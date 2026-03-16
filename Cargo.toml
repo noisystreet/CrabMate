@@ -1,0 +1,42 @@
+[package]
+name = "crabmate"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal agent demo using DeepSeek API"
+
+[package.metadata.deb]
+maintainer = "CrabMate <dev@example.com>"
+license-file = "README.md"
+extended-description = "CrabMate: a minimal Rust AI agent with HTTP server and web UI."
+depends = "libc6 (>= 2.31)"
+section = "utils"
+priority = "optional"
+assets = [
+    # 二进制：安装到 /usr/bin
+    ["target/release/crabmate", "usr/bin/crabmate", "755"],
+    # 默认配置与示例
+    ["default_config.toml", "etc/crabmate/default_config.toml", "644"],
+    ["config.toml.example", "usr/share/doc/crabmate/config.toml.example", "644"],
+    # 文档
+    ["README.md", "usr/share/doc/crabmate/README.md", "644"],
+]
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
+toml = "0.8"
+markdown-to-ansi = "0.2"
+unicodeit = "0.2"
+regex = "1"
+unicode-width = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+axum = { version = "0.7", features = ["json"] }
+tokio-stream = "0.1"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs"] }
+rfd = "0.14"

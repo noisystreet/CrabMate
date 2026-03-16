@@ -1,0 +1,32 @@
+# 默认配置（API 基础地址、模型与运行参数）
+# 可被 config.toml / .agent_demo.toml 或环境变量覆盖
+
+[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+# 保留的最近对话轮数（user+assistant 算一轮）
+max_message_history = 24
+# run_command 最长执行时间（秒）
+command_timeout_secs = 10
+# run_command 输出最大长度（字符），超出则截断
+command_max_output_len = 8192
+# run_command 允许执行的命令白名单（仅只读/查询类）
+allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "gcc", "g++", "make"]
+# run_command 的工作目录（命令在该目录下执行，需存在且为目录）
+run_command_working_dir = "."
+# 对话 API 单次请求最大 token 数
+max_tokens = 2048
+# 采样温度，0～2，越高越随机
+temperature = 0.7
+# HTTP 请求超时（秒），用于 chat/completions 等 API
+api_timeout_secs = 60
+# API 失败时最大重试次数（0 = 不重试，仅首次失败后再试一次需设为 1）
+api_max_retries = 3
+# 重试前等待秒数（首次重试用该值，之后按指数退避：delay * 2^attempt）
+api_retry_delay_secs = 1
+# get_weather 工具请求超时（秒）
+weather_timeout_secs = 15
+# 系统提示词（可改为 system_prompt_file = "path/to/prompt.txt" 从文件加载）
+system_prompt = """
+你是乐于助人的助手。若需要当前时间、数学计算或查看系统/文件信息，请使用提供的工具。可用的 Linux 命令仅限白名单（如 ls, pwd, whoami, date, cat, head, tail 等），不要尝试执行 rm、mv 等修改类命令。回答简洁清晰。
+"""

@@ -1,0 +1,62 @@
+########################
+# OS / 编辑器文件
+########################
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.log
+*.tmp
+*.bak
+*.orig
+
+########################
+# Node / 前端
+########################
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.turbo/
+dist/
+build/
+coverage/
+
+########################
+# Python
+########################
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+########################
+# IDE / 工具
+########################
+.idea/
+.vscode/
+.history/
+.env
+.env.*
+
+########################
+# 杂项
+########################
+*.iml
+*.out
+*.class
+*.tgz
+*.tar.gz
+*.zip
