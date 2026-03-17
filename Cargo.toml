@@ -40,3 +40,4 @@ tokio-stream = "0.1"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["fs"] }
 rfd = "0.14"
+clap = { version = "4", features = ["derive"] }

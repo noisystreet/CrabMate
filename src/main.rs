@@ -5,134 +5,34 @@ mod api;
 mod config;
 mod tools;
 mod types;
+mod runtime;
+mod ui;
 
 use api::stream_chat;
 use axum::{
-    extract::{Query, State},
+    extract::State,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use axum::response::sse::{Event, KeepAlive, Sse};
+use config::cli::{init_logging, parse_args};
 use futures_util::StreamExt;
 use tower_http::services::ServeDir;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use std::env;
-use std::io::{self, Read, Write};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{error, info};
 use types::{ChatRequest, Message};
 
-fn init_logging() {
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::util::SubscriberInitExt;
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_default_env())
-        .with(tracing_subscriber::fmt::layer().with_target(true))
-        .init();
-}
-
-/// 若命令行含 --help / -h，打印使用说明并退出。
-fn maybe_print_help_and_exit() {
-    let args: Vec<String> = env::args().collect();
-    for a in args.iter().skip(1) {
-        if a == "--help" || a == "-h" {
-            print_usage();
-            std::process::exit(0);
-        }
-    }
-}
-
-fn print_usage() {
-    let prog = env::args().next().unwrap_or_else(|| "agent_demo".to_string());
-    eprintln!(r#"DeepSeek Agent Demo - 基于 DeepSeek API 的简易 Agent，支持工具调用与流式输出
-
-用法:
-  {} [选项]
-
-选项:
-  -h, --help           显示此帮助信息
-  --config <path>      指定配置文件（覆盖默认的 config.toml / .agent_demo.toml）
-  --serve [port]       以 Web 服务启动，默认端口 8080（POST /chat 提问，GET /health 健康检查）
-  --query <问题>        单次提问，输出回答后退出（便于脚本调用）
-  --stdin              从标准输入读取问题（多行直到 EOF），输出回答后退出（便于管道）
-
-环境变量:
-  API_KEY              必填，DeepSeek API Key（见 https://platform.deepseek.com/）
-  RUST_LOG             可选，日志级别，如 info、agent_demo=debug
-  AGENT_*              可选，覆盖配置项，如 AGENT_MODEL、AGENT_API_BASE、AGENT_MAX_TOKENS 等
-
-配置:
-  默认从 default_config.toml（嵌入）+ config.toml 或 .agent_demo.toml + 环境变量 合并。
-  使用 --config 时仅从该文件合并，不再查找当前目录下的 config.toml。
-
-示例:
-  export API_KEY=your-key
-  {}
-  {} --config ./my.toml
-  {} --query "北京今天天气怎么样"
-  echo "1+1等于几" | {} --stdin
-  {} --serve
-  {} --serve 3000
-  RUST_LOG=info {} --config ./prod.toml
-"#, prog, prog, prog, prog, prog, prog, prog, prog);
-}
-
-/// 从标准输入读取全部内容（直到 EOF）
-fn read_stdin_to_string() -> String {
-    let mut s = String::new();
-    let _ = io::stdin().read_to_string(&mut s);
-    s
-}
-
-/// 解析命令行参数，返回 (--config 路径, 单次问题, --serve 端口)
-fn parse_args() -> (Option<String>, Option<String>, Option<u16>) {
-    let args: Vec<String> = env::args().collect();
-    let mut config_path = None;
-    let mut single_shot = None;
-    let mut serve_port = None;
-    let mut i = 1;
-    while i < args.len() {
-        if args[i] == "--config" {
-            i += 1;
-            if i < args.len() {
-                config_path = Some(args[i].clone());
-            }
-            i += 1;
-        } else if args[i] == "--serve" {
-            i += 1;
-            let port = if i < args.len() {
-                args[i].parse::<u16>().ok()
-            } else {
-                None
-            };
-            serve_port = Some(port.unwrap_or(8080));
-            if port.is_some() {
-                i += 1;
-            }
-        } else if args[i] == "--query" {
-            i += 1;
-            if i < args.len() {
-                single_shot = Some(args[i].clone());
-            }
-            i += 1;
-        } else if args[i] == "--stdin" {
-            i += 1;
-            single_shot = Some(read_stdin_to_string());
-        } else {
-            i += 1;
-        }
-    }
-    (config_path, single_shot, serve_port)
-}
-
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
 /// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）。
+/// 若 render_to_terminal 为 true，则在终端边收边打印；否则仅累积内容，供调用方统一渲染。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
-async fn run_agent_turn(
+pub(crate) async fn run_agent_turn(
     client: &reqwest::Client,
     api_key: &str,
     cfg: &config::AgentConfig,
@@ -141,8 +41,16 @@ async fn run_agent_turn(
     out: Option<&tokio::sync::mpsc::Sender<String>>,
     effective_working_dir: &std::path::Path,
     workspace_is_set: bool,
+    render_to_terminal: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    loop {
+    'outer: loop {
+        // 若用于 SSE 的发送端已关闭（通常是前端中止/断开连接），则尽快结束本轮对话与工具循环
+        if let Some(tx) = out {
+            if tx.is_closed() {
+                info!("SSE sender closed, aborting run_agent_turn loop early");
+                break;
+            }
+        }
         let req = ChatRequest {
             model: cfg.model.clone(),
             messages: messages.clone(),
@@ -157,7 +65,7 @@ async fn run_agent_turn(
         let max_attempts = cfg.api_max_retries + 1;
         let mut msg_and_reason = None;
         for attempt in 0..max_attempts {
-            match stream_chat(client, api_key, &cfg.api_base, &req, out).await {
+            match stream_chat(client, api_key, &cfg.api_base, &req, out, render_to_terminal).await {
                 Ok(r) => {
                     info!(
                         model = %req.model,
@@ -199,13 +107,19 @@ async fn run_agent_turn(
             let _ = tx.send(r#"{"tool_running":true}"#.to_string()).await;
         }
         for tc in tool_calls {
+            if let Some(tx) = out {
+                if tx.is_closed() {
+                    info!("SSE sender closed during tool execution, aborting remaining tools");
+                    break 'outer;
+                }
+            }
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
             let id = tc.id.clone();
             println!("  [调用工具: {}]", name);
             // 若有 SSE 输出通道，则先发送一条简短的工具调用摘要，供前端在 Chat 面板中展示
             if let Some(tx) = out {
-                if let Some(summary) = summarize_tool_call(&name, &args) {
+                if let Some(summary) = tools::summarize_tool_call(&name, &args) {
                     let payload = serde_json::json!({
                         "tool_call": {
                             "name": name,
@@ -250,7 +164,7 @@ async fn run_agent_turn(
                     }
                 };
                 // 若是编译相关命令且退出码为 0，则认为工作区发生了变更（生成/更新了构建产物）
-                if is_compile_command_success(&args, &s) {
+                if tools::is_compile_command_success(&args, &s) {
                     workspace_changed = true;
                 }
                 s
@@ -355,90 +269,10 @@ async fn run_agent_turn(
     Ok(())
 }
 
-/// 判断本次 run_command 是否为“成功的编译命令”（gcc/g++/make/cmake 且退出码为 0）
-fn is_compile_command_success(args_json: &str, result: &str) -> bool {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(_) => return false,
-        };
-    let cmd = v
-        .get("command")
-        .and_then(|c| c.as_str())
-        .map(|s| s.trim().to_lowercase());
-    let is_compile_cmd = cmd
-        .as_deref()
-        .map_or(false, |c| matches!(c, "gcc" | "g++" | "make" | "cmake"));
-    if !is_compile_cmd {
-        return false;
-    }
-    // run_command 输出的第一行形如：退出码：0
-    let first_line = result.lines().next().unwrap_or("");
-    if let Some(rest) = first_line.strip_prefix("退出码：") {
-        if let Ok(code) = rest.trim().parse::<i32>() {
-            return code == 0;
-        }
-    }
-    false
-}
-
-/// 为前端生成简短的工具调用摘要，便于在 Chat 面板中展示
-fn summarize_tool_call(name: &str, args_json: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
-    match name {
-        "run_command" => {
-            let cmd = v.get("command")?.as_str()?.trim();
-            let args = v
-                .get("args")
-                .and_then(|a| a.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
-                .unwrap_or_default();
-            let s = if args.is_empty() {
-                format!("执行命令：{}", cmd)
-            } else {
-                format!("执行命令：{} {}", cmd, args)
-            };
-            Some(s)
-        }
-        "create_file" => {
-            let path = v.get("path")?.as_str()?.trim();
-            Some(format!("新建文件：{}", path))
-        }
-        "modify_file" => {
-            let path = v.get("path")?.as_str()?.trim();
-            Some(format!("修改文件：{}", path))
-        }
-        "run_executable" => {
-            let path = v.get("path")?.as_str()?.trim();
-            let args = v
-                .get("args")
-                .and_then(|a| a.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
-                .unwrap_or_default();
-            let s = if args.is_empty() {
-                format!("运行可执行：{}", path)
-            } else {
-                format!("运行可执行：{} {}", path, args)
-            };
-            Some(s)
-        }
-        _ => None,
-    }
-}
-
 // ---------- Web 服务 ----------
 
 #[derive(Clone)]
-struct AppState {
+pub(crate) struct AppState {
     cfg: config::AgentConfig,
     api_key: String,
     client: reqwest::Client,
@@ -533,6 +367,7 @@ async fn chat_handler(
         None,
         work_dir,
         workspace_is_set,
+        true,
     )
     .await
     .map_err(|e| {
@@ -607,6 +442,7 @@ async fn chat_stream_handler(
             out,
             &work_dir,
             workspace_is_set,
+            false,
         )
         .await
         {
@@ -647,438 +483,21 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
     })
 }
 
-#[derive(serde::Serialize)]
-struct WorkspaceEntry {
-    name: String,
-    is_dir: bool,
-}
-
-#[derive(serde::Deserialize)]
-struct WorkspaceQuery {
-    path: Option<String>,
-}
-
-#[derive(serde::Serialize)]
-struct WorkspaceResponse {
-    path: String,
-    entries: Vec<WorkspaceEntry>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-fn resolve_workspace_path(
-    base: &std::path::Path,
-    sub: Option<&str>,
-) -> Result<std::path::PathBuf, String> {
-    let sub = match sub {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return Ok(base.to_path_buf()),
-    };
-    let joined = if std::path::Path::new(sub).is_absolute() {
-        std::path::PathBuf::from(sub)
-    } else {
-        base.join(sub)
-    };
-    let canonical = joined.canonicalize().map_err(|e| format!("路径无法解析: {}", e))?;
-    Ok(canonical)
-}
-
-#[derive(serde::Deserialize)]
-struct WorkspaceSetBody {
-    path: Option<String>,
-}
-
-async fn workspace_set_handler(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<WorkspaceSetBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let raw = body.path.as_deref().map(|s| s.trim()).unwrap_or("");
-    let path = if raw.is_empty() { "" } else { raw };
-    let mut guard = state.workspace_override.write().await;
-    // None 表示“从未设置过”；Some("") 表示“显式选择默认目录”；Some("...") 表示指定路径
-    *guard = Some(path.to_string());
-    Ok(Json(serde_json::json!({ "ok": true, "path": path })))
-}
-
-async fn workspace_handler(
-    State(state): State<Arc<AppState>>,
-    Query(query): Query<WorkspaceQuery>,
-) -> Json<WorkspaceResponse> {
-    let base_str = state.effective_workspace_path().await;
-    let base = std::path::Path::new(&base_str);
-    let base_canonical = match base.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            let msg = format!("工作目录无法解析: {}", e);
-            tracing::warn!("{}", msg);
-            return Json(WorkspaceResponse {
-                path: String::new(),
-                entries: Vec::new(),
-                error: Some(msg),
-            });
-        }
-    };
-    let canonical = match resolve_workspace_path(&base_canonical, query.path.as_deref()) {
-        Ok(p) => p,
-        Err(msg) => {
-            return Json(WorkspaceResponse {
-                path: base_canonical.display().to_string(),
-                entries: Vec::new(),
-                error: Some(msg),
-            });
-        }
-    };
-    let path_str = canonical.display().to_string();
-    let mut entries = Vec::new();
-    let mut read_dir = match tokio::fs::read_dir(&canonical).await {
-        Ok(d) => d,
-        Err(e) => {
-            let msg = format!("无法读取工作目录: {}", e);
-            tracing::warn!("{}", msg);
-            return Json(WorkspaceResponse {
-                path: path_str,
-                entries: Vec::new(),
-                error: Some(msg),
-            });
-        }
-    };
-    loop {
-        let entry = match read_dir.next_entry().await {
-            Ok(Some(e)) => e,
-            Ok(None) => break,
-            Err(e) => {
-                let msg = format!("读取目录项失败: {}", e);
-                tracing::warn!("{}", msg);
-                break;
-            }
-        };
-        let name = entry
-            .file_name()
-            .to_string_lossy()
-            .to_string();
-        let is_dir = entry.metadata().await.map(|m| m.is_dir()).unwrap_or(false);
-        entries.push(WorkspaceEntry { name, is_dir });
-    }
-    entries.sort_by(|a, b| {
-        match (a.is_dir, b.is_dir) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-        }
-    });
-    Json(WorkspaceResponse {
-        path: path_str,
-        entries,
-        error: None,
-    })
-}
-
-#[derive(serde::Serialize)]
-struct WorkspacePickResponse {
-    path: Option<String>,
-}
-
-async fn workspace_pick_handler() -> Json<WorkspacePickResponse> {
-    let path = tokio::task::spawn_blocking(|| {
-        rfd::FileDialog::new().pick_folder()
-    })
-    .await
-    .ok()
-    .and_then(|opt| opt)
-    .map(|p| p.display().to_string());
-    Json(WorkspacePickResponse { path })
-}
-
-#[derive(serde::Deserialize)]
-struct WorkspaceFileQuery {
-    path: String,
-}
-
-#[derive(serde::Serialize)]
-struct WorkspaceFileReadResponse {
-    content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-/// 工作区文件读取：按 path 返回文件内容（path 为工作区内文件路径）
-async fn workspace_file_read_handler(
-    State(state): State<Arc<AppState>>,
-    Query(query): Query<WorkspaceFileQuery>,
-) -> Json<WorkspaceFileReadResponse> {
-    let base_str = state.effective_workspace_path().await;
-    let base = std::path::Path::new(&base_str);
-    let base_canonical = match base.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(format!("工作目录无法解析: {}", e)),
-            });
-        }
-    };
-    let path = query.path.trim();
-    if path.is_empty() {
-        return Json(WorkspaceFileReadResponse {
-            content: String::new(),
-            error: Some("path 不能为空".to_string()),
-        });
-    }
-    let canonical = match resolve_workspace_path(&base_canonical, Some(path)) {
-        Ok(p) => p,
-        Err(msg) => {
-            return Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(msg),
-            });
-        }
-    };
-    let meta = match tokio::fs::metadata(&canonical).await {
-        Ok(m) => m,
-        Err(e) => {
-            return Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(format!("无法读取文件信息: {}", e)),
-            });
-        }
-    };
-    if meta.is_dir() {
-        return Json(WorkspaceFileReadResponse {
-            content: String::new(),
-            error: Some("路径是目录，无法读取为文件".to_string()),
-        });
-    }
-    match tokio::fs::read_to_string(&canonical).await {
-        Ok(content) => Json(WorkspaceFileReadResponse {
-            content,
-            error: None,
-        }),
-        Err(e) => Json(WorkspaceFileReadResponse {
-            content: String::new(),
-            error: Some(format!("读取文件失败: {}", e)),
-        }),
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct WorkspaceFileWriteBody {
-    path: String,
-    content: String,
-    /// 仅创建：若文件已存在则报错
-    #[serde(default)]
-    create_only: bool,
-    /// 仅修改：若文件不存在则报错
-    #[serde(default)]
-    update_only: bool,
-}
-
-#[derive(serde::Serialize)]
-struct WorkspaceFileWriteResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-/// 工作区文件写入：支持创建、写入（创建或覆盖）、仅创建、仅修改
-async fn workspace_file_write_handler(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<WorkspaceFileWriteBody>,
-) -> Json<WorkspaceFileWriteResponse> {
-    let base_str = state.effective_workspace_path().await;
-    let base = std::path::Path::new(&base_str);
-    let base_canonical = match base.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceFileWriteResponse {
-                error: Some(format!("工作目录无法解析: {}", e)),
-            });
-        }
-    };
-    let path = body.path.trim();
-    if path.is_empty() {
-        return Json(WorkspaceFileWriteResponse {
-            error: Some("path 不能为空".to_string()),
-        });
-    }
-    let canonical = match resolve_workspace_path(&base_canonical, Some(path)) {
-        Ok(p) => p,
-        Err(msg) => {
-            return Json(WorkspaceFileWriteResponse {
-                error: Some(msg),
-            });
-        }
-    };
-
-    let exists = tokio::fs::try_exists(&canonical).await.unwrap_or(false);
-    if body.create_only && exists {
-        return Json(WorkspaceFileWriteResponse {
-            error: Some("文件已存在，无法仅创建".to_string()),
-        });
-    }
-    if body.update_only && !exists {
-        return Json(WorkspaceFileWriteResponse {
-            error: Some("文件不存在，无法仅修改".to_string()),
-        });
-    }
-
-    if let Some(parent) = canonical.parent() {
-        if !parent.as_os_str().is_empty() {
-            if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                return Json(WorkspaceFileWriteResponse {
-                    error: Some(format!("创建目录失败: {}", e)),
-                });
-            }
-        }
-    }
-    match tokio::fs::write(&canonical, body.content.as_bytes()).await {
-        Ok(()) => Json(WorkspaceFileWriteResponse { error: None }),
-        Err(e) => Json(WorkspaceFileWriteResponse {
-            error: Some(format!("写入文件失败: {}", e)),
-        }),
-    }
-}
-
-#[derive(serde::Serialize)]
-struct WorkspaceFileDeleteResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-/// 删除工作区内的文件：path 为工作区内文件路径，不能删除目录
-async fn workspace_file_delete_handler(
-    State(state): State<Arc<AppState>>,
-    Query(query): Query<WorkspaceFileQuery>,
-) -> Json<WorkspaceFileDeleteResponse> {
-    let base_str = state.effective_workspace_path().await;
-    let base = std::path::Path::new(&base_str);
-    let base_canonical = match base.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceFileDeleteResponse {
-                error: Some(format!("工作目录无法解析: {}", e)),
-            });
-        }
-    };
-    let path = query.path.trim();
-    if path.is_empty() {
-        return Json(WorkspaceFileDeleteResponse {
-            error: Some("path 不能为空".to_string()),
-        });
-    }
-    let canonical = match resolve_workspace_path(&base_canonical, Some(path)) {
-        Ok(p) => p,
-        Err(msg) => {
-            return Json(WorkspaceFileDeleteResponse {
-                error: Some(msg),
-            });
-        }
-    };
-    let meta = match tokio::fs::metadata(&canonical).await {
-        Ok(m) => m,
-        Err(e) => {
-            return Json(WorkspaceFileDeleteResponse {
-                error: Some(format!("无法读取文件信息: {}", e)),
-            });
-        }
-    };
-    if meta.is_dir() {
-        return Json(WorkspaceFileDeleteResponse {
-            error: Some("不支持删除目录".to_string()),
-        });
-    }
-    match tokio::fs::remove_file(&canonical).await {
-        Ok(()) => Json(WorkspaceFileDeleteResponse { error: None }),
-        Err(e) => Json(WorkspaceFileDeleteResponse {
-            error: Some(format!("删除文件失败: {}", e)),
-        }),
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
-struct TaskItem {
-    id: String,
-    title: String,
-    done: bool,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
-struct TasksData {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    updated_at: Option<String>,
-    items: Vec<TaskItem>,
-}
-
-/// 读取当前工作区根目录下的 tasks.json；若不存在则返回空任务列表
-async fn tasks_get_handler(State(state): State<Arc<AppState>>) -> Json<TasksData> {
-    let base_str = state.effective_workspace_path().await;
-    let root = std::path::Path::new(&base_str);
-    let path = root.join("tasks.json");
-    if !path.exists() {
-        return Json(TasksData {
-            source: None,
-            updated_at: None,
-            items: Vec::new(),
-        });
-    }
-    match tokio::fs::read_to_string(&path).await {
-        Ok(s) => match serde_json::from_str::<TasksData>(&s) {
-            Ok(data) => Json(data),
-            Err(e) => {
-                error!(error = %e, "解析 tasks.json 失败，将返回空任务列表");
-                Json(TasksData {
-                    source: None,
-                    updated_at: None,
-                    items: Vec::new(),
-                })
-            }
-        },
-        Err(e) => {
-            error!(error = %e, "读取 tasks.json 失败，将返回空任务列表");
-            Json(TasksData {
-                source: None,
-                updated_at: None,
-                items: Vec::new(),
-            })
-        }
-    }
-}
-
-/// 覆盖写入当前工作区根目录的 tasks.json
-async fn tasks_set_handler(
-    State(state): State<Arc<AppState>>,
-    Json(mut body): Json<TasksData>,
-) -> Json<TasksData> {
-    let base_str = state.effective_workspace_path().await;
-    let root = std::path::Path::new(&base_str);
-    let path = root.join("tasks.json");
-    // 由后端统一维护更新时间
-    let now = chrono::Utc::now().to_rfc3339();
-    body.updated_at = Some(now);
-    let content = match serde_json::to_string_pretty(&body) {
-        Ok(c) => c,
-        Err(e) => {
-            error!(error = %e, "序列化任务数据失败");
-            return Json(body);
-        }
-    };
-    if let Some(parent) = path.parent() {
-        if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            error!(error = %e, "创建 tasks.json 目录失败");
-        }
-    }
-    if let Err(e) = tokio::fs::write(&path, content.as_bytes()).await {
-        error!(error = %e, "写入 tasks.json 失败");
-    }
-    Json(body)
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    maybe_print_help_and_exit();
     init_logging();
 
-    let (config_path, single_shot, serve_port) = parse_args();
+    let (
+        config_path,
+        single_shot,
+        serve_port,
+        workspace_cli,
+        output_mode,
+        no_tools,
+        no_web,
+        dry_run,
+        no_stream,
+    ) = parse_args();
 
     let api_key = env::var("API_KEY")
         .expect("请设置环境变量 API_KEY");
@@ -1091,36 +510,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     info!(api_base = %cfg.api_base, model = %cfg.model, "配置已加载");
+    if dry_run {
+        let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+        if !static_dir.is_dir() {
+            eprintln!(
+                "dry-run 失败：前端静态目录不存在：{}（请先在 frontend/ 下构建）",
+                static_dir.display()
+            );
+            std::process::exit(1);
+        }
+        println!("配置检查通过：API_KEY 已设置，配置可用，前端静态目录存在：{}", static_dir.display());
+        return Ok(());
+    }
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(cfg.api_timeout_secs))
         .build()?;
-    let tools = tools::build_tools();
+    let all_tools = tools::build_tools();
+    let tools = if no_tools { Vec::new() } else { all_tools };
 
     if let Some(port) = serve_port {
+        let initial_workspace = workspace_cli.clone();
         let state = Arc::new(AppState {
             cfg: cfg.clone(),
             api_key: api_key.clone(),
             client,
             tools,
-            workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
         });
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/chat", post(chat_handler))
             .route("/chat/stream", post(chat_stream_handler))
             .route("/health", get(health_handler))
             .route("/status", get(status_handler))
-            .route("/workspace", get(workspace_handler).post(workspace_set_handler))
-            .route("/workspace/pick", get(workspace_pick_handler))
+            .route(
+                "/workspace",
+                get(ui::workspace::workspace_handler).post(ui::workspace::workspace_set_handler),
+            )
+            .route("/workspace/pick", get(ui::workspace::workspace_pick_handler))
+            .route(
+                "/workspace/search",
+                post(ui::workspace::workspace_search_handler),
+            )
             .route(
                 "/workspace/file",
-                get(workspace_file_read_handler)
-                    .post(workspace_file_write_handler)
-                    .delete(workspace_file_delete_handler),
+                get(ui::workspace::workspace_file_read_handler)
+                    .post(ui::workspace::workspace_file_write_handler)
+                    .delete(ui::workspace::workspace_file_delete_handler),
             )
-            .route("/tasks", get(tasks_get_handler).post(tasks_set_handler))
-            .nest_service("/", ServeDir::new(static_dir))
-            .with_state(state);
+            .route(
+                "/tasks",
+                get(ui::task::tasks_get_handler).post(ui::task::tasks_set_handler),
+            );
+        if !no_web {
+            app = app.nest_service("/", ServeDir::new(static_dir));
+        }
+        let app = app.with_state(state);
         let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
         println!("Web 服务已启动");
         println!("  本地访问: http://127.0.0.1:{}", port);
@@ -1131,103 +576,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let mut messages: Vec<Message> = vec![Message {
-        role: "system".to_string(),
-        content: Some(cfg.system_prompt.clone()),
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    }];
-
     if let Some(question) = single_shot {
-        let q = question.trim();
-        if q.is_empty() {
-            eprintln!("错误：--query 或 --stdin 内容为空");
-            std::process::exit(1);
-        }
-        messages.push(Message {
-            role: "user".to_string(),
-            content: Some(q.to_string()),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        });
-        if messages.len() > 1 + cfg.max_message_history {
-            let keep = messages.len() - cfg.max_message_history;
-            messages = [messages[0].clone()]
-                .into_iter()
-                .chain(messages.into_iter().skip(keep))
-                .collect();
-        }
-        if let Err(e) = run_agent_turn(
+        crate::runtime::cli::run_single_shot(
+            &cfg,
             &client,
             &api_key,
-            &cfg,
             &tools,
-            &mut messages,
-            None,
-            std::path::Path::new(&cfg.run_command_working_dir),
-            true,
+            &workspace_cli,
+            &output_mode,
+            no_stream,
+            question,
         )
-        .await
-        {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+        .await?;
         return Ok(());
     }
 
-    println!("=== DeepSeek Agent Demo ===\n当前模型: {}\n输入内容与 Agent 对话，输入 quit/exit 或 Ctrl+D 退出。\n", cfg.model);
-
-    loop {
-        print!("你: ");
-        io::stdout().flush()?;
-        let mut input = String::new();
-        let n = io::stdin().read_line(&mut input)?;
-        if n == 0 {
-            break; // Ctrl+D (EOF)
-        }
-        let input = input.trim();
-        if input.eq_ignore_ascii_case("quit") || input.eq_ignore_ascii_case("exit") {
-            break;
-        }
-        if input.is_empty() {
-            continue;
-        }
-
-        messages.push(Message {
-            role: "user".to_string(),
-            content: Some(input.to_string()),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        });
-
-        if messages.len() > 1 + cfg.max_message_history {
-            let keep = messages.len() - cfg.max_message_history;
-            messages = [messages[0].clone()]
-                .into_iter()
-                .chain(messages.into_iter().skip(keep))
-                .collect();
-        }
-
-        if let Err(e) = run_agent_turn(
-            &client,
-            &api_key,
-            &cfg,
-            &tools,
-            &mut messages,
-            None,
-            std::path::Path::new(&cfg.run_command_working_dir),
-            true,
-        )
-        .await
-        {
-            eprintln!("{}", e);
-            break;
-        }
-    }
-
-    println!("再见。");
-    Ok(())
+    crate::runtime::cli::run_repl(
+        &cfg,
+        &client,
+        &api_key,
+        &tools,
+        &workspace_cli,
+        no_stream,
+    )
+    .await
 }

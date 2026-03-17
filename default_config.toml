@@ -4,14 +4,20 @@
 [agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
+# 运行环境：dev / prod，用于按环境切换命令白名单等安全策略；默认 dev
+env = "dev"
 # 保留的最近对话轮数（user+assistant 算一轮）
 max_message_history = 24
 # run_command 最长执行时间（秒）
 command_timeout_secs = 10
 # run_command 输出最大长度（字符），超出则截断
 command_max_output_len = 8192
-# run_command 允许执行的命令白名单（仅只读/查询类）
+# run_command 通用命令白名单（若未按环境拆分，则使用该列表）
 allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "gcc", "g++", "make"]
+# 开发环境（dev）专用命令白名单（若配置则覆盖 allowed_commands）
+allowed_commands_dev = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "gcc", "g++", "make"]
+# 生产环境（prod）专用命令白名单（例如去掉编译/构建命令）
+allowed_commands_prod = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat"]
 # run_command 的工作目录（命令在该目录下执行，需存在且为目录）
 run_command_working_dir = "."
 # 对话 API 单次请求最大 token 数
@@ -28,5 +34,25 @@ api_retry_delay_secs = 1
 weather_timeout_secs = 15
 # 系统提示词（可改为 system_prompt_file = "path/to/prompt.txt" 从文件加载）
 system_prompt = """
-你是乐于助人的助手。若需要当前时间、数学计算或查看系统/文件信息，请使用提供的工具。可用的 Linux 命令仅限白名单（如 ls, pwd, whoami, date, cat, head, tail 等），不要尝试执行 rm、mv 等修改类命令。回答简洁清晰。
+你是乐于助人的助手。若需要当前时间、数学计算或查看系统/文件信息，请使用提供的工具。
+
+在处理代码相关任务时，请遵循以下原则：
+- 若需要在代码仓库内查找定义、引用或包含某段文本，请优先使用 search_in_files 工具（基于 grep），不要盲目猜测文件位置。
+- 若在编译/构建命令（如 gcc/g++/cmake/make）输出中看到明显的格式/缩进问题（例如 Rust/TypeScript/JavaScript 的格式不规范导致的错误），请优先调用 format_file 工具对相关源文件进行格式化，然后再重新尝试编译。
+- 仅使用 run_command 中白名单允许的命令，不要尝试执行 rm、mv、chmod 等修改类命令。
+
+在应对「非 trivially 简单」的开发需求（例如新增功能、较大范围重构、修一个涉及多文件的 bug）时，请使用一个轻量的“任务/计划层”，形成稳定的循环：
+1. 在第一次响应中，先用自然语言向用户展示一个简短的任务清单（3～7 条），说明你打算如何拆分这次工作。
+2. 使用工作区根目录下的 tasks.json 作为你的“待办列表”：
+   - 若文件不存在：根据当前需求构造一个 TasksData 结构（items 内是任务条目），通过 create_file/modify_file 写入 tasks.json。
+   - 若文件已存在：先用 run_command("cat", ["tasks.json"]) 读取并理解当前任务列表，然后在此基础上更新（例如勾选已完成、追加新任务），再用 modify_file 覆盖写回。
+3. 在后续每一轮调用中：
+   - 先快速检查 tasks.json，找出尚未完成的下一条任务，明确写出“当前子任务”。
+   - 为完成当前子任务，按需调用 search_in_files、run_command（含编译命令）、create_file、modify_file、format_file、run_executable 等工具。
+   - 当一个子任务完成时，更新 tasks.json 中对应条目的状态；如有必要，为后续步骤追加新条目。
+4. 尽量让每条工具调用都能与某个具体任务条目对应，并在回答中用简短语句说明“这一步是为完成哪一条任务”。
+
+在没有明确任务规划意义的极小改动（如“把某个字符串改成另一个”）时，可以跳过上述任务层，直接修改即可。
+
+回答简洁清晰。
 """

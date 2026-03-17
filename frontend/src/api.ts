@@ -97,6 +97,32 @@ export async function sendChat(message: string): Promise<ChatResponse> {
   return data as ChatResponse
 }
 
+export interface WorkspaceSearchRequest {
+  pattern: string
+  path?: string | null
+  max_results?: number
+  case_insensitive?: boolean
+  ignore_hidden?: boolean
+}
+
+export interface WorkspaceSearchResponse {
+  output: string
+}
+
+/** 在工作区内搜索文件内容（基于后端 grep 工具），path 为空则从工作区根目录开始；否则从指定目录递归搜索 */
+export async function searchWorkspace(body: WorkspaceSearchRequest): Promise<WorkspaceSearchResponse> {
+  const r = await fetch(`${base}/workspace/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) {
+    throw new Error((data as { error?: string }).error || r.statusText)
+  }
+  return data as WorkspaceSearchResponse
+}
+
 /** 流式 chat：POST /chat/stream，通过 onDelta 逐段接收内容，onDone 结束时调用，失败时 onError；收到 workspace_changed 时调用 onWorkspaceChanged 以刷新工作区 */
 export async function sendChatStream(
   message: string,
@@ -108,12 +134,14 @@ export async function sendChatStream(
     onToolCall?: (info: { name: string; summary: string }) => void
     onToolStatusChange?: (running: boolean) => void
     onToolResult?: (info: { name: string; output: string }) => void
-  }
+  },
+  signal?: AbortSignal,
 ): Promise<void> {
   const r = await fetch(`${base}/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message }),
+    signal,
   })
   if (!r.ok) {
     const data = await r.json().catch(() => ({}))
@@ -212,6 +240,10 @@ export async function sendChatStream(
     }
     callbacks.onDone()
   } catch (e) {
+    // 若是主动取消（AbortError），静默返回；否则按错误处理
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      return
+    }
     callbacks.onError(e instanceof Error ? e.message : '流式读取失败')
   }
 }

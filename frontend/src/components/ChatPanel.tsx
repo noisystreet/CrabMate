@@ -5,7 +5,7 @@ import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
-import { Send, User, Bot, Loader2, ImagePlus, FileText, Mic, Video } from 'lucide-react'
+import { Send, User, Bot, Loader2, ImagePlus, FileText, Mic, Video, Square } from 'lucide-react'
 
 /** 将 [ ... LaTeX ... ] 转为 $$ ... $$，避免与 markdown 链接 [text](url) 冲突 */
 function preprocessLatexBlocks(text: string): string {
@@ -30,31 +30,15 @@ function preprocessLatexBlocks(text: string): string {
 function formatAssistantText(raw: string): string {
   // 先做 LaTeX 预处理
   let s = preprocessLatexBlocks(raw.replace(/\\n/g, '\n'))
-  // 若本身已有换行，则做规范化：去掉“伪空行”，压缩连续空行为最多 2 行，避免段落被贴在一起
+  // 若本身已有换行，则直接返回（交给后端/模型自行控制段落），不再做任何空行压缩
   if (s.includes('\n')) {
-    const norm = s.replace(/\r\n/g, '\n')
-    const lines = norm.split('\n')
-    const out: string[] = []
-    let emptyCount = 0
-    for (const line of lines) {
-      const isEmpty = line.trim().length === 0
-      if (isEmpty) {
-        if (emptyCount < 2) {
-          out.push('')
-        }
-        emptyCount += 1
-      } else {
-        out.push(line)
-        emptyCount = 0
-      }
-    }
-    return out.join('\n')
+    return s
   }
   // 在中文句号、问号、叹号后面尝试插入换行
   s = s.replace(/(。|！|？)/g, '$1\n')
-  // 在编号列表前插入换行：1. 2. 3.，并确保有空行 + 空格（更符合 markdown 列表语法）
-  s = s.replace(/(\d+\.)(?=\S)/g, '\n\n$1 ')
-  // 保持为单个换行，remark-breaks 会将其渲染为 <br>，不会产生多余空行
+  // 在编号列表前插入换行：1. 2. 3.，使用单个换行
+  s = s.replace(/(\d+\.)(?=\S)/g, '\n$1 ')
+  // 保持为单个换行，remark-breaks 会将其渲染为 <br>
   return s
 }
 
@@ -64,6 +48,14 @@ function normalizeToolOutput(raw: string): string {
     .replace(/\r\n/g, '\n')     // 统一换行符
     .replace(/\n{3,}/g, '\n\n') // 连续 3 行以上空行压缩为 1 个空行
     .replace(/\n+$/g, '')       // 去掉末尾多余空行
+}
+
+function classifyErrorKind(msg: string): ErrorKind {
+  const lower = msg.toLowerCase()
+  if (lower.includes('timeout') || lower.includes('超时')) return 'timeout'
+  if (lower.includes('network') || lower.includes('failed to fetch')) return 'network'
+  if (lower.includes('internal_error') || lower.includes('对话失败')) return 'server'
+  return 'unknown'
 }
 import { sendChatStream } from '../api'
 
@@ -79,6 +71,8 @@ function getStoredInputHeight(): number {
   return Number.isFinite(n) && n >= MIN_INPUT_HEIGHT && n <= MAX_INPUT_HEIGHT ? n : DEFAULT_INPUT_HEIGHT
 }
 
+type ErrorKind = 'network' | 'timeout' | 'server' | 'unknown'
+
 type Message = {
   role: 'user' | 'assistant' | 'system'
   text: string
@@ -87,6 +81,9 @@ type Message = {
   videoUrls?: string[]
   state?: 'loading' | 'error'
   collapsed?: boolean
+  isToolOutput?: boolean
+  errorKind?: ErrorKind
+  canRetry?: boolean
 }
 
 interface ChatPanelProps {
@@ -100,6 +97,12 @@ interface ChatPanelProps {
   onMessagesChange?: (hasMessages: boolean) => void
   /** 通知父组件工具运行状态（例如 run_command / run_executable 执行中） */
   onToolStatusChange?: (running: boolean) => void
+  /** 来自工作区或其它面板的外部发送请求 */
+  externalSend?: { seq: number; text: string } | null
+  /** 外部注入的系统消息（例如任务完成进度），只追加到消息流，不触发发送 */
+  systemInject?: { seq: number; text: string } | null
+  /** 当需要从聊天消息中创建任务时回调（只传递 title 文本） */
+  onAddTaskFromMessage?: (title: string) => void
 }
 
 export function ChatPanel({
@@ -109,6 +112,9 @@ export function ChatPanel({
   exportTrigger = 0,
   onMessagesChange,
   onToolStatusChange,
+  externalSend,
+  systemInject,
+  onAddTaskFromMessage,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
@@ -116,9 +122,12 @@ export function ChatPanel({
   const [pendingAudios, setPendingAudios] = useState<string[]>([])
   const [pendingVideos, setPendingVideos] = useState<string[]>([])
   const [sending, setSending] = useState(false)
+  const [pendingQueue, setPendingQueue] = useState<string[]>([])
+  const [lastPrompt, setLastPrompt] = useState<string | null>(null)
   const [inputHeight, setInputHeight] = useState(getStoredInputHeight)
   const listRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textFileInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
@@ -135,6 +144,28 @@ export function ChatPanel({
   useEffect(() => {
     onMessagesChange?.(messages.length > 0)
   }, [messages, onMessagesChange])
+
+  // 外部请求（例如 WorkspacePanel 中“将结果发送到聊天”）
+  useEffect(() => {
+    if (!externalSend || !externalSend.text.trim()) return
+    const text = externalSend.text.trim()
+    // 若当前正在发送，则加入发送队列
+    if (sending) {
+      setPendingQueue((q) => [...q, text])
+      return
+    }
+    setInput(text)
+    // 立即发起一轮发送（忽略返回值）
+    void send()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalSend?.seq])
+
+  // 外部系统消息注入（例如任务完成进度），只追加一条 system 消息
+  useEffect(() => {
+    if (!systemInject || !systemInject.text.trim()) return
+    const text = systemInject.text.trim()
+    setMessages((m) => [...m, { role: 'system', text }])
+  }, [systemInject?.seq])
 
   useEffect(() => {
     if (exportTrigger > 0) {
@@ -200,18 +231,30 @@ export function ChatPanel({
     const images = pendingImages.length > 0 ? [...pendingImages] : undefined
     const audioUrls = pendingAudios.length > 0 ? [...pendingAudios] : undefined
     const videoUrls = pendingVideos.length > 0 ? [...pendingVideos] : undefined
-    if ((!msg && !images && !audioUrls && !videoUrls) || sending) return
+    if (!msg && !images && !audioUrls && !videoUrls) return
+    // 若当前正在发送且本次不含附件，则将文本加入队列，等待上一轮结束后自动发送
+    if (sending && !images && !audioUrls && !videoUrls) {
+      setPendingQueue((q) => [...q, msg])
+      setInput('')
+      return
+    }
     setInput('')
     setPendingImages([])
     setPendingAudios([])
     setPendingVideos([])
     const fallback = images ? '(图片)' : audioUrls ? '(音频)' : videoUrls ? '(视频)' : ''
+    setLastPrompt(msg)
     setMessages((m) => [...m, { role: 'user', text: msg || fallback, images, audioUrls, videoUrls }])
     setMessages((m) => [...m, { role: 'assistant', text: '', state: 'loading' }])
     setSending(true)
     onSendStart?.()
     let finished = false
     try {
+      if (abortRef.current) {
+        abortRef.current.abort()
+      }
+      const controller = new AbortController()
+      abortRef.current = controller
       await sendChatStream(msg, {
         onDelta: (text) => {
           setMessages((m) => {
@@ -243,14 +286,15 @@ export function ChatPanel({
         },
         onToolStatusChange,
         onToolResult: ({ name, output }) => {
-          // 将工具输出也插入到对话中，使用 system 样式，便于查看 ls 等命令结果
-          const header = name ? `命令输出（${name}）：` : '命令输出：'
+          // 将工具输出也插入到对话中，使用专门的 system 样式，便于查看 ls 等命令结果
+          const header = name ? `命令输出（${name}）` : '命令输出'
           setMessages((m) => [
             ...m,
             {
               role: 'system',
               text: `${header}\n${normalizeToolOutput(output)}`,
-              collapsed: false,
+              collapsed: true,
+              isToolOutput: true,
             },
           ])
         },
@@ -273,6 +317,21 @@ export function ChatPanel({
           })
           onSendEnd?.()
           setSending(false)
+          // 若有排队的下一条消息，则在本轮结束后自动发送
+          setPendingQueue((q) => {
+            if (!q.length) return q
+            const [next, ...rest] = q
+            setInput(next)
+            // 异步触发下一轮发送，避免与当前状态更新冲突
+            setTimeout(() => {
+              // 仅在当前不忙时再发送
+              if (!sending) {
+                // 忽略返回值
+                void send()
+              }
+            }, 0)
+            return rest
+          })
         },
         onError: (errMsg) => {
           finished = true
@@ -286,14 +345,27 @@ export function ChatPanel({
               }
             }
             if (idx >= 0) {
-              next[idx] = { role: 'assistant', text: '错误：' + errMsg, state: 'error' }
+              const kind = classifyErrorKind(errMsg)
+              next[idx] = { role: 'assistant', text: errMsg, state: 'error', errorKind: kind, canRetry: !!lastPrompt }
             }
             return next
           })
           onSendEnd?.(errMsg)
           setSending(false)
+          // 错误场景同样尝试发送队列中的下一条
+          setPendingQueue((q) => {
+            if (!q.length) return q
+            const [next, ...rest] = q
+            setInput(next)
+            setTimeout(() => {
+              if (!sending) {
+                void send()
+              }
+            }, 0)
+            return rest
+          })
         },
-      })
+      }, controller.signal)
     } catch (e) {
       const msgText = e instanceof Error ? e.message : '请求失败'
       setMessages((m) => {
@@ -306,13 +378,26 @@ export function ChatPanel({
           }
         }
         if (idx >= 0) {
-          next[idx] = { role: 'assistant', text: '错误：' + msgText, state: 'error' }
+          const kind = classifyErrorKind(msgText)
+          next[idx] = { role: 'assistant', text: msgText, state: 'error', errorKind: kind, canRetry: !!lastPrompt }
         }
         return next
       })
       finished = true
       onSendEnd?.(msgText)
       setSending(false)
+      // 尝试发送队列中的下一条
+      setPendingQueue((q) => {
+        if (!q.length) return q
+        const [next, ...rest] = q
+        setInput(next)
+        setTimeout(() => {
+          if (!sending) {
+            void send()
+          }
+        }, 0)
+        return rest
+      })
     } finally {
       // 兜底：若 sendChatStream 正常返回但未触发 onDone/onError（例如某些异常路径），
       // 也要确保结束本轮忙碌状态，避免状态栏一直显示“生成中”
@@ -323,14 +408,92 @@ export function ChatPanel({
     }
   }
 
+  const cancel = () => {
+    if (!sending) return
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
+    setSending(false)
+    setMessages((m) => {
+      const next = [...m]
+      let idx = -1
+      for (let j = next.length - 1; j >= 0; j -= 1) {
+        if (next[j].role === 'assistant' && next[j].state === 'loading') {
+          idx = j
+          break
+        }
+      }
+      if (idx >= 0) {
+        const t = next[idx].text?.trim() || ''
+        next[idx] = {
+          role: 'assistant',
+          text: (t && `${t}\n\n(本轮回答已中止)`) || '(本轮回答已中止)',
+          state: 'error',
+        }
+      }
+      return next
+    })
+    onSendEnd?.('已中止')
+  }
+
   return (
     <div ref={panelRef} className="card flex flex-col h-full min-h-0 bg-base-200 border border-base-300 border-r-0 border-b-0 shadow-none rounded-none">
       <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
-          <p className="text-base-content/60 text-sm">输入消息并发送，开始对话</p>
+          <div className="flex flex-col items-center justify-center text-base-content/60 text-sm py-8 gap-3">
+            <Bot size={24} className="opacity-40" />
+            <p className="text-center">输入消息并发送，开始对话</p>
+          </div>
         )}
         {messages.map((m, i) =>
-          m.role === 'system' ? (
+          m.role === 'system' && m.isToolOutput ? (
+            // 命令输出：使用卡片样式，可折叠 + 复制
+            <div key={i} className="flex justify-center text-xs text-base-content/70">
+              <div className="w-full max-w-[720px] border border-base-300 bg-base-200 rounded-md overflow-hidden">
+                {(() => {
+                  const idx = m.text.indexOf('\n')
+                  const title = idx >= 0 ? m.text.slice(0, idx) : m.text
+                  const body = idx >= 0 ? m.text.slice(idx + 1) : ''
+                  return (
+                    <>
+                      <div className="flex items-center justify-between px-3 py-1.5 bg-base-300">
+                        <span className="truncate">{title}</span>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() =>
+                              setMessages((prev) => {
+                                const next = [...prev]
+                                next[i] = { ...next[i], collapsed: !next[i].collapsed }
+                                return next
+                              })
+                            }
+                          >
+                            {m.collapsed ? '展开' : '折叠'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() => navigator.clipboard.writeText(body || title)}
+                          >
+                            复制
+                          </button>
+                        </div>
+                      </div>
+                      {!m.collapsed && body && (
+                        <pre className="max-h-56 overflow-auto px-3 py-2 text-[11px] font-mono whitespace-pre-wrap leading-relaxed bg-base-100">
+                          {body}
+                        </pre>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+            </div>
+          ) : m.role === 'system' ? (
+            // 其他 system 消息（如工具调用摘要）：保持 pill 样式
             <div key={i} className="flex justify-center text-xs text-base-content/60">
               <button
                 type="button"
@@ -353,6 +516,21 @@ export function ChatPanel({
             <div
               key={i}
               className={`flex gap-3 items-end ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                if (!m.text) return
+                // 右键菜单：优先复制整条；若按住 Shift 右键，则作为任务添加
+                if (e.shiftKey && onAddTaskFromMessage) {
+                  onAddTaskFromMessage(m.text)
+                } else {
+                  navigator.clipboard.writeText(m.text).catch(() => {})
+                }
+              }}
+              title={
+                m.role === 'assistant'
+                  ? '右键复制整条，Shift+右键可将该条添加到任务清单'
+                  : '右键复制整条'
+              }
             >
               <div
                 className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-none ${
@@ -417,7 +595,37 @@ export function ChatPanel({
                         ))}
                       </div>
                     )}
-                    {m.text ? <span className="whitespace-pre-wrap break-words">{m.text}</span> : null}
+                    {m.text && (
+                      <div className="space-y-1">
+                        <span className="whitespace-pre-wrap break-words">{m.text}</span>
+                        {m.state === 'error' && m.role === 'assistant' && lastPrompt && m.canRetry && (
+                          <div className="flex items-center justify-between text-[11px] text-base-content/70 pt-1 border-t border-base-content/10">
+                            <span>
+                              {m.errorKind === 'network'
+                                ? '网络异常，可稍后重试。'
+                                : m.errorKind === 'timeout'
+                                  ? '请求超时，可缩短问题或稍后重试。'
+                                  : m.errorKind === 'server'
+                                    ? '后端出现错误，可稍后重试。'
+                                    : '发生未知错误。'}
+                            </span>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-xs rounded-none"
+                              disabled={sending}
+                              onClick={() => {
+                                if (!lastPrompt || sending) return
+                                setInput(lastPrompt)
+                                // 立即发起重试
+                                void send()
+                              }}
+                            >
+                              重试本轮
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -607,19 +815,32 @@ export function ChatPanel({
             style={{ height: inputHeight - 16, minHeight: MIN_INPUT_HEIGHT - 16, maxHeight: MAX_INPUT_HEIGHT - 16 }}
             className="flex-1 min-w-0 resize-none border-0 bg-transparent pl-0 pr-2 py-1.5 text-left text-[15px] leading-relaxed placeholder:text-base-content/50 focus:outline-none focus:ring-0"
           />
-          <button
-            type="button"
-            onClick={send}
-            disabled={sending}
-            className="send-btn flex-shrink-0 w-12 h-12 min-h-0 rounded-xl bg-primary text-primary-content border-0 shadow-md hover:shadow-lg hover:bg-primary-focus active:scale-[0.96] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-all duration-200 flex items-center justify-center self-end"
-            title="发送"
-          >
-            {sending ? (
-              <Loader2 size={22} className="animate-spin" />
-            ) : (
-              <Send size={22} strokeWidth={2.25} />
-            )}
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={send}
+                disabled={sending}
+                className="send-btn flex-shrink-0 w-12 h-12 min-h-0 rounded-xl bg-primary text-primary-content border-0 shadow-md hover:shadow-lg hover:bg-primary-focus active:scale-[0.96] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-all duration-200 flex items-center justify-center self-end"
+                title="发送"
+              >
+                {sending ? (
+                  <Loader2 size={22} className="animate-spin" />
+                ) : (
+                  <Send size={22} strokeWidth={2.25} />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={cancel}
+                disabled={!sending}
+                className="send-btn flex-shrink-0 w-12 h-12 min-h-0 rounded-xl bg-error text-error-content border-0 shadow-md hover:shadow-lg hover:bg-error/90 active:scale-[0.96] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error focus-visible:ring-offset-2 transition-all duration-200 flex items-center justify-center self-end"
+                title="中止当前大模型回答及其工具调用（仅作用于本轮）"
+              >
+                <Square size={20} strokeWidth={2.25} />
+              </button>
+            </div>
+          </div>
         </div>
         </div>
       </div>

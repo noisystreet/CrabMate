@@ -91,7 +91,7 @@ mod tests {
     }
 }
 
-/// 流式请求：边收边打印 content，并返回完整 Message 与 finish_reason。
+/// 流式请求：根据 render_to_terminal 决定是否在终端边收边打印 content，并返回完整 Message 与 finish_reason。
 /// 若提供 out，则每个 content delta 会通过 out 发送（供 HTTP SSE 等使用）。
 pub async fn stream_chat(
     client: &Client,
@@ -99,6 +99,7 @@ pub async fn stream_chat(
     api_base: &str,
     req: &ChatRequest,
     out: Option<&Sender<String>>,
+    render_to_terminal: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!("{}/chat/completions", api_base.trim_end_matches('/'));
     info!(url = %url, model = %req.model, "发起 chat 请求");
@@ -159,13 +160,15 @@ pub async fn stream_chat(
                         if let Some(tx) = out {
                             let _ = tx.send(s.clone()).await;
                         }
-                        if first_content {
-                            print!("Agent: ");
+                        if render_to_terminal {
+                            if first_content {
+                                print!("Agent: ");
+                                io::stdout().flush()?;
+                                first_content = false;
+                            }
+                            print!("{}", s);
                             io::stdout().flush()?;
-                            first_content = false;
                         }
-                        print!("{}", s);
-                        io::stdout().flush()?;
                         content_acc.push_str(s);
                     }
                 }
@@ -195,7 +198,7 @@ pub async fn stream_chat(
             }
         }
     }
-    if !content_acc.is_empty() {
+    if render_to_terminal && !content_acc.is_empty() {
         let term_w = terminal_width().unwrap_or(80);
         let with_prefix = format!("Agent: {}", content_acc);
         let total_lines = count_display_lines(&with_prefix, term_w);

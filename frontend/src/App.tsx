@@ -5,6 +5,8 @@ import { TasksPanel } from './components/TasksPanel'
 import { StatusBar } from './components/StatusBar'
 import { ResizeHandle } from './components/ResizeHandle'
 import { ThemeSwitcher } from './components/ThemeSwitcher'
+import { fetchTasks, saveTasks } from './api'
+import type { TasksData } from './types'
 
 const WORKSPACE_WIDTH_KEY = 'agent-demo-workspace-width'
 const WORKSPACE_VISIBLE_KEY = 'agent-demo-workspace-visible'
@@ -53,6 +55,8 @@ export default function App() {
   const [chatExportTrigger, setChatExportTrigger] = useState(0)
   const [chatHasMessages, setChatHasMessages] = useState(false)
   const [workspaceRefreshTrigger, setWorkspaceRefreshTrigger] = useState(0)
+  const [externalSend, setExternalSend] = useState<{ seq: number; text: string } | null>(null)
+  const [taskEvent, setTaskEvent] = useState<{ seq: number; text: string } | null>(null)
   const mainRowRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -153,6 +157,28 @@ export default function App() {
               exportTrigger={chatExportTrigger}
               onMessagesChange={setChatHasMessages}
               onToolStatusChange={setToolBusy}
+              externalSend={externalSend}
+              systemInject={taskEvent}
+              onAddTaskFromMessage={(title) => {
+                const trimmed = title.trim()
+                if (!trimmed) return
+                ;(async () => {
+                  try {
+                    const current = await fetchTasks()
+                    const base: TasksData = current ?? { items: [] }
+                    const items = Array.isArray(base.items) ? base.items : []
+                    const id = `${Date.now()}`
+                    const next: TasksData = {
+                      source: base.source ?? 'chat',
+                      items: [...items, { id, title: trimmed, done: false }],
+                    }
+                    await saveTasks(next)
+                  } catch (e) {
+                    // eslint-disable-next-line no-console
+                    console.error('从聊天创建任务失败', e)
+                  }
+                })()
+              }}
             />
           </div>
           {(workspaceVisible || tasksVisible) && (
@@ -163,11 +189,18 @@ export default function App() {
                   <WorkspacePanel
                     width={tasksVisible ? Math.max(180, workspaceWidth / 2) : workspaceWidth}
                     refreshTrigger={workspaceRefreshTrigger}
+                    onSendToChat={(text) => setExternalSend({ seq: Date.now(), text })}
                   />
                 )}
                 {tasksVisible && (
                   <TasksPanel
                     width={workspaceVisible ? Math.max(180, workspaceWidth / 2) : workspaceWidth}
+                    onTaskCompleted={(task, index) => {
+                      setTaskEvent({
+                        seq: Date.now(),
+                        text: `任务已完成：#${index + 1} ${task.title}`,
+                      })
+                    }}
                   />
                 )}
               </div>

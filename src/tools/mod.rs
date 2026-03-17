@@ -6,6 +6,7 @@ mod calc;
 mod command;
 mod exec;
 mod file;
+mod lint;
 mod format;
 mod grep;
 mod time;
@@ -24,6 +25,27 @@ pub fn build_tools() -> Vec<Tool> {
                 parameters: serde_json::json!({
                     "type": "object",
                     "properties": {},
+                    "required": []
+                }),
+            },
+        },
+        Tool {
+            typ: "function".to_string(),
+            function: FunctionDef {
+                name: "run_lints".to_string(),
+                description: "运行项目的静态检查工具并聚合结果。目前包括：后端的 cargo clippy 和（若存在 frontend 目录与 package.json）前端的 npm run lint。可用于在改动后检查潜在问题。".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "run_cargo": {
+                            "type": "boolean",
+                            "description": "是否运行 cargo clippy，默认为 true"
+                        },
+                        "run_frontend": {
+                            "type": "boolean",
+                            "description": "是否在 frontend 目录下运行 npm run lint（若存在），默认为 true"
+                        }
+                    },
                     "required": []
                 }),
             },
@@ -240,7 +262,88 @@ pub fn run_tool(
         "modify_file" => file::modify_file(args_json, run_command_working_dir),
         "search_in_files" => grep::run(args_json, run_command_working_dir),
         "format_file" => format::run(args_json, run_command_working_dir),
+        "run_lints" => lint::run(args_json, run_command_working_dir, command_max_output_len),
         _ => format!("未知工具：{}", name),
+    }
+}
+
+/// 判断本次 run_command 是否为“成功的编译命令”（gcc/g++/make/cmake 且退出码为 0）
+pub(crate) fn is_compile_command_success(args_json: &str, result: &str) -> bool {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let cmd = v
+        .get("command")
+        .and_then(|c| c.as_str())
+        .map(|s| s.trim().to_lowercase());
+    let is_compile_cmd = cmd
+        .as_deref()
+        .map_or(false, |c| matches!(c, "gcc" | "g++" | "make" | "cmake"));
+    if !is_compile_cmd {
+        return false;
+    }
+    // run_command 输出的第一行形如：退出码：0
+    let first_line = result.lines().next().unwrap_or("");
+    if let Some(rest) = first_line.strip_prefix("退出码：") {
+        if let Ok(code) = rest.trim().parse::<i32>() {
+            return code == 0;
+        }
+    }
+    false
+}
+
+/// 为前端生成简短的工具调用摘要，便于在 Chat 面板中展示
+pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
+    match name {
+        "run_command" => {
+            let cmd = v.get("command")?.as_str()?.trim();
+            let args = v
+                .get("args")
+                .and_then(|a| a.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            let s = if args.is_empty() {
+                format!("执行命令：{}", cmd)
+            } else {
+                format!("执行命令：{} {}", cmd, args)
+            };
+            Some(s)
+        }
+        "create_file" => {
+            let path = v.get("path")?.as_str()?.trim();
+            Some(format!("新建文件：{}", path))
+        }
+        "modify_file" => {
+            let path = v.get("path")?.as_str()?.trim();
+            Some(format!("修改文件：{}", path))
+        }
+        "run_executable" => {
+            let path = v.get("path")?.as_str()?.trim();
+            let args = v
+                .get("args")
+                .and_then(|a| a.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            let s = if args.is_empty() {
+                format!("运行可执行：{}", path)
+            } else {
+                format!("运行可执行：{} {}", path, args)
+            };
+            Some(s)
+        }
+        _ => None,
     }
 }
 

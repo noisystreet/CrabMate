@@ -5,11 +5,12 @@ import { fetchTasks, saveTasks, sendChat } from '../api'
 
 interface TasksPanelProps {
   width?: number
+  onTaskCompleted?: (task: TaskItem, index: number) => void
 }
 
 const EMPTY_TASKS: TasksData = { items: [] }
 
-export function TasksPanel({ width = 280 }: TasksPanelProps) {
+export function TasksPanel({ width = 280, onTaskCompleted }: TasksPanelProps) {
   const [data, setData] = useState<TasksData>(EMPTY_TASKS)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -49,6 +50,15 @@ export function TasksPanel({ width = 280 }: TasksPanelProps) {
 
   const toggleTask = (id: string) => {
     const items = data.items.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
+    // 找出本次被切换为 done 的任务，用于上报给外部（例如聊天系统消息）
+    const idx = data.items.findIndex((t) => t.id === id)
+    if (idx >= 0) {
+      const prev = data.items[idx]
+      const next = items[idx]
+      if (!prev.done && next.done && onTaskCompleted) {
+        onTaskCompleted(next, idx)
+      }
+    }
     persist({ ...data, items })
   }
 
@@ -121,6 +131,18 @@ ${desc}`
     }
   }
 
+  const total = data.items?.length ?? 0
+  const done = data.items?.filter((t) => t.done).length ?? 0
+  const percent = total === 0 ? 0 : Math.round((done / total) * 100)
+  let currentIndex = -1
+  const current = data.items?.find((t, idx) => {
+    if (!t.done && currentIndex === -1) {
+      currentIndex = idx
+      return true
+    }
+    return false
+  }) || null
+
   return (
     <div
       className="card flex-shrink-0 flex flex-col h-full min-h-0 bg-base-200 border border-base-300 border-t-0 border-b-0 shadow-none rounded-none"
@@ -153,8 +175,36 @@ ${desc}`
           </button>
         </div>
       </header>
-      <div className="flex-shrink-0 px-4 py-1 text-[11px] text-base-content/60">
-        {data.source ? `来源：${data.source.slice(0, 64)}${data.source.length > 64 ? '…' : ''}` : '尚未生成任务清单'}
+      <div className="flex-shrink-0 px-4 py-1 text-[11px] text-base-content/60 space-y-1">
+        <div>
+          {data.source
+            ? `来源：${data.source.slice(0, 64)}${data.source.length > 64 ? '…' : ''}`
+            : '尚未生成任务清单'}
+        </div>
+        {total > 0 && (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span>进度：{done}/{total}（{percent}%）</span>
+              {current && (
+                <span className="truncate max-w-[160px]">
+                  当前：#{currentIndex + 1} {current.title}
+                </span>
+              )}
+            </div>
+            <div className="w-full h-1.5 bg-base-300 relative overflow-hidden">
+              <div
+                className="h-1.5 bg-primary"
+                style={{ width: `${percent}%`, transition: 'width 0.2s ease-out' }}
+              />
+              {percent > 0 && (
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-primary border border-base-100"
+                  style={{ left: `calc(${percent}% - 4px)` }}
+                />
+              )}
+            </div>
+          </div>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto p-2">
         {error && <p className="text-xs text-error mb-2">任务错误：{error}</p>}
@@ -165,9 +215,12 @@ ${desc}`
           </div>
         )}
         {!loading && (data.items?.length ?? 0) === 0 && (
-          <p className="text-base-content/60 text-sm py-4 px-2 leading-relaxed">
-            当前没有任务。你可以点击「从描述生成」自动拆解需求，或者使用「+」按钮快速新增一条任务。
-          </p>
+          <div className="flex flex-col items-center justify-center text-base-content/60 text-sm py-6 px-2 gap-2">
+            <ListTodo size={20} className="opacity-40" />
+            <p className="text-center leading-relaxed">
+              当前没有任务。你可以点击「从描述生成」自动拆解需求，或者使用「+」按钮快速新增一条任务。
+            </p>
+          </div>
         )}
         {!loading && data.items && data.items.length > 0 && (
           <ul className="space-y-1">
@@ -196,8 +249,7 @@ ${desc}`
           快速添加
         </button>
         <span>
-          共 {data.items?.length ?? 0} 条任务，已完成{' '}
-          {data.items?.filter((t) => t.done).length ?? 0}
+          共 {total} 条任务，已完成 {done}
         </span>
       </div>
 

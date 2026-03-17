@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { FolderOpen, FileText, Loader2, Settings, FilePlus, Save, Download, Trash2 } from 'lucide-react'
-import { fetchWorkspace, fetchWorkspacePick, fetchWorkspaceFile, writeWorkspaceFile, setWorkspacePath, deleteWorkspaceFile } from '../api'
+import { FolderOpen, FileText, Loader2, Settings, FilePlus, Save, Download, Trash2, ChevronRight, Home, Search, Copy, Terminal } from 'lucide-react'
+import { fetchWorkspace, fetchWorkspacePick, fetchWorkspaceFile, writeWorkspaceFile, setWorkspacePath, deleteWorkspaceFile, searchWorkspace } from '../api'
 import type { WorkspaceData } from '../types'
 
 function joinPath(dir: string, name: string): string {
@@ -22,9 +22,11 @@ interface WorkspacePanelProps {
   width?: number
   /** 当此值增加时刷新工作区列表（例如 Agent 创建/修改文件后由父组件递增） */
   refreshTrigger?: number
+  /** 将文本发送到聊天面板作为新一轮 user 消息 */
+  onSendToChat?: (text: string) => void
 }
 
-export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePanelProps) {
+export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }: WorkspacePanelProps) {
   const [workspaceDir, setWorkspaceDir] = useState<string | null>(() => getStoredWorkspaceDir())
   const [data, setData] = useState<WorkspaceData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -45,6 +47,18 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePan
     y: number
   } | null>(null)
 
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set())
+  const [currentDir, setCurrentDir] = useState<string | null>(null)
+
+  const [searchModalOpen, setSearchModalOpen] = useState(false)
+  const [searchPattern, setSearchPattern] = useState('')
+  const [searchResult, setSearchResult] = useState('')
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+
+  const [activeFile, setActiveFile] = useState<string | null>(null)
+  const [recentFiles, setRecentFiles] = useState<string[]>([])
+
   const loadWorkspace = useCallback(() => {
     if (workspaceDir === null) return
     setLoading(true)
@@ -53,6 +67,7 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePan
       .then((d) => {
         setData(d)
         setError(d.error ?? null)
+        setCurrentDir(d.path || null)
       })
       .catch((e) => setError(e instanceof Error ? e.message : '加载失败'))
       .finally(() => setLoading(false))
@@ -97,6 +112,8 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePan
         setMenuOpen(false)
         setDirInput('')
         await setWorkspacePath(path)
+        setExpandedDirs(new Set())
+        setCurrentDir(path)
       }
     } catch {
       // 认为当前环境无法正常弹出目录选择框（例如无 GUI 的服务器环境），后续禁用按钮并提示手动输入
@@ -105,6 +122,51 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePan
     } finally {
       setPickLoading(false)
     }
+  }
+
+  const toggleDir = (path: string) => {
+    setExpandedDirs((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  const changeDir = (path: string | null) => {
+    if (!data) return
+    const base = data.path
+    const target = path ?? base
+    if (!target || !base) return
+    // 只改变视图层级，不重新请求服务器；entries 始终是 base 下第一层
+    setCurrentDir(target)
+  }
+
+  const buildBreadcrumbs = () => {
+    if (!data?.path || !currentDir) return []
+    const base = data.path
+    const rel = currentDir.startsWith(base) ? currentDir.slice(base.length).replace(/^\/+/, '') : ''
+    if (!rel) return []
+    const parts = rel.split('/').filter(Boolean)
+    const items: { label: string; path: string | null }[] = []
+    let acc = base
+    parts.forEach((p) => {
+      acc = `${acc}/${p}`
+      items.push({ label: p, path: acc })
+    })
+    return items
+  }
+
+  const visibleEntries = () => {
+    if (!data?.entries || !data.path || !currentDir || currentDir === data.path) return data?.entries || []
+    const rel = currentDir.slice(data.path.length).replace(/^\/+/, '')
+    if (!rel) return data.entries
+    const segs = rel.split('/').filter(Boolean)
+    // 简化：只支持一层嵌套视图，匹配当前目录名
+    const currentName = segs[segs.length - 1]
+    const dirEntry = data.entries.find((e) => e.is_dir && e.name === currentName)
+    if (!dirEntry || !dirEntry.children) return data.entries
+    return dirEntry.children
   }
 
   const openCreateFile = () => {
@@ -128,6 +190,21 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePan
     } catch (e) {
       setFileError(e instanceof Error ? e.message : '加载失败')
     }
+    setActiveFile(path)
+    setRecentFiles((prev) => {
+      const next = [path, ...prev.filter((p) => p !== path)]
+      return next.slice(0, 5)
+    })
+  }
+
+  const openEditFileByFullPath = (fullPath: string) => {
+    const norm = fullPath.replace(/\\/g, '/')
+    const idx = norm.lastIndexOf('/')
+    if (idx <= 0) return
+    const dir = norm.slice(0, idx)
+    const name = norm.slice(idx + 1)
+    if (!dir || !name) return
+    void openEditFile(dir, name)
   }
 
   const saveFile = async () => {
@@ -218,14 +295,29 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePan
         <h2 className="text-sm font-semibold text-base-content">工作区</h2>
         <div className="flex items-center gap-1">
           {workspaceDir !== null && data && !data.error && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs btn-square"
-              title="新建文件"
-              onClick={openCreateFile}
-            >
-              <FilePlus size={14} />
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs btn-square"
+                title="在当前目录搜索"
+                onClick={() => {
+                  setSearchPattern('')
+                  setSearchResult('')
+                  setSearchError(null)
+                  setSearchModalOpen(true)
+                }}
+              >
+                <Search size={14} />
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs btn-square"
+                title="新建文件"
+                onClick={openCreateFile}
+              >
+                <FilePlus size={14} />
+              </button>
+            </>
           )}
           <div className="dropdown dropdown-end">
           <label
@@ -304,14 +396,39 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePan
           </div>
         </div>
       </header>
-      <div className="flex-shrink-0 px-4 py-2 text-xs text-base-content/60 break-all font-mono">
-        {workspaceDir === null ? '未设置' : data?.path ? data.path : '—'}
+      <div className="flex-shrink-0 px-4 py-2 text-xs text-base-content/60 break-all font-mono flex items-center justify-between gap-2">
+        <span className="truncate">
+          {workspaceDir === null ? '未设置' : data?.path ? data.path : '—'}
+        </span>
+        {workspaceDir !== null && data?.path && (
+          <span className="flex items-center gap-1 flex-shrink-0">
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs btn-square"
+              title="复制当前路径"
+              onClick={() => navigator.clipboard.writeText(data.path)}
+            >
+              <Copy size={12} />
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs btn-square"
+              title="复制在终端中打开该目录的命令（cd ...）"
+              onClick={() => navigator.clipboard.writeText(`cd "${data.path}"`)}
+            >
+              <Terminal size={12} />
+            </button>
+          </span>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto p-2">
         {workspaceDir === null && (
-          <p className="text-base-content/60 text-sm py-4 px-2 leading-relaxed">
-            工作区未设置。请点击右上角设置图标，选择要浏览的目录；留空则使用服务端默认目录。
-          </p>
+          <div className="flex flex-col items-center justify-center text-base-content/60 text-sm py-6 px-2 gap-2">
+            <FolderOpen size={20} className="opacity-40" />
+            <p className="text-center leading-relaxed">
+              工作区未设置。请点击右上角设置图标，选择要浏览的目录；留空则使用服务端默认目录。
+            </p>
+          </div>
         )}
         {workspaceDir !== null && loading && (
           <div className="flex items-center gap-2 text-base-content/60 py-4 px-2">
@@ -324,22 +441,131 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePan
         )}
         {workspaceDir !== null && !loading && !error && data && !data.error && (
           <>
+            {/* 面包屑 */}
+            <div className="px-2 pb-2 text-xs text-base-content/70 flex items-center gap-1 flex-wrap">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 hover:underline"
+                onClick={() => {
+                  loadWorkspace()
+                }}
+              >
+                <Home size={12} />
+                <span>根目录</span>
+              </button>
+              {(() => {
+                const full = data.path || ''
+                const parts = full.split('/').filter(Boolean)
+                const items: { label: string; path: string }[] = []
+                let acc = ''
+                parts.forEach((p) => {
+                  acc = acc ? `${acc}/${p}` : p
+                  items.push({ label: p, path: acc })
+                })
+                return items.map((b, idx) => (
+                  <span key={b.path} className="inline-flex items-center gap-1">
+                    <ChevronRight size={10} />
+                    {idx === items.length - 1 ? (
+                      <span className="truncate max-w-[120px]">{b.label}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="hover:underline truncate max-w-[120px]"
+                        onClick={async () => {
+                          try {
+                            const d = await fetchWorkspace(b.path)
+                            setData(d)
+                            setError(d.error ?? null)
+                          } catch (e) {
+                            setError(e instanceof Error ? e.message : '加载失败')
+                          }
+                        }}
+                      >
+                        {b.label}
+                      </button>
+                    )}
+                  </span>
+                ))
+              })()}
+            </div>
+            {/* 最近打开文件 */}
+            {recentFiles.length > 0 && (
+              <div className="px-2 pb-1 text-[11px] text-base-content/60 flex items-center gap-1 flex-wrap">
+                <span>最近打开：</span>
+                {recentFiles.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className="px-1.5 py-0.5 border border-base-300 rounded-none hover:bg-base-300/70 text-[11px] font-mono max-w-[200px] truncate"
+                    title={p}
+                    onClick={() => openEditFileByFullPath(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* 当前目录内容列表 */}
             {data.entries.length === 0 ? (
-              <p className="text-base-content/60 text-sm py-4 px-2">（空）</p>
+              <div className="flex flex-col items-center justify-center text-base-content/60 text-sm py-6 px-2 gap-2">
+                <FolderOpen size={20} className="opacity-40" />
+                <p className="text-center">当前目录为空。</p>
+              </div>
             ) : (
               <ul className="space-y-0.5">
                 {data.entries.map((e) => (
                   <li
                     key={e.name}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded-none text-sm text-base-content transition-colors ${e.is_dir ? '' : 'hover:bg-base-300 cursor-pointer'}`}
-                    onClick={e.is_dir ? undefined : () => openEditFile(data.path, e.name)}
-                    onKeyDown={e.is_dir ? undefined : (ev) => ev.key === 'Enter' && openEditFile(data.path, e.name)}
-                    role={e.is_dir ? undefined : 'button'}
-                    tabIndex={e.is_dir ? undefined : 0}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-none text-sm text-base-content transition-colors cursor-pointer ${
+                      e.is_dir
+                        ? 'hover:bg-base-300'
+                        : activeFile && data.path && joinPath(data.path, e.name) === activeFile
+                          ? 'bg-base-300/70'
+                          : 'hover:bg-base-300'
+                    }`}
+                    onClick={async () => {
+                      if (e.is_dir) {
+                        try {
+                          const nextPath = joinPath(data.path, e.name)
+                          const d = await fetchWorkspace(nextPath)
+                          setData(d)
+                          setError(d.error ?? null)
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : '加载失败')
+                        }
+                      } else {
+                        openEditFile(data.path, e.name)
+                      }
+                    }}
+                    onKeyDown={(ev) => {
+                      if (ev.key === 'Enter') {
+                        if (e.is_dir) {
+                          ;(async () => {
+                            try {
+                              const nextPath = joinPath(data.path, e.name)
+                              const d = await fetchWorkspace(nextPath)
+                              setData(d)
+                              setError(d.error ?? null)
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : '加载失败')
+                            }
+                          })()
+                        } else {
+                          openEditFile(data.path, e.name)
+                        }
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
                     onContextMenu={e.is_dir ? undefined : (ev) => handleFileContextMenu(ev, data.path, e.name)}
                   >
                     {e.is_dir ? (
-                      <FolderOpen size={16} className="text-warning flex-shrink-0" />
+                      <>
+                        <span className="flex-shrink-0">
+                          <ChevronRight size={12} className="opacity-60" />
+                        </span>
+                        <FolderOpen size={16} className="text-warning flex-shrink-0" />
+                      </>
                     ) : (
                       <FileText size={16} className="text-base-content/50 flex-shrink-0" />
                     )}
@@ -419,6 +645,124 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0 }: WorkspacePan
                   {fileSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                   保存
                 </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {searchModalOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-50"
+            aria-hidden
+            onClick={() => {
+              setSearchModalOpen(false)
+            }}
+          />
+          <div className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-3xl max-h-[85vh] flex flex-col bg-base-200 border border-base-300 rounded-lg shadow-xl">
+            <div className="flex-shrink-0 px-4 py-3 border-b border-base-300 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Search size={16} />
+                <span className="font-semibold text-base-content text-sm">在当前目录搜索</span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-square"
+                aria-label="关闭"
+                onClick={() => setSearchModalOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col p-4 gap-3 overflow-hidden">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs text-base-content/70">
+                  搜索模式（支持正则）：会在
+                  <span className="font-mono mx-1">
+                    {data?.path || '(未知目录)'}
+                  </span>
+                  下递归搜索
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered input-sm w-full rounded-none"
+                  placeholder="例如：main\\(|TODO|fn\\s+run_agent_turn"
+                  value={searchPattern}
+                  onChange={(e) => setSearchPattern(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      ;(async () => {
+                        if (!data?.path || !searchPattern.trim()) return
+                        setSearchLoading(true)
+                        setSearchError(null)
+                        try {
+                          const res = await searchWorkspace({
+                            pattern: searchPattern.trim(),
+                            path: data.path,
+                          })
+                          setSearchResult(res.output || '(无结果)')
+                        } catch (err) {
+                          setSearchError(err instanceof Error ? err.message : '搜索失败')
+                          setSearchResult('')
+                        } finally {
+                          setSearchLoading(false)
+                        }
+                      })()
+                    }
+                  }}
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm rounded-none"
+                    onClick={async () => {
+                      if (!data?.path || !searchPattern.trim()) return
+                      setSearchLoading(true)
+                      setSearchError(null)
+                      try {
+                        const res = await searchWorkspace({
+                          pattern: searchPattern.trim(),
+                          path: data.path,
+                        })
+                        setSearchResult(res.output || '(无结果)')
+                      } catch (err) {
+                        setSearchError(err instanceof Error ? err.message : '搜索失败')
+                        setSearchResult('')
+                      } finally {
+                        setSearchLoading(false)
+                      }
+                    }}
+                    disabled={searchLoading || !searchPattern.trim()}
+                  >
+                    {searchLoading ? <Loader2 size={14} className="animate-spin" /> : '搜索'}
+                  </button>
+                </div>
+              </div>
+              {searchError && <p className="text-xs text-error">{searchError}</p>}
+              <div className="flex-1 min-h-0 mt-2">
+                <label className="text-xs text-base-content/70 block mb-1">搜索结果</label>
+                <pre className="w-full h-full max-h-[340px] overflow-auto bg-base-100 border border-base-300 rounded-none p-2 text-[11px] font-mono whitespace-pre-wrap leading-relaxed">
+                  {searchResult || '（尚未搜索）'}
+                </pre>
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs rounded-none"
+                    disabled={!searchResult.trim()}
+                    onClick={() => {
+                      if (!searchResult.trim()) return
+                      onSendToChat?.(
+                        `下面是我在工作区当前目录（${data?.path ?? ''}）中执行 grep 搜索得到的结果，请帮我分析并给出下一步建议：\n\n` +
+                          searchResult,
+                      )
+                      setSearchModalOpen(false)
+                    }}
+                  >
+                    将结果发送到聊天
+                  </button>
+                </div>
               </div>
             </div>
           </div>
