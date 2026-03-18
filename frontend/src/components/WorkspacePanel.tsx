@@ -47,9 +47,6 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
     y: number
   } | null>(null)
 
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set())
-  const [currentDir, setCurrentDir] = useState<string | null>(null)
-
   const [searchModalOpen, setSearchModalOpen] = useState(false)
   const [searchPattern, setSearchPattern] = useState('')
   const [searchResult, setSearchResult] = useState('')
@@ -67,7 +64,6 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
       .then((d) => {
         setData(d)
         setError(d.error ?? null)
-        setCurrentDir(d.path || null)
       })
       .catch((e) => setError(e instanceof Error ? e.message : '加载失败'))
       .finally(() => setLoading(false))
@@ -112,8 +108,6 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
         setMenuOpen(false)
         setDirInput('')
         await setWorkspacePath(path)
-        setExpandedDirs(new Set())
-        setCurrentDir(path)
       }
     } catch {
       // 认为当前环境无法正常弹出目录选择框（例如无 GUI 的服务器环境），后续禁用按钮并提示手动输入
@@ -122,51 +116,6 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
     } finally {
       setPickLoading(false)
     }
-  }
-
-  const toggleDir = (path: string) => {
-    setExpandedDirs((prev) => {
-      const next = new Set(prev)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
-  }
-
-  const changeDir = (path: string | null) => {
-    if (!data) return
-    const base = data.path
-    const target = path ?? base
-    if (!target || !base) return
-    // 只改变视图层级，不重新请求服务器；entries 始终是 base 下第一层
-    setCurrentDir(target)
-  }
-
-  const buildBreadcrumbs = () => {
-    if (!data?.path || !currentDir) return []
-    const base = data.path
-    const rel = currentDir.startsWith(base) ? currentDir.slice(base.length).replace(/^\/+/, '') : ''
-    if (!rel) return []
-    const parts = rel.split('/').filter(Boolean)
-    const items: { label: string; path: string | null }[] = []
-    let acc = base
-    parts.forEach((p) => {
-      acc = `${acc}/${p}`
-      items.push({ label: p, path: acc })
-    })
-    return items
-  }
-
-  const visibleEntries = () => {
-    if (!data?.entries || !data.path || !currentDir || currentDir === data.path) return data?.entries || []
-    const rel = currentDir.slice(data.path.length).replace(/^\/+/, '')
-    if (!rel) return data.entries
-    const segs = rel.split('/').filter(Boolean)
-    // 简化：只支持一层嵌套视图，匹配当前目录名
-    const currentName = segs[segs.length - 1]
-    const dirEntry = data.entries.find((e) => e.is_dir && e.name === currentName)
-    if (!dirEntry || !dirEntry.children) return data.entries
-    return dirEntry.children
   }
 
   const openCreateFile = () => {

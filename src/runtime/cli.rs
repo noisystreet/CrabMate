@@ -1,6 +1,7 @@
 use crate::config::AgentConfig;
 use crate::types::Message;
 use crate::run_agent_turn;
+use crossterm::{cursor::MoveToColumn, terminal::{Clear, ClearType}, ExecutableCommand};
 use std::io::{self, Write};
 
 /// 单次提问模式（--query / --stdin），执行一轮对话后退出
@@ -104,8 +105,12 @@ pub async fn run_repl(
     );
 
     loop {
-        print!("你: ");
-        io::stdout().flush()?;
+        // 清理提示符所在行，避免被上一次输出残留影响
+        let mut stdout = io::stdout();
+        let _ = stdout.execute(MoveToColumn(0));
+        let _ = stdout.execute(Clear(ClearType::CurrentLine));
+        write!(stdout, "你: ")?;
+        stdout.flush()?;
         let mut input = String::new();
         let n = io::stdin().read_line(&mut input)?;
         if n == 0 {

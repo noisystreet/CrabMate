@@ -16,9 +16,74 @@ export function StatusBar({ busy = false, toolBusy = false, error = null }: Stat
   const [statusError, setStatusError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchStatus()
-      .then(setStatus)
-      .catch(() => setStatusError('无法获取后台状态'))
+    let alive = true
+    let failCount = 0
+    let timer: number | null = null
+    const BASE_INTERVAL_MS = 10000
+    const MAX_INTERVAL_MS = 60000
+
+    const clearTimer = () => {
+      if (timer != null) window.clearTimeout(timer)
+      timer = null
+    }
+
+    const scheduleNext = (ms: number) => {
+      clearTimer()
+      if (!alive) return
+      timer = window.setTimeout(() => {
+        void poll()
+      }, ms)
+    }
+
+    const calcNextInterval = () => {
+      // 失败指数退避：10s * 2^failCount，上限 60s
+      const next = Math.min(MAX_INTERVAL_MS, BASE_INTERVAL_MS * 2 ** Math.min(failCount, 3))
+      return next
+    }
+
+    const poll = async () => {
+      if (!alive) return
+      // 页面不可见时暂停轮询，等恢复可见再继续
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        scheduleNext(BASE_INTERVAL_MS)
+        return
+      }
+      try {
+        const s = await fetchStatus()
+        if (!alive) return
+        setStatus(s)
+        setStatusError(null)
+        failCount = 0
+      } catch {
+        if (!alive) return
+        setStatusError('无法获取后台状态')
+        failCount += 1
+      } finally {
+        scheduleNext(calcNextInterval())
+      }
+    }
+
+    const onVisibilityChange = () => {
+      if (!alive) return
+      if (document.visibilityState === 'visible') {
+        // 恢复可见时立刻刷新一次
+        clearTimer()
+        void poll()
+      } else {
+        // 不可见时停止当前计时器（彻底暂停）
+        clearTimer()
+      }
+    }
+
+    // SWR：fetchStatus 可能直接命中缓存并返回旧值，同时后台刷新更新缓存
+    void poll()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      alive = false
+      clearTimer()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [])
 
   const msg = busy

@@ -6,6 +6,53 @@ import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { Send, User, Bot, Loader2, ImagePlus, FileText, Mic, Video, Square } from 'lucide-react'
+import type { Components } from 'react-markdown'
+import { Virtuoso } from 'react-virtuoso'
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024
+const MAX_VIDEO_BYTES = 80 * 1024 * 1024
+const IMAGE_MAX_W = 1600
+const IMAGE_MAX_H = 1600
+const IMAGE_QUALITY = 0.82
+
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let v = n
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i += 1
+  }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)}${units[i]}`
+}
+
+async function compressImageToFile(file: File): Promise<File> {
+  const bitmap = await createImageBitmap(file)
+  const scale = Math.min(1, IMAGE_MAX_W / bitmap.width, IMAGE_MAX_H / bitmap.height)
+  const w = Math.max(1, Math.round(bitmap.width * scale))
+  const h = Math.max(1, Math.round(bitmap.height * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('无法压缩图片')
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  bitmap.close()
+  const blob: Blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => {
+        if (!b) reject(new Error('无法压缩图片'))
+        else resolve(b)
+      },
+      'image/jpeg',
+      IMAGE_QUALITY,
+    )
+  })
+  const name = file.name.replace(/\.\w+$/, '') + '.jpg'
+  return new File([blob], name, { type: 'image/jpeg' })
+}
 
 /** 将 [ ... LaTeX ... ] 转为 $$ ... $$，避免与 markdown 链接 [text](url) 冲突 */
 function preprocessLatexBlocks(text: string): string {
@@ -50,6 +97,24 @@ function normalizeToolOutput(raw: string): string {
     .replace(/\n+$/g, '')       // 去掉末尾多余空行
 }
 
+function langFromClassName(className?: string): string {
+  if (!className) return ''
+  const m = className.match(/language-([a-zA-Z0-9_-]+)/)
+  return m?.[1] || ''
+}
+
+function downloadTextFile(name: string, content: string) {
+  const blob = new Blob([content], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 function classifyErrorKind(msg: string): ErrorKind {
   const lower = msg.toLowerCase()
   if (lower.includes('timeout') || lower.includes('超时')) return 'timeout'
@@ -57,7 +122,7 @@ function classifyErrorKind(msg: string): ErrorKind {
   if (lower.includes('internal_error') || lower.includes('对话失败')) return 'server'
   return 'unknown'
 }
-import { sendChatStream } from '../api'
+import { sendChatStream, uploadFiles } from '../api'
 
 const INPUT_HEIGHT_KEY = 'agent-demo-input-height'
 const MIN_INPUT_HEIGHT = 80
@@ -74,6 +139,7 @@ function getStoredInputHeight(): number {
 type ErrorKind = 'network' | 'timeout' | 'server' | 'unknown'
 
 type Message = {
+  id: string
   role: 'user' | 'assistant' | 'system'
   text: string
   images?: string[]
@@ -86,6 +152,16 @@ type Message = {
   canRetry?: boolean
 }
 
+type PendingAttachment = {
+  id: string
+  kind: 'image' | 'audio' | 'video'
+  file: File
+  previewUrl: string
+  name: string
+  size: number
+  mime: string
+}
+
 interface ChatPanelProps {
   onSendStart?: () => void
   onSendEnd?: (error?: string) => void
@@ -95,6 +171,14 @@ interface ChatPanelProps {
   exportTrigger?: number
   /** 通知父组件当前是否有可保存的会话记录 */
   onMessagesChange?: (hasMessages: boolean) => void
+  /** 会话切换时的 key（变化时会重置消息/草稿/附件/发送状态） */
+  sessionId?: string
+  /** 会话初始消息（用于切换会话时加载） */
+  initialMessages?: Message[]
+  /** 会话初始草稿 */
+  initialDraft?: string
+  /** 会话快照变化（用于父组件持久化） */
+  onSessionSnapshot?: (snap: { messages: Message[]; draft: string }) => void
   /** 通知父组件工具运行状态（例如 run_command / run_executable 执行中） */
   onToolStatusChange?: (running: boolean) => void
   /** 来自工作区或其它面板的外部发送请求 */
@@ -111,21 +195,42 @@ export function ChatPanel({
   onWorkspaceChanged,
   exportTrigger = 0,
   onMessagesChange,
+  sessionId,
+  initialMessages,
+  initialDraft,
+  onSessionSnapshot,
   onToolStatusChange,
   externalSend,
   systemInject,
   onAddTaskFromMessage,
 }: ChatPanelProps) {
+  const nextMsgSeqRef = useRef(1)
+  const makeMessageId = useCallback(() => {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+    const n = nextMsgSeqRef.current
+    nextMsgSeqRef.current += 1
+    return `m_${Date.now()}_${n}`
+  }, [])
+
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
-  const [pendingImages, setPendingImages] = useState<string[]>([])
-  const [pendingAudios, setPendingAudios] = useState<string[]>([])
-  const [pendingVideos, setPendingVideos] = useState<string[]>([])
+  const [pendingImages, setPendingImages] = useState<PendingAttachment[]>([])
+  const [pendingAudios, setPendingAudios] = useState<PendingAttachment[]>([])
+  const [pendingVideos, setPendingVideos] = useState<PendingAttachment[]>([])
+  const [attachHint, setAttachHint] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
-  const [pendingQueue, setPendingQueue] = useState<string[]>([])
+  const [, setPendingQueue] = useState<string[]>([])
   const [lastPrompt, setLastPrompt] = useState<string | null>(null)
+  const [collapsedCodeBlocks, setCollapsedCodeBlocks] = useState<Record<string, boolean>>({})
+  const [atBottom, setAtBottom] = useState(true)
+  const [jumpOpen, setJumpOpen] = useState(false)
+  const [jumpValue, setJumpValue] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [uploadPercent, setUploadPercent] = useState(0)
+  const uploadAbortRef = useRef<AbortController | null>(null)
   const [inputHeight, setInputHeight] = useState(getStoredInputHeight)
   const listRef = useRef<HTMLDivElement>(null)
+  const virtuosoRef = useRef<null | { scrollToIndex?: (arg: any) => void }>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -133,9 +238,125 @@ export function ChatPanel({
   const audioInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
 
+  const isNearBottomRef = useRef(true)
+  const scrollRafRef = useRef<number | null>(null)
+  const scheduleScrollToBottom = useCallback(() => {
+    if (!isNearBottomRef.current) return
+    if (scrollRafRef.current != null) return
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null
+      const v = virtuosoRef.current
+      if (v?.scrollToIndex) {
+        v.scrollToIndex({ index: Math.max(0, messages.length - 1), align: 'end', behavior: 'auto' })
+        return
+      }
+      const el = listRef.current
+      if (!el) return
+      el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
+    })
+  }, [messages.length])
+
+  const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    isNearBottomRef.current = atBottom
+    setAtBottom(atBottom)
+  }, [])
+
+  const scrollToIndex = useCallback((index: number) => {
+    const v = virtuosoRef.current
+    if (v?.scrollToIndex) {
+      v.scrollToIndex({ index: Math.max(0, Math.min(messages.length - 1, index)), align: 'start', behavior: 'smooth' })
+    }
+  }, [messages.length])
+
+  const scrollToBottomNow = useCallback(() => {
+    const v = virtuosoRef.current
+    if (v?.scrollToIndex) {
+      v.scrollToIndex({ index: Math.max(0, messages.length - 1), align: 'end', behavior: 'smooth' })
+    }
+  }, [messages.length])
+
+  // 流式输出：只更新“最后一条 assistant 文本节点”，避免频繁触发 React 重渲染
+  const streamingMsgIdRef = useRef<string | null>(null)
+  const streamingTextRef = useRef('')
+  const streamingSpanRef = useRef<HTMLSpanElement | null>(null)
+  const deltaBufferRef = useRef('')
+  const deltaFlushRafRef = useRef<number | null>(null)
+
+  const flushPendingDeltas = useCallback(() => {
+    if (!deltaBufferRef.current) return
+    const chunk = deltaBufferRef.current
+    deltaBufferRef.current = ''
+    streamingTextRef.current += chunk
+    if (streamingSpanRef.current) {
+      streamingSpanRef.current.textContent = streamingTextRef.current || '\u00A0'
+    }
+    scheduleScrollToBottom()
+  }, [scheduleScrollToBottom])
+
+  const enqueueDelta = useCallback((text: string) => {
+    deltaBufferRef.current += text
+    if (deltaFlushRafRef.current != null) return
+    deltaFlushRafRef.current = window.requestAnimationFrame(() => {
+      deltaFlushRafRef.current = null
+      flushPendingDeltas()
+    })
+  }, [flushPendingDeltas])
+
+  const markdownComponents: Components = {
+    pre: ({ children }) => <>{children}</>,
+    code: (props: any) => {
+      const { inline, className, children } = props as { inline?: boolean; className?: string; children?: unknown }
+      const raw = String(children ?? '')
+      if (inline) return <code className={className}>{children as any}</code>
+      const text = raw.replace(/\n$/, '')
+      const lang = langFromClassName(className) || 'text'
+      const key = `${lang}:${text.slice(0, 80)}:${text.length}`
+      const collapsed = collapsedCodeBlocks[key] ?? (text.split('\n').length > 18)
+      const shown = collapsed ? text.split('\n').slice(0, 18).join('\n') : text
+      const fileName = `snippet.${lang === 'text' ? 'txt' : lang}`
+      return (
+        <div className="border border-base-300 bg-base-100 rounded-none overflow-hidden my-2">
+          <div className="flex items-center justify-between px-2 py-1 bg-base-200 text-xs">
+            <span className="font-mono text-base-content/70">{lang}</span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs rounded-none"
+                onClick={() => navigator.clipboard.writeText(text).catch(() => {})}
+              >
+                复制
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs rounded-none"
+                onClick={() => downloadTextFile(fileName, text)}
+              >
+                下载
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs rounded-none"
+                onClick={() => setCollapsedCodeBlocks((p) => ({ ...p, [key]: !collapsed }))}
+              >
+                {collapsed ? '展开' : '折叠'}
+              </button>
+            </div>
+          </div>
+          <pre className="m-0 p-3 text-[12px] leading-relaxed overflow-auto">
+            <code className={className}>{shown}</code>
+            {collapsed && text !== shown && <div className="pt-2 text-xs text-base-content/50">…已折叠</div>}
+          </pre>
+        </div>
+      )
+    },
+  }
+
   useEffect(() => {
-    listRef.current?.scrollTo(0, listRef.current.scrollHeight)
-  }, [messages])
+    return () => {
+      if (scrollRafRef.current != null) window.cancelAnimationFrame(scrollRafRef.current)
+      if (deltaFlushRafRef.current != null) window.cancelAnimationFrame(deltaFlushRafRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem(INPUT_HEIGHT_KEY, String(inputHeight))
@@ -144,6 +365,159 @@ export function ChatPanel({
   useEffect(() => {
     onMessagesChange?.(messages.length > 0)
   }, [messages, onMessagesChange])
+
+  // 会话切换：重置 UI 状态并加载会话内容
+  useEffect(() => {
+    if (!sessionId) return
+    // 取消当前请求（如果有）
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
+    // 清空流式缓存
+    streamingMsgIdRef.current = null
+    streamingSpanRef.current = null
+    streamingTextRef.current = ''
+    deltaBufferRef.current = ''
+    // 重置状态
+    setSending(false)
+    setPendingImages([])
+    setPendingAudios([])
+    setPendingVideos([])
+    setAttachHint(null)
+    setInput(initialDraft ?? '')
+    setMessages(initialMessages ? [...initialMessages] : [])
+    scheduleScrollToBottom()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  // 将会话快照回传给父组件（做轻量节流，避免每次小变化都写 localStorage）
+  useEffect(() => {
+    if (!onSessionSnapshot) return
+    const t = window.setTimeout(() => {
+      onSessionSnapshot({ messages, draft: input })
+    }, 300)
+    return () => window.clearTimeout(t)
+  }, [messages, input, onSessionSnapshot])
+
+  const clearAttachments = useCallback(() => {
+    setPendingImages((prev) => {
+      prev.forEach((x) => URL.revokeObjectURL(x.previewUrl))
+      return []
+    })
+    setPendingAudios((prev) => {
+      prev.forEach((x) => URL.revokeObjectURL(x.previewUrl))
+      return []
+    })
+    setPendingVideos((prev) => {
+      prev.forEach((x) => URL.revokeObjectURL(x.previewUrl))
+      return []
+    })
+    setAttachHint(null)
+    setUploading(false)
+    setUploadPercent(0)
+    uploadAbortRef.current = null
+  }, [])
+
+  const addFiles = useCallback(async (files: FileList | File[]) => {
+    const list = Array.from(files)
+    if (!list.length) return
+    setAttachHint(null)
+
+    const imgs = list.filter((f) => f.type.startsWith('image/'))
+    const audios = list.filter((f) => f.type.startsWith('audio/'))
+    const videos = list.filter((f) => f.type.startsWith('video/'))
+
+    const hints: string[] = []
+
+    if (imgs.length) {
+      const okImgs = imgs.filter((f) => {
+        if (f.size > MAX_IMAGE_BYTES) {
+          hints.push(`图片过大已跳过：${f.name}（${formatBytes(f.size)}，上限 ${formatBytes(MAX_IMAGE_BYTES)}）`)
+          return false
+        }
+        return true
+      })
+      const items = await Promise.all(
+        okImgs.map(async (f) => {
+          let file = f
+          try {
+            if (f.size > 600 * 1024) file = await compressImageToFile(f)
+          } catch {
+            // ignore
+          }
+          const previewUrl = URL.createObjectURL(file)
+          return {
+            id: makeMessageId(),
+            kind: 'image' as const,
+            file,
+            previewUrl,
+            name: file.name,
+            size: file.size,
+            mime: file.type || 'application/octet-stream',
+          }
+        }),
+      )
+      if (items.length) setPendingImages((prev) => [...prev, ...items])
+      if (okImgs.length) hints.push(`已添加 ${okImgs.length} 张图片（大图会自动压缩）`)
+    }
+
+    if (audios.length) {
+      const okAudios = audios.filter((f) => {
+        if (f.size > MAX_AUDIO_BYTES) {
+          hints.push(`音频过大已跳过：${f.name}（${formatBytes(f.size)}，上限 ${formatBytes(MAX_AUDIO_BYTES)}）`)
+          return false
+        }
+        return true
+      })
+      if (okAudios.length) hints.push(`提示：音频将以 multipart 上传后引用，不会塞进内存（上限 ${formatBytes(MAX_AUDIO_BYTES)}）`)
+      const items = okAudios.map((f) => ({
+        id: makeMessageId(),
+        kind: 'audio' as const,
+        file: f,
+        previewUrl: URL.createObjectURL(f),
+        name: f.name,
+        size: f.size,
+        mime: f.type || 'application/octet-stream',
+      }))
+      if (items.length) setPendingAudios((prev) => [...prev, ...items])
+    }
+
+    if (videos.length) {
+      const okVideos = videos.filter((f) => {
+        if (f.size > MAX_VIDEO_BYTES) {
+          hints.push(`视频过大已跳过：${f.name}（${formatBytes(f.size)}，上限 ${formatBytes(MAX_VIDEO_BYTES)}）`)
+          return false
+        }
+        return true
+      })
+      if (okVideos.length) hints.push(`提示：视频将以 multipart 上传后引用，不会塞进内存（上限 ${formatBytes(MAX_VIDEO_BYTES)}）`)
+      const items = okVideos.map((f) => ({
+        id: makeMessageId(),
+        kind: 'video' as const,
+        file: f,
+        previewUrl: URL.createObjectURL(f),
+        name: f.name,
+        size: f.size,
+        mime: f.type || 'application/octet-stream',
+      }))
+      if (items.length) setPendingVideos((prev) => [...prev, ...items])
+    }
+
+    if (hints.length) setAttachHint(hints.join('；'))
+  }, [makeMessageId])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const files = e.dataTransfer.files
+    if (!files?.length) return
+    void addFiles(files)
+  }, [addFiles])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+  }, [])
 
   // 外部请求（例如 WorkspacePanel 中“将结果发送到聊天”）
   useEffect(() => {
@@ -164,7 +538,8 @@ export function ChatPanel({
   useEffect(() => {
     if (!systemInject || !systemInject.text.trim()) return
     const text = systemInject.text.trim()
-    setMessages((m) => [...m, { role: 'system', text }])
+    setMessages((m) => [...m, { id: makeMessageId(), role: 'system', text }])
+    scheduleScrollToBottom()
   }, [systemInject?.seq])
 
   useEffect(() => {
@@ -226,26 +601,101 @@ export function ChatPanel({
     document.addEventListener('mouseup', onMouseUp)
   }, [])
 
+  const handleInputResizePointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    if (!panelRef.current) return
+    // 捕获指针，避免拖动时丢事件（触控板/触屏/鼠标均适用）
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      // ignore
+    }
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (!panelRef.current) return
+      const rect = panelRef.current.getBoundingClientRect()
+      const heightFromBottom = rect.bottom - moveEvent.clientY
+      const next = Math.min(MAX_INPUT_HEIGHT, Math.max(MIN_INPUT_HEIGHT, heightFromBottom))
+      setInputHeight(next)
+    }
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.body.style.cursor = 'row-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+  }, [])
+
   const send = async () => {
     const msg = input.trim()
-    const images = pendingImages.length > 0 ? [...pendingImages] : undefined
-    const audioUrls = pendingAudios.length > 0 ? [...pendingAudios] : undefined
-    const videoUrls = pendingVideos.length > 0 ? [...pendingVideos] : undefined
+    const hasAny = pendingImages.length || pendingAudios.length || pendingVideos.length
+    let images: string[] | undefined
+    let audioUrls: string[] | undefined
+    let videoUrls: string[] | undefined
     if (!msg && !images && !audioUrls && !videoUrls) return
     // 若当前正在发送且本次不含附件，则将文本加入队列，等待上一轮结束后自动发送
-    if (sending && !images && !audioUrls && !videoUrls) {
+    if (sending && !hasAny) {
       setPendingQueue((q) => [...q, msg])
       setInput('')
       return
     }
     setInput('')
-    setPendingImages([])
-    setPendingAudios([])
-    setPendingVideos([])
+
+    // 若有附件：先 multipart 上传，拿到 /uploads/... URL 再发起聊天
+    if (hasAny) {
+      try {
+        setUploading(true)
+        setUploadPercent(0)
+        setAttachHint('附件上传中…')
+        const ac = new AbortController()
+        uploadAbortRef.current = ac
+        const files = [...pendingImages, ...pendingAudios, ...pendingVideos].map((x) => x.file)
+        const res = await uploadFiles(files, {
+          signal: ac.signal,
+          onProgress: (p) => {
+            setUploadPercent(p.percent)
+          },
+        })
+        const urls = res.files.map((f) => f.url)
+        const imgCount = pendingImages.length
+        const audioCount = pendingAudios.length
+        const videoCount = pendingVideos.length
+        images = imgCount ? urls.slice(0, imgCount) : undefined
+        audioUrls = audioCount ? urls.slice(imgCount, imgCount + audioCount) : undefined
+        videoUrls = videoCount ? urls.slice(imgCount + audioCount) : undefined
+      } catch (e) {
+        const err = e instanceof Error ? e.message : '附件上传失败'
+        setAttachHint(err)
+        return
+      } finally {
+        setUploading(false)
+        clearAttachments()
+      }
+    }
+
     const fallback = images ? '(图片)' : audioUrls ? '(音频)' : videoUrls ? '(视频)' : ''
     setLastPrompt(msg)
-    setMessages((m) => [...m, { role: 'user', text: msg || fallback, images, audioUrls, videoUrls }])
-    setMessages((m) => [...m, { role: 'assistant', text: '', state: 'loading' }])
+    const attachmentLines: string[] = []
+    if (images?.length) attachmentLines.push(...images.map((u) => `- 图片：${u}`))
+    if (audioUrls?.length) attachmentLines.push(...audioUrls.map((u) => `- 音频：${u}`))
+    if (videoUrls?.length) attachmentLines.push(...videoUrls.map((u) => `- 视频：${u}`))
+    const fullMsg = attachmentLines.length ? `${msg || fallback}\n\n附件：\n${attachmentLines.join('\n')}` : (msg || fallback)
+    const userId = makeMessageId()
+    const assistantId = makeMessageId()
+    streamingMsgIdRef.current = assistantId
+    streamingTextRef.current = ''
+    deltaBufferRef.current = ''
+    if (streamingSpanRef.current) streamingSpanRef.current.textContent = '\u00A0'
+    setMessages((m) => [
+      ...m,
+      { id: userId, role: 'user', text: fullMsg, images, audioUrls, videoUrls },
+      { id: assistantId, role: 'assistant', text: '', state: 'loading' },
+    ])
+    scheduleScrollToBottom()
     setSending(true)
     onSendStart?.()
     let finished = false
@@ -257,32 +707,20 @@ export function ChatPanel({
       abortRef.current = controller
       await sendChatStream(msg, {
         onDelta: (text) => {
-          setMessages((m) => {
-            const next = [...m]
-            // 从末尾向前找到最后一个正在加载的 assistant 消息
-            let idx = -1
-            for (let j = next.length - 1; j >= 0; j -= 1) {
-              if (next[j].role === 'assistant' && next[j].state === 'loading') {
-                idx = j
-                break
-              }
-            }
-            if (idx >= 0) {
-              next[idx] = { ...next[idx], text: (next[idx].text || '') + text }
-            }
-            return next
-          })
+          enqueueDelta(text)
         },
         onWorkspaceChanged,
         onToolCall: ({ summary }) => {
           setMessages((m) => [
             ...m,
             {
+              id: makeMessageId(),
               role: 'system',
               text: summary,
               collapsed: true,
             },
           ])
+          scheduleScrollToBottom()
         },
         onToolStatusChange,
         onToolResult: ({ name, output }) => {
@@ -291,15 +729,18 @@ export function ChatPanel({
           setMessages((m) => [
             ...m,
             {
+              id: makeMessageId(),
               role: 'system',
               text: `${header}\n${normalizeToolOutput(output)}`,
               collapsed: true,
               isToolOutput: true,
             },
           ])
+          scheduleScrollToBottom()
         },
         onDone: () => {
           finished = true
+          flushPendingDeltas()
           setMessages((m) => {
             const next = [...m]
             let idx = -1
@@ -310,11 +751,14 @@ export function ChatPanel({
               }
             }
             if (idx >= 0) {
-              const t = next[idx].text?.trim() || ''
-              next[idx] = { role: 'assistant', text: t || '(无回复)' }
+              const t = streamingTextRef.current.trim()
+              next[idx] = { ...next[idx], role: 'assistant', text: t || '(无回复)', state: undefined }
             }
             return next
           })
+          streamingMsgIdRef.current = null
+          streamingSpanRef.current = null
+          streamingTextRef.current = ''
           onSendEnd?.()
           setSending(false)
           // 若有排队的下一条消息，则在本轮结束后自动发送
@@ -335,6 +779,7 @@ export function ChatPanel({
         },
         onError: (errMsg) => {
           finished = true
+          flushPendingDeltas()
           setMessages((m) => {
             const next = [...m]
             let idx = -1
@@ -346,10 +791,13 @@ export function ChatPanel({
             }
             if (idx >= 0) {
               const kind = classifyErrorKind(errMsg)
-              next[idx] = { role: 'assistant', text: errMsg, state: 'error', errorKind: kind, canRetry: !!lastPrompt }
+              next[idx] = { ...next[idx], role: 'assistant', text: errMsg, state: 'error', errorKind: kind, canRetry: !!lastPrompt }
             }
             return next
           })
+          streamingMsgIdRef.current = null
+          streamingSpanRef.current = null
+          streamingTextRef.current = ''
           onSendEnd?.(errMsg)
           setSending(false)
           // 错误场景同样尝试发送队列中的下一条
@@ -368,6 +816,7 @@ export function ChatPanel({
       }, controller.signal)
     } catch (e) {
       const msgText = e instanceof Error ? e.message : '请求失败'
+      flushPendingDeltas()
       setMessages((m) => {
         const next = [...m]
         let idx = -1
@@ -379,10 +828,13 @@ export function ChatPanel({
         }
         if (idx >= 0) {
           const kind = classifyErrorKind(msgText)
-          next[idx] = { role: 'assistant', text: msgText, state: 'error', errorKind: kind, canRetry: !!lastPrompt }
+          next[idx] = { ...next[idx], role: 'assistant', text: msgText, state: 'error', errorKind: kind, canRetry: !!lastPrompt }
         }
         return next
       })
+      streamingMsgIdRef.current = null
+      streamingSpanRef.current = null
+      streamingTextRef.current = ''
       finished = true
       onSendEnd?.(msgText)
       setSending(false)
@@ -414,6 +866,7 @@ export function ChatPanel({
       abortRef.current.abort()
       abortRef.current = null
     }
+    flushPendingDeltas()
     setSending(false)
     setMessages((m) => {
       const next = [...m]
@@ -425,8 +878,9 @@ export function ChatPanel({
         }
       }
       if (idx >= 0) {
-        const t = next[idx].text?.trim() || ''
+        const t = streamingTextRef.current.trim()
         next[idx] = {
+          ...next[idx],
           role: 'assistant',
           text: (t && `${t}\n\n(本轮回答已中止)`) || '(本轮回答已中止)',
           state: 'error',
@@ -434,22 +888,40 @@ export function ChatPanel({
       }
       return next
     })
+    streamingMsgIdRef.current = null
+    streamingSpanRef.current = null
+    streamingTextRef.current = ''
     onSendEnd?.('已中止')
   }
 
   return (
-    <div ref={panelRef} className="card flex flex-col h-full min-h-0 bg-base-200 border border-base-300 border-r-0 border-b-0 shadow-none rounded-none">
-      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center text-base-content/60 text-sm py-8 gap-3">
-            <Bot size={24} className="opacity-40" />
-            <p className="text-center">输入消息并发送，开始对话</p>
+    <div
+      ref={panelRef}
+      className="card flex flex-col h-full min-h-0 bg-base-200 border border-base-300 border-r-0 border-b-0 shadow-none rounded-none"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      title="可将图片/音频/视频文件拖拽到此处上传"
+    >
+      <div ref={listRef} className="flex-1 min-h-0 overflow-hidden">
+        {messages.length === 0 ? (
+          <div className="h-full overflow-y-auto p-4">
+            <div className="flex flex-col items-center justify-center text-base-content/60 text-sm py-8 gap-3">
+              <Bot size={24} className="opacity-40" />
+              <p className="text-center">输入消息并发送，开始对话</p>
+            </div>
           </div>
-        )}
-        {messages.map((m, i) =>
-          m.role === 'system' && m.isToolOutput ? (
+        ) : (
+          <div className="relative h-full">
+            <Virtuoso
+              ref={virtuosoRef as any}
+              className="h-full"
+              data={messages}
+              atBottomStateChange={handleAtBottomStateChange}
+              followOutput={isNearBottomRef.current ? 'smooth' : false}
+              itemContent={(_idx, m) => (
+              m.role === 'system' && m.isToolOutput ? (
             // 命令输出：使用卡片样式，可折叠 + 复制
-            <div key={i} className="flex justify-center text-xs text-base-content/70">
+            <div key={m.id} className="flex justify-center text-xs text-base-content/70 px-4 pt-4">
               <div className="w-full max-w-[720px] border border-base-300 bg-base-200 rounded-md overflow-hidden">
                 {(() => {
                   const idx = m.text.indexOf('\n')
@@ -465,9 +937,8 @@ export function ChatPanel({
                             className="btn btn-ghost btn-xs"
                             onClick={() =>
                               setMessages((prev) => {
-                                const next = [...prev]
-                                next[i] = { ...next[i], collapsed: !next[i].collapsed }
-                                return next
+                                const id = m.id
+                                return prev.map((x) => (x.id === id ? { ...x, collapsed: !x.collapsed } : x))
                               })
                             }
                           >
@@ -494,15 +965,14 @@ export function ChatPanel({
             </div>
           ) : m.role === 'system' ? (
             // 其他 system 消息（如工具调用摘要）：保持 pill 样式
-            <div key={i} className="flex justify-center text-xs text-base-content/60">
+            <div key={m.id} className="flex justify-center text-xs text-base-content/60 px-4 pt-4">
               <button
                 type="button"
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-base-300/80 hover:bg-base-300 transition-colors"
                 onClick={() =>
                   setMessages((prev) => {
-                    const next = [...prev]
-                    next[i] = { ...next[i], collapsed: !next[i].collapsed }
-                    return next
+                    const id = m.id
+                    return prev.map((x) => (x.id === id ? { ...x, collapsed: !x.collapsed } : x))
                   })
                 }
               >
@@ -514,8 +984,8 @@ export function ChatPanel({
             </div>
           ) : (
             <div
-              key={i}
-              className={`flex gap-3 items-end ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
+              key={m.id}
+              className={`flex gap-3 items-end px-4 pt-4 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
               onContextMenu={(e) => {
                 e.preventDefault()
                 if (!m.text) return
@@ -551,13 +1021,25 @@ export function ChatPanel({
                 {m.state === 'loading' ? (
                   <div className="flex items-start gap-2 text-base-content/60">
                     <Loader2 size={16} className="animate-spin flex-shrink-0 mt-0.5" />
-                    <span className="whitespace-pre-wrap break-words">{m.text || '\u00A0'}</span>
+                    <span
+                      ref={(el) => {
+                        if (!el) return
+                        if (m.id === streamingMsgIdRef.current) {
+                          streamingSpanRef.current = el
+                          el.textContent = streamingTextRef.current || '\u00A0'
+                        }
+                      }}
+                      className="whitespace-pre-wrap break-words"
+                    >
+                      {m.text || '\u00A0'}
+                    </span>
                   </div>
                 ) : m.role === 'assistant' && !m.state ? (
                   <div className="markdown-body text-[15px] leading-relaxed">
                     <ReactMarkdown
                       remarkPlugins={[remarkMath, remarkBreaks, remarkGfm]}
                       rehypePlugins={[rehypeKatex]}
+                      components={markdownComponents}
                     >
                       {formatAssistantText(m.text)}
                     </ReactMarkdown>
@@ -630,17 +1112,85 @@ export function ChatPanel({
                 )}
               </div>
             </div>
-          ),
+          )
+            )}
+            />
+
+            <div className="absolute right-3 bottom-3 flex flex-col gap-2">
+              {!atBottom && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm rounded-none shadow-lg"
+                  onClick={scrollToBottomNow}
+                  title="跳转到底部"
+                >
+                  跳到底
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm rounded-none bg-base-200/90 border border-base-300 shadow"
+                onClick={() => setJumpOpen(true)}
+                title="按序号跳转到某条消息"
+              >
+                跳转
+              </button>
+            </div>
+
+            {jumpOpen && (
+              <div className="absolute inset-0 bg-black/30 flex items-center justify-center p-4">
+                <div className="w-full max-w-[420px] bg-base-100 border border-base-300 rounded-none shadow-xl">
+                  <div className="px-4 py-3 border-b border-base-300 bg-base-200 flex items-center justify-between">
+                    <div className="font-semibold">跳转到消息</div>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setJumpOpen(false)}>
+                      关闭
+                    </button>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="text-xs text-base-content/60">
+                      输入消息序号（1 - {messages.length}）
+                    </div>
+                    <input
+                      value={jumpValue}
+                      onChange={(e) => setJumpValue(e.target.value)}
+                      placeholder="例如：1"
+                      className="input input-bordered w-full rounded-none"
+                      inputMode="numeric"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button type="button" className="btn btn-ghost rounded-none" onClick={() => setJumpOpen(false)}>
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary rounded-none"
+                        onClick={() => {
+                          const n = Number(jumpValue)
+                          if (!Number.isFinite(n)) return
+                          const idx = Math.round(n) - 1
+                          scrollToIndex(idx)
+                          setJumpOpen(false)
+                        }}
+                      >
+                        跳转
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
       <div
         role="separator"
         aria-orientation="horizontal"
+        onPointerDown={handleInputResizePointerDown}
         onMouseDown={handleInputResizeMouseDown}
-        className="flex-shrink-0 h-1.5 cursor-row-resize hover:bg-primary/30 bg-base-300 flex items-center justify-center transition-colors"
+        className="flex-shrink-0 h-3 cursor-row-resize bg-base-300 hover:bg-primary/30 active:bg-primary/40 flex items-center justify-center transition-colors select-none"
         title="拖动调节输入框高度"
       >
-        <span className="w-10 h-0.5 rounded-full bg-base-content/30" />
+        <span className="w-14 h-[3px] rounded-full bg-base-content/40" />
       </div>
       <div
         className="flex-shrink-0 p-4 border-t border-base-300 flex flex-col gap-2"
@@ -648,10 +1198,18 @@ export function ChatPanel({
       >
         {(pendingImages.length > 0 || pendingAudios.length > 0 || pendingVideos.length > 0) && (
           <div className="flex flex-wrap gap-2 items-center min-h-[48px]">
-            {pendingImages.map((src, j) => (
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs rounded-none"
+              onClick={clearAttachments}
+              title="清空所有附件"
+            >
+              清空附件
+            </button>
+            {pendingImages.map((x, j) => (
               <span key={j} className="relative inline-block">
                 <img
-                  src={src}
+                  src={x.previewUrl}
                   alt=""
                   className="max-w-[72px] max-h-[48px] object-contain rounded border border-base-300 bg-base-100"
                 />
@@ -659,24 +1217,74 @@ export function ChatPanel({
                   type="button"
                   aria-label="移除"
                   className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-error text-error-content text-xs flex items-center justify-center hover:bg-error-focus"
-                  onClick={() => setPendingImages((p) => p.filter((_, i) => i !== j))}
+                  onClick={() =>
+                    setPendingImages((p) => {
+                      const item = p[j]
+                      if (item) URL.revokeObjectURL(item.previewUrl)
+                      return p.filter((_, i) => i !== j)
+                    })
+                  }
                 >
                   ×
                 </button>
               </span>
             ))}
-            {pendingAudios.map((src, j) => (
+            {pendingAudios.map((x, j) => (
               <span key={`a-${j}`} className="relative inline-flex items-center gap-1 rounded border border-base-300 bg-base-100 px-2 py-1">
-                <audio src={src} controls className="max-h-10 w-40" />
-                <button type="button" aria-label="移除" className="text-error hover:bg-error/20 rounded p-0.5" onClick={() => setPendingAudios((p) => p.filter((_, i) => i !== j))}>×</button>
+                <audio src={x.previewUrl} controls className="max-h-10 w-40" />
+                <button
+                  type="button"
+                  aria-label="移除"
+                  className="text-error hover:bg-error/20 rounded p-0.5"
+                  onClick={() =>
+                    setPendingAudios((p) => {
+                      const item = p[j]
+                      if (item) URL.revokeObjectURL(item.previewUrl)
+                      return p.filter((_, i) => i !== j)
+                    })
+                  }
+                >
+                  ×
+                </button>
               </span>
             ))}
-            {pendingVideos.map((src, j) => (
+            {pendingVideos.map((x, j) => (
               <span key={`v-${j}`} className="relative inline-block">
-                <video src={src} className="max-w-[100px] max-h-[48px] object-contain rounded border border-base-300 bg-base-100" />
-                <button type="button" aria-label="移除" className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-error text-error-content text-xs flex items-center justify-center hover:bg-error-focus" onClick={() => setPendingVideos((p) => p.filter((_, i) => i !== j))}>×</button>
+                <video src={x.previewUrl} className="max-w-[100px] max-h-[48px] object-contain rounded border border-base-300 bg-base-100" />
+                <button
+                  type="button"
+                  aria-label="移除"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-error text-error-content text-xs flex items-center justify-center hover:bg-error-focus"
+                  onClick={() =>
+                    setPendingVideos((p) => {
+                      const item = p[j]
+                      if (item) URL.revokeObjectURL(item.previewUrl)
+                      return p.filter((_, i) => i !== j)
+                    })
+                  }
+                >
+                  ×
+                </button>
               </span>
             ))}
+          </div>
+        )}
+        {attachHint && (
+          <div className="text-xs text-base-content/60">
+            {attachHint}
+            {uploading && (
+              <div className="mt-2 flex items-center gap-2">
+                <progress className="progress progress-primary w-48" value={uploadPercent} max={100} />
+                <span className="tabular-nums">{uploadPercent}%</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs rounded-none"
+                  onClick={() => uploadAbortRef.current?.abort()}
+                >
+                  取消上传
+                </button>
+              </div>
+            )}
           </div>
         )}
         <div className="flex gap-3 items-stretch flex-1 min-h-0">
@@ -689,17 +1297,7 @@ export function ChatPanel({
           onChange={(e) => {
             const files = e.target.files
             if (!files?.length) return
-            const readers = Array.from(files).filter((f) => f.type.startsWith('image/')).map((f) => {
-              const r = new FileReader()
-              r.readAsDataURL(f)
-              return new Promise<string>((res, rej) => {
-                r.onload = () => res(r.result as string)
-                r.onerror = rej
-              })
-            })
-            Promise.all(readers).then((urls) => {
-              setPendingImages((prev) => [...prev, ...urls])
-            })
+            void addFiles(files)
             e.target.value = ''
           }}
         />
@@ -729,15 +1327,7 @@ export function ChatPanel({
           onChange={(e) => {
             const files = e.target.files
             if (!files?.length) return
-            const readers = Array.from(files).filter((f) => f.type.startsWith('audio/')).map((f) => {
-              const r = new FileReader()
-              r.readAsDataURL(f)
-              return new Promise<string>((res, rej) => {
-                r.onload = () => res(r.result as string)
-                r.onerror = rej
-              })
-            })
-            Promise.all(readers).then((urls) => setPendingAudios((prev) => [...prev, ...urls]))
+            void addFiles(files)
             e.target.value = ''
           }}
         />
@@ -750,15 +1340,7 @@ export function ChatPanel({
           onChange={(e) => {
             const files = e.target.files
             if (!files?.length) return
-            const readers = Array.from(files).filter((f) => f.type.startsWith('video/')).map((f) => {
-              const r = new FileReader()
-              r.readAsDataURL(f)
-              return new Promise<string>((res, rej) => {
-                r.onload = () => res(r.result as string)
-                r.onerror = rej
-              })
-            })
-            Promise.all(readers).then((urls) => setPendingVideos((prev) => [...prev, ...urls]))
+            void addFiles(files)
             e.target.value = ''
           }}
         />

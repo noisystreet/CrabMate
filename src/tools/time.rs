@@ -2,12 +2,36 @@
 
 use chrono::{Datelike, NaiveDate};
 
-/// 返回当前本地日期时间与当月日历
-pub fn run() -> String {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeOutputMode {
+    Time,
+    Calendar,
+    Both,
+}
+
+impl TimeOutputMode {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "time" => Some(Self::Time),
+            "calendar" => Some(Self::Calendar),
+            "both" => Some(Self::Both),
+            _ => None,
+        }
+    }
+}
+
+/// 返回当前本地时间或日历（支持 mode= time|calendar|both；可选 year/month 用于日历）
+pub fn run(mode: TimeOutputMode, year: Option<i32>, month: Option<u32>) -> String {
     let now = chrono::Local::now();
     let time_str = format!("当前时间：{}", now.format("%Y-%m-%d %H:%M:%S"));
-    let cal = format_month_calendar(now.year(), now.month());
-    format!("{}\n\n{}", time_str, cal)
+    let y = year.unwrap_or(now.year());
+    let m = month.unwrap_or(now.month());
+    let cal = format_month_calendar(y, m);
+    match mode {
+        TimeOutputMode::Time => time_str,
+        TimeOutputMode::Calendar => cal,
+        TimeOutputMode::Both => format!("{}\n\n{}", time_str, cal),
+    }
 }
 
 /// 格式化当月日历（中文星期头：日 一 二 … 六）
@@ -50,7 +74,7 @@ mod tests {
 
     #[test]
     fn test_run_contains_time_and_calendar() {
-        let out = run();
+        let out = run(TimeOutputMode::Both, None, None);
         assert!(out.contains("当前时间"), "应包含「当前时间」，得到: {}", out);
         assert!(out.contains("月"), "应包含当月日历，得到: {}", out);
     }

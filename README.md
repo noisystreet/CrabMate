@@ -207,40 +207,9 @@ crabmate --serve 8080
 
 ## 项目结构
 
-```
-crabmate/
-├── Cargo.toml
-├── README.md
-├── default_config.toml  # 默认 api_base、model
-├── config.toml.example # 配置示例（可选覆盖）
-├── frontend/              # Web 前端（Vite + React + TS + Tailwind）
-│   └── src/
-│       ├── App.tsx        # 布局：聊天 + 工作区 + 状态栏
-│       ├── components/    # ChatPanel、WorkspacePanel、StatusBar 等
-│       ├── api.ts         # 前端调用 /chat、/chat/stream、/workspace 等 API
-│       └── types.ts
-└── src/
-    ├── main.rs            # 入口、REPL、Web 服务、Agent 主循环
-    ├── config.rs          # 配置加载（模型等），环境变量 + 配置文件
-    ├── types.rs           # API/消息类型与常量
-    ├── api.rs             # DeepSeek 流式请求与 SSE 解析
-    └── tools/             # 工具目录，按工具分文件便于扩展
-        ├── mod.rs         # 工具列表与 run_tool 分发
-        ├── time.rs        # 获取当前时间
-        ├── calc.rs        # 数学计算（bc -l）
-        ├── weather.rs     # 天气（Open-Meteo）
-        ├── command.rs     # 有限 Linux 命令执行（白名单 + 超时）
-        ├── exec.rs        # 运行工作区内可执行文件
-        ├── file.rs        # 创建 / 修改工作区文件
-        ├── grep.rs        # （可选）grep 相关工具
-        └── format.rs      # 代码格式化工具（rustfmt / prettier）
-```
+项目代码结构与各模块机制请移步开发文档：
 
-## 实现要点
-
-- **消息格式**：与 OpenAI Chat Completions 兼容，使用 `messages` + `tools` / `tool_choice`
-- **Agent 循环**：若返回 `finish_reason == "tool_calls"`，则本地执行对应工具，将结果以 `role: "tool"` 追加到 `messages`，再次请求 API，直到模型返回普通文本
-- **工具执行**：`get_current_time` 用 `chrono`；`calc` 通过 **bc -l**（stdin 传参、不经过 shell）做数学求值，依赖系统已安装 `bc`
+- `docs/DEVELOPMENT.md`
 
 ## 还可完善的方向
 

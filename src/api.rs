@@ -1,6 +1,11 @@
 //! DeepSeek API 流式请求与 SSE 解析，终端 Markdown 渲染与数学公式（LaTeX→Unicode）
 
 use crate::types::{ChatRequest, FunctionCall, Message, StreamChunk, ToolCall};
+use crossterm::{
+    cursor::{MoveToColumn, MoveUp},
+    terminal::{Clear, ClearType},
+    ExecutableCommand,
+};
 use futures_util::StreamExt;
 use markdown_to_ansi::{render, Options};
 use regex::Regex;
@@ -35,10 +40,10 @@ fn latex_math_to_unicode(s: &str) -> String {
 
 /// 尝试获取终端宽度；获取失败时返回 None
 fn terminal_width() -> Option<usize> {
-    std::env::var("COLUMNS")
+    crossterm::terminal::size()
         .ok()
-        .and_then(|c| c.parse().ok())
-        .filter(|&w: &usize| w > 0)
+        .map(|(cols, _rows)| cols as usize)
+        .filter(|w| *w > 0)
 }
 
 /// 按终端显示宽度估算行数（宽字符如中文按 2 列计，避免换行错位）
@@ -49,7 +54,7 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .split('\n')
         .map(|line| {
             let cols = line.width().max(1);
-            (cols + w - 1) / w
+            cols.div_ceil(w)
         })
         .sum()
 }
@@ -161,13 +166,15 @@ pub async fn stream_chat(
                             let _ = tx.send(s.clone()).await;
                         }
                         if render_to_terminal {
+                            // 这里保持“边收边打印”，但统一通过 stdout 句柄写入，便于后续进一步抽象终端输出。
+                            let mut stdout = io::stdout();
                             if first_content {
-                                print!("Agent: ");
-                                io::stdout().flush()?;
+                                write!(stdout, "Agent: ")?;
+                                stdout.flush()?;
                                 first_content = false;
                             }
-                            print!("{}", s);
-                            io::stdout().flush()?;
+                            write!(stdout, "{}", s)?;
+                            stdout.flush()?;
                         }
                         content_acc.push_str(s);
                     }
@@ -203,9 +210,12 @@ pub async fn stream_chat(
         let with_prefix = format!("Agent: {}", content_acc);
         let total_lines = count_display_lines(&with_prefix, term_w);
         // 光标上移、回到行首并清除至屏幕末尾，再重绘为 Markdown
-        print!("\x1b[{}A\r\x1b[0J", total_lines);
-        print!("Agent: ");
-        io::stdout().flush()?;
+        let mut stdout = io::stdout();
+        stdout.execute(MoveUp(total_lines as u16))?;
+        stdout.execute(MoveToColumn(0))?;
+        stdout.execute(Clear(ClearType::FromCursorDown))?;
+        write!(stdout, "Agent: ")?;
+        stdout.flush()?;
         let opts = Options {
             syntax_highlight: true,
             width: Some(term_w),
@@ -213,11 +223,11 @@ pub async fn stream_chat(
         };
         let content = latex_math_to_unicode(content_acc.trim());
         let rendered = render(&content, &opts);
-        print!("{}", rendered);
+        write!(stdout, "{}", rendered)?;
         if !rendered.ends_with('\n') {
-            println!();
+            writeln!(stdout)?;
         }
-        io::stdout().flush()?;
+        stdout.flush()?;
     }
     let tool_calls = if tool_calls_acc.is_empty() {
         None

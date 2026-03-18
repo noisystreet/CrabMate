@@ -10,8 +10,9 @@ mod ui;
 
 use api::stream_chat;
 use axum::{
+    extract::Multipart,
     extract::State,
-    http::StatusCode,
+    http::{header, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -19,7 +20,9 @@ use axum::{
 use axum::response::sse::{Event, KeepAlive, Sse};
 use config::cli::{init_logging, parse_args};
 use futures_util::StreamExt;
+use tower::ServiceBuilder;
 use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use std::env;
@@ -279,6 +282,7 @@ pub(crate) struct AppState {
     tools: Vec<crate::types::Tool>,
     /// 前端设置的工作区路径覆盖；为 None 时使用 cfg.run_command_working_dir
     workspace_override: std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
+    uploads_dir: std::path::PathBuf,
 }
 
 impl AppState {
@@ -302,6 +306,289 @@ impl AppState {
 #[derive(serde::Deserialize)]
 struct ChatRequestBody {
     message: String,
+}
+
+#[derive(serde::Serialize)]
+struct UploadedFileInfo {
+    url: String,
+    filename: String,
+    mime: String,
+    size: u64,
+}
+
+#[derive(serde::Serialize)]
+struct UploadResponseBody {
+    files: Vec<UploadedFileInfo>,
+}
+
+#[derive(serde::Deserialize)]
+struct DeleteUploadsBody {
+    urls: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+struct DeleteUploadsResponseBody {
+    deleted: Vec<String>,
+    skipped: Vec<String>,
+}
+
+async fn delete_uploads_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DeleteUploadsBody>,
+) -> Result<Json<DeleteUploadsResponseBody>, (StatusCode, Json<ApiError>)> {
+    let mut deleted = Vec::new();
+    let mut skipped = Vec::new();
+    for u in body.urls {
+        // 只接受 /uploads/<filename> 形式，避免目录穿越
+        if !u.starts_with("/uploads/") || u.contains("..") || u.contains('\\') {
+            skipped.push(u);
+            continue;
+        }
+        let name = u.trim_start_matches("/uploads/");
+        if name.is_empty() || name.contains('/') {
+            skipped.push(u);
+            continue;
+        }
+        let path = state.uploads_dir.join(name);
+        // 不暴露更多信息：不存在也当作 skipped
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => deleted.push(format!("/uploads/{}", name)),
+            Err(_) => skipped.push(format!("/uploads/{}", name)),
+        }
+    }
+    Ok(Json(DeleteUploadsResponseBody { deleted, skipped }))
+}
+
+async fn cleanup_uploads_dir(dir: std::path::PathBuf, max_age: Duration, max_bytes: u64) {
+    let now = std::time::SystemTime::now();
+    let mut entries: Vec<(std::path::PathBuf, std::time::SystemTime, u64)> = Vec::new();
+    let mut total: u64 = 0;
+
+    let mut rd = match tokio::fs::read_dir(&dir).await {
+        Ok(r) => r,
+        Err(e) => {
+            error!(error = %e, dir = %dir.display(), "uploads 清理：无法读取目录");
+            return;
+        }
+    };
+
+    while let Ok(Some(ent)) = rd.next_entry().await {
+        let path = ent.path();
+        let meta = match ent.metadata().await {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let size = meta.len();
+        let mtime = meta.modified().unwrap_or(now);
+        total = total.saturating_add(size);
+        entries.push((path, mtime, size));
+    }
+
+    // 1) 先按时间清理
+    let mut kept: Vec<(std::path::PathBuf, std::time::SystemTime, u64)> = Vec::new();
+    for (p, mt, sz) in entries {
+        let too_old = now
+            .duration_since(mt)
+            .ok()
+            .map(|d| d > max_age)
+            .unwrap_or(false);
+        if too_old {
+            if tokio::fs::remove_file(&p).await.is_ok() {
+                total = total.saturating_sub(sz);
+            }
+        } else {
+            kept.push((p, mt, sz));
+        }
+    }
+
+    // 2) 再按容量清理（从最旧开始删，直到 <= max_bytes）
+    if total > max_bytes {
+        kept.sort_by_key(|x| x.1);
+        for (p, _mt, sz) in kept {
+            if total <= max_bytes {
+                break;
+            }
+            if tokio::fs::remove_file(&p).await.is_ok() {
+                total = total.saturating_sub(sz);
+            }
+        }
+    }
+}
+
+fn sanitize_display_filename(input: &str) -> String {
+    // 仅用于“展示给前端”，不参与落盘路径（落盘用服务端生成的 safe_name）
+    let base = std::path::Path::new(input)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("upload.bin");
+    let mut out = String::with_capacity(base.len().min(80));
+    for ch in base.chars() {
+        let ok = ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_' | ' ' | '(' | ')' | '[' | ']');
+        out.push(if ok { ch } else { '_' });
+        if out.len() >= 80 {
+            break;
+        }
+    }
+    if out.trim().is_empty() {
+        "upload.bin".to_string()
+    } else {
+        out
+    }
+}
+
+fn ext_lower(file_name: &str) -> Option<String> {
+    std::path::Path::new(file_name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase())
+}
+
+async fn upload_handler(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> Result<Json<UploadResponseBody>, (StatusCode, Json<ApiError>)> {
+    let mut out: Vec<UploadedFileInfo> = Vec::new();
+    let max_total: u64 = 200 * 1024 * 1024; // 200MB total
+    let max_files: usize = 20;
+    let mut total: u64 = 0;
+
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "MULTIPART_ERROR",
+                message: format!("上传解析失败：{}", e),
+            }),
+        )
+    })? {
+        if out.len() >= max_files {
+            return Err((
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(ApiError {
+                    code: "UPLOAD_TOO_MANY_FILES",
+                    message: "上传文件数量过多".to_string(),
+                }),
+            ));
+        }
+
+        let raw_name = field.file_name().unwrap_or("upload.bin");
+        let file_name = sanitize_display_filename(raw_name);
+        let mime = field
+            .content_type()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+
+        // 白名单：MIME 前缀 + 扩展名
+        let ext = ext_lower(&file_name).unwrap_or_default();
+        let is_image = mime.starts_with("image/") && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif");
+        let is_audio = mime.starts_with("audio/") && matches!(ext.as_str(), "mp3" | "wav" | "m4a" | "aac" | "ogg" | "webm");
+        let is_video = mime.starts_with("video/") && matches!(ext.as_str(), "mp4" | "webm" | "mov" | "mkv");
+        if !(is_image || is_audio || is_video) {
+            return Err((
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                Json(ApiError {
+                    code: "UPLOAD_UNSUPPORTED_TYPE",
+                    message: "不支持的文件类型（仅支持常见图片/音频/视频）".to_string(),
+                }),
+            ));
+        }
+
+        // 单文件大小限制（与前端保持同量级）
+        let max_single: u64 = if is_image {
+            8 * 1024 * 1024
+        } else if is_audio {
+            25 * 1024 * 1024
+        } else {
+            80 * 1024 * 1024
+        };
+
+        let ext_with_dot = if ext.is_empty() { "".to_string() } else { format!(".{}", ext) };
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let safe_name = format!("u{}_{}_{}{}", std::process::id(), ts, n, ext_with_dot);
+        let path = state.uploads_dir.join(&safe_name);
+
+        let mut f = tokio::fs::File::create(&path).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    code: "UPLOAD_WRITE_ERROR",
+                    message: format!("无法写入上传文件：{}", e),
+                }),
+            )
+        })?;
+
+        let mut size: u64 = 0;
+        let mut field = field;
+        loop {
+            let next = match field.chunk().await {
+                Ok(v) => v,
+                Err(e) => {
+                    let _ = tokio::fs::remove_file(&path).await;
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(ApiError {
+                            code: "UPLOAD_READ_ERROR",
+                            message: format!("读取上传内容失败：{}", e),
+                        }),
+                    ));
+                }
+            };
+            let Some(chunk) = next else { break; };
+            let chunk_len = chunk.len() as u64;
+            size += chunk_len;
+            total += chunk_len;
+            if size > max_single {
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err((
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    Json(ApiError {
+                        code: "UPLOAD_FILE_TOO_LARGE",
+                        message: "单个文件过大".to_string(),
+                    }),
+                ));
+            }
+            if total > max_total {
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err((
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    Json(ApiError {
+                        code: "UPLOAD_TOO_LARGE",
+                        message: "上传内容过大".to_string(),
+                    }),
+                ));
+            }
+            use tokio::io::AsyncWriteExt;
+            f.write_all(&chunk).await.map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError {
+                        code: "UPLOAD_WRITE_ERROR",
+                        message: format!("写入上传内容失败：{}", e),
+                    }),
+                )
+            })?;
+        }
+
+        let url = format!("/uploads/{}", safe_name);
+        out.push(UploadedFileInfo {
+            url,
+            filename: file_name,
+            mime,
+            size,
+        });
+    }
+
+    Ok(Json(UploadResponseBody { files: out }))
 }
 
 #[derive(serde::Serialize)]
@@ -460,8 +747,176 @@ async fn chat_stream_handler(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-async fn health_handler() -> impl IntoResponse {
-    Json(serde_json::json!({ "status": "ok" }))
+#[derive(serde::Serialize)]
+struct HealthCheckItem {
+    ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct HealthResponse {
+    /// ok / degraded
+    status: &'static str,
+    checks: std::collections::BTreeMap<&'static str, HealthCheckItem>,
+}
+
+async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let mut checks: std::collections::BTreeMap<&'static str, HealthCheckItem> =
+        std::collections::BTreeMap::new();
+
+    // API key
+    let api_key_ok = !state.api_key.trim().is_empty();
+    checks.insert(
+        "api_key",
+        HealthCheckItem {
+            ok: api_key_ok,
+            detail: if api_key_ok {
+                None
+            } else {
+                Some("未设置 API_KEY".to_string())
+            },
+        },
+    );
+
+    // frontend static dir (optional for --no-web)
+    let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+    let static_ok = static_dir.is_dir();
+    checks.insert(
+        "frontend_static_dir",
+        HealthCheckItem {
+            ok: static_ok,
+            detail: if static_ok {
+                None
+            } else {
+                Some(format!("目录不存在：{}", static_dir.display()))
+            },
+        },
+    );
+
+    // workspace writable (create + delete temp file)
+    let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let writable = tokio::task::spawn_blocking({
+        let work_dir = work_dir.clone();
+        move || {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let pid = std::process::id();
+            let p = work_dir.join(format!(".crabmate_healthcheck_{}_{}.tmp", pid, ts));
+            match std::fs::write(&p, b"") {
+                Ok(()) => {
+                    let _ = std::fs::remove_file(&p);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
+    })
+    .await
+    .ok()
+    .and_then(|r| r.err())
+    .map(|e| format!("不可写：{}（{}）", work_dir.display(), e));
+    checks.insert(
+        "workspace_writable",
+        HealthCheckItem {
+            ok: writable.is_none(),
+            detail: writable,
+        },
+    );
+
+    // executable dependencies
+    let deps = tokio::task::spawn_blocking(|| {
+        fn check_cmd(cmd: &str, args: &[&str]) -> Result<String, String> {
+            match std::process::Command::new(cmd).args(args).output() {
+                Ok(out) => {
+                    let status = out.status.code().unwrap_or(-1);
+                    if status == 0 {
+                        let s = if !out.stdout.is_empty() {
+                            String::from_utf8_lossy(&out.stdout).trim().to_string()
+                        } else {
+                            String::from_utf8_lossy(&out.stderr).trim().to_string()
+                        };
+                        Ok(if s.is_empty() {
+                            "ok".to_string()
+                        } else {
+                            s
+                        })
+                    } else {
+                        Err(format!("exit={}", status))
+                    }
+                }
+                Err(e) => Err(e.to_string()),
+            }
+        }
+
+        let mut m = std::collections::BTreeMap::new();
+
+        // bc: GNU bc 有时支持 --version，也可能是 -v/-V；尽量多试几种
+        let bc = check_cmd("bc", &["--version"])
+            .or_else(|_| check_cmd("bc", &["-v"]))
+            .or_else(|_| check_cmd("bc", &["-V"]));
+        m.insert("bc", bc);
+
+        let rustfmt = check_cmd("rustfmt", &["--version"]);
+        m.insert("rustfmt", rustfmt);
+
+        let npm = check_cmd("npm", &["--version"]);
+        m.insert("npm", npm);
+
+        m
+    })
+    .await
+    .ok()
+    .unwrap_or_default();
+
+    for (k, v) in deps {
+        let key: &'static str = match k {
+            "bc" => "dep_bc",
+            "rustfmt" => "dep_rustfmt",
+            "npm" => "dep_npm",
+            _ => continue,
+        };
+        match v {
+            Ok(detail) => {
+                checks.insert(
+                    key,
+                    HealthCheckItem {
+                        ok: true,
+                        detail: Some(detail),
+                    },
+                );
+            }
+            Err(err) => {
+                checks.insert(
+                    key,
+                    HealthCheckItem {
+                        ok: false,
+                        detail: Some(err),
+                    },
+                );
+            }
+        }
+    }
+
+    let required_ok = checks
+        .get("api_key")
+        .map(|c| c.ok)
+        .unwrap_or(false)
+        && checks
+            .get("workspace_writable")
+            .map(|c| c.ok)
+            .unwrap_or(false);
+    let status = if required_ok && checks.values().all(|c| c.ok) {
+        "ok"
+    } else if required_ok {
+        "degraded"
+    } else {
+        "degraded"
+    };
+
+    Json(HealthResponse { status, checks })
 }
 
 #[derive(serde::Serialize)]
@@ -497,6 +952,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         no_web,
         dry_run,
         no_stream,
+        tui,
     ) = parse_args();
 
     let api_key = env::var("API_KEY")
@@ -528,21 +984,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let all_tools = tools::build_tools();
     let tools = if no_tools { Vec::new() } else { all_tools };
 
+    if tui {
+        crate::runtime::tui::run_tui(
+            &cfg,
+            &client,
+            &api_key,
+            &tools,
+            &workspace_cli,
+            no_stream,
+        )
+        .await?;
+        return Ok(());
+    }
+
     if let Some(port) = serve_port {
         let initial_workspace = workspace_cli.clone();
+            let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
+            std::fs::create_dir_all(&uploads_dir).ok();
         let state = Arc::new(AppState {
             cfg: cfg.clone(),
             api_key: api_key.clone(),
             client,
             tools,
             workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
+                uploads_dir: uploads_dir.clone(),
         });
-        let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+            let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+            let uploads_dir_for_static = uploads_dir.clone();
         let mut app = Router::new()
             .route("/chat", post(chat_handler))
             .route("/chat/stream", post(chat_stream_handler))
+                .route("/upload", post(upload_handler))
+                .route("/uploads/delete", post(delete_uploads_handler))
             .route("/health", get(health_handler))
             .route("/status", get(status_handler))
+                .nest_service(
+                    "/uploads",
+                    ServiceBuilder::new()
+                        .layer(SetResponseHeaderLayer::if_not_present(
+                            header::CACHE_CONTROL,
+                            HeaderValue::from_static("public, max-age=31536000, immutable"),
+                        ))
+                        .layer(SetResponseHeaderLayer::if_not_present(
+                            header::X_CONTENT_TYPE_OPTIONS,
+                            HeaderValue::from_static("nosniff"),
+                        ))
+                        .layer(SetResponseHeaderLayer::if_not_present(
+                            header::HeaderName::from_static("cross-origin-resource-policy"),
+                            HeaderValue::from_static("same-site"),
+                        ))
+                        .service(ServeDir::new(uploads_dir_for_static)),
+                )
             .route(
                 "/workspace",
                 get(ui::workspace::workspace_handler).post(ui::workspace::workspace_set_handler),
@@ -572,6 +1064,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  监听地址: http://0.0.0.0:{}", port);
         info!(port = %port, "Web 服务监听 http://{}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;
+        // uploads 自动清理：每 10 分钟执行一次；保留 24h；总容量上限 500MB
+        tokio::spawn({
+            let dir = uploads_dir.clone();
+            async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(600));
+                loop {
+                    interval.tick().await;
+                    cleanup_uploads_dir(dir.clone(), Duration::from_secs(24 * 3600), 500 * 1024 * 1024).await;
+                }
+            }
+        });
         axum::serve(listener, app).await?;
         return Ok(());
     }

@@ -65,6 +65,10 @@ pub struct Cli {
     /// 在命令行模式下关闭流式输出，等待完整回答后一次性打印
     #[arg(long)]
     pub no_stream: bool,
+
+    /// 启动完整终端 UI（TUI，左侧对话，右侧工作区/任务/日程）
+    #[arg(long)]
+    pub tui: bool,
 }
 
 /// 兼容原有调用处的解析函数，基于 clap::Parser 实现
@@ -78,6 +82,7 @@ pub fn parse_args() -> (
     bool, // no_web
     bool, // dry_run
     bool, // no_stream
+    bool, // tui
 ) {
     let cli = Cli::parse();
 
@@ -116,6 +121,7 @@ pub fn parse_args() -> (
         cli.no_web,
         cli.dry_run,
         cli.no_stream,
+        cli.tui,
     )
 }
 

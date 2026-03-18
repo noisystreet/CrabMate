@@ -35,9 +35,12 @@ regex = "1"
 unicode-width = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-axum = { version = "0.7", features = ["json"] }
+axum = { version = "0.7", features = ["json", "multipart"] }
 tokio-stream = "0.1"
 tower = "0.4"
-tower-http = { version = "0.5", features = ["fs"] }
+tower-http = { version = "0.5", features = ["fs", "set-header"] }
 rfd = "0.14"
 clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+ratatui = "0.30"
+tui-markdown = { path = "vendor/tui-markdown", version = "0.3.7" }
