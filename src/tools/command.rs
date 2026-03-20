@@ -102,7 +102,7 @@ fn now_sec() -> u64 {
 }
 
 fn check_rate_limit() -> Result<(), String> {
-    let mut state = RATE_LIMIT.lock().unwrap();
+    let mut state = RATE_LIMIT.lock().unwrap_or_else(|e| e.into_inner());
     let now = now_sec();
     if now != state.window_sec {
         state.window_sec = now;

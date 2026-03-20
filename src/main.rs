@@ -5,6 +5,8 @@ mod api;
 mod config;
 mod tools;
 mod types;
+mod workflow;
+mod workflow_reflection_controller;
 mod runtime;
 mod ui;
 
@@ -46,6 +48,20 @@ pub(crate) async fn run_agent_turn(
     workspace_is_set: bool,
     render_to_terminal: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // 反思控制器：由模型通过设置 workflow.done=true 来决定停止；
+    // 运行时也用 max_rounds 做兜底上限，避免模型忘记置 done=true 导致死循环。
+    let mut reflection_controller =
+        workflow_reflection_controller::WorkflowReflectionController::new(5);
+    // 方案 C：运行时校验模型最终回答 content 中是否包含“规划”。
+    // 仅当反思进入规划（plan）阶段时启用，若缺失则追加一条纠正 user 消息让模型重写。
+    let mut require_plan_in_final_content = false;
+    let mut plan_rewrite_attempts: usize = 0;
+    const MAX_PLAN_REWRITE_ATTEMPTS: usize = 2;
+    let assistant_content_has_plan = |content: &str| -> bool {
+        // 强约束：尽量要求标题 `## 规划`
+        content.contains("## 规划") || content.contains("规划：")
+    };
+
     'outer: loop {
         // 若用于 SSE 的发送端已关闭（通常是前端中止/断开连接），则尽快结束本轮对话与工具循环
         if let Some(tx) = out {
@@ -96,10 +112,35 @@ pub(crate) async fn run_agent_turn(
                 }
             }
         }
-        let (msg, finish_reason) = msg_and_reason.expect("msg_and_reason 应在成功时赋值");
+        let (msg, finish_reason) = msg_and_reason.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "chat 请求成功但未拿到消息内容（msg_and_reason 为空）",
+            )
+        })?;
         messages.push(msg.clone());
 
         if finish_reason != "tool_calls" {
+            if require_plan_in_final_content {
+                let content = msg.content.as_deref().unwrap_or("");
+                if !assistant_content_has_plan(content) {
+                    if plan_rewrite_attempts < MAX_PLAN_REWRITE_ATTEMPTS {
+                        plan_rewrite_attempts += 1;
+                        messages.push(Message {
+                            role: "user".to_string(),
+                            content: Some(
+                                "你的最终回答缺少规划。请在 content 中包含规划部分，并以 `## 规划` 作为标题（随后再给出执行/结论）。请直接重写本轮最终回答。".to_string(),
+                            ),
+                            tool_calls: None,
+                            name: None,
+                            tool_call_id: None,
+                        });
+                        continue 'outer;
+                    }
+                } else {
+                    // 本轮已包含规划，允许直接结束本轮最终回答。
+                }
+            }
             break;
         }
 
@@ -133,7 +174,54 @@ pub(crate) async fn run_agent_turn(
                 }
             }
             let t_tool = Instant::now();
-            let result = if name == "run_command" {
+            let mut reflection_after_tool: Option<serde_json::Value> = None;
+            let result = if name == "workflow_execute" {
+                let decision = reflection_controller.decide(&args);
+                reflection_after_tool = decision.inject_instruction.clone();
+                if let Some(v) = reflection_after_tool.as_ref() {
+                    if v.get("instruction_type")
+                        .and_then(|x| x.as_str())
+                        == Some("workflow_reflection_plan_next")
+                    {
+                        require_plan_in_final_content = true;
+                    }
+                }
+                let tool_args = if let Some(patch) = decision.workflow_args_patch.as_ref() {
+                    workflow_reflection_controller::apply_workflow_patch(&args, patch)
+                } else {
+                    args.to_string()
+                };
+
+                if decision.execute {
+                    if let Err(contract_err) = workflow_reflection_controller::validate_workflow_execute_do_contract(&tool_args) {
+                        // Do 阶段契约不满足：直接返回结构化错误，避免副作用执行。
+                        contract_err.to_string()
+                    } else {
+                        let (wf_out, wf_workspace_changed) =
+                            workflow::run_workflow_execute_tool(
+                                &tool_args,
+                                &cfg,
+                                effective_working_dir,
+                                workspace_is_set,
+                                workflow::WorkflowApprovalMode::NoApproval,
+                                cfg.command_max_output_len,
+                            )
+                            .await;
+                        workspace_changed = workspace_changed || wf_workspace_changed;
+                        wf_out
+                    }
+                } else {
+                    let stop_v = decision.stop_output.unwrap_or_else(|| {
+                        serde_json::Value::String(
+                            "workflow_execute 已停止（反思控制器拒绝继续执行）。".to_string(),
+                        )
+                    });
+                    match stop_v {
+                        serde_json::Value::String(s) => s,
+                        v => v.to_string(),
+                    }
+                }
+            } else if name == "run_command" {
                 if !workspace_is_set {
                     "错误：未设置工作区，禁止执行命令。请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。"
                         .to_string()
@@ -260,6 +348,18 @@ pub(crate) async fn run_agent_turn(
                 name: None,
                 tool_call_id: Some(id),
             });
+
+            if let Some(instruction) = reflection_after_tool {
+                let instruction_str = serde_json::to_string(&instruction)
+                    .unwrap_or_else(|_| "".to_string());
+                messages.push(Message {
+                    role: "user".to_string(),
+                    content: Some(instruction_str),
+                    tool_calls: None,
+                    name: None,
+                    tool_call_id: None,
+                });
+            }
         }
         if let Some(tx) = out {
             if workspace_changed {
@@ -955,8 +1055,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tui,
     ) = parse_args();
 
-    let api_key = env::var("API_KEY")
-        .expect("请设置环境变量 API_KEY");
+    let api_key = match env::var("API_KEY") {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("请设置环境变量 API_KEY");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "未设置环境变量 API_KEY",
+            )
+            .into());
+        }
+    };
 
     let cfg = match config::load_config(config_path.as_deref()) {
         Ok(c) => c,
