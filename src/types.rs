@@ -116,3 +116,11 @@ pub struct StreamChunk {
     pub choices: Option<Vec<StreamChoice>>,
 }
 
+// TUI 中用于“人工审批”的决策结果：拒绝/允许一次/永久允许。
+#[derive(Clone, Copy, Debug)]
+pub enum CommandApprovalDecision {
+    Deny,
+    AllowOnce,
+    AllowAlways,
+}
+

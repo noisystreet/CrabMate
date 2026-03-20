@@ -1,0 +1,119 @@
+//! 安全相关工具：cargo audit / cargo deny
+
+use std::path::Path;
+use std::process::Command;
+
+const MAX_OUTPUT_LINES: usize = 800;
+
+pub fn cargo_audit(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    if !workspace_root.join("Cargo.toml").is_file() {
+        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+    }
+    let deny_warnings = v
+        .get("deny_warnings")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let json = v.get("json").and_then(|x| x.as_bool()).unwrap_or(false);
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("audit");
+    if deny_warnings {
+        cmd.arg("--deny").arg("warnings");
+    }
+    if json {
+        cmd.arg("--json");
+    }
+    cmd.current_dir(workspace_root);
+    run_and_format(cmd, max_output_len, "cargo audit")
+}
+
+pub fn cargo_deny(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    if !workspace_root.join("Cargo.toml").is_file() {
+        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+    }
+    let checks = v
+        .get("checks")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("advisories licenses bans sources");
+    let all_features = v
+        .get("all_features")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("deny").arg("check");
+    for c in checks.split_whitespace() {
+        cmd.arg(c);
+    }
+    if all_features {
+        cmd.arg("--all-features");
+    }
+    cmd.current_dir(workspace_root);
+    let out = run_and_format(cmd, max_output_len, "cargo deny check");
+    if out.contains("no such command: `deny`") {
+        return "cargo deny: 未安装 cargo-deny，请先运行 `cargo install cargo-deny`".to_string();
+    }
+    out
+}
+
+fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> String {
+    match cmd.output() {
+        Ok(output) => {
+            let status = output.status.code().unwrap_or(-1);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let mut body = String::new();
+            if !stdout.trim().is_empty() {
+                body.push_str(stdout.trim_end());
+            }
+            if !stderr.trim().is_empty() {
+                if !body.is_empty() {
+                    body.push('\n');
+                }
+                body.push_str(stderr.trim_end());
+            }
+            if body.is_empty() {
+                body = "(无输出)".to_string();
+            }
+            if status != 0 && body.contains("no such command: `audit`") {
+                return "cargo audit: 未安装 cargo-audit，请先运行 `cargo install cargo-audit`".to_string();
+            }
+            format!(
+                "{} (exit={}):\n{}",
+                title,
+                status,
+                truncate_output(&body, max_output_len)
+            )
+        }
+        Err(e) => format!("{}: 执行失败（{}）", title, e),
+    }
+}
+
+fn truncate_output(s: &str, max_bytes: usize) -> String {
+    let lines: Vec<&str> = s.lines().collect();
+    if s.len() <= max_bytes && lines.len() <= MAX_OUTPUT_LINES {
+        return s.to_string();
+    }
+    let kept_lines = lines.len().min(MAX_OUTPUT_LINES);
+    let joined = lines[..kept_lines].join("\n");
+    let truncated = if joined.len() <= max_bytes {
+        joined
+    } else {
+        joined[..max_bytes].to_string()
+    };
+    format!(
+        "{}\n\n... (输出已截断，保留前 {} 行，共 {} 行)",
+        truncated, kept_lines, lines.len()
+    )
+}
+

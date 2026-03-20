@@ -25,6 +25,245 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 - **会话保存**：
   - 顶部菜单栏提供“保存会话”按钮，可将当前对话导出为 JSON 文件，便于归档或调试。
 
+## Rust 开发工具示例
+
+以下示例展示了常用 Rust 开发工具的结构化参数（Function Calling 参数 JSON）：
+
+- `cargo_run`（运行二进制）：
+  ```json
+  {"bin":"crabmate","args":["--help"]}
+  ```
+- `rust_test_one`（运行单个测试）：
+  ```json
+  {"test_name":"tools::tests::test_build_tools_names","nocapture":true}
+  ```
+- `cargo_audit`（依赖安全扫描）：
+  ```json
+  {"deny_warnings":true}
+  ```
+- `ci_pipeline_local`（本地 CI 关键检查）：
+  ```json
+  {"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"fail_fast":true,"summary_only":false}
+  ```
+- `release_ready_check`（发布前一键检查）：
+  ```json
+  {"run_ci":true,"run_audit":true,"run_deny":true,"require_clean_worktree":true,"fail_fast":true,"summary_only":true}
+  ```
+- `cargo_nextest`（更快测试执行）：
+  ```json
+  {"profile":"default","test_filter":"tools::","nocapture":false}
+  ```
+- `cargo_fmt_check`（代码格式检查）：
+  ```json
+  {}
+  ```
+- `cargo_outdated`（依赖过期检查）：
+  ```json
+  {"workspace":true,"depth":2}
+  ```
+- `cargo_fix`（应用编译器建议修复，受控写入）：
+  ```json
+  {"confirm":true,"broken_code":false}
+  ```
+- `cargo_deny`（许可证/安全策略检查）：
+  ```json
+  {"checks":"advisories licenses bans sources","all_features":true}
+  ```
+- `rust_backtrace_analyze`（分析 panic/backtrace）：
+  ```json
+  {"backtrace":"thread 'main' panicked at src/main.rs:10:5\nstack backtrace:\n   0: ...","crate_hint":"crabmate"}
+  ```
+- `frontend_lint`（前端 lint）：
+  ```json
+  {}
+  ```
+- `frontend_build`（前端 build）：
+  ```json
+  {"script":"build"}
+  ```
+- `frontend_test`（前端 test）：
+  ```json
+  {"script":"test"}
+  ```
+- `workflow_execute`（DAG 工作流执行：并行/串行、审批、SLA、失败补偿）：
+  ```json
+  {"workflow":{
+    "max_parallelism":2,
+    "fail_fast":true,
+    "compensate_on_failure":true,
+    "nodes":[
+      {"id":"clean","tool_name":"cargo_clean","tool_args":{"dry_run":true},"deps":[],"compensate_with":[]},
+      {"id":"clippy","tool_name":"cargo_clippy","tool_args":{"all_targets":true},"deps":["clean"],"compensate_with":["clean"]},
+      {"id":"test","tool_name":"cargo_test","tool_args":{},"deps":["clippy"],"compensate_with":[]},
+      {"id":"deny","tool_name":"cargo_deny","tool_args":{"checks":"advisories licenses bans sources","all_features":true},"deps":["test"],"requires_approval":true,"compensate_with":["clean"]}
+    ]
+  }}
+  ```
+ - `workflow_execute`（Git 工作流示例：注入 `git_log` 的 commit hash 到 `git_show`）：
+   ```json
+   {"workflow":{
+     "max_parallelism":2,
+     "fail_fast":true,
+     "compensate_on_failure":false,
+     "nodes":[
+       {"id":"log","tool_name":"git_log","tool_args":{"max_count":1,"oneline":true},"deps":[],"compensate_with":[]},
+       {"id":"show","tool_name":"git_show","tool_args":{"rev":"{{log.stdout_first_token}}"},"deps":["log"],"compensate_with":[]}
+     ]
+   }}
+   ```
+
+ - `workflow_execute`（Git 工作流示例：diff 基准检查 + 补丁审批后应用）：
+   ```json
+   {"workflow":{
+     "max_parallelism":1,
+     "fail_fast":true,
+     "compensate_on_failure":false,
+     "nodes":[
+       {"id":"diff","tool_name":"git_diff_base","tool_args":{"base":"main","context_lines":3},"deps":[],"compensate_with":[]},
+       {"id":"patch_check","tool_name":"git_apply","tool_args":{"patch_path":"patches/fix.diff","check_only":true},"deps":["diff"],"compensate_with":[]},
+       {"id":"patch_apply","tool_name":"git_apply","tool_args":{"patch_path":"patches/fix.diff","check_only":false},"deps":["patch_check"],"requires_approval":true,"compensate_with":[]}
+     ]
+   }}
+   ```
+
+   说明：`patch_path` 指向工作区内已有的补丁文件（例如 `patches/fix.diff`），该文件需你或上一步工具提前生成/提供。
+
+  在后续节点参数里可使用上游节点输出占位符（仅会对 `string` 字段生效，JSON 对象/数组会递归处理）：
+  - `{{node_id.output}}`：注入节点 `node_id` 的完整输出（默认会截断到最多 `output_inject_max_chars`，默认 `2000` 字符）
+  - `{{node_id.status}}`：注入 `passed/failed`
+  - `{{node_id.stdout_first_line}}`：注入输出的第一行（同样会截断）
+  - `{{node_id.stdout_first_token}}`：注入输出的第一行第一个 token（常用于 `git log --oneline` 的 commit hash）
+
+### 发布前检查推荐模板
+
+- `release_ready_check`（快速版，适合本地频繁自检）：
+  ```json
+  {"run_ci":true,"run_audit":false,"run_deny":false,"require_clean_worktree":false,"fail_fast":true,"summary_only":true}
+  ```
+
+- `release_ready_check`（严格版，适合发版前）：
+  ```json
+  {"run_ci":true,"run_audit":true,"run_deny":true,"require_clean_worktree":true,"fail_fast":true,"summary_only":false}
+  ```
+- `cargo_tree`（查看依赖树）：
+  ```json
+  {"package":"crabmate","depth":2}
+  ```
+- `cargo_clean`（清理构建产物，默认仅预览）：
+  ```json
+  {"release":true,"dry_run":true}
+  ```
+- `cargo_doc`（生成文档）：
+  ```json
+  {"package":"crabmate","no_deps":true,"open":false}
+  ```
+
+另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`frontend_lint`。
+以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
+
+## Git 工具示例
+
+以下示例展示新增 Git 工具的常见调用参数（Function Calling 参数 JSON）：
+
+- `git_clean_check`（检查当前工作区是否干净）：
+  ```json
+  {}
+  ```
+- `git_diff_stat`（diff 统计）：
+  ```json
+  {"mode":"working"}
+  ```
+- `git_diff_names`（diff 变更文件名列表）：
+  ```json
+  {"mode":"working"}
+  ```
+- `git_fetch`（拉取远程更新）：
+  ```json
+  {"remote":"origin","branch":"main","prune":true}
+  ```
+- `git_remote_list`（查看远程仓库）：
+  ```json
+  {}
+  ```
+- `git_remote_set_url`（设置远程 URL，需确认）：
+  ```json
+  {"name":"origin","url":"git@github.com:your-org/your-repo.git","confirm":true}
+  ```
+- `git_apply`（先检查补丁可用性）：
+  ```json
+  {"patch_path":"patches/fix.diff","check_only":true}
+  ```
+- `git_clone`（克隆到工作区内目录，需确认）：
+  ```json
+  {"repo_url":"https://github.com/rust-lang/cargo.git","target_dir":"vendor/cargo","depth":1,"confirm":true}
+  ```
+
+## 常见失败处理指引
+
+下面是使用 `release_ready_check`、`cargo_deny`、`cargo_audit` 时最常见的失败场景与处理建议。
+
+- `cargo_deny` 失败（许可证/策略不满足）
+  - 先单独执行并看完整输出：
+    ```bash
+    cargo deny check advisories licenses bans sources
+    ```
+  - 常见原因：
+    - 新依赖命中了 `bans`（被禁止包或重复版本过多）
+    - 许可证不在允许列表（`licenses`）
+    - 来源不符合策略（`sources`）
+  - 建议处理：
+    - 优先升级或替换触发规则的依赖
+    - 在项目 `deny.toml` 中按团队策略补充白名单/例外（需代码评审）
+    - 对临时例外设置说明与到期计划，避免长期“豁免”
+
+- `cargo_audit` 失败（存在已知漏洞）
+  - 先单独执行并看完整输出：
+    ```bash
+    cargo audit
+    ```
+  - 常见原因：
+    - 依赖树中存在 RustSec 漏洞公告
+    - 锁文件过旧，仍引用已修复前版本
+  - 建议处理：
+    - 优先执行 `cargo update`（或定向 `cargo update -p <crate>`）后复测
+    - 若上游尚未修复，评估降级功能、替代库或临时隔离风险
+    - 确认修复后重新运行 `cargo audit` 与测试
+
+- 工作区不干净（`require_clean_worktree=true`）
+  - 现象：`release_ready_check` 中 `git_clean_check` 显示 failed。
+  - 先确认改动：
+    ```bash
+    git status
+    git diff
+    ```
+  - 建议处理：
+    - 需要保留改动：先提交（或拆分提交）再执行发布检查
+    - 暂不发布这些改动：可 stash 后再跑检查
+    - 仅想本地快速自检：将 `require_clean_worktree` 设为 `false`
+
+- 工具未安装导致失败
+  - `cargo-deny` 未安装：
+    ```bash
+    cargo install cargo-deny
+    ```
+  - `cargo-audit` 未安装：
+    ```bash
+    cargo install cargo-audit
+    ```
+
+### 发布前建议顺序
+
+建议按“先快后严”的顺序执行，能更高效定位问题：
+
+1. 本地快速自检（快速版）  
+   目标：先确认主流程基本可用，快速发现明显问题。
+2. 修复后运行严格检查（严格版）  
+   目标：补齐安全与策略校验，确保发版质量门禁。
+3. 确认工作区干净并复跑关键测试  
+   目标：避免把临时改动带入发布物。
+4. 打 tag / 进入发布流程  
+   目标：在可追溯状态下产出正式版本。
+
 ## 环境
 
 - Rust 1.70+
@@ -66,6 +305,29 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 export API_KEY="your-api-key"
 cargo run
 ```
+
+## 文件/目录辅助工具示例
+
+- `read_dir`（列出目录内容）：
+  ```json
+  {"path":"src","max_entries":50,"include_hidden":false}
+  ```
+- `file_exists`（检查文件/目录是否存在）：
+  ```json
+  {"path":"src/main.rs","kind":"file"}
+  ```
+- `extract_in_file`（文件内按正则抽取匹配行）：
+  ```json
+  {"path":"src/main.rs","pattern":"workflow_execute","max_matches":20,"case_insensitive":true}
+  ```
+  若你只处理 Rust，可使用函数块模式（从匹配到的 `fn` 签名开始，抓取花括号 `{}` 配对的完整块）：
+  ```json
+  {"path":"src/main.rs","pattern":"pub\\s+fn\\s+run_agent_turn","mode":"rust_fn_block","max_matches":1}
+  ```
+- `find_symbol`（工作区递归定位 Rust 符号位置）：
+  ```json
+  {"symbol":"run_agent_turn","kind":"fn","path":"src","context_lines":2,"max_results":10}
+  ```
 
 ### 常用命令行选项
 

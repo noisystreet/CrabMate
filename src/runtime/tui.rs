@@ -1,25 +1,24 @@
 use crate::config::AgentConfig;
-use crate::run_agent_turn;
-use crate::types::Message;
-use crossterm::{
-    event::{
-        self, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-        EnableMouseCapture, DisableMouseCapture,
-    },
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
-};
+use crate::api::stream_chat;
+use crate::types::{CommandApprovalDecision, Message};
+use crate::types::ChatRequest;
+use ratatui::termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseEvent, MouseButtons};
+use ratatui::termwiz::terminal::Terminal as TermwizTerminal;
 use ratatui::{
-    backend::CrosstermBackend,
+    backend::TermwizBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Tabs, Wrap},
     Terminal,
 };
-use std::io;
+use ratatui::widgets::Padding;
+use std::path::Path;
 use std::time::{Duration, Instant};
+use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
+use std::collections::HashSet;
 use tui_markdown::{from_str_with_options as markdown_to_text, Options, StyleSheet};
 use unicodeit::replace as latex_to_unicode;
 use unicode_width::UnicodeWidthStr;
@@ -27,7 +26,9 @@ use ratatui::layout::Margin;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
-    Chat,
+    ChatView,
+    ChatInput,
+    Workspace,
     Right,
 }
 
@@ -36,6 +37,7 @@ enum Mode {
     Normal,
     FileView,
     Prompt,
+    CommandApprove,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +50,50 @@ enum RightTab {
 impl RightTab {
     fn titles() -> [&'static str; 3] {
         ["工作区", "任务", "日程"]
+    }
+}
+
+fn draw_rect_corners(
+    f: &mut ratatui::Frame<'_>,
+    rect: Rect,
+    tl: &'static str,
+    tr: &'static str,
+    bl: &'static str,
+    br: &'static str,
+    style: Style,
+) {
+    if rect.width < 2 || rect.height < 2 {
+        return;
+    }
+    let buf = f.buffer_mut();
+    let x0 = rect.x;
+    let x1 = rect.x + rect.width.saturating_sub(1);
+    let y0 = rect.y;
+    let y1 = rect.y + rect.height.saturating_sub(1);
+
+    if let Some(cell) = buf.cell_mut((x0, y0)) {
+        cell.set_symbol(tl);
+        cell.set_style(style);
+    }
+    if let Some(cell) = buf.cell_mut((x1, y0)) {
+        cell.set_symbol(tr);
+        cell.set_style(style);
+    }
+    if let Some(cell) = buf.cell_mut((x0, y1)) {
+        cell.set_symbol(bl);
+        cell.set_style(style);
+    }
+    if let Some(cell) = buf.cell_mut((x1, y1)) {
+        cell.set_symbol(br);
+        cell.set_style(style);
+    }
+}
+
+fn right_tab_color(tab: RightTab) -> Color {
+    match tab {
+        RightTab::Workspace => Color::Green,
+        RightTab::Tasks => Color::Yellow,
+        RightTab::Schedule => Color::Cyan,
     }
 }
 
@@ -183,12 +229,26 @@ fn code_themes() -> [&'static str; 5] {
     ]
 }
 
+fn focus_name(f: Focus) -> &'static str {
+    match f {
+        Focus::ChatView => "聊天区",
+        Focus::ChatInput => "输入区",
+        Focus::Workspace => "工作区",
+        Focus::Right => "右侧面板",
+    }
+}
+
 struct TuiState {
     // chat
     messages: Vec<Message>,
     input: String,
     prompt: String,
     prompt_title: String,
+    pending_command: String,
+    pending_command_args: String,
+    approve_choice: u8, // 0=拒绝 1=本次允许 2=永久允许
+    persistent_command_allowlist: HashSet<String>,
+    allowlist_file: std::path::PathBuf,
     // runtime
     status_line: String,
     tool_running: bool,
@@ -225,6 +285,58 @@ struct TuiState {
     input_drag_row: u16,
     // chat scroll offset (0 = bottom, >0 = scrolled up)
     chat_scroll: i32,
+    // When mouse clicks into ChatInput, we can override cursor position once.
+    // This helps avoid terminals that visually "flash" when cursor jumps far.
+    cursor_override: Option<(u16, u16)>,
+    // Defer mouse-induced focus/tab changes until mouse release.
+    // This avoids "mouse-down" visual flicker on some terminals.
+    pending_focus: Option<Focus>,
+    pending_tab: Option<RightTab>,
+    // For mouse-down flicker: terminals may temporarily move their own cursor to
+    // the clicked cell. We mirror that position for the next draw to avoid
+    // hide/show or position-jump visuals.
+    cursor_mouse_pos: Option<(u16, u16)>,
+}
+
+fn command_approval_message(command: &str, args: &str) -> String {
+    if args.trim().is_empty() {
+        format!("命令审批：{}", command)
+    } else {
+        format!("命令审批：{} {}", command, args)
+    }
+}
+
+fn load_persistent_allowlist(path: &Path) -> HashSet<String> {
+    let s = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return HashSet::new(),
+    };
+    let v: serde_json::Value = match serde_json::from_str(&s) {
+        Ok(v) => v,
+        Err(_) => return HashSet::new(),
+    };
+    v.get("commands")
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str())
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn save_persistent_allowlist(path: &Path, allowlist: &HashSet<String>) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut items = allowlist.iter().cloned().collect::<Vec<_>>();
+    items.sort();
+    let body = serde_json::json!({ "commands": items });
+    if let Ok(s) = serde_json::to_string_pretty(&body) {
+        let _ = std::fs::write(path, s.as_bytes());
+    }
 }
 
 pub async fn run_tui(
@@ -241,6 +353,10 @@ pub async fn run_tui(
         .unwrap_or(&cfg.run_command_working_dir)
         .to_string();
     let workspace_dir = std::path::PathBuf::from(work_dir_str);
+    let allowlist_file = workspace_dir
+        .join(".crabmate")
+        .join("tui_command_allowlist.json");
+    let persistent_command_allowlist = load_persistent_allowlist(&allowlist_file);
 
     // initial messages
     let mut state = TuiState {
@@ -254,12 +370,17 @@ pub async fn run_tui(
         input: String::new(),
         prompt: String::new(),
         prompt_title: String::new(),
+        pending_command: String::new(),
+        pending_command_args: String::new(),
+        approve_choice: 0,
+        persistent_command_allowlist,
+        allowlist_file,
         status_line: format!(
-            "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：聊天）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
+            "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：输入）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
             cfg.model
         ),
         tool_running: false,
-        focus: Focus::Chat,
+        focus: Focus::ChatInput,
         mode: Mode::Normal,
         tab: RightTab::Workspace,
         workspace_dir,
@@ -282,22 +403,24 @@ pub async fn run_tui(
         input_dragging: false,
         input_drag_row: 0,
         chat_scroll: 0,
+        cursor_override: None,
+        cursor_mouse_pos: None,
+        pending_focus: None,
+        pending_tab: None,
     };
     refresh_workspace(&mut state);
     refresh_tasks(&mut state);
     refresh_schedule(&mut state);
 
     // terminal init
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    stdout.execute(EnterAlternateScreen)?;
-    stdout.execute(EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
+    // TermwizBackend will enable raw mode and alternate screen automatically.
+    let backend = TermwizBackend::new()?;
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
     // agent output channel
     let (tx, mut rx) = mpsc::channel::<String>(2048);
+    let mut approval_tx: Option<mpsc::Sender<CommandApprovalDecision>> = None;
     let mut agent_running: Option<tokio::task::JoinHandle<()>> = None;
     let mut assistant_buf = String::new();
 
@@ -318,7 +441,7 @@ pub async fn run_tui(
                     state.status_line = format!(
                         "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
                         cfg.model,
-                        if state.focus == Focus::Chat { "聊天" } else { "右侧" }
+                        focus_name(state.focus)
                     );
                 }
                 continue;
@@ -335,6 +458,29 @@ pub async fn run_tui(
                 assistant_buf.push_str(&s);
                 continue;
             }
+            if s.starts_with("{\"command_approval_request\"") {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                    if let Some(obj) = v.get("command_approval_request") {
+                        state.pending_command = obj
+                            .get("command")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        state.pending_command_args = obj
+                            .get("args")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        state.approve_choice = 0;
+                        state.mode = Mode::CommandApprove;
+                        state.status_line = command_approval_message(
+                            &state.pending_command,
+                            &state.pending_command_args,
+                        );
+                    }
+                }
+                continue;
+            }
             // normal content delta
             assistant_buf.push_str(&s);
             upsert_assistant_message(&mut state.messages, &assistant_buf);
@@ -342,31 +488,42 @@ pub async fn run_tui(
 
         // draw
         terminal.draw(|f| draw_ui(f, &state))?;
+        // Clear one-shot cursor overrides after the frame is rendered.
+        state.cursor_mouse_pos = None;
+        state.cursor_override = None;
 
         // finish agent task if done
         if let Some(handle) = agent_running.as_ref() {
             if handle.is_finished() {
                 agent_running = None;
+                approval_tx = None;
                 state.status_line = format!(
                     "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
                     cfg.model,
-                    if state.focus == Focus::Chat { "聊天" } else { "右侧" }
+                    focus_name(state.focus)
                 );
             }
         }
 
-        // input events
+        // input events (termwiz backend)
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or(Duration::from_secs(0));
-        if event::poll(timeout)? {
-            match event::read()? {
-                Event::Key(key) => {
+        let screen_size = terminal.size()?;
+        if let Some(input_event) = terminal
+            .backend_mut()
+            .buffered_terminal_mut()
+            .terminal()
+            .poll_input(Some(timeout))?
+        {
+            match input_event {
+                InputEvent::Key(key) => {
                     if handle_key(
                         key,
                         &mut state,
                         &mut agent_running,
                         &mut assistant_buf,
+                        &mut approval_tx,
                         &tx,
                         cfg,
                         client,
@@ -379,13 +536,13 @@ pub async fn run_tui(
                         break;
                     }
                 }
-                Event::Mouse(m) => {
-                    handle_mouse(m, &mut state);
+                InputEvent::Mouse(m) => {
+                    handle_mouse(m, &mut state, screen_size.width, screen_size.height);
                 }
-                Event::Resize(_, _) => {
+                InputEvent::Resized { .. } => {
                     // ignore, layout will be recomputed on next draw
                 }
-                Event::FocusGained | Event::FocusLost | Event::Paste(_) => {
+                InputEvent::Paste(_) | InputEvent::Wake | InputEvent::PixelMouse(_) => {
                     // currently no-op
                 }
             }
@@ -395,11 +552,290 @@ pub async fn run_tui(
         }
     }
 
-    // restore terminal
-    disable_raw_mode()?;
-    let mut stdout = io::stdout();
-    stdout.execute(DisableMouseCapture)?;
-    stdout.execute(LeaveAlternateScreen)?;
+    Ok(())
+}
+
+async fn run_agent_turn_tui(
+    client: &reqwest::Client,
+    api_key: &str,
+    cfg: &AgentConfig,
+    tools: &[crate::types::Tool],
+    messages: &mut Vec<Message>,
+    out: Option<&tokio::sync::mpsc::Sender<String>>,
+    effective_working_dir: &std::path::Path,
+    workspace_is_set: bool,
+    persistent_allowlist: HashSet<String>,
+    approval_rx: mpsc::Receiver<CommandApprovalDecision>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let out_tx = out.map(|t| t.clone());
+    let out_tx_cloned = out_tx.clone();
+    let approval_rx_shared: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>> =
+        Arc::new(Mutex::new(approval_rx));
+    let approval_request_guard = Arc::new(Mutex::new(()));
+    let persistent_allowlist_shared = Arc::new(Mutex::new(persistent_allowlist));
+    // 反思阶段由模型设置 workflow.done=true 来停止；
+    // 运行时也用 max_rounds 做兜底上限，避免模型忘记置 done=true 导致死循环。
+    let mut reflection_controller =
+        crate::workflow_reflection_controller::WorkflowReflectionController::new(5);
+    // 方案 C：运行时校验模型最终回答 content 中是否包含“规划”。
+    // 仅当反思进入规划（plan）阶段时启用，若缺失则追加纠正消息让模型重写。
+    let mut require_plan_in_final_content = false;
+    let mut plan_rewrite_attempts: usize = 0;
+    const MAX_PLAN_REWRITE_ATTEMPTS: usize = 2;
+    let assistant_content_has_plan = |content: &str| -> bool {
+        content.contains("## 规划") || content.contains("规划：")
+    };
+    'outer: loop {
+        let req = ChatRequest {
+            model: cfg.model.clone(),
+            messages: messages.clone(),
+            tools: Some(tools.to_vec()),
+            tool_choice: Some("auto".to_string()),
+            max_tokens: cfg.max_tokens,
+            temperature: cfg.temperature,
+            stream: None,
+        };
+        let (msg, finish_reason) =
+            stream_chat(client, api_key, &cfg.api_base, &req, out, false).await?;
+        messages.push(msg.clone());
+        if finish_reason != "tool_calls" {
+            if require_plan_in_final_content {
+                let content = msg.content.as_deref().unwrap_or("");
+                if !assistant_content_has_plan(content) {
+                    if plan_rewrite_attempts < MAX_PLAN_REWRITE_ATTEMPTS {
+                        plan_rewrite_attempts += 1;
+                        messages.push(Message {
+                            role: "user".to_string(),
+                            content: Some(
+                                "你的最终回答缺少规划。请在 content 中包含规划部分，并以 `## 规划` 作为标题（随后再给出执行/结论）。请直接重写本轮最终回答。".to_string(),
+                            ),
+                            tool_calls: None,
+                            name: None,
+                            tool_call_id: None,
+                        });
+                        continue 'outer;
+                    }
+                } else {
+                    // 本轮已包含规划，允许直接结束本轮最终回答。
+                }
+            }
+            break;
+        }
+        let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+        if let Some(tx) = out_tx_cloned.as_ref() {
+            let _ = tx.send(r#"{"tool_running":true}"#.to_string()).await;
+        }
+        for tc in tool_calls {
+            let name = tc.function.name.clone();
+            let args = tc.function.arguments.clone();
+            let id = tc.id.clone();
+            if let Some(tx) = out_tx_cloned.as_ref() {
+                if let Some(summary) = crate::tools::summarize_tool_call(&name, &args) {
+                    let payload = serde_json::json!({ "tool_call": { "name": name, "summary": summary } });
+                    let _ = tx.send(payload.to_string()).await;
+                }
+            }
+            let mut reflection_after_tool: Option<serde_json::Value> = None;
+            let result = if name == "workflow_execute" {
+                let decision = reflection_controller.decide(&args);
+                reflection_after_tool = decision.inject_instruction.clone();
+                if let Some(v) = reflection_after_tool.as_ref() {
+                    if v.get("instruction_type")
+                        .and_then(|x| x.as_str())
+                        == Some("workflow_reflection_plan_next")
+                    {
+                        require_plan_in_final_content = true;
+                    }
+                }
+                let tool_args = if let Some(patch) = decision.workflow_args_patch.as_ref() {
+                    crate::workflow_reflection_controller::apply_workflow_patch(&args, patch)
+                } else {
+                    args.to_string()
+                };
+
+                if decision.execute {
+                    // 实际执行 workflow_execute（done=true 时由 workflow.rs 直接跳过 DAG）
+                    let approval_mode = if let Some(tx) = out_tx_cloned.as_ref() {
+                        crate::workflow::WorkflowApprovalMode::Tui {
+                            out_tx: tx.clone(),
+                            approval_rx: approval_rx_shared.clone(),
+                            approval_request_guard: approval_request_guard.clone(),
+                            persistent_allowlist: persistent_allowlist_shared.clone(),
+                        }
+                    } else {
+                        crate::workflow::WorkflowApprovalMode::NoApproval
+                    };
+
+                    if let Err(contract_err) =
+                        crate::workflow_reflection_controller::validate_workflow_execute_do_contract(&tool_args)
+                    {
+                        contract_err.to_string()
+                    } else {
+                        let (wf_out, _wf_workspace_changed) =
+                            crate::workflow::run_workflow_execute_tool(
+                                &tool_args,
+                                &cfg,
+                                effective_working_dir,
+                                workspace_is_set,
+                                approval_mode,
+                                cfg.command_max_output_len,
+                            )
+                            .await;
+                        wf_out
+                    }
+                } else {
+                    let stop_v = decision.stop_output.unwrap_or_else(|| {
+                        serde_json::Value::String(
+                            "workflow_execute 已停止（反思控制器拒绝继续执行）。".to_string(),
+                        )
+                    });
+                    match stop_v {
+                        serde_json::Value::String(s) => s,
+                        v => v.to_string(),
+                    }
+                }
+            } else if name == "run_command" {
+                if !workspace_is_set {
+                    "错误：未设置工作区，禁止执行命令。".to_string()
+                } else {
+                    let v: serde_json::Value = serde_json::from_str(&args).unwrap_or_default();
+                    let cmd = v
+                        .get("command")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_lowercase();
+                    let arg_preview = v
+                        .get("args")
+                        .and_then(|x| x.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|x| x.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        })
+                        .unwrap_or_default();
+                    let mut effective_allowed = cfg.allowed_commands.clone();
+                    if !cmd.is_empty()
+                        && !effective_allowed.iter().any(|c| c.eq_ignore_ascii_case(&cmd))
+                    {
+                        let already_allowed = persistent_allowlist_shared.lock().await.contains(&cmd);
+                        if already_allowed {
+                            effective_allowed.push(cmd.clone());
+                            crate::tools::run_tool(
+                                &name,
+                                &args,
+                                cfg.command_max_output_len,
+                                cfg.weather_timeout_secs,
+                                &effective_allowed,
+                                effective_working_dir,
+                            )
+                        } else {
+                            let decision = {
+                                let _guard = approval_request_guard.lock().await;
+                                if let Some(tx) = out_tx_cloned.as_ref() {
+                                    let payload = serde_json::json!({
+                                        "command_approval_request": {
+                                            "command": cmd,
+                                            "args": arg_preview
+                                        }
+                                    });
+                                    let _ = tx.send(payload.to_string()).await;
+                                }
+                                let mut rx_guard = approval_rx_shared.lock().await;
+                                rx_guard.recv().await.unwrap_or(CommandApprovalDecision::Deny)
+                            };
+                            match decision {
+                                CommandApprovalDecision::Deny => {
+                                    let cmd_show = if arg_preview.is_empty() {
+                                        cmd
+                                    } else {
+                                        format!("{} {}", cmd, arg_preview)
+                                    };
+                                    format!("用户拒绝执行命令：{}", cmd_show.trim())
+                                }
+                                CommandApprovalDecision::AllowOnce => {
+                                    effective_allowed.push(cmd.clone());
+                                    crate::tools::run_tool(
+                                        &name,
+                                        &args,
+                                        cfg.command_max_output_len,
+                                        cfg.weather_timeout_secs,
+                                        &effective_allowed,
+                                        effective_working_dir,
+                                    )
+                                }
+                                CommandApprovalDecision::AllowAlways => {
+                                    persistent_allowlist_shared.lock().await.insert(cmd.clone());
+                                    effective_allowed.push(cmd.clone());
+                                    crate::tools::run_tool(
+                                        &name,
+                                        &args,
+                                        cfg.command_max_output_len,
+                                        cfg.weather_timeout_secs,
+                                        &effective_allowed,
+                                        effective_working_dir,
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        crate::tools::run_tool(
+                            &name,
+                            &args,
+                            cfg.command_max_output_len,
+                            cfg.weather_timeout_secs,
+                            &effective_allowed,
+                            effective_working_dir,
+                        )
+                    }
+                }
+            } else {
+                crate::tools::run_tool(
+                    &name,
+                    &args,
+                    cfg.command_max_output_len,
+                    cfg.weather_timeout_secs,
+                    &cfg.allowed_commands,
+                    effective_working_dir,
+                )
+            };
+            if let Some(tx) = out {
+                if tx.is_closed() {
+                    break 'outer;
+                }
+                let payload = serde_json::json!({
+                    "tool_result": {
+                        "name": tc.function.name,
+                        "output": result,
+                    }
+                });
+                let _ = tx.send(payload.to_string()).await;
+            }
+            messages.push(Message {
+                role: "tool".to_string(),
+                content: Some(result),
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some(id),
+            });
+
+            if let Some(instruction) = reflection_after_tool {
+                let instruction_str = serde_json::to_string(&instruction)
+                    .unwrap_or_else(|_| "".to_string());
+                messages.push(Message {
+                    role: "user".to_string(),
+                    content: Some(instruction_str),
+                    tool_calls: None,
+                    name: None,
+                    tool_call_id: None,
+                });
+            }
+        }
+        if let Some(tx) = out {
+            let _ = tx.send(r#"{"tool_running":false}"#.to_string()).await;
+        }
+    }
     Ok(())
 }
 
@@ -408,6 +844,7 @@ async fn handle_key(
     state: &mut TuiState,
     agent_running: &mut Option<tokio::task::JoinHandle<()>>,
     assistant_buf: &mut String,
+    approval_tx: &mut Option<mpsc::Sender<CommandApprovalDecision>>,
     tx: &mpsc::Sender<String>,
     cfg: &AgentConfig,
     client: &reqwest::Client,
@@ -416,14 +853,17 @@ async fn handle_key(
     no_stream: bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     // exit
-    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+    if key.key == KeyCode::Char('c') && key.modifiers.contains(Modifiers::CTRL) {
         return Ok(true);
     }
 
+    // Any keyboard activity should cancel mouse-down cursor mirroring.
+    state.cursor_mouse_pos = None;
+
     // modal / prompt
     if state.mode == Mode::FileView {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
+        match key.key {
+            KeyCode::Escape | KeyCode::Char('q') => {
                 state.mode = Mode::Normal;
                 state.file_view_title.clear();
                 state.file_view_content.clear();
@@ -433,8 +873,8 @@ async fn handle_key(
         return Ok(false);
     }
     if state.mode == Mode::Prompt {
-        match key.code {
-            KeyCode::Esc => {
+        match key.key {
+            KeyCode::Escape => {
                 state.mode = Mode::Normal;
                 state.prompt.clear();
                 state.prompt_title.clear();
@@ -471,9 +911,92 @@ async fn handle_key(
                 state.prompt.pop();
             }
             KeyCode::Char(ch) => {
-                if !key.modifiers.contains(KeyModifiers::CONTROL) && !key.modifiers.contains(KeyModifiers::ALT) {
+                if !key.modifiers.contains(Modifiers::CTRL) && !key.modifiers.contains(Modifiers::ALT) {
                     state.prompt.push(ch);
                 }
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
+    if state.mode == Mode::CommandApprove {
+        async fn submit_approval(
+            state: &mut TuiState,
+            approval_tx: &mut Option<mpsc::Sender<CommandApprovalDecision>>,
+            cfg: &AgentConfig,
+            decision: CommandApprovalDecision,
+        ) {
+            if let CommandApprovalDecision::AllowAlways = decision {
+                let cmd = state.pending_command.trim().to_lowercase();
+                if !cmd.is_empty() {
+                    state.persistent_command_allowlist.insert(cmd);
+                    save_persistent_allowlist(
+                        &state.allowlist_file,
+                        &state.persistent_command_allowlist,
+                    );
+                }
+            }
+            if let Some(ch) = approval_tx.as_ref() {
+                let _ = ch.send(decision).await;
+            }
+            state.mode = Mode::Normal;
+            state.status_line = format!(
+                "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
+                cfg.model,
+                focus_name(state.focus)
+            );
+            state.pending_command.clear();
+            state.pending_command_args.clear();
+        }
+
+        match key.key {
+            KeyCode::Escape => {
+                state.approve_choice = 0;
+            }
+            KeyCode::LeftArrow => {
+                state.approve_choice = state.approve_choice.saturating_sub(1);
+            }
+            KeyCode::RightArrow => {
+                state.approve_choice = (state.approve_choice + 1).min(2);
+            }
+            KeyCode::Char('1') => state.approve_choice = 0,
+            KeyCode::Char('2') => state.approve_choice = 1,
+            KeyCode::Char('3') => state.approve_choice = 2,
+            // 快捷键：d=拒绝，o=本次允许，p=永久允许（按下即确认）
+            KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'d') => {
+                submit_approval(
+                    state,
+                    approval_tx,
+                    cfg,
+                    CommandApprovalDecision::Deny,
+                )
+                .await;
+            }
+            KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'o') => {
+                submit_approval(
+                    state,
+                    approval_tx,
+                    cfg,
+                    CommandApprovalDecision::AllowOnce,
+                )
+                .await;
+            }
+            KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'p') => {
+                submit_approval(
+                    state,
+                    approval_tx,
+                    cfg,
+                    CommandApprovalDecision::AllowAlways,
+                )
+                .await;
+            }
+            KeyCode::Enter => {
+                let decision = match state.approve_choice {
+                    1 => CommandApprovalDecision::AllowOnce,
+                    2 => CommandApprovalDecision::AllowAlways,
+                    _ => CommandApprovalDecision::Deny,
+                };
+                submit_approval(state, approval_tx, cfg, decision).await;
             }
             _ => {}
         }
@@ -482,8 +1005,8 @@ async fn handle_key(
 
     // 全局帮助弹窗优先处理（除 Ctrl+C 外）
     if state.show_help {
-        match key.code {
-            KeyCode::F(1) | KeyCode::Esc => {
+        match key.key {
+            KeyCode::Function(1) | KeyCode::Escape => {
                 state.show_help = false;
             }
             _ => {}
@@ -491,36 +1014,43 @@ async fn handle_key(
         return Ok(false);
     }
 
-    match key.code {
-        KeyCode::F(1) => {
+    match key.key {
+        KeyCode::Function(1) => {
             state.show_help = !state.show_help;
         }
-        KeyCode::F(2) => {
-            state.focus = if state.focus == Focus::Chat { Focus::Right } else { Focus::Chat };
+        KeyCode::Function(2) => {
+            // Keyboard focus switching doesn't carry a click position.
+            state.cursor_override = None;
+            state.focus = match state.focus {
+                Focus::ChatView => Focus::ChatInput,
+                Focus::ChatInput => Focus::Workspace,
+                Focus::Workspace => Focus::Right,
+                Focus::Right => Focus::ChatView,
+            };
             state.status_line = format!(
                 "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
                 cfg.model,
-                if state.focus == Focus::Chat { "聊天" } else { "右侧" }
+                focus_name(state.focus)
             );
         }
-        KeyCode::F(3) => {
+        KeyCode::Function(3) => {
             state.code_theme_idx = (state.code_theme_idx + 1) % code_themes().len();
             state.status_line = format!("代码主题：{}（F3 切换）", code_themes()[state.code_theme_idx]);
         }
-        KeyCode::F(4) => {
+        KeyCode::Function(4) => {
             state.md_style = if state.md_style == 0 { 1 } else { 0 };
             state.status_line = format!(
                 "Markdown样式：{}（F4 切换）",
                 if state.md_style == 0 { "dark" } else { "light" }
             );
         }
-        KeyCode::F(5) => {
+        KeyCode::Function(5) => {
             state.high_contrast = !state.high_contrast;
             state.status_line = format!(
                 "高对比度：{}（F5 切换）  |  模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
                 if state.high_contrast { "开" } else { "关" },
                 cfg.model,
-                if state.focus == Focus::Chat { "聊天" } else { "右侧" }
+                focus_name(state.focus)
             );
         }
         KeyCode::PageUp => {
@@ -541,6 +1071,10 @@ async fn handle_key(
                 RightTab::Tasks => RightTab::Schedule,
                 RightTab::Schedule => RightTab::Workspace,
             };
+            // 只有在工作区标签时才允许“工作区焦点”
+            if state.focus == Focus::Workspace && state.tab != RightTab::Workspace {
+                state.focus = Focus::Right;
+            }
             // refresh view data on tab switch
             match state.tab {
                 RightTab::Workspace => refresh_workspace(state),
@@ -548,8 +1082,8 @@ async fn handle_key(
                 RightTab::Schedule => refresh_schedule(state),
             }
         }
-        KeyCode::Up => {
-            if state.focus == Focus::Right {
+        KeyCode::UpArrow => {
+            if state.focus == Focus::Right || state.focus == Focus::Workspace {
                 match state.tab {
                     RightTab::Workspace => {
                         if !state.workspace_entries.is_empty() {
@@ -573,8 +1107,8 @@ async fn handle_key(
                 }
             }
         }
-        KeyCode::Down => {
-            if state.focus == Focus::Right {
+        KeyCode::DownArrow => {
+            if state.focus == Focus::Right || state.focus == Focus::Workspace {
                 match state.tab {
                     RightTab::Workspace => {
                         if !state.workspace_entries.is_empty() {
@@ -607,7 +1141,7 @@ async fn handle_key(
             refresh_schedule(state);
         }
         KeyCode::Enter => {
-            if state.focus == Focus::Right {
+            if state.focus == Focus::Right || state.focus == Focus::Workspace {
                 match state.tab {
                     RightTab::Workspace => {
                         workspace_open_or_enter(state);
@@ -622,9 +1156,10 @@ async fn handle_key(
                 return Ok(false);
             }
             // send chat
-            if agent_running.is_none() && state.focus == Focus::Chat {
+            if agent_running.is_none() && state.focus == Focus::ChatInput {
                 let q = state.input.trim().to_string();
                 if !q.is_empty() {
+                    state.cursor_override = None;
                     state.input.clear();
                     // 若当前在底部，则保持自动滚动；否则保留用户的历史查看位置
                     if state.chat_scroll <= 0 {
@@ -656,9 +1191,13 @@ async fn handle_key(
                     let client = client.clone();
                     let api_key = api_key.to_string();
                     let tools = tools.to_vec();
+                    let persistent_allowlist = state.persistent_command_allowlist.clone();
+                    let (approve_tx_ch, approve_rx_ch) =
+                        mpsc::channel::<CommandApprovalDecision>(8);
+                    *approval_tx = Some(approve_tx_ch);
                     *agent_running = Some(tokio::spawn(async move {
                         let out = Some(&tx2);
-                        let _ = run_agent_turn(
+                        let _ = run_agent_turn_tui(
                             &client,
                             &api_key,
                             &cfg,
@@ -667,9 +1206,9 @@ async fn handle_key(
                             out,
                             &work_dir,
                             workspace_is_set,
-                            false,
-                        )
-                        .await;
+                            persistent_allowlist,
+                            approve_rx_ch,
+                        ).await;
                         // 结束标记交给上层通过 join handle 检测
                         let _ = tx2.send(r#"{"tool_running":false}"#.to_string()).await;
                     }));
@@ -677,9 +1216,12 @@ async fn handle_key(
             }
         }
         KeyCode::Backspace => {
-            if state.focus == Focus::Right && state.tab == RightTab::Workspace {
+            if (state.focus == Focus::Right || state.focus == Focus::Workspace)
+                && state.tab == RightTab::Workspace
+            {
                 workspace_go_up(state);
-            } else if state.focus == Focus::Chat {
+            } else if state.focus == Focus::ChatInput {
+                state.cursor_override = None;
                 state.input.pop();
             }
         }
@@ -697,6 +1239,7 @@ async fn handle_key(
                     _ => {}
                 }
             } else {
+                state.cursor_override = None;
                 state.input.push(' ');
             }
         }
@@ -718,8 +1261,9 @@ async fn handle_key(
             }
         }
         KeyCode::Char(ch) => {
-            if !key.modifiers.contains(KeyModifiers::CONTROL) && !key.modifiers.contains(KeyModifiers::ALT) {
-                if state.focus == Focus::Chat {
+            if !key.modifiers.contains(Modifiers::CTRL) && !key.modifiers.contains(Modifiers::ALT) {
+                if state.focus == Focus::ChatInput {
+                    state.cursor_override = None;
                     state.input.push(ch);
                 }
             }
@@ -942,6 +1486,139 @@ fn draw_ui(f: &mut ratatui::Frame<'_>, state: &TuiState) {
     draw_chat(f, chunks[0], state);
     draw_right(f, chunks[1], state);
 
+    // 是否显示“手工粗分隔线”（━/┃）。
+    // 你当前希望彻底隐藏这些线，因此默认关闭。
+    const SHOW_SEPARATORS: bool = false;
+    if SHOW_SEPARATORS {
+        // 统一在最后覆盖绘制粗分隔线，确保窗口交界不留空隙
+        // 说明：先画横线，再画竖线（竖线最后），以保证交点处是“┃”而不是被“━”覆盖。
+        let sep_style = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
+
+        // 左侧：聊天/输入/状态 的横分隔线
+        let left_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(3),
+                Constraint::Length(state.input_rows.max(2)),
+                Constraint::Length(1),
+            ])
+            .split(chunks[0]);
+
+        // chat<->input
+        let left_sep1_y = left_chunks[1].y;
+        for dy in 0..2u16 {
+            let y = left_sep1_y.saturating_add(dy);
+            if y >= area.y.saturating_add(area.height) {
+                continue;
+            }
+            let sep_area = Rect::new(chunks[0].x, y, chunks[0].width, 1);
+            f.render_widget(Clear, sep_area);
+            f.render_widget(
+                Paragraph::new("━".repeat(chunks[0].width as usize)).style(sep_style),
+                sep_area,
+            );
+        }
+
+        // input<->status
+        let left_sep2_y = left_chunks[2].y;
+        for dy in 0..2u16 {
+            let y = left_sep2_y.saturating_add(dy);
+            if y >= area.y.saturating_add(area.height) {
+                continue;
+            }
+            let sep_area = Rect::new(chunks[0].x, y, chunks[0].width, 1);
+            f.render_widget(Clear, sep_area);
+            f.render_widget(
+                Paragraph::new("━".repeat(chunks[0].width as usize)).style(sep_style),
+                sep_area,
+            );
+        }
+
+        // 右侧：标签与内容横分隔线
+        let right_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(3)])
+            .split(chunks[1]);
+
+        let right_sep_y = right_chunks[1].y;
+        for dy in 0..2u16 {
+            let y = right_sep_y.saturating_add(dy);
+            if y >= area.y.saturating_add(area.height) {
+                continue;
+            }
+            let sep_area = Rect::new(chunks[1].x, y, chunks[1].width, 1);
+            f.render_widget(Clear, sep_area);
+            f.render_widget(
+                Paragraph::new("━".repeat(chunks[1].width as usize)).style(sep_style),
+                sep_area,
+            );
+        }
+
+        // 左右主区域竖分隔线（最后绘制）
+        let separator_x_start = chunks[1].x.saturating_sub(1);
+        // 中央竖线覆盖 2 列
+        for dx in 0..2u16 {
+            let x = separator_x_start.saturating_add(dx);
+            if x >= area.x.saturating_add(area.width) {
+                continue;
+            }
+            let sep_area = Rect::new(x, area.y, 1, area.height);
+            f.render_widget(Clear, sep_area);
+            let vbar_lines: Vec<Line<'_>> =
+                (0..sep_area.height).map(|_| Line::raw("┃")).collect();
+            f.render_widget(Paragraph::new(vbar_lines).style(sep_style), sep_area);
+        }
+    }
+
+    if state.mode == Mode::CommandApprove {
+        let w = area.width.saturating_mul(7) / 10;
+        let h: u16 = 9;
+        let x = area.x + (area.width.saturating_sub(w)) / 2;
+        let y = area.y + (area.height.saturating_sub(h)) / 2;
+        let popup = Rect::new(x, y, w.max(50), h);
+        let options = ["拒绝", "本次允许", "永久允许"];
+        let mut option_line: Vec<Span<'_>> = Vec::new();
+        for (i, text) in options.iter().enumerate() {
+            if i as u8 == state.approve_choice {
+                option_line.push(Span::styled(
+                    format!("[{}]", text),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                ));
+            } else {
+                option_line.push(Span::raw(format!(" {} ", text)));
+            }
+            option_line.push(Span::raw("  "));
+        }
+        let args_text = if state.pending_command_args.trim().is_empty() {
+            "(无参数)".to_string()
+        } else {
+            state.pending_command_args.clone()
+        };
+        let lines = vec![
+            Line::from(Span::styled(
+                "命令执行审批",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::raw(format!("命令: {}", state.pending_command)),
+            Line::raw(format!("参数: {}", args_text)),
+            Line::raw(""),
+            Line::from(option_line),
+            Line::raw("←/→ 选择，Enter 确认（1/2/3 选项，Esc=拒绝）"),
+            Line::raw("快捷键：D=拒绝，O=本次允许，P=永久允许（按下即确认）"),
+        ];
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .title(" 命令审批 ");
+        let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
+        f.render_widget(Clear, popup);
+        f.render_widget(para, popup);
+    }
+
     if state.show_help {
         // 居中弹窗区域（约 70% 宽、80% 高）
         let w = area.width.saturating_mul(7) / 10;
@@ -995,17 +1672,51 @@ fn draw_chat(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
         .split(area);
 
     let mut lines: Vec<Line<'_>> = Vec::new();
-    for m in state.messages.iter().filter(|m| m.role != "system") {
-        let role = if m.role == "user" { "你" } else { "Agent" };
-        let raw = m.content.as_deref().unwrap_or("");
-        // 轻量公式渲染：将常见 LaTeX 命令替换为 Unicode 符号，便于在终端阅读。
-        // 为了满足 ratatui Text 的生命周期约束，这里将结果提升为 'static。
-        let rendered_owned = latex_to_unicode(raw);
-        let rendered: &'static str = Box::leak(rendered_owned.into_boxed_str());
-        lines.push(Line::from(Span::styled(
-            format!("{}:", role),
-            Style::default().add_modifier(Modifier::BOLD),
-        )));
+    let chat_inner_width = vchunks[0].width.saturating_sub(2) as usize;
+    // 先把本次 draw_chat 里要渲染的消息 + latex_to_unicode 结果一次性算出来，
+    // 再生成 Line<'_>（Line 内部引用的 &str 生命周期由 rendered_list 持有，且 draw_chat 期间不会再被修改）。
+    let chat_msgs: Vec<&Message> = state.messages.iter().filter(|m| m.role != "system").collect();
+    let rendered_list: Vec<String> = chat_msgs
+        .iter()
+        .map(|m| {
+            // 让 workflow_execute/tool 等“结构化 JSON 输出”回落为可读摘要，提升 TUI 可用性。
+            let raw = m.content.as_deref().unwrap_or("");
+            let display_raw = if m.role == "tool" {
+                serde_json::from_str::<serde_json::Value>(raw)
+                    .ok()
+                    .and_then(|v| v.get("human_summary").and_then(|x| x.as_str()).map(|s| s.to_string()))
+                    .unwrap_or_else(|| raw.to_string())
+            } else {
+                raw.to_string()
+            };
+            latex_to_unicode(&display_raw)
+        })
+        .collect();
+
+    for (idx, m) in chat_msgs.iter().enumerate() {
+        let role = if m.role == "user" { "我" } else { "模型" };
+        let rendered = rendered_list[idx].as_str();
+        if m.role == "user" {
+            let role_text = format!("{}:", role);
+            let role_padded = if role_text.width() >= chat_inner_width {
+                role_text
+            } else {
+                format!(
+                    "{}{}",
+                    " ".repeat(chat_inner_width.saturating_sub(role_text.width())),
+                    role_text
+                )
+            };
+            lines.push(Line::from(Span::styled(
+                role_padded,
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
+                format!("{}:", role),
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+        }
         if m.role == "assistant" {
             // 使用 tui-markdown 渲染：链接会包含 URL（便于复制/终端自动识别点击）。
             let theme = code_themes()[state.code_theme_idx];
@@ -1033,9 +1744,18 @@ fn draw_chat(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
             };
             lines.extend(text.lines.into_iter());
         } else {
-            // user message: keep raw to avoid surprising formatting
+            // user message: keep raw and right-align
             for l in rendered.lines() {
-                lines.push(Line::raw(l));
+                let padded = if l.width() >= chat_inner_width {
+                    l.to_string()
+                } else {
+                    format!(
+                        "{}{}",
+                        " ".repeat(chat_inner_width.saturating_sub(l.width())),
+                        l
+                    )
+                };
+                lines.push(Line::raw(padded));
             }
         }
         lines.push(Line::raw("")); // spacer
@@ -1051,157 +1771,311 @@ fn draw_chat(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
         let end = (offset + height).min(total) as usize;
         lines = lines[start..end].to_vec();
     }
-    let chat_focused = state.focus == Focus::Chat;
-    let chat_block = if chat_focused {
-        Block::default()
-            .borders(Borders::ALL)
-            .title("对话")
-            .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-            .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-    } else {
-        Block::default()
-            .borders(Borders::ALL)
-            .title("对话")
-            .border_style(Style::default().fg(Color::DarkGray))
-            .title_style(Style::default().fg(Color::DarkGray))
-    };
+    // 顶部聊天区：使用角标替代边框线
+    let chat_focused = state.focus == Focus::ChatView;
+    let chat_block = Block::default()
+        .borders(Borders::NONE)
+        // 给内容预留 1 格空边，避免内容覆盖角标
+        .padding(Padding::symmetric(1, 1))
+        .style(Style::default().bg(Color::Black));
     let chat = Paragraph::new(lines)
         .block(chat_block)
         .wrap(Wrap { trim: false });
     f.render_widget(chat, vchunks[0]);
+    let chat_corner_style = Style::default()
+        .fg(if chat_focused { Color::Cyan } else { Color::DarkGray })
+        .add_modifier(Modifier::BOLD);
+    draw_rect_corners(
+        f,
+        vchunks[0],
+        "┏",
+        "┓",
+        "┗",
+        "┛",
+        chat_corner_style,
+    );
 
-    let input_title = if state.mode == Mode::Prompt {
-        state.prompt_title.as_str()
-    } else if state.focus == Focus::Chat {
-        "输入（Enter 发送 | F2 切到右侧 | 底部拖动调节高度）"
-    } else {
-        "输入（F2 切回聊天 | 底部拖动调节高度）"
-    };
     let input_text = if state.mode == Mode::Prompt {
         state.prompt.as_str()
     } else {
         state.input.as_str()
     };
-    let input_focused = state.mode == Mode::Prompt || state.focus == Focus::Chat;
-    let input_block = if input_focused {
-        Block::default()
-            .borders(Borders::ALL)
-            .title(input_title)
-            .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-            .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-    } else {
-        Block::default()
-            .borders(Borders::ALL)
-            .title(input_title)
-            .border_style(Style::default().fg(Color::DarkGray))
-            .title_style(Style::default().fg(Color::DarkGray))
-    };
+    let input_focused = state.mode == Mode::Prompt || state.focus == Focus::ChatInput;
+    // 输入框四个角用“角标”代替边框线
+    let input_block = Block::default()
+        .borders(Borders::NONE)
+        .padding(Padding::symmetric(1, 1))
+        .style(Style::default().bg(Color::DarkGray));
     let input = Paragraph::new(input_text)
         .block(input_block)
-        .style(if input_focused { Style::default() } else { Style::default().fg(Color::Gray) })
+        // Use a stable fg/bg regardless of focus.
+        // Some terminals (xfce4-terminal) show a brief local color flash when switching focus.
+        .style(Style::default().fg(Color::Gray).bg(Color::DarkGray))
         .wrap(Wrap { trim: false });
     f.render_widget(input, vchunks[1]);
 
-    // 显示终端光标（由终端负责闪烁）：聚焦时把光标放到输入内容末尾
-    if input_focused {
-        let inner = vchunks[1].inner(Margin { vertical: 1, horizontal: 1 });
-        if inner.width > 0 && inner.height > 0 {
-            let lines: Vec<&str> = input_text.split('\n').collect();
-            let line_idx = lines.len().saturating_sub(1);
-            let last = lines.get(line_idx).copied().unwrap_or("");
-            let x_off = last.width() as u16;
-            let x = inner.x.saturating_add(x_off).min(inner.x + inner.width.saturating_sub(1));
-            let y = inner.y.saturating_add(line_idx as u16).min(inner.y + inner.height.saturating_sub(1));
+    // 绘制输入框四角（角标字符包含竖向边的语义）
+    let input_corner_style = Style::default()
+        .fg(if input_focused { Color::Yellow } else { Color::DarkGray })
+        .add_modifier(Modifier::BOLD);
+    draw_rect_corners(
+        f,
+        vchunks[1],
+        "┏",
+        "┓",
+        "┗",
+        "┛",
+        input_corner_style,
+    );
+
+    // 光标刷新尽量只在“输入框聚焦”时做，避免模型滚动/切换焦点时
+    // 光标位置被反复 set_cursor_position 导致 xfce4-terminal 局部背景闪烁。
+    if state.mode != Mode::CommandApprove && !state.show_help {
+        // mouse-down one-shot: mirror to the clicked cell (only armed when click is in input area)
+        if let Some((mx, my)) = state.cursor_mouse_pos {
+            let area = f.area();
+            let max_x = area.x.saturating_add(area.width.saturating_sub(1));
+            let max_y = area.y.saturating_add(area.height.saturating_sub(1));
+            let x = mx.min(max_x);
+            let y = my.min(max_y);
             f.set_cursor_position((x, y));
+        } else if input_focused {
+            // keep cursor inside input area when focused
+            let inner = vchunks[1].inner(Margin { vertical: 1, horizontal: 1 });
+            if inner.width > 0 && inner.height > 0 {
+                if let Some((cx, cy)) = state.cursor_override {
+                    // Put cursor near the click spot, clamped into the input content area.
+                    let rel_x = cx.saturating_sub(inner.x);
+                    let rel_y = cy.saturating_sub(inner.y);
+                    let max_dx = inner.width.saturating_sub(1);
+                    let max_dy = inner.height.saturating_sub(1);
+                    let x = inner.x.saturating_add(rel_x.min(max_dx));
+                    let y = inner.y.saturating_add(rel_y.min(max_dy));
+                    f.set_cursor_position((x, y));
+                } else {
+                    // Default: cursor at end of current input text.
+                    let lines: Vec<&str> = input_text.split('\n').collect();
+                    let line_idx = lines.len().saturating_sub(1);
+                    let last = lines.get(line_idx).copied().unwrap_or("");
+                    let x_off = last.width() as u16;
+                    let x = inner
+                        .x
+                        .saturating_add(x_off)
+                        .min(inner.x + inner.width.saturating_sub(1));
+                    let y = inner
+                        .y
+                        .saturating_add(line_idx as u16)
+                        .min(inner.y + inner.height.saturating_sub(1));
+                    f.set_cursor_position((x, y));
+                }
+            }
         }
     }
 
-    let status_block = if state.focus == Focus::Chat {
-        Block::default()
-            .borders(Borders::ALL)
-            .title("状态（聊天聚焦）")
-            .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-            .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-    } else {
-        Block::default()
-            .borders(Borders::ALL)
-            .title("状态（右侧聚焦）")
-            .border_style(Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))
-            .title_style(Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))
+    // 状态区：使用角标替代边框线
+    let status_color = match state.focus {
+        Focus::ChatView => Color::Cyan,
+        Focus::ChatInput => Color::Yellow,
+        Focus::Workspace => Color::Green,
+        Focus::Right => Color::Magenta,
     };
-    let status = Paragraph::new(state.status_line.as_str()).block(status_block);
+    let status_bg = Color::Blue;
+    let status_block = Block::default()
+        .borders(Borders::NONE)
+        .padding(Padding::symmetric(1, 1))
+        .style(Style::default().bg(status_bg));
+    let status = Paragraph::new(state.status_line.as_str())
+        .block(status_block)
+        .style(Style::default().fg(status_color).bg(status_bg));
     f.render_widget(status, vchunks[2]);
+    let status_corner_style = Style::default()
+        .fg(status_color)
+        .add_modifier(Modifier::BOLD);
+    draw_rect_corners(
+        f,
+        vchunks[2],
+        "┏",
+        "┓",
+        "┗",
+        "┛",
+        status_corner_style,
+    );
+
 }
 
-fn handle_mouse(me: MouseEvent, state: &mut TuiState) {
-    match me.kind {
-        MouseEventKind::Down(MouseButton::Left) => {
-            // 在终端底部若干行内按下，进入“拖动输入区域高度”模式
-            if let Ok((_cols, rows)) = crossterm::terminal::size() {
-                if me.row >= rows.saturating_sub(6) {
-                    state.input_dragging = true;
-                    state.input_drag_row = me.row;
-                    state.status_line = format!(
-                        "正在拖动输入区域高度（当前：{} 行）",
-                        state.input_rows
-                    );
-                    return;
-                }
+fn handle_mouse(me: MouseEvent, state: &mut TuiState, cols: u16, rows: u16) {
+    let x = me.x;
+    let y = me.y;
+
+    // 1) 滚轮事件（termwiz：Button4=wheel up，Button5=wheel down）
+    if me.mouse_buttons.contains(MouseButtons::VERT_WHEEL) {
+        if me.mouse_buttons.contains(MouseButtons::WHEEL_POSITIVE) {
+            // wheel up
+            state.chat_scroll -= 3;
+            if state.chat_scroll < 0 {
+                state.chat_scroll = 0;
             }
-            // 普通点击：根据横向位置切换焦点（左侧=聊天，右侧=面板）
-            if let Ok((cols, _rows)) = crossterm::terminal::size() {
-                // 与布局保持一致：左 65% 聊天，右 35% 面板
-                let chat_width = (cols as f32 * 0.65).round() as u16;
-                let new_focus = if me.column < chat_width {
-                    Focus::Chat
-                } else {
-                    Focus::Right
-                };
-                if new_focus != state.focus {
-                    state.focus = new_focus;
-                    state.status_line = format!(
-                        "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                        state.status_line.split('：').nth(1).unwrap_or("").trim(),
-                        if state.focus == Focus::Chat { "聊天" } else { "右侧" }
-                    );
-                }
-            }
+        } else {
+            // wheel down
+            state.chat_scroll += 3;
         }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            if state.input_dragging {
-                let prev = state.input_drag_row;
-                let cur = me.row;
-                if cur != prev {
-                    let delta = prev as i16 - cur as i16;
-                    let new_rows = (state.input_rows as i16 + delta).clamp(3, 12) as u16;
-                    state.input_rows = new_rows;
-                    state.input_drag_row = cur;
-                    state.status_line = format!(
-                        "正在拖动输入区域高度（当前：{} 行）",
-                        state.input_rows
-                    );
-                }
+        return;
+    }
+
+    // 2) 鼠标拖动/点击逻辑（只看左键按下状态）
+    let left_pressed = me.mouse_buttons.contains(MouseButtons::LEFT);
+
+    if state.input_dragging {
+        // 拖动过程中：只要左键还按着，就按鼠标 y 增量调整输入高度
+        if left_pressed {
+            let prev = state.input_drag_row;
+            let cur = y;
+            if cur != prev {
+                let delta = prev as i16 - cur as i16;
+                let new_rows = (state.input_rows as i16 + delta).clamp(3, 12) as u16;
+                state.input_rows = new_rows;
+                state.input_drag_row = cur;
+                state.status_line = format!(
+                    "正在拖动输入区域高度（当前：{} 行）",
+                    state.input_rows
+                );
             }
-        }
-        MouseEventKind::Up(MouseButton::Left) => {
+        } else {
+            // 松开左键：结束拖动
             state.input_dragging = false;
             state.status_line = format!(
                 "输入区域高度已调整为 {} 行（在底部拖动可再次调整）",
                 state.input_rows
             );
         }
-        MouseEventKind::ScrollUp => {
-            // 鼠标滚轮向上：聊天区域向下滚（更符合多数终端/编辑器习惯）
-            state.chat_scroll -= 3;
-            if state.chat_scroll < 0 {
-                state.chat_scroll = 0;
+        return;
+    }
+
+    // 非拖动：左键按下时做命中（点击聚焦/底部进入高度拖动模式）
+    if left_pressed {
+        let chat_width = cols.saturating_mul(65) / 100;
+        let input_start_row = rows.saturating_sub(state.input_rows + 1);
+
+        // One-shot cursor mirroring for the next draw after mouse press.
+        // Only enable when the click lands inside the input box region.
+        if x < chat_width && y >= input_start_row {
+            state.cursor_mouse_pos = Some((x, y));
+        }
+
+        // 仅在左侧，且终端最底部 1 行（状态栏）按下时，进入高度拖动模式。
+        // 避免点击输入框（通常会落在倒数第 2 行）时误触发拖动逻辑导致闪烁/焦点异常。
+        if x < chat_width && y >= rows.saturating_sub(1) {
+            state.input_dragging = true;
+            state.input_drag_row = y;
+            state.status_line = format!(
+                "正在拖动输入区域高度（当前：{} 行）",
+                state.input_rows
+            );
+            return;
+        }
+
+        apply_click_focus_and_tab(x, y, cols, rows, state);
+    }
+}
+
+fn apply_click_focus_and_tab(
+    col: u16,
+    row: u16,
+    cols: u16,
+    rows: u16,
+    state: &mut TuiState,
+) {
+    let chat_width = cols.saturating_mul(65) / 100;
+    // 右侧面板的鼠标点击：为避免“mouse-down”视觉闪烁，将焦点/Tab 切换延迟到鼠标释放。
+    // 左侧（聊天/输入）保持即时响应。
+    let defer_to_release = col >= chat_width;
+
+    // 右侧标签栏点击：按列位置切换 tab（工作区/任务/日程）
+    if col >= chat_width && row <= 3 {
+        let right_x = col.saturating_sub(chat_width);
+        let right_w = cols.saturating_sub(chat_width).max(3);
+        let inner_w = right_w.saturating_sub(2).max(3);
+        let inner_x = right_x.saturating_sub(1).min(inner_w.saturating_sub(1));
+
+        // Tabs 是按内容宽度紧凑排布，不是平均三等分；按标题宽度做命中更准确
+        let titles = RightTab::titles();
+        let mut cursor: u16 = 0;
+        let mut tab_idx: u16 = 2;
+        for (i, t) in titles.iter().enumerate() {
+            // 每个标签近似渲染为 " <title> "
+            let w = (t.width() as u16).saturating_add(2);
+            if inner_x >= cursor && inner_x < cursor.saturating_add(w) {
+                tab_idx = i as u16;
+                break;
             }
+            // 标签间分隔符占 1 列
+            cursor = cursor.saturating_add(w).saturating_add(1);
         }
-        MouseEventKind::ScrollDown => {
-            // 鼠标滚轮向下：聊天区域向上滚
-            state.chat_scroll += 3;
+        let new_tab = match tab_idx {
+            0 => RightTab::Workspace,
+            1 => RightTab::Tasks,
+            _ => RightTab::Schedule,
+        };
+        let new_focus = match new_tab {
+            RightTab::Workspace => Focus::Workspace,
+            RightTab::Tasks => Focus::Right,
+            RightTab::Schedule => Focus::Right,
+        };
+
+        if defer_to_release {
+            state.pending_tab = Some(new_tab);
+            state.pending_focus = Some(new_focus);
+        } else {
+            state.tab = new_tab;
+            state.focus = new_focus;
+            state.status_line = format!(
+                "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
+                state.status_line.split('：').nth(1).unwrap_or("").trim(),
+                focus_name(state.focus)
+            );
         }
-        _ => {}
+        return;
+    }
+
+    let new_focus = if col < chat_width {
+        // 左侧区域再按纵向分成“聊天区 / 输入区”
+        let input_start_row = rows.saturating_sub(state.input_rows + 1);
+        if row >= input_start_row {
+            Focus::ChatInput
+        } else {
+            Focus::ChatView
+        }
+    } else {
+        // 右侧再细分：workspace 标签下，点内容区聚焦到“工作区”
+        let tabs_h: u16 = 3;
+        if state.tab == RightTab::Workspace && row > tabs_h {
+            Focus::Workspace
+        } else {
+            Focus::Right
+        }
+    };
+
+    if new_focus != state.focus {
+        if defer_to_release {
+            state.pending_focus = Some(new_focus);
+        } else {
+            state.focus = new_focus;
+            if new_focus == Focus::ChatInput {
+                // Arm a one-shot cursor override so it appears where the user clicked.
+                state.cursor_override = Some((col, row));
+            }
+            state.status_line = format!(
+                "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
+                state.status_line.split('：').nth(1).unwrap_or("").trim(),
+                focus_name(state.focus)
+            );
+        }
+    }
+
+    // If the click lands inside the input area, always reposition the cursor immediately.
+    // This is safe for the requested flicker fix (right-panel clicks are deferred).
+    if new_focus == Focus::ChatInput && !defer_to_release {
+        state.cursor_override = Some((col, row));
     }
 }
 
@@ -1216,24 +2090,37 @@ fn draw_right(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
         .map(|t| Line::from(Span::raw(*t)))
         .collect();
     let right_focused = state.focus == Focus::Right;
-    let tabs_block = if right_focused {
-        Block::default()
-            .borders(Borders::ALL)
-            .title("面板（Tab 切换）")
-            .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-            .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-    } else {
-        Block::default()
-            .borders(Borders::ALL)
-            .title("面板（Tab 切换）")
-            .border_style(Style::default().fg(Color::DarkGray))
-            .title_style(Style::default().fg(Color::DarkGray))
-    };
+    // Tabs 区：使用角标替代边框线
+    let tabs_bg = Color::DarkGray;
+    let tabs_block = Block::default()
+        .borders(Borders::NONE)
+        .padding(Padding::symmetric(1, 1))
+        .style(Style::default().bg(tabs_bg));
     let tabs = Tabs::new(titles)
         .select(state.tab as usize)
         .block(tabs_block)
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+        .highlight_style(
+            Style::default()
+                .fg(right_tab_color(state.tab))
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        );
     f.render_widget(tabs, vchunks[0]);
+    let tabs_corner_color = if right_focused {
+        right_tab_color(state.tab)
+    } else {
+        Color::DarkGray
+    };
+    draw_rect_corners(
+        f,
+        vchunks[0],
+        "┏",
+        "┓",
+        "┗",
+        "┛",
+        Style::default()
+            .fg(tabs_corner_color)
+            .add_modifier(Modifier::BOLD),
+    );
 
     match state.tab {
         RightTab::Workspace => {
@@ -1250,10 +2137,30 @@ fn draw_right(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
                     lines.push(Line::raw(s));
                 }
             }
+            let workspace_focused = state.focus == Focus::Workspace;
+            let workspace_block = Block::default()
+                .borders(Borders::NONE)
+                .padding(Padding::symmetric(1, 1))
+                .style(Style::default().bg(Color::Black));
             let w = Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("工作区（↑↓ 选择）"))
+                .block(workspace_block)
+                .style(Style::default().fg(Color::White))
                 .wrap(Wrap { trim: false });
             f.render_widget(w, vchunks[1]);
+            let c = if workspace_focused {
+                Color::Green
+            } else {
+                Color::DarkGray
+            };
+            draw_rect_corners(
+                f,
+                vchunks[1],
+                "┏",
+                "┓",
+                "┗",
+                "┛",
+                Style::default().fg(c).add_modifier(Modifier::BOLD),
+            );
         }
         RightTab::Tasks => {
             let mut lines = Vec::new();
@@ -1274,10 +2181,30 @@ fn draw_right(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
                     }
                 }
             }
+            let tasks_focused = state.focus == Focus::Right && state.tab == RightTab::Tasks;
+            let tasks_block = Block::default()
+                .borders(Borders::NONE)
+                .padding(Padding::symmetric(1, 1))
+                .style(Style::default().bg(Color::Blue));
             let w = Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("任务"))
+                .block(tasks_block)
+                .style(Style::default().fg(Color::White))
                 .wrap(Wrap { trim: false });
             f.render_widget(w, vchunks[1]);
+            let c = if tasks_focused {
+                Color::Yellow
+            } else {
+                Color::DarkGray
+            };
+            draw_rect_corners(
+                f,
+                vchunks[1],
+                "┏",
+                "┓",
+                "┗",
+                "┛",
+                Style::default().fg(c).add_modifier(Modifier::BOLD),
+            );
         }
         RightTab::Schedule => {
             let mut lines = Vec::new();
@@ -1332,22 +2259,54 @@ fn draw_right(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
                     }
                 }
             }
+            let schedule_focused = state.focus == Focus::Right && state.tab == RightTab::Schedule;
+            let schedule_block = Block::default()
+                .borders(Borders::NONE)
+                .padding(Padding::symmetric(1, 1))
+                .style(Style::default().bg(Color::Magenta));
             let w = Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("日程/提醒"))
+                .block(schedule_block)
+                .style(Style::default().fg(Color::White))
                 .wrap(Wrap { trim: false });
             f.render_widget(w, vchunks[1]);
+            let c = if schedule_focused {
+                Color::Cyan
+            } else {
+                Color::DarkGray
+            };
+            draw_rect_corners(
+                f,
+                vchunks[1],
+                "┏",
+                "┓",
+                "┗",
+                "┛",
+                Style::default().fg(c).add_modifier(Modifier::BOLD),
+            );
         }
     }
 
     if state.mode == Mode::FileView {
         let block = Block::default()
-            .borders(Borders::ALL)
-            .title(format!("查看文件（Esc/q 关闭）：{}", state.file_view_title));
-        let content = Paragraph::new(state.file_view_content.as_str())
+            .borders(Borders::NONE)
+            .padding(Padding::symmetric(1, 1))
+            .style(Style::default().bg(Color::DarkGray));
+        let title = format!("查看文件（Esc/q 关闭）：{}", state.file_view_title);
+        let full = format!("{}\n{}\n", title, state.file_view_content);
+        let content = Paragraph::new(full)
             .block(block)
             .wrap(Wrap { trim: false });
         // overlay on right area for simplicity
         f.render_widget(content, vchunks[1]);
+        draw_rect_corners(
+            f,
+            vchunks[1],
+            "┏",
+            "┓",
+            "┗",
+            "┛",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+        );
     }
 }
 

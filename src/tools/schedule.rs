@@ -145,6 +145,8 @@ pub fn add_reminder(args_json: &str, working_dir: &Path) -> String {
     } else {
         parse_datetime_to_rfc3339(due_at_raw).or_else(|| Some(due_at_raw.to_string()))
     };
+    // 用于返回消息（title 会在构造 Reminder 时 move 进去）
+    let title_for_return = title.clone();
 
     if let Err(e) = ensure_data_dir(working_dir) {
         return e;
@@ -168,7 +170,7 @@ pub fn add_reminder(args_json: &str, working_dir: &Path) -> String {
     if let Err(e) = write_json(&path, &data) {
         return e;
     }
-    format!("已添加提醒：{}（id={}）", data.items.last().unwrap().title, id)
+    format!("已添加提醒：{}（id={}）", title_for_return, id)
 }
 
 pub fn list_reminders(args_json: &str, working_dir: &Path) -> String {
@@ -372,6 +374,8 @@ pub fn add_event(args_json: &str, working_dir: &Path) -> String {
         .and_then(|x| x.as_str())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    // 用于返回消息（title 会在构造 Event 时 move 进去）
+    let title_for_return = title.clone();
 
     if let Err(e) = ensure_data_dir(working_dir) {
         return e;
@@ -397,7 +401,7 @@ pub fn add_event(args_json: &str, working_dir: &Path) -> String {
     if let Err(e) = write_json(&path, &data) {
         return e;
     }
-    format!("已添加日程：{}（id={}）", data.items.last().unwrap().title, id)
+    format!("已添加日程：{}（id={}）", title_for_return, id)
 }
 
 pub fn list_events(args_json: &str, working_dir: &Path) -> String {
