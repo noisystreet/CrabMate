@@ -2,8 +2,38 @@
 //!
 //! 路径均为**相对于工作目录**的相对路径（与 main 中 workspace 文件 API 一致，基于 run_command_working_dir）。
 
+use regex::RegexBuilder;
 use std::path::{Path, PathBuf};
-use regex::{RegexBuilder};
+
+fn canonical_workspace_root(base: &Path) -> Result<PathBuf, String> {
+    base.canonicalize()
+        .map_err(|e| format!("工作目录无法解析: {}", e))
+}
+
+fn ensure_within_workspace(base_canonical: &Path, candidate: &Path) -> Result<(), String> {
+    if candidate.starts_with(base_canonical) {
+        Ok(())
+    } else {
+        Err("路径不能超出工作目录".to_string())
+    }
+}
+
+// 对“目标路径或其最近存在祖先”做 canonical 边界校验，防止借助工作区内 symlink 逃逸。
+fn ensure_existing_ancestor_within_workspace(
+    base_canonical: &Path,
+    target: &Path,
+) -> Result<(), String> {
+    let mut ancestor = target;
+    while !ancestor.exists() {
+        ancestor = ancestor
+            .parent()
+            .ok_or_else(|| "路径无法解析".to_string())?;
+    }
+    let ancestor_canonical = ancestor
+        .canonicalize()
+        .map_err(|e| format!("路径无法解析: {}", e))?;
+    ensure_within_workspace(base_canonical, &ancestor_canonical)
+}
 
 /// 解析用于读取或修改的路径（目标必须存在；path 必须为相对工作目录的相对路径）
 fn resolve_for_read(base: &Path, sub: &str) -> Result<PathBuf, String> {
@@ -14,10 +44,13 @@ fn resolve_for_read(base: &Path, sub: &str) -> Result<PathBuf, String> {
     if Path::new(sub).is_absolute() {
         return Err("路径必须为相对于工作目录的相对路径，不能使用绝对路径".to_string());
     }
-    let joined = base.join(sub);
-    joined
+    let base_canonical = canonical_workspace_root(base)?;
+    let joined = base_canonical.join(sub);
+    let canonical = joined
         .canonicalize()
-        .map_err(|e| format!("路径无法解析: {}", e))
+        .map_err(|e| format!("路径无法解析: {}", e))?;
+    ensure_within_workspace(&base_canonical, &canonical)?;
+    Ok(canonical)
 }
 
 /// 解析用于写入的路径（目标可不存在；path 必须为相对工作目录的相对路径，且不能通过 .. 超出工作目录）
@@ -29,15 +62,12 @@ fn resolve_for_write(base: &Path, sub: &str) -> Result<PathBuf, String> {
     if Path::new(sub).is_absolute() {
         return Err("路径必须为相对于工作目录的相对路径，不能使用绝对路径".to_string());
     }
-    let base_canonical = base
-        .canonicalize()
-        .map_err(|e| format!("工作目录无法解析: {}", e))?;
+    let base_canonical = canonical_workspace_root(base)?;
     let joined = base_canonical.join(sub);
     // 规范化 .. 和 . 并确保仍在 base 下（路径穿越检查）
     let normalized = normalize_path(&joined);
-    if !normalized.starts_with(&base_canonical) {
-        return Err("路径不能超出工作目录".to_string());
-    }
+    ensure_within_workspace(&base_canonical, &normalized)?;
+    ensure_existing_ancestor_within_workspace(&base_canonical, &normalized)?;
     Ok(normalized)
 }
 
@@ -198,7 +228,10 @@ pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
         .and_then(|n| n.as_u64())
         .map(|n| n.max(1) as usize)
         .unwrap_or(200);
-    let include_hidden = v.get("include_hidden").and_then(|b| b.as_bool()).unwrap_or(false);
+    let include_hidden = v
+        .get("include_hidden")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
 
     let root = match resolve_for_read(working_dir, path) {
         Ok(p) => p,
@@ -232,7 +265,11 @@ pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
             });
             for (name, is_dir) in entries.into_iter().take(max_entries) {
                 shown += 1;
-                out.push_str(&format!("{}{}\n", if is_dir { "dir: " } else { "file: " }, name));
+                out.push_str(&format!(
+                    "{}{}\n",
+                    if is_dir { "dir: " } else { "file: " },
+                    name
+                ));
             }
             out.push_str(&format!("总计遍历: {}，展示: {}\n", count, shown));
             out.trim_end().to_string()
@@ -454,12 +491,12 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
             continue;
         }
 
-        let block = match extract_rust_brace_block(&all_lines, idx, max_block_lines, max_block_chars)
-        {
-            Ok(Some((s, e, txt))) => (s, e, txt),
-            Ok(None) => continue,
-            Err(e) => return e,
-        };
+        let block =
+            match extract_rust_brace_block(&all_lines, idx, max_block_lines, max_block_chars) {
+                Ok(Some((s, e, txt))) => (s, e, txt),
+                Ok(None) => continue,
+                Err(e) => return e,
+            };
         if blocks.len() >= max_matches {
             break;
         }
@@ -837,5 +874,48 @@ pub fn bar() { println!("hi"); }
         assert!(out.trim_end().ends_with('}'));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_read_file_reject_outside_workspace() {
+        let dir = make_test_dir();
+        let outside_name = format!("crabmate_outside_read_{}.txt", std::process::id());
+        let outside = std::env::temp_dir().join(&outside_name);
+        std::fs::write(&outside, "outside\n").unwrap();
+        let arg = serde_json::json!({ "path": format!("../{}", outside_name) }).to_string();
+        let out = read_file(&arg, &dir);
+        assert!(
+            out.contains("路径不能超出工作目录"),
+            "应拒绝越界读取: {}",
+            out
+        );
+        let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_create_file_reject_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let dir = make_test_dir();
+        let outside = std::env::temp_dir().join(format!(
+            "crabmate_outside_symlink_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&outside).unwrap();
+        let link = dir.join("link_out");
+        symlink(&outside, &link).unwrap();
+
+        let out = create_file(r#"{"path":"link_out/pwned.txt","content":"x"}"#, &dir);
+        assert!(
+            out.contains("路径不能超出工作目录"),
+            "应拒绝 symlink 绕过写入: {}",
+            out
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 }
