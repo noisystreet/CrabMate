@@ -220,6 +220,10 @@ export function ChatPanel({
   const [attachHint, setAttachHint] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [, setPendingQueue] = useState<string[]>([])
+  const inputRef = useRef('')
+  const sendingRef = useRef(false)
+  inputRef.current = input
+  sendingRef.current = sending
   const [lastPrompt, setLastPrompt] = useState<string | null>(null)
   const [collapsedCodeBlocks, setCollapsedCodeBlocks] = useState<Record<string, boolean>>({})
   const [atBottom, setAtBottom] = useState(true)
@@ -380,6 +384,7 @@ export function ChatPanel({
     streamingTextRef.current = ''
     deltaBufferRef.current = ''
     // 重置状态
+    sendingRef.current = false
     setSending(false)
     setPendingImages([])
     setPendingAudios([])
@@ -524,13 +529,12 @@ export function ChatPanel({
     if (!externalSend || !externalSend.text.trim()) return
     const text = externalSend.text.trim()
     // 若当前正在发送，则加入发送队列
-    if (sending) {
+    if (sendingRef.current) {
       setPendingQueue((q) => [...q, text])
       return
     }
-    setInput(text)
     // 立即发起一轮发送（忽略返回值）
-    void send()
+    void send(text)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalSend?.seq])
 
@@ -630,17 +634,21 @@ export function ChatPanel({
     window.addEventListener('pointerup', onPointerUp)
   }, [])
 
-  const send = async () => {
-    const msg = input.trim()
-    const hasAny = pendingImages.length || pendingAudios.length || pendingVideos.length
+  const send = async (overrideInput?: string) => {
+    const msg = (overrideInput ?? inputRef.current).trim()
+    const hasAny = pendingImages.length > 0 || pendingAudios.length > 0 || pendingVideos.length > 0
     let images: string[] | undefined
     let audioUrls: string[] | undefined
     let videoUrls: string[] | undefined
-    if (!msg && !images && !audioUrls && !videoUrls) return
+    if (!msg && !hasAny) return
     // 若当前正在发送且本次不含附件，则将文本加入队列，等待上一轮结束后自动发送
-    if (sending && !hasAny) {
-      setPendingQueue((q) => [...q, msg])
-      setInput('')
+    if (sendingRef.current && !hasAny) {
+      if (msg) {
+        setPendingQueue((q) => [...q, msg])
+      }
+      if (overrideInput === undefined) {
+        setInput('')
+      }
       return
     }
     setInput('')
@@ -696,6 +704,7 @@ export function ChatPanel({
       { id: assistantId, role: 'assistant', text: '', state: 'loading' },
     ])
     scheduleScrollToBottom()
+    sendingRef.current = true
     setSending(true)
     onSendStart?.()
     let finished = false
@@ -705,7 +714,7 @@ export function ChatPanel({
       }
       const controller = new AbortController()
       abortRef.current = controller
-      await sendChatStream(msg, {
+      await sendChatStream(fullMsg, {
         onDelta: (text) => {
           enqueueDelta(text)
         },
@@ -760,19 +769,15 @@ export function ChatPanel({
           streamingSpanRef.current = null
           streamingTextRef.current = ''
           onSendEnd?.()
+          sendingRef.current = false
           setSending(false)
           // 若有排队的下一条消息，则在本轮结束后自动发送
           setPendingQueue((q) => {
             if (!q.length) return q
             const [next, ...rest] = q
-            setInput(next)
             // 异步触发下一轮发送，避免与当前状态更新冲突
             setTimeout(() => {
-              // 仅在当前不忙时再发送
-              if (!sending) {
-                // 忽略返回值
-                void send()
-              }
+              void send(next)
             }, 0)
             return rest
           })
@@ -799,16 +804,14 @@ export function ChatPanel({
           streamingSpanRef.current = null
           streamingTextRef.current = ''
           onSendEnd?.(errMsg)
+          sendingRef.current = false
           setSending(false)
           // 错误场景同样尝试发送队列中的下一条
           setPendingQueue((q) => {
             if (!q.length) return q
             const [next, ...rest] = q
-            setInput(next)
             setTimeout(() => {
-              if (!sending) {
-                void send()
-              }
+              void send(next)
             }, 0)
             return rest
           })
@@ -837,16 +840,14 @@ export function ChatPanel({
       streamingTextRef.current = ''
       finished = true
       onSendEnd?.(msgText)
+      sendingRef.current = false
       setSending(false)
       // 尝试发送队列中的下一条
       setPendingQueue((q) => {
         if (!q.length) return q
         const [next, ...rest] = q
-        setInput(next)
         setTimeout(() => {
-          if (!sending) {
-            void send()
-          }
+          void send(next)
         }, 0)
         return rest
       })
@@ -855,18 +856,20 @@ export function ChatPanel({
       // 也要确保结束本轮忙碌状态，避免状态栏一直显示“生成中”
       if (!finished) {
         onSendEnd?.()
+        sendingRef.current = false
         setSending(false)
       }
     }
   }
 
   const cancel = () => {
-    if (!sending) return
+    if (!sendingRef.current) return
     if (abortRef.current) {
       abortRef.current.abort()
       abortRef.current = null
     }
     flushPendingDeltas()
+    sendingRef.current = false
     setSending(false)
     setMessages((m) => {
       const next = [...m]
@@ -1097,9 +1100,7 @@ export function ChatPanel({
                               disabled={sending}
                               onClick={() => {
                                 if (!lastPrompt || sending) return
-                                setInput(lastPrompt)
-                                // 立即发起重试
-                                void send()
+                                void send(lastPrompt)
                               }}
                             >
                               重试本轮
@@ -1401,7 +1402,9 @@ export function ChatPanel({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={send}
+                onClick={() => {
+                  void send()
+                }}
                 disabled={sending}
                 className="send-btn flex-shrink-0 w-12 h-12 min-h-0 rounded-xl bg-primary text-primary-content border-0 shadow-md hover:shadow-lg hover:bg-primary-focus active:scale-[0.96] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-all duration-200 flex items-center justify-center self-end"
                 title="发送"

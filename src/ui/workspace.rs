@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 use axum::{
-    extract::{State, Query},
+    extract::{Query, State},
     http::StatusCode,
     Json,
 };
@@ -89,32 +89,90 @@ pub struct WorkspaceFileDeleteResponse {
     pub error: Option<String>,
 }
 
+fn normalize_path(p: &Path) -> std::path::PathBuf {
+    let mut out = std::path::PathBuf::new();
+    for c in p.components() {
+        match c {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn ensure_within_workspace(
+    base_canonical: &Path,
+    candidate: std::path::PathBuf,
+) -> Result<std::path::PathBuf, String> {
+    if candidate.starts_with(base_canonical) {
+        Ok(candidate)
+    } else {
+        Err("路径不能超出工作区根目录".to_string())
+    }
+}
+
+fn resolve_workspace_write_path(base: &Path, sub: &str) -> Result<std::path::PathBuf, String> {
+    let sub = sub.trim();
+    if sub.is_empty() {
+        return Err("path 不能为空".to_string());
+    }
+    let base_canonical = base
+        .canonicalize()
+        .map_err(|e| format!("工作目录无法解析: {}", e))?;
+    let joined = if Path::new(sub).is_absolute() {
+        std::path::PathBuf::from(sub)
+    } else {
+        base_canonical.join(sub)
+    };
+    let normalized = normalize_path(&joined);
+    ensure_within_workspace(&base_canonical, normalized.clone())?;
+
+    // 防止借助工作区内 symlink 写到外部：校验最近存在祖先路径的 canonical 结果仍在工作区内
+    let mut ancestor = normalized.as_path();
+    while !ancestor.exists() {
+        ancestor = ancestor
+            .parent()
+            .ok_or_else(|| "路径无法解析".to_string())?;
+    }
+    let ancestor_canonical = ancestor
+        .canonicalize()
+        .map_err(|e| format!("路径无法解析: {}", e))?;
+    ensure_within_workspace(&base_canonical, ancestor_canonical)?;
+    Ok(normalized)
+}
+
 pub(crate) fn resolve_workspace_path(
     base: &Path,
     sub: Option<&str>,
 ) -> Result<std::path::PathBuf, String> {
+    let base_canonical = base
+        .canonicalize()
+        .map_err(|e| format!("工作目录无法解析: {}", e))?;
     let sub = match sub {
         Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return Ok(base.to_path_buf()),
+        _ => return Ok(base_canonical),
     };
     let joined = if Path::new(sub).is_absolute() {
         std::path::PathBuf::from(sub)
     } else {
-        base.join(sub)
+        base_canonical.join(sub)
     };
-    let canonical = joined.canonicalize().map_err(|e| format!("路径无法解析: {}", e))?;
-    Ok(canonical)
+    let canonical = joined
+        .canonicalize()
+        .map_err(|e| format!("路径无法解析: {}", e))?;
+    ensure_within_workspace(&base_canonical, canonical)
 }
 
 /// 通过原生文件对话框选择工作区根目录
 pub async fn workspace_pick_handler() -> Json<WorkspacePickResponse> {
-    let path = tokio::task::spawn_blocking(|| {
-        rfd::FileDialog::new().pick_folder()
-    })
-    .await
-    .ok()
-    .and_then(|opt| opt)
-    .map(|p| p.display().to_string());
+    let path = tokio::task::spawn_blocking(|| rfd::FileDialog::new().pick_folder())
+        .await
+        .ok()
+        .and_then(|opt| opt)
+        .map(|p| p.display().to_string());
     Json(WorkspacePickResponse { path })
 }
 
@@ -224,7 +282,12 @@ pub async fn workspace_search_handler(
         }
     };
     // 将来自前端的绝对路径（当前目录 data.path）转换为相对于工作区根目录的相对路径，供 grep 工具使用
-    let rel_path = match body.path.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let rel_path = match body
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         None => None,
         Some(p) => {
             let p_path = Path::new(p);
@@ -270,7 +333,10 @@ pub async fn workspace_search_handler(
         &state.cfg.allowed_commands,
         &base_canonical,
     );
-    Json(WorkspaceSearchResponse { output, error: None })
+    Json(WorkspaceSearchResponse {
+        output,
+        error: None,
+    })
 }
 
 #[derive(Serialize)]
@@ -363,9 +429,7 @@ pub async fn workspace_file_delete_handler(
     let canonical = match resolve_workspace_path(&base_canonical, Some(path)) {
         Ok(p) => p,
         Err(msg) => {
-            return Json(WorkspaceFileDeleteResponse {
-                error: Some(msg),
-            });
+            return Json(WorkspaceFileDeleteResponse { error: Some(msg) });
         }
     };
     let meta = match tokio::fs::metadata(&canonical).await {
@@ -410,12 +474,10 @@ pub async fn workspace_file_write_handler(
             error: Some("path 不能为空".to_string()),
         });
     }
-    let canonical = match resolve_workspace_path(&base_canonical, Some(path)) {
+    let canonical = match resolve_workspace_write_path(&base_canonical, path) {
         Ok(p) => p,
         Err(msg) => {
-            return Json(WorkspaceFileWriteResponse {
-                error: Some(msg),
-            });
+            return Json(WorkspaceFileWriteResponse { error: Some(msg) });
         }
     };
 
@@ -447,4 +509,3 @@ pub async fn workspace_file_write_handler(
         }),
     }
 }
-

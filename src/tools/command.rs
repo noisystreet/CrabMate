@@ -1,8 +1,8 @@
 //! 有限的 Linux 命令执行工具（白名单、工作目录限制、无 shell 注入）
 
+use std::io;
 use std::path::Path;
 use std::process::Command;
-use std::io;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -128,13 +128,24 @@ fn truncate_output(s: &str, max_bytes: usize) -> String {
     let kept = if kept.len() <= max_bytes {
         kept
     } else {
-        kept[..max_bytes].to_string()
+        truncate_to_char_boundary(&kept, max_bytes)
     };
     let total_lines = lines.len();
     format!(
         "{}\n\n... (输出已截断，保留前 {} 行，共 {} 行)",
         kept, kept_lines, total_lines
     )
+}
+
+fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let mut end = max_bytes.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
 }
 
 /// 将底层 IO 错误转为对用户更友好的提示
@@ -160,7 +171,10 @@ mod tests {
     use std::path::Path;
 
     const TEST_MAX_OUTPUT_LEN: usize = 8192;
-    const TEST_ALLOWED: &[&str] = &["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "gcc", "g++", "make"];
+    const TEST_ALLOWED: &[&str] = &[
+        "ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail",
+        "wc", "cat", "cmake", "gcc", "g++", "make",
+    ];
 
     fn test_allowed() -> Vec<String> {
         TEST_ALLOWED.iter().map(|s| s.to_string()).collect()
@@ -172,13 +186,23 @@ mod tests {
 
     #[test]
     fn test_run_invalid_json() {
-        let out = run("not json", TEST_MAX_OUTPUT_LEN, &test_allowed(), test_work_dir());
+        let out = run(
+            "not json",
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            test_work_dir(),
+        );
         assert!(out.starts_with("参数解析错误"));
     }
 
     #[test]
     fn test_run_missing_command() {
-        let out = run(r#"{"args":[]}"#, TEST_MAX_OUTPUT_LEN, &test_allowed(), test_work_dir());
+        let out = run(
+            r#"{"args":[]}"#,
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            test_work_dir(),
+        );
         assert_eq!(out, "错误：缺少 command 参数");
     }
 
