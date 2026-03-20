@@ -117,7 +117,8 @@ fn write_temp_patch_file(root: &Path, patch_text: &str) -> Result<PathBuf, Strin
         .unwrap_or_default()
         .as_millis();
     let p = cache_dir.join(format!("tmp_patch_{}_{}.diff", std::process::id(), ts));
-    std::fs::write(&p, patch_text.as_bytes()).map_err(|e| format!("写入临时补丁文件失败: {}", e))?;
+    std::fs::write(&p, patch_text.as_bytes())
+        .map_err(|e| format!("写入临时补丁文件失败: {}", e))?;
     Ok(p)
 }
 
@@ -169,6 +170,24 @@ fn validate_single_path(raw_path: &str, root: &Path) -> Result<(), String> {
     if !normalized.starts_with(root) {
         return Err(format!("路径超出工作区: {}", raw_path));
     }
+    ensure_existing_ancestor_within_workspace(root, &normalized)?;
+    Ok(())
+}
+
+// 对“目标路径或其最近存在祖先”做 canonical 校验，防止借助工作区内 symlink 写到外部。
+fn ensure_existing_ancestor_within_workspace(root: &Path, target: &Path) -> Result<(), String> {
+    let mut ancestor = target;
+    while !ancestor.exists() {
+        ancestor = ancestor
+            .parent()
+            .ok_or_else(|| format!("路径无法解析: {}", target.display()))?;
+    }
+    let ancestor_canonical = ancestor
+        .canonicalize()
+        .map_err(|e| format!("路径无法解析: {} ({})", ancestor.display(), e))?;
+    if !ancestor_canonical.starts_with(root) {
+        return Err(format!("路径超出工作区: {}", target.display()));
+    }
     Ok(())
 }
 
@@ -201,8 +220,14 @@ mod tests {
 
     #[test]
     fn test_parse_header_path() {
-        assert_eq!(parse_header_path("--- a/src/main.rs"), Some("a/src/main.rs"));
-        assert_eq!(parse_header_path("+++ b/src/main.rs\t2026-01-01"), Some("b/src/main.rs"));
+        assert_eq!(
+            parse_header_path("--- a/src/main.rs"),
+            Some("a/src/main.rs")
+        );
+        assert_eq!(
+            parse_header_path("+++ b/src/main.rs\t2026-01-01"),
+            Some("b/src/main.rs")
+        );
         assert_eq!(parse_header_path("@@ -1,2 +1,2 @@"), None);
     }
 
@@ -224,5 +249,42 @@ mod tests {
 +new
 ";
         assert!(validate_patch_paths(patch, &root).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_single_path_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "crabmate_patch_tool_test_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        ));
+        let outside = std::env::temp_dir().join(format!(
+            "crabmate_patch_outside_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let link = root.join("escape");
+        symlink(&outside, &link).unwrap();
+
+        let err = validate_single_path("escape/pwned.txt", &root).unwrap_err();
+        assert!(
+            err.contains("路径超出工作区"),
+            "应拒绝 symlink 绕过: {}",
+            err
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 }

@@ -23,6 +23,36 @@ static RATE_LIMIT: Mutex<RateLimitState> = Mutex::new(RateLimitState {
     count: 0,
 });
 
+fn canonical_workspace_root(base: &Path) -> Result<PathBuf, String> {
+    base.canonicalize()
+        .map_err(|e| format!("工作目录无法解析: {}", e))
+}
+
+fn ensure_within_workspace(base_canonical: &Path, candidate: &Path) -> Result<(), String> {
+    if candidate.starts_with(base_canonical) {
+        Ok(())
+    } else {
+        Err("路径不能超出工作目录".to_string())
+    }
+}
+
+// 对“目标路径或其最近存在祖先”做 canonical 校验，防止通过 symlink 指向工作区外。
+fn ensure_existing_ancestor_within_workspace(
+    base_canonical: &Path,
+    target: &Path,
+) -> Result<(), String> {
+    let mut ancestor = target;
+    while !ancestor.exists() {
+        ancestor = ancestor
+            .parent()
+            .ok_or_else(|| "路径无法解析".to_string())?;
+    }
+    let ancestor_canonical = ancestor
+        .canonicalize()
+        .map_err(|e| format!("路径无法解析: {}", e))?;
+    ensure_within_workspace(base_canonical, &ancestor_canonical)
+}
+
 /// 解析相对工作目录的路径，且不允许超出工作目录
 fn resolve_executable_path(base: &Path, sub: &str) -> Result<PathBuf, String> {
     let sub = sub.trim();
@@ -32,14 +62,11 @@ fn resolve_executable_path(base: &Path, sub: &str) -> Result<PathBuf, String> {
     if Path::new(sub).is_absolute() {
         return Err("路径必须为相对于工作目录的相对路径，不能使用绝对路径".to_string());
     }
-    let base_canonical = base
-        .canonicalize()
-        .map_err(|e| format!("工作目录无法解析: {}", e))?;
+    let base_canonical = canonical_workspace_root(base)?;
     let joined = base_canonical.join(sub);
     let normalized = normalize_path(&joined);
-    if !normalized.starts_with(&base_canonical) {
-        return Err("路径不能超出工作目录".to_string());
-    }
+    ensure_within_workspace(&base_canonical, &normalized)?;
+    ensure_existing_ancestor_within_workspace(&base_canonical, &normalized)?;
     Ok(normalized)
 }
 
@@ -200,5 +227,57 @@ fn format_spawn_error(_target: &Path, e: &io::Error) -> String {
         NotFound => "错误：目标可执行文件不存在或不可访问（可能在执行前被删除）".to_string(),
         PermissionDenied => "错误：缺少执行该文件的权限（请检查文件权限或挂载选项）".to_string(),
         _ => format!("错误：无法启动可执行文件（系统错误：{}）", e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+    fn make_test_dir() -> PathBuf {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let seq = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "crabmate_exec_tool_test_{}_{}_{}",
+            std::process::id(),
+            ts,
+            seq
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_executable_path_reject_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let dir = make_test_dir();
+        let outside = std::env::temp_dir().join(format!(
+            "crabmate_exec_outside_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&outside).unwrap();
+        let link = dir.join("bin");
+        symlink(&outside, &link).unwrap();
+
+        let res = resolve_executable_path(&dir, "bin/tool.sh");
+        assert!(res.is_err(), "应拒绝 symlink 绕过执行路径");
+        assert!(
+            res.err()
+                .unwrap_or_default()
+                .contains("路径不能超出工作目录"),
+            "报错应提示越界"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 }
