@@ -2,8 +2,8 @@
 //!
 //! 路径为相对于工作目录的相对路径，且不能通过 .. 超出工作目录。
 
-use std::path::{Path, PathBuf};
 use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -174,7 +174,7 @@ fn truncate_output(s: &str, max_bytes: usize) -> String {
     let kept = if kept.len() <= max_bytes {
         kept
     } else {
-        kept[..max_bytes].to_string()
+        truncate_to_char_boundary(&kept, max_bytes)
     };
     let total_lines = lines.len();
     format!(
@@ -183,14 +183,22 @@ fn truncate_output(s: &str, max_bytes: usize) -> String {
     )
 }
 
+fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let mut end = max_bytes.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
+}
+
 fn format_spawn_error(_target: &Path, e: &io::Error) -> String {
     use io::ErrorKind::*;
     match e.kind() {
         NotFound => "错误：目标可执行文件不存在或不可访问（可能在执行前被删除）".to_string(),
         PermissionDenied => "错误：缺少执行该文件的权限（请检查文件权限或挂载选项）".to_string(),
-        _ => format!(
-            "错误：无法启动可执行文件（系统错误：{}）",
-            e
-        ),
+        _ => format!("错误：无法启动可执行文件（系统错误：{}）", e),
     }
 }
