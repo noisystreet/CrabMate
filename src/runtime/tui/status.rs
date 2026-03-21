@@ -4,7 +4,7 @@ use super::state::TuiState;
 
 pub(super) fn build_normal_status_line(model: &str) -> String {
     format!(
-        "模型：{}  |  Ctrl+C 退出  |  F2 切焦点  |  Tab 切右侧面板  |  F4 Markdown样式",
+        "模型：{}  |  Ctrl+C 退出  |  F1 键位表  |  F2 焦点  |  Tab 右栏  |  F4 Markdown",
         model
     )
 }

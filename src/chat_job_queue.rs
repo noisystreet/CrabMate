@@ -292,6 +292,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 workspace_is_set,
                 false,
                 false,
+                None,
             )
             .await;
             let (ok, err) = match r {
@@ -331,6 +332,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 workspace_is_set,
                 true,
                 false,
+                None,
             )
             .await;
             let (ok, err) = match r {

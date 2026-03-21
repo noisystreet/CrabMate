@@ -125,3 +125,9 @@ pub enum CommandApprovalDecision {
     AllowOnce,
     AllowAlways,
 }
+
+/// 流式输出被用户中止时 `stream_chat` 返回的 `finish_reason` 占位（非上游 API 原义）。
+pub const USER_CANCELLED_FINISH_REASON: &str = "user_cancelled";
+
+/// `complete_chat_retrying` 在用户取消时返回的错误消息（与 `run_agent_turn_common` 识别一致）。
+pub const LLM_CANCELLED_ERROR: &str = "已取消";

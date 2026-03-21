@@ -57,6 +57,7 @@ pub async fn run_single_shot(
         true,
         !no_stream,
         no_stream,
+        None,
     )
     .await
     {
@@ -147,6 +148,7 @@ pub async fn run_repl(
             true,
             !no_stream,
             no_stream,
+            None,
         )
         .await
         {

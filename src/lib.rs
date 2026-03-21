@@ -49,6 +49,7 @@ use types::Message;
 /// 有正文则通过 `out` 一次性下发整段。
 /// 若 `render_to_terminal` 为 true，则在终端渲染助手回复（流式边收边打，非流式完成后一次性 Markdown）。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
+/// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供 TUI 等场景中止生成。
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent_turn(
     client: &reqwest::Client,
@@ -61,6 +62,7 @@ pub async fn run_agent_turn(
     workspace_is_set: bool,
     render_to_terminal: bool,
     no_stream: bool,
+    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     agent_turn::run_agent_turn_common(
         client,
@@ -72,6 +74,7 @@ pub async fn run_agent_turn(
         effective_working_dir,
         workspace_is_set,
         no_stream,
+        cancel.as_deref(),
         agent_turn::AgentRunMode::Web { render_to_terminal },
     )
     .await
@@ -988,4 +991,5 @@ pub use tool_registry::{
     ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata, execution_class_for_tool,
     try_dispatch_meta,
 };
-pub use tools::build_tools;
+pub use tools::dev_tag;
+pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options};

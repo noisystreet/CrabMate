@@ -19,6 +19,7 @@ pub mod http_fetch;
 mod lint;
 mod markdown_links;
 mod patch;
+mod python_tools;
 mod quality_tools;
 mod release_docs;
 mod rust_ide;
@@ -30,19 +31,19 @@ mod time;
 mod weather;
 mod web_search;
 
+pub mod dev_tag;
+
 use crate::config::AgentConfig;
 use crate::tool_result::ToolResult;
 use crate::types::{FunctionDef, Tool};
 
+/// 工具顶层分类（用于 `build_tools_filtered`、文档与后续按场景裁剪工具列表）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCategory {
-    Utility,
-    File,
-    Search,
-    Format,
-    Lint,
-    Command,
-    Schedule,
+    /// 基础工具：时间/计算/天气、联网搜索与受控 HTTP、日程与提醒等（不依赖「在仓库里写代码」）。
+    Basic,
+    /// 开发工具：工作区文件、Git、Cargo/前端构建与测试、Lint、补丁、符号搜索、工作流等。
+    Development,
 }
 
 pub struct ToolContext<'a> {
@@ -449,6 +450,68 @@ fn params_frontend_lint() -> serde_json::Value {
     })
 }
 
+#[allow(dead_code)] // 供后续注册独立 Python 工具或聚合参数时复用
+fn params_ruff_check() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：相对工作区根的检查路径列表；默认 [\".\"]。禁止绝对路径与 .."
+            }
+        },
+        "required": []
+    })
+}
+
+#[allow(dead_code)]
+fn params_pytest_run() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "test_path": { "type": "string", "description": "可选：相对工作区的测试文件或目录；空则整库" },
+            "keyword": { "type": "string", "description": "可选：pytest -k 表达式（禁止 shell 元字符）" },
+            "markers": { "type": "string", "description": "可选：pytest -m 标记表达式" },
+            "quiet": { "type": "boolean", "description": "可选：是否加 -q，默认 true" },
+            "maxfail": { "type": "integer", "description": "可选：--maxfail，默认不传", "minimum": 1 },
+            "nocapture": { "type": "boolean", "description": "可选：是否 --capture=no，默认 false" }
+        },
+        "required": []
+    })
+}
+
+#[allow(dead_code)]
+fn params_mypy_check() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：相对工作区的检查路径，默认 [\".\"]"
+            },
+            "strict": { "type": "boolean", "description": "可选：是否传 --strict，默认 false" }
+        },
+        "required": []
+    })
+}
+
+#[allow(dead_code)]
+fn params_python_install_editable() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "backend": {
+                "type": "string",
+                "description": "包管理后端：uv（uv pip install -e .）或 pip（python3 -m pip install -e .）",
+                "enum": ["uv", "pip"]
+            }
+        },
+        "required": ["backend"]
+    })
+}
+
 fn params_cargo_audit() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -490,6 +553,9 @@ fn params_ci_pipeline_local() -> serde_json::Value {
             "run_clippy": { "type": "boolean", "description": "是否运行 cargo clippy，默认 true" },
             "run_test": { "type": "boolean", "description": "是否运行 cargo test，默认 true" },
             "run_frontend_lint": { "type": "boolean", "description": "是否运行 frontend lint，默认 true" },
+            "run_ruff_check": { "type": "boolean", "description": "是否运行 ruff check（无 Python 项目标记时跳过），默认 true" },
+            "run_pytest": { "type": "boolean", "description": "是否运行 python3 -m pytest（较慢，默认 false）" },
+            "run_mypy": { "type": "boolean", "description": "是否运行 mypy（默认 false）" },
             "fail_fast": { "type": "boolean", "description": "是否在首个失败步骤后立即停止，默认 false" },
             "summary_only": { "type": "boolean", "description": "是否仅输出步骤通过/失败/跳过统计，默认 false" }
         },
@@ -1140,7 +1206,7 @@ fn params_format_check_file() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作区根目录的文件路径；支持 .rs 与 ts/tsx/js/jsx/json（prettier --check）"
+                "description": "相对工作区根目录的文件路径；支持 .rs、.py（ruff format --check）、ts/tsx/js/jsx/json（prettier --check）"
             }
         },
         "required": ["path"]
@@ -1156,6 +1222,9 @@ fn params_quality_workspace() -> serde_json::Value {
             "run_cargo_test": { "type":"boolean", "description":"可选：cargo test，默认 false（较慢）" },
             "run_frontend_lint": { "type":"boolean", "description":"可选：frontend 下 npm run lint，默认 false" },
             "run_frontend_prettier_check": { "type":"boolean", "description":"可选：frontend 下 npx prettier --check .，默认 false" },
+            "run_ruff_check": { "type":"boolean", "description":"可选：ruff check，默认 false（无 Python 项目时跳过）" },
+            "run_pytest": { "type":"boolean", "description":"可选：python3 -m pytest，默认 false" },
+            "run_mypy": { "type":"boolean", "description":"可选：mypy，默认 false" },
             "fail_fast": { "type":"boolean", "description":"可选：遇首个失败即停止后续步骤，默认 true" },
             "summary_only": { "type":"boolean", "description":"可选：仅输出各步骤 passed/failed 汇总，默认 false" }
         },
@@ -1317,7 +1386,7 @@ fn params_format_file() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作区根目录的文件路径，如 src/main.rs、frontend/src/App.tsx"
+                "description": "相对工作区根目录的文件路径，如 src/main.rs、frontend/src/App.tsx、src/pkg/__init__.py（.py 使用 ruff format）"
             }
         },
         "required": ["path"]
@@ -1335,6 +1404,10 @@ fn params_run_lints() -> serde_json::Value {
             "run_frontend": {
                 "type": "boolean",
                 "description": "是否在 frontend 目录下运行 npm run lint（若存在），默认为 true"
+            },
+            "run_python_ruff": {
+                "type": "boolean",
+                "description": "是否运行 ruff check（有 Python 项目标记时），默认为 true"
             }
         },
         "required": []
@@ -1544,6 +1617,22 @@ fn runner_cargo_run(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_rust_test_one(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::rust_test_one(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_ruff_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    python_tools::ruff_check(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_pytest_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    python_tools::pytest_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_mypy_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    python_tools::mypy_check(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_python_install_editable(args: &str, ctx: &ToolContext<'_>) -> String {
+    python_tools::python_install_editable(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn runner_frontend_lint(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -1795,640 +1884,701 @@ fn tool_specs() -> &'static [ToolSpec] {
         ToolSpec {
             name: "get_current_time",
             description: "获取当前时间或打印日历。支持 mode=time|calendar|both（默认 time）。用于回答「现在几点」「今天几号」「打印本月日历」「打印 2026 年 3 月日历」等问题。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Basic,
             parameters: params_get_current_time,
             runner: runner_get_current_time,
         },
         ToolSpec {
             name: "calc",
             description: "使用 Linux 的 bc -l 计算器执行数学表达式。支持：四则 + - * / %、乘方 ^；sqrt(x)、s(x)=sin、c(x)=cos、a(x)=atan、l(x)=ln、e(x)=exp；常量 pi、e（在 bc 中为 pi=4*a(1), e=e(1)）。可写 math::sqrt(2)、math::sin(pi/2)、math::log10(100) 等，会转为 bc 语法后执行。示例：1+2*3、2^10、sqrt(2)、s(3.14159/2)。参数 expression 为单个数学表达式。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Basic,
             parameters: params_calc,
             runner: runner_calc,
         },
         ToolSpec {
             name: "get_weather",
             description: "获取指定城市或地区的当前天气（使用 Open-Meteo，无需 API Key）。用于回答「某地天气怎么样」「北京今天天气」等问题。参数 city 或 location 为城市/地区名，如北京、上海、Tokyo、New York。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Basic,
             parameters: params_weather,
             runner: runner_get_weather,
         },
         ToolSpec {
             name: "web_search",
             description: "联网搜索网页：根据关键词返回若干条结果的标题、URL 与摘要。需在配置中设置 web_search_api_key，并选择 web_search_provider 为 brave（Brave Search API）或 tavily（Tavily）。适合查新闻、文档、事实类问题；代码仓库内查找请优先用 search_in_files。",
-            category: ToolCategory::Search,
+            category: ToolCategory::Basic,
             parameters: params_web_search,
             runner: runner_web_search,
         },
         ToolSpec {
             name: "http_fetch",
             description: "对 **http/https** URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（按配置截断）；HEAD 不下载 body，仅元数据与重定向链，省流量。**Web**：仅当 URL 以 `http_fetch_allowed_prefixes` 中某一前缀开头时执行。**TUI**：未匹配前缀时与 `run_command` 相同审批；GET/HEAD 共用白名单键 `http_fetch:<归一化URL>`。勿在 URL 中放真实密钥。`workflow_execute` 节点内仅白名单 URL 可成功。",
-            category: ToolCategory::Search,
+            category: ToolCategory::Basic,
             parameters: params_http_fetch,
             runner: runner_http_fetch,
         },
         ToolSpec {
             name: "run_command",
             description: "在服务器上执行有限的 Linux 命令。允许的命令：ls, pwd, whoami, date, echo, id, uname, env, df, du, head, tail, wc, cat, cmake, gcc, g++, make。用于列出目录、查看文件、编译 C/C++ 项目（gcc/g++/make）、CMake 配置与构建等。参数 args 为字符串数组，如 [\"-l\"], [\"-n\", \"5\", \"file.txt\"], [\"..\"], [\"--build\", \".\"]。不要执行 rm、mv、chmod 等未在白名单中的命令。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_run_command,
             runner: runner_run_command,
         },
         ToolSpec {
             name: "run_executable",
             description: "在工作目录下执行可执行程序。path 为相对于工作目录的可执行文件路径（如 ./main、./build/app、out/run_tests），不能使用绝对路径或 .. 超出工作目录。用于运行编译产物、脚本等。参数 path 为相对路径，args 为传给程序的参数数组（可选）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_run_executable,
             runner: runner_run_executable,
         },
         ToolSpec {
             name: "cargo_check",
             description: "运行 cargo check（结构化参数）。用于快速检查 Rust 项目编译问题。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_common,
             runner: runner_cargo_check,
         },
         ToolSpec {
             name: "cargo_test",
             description: "运行 cargo test（支持 package/bin/filter/nocapture）。用于执行 Rust 测试。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_test,
             runner: runner_cargo_test,
         },
         ToolSpec {
             name: "cargo_clippy",
             description: "运行 cargo clippy（结构化参数）。用于检查 Rust 代码潜在问题。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_common,
             runner: runner_cargo_clippy,
         },
         ToolSpec {
             name: "cargo_metadata",
             description: "运行 cargo metadata 并返回包/依赖元数据（JSON）。用于理解 workspace 与 crate 关系。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_metadata,
             runner: runner_cargo_metadata,
         },
         ToolSpec {
             name: "cargo_tree",
             description: "运行 cargo tree 查看依赖树。支持反向依赖、深度和边类型过滤。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_tree,
             runner: runner_cargo_tree,
         },
         ToolSpec {
             name: "cargo_clean",
             description: "运行 cargo clean 清理构建产物。默认 dry_run=true，仅预览。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_clean,
             runner: runner_cargo_clean,
         },
         ToolSpec {
             name: "cargo_doc",
             description: "运行 cargo doc 生成文档。可选 no_deps/open/package。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_doc,
             runner: runner_cargo_doc,
         },
         ToolSpec {
             name: "cargo_run",
             description: "运行 cargo run（结构化参数）。用于启动 Rust 可执行程序。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_run,
             runner: runner_cargo_run,
         },
         ToolSpec {
             name: "cargo_nextest",
             description: "运行 cargo nextest run（需要已安装 cargo-nextest）。用于更快的测试执行。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_nextest,
             runner: runner_cargo_nextest,
         },
         ToolSpec {
             name: "cargo_fmt_check",
             description: "运行 cargo fmt --check（代码格式检查）。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_cargo_fmt_check,
             runner: runner_cargo_fmt_check,
         },
         ToolSpec {
             name: "cargo_outdated",
             description: "运行 cargo outdated（检查依赖是否过期/可升级）。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_cargo_outdated,
             runner: runner_cargo_outdated,
         },
         ToolSpec {
             name: "cargo_publish_dry_run",
             description: "运行 cargo publish --dry-run：验证打包与发布检查，**不会**上传到 registry。可选 package、allow_dirty、no_verify、features。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_publish_dry_run,
             runner: runner_cargo_publish_dry_run,
         },
         ToolSpec {
             name: "rust_compiler_json",
             description: "运行 `cargo check --message-format=<json>`，解析 **compiler-message** 行，输出结构化诊断摘要（级别、错误码、rendered、span）。等价于对接 rustc 的 JSON 诊断流，无需 rust-analyzer。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_rust_compiler_json,
             runner: runner_rust_compiler_json,
         },
         ToolSpec {
             name: "rust_analyzer_goto_definition",
             description: "启动 **rust-analyzer**（stdio LSP），对指定 **path + 0-based line/character** 执行 `textDocument/definition`。需本机已安装 rust-analyzer；单文件 didOpen，适合跳转定义。大文件 >512KiB 请换 read_file 分段。",
-            category: ToolCategory::Search,
+            category: ToolCategory::Development,
             parameters: params_rust_analyzer_position,
             runner: runner_rust_analyzer_goto_definition,
         },
         ToolSpec {
             name: "rust_analyzer_find_references",
             description: "同上，执行 `textDocument/references`（语义引用）。参数含 include_declaration。",
-            category: ToolCategory::Search,
+            category: ToolCategory::Development,
             parameters: params_rust_analyzer_references,
             runner: runner_rust_analyzer_find_references,
         },
         ToolSpec {
             name: "cargo_fix",
             description: "执行 cargo fix 应用编译器/诊断建议（受控写入，需 confirm=true）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_cargo_fix,
             runner: runner_cargo_fix,
         },
         ToolSpec {
             name: "rust_test_one",
             description: "运行单个 Rust 测试（按 test_name 过滤）。用于快速调试具体测试。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_rust_test_one,
             runner: runner_rust_test_one,
         },
         ToolSpec {
+            name: "ruff_check",
+            description: "在工作区运行 `ruff check`（需已安装 ruff）。默认检查 `.`；可通过 paths 指定相对路径。无 pyproject.toml/setup/requirements 等标记时跳过。",
+            category: ToolCategory::Development,
+            parameters: params_ruff_check,
+            runner: runner_ruff_check,
+        },
+        ToolSpec {
+            name: "pytest_run",
+            description: "在工作区运行 `python3 -m pytest`（需已安装 pytest）。可选 test_path、keyword（-k）、markers（-m）、quiet、maxfail、nocapture。",
+            category: ToolCategory::Development,
+            parameters: params_pytest_run,
+            runner: runner_pytest_run,
+        },
+        ToolSpec {
+            name: "mypy_check",
+            description: "在工作区运行 `mypy`（需已安装 mypy）。默认检查 `.`；可选 paths 与 strict。无 Python 项目标记时跳过。",
+            category: ToolCategory::Development,
+            parameters: params_mypy_check,
+            runner: runner_mypy_check,
+        },
+        ToolSpec {
+            name: "python_install_editable",
+            description: "在工作区根执行可编辑安装：`backend=uv` 时 `uv pip install -e .`，`backend=pip` 时 `python3 -m pip install -e .`。须存在 pyproject.toml 或 setup.py。",
+            category: ToolCategory::Development,
+            parameters: params_python_install_editable,
+            runner: runner_python_install_editable,
+        },
+        ToolSpec {
             name: "frontend_lint",
             description: "运行前端 npm lint（结构化参数）。支持指定前端子目录和 script 名称。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_frontend_lint,
             runner: runner_frontend_lint,
         },
         ToolSpec {
             name: "frontend_build",
             description: "运行前端 npm build（结构化参数）。支持指定前端子目录和 script 名称（默认 build）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_frontend_lint,
             runner: runner_frontend_build,
         },
         ToolSpec {
             name: "frontend_test",
             description: "运行前端 npm test（结构化参数）。支持指定前端子目录和 script 名称（默认 test）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_frontend_lint,
             runner: runner_frontend_test,
         },
         ToolSpec {
             name: "cargo_audit",
             description: "运行 cargo audit 做依赖漏洞扫描（需要已安装 cargo-audit）。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_cargo_audit,
             runner: runner_cargo_audit,
         },
         ToolSpec {
             name: "cargo_deny",
             description: "运行 cargo deny check（需要已安装 cargo-deny），做许可证/安全策略检查。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_cargo_deny,
             runner: runner_cargo_deny,
         },
         ToolSpec {
             name: "ci_pipeline_local",
             description: "本地一键执行 CI 关键检查（fmt/clippy/test/frontend_lint）。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_ci_pipeline_local,
             runner: runner_ci_pipeline_local,
         },
         ToolSpec {
             name: "release_ready_check",
             description: "发布前一键检查：CI + audit + deny + 工作区干净检查。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_release_ready_check,
             runner: runner_release_ready_check,
         },
         ToolSpec {
             name: "workflow_execute",
             description: "执行 DAG 工作流：并行/串行调度 + 人工审批节点 + SLA 超时 + 失败补偿。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_workflow_execute,
             runner: runner_workflow_execute,
         },
         ToolSpec {
             name: "rust_backtrace_analyze",
             description: "分析 Rust panic/backtrace 文本，提取首个可疑业务帧和模块命中统计。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_backtrace_analyze,
             runner: runner_backtrace_analyze,
         },
         ToolSpec {
             name: "diagnostic_summary",
             description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `frontend/package.json` / `frontend/dist` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `AGENT_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_diagnostic_summary,
             runner: runner_diagnostic_summary,
         },
         ToolSpec {
             name: "changelog_draft",
             description: "根据 **git log** 生成 **Markdown 变更说明草稿**（**不写仓库**）。支持按提交日聚合 subject、`flat` 平铺、或 `tag_ranges` 按 semver 降序相邻 tag 分段（`--no-merges`）。可选 since/until 与 max_commits。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_changelog_draft,
             runner: runner_changelog_draft,
         },
         ToolSpec {
             name: "license_notice",
             description: "运行 **cargo metadata** 解析依赖图，生成 **crate → license** 的 Markdown 表（**只读**；未在 Cargo.toml 声明的显示占位说明）。可选仅工作区成员、限制行数。非法律意见，发版前需人工核对。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_license_notice,
             runner: runner_license_notice,
         },
         ToolSpec {
             name: "git_status",
             description: "读取当前工作区的 Git 状态（只读）。可查看分支、已暂存/未暂存变更和未跟踪文件，帮助在改动前后自检变更范围，避免覆盖未提交内容。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_status,
             runner: runner_git_status,
         },
         ToolSpec {
             name: "git_diff",
             description: "读取当前工作区的 Git diff（只读）。支持查看 working、staged 或 all 模式，并可按 path 过滤，便于精确确认具体改动。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_diff,
             runner: runner_git_diff,
         },
         ToolSpec {
             name: "git_clean_check",
             description: "检查当前工作区是否干净（git status --porcelain）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_clean_check,
             runner: runner_git_clean_check,
         },
         ToolSpec {
             name: "git_diff_stat",
             description: "读取当前工作区的 Git diff 统计（只读）。支持 working/staged/all 与可选 path 过滤。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_diff_stat,
             runner: runner_git_diff_stat,
         },
         ToolSpec {
             name: "git_diff_names",
             description: "读取当前工作区的 Git diff 变更文件名列表（只读）。支持 working/staged/all 与可选 path 过滤。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_diff_names,
             runner: runner_git_diff_names,
         },
         ToolSpec {
             name: "git_log",
             description: "读取 Git 提交历史（只读）。支持条数和单行模式。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_log,
             runner: runner_git_log,
         },
         ToolSpec {
             name: "git_show",
             description: "读取指定提交详情（只读），默认 HEAD。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_show,
             runner: runner_git_show,
         },
         ToolSpec {
             name: "git_diff_base",
             description: "读取 base...HEAD 范围 diff（只读），默认 main...HEAD。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_diff_base,
             runner: runner_git_diff_base,
         },
         ToolSpec {
             name: "git_blame",
             description: "查看文件行级 blame（只读）。可选行范围。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_blame,
             runner: runner_git_blame,
         },
         ToolSpec {
             name: "git_file_history",
             description: "查看单文件历史（只读，--follow）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_file_history,
             runner: runner_git_file_history,
         },
         ToolSpec {
             name: "git_branch_list",
             description: "查看分支列表（只读），可含远程分支。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_branch_list,
             runner: runner_git_branch_list,
         },
         ToolSpec {
             name: "git_remote_status",
             description: "查看本地分支与远程跟踪关系（只读，git status -sb）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_status,
             runner: runner_git_remote_status,
         },
         ToolSpec {
             name: "git_stage_files",
             description: "将指定相对路径加入暂存区（受控写入）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_stage_files,
             runner: runner_git_stage_files,
         },
         ToolSpec {
             name: "git_commit",
             description: "执行 git commit（受控写入，需 confirm=true）。可选先 stage_all。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_commit,
             runner: runner_git_commit,
         },
         ToolSpec {
             name: "git_fetch",
             description: "执行 git fetch（可选 remote/branch/prune）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_fetch,
             runner: runner_git_fetch,
         },
         ToolSpec {
             name: "git_remote_list",
             description: "查看远程仓库列表（git remote -v）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_empty_object,
             runner: runner_git_remote_list,
         },
         ToolSpec {
             name: "git_remote_set_url",
             description: "设置远程仓库 URL（受控写入，需 confirm=true）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_remote_set_url,
             runner: runner_git_remote_set_url,
         },
         ToolSpec {
             name: "git_apply",
             description: "执行 git apply。默认 check_only=true 先检查可应用性。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_apply,
             runner: runner_git_apply,
         },
         ToolSpec {
             name: "git_clone",
             description: "执行 git clone 到工作区内目标目录（受控写入，需 confirm=true）。",
-            category: ToolCategory::Command,
+            category: ToolCategory::Development,
             parameters: params_git_clone,
             runner: runner_git_clone,
         },
         ToolSpec {
             name: "create_file",
             description: "在工作区内创建新文件。仅当文件不存在时创建；若路径已存在则报错。路径相对于工作目录，不能包含 .. 超出工作目录。用于用户要求「新建文件」「创建 xx」等。参数 path 为相对路径，content 为文件内容。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_file_write,
             runner: runner_create_file,
         },
         ToolSpec {
             name: "modify_file",
             description: "在工作区内修改已有文件。mode=full（默认）：整文件覆盖。mode=replace_lines：仅替换 start_line..=end_line 为 content，流式读写不写全文件进内存，适合大文件局部修改。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_modify_file,
             runner: runner_modify_file,
         },
         ToolSpec {
             name: "copy_file",
             description: "在工作区内复制**文件**（非目录）。路径校验与 create/read 一致（禁止绝对路径与 `..` 越界、借助 symlink 逃逸）。目标为已存在文件时须 `overwrite=true` 才覆盖；目标为已存在目录会报错。适合批量整理而无需把内容读进对话。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_file_from_to_overwrite,
             runner: runner_copy_file,
         },
         ToolSpec {
             name: "move_file",
             description: "在工作区内移动/重命名**文件**。`overwrite` 语义同 `copy_file`。跨文件系统时 `rename` 失败会自动回退为复制后删除源文件。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_file_from_to_overwrite,
             runner: runner_move_file,
         },
         ToolSpec {
             name: "read_file",
             description: "按行流式读取文件（不把整文件载入内存）。默认单次最多返回 max_lines=500 行（可调到 8000）；未指定 end_line 时自动分段。输出提示下一段 start_line。可选 count_total_lines 统计总行数（大文件慎用）。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_read_file,
             runner: runner_read_file,
         },
         ToolSpec {
             name: "read_dir",
             description: "在工作区内读取目录下的文件/子目录列表（受控只读）。可选包含隐藏项与最大条数。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_read_dir,
             runner: runner_read_dir,
         },
         ToolSpec {
             name: "glob_files",
             description: "在工作区内从指定子目录起递归扫描，按 glob 模式匹配**文件**相对路径（如 **/*.rs）。带 max_depth、max_results 上限；路径均在工作区内解析，禁止 ..。优先于 run_command find。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_glob_files,
             runner: runner_glob_files,
         },
         ToolSpec {
             name: "list_tree",
             description: "在工作区内从指定目录起递归列出子路径（先序、字典序），前缀 dir:/file:；带 max_depth、max_entries。用于快速看目录树而不用 find。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_list_tree,
             runner: runner_list_tree,
         },
         ToolSpec {
             name: "file_exists",
             description: "检查工作区内某路径（文件或目录）是否存在，并可按 kind=file|dir|any 过滤。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_file_exists,
             runner: runner_file_exists,
         },
         ToolSpec {
             name: "read_binary_meta",
             description: "读取任意文件的元数据（大小、可选修改时间）及**文件头一段的 SHA256**，不把整文件读入上下文；适合二进制/大文件比对。prefix_hash_bytes 默认 8192，0 表示跳过哈希。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_read_binary_meta,
             runner: runner_read_binary_meta,
         },
         ToolSpec {
             name: "hash_file",
             description: "对工作区内**常规文件**做只读哈希（流式读取，不占满内存）：**sha256**（默认）、**sha512**、**blake3**。可选 `max_bytes` 仅哈希前缀（用于大文件抽样或对齐外部工具）；路径解析与 `read_file` 相同。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_hash_file,
             runner: runner_hash_file,
         },
         ToolSpec {
             name: "extract_in_file",
             description: "在指定文件内按正则抽取匹配行（只读）。返回带行号的匹配行，并支持截断。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_extract_in_file,
             runner: runner_extract_in_file,
         },
         ToolSpec {
             name: "apply_patch",
             description: "应用 **unified diff**。路径：--- src/…（strip=0）或 --- a/src/…（strip=1）；hunk **带 2～3 行上下文**；**小步**单主题；可 **patch -R** / **git checkout** 回滚。先 dry-run。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_apply_patch,
             runner: runner_apply_patch,
         },
         ToolSpec {
             name: "search_in_files",
             description: "在当前工作区内搜索文件内容。支持按正则或普通关键词搜索，返回匹配的文件路径、行号和包含匹配的行片段。适合回答「某个函数/类型/常量在哪定义」「有哪些地方包含 TODO」等问题。",
-            category: ToolCategory::Search,
+            category: ToolCategory::Development,
             parameters: params_search_in_files,
             runner: runner_search_in_files,
         },
         ToolSpec {
             name: "markdown_check_links",
             description: "扫描工作区内 Markdown（默认 README.md 与 docs/）：校验**相对路径**链接目标是否存在（含 `[]()`、`![]()`、`<https://…>` 与引用式 `[ref]:`）。`http(s)://` 与 `//` 外链默认**不联网**；仅当提供 `allowed_external_prefixes` 时对匹配前缀做 HEAD 探测（失败时 GET Range 回退）。`mailto:`/`tel:` 等跳过。",
-            category: ToolCategory::File,
+            category: ToolCategory::Development,
             parameters: params_markdown_check_links,
             runner: runner_markdown_check_links,
         },
         ToolSpec {
             name: "structured_validate",
             description: "解析并校验工作区内的 **JSON / YAML / TOML**（按扩展名或 `format`）。用于确认 `package.json`、CI 配置、`Cargo.toml` 等是否语法合法；可选输出顶层键/数组长度摘要。单文件上限 4MiB。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_structured_validate,
             runner: runner_structured_validate,
         },
         ToolSpec {
             name: "structured_query",
             description: "在解析后的 JSON 模型上按 **JSON Pointer**（`/a/b`）或 **点号路径**（`a.b.0`）取值，返回类型与格式化 JSON。比整文件 `read_file` 更省上下文，适合查单键或嵌套字段是否存在。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_structured_query,
             runner: runner_structured_query,
         },
         ToolSpec {
             name: "structured_diff",
             description: "将两份 **JSON / YAML / TOML** 解析为同一结构化模型后做**键路径级**差异（缺失键、数组项、标量不等），非文本行 diff；与 `git_diff` 互补（适合对比两份 `openapi.json` 或迁移前后配置）。",
-            category: ToolCategory::Utility,
+            category: ToolCategory::Development,
             parameters: params_structured_diff,
             runner: runner_structured_diff,
         },
         ToolSpec {
             name: "find_symbol",
             description: "在当前工作区递归定位 Rust 符号的潜在定义位置（如 fn/struct/enum/trait/const/static/type/mod）。返回匹配行与上下文。",
-            category: ToolCategory::Search,
+            category: ToolCategory::Development,
             parameters: params_find_symbol,
             runner: runner_find_symbol,
         },
         ToolSpec {
             name: "find_references",
             description: "在 .rs 源文件中按词边界搜索某标识符的引用位置；默认排除与 find_symbol 一致的「疑似定义」行。适合在改名、删函数前快速扫一遍使用处。",
-            category: ToolCategory::Search,
+            category: ToolCategory::Development,
             parameters: params_find_references,
             runner: runner_find_references,
         },
         ToolSpec {
             name: "rust_file_outline",
             description: "读取单个 Rust 源文件，列出其中常见的顶层结构行摘要（mod/fn/struct/enum/trait/impl/use 等），便于大文件导航与拆分任务。",
-            category: ToolCategory::Search,
+            category: ToolCategory::Development,
             parameters: params_rust_file_outline,
             runner: runner_rust_file_outline,
         },
         ToolSpec {
             name: "format_file",
             description: "对工作区内的文件进行代码格式化。根据文件扩展名自动选择合适的本地格式化器，例如 Rust 文件使用 rustfmt，前端 TypeScript/JavaScript 文件使用项目内的 Prettier。适合在修改代码后统一整理缩进和风格。注意：需要本地已安装相应格式化工具（如 rustfmt、npm 项目内的 prettier）。",
-            category: ToolCategory::Format,
+            category: ToolCategory::Development,
             parameters: params_format_file,
             runner: runner_format_file,
         },
         ToolSpec {
             name: "format_check_file",
             description: "对单个文件做格式检查（不修改磁盘）：Rust 使用 rustfmt --check，前端类文件使用 prettier --check。适合在提交前确认风格一致。",
-            category: ToolCategory::Format,
+            category: ToolCategory::Development,
             parameters: params_format_check_file,
             runner: runner_format_check_file,
         },
         ToolSpec {
             name: "run_lints",
             description: "运行项目的静态检查工具并聚合结果。目前包括：后端的 cargo clippy 和（若存在 frontend 目录与 package.json）前端的 npm run lint。可用于在改动后检查潜在问题。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_run_lints,
             runner: runner_run_lints,
         },
         ToolSpec {
             name: "quality_workspace",
             description: "按开关组合运行质量检查：默认 cargo fmt --check + cargo clippy（轻量）；可选 cargo test、frontend npm lint、frontend prettier --check。适合「改完一轮后」快速拉齐格式与静态分析。",
-            category: ToolCategory::Lint,
+            category: ToolCategory::Development,
             parameters: params_quality_workspace,
             runner: runner_quality_workspace,
         },
         ToolSpec {
             name: "add_reminder",
             description: "添加一个提醒事项，并持久化到工作区的 .crabmate/reminders.json。可选 due_at 支持 RFC3339 或 YYYY-MM-DD HH:MM / YYYY-MM-DD。",
-            category: ToolCategory::Schedule,
+            category: ToolCategory::Basic,
             parameters: params_add_reminder,
             runner: runner_add_reminder,
         },
         ToolSpec {
             name: "list_reminders",
             description: "列出提醒事项（默认不包含已完成）。数据来自工作区的 .crabmate/reminders.json。",
-            category: ToolCategory::Schedule,
+            category: ToolCategory::Basic,
             parameters: params_list_reminders,
             runner: runner_list_reminders,
         },
         ToolSpec {
             name: "complete_reminder",
             description: "将指定 id 的提醒标记为完成。",
-            category: ToolCategory::Schedule,
+            category: ToolCategory::Basic,
             parameters: params_id_only,
             runner: runner_complete_reminder,
         },
         ToolSpec {
             name: "delete_reminder",
             description: "删除指定 id 的提醒。",
-            category: ToolCategory::Schedule,
+            category: ToolCategory::Basic,
             parameters: params_id_only,
             runner: runner_delete_reminder,
         },
         ToolSpec {
             name: "update_reminder",
             description: "更新提醒（title/due_at/done 任意字段）。due_at 传空字符串表示清空到期时间。",
-            category: ToolCategory::Schedule,
+            category: ToolCategory::Basic,
             parameters: params_update_reminder,
             runner: runner_update_reminder,
         },
         ToolSpec {
             name: "add_event",
             description: "添加一个日程事件，并持久化到工作区的 .crabmate/events.json。start_at 必填，end_at/location/notes 可选。",
-            category: ToolCategory::Schedule,
+            category: ToolCategory::Basic,
             parameters: params_add_event,
             runner: runner_add_event,
         },
         ToolSpec {
             name: "list_events",
             description: "列出日程事件；可选按 year/month 过滤。数据来自工作区的 .crabmate/events.json。",
-            category: ToolCategory::Schedule,
+            category: ToolCategory::Basic,
             parameters: params_list_events,
             runner: runner_list_events,
         },
         ToolSpec {
             name: "delete_event",
             description: "删除指定 id 的日程事件。",
-            category: ToolCategory::Schedule,
+            category: ToolCategory::Basic,
             parameters: params_id_only,
             runner: runner_delete_event,
         },
         ToolSpec {
             name: "update_event",
             description: "更新日程事件（title/start_at/end_at/location/notes 任意字段）。end_at/location/notes 传空字符串表示清空。",
-            category: ToolCategory::Schedule,
+            category: ToolCategory::Basic,
             parameters: params_update_event,
             runner: runner_update_event,
         },
     ]
 }
 
-/// 构建传给 API 的工具列表（表驱动注册）。
-pub fn build_tools() -> Vec<Tool> {
-    build_tools_filtered(None)
+/// 构建工具列表时的分类与开发子域标签过滤。
+#[derive(Clone, Copy, Default)]
+pub struct ToolsBuildOptions<'a> {
+    /// `None` 或 `Some(&[])`：不按顶层分类过滤（`Basic` 与 `Development` 均保留）。
+    pub categories: Option<&'a [ToolCategory]>,
+    /// `None` 或 `Some(&[])`：不按标签过滤。`Some(non-empty)`：仅保留 **Development** 工具中
+    /// [`dev_tag::tags_for_tool_name`] 与列表 **有交集** 者；`Basic` 仍只受 `categories` 约束。
+    pub dev_tags: Option<&'a [&'a str]>,
 }
 
-/// 构建传给 API 的工具列表：可按分类过滤（便于未来精确禁用某类工具）。
+fn tool_passes_filters(spec: &ToolSpec, opts: ToolsBuildOptions<'_>) -> bool {
+    let cats = opts.categories.unwrap_or(&[]);
+    if !cats.is_empty() && !cats.contains(&spec.category) {
+        return false;
+    }
+    let Some(wanted) = opts.dev_tags.and_then(|t| (!t.is_empty()).then_some(t)) else {
+        return true;
+    };
+    if spec.category != ToolCategory::Development {
+        return true;
+    }
+    dev_tag::tags_for_tool_name(spec.name)
+        .iter()
+        .any(|tag| wanted.contains(tag))
+}
+
+/// 构建传给 API 的工具列表（表驱动注册）。
+pub fn build_tools() -> Vec<Tool> {
+    build_tools_with_options(ToolsBuildOptions::default())
+}
+
+/// 构建传给 API 的工具列表：可按顶层分类过滤（[`ToolCategory::Basic`] / [`ToolCategory::Development`]）。
 pub fn build_tools_filtered(allowed: Option<&[ToolCategory]>) -> Vec<Tool> {
-    let allowed = allowed.unwrap_or(&[]);
+    build_tools_with_options(ToolsBuildOptions {
+        categories: allowed,
+        dev_tags: None,
+    })
+}
+
+/// 同时支持顶层分类与 Development 子域标签过滤（见 [`ToolsBuildOptions`]）。
+pub fn build_tools_with_options(opts: ToolsBuildOptions<'_>) -> Vec<Tool> {
     tool_specs()
         .iter()
-        .filter(|s| allowed.is_empty() || allowed.contains(&s.category))
+        .filter(|s| tool_passes_filters(s, opts))
         .map(|s| Tool {
             typ: "function".to_string(),
             function: FunctionDef {
@@ -2532,6 +2682,13 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         "frontend_lint" => Some("运行前端 lint".to_string()),
         "frontend_build" => Some("运行前端 build".to_string()),
         "frontend_test" => Some("运行前端 test".to_string()),
+        "ruff_check" => Some("运行 ruff check".to_string()),
+        "pytest_run" => Some("运行 python3 -m pytest".to_string()),
+        "mypy_check" => Some("运行 mypy".to_string()),
+        "python_install_editable" => {
+            let b = v.get("backend").and_then(|x| x.as_str()).unwrap_or("?");
+            Some(format!("Python 可编辑安装（{}）", b))
+        }
         "cargo_audit" => Some("运行 cargo audit".to_string()),
         "cargo_deny" => Some("运行 cargo deny".to_string()),
         "ci_pipeline_local" => Some("运行本地 CI 流水线".to_string()),
@@ -2931,6 +3088,10 @@ mod tests {
         assert!(names.contains(&"rust_analyzer_find_references"));
         assert!(names.contains(&"cargo_fix"));
         assert!(names.contains(&"rust_test_one"));
+        assert!(names.contains(&"ruff_check"));
+        assert!(names.contains(&"pytest_run"));
+        assert!(names.contains(&"mypy_check"));
+        assert!(names.contains(&"python_install_editable"));
         assert!(names.contains(&"frontend_lint"));
         assert!(names.contains(&"frontend_build"));
         assert!(names.contains(&"frontend_test"));
@@ -2987,5 +3148,45 @@ mod tests {
         assert!(names.contains(&"quality_workspace"));
         assert!(names.contains(&"apply_patch"));
         assert!(names.contains(&"run_executable"));
+    }
+
+    #[test]
+    fn test_build_tools_filtered_basic_vs_development() {
+        let basic = build_tools_filtered(Some(&[ToolCategory::Basic]));
+        let dev = build_tools_filtered(Some(&[ToolCategory::Development]));
+        let full = build_tools();
+        assert_eq!(basic.len() + dev.len(), full.len());
+        let bn: Vec<_> = basic.iter().map(|t| t.function.name.as_str()).collect();
+        assert!(bn.contains(&"get_current_time"));
+        assert!(bn.contains(&"add_reminder"));
+        assert!(!bn.contains(&"cargo_check"));
+        let dn: Vec<_> = dev.iter().map(|t| t.function.name.as_str()).collect();
+        assert!(dn.contains(&"cargo_check"));
+        assert!(!dn.contains(&"get_current_time"));
+    }
+
+    #[test]
+    fn test_build_tools_dev_tags_rust_excludes_pure_vcs() {
+        let rust_only = [dev_tag::RUST];
+        let tools = build_tools_with_options(ToolsBuildOptions {
+            categories: Some(&[ToolCategory::Development]),
+            dev_tags: Some(rust_only.as_slice()),
+        });
+        let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
+        assert!(names.contains(&"cargo_check"));
+        assert!(!names.contains(&"git_status"));
+    }
+
+    #[test]
+    fn test_build_tools_dev_tags_basic_plus_rust() {
+        let rust_only = [dev_tag::RUST];
+        let tools = build_tools_with_options(ToolsBuildOptions {
+            categories: Some(&[ToolCategory::Basic, ToolCategory::Development]),
+            dev_tags: Some(rust_only.as_slice()),
+        });
+        let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
+        assert!(names.contains(&"calc"));
+        assert!(names.contains(&"cargo_check"));
+        assert!(!names.contains(&"git_status"));
     }
 }

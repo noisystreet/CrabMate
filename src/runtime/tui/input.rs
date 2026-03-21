@@ -5,13 +5,18 @@ use crossterm::event::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
-use crate::types::{CommandApprovalDecision, Message};
+use crate::types::{CommandApprovalDecision, LLM_CANCELLED_ERROR, Message};
 
 use super::agent::run_agent_turn_tui;
 use super::allowlist::save_persistent_allowlist;
+use super::chat_nav;
+use super::chat_session;
 use super::clipboard;
 use super::draw;
 use super::edit_history;
@@ -82,6 +87,7 @@ pub(super) struct HandleKeyContext<'a> {
     pub approval_tx: &'a mut Option<mpsc::Sender<CommandApprovalDecision>>,
     pub tx: &'a mpsc::Sender<String>,
     pub sync_tx: mpsc::Sender<Vec<Message>>,
+    pub agent_cancel: Arc<AtomicBool>,
     pub cfg: &'a AgentConfig,
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
@@ -101,6 +107,7 @@ pub(super) async fn handle_key(
         approval_tx,
         tx,
         sync_tx,
+        agent_cancel,
         cfg,
         client,
         api_key,
@@ -113,6 +120,29 @@ pub(super) async fn handle_key(
     }
     if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Ok(true);
+    }
+
+    if agent_running.is_some() {
+        let g = matches!(key.code, KeyCode::Char('g') | KeyCode::Char('G'));
+        if g && key.modifiers.contains(KeyModifiers::CONTROL) {
+            if key.modifiers.contains(KeyModifiers::SHIFT) {
+                if let Some(h) = agent_running.take() {
+                    h.abort();
+                }
+                *approval_tx = None;
+                agent_cancel.store(false, Ordering::SeqCst);
+                state.tool_running = false;
+                state.tool_running_clear_pending = false;
+                state.model_phase = ModelPhase::Idle;
+                set_normal_status_line(state, &cfg.model);
+                state.status_line = "已强制中止本轮（工具执行中可能无法立刻停下）".to_string();
+            } else {
+                agent_cancel.store(true, Ordering::SeqCst);
+                state.status_line =
+                    "正在停止生成…（Ctrl+Shift+G 强制中止；工具执行中需等待或强制）".to_string();
+            }
+            return Ok(false);
+        }
     }
 
     if state.mode == Mode::FileView {
@@ -142,7 +172,16 @@ pub(super) async fn handle_key(
                     edit_history::push_prompt_undo(state);
                     text_input::insert_at_cursor(&mut state.prompt, &mut state.prompt_cursor, '\n');
                 } else {
-                    if state.prompt_title.starts_with("新增提醒") {
+                    if state
+                        .prompt_title
+                        .starts_with(chat_nav::PROMPT_TITLE_SEARCH)
+                    {
+                        let q = state.prompt.clone();
+                        chat_nav::apply_chat_search(state, &q, term_cols);
+                    } else if state.prompt_title.starts_with(chat_nav::PROMPT_TITLE_JUMP) {
+                        let raw = state.prompt.clone();
+                        let _ = chat_nav::apply_jump_to_message(state, &raw, term_cols);
+                    } else if state.prompt_title.starts_with("新增提醒") {
                         let raw = state.prompt.trim();
                         if !raw.is_empty() {
                             let (title, due_at) = split_title_due(raw);
@@ -368,6 +407,61 @@ pub(super) async fn handle_key(
             state.high_contrast = !state.high_contrast;
             set_high_contrast_status_line(state, &cfg.model);
         }
+        KeyCode::F(6) if state.mode == Mode::Normal => {
+            if key.modifiers.contains(KeyModifiers::SHIFT) {
+                chat_nav::search_next(state, -1);
+            } else if state.chat_search_matches.is_empty() {
+                state.mouse_leak_scratch.clear();
+                state.mode = Mode::Prompt;
+                state.prompt.clear();
+                state.prompt_cursor = 0;
+                edit_history::clear_prompt_history(state);
+                state.prompt_title = format!("{}：输入关键词 Enter", chat_nav::PROMPT_TITLE_SEARCH);
+            } else {
+                chat_nav::search_next(state, 1);
+            }
+        }
+        KeyCode::F(7) if state.mode == Mode::Normal => {
+            state.mouse_leak_scratch.clear();
+            state.mode = Mode::Prompt;
+            state.prompt.clear();
+            state.prompt_cursor = 0;
+            edit_history::clear_prompt_history(state);
+            state.prompt_title = format!(
+                "{}：从 1 起（不含系统提示），Enter",
+                chat_nav::PROMPT_TITLE_JUMP
+            );
+        }
+        KeyCode::F(8) if state.mode == Mode::Normal => {
+            match chat_session::export_json(&state.workspace_dir, &state.messages) {
+                Ok(p) => {
+                    state.status_line = format!("已导出 JSON：{}", p.display());
+                }
+                Err(e) => {
+                    state.status_line = format!("导出失败：{e}");
+                }
+            }
+        }
+        KeyCode::F(9) if state.mode == Mode::Normal => {
+            match chat_session::export_markdown(&state.workspace_dir, &state.messages) {
+                Ok(p) => {
+                    state.status_line = format!("已导出 Markdown：{}", p.display());
+                }
+                Err(e) => {
+                    state.status_line = format!("导出失败：{e}");
+                }
+            }
+        }
+        KeyCode::Char('f') | KeyCode::Char('F')
+            if key.modifiers.contains(KeyModifiers::CONTROL) && state.mode == Mode::Normal =>
+        {
+            state.mouse_leak_scratch.clear();
+            state.mode = Mode::Prompt;
+            state.prompt.clear();
+            state.prompt_cursor = 0;
+            edit_history::clear_prompt_history(state);
+            state.prompt_title = format!("{}：输入关键词 Enter", chat_nav::PROMPT_TITLE_SEARCH);
+        }
         KeyCode::Char('z')
             if key.modifiers.contains(KeyModifiers::CONTROL)
                 && !key.modifiers.contains(KeyModifiers::SHIFT) =>
@@ -527,6 +621,8 @@ pub(super) async fn handle_key(
                     state.input_cursor = 0;
                     edit_history::clear_input_history(state);
                     state.chat_follow_tail = true;
+                    state.chat_search_matches.clear();
+                    state.chat_search_active_idx = 0;
                     state.messages.push(Message {
                         role: "user".to_string(),
                         content: Some(q),
@@ -557,6 +653,8 @@ pub(super) async fn handle_key(
                         mpsc::channel::<CommandApprovalDecision>(8);
                     *approval_tx = Some(approve_tx_ch);
                     let sync_tx2 = sync_tx.clone();
+                    agent_cancel.store(false, Ordering::SeqCst);
+                    let cancel_arc = agent_cancel.clone();
                     *agent_running = Some(tokio::spawn(async move {
                         let out = Some(&tx2);
                         let res = run_agent_turn_tui(
@@ -571,10 +669,17 @@ pub(super) async fn handle_key(
                             no_stream,
                             persistent_allowlist,
                             approve_rx_ch,
+                            Some(cancel_arc.as_ref()),
                         )
                         .await;
-                        let _ = sync_tx2.send(messages).await;
-                        if let Err(e) = res {
+                        let user_cancelled =
+                            matches!(&res, Err(e) if format!("{e}") == LLM_CANCELLED_ERROR);
+                        if !user_cancelled {
+                            let _ = sync_tx2.send(messages).await;
+                        }
+                        if let Err(e) = res
+                            && format!("{e}") != LLM_CANCELLED_ERROR
+                        {
                             let _ = tx2
                                 .send(crate::sse_protocol::encode_message(
                                     crate::sse_protocol::SsePayload::Error(

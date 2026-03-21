@@ -209,6 +209,7 @@ pub async fn maybe_summarize_with_llm(
         None::<&Sender<String>>,
         false,
         true,
+        None,
     )
     .await
     {

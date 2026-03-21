@@ -6,6 +6,7 @@
 //! 被 crate 根 `run_agent_turn`（Web）与 `runtime::tui`（TUI）共同复用。
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use tokio::sync::mpsc;
@@ -20,7 +21,7 @@ use crate::sse_protocol::{
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result::ToolResult as StructuredToolResult;
 use crate::tools;
-use crate::types::{Message, ToolCall};
+use crate::types::{Message, ToolCall, USER_CANCELLED_FINISH_REASON};
 
 // --- P：向模型要本轮输出（含重试）---
 
@@ -35,6 +36,7 @@ pub(crate) async fn per_plan_call_model_retrying(
     out: Option<&mpsc::Sender<String>>,
     render_to_terminal: bool,
     no_stream: bool,
+    cancel: Option<&AtomicBool>,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let req = tool_chat_request(cfg, messages, tools_defs);
     complete_chat_retrying(
@@ -45,6 +47,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         out,
         render_to_terminal,
         no_stream,
+        cancel,
     )
     .await
 }
@@ -326,6 +329,7 @@ pub(crate) async fn run_agent_turn_common(
     effective_working_dir: &Path,
     workspace_is_set: bool,
     no_stream: bool,
+    cancel: Option<&AtomicBool>,
     mode: AgentRunMode<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut per_coord = PerCoordinator::new(
@@ -337,6 +341,9 @@ pub(crate) async fn run_agent_turn_common(
     'outer: loop {
         if sse_sender_closed(out) {
             info!("SSE sender closed, aborting run_agent_turn loop early");
+            break;
+        }
+        if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             break;
         }
 
@@ -354,9 +361,13 @@ pub(crate) async fn run_agent_turn_common(
             out,
             render_to_terminal,
             no_stream,
+            cancel,
         )
         .await?;
         messages.push(msg.clone());
+        if finish_reason == USER_CANCELLED_FINISH_REASON {
+            break;
+        }
 
         match per_reflect_after_assistant(&mut per_coord, &finish_reason, &msg, messages) {
             ReflectOnAssistantOutcome::StopTurn => break,
