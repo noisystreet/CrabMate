@@ -8,7 +8,6 @@ mod clipboard;
 mod draw;
 mod edit_history;
 mod input;
-mod sse_line;
 mod state;
 mod status;
 mod styles;
@@ -16,6 +15,7 @@ mod text_input;
 mod workspace_ops;
 
 use crate::config::AgentConfig;
+use crate::sse_line::{AgentLineKind, classify_agent_sse_line};
 use crate::types::Message;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use crossterm::execute;
@@ -37,7 +37,6 @@ use allowlist::{command_approval_message, load_persistent_allowlist};
 use chat_session::{load_tui_session, save_tui_session};
 use draw::draw_ui;
 use input::{HandleKeyContext, handle_crossterm_mouse, handle_key};
-use sse_line::{AgentLineKind, classify_agent_sse_line};
 use state::{Focus, Mode, ModelPhase, TuiState, strip_sgr_mouse_leaks};
 use status::set_normal_status_line;
 use workspace_ops::{refresh_schedule, refresh_tasks, refresh_workspace, upsert_assistant_message};
@@ -139,15 +138,7 @@ pub async fn run_tui(
         &cfg.system_prompt,
         cfg.tui_session_max_messages,
     )
-    .unwrap_or_else(|| {
-        vec![Message {
-            role: "system".to_string(),
-            content: Some(cfg.system_prompt.clone()),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }]
-    });
+    .unwrap_or_else(|| vec![Message::system_only(cfg.system_prompt.clone())]);
 
     let mut state = TuiState {
         messages: initial_messages,
@@ -279,7 +270,7 @@ pub async fn run_tui(
                 }
                 AgentLineKind::StreamError => {
                     state.model_phase = ModelPhase::Error;
-                    // 不把错误 JSON 写入对话区；底栏左侧阶段词显示为「异常」，右侧保持常规快捷键说明。
+                    // 不把错误 JSON 写入对话区；底栏左侧阶段词显示为「异常」。
                     set_normal_status_line(&mut state, &cfg.model);
                 }
                 AgentLineKind::Ignore => {}

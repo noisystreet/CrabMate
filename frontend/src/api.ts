@@ -400,6 +400,89 @@ export async function deleteUploads(urls: string[]): Promise<DeleteUploadsRespon
   })
 }
 
+/** 与后端 `sse_protocol` 控制面字段对齐（见 `src/sse_protocol.rs`）；与 `src/sse_line.rs` 的 Rust 分类逻辑保持语义一致。 */
+type SseControlPayload = {
+  v?: number
+  error?: string
+  code?: string
+  plan_required?: boolean
+  workspace_changed?: boolean
+  tool_call?: { name?: string; summary?: string }
+  tool_running?: boolean
+  parsing_tool_calls?: boolean
+  tool_result?: {
+    name?: string
+    output?: string
+    ok?: boolean
+    exit_code?: number
+    error_code?: string
+    stdout?: string
+    stderr?: string
+  }
+}
+
+/** 解析单条 `data:` 合并后的字符串：若为控制面 JSON 则调用 callbacks 并返回 `stop` | `handled`；否则返回 `plain`（由调用方按正文 delta 处理）。 */
+function tryDispatchSseControlPayload(
+  data: string,
+  callbacks: {
+    onError: (err: string) => void
+    onWorkspaceChanged?: () => void
+    onToolCall?: (info: { name: string; summary: string }) => void
+    onToolStatusChange?: (running: boolean) => void
+    onParsingToolCallsChange?: (parsing: boolean) => void
+    onToolResult?: (info: ToolResultInfo) => void
+    onPlanRequired?: () => void
+  },
+): 'stop' | 'handled' | 'plain' {
+  try {
+    const parsed = JSON.parse(data) as SseControlPayload
+    if (parsed.error != null) {
+      callbacks.onError(
+        parsed.code != null ? `${parsed.error} (${parsed.code})` : parsed.error,
+      )
+      return 'stop'
+    }
+    if (parsed.plan_required === true) {
+      callbacks.onPlanRequired?.()
+      return 'handled'
+    }
+    if (parsed.workspace_changed === true) {
+      callbacks.onWorkspaceChanged?.()
+      return 'handled'
+    }
+    if (parsed.tool_call?.summary) {
+      callbacks.onToolCall?.({
+        name: parsed.tool_call.name || '',
+        summary: parsed.tool_call.summary,
+      })
+      return 'handled'
+    }
+    if (typeof parsed.parsing_tool_calls === 'boolean') {
+      callbacks.onParsingToolCallsChange?.(parsed.parsing_tool_calls)
+      return 'handled'
+    }
+    if (typeof parsed.tool_running === 'boolean') {
+      callbacks.onToolStatusChange?.(parsed.tool_running)
+      return 'handled'
+    }
+    if (parsed.tool_result?.output != null) {
+      callbacks.onToolResult?.({
+        name: parsed.tool_result.name || '',
+        output: parsed.tool_result.output,
+        ok: parsed.tool_result.ok,
+        exit_code: parsed.tool_result.exit_code,
+        error_code: parsed.tool_result.error_code,
+        stdout: parsed.tool_result.stdout,
+        stderr: parsed.tool_result.stderr,
+      })
+      return 'handled'
+    }
+  } catch {
+    // 非 JSON，按正文处理
+  }
+  return 'plain'
+}
+
 /** 流式 chat：POST /chat/stream，通过 onDelta 逐段接收内容，onDone 结束时调用，失败时 onError；收到 workspace_changed 时调用 onWorkspaceChanged 以刷新工作区 */
 export async function sendChatStream(
   message: string,
@@ -447,70 +530,9 @@ export async function sendChatStream(
         const dataLines = block.split('\n').filter((l) => l.startsWith('data: '))
         const data = dataLines.map((l) => l.slice(6).replace(/^\s+/, '')).join('\n').trim()
         if (!data) continue
-        try {
-          const parsed = JSON.parse(data) as {
-            v?: number
-            error?: string
-            code?: string
-            plan_required?: boolean
-            workspace_changed?: boolean
-            tool_call?: { name?: string; summary?: string }
-            tool_running?: boolean
-            parsing_tool_calls?: boolean
-            tool_result?: {
-              name?: string
-              output?: string
-              ok?: boolean
-              exit_code?: number
-              error_code?: string
-              stdout?: string
-              stderr?: string
-            }
-          }
-          if (parsed.error != null) {
-            callbacks.onError(
-              parsed.code != null ? `${parsed.error} (${parsed.code})` : parsed.error,
-            )
-            return
-          }
-          if (parsed.plan_required === true) {
-            callbacks.onPlanRequired?.()
-            continue
-          }
-          if (parsed.workspace_changed === true) {
-            callbacks.onWorkspaceChanged?.()
-            continue
-          }
-          if (parsed.tool_call?.summary) {
-            callbacks.onToolCall?.({
-              name: parsed.tool_call.name || '',
-              summary: parsed.tool_call.summary,
-            })
-            continue
-          }
-          if (typeof parsed.parsing_tool_calls === 'boolean') {
-            callbacks.onParsingToolCallsChange?.(parsed.parsing_tool_calls)
-            continue
-          }
-          if (typeof parsed.tool_running === 'boolean') {
-            callbacks.onToolStatusChange?.(parsed.tool_running)
-            continue
-          }
-          if (parsed.tool_result?.output != null) {
-            callbacks.onToolResult?.({
-              name: parsed.tool_result.name || '',
-              output: parsed.tool_result.output,
-              ok: parsed.tool_result.ok,
-              exit_code: parsed.tool_result.exit_code,
-              error_code: parsed.tool_result.error_code,
-              stdout: parsed.tool_result.stdout,
-              stderr: parsed.tool_result.stderr,
-            })
-            continue
-          }
-        } catch {
-          // 非 JSON，当作纯文本 delta
-        }
+        const d = tryDispatchSseControlPayload(data, callbacks)
+        if (d === 'stop') return
+        if (d === 'handled') continue
         if (data !== '[DONE]') callbacks.onDelta(data)
       }
     }
@@ -518,56 +540,8 @@ export async function sendChatStream(
       const dataLines = buffer.split('\n').filter((l) => l.startsWith('data: '))
       const data = dataLines.map((l) => l.slice(6).replace(/^\s+/, '')).join('\n').trim()
       if (data && data !== '[DONE]') {
-        try {
-          const parsed = JSON.parse(data) as {
-            v?: number
-            error?: string
-            code?: string
-            plan_required?: boolean
-            workspace_changed?: boolean
-            tool_call?: { name?: string; summary?: string }
-            tool_running?: boolean
-            parsing_tool_calls?: boolean
-            tool_result?: {
-              name?: string
-              output?: string
-              ok?: boolean
-              exit_code?: number
-              error_code?: string
-              stdout?: string
-              stderr?: string
-            }
-          }
-          if (parsed.error != null) {
-            callbacks.onError(
-              parsed.code != null ? `${parsed.error} (${parsed.code})` : parsed.error,
-            )
-          } else if (parsed.plan_required === true) {
-            callbacks.onPlanRequired?.()
-          } else if (parsed.workspace_changed === true) callbacks.onWorkspaceChanged?.()
-          else if (parsed.tool_call?.summary) {
-            callbacks.onToolCall?.({
-              name: parsed.tool_call.name || '',
-              summary: parsed.tool_call.summary,
-            })
-          } else if (typeof parsed.parsing_tool_calls === 'boolean') {
-            callbacks.onParsingToolCallsChange?.(parsed.parsing_tool_calls)
-          } else if (typeof parsed.tool_running === 'boolean') {
-            callbacks.onToolStatusChange?.(parsed.tool_running)
-          } else if (parsed.tool_result?.output != null) {
-            callbacks.onToolResult?.({
-              name: parsed.tool_result.name || '',
-              output: parsed.tool_result.output,
-              ok: parsed.tool_result.ok,
-              exit_code: parsed.tool_result.exit_code,
-              error_code: parsed.tool_result.error_code,
-              stdout: parsed.tool_result.stdout,
-              stderr: parsed.tool_result.stderr,
-            })
-          } else callbacks.onDelta(data)
-        } catch {
-          callbacks.onDelta(data)
-        }
+        const d = tryDispatchSseControlPayload(data, callbacks)
+        if (d === 'plain') callbacks.onDelta(data)
       }
     }
     callbacks.onDone()

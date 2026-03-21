@@ -1,8 +1,10 @@
-//! SSE 控制行分类（与 `crate::sse_protocol` 对齐）。
+//! 对经 SSE `data:` 下发的一行字符串做分类（与 `sse_protocol` 及历史兼容键名对齐）。
+//!
+//! Web 前端在 `frontend/src/api.ts` 的 `sendChatStream` 中做等价解析；此处为 **Rust 侧** 单一实现，供 TUI 等消费同一字节流时使用。
 
 /// 与 `sse_protocol` 对齐的 SSE 控制行；无法识别则视为模型流式正文。
 #[derive(Debug)]
-pub(super) enum AgentLineKind {
+pub(crate) enum AgentLineKind {
     ToolRunning(bool),
     ParsingToolCalls(bool),
     WorkspaceRefresh,
@@ -17,7 +19,7 @@ pub(super) enum AgentLineKind {
     Plain,
 }
 
-pub(super) fn classify_agent_sse_line(s: &str) -> AgentLineKind {
+pub(crate) fn classify_agent_sse_line(s: &str) -> AgentLineKind {
     if let Ok(msg) = serde_json::from_str::<crate::sse_protocol::SseMessage>(s) {
         match msg.payload {
             crate::sse_protocol::SsePayload::ToolRunning { tool_running } => {

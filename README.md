@@ -33,8 +33,10 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 - **流式输出与状态栏**：
   - Chat 回复支持流式增量显示。
   - 状态栏区分“模型生成中…”和“工具运行中…”，命令完成后不会一直显示忙碌。
-- **会话保存**：
-  - 顶部菜单栏提供“保存会话”按钮，可将当前对话导出为 JSON 文件，便于归档或调试。
+- **会话导出（Web 与 TUI 对齐）**：
+  - Web：顶部「**导出 JSON**」生成 `{ "version": 1, "messages": [...] }`，与 TUI 工作区内 `.crabmate/tui_session.json` 及 F8 导出同形（`role` / `content` 等字段与 OpenAI 兼容消息一致；工具气泡在 JSON 中为 `role: "tool"`）。
+  - Web：「**导出 MD**」正文与 TUI **F9** 一致（`# CrabMate 聊天记录`、按轮 `## 用户` / `## 助手` / `## 工具`）；可选会话标题与 id、标签等元信息前缀。
+  - TUI：**F8** JSON、**F9** Markdown，文件在 `.crabmate/exports/`。
 
 ## 文档与维护
 
@@ -507,7 +509,7 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
 | `--no-stream`     | 对 API 使用 `stream: false`（非 SSE），并在 CLI 下等待完整回答后一次性 Markdown 打印；TUI 侧亦为整块正文刷新。|
-| `--tui`           | 全屏终端 UI。会话默认持久化到当前工作区下 `.crabmate/tui_session.json`（退出保存、启动加载）；可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`；**F10** 查看与 `GET /health` 同逻辑的本机运行状况（无需启动 Web）。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止（详见 F1 帮助）。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
+| `--tui`           | 全屏终端 UI。底栏左侧为运行阶段、右侧为状态摘要（默认仅模型名）；完整键位见 **F1**。会话默认持久化到当前工作区下 `.crabmate/tui_session.json`（退出保存、启动加载）；可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`；**F10** 查看与 `GET /health` 同逻辑的本机运行状况（无需启动 Web）。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
 
 对应示例：
 

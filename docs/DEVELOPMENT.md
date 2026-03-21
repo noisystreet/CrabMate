@@ -85,6 +85,7 @@ flowchart TB
 |------|----------|
 | `agent_turn.rs` | Agent 主循环共用实现（Web/TUI）：调模型、解析 `tool_calls`、串联 `tool_registry` 与 PER。 |
 | `api.rs` | `chat/completions` 单次 HTTP 与 SSE 行解析；CLI 下终端 Markdown 展示（公式转 Unicode 见 `latex_unicode`）。 |
+| `chat_export.rs` | 会话导出：与 `.crabmate/tui_session.json` 同形的 `ChatSessionFile`（`version` + `messages`）、`messages_to_markdown`、写入 `exports/` 的 JSON/Markdown；Web 见 `frontend/src/chatExport.ts`。 |
 | `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限；运行中任务的 `PerTurnFlight` 注册供 `GET /status` 的 `per_active_jobs`。 |
 | `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数。 |
 | `context_window.rs` | 每次调模型前：`tool` 截断、条数/字符预算、可选摘要请求。 |
@@ -96,10 +97,11 @@ flowchart TB
 | `plan_artifact.rs` | 终答中规划 JSON（v1）解析与规则校验辅助。 |
 | `runtime/` | `cli`：单次问答/REPL；`tui`：全屏界面、绘制与输入。 |
 | `sse_protocol.rs` | SSE 负载枚举、`encode_message`、协议版本字段。 |
+| `sse_line.rs` | 对 SSE `data:` 单行做控制面/正文分类（`classify_agent_sse_line`）；与 `frontend/src/api.ts` 中 `tryDispatchSseControlPayload` 语义对齐。 |
 | `tool_registry.rs` | 按工具名选择 Workflow / 命令超时 / 天气与联网搜索超时 / 默认同步等策略。 |
 | `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
 | `tools/` | 全部 Function Calling 定义、`ToolContext`、`run_tool`；子模块见下表。 |
-| `types.rs` | `Message`、`Tool`、流式 chunk 等 OpenAI 兼容类型。 |
+| `types.rs` | `Message`、`Tool`、流式 chunk 等 OpenAI 兼容类型；`Message::system_only` / `user_only`、`messages_chat_seed` 供 Web 首轮与 CLI 共用。 |
 | `ui/` | Web 专用 axum handler：`workspace`、`task` 等。 |
 | `workflow.rs` | `workflow_execute`：DAG 拓扑、节点并行、工具调用与输出注入。 |
 | `workflow_reflection_controller.rs` | 反思回合状态、注入 `plan_next` 等契约校验。 |
@@ -231,6 +233,10 @@ flowchart LR
 
 - **SSE 控制帧**：`SseMessage { v, payload }` + `SsePayload`（`serde` untagged），`encode_message` 生成单行 JSON；Web `agent_turn`、TUI、`workflow` 审批、流式错误等均经此发出，避免手写 JSON 拼写错误。
 
+### `src/sse_line.rs`
+
+- **消费侧分类**：将单条 SSE `data:` 字符串分为工具状态、审批请求、工作区刷新、流错误、忽略或正文（`Plain`），供 TUI 主循环分支；与 `sse_protocol` 反序列化及若干历史裸 JSON 键名兼容。
+
 ### `src/types.rs`
 
 - **统一数据结构**：请求/响应、message、tool schema、stream chunk 等类型。
@@ -283,7 +289,7 @@ flowchart LR
 
 - **`ui`**：承载 Web 侧的“工作区/任务”等 API handler（与前端面板直接对应）。
 - **`runtime`**：CLI/TUI 运行时逻辑，负责 REPL、单次问答、TUI 的交互渲染与调用 `run_agent_turn`。
-  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_session`（`.crabmate/tui_session.json` 与导出；启动加载时按 `[agent] tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断，总条数含 `system`，超出则保留首条 system 与尾部最近若干条）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐）、`workspace_ops`、`sse_line`、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`、`allowlist`、`agent`（委托 `agent_turn`）。
+  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_session`（`.crabmate/tui_session.json` 与导出；启动加载时按 `[agent] tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断，总条数含 `system`，超出则保留首条 system 与尾部最近若干条）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐）、`workspace_ops`、`sse_line`、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`（底栏右侧 `status_line`：默认仅模型名等，不常驻快捷键说明）、`allowlist`、`agent`（委托 `agent_turn`）。
 
 ## 前端模块说明（`frontend/src/`）
 
@@ -334,5 +340,5 @@ flowchart LR
   - Web 模式下的工作区设置会影响“工具执行目录”，需要明确这一点避免误操作。
   - **密钥与日志**：勿将真实 API key、token、`.env` 内容写入代码、示例配置、commit message 或日志；日志与错误回显须脱敏。Cursor 规则见 **`.cursor/rules/secrets-and-logging.mdc`**。
   - 已知 HTTP 鉴权、监听地址、`workspace_set` 等安全与协议债见 [`docs/TODOLIST.md`](TODOLIST.md)。
-- **SSE 协议演进**：后端以 `sse_protocol::SseMessage` / `SsePayload` 为单一事实来源；`v` 递增时前端可按版本分支。解析逻辑在 `frontend/src/api.ts` 的 `sendChatStream`。
+- **SSE 协议演进**：后端以 `sse_protocol::SseMessage` / `SsePayload` 为单一事实来源；`v` 递增时前端可按版本分支。Rust 侧行分类见 `sse_line.rs`；浏览器侧统一在 `frontend/src/api.ts` 的 `tryDispatchSseControlPayload`（由 `sendChatStream` 调用）。
 

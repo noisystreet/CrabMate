@@ -20,6 +20,38 @@ pub struct Message {
     pub tool_call_id: Option<String>,
 }
 
+impl Message {
+    /// 无 `tool_calls` 的 `system` 消息（Web 首轮、CLI、TUI 空会话等共用）。
+    pub fn system_only(content: impl Into<String>) -> Self {
+        Self {
+            role: "system".to_string(),
+            content: Some(content.into()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// 无 `tool_calls` 的 `user` 消息。
+    pub fn user_only(content: impl Into<String>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: Some(content.into()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+}
+
+/// Web `/chat`、队列任务与 CLI 单次问答共用的首轮：`[system, user]`。
+pub fn messages_chat_seed(system_prompt: &str, user_text: &str) -> Vec<Message> {
+    vec![
+        Message::system_only(system_prompt.to_string()),
+        Message::user_only(user_text.to_string()),
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: String,
