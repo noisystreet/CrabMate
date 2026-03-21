@@ -441,8 +441,8 @@ async fn execute_http_fetch_web(
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
-    let url = match tools::http_fetch::parse_url_from_args(args) {
-        Ok(u) => u,
+    let (url, _method) = match tools::http_fetch::parse_http_fetch_args(args) {
+        Ok(x) => x,
         Err(e) => return (format!("错误：{}", e), None),
     };
     let url_str = url.as_str().to_string();
@@ -460,11 +460,11 @@ async fn execute_http_fetch_web(
     let args_owned = args.to_string();
     let cmd_timeout = cfg.command_timeout_secs.max(timeout_secs);
     let handle = tokio::task::spawn_blocking(move || {
-        let u = match tools::http_fetch::parse_url_from_args(&args_owned) {
-            Ok(u) => u,
+        let (u, m) = match tools::http_fetch::parse_http_fetch_args(&args_owned) {
+            Ok(x) => x,
             Err(e) => return format!("错误：{}", e),
         };
-        tools::http_fetch::fetch_url(&u, timeout_secs, max_body)
+        tools::http_fetch::fetch_with_method(&u, m, timeout_secs, max_body)
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,
@@ -483,13 +483,13 @@ async fn execute_http_fetch_tui(
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
-    let url = match tools::http_fetch::parse_url_from_args(args) {
-        Ok(u) => u,
+    let (url, method) = match tools::http_fetch::parse_http_fetch_args(args) {
+        Ok(x) => x,
         Err(e) => return (format!("错误：{}", e), None),
     };
     let url_str = url.as_str().to_string();
     let key = tools::http_fetch::storage_key(&url);
-    let redacted = tools::http_fetch::display_redacted(&url);
+    let approval_args = tools::http_fetch::approval_args_display(method, &url);
     let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch_max_response_bytes;
 
@@ -505,7 +505,7 @@ async fn execute_http_fetch_tui(
                     crate::sse_protocol::SsePayload::CommandApproval {
                         command_approval_request: crate::sse_protocol::CommandApprovalBody {
                             command: "http_fetch".to_string(),
-                            args: redacted.clone(),
+                            args: approval_args.clone(),
                             allowlist_key: Some(key.clone()),
                         },
                     },
@@ -520,7 +520,7 @@ async fn execute_http_fetch_tui(
         };
         match decision {
             CommandApprovalDecision::Deny => {
-                return (format!("用户拒绝 http_fetch：{}", redacted), None);
+                return (format!("用户拒绝 http_fetch：{}", approval_args), None);
             }
             CommandApprovalDecision::AllowOnce => {}
             CommandApprovalDecision::AllowAlways => {
@@ -535,11 +535,11 @@ async fn execute_http_fetch_tui(
     let args_owned = args.to_string();
     let cmd_timeout = cfg.command_timeout_secs.max(timeout_secs);
     let handle = tokio::task::spawn_blocking(move || {
-        let u = match tools::http_fetch::parse_url_from_args(&args_owned) {
-            Ok(u) => u,
+        let (u, m) = match tools::http_fetch::parse_http_fetch_args(&args_owned) {
+            Ok(x) => x,
             Err(e) => return format!("错误：{}", e),
         };
-        tools::http_fetch::fetch_url(&u, timeout_secs, max_body)
+        tools::http_fetch::fetch_with_method(&u, m, timeout_secs, max_body)
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,

@@ -128,6 +128,11 @@ pub(super) struct TuiState {
     pub pending_focus: Option<Focus>,
     pub pending_tab: Option<RightTab>,
     pub mouse_leak_scratch: String,
+    /// 聊天输入撤销栈（快照为 `(文本, 光标字节)`）。
+    pub input_undo: Vec<(String, usize)>,
+    pub input_redo: Vec<(String, usize)>,
+    pub prompt_undo: Vec<(String, usize)>,
+    pub prompt_redo: Vec<(String, usize)>,
 }
 
 /// xterm SGR 鼠标报告：`\x1b[<btn;col;rowM`；若 CSI 被吞掉，可见部分形如 `<35;50;30M`。
@@ -190,4 +195,11 @@ pub(super) fn feed_char_filter_sgr_mouse_leak<F: FnMut(char)>(
             }
         }
     }
+}
+
+/// 与 [`feed_char_filter_sgr_mouse_leak`] 等价，但将应写入输入框的字符收集为 `Vec`（便于调用方在写入前做撤销检查点）。
+pub(super) fn collect_feed_chars_after_sgr_filter(scratch: &mut String, ch: char) -> Vec<char> {
+    let mut out = Vec::new();
+    feed_char_filter_sgr_mouse_leak(scratch, ch, |c| out.push(c));
+    out
 }

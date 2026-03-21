@@ -12,8 +12,12 @@ use crate::types::{CommandApprovalDecision, Message};
 
 use super::agent::run_agent_turn_tui;
 use super::allowlist::save_persistent_allowlist;
+use super::clipboard;
 use super::draw;
-use super::state::{Focus, Mode, ModelPhase, RightTab, TuiState, feed_char_filter_sgr_mouse_leak};
+use super::edit_history;
+use super::state::{
+    Focus, Mode, ModelPhase, RightTab, TuiState, collect_feed_chars_after_sgr_filter,
+};
 use super::status::{set_high_contrast_status_line, set_normal_status_line};
 use super::styles::code_themes;
 use super::text_input;
@@ -21,6 +25,35 @@ use super::workspace_ops::{
     refresh_schedule, refresh_tasks, refresh_workspace, split_title_due, toggle_reminder_done,
     toggle_task_done, workspace_go_up, workspace_open_or_enter,
 };
+
+fn insert_tab_chat(state: &mut TuiState) {
+    if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+        edit_history::push_input_undo(state);
+        text_input::insert_at_cursor(&mut state.input, &mut state.input_cursor, '\t');
+    }
+}
+
+fn insert_tab_prompt(state: &mut TuiState) {
+    edit_history::push_prompt_undo(state);
+    text_input::insert_at_cursor(&mut state.prompt, &mut state.prompt_cursor, '\t');
+}
+
+fn paste_chat(state: &mut TuiState) {
+    if state.focus != Focus::ChatInput || state.mode != Mode::Normal {
+        return;
+    }
+    if let Some(t) = clipboard::try_clipboard_text() {
+        edit_history::push_input_undo(state);
+        text_input::insert_str_at_cursor(&mut state.input, &mut state.input_cursor, &t);
+    }
+}
+
+fn paste_prompt(state: &mut TuiState) {
+    if let Some(t) = clipboard::try_clipboard_text() {
+        edit_history::push_prompt_undo(state);
+        text_input::insert_str_at_cursor(&mut state.prompt, &mut state.prompt_cursor, &t);
+    }
+}
 
 /// 焦点在聊天输入且无 Ctrl/Alt 时写入输入缓冲；成功则返回 `true`。
 ///
@@ -32,9 +65,13 @@ fn try_feed_chat_input(key: &KeyEvent, state: &mut TuiState, ch: char) -> bool {
     if key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
         return false;
     }
-    feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ch, |c| {
+    let chars = collect_feed_chars_after_sgr_filter(&mut state.mouse_leak_scratch, ch);
+    if !chars.is_empty() {
+        edit_history::push_input_undo(state);
+    }
+    for c in chars {
         text_input::insert_at_cursor(&mut state.input, &mut state.input_cursor, c);
-    });
+    }
     true
 }
 
@@ -97,10 +134,12 @@ pub(super) async fn handle_key(
                 state.mouse_leak_scratch.clear();
                 state.prompt.clear();
                 state.prompt_cursor = 0;
+                edit_history::clear_prompt_history(state);
                 state.prompt_title.clear();
             }
             KeyCode::Enter => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    edit_history::push_prompt_undo(state);
                     text_input::insert_at_cursor(&mut state.prompt, &mut state.prompt_cursor, '\n');
                 } else {
                     if state.prompt_title.starts_with("新增提醒") {
@@ -125,17 +164,56 @@ pub(super) async fn handle_key(
                     state.mouse_leak_scratch.clear();
                     state.prompt.clear();
                     state.prompt_cursor = 0;
+                    edit_history::clear_prompt_history(state);
                     state.prompt_title.clear();
                 }
+            }
+            KeyCode::Tab => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    insert_tab_prompt(state);
+                }
+            }
+            KeyCode::Char('\t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                insert_tab_prompt(state);
+            }
+            KeyCode::Char('z')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                let _ = edit_history::prompt_undo(state);
+            }
+            KeyCode::Char('Z')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                let _ = edit_history::prompt_redo(state);
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                let _ = edit_history::prompt_redo(state);
+            }
+            KeyCode::Char('v') | KeyCode::Char('V')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                paste_prompt(state);
+            }
+            KeyCode::Char('i') | KeyCode::Char('I')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                insert_tab_prompt(state);
             }
             KeyCode::Backspace => {
                 if !state.mouse_leak_scratch.is_empty() {
                     state.mouse_leak_scratch.pop();
                 } else {
+                    edit_history::push_prompt_undo(state);
                     text_input::delete_before_cursor(&mut state.prompt, &mut state.prompt_cursor);
                 }
             }
             KeyCode::Delete => {
+                edit_history::push_prompt_undo(state);
                 text_input::delete_after_cursor(&mut state.prompt, &mut state.prompt_cursor);
             }
             KeyCode::Left => {
@@ -160,13 +238,18 @@ pub(super) async fn handle_key(
                 if !key.modifiers.contains(KeyModifiers::CONTROL)
                     && !key.modifiers.contains(KeyModifiers::ALT)
                 {
-                    feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ch, |c| {
+                    let chars =
+                        collect_feed_chars_after_sgr_filter(&mut state.mouse_leak_scratch, ch);
+                    if !chars.is_empty() {
+                        edit_history::push_prompt_undo(state);
+                    }
+                    for c in chars {
                         text_input::insert_at_cursor(
                             &mut state.prompt,
                             &mut state.prompt_cursor,
                             c,
                         );
-                    });
+                    }
                 }
             }
             _ => {}
@@ -285,6 +368,43 @@ pub(super) async fn handle_key(
             state.high_contrast = !state.high_contrast;
             set_high_contrast_status_line(state, &cfg.model);
         }
+        KeyCode::Char('z')
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                let _ = edit_history::input_undo(state);
+            }
+        }
+        KeyCode::Char('Z')
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && key.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                let _ = edit_history::input_redo(state);
+            }
+        }
+        KeyCode::Char('y') | KeyCode::Char('Y')
+            if key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                let _ = edit_history::input_redo(state);
+            }
+        }
+        KeyCode::Char('v') | KeyCode::Char('V')
+            if key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
+            paste_chat(state);
+        }
+        KeyCode::Char('i') | KeyCode::Char('I')
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
+            insert_tab_chat(state);
+        }
+        KeyCode::Char('\t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            insert_tab_chat(state);
+        }
         KeyCode::PageUp => {
             let step = state.input_rows.max(3) as usize;
             state.chat_follow_tail = false;
@@ -295,18 +415,22 @@ pub(super) async fn handle_key(
             state.chat_first_line = state.chat_first_line.saturating_add(step);
         }
         KeyCode::Tab => {
-            state.tab = match state.tab {
-                RightTab::Workspace => RightTab::Tasks,
-                RightTab::Tasks => RightTab::Schedule,
-                RightTab::Schedule => RightTab::Workspace,
-            };
-            if state.focus == Focus::Workspace && state.tab != RightTab::Workspace {
-                state.focus = Focus::Right;
-            }
-            match state.tab {
-                RightTab::Workspace => refresh_workspace(state),
-                RightTab::Tasks => refresh_tasks(state),
-                RightTab::Schedule => refresh_schedule(state),
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                insert_tab_chat(state);
+            } else {
+                state.tab = match state.tab {
+                    RightTab::Workspace => RightTab::Tasks,
+                    RightTab::Tasks => RightTab::Schedule,
+                    RightTab::Schedule => RightTab::Workspace,
+                };
+                if state.focus == Focus::Workspace && state.tab != RightTab::Workspace {
+                    state.focus = Focus::Right;
+                }
+                match state.tab {
+                    RightTab::Workspace => refresh_workspace(state),
+                    RightTab::Tasks => refresh_tasks(state),
+                    RightTab::Schedule => refresh_schedule(state),
+                }
             }
         }
         KeyCode::Up => {
@@ -382,6 +506,7 @@ pub(super) async fn handle_key(
                 && key.modifiers.contains(KeyModifiers::SHIFT)
             {
                 state.mouse_leak_scratch.clear();
+                edit_history::push_input_undo(state);
                 text_input::insert_at_cursor(&mut state.input, &mut state.input_cursor, '\n');
             } else if state.focus == Focus::Right || state.focus == Focus::Workspace {
                 match state.tab {
@@ -400,6 +525,7 @@ pub(super) async fn handle_key(
                     state.mouse_leak_scratch.clear();
                     state.input.clear();
                     state.input_cursor = 0;
+                    edit_history::clear_input_history(state);
                     state.chat_follow_tail = true;
                     state.messages.push(Message {
                         role: "user".to_string(),
@@ -480,12 +606,14 @@ pub(super) async fn handle_key(
                 if !state.mouse_leak_scratch.is_empty() {
                     state.mouse_leak_scratch.pop();
                 } else {
+                    edit_history::push_input_undo(state);
                     text_input::delete_before_cursor(&mut state.input, &mut state.input_cursor);
                 }
             }
         }
         KeyCode::Delete => {
             if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                edit_history::push_input_undo(state);
                 text_input::delete_after_cursor(&mut state.input, &mut state.input_cursor);
             }
         }
@@ -523,9 +651,13 @@ pub(super) async fn handle_key(
                     _ => {}
                 }
             } else if state.focus == Focus::ChatInput {
-                feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ' ', |c| {
+                let chars = collect_feed_chars_after_sgr_filter(&mut state.mouse_leak_scratch, ' ');
+                if !chars.is_empty() {
+                    edit_history::push_input_undo(state);
+                }
+                for c in chars {
                     text_input::insert_at_cursor(&mut state.input, &mut state.input_cursor, c);
-                });
+                }
             }
         }
         KeyCode::Char('a') => {
@@ -537,6 +669,7 @@ pub(super) async fn handle_key(
                 state.mode = Mode::Prompt;
                 state.prompt.clear();
                 state.prompt_cursor = 0;
+                edit_history::clear_prompt_history(state);
                 state.prompt_title =
                     "新增提醒：输入「标题 @ 2026-03-20 09:00」（@ 后可省略）".to_string();
             } else {
@@ -562,9 +695,13 @@ pub(super) async fn handle_key(
                 && !key.modifiers.contains(KeyModifiers::ALT)
                 && state.focus == Focus::ChatInput
             {
-                feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ch, |c| {
+                let chars = collect_feed_chars_after_sgr_filter(&mut state.mouse_leak_scratch, ch);
+                if !chars.is_empty() {
+                    edit_history::push_input_undo(state);
+                }
+                for c in chars {
                     text_input::insert_at_cursor(&mut state.input, &mut state.input_cursor, c);
-                });
+                }
             }
         }
         _ => {}

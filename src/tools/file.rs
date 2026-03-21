@@ -6,7 +6,7 @@
 
 use glob::Pattern;
 use regex::RegexBuilder;
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha512};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
@@ -20,6 +20,11 @@ const READ_FILE_ABS_MAX_LINES: usize = 8000;
 const READ_BINARY_META_PREFIX_DEFAULT: usize = 8192;
 /// read_binary_meta：前缀哈希最多读取字节（避免大文件读入过多）
 const READ_BINARY_META_PREFIX_MAX: usize = 256 * 1024;
+
+/// hash_file：`max_bytes` 上限（仅哈希前缀时）
+const HASH_FILE_MAX_PREFIX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+/// 流式读缓冲区
+const HASH_FILE_BUF_SIZE: usize = 256 * 1024;
 
 /// glob_files：默认/上限
 const GLOB_DEFAULT_MAX_DEPTH: usize = 20;
@@ -137,6 +142,144 @@ pub fn create_file(args_json: &str, working_dir: &Path) -> String {
     match std::fs::write(&target, content.as_bytes()) {
         Ok(()) => format!("已创建文件: {}", target.display()),
         Err(e) => format!("写入文件失败: {}", e),
+    }
+}
+
+#[cfg(unix)]
+fn is_cross_device_rename(err: &std::io::Error) -> bool {
+    err.raw_os_error() == Some(18) // EXDEV
+}
+
+#[cfg(windows)]
+fn is_cross_device_rename(err: &std::io::Error) -> bool {
+    err.raw_os_error() == Some(17) // ERROR_NOT_SAME_DEVICE
+}
+
+#[cfg(not(any(unix, windows)))]
+fn is_cross_device_rename(_: &std::io::Error) -> bool {
+    false
+}
+
+fn parse_from_to_overwrite(args_json: &str) -> Result<(String, String, bool), String> {
+    let v: serde_json::Value =
+        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {}", e))?;
+    let from = v
+        .get("from")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "缺少 from（源相对路径）".to_string())?
+        .to_string();
+    let to = v
+        .get("to")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "缺少 to（目标相对路径）".to_string())?
+        .to_string();
+    let overwrite = v
+        .get("overwrite")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    Ok((from, to, overwrite))
+}
+
+fn check_dest_for_write_file(dst: &Path, overwrite: bool) -> Result<(), String> {
+    if dst.exists() {
+        if dst.is_dir() {
+            return Err("错误：目标是已存在的目录，请指定具体文件路径".to_string());
+        }
+        if dst.is_file() && !overwrite {
+            return Err("错误：目标文件已存在；若需覆盖请设置 overwrite 为 true".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn try_rename_or_move_file(src: &Path, dst: &Path) -> std::io::Result<()> {
+    match std::fs::rename(src, dst) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            if is_cross_device_rename(&e) {
+                std::fs::copy(src, dst)?;
+                std::fs::remove_file(src)?;
+                Ok(())
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+/// 在工作区内复制**文件**（非目录）。源须已存在；路径规则与 `create_file` / `read_file` 相同（相对路径、`..` 与 symlink 逃逸校验）。
+/// 参数：`from`、`to` 为相对工作目录路径；`overwrite` 可选，默认 `false`（目标已存在且为文件时须显式 `true` 才覆盖）。
+pub fn copy_file(args_json: &str, working_dir: &Path) -> String {
+    let (from, to, overwrite) = match parse_from_to_overwrite(args_json) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    let src = match resolve_for_read(working_dir, &from) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    if !src.is_file() {
+        return "错误：源路径不是常规文件（或为目录），仅支持复制文件".to_string();
+    }
+    let dst = match resolve_for_write(working_dir, &to) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    if src == dst {
+        return "错误：源与目标解析后相同，无需复制".to_string();
+    }
+    if let Err(e) = check_dest_for_write_file(&dst, overwrite) {
+        return e;
+    }
+    if let Some(parent) = dst.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return format!("创建目标父目录失败: {}", e);
+    }
+    match std::fs::copy(&src, &dst) {
+        Ok(n) => format!("已复制：{} -> {}（{} 字节）", from, to, n),
+        Err(e) => format!("复制失败: {}", e),
+    }
+}
+
+/// 在工作区内移动**文件**（重命名或迁路径）。`rename` 失败且为跨设备时自动回退为复制后删除源文件。
+/// `overwrite` 默认 `false`：目标已存在为文件时须 `true` 才覆盖（与 `copy_file` 一致）。
+pub fn move_file(args_json: &str, working_dir: &Path) -> String {
+    let (from, to, overwrite) = match parse_from_to_overwrite(args_json) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    let src = match resolve_for_read(working_dir, &from) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    if !src.is_file() {
+        return "错误：源路径不是常规文件（或为目录），仅支持移动文件".to_string();
+    }
+    let dst = match resolve_for_write(working_dir, &to) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    if src == dst {
+        return "错误：源与目标解析后相同".to_string();
+    }
+    if let Err(e) = check_dest_for_write_file(&dst, overwrite) {
+        return e;
+    }
+    if let Some(parent) = dst.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return format!("创建目标父目录失败: {}", e);
+    }
+    match try_rename_or_move_file(&src, &dst) {
+        Ok(()) => format!("已移动：{} -> {}", from, to),
+        Err(e) => format!("移动失败: {}", e),
     }
 }
 
@@ -1052,6 +1195,139 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
     out.trim_end().to_string()
 }
 
+/// 计算工作区内**常规文件**的加密哈希（只读，流式读取，不把整文件载入内存）。
+///
+/// 参数：`path`（必填）；`algorithm`：`sha256`（默认）、`blake3`、`sha512`；`max_bytes` 可选，若设置则只哈希文件前若干字节（上限 4GiB），省略则整文件。
+pub fn hash_file(args_json: &str, working_dir: &Path) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数 JSON 无效: {}", e),
+    };
+    let path = match v
+        .get("path")
+        .and_then(|p| p.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(p) => p.to_string(),
+        None => return "错误：缺少 path 参数".to_string(),
+    };
+
+    let algo = v
+        .get("algorithm")
+        .and_then(|a| a.as_str())
+        .map(|s| s.trim().to_lowercase())
+        .unwrap_or_else(|| "sha256".to_string());
+
+    let max_bytes = match v.get("max_bytes").and_then(|n| n.as_u64()) {
+        Some(0) => return "错误：max_bytes 须大于 0；省略该字段表示哈希整文件".to_string(),
+        Some(n) => Some(n.min(HASH_FILE_MAX_PREFIX_BYTES)),
+        None => None,
+    };
+
+    let target = match resolve_for_read(working_dir, &path) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    if !target.is_file() {
+        return "错误：路径不是文件或不存在".to_string();
+    }
+
+    let meta = match std::fs::metadata(&target) {
+        Ok(m) => m,
+        Err(e) => return format!("读取元数据失败: {}", e),
+    };
+    let size = meta.len();
+
+    let limit = max_bytes.map(|m| m.min(size)).unwrap_or(size);
+
+    let hash_result = match algo.as_str() {
+        "sha256" | "sha-256" => hash_file_stream_sha256(&target, limit),
+        "sha512" | "sha-512" => hash_file_stream_sha512(&target, limit),
+        "blake3" => hash_file_stream_blake3(&target, limit),
+        _ => {
+            return format!(
+                "错误：algorithm 仅支持 sha256、sha512、blake3（收到 {:?}）",
+                algo
+            );
+        }
+    };
+
+    match hash_result {
+        Ok(hex_digest) => {
+            let mut out = String::new();
+            out.push_str(&format!("path: {}\n", path));
+            out.push_str(&format!("resolved: {}\n", target.display()));
+            out.push_str(&format!("size_bytes: {}\n", size));
+            out.push_str(&format!("hashed_bytes: {}\n", limit));
+            out.push_str(&format!("algorithm: {}\n", algo));
+            out.push_str(&format!("digest_hex: {}\n", hex_digest));
+            if max_bytes.is_some() && limit < size {
+                out.push_str("note: 仅前 hashed_bytes 参与哈希，非整文件。\n");
+            }
+            out.trim_end().to_string()
+        }
+        Err(e) => e,
+    }
+}
+
+fn hash_file_stream_sha256(path: &Path, max_read: u64) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; HASH_FILE_BUF_SIZE];
+    let mut remaining = max_read;
+    while remaining > 0 {
+        let chunk = (remaining as usize).min(buf.len());
+        let n = file
+            .read(&mut buf[..chunk])
+            .map_err(|e| format!("读取文件失败: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        remaining -= n as u64;
+    }
+    Ok(bytes_to_hex(&hasher.finalize()))
+}
+
+fn hash_file_stream_sha512(path: &Path, max_read: u64) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
+    let mut hasher = Sha512::new();
+    let mut buf = vec![0u8; HASH_FILE_BUF_SIZE];
+    let mut remaining = max_read;
+    while remaining > 0 {
+        let chunk = (remaining as usize).min(buf.len());
+        let n = file
+            .read(&mut buf[..chunk])
+            .map_err(|e| format!("读取文件失败: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        remaining -= n as u64;
+    }
+    Ok(bytes_to_hex(&hasher.finalize()))
+}
+
+fn hash_file_stream_blake3(path: &Path, max_read: u64) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = vec![0u8; HASH_FILE_BUF_SIZE];
+    let mut remaining = max_read;
+    while remaining > 0 {
+        let chunk = (remaining as usize).min(buf.len());
+        let n = file
+            .read(&mut buf[..chunk])
+            .map_err(|e| format!("读取文件失败: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        remaining -= n as u64;
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
 fn bytes_to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
@@ -1595,6 +1871,44 @@ mod tests {
     }
 
     #[test]
+    fn test_hash_file_sha256_empty() {
+        let dir = make_test_dir();
+        let file = dir.join("empty.dat");
+        std::fs::write(&file, []).unwrap();
+        let out = hash_file(r#"{"path":"empty.dat","algorithm":"sha256"}"#, &dir);
+        assert!(out.contains("digest_hex:"), "{}", out);
+        assert!(out.contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_hash_file_blake3_prefix() {
+        let dir = make_test_dir();
+        let file = dir.join("p.bin");
+        std::fs::write(&file, b"hello world").unwrap();
+        let full = hash_file(r#"{"path":"p.bin","algorithm":"blake3"}"#, &dir);
+        let prefix = hash_file(
+            r#"{"path":"p.bin","algorithm":"blake3","max_bytes":5}"#,
+            &dir,
+        );
+        assert!(full.contains("digest_hex:"), "{}", full);
+        assert!(prefix.contains("hashed_bytes: 5"), "{}", prefix);
+        assert_ne!(
+            line_digest(&full),
+            line_digest(&prefix),
+            "整文件与前缀哈希应不同"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn line_digest(out: &str) -> String {
+        out.lines()
+            .find(|l| l.starts_with("digest_hex:"))
+            .unwrap_or("")
+            .to_string()
+    }
+
+    #[test]
     fn test_modify_file_replace_lines() {
         let dir = make_test_dir();
         let file = dir.join("m.txt");
@@ -1731,6 +2045,63 @@ pub fn bar() { println!("hi"); }
         assert!(out.contains("a/") && out.contains("dir:"), "{}", out);
         assert!(out.contains("a/x.txt"), "{}", out);
         assert!(!out.contains("y.txt"), "不应列出 a/b 内文件: {}", out);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_copy_file_basic() {
+        let dir = make_test_dir();
+        std::fs::write(dir.join("a.txt"), "hello").unwrap();
+        let out = copy_file(r#"{"from":"a.txt","to":"sub/b.txt"}"#, &dir);
+        assert!(out.contains("已复制"), "{}", out);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("sub/b.txt")).unwrap(),
+            "hello"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_copy_file_reject_existing_without_overwrite() {
+        let dir = make_test_dir();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        std::fs::write(dir.join("b.txt"), "b").unwrap();
+        let out = copy_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir);
+        assert!(out.contains("overwrite"), "{}", out);
+        assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "b");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_copy_file_overwrite() {
+        let dir = make_test_dir();
+        std::fs::write(dir.join("a.txt"), "new").unwrap();
+        std::fs::write(dir.join("b.txt"), "old").unwrap();
+        let out = copy_file(r#"{"from":"a.txt","to":"b.txt","overwrite":true}"#, &dir);
+        assert!(out.contains("已复制"), "{}", out);
+        assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "new");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_move_file_basic() {
+        let dir = make_test_dir();
+        std::fs::write(dir.join("a.txt"), "mv").unwrap();
+        let out = move_file(r#"{"from":"a.txt","to":"c.txt"}"#, &dir);
+        assert!(out.contains("已移动"), "{}", out);
+        assert!(!dir.join("a.txt").exists());
+        assert_eq!(std::fs::read_to_string(dir.join("c.txt")).unwrap(), "mv");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_move_file_reject_existing_without_overwrite() {
+        let dir = make_test_dir();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        std::fs::write(dir.join("b.txt"), "b").unwrap();
+        let out = move_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir);
+        assert!(out.contains("overwrite"), "{}", out);
+        assert!(dir.join("a.txt").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -2,7 +2,9 @@
 
 mod agent;
 mod allowlist;
+mod clipboard;
 mod draw;
+mod edit_history;
 mod input;
 mod sse_line;
 mod state;
@@ -33,14 +35,21 @@ use state::{Focus, Mode, ModelPhase, TuiState, strip_sgr_mouse_leaks};
 use status::set_normal_status_line;
 use workspace_ops::{refresh_schedule, refresh_tasks, refresh_workspace, upsert_assistant_message};
 
-/// 退出全屏 TUI：关鼠标、离开备用屏幕、关 raw，并 flush stdin（crossterm 与 ratatui 一致）。
+/// 退出全屏 TUI：关鼠标、离开备用屏幕、关 raw，并丢弃 stdin 中残留的鼠标 CSI（避免退出后 shell 上出现 `12;34;56M` 等泄漏）。
 fn tui_restore_tty_mouse_and_stdin() -> std::io::Result<()> {
+    #[cfg(unix)]
+    flush_stdin_tty_queue();
+
     let mut out = stdout();
     execute!(out, DisableMouseCapture)?;
     execute!(out, LeaveAlternateScreen)?;
     disable_raw_mode()?;
+
     #[cfg(unix)]
     flush_stdin_tty_queue();
+    #[cfg(unix)]
+    drain_stdin_nonblocking_best_effort();
+
     Ok(())
 }
 
@@ -51,6 +60,35 @@ fn flush_stdin_tty_queue() {
     unsafe {
         libc::tcflush(fd, libc::TCIFLUSH);
     }
+}
+
+/// 非阻塞读尽 stdin，丢弃已排队但未解析的输入（常见于 Ctrl+C 退出瞬间的 SGR 鼠标序列）。
+#[cfg(unix)]
+fn drain_stdin_nonblocking_best_effort() {
+    use std::io::Read;
+    use std::os::unix::io::AsRawFd;
+
+    let fd = std::io::stdin().as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 {
+        return;
+    }
+    if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return;
+    }
+
+    let mut buf = [0u8; 512];
+    let mut stdin = std::io::stdin().lock();
+    for _ in 0..128 {
+        match stdin.read(&mut buf) {
+            Ok(0) => break,
+            Ok(_) => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+            Err(_) => break,
+        }
+    }
+
+    let _ = unsafe { libc::fcntl(fd, libc::F_SETFL, flags) };
 }
 
 pub async fn run_tui(
@@ -122,6 +160,10 @@ pub async fn run_tui(
         pending_focus: None,
         pending_tab: None,
         mouse_leak_scratch: String::new(),
+        input_undo: Vec::new(),
+        input_redo: Vec::new(),
+        prompt_undo: Vec::new(),
+        prompt_redo: Vec::new(),
     };
     refresh_workspace(&mut state);
     refresh_tasks(&mut state);
@@ -305,6 +347,7 @@ pub async fn run_tui(
         }
     }
 
+    drop(terminal);
     let _ = tui_restore_tty_mouse_and_stdin();
 
     Ok(())

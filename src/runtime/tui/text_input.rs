@@ -1,4 +1,6 @@
-//! 多行输入：UTF-8 安全光标、按显示宽度折行（与 `Paragraph` + `Wrap` 近似）。
+//! 多行输入：UTF-8 安全光标、按显示宽度折行。
+//!
+//! **折行**：此处为「按显示列宽、逐字符填满后换行」，与 ratatui `Paragraph` 的 `Wrap`（可能按词断行）在极长无空格行上可能略有差异；光标坐标以本模块算法为准。
 
 use unicode_width::UnicodeWidthChar;
 
@@ -21,6 +23,15 @@ pub(super) fn insert_at_cursor(s: &mut String, cursor: &mut usize, ch: char) {
     *cursor = snap_cursor_to_char_boundary(s, *cursor);
     s.insert(*cursor, ch);
     *cursor += ch.len_utf8();
+}
+
+pub(super) fn insert_str_at_cursor(s: &mut String, cursor: &mut usize, chunk: &str) {
+    if chunk.is_empty() {
+        return;
+    }
+    *cursor = snap_cursor_to_char_boundary(s, *cursor);
+    s.insert_str(*cursor, chunk);
+    *cursor += chunk.len();
 }
 
 pub(super) fn delete_before_cursor(s: &mut String, cursor: &mut usize) {

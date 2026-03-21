@@ -190,6 +190,13 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
             Line::from(
                 "发送：Enter 发送；Shift+Enter 换行。←→ 移动光标、↑↓ 按显示行移动、Home/End 行首行尾、Delete 向后删。",
             ),
+            Line::from(
+                "剪贴板：Ctrl+V 从系统剪贴板粘贴（Linux 需 X11/Wayland 与剪贴板环境；失败时静默跳过）。",
+            ),
+            Line::from("制表符：Tab 在右侧标签间切换；Ctrl+Tab 或 Ctrl+I 在输入中插入 Tab 字符。"),
+            Line::from(
+                "撤销/重做：Ctrl+Z 撤销，Ctrl+Y 或 Ctrl+Shift+Z 重做（多行编辑）。折行与显示可能与 Markdown 区略有偏差，属预期范围。",
+            ),
             Line::from("Markdown：F3 切换代码主题，F4 切换 Markdown 暗/亮样式。"),
             Line::from("高对比度：F5 在普通 / 高对比度模式之间切换（适合弱光/弱视）。"),
             Line::from("任务 / 日程：右侧标签页中查看和勾选任务、提醒和事件。"),
