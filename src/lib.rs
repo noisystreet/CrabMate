@@ -5,6 +5,7 @@
 
 mod api;
 mod config;
+mod tool_result;
 mod tools;
 mod types;
 mod workflow;
@@ -57,60 +58,19 @@ pub async fn run_agent_turn(
     render_to_terminal: bool,
     no_stream: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut per_coord =
-        per_coord::PerCoordinator::new(cfg.reflection_default_max_rounds);
-
-    'outer: loop {
-        if agent_turn::sse_sender_closed(out) {
-            info!("SSE sender closed, aborting run_agent_turn loop early");
-            break;
-        }
-
-        let (msg, finish_reason) = agent_turn::per_plan_call_model_retrying(
-            client,
-            api_key,
-            cfg,
-            tools,
-            messages,
-            out,
-            render_to_terminal,
-            no_stream,
-        )
-        .await?;
-
-        messages.push(msg.clone());
-
-        match agent_turn::per_reflect_after_assistant(
-            &mut per_coord,
-            &finish_reason,
-            &msg,
-            messages,
-        ) {
-            agent_turn::ReflectOnAssistantOutcome::StopTurn => break,
-            agent_turn::ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => continue 'outer,
-            agent_turn::ReflectOnAssistantOutcome::ProceedToExecuteTools => {}
-        }
-
-        let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
-
-        match agent_turn::per_execute_tools_web(
-            tool_calls,
-            &mut per_coord,
-            messages,
-            agent_turn::WebExecuteCtx {
-                cfg,
-                effective_working_dir,
-                workspace_is_set,
-                out,
-            },
-        )
-        .await
-        {
-            agent_turn::ExecuteToolsBatchOutcome::Finished => {}
-            agent_turn::ExecuteToolsBatchOutcome::AbortedSse => break,
-        }
-    }
-    Ok(())
+    agent_turn::run_agent_turn_common(
+        client,
+        api_key,
+        cfg,
+        tools,
+        messages,
+        out,
+        effective_working_dir,
+        workspace_is_set,
+        no_stream,
+        agent_turn::AgentRunMode::Web { render_to_terminal },
+    )
+    .await
 }
 
 // ---------- Web 服务 ----------

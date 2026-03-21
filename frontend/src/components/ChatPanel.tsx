@@ -732,15 +732,21 @@ export function ChatPanel({
           scheduleScrollToBottom()
         },
         onToolStatusChange,
-        onToolResult: ({ name, output }) => {
+        onToolResult: ({ name, output, ok, exit_code, error_code }) => {
           // 将工具输出也插入到对话中，使用专门的 system 样式，便于查看 ls 等命令结果
           const header = name ? `命令输出（${name}）` : '命令输出'
+          const statusParts: string[] = []
+          if (typeof ok === 'boolean') statusParts.push(ok ? '成功' : '失败')
+          if (typeof exit_code === 'number') statusParts.push(`exit=${exit_code}`)
+          if (error_code) statusParts.push(`code=${error_code}`)
+          const statusLine = statusParts.length ? `状态：${statusParts.join(' | ')}` : ''
+          const body = normalizeToolOutput(output)
           setMessages((m) => [
             ...m,
             {
               id: makeMessageId(),
               role: 'system',
-              text: `${header}\n${normalizeToolOutput(output)}`,
+              text: statusLine ? `${header}\n${statusLine}\n${body}` : `${header}\n${body}`,
               collapsed: true,
               isToolOutput: true,
             },
