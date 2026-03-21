@@ -26,7 +26,7 @@ use allowlist::{command_approval_message, load_persistent_allowlist};
 use draw::draw_ui;
 use input::{handle_crossterm_mouse, handle_key, HandleKeyContext};
 use sse_line::{classify_agent_sse_line, AgentLineKind};
-use state::{strip_sgr_mouse_leaks, Focus, Mode, TuiState};
+use state::{strip_sgr_mouse_leaks, Focus, Mode, ModelPhase, TuiState};
 use status::set_normal_status_line;
 use workspace_ops::{refresh_schedule, refresh_tasks, refresh_workspace, upsert_assistant_message};
 
@@ -86,6 +86,7 @@ pub async fn run_tui(
         persistent_command_allowlist,
         allowlist_file,
         status_line: String::new(),
+        model_phase: ModelPhase::Idle,
         tool_running: false,
         tool_running_clear_pending: false,
         focus: Focus::ChatInput,
@@ -148,7 +149,18 @@ pub async fn run_tui(
                 AgentLineKind::ToolRunning(true) => {
                     state.tool_running = true;
                     state.tool_running_clear_pending = false;
-                    state.status_line = "工具运行中…".to_string();
+                    state.model_phase = ModelPhase::ToolRunning;
+                    set_normal_status_line(&mut state, &cfg.model);
+                }
+                AgentLineKind::ParsingToolCalls(true) => {
+                    state.model_phase = ModelPhase::SelectingTools;
+                    set_normal_status_line(&mut state, &cfg.model);
+                }
+                AgentLineKind::ParsingToolCalls(false) => {
+                    if state.model_phase == ModelPhase::SelectingTools {
+                        state.model_phase = ModelPhase::Thinking;
+                        set_normal_status_line(&mut state, &cfg.model);
+                    }
                 }
                 AgentLineKind::ToolRunning(false) => {
                     // 不在此处立即清掉：否则与 true 同一次 try_recv 排空时，draw 前状态已被还原，用户看不到提示。
@@ -164,12 +176,14 @@ pub async fn run_tui(
                     state.pending_command_args = args;
                     state.approve_choice = 0;
                     state.mode = Mode::CommandApprove;
+                    state.model_phase = ModelPhase::AwaitingApproval;
                     state.status_line = command_approval_message(
                         &state.pending_command,
                         &state.pending_command_args,
                     );
                 }
                 AgentLineKind::StreamError => {
+                    state.model_phase = ModelPhase::Error;
                     assistant_buf.push('\n');
                     assistant_buf.push_str(&s);
                     let cleaned = strip_sgr_mouse_leaks(&assistant_buf);
@@ -180,6 +194,7 @@ pub async fn run_tui(
                 }
                 AgentLineKind::Ignore => {}
                 AgentLineKind::Plain => {
+                    state.model_phase = ModelPhase::Answering;
                     assistant_buf.push_str(&s);
                     let cleaned = strip_sgr_mouse_leaks(&assistant_buf);
                     if cleaned != assistant_buf {
@@ -201,6 +216,7 @@ pub async fn run_tui(
             approval_tx = None;
             state.tool_running = false;
             state.tool_running_clear_pending = false;
+            state.model_phase = ModelPhase::Idle;
             set_normal_status_line(&mut state, &cfg.model);
         }
 
@@ -261,6 +277,7 @@ pub async fn run_tui(
             && !state.chat_follow_tail
             && !had_input
             && !state.tool_running
+            && state.model_phase != ModelPhase::SelectingTools
             && last_draw_at.elapsed() < stream_scroll_min_draw_interval;
         let did_draw = !throttle_draw;
         if did_draw {
@@ -272,7 +289,12 @@ pub async fn run_tui(
         if did_draw && state.tool_running_clear_pending {
             state.tool_running_clear_pending = false;
             state.tool_running = false;
-            if state.status_line == "工具运行中…" {
+            if state.model_phase == ModelPhase::ToolRunning {
+                state.model_phase = if streaming {
+                    ModelPhase::Thinking
+                } else {
+                    ModelPhase::Idle
+                };
                 set_normal_status_line(&mut state, &cfg.model);
             }
         }

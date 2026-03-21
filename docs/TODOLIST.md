@@ -14,7 +14,7 @@
 
 ## P1 — 产品 / 协议
 
-- [ ] **Web 聊天无多轮历史**：`ChatRequestBody` 仅 `message: String`（`src/lib.rs`），`max_message_history` 截断在当前 API 下几乎不生效。若需会话延续，需扩展请求体（如 `messages` / `conversation_id` + 服务端存储）并统一与 `run_agent_turn` 对齐。
+- [ ] **Web 聊天无跨请求多轮历史**：`ChatRequestBody` 仍仅 `message: String`（`src/lib.rs`），服务端不持久化会话；单请求内的多轮工具循环已由 `context_window` 做截断/预算/可选摘要。若需浏览器侧连续对话，需扩展请求体（如 `messages` / `conversation_id` + 存储）并与 `run_agent_turn` 对齐。
 - [ ] **Web 侧 workflow 审批（可选）**：当前 TUI 可对命令/workflow 做人机审批，Web 为 `NoApproval`。若要对齐安全模型，需产品定案 + SSE/前端确认流 + 超时默认拒绝。
 
 ---

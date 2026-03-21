@@ -13,7 +13,7 @@ use crate::types::{CommandApprovalDecision, Message};
 use super::agent::run_agent_turn_tui;
 use super::allowlist::save_persistent_allowlist;
 use super::state::{
-    feed_char_filter_sgr_mouse_leak, Focus, Mode, RightTab, TuiState,
+    feed_char_filter_sgr_mouse_leak, Focus, Mode, ModelPhase, RightTab, TuiState,
 };
 use super::status::{set_high_contrast_status_line, set_normal_status_line};
 use super::styles::code_themes;
@@ -148,6 +148,7 @@ pub(super) async fn handle_key(
                 let _ = ch.send(decision).await;
             }
             state.mode = Mode::Normal;
+            state.model_phase = ModelPhase::Thinking;
             set_normal_status_line(state, &cfg.model);
             state.pending_command.clear();
             state.pending_command_args.clear();
@@ -358,7 +359,8 @@ pub(super) async fn handle_key(
                         name: None,
                         tool_call_id: None,
                     });
-                    state.status_line = "模型生成中…".to_string();
+                    state.model_phase = ModelPhase::Thinking;
+                    set_normal_status_line(state, &cfg.model);
                     let mut messages = state.messages.clone();
                     let tx2 = tx.clone();
                     let work_dir = state.workspace_dir.clone();

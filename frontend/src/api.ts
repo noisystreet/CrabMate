@@ -410,6 +410,8 @@ export async function sendChatStream(
     onWorkspaceChanged?: () => void
     onToolCall?: (info: { name: string; summary: string }) => void
     onToolStatusChange?: (running: boolean) => void
+    /** 模型正在流式解析 tool_calls（选工具 / 拼参数） */
+    onParsingToolCallsChange?: (parsing: boolean) => void
     onToolResult?: (info: ToolResultInfo) => void
     /** 预留：后端 `plan_required`（如 PER 结构化规划提示） */
     onPlanRequired?: () => void
@@ -454,6 +456,7 @@ export async function sendChatStream(
             workspace_changed?: boolean
             tool_call?: { name?: string; summary?: string }
             tool_running?: boolean
+            parsing_tool_calls?: boolean
             tool_result?: {
               name?: string
               output?: string
@@ -483,6 +486,10 @@ export async function sendChatStream(
               name: parsed.tool_call.name || '',
               summary: parsed.tool_call.summary,
             })
+            continue
+          }
+          if (typeof parsed.parsing_tool_calls === 'boolean') {
+            callbacks.onParsingToolCallsChange?.(parsed.parsing_tool_calls)
             continue
           }
           if (typeof parsed.tool_running === 'boolean') {
@@ -520,6 +527,7 @@ export async function sendChatStream(
             workspace_changed?: boolean
             tool_call?: { name?: string; summary?: string }
             tool_running?: boolean
+            parsing_tool_calls?: boolean
             tool_result?: {
               name?: string
               output?: string
@@ -542,6 +550,8 @@ export async function sendChatStream(
               name: parsed.tool_call.name || '',
               summary: parsed.tool_call.summary,
             })
+          } else if (typeof parsed.parsing_tool_calls === 'boolean') {
+            callbacks.onParsingToolCallsChange?.(parsed.parsing_tool_calls)
           } else if (typeof parsed.tool_running === 'boolean') {
             callbacks.onToolStatusChange?.(parsed.tool_running)
           } else if (parsed.tool_result?.output != null) {

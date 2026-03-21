@@ -217,7 +217,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
             Line::raw(""),
             Line::from("布局：左侧对话 + 输入区域，右侧 工作区 / 任务 / 日程 标签页。"),
             Line::from("焦点切换：F2 在 聊天 和 右侧 面板之间切换，Tab 在右侧标签页间切换。"),
-            Line::from("发送：在输入框中按 Enter 发送消息；工具运行时状态栏会提示。"),
+            Line::from("发送：在输入框中按 Enter；底栏「状态」含思考中/选用工具/回答中/工具执行中/完成等。"),
             Line::from("Markdown：F3 切换代码主题，F4 切换 Markdown 暗/亮样式。"),
             Line::from("高对比度：F5 在普通 / 高对比度模式之间切换（适合弱光/弱视）。"),
             Line::from("任务 / 日程：右侧标签页中查看和勾选任务、提醒和事件。"),
@@ -412,16 +412,21 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
             lines.extend(text.lines.into_iter());
         } else {
             for l in rendered.lines() {
-                let padded = if l.width() >= chat_inner_width {
-                    l.to_string()
+                // 仅用户气泡内正文保持靠右；模型回复与工具输出一律左对齐。
+                let line_str = if m.role == "user" {
+                    if l.width() >= chat_inner_width {
+                        l.to_string()
+                    } else {
+                        format!(
+                            "{}{}",
+                            " ".repeat(chat_inner_width.saturating_sub(l.width())),
+                            l
+                        )
+                    }
                 } else {
-                    format!(
-                        "{}{}",
-                        " ".repeat(chat_inner_width.saturating_sub(l.width())),
-                        l
-                    )
+                    l.to_string()
                 };
-                lines.push(Line::raw(padded));
+                lines.push(Line::raw(line_str));
             }
         }
         lines.push(Line::raw(""));
@@ -449,8 +454,7 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     let chat_focused = state.focus == Focus::ChatView;
     let chat_block = Block::default()
         .borders(Borders::NONE)
-        .padding(Padding::symmetric(1, 1))
-        .style(Style::default().bg(Color::Black));
+        .padding(Padding::symmetric(1, 1));
     let chat = Paragraph::new(lines)
         .block(chat_block)
         .wrap(Wrap { trim: false });
@@ -476,11 +480,10 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     let input_focused = state.mode == Mode::Prompt || state.focus == Focus::ChatInput;
     let input_block = Block::default()
         .borders(Borders::NONE)
-        .padding(Padding::symmetric(1, 1))
-        .style(Style::default().bg(Color::DarkGray));
+        .padding(Padding::symmetric(1, 1));
     let input = Paragraph::new(input_text)
         .block(input_block)
-        .style(Style::default().fg(Color::Gray).bg(Color::DarkGray))
+        .style(Style::default().fg(Color::Gray))
         .wrap(Wrap { trim: false });
     f.render_widget(input, vchunks[1]);
 
@@ -541,14 +544,17 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         Focus::Workspace => Color::Green,
         Focus::Right => Color::Magenta,
     };
-    let status_bg = Color::Blue;
     let status_block = Block::default()
         .borders(Borders::NONE)
-        .padding(Padding::symmetric(1, 1))
-        .style(Style::default().bg(status_bg));
-    let status = Paragraph::new(state.status_line.as_str())
+        .padding(Padding::symmetric(1, 1));
+    let status_full = format!(
+        "状态：{} | {}",
+        state.model_phase.label(),
+        state.status_line
+    );
+    let status = Paragraph::new(status_full)
         .block(status_block)
-        .style(Style::default().fg(status_color).bg(status_bg));
+        .style(Style::default().fg(status_color));
     f.render_widget(status, vchunks[2]);
     let status_corner_style = Style::default()
         .fg(status_color)
@@ -575,11 +581,9 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
         .map(|t| Line::from(Span::raw(*t)))
         .collect();
     let right_focused = state.focus == Focus::Right;
-    let tabs_bg = Color::DarkGray;
     let tabs_block = Block::default()
         .borders(Borders::NONE)
-        .padding(Padding::symmetric(1, 1))
-        .style(Style::default().bg(tabs_bg));
+        .padding(Padding::symmetric(1, 1));
     let tabs = Tabs::new(titles)
         .select(state.tab as usize)
         .block(tabs_block)
@@ -624,11 +628,9 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
             let workspace_focused = state.focus == Focus::Workspace;
             let workspace_block = Block::default()
                 .borders(Borders::NONE)
-                .padding(Padding::symmetric(1, 1))
-                .style(Style::default().bg(Color::Black));
+                .padding(Padding::symmetric(1, 1));
             let w = Paragraph::new(lines)
                 .block(workspace_block)
-                .style(Style::default().fg(Color::White))
                 .wrap(Wrap { trim: false });
             f.render_widget(w, vchunks[1]);
             let c = if workspace_focused {
@@ -668,11 +670,9 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
             let tasks_focused = state.focus == Focus::Right && state.tab == RightTab::Tasks;
             let tasks_block = Block::default()
                 .borders(Borders::NONE)
-                .padding(Padding::symmetric(1, 1))
-                .style(Style::default().bg(Color::Blue));
+                .padding(Padding::symmetric(1, 1));
             let w = Paragraph::new(lines)
                 .block(tasks_block)
-                .style(Style::default().fg(Color::White))
                 .wrap(Wrap { trim: false });
             f.render_widget(w, vchunks[1]);
             let c = if tasks_focused {
@@ -744,11 +744,9 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
             let schedule_focused = state.focus == Focus::Right && state.tab == RightTab::Schedule;
             let schedule_block = Block::default()
                 .borders(Borders::NONE)
-                .padding(Padding::symmetric(1, 1))
-                .style(Style::default().bg(Color::Magenta));
+                .padding(Padding::symmetric(1, 1));
             let w = Paragraph::new(lines)
                 .block(schedule_block)
-                .style(Style::default().fg(Color::White))
                 .wrap(Wrap { trim: false });
             f.render_widget(w, vchunks[1]);
             let c = if schedule_focused {
@@ -771,8 +769,7 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
     if state.mode == Mode::FileView {
         let block = Block::default()
             .borders(Borders::NONE)
-            .padding(Padding::symmetric(1, 1))
-            .style(Style::default().bg(Color::DarkGray));
+            .padding(Padding::symmetric(1, 1));
         let title = format!("查看文件（Esc/q 关闭）：{}", state.file_view_title);
         let full = format!("{}\n{}\n", title, state.file_view_content);
         let content = Paragraph::new(full)
