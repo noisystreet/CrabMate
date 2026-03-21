@@ -633,7 +633,7 @@ pub fn commit(args_json: &str, max_output_len: usize, working_dir: &Path) -> Str
     run_and_format(cmd, max_output_len, "git commit")
 }
 
-fn ensure_git_repo(working_dir: &Path) -> Result<(), String> {
+pub(crate) fn ensure_git_repo(working_dir: &Path) -> Result<(), String> {
     let out = Command::new("git")
         .arg("rev-parse")
         .arg("--is-inside-work-tree")

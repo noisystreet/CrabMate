@@ -10,13 +10,17 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `calc`：使用 Linux 的 `bc -l` 执行数学表达式（四则、乘方 ^、sqrt/sin/cos/tan/ln/exp、pi/e 等）。
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
   - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
-  - `http_fetch`：对给定 URL 发起 **GET** 并返回正文（有超时与响应体大小上限）。**Web** 端仅当 URL 以配置的 `http_fetch_allowed_prefixes` 中某一前缀开头时才执行；**TUI** 下未匹配前缀时可像 `run_command` 一样 **拒绝 / 本次允许 / 永久允许**（永久同意会把该 URL 的归一化键写入持久白名单）。
+  - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。**Web** 端仅当 URL 以 `http_fetch_allowed_prefixes` 中某一前缀开头时才执行；**TUI** 下未匹配前缀时可像 `run_command` 一样 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键）。
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`head`、`tail`、`wc`、`cmake`、`gcc`、`g++`、`make` 等），带超时与输出截断。
   - `run_executable`：在工作区目录下运行可执行文件（路径、参数均做安全校验）。
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。
+  - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接目标是否存在；`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测。
   - `structured_validate` / `structured_query` / `structured_diff`：校验 **JSON / YAML / TOML**（如 `package.json`、`Cargo.toml`、CI 配置）；按 **JSON Pointer**（`/a/b`）或**点号路径**查询嵌套键；对两份文件做**结构化 diff**（与 `git_diff` 文本 diff 互补）。
+  - `changelog_draft`：根据 **git log** 生成 **Markdown 变更说明草稿**（不写仓库）；可按提交日聚合、`flat` 平铺，或按 **相邻 tag** 分段（`tag_ranges`）。
+  - `license_notice`：运行 **cargo metadata**，生成 **crate → license** 的 Markdown 表（未声明项有占位说明）；**非法律意见**，发版前需人工核对。
+  - `hash_file`：对工作区内文件做只读 **SHA-256 / SHA-512 / BLAKE3**（流式读取）；可选仅哈希前 `max_bytes` 字节，便于大文件或抽样校验。
   - `diagnostic_summary`：只读排障摘要——Rust 工具链（`rustc`/`cargo`/`rustup`/`bc`）、工作区 `target/` 与 `Cargo.toml` / `frontend` 常见路径、关键环境变量**是否设置**（**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：
   - 浏览当前工作目录的文件/子目录。

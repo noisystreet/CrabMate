@@ -20,6 +20,7 @@ mod lint;
 mod markdown_links;
 mod patch;
 mod quality_tools;
+mod release_docs;
 mod rust_ide;
 mod schedule;
 mod security_tools;
@@ -169,10 +170,16 @@ fn params_http_fetch() -> serde_json::Value {
         "properties": {
             "url": {
                 "type": "string",
-                "description": "完整 http(s) URL（GET）。Web 仅允许匹配配置的 http_fetch_allowed_prefixes；TUI 未匹配时可人工审批（与 run_command 相同交互）。"
+                "description": "完整 http(s) URL。Web 仅允许匹配 http_fetch_allowed_prefixes；TUI 未匹配时可人工审批（与 run_command 相同）。"
+            },
+            "method": {
+                "type": "string",
+                "description": "HTTP 方法：GET（默认，返回正文截断）或 HEAD（仅状态码、Content-Type、Content-Length、重定向链，不下载 body）",
+                "enum": ["GET", "HEAD", "get", "head"]
             }
         },
-        "required": ["url"]
+        "required": ["url"],
+        "additionalProperties": false
     })
 }
 
@@ -616,6 +623,61 @@ fn params_git_log() -> serde_json::Value {
     })
 }
 
+fn params_changelog_draft() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "since": {
+                "type": "string",
+                "description": "可选：范围起点（tag/提交/分支）；与 until 组成 since..until"
+            },
+            "until": {
+                "type": "string",
+                "description": "可选：范围终点；默认与 HEAD 组合见 since；都空则从 HEAD 回溯"
+            },
+            "max_commits": {
+                "type": "integer",
+                "description": "最多纳入多少条提交，默认 500，上限 2000",
+                "minimum": 1,
+                "maximum": 2000
+            },
+            "group_by": {
+                "type": "string",
+                "description": "聚合方式：date=按提交日；flat=平铺列表；tag_ranges 或 tags=按相邻 tag 区间（semver 降序，需至少 2 个 tag）",
+                "enum": ["date", "flat", "tag_ranges", "tags"]
+            },
+            "max_tag_sections": {
+                "type": "integer",
+                "description": "tag_ranges 时最多几段区间（每段一对相邻 tag），默认 25，上限 100",
+                "minimum": 1,
+                "maximum": 100
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
+fn params_license_notice() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "workspace_only": {
+                "type": "boolean",
+                "description": "仅列出工作区成员包（默认 false：含解析图中的传递依赖）"
+            },
+            "max_crates": {
+                "type": "integer",
+                "description": "表格最多多少行（按 crate 名去重后），默认 500，上限 3000",
+                "minimum": 1,
+                "maximum": 3000
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
 fn params_git_show() -> serde_json::Value {
     serde_json::json!({
         "type":"object",
@@ -823,6 +885,28 @@ fn params_modify_file() -> serde_json::Value {
     })
 }
 
+fn params_file_from_to_overwrite() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "from": {
+                "type": "string",
+                "description": "源文件路径（相对工作目录）"
+            },
+            "to": {
+                "type": "string",
+                "description": "目标文件路径（相对工作目录）；父目录不存在时会创建"
+            },
+            "overwrite": {
+                "type": "boolean",
+                "description": "目标已存在且为文件时是否覆盖；默认 false"
+            }
+        },
+        "required": ["from", "to"],
+        "additionalProperties": false
+    })
+}
+
 fn params_read_file() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -954,6 +1038,29 @@ fn params_read_binary_meta() -> serde_json::Value {
                 "description": "参与 SHA256 的文件头字节数：默认 8192；0 表示不计算哈希；最大 262144",
                 "minimum": 0,
                 "maximum": 262144
+            }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+    })
+}
+
+fn params_hash_file() -> serde_json::Value {
+    let max_prefix: i64 = (4u64 * 1024 * 1024 * 1024).min(i64::MAX as u64) as i64;
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": { "type": "string", "description": "相对工作区的文件路径（必填）" },
+            "algorithm": {
+                "type": "string",
+                "description": "哈希算法：sha256（默认）、sha512、blake3",
+                "enum": ["sha256", "sha-256", "sha512", "sha-512", "blake3"]
+            },
+            "max_bytes": {
+                "type": "integer",
+                "description": "可选：仅哈希文件前若干字节（与整文件校验不同）；省略则整文件流式哈希。最小 1，上限 4GiB",
+                "minimum": 1,
+                "maximum": max_prefix
             }
         },
         "required": ["path"],
@@ -1465,6 +1572,14 @@ fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
     diagnostics::diagnostic_summary(args, ctx.working_dir)
 }
 
+fn runner_changelog_draft(args: &str, ctx: &ToolContext<'_>) -> String {
+    release_docs::changelog_draft(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_license_notice(args: &str, ctx: &ToolContext<'_>) -> String {
+    release_docs::license_notice(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
 fn runner_ci_pipeline_local(args: &str, ctx: &ToolContext<'_>) -> String {
     ci_tools::ci_pipeline_local(args, ctx.working_dir, ctx.command_max_output_len)
 }
@@ -1547,6 +1662,14 @@ fn runner_modify_file(args: &str, ctx: &ToolContext<'_>) -> String {
     file::modify_file(args, ctx.working_dir)
 }
 
+fn runner_copy_file(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::copy_file(args, ctx.working_dir)
+}
+
+fn runner_move_file(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::move_file(args, ctx.working_dir)
+}
+
 fn runner_read_file(args: &str, ctx: &ToolContext<'_>) -> String {
     file::read_file(args, ctx.working_dir)
 }
@@ -1569,6 +1692,10 @@ fn runner_file_exists(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_read_binary_meta(args: &str, ctx: &ToolContext<'_>) -> String {
     file::read_binary_meta(args, ctx.working_dir)
+}
+
+fn runner_hash_file(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::hash_file(args, ctx.working_dir)
 }
 
 fn runner_extract_in_file(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -1695,7 +1822,7 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "http_fetch",
-            description: "对 **http/https** URL 发起 **GET**，返回状态、Content-Type 与正文（按配置截断）。**Web**：仅当 URL 以 `http_fetch_allowed_prefixes` 中某一前缀开头时执行。**TUI**：未匹配前缀时弹出与 `run_command` 相同的审批（拒绝 / 本次同意 / 永久同意）；永久同意写入白名单键 `http_fetch:<归一化URL>`（无 query）。勿在 URL 中放真实密钥；审批展示会隐藏 query。`workflow_execute` 节点内仅白名单 URL 可成功。",
+            description: "对 **http/https** URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（按配置截断）；HEAD 不下载 body，仅元数据与重定向链，省流量。**Web**：仅当 URL 以 `http_fetch_allowed_prefixes` 中某一前缀开头时执行。**TUI**：未匹配前缀时与 `run_command` 相同审批；GET/HEAD 共用白名单键 `http_fetch:<归一化URL>`。勿在 URL 中放真实密钥。`workflow_execute` 节点内仅白名单 URL 可成功。",
             category: ToolCategory::Search,
             parameters: params_http_fetch,
             runner: runner_http_fetch,
@@ -1904,6 +2031,20 @@ fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_diagnostic_summary,
         },
         ToolSpec {
+            name: "changelog_draft",
+            description: "根据 **git log** 生成 **Markdown 变更说明草稿**（**不写仓库**）。支持按提交日聚合 subject、`flat` 平铺、或 `tag_ranges` 按 semver 降序相邻 tag 分段（`--no-merges`）。可选 since/until 与 max_commits。",
+            category: ToolCategory::Utility,
+            parameters: params_changelog_draft,
+            runner: runner_changelog_draft,
+        },
+        ToolSpec {
+            name: "license_notice",
+            description: "运行 **cargo metadata** 解析依赖图，生成 **crate → license** 的 Markdown 表（**只读**；未在 Cargo.toml 声明的显示占位说明）。可选仅工作区成员、限制行数。非法律意见，发版前需人工核对。",
+            category: ToolCategory::Utility,
+            parameters: params_license_notice,
+            runner: runner_license_notice,
+        },
+        ToolSpec {
             name: "git_status",
             description: "读取当前工作区的 Git 状态（只读）。可查看分支、已暂存/未暂存变更和未跟踪文件，帮助在改动前后自检变更范围，避免覆盖未提交内容。",
             category: ToolCategory::Command,
@@ -2051,6 +2192,20 @@ fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_modify_file,
         },
         ToolSpec {
+            name: "copy_file",
+            description: "在工作区内复制**文件**（非目录）。路径校验与 create/read 一致（禁止绝对路径与 `..` 越界、借助 symlink 逃逸）。目标为已存在文件时须 `overwrite=true` 才覆盖；目标为已存在目录会报错。适合批量整理而无需把内容读进对话。",
+            category: ToolCategory::File,
+            parameters: params_file_from_to_overwrite,
+            runner: runner_copy_file,
+        },
+        ToolSpec {
+            name: "move_file",
+            description: "在工作区内移动/重命名**文件**。`overwrite` 语义同 `copy_file`。跨文件系统时 `rename` 失败会自动回退为复制后删除源文件。",
+            category: ToolCategory::File,
+            parameters: params_file_from_to_overwrite,
+            runner: runner_move_file,
+        },
+        ToolSpec {
             name: "read_file",
             description: "按行流式读取文件（不把整文件载入内存）。默认单次最多返回 max_lines=500 行（可调到 8000）；未指定 end_line 时自动分段。输出提示下一段 start_line。可选 count_total_lines 统计总行数（大文件慎用）。",
             category: ToolCategory::File,
@@ -2091,6 +2246,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Utility,
             parameters: params_read_binary_meta,
             runner: runner_read_binary_meta,
+        },
+        ToolSpec {
+            name: "hash_file",
+            description: "对工作区内**常规文件**做只读哈希（流式读取，不占满内存）：**sha256**（默认）、**sha512**、**blake3**。可选 `max_bytes` 仅哈希前缀（用于大文件抽样或对齐外部工具）；路径解析与 `read_file` 相同。",
+            category: ToolCategory::Utility,
+            parameters: params_hash_file,
+            runner: runner_hash_file,
         },
         ToolSpec {
             name: "extract_in_file",
@@ -2377,6 +2539,8 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         "workflow_execute" => Some("执行 DAG 工作流".to_string()),
         "rust_backtrace_analyze" => Some("分析 Rust backtrace".to_string()),
         "diagnostic_summary" => Some("环境/工具链诊断摘要（脱敏）".to_string()),
+        "changelog_draft" => Some("生成变更日志 Markdown 草稿".to_string()),
+        "license_notice" => Some("依赖许可证摘要表（cargo metadata）".to_string()),
         "git_status" => Some("查看 Git 状态".to_string()),
         "git_clean_check" => Some("检查 Git 工作区是否干净".to_string()),
         "git_diff" => {
@@ -2444,6 +2608,16 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
                 Some(format!("修改文件：{}", path))
             }
         }
+        "copy_file" => {
+            let from = v.get("from")?.as_str()?.trim();
+            let to = v.get("to")?.as_str()?.trim();
+            Some(format!("复制文件：{} → {}", from, to))
+        }
+        "move_file" => {
+            let from = v.get("from")?.as_str()?.trim();
+            let to = v.get("to")?.as_str()?.trim();
+            Some(format!("移动文件：{} → {}", from, to))
+        }
         "read_file" => {
             let path = v.get("path")?.as_str()?.trim();
             let start = v.get("start_line").and_then(|x| x.as_u64());
@@ -2473,7 +2647,13 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         }
         "http_fetch" => {
             let u = v.get("url")?.as_str()?.trim();
-            Some(format!("HTTP GET：{}", u))
+            let m = v
+                .get("method")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or("GET");
+            Some(format!("HTTP {}：{}", m.to_ascii_uppercase(), u))
         }
         "glob_files" => {
             let pat = v.get("pattern")?.as_str()?.trim();
@@ -2527,6 +2707,14 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         "read_binary_meta" => {
             let path = v.get("path")?.as_str()?.trim();
             Some(format!("二进制元数据：{}", path))
+        }
+        "hash_file" => {
+            let path = v.get("path")?.as_str()?.trim();
+            let algo = v
+                .get("algorithm")
+                .and_then(|x| x.as_str())
+                .unwrap_or("sha256");
+            Some(format!("文件哈希 {}：{}", algo, path))
         }
         "extract_in_file" => {
             let path = v.get("path")?.as_str()?.trim();
@@ -2753,6 +2941,8 @@ mod tests {
         assert!(names.contains(&"workflow_execute"));
         assert!(names.contains(&"rust_backtrace_analyze"));
         assert!(names.contains(&"diagnostic_summary"));
+        assert!(names.contains(&"changelog_draft"));
+        assert!(names.contains(&"license_notice"));
         assert!(names.contains(&"git_status"));
         assert!(names.contains(&"git_clean_check"));
         assert!(names.contains(&"git_diff"));
@@ -2774,12 +2964,15 @@ mod tests {
         assert!(names.contains(&"git_clone"));
         assert!(names.contains(&"create_file"));
         assert!(names.contains(&"modify_file"));
+        assert!(names.contains(&"copy_file"));
+        assert!(names.contains(&"move_file"));
         assert!(names.contains(&"read_file"));
         assert!(names.contains(&"read_dir"));
         assert!(names.contains(&"glob_files"));
         assert!(names.contains(&"list_tree"));
         assert!(names.contains(&"file_exists"));
         assert!(names.contains(&"read_binary_meta"));
+        assert!(names.contains(&"hash_file"));
         assert!(names.contains(&"extract_in_file"));
         assert!(names.contains(&"markdown_check_links"));
         assert!(names.contains(&"structured_validate"));
