@@ -624,6 +624,7 @@ dependencies = [
  "clap",
  "crossterm 0.28.1",
  "futures-util",
+ "libc",
  "markdown-to-ansi",
  "ratatui",
  "regex",

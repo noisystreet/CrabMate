@@ -729,15 +729,31 @@ struct StatusResponse {
     api_base: String,
     max_tokens: u32,
     temperature: f32,
+    /// 当前加载进 API 请求的工具定义数量（`--no-tools` 时为 0）。
+    tool_count: usize,
+    /// 与模型对话时实际下发的工具名列表。
+    tool_names: Vec<String>,
+    /// `tool_registry` 中显式声明的分发策略（其余名称运行时走同步 `run_tool`）。
+    tool_dispatch_registry: &'static [tool_registry::ToolDispatchMeta],
+    reflection_default_max_rounds: usize,
 }
 
 async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let tool_names: Vec<String> = state
+        .tools
+        .iter()
+        .map(|t| t.function.name.clone())
+        .collect();
     Json(StatusResponse {
         status: "ok",
         model: state.cfg.model.clone(),
         api_base: state.cfg.api_base.clone(),
         max_tokens: state.cfg.max_tokens,
         temperature: state.cfg.temperature,
+        tool_count: tool_names.len(),
+        tool_names,
+        tool_dispatch_registry: tool_registry::all_dispatch_metadata(),
+        reflection_default_max_rounds: state.cfg.reflection_default_max_rounds,
     })
 }
 

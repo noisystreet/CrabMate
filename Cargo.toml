@@ -43,5 +43,6 @@ tower-http = { version = "0.5", features = ["fs", "set-header"] }
 rfd = "0.14"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"
+libc = "0.2"
 ratatui = { version = "0.30", default-features = false, features = ["termwiz", "underline-color", "all-widgets", "macros", "layout-cache"] }
 tui-markdown = { path = "vendor/tui-markdown", version = "0.3.7" }

@@ -62,6 +62,9 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
 /// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
 /// `render_to_terminal` 仅在流式时边收边打；非流式时在完整 `message` 到达后一次性按 Markdown 渲染（若启用）。
 /// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 TUI/SSE 等）。
+///
+/// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；
+/// DeepSeek 等兼容实现可用；字段形态不同的网关需在调用侧适配或扩展解析。
 pub async fn stream_chat(
     client: &Client,
     api_key: &str,

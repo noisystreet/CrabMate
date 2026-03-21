@@ -3,6 +3,12 @@
 本文面向**二次开发/维护**，重点解释各模块职责、关键机制与扩展点。  
 若你只关心功能与使用方式，请看 `README.md`。
 
+## TODOLIST 与功能文档约定
+
+- **`docs/TODOLIST.md`**：只保留**未完成**项。实现某条后**从文件中删除该条目**（不要用 `[x]` 长期占位）；空的小节可删掉标题。历史追溯用 Git。
+- **新功能 / 用户可见变更**（新 CLI 标志、HTTP 接口、配置键、工具名、TUI/Web 行为等）：合并代码时同步更新 **`README.md`**（面向使用者：功能、命令、配置、安全提示）和/或 **`docs/DEVELOPMENT.md`**（面向维护者：模块、协议、扩展点）。纯内部重构且无行为变化时，可只改 `DEVELOPMENT` 或注释。
+- **Cursor 规则**：项目内 `.cursor/rules/todolist-and-documentation.mdc` 对 Agent 重申上述约定。
+
 ## 总览：系统由哪些部分组成
 
 - **Rust 后端（`src/`）**：负责与 DeepSeek API 通信、实现 Agent 主循环、提供 HTTP API（含 SSE 流式输出）、执行工具、提供工作区/任务/上传等能力。
@@ -10,10 +16,11 @@
 
 ## 核心机制：Agent 主循环与工具调用
 
-核心流程在 `src/lib.rs` 的 `run_agent_turn`：
+核心流程在 `src/lib.rs` 的 `run_agent_turn`（实现骨架在 `agent_turn.rs`）：
 
 - **输入**：构造 `ChatRequest`（`src/types.rs`）并携带 `tools`（Function Calling 定义）。
-- **调用模型**：通过 `src/api.rs::stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `run_agent_turn(..., no_stream: true)` 时为 `stream: false`，一次取回完整 `choices[0].message`（有正文则经 `out` 整段下发，供 TUI/SSE）。
+- **P（命名上的「规划」步）**：`per_plan_call_model_retrying` —— **一次** `stream_chat`，由模型产出正文或 `tool_calls`，并非独立规划器。
+- **调用模型**：通过 `src/api.rs::stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `run_agent_turn(..., no_stream: true)` 时为 `stream: false`，按 OpenAI 兼容 `ChatResponse` 解析 `choices[0].message`（有正文则经 `out` 整段下发）；其它 API 形态需自行适配。
 - **处理结束原因**：
   - `finish_reason != "tool_calls"`：本轮对话结束，最后一条 assistant message 即最终回复。
   - `finish_reason == "tool_calls"`：解析 tool calls，逐个执行本地工具，把工具结果作为 `role: "tool"` 的消息追加进 `messages`，然后继续下一轮请求，直到模型返回最终文本。
@@ -23,6 +30,7 @@
     - `tool_running`、`tool_call`、`tool_result`、`workspace_changed`
     - `error`（+ 可选 `code`）、`command_approval_request`（TUI/工作流审批）
     - 预留 `plan_required` 等扩展键
+- **协议版本 `v`**：当前为 `1`；演进时递增 `sse_protocol::SSE_PROTOCOL_VERSION`，前端 `api.ts` 的 `sendChatStream` 已按字段形状解析（`tool_call` / `tool_result` / `plan_required` / `error.code` 等），新事件需在前后端同步扩展。
 
 ## 后端模块说明（`src/`）
 
@@ -34,7 +42,7 @@
 - **Web 服务**：使用 axum 路由，核心接口包括：
   - `POST /chat`：非流式对话
   - `POST /chat/stream`：SSE 流式对话（前端默认走这个）
-  - `GET /status`：状态栏轮询数据（模型、api_base、max_tokens、temperature）
+  - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`）
   - `GET /health`：健康检查（API_KEY/静态目录/工作区可写/依赖命令）
   - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件
   - `GET|POST /tasks`：任务清单读写
@@ -86,6 +94,7 @@
 
 - **`ui`**：承载 Web 侧的“工作区/任务”等 API handler（与前端面板直接对应）。
 - **`runtime`**：CLI/TUI 运行时逻辑，负责 REPL、单次问答、TUI 的交互渲染与调用 `run_agent_turn`。
+  - TUI 实现位于 `runtime/tui/`：`mod`（主循环）、`state`、`draw`、`input`（键鼠）、`workspace_ops`、`sse_line`、`styles`、`status`、`allowlist`、`agent`（委托 `agent_turn`）。
 
 ## 前端模块说明（`frontend/src/`）
 
