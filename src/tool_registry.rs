@@ -28,6 +28,7 @@ pub enum ToolExecutionClass {
     CommandSpawnTimeout,
     ExecutableSpawnTimeout,
     WeatherSpawnTimeout,
+    WebSearchSpawnTimeout,
     BlockingSync,
 }
 
@@ -60,6 +61,11 @@ pub fn all_dispatch_metadata() -> &'static [ToolDispatchMeta] {
             name: "get_weather",
             requires_workspace: false,
             class: ToolExecutionClass::WeatherSpawnTimeout,
+        },
+        ToolDispatchMeta {
+            name: "web_search",
+            requires_workspace: false,
+            class: ToolExecutionClass::WebSearchSpawnTimeout,
         },
     ]
 }
@@ -104,6 +110,7 @@ enum HandlerId {
     RunCommand,
     RunExecutable,
     GetWeather,
+    WebSearch,
     SyncDefault,
 }
 
@@ -117,6 +124,7 @@ fn handler_id_for(name: &str) -> HandlerId {
             m.insert("run_command", HandlerId::RunCommand);
             m.insert("run_executable", HandlerId::RunExecutable);
             m.insert("get_weather", HandlerId::GetWeather);
+            m.insert("web_search", HandlerId::WebSearch);
             m
         })
         .get(name)
@@ -139,7 +147,7 @@ pub async fn dispatch_tool(
     let mut hid = handler_id_for(name);
     if matches!(
         hid,
-        HandlerId::RunExecutable | HandlerId::GetWeather
+        HandlerId::RunExecutable | HandlerId::GetWeather | HandlerId::WebSearch
     ) && matches!(runtime, ToolRuntime::Tui { .. })
     {
         hid = HandlerId::SyncDefault;
@@ -181,15 +189,9 @@ pub async fn dispatch_tool(
             ToolRuntime::Tui { .. } => {
                 // TUI 入口通常将 RunExecutable remap 为 SyncDefault；若未 remap，退回通用 run_tool 以免 panic。
                 warn!(tool = %name, "RunExecutable on TUI without remap; using sync run_tool");
+                let ctx = tools::tool_context_for(cfg, &cfg.allowed_commands, effective_working_dir);
                 (
-                    tools::run_tool(
-                        &tc.function.name,
-                        &tc.function.arguments,
-                        cfg.command_max_output_len,
-                        cfg.weather_timeout_secs,
-                        &cfg.allowed_commands,
-                        effective_working_dir,
-                    ),
+                    tools::run_tool(&tc.function.name, &tc.function.arguments, &ctx),
                     None,
                 )
             }
@@ -197,17 +199,11 @@ pub async fn dispatch_tool(
         HandlerId::GetWeather => {
             execute_get_weather_web(cfg, effective_working_dir, name, args).await
         }
-        HandlerId::SyncDefault => (
-            tools::run_tool(
-                &tc.function.name,
-                &tc.function.arguments,
-                cfg.command_max_output_len,
-                cfg.weather_timeout_secs,
-                &cfg.allowed_commands,
-                effective_working_dir,
-            ),
-            None,
-        ),
+        HandlerId::WebSearch => execute_web_search_web(cfg, effective_working_dir, name, args).await,
+        HandlerId::SyncDefault => {
+            let ctx = tools::tool_context_for(cfg, &cfg.allowed_commands, effective_working_dir);
+            (tools::run_tool(&tc.function.name, &tc.function.arguments, &ctx), None)
+        }
     }
 }
 
@@ -283,18 +279,25 @@ async fn execute_run_command_web(
     let cmd_timeout = cfg.command_timeout_secs;
     let cmd_max_len = cfg.command_max_output_len;
     let weather_secs = cfg.weather_timeout_secs;
+    let ws_timeout = cfg.web_search_timeout_secs;
+    let ws_provider = cfg.web_search_provider;
+    let ws_max = cfg.web_search_max_results;
+    let ws_key = cfg.web_search_api_key.clone();
     let allowed = cfg.allowed_commands.clone();
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
     let handle = tokio::task::spawn_blocking(move || {
-        tools::run_tool(
-            &name_in,
-            &args_cloned,
-            cmd_max_len,
-            weather_secs,
-            &allowed,
-            &work_dir,
-        )
+        let ctx = tools::ToolContext {
+            command_max_output_len: cmd_max_len,
+            weather_timeout_secs: weather_secs,
+            allowed_commands: &allowed,
+            working_dir: &work_dir,
+            web_search_timeout_secs: ws_timeout,
+            web_search_provider: ws_provider,
+            web_search_api_key: ws_key.as_str(),
+            web_search_max_results: ws_max,
+        };
+        tools::run_tool(&name_in, &args_cloned, &ctx)
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,
@@ -347,17 +350,8 @@ async fn execute_run_command_tui(
         let already_allowed = ctx.persistent_allowlist_shared.lock().await.contains(&cmd);
         if already_allowed {
             effective_allowed.push(cmd.clone());
-            return (
-                tools::run_tool(
-                    name,
-                    args,
-                    cfg.command_max_output_len,
-                    cfg.weather_timeout_secs,
-                    &effective_allowed,
-                    effective_working_dir,
-                ),
-                None,
-            );
+            let ctx = tools::tool_context_for(cfg, &effective_allowed, effective_working_dir);
+            return (tools::run_tool(name, args, &ctx), None);
         }
         let decision = {
             let _guard = ctx.approval_request_guard.lock().await;
@@ -392,46 +386,19 @@ async fn execute_run_command_tui(
             }
             CommandApprovalDecision::AllowOnce => {
                 effective_allowed.push(cmd.clone());
-                (
-                    tools::run_tool(
-                        name,
-                        args,
-                        cfg.command_max_output_len,
-                        cfg.weather_timeout_secs,
-                        &effective_allowed,
-                        effective_working_dir,
-                    ),
-                    None,
-                )
+                let ctx = tools::tool_context_for(cfg, &effective_allowed, effective_working_dir);
+                (tools::run_tool(name, args, &ctx), None)
             }
             CommandApprovalDecision::AllowAlways => {
                 ctx.persistent_allowlist_shared.lock().await.insert(cmd.clone());
                 effective_allowed.push(cmd.clone());
-                (
-                    tools::run_tool(
-                        name,
-                        args,
-                        cfg.command_max_output_len,
-                        cfg.weather_timeout_secs,
-                        &effective_allowed,
-                        effective_working_dir,
-                    ),
-                    None,
-                )
+                let ctx = tools::tool_context_for(cfg, &effective_allowed, effective_working_dir);
+                (tools::run_tool(name, args, &ctx), None)
             }
         }
     } else {
-        (
-            tools::run_tool(
-                name,
-                args,
-                cfg.command_max_output_len,
-                cfg.weather_timeout_secs,
-                &effective_allowed,
-                effective_working_dir,
-            ),
-            None,
-        )
+        let ctx = tools::tool_context_for(cfg, &effective_allowed, effective_working_dir);
+        (tools::run_tool(name, args, &ctx), None)
     }
 }
 
@@ -453,18 +420,25 @@ async fn execute_run_executable_web(
     let cmd_timeout = cfg.command_timeout_secs;
     let cmd_max_len = cfg.command_max_output_len;
     let weather_secs = cfg.weather_timeout_secs;
+    let ws_timeout = cfg.web_search_timeout_secs;
+    let ws_provider = cfg.web_search_provider;
+    let ws_max = cfg.web_search_max_results;
+    let ws_key = cfg.web_search_api_key.clone();
     let allowed = cfg.allowed_commands.clone();
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
     let handle = tokio::task::spawn_blocking(move || {
-        tools::run_tool(
-            &name_in,
-            &args_owned,
-            cmd_max_len,
-            weather_secs,
-            &allowed,
-            &work_dir,
-        )
+        let ctx = tools::ToolContext {
+            command_max_output_len: cmd_max_len,
+            weather_timeout_secs: weather_secs,
+            allowed_commands: &allowed,
+            working_dir: &work_dir,
+            web_search_timeout_secs: ws_timeout,
+            web_search_provider: ws_provider,
+            web_search_api_key: ws_key.as_str(),
+            web_search_max_results: ws_max,
+        };
+        tools::run_tool(&name_in, &args_owned, &ctx)
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,
@@ -489,18 +463,25 @@ async fn execute_get_weather_web(
     let name_in = name.to_string();
     let cmd_max_len = cfg.command_max_output_len;
     let weather_timeout = cfg.weather_timeout_secs;
+    let ws_timeout = cfg.web_search_timeout_secs;
+    let ws_provider = cfg.web_search_provider;
+    let ws_max = cfg.web_search_max_results;
+    let ws_key = cfg.web_search_api_key.clone();
     let allowed = cfg.allowed_commands.clone();
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
     let handle = tokio::task::spawn_blocking(move || {
-        tools::run_tool(
-            &name_in,
-            &args_owned,
-            cmd_max_len,
-            weather_timeout,
-            &allowed,
-            &work_dir,
-        )
+        let ctx = tools::ToolContext {
+            command_max_output_len: cmd_max_len,
+            weather_timeout_secs: weather_timeout,
+            allowed_commands: &allowed,
+            working_dir: &work_dir,
+            web_search_timeout_secs: ws_timeout,
+            web_search_provider: ws_provider,
+            web_search_api_key: ws_key.as_str(),
+            web_search_max_results: ws_max,
+        };
+        tools::run_tool(&name_in, &args_owned, &ctx)
     });
     let s = match tokio::time::timeout(Duration::from_secs(weather_timeout), handle).await {
         Ok(Ok(s)) => s,
@@ -516,6 +497,49 @@ async fn execute_get_weather_web(
     (s, None)
 }
 
+async fn execute_web_search_web(
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    name: &str,
+    args: &str,
+) -> (String, Option<serde_json::Value>) {
+    let name_in = name.to_string();
+    let cmd_max_len = cfg.command_max_output_len;
+    let weather_timeout = cfg.weather_timeout_secs;
+    let search_timeout = cfg.web_search_timeout_secs;
+    let ws_provider = cfg.web_search_provider;
+    let ws_max = cfg.web_search_max_results;
+    let ws_key = cfg.web_search_api_key.clone();
+    let allowed = cfg.allowed_commands.clone();
+    let work_dir = effective_working_dir.to_path_buf();
+    let args_owned = args.to_string();
+    let handle = tokio::task::spawn_blocking(move || {
+        let ctx = tools::ToolContext {
+            command_max_output_len: cmd_max_len,
+            weather_timeout_secs: weather_timeout,
+            allowed_commands: &allowed,
+            working_dir: &work_dir,
+            web_search_timeout_secs: search_timeout,
+            web_search_provider: ws_provider,
+            web_search_api_key: ws_key.as_str(),
+            web_search_max_results: ws_max,
+        };
+        tools::run_tool(&name_in, &args_owned, &ctx)
+    });
+    let s = match tokio::time::timeout(Duration::from_secs(search_timeout), handle).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            error!(tool = %name, error = ?e, "工具执行异常");
+            format!("工具执行异常：{:?}", e)
+        }
+        Err(_) => {
+            error!(tool = %name, "联网搜索超时");
+            format!("联网搜索超时（{} 秒）", search_timeout)
+        }
+    };
+    (s, None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,6 +548,7 @@ mod tests {
     fn handler_map_resolves_known_tools() {
         assert_eq!(handler_id_for("workflow_execute"), HandlerId::Workflow);
         assert_eq!(handler_id_for("run_command"), HandlerId::RunCommand);
+        assert_eq!(handler_id_for("web_search"), HandlerId::WebSearch);
         assert_eq!(handler_id_for("unknown_xyz"), HandlerId::SyncDefault);
     }
 

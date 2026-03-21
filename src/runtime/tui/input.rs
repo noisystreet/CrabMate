@@ -91,14 +91,12 @@ pub(super) async fn handle_key(
                         } else {
                             serde_json::json!({ "title": title }).to_string()
                         };
-                        let _ = crate::tools::run_tool(
-                            "add_reminder",
-                            &args,
-                            cfg.command_max_output_len,
-                            cfg.weather_timeout_secs,
+                        let ctx = crate::tools::tool_context_for(
+                            cfg,
                             &cfg.allowed_commands,
                             &state.workspace_dir,
                         );
+                        let _ = crate::tools::run_tool("add_reminder", &args, &ctx);
                         refresh_schedule(state);
                     }
                 }

@@ -21,6 +21,10 @@
 # api_max_retries = 3
 # api_retry_delay_secs = 1
 # weather_timeout_secs = 15
+# web_search_provider = "brave"   # brave | tavily
+# web_search_api_key = "YOUR_BRAVE_OR_TAVILY_KEY"
+# web_search_timeout_secs = 30
+# web_search_max_results = 8
 # reflection_default_max_rounds = 5
 # final_plan_requirement = "workflow_reflection"  # never | workflow_reflection | always
 # plan_rewrite_max_attempts = 2

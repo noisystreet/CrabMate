@@ -50,6 +50,11 @@ api_max_retries = 3
 api_retry_delay_secs = 1
 # get_weather 工具请求超时（秒）
 weather_timeout_secs = 15
+# web_search：联网搜索（需 API Key）。provider: brave | tavily；未设置 api_key 时工具会提示错误
+# web_search_provider = "brave"
+# web_search_api_key = ""
+# web_search_timeout_secs = 30
+# web_search_max_results = 8
 # workflow 反思：模型未指定 workflow.reflection.max_rounds 时使用的默认轮数上限（≥1）
 reflection_default_max_rounds = 5
 # 何时强制终答含 agent_reply_plan：never | workflow_reflection（默认）| always
