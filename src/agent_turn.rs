@@ -12,6 +12,7 @@ use crate::config::AgentConfig;
 use crate::per_coord::PerCoordinator;
 use crate::sse_protocol::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
+use crate::tool_result::ToolResult as StructuredToolResult;
 use crate::tools;
 use crate::types::{ChatRequest, Message, ToolCall};
 
@@ -136,8 +137,12 @@ pub(crate) struct TuiExecuteCtx<'a> {
 
 #[derive(Clone, Copy)]
 pub(crate) enum AgentRunMode<'a> {
-    Web { render_to_terminal: bool },
-    Tui { tui_tool_ctx: &'a tool_registry::TuiToolRuntime },
+    Web {
+        render_to_terminal: bool,
+    },
+    Tui {
+        tui_tool_ctx: &'a tool_registry::TuiToolRuntime,
+    },
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -235,11 +240,27 @@ async fn per_execute_tools_common(
         info!(tool = %name, elapsed_ms = t_tool.elapsed().as_millis(), "工具调用完成");
 
         if let Some(tx) = out {
+            let structured = StructuredToolResult::from_legacy_output(&name, result.clone());
+            let stdout = if structured.stdout.is_empty() {
+                None
+            } else {
+                Some(structured.stdout)
+            };
+            let stderr = if structured.stderr.is_empty() {
+                None
+            } else {
+                Some(structured.stderr)
+            };
             let _ = tx
                 .send(encode_message(SsePayload::ToolResult {
                     tool_result: ToolResultBody {
                         name: name.clone(),
                         output: result.clone(),
+                        ok: Some(structured.ok),
+                        exit_code: structured.exit_code,
+                        error_code: structured.error_code,
+                        stdout,
+                        stderr,
                     },
                 }))
                 .await;

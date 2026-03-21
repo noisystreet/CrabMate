@@ -284,6 +284,16 @@ export interface WorkspaceSearchResponse {
   output: string
 }
 
+export interface ToolResultInfo {
+  name: string
+  output: string
+  ok?: boolean
+  exit_code?: number
+  error_code?: string
+  stdout?: string
+  stderr?: string
+}
+
 /** 在工作区内搜索文件内容（基于后端 grep 工具），path 为空则从工作区根目录开始；否则从指定目录递归搜索 */
 export async function searchWorkspace(body: WorkspaceSearchRequest): Promise<WorkspaceSearchResponse> {
   return request<WorkspaceSearchResponse>('/workspace/search', {
@@ -400,7 +410,7 @@ export async function sendChatStream(
     onWorkspaceChanged?: () => void
     onToolCall?: (info: { name: string; summary: string }) => void
     onToolStatusChange?: (running: boolean) => void
-    onToolResult?: (info: { name: string; output: string }) => void
+    onToolResult?: (info: ToolResultInfo) => void
     /** 预留：后端 `plan_required`（如 PER 结构化规划提示） */
     onPlanRequired?: () => void
   },
@@ -444,7 +454,15 @@ export async function sendChatStream(
             workspace_changed?: boolean
             tool_call?: { name?: string; summary?: string }
             tool_running?: boolean
-            tool_result?: { name?: string; output?: string }
+            tool_result?: {
+              name?: string
+              output?: string
+              ok?: boolean
+              exit_code?: number
+              error_code?: string
+              stdout?: string
+              stderr?: string
+            }
           }
           if (parsed.error != null) {
             callbacks.onError(
@@ -475,6 +493,11 @@ export async function sendChatStream(
             callbacks.onToolResult?.({
               name: parsed.tool_result.name || '',
               output: parsed.tool_result.output,
+              ok: parsed.tool_result.ok,
+              exit_code: parsed.tool_result.exit_code,
+              error_code: parsed.tool_result.error_code,
+              stdout: parsed.tool_result.stdout,
+              stderr: parsed.tool_result.stderr,
             })
             continue
           }
@@ -497,7 +520,15 @@ export async function sendChatStream(
             workspace_changed?: boolean
             tool_call?: { name?: string; summary?: string }
             tool_running?: boolean
-            tool_result?: { name?: string; output?: string }
+            tool_result?: {
+              name?: string
+              output?: string
+              ok?: boolean
+              exit_code?: number
+              error_code?: string
+              stdout?: string
+              stderr?: string
+            }
           }
           if (parsed.error != null) {
             callbacks.onError(
@@ -517,6 +548,11 @@ export async function sendChatStream(
             callbacks.onToolResult?.({
               name: parsed.tool_result.name || '',
               output: parsed.tool_result.output,
+              ok: parsed.tool_result.ok,
+              exit_code: parsed.tool_result.exit_code,
+              error_code: parsed.tool_result.error_code,
+              stdout: parsed.tool_result.stdout,
+              stderr: parsed.tool_result.stderr,
             })
           } else callbacks.onDelta(data)
         } catch {

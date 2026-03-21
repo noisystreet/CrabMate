@@ -70,6 +70,16 @@ pub struct ToolCallSummary {
 pub struct ToolResultBody {
     pub name: String,
     pub output: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ok: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdout: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stderr: Option<String>,
 }
 
 /// 序列化为单行 JSON，供 `Event::data(...)` 使用。
@@ -90,16 +100,12 @@ mod tests {
 
     #[test]
     fn roundtrip_tool_running() {
-        let s = encode_message(SsePayload::ToolRunning {
-            tool_running: true,
-        });
+        let s = encode_message(SsePayload::ToolRunning { tool_running: true });
         let m: SseMessage = serde_json::from_str(&s).unwrap();
         assert_eq!(m.v, SSE_PROTOCOL_VERSION);
         assert!(matches!(
             m.payload,
-            SsePayload::ToolRunning {
-                tool_running: true
-            }
+            SsePayload::ToolRunning { tool_running: true }
         ));
     }
 
@@ -123,5 +129,31 @@ mod tests {
         }));
         assert!(s.contains("\"v\":1"));
         assert!(s.contains("\"code\":\"E\""));
+    }
+
+    #[test]
+    fn tool_result_with_structured_fields() {
+        let s = encode_message(SsePayload::ToolResult {
+            tool_result: ToolResultBody {
+                name: "run_command".into(),
+                output: "退出码：1".into(),
+                ok: Some(false),
+                exit_code: Some(1),
+                error_code: Some("command_failed".into()),
+                stdout: Some(String::new()),
+                stderr: Some("permission denied".into()),
+            },
+        });
+        let m: SseMessage = serde_json::from_str(&s).unwrap();
+        match m.payload {
+            SsePayload::ToolResult { tool_result } => {
+                assert_eq!(tool_result.name, "run_command");
+                assert_eq!(tool_result.ok, Some(false));
+                assert_eq!(tool_result.exit_code, Some(1));
+                assert_eq!(tool_result.error_code.as_deref(), Some("command_failed"));
+                assert_eq!(tool_result.stderr.as_deref(), Some("permission denied"));
+            }
+            _ => panic!("expected tool_result payload"),
+        }
     }
 }
