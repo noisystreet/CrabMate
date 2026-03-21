@@ -190,7 +190,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
             )),
             Line::raw(""),
             Line::from(
-                "【全局】Ctrl+C 退出。F1 开关本页。Esc 关闭本页；另可关闭文件预览、提示行等（见各模式说明）。",
+                "【全局】Ctrl+C 退出。F1 开关本页。F10 打开运行状况（与 GET /health 同逻辑），Esc 或 F10 关闭。Esc 另可关闭文件预览、提示行等（见各模式说明）。",
             ),
             Line::from("【焦点 F2】循环：聊天视图 → 聊天输入 → 工作区列表 → 右侧面板 → 聊天视图。"),
             Line::from(
@@ -210,7 +210,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
                 "【搜索 / 跳转】Ctrl+F 或 F6（无搜索结果时）打开关键词搜索，Enter 执行；有结果时 F6 下一处、Shift+F6 上一处。F7 打开「按序号跳转」（可见消息从 1 起，不含系统提示）。",
             ),
             Line::from(
-                "【导出 / 会话】F8 导出 JSON、F9 导出 Markdown 到 .crabmate/exports/。退出时保存 .crabmate/tui_session.json，启动自动加载（首条 system 随当前配置更新）。",
+                "【导出 / 会话 / 健康】F8 导出 JSON、F9 导出 Markdown 到 .crabmate/exports/；F10 本机运行状况（无需启动 HTTP）。退出时保存 .crabmate/tui_session.json，启动自动加载（首条 system 随当前配置更新）。",
             ),
             Line::from(
                 "【模型运行中】Ctrl+G 协作停止生成；Ctrl+Shift+G 强制中止任务（子进程工具可能仍须等待或依赖强制）。",
@@ -248,6 +248,43 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
             )
             .title(" 帮助 / 教程 ");
         let para = Paragraph::new(help_lines)
+            .block(block)
+            .wrap(Wrap { trim: true });
+        f.render_widget(Clear, popup);
+        f.render_widget(para, popup);
+    }
+
+    if state.show_health {
+        let w = area.width.saturating_mul(7) / 10;
+        let h = area.height.saturating_mul(8) / 10;
+        let x = area.x + (area.width.saturating_sub(w)) / 2;
+        let y = area.y + (area.height.saturating_sub(h)) / 2;
+        let popup = Rect::new(x, y, w.max(40), h.max(12));
+
+        let mut health_lines: Vec<Line<'_>> = vec![
+            Line::from(Span::styled(
+                "运行状况（与 GET /health 一致）",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                "不发起 HTTP；按 F10 或 Esc 关闭",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::raw(""),
+        ];
+        health_lines.extend(state.health_text.lines().map(|s| Line::raw(s.to_string())));
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .title(" 健康检查 ");
+        let para = Paragraph::new(health_lines)
             .block(block)
             .wrap(Wrap { trim: true });
         f.render_widget(Clear, popup);

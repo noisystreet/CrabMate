@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
+use crate::health::{build_health_report, format_health_report_terminal};
 use crate::types::{CommandApprovalDecision, LLM_CANCELLED_ERROR, Message};
 
 use super::agent::run_agent_turn_tui;
@@ -368,6 +369,16 @@ pub(super) async fn handle_key(
         return Ok(false);
     }
 
+    if state.show_health {
+        match key.code {
+            KeyCode::F(10) | KeyCode::Esc => {
+                state.show_health = false;
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
+
     if state.show_help {
         match key.code {
             KeyCode::F(1) | KeyCode::Esc => {
@@ -381,6 +392,9 @@ pub(super) async fn handle_key(
     match key.code {
         KeyCode::F(1) => {
             state.show_help = !state.show_help;
+            if state.show_help {
+                state.show_health = false;
+            }
         }
         KeyCode::F(2) => {
             state.focus = match state.focus {
@@ -451,6 +465,13 @@ pub(super) async fn handle_key(
                     state.status_line = format!("导出失败：{e}");
                 }
             }
+        }
+        KeyCode::F(10) if state.mode == Mode::Normal => {
+            state.show_help = false;
+            let report = build_health_report(&state.workspace_dir, api_key, true).await;
+            state.health_text = format_health_report_terminal(&report);
+            state.show_health = true;
+            set_normal_status_line(state, &cfg.model);
         }
         KeyCode::Char('f') | KeyCode::Char('F')
             if key.modifiers.contains(KeyModifiers::CONTROL) && state.mode == Mode::Normal =>

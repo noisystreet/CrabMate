@@ -8,6 +8,7 @@ mod api;
 mod chat_job_queue;
 mod config;
 mod context_window;
+mod health;
 mod http_client;
 mod latex_unicode;
 mod llm;
@@ -578,179 +579,10 @@ async fn chat_stream_handler(
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
-#[derive(serde::Serialize)]
-struct HealthCheckItem {
-    ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    detail: Option<String>,
-}
-
-#[derive(serde::Serialize)]
-struct HealthResponse {
-    /// ok / degraded
-    status: &'static str,
-    checks: std::collections::BTreeMap<&'static str, HealthCheckItem>,
-}
-
 async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let mut checks: std::collections::BTreeMap<&'static str, HealthCheckItem> =
-        std::collections::BTreeMap::new();
-
-    // API key
-    let api_key_ok = !state.api_key.trim().is_empty();
-    checks.insert(
-        "api_key",
-        HealthCheckItem {
-            ok: api_key_ok,
-            detail: if api_key_ok {
-                None
-            } else {
-                Some("未设置 API_KEY".to_string())
-            },
-        },
-    );
-
-    // frontend static dir (optional for --no-web)
-    let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
-    let static_ok = static_dir.is_dir();
-    checks.insert(
-        "frontend_static_dir",
-        HealthCheckItem {
-            ok: static_ok,
-            detail: if static_ok {
-                None
-            } else {
-                Some(format!("目录不存在：{}", static_dir.display()))
-            },
-        },
-    );
-
-    // workspace writable (create + delete temp file)
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
-    let writable = tokio::task::spawn_blocking({
-        let work_dir = work_dir.clone();
-        move || {
-            let ts = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            let pid = std::process::id();
-            let p = work_dir.join(format!(".crabmate_healthcheck_{}_{}.tmp", pid, ts));
-            match std::fs::write(&p, b"") {
-                Ok(()) => {
-                    let _ = std::fs::remove_file(&p);
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            }
-        }
-    })
-    .await
-    .ok()
-    .and_then(|r| r.err())
-    .map(|e| format!("不可写：{}（{}）", work_dir.display(), e));
-    checks.insert(
-        "workspace_writable",
-        HealthCheckItem {
-            ok: writable.is_none(),
-            detail: writable,
-        },
-    );
-
-    // executable dependencies
-    let deps = tokio::task::spawn_blocking(|| {
-        fn check_cmd(cmd: &str, args: &[&str]) -> Result<String, String> {
-            match std::process::Command::new(cmd).args(args).output() {
-                Ok(out) => {
-                    let status = out.status.code().unwrap_or(-1);
-                    if status == 0 {
-                        let s = if !out.stdout.is_empty() {
-                            String::from_utf8_lossy(&out.stdout).trim().to_string()
-                        } else {
-                            String::from_utf8_lossy(&out.stderr).trim().to_string()
-                        };
-                        Ok(if s.is_empty() { "ok".to_string() } else { s })
-                    } else {
-                        Err(format!("exit={}", status))
-                    }
-                }
-                Err(e) => Err(e.to_string()),
-            }
-        }
-
-        let mut m = std::collections::BTreeMap::new();
-
-        // bc: GNU bc 有时支持 --version，也可能是 -v/-V；尽量多试几种
-        let bc = check_cmd("bc", &["--version"])
-            .or_else(|_| check_cmd("bc", &["-v"]))
-            .or_else(|_| check_cmd("bc", &["-V"]));
-        m.insert("bc", bc);
-
-        let rustfmt = check_cmd("rustfmt", &["--version"]);
-        m.insert("rustfmt", rustfmt);
-
-        let clang_format = check_cmd("clang-format", &["--version"]);
-        m.insert("clang_format", clang_format);
-
-        let cmake = check_cmd("cmake", &["--version"]);
-        m.insert("cmake", cmake);
-
-        let cxxfilt = check_cmd("c++filt", &["--version"]);
-        m.insert("cxxfilt", cxxfilt);
-
-        let npm = check_cmd("npm", &["--version"]);
-        m.insert("npm", npm);
-
-        m
-    })
-    .await
-    .ok()
-    .unwrap_or_default();
-
-    for (k, v) in deps {
-        let key: &'static str = match k {
-            "bc" => "dep_bc",
-            "rustfmt" => "dep_rustfmt",
-            "clang_format" => "dep_clang_format",
-            "cmake" => "dep_cmake",
-            "cxxfilt" => "dep_cxxfilt",
-            "npm" => "dep_npm",
-            _ => continue,
-        };
-        match v {
-            Ok(detail) => {
-                checks.insert(
-                    key,
-                    HealthCheckItem {
-                        ok: true,
-                        detail: Some(detail),
-                    },
-                );
-            }
-            Err(err) => {
-                checks.insert(
-                    key,
-                    HealthCheckItem {
-                        ok: false,
-                        detail: Some(err),
-                    },
-                );
-            }
-        }
-    }
-
-    let required_ok = checks.get("api_key").map(|c| c.ok).unwrap_or(false)
-        && checks
-            .get("workspace_writable")
-            .map(|c| c.ok)
-            .unwrap_or(false);
-    let status = if required_ok && checks.values().all(|c| c.ok) {
-        "ok"
-    } else {
-        "degraded"
-    };
-
-    Json(HealthResponse { status, checks })
+    let report = health::build_health_report(&work_dir, &state.api_key, true).await;
+    Json(report)
 }
 
 #[derive(serde::Serialize)]

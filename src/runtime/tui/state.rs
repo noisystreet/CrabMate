@@ -136,6 +136,9 @@ pub(super) struct TuiState {
     pub code_theme_idx: usize,
     // help overlay
     pub show_help: bool,
+    /// 与 `GET /health` 同逻辑的运行状况（F10）。
+    pub show_health: bool,
+    pub health_text: String,
     // input area height (in terminal rows)
     pub input_rows: u16,
     pub input_dragging: bool,
