@@ -1,0 +1,26 @@
+---
+description: 调整架构或 src 模块组织时同步更新 docs/DEVELOPMENT.md 架构与模块索引
+alwaysApply: true
+---
+
+# 架构与模块文档同步
+
+变更**架构**或 **`src/` 代码模块组织**时，必须审阅并更新 **`docs/DEVELOPMENT.md`**：
+
+- **「架构设计」**：分层描述、Web 数据流概要、**Mermaid 图**中的节点与连线是否与当前调用链一致。
+- **「`src/` 代码模块索引」**：顶层模块**表格**（路径、职责摘要）与 **`lib.rs` 的 `mod` 列表**一致。
+- **「`src/tools/` 子文件」**：增删 `tools/mod.rs` 中的 `mod xxx` 时，同步增删表中的行。
+
+## 典型触发条件
+
+- `src/lib.rs`：增删 `mod`、重组 `Router`、`AppState` 职责迁移。
+- 新建/删除/重命名 `src/` 下文件或子目录，或某文件**主要职责**改变（不仅是私有重构）。
+- `tool_registry.rs`：新增执行类别（如新的 `spawn_blocking` + 超时策略）或分发逻辑分层变化。
+- `runtime/`、`ui/` 子模块边界变化（拆分、合并、新目录）。
+
+## 不必改索引的情况
+
+- 仅函数实现、私有重命名、注释与格式；对外模块职责描述不变。
+- 仅 `tests/`、`#[cfg(test)]`、fixture。
+
+若同一变更还影响用户可见行为，继续遵守 **`.cursor/rules/todolist-and-documentation.mdc`**（`README.md` / `TODOLIST.md` 等）。

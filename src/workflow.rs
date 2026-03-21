@@ -4,15 +4,15 @@
 
 use crate::config::AgentConfig;
 use crate::types::CommandApprovalDecision;
+use futures_util::StreamExt;
+use futures_util::stream::FuturesUnordered;
+use serde::Serialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
-use serde::Serialize;
-use tokio::sync::{mpsc, Mutex, Semaphore};
-use futures_util::stream::FuturesUnordered;
-use futures_util::StreamExt;
+use tokio::sync::{Mutex, Semaphore, mpsc};
 use tracing::{info, warn};
 
 #[derive(Debug, Clone)]
@@ -135,7 +135,10 @@ pub async fn run_workflow_execute_tool(
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(_) => {
-            warn!(workflow_run_id = workflow_run_id, "workflow_execute args parse failed");
+            warn!(
+                workflow_run_id = workflow_run_id,
+                "workflow_execute args parse failed"
+            );
             let report = serde_json::json!({
                 "type": "workflow_execute_error",
                 "status": "failed",
@@ -147,9 +150,15 @@ pub async fn run_workflow_execute_tool(
     };
     let workflow_v = v.get("workflow").unwrap_or(&v);
 
-    let done = workflow_v.get("done").and_then(|x| x.as_bool()).unwrap_or(false);
+    let done = workflow_v
+        .get("done")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     if done {
-        info!(workflow_run_id = workflow_run_id, "workflow_execute skip by done=true");
+        info!(
+            workflow_run_id = workflow_run_id,
+            "workflow_execute skip by done=true"
+        );
         let report = serde_json::json!({
             "type": "workflow_execute_done_skip",
             "status": "passed",
@@ -169,7 +178,10 @@ pub async fn run_workflow_execute_tool(
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
     if validate_only {
-        info!(workflow_run_id = workflow_run_id, "workflow_validate_only start");
+        info!(
+            workflow_run_id = workflow_run_id,
+            "workflow_validate_only start"
+        );
         let spec = match parse_workflow_spec(args_json) {
             Ok(s) => s,
             Err(e) => {
@@ -345,15 +357,15 @@ pub async fn run_workflow_execute_tool(
 
 fn topo_layers(nodes: &[WorkflowNodeSpec]) -> Result<Vec<Vec<String>>, String> {
     // Kahn 算法逐层生成拓扑层级。
-    let mut indegree: HashMap<String, usize> = nodes
-        .iter()
-        .map(|n| (n.id.clone(), 0usize))
-        .collect();
+    let mut indegree: HashMap<String, usize> =
+        nodes.iter().map(|n| (n.id.clone(), 0usize)).collect();
     let mut adj: HashMap<String, Vec<String>> = HashMap::new();
     for n in nodes.iter() {
         for d in n.deps.iter() {
             adj.entry(d.clone()).or_default().push(n.id.clone());
-            *indegree.get_mut(&n.id).ok_or("internal error: missing indegree")? += 1;
+            *indegree
+                .get_mut(&n.id)
+                .ok_or("internal error: missing indegree")? += 1;
         }
     }
 
@@ -422,8 +434,12 @@ async fn execute_workflow_dag(
         compensate_on_failure = spec.compensate_on_failure,
         "workflow dag execute start"
     );
-    let nodes: HashMap<String, WorkflowNodeSpec> =
-        spec.nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
+    let nodes: HashMap<String, WorkflowNodeSpec> = spec
+        .nodes
+        .iter()
+        .cloned()
+        .map(|n| (n.id.clone(), n))
+        .collect();
 
     let mut completed: HashMap<String, NodeRunResult> = HashMap::new();
     let mut started: HashSet<String> = HashSet::new();
@@ -508,8 +524,13 @@ async fn execute_workflow_dag(
     let workspace_changed = completed.values().any(|r| r.workspace_changed);
 
     // 根据 completed/started 组装主结果
-    let main_summary =
-        format_main_summary(&spec, &completed, &started, &completion_order, first_failure.as_ref());
+    let main_summary = format_main_summary(
+        &spec,
+        &completed,
+        &started,
+        &completion_order,
+        first_failure.as_ref(),
+    );
 
     let status = if first_failure.is_some() {
         "failed".to_string()
@@ -601,29 +622,32 @@ async fn execute_workflow_dag(
     // 失败补偿（Saga：按成功完成顺序逆序执行补偿节点）
     let mut compensation_summary: Option<String> = None;
     let mut compensation_executed: bool = false;
-            let mut workspace_changed_final = workspace_changed;
-            let human_summary = if first_failure.is_some() {
+    let mut workspace_changed_final = workspace_changed;
+    let human_summary = if first_failure.is_some() {
         if spec.compensate_on_failure {
             let command_max_output_len = command_max_output_len_from(&tool_exec_ctx);
-                    let (s, comp_workspace_changed) = execute_compensations(
-                        &spec,
-                        &nodes,
-                        &completion_order,
-                        &completed,
-                        approval_mode,
-                        tool_exec_ctx.clone(),
-                        command_max_output_len,
-                    )
-                    .await;
-                    workspace_changed_final = workspace_changed_final || comp_workspace_changed;
-                    compensation_summary = Some(s.clone());
-                    compensation_executed = true;
-                    format!(
-                        "{}\n\n====================\n\n补偿执行结果：\n{}",
-                        main_summary, s
-                    )
+            let (s, comp_workspace_changed) = execute_compensations(
+                &spec,
+                &nodes,
+                &completion_order,
+                &completed,
+                approval_mode,
+                tool_exec_ctx.clone(),
+                command_max_output_len,
+            )
+            .await;
+            workspace_changed_final = workspace_changed_final || comp_workspace_changed;
+            compensation_summary = Some(s.clone());
+            compensation_executed = true;
+            format!(
+                "{}\n\n====================\n\n补偿执行结果：\n{}",
+                main_summary, s
+            )
         } else {
-            format!("{}\n\n补偿已跳过（compensate_on_failure=false）", main_summary)
+            format!(
+                "{}\n\n补偿已跳过（compensate_on_failure=false）",
+                main_summary
+            )
         }
     } else {
         main_summary.clone()
@@ -692,11 +716,8 @@ async fn run_node(
     );
     // 人工审批：仅对“非 run_command 的人工审批节点”提供通用入口；
     // run_command 的审批仍按 cmd allowlist 逻辑处理。
-    let injected_tool_args = inject_placeholders(
-        &node.tool_args,
-        &completed_snapshot,
-        inject_max_chars,
-    );
+    let injected_tool_args =
+        inject_placeholders(&node.tool_args, &completed_snapshot, inject_max_chars);
     let tool_args_json_str = if injected_tool_args.is_null() {
         "{}".to_string()
     } else {
@@ -712,7 +733,9 @@ async fn run_node(
         return NodeRunResult {
             id: node.id,
             status: NodeRunStatus::Failed,
-            output: "错误：未设置工作区，禁止在工作流中执行该工具（需要 TUI/CLI 先设置 workspace）。".to_string(),
+            output:
+                "错误：未设置工作区，禁止在工作流中执行该工具（需要 TUI/CLI 先设置 workspace）。"
+                    .to_string(),
             workspace_changed: false,
             exit_code: None,
             error_code: Some("workspace_not_set".to_string()),
@@ -729,7 +752,10 @@ async fn run_node(
                 .any(|c| c.eq_ignore_ascii_case(&cmd_lower));
 
             let already_allowed = match &approval_mode {
-                WorkflowApprovalMode::Tui { persistent_allowlist, .. } => {
+                WorkflowApprovalMode::Tui {
+                    persistent_allowlist,
+                    ..
+                } => {
                     let guard = persistent_allowlist.lock().await;
                     guard.contains(&cmd_lower)
                 }
@@ -799,7 +825,10 @@ async fn run_node(
                     }
                     CommandApprovalDecision::AllowAlways => {
                         effective_allowed.push(cmd_lower.clone());
-                        if let WorkflowApprovalMode::Tui { persistent_allowlist, .. } = &approval_mode
+                        if let WorkflowApprovalMode::Tui {
+                            persistent_allowlist,
+                            ..
+                        } = &approval_mode
                         {
                             persistent_allowlist.lock().await.insert(cmd_lower.clone());
                         }
@@ -901,14 +930,16 @@ async fn run_node(
             };
             crate::tools::run_tool_result(&tool_name, &exec_args, &ctx)
         });
-        handle.await.unwrap_or_else(|e| crate::tool_result::ToolResult {
-            ok: false,
-            exit_code: None,
-            message: format!("工具执行异常：{:?}", e),
-            stdout: String::new(),
-            stderr: String::new(),
-            error_code: Some("workflow_tool_join_error".to_string()),
-        })
+        handle
+            .await
+            .unwrap_or_else(|e| crate::tool_result::ToolResult {
+                ok: false,
+                exit_code: None,
+                message: format!("工具执行异常：{:?}", e),
+                stdout: String::new(),
+                stderr: String::new(),
+                error_code: Some("workflow_tool_join_error".to_string()),
+            })
     };
 
     let tool_result = if let Some(ts) = timeout_secs {
@@ -973,16 +1004,20 @@ async fn request_approval(
 ) -> CommandApprovalDecision {
     // 保证同一时间只有一个审批请求处于“发送 -> 等待决策”的进行中，避免并发覆盖 TUI 状态。
     let _guard = approval_request_guard.lock().await;
-    let line = crate::sse_protocol::encode_message(crate::sse_protocol::SsePayload::CommandApproval {
-        command_approval_request: crate::sse_protocol::CommandApprovalBody {
-            command: command.to_string(),
-            args: args.to_string(),
-        },
-    });
+    let line =
+        crate::sse_protocol::encode_message(crate::sse_protocol::SsePayload::CommandApproval {
+            command_approval_request: crate::sse_protocol::CommandApprovalBody {
+                command: command.to_string(),
+                args: args.to_string(),
+            },
+        });
     let _ = out_tx.send(line).await;
 
     let mut rx_guard = approval_rx.lock().await;
-    rx_guard.recv().await.unwrap_or(CommandApprovalDecision::Deny)
+    rx_guard
+        .recv()
+        .await
+        .unwrap_or(CommandApprovalDecision::Deny)
 }
 
 fn format_main_summary(
@@ -1041,7 +1076,10 @@ fn format_main_summary(
                     NodeRunStatus::Failed => "failed",
                 }
             ));
-            out.push_str(&format!("    output: {}\n", truncate_for_summary(&r.output, 1200)));
+            out.push_str(&format!(
+                "    output: {}\n",
+                truncate_for_summary(&r.output, 1200)
+            ));
         }
     }
     for node in spec.nodes.iter() {
@@ -1049,15 +1087,30 @@ fn format_main_summary(
             continue;
         }
         if let Some(r) = completed.get(&node.id) {
-            out.push_str(&format!("  - {}: {}\n", r.id, if r.status == NodeRunStatus::Passed { "passed" } else { "failed" }));
-            out.push_str(&format!("    output: {}\n", truncate_for_summary(&r.output, 1200)));
+            out.push_str(&format!(
+                "  - {}: {}\n",
+                r.id,
+                if r.status == NodeRunStatus::Passed {
+                    "passed"
+                } else {
+                    "failed"
+                }
+            ));
+            out.push_str(&format!(
+                "    output: {}\n",
+                truncate_for_summary(&r.output, 1200)
+            ));
         } else {
             out.push_str(&format!("  - {}: skipped\n", node.id));
         }
     }
 
     if let Some(f) = first_failure {
-        out.push_str(&format!("\n首个失败节点：{}（tool={}）\n", f.id, f.output.lines().next().unwrap_or("")));
+        out.push_str(&format!(
+            "\n首个失败节点：{}（tool={}）\n",
+            f.id,
+            f.output.lines().next().unwrap_or("")
+        ));
     }
     out
 }
@@ -1138,7 +1191,11 @@ async fn execute_compensations(
             if res.workspace_changed {
                 any_workspace_changed = true;
             }
-            out.push_str(&format!("- {}: failed\n    output: {}\n", comp_id, truncate_for_summary(&res.output, 800)));
+            out.push_str(&format!(
+                "- {}: failed\n    output: {}\n",
+                comp_id,
+                truncate_for_summary(&res.output, 800)
+            ));
         }
     }
 
@@ -1204,7 +1261,10 @@ fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
         .get("max_parallelism")
         .and_then(|x| x.as_u64())
         .unwrap_or(4) as usize;
-    let fail_fast = spec_v.get("fail_fast").and_then(|x| x.as_bool()).unwrap_or(true);
+    let fail_fast = spec_v
+        .get("fail_fast")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(true);
     let compensate_on_failure = spec_v
         .get("compensate_on_failure")
         .and_then(|x| x.as_bool())
@@ -1245,7 +1305,10 @@ fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
     })
 }
 
-fn parse_node_from_value(v: &serde_json::Value, forced_id: Option<&String>) -> Result<WorkflowNodeSpec, String> {
+fn parse_node_from_value(
+    v: &serde_json::Value,
+    forced_id: Option<&String>,
+) -> Result<WorkflowNodeSpec, String> {
     let id = forced_id
         .cloned()
         .or_else(|| v.get("id").and_then(|x| x.as_str()).map(|s| s.to_string()))
@@ -1258,7 +1321,10 @@ fn parse_node_from_value(v: &serde_json::Value, forced_id: Option<&String>) -> R
         .ok_or(format!("node {} 缺少 tool_name", id))?
         .to_string();
 
-    let tool_args = v.get("tool_args").cloned().unwrap_or_else(|| serde_json::json!({}));
+    let tool_args = v
+        .get("tool_args")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
 
     let deps = v
         .get("deps")
@@ -1306,7 +1372,9 @@ fn inject_placeholders(
     max_chars: usize,
 ) -> serde_json::Value {
     match value {
-        serde_json::Value::String(s) => serde_json::Value::String(inject_string(s, completed, max_chars)),
+        serde_json::Value::String(s) => {
+            serde_json::Value::String(inject_string(s, completed, max_chars))
+        }
         serde_json::Value::Array(arr) => serde_json::Value::Array(
             arr.iter()
                 .map(|v| inject_placeholders(v, completed, max_chars))
@@ -1321,11 +1389,7 @@ fn inject_placeholders(
     }
 }
 
-fn inject_string(
-    s: &str,
-    completed: &HashMap<String, NodeRunResult>,
-    max_chars: usize,
-) -> String {
+fn inject_string(s: &str, completed: &HashMap<String, NodeRunResult>, max_chars: usize) -> String {
     let mut out = String::new();
     let mut rest = s;
     loop {
@@ -1511,4 +1575,3 @@ mod tests {
         assert_eq!(rev, "deadbeef123");
     }
 }
-

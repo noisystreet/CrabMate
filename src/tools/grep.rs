@@ -79,8 +79,8 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
 }
 
 fn parse_params(args_json: &str) -> Result<SearchParams, String> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| format!("参数 JSON 无效：{}", e))?;
+    let v: serde_json::Value =
+        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效：{}", e))?;
     let pattern = v
         .get("pattern")
         .and_then(|p| p.as_str())
@@ -161,7 +161,14 @@ fn walk_and_search(
             continue;
         }
         if path.is_dir() {
-            walk_and_search(&path, re, results, visited_files, max_results, ignore_hidden)?;
+            walk_and_search(
+                &path,
+                re,
+                results,
+                visited_files,
+                max_results,
+                ignore_hidden,
+            )?;
             if results.len() >= max_results {
                 break;
             }
@@ -200,4 +207,3 @@ fn search_in_file(
     }
     Ok(())
 }
-

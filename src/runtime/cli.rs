@@ -1,7 +1,11 @@
 use crate::config::AgentConfig;
-use crate::types::Message;
 use crate::run_agent_turn;
-use crossterm::{cursor::MoveToColumn, terminal::{Clear, ClearType}, ExecutableCommand};
+use crate::types::Message;
+use crossterm::{
+    ExecutableCommand,
+    cursor::MoveToColumn,
+    terminal::{Clear, ClearType},
+};
 use std::io::{self, Write};
 
 /// 单次提问模式（--query / --stdin），执行一轮对话后退出
@@ -60,19 +64,20 @@ pub async fn run_single_shot(
         std::process::exit(1);
     }
     if let Some(mode) = output_mode.as_deref()
-        && mode == "json" {
-            let reply = messages
-                .iter()
-                .rev()
-                .find(|m| m.role == "assistant")
-                .and_then(|m| m.content.clone())
-                .unwrap_or_default();
-            let obj = serde_json::json!({
-                "reply": reply,
-                "model": cfg.model,
-            });
-            println!("{}", obj);
-        }
+        && mode == "json"
+    {
+        let reply = messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "assistant")
+            .and_then(|m| m.content.clone())
+            .unwrap_or_default();
+        let obj = serde_json::json!({
+            "reply": reply,
+            "model": cfg.model,
+        });
+        println!("{}", obj);
+    }
     Ok(())
 }
 
@@ -153,4 +158,3 @@ pub async fn run_repl(
     println!("再见。");
     Ok(())
 }
-

@@ -126,7 +126,10 @@ mod tests {
 
     #[test]
     fn parse_exit_code_from_exit_pattern() {
-        let r = ToolResult::from_legacy_output("cargo_test", "cargo test (exit=1):\nfailed".to_string());
+        let r = ToolResult::from_legacy_output(
+            "cargo_test",
+            "cargo test (exit=1):\nfailed".to_string(),
+        );
         assert!(!r.ok);
         assert_eq!(r.exit_code, Some(1));
         assert_eq!(r.error_code.as_deref(), Some("cargo_test_failed"));

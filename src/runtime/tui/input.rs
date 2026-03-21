@@ -12,9 +12,7 @@ use crate::types::{CommandApprovalDecision, Message};
 
 use super::agent::run_agent_turn_tui;
 use super::allowlist::save_persistent_allowlist;
-use super::state::{
-    feed_char_filter_sgr_mouse_leak, Focus, Mode, ModelPhase, RightTab, TuiState,
-};
+use super::state::{Focus, Mode, ModelPhase, RightTab, TuiState, feed_char_filter_sgr_mouse_leak};
 use super::status::{set_high_contrast_status_line, set_normal_status_line};
 use super::styles::code_themes;
 use super::workspace_ops::{
@@ -166,22 +164,10 @@ pub(super) async fn handle_key(
             KeyCode::Char('2') => state.approve_choice = 1,
             KeyCode::Char('3') => state.approve_choice = 2,
             KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'d') => {
-                submit_approval(
-                    state,
-                    approval_tx,
-                    cfg,
-                    CommandApprovalDecision::Deny,
-                )
-                .await;
+                submit_approval(state, approval_tx, cfg, CommandApprovalDecision::Deny).await;
             }
             KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'o') => {
-                submit_approval(
-                    state,
-                    approval_tx,
-                    cfg,
-                    CommandApprovalDecision::AllowOnce,
-                )
-                .await;
+                submit_approval(state, approval_tx, cfg, CommandApprovalDecision::AllowOnce).await;
             }
             KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'p') => {
                 submit_approval(
@@ -231,7 +217,10 @@ pub(super) async fn handle_key(
         }
         KeyCode::F(3) => {
             state.code_theme_idx = (state.code_theme_idx + 1) % code_themes().len();
-            state.status_line = format!("代码主题：{}（F3 切换）", code_themes()[state.code_theme_idx]);
+            state.status_line = format!(
+                "代码主题：{}（F3 切换）",
+                code_themes()[state.code_theme_idx]
+            );
         }
         KeyCode::F(4) => {
             state.md_style = if state.md_style == 0 { 1 } else { 0 };
@@ -314,7 +303,8 @@ pub(super) async fn handle_key(
                                     (state.reminder_sel + 1).min(state.reminder_items.len() - 1);
                             }
                         } else if !state.event_items.is_empty() {
-                            state.event_sel = (state.event_sel + 1).min(state.event_items.len() - 1);
+                            state.event_sel =
+                                (state.event_sel + 1).min(state.event_items.len() - 1);
                         }
                     }
                 }
@@ -447,11 +437,15 @@ pub(super) async fn handle_key(
             }
         }
         KeyCode::Char('a') => {
-            if state.focus == Focus::Right && state.tab == RightTab::Schedule && state.schedule_sub == 0 {
+            if state.focus == Focus::Right
+                && state.tab == RightTab::Schedule
+                && state.schedule_sub == 0
+            {
                 state.mouse_leak_scratch.clear();
                 state.mode = Mode::Prompt;
                 state.prompt.clear();
-                state.prompt_title = "新增提醒：输入「标题 @ 2026-03-20 09:00」（@ 后可省略）".to_string();
+                state.prompt_title =
+                    "新增提醒：输入「标题 @ 2026-03-20 09:00」（@ 后可省略）".to_string();
             }
         }
         KeyCode::Char('e') => {
@@ -508,10 +502,8 @@ pub(super) fn handle_crossterm_mouse(
                 let new_rows = (state.input_rows as i16 + delta).clamp(3, 12) as u16;
                 state.input_rows = new_rows;
                 state.input_drag_row = cur;
-                state.status_line = format!(
-                    "正在拖动输入区域高度（当前：{} 行）",
-                    state.input_rows
-                );
+                state.status_line =
+                    format!("正在拖动输入区域高度（当前：{} 行）", state.input_rows);
             }
         }
         MouseEventKind::Up(MouseButton::Left) => {
@@ -528,24 +520,18 @@ pub(super) fn handle_crossterm_mouse(
         MouseEventKind::Down(MouseButton::Left) => {
             let chat_width = cols.saturating_mul(65) / 100;
             let below_input = super::draw::LEFT_COLUMN_ROWS_BELOW_INPUT;
-            let input_start_row =
-                rows.saturating_sub(state.input_rows.saturating_add(below_input));
+            let input_start_row = rows.saturating_sub(state.input_rows.saturating_add(below_input));
 
             // 输入区与状态栏之间的横线：拖动调整输入区高度（勿点在状态文字行上）
             if x < chat_width && y == rows.saturating_sub(below_input) {
                 state.input_dragging = true;
                 state.input_drag_row = y;
-                state.status_line = format!(
-                    "正在拖动输入区域高度（当前：{} 行）",
-                    state.input_rows
-                );
+                state.status_line =
+                    format!("正在拖动输入区域高度（当前：{} 行）", state.input_rows);
                 return;
             }
 
-            if x < chat_width
-                && y >= input_start_row
-                && y < rows.saturating_sub(below_input)
-            {
+            if x < chat_width && y >= input_start_row && y < rows.saturating_sub(below_input) {
                 state.cursor_mouse_pos = Some((x, y));
             }
 
@@ -607,19 +593,17 @@ fn apply_click_focus_and_tab(
 
     let new_focus = if col < chat_width {
         let below_input = super::draw::LEFT_COLUMN_ROWS_BELOW_INPUT;
-        let input_start_row =
-            rows.saturating_sub(state.input_rows.saturating_add(below_input));
+        let input_start_row = rows.saturating_sub(state.input_rows.saturating_add(below_input));
         if row >= input_start_row && row < rows.saturating_sub(below_input) {
             Focus::ChatInput
         } else {
             Focus::ChatView
         }
+    } else if state.tab == RightTab::Workspace && row >= super::draw::RIGHT_PANEL_ROWS_ABOVE_CONTENT
+    {
+        Focus::Workspace
     } else {
-        if state.tab == RightTab::Workspace && row >= super::draw::RIGHT_PANEL_ROWS_ABOVE_CONTENT {
-            Focus::Workspace
-        } else {
-            Focus::Right
-        }
+        Focus::Right
     };
 
     if new_focus != state.focus {
@@ -642,15 +626,15 @@ fn apply_click_focus_and_tab(
 fn apply_pending_focus_and_tab(state: &mut TuiState, model: &str) {
     let mut changed = false;
 
-    if let Some(tab) = state.pending_tab.take() {
-        if state.tab != tab {
-            state.tab = tab;
-            changed = true;
-            match state.tab {
-                RightTab::Workspace => refresh_workspace(state),
-                RightTab::Tasks => refresh_tasks(state),
-                RightTab::Schedule => refresh_schedule(state),
-            }
+    if let Some(tab) = state.pending_tab.take()
+        && state.tab != tab
+    {
+        state.tab = tab;
+        changed = true;
+        match state.tab {
+            RightTab::Workspace => refresh_workspace(state),
+            RightTab::Tasks => refresh_tasks(state),
+            RightTab::Schedule => refresh_schedule(state),
         }
     }
     if let Some(focus) = state.pending_focus.take()

@@ -130,9 +130,10 @@ pub fn create_file(args_json: &str, working_dir: &Path) -> String {
     }
     if let Some(parent) = target.parent()
         && !parent.as_os_str().is_empty()
-            && let Err(e) = std::fs::create_dir_all(parent) {
-                return format!("创建目录失败: {}", e);
-            }
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return format!("创建目录失败: {}", e);
+    }
     match std::fs::write(&target, content.as_bytes()) {
         Ok(()) => format!("已创建文件: {}", target.display()),
         Err(e) => format!("写入文件失败: {}", e),
@@ -184,10 +185,7 @@ pub fn modify_file(args_json: &str, working_dir: &Path) -> String {
             Err(e) => format!("写入文件失败: {}", e),
         }
     } else {
-        format!(
-            "错误：mode 仅支持 full 或 replace_lines（收到 {:?}）",
-            mode
-        )
+        format!("错误：mode 仅支持 full 或 replace_lines（收到 {:?}）", mode)
     }
 }
 
@@ -256,9 +254,10 @@ fn modify_file_replace_lines(v: &serde_json::Value, target: &Path) -> String {
                     return format!("写入临时文件失败: {}", e);
                 }
                 if !new_body.ends_with('\n')
-                    && let Err(e) = writer.write_all(b"\n") {
-                        return format!("写入临时文件失败: {}", e);
-                    }
+                    && let Err(e) = writer.write_all(b"\n")
+                {
+                    return format!("写入临时文件失败: {}", e);
+                }
             }
             replaced = true;
         }
@@ -266,9 +265,10 @@ fn modify_file_replace_lines(v: &serde_json::Value, target: &Path) -> String {
             continue;
         }
         if line_no > end_line
-            && let Err(e) = writer.write_all(buf.as_bytes()) {
-                return format!("写入临时文件失败: {}", e);
-            }
+            && let Err(e) = writer.write_all(buf.as_bytes())
+        {
+            return format!("写入临时文件失败: {}", e);
+        }
     }
 
     if line_no < start_line {
@@ -294,10 +294,11 @@ fn modify_file_replace_lines(v: &serde_json::Value, target: &Path) -> String {
     drop(writer);
     // Windows 上 rename 不能覆盖已存在目标，需先删原文件
     if target.exists()
-        && let Err(e) = std::fs::remove_file(target) {
-            let _ = std::fs::remove_file(&tmp_path);
-            return format!("删除原文件以替换失败: {}", e);
-        }
+        && let Err(e) = std::fs::remove_file(target)
+    {
+        let _ = std::fs::remove_file(&tmp_path);
+        return format!("删除原文件以替换失败: {}", e);
+    }
     if let Err(e) = std::fs::rename(&tmp_path, target) {
         let _ = std::fs::remove_file(&tmp_path);
         return format!("替换目标文件失败: {}", e);
@@ -354,9 +355,10 @@ pub fn read_file(args_json: &str, working_dir: &Path) -> String {
         .unwrap_or(false);
 
     if let Some(e) = end_line_opt
-        && e < start_line {
-            return "错误：end_line 不能小于 start_line".to_string();
-        }
+        && e < start_line
+    {
+        return "错误：end_line 不能小于 start_line".to_string();
+    }
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
@@ -501,7 +503,9 @@ fn count_lines_in_file(path: &Path) -> Result<usize, String> {
     let mut buf = String::new();
     loop {
         buf.clear();
-        let n = reader.read_line(&mut buf).map_err(|e| format!("读取失败: {}", e))?;
+        let n = reader
+            .read_line(&mut buf)
+            .map_err(|e| format!("读取失败: {}", e))?;
         if n == 0 {
             break;
         }
@@ -589,6 +593,7 @@ fn rel_path_posix(rel: &Path) -> String {
 }
 
 /// 在 `abs_dir`（已位于工作区内）下列目录，按 glob 收集文件相对路径（相对**起始目录** `scan_root_display`）。
+#[allow(clippy::too_many_arguments)] // 递归遍历需携带扫描上下文，字段多为路径/限制参数
 fn walk_glob_collect(
     abs_dir: &Path,
     rel_from_scan_root: &Path,
@@ -1029,18 +1034,17 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
     };
     let mut buf = vec![0u8; to_read];
     if to_read > 0
-        && let Err(e) = file.read_exact(&mut buf) {
-            return format!("读取文件头失败: {}", e);
-        }
+        && let Err(e) = file.read_exact(&mut buf)
+    {
+        return format!("读取文件头失败: {}", e);
+    }
 
     let digest = Sha256::digest(&buf);
     let hex = bytes_to_hex(&digest);
     out.push_str(&format!("sha256_prefix: {}\n", hex));
     out.push_str(&format!(
         "sha256_prefix_bytes: {}（文件共 {} 字节；仅头 {} 字节参与哈希）\n",
-        to_read,
-        size,
-        to_read
+        to_read, size, to_read
     ));
     if (size as usize) > to_read {
         out.push_str("note: 文件大于前缀长度，哈希仅为文件头摘要，非整文件校验。\n");
@@ -1098,9 +1102,10 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         None => None,
     };
     if let (Some(s), Some(e)) = (start_line, end_line)
-        && e < s {
-            return "错误：end_line 不能小于 start_line".to_string();
-        }
+        && e < s
+    {
+        return "错误：end_line 不能小于 start_line".to_string();
+    }
 
     let max_matches = v
         .get("max_matches")
@@ -1571,10 +1576,7 @@ mod tests {
         let dir = make_test_dir();
         let file = dir.join("bin.dat");
         std::fs::write(&file, [1u8, 2, 3, 4, 5]).unwrap();
-        let out = read_binary_meta(
-            r#"{"path":"bin.dat","prefix_hash_bytes":64}"#,
-            &dir,
-        );
+        let out = read_binary_meta(r#"{"path":"bin.dat","prefix_hash_bytes":64}"#, &dir);
         assert!(out.contains("size_bytes: 5"), "{}", out);
         assert!(out.contains("sha256_prefix:"), "{}", out);
         assert!(out.contains("sha256_prefix_bytes: 5"), "{}", out);

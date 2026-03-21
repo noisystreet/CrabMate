@@ -1,6 +1,6 @@
-use std::path::Path;
 use super::cargo_tools;
 use super::frontend_tools;
+use std::path::Path;
 
 /// 运行 cargo clippy 和（可选）frontend 的 npm lint，将结果聚合为一段文本。
 ///
@@ -14,10 +14,7 @@ pub fn run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> Str
         Ok(v) => v,
         Err(e) => return format!("参数解析错误：{}", e),
     };
-    let run_cargo = v
-        .get("run_cargo")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(true);
+    let run_cargo = v.get("run_cargo").and_then(|b| b.as_bool()).unwrap_or(true);
     let run_frontend = v
         .get("run_frontend")
         .and_then(|b| b.as_bool())
@@ -32,7 +29,10 @@ pub fn run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> Str
         sections.push(run_frontend_lint(workspace_root, max_output_len));
     }
 
-    sections.join("\n\n====================\n\n").trim().to_string()
+    sections
+        .join("\n\n====================\n\n")
+        .trim()
+        .to_string()
 }
 
 fn run_cargo_clippy(root: &Path, max_output_len: usize) -> String {
@@ -43,6 +43,9 @@ fn run_cargo_clippy(root: &Path, max_output_len: usize) -> String {
 }
 
 fn run_frontend_lint(root: &Path, max_output_len: usize) -> String {
-    frontend_tools::frontend_lint(r#"{"subdir":"frontend","script":"lint"}"#, root, max_output_len)
+    frontend_tools::frontend_lint(
+        r#"{"subdir":"frontend","script":"lint"}"#,
+        root,
+        max_output_len,
+    )
 }
-

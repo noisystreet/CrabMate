@@ -35,7 +35,10 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         Some(s) if !s.trim().is_empty() => s,
         _ => return "错误：缺少 patch 参数".to_string(),
     };
-    let strip = args.get("strip").and_then(|v| v.as_u64()).unwrap_or_default();
+    let strip = args
+        .get("strip")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_default();
 
     let root = match workspace_root.canonicalize() {
         Ok(p) => p,

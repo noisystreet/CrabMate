@@ -25,6 +25,7 @@ use crate::types::{Message, ToolCall};
 // --- P：向模型要本轮输出（含重试）---
 
 /// P：构造请求并调用模型（`no_stream` 为 true 时走 `stream: false`），**不**修改 `messages`。
+#[allow(clippy::too_many_arguments)] // Web/TUI 共用入口，参数扁平便于各调用点传参
 pub(crate) async fn per_plan_call_model_retrying(
     client: &reqwest::Client,
     api_key: &str,
@@ -124,6 +125,7 @@ enum ExecuteDispatchMode<'a> {
 }
 
 /// E：执行一批 tool 调用（Web/TUI 共用骨架），写入 tool / 反思 user，并发送 SSE 片段。
+#[allow(clippy::too_many_arguments)] // 工具批处理上下文字段较多，拆结构体收益有限
 async fn per_execute_tools_common(
     tool_calls: &[ToolCall],
     per_coord: &mut PerCoordinator,

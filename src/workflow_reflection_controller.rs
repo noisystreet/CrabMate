@@ -1,6 +1,6 @@
 //! Workflow 反思（Review）控制器：将“反思阶段 -> 模型修订计划 -> 再执行”做成可测试、可复用的决策逻辑。
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// 反思首轮注入 JSON 的 `instruction_type`，与 `per_coord` 中「是否强制终答含 `agent_reply_plan`」对齐。
 pub const INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT: &str = "workflow_reflection_plan_next";
@@ -302,7 +302,7 @@ pub fn validate_workflow_execute_do_contract(args_json: &str) -> Result<(), Valu
         }));
     }
 
-        // 验证 deps 形态 + deps 引用必须在 nodes_id 集合中
+    // 验证 deps 形态 + deps 引用必须在 nodes_id 集合中
     for (node, id) in nodes_as_iter.iter() {
         let node_obj = node.as_object().ok_or_else(|| {
             json!({
@@ -311,35 +311,34 @@ pub fn validate_workflow_execute_do_contract(args_json: &str) -> Result<(), Valu
             })
         })?;
 
-            // 与 parse_workflow_spec 保持一致：deps 缺失视为 []。
-            let deps_values: Vec<Value> = match node_obj.get("deps") {
-                None => Vec::new(),
-                Some(dv) => {
-                    dv.as_array()
-                        .ok_or_else(|| {
-                            json!({
-                                "type": "workflow_execute_do_contract_error",
-                                "human_summary": format!("node {} 的 deps 必须是数组", id)
-                            })
-                        })?
-                        .clone()
-                }
-            };
-
-            for dep in deps_values.iter() {
-                let dep_id = dep.as_str().ok_or_else(|| {
+        // 与 parse_workflow_spec 保持一致：deps 缺失视为 []。
+        let deps_values: Vec<Value> = match node_obj.get("deps") {
+            None => Vec::new(),
+            Some(dv) => dv
+                .as_array()
+                .ok_or_else(|| {
                     json!({
                         "type": "workflow_execute_do_contract_error",
-                        "human_summary": format!("node {} 的 deps 元素必须是字符串", id)
+                        "human_summary": format!("node {} 的 deps 必须是数组", id)
                     })
-                })?;
-                if !node_ids.contains(dep_id) {
-                    return Err(json!({
-                        "type": "workflow_execute_do_contract_error",
-                        "human_summary": format!("node {} 的 deps 引用了未知节点 {}", id, dep_id)
-                    }));
-                }
+                })?
+                .clone(),
+        };
+
+        for dep in deps_values.iter() {
+            let dep_id = dep.as_str().ok_or_else(|| {
+                json!({
+                    "type": "workflow_execute_do_contract_error",
+                    "human_summary": format!("node {} 的 deps 元素必须是字符串", id)
+                })
+            })?;
+            if !node_ids.contains(dep_id) {
+                return Err(json!({
+                    "type": "workflow_execute_do_contract_error",
+                    "human_summary": format!("node {} 的 deps 引用了未知节点 {}", id, dep_id)
+                }));
             }
+        }
 
         // tool_name 必须存在，避免后续运行时 unknown tool
         let tool_name = node_obj
@@ -456,9 +455,13 @@ mod tests {
     #[test]
     fn test_validate_do_contract_requires_nodes_and_deps_shape() {
         // validate_only=false + nodes 缺失 => 错
-        let bad_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":5},"done":false}}"#;
+        let bad_args =
+            r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":5},"done":false}}"#;
         let err = validate_workflow_execute_do_contract(bad_args).unwrap_err();
-        assert_eq!(err.get("type").and_then(|v| v.as_str()).unwrap_or(""), "workflow_execute_do_contract_error");
+        assert_eq!(
+            err.get("type").and_then(|v| v.as_str()).unwrap_or(""),
+            "workflow_execute_do_contract_error"
+        );
 
         // nodes 存在但 deps 非数组 => 错
         let bad_deps = r#"{
@@ -511,4 +514,3 @@ mod tests {
         assert!(validate_workflow_execute_do_contract(ok_args_no_deps).is_ok());
     }
 }
-

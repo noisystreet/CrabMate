@@ -1,0 +1,42 @@
+# https://pre-commit.com
+# 安装：pip install pre-commit && pre-commit install
+#   （本配置含 default_install_hook_types，会同时安装 pre-commit + commit-msg；旧环境可补：pre-commit install --hook-type commit-msg）
+# 手动跑文件检查：pre-commit run --all-files（不含 commit-msg；说明校验见 conventional-commits 规则中的手动命令）
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt (workspace)
+        entry: cargo fmt --all --
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: cargo-clippy
+        name: cargo clippy (-D warnings)
+        entry: cargo clippy --all-targets --all-features -- -D warnings
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          # 与 .cursor/rules/conventional-commits.mdc 中的 type 对齐
+          - build
+          - chore
+          - ci
+          - docs
+          - feat
+          - fix
+          - perf
+          - refactor
+          - revert
+          - style
+          - test

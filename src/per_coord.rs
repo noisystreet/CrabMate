@@ -105,7 +105,11 @@ impl PerCoordinator {
     }
 
     /// 在已将 assistant 消息推入 `messages` 之后调用，根据是否需要「规划」段落决定下一步。
-    pub fn after_final_assistant(&mut self, msg: &Message, messages: &[Message]) -> AfterFinalAssistant {
+    pub fn after_final_assistant(
+        &mut self,
+        msg: &Message,
+        messages: &[Message],
+    ) -> AfterFinalAssistant {
         let require_plan = match self.final_plan_policy {
             FinalPlanRequirementMode::Never => false,
             FinalPlanRequirementMode::WorkflowReflection => self.require_plan_in_final_content,
@@ -196,8 +200,10 @@ impl PerCoordinator {
     pub fn prepare_workflow_execute(&mut self, args_json: &str) -> PreparedWorkflowExecute {
         let decision = self.reflection.decide(args_json);
         let reflection_inject = decision.inject_instruction.clone();
-        if matches!(self.final_plan_policy, FinalPlanRequirementMode::WorkflowReflection)
-            && let Some(v) = reflection_inject.as_ref()
+        if matches!(
+            self.final_plan_policy,
+            FinalPlanRequirementMode::WorkflowReflection
+        ) && let Some(v) = reflection_inject.as_ref()
             && v.get("instruction_type").and_then(|x| x.as_str())
                 == Some(workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT)
         {
@@ -286,7 +292,11 @@ fn last_workflow_validate_layer_count(messages: &[Message]) -> Option<usize> {
     None
 }
 
-fn assistant_index_for_tool_call(messages: &[Message], tool_idx: usize, tool_call_id: &str) -> Option<usize> {
+fn assistant_index_for_tool_call(
+    messages: &[Message],
+    tool_idx: usize,
+    tool_call_id: &str,
+) -> Option<usize> {
     for j in (0..tool_idx).rev() {
         if messages[j].role != "assistant" {
             continue;
@@ -421,7 +431,7 @@ mod tests {
   {"id":"c","description":"layer 2"}
 ]}
 ```"#
-                .to_string(),
+                    .to_string(),
             ),
             tool_calls: None,
             name: None,

@@ -3,44 +3,44 @@
 //!
 //! 日志由 `RUST_LOG` 控制（与原先一致）。
 
+mod agent_turn;
 mod api;
+mod chat_job_queue;
+mod config;
+mod context_window;
 mod http_client;
 mod llm;
-mod config;
+mod per_coord;
+mod plan_artifact;
+mod runtime;
+mod sse_protocol;
+mod tool_registry;
 mod tool_result;
 mod tools;
 mod types;
+mod ui;
 mod workflow;
 mod workflow_reflection_controller;
-mod per_coord;
-mod plan_artifact;
-mod tool_registry;
-mod sse_protocol;
-mod agent_turn;
-mod context_window;
-mod chat_job_queue;
-mod runtime;
-mod ui;
 
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
+    Json, Router,
     extract::Multipart,
     extract::State,
-    http::{header, HeaderValue, StatusCode},
+    http::{HeaderValue, StatusCode, header},
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
-use axum::response::sse::{Event, KeepAlive, Sse};
 use config::cli::{init_logging, parse_args};
 use futures_util::StreamExt;
-use tower::ServiceBuilder;
-use tower_http::services::ServeDir;
-use tower_http::set_header::SetResponseHeaderLayer;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+use tower::ServiceBuilder;
+use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{error, info};
 use types::Message;
 
@@ -233,7 +233,8 @@ fn sanitize_display_filename(input: &str) -> String {
         .unwrap_or("upload.bin");
     let mut out = String::with_capacity(base.len().min(80));
     for ch in base.chars() {
-        let ok = ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_' | ' ' | '(' | ')' | '[' | ']');
+        let ok = ch.is_ascii_alphanumeric()
+            || matches!(ch, '.' | '-' | '_' | ' ' | '(' | ')' | '[' | ']');
         out.push(if ok { ch } else { '_' });
         if out.len() >= 80 {
             break;
@@ -292,9 +293,12 @@ async fn upload_handler(
 
         // 白名单：MIME 前缀 + 扩展名
         let ext = ext_lower(&file_name).unwrap_or_default();
-        let is_image = mime.starts_with("image/") && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif");
-        let is_audio = mime.starts_with("audio/") && matches!(ext.as_str(), "mp3" | "wav" | "m4a" | "aac" | "ogg" | "webm");
-        let is_video = mime.starts_with("video/") && matches!(ext.as_str(), "mp4" | "webm" | "mov" | "mkv");
+        let is_image = mime.starts_with("image/")
+            && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif");
+        let is_audio = mime.starts_with("audio/")
+            && matches!(ext.as_str(), "mp3" | "wav" | "m4a" | "aac" | "ogg" | "webm");
+        let is_video =
+            mime.starts_with("video/") && matches!(ext.as_str(), "mp4" | "webm" | "mov" | "mkv");
         if !(is_image || is_audio || is_video) {
             return Err((
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -314,7 +318,11 @@ async fn upload_handler(
             80 * 1024 * 1024
         };
 
-        let ext_with_dot = if ext.is_empty() { "".to_string() } else { format!(".{}", ext) };
+        let ext_with_dot = if ext.is_empty() {
+            "".to_string()
+        } else {
+            format!(".{}", ext)
+        };
 
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -350,7 +358,9 @@ async fn upload_handler(
                     ));
                 }
             };
-            let Some(chunk) = next else { break; };
+            let Some(chunk) = next else {
+                break;
+            };
             let chunk_len = chunk.len() as u64;
             size += chunk_len;
             total += chunk_len;
@@ -470,25 +480,27 @@ async fn chat_handler(
                 }),
             )
         })?;
-    let messages = reply_rx.await.map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError {
-                code: "INTERNAL_ERROR",
-                message: "对话任务被取消或内部错误".to_string(),
-            }),
-        )
-    })?
-    .map_err(|e| {
-        error!(error = %e, job_id, "chat_handler 队列任务失败");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError {
-                code: "INTERNAL_ERROR",
-                message: "对话失败，请稍后重试".to_string(),
-            }),
-        )
-    })?;
+    let messages = reply_rx
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    code: "INTERNAL_ERROR",
+                    message: "对话任务被取消或内部错误".to_string(),
+                }),
+            )
+        })?
+        .map_err(|e| {
+            error!(error = %e, job_id, "chat_handler 队列任务失败");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    code: "INTERNAL_ERROR",
+                    message: "对话失败，请稍后重试".to_string(),
+                }),
+            )
+        })?;
     let reply = messages
         .last()
         .and_then(|m| m.content.as_deref())
@@ -501,7 +513,10 @@ async fn chat_handler(
 async fn chat_stream_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ChatRequestBody>,
-) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>>, (StatusCode, Json<ApiError>)> {
+) -> Result<
+    Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>>,
+    (StatusCode, Json<ApiError>),
+> {
     let msg = body.message.trim();
     if msg.is_empty() {
         return Err((
@@ -647,11 +662,7 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
                         } else {
                             String::from_utf8_lossy(&out.stderr).trim().to_string()
                         };
-                        Ok(if s.is_empty() {
-                            "ok".to_string()
-                        } else {
-                            s
-                        })
+                        Ok(if s.is_empty() { "ok".to_string() } else { s })
                     } else {
                         Err(format!("exit={}", status))
                     }
@@ -709,10 +720,7 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         }
     }
 
-    let required_ok = checks
-        .get("api_key")
-        .map(|c| c.ok)
-        .unwrap_or(false)
+    let required_ok = checks.get("api_key").map(|c| c.ok).unwrap_or(false)
         && checks
             .get("workspace_writable")
             .map(|c| c.ok)
@@ -832,7 +840,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
             std::process::exit(1);
         }
-        println!("配置检查通过：API_KEY 已设置，配置可用，前端静态目录存在：{}", static_dir.display());
+        println!(
+            "配置检查通过：API_KEY 已设置，配置可用，前端静态目录存在：{}",
+            static_dir.display()
+        );
         return Ok(());
     }
     let client = http_client::build_shared_api_client(&cfg)?;
@@ -840,22 +851,15 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let tools = if no_tools { Vec::new() } else { all_tools };
 
     if tui {
-        crate::runtime::tui::run_tui(
-            &cfg,
-            &client,
-            &api_key,
-            &tools,
-            &workspace_cli,
-            no_stream,
-        )
-        .await?;
+        crate::runtime::tui::run_tui(&cfg, &client, &api_key, &tools, &workspace_cli, no_stream)
+            .await?;
         return Ok(());
     }
 
     if let Some(port) = serve_port {
         let initial_workspace = workspace_cli.clone();
-            let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
-            std::fs::create_dir_all(&uploads_dir).ok();
+        let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
+        std::fs::create_dir_all(&uploads_dir).ok();
         let chat_queue = chat_job_queue::ChatJobQueue::new(
             cfg.chat_queue_max_concurrent,
             cfg.chat_queue_max_pending,
@@ -866,40 +870,43 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             client,
             tools,
             workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
-                uploads_dir: uploads_dir.clone(),
+            uploads_dir: uploads_dir.clone(),
             chat_queue,
         });
-            let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
-            let uploads_dir_for_static = uploads_dir.clone();
+        let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+        let uploads_dir_for_static = uploads_dir.clone();
         let mut app = Router::new()
             .route("/chat", post(chat_handler))
             .route("/chat/stream", post(chat_stream_handler))
-                .route("/upload", post(upload_handler))
-                .route("/uploads/delete", post(delete_uploads_handler))
+            .route("/upload", post(upload_handler))
+            .route("/uploads/delete", post(delete_uploads_handler))
             .route("/health", get(health_handler))
             .route("/status", get(status_handler))
-                .nest_service(
-                    "/uploads",
-                    ServiceBuilder::new()
-                        .layer(SetResponseHeaderLayer::if_not_present(
-                            header::CACHE_CONTROL,
-                            HeaderValue::from_static("public, max-age=31536000, immutable"),
-                        ))
-                        .layer(SetResponseHeaderLayer::if_not_present(
-                            header::X_CONTENT_TYPE_OPTIONS,
-                            HeaderValue::from_static("nosniff"),
-                        ))
-                        .layer(SetResponseHeaderLayer::if_not_present(
-                            header::HeaderName::from_static("cross-origin-resource-policy"),
-                            HeaderValue::from_static("same-site"),
-                        ))
-                        .service(ServeDir::new(uploads_dir_for_static)),
-                )
+            .nest_service(
+                "/uploads",
+                ServiceBuilder::new()
+                    .layer(SetResponseHeaderLayer::if_not_present(
+                        header::CACHE_CONTROL,
+                        HeaderValue::from_static("public, max-age=31536000, immutable"),
+                    ))
+                    .layer(SetResponseHeaderLayer::if_not_present(
+                        header::X_CONTENT_TYPE_OPTIONS,
+                        HeaderValue::from_static("nosniff"),
+                    ))
+                    .layer(SetResponseHeaderLayer::if_not_present(
+                        header::HeaderName::from_static("cross-origin-resource-policy"),
+                        HeaderValue::from_static("same-site"),
+                    ))
+                    .service(ServeDir::new(uploads_dir_for_static)),
+            )
             .route(
                 "/workspace",
                 get(ui::workspace::workspace_handler).post(ui::workspace::workspace_set_handler),
             )
-            .route("/workspace/pick", get(ui::workspace::workspace_pick_handler))
+            .route(
+                "/workspace/pick",
+                get(ui::workspace::workspace_pick_handler),
+            )
             .route(
                 "/workspace/search",
                 post(ui::workspace::workspace_search_handler),
@@ -921,14 +928,20 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let bind_ip: std::net::IpAddr = http_bind_host.parse().map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!("无效的 Web 监听地址 {:?}（请使用有效 IP，如 127.0.0.1 或 0.0.0.0）", http_bind_host),
+                format!(
+                    "无效的 Web 监听地址 {:?}（请使用有效 IP，如 127.0.0.1 或 0.0.0.0）",
+                    http_bind_host
+                ),
             )
         })?;
         let addr = std::net::SocketAddr::from((bind_ip, port));
         println!("Web 服务已启动");
         println!("  监听: http://{}/", addr);
         if bind_ip.is_unspecified() {
-            eprintln!("  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露", addr);
+            eprintln!(
+                "  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露",
+                addr
+            );
         }
         info!(%addr, "Web 服务监听");
         let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -939,7 +952,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let mut interval = tokio::time::interval(Duration::from_secs(600));
                 loop {
                     interval.tick().await;
-                    cleanup_uploads_dir(dir.clone(), Duration::from_secs(24 * 3600), 500 * 1024 * 1024).await;
+                    cleanup_uploads_dir(
+                        dir.clone(),
+                        Duration::from_secs(24 * 3600),
+                        500 * 1024 * 1024,
+                    )
+                    .await;
                 }
             }
         });
@@ -962,20 +980,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    crate::runtime::cli::run_repl(
-        &cfg,
-        &client,
-        &api_key,
-        &tools,
-        &workspace_cli,
-        no_stream,
-    )
-    .await
+    crate::runtime::cli::run_repl(&cfg, &client, &api_key, &tools, &workspace_cli, no_stream).await
 }
 
-pub use config::{load_config, AgentConfig};
+pub use config::{AgentConfig, load_config};
 pub use tool_registry::{
-    all_dispatch_metadata, execution_class_for_tool, try_dispatch_meta, ToolDispatchMeta,
-    ToolExecutionClass,
+    ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata, execution_class_for_tool,
+    try_dispatch_meta,
 };
 pub use tools::build_tools;

@@ -156,7 +156,11 @@ pub(super) fn strip_sgr_mouse_leaks(s: &str) -> String {
 }
 
 /// 丢弃误送入的 SGR 鼠标片段；否则将 `scratch` 与当前字符按用户输入写入 `push`。
-pub(super) fn feed_char_filter_sgr_mouse_leak<F: FnMut(char)>(scratch: &mut String, ch: char, mut push: F) {
+pub(super) fn feed_char_filter_sgr_mouse_leak<F: FnMut(char)>(
+    scratch: &mut String,
+    ch: char,
+    mut push: F,
+) {
     const MAX: usize = 32;
     if scratch.len() >= MAX {
         let old = std::mem::take(scratch);

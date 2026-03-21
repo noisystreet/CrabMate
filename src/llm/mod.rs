@@ -82,9 +82,7 @@ pub async fn complete_chat_retrying(
             }
         }
     }
-    last_ok.ok_or_else(|| {
-        std::io::Error::other("llm chat 成功分支未写入结果（逻辑错误）").into()
-    })
+    last_ok.ok_or_else(|| std::io::Error::other("llm chat 成功分支未写入结果（逻辑错误）").into())
 }
 
 #[cfg(test)]

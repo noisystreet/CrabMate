@@ -32,10 +32,7 @@ pub fn rust_test_one(args_json: &str, workspace_root: &Path, max_output_len: usi
     };
     let mut merged = v;
     if let Some(obj) = merged.as_object_mut() {
-        obj.insert(
-            "test_filter".to_string(),
-            serde_json::Value::String(filter),
-        );
+        obj.insert("test_filter".to_string(), serde_json::Value::String(filter));
     }
     run_cargo_subcommand(
         "test",
@@ -178,7 +175,10 @@ pub fn cargo_nextest(args_json: &str, workspace_root: &Path, max_output_len: usi
         .and_then(|x| x.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let no_capture = v.get("nocapture").and_then(|x| x.as_bool()).unwrap_or(false);
+    let no_capture = v
+        .get("nocapture")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
 
     let mut cmd = Command::new("cargo");
     cmd.arg("nextest").arg("run");
@@ -197,7 +197,8 @@ pub fn cargo_nextest(args_json: &str, workspace_root: &Path, max_output_len: usi
     cmd.current_dir(workspace_root);
     let out = run_and_format(cmd, max_output_len, "cargo nextest run");
     if out.contains("no such command: `nextest`") {
-        return "cargo nextest: 未安装 cargo-nextest，请先运行 `cargo install cargo-nextest`".to_string();
+        return "cargo nextest: 未安装 cargo-nextest，请先运行 `cargo install cargo-nextest`"
+            .to_string();
     }
     out
 }
@@ -210,7 +211,10 @@ pub fn cargo_outdated(args_json: &str, workspace_root: &Path, max_output_len: us
     if !workspace_root.join("Cargo.toml").is_file() {
         return "错误：当前工作目录未找到 Cargo.toml".to_string();
     }
-    let workspace = v.get("workspace").and_then(|x| x.as_bool()).unwrap_or(false);
+    let workspace = v
+        .get("workspace")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let depth = v.get("depth").and_then(|x| x.as_u64());
 
     let mut cmd = Command::new("cargo");
@@ -224,7 +228,8 @@ pub fn cargo_outdated(args_json: &str, workspace_root: &Path, max_output_len: us
     cmd.current_dir(workspace_root);
     let out = run_and_format(cmd, max_output_len, "cargo outdated");
     if out.contains("no such command: `outdated`") || out.contains("no such command: outdated") {
-        return "cargo outdated: 未安装 cargo-outdated，请先运行 `cargo install cargo-outdated`".to_string();
+        return "cargo outdated: 未安装 cargo-outdated，请先运行 `cargo install cargo-outdated`"
+            .to_string();
     }
     out
 }
@@ -243,11 +248,28 @@ pub fn cargo_publish_dry_run(
         return "错误：当前工作目录未找到 Cargo.toml".to_string();
     }
 
-    let package = v.get("package").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
-    let allow_dirty = v.get("allow_dirty").and_then(|x| x.as_bool()).unwrap_or(false);
-    let no_verify = v.get("no_verify").and_then(|x| x.as_bool()).unwrap_or(false);
-    let features = v.get("features").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
-    let all_features = v.get("all_features").and_then(|x| x.as_bool()).unwrap_or(false);
+    let package = v
+        .get("package")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let allow_dirty = v
+        .get("allow_dirty")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let no_verify = v
+        .get("no_verify")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let features = v
+        .get("features")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let all_features = v
+        .get("all_features")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
 
     let mut cmd = Command::new("cargo");
     cmd.arg("publish").arg("--dry-run");
@@ -282,19 +304,53 @@ pub fn cargo_fix(args_json: &str, workspace_root: &Path, max_output_len: usize) 
 
     let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
     if !confirm {
-        return "拒绝执行：cargo_fix 需要 confirm=true 才会真正应用修复（避免误改代码）。".to_string();
+        return "拒绝执行：cargo_fix 需要 confirm=true 才会真正应用修复（避免误改代码）。"
+            .to_string();
     }
 
-    let broken_code = v.get("broken_code").and_then(|x| x.as_bool()).unwrap_or(false);
-    let all_targets = v.get("all_targets").and_then(|x| x.as_bool()).unwrap_or(false);
-    let package = v.get("package").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
-    let features = v.get("features").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
-    let all_features = v.get("all_features").and_then(|x| x.as_bool()).unwrap_or(false);
-    let edition = v.get("edition").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
-    let edition_idioms = v.get("edition_idioms").and_then(|x| x.as_bool()).unwrap_or(false);
-    let allow_dirty = v.get("allow_dirty").and_then(|x| x.as_bool()).unwrap_or(false);
-    let allow_staged = v.get("allow_staged").and_then(|x| x.as_bool()).unwrap_or(false);
-    let allow_no_vcs = v.get("allow_no_vcs").and_then(|x| x.as_bool()).unwrap_or(false);
+    let broken_code = v
+        .get("broken_code")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let all_targets = v
+        .get("all_targets")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let package = v
+        .get("package")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let features = v
+        .get("features")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let all_features = v
+        .get("all_features")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let edition = v
+        .get("edition")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let edition_idioms = v
+        .get("edition_idioms")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let allow_dirty = v
+        .get("allow_dirty")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let allow_staged = v
+        .get("allow_staged")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let allow_no_vcs = v
+        .get("allow_no_vcs")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
 
     let mut cmd = Command::new("cargo");
     cmd.arg("fix");
@@ -365,7 +421,10 @@ fn run_cargo_subcommand(
         .and_then(|x| x.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let no_capture = v.get("nocapture").and_then(|x| x.as_bool()).unwrap_or(false);
+    let no_capture = v
+        .get("nocapture")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let run_args = v
         .get("args")
         .and_then(|x| x.as_array())
@@ -373,13 +432,15 @@ fn run_cargo_subcommand(
         .unwrap_or_default();
 
     if let Some(p) = package
-        && (p.is_empty() || p.contains(char::is_whitespace)) {
-            return "错误：package 参数无效".to_string();
-        }
+        && (p.is_empty() || p.contains(char::is_whitespace))
+    {
+        return "错误：package 参数无效".to_string();
+    }
     if let Some(b) = bin
-        && (b.is_empty() || b.contains(char::is_whitespace)) {
-            return "错误：bin 参数无效".to_string();
-        }
+        && (b.is_empty() || b.contains(char::is_whitespace))
+    {
+        return "错误：bin 参数无效".to_string();
+    }
 
     let mut cmd = Command::new("cargo");
     cmd.arg(subcmd);
@@ -405,15 +466,14 @@ fn run_cargo_subcommand(
         if no_capture {
             cmd.arg("--").arg("--nocapture");
         }
-    } else if subcmd == "run"
-        && !run_args.is_empty() {
-            cmd.arg("--");
-            for a in run_args {
-                if let Some(s) = a.as_str() {
-                    cmd.arg(s);
-                }
+    } else if subcmd == "run" && !run_args.is_empty() {
+        cmd.arg("--");
+        for a in run_args {
+            if let Some(s) = a.as_str() {
+                cmd.arg(s);
             }
         }
+    }
     cmd.current_dir(workspace_root);
     run_and_format(cmd, max_output_len, &format!("cargo {}", subcmd))
 }
@@ -467,4 +527,3 @@ fn truncate_output(s: &str, max_bytes: usize) -> String {
         lines.len()
     )
 }
-

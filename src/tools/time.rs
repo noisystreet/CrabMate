@@ -75,7 +75,11 @@ mod tests {
     #[test]
     fn test_run_contains_time_and_calendar() {
         let out = run(TimeOutputMode::Both, None, None);
-        assert!(out.contains("当前时间"), "应包含「当前时间」，得到: {}", out);
+        assert!(
+            out.contains("当前时间"),
+            "应包含「当前时间」，得到: {}",
+            out
+        );
         assert!(out.contains("月"), "应包含当月日历，得到: {}", out);
     }
 

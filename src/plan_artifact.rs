@@ -24,7 +24,10 @@ pub enum PlanArtifactError {
     WrongType(String),
     WrongVersion(u32),
     EmptySteps,
-    InvalidStep { index: usize, reason: &'static str },
+    InvalidStep {
+        index: usize,
+        reason: &'static str,
+    },
 }
 
 /// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json 围栏，或整段即为单个 JSON 对象）。
@@ -111,7 +114,8 @@ mod tests {
     use super::*;
 
     fn sample_json() -> String {
-        r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"do a"}]}"#.to_string()
+        r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"do a"}]}"#
+            .to_string()
     }
 
     #[test]

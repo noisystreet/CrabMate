@@ -9,11 +9,11 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use tokio::sync::{mpsc, oneshot, Semaphore};
+use tokio::sync::{Semaphore, mpsc, oneshot};
 use tracing::{error, info};
 
-use crate::types::Message;
 use crate::AppState;
+use crate::types::Message;
 
 const RECENT_CAP: usize = 32;
 
@@ -125,9 +125,7 @@ impl ChatJobQueue {
     }
 
     pub fn next_job_id(&self) -> u64 {
-        self.inner
-            .next_job_id
-            .fetch_add(1, Ordering::SeqCst)
+        self.inner.next_job_id.fetch_add(1, Ordering::SeqCst)
     }
 
     pub fn running_count(&self) -> usize {
@@ -301,18 +299,13 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 Err(e) => {
                     error!(job_id, error = %e, "chat stream 任务失败");
                     let err_line = crate::sse_protocol::encode_message(
-                        crate::sse_protocol::SsePayload::Error(
-                            crate::sse_protocol::SseErrorBody {
-                                error: "对话失败，请稍后重试".to_string(),
-                                code: Some("INTERNAL_ERROR".to_string()),
-                            },
-                        ),
+                        crate::sse_protocol::SsePayload::Error(crate::sse_protocol::SseErrorBody {
+                            error: "对话失败，请稍后重试".to_string(),
+                            code: Some("INTERNAL_ERROR".to_string()),
+                        }),
                     );
                     let _ = sse_tx.send(err_line).await;
-                    (
-                        false,
-                        Some(truncate_chars(&e.to_string(), 120)),
-                    )
+                    (false, Some(truncate_chars(&e.to_string(), 120)))
                 }
             };
             drop(sse_tx);

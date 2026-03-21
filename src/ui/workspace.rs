@@ -2,9 +2,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Query, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -325,11 +325,8 @@ pub async fn workspace_search_handler(
     if let Some(ih) = body.ignore_hidden {
         args["ignore_hidden"] = serde_json::json!(ih);
     }
-    let ctx = crate::tools::tool_context_for(
-        &state.cfg,
-        &state.cfg.allowed_commands,
-        &base_canonical,
-    );
+    let ctx =
+        crate::tools::tool_context_for(&state.cfg, &state.cfg.allowed_commands, &base_canonical);
     let output = crate::tools::run_tool("search_in_files", &args.to_string(), &ctx);
     Json(WorkspaceSearchResponse {
         output,
@@ -493,11 +490,12 @@ pub async fn workspace_file_write_handler(
 
     if let Some(parent) = canonical.parent()
         && !parent.as_os_str().is_empty()
-            && let Err(e) = tokio::fs::create_dir_all(parent).await {
-                return Json(WorkspaceFileWriteResponse {
-                    error: Some(format!("创建目录失败: {}", e)),
-                });
-            }
+        && let Err(e) = tokio::fs::create_dir_all(parent).await
+    {
+        return Json(WorkspaceFileWriteResponse {
+            error: Some(format!("创建目录失败: {}", e)),
+        });
+    }
     match tokio::fs::write(&canonical, body.content.as_bytes()).await {
         Ok(()) => Json(WorkspaceFileWriteResponse { error: None }),
         Err(e) => Json(WorkspaceFileWriteResponse {

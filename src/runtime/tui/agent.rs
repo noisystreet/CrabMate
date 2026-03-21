@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::config::AgentConfig;
 use crate::types::Message;

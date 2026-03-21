@@ -170,7 +170,11 @@ fn run_rustfmt(target: &Path, check_only: bool) -> Result<String, String> {
     }
     Ok(format!(
         "已使用 rustfmt {}：{}",
-        if check_only { "检查通过" } else { "格式化" },
+        if check_only {
+            "检查通过"
+        } else {
+            "格式化"
+        },
         target.display()
     ))
 }
@@ -226,9 +230,12 @@ fn run_prettier(target: &Path, workspace_root: &Path, check_only: bool) -> Resul
     }
     Ok(format!(
         "已使用 prettier {}：{}（相对路径：{}）",
-        if check_only { "检查通过" } else { "格式化" },
+        if check_only {
+            "检查通过"
+        } else {
+            "格式化"
+        },
         target.display(),
         relative.display()
     ))
 }
-

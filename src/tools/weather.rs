@@ -57,8 +57,12 @@ fn weather_code_text(code: f64) -> &'static str {
 pub fn run(args_json: &str, timeout_secs: u64) -> String {
     let city = match serde_json::from_str::<serde_json::Value>(args_json)
         .ok()
-        .and_then(|v| v.get("city").or(v.get("location")).and_then(|c| c.as_str()).map(String::from))
-    {
+        .and_then(|v| {
+            v.get("city")
+                .or(v.get("location"))
+                .and_then(|c| c.as_str())
+                .map(String::from)
+        }) {
         Some(s) if s.len() >= 2 => s.trim().to_string(),
         _ => return "错误：请提供 city 或 location 参数（至少 2 个字符）".to_string(),
     };
@@ -73,11 +77,7 @@ pub fn run(args_json: &str, timeout_secs: u64) -> String {
 
     let geo: GeocodingResponse = match client
         .get(GEOCODING_URL)
-        .query(&[
-            ("name", city.as_str()),
-            ("count", "1"),
-            ("language", "zh"),
-        ])
+        .query(&[("name", city.as_str()), ("count", "1"), ("language", "zh")])
         .send()
     {
         Ok(res) if res.status().is_success() => match res.json() {
@@ -100,7 +100,10 @@ pub fn run(args_json: &str, timeout_secs: u64) -> String {
         .query(&[
             ("latitude", lat.as_str()),
             ("longitude", lon.as_str()),
-            ("current", "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"),
+            (
+                "current",
+                "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m",
+            ),
             ("timezone", loc.timezone.as_str()),
         ])
         .send()
@@ -118,10 +121,7 @@ pub fn run(args_json: &str, timeout_secs: u64) -> String {
         None => return "未获取到当前天气数据".to_string(),
     };
 
-    let desc = cur
-        .weather_code
-        .map(weather_code_text)
-        .unwrap_or("—");
+    let desc = cur.weather_code.map(weather_code_text).unwrap_or("—");
     let hum = cur
         .relative_humidity_2m
         .map(|h| format!("湿度 {}%", h as i32))
@@ -130,7 +130,11 @@ pub fn run(args_json: &str, timeout_secs: u64) -> String {
         .wind_speed_10m
         .map(|w| format!("风速 {} km/h", w as i32))
         .unwrap_or_default();
-    let extra = [hum, wind].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("，");
+    let extra = [hum, wind]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("，");
 
     let location_name = if loc.country.is_empty() {
         loc.name
@@ -154,12 +158,20 @@ mod tests {
     #[test]
     fn test_run_missing_city() {
         let out = run("{}", 15);
-        assert!(out.contains("city") || out.contains("location"), "缺少参数应提示，得到: {}", out);
+        assert!(
+            out.contains("city") || out.contains("location"),
+            "缺少参数应提示，得到: {}",
+            out
+        );
     }
 
     #[test]
     fn test_run_city_too_short() {
         let out = run(r#"{"city":"x"}"#, 15);
-        assert!(out.contains("至少 2 个字符") || out.contains("city") || out.contains("location"), "得到: {}", out);
+        assert!(
+            out.contains("至少 2 个字符") || out.contains("city") || out.contains("location"),
+            "得到: {}",
+            out
+        );
     }
 }

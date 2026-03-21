@@ -22,9 +22,7 @@ pub(super) fn classify_agent_sse_line(s: &str) -> AgentLineKind {
             crate::sse_protocol::SsePayload::ToolRunning { tool_running } => {
                 return AgentLineKind::ToolRunning(tool_running);
             }
-            crate::sse_protocol::SsePayload::ParsingToolCalls {
-                parsing_tool_calls,
-            } => {
+            crate::sse_protocol::SsePayload::ParsingToolCalls { parsing_tool_calls } => {
                 return AgentLineKind::ParsingToolCalls(parsing_tool_calls);
             }
             crate::sse_protocol::SsePayload::WorkspaceChanged {

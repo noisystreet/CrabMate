@@ -14,19 +14,21 @@ use crate::config::AgentConfig;
 use crate::types::Message;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
-use ratatui::Terminal;
 use std::io::stdout;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use allowlist::{command_approval_message, load_persistent_allowlist};
 use draw::draw_ui;
-use input::{handle_crossterm_mouse, handle_key, HandleKeyContext};
-use sse_line::{classify_agent_sse_line, AgentLineKind};
-use state::{strip_sgr_mouse_leaks, Focus, Mode, ModelPhase, TuiState};
+use input::{HandleKeyContext, handle_crossterm_mouse, handle_key};
+use sse_line::{AgentLineKind, classify_agent_sse_line};
+use state::{Focus, Mode, ModelPhase, TuiState, strip_sgr_mouse_leaks};
 use status::set_normal_status_line;
 use workspace_ops::{refresh_schedule, refresh_tasks, refresh_workspace, upsert_assistant_message};
 
@@ -270,9 +272,7 @@ pub async fn run_tui(
             }
         }
 
-        let streaming = agent_running
-            .as_ref()
-            .is_some_and(|h| !h.is_finished());
+        let streaming = agent_running.as_ref().is_some_and(|h| !h.is_finished());
         let throttle_draw = streaming
             && !state.chat_follow_tail
             && !had_input

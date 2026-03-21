@@ -18,7 +18,7 @@ use crate::config::AgentConfig;
 
 /// 建立 TLS 等阶段的上限，避免坏网络长时间挂死（与整请求 `timeout` 区分）。
 fn connect_timeout_for(cfg: &AgentConfig) -> Duration {
-    let secs = cfg.api_timeout_secs.min(45).max(5);
+    let secs = cfg.api_timeout_secs.clamp(5, 45);
     Duration::from_secs(secs)
 }
 

@@ -36,7 +36,7 @@ pub fn estimate_non_system_chars(messages: &[Message]) -> usize {
 }
 
 /// 截断 `tool` 消息正文（过长时追加说明尾注）。
-pub fn compress_tool_message_contents(messages: &mut Vec<Message>, max_chars: usize) {
+pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize) {
     let max_chars = max_chars.max(256);
     for m in messages.iter_mut() {
         if m.role != "tool" {
@@ -166,11 +166,9 @@ pub async fn maybe_summarize_with_llm(
     if messages.len() <= 1 + tail + 1 {
         return Ok(());
     }
-    let Some(transcript) = build_transcript_middle(
-        messages,
-        tail,
-        cfg.context_summary_transcript_max_chars,
-    ) else {
+    let Some(transcript) =
+        build_transcript_middle(messages, tail, cfg.context_summary_transcript_max_chars)
+    else {
         return Ok(());
     };
 
@@ -203,7 +201,16 @@ pub async fn maybe_summarize_with_llm(
         stream: None,
     };
 
-    match complete_chat_retrying(client, api_key, cfg, &req, None::<&Sender<String>>, false, true).await
+    match complete_chat_retrying(
+        client,
+        api_key,
+        cfg,
+        &req,
+        None::<&Sender<String>>,
+        false,
+        true,
+    )
+    .await
     {
         Ok((msg, _)) => {
             let summary = msg.content.unwrap_or_default();

@@ -53,7 +53,9 @@ impl StyleSheet for LightStyleSheet {
     }
 
     fn link(&self) -> Style {
-        Style::new().fg(Color::Blue).add_modifier(Modifier::UNDERLINED)
+        Style::new()
+            .fg(Color::Blue)
+            .add_modifier(Modifier::UNDERLINED)
     }
 
     fn blockquote(&self) -> Style {
