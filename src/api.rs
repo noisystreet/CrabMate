@@ -1,4 +1,6 @@
-//! DeepSeek API 流式请求与 SSE 解析，终端 Markdown 渲染与数学公式（LaTeX→Unicode）
+//! OpenAI 兼容 **`chat/completions`** 的单次 HTTP 调用：SSE/JSON 解析、终端 Markdown 与 LaTeX→Unicode。
+//!
+//! 带 **tools** 的 `ChatRequest` 构造、**退避重试**与 Agent 侧调用入口见 [`crate::llm`]；本模块专注传输与响应拼装。
 
 use crate::types::{ChatRequest, FunctionCall, Message, StreamChunk, ToolCall};
 use crossterm::{
@@ -74,7 +76,11 @@ pub async fn stream_chat(
     render_to_terminal: bool,
     no_stream: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
-    let url = format!("{}/chat/completions", api_base.trim_end_matches('/'));
+    let url = format!(
+        "{}/{}",
+        api_base.trim_end_matches('/'),
+        crate::types::OPENAI_CHAT_COMPLETIONS_REL_PATH
+    );
     info!(
         url = %url,
         model = %req.model,
