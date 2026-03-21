@@ -17,7 +17,7 @@ use unicodeit::replace as latex_to_unicode;
 
 use crate::types::Message;
 
-use super::state::{Focus, Mode, RightTab, TuiState};
+use super::state::{Focus, Mode, ModelPhase, RightTab, TuiState};
 use super::styles::{
     code_themes, DarkStyleSheet, HighContrastDarkStyleSheet, HighContrastLightStyleSheet,
     LightStyleSheet,
@@ -55,6 +55,19 @@ fn right_tab_color(tab: RightTab) -> Color {
         RightTab::Workspace => Color::Green,
         RightTab::Tasks => Color::Yellow,
         RightTab::Schedule => Color::Cyan,
+    }
+}
+
+/// 状态栏左侧阶段词颜色（与 `ModelPhase::label` 对应）。
+fn model_phase_color(phase: ModelPhase) -> Color {
+    match phase {
+        ModelPhase::Idle => Color::Green,
+        ModelPhase::Thinking => Color::Cyan,
+        ModelPhase::SelectingTools => Color::Yellow,
+        ModelPhase::Answering => Color::Blue,
+        ModelPhase::ToolRunning => Color::Rgb(255, 165, 0), // 橙，与「思考」青蓝区分
+        ModelPhase::AwaitingApproval => Color::Magenta,
+        ModelPhase::Error => Color::Red,
     }
 }
 
@@ -139,7 +152,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
             Line::raw(""),
             Line::from("布局：左侧对话与输入区以横线分隔，左右主区域以竖线分隔；右侧为 工作区 / 任务 / 日程 标签页。"),
             Line::from("焦点切换：F2 在 聊天 和 右侧 面板之间切换，Tab 在右侧标签页间切换。"),
-            Line::from("发送：在输入框中按 Enter；底栏为横线 + 单行状态（就绪/思考/选用工具/回答/工具执行中等）。"),
+            Line::from("发送：在输入框中按 Enter；底栏为横线 + 单行加粗状态；左侧阶段词着色（如就绪绿、思考中青、回答中蓝等）。"),
             Line::from("Markdown：F3 切换代码主题，F4 切换 Markdown 暗/亮样式。"),
             Line::from("高对比度：F5 在普通 / 高对比度模式之间切换（适合弱光/弱视）。"),
             Line::from("任务 / 日程：右侧标签页中查看和勾选任务、提醒和事件。"),
@@ -462,10 +475,13 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         }
     }
 
-    // 底栏：固定 1 行，无 Block 上下留白；终端默认前景/背景
-    let status_rect = vchunks[3];
+    // 底栏：`vchunks[3]` 为横线（见上 `draw_pane_separator_horizontal`），状态文字在下一行 `vchunks[4]`
+    let status_rect = vchunks[4];
     let inner_cols = status_rect.width.max(1) as usize;
-    let phase = state.model_phase.label();
+    let phase = state.model_phase;
+    let phase_label = phase.label();
+    let phase_color = model_phase_color(phase);
+    let bold = Style::default().add_modifier(Modifier::BOLD);
     let meta = state.status_line.trim();
     let meta = if meta.is_empty() {
         "Ctrl+C 退出  F1 帮助"
@@ -473,10 +489,23 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         meta
     };
     let meta = meta.replace(['\n', '\r'], " ");
-    // 左段为阶段、右段为模型/快捷键等说明
-    let raw = format!(" {} │ {} ", phase, meta);
-    let bar_text = truncate_display_width(&raw, inner_cols);
-    let status = Paragraph::new(Line::raw(bar_text));
+    // 「 ␣阶段 │ 」占宽，右侧说明单独按列宽截断，避免整串截断吃掉彩色阶段词
+    let prefix_w = 1usize
+        .saturating_add(phase_label.width())
+        .saturating_add(3); // " │ "
+    let meta_max = inner_cols.saturating_sub(prefix_w).max(1);
+    let bar_meta = truncate_display_width(&meta, meta_max);
+    let status = Paragraph::new(Line::from(vec![
+        Span::styled(" ", bold),
+        Span::styled(
+            phase_label,
+            Style::default()
+                .fg(phase_color)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" │ ", bold),
+        Span::styled(bar_meta, bold),
+    ]));
     f.render_widget(status, status_rect);
 }
 
