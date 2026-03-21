@@ -26,6 +26,7 @@ mod release_docs;
 mod rust_ide;
 mod schedule;
 mod security_tools;
+mod spell_astgrep_tools;
 mod structured_data;
 mod symbol;
 mod time;
@@ -390,6 +391,27 @@ fn params_cargo_outdated() -> serde_json::Value {
     })
 }
 
+fn params_cargo_machete() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "with_metadata": { "type":"boolean", "description":"可选：传 --with-metadata（调用 cargo metadata，更准但更慢，可能改动 Cargo.lock）" },
+            "path": { "type":"string", "description":"可选：相对工作区的子目录，传给 cargo machete <path>；不可含 .." }
+        },
+        "required":[]
+    })
+}
+
+fn params_cargo_udeps() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "nightly": { "type":"boolean", "description":"可选：为 true 时执行 cargo +nightly udeps（cargo-udeps 通常需要 nightly）" }
+        },
+        "required":[]
+    })
+}
+
 fn params_cargo_publish_dry_run() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -583,6 +605,68 @@ fn params_pre_commit_run() -> serde_json::Value {
             "verbose": { "type": "boolean", "description": "可选：是否 --verbose，默认 false" }
         },
         "required": []
+    })
+}
+
+fn params_typos_check() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：相对工作区根的待检查路径（文件或目录），默认 [\"README.md\",\"docs\"]；仅当路径存在时才会传入 typos，最多 24 项。禁止 .. 与绝对路径。"
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
+fn params_codespell_check() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：同 typos_check，默认 README.md 与 docs；只读检查，不会写回（封装层不传 -w）。"
+            },
+            "skip": {
+                "type": "string",
+                "description": "可选：传给 codespell 的 --skip（如 \"*.svg,*.lock\"），不含换行，最长 512 字符"
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
+fn params_ast_grep_run() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "ast-grep 模式串（如 Rust：`fn $NAME($$$) { $$$ }`）。单行建议；最长 4096 字符。"
+            },
+            "lang": {
+                "type": "string",
+                "description": "语言：rust、c/cpp、python、javascript、typescript、tsx、jsx、go、java、kotlin、bash、html、css（可用别名如 rs、py、ts）"
+            },
+            "paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：搜索根路径（相对工作区），默认 [\"src\"]；仅存在路径会参与；最多 8 项。内置排除 target/node_modules/.git/vendor/dist/build。"
+            },
+            "globs": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：额外 --globs（如 \"!**/generated/**\"），最多 10 项；禁止 .. 与反引号等。"
+            }
+        },
+        "required": ["pattern", "lang"],
+        "additionalProperties": false
     })
 }
 
@@ -1669,6 +1753,14 @@ fn runner_cargo_outdated(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::cargo_outdated(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
+fn runner_cargo_machete(args: &str, ctx: &ToolContext<'_>) -> String {
+    cargo_tools::cargo_machete(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_cargo_udeps(args: &str, ctx: &ToolContext<'_>) -> String {
+    cargo_tools::cargo_udeps(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
 fn runner_cargo_publish_dry_run(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::cargo_publish_dry_run(args, ctx.working_dir, ctx.command_max_output_len)
 }
@@ -1723,6 +1815,18 @@ fn runner_uv_run(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_pre_commit_run(args: &str, ctx: &ToolContext<'_>) -> String {
     precommit_tools::pre_commit_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_typos_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    spell_astgrep_tools::typos_check(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_codespell_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    spell_astgrep_tools::codespell_check(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_ast_grep_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    spell_astgrep_tools::ast_grep_run(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn runner_frontend_lint(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -2105,6 +2209,20 @@ fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_cargo_outdated,
         },
         ToolSpec {
+            name: "cargo_machete",
+            description: "运行 cargo machete（需 cargo-machete）：快速扫描 **声明但未在源码中引用** 的依赖；与 cargo_outdated（版本可升级）互补。可选 with_metadata、path。",
+            category: ToolCategory::Development,
+            parameters: params_cargo_machete,
+            runner: runner_cargo_machete,
+        },
+        ToolSpec {
+            name: "cargo_udeps",
+            description: "运行 cargo udeps（需 cargo-udeps，通常需 nightly：传 nightly=true 使用 cargo +nightly udeps）：基于构建的未使用依赖检查，与 machete/outdated 互补。",
+            category: ToolCategory::Development,
+            parameters: params_cargo_udeps,
+            runner: runner_cargo_udeps,
+        },
+        ToolSpec {
             name: "cargo_publish_dry_run",
             description: "运行 cargo publish --dry-run：验证打包与发布检查，**不会**上传到 registry。可选 package、allow_dirty、no_verify、features。",
             category: ToolCategory::Development,
@@ -2194,6 +2312,27 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: params_pre_commit_run,
             runner: runner_pre_commit_run,
+        },
+        ToolSpec {
+            name: "typos_check",
+            description: "运行 [typos](https://github.com/crate-ci/typos) 拼写检查（**只读**）。默认检查存在的 `README.md` 与 `docs/`；可用 `paths` 指定更多相对路径。需本机已安装 `typos` CLI。适合文档与注释中的常见错别字。",
+            category: ToolCategory::Development,
+            parameters: params_typos_check,
+            runner: runner_typos_check,
+        },
+        ToolSpec {
+            name: "codespell_check",
+            description: "运行 [codespell](https://github.com/codespell-project/codespell)（**只读**，不传入 `-w`）。默认路径策略同 `typos_check`；可选 `skip` 传给 `--skip`。需本机已安装 `codespell`。",
+            category: ToolCategory::Development,
+            parameters: params_codespell_check,
+            runner: runner_codespell_check,
+        },
+        ToolSpec {
+            name: "ast_grep_run",
+            description: "运行 [ast-grep](https://ast-grep.github.io/) `run` 做**结构化**代码搜索（非纯文本 grep）。必填 `pattern` 与 `lang`；默认仅在存在的 `src` 下搜索，并附加 `--globs` 排除 target、node_modules、.git、vendor、dist、build。可用 `paths` 收窄/改写根路径，`globs` 追加排除规则。需本机已安装 `ast-grep` 命令（`cargo install ast-grep`）。",
+            category: ToolCategory::Development,
+            parameters: params_ast_grep_run,
+            runner: runner_ast_grep_run,
         },
         ToolSpec {
             name: "frontend_lint",
@@ -2786,6 +2925,8 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         "cargo_nextest" => Some("运行 cargo nextest".to_string()),
         "cargo_fmt_check" => Some("运行 cargo fmt --check".to_string()),
         "cargo_outdated" => Some("运行 cargo outdated".to_string()),
+        "cargo_machete" => Some("运行 cargo machete".to_string()),
+        "cargo_udeps" => Some("运行 cargo udeps".to_string()),
         "cargo_publish_dry_run" => Some("cargo publish --dry-run".to_string()),
         "rust_compiler_json" => Some("cargo check JSON 诊断".to_string()),
         "rust_analyzer_goto_definition" => {
@@ -2836,6 +2977,18 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             } else {
                 Some(format!("pre-commit：{}", hook))
             }
+        }
+        "typos_check" => Some("typos 拼写检查".to_string()),
+        "codespell_check" => Some("codespell 拼写检查".to_string()),
+        "ast_grep_run" => {
+            let lang = v.get("lang").and_then(|x| x.as_str()).unwrap_or("?");
+            let p = v.get("pattern").and_then(|x| x.as_str()).unwrap_or("");
+            let short = if p.chars().count() > 48 {
+                format!("{}…", p.chars().take(48).collect::<String>())
+            } else {
+                p.to_string()
+            };
+            Some(format!("ast-grep [{}] {}", lang, short))
         }
         "cargo_audit" => Some("运行 cargo audit".to_string()),
         "cargo_deny" => Some("运行 cargo deny".to_string()),
@@ -3196,6 +3349,17 @@ mod tests {
     }
 
     #[test]
+    fn test_run_tool_typos_check_invokes_cli() {
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool("typos_check", r#"{"paths":["README.md"]}"#, &ctx);
+        assert!(
+            out.starts_with("typos (exit=") || out.contains("无法启动"),
+            "应调用 typos 或报告未安装，得到: {out}"
+        );
+    }
+
+    #[test]
     fn test_run_tool_run_command_pwd() {
         let allowed = test_allowed_commands();
         let ctx = test_ctx(&allowed);
@@ -3257,6 +3421,8 @@ mod tests {
         assert!(names.contains(&"cargo_nextest"));
         assert!(names.contains(&"cargo_fmt_check"));
         assert!(names.contains(&"cargo_outdated"));
+        assert!(names.contains(&"cargo_machete"));
+        assert!(names.contains(&"cargo_udeps"));
         assert!(names.contains(&"cargo_publish_dry_run"));
         assert!(names.contains(&"rust_compiler_json"));
         assert!(names.contains(&"rust_analyzer_goto_definition"));
@@ -3270,6 +3436,9 @@ mod tests {
         assert!(names.contains(&"uv_sync"));
         assert!(names.contains(&"uv_run"));
         assert!(names.contains(&"pre_commit_run"));
+        assert!(names.contains(&"typos_check"));
+        assert!(names.contains(&"codespell_check"));
+        assert!(names.contains(&"ast_grep_run"));
         assert!(names.contains(&"frontend_lint"));
         assert!(names.contains(&"frontend_build"));
         assert!(names.contains(&"frontend_test"));

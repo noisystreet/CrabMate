@@ -18,6 +18,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接目标是否存在；`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测。
+  - `typos_check` / `codespell_check`：文档拼写检查（**只读**，需本机安装 [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)）；默认优先检查存在的 `README.md` 与 `docs/`，可用 `paths` 收窄；`codespell_check` 可选 `skip` 传给 `--skip`。
+  - `ast_grep_run`：用 [ast-grep](https://ast-grep.github.io/) 做**语法树级**搜索（需本机安装 `ast-grep`，如 `cargo install ast-grep`）；必填 `pattern` 与 `lang`，默认在存在的 `src` 下搜索，并内置排除 `target`、`node_modules`、`.git` 等；可用 `paths` / `globs` 进一步限制范围。
   - `structured_validate` / `structured_query` / `structured_diff`：校验 **JSON / YAML / TOML**（如 `package.json`、`Cargo.toml`、CI 配置）；按 **JSON Pointer**（`/a/b`）或**点号路径**查询嵌套键；对两份文件做**结构化 diff**（与 `git_diff` 文本 diff 互补）。
   - `changelog_draft`：根据 **git log** 生成 **Markdown 变更说明草稿**（不写仓库）；可按提交日聚合、`flat` 平铺，或按 **相邻 tag** 分段（`tag_ranges`）。
   - `license_notice`：运行 **cargo metadata**，生成 **crate → license** 的 Markdown 表（未声明项有占位说明）；**非法律意见**，发版前需人工核对。
@@ -87,6 +89,14 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 - `cargo_outdated`（依赖过期检查）：
   ```json
   {"workspace":true,"depth":2}
+  ```
+- `cargo_machete`（**未使用依赖**启发式扫描，需 `cargo install cargo-machete`；与 `cargo_outdated` 的「可升级版本」互补）：
+  ```json
+  {"with_metadata":false}
+  ```
+- `cargo_udeps`（**未使用依赖**构建级检查，需 `cargo install cargo-udeps`；通常需 **`nightly: true`** 即 `cargo +nightly udeps`）：
+  ```json
+  {"nightly":true}
   ```
 - `cargo_publish_dry_run`（`cargo publish --dry-run`，**不会**上传 registry）：
   ```json
@@ -200,7 +210,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`diagnostic_summary`。
+另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`diagnostic_summary`。
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
 
 **Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`pre_commit_run`；聚合类还有 `run_lints`（可选 ruff）、`quality_workspace`（可选 ruff/pytest/mypy）。
@@ -349,6 +359,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_PLAN_REWRITE_MAX_ATTEMPTS`：规划不合格时最多重写轮次（默认 `2`，与 `[agent] plan_rewrite_max_attempts` 一致；用尽后 SSE 带 `code=plan_rewrite_exhausted`）  
    - `AGENT_HTTP_HOST`：Web 监听 IP（如 `0.0.0.0`）；**未**传 `--host` 时生效，默认仍为 `127.0.0.1`  
    - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）
+   - `AGENT_STAGED_PLAN_EXECUTION`：设为 `1`/`true`/`yes`/`on` 启用分阶段规划（先无工具 `agent_reply_plan`，再按步执行）；其它或未设置为关闭（与 `[agent] staged_plan_execution` 一致）
+   - `AGENT_STAGED_PLAN_PHASE_INSTRUCTION`：规划轮追加的 **system** 文案；空或未设置则用内置默认（与 `[agent] staged_plan_phase_instruction` 一致）
    - **联网搜索**（`web_search` 工具）：`AGENT_WEB_SEARCH_PROVIDER`（`brave` / `tavily`）、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`（1～20，默认 8）
    - **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`（逗号分隔 URL 前缀）、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`（与 `default_config.toml` / `[agent]` 中同名项对应）
    - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
@@ -371,6 +383,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 **终答规划策略**（`[agent] final_plan_requirement`）：控制模型以**非 tool_calls**结束一轮时，是否必须嵌入可解析的 `agent_reply_plan` JSON（见 `docs/DEVELOPMENT.md`）。`workflow_reflection` 为默认：仅在工作流反思首轮注入「下一步须带规划」指令后启用校验；`never` 关闭该校验；**`always`（实验性）** 对**每一次**终答都校验：只要模型以正文结束（非 `tool_calls`）且规划 JSON 不合格，就会占用 `plan_rewrite_max_attempts` 额度并可能追加多轮 `chat/completions`，**API 费用与延迟明显高于**默认策略，适合强合规/审计场景或调试规划格式；日常对话、低成本场景请保持 `workflow_reflection` 或 `never`。若近期存在 `workflow_validate_only` 结果，服务端还会按 `spec.layer_count` 要求规划步骤条数不少于层数。
 
 **规划重写次数**（`[agent] plan_rewrite_max_attempts`）：不合格时追加「请重写」user 消息的上限；超过后结束本轮，流式场景下前端会收到 `error` + `code: plan_rewrite_exhausted`。
+
+**分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 `true` 时，**每条用户消息**会先走一轮**无工具**的 API 调用，要求模型在正文中产出可解析的 `agent_reply_plan` v1；服务端解析成功后，按 `steps` 顺序**各追加一条 user**（`【分步执行 i/n】…`）并**各跑完一整段** Agent 外层循环（该步内可多轮 tool_calls）。规划轮若误返回 `tool_calls` 或 JSON 不合格，流式下会收到 `error` + `code: staged_plan_tool_calls` / `staged_plan_invalid`（助手规划正文仍会写入消息列表以便排错）。**API 调用次数与费用通常明显高于关闭时**，适合需要「先出步骤再执行」的实验场景；日常对话建议保持 `false`。可选 `[agent] staged_plan_phase_instruction`（或 `AGENT_STAGED_PLAN_PHASE_INSTRUCTION`）覆盖规划轮的追加 system 说明，空则用内置文案。
 
 **系统提示词**：在 `default_config.toml` 中通过 `system_prompt`（多行字符串）或 `system_prompt_file`（文件路径）配置；若同时设置，以文件内容为准。未配置则启动报错。
 
@@ -510,7 +524,7 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
 | `--no-stream`     | 对 API 使用 `stream: false`（非 SSE），并在 CLI 下等待完整回答后一次性 Markdown 打印；TUI 侧亦为整块正文刷新。|
-| `--tui`           | 全屏终端 UI。底栏左侧为运行阶段、右侧为状态摘要（默认仅模型名）；完整键位见 **F1**。会话默认持久化到当前工作区下 `.crabmate/tui_session.json`（退出保存、启动加载）；可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`；**F10** 查看与 `GET /health` 同逻辑的本机运行状况（无需启动 Web）。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
+| `--tui`           | 全屏终端 UI。底栏左侧为运行阶段、右侧为状态摘要（默认仅模型名）；完整键位见 **F1**。右栏含工作区 / **队列** / 任务 / 日程（「队列」紧挨工作区，为当前终端会话内的对话回合摘要，与 `--serve` 的 HTTP `ChatJobQueue` 相互独立）。会话默认持久化到当前工作区下 `.crabmate/tui_session.json`（退出保存、启动加载）；可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`；**F10** 查看与 `GET /health` 同逻辑的本机运行状况（无需启动 Web）。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
 
 对应示例：
 

@@ -125,6 +125,16 @@ pub async fn build_health_report(
         m.insert("cxxfilt", check_cmd("c++filt", &["--version"]));
         m.insert("npm", check_cmd("npm", &["--version"]));
 
+        m.insert("typos", check_cmd("typos", &["--version"]));
+        m.insert("codespell", check_cmd("codespell", &["--version"]));
+        m.insert("ast_grep", check_cmd("ast-grep", &["--version"]));
+
+        m.insert(
+            "cargo_machete",
+            check_cmd("cargo", &["machete", "--version"]),
+        );
+        m.insert("cargo_udeps", check_cmd("cargo", &["udeps", "--version"]));
+
         m
     })
     .await
@@ -139,6 +149,11 @@ pub async fn build_health_report(
             "cmake" => "dep_cmake",
             "cxxfilt" => "dep_cxxfilt",
             "npm" => "dep_npm",
+            "typos" => "dep_typos",
+            "codespell" => "dep_codespell",
+            "ast_grep" => "dep_ast_grep",
+            "cargo_machete" => "dep_cargo_machete",
+            "cargo_udeps" => "dep_cargo_udeps",
             _ => continue,
         };
         match v {

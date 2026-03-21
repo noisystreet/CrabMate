@@ -24,6 +24,8 @@ export interface StatusData {
   final_plan_requirement?: 'never' | 'workflow_reflection' | 'always'
   /** 终答规划重写次数上限 */
   plan_rewrite_max_attempts?: number
+  /** 为 true 时先无工具规划轮再按 agent_reply_plan 分步执行 */
+  staged_plan_execution?: boolean
   /** 上下文：system 后最多保留消息条数 */
   max_message_history?: number
   tool_message_max_chars?: number

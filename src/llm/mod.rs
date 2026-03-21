@@ -31,6 +31,19 @@ pub fn tool_chat_request(cfg: &AgentConfig, messages: &[Message], tools: &[Tool]
     }
 }
 
+/// 构造**无 tools** 的请求（`tool_choice` 省略），用于分阶段规划首轮等场景。
+pub fn nl_only_chat_request(cfg: &AgentConfig, messages: &[Message]) -> ChatRequest {
+    ChatRequest {
+        model: cfg.model.clone(),
+        messages: messages.to_vec(),
+        tools: None,
+        tool_choice: None,
+        max_tokens: cfg.max_tokens,
+        temperature: cfg.temperature,
+        stream: None,
+    }
+}
+
 /// 调用 `chat/completions`：失败时按 `AgentConfig::api_retry_delay_secs` 做指数退避，最多 `api_max_retries + 1` 次。
 #[allow(clippy::too_many_arguments)]
 pub async fn complete_chat_retrying(

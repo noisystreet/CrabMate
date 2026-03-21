@@ -49,6 +49,15 @@ pub enum SsePayload {
     PlanRequired {
         plan_required: bool,
     },
+    /// 分阶段规划：TUI 用于状态栏与「队列」页；Web 可忽略（`frontend/src/api.ts` 吞掉不当下文）。
+    StagedPlanNotice {
+        /// 可多行 `\n` 分隔。
+        #[serde(rename = "staged_plan_notice")]
+        text: String,
+        /// 为 true 时客户端清空本轮规划日志再追加 `text` 各行。
+        #[serde(default, rename = "staged_plan_notice_clear")]
+        clear_before: bool,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -175,6 +184,22 @@ mod tests {
                 assert_eq!(tool_result.stderr.as_deref(), Some("permission denied"));
             }
             _ => panic!("expected tool_result payload"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_staged_plan_notice() {
+        let s = encode_message(SsePayload::StagedPlanNotice {
+            text: "【规划】共 2 步\n  1. [a] x".into(),
+            clear_before: true,
+        });
+        let m: SseMessage = serde_json::from_str(&s).unwrap();
+        match m.payload {
+            SsePayload::StagedPlanNotice { text, clear_before } => {
+                assert!(clear_before);
+                assert_eq!(text, "【规划】共 2 步\n  1. [a] x");
+            }
+            _ => panic!("expected staged_plan_notice payload"),
         }
     }
 }

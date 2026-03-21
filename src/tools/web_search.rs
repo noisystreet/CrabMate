@@ -1,7 +1,9 @@
 //! 联网网页搜索：通过第三方 HTTP API（Brave / Tavily）查询，使用 reqwest + serde。
 
 use crate::config::WebSearchProvider;
+use crate::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
 use serde::Deserialize;
+use tracing::warn;
 
 use super::ToolContext;
 
@@ -102,8 +104,18 @@ fn search_brave(
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().unwrap_or_default();
-        let tail: String = body.chars().take(500).collect();
-        return Err(format!("Brave 搜索 API 错误：HTTP {} — {}", status, tail));
+        let preview = redact::single_line_preview(&body, HTTP_BODY_PREVIEW_LOG_CHARS);
+        warn!(
+            provider = "brave",
+            status = %status,
+            body_len = body.len(),
+            body_preview = %preview,
+            "Brave 搜索 API 非成功响应"
+        );
+        return Err(format!(
+            "Brave 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",
+            status.as_u16()
+        ));
     }
 
     let parsed: BraveWebSearchResponse = res
@@ -155,8 +167,18 @@ fn search_tavily(
     if !res.status().is_success() {
         let status = res.status();
         let text = res.text().unwrap_or_default();
-        let tail: String = text.chars().take(500).collect();
-        return Err(format!("Tavily 搜索 API 错误：HTTP {} — {}", status, tail));
+        let preview = redact::single_line_preview(&text, HTTP_BODY_PREVIEW_LOG_CHARS);
+        warn!(
+            provider = "tavily",
+            status = %status,
+            body_len = text.len(),
+            body_preview = %preview,
+            "Tavily 搜索 API 非成功响应"
+        );
+        return Err(format!(
+            "Tavily 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",
+            status.as_u16()
+        ));
     }
 
     let parsed: TavilySearchResponse = res

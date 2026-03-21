@@ -244,7 +244,7 @@ pub fn python_install_editable(
         Err(e) => return format!("参数解析错误：{}", e),
     };
     let backend = match v.get("backend").and_then(|x| x.as_str()).map(str::trim) {
-        Some("uv") | Some("pip") => v.get("backend").and_then(|x| x.as_str()).unwrap().trim(),
+        Some(s) if s == "uv" || s == "pip" => s,
         _ => return "错误：backend 须为 \"uv\" 或 \"pip\"".to_string(),
     };
 
