@@ -24,6 +24,7 @@ mod security_tools;
 mod time;
 mod weather;
 
+use crate::tool_result::ToolResult;
 use crate::types::{FunctionDef, Tool};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1939,6 +1940,26 @@ pub fn run_tool(
         Some(spec) => (spec.runner)(args_json, &ctx),
         None => format!("未知工具：{}", name),
     }
+}
+
+/// 执行本地工具并返回结构化结果（兼容既有字符串输出）。
+pub fn run_tool_result(
+    name: &str,
+    args_json: &str,
+    command_max_output_len: usize,
+    weather_timeout_secs: u64,
+    allowed_commands: &[String],
+    run_command_working_dir: &std::path::Path,
+) -> ToolResult {
+    let output = run_tool(
+        name,
+        args_json,
+        command_max_output_len,
+        weather_timeout_secs,
+        allowed_commands,
+        run_command_working_dir,
+    );
+    ToolResult::from_legacy_output(name, output)
 }
 
 /// 判断本次 run_command 是否为“成功的编译命令”（gcc/g++/make/cmake 且退出码为 0）

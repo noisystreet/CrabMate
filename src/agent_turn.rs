@@ -1,5 +1,5 @@
-//! Web 端单轮 Agent 循环的步骤拆分：与「规划–执行–反思」对齐的调用边界（P/E/R）。
-//! 仅被 crate 根 `run_agent_turn`（Web）使用；工具实际执行见 `tool_registry`（TUI 与 Web 共用）。
+//! 单轮 Agent 循环的步骤拆分：与「规划–执行–反思」对齐的调用边界（P/E/R）。
+//! 被 crate 根 `run_agent_turn`（Web）与 `run_agent_turn_tui`（TUI）共同复用。
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -10,8 +10,9 @@ use tracing::{error, info};
 use crate::api::stream_chat;
 use crate::config::AgentConfig;
 use crate::per_coord::PerCoordinator;
-use crate::sse_protocol::{encode_message, SsePayload, ToolCallSummary, ToolResultBody};
+use crate::sse_protocol::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
+use crate::tool_result::ToolResult as StructuredToolResult;
 use crate::tools;
 use crate::types::{ChatRequest, Message, ToolCall};
 
@@ -83,10 +84,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         }
     }
     msg_and_reason.ok_or_else(|| {
-        std::io::Error::other(
-            "chat 请求成功但未拿到消息内容（msg_and_reason 为空）",
-        )
-        .into()
+        std::io::Error::other("chat 请求成功但未拿到消息内容（msg_and_reason 为空）").into()
     })
 }
 
@@ -129,6 +127,24 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub out: Option<&'a mpsc::Sender<String>>,
 }
 
+pub(crate) struct TuiExecuteCtx<'a> {
+    pub cfg: &'a AgentConfig,
+    pub effective_working_dir: &'a Path,
+    pub workspace_is_set: bool,
+    pub out: Option<&'a mpsc::Sender<String>>,
+    pub tui_tool_ctx: &'a tool_registry::TuiToolRuntime,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum AgentRunMode<'a> {
+    Web {
+        render_to_terminal: bool,
+    },
+    Tui {
+        tui_tool_ctx: &'a tool_registry::TuiToolRuntime,
+    },
+}
+
 pub(crate) enum ExecuteToolsBatchOutcome {
     /// 本批工具跑完，继续外层循环
     Finished,
@@ -136,20 +152,23 @@ pub(crate) enum ExecuteToolsBatchOutcome {
     AbortedSse,
 }
 
-/// E：执行一批 tool 调用，写入 tool / 反思 user，并发送 SSE 片段。
-pub(crate) async fn per_execute_tools_web(
+#[derive(Clone, Copy)]
+enum ExecuteDispatchMode<'a> {
+    Web,
+    Tui(&'a tool_registry::TuiToolRuntime),
+}
+
+/// E：执行一批 tool 调用（Web/TUI 共用骨架），写入 tool / 反思 user，并发送 SSE 片段。
+async fn per_execute_tools_common(
     tool_calls: &[ToolCall],
     per_coord: &mut PerCoordinator,
     messages: &mut Vec<Message>,
-    ctx: WebExecuteCtx<'_>,
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    out: Option<&mpsc::Sender<String>>,
+    dispatch_mode: ExecuteDispatchMode<'_>,
 ) -> ExecuteToolsBatchOutcome {
-    let WebExecuteCtx {
-        cfg,
-        effective_working_dir,
-        workspace_is_set,
-        out,
-    } = ctx;
-
     let mut workspace_changed = false;
 
     if let Some(tx) = out {
@@ -162,10 +181,11 @@ pub(crate) async fn per_execute_tools_web(
 
     for tc in tool_calls {
         if let Some(tx) = out
-            && tx.is_closed() {
-                info!("SSE sender closed during tool execution, aborting remaining tools");
-                return ExecuteToolsBatchOutcome::AbortedSse;
-            }
+            && tx.is_closed()
+        {
+            info!("SSE sender closed during tool execution, aborting remaining tools");
+            return ExecuteToolsBatchOutcome::AbortedSse;
+        }
 
         let name = tc.function.name.clone();
         let args = tc.function.arguments.clone();
@@ -173,55 +193,84 @@ pub(crate) async fn per_execute_tools_web(
         println!("  [调用工具: {}]", name);
 
         if let Some(tx) = out
-            && let Some(summary) = tools::summarize_tool_call(&name, &args) {
-                let _ = tx
-                    .send(encode_message(SsePayload::ToolCall {
-                        tool_call: ToolCallSummary {
-                            name: name.clone(),
-                            summary,
-                        },
-                    }))
-                    .await;
-            }
+            && let Some(summary) = tools::summarize_tool_call(&name, &args)
+        {
+            let _ = tx
+                .send(encode_message(SsePayload::ToolCall {
+                    tool_call: ToolCallSummary {
+                        name: name.clone(),
+                        summary,
+                    },
+                }))
+                .await;
+        }
 
         let t_tool = Instant::now();
-        let (result, reflection_inject) = tool_registry::dispatch_tool(
-            ToolRuntime::Web {
-                workspace_changed: &mut workspace_changed,
-            },
-            per_coord,
-            cfg,
-            effective_working_dir,
-            workspace_is_set,
-            &name,
-            &args,
-            tc,
-        )
-        .await;
+        let (result, reflection_inject) = match dispatch_mode {
+            ExecuteDispatchMode::Web => {
+                tool_registry::dispatch_tool(
+                    ToolRuntime::Web {
+                        workspace_changed: &mut workspace_changed,
+                    },
+                    per_coord,
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    &name,
+                    &args,
+                    tc,
+                )
+                .await
+            }
+            ExecuteDispatchMode::Tui(tui_tool_ctx) => {
+                tool_registry::dispatch_tool(
+                    ToolRuntime::Tui { ctx: tui_tool_ctx },
+                    per_coord,
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    &name,
+                    &args,
+                    tc,
+                )
+                .await
+            }
+        };
 
         info!(tool = %name, elapsed_ms = t_tool.elapsed().as_millis(), "工具调用完成");
 
         if let Some(tx) = out {
-                let _ = tx
-                    .send(encode_message(SsePayload::ToolResult {
-                        tool_result: ToolResultBody {
-                            name: name.clone(),
-                            output: result.clone(),
-                        },
-                    }))
-                    .await;
+            let structured = StructuredToolResult::from_legacy_output(&name, result.clone());
+            let stdout = if structured.stdout.is_empty() {
+                None
+            } else {
+                Some(structured.stdout)
+            };
+            let stderr = if structured.stderr.is_empty() {
+                None
+            } else {
+                Some(structured.stderr)
+            };
+            let _ = tx
+                .send(encode_message(SsePayload::ToolResult {
+                    tool_result: ToolResultBody {
+                        name: name.clone(),
+                        output: result.clone(),
+                        ok: Some(structured.ok),
+                        exit_code: structured.exit_code,
+                        error_code: structured.error_code,
+                        stdout,
+                        stderr,
+                    },
+                }))
+                .await;
         }
 
-        PerCoordinator::append_tool_result_and_reflection(
-            messages,
-            id,
-            result,
-            reflection_inject,
-        );
+        PerCoordinator::append_tool_result_and_reflection(messages, id, result, reflection_inject);
     }
 
     if let Some(tx) = out {
-        if workspace_changed {
+        if matches!(dispatch_mode, ExecuteDispatchMode::Web) && workspace_changed {
             let _ = tx
                 .send(encode_message(SsePayload::WorkspaceChanged {
                     workspace_changed: true,
@@ -238,7 +287,145 @@ pub(crate) async fn per_execute_tools_web(
     ExecuteToolsBatchOutcome::Finished
 }
 
+/// E：执行一批 tool 调用，写入 tool / 反思 user，并发送 SSE 片段。
+pub(crate) async fn per_execute_tools_web(
+    tool_calls: &[ToolCall],
+    per_coord: &mut PerCoordinator,
+    messages: &mut Vec<Message>,
+    ctx: WebExecuteCtx<'_>,
+) -> ExecuteToolsBatchOutcome {
+    let WebExecuteCtx {
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        out,
+    } = ctx;
+
+    per_execute_tools_common(
+        tool_calls,
+        per_coord,
+        messages,
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        out,
+        ExecuteDispatchMode::Web,
+    )
+    .await
+}
+
+/// E（TUI）：执行一批 tool 调用，写入 tool / 反思 user，并发送 SSE 片段。
+pub(crate) async fn per_execute_tools_tui(
+    tool_calls: &[ToolCall],
+    per_coord: &mut PerCoordinator,
+    messages: &mut Vec<Message>,
+    ctx: TuiExecuteCtx<'_>,
+) -> ExecuteToolsBatchOutcome {
+    let TuiExecuteCtx {
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        out,
+        tui_tool_ctx,
+    } = ctx;
+
+    per_execute_tools_common(
+        tool_calls,
+        per_coord,
+        messages,
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        out,
+        ExecuteDispatchMode::Tui(tui_tool_ctx),
+    )
+    .await
+}
+
 /// SSE 发送端已关闭时，应尽快结束外层循环。
 pub(crate) fn sse_sender_closed(out: Option<&mpsc::Sender<String>>) -> bool {
     out.is_some_and(|tx| tx.is_closed())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_agent_turn_common(
+    client: &reqwest::Client,
+    api_key: &str,
+    cfg: &AgentConfig,
+    tools_defs: &[crate::types::Tool],
+    messages: &mut Vec<Message>,
+    out: Option<&mpsc::Sender<String>>,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    no_stream: bool,
+    mode: AgentRunMode<'_>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut per_coord = PerCoordinator::new(cfg.reflection_default_max_rounds);
+
+    'outer: loop {
+        if sse_sender_closed(out) {
+            info!("SSE sender closed, aborting run_agent_turn loop early");
+            break;
+        }
+
+        let render_to_terminal = match mode {
+            AgentRunMode::Web { render_to_terminal } => render_to_terminal,
+            AgentRunMode::Tui { .. } => false,
+        };
+        let (msg, finish_reason) = per_plan_call_model_retrying(
+            client,
+            api_key,
+            cfg,
+            tools_defs,
+            messages,
+            out,
+            render_to_terminal,
+            no_stream,
+        )
+        .await?;
+        messages.push(msg.clone());
+
+        match per_reflect_after_assistant(&mut per_coord, &finish_reason, &msg, messages) {
+            ReflectOnAssistantOutcome::StopTurn => break,
+            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => continue 'outer,
+            ReflectOnAssistantOutcome::ProceedToExecuteTools => {}
+        }
+
+        let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+        let exec_outcome = match mode {
+            AgentRunMode::Web { .. } => {
+                per_execute_tools_web(
+                    tool_calls,
+                    &mut per_coord,
+                    messages,
+                    WebExecuteCtx {
+                        cfg,
+                        effective_working_dir,
+                        workspace_is_set,
+                        out,
+                    },
+                )
+                .await
+            }
+            AgentRunMode::Tui { tui_tool_ctx } => {
+                per_execute_tools_tui(
+                    tool_calls,
+                    &mut per_coord,
+                    messages,
+                    TuiExecuteCtx {
+                        cfg,
+                        effective_working_dir,
+                        workspace_is_set,
+                        out,
+                        tui_tool_ctx,
+                    },
+                )
+                .await
+            }
+        };
+        if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+            break;
+        }
+    }
+    Ok(())
 }

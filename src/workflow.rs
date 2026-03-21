@@ -6,11 +6,14 @@ use crate::config::AgentConfig;
 use crate::types::CommandApprovalDecision;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use serde::Serialize;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
+use tracing::{info, warn};
 
 #[derive(Debug, Clone)]
 pub struct WorkflowSpec {
@@ -44,6 +47,8 @@ struct NodeRunResult {
     status: NodeRunStatus,
     output: String,
     workspace_changed: bool,
+    exit_code: Option<i32>,
+    error_code: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -64,8 +69,14 @@ struct WorkflowExecutionNodeReport {
     compensate_with: Vec<String>,
     output_preview: String,
     workspace_changed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_code: Option<String>,
     planned_layer: Option<usize>,
 }
+
+static WORKFLOW_RUN_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Serialize)]
 struct WorkflowExecutionFirstFailureReport {
@@ -113,11 +124,18 @@ pub async fn run_workflow_execute_tool(
     approval_mode: WorkflowApprovalMode,
     command_max_output_len: usize,
 ) -> (String, bool) {
+    let workflow_run_id = WORKFLOW_RUN_SEQ.fetch_add(1, Ordering::Relaxed);
+    info!(
+        workflow_run_id = workflow_run_id,
+        workspace_is_set = workspace_is_set,
+        "workflow_execute start"
+    );
     // 支持反思阶段的“done=true”：运行时应跳过 DAG 执行，
     // 只返回一个明确的结果，避免模型误触发重复执行。
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(_) => {
+            warn!(workflow_run_id = workflow_run_id, "workflow_execute args parse failed");
             let report = serde_json::json!({
                 "type": "workflow_execute_error",
                 "status": "failed",
@@ -131,6 +149,7 @@ pub async fn run_workflow_execute_tool(
 
     let done = workflow_v.get("done").and_then(|x| x.as_bool()).unwrap_or(false);
     if done {
+        info!(workflow_run_id = workflow_run_id, "workflow_execute skip by done=true");
         let report = serde_json::json!({
             "type": "workflow_execute_done_skip",
             "status": "passed",
@@ -150,9 +169,11 @@ pub async fn run_workflow_execute_tool(
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
     if validate_only {
+        info!(workflow_run_id = workflow_run_id, "workflow_validate_only start");
         let spec = match parse_workflow_spec(args_json) {
             Ok(s) => s,
             Err(e) => {
+                warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_validate_only parse failed");
                 let report = serde_json::json!({
                     "type": "workflow_validate_error",
                     "status": "failed",
@@ -164,6 +185,7 @@ pub async fn run_workflow_execute_tool(
         };
 
         if let Err(e) = validate_dag(&spec.nodes) {
+            warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_validate_only dag validation failed");
             let report = serde_json::json!({
                 "type": "workflow_validate_error",
                 "status": "failed",
@@ -177,6 +199,7 @@ pub async fn run_workflow_execute_tool(
         let execution_layers = match topo_layers(&spec.nodes) {
             Ok(l) => l,
             Err(e) => {
+                warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_validate_only topo layer failed");
                 let report = serde_json::json!({
                     "type": "workflow_validate_error",
                     "status": "failed",
@@ -208,6 +231,8 @@ pub async fn run_workflow_execute_tool(
                 compensate_with: n.compensate_with.clone(),
                 output_preview: truncate_for_summary(&n.tool_args.to_string(), 1200),
                 workspace_changed: false,
+                exit_code: None,
+                error_code: None,
                 planned_layer: layer_idx_by_id.get(&n.id).copied(),
             })
             .collect();
@@ -249,6 +274,12 @@ pub async fn run_workflow_execute_tool(
             ),
         };
 
+        info!(
+            workflow_run_id = workflow_run_id,
+            nodes_count = spec.nodes.len(),
+            layer_count = execution_layers.len(),
+            "workflow_validate_only planned"
+        );
         let json = serde_json::to_string(&report).unwrap_or_else(|_| report.human_summary.clone());
         return (json, false);
     }
@@ -256,6 +287,7 @@ pub async fn run_workflow_execute_tool(
     let spec = match parse_workflow_spec(args_json) {
         Ok(s) => s,
         Err(e) => {
+            warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_execute parse spec failed");
             let report = serde_json::json!({
                 "type": "workflow_execute_error",
                 "status": "failed",
@@ -267,6 +299,7 @@ pub async fn run_workflow_execute_tool(
     };
 
     if let Err(e) = validate_dag(&spec.nodes) {
+        warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_execute dag validation failed");
         let report = serde_json::json!({
             "type": "workflow_execute_error",
             "status": "failed",
@@ -289,10 +322,16 @@ pub async fn run_workflow_execute_tool(
         effective_working_dir: workdir,
         workspace_is_set,
         command_max_output_len,
+        workflow_run_id,
     };
 
     let (main_result, workspace_changed) =
         execute_workflow_dag(spec, approval_mode, tool_exec_ctx).await;
+    info!(
+        workflow_run_id = workflow_run_id,
+        workspace_changed = workspace_changed,
+        "workflow_execute finished"
+    );
     (main_result, workspace_changed)
 }
 
@@ -354,6 +393,7 @@ struct WorkflowToolExecCtx {
     effective_working_dir: PathBuf,
     workspace_is_set: bool,
     command_max_output_len: usize,
+    workflow_run_id: u64,
 }
 
 async fn execute_workflow_dag(
@@ -361,6 +401,15 @@ async fn execute_workflow_dag(
     approval_mode: WorkflowApprovalMode,
     tool_exec_ctx: WorkflowToolExecCtx,
 ) -> (String, bool) {
+    let workflow_run_id = tool_exec_ctx.workflow_run_id;
+    info!(
+        workflow_run_id = workflow_run_id,
+        nodes_count = spec.nodes.len(),
+        max_parallelism = spec.max_parallelism,
+        fail_fast = spec.fail_fast,
+        compensate_on_failure = spec.compensate_on_failure,
+        "workflow dag execute start"
+    );
     let nodes: HashMap<String, WorkflowNodeSpec> =
         spec.nodes.iter().cloned().map(|n| (n.id.clone(), n)).collect();
 
@@ -399,6 +448,8 @@ async fn execute_workflow_dag(
                                     status: NodeRunStatus::Failed,
                                     output: "workflow 并发控制异常（semaphore closed）".to_string(),
                                     workspace_changed: false,
+                                    exit_code: None,
+                                    error_code: Some("workflow_semaphore_closed".to_string()),
                                 };
                             }
                         };
@@ -433,6 +484,8 @@ async fn execute_workflow_dag(
                             status: NodeRunStatus::Failed,
                             output: res.output.clone(),
                             workspace_changed: res.workspace_changed,
+                            exit_code: res.exit_code,
+                            error_code: res.error_code.clone(),
                         },
                     );
                 }
@@ -480,6 +533,8 @@ async fn execute_workflow_dag(
                 compensate_with: n.compensate_with.clone(),
                 output_preview: truncate_for_summary(&r.output, 1200),
                 workspace_changed: r.workspace_changed,
+                exit_code: r.exit_code,
+                error_code: r.error_code.clone(),
                 planned_layer: None,
             });
         } else if started.contains(&n.id) {
@@ -495,6 +550,8 @@ async fn execute_workflow_dag(
                 compensate_with: n.compensate_with.clone(),
                 output_preview: "".to_string(),
                 workspace_changed: false,
+                exit_code: None,
+                error_code: Some("workflow_node_missing_result".to_string()),
                 planned_layer: None,
             });
         } else {
@@ -509,6 +566,8 @@ async fn execute_workflow_dag(
                 compensate_with: n.compensate_with.clone(),
                 output_preview: "".to_string(),
                 workspace_changed: false,
+                exit_code: None,
+                error_code: None,
                 planned_layer: None,
             });
         }
@@ -585,6 +644,15 @@ async fn execute_workflow_dag(
     };
 
     let json = serde_json::to_string(&report).unwrap_or_else(|_| report.human_summary.clone());
+    info!(
+        workflow_run_id = workflow_run_id,
+        status = %report.status,
+        passed = passed,
+        failed = failed,
+        skipped = skipped,
+        workspace_changed = workspace_changed_final,
+        "workflow dag execute finished"
+    );
     (json, workspace_changed)
 }
 
@@ -603,6 +671,13 @@ async fn run_node(
     completed_snapshot: HashMap<String, NodeRunResult>,
     inject_max_chars: usize,
 ) -> NodeRunResult {
+    let node_start = Instant::now();
+    info!(
+        workflow_run_id = tool_exec_ctx.workflow_run_id,
+        node_id = %node.id,
+        tool_name = %node.tool_name,
+        "workflow node start"
+    );
     // 人工审批：仅对“非 run_command 的人工审批节点”提供通用入口；
     // run_command 的审批仍按 cmd allowlist 逻辑处理。
     let injected_tool_args = inject_placeholders(
@@ -627,6 +702,8 @@ async fn run_node(
             status: NodeRunStatus::Failed,
             output: "错误：未设置工作区，禁止在工作流中执行该工具（需要 TUI/CLI 先设置 workspace）。".to_string(),
             workspace_changed: false,
+            exit_code: None,
+            error_code: Some("workspace_not_set".to_string()),
         };
     }
 
@@ -685,6 +762,8 @@ async fn run_node(
                                 cmd_lower
                             ),
                             workspace_changed: false,
+                            exit_code: None,
+                            error_code: Some("command_not_allowed".to_string()),
                         };
                     }
                 };
@@ -699,6 +778,8 @@ async fn run_node(
                                 cmd_lower
                             ),
                             workspace_changed: false,
+                            exit_code: None,
+                            error_code: Some("command_denied".to_string()),
                         };
                     }
                     CommandApprovalDecision::AllowOnce => {
@@ -728,6 +809,8 @@ async fn run_node(
                         approval_key
                     ),
                     workspace_changed: false,
+                    exit_code: None,
+                    error_code: Some("approval_required".to_string()),
                 };
             }
             WorkflowApprovalMode::Tui {
@@ -756,6 +839,8 @@ async fn run_node(
                                     approval_key
                                 ),
                                 workspace_changed: false,
+                                exit_code: None,
+                                error_code: Some("approval_denied".to_string()),
                             };
                         }
                         CommandApprovalDecision::AllowOnce => {}
@@ -787,7 +872,7 @@ async fn run_node(
         let work_dir = run_command_working_dir;
         let allowed = allowed_slice;
         let handle = tokio::task::spawn_blocking(move || {
-            crate::tools::run_tool(
+            crate::tools::run_tool_result(
                 &tool_name,
                 &exec_args,
                 command_max_output_len,
@@ -796,10 +881,17 @@ async fn run_node(
                 &work_dir,
             )
         });
-        handle.await.unwrap_or_else(|e| format!("工具执行异常：{:?}", e))
+        handle.await.unwrap_or_else(|e| crate::tool_result::ToolResult {
+            ok: false,
+            exit_code: None,
+            message: format!("工具执行异常：{:?}", e),
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some("workflow_tool_join_error".to_string()),
+        })
     };
 
-    let output = if let Some(ts) = timeout_secs {
+    let tool_result = if let Some(ts) = timeout_secs {
         match tokio::time::timeout(std::time::Duration::from_secs(ts), output_res).await {
             Ok(s) => s,
             Err(_) => {
@@ -808,6 +900,8 @@ async fn run_node(
                     status: NodeRunStatus::Failed,
                     output: format!("workflow 节点超时（{} 秒）：tool={}", ts, node.tool_name),
                     workspace_changed: false,
+                    exit_code: None,
+                    error_code: Some("timeout".to_string()),
                 };
             }
         }
@@ -816,49 +910,38 @@ async fn run_node(
     };
 
     if node.tool_name == "run_command"
-        && crate::tools::is_compile_command_success(&exec_args_for_success, &output)
+        && crate::tools::is_compile_command_success(&exec_args_for_success, &tool_result.message)
     {
         workspace_changed = true;
     }
 
-    let status = if output_indicates_failure(&output) {
-        NodeRunStatus::Failed
-    } else {
+    let status = if tool_result.ok {
         NodeRunStatus::Passed
+    } else {
+        NodeRunStatus::Failed
     };
-
-    NodeRunResult {
+    let output = tool_result.message.clone();
+    let result = NodeRunResult {
         id: node.id,
         status,
         output,
         workspace_changed,
-    }
-}
-
-fn output_indicates_failure(output: &str) -> bool {
-    let first = output.lines().next().unwrap_or("").trim();
-    if first.is_empty() {
-        return false;
-    }
-    if first.starts_with("错误")
-        || first.starts_with("未知工具")
-        || first.starts_with("参数解析错误")
-        || first.starts_with("执行失败")
-    {
-        return true;
-    }
-    if first.contains("exit=") {
-        // 兼容：类似 “... (exit=0):” 或 “... (exit=1):”
-        if let Some(idx) = first.find("(exit=") {
-            let rest = &first[idx + "(exit=".len()..];
-            if let Some(end) = rest.find(')')
-                && let Ok(code) = rest[..end].trim().parse::<i32>() {
-                    return code != 0;
-                }
-        }
-    }
-    // 兜底：如果输出第一行明确包含 “失败”，认为失败
-    first.contains("失败")
+        exit_code: tool_result.exit_code,
+        error_code: tool_result.error_code.clone(),
+    };
+    info!(
+        workflow_run_id = tool_exec_ctx.workflow_run_id,
+        node_id = %result.id,
+        tool_name = %node.tool_name,
+        status = ?result.status,
+        elapsed_ms = node_start.elapsed().as_millis(),
+        exit_code = result.exit_code,
+        error_code = ?result.error_code,
+        stdout_len = tool_result.stdout.len(),
+        stderr_len = tool_result.stderr.len(),
+        "workflow node finished"
+    );
+    result
 }
 
 async fn request_approval(
@@ -1376,6 +1459,8 @@ mod tests {
                 status: NodeRunStatus::Passed,
                 output: "hello world".repeat(200),
                 workspace_changed: false,
+                exit_code: Some(0),
+                error_code: None,
             },
         );
         let v = serde_json::json!({"x":"prefix {{a.output}} suffix"});
@@ -1396,6 +1481,8 @@ mod tests {
                 status: NodeRunStatus::Passed,
                 output: "deadbeef123 some message\nsecond line".to_string(),
                 workspace_changed: false,
+                exit_code: Some(0),
+                error_code: None,
             },
         );
         let v = serde_json::json!({"rev":"{{a.stdout_first_token}}"});
