@@ -2,36 +2,38 @@
 
 ## Cursor Cloud specific instructions
 
-### Overview
+### Project overview
 
-CrabMate is a Rust AI Agent (DeepSeek API) with a Vite+React+TypeScript web frontend. The backend serves the frontend as static files from `frontend/dist/`.
+CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web UI (Axum + React), TUI, and CLI interfaces. See `README.md` for full feature list and `docs/DEVELOPMENT.md` for architecture details.
 
-### System requirements
+### Required environment variable
 
-- **Rust stable >= 1.85** (edition 2024 in `Cargo.toml`). Run `rustup update stable && rustup default stable` if the installed version is too old.
-- **Rust nightly** — 预装在环境中，可直接使用 `cargo +nightly test` 等命令。
-- **Node.js >= 22** (for the frontend build)
-- **System packages**: `build-essential`, `pkg-config`, `libssl-dev`, `libssh2-1-dev`
+- `API_KEY` — DeepSeek API key. Required at runtime; without it, the server starts but chat requests fail with `INTERNAL_ERROR`. Use `--dry-run` to verify config without making API calls.
 
-### Key commands (see README.md for full details)
+### Running services
+
+- **Backend + Web UI**: `API_KEY="..." cargo run -- --serve` (default port 8080)
+- **Frontend dev server** (optional, for hot-reload): `cd frontend && npm run dev` (Vite proxies API calls to `:8080`)
+- Frontend must be built (`cd frontend && npm run build`) before running the backend in serve mode, since it serves `frontend/dist` as static assets.
+
+### Lint / Test / Build
+
+Standard commands from `README.md`:
 
 | Task | Command |
 |------|---------|
-| Install frontend deps | `cd frontend && npm install` |
-| Build frontend | `cd frontend && npm run build` |
-| Frontend dev server | `cd frontend && npm run dev` (port 5173, proxies to backend 8080) |
-| Build backend | `cargo build` |
-| Run tests | `cargo test` |
-| Run tests (nightly) | `cargo +nightly test` |
-| Lint (Rust) | `cargo clippy` |
-| Format check (Rust) | `cargo fmt --check` |
-| Run server | `API_KEY="..." cargo run -- --serve` (port 8080) |
-| Dry-run config check | `API_KEY="..." cargo run -- --dry-run` |
+| Rust build | `cargo build` |
+| Rust tests | `cargo test` |
+| Rust tests (nightly) | `cargo +nightly test` |
+| Rust clippy | `cargo clippy` |
+| Rust format check | `cargo fmt --check` |
+| Frontend install | `cd frontend && npm install` |
+| Frontend build | `cd frontend && npm run build` |
 
-### Non-obvious caveats
+### Gotchas
 
-- The `API_KEY` environment variable (DeepSeek API key) is **required** to start the server. Without it, `cargo run` will fail at config validation. For testing server startup without a real key, use a placeholder: `API_KEY=test cargo run -- --dry-run`.
-- The frontend must be built (`npm run build` in `frontend/`) **before** starting the backend in web mode (`--serve`), because the backend serves static files from `frontend/dist/`. If `frontend/dist/` is missing, the `--dry-run` check will report it and the web UI won't load.
-- `cargo fmt --check` currently reports formatting differences in the codebase — this is a pre-existing condition, not a regression from your changes.
-- The `ashpd` dependency triggers a future-incompatibility warning during build — safe to ignore.
-- The `bc` command is used by the calculator tool. If missing, the health endpoint reports `dep_bc` as degraded but the server still runs fine.
+- The project uses Rust **edition 2024**, which requires **Rust 1.85+**. The VM snapshot installs the latest stable toolchain. If `cargo build` fails with an edition error, run `rustup update stable && rustup default stable`.
+- **Rust nightly** is pre-installed in the environment. You can use `cargo +nightly test` and similar commands directly.
+- System libraries `libssl-dev` and `libssh2-1-dev` are required for the Rust build (installed by the VM snapshot).
+- The `bc` command-line calculator is used by the `calc` tool at runtime. It may not be pre-installed; this causes `/health` to report `dep_bc` as degraded, but does not block the server from starting.
+- `cargo fmt --check` may report pre-existing formatting differences in the codebase; this is not caused by agent changes.
