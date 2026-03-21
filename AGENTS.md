@@ -38,7 +38,11 @@ Standard commands from `README.md`:
 - **Rust nightly** is pre-installed in the environment. You can use `cargo +nightly test` and similar commands directly.
 - System libraries `libssl-dev` and `libssh2-1-dev` are required for the Rust build (installed by the VM snapshot).
 - The `bc` command-line calculator is used by the `calc` tool at runtime. It may not be pre-installed; this causes `/health` to report `dep_bc` as degraded, but does not block the server from starting.
-- `cargo clippy -- -D warnings` will fail on existing code (pre-existing warnings like `too_many_arguments`, `collapsible_if`). Use `cargo clippy` without `-D warnings` for a non-blocking lint check.
-- `cargo fmt --check` may report pre-existing formatting differences in the codebase; this is not caused by agent changes.
+- `clang-format` is used by `format_file` / `format_check_file` for C/C++ sources. If missing, `/health` may report `dep_clang_format` as degraded; C/C++ formatting tools will return an explanatory error.
+- `cmake` is on the `run_command` allowlist for configuring/building CMake projects. If missing, `/health` may report `dep_cmake` as degraded. Note: `run_command` rejects any arg containing `..` or starting with `/`, so prefer relative `-S`/`-B` and `--build` paths (avoid absolute `-D` values in args).
+- `c++filt` (Itanium demangler) is on the dev `run_command` allowlist for demangling linker/stack symbols. If missing, `/health` may report `dep_cxxfilt` as degraded.
+- `autoreconf`, `autoconf`, `automake`, and `aclocal` are on the default dev-oriented `run_command` allowlist for Autotools maintenance; they execute project `configure.ac` / `Makefile.am` logic—only use in trusted workspaces. Not in `allowed_commands_prod` by default.
+- **Lint**：仓库 **pre-commit** 使用 **`cargo clippy --all-targets --all-features -- -D warnings`**（见 **`.pre-commit-config.yaml`** 与 **`.cursor/rules/pre-commit-before-commit.mdc`**）。**提交前**须通过；仅本地快速试探时可运行不带 `-D warnings` 的 **`cargo clippy`**，但不应在 hook 未通过时代为提交。
+- **`cargo fmt --check`**：若与 **`cargo fmt`** 结果不一致，先执行 **`cargo fmt --all`** 再提交；pre-commit 也会格式化 Rust 代码。
 - The `rfd` crate (file dialog) is a dependency but won't work headlessly; this doesn't affect the web server mode.
 - The vendored `tui-markdown` crate is at `vendor/tui-markdown/` and is referenced via `path` in `Cargo.toml`.

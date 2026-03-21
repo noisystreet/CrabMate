@@ -172,8 +172,32 @@ mod tests {
 
     const TEST_MAX_OUTPUT_LEN: usize = 8192;
     const TEST_ALLOWED: &[&str] = &[
-        "ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail",
-        "wc", "cat", "cmake", "gcc", "g++", "make",
+        "ls",
+        "pwd",
+        "whoami",
+        "date",
+        "echo",
+        "id",
+        "uname",
+        "env",
+        "df",
+        "du",
+        "head",
+        "tail",
+        "wc",
+        "cat",
+        "cmake",
+        "ninja",
+        "gcc",
+        "g++",
+        "clang",
+        "clang++",
+        "c++filt",
+        "autoreconf",
+        "autoconf",
+        "automake",
+        "aclocal",
+        "make",
     ];
 
     fn test_allowed() -> Vec<String> {

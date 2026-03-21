@@ -712,6 +712,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             "clang".into(),
             "clang++".into(),
             "c++filt".into(),
+            "autoreconf".into(),
+            "autoconf".into(),
+            "automake".into(),
+            "aclocal".into(),
             "make".into(),
         ]
     });

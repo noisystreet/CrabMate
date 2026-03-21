@@ -8,6 +8,8 @@ pub const RUST: &str = "rust";
 pub const FRONTEND: &str = "frontend";
 /// Python（ruff/pytest/mypy/pip/uv 等）。
 pub const PYTHON: &str = "python";
+/// C / C++（clang-format、run_command 白名单中的编译/构建工具等）。
+pub const CPP: &str = "cpp";
 /// Git 版本控制。
 pub const VCS: &str = "vcs";
 /// 静态检查、审计、CI 聚合等质量类工具（常与 RUST/FRONTEND 重叠）。
@@ -17,7 +19,7 @@ pub const QUALITY: &str = "quality";
 pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
     match name {
         // --- 语言无关 / 工作区 ---
-        "run_command" | "run_executable" | "workflow_execute" => &[GENERAL],
+        "run_command" | "run_executable" | "workflow_execute" => &[GENERAL, CPP],
         "diagnostic_summary" | "changelog_draft" | "license_notice" => &[GENERAL],
         "rust_backtrace_analyze" => &[GENERAL, RUST],
         "create_file"
@@ -77,7 +79,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "run_lints" | "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],
 
         // --- 格式化（多语言由实现按扩展名分流）---
-        "format_file" | "format_check_file" => &[GENERAL, RUST, FRONTEND, PYTHON],
+        "format_file" | "format_check_file" => &[GENERAL, RUST, FRONTEND, PYTHON, CPP],
 
         _ => &[GENERAL],
     }
@@ -98,6 +100,14 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
         || root.join("requirements.txt").is_file()
     {
         out.push(PYTHON);
+    }
+    if root.join("CMakeLists.txt").is_file()
+        || root.join("Makefile").is_file()
+        || root.join("meson.build").is_file()
+        || root.join("configure.ac").is_file()
+        || root.join("configure.in").is_file()
+    {
+        out.push(CPP);
     }
     out.sort_unstable();
     out.dedup();
@@ -149,5 +159,37 @@ mod tests {
         let s = suggest_dev_tags_for_workspace(&dir);
         assert!(s.contains(&RUST));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn suggest_tags_includes_cpp_when_configure_ac() {
+        let dir = std::env::temp_dir().join(format!("crabmate_dev_tag_ac_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("configure.ac"), "AC_INIT([x],[1.0])\n").unwrap();
+        let s = suggest_dev_tags_for_workspace(&dir);
+        assert!(s.contains(&CPP));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn suggest_tags_includes_cpp_when_cmake() {
+        let dir = std::env::temp_dir().join(format!("crabmate_dev_tag_cpp_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.16)\n",
+        )
+        .unwrap();
+        let s = suggest_dev_tags_for_workspace(&dir);
+        assert!(s.contains(&CPP));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn format_file_tag_includes_cpp() {
+        let t = tags_for_tool_name("format_file");
+        assert!(t.contains(&CPP));
     }
 }
