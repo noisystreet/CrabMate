@@ -2,7 +2,7 @@
 
 pub mod cli;
 
-use crate::per_coord::FinalPlanRequirementMode;
+use crate::agent::per_coord::FinalPlanRequirementMode;
 use serde::Deserialize;
 use std::path::Path;
 

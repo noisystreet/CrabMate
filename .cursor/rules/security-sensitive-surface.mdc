@@ -9,7 +9,7 @@ alwaysApply: true
 
 | 区域 | 典型文件 / 入口 | 关注点 |
 |------|-----------------|--------|
-| 工作区切换与路径 | `src/ui/workspace.rs`（如 `workspace_set`）、工作区解析 helper | 路径规范化、**禁止未授权任意目录**、符号链接与 `..`（与 **TODOLIST** 已知项对齐前的临时方案须标注风险） |
+| 工作区切换与路径 | `src/web/workspace.rs`（如 `workspace_set`）、工作区解析 helper | 路径规范化、**禁止未授权任意目录**、符号链接与 `..`（与 **TODOLIST** 已知项对齐前的临时方案须标注风险） |
 | 命令执行 | `src/tools/command.rs`、白名单配置、`tool_registry` 中 `run_command` | 仅白名单命令、参数中 **`..` / 绝对路径** 等拒绝规则保持不变或有意变更时更新文档 |
 | HTTP 拉取 | `src/tools/http_fetch.rs`、`http_fetch_allowed_prefixes` | 前缀列表默认偏保守；Web 与 TUI 审批差异是否在 DEVELOPMENT 中仍准确 |
 | 文件读写工具 | `src/tools/file.rs` 等 | 工作区内解析、`resolve_for_read` / `resolve_for_write` 语义不被绕过 |

@@ -1,9 +1,10 @@
 //! 规划–执行–反思（PER）协调：workflow 反思状态机 + 最终回答中的「规划」校验。
 //! Web 与 TUI 的 `run_agent_turn*` 共用此层，避免双份维护。
 
-use crate::plan_artifact;
 use crate::types::Message;
-use crate::workflow_reflection_controller::{self, WorkflowReflectionController};
+
+use super::plan_artifact;
+use super::workflow_reflection_controller::{self, WorkflowReflectionController};
 use serde_json::Value;
 
 const PLAN_REWRITE_EXHAUSTED_SSE: &str =
@@ -467,7 +468,7 @@ mod tests {
             .and_then(|x| x.as_str());
         assert_eq!(
             ty,
-            Some(crate::workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT)
+            Some(workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT)
         );
     }
 

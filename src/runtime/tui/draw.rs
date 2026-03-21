@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 use tui_markdown::{Options, from_str_with_options as markdown_to_text};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::latex_unicode::latex_math_to_unicode;
+use crate::runtime::latex_unicode::latex_math_to_unicode;
 use crate::types::Message;
 
 use super::state::{ChatMessageLineCacheEntry, Focus, Mode, ModelPhase, RightTab, TuiState};

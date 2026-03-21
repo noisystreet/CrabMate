@@ -36,7 +36,7 @@ pub(super) async fn run_agent_turn_tui(
         approval_request_guard,
         persistent_allowlist_shared,
     };
-    crate::agent_turn::run_agent_turn_common(
+    crate::agent::agent_turn::run_agent_turn_common(
         client,
         api_key,
         cfg,
@@ -47,7 +47,7 @@ pub(super) async fn run_agent_turn_tui(
         workspace_is_set,
         no_stream,
         cancel,
-        crate::agent_turn::AgentRunMode::Tui {
+        crate::agent::agent_turn::AgentRunMode::Tui {
             tui_tool_ctx: &tui_tool_ctx,
         },
         None,

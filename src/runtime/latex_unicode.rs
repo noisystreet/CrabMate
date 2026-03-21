@@ -1,6 +1,6 @@
 //! 将常见 LaTeX 数学定界符内的内容转为 Unicode，供终端 Markdown 渲染（`unicodeit`）。
 //!
-//! 与 Web 端数学公式展示无关；TUI / `api` 流式终端输出共用此逻辑。
+//! 位于 `runtime/` 与 `cli`、`tui` 并列，避免 `api` 依赖整个 `tui` 模块树。与 Web 端数学公式展示无关；**`api`** 流式终端输出与 **TUI `draw`** 共用此逻辑。
 //!
 //! 在 `unicodeit` 之前做**小规模结构化预处理**：`\frac`、`\\sqrt`、`\text`/`\mathrm` 等拆壳、`\left`/`\right` 剥离、`\quad` 等空白命令。
 

@@ -3,7 +3,9 @@
 //! - **`api`**：单次 HTTP + SSE/JSON 解析 + 可选终端 Markdown 渲染（传输与协议细节）。
 //! - **本模块**：`ChatRequest` 的惯用构造、带指数退避的**重试策略**、以及后续可扩展的调用入口（例如统一超时、观测字段）。
 //!
-//! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent_turn` 中散落重试与请求拼装逻辑。
+//! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent::agent_turn` 中散落重试与请求拼装逻辑。
+
+mod api;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -11,12 +13,12 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
-use crate::api::stream_chat;
 use crate::config::AgentConfig;
 use crate::types::{ChatRequest, Message, Tool};
+use api::stream_chat;
 use reqwest::Client;
 
-/// 构造带 tools、**`tool_choice: auto`** 及采样参数的请求体（`stream` 由 `api::stream_chat` 按 `no_stream` 覆盖）。
+/// 构造带 tools、**`tool_choice: auto`** 及采样参数的请求体（`stream` 由 [`api::stream_chat`] 按 `no_stream` 覆盖）。
 pub fn tool_chat_request(cfg: &AgentConfig, messages: &[Message], tools: &[Tool]) -> ChatRequest {
     ChatRequest {
         model: cfg.model.clone(),

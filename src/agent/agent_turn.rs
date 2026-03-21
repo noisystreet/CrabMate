@@ -1,9 +1,9 @@
 //! 单轮 Agent 循环的步骤拆分：与「规划–执行–反思」命名对齐的调用边界（P/E/R）。
 //!
-//! **命名说明**：此处的 **P（Plan）** 指「向模型要本轮输出」——即一次 `llm::complete_chat_retrying`（内部 `api::stream_chat`），由模型产出正文或 `tool_calls`，
+//! **命名说明**：此处的 **P（Plan）** 指「向模型要本轮输出」——即一次 `llm::complete_chat_retrying`（内部 `llm::api::stream_chat`），由模型产出正文或 `tool_calls`，
 //! **不是**独立的符号规划器。**E** 为执行工具；**R** 为终答阶段是否满足结构化规划等（见 `per_coord::after_final_assistant`）。
 //!
-//! 被 crate 根 `run_agent_turn`（Web）与 `runtime::tui`（TUI）共同复用。
+//! 被 crate 根 [`crate::run_agent_turn`]（Web）与 `runtime::tui`（TUI）共同复用。
 
 use std::path::Path;
 use std::sync::Arc;
@@ -13,12 +13,10 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tracing::info;
 
+use super::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::llm::{complete_chat_retrying, tool_chat_request};
-use crate::per_coord::PerCoordinator;
-use crate::sse_protocol::{
-    SseErrorBody, SsePayload, ToolCallSummary, ToolResultBody, encode_message,
-};
+use crate::sse::{SseErrorBody, SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result::ToolResult as StructuredToolResult;
 use crate::tools;
@@ -77,12 +75,12 @@ pub(crate) fn per_reflect_after_assistant(
         return ReflectOnAssistantOutcome::ProceedToExecuteTools;
     }
     match per_coord.after_final_assistant(msg, messages.as_slice()) {
-        crate::per_coord::AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
-        crate::per_coord::AfterFinalAssistant::RequestPlanRewrite(m) => {
+        super::per_coord::AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
+        super::per_coord::AfterFinalAssistant::RequestPlanRewrite(m) => {
             messages.push(m);
             ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
         }
-        crate::per_coord::AfterFinalAssistant::StopTurnPlanRewriteExhausted => {
+        super::per_coord::AfterFinalAssistant::StopTurnPlanRewriteExhausted => {
             ReflectOnAssistantOutcome::PlanRewriteExhausted
         }
     }
@@ -353,7 +351,7 @@ pub(crate) async fn run_agent_turn_common(
             AgentRunMode::Web { render_to_terminal } => render_to_terminal,
             AgentRunMode::Tui { .. } => false,
         };
-        crate::context_window::prepare_messages_for_model(client, api_key, cfg, messages).await?;
+        super::context_window::prepare_messages_for_model(client, api_key, cfg, messages).await?;
         let (msg, finish_reason) = per_plan_call_model_retrying(
             client,
             api_key,

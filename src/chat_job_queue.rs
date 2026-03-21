@@ -29,7 +29,7 @@ pub struct PerTurnFlight {
 }
 
 impl PerTurnFlight {
-    pub fn sync_from_per_coord(&self, p: &crate::per_coord::PerCoordinator) {
+    pub fn sync_from_per_coord(&self, p: &crate::agent::per_coord::PerCoordinator) {
         self.plan_rewrite_attempts
             .store(p.plan_rewrite_attempts_snapshot(), Ordering::Relaxed);
         self.require_plan_in_final_content
@@ -385,12 +385,12 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 Ok(()) => (true, None),
                 Err(e) => {
                     error!(job_id, error = %e, "chat stream 任务失败");
-                    let err_line = crate::sse_protocol::encode_message(
-                        crate::sse_protocol::SsePayload::Error(crate::sse_protocol::SseErrorBody {
+                    let err_line = crate::sse::encode_message(crate::sse::SsePayload::Error(
+                        crate::sse::SseErrorBody {
                             error: "对话失败，请稍后重试".to_string(),
                             code: Some("INTERNAL_ERROR".to_string()),
-                        }),
-                    );
+                        },
+                    ));
                     let _ = sse_tx.send(err_line).await;
                     (false, Some(truncate_chars(&e.to_string(), 120)))
                 }

@@ -1,6 +1,6 @@
-//! TUI 会话：工作区 `.crabmate/tui_session.json` 与导出（实现委托 `chat_export`）。
+//! TUI 会话：工作区 `.crabmate/tui_session.json` 与导出（实现委托 `runtime::chat_export`）。
 
-use crate::chat_export::{self, ChatSessionFile, session_to_json_pretty};
+use crate::runtime::chat_export::{self, ChatSessionFile, session_to_json_pretty};
 use crate::types::Message;
 use std::path::{Path, PathBuf};
 

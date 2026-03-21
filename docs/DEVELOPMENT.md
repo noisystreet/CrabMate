@@ -21,15 +21,15 @@
 
 ### 总体结构
 
-CrabMate 在**单个 Rust 进程**内使用 **Tokio** 异步运行时：通过 **Axum** 暴露 HTTP，通过 **`runtime/`** 提供 CLI/TUI，共享同一套 **Agent 回合**（`run_agent_turn` → `agent_turn`）、**工具**（`tools`）与 **`AgentConfig`**。
+CrabMate 在**单个 Rust 进程**内使用 **Tokio** 异步运行时：通过 **Axum** 暴露 HTTP，通过 **`runtime/`** 提供 CLI/TUI，共享同一套 **Agent 回合**（`run_agent_turn` → **`agent::agent_turn`**）、**工具**（`tools`）与 **`AgentConfig`**。
 
 ### 逻辑分层（自外而内）
 
 1. **接入层**：HTTP 路由与 multipart（`lib.rs`）、CLI/TUI 参数与交互循环（`runtime/`）。
-2. **编排层**：Web 对话排队（`chat_job_queue`）、Agent 主循环（`agent_turn`）、上下文裁剪/摘要（`context_window`）、PER 与终答规划（`per_coord`、`plan_artifact`、`workflow_reflection_controller`）。
-3. **模型层**：共享 HTTP 客户端（`http_client`）、请求拼装与重试（`llm`）、流式响应解析（`api`）。
-4. **工具与工作流**：工具表驱动执行（`tools/mod.rs`）、按名分发与 Web 侧阻塞超时（`tool_registry`）、DAG 工作流（`workflow`）。
-5. **横向契约**：OpenAI 兼容类型（`types`）、SSE 帧（`sse_protocol`）、工具结构化结果（`tool_result`）、配置（`config`）、Web 工作区/任务 API（`ui/*`）。
+2. **编排层**：Web 对话排队（`chat_job_queue`）、Agent 主循环与上下文/PER/工作流（**`agent/`**：`agent_turn`、`context_window`、`per_coord` 等）。
+3. **模型层**：共享 HTTP 客户端（`http_client`）、请求拼装与重试（`llm`）、流式响应解析（**`llm::api`**，`stream_chat`）。
+4. **工具与工作流**：工具表驱动执行（`tools/mod.rs`）、按名分发与 Web 侧阻塞超时（`tool_registry`）、DAG 工作流（**`agent::workflow`**）。
+5. **横向契约**：OpenAI 兼容类型（`types`）、SSE 控制面（**`sse/`**：`protocol` + `line`）、工具结构化结果（`tool_result`）、配置（`config`）、Web 工作区/任务 API（`web/*`）。
 
 ```mermaid
 flowchart TB
@@ -37,7 +37,7 @@ flowchart TB
     WEB["Axum HTTP\n(lib.rs)"]
     CLI["CLI / TUI\n(runtime)"]
   end
-  subgraph agent [Agent 编排]
+  subgraph agent [Agent 编排 agent/]
     Q[chat_job_queue]
     AT[agent_turn]
     CW[context_window]
@@ -47,12 +47,12 @@ flowchart TB
   subgraph model [模型调用]
     HC[http_client]
     LLM[llm]
-    API[api stream_chat]
+    API[llm::api]
   end
   subgraph exec [工具与工作流]
     TR[tool_registry]
     TS[tools]
-    WF[workflow]
+    WF[agent::workflow]
   end
   WEB --> Q
   Q --> AT
@@ -71,9 +71,9 @@ flowchart TB
 
 1. 客户端 `POST /chat/stream` → **`ChatJobQueue`** 限流排队。  
 2. **`run_agent_turn`** 携带 `messages` 与 `tools` 定义进入循环。  
-3. **`llm` / `api`** 请求 `/chat/completions`（SSE），直到得到最终文本或 **`tool_calls`**。  
-4. 若有工具调用 → **`tool_registry::dispatch_tool`** → **`tools::run_tool`**（或 workflow 路径）→ 结果以 `role: "tool"` 写回 `messages`。  
-5. 控制面事件经 **`sse_protocol`** 编码为 SSE 行下发前端。
+3. **`llm`**（含 **`llm::api::stream_chat`**）请求 `/chat/completions`（SSE），直到得到最终文本或 **`tool_calls`**。  
+4. 若有工具调用 → **`tool_registry::dispatch_tool`** → **`tools::run_tool`**（或 **`agent::workflow`** 路径）→ 结果以 `role: "tool"` 写回 `messages`。  
+5. 控制面事件经 **`sse::protocol`**（`encode_message` / `SsePayload`）编码为 SSE 行下发前端。
 
 ## `src/` 代码模块索引
 
@@ -83,28 +83,19 @@ flowchart TB
 
 | 路径 | 职责摘要 |
 |------|----------|
-| `agent_turn.rs` | Agent 主循环共用实现（Web/TUI）：调模型、解析 `tool_calls`、串联 `tool_registry` 与 PER。 |
-| `api.rs` | `chat/completions` 单次 HTTP 与 SSE 行解析；CLI 下终端 Markdown 展示（公式转 Unicode 见 `latex_unicode`）。 |
-| `chat_export.rs` | 会话导出：与 `.crabmate/tui_session.json` 同形的 `ChatSessionFile`（`version` + `messages`）、`messages_to_markdown`、写入 `exports/` 的 JSON/Markdown；Web 见 `frontend/src/chatExport.ts`。 |
+| `agent/` | **`agent_turn`**：主循环（Web/TUI）；**`context_window`**：上下文裁剪/摘要；**`per_coord` / `plan_artifact` / `workflow_reflection_controller`**：PER 与终答规划；**`workflow`**：DAG 执行。 |
 | `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限；运行中任务的 `PerTurnFlight` 注册供 `GET /status` 的 `per_active_jobs`。 |
 | `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数。 |
-| `context_window.rs` | 每次调模型前：`tool` 截断、条数/字符预算、可选摘要请求。 |
 | `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
 | `health.rs` | 与 `GET /health` 一致的运行状况报告（`build_health_report` / `format_health_report_terminal`）；供 `lib.rs` 的 health handler 与 TUI **F10** 弹层共用，不依赖本机再起 HTTP 服务。 |
-| `latex_unicode.rs` | LaTeX 数学定界符（`$…$`、`$$…$$`、`\(...\)`、`\[...\]`）内先做小规模结构化预处理：`\text`/`\mathrm`/`\operatorname` 等拆壳、`\sqrt`/`[n]` 根式、`\frac` 线性化、常见 `\left`/`\right` 剥离、`\quad` 等空白命令，再 `unicodeit` 转 Unicode；供 `api` 终端 Markdown 与 TUI 聊天区一致渲染。 |
-| `llm/mod.rs` | 构造 `ChatRequest`、封装带指数退避的补全调用。 |
-| `per_coord.rs` | PER：工作流反思注入与终答 `agent_reply_plan` 策略。 |
-| `plan_artifact.rs` | 终答中规划 JSON（v1）解析与规则校验辅助。 |
-| `runtime/` | `cli`：单次问答/REPL；`tui`：全屏界面、绘制与输入。 |
-| `sse_protocol.rs` | SSE 负载枚举、`encode_message`、协议版本字段。 |
-| `sse_line.rs` | 对 SSE `data:` 单行做控制面/正文分类（`classify_agent_sse_line`）；与 `frontend/src/api.ts` 中 `tryDispatchSseControlPayload` 语义对齐。 |
+| `llm/` | **`mod`**：`ChatRequest` 构造、指数退避 **`complete_chat_retrying`**；**`api`**：`chat/completions` HTTP + SSE/JSON 解析、终端 Markdown（公式见 `runtime::latex_unicode`）。 |
+| `runtime/` | `cli`：单次问答/REPL；`tui`：全屏终端 UI；`latex_unicode`；`chat_export`（会话 JSON/Markdown 导出，对齐 `frontend/src/chatExport.ts`）。 |
+| `sse/` | **`protocol`**：`SsePayload` / `encode_message`；**`line`**：`classify_agent_sse_line`（TUI）；根再导出常用类型，与 `frontend/src/api.ts` 控制面解析对齐。 |
 | `tool_registry.rs` | 按工具名选择 Workflow / 命令超时 / 天气与联网搜索超时 / 默认同步等策略。 |
 | `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
 | `tools/` | 全部 Function Calling 定义、`ToolContext`、`run_tool`；子模块见下表。 |
 | `types.rs` | `Message`、`Tool`、流式 chunk 等 OpenAI 兼容类型；`Message::system_only` / `user_only`、`messages_chat_seed` 供 Web 首轮与 CLI 共用。 |
-| `ui/` | Web 专用 axum handler：`workspace`、`task` 等。 |
-| `workflow.rs` | `workflow_execute`：DAG 拓扑、节点并行、工具调用与输出注入。 |
-| `workflow_reflection_controller.rs` | 反思回合状态、注入 `plan_next` 等契约校验。 |
+| `web/` | Web（HTTP）专用 axum handler：`workspace`、`task` 等；与终端 `runtime/tui` 区分命名。 |
 
 ### `lib.rs` 额外职责（非独立文件但需知）
 
@@ -146,31 +137,31 @@ flowchart TB
 
 ## 核心机制：Agent 主循环与工具调用
 
-核心流程在 `src/lib.rs` 的 `run_agent_turn`（实现骨架在 `agent_turn.rs`）：
+核心流程在 `src/lib.rs` 的 `run_agent_turn`（实现骨架在 **`src/agent/agent_turn.rs`**）：
 
 - **输入**：构造 `ChatRequest`（`src/types.rs`）并携带 `tools`（Function Calling 定义）。
 - **P（命名上的「规划」步）**：`per_plan_call_model_retrying` —— **一次** `stream_chat`，由模型产出正文或 `tool_calls`，并非独立规划器。
-- **调用模型**：通过 `src/api.rs::stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `run_agent_turn(..., no_stream: true)` 时为 `stream: false`，按 OpenAI 兼容 `ChatResponse` 解析 `choices[0].message`（有正文则经 `out` 整段下发）；其它 API 形态需自行适配。
-- **上下文窗口策略**（`src/context_window.rs`）：在 `agent_turn::run_agent_turn_common` 的**每次** P 步（`per_plan_call_model_retrying`）之前调用 `prepare_messages_for_model`：**`tool` 消息正文截断**（`tool_message_max_chars`）、**按条数保留**（沿用 `max_message_history`）、可选 **`context_char_budget` 按近似字符删旧消息**；若 `context_summary_trigger_chars > 0` 且非 system 总字符超阈值，则额外发起**无 tools** 的 `chat/completions` 将「中间段」压成一条 user 摘要，尾部保留 `context_summary_tail_messages` 条。TUI/Web 在同步回 `messages` 后，列表长度会随裁剪/摘要变化（工具截断不改变条数）。配置见 `default_config.toml` 与 `AGENT_CONTEXT_*` / `AGENT_TOOL_MESSAGE_MAX_CHARS`。
+- **调用模型**：通过 **`src/llm/api.rs`** 的 `stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `run_agent_turn(..., no_stream: true)` 时为 `stream: false`，按 OpenAI 兼容 `ChatResponse` 解析 `choices[0].message`（有正文则经 `out` 整段下发）；其它 API 形态需自行适配。
+- **上下文窗口策略**（`src/agent/context_window.rs`）：在 `agent::agent_turn::run_agent_turn_common` 的**每次** P 步（`per_plan_call_model_retrying`）之前调用 `prepare_messages_for_model`：**`tool` 消息正文截断**（`tool_message_max_chars`）、**按条数保留**（沿用 `max_message_history`）、可选 **`context_char_budget` 按近似字符删旧消息**；若 `context_summary_trigger_chars > 0` 且非 system 总字符超阈值，则额外发起**无 tools** 的 `chat/completions` 将「中间段」压成一条 user 摘要，尾部保留 `context_summary_tail_messages` 条。TUI/Web 在同步回 `messages` 后，列表长度会随裁剪/摘要变化（工具截断不改变条数）。配置见 `default_config.toml` 与 `AGENT_CONTEXT_*` / `AGENT_TOOL_MESSAGE_MAX_CHARS`。
 - **处理结束原因**：
   - `finish_reason != "tool_calls"`：本轮对话结束，最后一条 assistant message 即最终回复。
   - `finish_reason == "tool_calls"`：解析 tool calls，逐个执行本地工具，把工具结果作为 `role: "tool"` 的消息追加进 `messages`，然后继续下一轮请求，直到模型返回最终文本。
 - **SSE 通道协作**：若本轮由 `/chat/stream` 触发，会通过 channel 向前端发送：
   - 文本 delta（assistant 内容增量）
-  - **控制类 JSON**（由 `src/sse_protocol.rs` 序列化）：统一带版本字段 `v`（当前为 `1`），并与原有键名兼容，例如：
+  - **控制类 JSON**（由 **`src/sse/protocol.rs`** 序列化）：统一带版本字段 `v`（当前为 `1`），并与原有键名兼容，例如：
     - `tool_running`、`tool_call`、`tool_result`、`workspace_changed`
     - `error`（+ 可选 `code`）、`command_approval_request`（TUI/工作流审批）
     - 预留 `plan_required` 等扩展键
-- **协议版本 `v`**：当前为 `1`；演进时递增 `sse_protocol::SSE_PROTOCOL_VERSION`，前端 `api.ts` 的 `sendChatStream` 已按字段形状解析（`tool_call` / `tool_result` / `plan_required` / `error.code` 等），新事件需在前后端同步扩展。
+- **协议版本 `v`**：当前为 `1`；演进时递增 **`sse::protocol::SSE_PROTOCOL_VERSION`**，前端 `api.ts` 的 `sendChatStream` 已按字段形状解析（`tool_call` / `tool_result` / `plan_required` / `error.code` 等），新事件需在前后端同步扩展。
 
 ### PER 与终答 `agent_reply_plan` 强制策略
 
-- **`per_coord::PerCoordinator`**（`src/per_coord.rs`）在 Web/TUI 共用：串联 **workflow 反思**（`workflow_reflection_controller`）与 **终答正文**是否含 `plan_artifact` 可解析的 v1 规划。
+- **`agent::per_coord::PerCoordinator`**（`src/agent/per_coord.rs`）在 Web/TUI 共用：串联 **workflow 反思**（`workflow_reflection_controller`）与 **终答正文**是否含 `plan_artifact` 可解析的 v1 规划。
 - **配置项** `[agent] final_plan_requirement`（环境变量 `AGENT_FINAL_PLAN_REQUIREMENT`）→ `FinalPlanRequirementMode`：
   - **`never`**：不进入「缺规划则追加 user 重写提示」循环；反思注入仍会下发，但不置位强制标记。
   - **`workflow_reflection`（默认）**：仅当工具路径注入了 `instruction_type == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT` 时，对随后的**最终** assistant 校验；避免与反思 JSON 的字符串散落耦合。
   - **`always`**（实验性）：每次 `finish_reason != tool_calls` 的终答均校验。只要终答缺合格 `agent_reply_plan`，就会计入重写次数并可能再调模型，**轮次与费用通常明显高于** `workflow_reflection`；适用于强约束输出形态、联调规划解析、或审计场景。低成本/闲聊场景不建议开启。
-- **`[agent] plan_rewrite_max_attempts`**（`AGENT_PLAN_REWRITE_MAX_ATTEMPTS`，默认 `2`， clamp `1..=20`）：终答规划不合格时，最多追加多少次「请重写」user 消息；用尽后结束外层循环，并在 **有 SSE 通道** 时发送 `{"error":"…","code":"plan_rewrite_exhausted"}`（与 `sse_protocol::SsePayload::Error` 一致）。
+- **`[agent] plan_rewrite_max_attempts`**（`AGENT_PLAN_REWRITE_MAX_ATTEMPTS`，默认 `2`， clamp `1..=20`）：终答规划不合格时，最多追加多少次「请重写」user 消息；用尽后结束外层循环，并在 **有 SSE 通道** 时发送 `{"error":"…","code":"plan_rewrite_exhausted"}`（与 `sse::SsePayload::Error` 一致）。
 - **规则化语义（相对 `workflow_validate_only`）**：当策略要求校验规划，且历史中最近一次 `workflow_execute` 的 tool 结果为 `report_type == workflow_validate_result` 时，读取 `spec.layer_count`（拓扑层数），要求 `agent_reply_plan.steps.len() >= layer_count`；否则仅做 JSON 形态校验。重写提示中会附带 `layer_count` 说明。
 - **可观测性**：`tracing` 目标 `crabmate::per`（`RUST_LOG=crabmate::per=info` 或 `RUST_LOG=info`）记录 `after_final_assistant` 的 outcome、`reflection_stage_round`、`plan_rewrite_attempts` 等；`workflow_reflection_controller::WorkflowReflectionController::stage_round()` 供排错对照反思轮次。
 
@@ -216,7 +207,7 @@ flowchart LR
 ### `src/llm/mod.rs`
 
 - **与大模型交互的封装层**（在 `api` 之上）：`tool_chat_request` 统一从 `AgentConfig` + `messages` + `tools` 构造 `ChatRequest`（含 `tool_choice: auto`）；`complete_chat_retrying` 封装 `api::stream_chat` 与 **指数退避重试**（`api_max_retries` / `api_retry_delay_secs`）。
-- **Agent 主循环**（`agent_turn::per_plan_call_model_retrying`）只委托本模块，避免在 P 步重复拼装请求与重试逻辑。
+- **Agent 主循环**（`agent::agent_turn::per_plan_call_model_retrying`）只委托本模块，避免在 P 步重复拼装请求与重试逻辑。
 - HTTP 路径片段见 `types::OPENAI_CHAT_COMPLETIONS_REL_PATH`（`api` / 文档共用）。
 
 ### `src/http_client.rs`
@@ -224,18 +215,18 @@ flowchart LR
 - **`build_shared_api_client`**：`run()` 内构造**唯一**异步 `reqwest::Client` 写入 `AppState`，供所有 `chat/completions` 与工具内嵌 HTTP 调用以外的模型流量复用。
 - **连接优化**（非 WebSocket）：`connect_timeout` 与整请求 `timeout` 分离；`pool_max_idle_per_host`、`pool_idle_timeout`、`tcp_keepalive` 便于 **HTTP Keep-Alive / 连接池** 在多轮对话中复用 TLS（OpenAI 兼容 API 为 HTTP+SSE，无「单条模型 WebSocket」协议）。
 
-### `src/api.rs`
+### `src/llm/api.rs`
 
 - **单次 HTTP 传输**：`POST {api_base}/chat/completions`，`stream: true` 时对响应进行 `data: ...` 行拆解，聚合 assistant content 与 tool_calls（按 index 累积 arguments）。流结束时若缓冲区内仍有**未以换行结尾**的最后一帧，会在关闭读循环后补解析一次，避免尾部 delta 丢失（此前仅按 `\n` 切行时易丢末包）。
 - **终端渲染增强（CLI/TUI）**：对终端输出做 Markdown 渲染与 LaTeX→Unicode 转换，提升命令行交互体验（Web 模式不依赖这部分展示）。
 
-### `src/sse_protocol.rs`
+### `src/sse/protocol.rs`
 
-- **SSE 控制帧**：`SseMessage { v, payload }` + `SsePayload`（`serde` untagged），`encode_message` 生成单行 JSON；Web `agent_turn`、TUI、`workflow` 审批、流式错误等均经此发出，避免手写 JSON 拼写错误。
+- **SSE 控制帧**：`SseMessage { v, payload }` + `SsePayload`（`serde` untagged），`encode_message` 生成单行 JSON；Web **`agent::agent_turn`**、TUI、**`agent::workflow`** 审批、流式错误等均经此发出，避免手写 JSON 拼写错误。
 
-### `src/sse_line.rs`
+### `src/sse/line.rs`
 
-- **消费侧分类**：将单条 SSE `data:` 字符串分为工具状态、审批请求、工作区刷新、流错误、忽略或正文（`Plain`），供 TUI 主循环分支；与 `sse_protocol` 反序列化及若干历史裸 JSON 键名兼容。
+- **消费侧分类**：将单条 SSE `data:` 字符串分为工具状态、审批请求、工作区刷新、流错误、忽略或正文（`Plain`），供 TUI 主循环分支；与 **`protocol`** 反序列化及若干历史裸 JSON 键名兼容。常用符号经 `sse/mod.rs` 再导出为 `crate::sse::classify_agent_sse_line` 等。
 
 ### `src/types.rs`
 
@@ -285,11 +276,11 @@ flowchart LR
 - **`grep.rs` / `format.rs` / `lint.rs`**：面向开发工作流的辅助能力（搜索/格式化/静态检查聚合）；`format` 对 `.py` 使用 `ruff format`，对 `.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh` 使用 `clang-format`（检查模式为 `--dry-run --Werror`）；`run_lints` 可选聚合 `ruff check`（`run_python_ruff`）。`run_command` 默认可含 `cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make`（见配置 `allowed_commands`）；`cmake`、`c++filt` 与 `clang-format` 等可选依赖会在 **`GET /health`** 中体现为 `dep_cmake` / `dep_cxxfilt` / `dep_clang_format`（缺失为 degraded，不阻止启动）。**`run_command` 参数**仍禁止 `..` 与以 `/` 开头的实参，CMake 场景宜使用相对 `-S`/`-B` 与 `--build`。Autotools 会执行项目内生成逻辑，**prod** 白名单默认不含构建类命令。
 - **`python_tools.rs` / `precommit_tools.rs`**：见上表；`quality_workspace` / `ci_pipeline_local` 可选步骤含 ruff/pytest/mypy；`pre_commit_run` 依赖仓库根 `.pre-commit-config.yaml`（或 `.yml`）。
 
-### `src/ui/*` 与 `src/runtime/*`
+### `src/web/*` 与 `src/runtime/*`
 
-- **`ui`**：承载 Web 侧的“工作区/任务”等 API handler（与前端面板直接对应）。
+- **`web`**：承载 Web 侧的“工作区/任务”等 axum handler（与前端面板直接对应）；**不是**终端 TUI。
 - **`runtime`**：CLI/TUI 运行时逻辑，负责 REPL、单次问答、TUI 的交互渲染与调用 `run_agent_turn`。
-  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_session`（`.crabmate/tui_session.json` 与导出；启动加载时按 `[agent] tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断，总条数含 `system`，超出则保留首条 system 与尾部最近若干条）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐）、`workspace_ops`、`sse_line`、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`（底栏右侧 `status_line`：默认仅模型名等，不常驻快捷键说明）、`allowlist`、`agent`（委托 `agent_turn`）。
+  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_session`（`.crabmate/tui_session.json` 与导出；启动加载时按 `[agent] tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断，总条数含 `system`，超出则保留首条 system 与尾部最近若干条）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐）、`workspace_ops`、（SSE 控制行分类：`crate::sse::classify_agent_sse_line`）、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`（底栏右侧 `status_line`：默认仅模型名等，不常驻快捷键说明）、`allowlist`、`agent`（委托 `crate::agent::agent_turn`）。
 
 ## 前端模块说明（`frontend/src/`）
 
@@ -340,5 +331,5 @@ flowchart LR
   - Web 模式下的工作区设置会影响“工具执行目录”，需要明确这一点避免误操作。
   - **密钥与日志**：勿将真实 API key、token、`.env` 内容写入代码、示例配置、commit message 或日志；日志与错误回显须脱敏。Cursor 规则见 **`.cursor/rules/secrets-and-logging.mdc`**。
   - 已知 HTTP 鉴权、监听地址、`workspace_set` 等安全与协议债见 [`docs/TODOLIST.md`](TODOLIST.md)。
-- **SSE 协议演进**：后端以 `sse_protocol::SseMessage` / `SsePayload` 为单一事实来源；`v` 递增时前端可按版本分支。Rust 侧行分类见 `sse_line.rs`；浏览器侧统一在 `frontend/src/api.ts` 的 `tryDispatchSseControlPayload`（由 `sendChatStream` 调用）。
+- **SSE 协议演进**：后端以 **`sse::protocol::SseMessage` / `SsePayload`**（及 `sse/mod.rs` 再导出）为单一事实来源；`v` 递增时前端可按版本分支。Rust 侧行分类见 **`sse/line.rs`**；浏览器侧统一在 `frontend/src/api.ts` 的 `tryDispatchSseControlPayload`（由 `sendChatStream` 调用）。
 

@@ -3,28 +3,19 @@
 //!
 //! 日志由 `RUST_LOG` 控制；`--tui` 时不向终端写 tracing 行，以免打乱全屏界面。
 
-mod agent_turn;
-mod api;
-mod chat_export;
+mod agent;
 mod chat_job_queue;
 mod config;
-mod context_window;
 mod health;
 mod http_client;
-mod latex_unicode;
 mod llm;
-mod per_coord;
-mod plan_artifact;
 mod runtime;
-mod sse_line;
-mod sse_protocol;
+mod sse;
 mod tool_registry;
 mod tool_result;
 mod tools;
 mod types;
-mod ui;
-mod workflow;
-mod workflow_reflection_controller;
+mod web;
 
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
@@ -70,7 +61,7 @@ pub async fn run_agent_turn(
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    agent_turn::run_agent_turn_common(
+    agent::agent_turn::run_agent_turn_common(
         client,
         api_key,
         cfg,
@@ -81,7 +72,7 @@ pub async fn run_agent_turn(
         workspace_is_set,
         no_stream,
         cancel.as_deref(),
-        agent_turn::AgentRunMode::Web { render_to_terminal },
+        agent::agent_turn::AgentRunMode::Web { render_to_terminal },
         per_flight,
     )
     .await
@@ -571,7 +562,7 @@ struct StatusResponse {
     /// `tool_registry` 中显式声明的分发策略（其余名称运行时走同步 `run_tool`）。
     tool_dispatch_registry: &'static [tool_registry::ToolDispatchMeta],
     reflection_default_max_rounds: usize,
-    final_plan_requirement: crate::per_coord::FinalPlanRequirementMode,
+    final_plan_requirement: crate::agent::per_coord::FinalPlanRequirementMode,
     plan_rewrite_max_attempts: usize,
     max_message_history: usize,
     tool_message_max_chars: usize,
@@ -728,25 +719,25 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             )
             .route(
                 "/workspace",
-                get(ui::workspace::workspace_handler).post(ui::workspace::workspace_set_handler),
+                get(web::workspace::workspace_handler).post(web::workspace::workspace_set_handler),
             )
             .route(
                 "/workspace/pick",
-                get(ui::workspace::workspace_pick_handler),
+                get(web::workspace::workspace_pick_handler),
             )
             .route(
                 "/workspace/search",
-                post(ui::workspace::workspace_search_handler),
+                post(web::workspace::workspace_search_handler),
             )
             .route(
                 "/workspace/file",
-                get(ui::workspace::workspace_file_read_handler)
-                    .post(ui::workspace::workspace_file_write_handler)
-                    .delete(ui::workspace::workspace_file_delete_handler),
+                get(web::workspace::workspace_file_read_handler)
+                    .post(web::workspace::workspace_file_write_handler)
+                    .delete(web::workspace::workspace_file_delete_handler),
             )
             .route(
                 "/tasks",
-                get(ui::task::tasks_get_handler).post(ui::task::tasks_set_handler),
+                get(web::task::tasks_get_handler).post(web::task::tasks_set_handler),
             );
         if !no_web {
             app = app.nest_service("/", ServeDir::new(static_dir));

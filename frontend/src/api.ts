@@ -400,7 +400,7 @@ export async function deleteUploads(urls: string[]): Promise<DeleteUploadsRespon
   })
 }
 
-/** 与后端 `sse_protocol` 控制面字段对齐（见 `src/sse_protocol.rs`）；与 `src/sse_line.rs` 的 Rust 分类逻辑保持语义一致。 */
+/** 与后端 `src/sse/protocol.rs`（`SsePayload` 等）控制面字段对齐；与 `src/sse/line.rs`（`classify_agent_sse_line`）的 Rust 分类逻辑保持语义一致。 */
 type SseControlPayload = {
   v?: number
   error?: string

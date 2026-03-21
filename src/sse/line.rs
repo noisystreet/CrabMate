@@ -1,10 +1,10 @@
-//! 对经 SSE `data:` 下发的一行字符串做分类（与 `sse_protocol` 及历史兼容键名对齐）。
+//! 对经 SSE `data:` 下发的一行字符串做分类（与 `super::protocol` 及历史兼容键名对齐）。
 //!
 //! Web 前端在 `frontend/src/api.ts` 的 `sendChatStream` 中做等价解析；此处为 **Rust 侧** 单一实现，供 TUI 等消费同一字节流时使用。
 
-/// 与 `sse_protocol` 对齐的 SSE 控制行；无法识别则视为模型流式正文。
+/// 与 `protocol` 模块对齐的 SSE 控制行；无法识别则视为模型流式正文。
 #[derive(Debug)]
-pub(crate) enum AgentLineKind {
+pub enum AgentLineKind {
     ToolRunning(bool),
     ParsingToolCalls(bool),
     WorkspaceRefresh,
@@ -19,22 +19,22 @@ pub(crate) enum AgentLineKind {
     Plain,
 }
 
-pub(crate) fn classify_agent_sse_line(s: &str) -> AgentLineKind {
-    if let Ok(msg) = serde_json::from_str::<crate::sse_protocol::SseMessage>(s) {
+pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
+    if let Ok(msg) = serde_json::from_str::<super::protocol::SseMessage>(s) {
         match msg.payload {
-            crate::sse_protocol::SsePayload::ToolRunning { tool_running } => {
+            super::protocol::SsePayload::ToolRunning { tool_running } => {
                 return AgentLineKind::ToolRunning(tool_running);
             }
-            crate::sse_protocol::SsePayload::ParsingToolCalls { parsing_tool_calls } => {
+            super::protocol::SsePayload::ParsingToolCalls { parsing_tool_calls } => {
                 return AgentLineKind::ParsingToolCalls(parsing_tool_calls);
             }
-            crate::sse_protocol::SsePayload::WorkspaceChanged {
+            super::protocol::SsePayload::WorkspaceChanged {
                 workspace_changed: true,
             } => return AgentLineKind::WorkspaceRefresh,
-            crate::sse_protocol::SsePayload::WorkspaceChanged {
+            super::protocol::SsePayload::WorkspaceChanged {
                 workspace_changed: false,
             } => return AgentLineKind::Ignore,
-            crate::sse_protocol::SsePayload::CommandApproval {
+            super::protocol::SsePayload::CommandApproval {
                 command_approval_request,
             } => {
                 return AgentLineKind::CommandApproval {
@@ -43,10 +43,10 @@ pub(crate) fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                     allowlist_key: command_approval_request.allowlist_key,
                 };
             }
-            crate::sse_protocol::SsePayload::Error(_) => return AgentLineKind::StreamError,
-            crate::sse_protocol::SsePayload::ToolCall { .. }
-            | crate::sse_protocol::SsePayload::ToolResult { .. }
-            | crate::sse_protocol::SsePayload::PlanRequired { .. } => {
+            super::protocol::SsePayload::Error(_) => return AgentLineKind::StreamError,
+            super::protocol::SsePayload::ToolCall { .. }
+            | super::protocol::SsePayload::ToolResult { .. }
+            | super::protocol::SsePayload::PlanRequired { .. } => {
                 return AgentLineKind::Ignore;
             }
         }
