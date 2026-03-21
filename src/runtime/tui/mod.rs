@@ -185,6 +185,8 @@ pub async fn run_tui(
         high_contrast: false,
         code_theme_idx: 0,
         show_help: false,
+        show_health: false,
+        health_text: String::new(),
         input_rows: 5,
         input_dragging: false,
         input_drag_row: 0,

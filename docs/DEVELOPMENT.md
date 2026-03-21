@@ -89,6 +89,7 @@ flowchart TB
 | `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数。 |
 | `context_window.rs` | 每次调模型前：`tool` 截断、条数/字符预算、可选摘要请求。 |
 | `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
+| `health.rs` | 与 `GET /health` 一致的运行状况报告（`build_health_report` / `format_health_report_terminal`）；供 `lib.rs` 的 health handler 与 TUI **F10** 弹层共用，不依赖本机再起 HTTP 服务。 |
 | `latex_unicode.rs` | LaTeX 数学定界符（`$…$`、`$$…$$`、`\(...\)`、`\[...\]`）内先做小规模结构化预处理：`\text`/`\mathrm`/`\operatorname` 等拆壳、`\sqrt`/`[n]` 根式、`\frac` 线性化、常见 `\left`/`\right` 剥离、`\quad` 等空白命令，再 `unicodeit` 转 Unicode；供 `api` 终端 Markdown 与 TUI 聊天区一致渲染。 |
 | `llm/mod.rs` | 构造 `ChatRequest`、封装带指数退避的补全调用。 |
 | `per_coord.rs` | PER：工作流反思注入与终答 `agent_reply_plan` 策略。 |
@@ -203,7 +204,7 @@ flowchart LR
   - `POST /chat`：非流式对话
   - `POST /chat/stream`：SSE 流式对话（前端默认走这个）
   - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement` / `plan_rewrite_max_attempts`**、**`max_message_history` / `tool_message_max_chars` / `context_char_budget` / `context_summary_trigger_chars`**、**`chat_queue_*` / `chat_queue_recent_jobs` / `per_active_jobs`**）
-  - `GET /health`：健康检查（API_KEY/静态目录/工作区可写/依赖命令）
+  - `GET /health`：健康检查（API_KEY/静态目录/工作区可写/依赖命令）；实现见 `health.rs`，**TUI 按 F10** 弹层复用同一逻辑（无需起 HTTP）。
   - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件
   - `GET|POST /tasks`：任务清单读写
   - `POST /upload` + `GET /uploads/...`：上传与静态访问
