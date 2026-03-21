@@ -273,11 +273,10 @@ pub fn diff_names(args_json: &str, max_output_len: usize, working_dir: &Path) ->
 
             let mut staged = Command::new("git");
             staged.arg("diff").arg("--name-only").arg("--staged");
-            if let Some(p) = v.get("path").and_then(|x| x.as_str()) {
-                if is_safe_rel_path(p) {
+            if let Some(p) = v.get("path").and_then(|x| x.as_str())
+                && is_safe_rel_path(p) {
                     staged.arg("--").arg(p.trim());
                 }
-            }
             staged.current_dir(working_dir);
             let b = run_and_format(staged, max_output_len, "git diff --name-only --staged");
             format!("{}\n\n====================\n\n{}", a, b)

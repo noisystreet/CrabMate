@@ -1,6 +1,19 @@
-//! 在工作区内应用 unified diff/hunk 补丁。
+//! 在工作区内应用 **unified diff**（与 `git diff` / `diff -u` 同类）补丁。
 //!
-//! 安全策略：
+//! # CrabMate 统一补丁约定（给模型/人类）
+//!
+//! 1. **格式**：标准 unified diff，必须含 `---` / `+++` 文件头与 `@@ ... @@` hunk 头；行前缀 ` `（上下文）、`-`（删）、`+`（增）。
+//! 2. **路径与 strip（二选一，须与 GNU patch 行为一致）**：
+//!    - **写法 A（推荐，strip=0，默认）**：`--- src/foo.rs` / `+++ src/foo.rs`，路径为**相对工作区根**，与磁盘一致，**不要**加 `a/`/`b/`。
+//!    - **写法 B（Git 风格，strip=1）**：`--- a/src/foo.rs` / `+++ b/src/foo.rs`，调用工具时传 **`strip: 1`**（剥掉 `a/` 后得到 `src/foo.rs`）；若误用 `strip=0` 仍带 `a/` 前缀，patch 会去找 `a/src/...` 而失败。
+//! 3. **带上下文**：每个 hunk 在变更行上下保留 **至少 2～3 行** 未改动的上下文（` ` 开头），避免错位；**禁止**零上下文只贴一行。
+//! 4. **小步**：一次补丁优先 **一个主题**（如一个函数、一处配置）；大改动拆成 **多次 `apply_patch`**，便于预检失败时定位。
+//! 5. **可回滚**：成功应用后若需撤销，可用 `patch -R`（同补丁）、`git checkout -- 文件` 或再打一版 **反向 diff**；因此小步补丁更容易安全回退。
+//!
+//! 底层调用 GNU **`patch --batch --forward`**，先 **`--dry-run`** 再正式应用。
+//!
+//! # 安全策略
+//!
 //! - 仅允许相对路径（禁止绝对路径）
 //! - 禁止 `..` 路径穿越
 //! - 必须落在工作区根目录下
@@ -22,10 +35,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         Some(s) if !s.trim().is_empty() => s,
         _ => return "错误：缺少 patch 参数".to_string(),
     };
-    let strip = match args.get("strip").and_then(|v| v.as_u64()) {
-        Some(n) => n,
-        None => 0,
-    };
+    let strip = args.get("strip").and_then(|v| v.as_u64()).unwrap_or_default();
 
     let root = match workspace_root.canonicalize() {
         Ok(p) => p,

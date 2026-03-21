@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! 工作区内的代码格式化工具。
 //!
 //! 根据文件扩展名自动选择本地格式化器：
@@ -48,7 +46,50 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         return format!("错误：暂不支持扩展名为 .{} 的文件格式化", ext);
     };
 
-    match run_formatter(formatter, &target, workspace_root) {
+    match run_formatter(formatter, &target, workspace_root, false) {
+        Ok(msg) => msg,
+        Err(e) => e,
+    }
+}
+
+/// 对单个文件做格式「检查」（不写入）：`rustfmt --check` / `prettier --check`。
+pub fn run_check(args_json: &str, workspace_root: &Path) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数 JSON 无效: {}", e),
+    };
+    let path = match v.get("path").and_then(|p| p.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return "错误：缺少 path 参数".to_string(),
+    };
+
+    let target = match resolve_target(workspace_root, path) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    if !target.exists() {
+        return "错误：指定的文件不存在".to_string();
+    }
+    if !target.is_file() {
+        return "错误：只能检查普通文件".to_string();
+    }
+
+    let ext = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let formatter = if ext == "rs" {
+        Formatter::Rustfmt
+    } else if matches!(ext.as_str(), "ts" | "tsx" | "js" | "jsx" | "json") {
+        Formatter::Prettier
+    } else {
+        return format!("错误：暂不支持扩展名为 .{} 的格式检查", ext);
+    };
+
+    match run_formatter(formatter, &target, workspace_root, true) {
         Ok(msg) => msg,
         Err(e) => e,
     }
@@ -78,31 +119,44 @@ fn resolve_target(base: &Path, sub: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-#[allow(dead_code)]
-fn run_formatter(formatter: Formatter, target: &Path, workspace_root: &Path) -> Result<String, String> {
+fn run_formatter(
+    formatter: Formatter,
+    target: &Path,
+    workspace_root: &Path,
+    check_only: bool,
+) -> Result<String, String> {
     match formatter {
-        Formatter::Rustfmt => run_rustfmt(target),
-        Formatter::Prettier => run_prettier(target, workspace_root),
+        Formatter::Rustfmt => run_rustfmt(target, check_only),
+        Formatter::Prettier => run_prettier(target, workspace_root, check_only),
     }
 }
 
-fn run_rustfmt(target: &Path) -> Result<String, String> {
-    let status = Command::new("rustfmt")
-        .arg("--emit")
-        .arg("files")
-        .arg(target)
+fn run_rustfmt(target: &Path, check_only: bool) -> Result<String, String> {
+    let mut cmd = Command::new("rustfmt");
+    if check_only {
+        cmd.arg("--check");
+    } else {
+        cmd.arg("--emit").arg("files");
+    }
+    cmd.arg(target);
+    let status = cmd
         .status()
         .map_err(|e| format!("无法执行 rustfmt：{}（请确认已安装 rustfmt）", e))?;
     if !status.success() {
         return Err(format!(
-            "rustfmt 格式化失败，退出码：{}",
+            "rustfmt {}失败，退出码：{}",
+            if check_only { "检查" } else { "格式化" },
             status.code().unwrap_or(-1)
         ));
     }
-    Ok(format!("已使用 rustfmt 格式化：{}", target.display()))
+    Ok(format!(
+        "已使用 rustfmt {}：{}",
+        if check_only { "检查通过" } else { "格式化" },
+        target.display()
+    ))
 }
 
-fn run_prettier(target: &Path, workspace_root: &Path) -> Result<String, String> {
+fn run_prettier(target: &Path, workspace_root: &Path, check_only: bool) -> Result<String, String> {
     // 使用项目内的 prettier（若存在），否则依赖全局 npx
     let relative = target
         .strip_prefix(
@@ -112,26 +166,30 @@ fn run_prettier(target: &Path, workspace_root: &Path) -> Result<String, String> 
         )
         .unwrap_or(target);
 
-    let status = Command::new("npx")
-        .arg("prettier")
-        .arg("--write")
-        .arg(relative)
-        .current_dir(workspace_root)
-        .status()
-        .map_err(|e| {
-            format!(
-                "无法执行 prettier：{}（请确认已在工作区内安装 prettier 或可通过 npx 调用）",
-                e
-            )
-        })?;
+    let mut cmd = Command::new("npx");
+    cmd.arg("prettier");
+    if check_only {
+        cmd.arg("--check");
+    } else {
+        cmd.arg("--write");
+    }
+    cmd.arg(relative).current_dir(workspace_root);
+    let status = cmd.status().map_err(|e| {
+        format!(
+            "无法执行 prettier：{}（请确认已在工作区内安装 prettier 或可通过 npx 调用）",
+            e
+        )
+    })?;
     if !status.success() {
         return Err(format!(
-            "prettier 格式化失败，退出码：{}",
+            "prettier {}失败，退出码：{}",
+            if check_only { "检查" } else { "格式化" },
             status.code().unwrap_or(-1)
         ));
     }
     Ok(format!(
-        "已使用 prettier 格式化：{}（相对路径：{}）",
+        "已使用 prettier {}：{}（相对路径：{}）",
+        if check_only { "检查通过" } else { "格式化" },
         target.display(),
         relative.display()
     ))

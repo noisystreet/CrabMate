@@ -1,0 +1,534 @@
+//! 工具分发注册表：按工具名解析执行策略（workflow / 阻塞+超时 / 同步），Web 与 TUI 共用实现。
+//!
+//! 新增「需特殊运行时」的工具：在 `HANDLER_MAP` 初始化与 `all_dispatch_metadata()` 中各增一项，并在 `dispatch_tool` 的 `match hid` 中补分支。
+
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::OnceLock;
+use std::time::Duration;
+
+use tokio::sync::{mpsc, Mutex};
+use tracing::error;
+
+use crate::config::AgentConfig;
+use crate::per_coord::PerCoordinator;
+use crate::tools;
+use crate::types::{CommandApprovalDecision, ToolCall};
+use crate::workflow;
+use crate::workflow_reflection_controller;
+
+// --- 元数据（文档 / 将来 OpenAPI 生成）---
+
+/// 工具在运行时的执行类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolExecutionClass {
+    Workflow,
+    CommandSpawnTimeout,
+    ExecutableSpawnTimeout,
+    WeatherSpawnTimeout,
+    BlockingSync,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ToolDispatchMeta {
+    pub name: &'static str,
+    pub requires_workspace: bool,
+    pub class: ToolExecutionClass,
+}
+
+/// 注册表中显式声明的工具；其余名称运行时走 `SyncDefault`（同步 `run_tool`）。
+pub fn all_dispatch_metadata() -> &'static [ToolDispatchMeta] {
+    &[
+        ToolDispatchMeta {
+            name: "workflow_execute",
+            requires_workspace: false,
+            class: ToolExecutionClass::Workflow,
+        },
+        ToolDispatchMeta {
+            name: "run_command",
+            requires_workspace: true,
+            class: ToolExecutionClass::CommandSpawnTimeout,
+        },
+        ToolDispatchMeta {
+            name: "run_executable",
+            requires_workspace: true,
+            class: ToolExecutionClass::ExecutableSpawnTimeout,
+        },
+        ToolDispatchMeta {
+            name: "get_weather",
+            requires_workspace: false,
+            class: ToolExecutionClass::WeatherSpawnTimeout,
+        },
+    ]
+}
+
+/// 若在 `all_dispatch_metadata` 中登记则返回其元数据，否则 `None`（运行时走同步 `run_tool`）。
+pub fn try_dispatch_meta(name: &str) -> Option<&'static ToolDispatchMeta> {
+    meta_by_name(name)
+}
+
+/// 合并「注册表元数据 + 默认同步」的执行类别，便于文档或将来生成 OpenAPI。
+pub fn execution_class_for_tool(name: &str) -> ToolExecutionClass {
+    try_dispatch_meta(name)
+        .map(|m| m.class)
+        .unwrap_or(ToolExecutionClass::BlockingSync)
+}
+
+fn meta_by_name(name: &str) -> Option<&'static ToolDispatchMeta> {
+    all_dispatch_metadata().iter().find(|m| m.name == name)
+}
+
+// --- 运行时上下文 ---
+
+pub enum ToolRuntime<'a> {
+    Web {
+        workspace_changed: &'a mut bool,
+    },
+    Tui {
+        ctx: &'a TuiToolRuntime,
+    },
+}
+
+pub struct TuiToolRuntime {
+    pub out_tx: Option<mpsc::Sender<String>>,
+    pub approval_rx_shared: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
+    pub approval_request_guard: Arc<Mutex<()>>,
+    pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum HandlerId {
+    Workflow,
+    RunCommand,
+    RunExecutable,
+    GetWeather,
+    SyncDefault,
+}
+
+static HANDLER_MAP: OnceLock<HashMap<&'static str, HandlerId>> = OnceLock::new();
+
+fn handler_id_for(name: &str) -> HandlerId {
+    HANDLER_MAP
+        .get_or_init(|| {
+            let mut m = HashMap::new();
+            m.insert("workflow_execute", HandlerId::Workflow);
+            m.insert("run_command", HandlerId::RunCommand);
+            m.insert("run_executable", HandlerId::RunExecutable);
+            m.insert("get_weather", HandlerId::GetWeather);
+            m
+        })
+        .get(name)
+        .copied()
+        .unwrap_or(HandlerId::SyncDefault)
+}
+
+/// Web/TUI 统一入口：`(tool_result_text, workflow 反思注入)`。
+#[allow(clippy::too_many_arguments)]
+pub async fn dispatch_tool(
+    runtime: ToolRuntime<'_>,
+    per_coord: &mut PerCoordinator,
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    name: &str,
+    args: &str,
+    tc: &ToolCall,
+) -> (String, Option<serde_json::Value>) {
+    let mut hid = handler_id_for(name);
+    if matches!(
+        hid,
+        HandlerId::RunExecutable | HandlerId::GetWeather
+    ) && matches!(runtime, ToolRuntime::Tui { .. })
+    {
+        hid = HandlerId::SyncDefault;
+    }
+
+    match hid {
+        HandlerId::Workflow => {
+            execute_workflow(
+                runtime,
+                per_coord,
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                args,
+            )
+            .await
+        }
+        HandlerId::RunCommand => match runtime {
+            ToolRuntime::Web { workspace_changed } => {
+                execute_run_command_web(
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    workspace_changed,
+                    name,
+                    args,
+                )
+                .await
+            }
+            ToolRuntime::Tui { ctx } => {
+                execute_run_command_tui(cfg, effective_working_dir, workspace_is_set, ctx, name, args)
+                    .await
+            }
+        },
+        HandlerId::RunExecutable => {
+            let ToolRuntime::Web { .. } = runtime else {
+                unreachable!("TUI remaps RunExecutable to SyncDefault");
+            };
+            execute_run_executable_web(cfg, effective_working_dir, workspace_is_set, name, args).await
+        }
+        HandlerId::GetWeather => {
+            execute_get_weather_web(cfg, effective_working_dir, name, args).await
+        }
+        HandlerId::SyncDefault => (
+            tools::run_tool(
+                &tc.function.name,
+                &tc.function.arguments,
+                cfg.command_max_output_len,
+                cfg.weather_timeout_secs,
+                &cfg.allowed_commands,
+                effective_working_dir,
+            ),
+            None,
+        ),
+    }
+}
+
+async fn execute_workflow(
+    runtime: ToolRuntime<'_>,
+    per_coord: &mut PerCoordinator,
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    args: &str,
+) -> (String, Option<serde_json::Value>) {
+    let prep = per_coord.prepare_workflow_execute(args);
+    let reflection_inject = prep.reflection_inject.clone();
+
+    let result = if prep.execute {
+        if let Err(contract_err) =
+            workflow_reflection_controller::validate_workflow_execute_do_contract(&prep.patched_args)
+        {
+            contract_err.to_string()
+        } else {
+            let approval_mode = match &runtime {
+                ToolRuntime::Web { .. } => workflow::WorkflowApprovalMode::NoApproval,
+                ToolRuntime::Tui { ctx } => {
+                    if let Some(tx) = ctx.out_tx.as_ref() {
+                        workflow::WorkflowApprovalMode::Tui {
+                            out_tx: tx.clone(),
+                            approval_rx: ctx.approval_rx_shared.clone(),
+                            approval_request_guard: ctx.approval_request_guard.clone(),
+                            persistent_allowlist: ctx.persistent_allowlist_shared.clone(),
+                        }
+                    } else {
+                        workflow::WorkflowApprovalMode::NoApproval
+                    }
+                }
+            };
+            let (wf_out, wf_ws_changed) = workflow::run_workflow_execute_tool(
+                &prep.patched_args,
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                approval_mode,
+                cfg.command_max_output_len,
+            )
+            .await;
+            if let ToolRuntime::Web { workspace_changed } = runtime {
+                *workspace_changed |= wf_ws_changed;
+            }
+            wf_out
+        }
+    } else {
+        prep.skipped_result.clone()
+    };
+
+    (result, reflection_inject)
+}
+
+async fn execute_run_command_web(
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    workspace_changed: &mut bool,
+    name: &str,
+    args: &str,
+) -> (String, Option<serde_json::Value>) {
+    if !workspace_is_set {
+        return (
+            "错误：未设置工作区，禁止执行命令。请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。"
+                .to_string(),
+            None,
+        );
+    }
+    let name_in = name.to_string();
+    let cmd_timeout = cfg.command_timeout_secs;
+    let cmd_max_len = cfg.command_max_output_len;
+    let weather_secs = cfg.weather_timeout_secs;
+    let allowed = cfg.allowed_commands.clone();
+    let work_dir = effective_working_dir.to_path_buf();
+    let args_cloned = args.to_string();
+    let handle = tokio::task::spawn_blocking(move || {
+        tools::run_tool(
+            &name_in,
+            &args_cloned,
+            cmd_max_len,
+            weather_secs,
+            &allowed,
+            &work_dir,
+        )
+    });
+    let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            error!(tool = %name, error = ?e, "工具执行异常");
+            format!("工具执行异常：{:?}", e)
+        }
+        Err(_) => {
+            error!(tool = %name, "命令执行超时");
+            format!("命令执行超时（{} 秒）", cmd_timeout)
+        }
+    };
+    if tools::is_compile_command_success(args, &s) {
+        *workspace_changed = true;
+    }
+    (s, None)
+}
+
+async fn execute_run_command_tui(
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    ctx: &TuiToolRuntime,
+    name: &str,
+    args: &str,
+) -> (String, Option<serde_json::Value>) {
+    if !workspace_is_set {
+        return ("错误：未设置工作区，禁止执行命令。".to_string(), None);
+    }
+    let v: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
+    let cmd = v
+        .get("command")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+    let arg_preview = v
+        .get("args")
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr
+                .iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_default();
+    let mut effective_allowed = cfg.allowed_commands.clone();
+    if !cmd.is_empty() && !effective_allowed.iter().any(|c| c.eq_ignore_ascii_case(&cmd)) {
+        let already_allowed = ctx.persistent_allowlist_shared.lock().await.contains(&cmd);
+        if already_allowed {
+            effective_allowed.push(cmd.clone());
+            return (
+                tools::run_tool(
+                    name,
+                    args,
+                    cfg.command_max_output_len,
+                    cfg.weather_timeout_secs,
+                    &effective_allowed,
+                    effective_working_dir,
+                ),
+                None,
+            );
+        }
+        let decision = {
+            let _guard = ctx.approval_request_guard.lock().await;
+            if let Some(tx) = ctx.out_tx.as_ref() {
+                let line = crate::sse_protocol::encode_message(
+                    crate::sse_protocol::SsePayload::CommandApproval {
+                        command_approval_request: crate::sse_protocol::CommandApprovalBody {
+                            command: cmd.clone(),
+                            args: arg_preview.clone(),
+                        },
+                    },
+                );
+                let _ = tx.send(line).await;
+            }
+            let mut rx_guard = ctx.approval_rx_shared.lock().await;
+            rx_guard
+                .recv()
+                .await
+                .unwrap_or(CommandApprovalDecision::Deny)
+        };
+        match decision {
+            CommandApprovalDecision::Deny => {
+                let cmd_show = if arg_preview.is_empty() {
+                    cmd
+                } else {
+                    format!("{} {}", cmd, arg_preview)
+                };
+                (
+                    format!("用户拒绝执行命令：{}", cmd_show.trim()),
+                    None,
+                )
+            }
+            CommandApprovalDecision::AllowOnce => {
+                effective_allowed.push(cmd.clone());
+                (
+                    tools::run_tool(
+                        name,
+                        args,
+                        cfg.command_max_output_len,
+                        cfg.weather_timeout_secs,
+                        &effective_allowed,
+                        effective_working_dir,
+                    ),
+                    None,
+                )
+            }
+            CommandApprovalDecision::AllowAlways => {
+                ctx.persistent_allowlist_shared.lock().await.insert(cmd.clone());
+                effective_allowed.push(cmd.clone());
+                (
+                    tools::run_tool(
+                        name,
+                        args,
+                        cfg.command_max_output_len,
+                        cfg.weather_timeout_secs,
+                        &effective_allowed,
+                        effective_working_dir,
+                    ),
+                    None,
+                )
+            }
+        }
+    } else {
+        (
+            tools::run_tool(
+                name,
+                args,
+                cfg.command_max_output_len,
+                cfg.weather_timeout_secs,
+                &effective_allowed,
+                effective_working_dir,
+            ),
+            None,
+        )
+    }
+}
+
+async fn execute_run_executable_web(
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    name: &str,
+    args: &str,
+) -> (String, Option<serde_json::Value>) {
+    if !workspace_is_set {
+        return (
+            "错误：未设置工作区，禁止运行可执行程序。请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。"
+                .to_string(),
+            None,
+        );
+    }
+    let name_in = name.to_string();
+    let cmd_timeout = cfg.command_timeout_secs;
+    let cmd_max_len = cfg.command_max_output_len;
+    let weather_secs = cfg.weather_timeout_secs;
+    let allowed = cfg.allowed_commands.clone();
+    let work_dir = effective_working_dir.to_path_buf();
+    let args_owned = args.to_string();
+    let handle = tokio::task::spawn_blocking(move || {
+        tools::run_tool(
+            &name_in,
+            &args_owned,
+            cmd_max_len,
+            weather_secs,
+            &allowed,
+            &work_dir,
+        )
+    });
+    let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            error!(tool = %name, error = ?e, "工具执行异常");
+            format!("工具执行异常：{:?}", e)
+        }
+        Err(_) => {
+            error!(tool = %name, "可执行程序运行超时");
+            format!("可执行程序运行超时（{} 秒）", cmd_timeout)
+        }
+    };
+    (s, None)
+}
+
+async fn execute_get_weather_web(
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    name: &str,
+    args: &str,
+) -> (String, Option<serde_json::Value>) {
+    let name_in = name.to_string();
+    let cmd_max_len = cfg.command_max_output_len;
+    let weather_timeout = cfg.weather_timeout_secs;
+    let allowed = cfg.allowed_commands.clone();
+    let work_dir = effective_working_dir.to_path_buf();
+    let args_owned = args.to_string();
+    let handle = tokio::task::spawn_blocking(move || {
+        tools::run_tool(
+            &name_in,
+            &args_owned,
+            cmd_max_len,
+            weather_timeout,
+            &allowed,
+            &work_dir,
+        )
+    });
+    let s = match tokio::time::timeout(Duration::from_secs(weather_timeout), handle).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            error!(tool = %name, error = ?e, "工具执行异常");
+            format!("工具执行异常：{:?}", e)
+        }
+        Err(_) => {
+            error!(tool = %name, "天气请求超时");
+            format!("天气请求超时（{} 秒）", weather_timeout)
+        }
+    };
+    (s, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handler_map_resolves_known_tools() {
+        assert_eq!(handler_id_for("workflow_execute"), HandlerId::Workflow);
+        assert_eq!(handler_id_for("run_command"), HandlerId::RunCommand);
+        assert_eq!(handler_id_for("unknown_xyz"), HandlerId::SyncDefault);
+    }
+
+    #[test]
+    fn try_dispatch_meta_unknown_is_none() {
+        assert!(try_dispatch_meta("calc").is_none());
+        assert_eq!(
+            try_dispatch_meta("workflow_execute").map(|m| m.name),
+            Some("workflow_execute")
+        );
+    }
+
+    #[test]
+    fn meta_fields_and_default_class() {
+        let wf = try_dispatch_meta("workflow_execute").unwrap();
+        assert!(!wf.requires_workspace);
+        assert_eq!(wf.class, ToolExecutionClass::Workflow);
+        let rc = try_dispatch_meta("run_command").unwrap();
+        assert!(rc.requires_workspace);
+        assert_eq!(rc.class, ToolExecutionClass::CommandSpawnTimeout);
+        assert_eq!(execution_class_for_tool("calc"), ToolExecutionClass::BlockingSync);
+    }
+}

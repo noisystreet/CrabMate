@@ -10,25 +10,27 @@
 
 ## 核心机制：Agent 主循环与工具调用
 
-核心流程在 `src/main.rs` 的 `run_agent_turn`：
+核心流程在 `src/lib.rs` 的 `run_agent_turn`：
 
 - **输入**：构造 `ChatRequest`（`src/types.rs`）并携带 `tools`（Function Calling 定义）。
-- **调用模型**：通过 `src/api.rs::stream_chat` 以**流式**方式请求 DeepSeek `/chat/completions`。
+- **调用模型**：通过 `src/api.rs::stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `run_agent_turn(..., no_stream: true)` 时为 `stream: false`，一次取回完整 `choices[0].message`（有正文则经 `out` 整段下发，供 TUI/SSE）。
 - **处理结束原因**：
   - `finish_reason != "tool_calls"`：本轮对话结束，最后一条 assistant message 即最终回复。
   - `finish_reason == "tool_calls"`：解析 tool calls，逐个执行本地工具，把工具结果作为 `role: "tool"` 的消息追加进 `messages`，然后继续下一轮请求，直到模型返回最终文本。
 - **SSE 通道协作**：若本轮由 `/chat/stream` 触发，会通过 channel 向前端发送：
   - 文本 delta（assistant 内容增量）
-  - `{"tool_running": true/false}`（状态栏“工具运行中…”）
-  - `{"tool_call": {...}}`（工具调用摘要）
-  - `{"tool_result": {...}}`（工具输出，用于聊天面板展示）
-  - `{"workspace_changed": true}`（触发前端刷新工作区）
+  - **控制类 JSON**（由 `src/sse_protocol.rs` 序列化）：统一带版本字段 `v`（当前为 `1`），并与原有键名兼容，例如：
+    - `tool_running`、`tool_call`、`tool_result`、`workspace_changed`
+    - `error`（+ 可选 `code`）、`command_approval_request`（TUI/工作流审批）
+    - 预留 `plan_required` 等扩展键
 
 ## 后端模块说明（`src/`）
 
-### `src/main.rs`
+### `src/lib.rs` / `src/main.rs`
 
-- **入口与运行模式**：解析 CLI（`--serve`/`--query`/`--stdin`/`--no-tools`/`--no-web`/`--dry-run` 等），选择启动 Web 服务、REPL、单次提问或 TUI。
+- **`lib.rs`**：crate 根模块；Agent 主循环（`run_agent_turn`）、Axum Web 路由与 handler、上传清理等。**对外再导出** `run`、`load_config`、`AgentConfig`、`Message`、`Tool`、`build_tools` 等，供集成测试与其它二进制复用。
+- **`main.rs`**：薄入口，仅 `#[tokio::main] async fn main() { crabmate::run().await }`。
+- **运行模式**：由 `run()` 内解析 CLI（`--serve`/`--query`/`--stdin`/`--no-tools`/`--no-web`/`--dry-run` 等），选择启动 Web 服务、REPL、单次提问或 TUI。
 - **Web 服务**：使用 axum 路由，核心接口包括：
   - `POST /chat`：非流式对话
   - `POST /chat/stream`：SSE 流式对话（前端默认走这个）
@@ -43,6 +45,10 @@
 
 - **DeepSeek 流式协议解析**：对响应进行 `data: ...` 行拆解，聚合 assistant content 与 tool_calls（按 index 累积 arguments）。
 - **终端渲染增强（CLI/TUI）**：对终端输出做 Markdown 渲染与 LaTeX→Unicode 转换，提升命令行交互体验（Web 模式不依赖这部分展示）。
+
+### `src/sse_protocol.rs`
+
+- **SSE 控制帧**：`SseMessage { v, payload }` + `SsePayload`（`serde` untagged），`encode_message` 生成单行 JSON；Web `agent_turn`、TUI、`workflow` 审批、流式错误等均经此发出，避免手写 JSON 拼写错误。
 
 ### `src/types.rs`
 
@@ -128,5 +134,6 @@
   - `run_command` 必须受白名单控制，避免破坏性命令。
   - 文件读写与 `run_executable` 必须做路径归一化与越界限制。
   - Web 模式下的工作区设置会影响“工具执行目录”，需要明确这一点避免误操作。
-- **SSE 协议兼容**：前端依赖后端发送的 JSON 事件键名（`tool_running`、`tool_call`、`tool_result`、`workspace_changed`），改动时需同步修改 `frontend/src/api.ts` 的解析逻辑。
+  - 已知 HTTP 鉴权、监听地址、`workspace_set` 等安全与协议债见 [`docs/TODOLIST.md`](TODOLIST.md)。
+- **SSE 协议演进**：后端以 `sse_protocol::SseMessage` / `SsePayload` 为单一事实来源；`v` 递增时前端可按版本分支。解析逻辑在 `frontend/src/api.ts` 的 `sendChatStream`。
 

@@ -1,0 +1,966 @@
+//! CrabMate 库：DeepSeek Agent、HTTP 服务、工具与工作流。
+//! 二进制入口见 `src/main.rs` 的 [`run`] 包装。
+//!
+//! 日志由 `RUST_LOG` 控制（与原先一致）。
+
+mod api;
+mod config;
+mod tool_result;
+mod tools;
+mod types;
+mod workflow;
+mod workflow_reflection_controller;
+mod per_coord;
+mod plan_artifact;
+mod tool_registry;
+mod sse_protocol;
+mod agent_turn;
+mod runtime;
+mod ui;
+
+use axum::{
+    extract::Multipart,
+    extract::State,
+    http::{header, HeaderValue, StatusCode},
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
+use axum::response::sse::{Event, KeepAlive, Sse};
+use config::cli::{init_logging, parse_args};
+use futures_util::StreamExt;
+use tower::ServiceBuilder;
+use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+use std::env;
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::{error, info};
+use types::Message;
+
+/// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
+/// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）；`no_stream` 为 true 时 API 使用 `stream: false`，
+/// 有正文则通过 `out` 一次性下发整段。
+/// 若 `render_to_terminal` 为 true，则在终端渲染助手回复（流式边收边打，非流式完成后一次性 Markdown）。
+/// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
+#[allow(clippy::too_many_arguments)]
+pub async fn run_agent_turn(
+    client: &reqwest::Client,
+    api_key: &str,
+    cfg: &config::AgentConfig,
+    tools: &[crate::types::Tool],
+    messages: &mut Vec<Message>,
+    out: Option<&tokio::sync::mpsc::Sender<String>>,
+    effective_working_dir: &std::path::Path,
+    workspace_is_set: bool,
+    render_to_terminal: bool,
+    no_stream: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut per_coord =
+        per_coord::PerCoordinator::new(cfg.reflection_default_max_rounds);
+
+    'outer: loop {
+        if agent_turn::sse_sender_closed(out) {
+            info!("SSE sender closed, aborting run_agent_turn loop early");
+            break;
+        }
+
+        let (msg, finish_reason) = agent_turn::per_plan_call_model_retrying(
+            client,
+            api_key,
+            cfg,
+            tools,
+            messages,
+            out,
+            render_to_terminal,
+            no_stream,
+        )
+        .await?;
+
+        messages.push(msg.clone());
+
+        match agent_turn::per_reflect_after_assistant(
+            &mut per_coord,
+            &finish_reason,
+            &msg,
+            messages,
+        ) {
+            agent_turn::ReflectOnAssistantOutcome::StopTurn => break,
+            agent_turn::ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => continue 'outer,
+            agent_turn::ReflectOnAssistantOutcome::ProceedToExecuteTools => {}
+        }
+
+        let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+
+        match agent_turn::per_execute_tools_web(
+            tool_calls,
+            &mut per_coord,
+            messages,
+            agent_turn::WebExecuteCtx {
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                out,
+            },
+        )
+        .await
+        {
+            agent_turn::ExecuteToolsBatchOutcome::Finished => {}
+            agent_turn::ExecuteToolsBatchOutcome::AbortedSse => break,
+        }
+    }
+    Ok(())
+}
+
+// ---------- Web 服务 ----------
+
+#[derive(Clone)]
+pub(crate) struct AppState {
+    cfg: config::AgentConfig,
+    api_key: String,
+    client: reqwest::Client,
+    tools: Vec<crate::types::Tool>,
+    /// 前端设置的工作区路径覆盖；为 None 时使用 cfg.run_command_working_dir
+    workspace_override: std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
+    uploads_dir: std::path::PathBuf,
+}
+
+impl AppState {
+    /// 当前生效的工作区根路径（前端已设置则用其值，否则用配置）
+    async fn effective_workspace_path(&self) -> String {
+        let guard = self.workspace_override.read().await;
+        match guard.as_deref() {
+            None => self.cfg.run_command_working_dir.clone(),
+            Some(s) if s.trim().is_empty() => self.cfg.run_command_working_dir.clone(),
+            Some(s) => s.to_string(),
+        }
+    }
+
+    /// 前端是否已经“设置过工作区”（包含：显式选择默认目录）
+    async fn workspace_is_set(&self) -> bool {
+        let guard = self.workspace_override.read().await;
+        guard.is_some()
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct ChatRequestBody {
+    message: String,
+}
+
+#[derive(serde::Serialize)]
+struct UploadedFileInfo {
+    url: String,
+    filename: String,
+    mime: String,
+    size: u64,
+}
+
+#[derive(serde::Serialize)]
+struct UploadResponseBody {
+    files: Vec<UploadedFileInfo>,
+}
+
+#[derive(serde::Deserialize)]
+struct DeleteUploadsBody {
+    urls: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+struct DeleteUploadsResponseBody {
+    deleted: Vec<String>,
+    skipped: Vec<String>,
+}
+
+async fn delete_uploads_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DeleteUploadsBody>,
+) -> Result<Json<DeleteUploadsResponseBody>, (StatusCode, Json<ApiError>)> {
+    let mut deleted = Vec::new();
+    let mut skipped = Vec::new();
+    for u in body.urls {
+        // 只接受 /uploads/<filename> 形式，避免目录穿越
+        if !u.starts_with("/uploads/") || u.contains("..") || u.contains('\\') {
+            skipped.push(u);
+            continue;
+        }
+        let name = u.trim_start_matches("/uploads/");
+        if name.is_empty() || name.contains('/') {
+            skipped.push(u);
+            continue;
+        }
+        let path = state.uploads_dir.join(name);
+        // 不暴露更多信息：不存在也当作 skipped
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => deleted.push(format!("/uploads/{}", name)),
+            Err(_) => skipped.push(format!("/uploads/{}", name)),
+        }
+    }
+    Ok(Json(DeleteUploadsResponseBody { deleted, skipped }))
+}
+
+async fn cleanup_uploads_dir(dir: std::path::PathBuf, max_age: Duration, max_bytes: u64) {
+    let now = std::time::SystemTime::now();
+    let mut entries: Vec<(std::path::PathBuf, std::time::SystemTime, u64)> = Vec::new();
+    let mut total: u64 = 0;
+
+    let mut rd = match tokio::fs::read_dir(&dir).await {
+        Ok(r) => r,
+        Err(e) => {
+            error!(error = %e, dir = %dir.display(), "uploads 清理：无法读取目录");
+            return;
+        }
+    };
+
+    while let Ok(Some(ent)) = rd.next_entry().await {
+        let path = ent.path();
+        let meta = match ent.metadata().await {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let size = meta.len();
+        let mtime = meta.modified().unwrap_or(now);
+        total = total.saturating_add(size);
+        entries.push((path, mtime, size));
+    }
+
+    // 1) 先按时间清理
+    let mut kept: Vec<(std::path::PathBuf, std::time::SystemTime, u64)> = Vec::new();
+    for (p, mt, sz) in entries {
+        let too_old = now
+            .duration_since(mt)
+            .ok()
+            .map(|d| d > max_age)
+            .unwrap_or(false);
+        if too_old {
+            if tokio::fs::remove_file(&p).await.is_ok() {
+                total = total.saturating_sub(sz);
+            }
+        } else {
+            kept.push((p, mt, sz));
+        }
+    }
+
+    // 2) 再按容量清理（从最旧开始删，直到 <= max_bytes）
+    if total > max_bytes {
+        kept.sort_by_key(|x| x.1);
+        for (p, _mt, sz) in kept {
+            if total <= max_bytes {
+                break;
+            }
+            if tokio::fs::remove_file(&p).await.is_ok() {
+                total = total.saturating_sub(sz);
+            }
+        }
+    }
+}
+
+fn sanitize_display_filename(input: &str) -> String {
+    // 仅用于“展示给前端”，不参与落盘路径（落盘用服务端生成的 safe_name）
+    let base = std::path::Path::new(input)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("upload.bin");
+    let mut out = String::with_capacity(base.len().min(80));
+    for ch in base.chars() {
+        let ok = ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_' | ' ' | '(' | ')' | '[' | ']');
+        out.push(if ok { ch } else { '_' });
+        if out.len() >= 80 {
+            break;
+        }
+    }
+    if out.trim().is_empty() {
+        "upload.bin".to_string()
+    } else {
+        out
+    }
+}
+
+fn ext_lower(file_name: &str) -> Option<String> {
+    std::path::Path::new(file_name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase())
+}
+
+async fn upload_handler(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> Result<Json<UploadResponseBody>, (StatusCode, Json<ApiError>)> {
+    let mut out: Vec<UploadedFileInfo> = Vec::new();
+    let max_total: u64 = 200 * 1024 * 1024; // 200MB total
+    let max_files: usize = 20;
+    let mut total: u64 = 0;
+
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "MULTIPART_ERROR",
+                message: format!("上传解析失败：{}", e),
+            }),
+        )
+    })? {
+        if out.len() >= max_files {
+            return Err((
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(ApiError {
+                    code: "UPLOAD_TOO_MANY_FILES",
+                    message: "上传文件数量过多".to_string(),
+                }),
+            ));
+        }
+
+        let raw_name = field.file_name().unwrap_or("upload.bin");
+        let file_name = sanitize_display_filename(raw_name);
+        let mime = field
+            .content_type()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+
+        // 白名单：MIME 前缀 + 扩展名
+        let ext = ext_lower(&file_name).unwrap_or_default();
+        let is_image = mime.starts_with("image/") && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif");
+        let is_audio = mime.starts_with("audio/") && matches!(ext.as_str(), "mp3" | "wav" | "m4a" | "aac" | "ogg" | "webm");
+        let is_video = mime.starts_with("video/") && matches!(ext.as_str(), "mp4" | "webm" | "mov" | "mkv");
+        if !(is_image || is_audio || is_video) {
+            return Err((
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                Json(ApiError {
+                    code: "UPLOAD_UNSUPPORTED_TYPE",
+                    message: "不支持的文件类型（仅支持常见图片/音频/视频）".to_string(),
+                }),
+            ));
+        }
+
+        // 单文件大小限制（与前端保持同量级）
+        let max_single: u64 = if is_image {
+            8 * 1024 * 1024
+        } else if is_audio {
+            25 * 1024 * 1024
+        } else {
+            80 * 1024 * 1024
+        };
+
+        let ext_with_dot = if ext.is_empty() { "".to_string() } else { format!(".{}", ext) };
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let safe_name = format!("u{}_{}_{}{}", std::process::id(), ts, n, ext_with_dot);
+        let path = state.uploads_dir.join(&safe_name);
+
+        let mut f = tokio::fs::File::create(&path).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    code: "UPLOAD_WRITE_ERROR",
+                    message: format!("无法写入上传文件：{}", e),
+                }),
+            )
+        })?;
+
+        let mut size: u64 = 0;
+        let mut field = field;
+        loop {
+            let next = match field.chunk().await {
+                Ok(v) => v,
+                Err(e) => {
+                    let _ = tokio::fs::remove_file(&path).await;
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(ApiError {
+                            code: "UPLOAD_READ_ERROR",
+                            message: format!("读取上传内容失败：{}", e),
+                        }),
+                    ));
+                }
+            };
+            let Some(chunk) = next else { break; };
+            let chunk_len = chunk.len() as u64;
+            size += chunk_len;
+            total += chunk_len;
+            if size > max_single {
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err((
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    Json(ApiError {
+                        code: "UPLOAD_FILE_TOO_LARGE",
+                        message: "单个文件过大".to_string(),
+                    }),
+                ));
+            }
+            if total > max_total {
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err((
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    Json(ApiError {
+                        code: "UPLOAD_TOO_LARGE",
+                        message: "上传内容过大".to_string(),
+                    }),
+                ));
+            }
+            use tokio::io::AsyncWriteExt;
+            f.write_all(&chunk).await.map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError {
+                        code: "UPLOAD_WRITE_ERROR",
+                        message: format!("写入上传内容失败：{}", e),
+                    }),
+                )
+            })?;
+        }
+
+        let url = format!("/uploads/{}", safe_name);
+        out.push(UploadedFileInfo {
+            url,
+            filename: file_name,
+            mime,
+            size,
+        });
+    }
+
+    Ok(Json(UploadResponseBody { files: out }))
+}
+
+#[derive(serde::Serialize)]
+struct ChatResponseBody {
+    reply: String,
+}
+
+/// 统一的 API 错误结构：包含错误码与面向用户的友好提示
+#[derive(serde::Serialize)]
+struct ApiError {
+    /// 机器可读的错误码（前端或日志可用）
+    code: &'static str,
+    /// 面向用户展示的友好错误信息
+    message: String,
+}
+
+async fn chat_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatRequestBody>,
+) -> Result<Json<ChatResponseBody>, (StatusCode, Json<ApiError>)> {
+    let msg = body.message.trim();
+    if msg.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "EMPTY_MESSAGE",
+                message: "提问内容不能为空".to_string(),
+            }),
+        ));
+    }
+    let mut messages: Vec<Message> = vec![
+        Message {
+            role: "system".to_string(),
+            content: Some(state.cfg.system_prompt.clone()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        },
+        Message {
+            role: "user".to_string(),
+            content: Some(msg.to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        },
+    ];
+    if messages.len() > 1 + state.cfg.max_message_history {
+        let keep = messages.len() - state.cfg.max_message_history;
+        messages = [messages[0].clone()]
+            .into_iter()
+            .chain(messages.into_iter().skip(keep))
+            .collect();
+    }
+    let work_dir_str = state.effective_workspace_path().await;
+    let work_dir = std::path::Path::new(&work_dir_str);
+    let workspace_is_set = state.workspace_is_set().await;
+    run_agent_turn(
+        &state.client,
+        &state.api_key,
+        &state.cfg,
+        &state.tools,
+        &mut messages,
+        None,
+        work_dir,
+        workspace_is_set,
+        true,
+        false,
+    )
+    .await
+    .map_err(|e| {
+        // 记录具体错误到日志，但对前端仅暴露通用友好文案与错误码
+        error!(error = %e, "chat_handler 调用 run_agent_turn 失败");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError {
+                code: "INTERNAL_ERROR",
+                message: "对话失败，请稍后重试".to_string(),
+            }),
+        )
+    })?;
+    let reply = messages
+        .last()
+        .and_then(|m| m.content.as_deref())
+        .unwrap_or("")
+        .to_string();
+    Ok(Json(ChatResponseBody { reply }))
+}
+
+/// 流式 chat：返回 SSE，每个 event 的 data 为一段 content delta（或结束时一条 error JSON）
+async fn chat_stream_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatRequestBody>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>>, (StatusCode, Json<ApiError>)> {
+    let msg = body.message.trim();
+    if msg.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "EMPTY_MESSAGE",
+                message: "提问内容不能为空".to_string(),
+            }),
+        ));
+    }
+    let mut messages: Vec<Message> = vec![
+        Message {
+            role: "system".to_string(),
+            content: Some(state.cfg.system_prompt.clone()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        },
+        Message {
+            role: "user".to_string(),
+            content: Some(msg.to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        },
+    ];
+    if messages.len() > 1 + state.cfg.max_message_history {
+        let keep = messages.len() - state.cfg.max_message_history;
+        messages = [messages[0].clone()]
+            .into_iter()
+            .chain(messages.into_iter().skip(keep))
+            .collect();
+    }
+    let (tx, rx) = mpsc::channel::<String>(1024);
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        let work_dir = std::path::PathBuf::from(state_clone.effective_workspace_path().await);
+        let workspace_is_set = state_clone.workspace_is_set().await;
+        let out = Some(&tx);
+        if let Err(e) = run_agent_turn(
+            &state_clone.client,
+            &state_clone.api_key,
+            &state_clone.cfg,
+            &state_clone.tools,
+            &mut messages,
+            out,
+            &work_dir,
+            workspace_is_set,
+            false,
+            false,
+        )
+        .await
+        {
+            // 将具体错误记录在日志中，仅通过统一的错误码和友好提示回传给前端
+            error!(error = %e, "chat_stream_handler 中 run_agent_turn 失败");
+            let err_line = crate::sse_protocol::encode_message(crate::sse_protocol::SsePayload::Error(
+                crate::sse_protocol::SseErrorBody {
+                    error: "对话失败，请稍后重试".to_string(),
+                    code: Some("INTERNAL_ERROR".to_string()),
+                },
+            ));
+            let _ = tx.send(err_line).await;
+        }
+        drop(tx);
+    });
+    let stream = ReceiverStream::new(rx).map(|s| Ok(Event::default().data(s)));
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+#[derive(serde::Serialize)]
+struct HealthCheckItem {
+    ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct HealthResponse {
+    /// ok / degraded
+    status: &'static str,
+    checks: std::collections::BTreeMap<&'static str, HealthCheckItem>,
+}
+
+async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let mut checks: std::collections::BTreeMap<&'static str, HealthCheckItem> =
+        std::collections::BTreeMap::new();
+
+    // API key
+    let api_key_ok = !state.api_key.trim().is_empty();
+    checks.insert(
+        "api_key",
+        HealthCheckItem {
+            ok: api_key_ok,
+            detail: if api_key_ok {
+                None
+            } else {
+                Some("未设置 API_KEY".to_string())
+            },
+        },
+    );
+
+    // frontend static dir (optional for --no-web)
+    let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+    let static_ok = static_dir.is_dir();
+    checks.insert(
+        "frontend_static_dir",
+        HealthCheckItem {
+            ok: static_ok,
+            detail: if static_ok {
+                None
+            } else {
+                Some(format!("目录不存在：{}", static_dir.display()))
+            },
+        },
+    );
+
+    // workspace writable (create + delete temp file)
+    let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let writable = tokio::task::spawn_blocking({
+        let work_dir = work_dir.clone();
+        move || {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let pid = std::process::id();
+            let p = work_dir.join(format!(".crabmate_healthcheck_{}_{}.tmp", pid, ts));
+            match std::fs::write(&p, b"") {
+                Ok(()) => {
+                    let _ = std::fs::remove_file(&p);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
+    })
+    .await
+    .ok()
+    .and_then(|r| r.err())
+    .map(|e| format!("不可写：{}（{}）", work_dir.display(), e));
+    checks.insert(
+        "workspace_writable",
+        HealthCheckItem {
+            ok: writable.is_none(),
+            detail: writable,
+        },
+    );
+
+    // executable dependencies
+    let deps = tokio::task::spawn_blocking(|| {
+        fn check_cmd(cmd: &str, args: &[&str]) -> Result<String, String> {
+            match std::process::Command::new(cmd).args(args).output() {
+                Ok(out) => {
+                    let status = out.status.code().unwrap_or(-1);
+                    if status == 0 {
+                        let s = if !out.stdout.is_empty() {
+                            String::from_utf8_lossy(&out.stdout).trim().to_string()
+                        } else {
+                            String::from_utf8_lossy(&out.stderr).trim().to_string()
+                        };
+                        Ok(if s.is_empty() {
+                            "ok".to_string()
+                        } else {
+                            s
+                        })
+                    } else {
+                        Err(format!("exit={}", status))
+                    }
+                }
+                Err(e) => Err(e.to_string()),
+            }
+        }
+
+        let mut m = std::collections::BTreeMap::new();
+
+        // bc: GNU bc 有时支持 --version，也可能是 -v/-V；尽量多试几种
+        let bc = check_cmd("bc", &["--version"])
+            .or_else(|_| check_cmd("bc", &["-v"]))
+            .or_else(|_| check_cmd("bc", &["-V"]));
+        m.insert("bc", bc);
+
+        let rustfmt = check_cmd("rustfmt", &["--version"]);
+        m.insert("rustfmt", rustfmt);
+
+        let npm = check_cmd("npm", &["--version"]);
+        m.insert("npm", npm);
+
+        m
+    })
+    .await
+    .ok()
+    .unwrap_or_default();
+
+    for (k, v) in deps {
+        let key: &'static str = match k {
+            "bc" => "dep_bc",
+            "rustfmt" => "dep_rustfmt",
+            "npm" => "dep_npm",
+            _ => continue,
+        };
+        match v {
+            Ok(detail) => {
+                checks.insert(
+                    key,
+                    HealthCheckItem {
+                        ok: true,
+                        detail: Some(detail),
+                    },
+                );
+            }
+            Err(err) => {
+                checks.insert(
+                    key,
+                    HealthCheckItem {
+                        ok: false,
+                        detail: Some(err),
+                    },
+                );
+            }
+        }
+    }
+
+    let required_ok = checks
+        .get("api_key")
+        .map(|c| c.ok)
+        .unwrap_or(false)
+        && checks
+            .get("workspace_writable")
+            .map(|c| c.ok)
+            .unwrap_or(false);
+    let status = if required_ok && checks.values().all(|c| c.ok) {
+        "ok"
+    } else {
+        "degraded"
+    };
+
+    Json(HealthResponse { status, checks })
+}
+
+#[derive(serde::Serialize)]
+struct StatusResponse {
+    status: &'static str,
+    model: String,
+    api_base: String,
+    max_tokens: u32,
+    temperature: f32,
+}
+
+async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(StatusResponse {
+        status: "ok",
+        model: state.cfg.model.clone(),
+        api_base: state.cfg.api_base.clone(),
+        max_tokens: state.cfg.max_tokens,
+        temperature: state.cfg.temperature,
+    })
+}
+
+/// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL / TUI。
+pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
+
+    let (
+        config_path,
+        single_shot,
+        serve_port,
+        workspace_cli,
+        output_mode,
+        no_tools,
+        no_web,
+        dry_run,
+        no_stream,
+        tui,
+    ) = parse_args();
+
+    let api_key = match env::var("API_KEY") {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("请设置环境变量 API_KEY");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "未设置环境变量 API_KEY",
+            )
+            .into());
+        }
+    };
+
+    let cfg = match config::load_config(config_path.as_deref()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    };
+    info!(api_base = %cfg.api_base, model = %cfg.model, "配置已加载");
+    if dry_run {
+        let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+        if !static_dir.is_dir() {
+            eprintln!(
+                "dry-run 失败：前端静态目录不存在：{}（请先在 frontend/ 下构建）",
+                static_dir.display()
+            );
+            std::process::exit(1);
+        }
+        println!("配置检查通过：API_KEY 已设置，配置可用，前端静态目录存在：{}", static_dir.display());
+        return Ok(());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(cfg.api_timeout_secs))
+        .build()?;
+    let all_tools = tools::build_tools();
+    let tools = if no_tools { Vec::new() } else { all_tools };
+
+    if tui {
+        crate::runtime::tui::run_tui(
+            &cfg,
+            &client,
+            &api_key,
+            &tools,
+            &workspace_cli,
+            no_stream,
+        )
+        .await?;
+        return Ok(());
+    }
+
+    if let Some(port) = serve_port {
+        let initial_workspace = workspace_cli.clone();
+            let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
+            std::fs::create_dir_all(&uploads_dir).ok();
+        let state = Arc::new(AppState {
+            cfg: cfg.clone(),
+            api_key: api_key.clone(),
+            client,
+            tools,
+            workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
+                uploads_dir: uploads_dir.clone(),
+        });
+            let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+            let uploads_dir_for_static = uploads_dir.clone();
+        let mut app = Router::new()
+            .route("/chat", post(chat_handler))
+            .route("/chat/stream", post(chat_stream_handler))
+                .route("/upload", post(upload_handler))
+                .route("/uploads/delete", post(delete_uploads_handler))
+            .route("/health", get(health_handler))
+            .route("/status", get(status_handler))
+                .nest_service(
+                    "/uploads",
+                    ServiceBuilder::new()
+                        .layer(SetResponseHeaderLayer::if_not_present(
+                            header::CACHE_CONTROL,
+                            HeaderValue::from_static("public, max-age=31536000, immutable"),
+                        ))
+                        .layer(SetResponseHeaderLayer::if_not_present(
+                            header::X_CONTENT_TYPE_OPTIONS,
+                            HeaderValue::from_static("nosniff"),
+                        ))
+                        .layer(SetResponseHeaderLayer::if_not_present(
+                            header::HeaderName::from_static("cross-origin-resource-policy"),
+                            HeaderValue::from_static("same-site"),
+                        ))
+                        .service(ServeDir::new(uploads_dir_for_static)),
+                )
+            .route(
+                "/workspace",
+                get(ui::workspace::workspace_handler).post(ui::workspace::workspace_set_handler),
+            )
+            .route("/workspace/pick", get(ui::workspace::workspace_pick_handler))
+            .route(
+                "/workspace/search",
+                post(ui::workspace::workspace_search_handler),
+            )
+            .route(
+                "/workspace/file",
+                get(ui::workspace::workspace_file_read_handler)
+                    .post(ui::workspace::workspace_file_write_handler)
+                    .delete(ui::workspace::workspace_file_delete_handler),
+            )
+            .route(
+                "/tasks",
+                get(ui::task::tasks_get_handler).post(ui::task::tasks_set_handler),
+            );
+        if !no_web {
+            app = app.nest_service("/", ServeDir::new(static_dir));
+        }
+        let app = app.with_state(state);
+        let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
+        println!("Web 服务已启动");
+        println!("  本地访问: http://127.0.0.1:{}", port);
+        println!("  监听地址: http://0.0.0.0:{}", port);
+        info!(port = %port, "Web 服务监听 http://{}", addr);
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        // uploads 自动清理：每 10 分钟执行一次；保留 24h；总容量上限 500MB
+        tokio::spawn({
+            let dir = uploads_dir.clone();
+            async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(600));
+                loop {
+                    interval.tick().await;
+                    cleanup_uploads_dir(dir.clone(), Duration::from_secs(24 * 3600), 500 * 1024 * 1024).await;
+                }
+            }
+        });
+        axum::serve(listener, app).await?;
+        return Ok(());
+    }
+
+    if let Some(question) = single_shot {
+        crate::runtime::cli::run_single_shot(
+            &cfg,
+            &client,
+            &api_key,
+            &tools,
+            &workspace_cli,
+            &output_mode,
+            no_stream,
+            question,
+        )
+        .await?;
+        return Ok(());
+    }
+
+    crate::runtime::cli::run_repl(
+        &cfg,
+        &client,
+        &api_key,
+        &tools,
+        &workspace_cli,
+        no_stream,
+    )
+    .await
+}
+
+pub use config::{load_config, AgentConfig};
+pub use tool_registry::{
+    all_dispatch_metadata, execution_class_for_tool, try_dispatch_meta, ToolDispatchMeta,
+    ToolExecutionClass,
+};
+pub use tools::build_tools;

@@ -59,45 +59,9 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .sum()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_latex_math_to_unicode_inline() {
-        // $x$ -> 转为 Unicode 字母 x（unicodeit 可能保留或转换）
-        let out = latex_math_to_unicode("公式 $x^2$ 结束");
-        assert!(!out.contains("$"));
-        assert!(out.contains("x") || out.contains("²"));
-    }
-
-    #[test]
-    fn test_latex_math_to_unicode_display() {
-        let out = latex_math_to_unicode("$$1+1=2$$");
-        assert!(!out.contains("$$"));
-    }
-
-    #[test]
-    fn test_latex_math_to_unicode_plain_unchanged() {
-        let s = "纯文本无公式";
-        assert_eq!(latex_math_to_unicode(s), s);
-    }
-
-    #[test]
-    fn test_count_display_lines() {
-        assert_eq!(count_display_lines("a", 80), 1);
-        assert_eq!(count_display_lines("a\nb", 80), 2);
-        // 80 个 ASCII 占 80 列，一行刚好
-        assert_eq!(count_display_lines(&"x".repeat(80), 80), 1);
-        assert_eq!(count_display_lines(&"x".repeat(81), 80), 2);
-        // 中文占 2 列，10 个中文 = 20 列
-        assert_eq!(count_display_lines("中", 10), 1);
-        assert_eq!(count_display_lines("中文中文中文", 10), 2); // 6 个中文 = 12 列，10 宽 => 2 行
-    }
-}
-
-/// 流式请求：根据 render_to_terminal 决定是否在终端边收边打印 content，并返回完整 Message 与 finish_reason。
-/// 若提供 out，则每个 content delta 会通过 out 发送（供 HTTP SSE 等使用）。
+/// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
+/// `render_to_terminal` 仅在流式时边收边打；非流式时在完整 `message` 到达后一次性按 Markdown 渲染（若启用）。
+/// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 TUI/SSE 等）。
 pub async fn stream_chat(
     client: &Client,
     api_key: &str,
@@ -105,11 +69,17 @@ pub async fn stream_chat(
     req: &ChatRequest,
     out: Option<&Sender<String>>,
     render_to_terminal: bool,
+    no_stream: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!("{}/chat/completions", api_base.trim_end_matches('/'));
-    info!(url = %url, model = %req.model, "发起 chat 请求");
+    info!(
+        url = %url,
+        model = %req.model,
+        streaming = %(!no_stream),
+        "发起 chat 请求"
+    );
     let mut stream_req = req.clone();
-    stream_req.stream = Some(true);
+    stream_req.stream = Some(!no_stream);
     let res = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
@@ -122,6 +92,58 @@ pub async fn stream_chat(
         error!(status = %status, body = %body, "API 返回错误");
         return Err(format!("API 错误 {}: {}", status, body).into());
     }
+
+    if no_stream {
+        let body = res.text().await?;
+        let parsed: crate::types::ChatResponse = serde_json::from_str(&body).map_err(|e| {
+            format!(
+                "非流式响应 JSON 解析失败: {} — 正文开头: {}",
+                e,
+                body.chars().take(240).collect::<String>()
+            )
+        })?;
+        let choice = parsed
+            .choices
+            .into_iter()
+            .next()
+            .ok_or_else(|| -> Box<dyn std::error::Error + Send + Sync> {
+                "非流式响应 choices 为空".into()
+            })?;
+        let crate::types::Choice {
+            message: msg,
+            finish_reason,
+        } = choice;
+
+        if let Some(content) = msg.content.as_ref().filter(|c| !c.is_empty()) {
+            if let Some(tx) = out {
+                let _ = tx.send(content.clone()).await;
+            }
+        }
+        if render_to_terminal {
+            if let Some(ref content_acc) = msg.content {
+                if !content_acc.is_empty() {
+                    let term_w = terminal_width().unwrap_or(80);
+                    let mut stdout = io::stdout();
+                    write!(stdout, "Agent: ")?;
+                    stdout.flush()?;
+                    let opts = Options {
+                        syntax_highlight: true,
+                        width: Some(term_w),
+                        code_bg: true,
+                    };
+                    let content = latex_math_to_unicode(content_acc.trim());
+                    let rendered = render(&content, &opts);
+                    write!(stdout, "{}", rendered)?;
+                    if !rendered.ends_with('\n') {
+                        writeln!(stdout)?;
+                    }
+                    stdout.flush()?;
+                }
+            }
+        }
+        return Ok((msg, finish_reason));
+    }
+
     let mut stream = res.bytes_stream();
     let mut buf = Vec::new();
     let mut content_acc = String::new();
@@ -154,30 +176,30 @@ pub async fn stream_chat(
                     Some(c) => c,
                     None => continue,
                 };
-                if let Some(reason) = choice.finish_reason {
-                    if !reason.is_empty() {
-                        finish_reason = reason;
-                    }
+                if let Some(reason) = choice.finish_reason
+                    && !reason.is_empty()
+                {
+                    finish_reason = reason;
                 }
                 let delta = choice.delta;
-                if let Some(ref s) = delta.content {
-                    if !s.is_empty() {
-                        if let Some(tx) = out {
-                            let _ = tx.send(s.clone()).await;
-                        }
-                        if render_to_terminal {
-                            // 这里保持“边收边打印”，但统一通过 stdout 句柄写入，便于后续进一步抽象终端输出。
-                            let mut stdout = io::stdout();
-                            if first_content {
-                                write!(stdout, "Agent: ")?;
-                                stdout.flush()?;
-                                first_content = false;
-                            }
-                            write!(stdout, "{}", s)?;
-                            stdout.flush()?;
-                        }
-                        content_acc.push_str(s);
+                if let Some(ref s) = delta.content
+                    && !s.is_empty()
+                {
+                    if let Some(tx) = out {
+                        let _ = tx.send(s.clone()).await;
                     }
+                    if render_to_terminal {
+                        // 这里保持“边收边打印”，但统一通过 stdout 句柄写入，便于后续进一步抽象终端输出。
+                        let mut stdout = io::stdout();
+                        if first_content {
+                            write!(stdout, "Agent: ")?;
+                            stdout.flush()?;
+                            first_content = false;
+                        }
+                        write!(stdout, "{}", s)?;
+                        stdout.flush()?;
+                    }
+                    content_acc.push_str(s);
                 }
                 if let Some(tcs) = delta.tool_calls {
                     for tc in tcs {
@@ -251,4 +273,41 @@ pub async fn stream_chat(
         tool_call_id: None,
     };
     Ok((msg, finish_reason))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_latex_math_to_unicode_inline() {
+        // $x$ -> 转为 Unicode 字母 x（unicodeit 可能保留或转换）
+        let out = latex_math_to_unicode("公式 $x^2$ 结束");
+        assert!(!out.contains("$"));
+        assert!(out.contains("x") || out.contains("²"));
+    }
+
+    #[test]
+    fn test_latex_math_to_unicode_display() {
+        let out = latex_math_to_unicode("$$1+1=2$$");
+        assert!(!out.contains("$$"));
+    }
+
+    #[test]
+    fn test_latex_math_to_unicode_plain_unchanged() {
+        let s = "纯文本无公式";
+        assert_eq!(latex_math_to_unicode(s), s);
+    }
+
+    #[test]
+    fn test_count_display_lines() {
+        assert_eq!(count_display_lines("a", 80), 1);
+        assert_eq!(count_display_lines("a\nb", 80), 2);
+        // 80 个 ASCII 占 80 列，一行刚好
+        assert_eq!(count_display_lines(&"x".repeat(80), 80), 1);
+        assert_eq!(count_display_lines(&"x".repeat(81), 80), 2);
+        // 中文占 2 列，10 个中文 = 20 列
+        assert_eq!(count_display_lines("中", 10), 1);
+        assert_eq!(count_display_lines("中文中文中文", 10), 2); // 6 个中文 = 12 列，10 宽 => 2 行
+    }
 }

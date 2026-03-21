@@ -173,7 +173,7 @@ impl WorkflowReflectionController {
                 "round": self.round,
                 "max_rounds": self.max_rounds,
                 "required_model_action": if self.round == 1 {
-                    "plan_from_validate_only_result: you MUST use the validate_only tool_result's execution_layers and each node's deps/required_approval/timeout_secs/compensate_with to write a concrete plan in assistant content (include mapping layer->nodes, and where approvals happen). After producing the plan, call workflow_execute again with workflow.validate_only=false (Do stage), unless you already set workflow.done=true."
+                    "plan_from_validate_only_result: you MUST embed a ```json fenced block whose JSON is {\"type\":\"agent_reply_plan\",\"version\":1,\"steps\":[{\"id\":\"...\",\"description\":\"...\"},...]} with at least one step. Each description should reflect the validate_only tool_result (execution_layers, deps, required_approval, timeout_secs, compensate_with, mapping layer->nodes). Natural language outside the fence is OK. After producing the plan, call workflow_execute again with workflow.validate_only=false (Do stage), unless you already set workflow.done=true."
                 } else {
                     "revise_workflow_then_call_workflow_execute_or_set_workflow_done_true_when_goal_reached"
                 },
@@ -376,26 +376,24 @@ mod tests {
         assert!(d1.execute);
         assert!(d1.inject_instruction.is_some());
         assert!(d1.stop_output.is_none());
-        assert_eq!(
+        assert!(
             d1.workflow_args_patch
                 .as_ref()
                 .and_then(|v| v.get("validate_only"))
                 .and_then(|x| x.as_bool())
-                .unwrap_or(false),
-            true
+                .unwrap_or(false)
         );
 
         // second call => round becomes 2, execute=true
         let d2 = c.decide(&base_args(true, false, max_rounds));
         assert!(d2.execute);
         assert!(d2.inject_instruction.is_some());
-        assert_eq!(
-            d2.workflow_args_patch
+        assert!(
+            !d2.workflow_args_patch
                 .as_ref()
                 .and_then(|v| v.get("validate_only"))
                 .and_then(|x| x.as_bool())
-                .unwrap_or(true),
-            false
+                .unwrap_or(true)
         );
 
         // third call => round>=max_rounds, stop and lock

@@ -11,7 +11,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`head`、`tail`、`wc`、`cmake`、`gcc`、`g++`、`make` 等），带超时与输出截断。
   - `run_executable`：在工作区目录下运行可执行文件（路径、参数均做安全校验）。
-  - `create_file` / `modify_file`：在当前工作区内创建或修改文件（相对路径 + 目录越界检查）。
+  - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
@@ -60,6 +60,21 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 - `cargo_outdated`（依赖过期检查）：
   ```json
   {"workspace":true,"depth":2}
+  ```
+- `cargo_publish_dry_run`（`cargo publish --dry-run`，**不会**上传 registry）：
+  ```json
+  {"package":"my-crate","allow_dirty":false,"no_verify":false}
+  ```
+- `rust_compiler_json`（**rustc/Cargo JSON 诊断**：`cargo check --message-format=json`，解析 `compiler-message` 汇总错误/警告，无需 rust-analyzer）：
+  ```json
+  {"all_targets":true,"max_diagnostics":80,"message_format":"json"}
+  ```
+- `rust_analyzer_goto_definition` / `rust_analyzer_find_references`（本机需 **`rust-analyzer` 在 PATH**；**line/character 为 0-based**，与 LSP 一致）：
+  ```json
+  {"path":"src/tools/mod.rs","line":1195,"character":4,"wait_after_open_ms":500}
+  ```
+  ```json
+  {"path":"src/tools/mod.rs","line":1195,"character":4,"include_declaration":true}
   ```
 - `cargo_fix`（应用编译器建议修复，受控写入）：
   ```json
@@ -158,7 +173,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`frontend_lint`。
+另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`。
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
 
 ## Git 工具示例
@@ -308,6 +323,20 @@ cargo run
 
 ## 文件/目录辅助工具示例
 
+- `read_binary_meta`（二进制/大文件：只返回大小、修改时间、**文件头 SHA256**，不把整文件读进上下文）：
+  ```json
+  {"path":"assets/app.bin","prefix_hash_bytes":8192}
+  ```
+  `prefix_hash_bytes` 为 `0` 时跳过哈希；最大 262144。
+- `read_file`（**按行流式**读取，默认单次最多 500 行，避免大文件撑爆上下文）：
+  ```json
+  {"path":"src/main.rs","start_line":1,"max_lines":200}
+  ```
+  响应中会提示「下一段可将 start_line 设为 N」。需要精确总行数时可设 `"count_total_lines": true`（大文件会多扫一遍）。也可用 `start_line` + `end_line` 精确区间（仍受 `max_lines` 上限截断）。
+- `modify_file`（大文件局部改：`mode=replace_lines` + 行号区间 + `content`，流式改写不落整文件到内存）：
+  ```json
+  {"path":"src/huge.rs","mode":"replace_lines","start_line":120,"end_line":135,"content":"// 新片段\n"}
+  ```
 - `read_dir`（列出目录内容）：
   ```json
   {"path":"src","max_entries":50,"include_hidden":false}
@@ -324,14 +353,53 @@ cargo run
   ```json
   {"path":"src/main.rs","pattern":"pub\\s+fn\\s+run_agent_turn","mode":"rust_fn_block","max_matches":1}
   ```
+- `apply_patch`（**统一 unified diff**，先 dry-run 再应用；强调 **小步、可回滚、带上下文**）：
+  - **格式**：与 `git diff` 相同：`---` / `+++` 文件头、`@@ -旧起始,行数 +新起始,行数 @@`，变更行 `-`/`+`，**上下文行必须以单个空格开头**。
+  - **带上下文**：每个 hunk 在修改行上下保留 **至少 2～3 行** 未改动内容，减少错位；避免零上下文单行 hunk。
+  - **小步**：一次补丁尽量只做一个逻辑改动（单函数/单配置块），大改动拆多次调用，便于 dry-run 失败定位。
+  - **可回滚**：`patch -R`、或 `git checkout -- <file>`、或反向 diff；小步更易安全撤销。
+  - **路径与 strip（二选一）**：
+    - **推荐**：`--- src/example.rs` / `+++ src/example.rs`（相对工作区根，**无** `a/`），**`strip` 用默认 `0`**。
+    - **Git 导出**：`--- a/src/example.rs` / `+++ b/src/example.rs` 时须设 **`"strip": 1`**，否则 patch 会找错路径。
+  - 路径须在工作区内，禁止 `..`。
+  ```text
+  --- src/example.rs
+  +++ src/example.rs
+  @@ -4,6 +4,7 @@ fn demo() {
+       let a = 1;
+       let b = 2;
+  -    let c = a + b;
+  +    let c = a + b + 1;
+       println!("{}", c);
+       // trailing context
+  ```
+  ```json
+  {"patch":"--- src/example.rs\n+++ src/example.rs\n@@ -4,6 +4,7 @@ fn demo() {\n ...\n"}
+  ```
 - `find_symbol`（工作区递归定位 Rust 符号位置）：
   ```json
   {"symbol":"run_agent_turn","kind":"fn","path":"src","context_lines":2,"max_results":10}
   ```
+- `find_references`（在 `.rs` 中按词边界搜标识符引用，默认跳过疑似定义行）：
+  ```json
+  {"symbol":"run_tool","path":"src/tools","max_results":50,"case_sensitive":false,"exclude_definitions":true}
+  ```
+- `rust_file_outline`（单文件结构导航：mod/fn/struct/impl 等行摘要）：
+  ```json
+  {"path":"src/tools/mod.rs","include_use":false,"max_items":200}
+  ```
+- `format_check_file`（单文件格式检查，不写盘：`rustfmt --check` / `prettier --check`）：
+  ```json
+  {"path":"src/main.rs"}
+  ```
+- `quality_workspace`（组合质量检查；默认 `fmt --check` + `clippy`，可按开关加 `test` / 前端 lint / prettier check）：
+  ```json
+  {"run_cargo_fmt_check":true,"run_cargo_clippy":true,"run_cargo_test":false,"run_frontend_lint":false,"run_frontend_prettier_check":false,"fail_fast":true,"summary_only":false}
+  ```
 
 ### 常用命令行选项
 
-CrabMate 支持几种常见运行模式，对应 `src/main.rs` 中的 CLI 解析：
+CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 解析：
 
 | 选项              | 作用 |
 |-------------------|------|
@@ -346,7 +414,7 @@ CrabMate 支持几种常见运行模式，对应 `src/main.rs` 中的 CLI 解析
 | `--no-web`        | 仅提供后端 API，不挂载前端静态页面（适合部署为纯后端服务）。|
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
-| `--no-stream`     | 在命令行模式下关闭流式输出，等待完整回答后一次性打印。|
+| `--no-stream`     | 对 API 使用 `stream: false`（非 SSE），并在 CLI 下等待完整回答后一次性 Markdown 打印；TUI 侧亦为整块正文刷新。|
 
 对应示例：
 

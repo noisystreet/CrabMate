@@ -17,6 +17,44 @@ pub fn frontend_test(args_json: &str, workspace_root: &Path, max_output_len: usi
     frontend_run_script(args_json, workspace_root, max_output_len, "test")
 }
 
+/// `npx prettier --check .`（在指定前端子目录下），用于一致性检查而不改文件。
+pub fn frontend_prettier_check(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    let subdir = v
+        .get("subdir")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("frontend");
+
+    if subdir.starts_with('/') || subdir.contains("..") {
+        return "错误：subdir 必须是工作区内相对路径，且不能包含 ..".to_string();
+    }
+
+    let dir = workspace_root.join(subdir);
+    if !dir.is_dir() {
+        return format!("prettier --check: 跳过（{} 目录不存在）", subdir);
+    }
+    if !dir.join("package.json").is_file() {
+        return "prettier --check: 跳过（未找到 package.json）".to_string();
+    }
+
+    let mut cmd = Command::new("npx");
+    cmd.arg("prettier").arg("--check").arg(".").current_dir(&dir);
+    run_and_format(
+        cmd,
+        max_output_len,
+        &format!("npx prettier --check . (cwd={})", subdir),
+    )
+}
+
 fn frontend_run_script(
     args_json: &str,
     workspace_root: &Path,

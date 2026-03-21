@@ -401,6 +401,8 @@ export async function sendChatStream(
     onToolCall?: (info: { name: string; summary: string }) => void
     onToolStatusChange?: (running: boolean) => void
     onToolResult?: (info: { name: string; output: string }) => void
+    /** 预留：后端 `plan_required`（如 PER 结构化规划提示） */
+    onPlanRequired?: () => void
   },
   signal?: AbortSignal,
 ): Promise<void> {
@@ -435,15 +437,24 @@ export async function sendChatStream(
         if (!data) continue
         try {
           const parsed = JSON.parse(data) as {
+            v?: number
             error?: string
+            code?: string
+            plan_required?: boolean
             workspace_changed?: boolean
             tool_call?: { name?: string; summary?: string }
             tool_running?: boolean
             tool_result?: { name?: string; output?: string }
           }
           if (parsed.error != null) {
-            callbacks.onError(parsed.error)
+            callbacks.onError(
+              parsed.code != null ? `${parsed.error} (${parsed.code})` : parsed.error,
+            )
             return
+          }
+          if (parsed.plan_required === true) {
+            callbacks.onPlanRequired?.()
+            continue
           }
           if (parsed.workspace_changed === true) {
             callbacks.onWorkspaceChanged?.()
@@ -479,14 +490,22 @@ export async function sendChatStream(
       if (data && data !== '[DONE]') {
         try {
           const parsed = JSON.parse(data) as {
+            v?: number
             error?: string
+            code?: string
+            plan_required?: boolean
             workspace_changed?: boolean
             tool_call?: { name?: string; summary?: string }
             tool_running?: boolean
             tool_result?: { name?: string; output?: string }
           }
-          if (parsed.error != null) callbacks.onError(parsed.error)
-          else if (parsed.workspace_changed === true) callbacks.onWorkspaceChanged?.()
+          if (parsed.error != null) {
+            callbacks.onError(
+              parsed.code != null ? `${parsed.error} (${parsed.code})` : parsed.error,
+            )
+          } else if (parsed.plan_required === true) {
+            callbacks.onPlanRequired?.()
+          } else if (parsed.workspace_changed === true) callbacks.onWorkspaceChanged?.()
           else if (parsed.tool_call?.summary) {
             callbacks.onToolCall?.({
               name: parsed.tool_call.name || '',

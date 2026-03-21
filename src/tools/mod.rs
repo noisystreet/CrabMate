@@ -5,6 +5,7 @@
 mod calc;
 mod cargo_tools;
 mod ci_tools;
+mod code_nav;
 mod command;
 mod debug_tools;
 mod exec;
@@ -15,6 +16,8 @@ mod symbol;
 mod patch;
 mod lint;
 mod format;
+mod quality_tools;
+mod rust_ide;
 mod grep;
 mod schedule;
 mod security_tools;
@@ -278,6 +281,67 @@ fn params_cargo_outdated() -> serde_json::Value {
             "depth": { "type":"integer", "description":"可选：依赖树深度（--depth）", "minimum":0 }
         },
         "required":[]
+    })
+}
+
+fn params_cargo_publish_dry_run() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "package": { "type": "string", "description": "可选：workspace 中指定包名（--package）" },
+            "allow_dirty": { "type": "boolean", "description": "可选：--allow-dirty，默认 false" },
+            "no_verify": { "type": "boolean", "description": "可选：--no-verify，默认 false（跳过发布前的构建验证）" },
+            "features": { "type": "string", "description": "可选：--features" },
+            "all_features": { "type": "boolean", "description": "可选：--all-features，默认 false" }
+        },
+        "required": []
+    })
+}
+
+fn params_rust_compiler_json() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "all_targets": { "type": "boolean", "description": "可选：--all-targets，默认 false" },
+            "package": { "type": "string", "description": "可选：--package" },
+            "features": { "type": "string", "description": "可选：--features" },
+            "all_features": { "type": "boolean", "description": "可选：--all-features，默认 false" },
+            "max_diagnostics": { "type": "integer", "description": "可选：最多汇总多少条 compiler-message，默认 120，上限 500", "minimum": 1 },
+            "message_format": {
+                "type": "string",
+                "description": "传给 cargo 的 --message-format，默认 json；也可用 json-diagnostic-short 等"
+            }
+        },
+        "required": []
+    })
+}
+
+fn params_rust_analyzer_position() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": { "type": "string", "description": "相对工作区的 .rs 源文件路径" },
+            "line": { "type": "integer", "description": "光标行号，0-based（与 LSP 一致；第 10 行填 9）", "minimum": 0 },
+            "character": { "type": "integer", "description": "可选：UTF-16 偏移列号，0-based，默认 0", "minimum": 0 },
+            "server_path": { "type": "string", "description": "可选：rust-analyzer 可执行文件路径，默认在 PATH 中查找 rust-analyzer" },
+            "wait_after_open_ms": { "type": "integer", "description": "可选：didOpen 后等待索引的毫秒数，默认 500，上限 5000", "minimum": 0 }
+        },
+        "required": ["path", "line"]
+    })
+}
+
+fn params_rust_analyzer_references() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": { "type": "string", "description": "相对工作区的 .rs 源文件路径" },
+            "line": { "type": "integer", "description": "0-based 行号", "minimum": 0 },
+            "character": { "type": "integer", "description": "可选：0-based 列号，默认 0", "minimum": 0 },
+            "include_declaration": { "type": "boolean", "description": "可选：references 是否包含定义处，默认 true" },
+            "server_path": { "type": "string", "description": "可选：rust-analyzer 可执行路径" },
+            "wait_after_open_ms": { "type": "integer", "description": "可选：didOpen 后等待毫秒，默认 500", "minimum": 0 }
+        },
+        "required": ["path", "line"]
     })
 }
 
@@ -635,6 +699,38 @@ fn params_file_write() -> serde_json::Value {
     })
 }
 
+fn params_modify_file() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "相对工作目录的文件路径"
+            },
+            "mode": {
+                "type": "string",
+                "description": "可选：full（默认）整文件覆盖；replace_lines 按行区间替换，流式读写适合大文件",
+                "enum": ["full", "replace_lines"]
+            },
+            "content": {
+                "type": "string",
+                "description": "full 时为新的全文；replace_lines 时替换区间的新内容（可为空以删除这些行）"
+            },
+            "start_line": {
+                "type": "integer",
+                "description": "replace_lines 必填：起始行（1-based，含）",
+                "minimum": 1
+            },
+            "end_line": {
+                "type": "integer",
+                "description": "replace_lines 必填：结束行（1-based，含）",
+                "minimum": 1
+            }
+        },
+        "required": ["path"]
+    })
+}
+
 fn params_read_file() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -645,13 +741,23 @@ fn params_read_file() -> serde_json::Value {
             },
             "start_line": {
                 "type": "integer",
-                "description": "可选：起始行（1-based，包含该行）",
+                "description": "可选：起始行（1-based，包含该行）；省略时默认为 1",
                 "minimum": 1
             },
             "end_line": {
                 "type": "integer",
-                "description": "可选：结束行（1-based，包含该行）",
+                "description": "可选：结束行（1-based，包含该行）；省略时按 max_lines 自动截断到 start_line+max_lines-1 或 EOF",
                 "minimum": 1
+            },
+            "max_lines": {
+                "type": "integer",
+                "description": "单次最多返回行数，默认 500，上限 8000；防止大文件一次读爆上下文",
+                "minimum": 1,
+                "maximum": 8000
+            },
+            "count_total_lines": {
+                "type": "boolean",
+                "description": "可选：是否额外扫描全文件统计总行数（大文件会多一次 I/O，默认 false）"
             }
         },
         "required": ["path"]
@@ -679,6 +785,23 @@ fn params_file_exists() -> serde_json::Value {
         },
         "required":["path"],
         "additionalProperties":false
+    })
+}
+
+fn params_read_binary_meta() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": { "type": "string", "description": "相对工作区的文件路径（必填）" },
+            "prefix_hash_bytes": {
+                "type": "integer",
+                "description": "参与 SHA256 的文件头字节数：默认 8192；0 表示不计算哈希；最大 262144",
+                "minimum": 0,
+                "maximum": 262144
+            }
+        },
+        "required": ["path"],
+        "additionalProperties": false
     })
 }
 
@@ -719,17 +842,75 @@ fn params_find_symbol() -> serde_json::Value {
     })
 }
 
+fn params_find_references() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "symbol": { "type":"string", "description":"要查找引用的标识符名（必填）" },
+            "path": { "type":"string", "description":"可选：仅在某子路径下搜索（相对工作区）" },
+            "max_results": { "type":"integer", "description":"可选：最多返回条数，默认 80，上限 300", "minimum":1 },
+            "case_sensitive": { "type":"boolean", "description":"可选：是否大小写敏感（默认 false，即忽略大小写）" },
+            "exclude_definitions": { "type":"boolean", "description":"可选：是否跳过疑似定义行（默认 true）" },
+            "include_hidden": { "type":"boolean", "description":"可选：是否遍历隐藏目录（默认 false）" }
+        },
+        "required":["symbol"],
+        "additionalProperties":false
+    })
+}
+
+fn params_rust_file_outline() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "path": { "type":"string", "description":"相对工作区的 .rs 文件路径（必填）" },
+            "include_use": { "type":"boolean", "description":"可选：是否列出 use 行（默认 false，减少噪音）" },
+            "max_items": { "type":"integer", "description":"可选：最多列出条目数，默认 200，上限 500", "minimum":1 }
+        },
+        "required":["path"],
+        "additionalProperties":false
+    })
+}
+
+fn params_format_check_file() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "相对工作区根目录的文件路径；支持 .rs 与 ts/tsx/js/jsx/json（prettier --check）"
+            }
+        },
+        "required": ["path"]
+    })
+}
+
+fn params_quality_workspace() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "run_cargo_fmt_check": { "type":"boolean", "description":"可选：cargo fmt --check，默认 true" },
+            "run_cargo_clippy": { "type":"boolean", "description":"可选：cargo clippy --all-targets，默认 true" },
+            "run_cargo_test": { "type":"boolean", "description":"可选：cargo test，默认 false（较慢）" },
+            "run_frontend_lint": { "type":"boolean", "description":"可选：frontend 下 npm run lint，默认 false" },
+            "run_frontend_prettier_check": { "type":"boolean", "description":"可选：frontend 下 npx prettier --check .，默认 false" },
+            "fail_fast": { "type":"boolean", "description":"可选：遇首个失败即停止后续步骤，默认 true" },
+            "summary_only": { "type":"boolean", "description":"可选：仅输出各步骤 passed/failed 汇总，默认 false" }
+        },
+        "required":[]
+    })
+}
+
 fn params_apply_patch() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
             "patch": {
                 "type": "string",
-                "description": "unified diff/hunk 补丁文本，通常包含 ---/+++ 和 @@ 段"
+                "description": "unified diff（同 git diff）：含 ---/+++ 与 @@；变更上下各保留 2～3 行上下文（空格行），禁止零上下文；小步单主题便于回滚。路径：要么 --- src/x.rs（strip 默认 0），要么 --- a/src/x.rs 且 strip=1。可 patch -R 或 git checkout 撤销。"
             },
             "strip": {
                 "type": "integer",
-                "description": "可选：传给 patch 的 -p/--strip 值，默认 0",
+                "description": "patch -p：无 a/ 前缀时用 0；--- a/... 的 Git 风格 diff 须用 1",
                 "minimum": 0
             }
         },
@@ -963,6 +1144,22 @@ fn runner_cargo_outdated(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::cargo_outdated(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
+fn runner_cargo_publish_dry_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    cargo_tools::cargo_publish_dry_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_rust_compiler_json(args: &str, ctx: &ToolContext<'_>) -> String {
+    rust_ide::rust_compiler_json(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_rust_analyzer_goto_definition(args: &str, ctx: &ToolContext<'_>) -> String {
+    rust_ide::rust_analyzer_goto_definition(args, ctx.working_dir)
+}
+
+fn runner_rust_analyzer_find_references(args: &str, ctx: &ToolContext<'_>) -> String {
+    rust_ide::rust_analyzer_find_references(args, ctx.working_dir)
+}
+
 fn runner_cargo_fix(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::cargo_fix(args, ctx.working_dir, ctx.command_max_output_len)
 }
@@ -1091,6 +1288,10 @@ fn runner_file_exists(args: &str, ctx: &ToolContext<'_>) -> String {
     file::file_exists(args, ctx.working_dir)
 }
 
+fn runner_read_binary_meta(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::read_binary_meta(args, ctx.working_dir)
+}
+
 fn runner_extract_in_file(args: &str, ctx: &ToolContext<'_>) -> String {
     file::extract_in_file(args, ctx.working_dir)
 }
@@ -1107,12 +1308,28 @@ fn runner_find_symbol(args: &str, ctx: &ToolContext<'_>) -> String {
     symbol::run(args, ctx.working_dir)
 }
 
+fn runner_find_references(args: &str, ctx: &ToolContext<'_>) -> String {
+    code_nav::find_references(args, ctx.working_dir)
+}
+
+fn runner_rust_file_outline(args: &str, ctx: &ToolContext<'_>) -> String {
+    code_nav::rust_file_outline(args, ctx.working_dir)
+}
+
 fn runner_format_file(args: &str, ctx: &ToolContext<'_>) -> String {
     format::run(args, ctx.working_dir)
 }
 
+fn runner_format_check_file(args: &str, ctx: &ToolContext<'_>) -> String {
+    format::run_check(args, ctx.working_dir)
+}
+
 fn runner_run_lints(args: &str, ctx: &ToolContext<'_>) -> String {
     lint::run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_quality_workspace(args: &str, ctx: &ToolContext<'_>) -> String {
+    quality_tools::quality_workspace(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn runner_add_reminder(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -1264,6 +1481,34 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Lint,
             parameters: params_cargo_outdated,
             runner: runner_cargo_outdated,
+        },
+        ToolSpec {
+            name: "cargo_publish_dry_run",
+            description: "运行 cargo publish --dry-run：验证打包与发布检查，**不会**上传到 registry。可选 package、allow_dirty、no_verify、features。",
+            category: ToolCategory::Command,
+            parameters: params_cargo_publish_dry_run,
+            runner: runner_cargo_publish_dry_run,
+        },
+        ToolSpec {
+            name: "rust_compiler_json",
+            description: "运行 `cargo check --message-format=<json>`，解析 **compiler-message** 行，输出结构化诊断摘要（级别、错误码、rendered、span）。等价于对接 rustc 的 JSON 诊断流，无需 rust-analyzer。",
+            category: ToolCategory::Lint,
+            parameters: params_rust_compiler_json,
+            runner: runner_rust_compiler_json,
+        },
+        ToolSpec {
+            name: "rust_analyzer_goto_definition",
+            description: "启动 **rust-analyzer**（stdio LSP），对指定 **path + 0-based line/character** 执行 `textDocument/definition`。需本机已安装 rust-analyzer；单文件 didOpen，适合跳转定义。大文件 >512KiB 请换 read_file 分段。",
+            category: ToolCategory::Search,
+            parameters: params_rust_analyzer_position,
+            runner: runner_rust_analyzer_goto_definition,
+        },
+        ToolSpec {
+            name: "rust_analyzer_find_references",
+            description: "同上，执行 `textDocument/references`（语义引用）。参数含 include_declaration。",
+            category: ToolCategory::Search,
+            parameters: params_rust_analyzer_references,
+            runner: runner_rust_analyzer_find_references,
         },
         ToolSpec {
             name: "cargo_fix",
@@ -1484,14 +1729,14 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "modify_file",
-            description: "在工作区内修改已有文件内容（覆盖写入）。仅当文件已存在时修改；若路径不存在或不是文件则报错。用于用户要求「修改 xx」「把 xx 改成」「编辑文件」等。参数 path 为相对路径，content 为新的文件内容。",
+            description: "在工作区内修改已有文件。mode=full（默认）：整文件覆盖。mode=replace_lines：仅替换 start_line..=end_line 为 content，流式读写不写全文件进内存，适合大文件局部修改。",
             category: ToolCategory::File,
-            parameters: params_file_write,
+            parameters: params_modify_file,
             runner: runner_modify_file,
         },
         ToolSpec {
             name: "read_file",
-            description: "在工作区内安全读取文件内容。支持 path + start_line + end_line（1-based）读取行区间，并返回带行号内容，便于精确定位和后续增量修改。",
+            description: "按行流式读取文件（不把整文件载入内存）。默认单次最多返回 max_lines=500 行（可调到 8000）；未指定 end_line 时自动分段。输出提示下一段 start_line。可选 count_total_lines 统计总行数（大文件慎用）。",
             category: ToolCategory::File,
             parameters: params_read_file,
             runner: runner_read_file,
@@ -1511,6 +1756,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_file_exists,
         },
         ToolSpec {
+            name: "read_binary_meta",
+            description: "读取任意文件的元数据（大小、可选修改时间）及**文件头一段的 SHA256**，不把整文件读入上下文；适合二进制/大文件比对。prefix_hash_bytes 默认 8192，0 表示跳过哈希。",
+            category: ToolCategory::Utility,
+            parameters: params_read_binary_meta,
+            runner: runner_read_binary_meta,
+        },
+        ToolSpec {
             name: "extract_in_file",
             description: "在指定文件内按正则抽取匹配行（只读）。返回带行号的匹配行，并支持截断。",
             category: ToolCategory::File,
@@ -1519,7 +1771,7 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "apply_patch",
-            description: "在工作区内应用 unified diff/hunk 补丁。执行前会做路径安全校验，并先 dry-run 预检查，降低误改风险。适合对已有文件做增量修改而不是整文件覆盖。参数 patch 为补丁文本，strip 可选（默认 0）。",
+            description: "应用 **unified diff**。路径：--- src/…（strip=0）或 --- a/src/…（strip=1）；hunk **带 2～3 行上下文**；**小步**单主题；可 **patch -R** / **git checkout** 回滚。先 dry-run。",
             category: ToolCategory::File,
             parameters: params_apply_patch,
             runner: runner_apply_patch,
@@ -1539,6 +1791,20 @@ fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_find_symbol,
         },
         ToolSpec {
+            name: "find_references",
+            description: "在 .rs 源文件中按词边界搜索某标识符的引用位置；默认排除与 find_symbol 一致的「疑似定义」行。适合在改名、删函数前快速扫一遍使用处。",
+            category: ToolCategory::Search,
+            parameters: params_find_references,
+            runner: runner_find_references,
+        },
+        ToolSpec {
+            name: "rust_file_outline",
+            description: "读取单个 Rust 源文件，列出其中常见的顶层结构行摘要（mod/fn/struct/enum/trait/impl/use 等），便于大文件导航与拆分任务。",
+            category: ToolCategory::Search,
+            parameters: params_rust_file_outline,
+            runner: runner_rust_file_outline,
+        },
+        ToolSpec {
             name: "format_file",
             description: "对工作区内的文件进行代码格式化。根据文件扩展名自动选择合适的本地格式化器，例如 Rust 文件使用 rustfmt，前端 TypeScript/JavaScript 文件使用项目内的 Prettier。适合在修改代码后统一整理缩进和风格。注意：需要本地已安装相应格式化工具（如 rustfmt、npm 项目内的 prettier）。",
             category: ToolCategory::Format,
@@ -1546,11 +1812,25 @@ fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_format_file,
         },
         ToolSpec {
+            name: "format_check_file",
+            description: "对单个文件做格式检查（不修改磁盘）：Rust 使用 rustfmt --check，前端类文件使用 prettier --check。适合在提交前确认风格一致。",
+            category: ToolCategory::Format,
+            parameters: params_format_check_file,
+            runner: runner_format_check_file,
+        },
+        ToolSpec {
             name: "run_lints",
             description: "运行项目的静态检查工具并聚合结果。目前包括：后端的 cargo clippy 和（若存在 frontend 目录与 package.json）前端的 npm run lint。可用于在改动后检查潜在问题。",
             category: ToolCategory::Lint,
             parameters: params_run_lints,
             runner: runner_run_lints,
+        },
+        ToolSpec {
+            name: "quality_workspace",
+            description: "按开关组合运行质量检查：默认 cargo fmt --check + cargo clippy（轻量）；可选 cargo test、frontend npm lint、frontend prettier --check。适合「改完一轮后」快速拉齐格式与静态分析。",
+            category: ToolCategory::Lint,
+            parameters: params_quality_workspace,
+            runner: runner_quality_workspace,
         },
         ToolSpec {
             name: "add_reminder",
@@ -1694,17 +1974,16 @@ pub(crate) fn is_compile_command_success(args_json: &str, result: &str) -> bool 
         .map(|s| s.trim().to_lowercase());
     let is_compile_cmd = cmd
         .as_deref()
-        .map_or(false, |c| matches!(c, "gcc" | "g++" | "make" | "cmake"));
+        .is_some_and(|c| matches!(c, "gcc" | "g++" | "make" | "cmake"));
     if !is_compile_cmd {
         return false;
     }
     // run_command 输出的第一行形如：退出码：0
     let first_line = result.lines().next().unwrap_or("");
-    if let Some(rest) = first_line.strip_prefix("退出码：") {
-        if let Ok(code) = rest.trim().parse::<i32>() {
+    if let Some(rest) = first_line.strip_prefix("退出码：")
+        && let Ok(code) = rest.trim().parse::<i32>() {
             return code == 0;
         }
-    }
     false
 }
 
@@ -1742,6 +2021,18 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         "cargo_nextest" => Some("运行 cargo nextest".to_string()),
         "cargo_fmt_check" => Some("运行 cargo fmt --check".to_string()),
         "cargo_outdated" => Some("运行 cargo outdated".to_string()),
+        "cargo_publish_dry_run" => Some("cargo publish --dry-run".to_string()),
+        "rust_compiler_json" => Some("cargo check JSON 诊断".to_string()),
+        "rust_analyzer_goto_definition" => {
+            let path = v.get("path")?.as_str()?.trim();
+            let line = v.get("line").and_then(|x| x.as_u64());
+            Some(format!("RA 跳转定义：{}:{}", path, line.unwrap_or(0)))
+        },
+        "rust_analyzer_find_references" => {
+            let path = v.get("path")?.as_str()?.trim();
+            let line = v.get("line").and_then(|x| x.as_u64());
+            Some(format!("RA 查找引用：{}:{}", path, line.unwrap_or(0)))
+        },
         "cargo_fix" => Some("运行 cargo fix（受控写入）".to_string()),
         "rust_test_one" => Some("运行单个 Rust 测试".to_string()),
         "frontend_lint" => Some("运行前端 lint".to_string()),
@@ -1802,17 +2093,32 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         }
         "modify_file" => {
             let path = v.get("path")?.as_str()?.trim();
-            Some(format!("修改文件：{}", path))
+            let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("full");
+            if mode == "replace_lines" {
+                let s = v.get("start_line").and_then(|x| x.as_u64());
+                let e = v.get("end_line").and_then(|x| x.as_u64());
+                Some(format!(
+                    "修改文件（行替换 {}-{}）：{}",
+                    s.unwrap_or(0),
+                    e.unwrap_or(0),
+                    path
+                ))
+            } else {
+                Some(format!("修改文件：{}", path))
+            }
         }
         "read_file" => {
             let path = v.get("path")?.as_str()?.trim();
             let start = v.get("start_line").and_then(|x| x.as_u64());
             let end = v.get("end_line").and_then(|x| x.as_u64());
-            let suffix = match (start, end) {
-                (Some(s), Some(e)) => format!(" [{}-{}]", s, e),
-                (Some(s), None) => format!(" [{}-EOF]", s),
-                (None, Some(e)) => format!(" [1-{}]", e),
-                (None, None) => String::new(),
+            let ml = v.get("max_lines").and_then(|x| x.as_u64());
+            let suffix = match (start, end, ml) {
+                (Some(s), Some(e), _) => format!(" [{}-{}]", s, e),
+                (Some(s), None, Some(m)) => format!(" [{}~ max_lines={}]", s, m),
+                (Some(s), None, None) => format!(" [{}~]", s),
+                (None, Some(e), _) => format!(" [1-{}]", e),
+                (None, None, Some(m)) => format!(" [分段 max_lines={}]", m),
+                (None, None, None) => String::new(),
             };
             Some(format!("读取文件：{}{}", path, suffix))
         }
@@ -1827,6 +2133,10 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         "file_exists" => {
             let path = v.get("path")?.as_str()?.trim();
             Some(format!("检查是否存在：{}", path))
+        }
+        "read_binary_meta" => {
+            let path = v.get("path")?.as_str()?.trim();
+            Some(format!("二进制元数据：{}", path))
         }
         "extract_in_file" => {
             let path = v.get("path")?.as_str()?.trim();
@@ -1871,6 +2181,19 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             let symbol = v.get("symbol")?.as_str()?.trim();
             Some(format!("查找符号：{}", symbol))
         }
+        "find_references" => {
+            let symbol = v.get("symbol")?.as_str()?.trim();
+            Some(format!("查找引用：{}", symbol))
+        }
+        "rust_file_outline" => {
+            let path = v.get("path")?.as_str()?.trim();
+            Some(format!("Rust 大纲：{}", path))
+        }
+        "format_check_file" => {
+            let path = v.get("path")?.as_str()?.trim();
+            Some(format!("格式检查：{}", path))
+        }
+        "quality_workspace" => Some("工作区质量检查".to_string()),
         _ => None,
     }
 }
@@ -2018,6 +2341,10 @@ mod tests {
         assert!(names.contains(&"cargo_nextest"));
         assert!(names.contains(&"cargo_fmt_check"));
         assert!(names.contains(&"cargo_outdated"));
+        assert!(names.contains(&"cargo_publish_dry_run"));
+        assert!(names.contains(&"rust_compiler_json"));
+        assert!(names.contains(&"rust_analyzer_goto_definition"));
+        assert!(names.contains(&"rust_analyzer_find_references"));
         assert!(names.contains(&"cargo_fix"));
         assert!(names.contains(&"rust_test_one"));
         assert!(names.contains(&"frontend_lint"));
@@ -2053,8 +2380,15 @@ mod tests {
         assert!(names.contains(&"read_file"));
         assert!(names.contains(&"read_dir"));
         assert!(names.contains(&"file_exists"));
+        assert!(names.contains(&"read_binary_meta"));
         assert!(names.contains(&"extract_in_file"));
         assert!(names.contains(&"find_symbol"));
+        assert!(names.contains(&"find_references"));
+        assert!(names.contains(&"rust_file_outline"));
+        assert!(names.contains(&"format_file"));
+        assert!(names.contains(&"format_check_file"));
+        assert!(names.contains(&"run_lints"));
+        assert!(names.contains(&"quality_workspace"));
         assert!(names.contains(&"apply_patch"));
         assert!(names.contains(&"run_executable"));
     }

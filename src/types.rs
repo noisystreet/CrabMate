@@ -61,18 +61,17 @@ pub struct ChatRequest {
     pub stream: Option<bool>,
 }
 
-// ---------- 非流式响应（保留供可选 fallback） ----------
+// ---------- 非流式响应（`stream: false` 时 chat/completions 返回体） ----------
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct ChatResponse {
     pub choices: Vec<Choice>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct Choice {
     pub message: Message,
+    #[serde(default)]
     pub finish_reason: String,
 }
 
