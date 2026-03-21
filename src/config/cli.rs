@@ -71,8 +71,8 @@ pub struct Cli {
     pub tui: bool,
 }
 
-/// 兼容原有调用处的解析函数，基于 clap::Parser 实现
-pub fn parse_args() -> (
+/// `parse_args` 的返回值：配置路径、单次提问、serve 端口、输出模式、工作区 CLI、各类布尔开关。
+pub type ParsedCliArgs = (
     Option<String>,
     Option<String>,
     Option<u16>,
@@ -83,7 +83,10 @@ pub fn parse_args() -> (
     bool, // dry_run
     bool, // no_stream
     bool, // tui
-) {
+);
+
+/// 兼容原有调用处的解析函数，基于 clap::Parser 实现
+pub fn parse_args() -> ParsedCliArgs {
     let cli = Cli::parse();
 
     // serve: None 表示未传；Some(None) 表示传了但没给端口 => 默认 8080；Some(Some(p)) 为指定端口

@@ -1,4 +1,4 @@
-//! Rust 开发工具：cargo check/test/clippy/metadata/run/tree/clean/doc
+//! Rust 开发工具：cargo check/test/clippy/metadata/run/tree/clean/doc/publish dry-run
 
 use std::path::Path;
 use std::process::Command;
@@ -229,6 +229,47 @@ pub fn cargo_outdated(args_json: &str, workspace_root: &Path, max_output_len: us
     out
 }
 
+/// `cargo publish --dry-run`：仅验证打包与发布检查，**不会**上传 registry。
+pub fn cargo_publish_dry_run(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    if !workspace_root.join("Cargo.toml").is_file() {
+        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+    }
+
+    let package = v.get("package").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
+    let allow_dirty = v.get("allow_dirty").and_then(|x| x.as_bool()).unwrap_or(false);
+    let no_verify = v.get("no_verify").and_then(|x| x.as_bool()).unwrap_or(false);
+    let features = v.get("features").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
+    let all_features = v.get("all_features").and_then(|x| x.as_bool()).unwrap_or(false);
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("publish").arg("--dry-run");
+    if let Some(p) = package {
+        cmd.arg("--package").arg(p);
+    }
+    if allow_dirty {
+        cmd.arg("--allow-dirty");
+    }
+    if no_verify {
+        cmd.arg("--no-verify");
+    }
+    if let Some(f) = features {
+        cmd.arg("--features").arg(f);
+    }
+    if all_features {
+        cmd.arg("--all-features");
+    }
+    cmd.current_dir(workspace_root);
+    run_and_format(cmd, max_output_len, "cargo publish --dry-run")
+}
+
 pub fn cargo_fix(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
@@ -331,16 +372,14 @@ fn run_cargo_subcommand(
         .cloned()
         .unwrap_or_default();
 
-    if let Some(p) = package {
-        if p.is_empty() || p.contains(char::is_whitespace) {
+    if let Some(p) = package
+        && (p.is_empty() || p.contains(char::is_whitespace)) {
             return "错误：package 参数无效".to_string();
         }
-    }
-    if let Some(b) = bin {
-        if b.is_empty() || b.contains(char::is_whitespace) {
+    if let Some(b) = bin
+        && (b.is_empty() || b.contains(char::is_whitespace)) {
             return "错误：bin 参数无效".to_string();
         }
-    }
 
     let mut cmd = Command::new("cargo");
     cmd.arg(subcmd);
@@ -366,8 +405,8 @@ fn run_cargo_subcommand(
         if no_capture {
             cmd.arg("--").arg("--nocapture");
         }
-    } else if subcmd == "run" {
-        if !run_args.is_empty() {
+    } else if subcmd == "run"
+        && !run_args.is_empty() {
             cmd.arg("--");
             for a in run_args {
                 if let Some(s) = a.as_str() {
@@ -375,7 +414,6 @@ fn run_cargo_subcommand(
                 }
             }
         }
-    }
     cmd.current_dir(workspace_root);
     run_and_format(cmd, max_output_len, &format!("cargo {}", subcmd))
 }

@@ -49,10 +49,12 @@ pub fn run(expr: &str) -> String {
     let out = String::from_utf8_lossy(&output.stdout);
     let err = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() {
-        return format!(
-            "bc 错误：{}",
-            err.trim().is_empty().then(|| out.as_ref()).unwrap_or(err.trim())
-        );
+        let detail = if err.trim().is_empty() {
+            out.trim()
+        } else {
+            err.trim()
+        };
+        return format!("bc 错误：{}", detail);
     }
     let result = out.lines().last().unwrap_or("").trim();
     if result.is_empty() {

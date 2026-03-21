@@ -32,6 +32,7 @@ toml = "0.8"
 markdown-to-ansi = "0.2"
 unicodeit = "0.2"
 regex = "1"
+sha2 = "0.10"
 unicode-width = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

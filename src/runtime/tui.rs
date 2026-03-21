@@ -2,6 +2,8 @@ use crate::config::AgentConfig;
 use crate::api::stream_chat;
 use crate::types::{CommandApprovalDecision, Message};
 use crate::types::ChatRequest;
+use regex::Regex;
+use std::sync::LazyLock;
 use ratatui::termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseEvent, MouseButtons};
 use ratatui::termwiz::terminal::Terminal as TermwizTerminal;
 use ratatui::{
@@ -51,6 +53,80 @@ impl RightTab {
     fn titles() -> [&'static str; 3] {
         ["工作区", "任务", "日程"]
     }
+}
+
+/// 与 `sse_protocol` 对齐的 SSE 控制行；无法识别则视为模型流式正文。
+#[derive(Debug)]
+enum AgentLineKind {
+    ToolRunning(bool),
+    WorkspaceRefresh,
+    CommandApproval {
+        command: String,
+        args: String,
+    },
+    StreamError,
+    /// 已识别为协议行但无需刷新 UI（如 workspace_changed:false）
+    Ignore,
+    Plain,
+}
+
+fn classify_agent_sse_line(s: &str) -> AgentLineKind {
+    if let Ok(msg) = serde_json::from_str::<crate::sse_protocol::SseMessage>(s) {
+        match msg.payload {
+            crate::sse_protocol::SsePayload::ToolRunning { tool_running } => {
+                return AgentLineKind::ToolRunning(tool_running);
+            }
+            crate::sse_protocol::SsePayload::WorkspaceChanged {
+                workspace_changed: true,
+            } => return AgentLineKind::WorkspaceRefresh,
+            crate::sse_protocol::SsePayload::WorkspaceChanged {
+                workspace_changed: false,
+            } => return AgentLineKind::Ignore,
+            crate::sse_protocol::SsePayload::CommandApproval {
+                command_approval_request,
+            } => {
+                return AgentLineKind::CommandApproval {
+                    command: command_approval_request.command,
+                    args: command_approval_request.args,
+                };
+            }
+            crate::sse_protocol::SsePayload::Error(_) => return AgentLineKind::StreamError,
+            crate::sse_protocol::SsePayload::ToolCall { .. }
+            | crate::sse_protocol::SsePayload::ToolResult { .. }
+            | crate::sse_protocol::SsePayload::PlanRequired { .. } => {
+                return AgentLineKind::Ignore;
+            }
+        }
+    }
+    if s == r#"{"tool_running":true}"# {
+        return AgentLineKind::ToolRunning(true);
+    }
+    if s == r#"{"tool_running":false}"# {
+        return AgentLineKind::ToolRunning(false);
+    }
+    if s == r#"{"workspace_changed":true}"# {
+        return AgentLineKind::WorkspaceRefresh;
+    }
+    if s.starts_with("{\"error\"") {
+        return AgentLineKind::StreamError;
+    }
+    if s.starts_with("{\"command_approval_request\"")
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(s)
+            && let Some(obj) = v.get("command_approval_request") {
+                return AgentLineKind::CommandApproval {
+                    command: obj
+                        .get("command")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    args: obj
+                        .get("args")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                };
+            }
+    AgentLineKind::Plain
 }
 
 fn draw_rect_corners(
@@ -296,6 +372,59 @@ struct TuiState {
     // the clicked cell. We mirror that position for the next draw to avoid
     // hide/show or position-jump visuals.
     cursor_mouse_pos: Option<(u16, u16)>,
+    /// termwiz/终端在开启鼠标报告时，偶发把 SGR 序列尾部（如 `<64;12;34M`）当普通字符送入输入。
+    mouse_leak_scratch: String,
+}
+
+/// xterm SGR 鼠标报告：`\x1b[<btn;col;rowM`；若 CSI 被吞掉，可见部分形如 `<35;50;30M`。
+static SGR_MOUSE_LEAK_TAIL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^<\d+;\d+;\d+[Mm]$").expect("SGR mouse tail regex"));
+
+static SGR_MOUSE_LEAK_EMBEDDED: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\x1b\[<\d+;\d+;\d+[Mm]|<\d+;\d+;\d+[Mm]").expect("SGR mouse embedded regex")
+});
+
+fn strip_sgr_mouse_leaks(s: &str) -> String {
+    SGR_MOUSE_LEAK_EMBEDDED.replace_all(s, "").into_owned()
+}
+
+/// 丢弃误送入的 SGR 鼠标片段；否则将 `scratch` 与当前字符按用户输入写入 `push`。
+fn feed_char_filter_sgr_mouse_leak<F: FnMut(char)>(scratch: &mut String, ch: char, mut push: F) {
+    const MAX: usize = 32;
+    if scratch.len() >= MAX {
+        let old = std::mem::take(scratch);
+        for c in old.chars() {
+            push(c);
+        }
+    }
+    if scratch.is_empty() {
+        if ch == '<' {
+            scratch.push(ch);
+        } else {
+            push(ch);
+        }
+        return;
+    }
+    let valid_next = ch.is_ascii_digit() || ch == ';' || ch == 'M' || ch == 'm';
+    if !valid_next {
+        let old = std::mem::take(scratch);
+        for c in old.chars() {
+            push(c);
+        }
+        push(ch);
+        return;
+    }
+    scratch.push(ch);
+    if ch == 'M' || ch == 'm' {
+        if SGR_MOUSE_LEAK_TAIL.is_match(scratch.as_str()) {
+            scratch.clear();
+        } else {
+            let old = std::mem::take(scratch);
+            for c in old.chars() {
+                push(c);
+            }
+        }
+    }
 }
 
 fn command_approval_message(command: &str, args: &str) -> String {
@@ -407,6 +536,7 @@ pub async fn run_tui(
         cursor_mouse_pos: None,
         pending_focus: None,
         pending_tab: None,
+        mouse_leak_scratch: String::new(),
     };
     refresh_workspace(&mut state);
     refresh_tasks(&mut state);
@@ -418,8 +548,10 @@ pub async fn run_tui(
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    // agent output channel
+    // agent output channel（流式正文与控制面 JSON 行）
     let (tx, mut rx) = mpsc::channel::<String>(2048);
+    // 每轮 agent 结束后回传权威对话历史，与后台任务内的 `messages` 对齐（含 tool_calls / tool）
+    let (sync_tx, mut sync_rx) = mpsc::channel::<Vec<Message>>(1);
     let mut approval_tx: Option<mpsc::Sender<CommandApprovalDecision>> = None;
     let mut agent_running: Option<tokio::task::JoinHandle<()>> = None;
     let mut assistant_buf = String::new();
@@ -428,62 +560,61 @@ pub async fn run_tui(
     let mut last_tick = Instant::now();
 
     loop {
+        // 先应用回合结束后的完整 messages，避免后续控制行写入过期的 assistant_buf
+        while let Ok(msgs) = sync_rx.try_recv() {
+            state.messages = msgs;
+            assistant_buf.clear();
+        }
         // pump agent stream into UI state
         while let Ok(s) = rx.try_recv() {
-            if s == r#"{"tool_running":true}"# {
-                state.tool_running = true;
-                state.status_line = "工具运行中…".to_string();
-                continue;
-            }
-            if s == r#"{"tool_running":false}"# {
-                state.tool_running = false;
-                if state.status_line == "工具运行中…" {
-                    state.status_line = format!(
-                        "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                        cfg.model,
-                        focus_name(state.focus)
-                    );
+            match classify_agent_sse_line(&s) {
+                AgentLineKind::ToolRunning(true) => {
+                    state.tool_running = true;
+                    state.status_line = "工具运行中…".to_string();
                 }
-                continue;
-            }
-            if s == r#"{"workspace_changed":true}"# {
-                refresh_workspace(&mut state);
-                refresh_tasks(&mut state);
-                refresh_schedule(&mut state);
-                continue;
-            }
-            if s.starts_with("{\"error\"") {
-                // backend error JSON string from stream_chat wrapper
-                assistant_buf.push_str("\n");
-                assistant_buf.push_str(&s);
-                continue;
-            }
-            if s.starts_with("{\"command_approval_request\"") {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                    if let Some(obj) = v.get("command_approval_request") {
-                        state.pending_command = obj
-                            .get("command")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        state.pending_command_args = obj
-                            .get("args")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        state.approve_choice = 0;
-                        state.mode = Mode::CommandApprove;
-                        state.status_line = command_approval_message(
-                            &state.pending_command,
-                            &state.pending_command_args,
+                AgentLineKind::ToolRunning(false) => {
+                    state.tool_running = false;
+                    if state.status_line == "工具运行中…" {
+                        state.status_line = format!(
+                            "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
+                            cfg.model,
+                            focus_name(state.focus)
                         );
                     }
                 }
-                continue;
+                AgentLineKind::WorkspaceRefresh => {
+                    refresh_workspace(&mut state);
+                    refresh_tasks(&mut state);
+                    refresh_schedule(&mut state);
+                }
+                AgentLineKind::CommandApproval { command, args } => {
+                    state.pending_command = command;
+                    state.pending_command_args = args;
+                    state.approve_choice = 0;
+                    state.mode = Mode::CommandApprove;
+                    state.status_line = command_approval_message(
+                        &state.pending_command,
+                        &state.pending_command_args,
+                    );
+                }
+                AgentLineKind::StreamError => {
+                    assistant_buf.push('\n');
+                    assistant_buf.push_str(&s);
+                    let cleaned = strip_sgr_mouse_leaks(&assistant_buf);
+                    if cleaned != assistant_buf {
+                        assistant_buf = cleaned;
+                    }
+                }
+                AgentLineKind::Ignore => {}
+                AgentLineKind::Plain => {
+                    assistant_buf.push_str(&s);
+                    let cleaned = strip_sgr_mouse_leaks(&assistant_buf);
+                    if cleaned != assistant_buf {
+                        assistant_buf = cleaned;
+                    }
+                    upsert_assistant_message(&mut state.messages, &assistant_buf);
+                }
             }
-            // normal content delta
-            assistant_buf.push_str(&s);
-            upsert_assistant_message(&mut state.messages, &assistant_buf);
         }
 
         // draw
@@ -493,8 +624,8 @@ pub async fn run_tui(
         state.cursor_override = None;
 
         // finish agent task if done
-        if let Some(handle) = agent_running.as_ref() {
-            if handle.is_finished() {
+        if let Some(handle) = agent_running.as_ref()
+            && handle.is_finished() {
                 agent_running = None;
                 approval_tx = None;
                 state.status_line = format!(
@@ -503,7 +634,6 @@ pub async fn run_tui(
                     focus_name(state.focus)
                 );
             }
-        }
 
         // input events (termwiz backend)
         let timeout = tick_rate
@@ -521,15 +651,18 @@ pub async fn run_tui(
                     if handle_key(
                         key,
                         &mut state,
-                        &mut agent_running,
-                        &mut assistant_buf,
-                        &mut approval_tx,
-                        &tx,
-                        cfg,
-                        client,
-                        api_key,
-                        tools,
-                        no_stream,
+                        HandleKeyContext {
+                            agent_running: &mut agent_running,
+                            assistant_buf: &mut assistant_buf,
+                            approval_tx: &mut approval_tx,
+                            tx: &tx,
+                            sync_tx: sync_tx.clone(),
+                            cfg,
+                            client,
+                            api_key,
+                            tools,
+                            no_stream,
+                        },
                     )
                     .await?
                     {
@@ -555,6 +688,7 @@ pub async fn run_tui(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_agent_turn_tui(
     client: &reqwest::Client,
     api_key: &str,
@@ -564,27 +698,18 @@ async fn run_agent_turn_tui(
     out: Option<&tokio::sync::mpsc::Sender<String>>,
     effective_working_dir: &std::path::Path,
     workspace_is_set: bool,
+    no_stream: bool,
     persistent_allowlist: HashSet<String>,
     approval_rx: mpsc::Receiver<CommandApprovalDecision>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let out_tx = out.map(|t| t.clone());
+    let out_tx = out.cloned();
     let out_tx_cloned = out_tx.clone();
     let approval_rx_shared: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>> =
         Arc::new(Mutex::new(approval_rx));
     let approval_request_guard = Arc::new(Mutex::new(()));
     let persistent_allowlist_shared = Arc::new(Mutex::new(persistent_allowlist));
-    // 反思阶段由模型设置 workflow.done=true 来停止；
-    // 运行时也用 max_rounds 做兜底上限，避免模型忘记置 done=true 导致死循环。
-    let mut reflection_controller =
-        crate::workflow_reflection_controller::WorkflowReflectionController::new(5);
-    // 方案 C：运行时校验模型最终回答 content 中是否包含“规划”。
-    // 仅当反思进入规划（plan）阶段时启用，若缺失则追加纠正消息让模型重写。
-    let mut require_plan_in_final_content = false;
-    let mut plan_rewrite_attempts: usize = 0;
-    const MAX_PLAN_REWRITE_ATTEMPTS: usize = 2;
-    let assistant_content_has_plan = |content: &str| -> bool {
-        content.contains("## 规划") || content.contains("规划：")
-    };
+    let mut per_coord =
+        crate::per_coord::PerCoordinator::new(cfg.reflection_default_max_rounds);
     'outer: loop {
         let req = ChatRequest {
             model: cfg.model.clone(),
@@ -596,262 +721,129 @@ async fn run_agent_turn_tui(
             stream: None,
         };
         let (msg, finish_reason) =
-            stream_chat(client, api_key, &cfg.api_base, &req, out, false).await?;
+            stream_chat(client, api_key, &cfg.api_base, &req, out, false, no_stream).await?;
         messages.push(msg.clone());
         if finish_reason != "tool_calls" {
-            if require_plan_in_final_content {
-                let content = msg.content.as_deref().unwrap_or("");
-                if !assistant_content_has_plan(content) {
-                    if plan_rewrite_attempts < MAX_PLAN_REWRITE_ATTEMPTS {
-                        plan_rewrite_attempts += 1;
-                        messages.push(Message {
-                            role: "user".to_string(),
-                            content: Some(
-                                "你的最终回答缺少规划。请在 content 中包含规划部分，并以 `## 规划` 作为标题（随后再给出执行/结论）。请直接重写本轮最终回答。".to_string(),
-                            ),
-                            tool_calls: None,
-                            name: None,
-                            tool_call_id: None,
-                        });
-                        continue 'outer;
-                    }
-                } else {
-                    // 本轮已包含规划，允许直接结束本轮最终回答。
+            match per_coord.after_final_assistant(&msg) {
+                crate::per_coord::AfterFinalAssistant::StopTurn => break,
+                crate::per_coord::AfterFinalAssistant::RequestPlanRewrite(m) => {
+                    messages.push(m);
+                    continue 'outer;
                 }
             }
-            break;
         }
         let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+        let tui_tool_ctx = crate::tool_registry::TuiToolRuntime {
+            out_tx: out_tx_cloned.clone(),
+            approval_rx_shared: approval_rx_shared.clone(),
+            approval_request_guard: approval_request_guard.clone(),
+            persistent_allowlist_shared: persistent_allowlist_shared.clone(),
+        };
         if let Some(tx) = out_tx_cloned.as_ref() {
-            let _ = tx.send(r#"{"tool_running":true}"#.to_string()).await;
+            let _ = tx
+                .send(crate::sse_protocol::encode_message(
+                    crate::sse_protocol::SsePayload::ToolRunning {
+                        tool_running: true,
+                    },
+                ))
+                .await;
         }
         for tc in tool_calls {
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
             let id = tc.id.clone();
-            if let Some(tx) = out_tx_cloned.as_ref() {
-                if let Some(summary) = crate::tools::summarize_tool_call(&name, &args) {
-                    let payload = serde_json::json!({ "tool_call": { "name": name, "summary": summary } });
-                    let _ = tx.send(payload.to_string()).await;
+            if let Some(tx) = out_tx_cloned.as_ref()
+                && let Some(summary) = crate::tools::summarize_tool_call(&name, &args) {
+                    let _ = tx
+                        .send(crate::sse_protocol::encode_message(
+                            crate::sse_protocol::SsePayload::ToolCall {
+                                tool_call: crate::sse_protocol::ToolCallSummary {
+                                    name: name.clone(),
+                                    summary,
+                                },
+                            },
+                        ))
+                        .await;
                 }
-            }
-            let mut reflection_after_tool: Option<serde_json::Value> = None;
-            let result = if name == "workflow_execute" {
-                let decision = reflection_controller.decide(&args);
-                reflection_after_tool = decision.inject_instruction.clone();
-                if let Some(v) = reflection_after_tool.as_ref() {
-                    if v.get("instruction_type")
-                        .and_then(|x| x.as_str())
-                        == Some("workflow_reflection_plan_next")
-                    {
-                        require_plan_in_final_content = true;
-                    }
-                }
-                let tool_args = if let Some(patch) = decision.workflow_args_patch.as_ref() {
-                    crate::workflow_reflection_controller::apply_workflow_patch(&args, patch)
-                } else {
-                    args.to_string()
-                };
-
-                if decision.execute {
-                    // 实际执行 workflow_execute（done=true 时由 workflow.rs 直接跳过 DAG）
-                    let approval_mode = if let Some(tx) = out_tx_cloned.as_ref() {
-                        crate::workflow::WorkflowApprovalMode::Tui {
-                            out_tx: tx.clone(),
-                            approval_rx: approval_rx_shared.clone(),
-                            approval_request_guard: approval_request_guard.clone(),
-                            persistent_allowlist: persistent_allowlist_shared.clone(),
-                        }
-                    } else {
-                        crate::workflow::WorkflowApprovalMode::NoApproval
-                    };
-
-                    if let Err(contract_err) =
-                        crate::workflow_reflection_controller::validate_workflow_execute_do_contract(&tool_args)
-                    {
-                        contract_err.to_string()
-                    } else {
-                        let (wf_out, _wf_workspace_changed) =
-                            crate::workflow::run_workflow_execute_tool(
-                                &tool_args,
-                                &cfg,
-                                effective_working_dir,
-                                workspace_is_set,
-                                approval_mode,
-                                cfg.command_max_output_len,
-                            )
-                            .await;
-                        wf_out
-                    }
-                } else {
-                    let stop_v = decision.stop_output.unwrap_or_else(|| {
-                        serde_json::Value::String(
-                            "workflow_execute 已停止（反思控制器拒绝继续执行）。".to_string(),
-                        )
-                    });
-                    match stop_v {
-                        serde_json::Value::String(s) => s,
-                        v => v.to_string(),
-                    }
-                }
-            } else if name == "run_command" {
-                if !workspace_is_set {
-                    "错误：未设置工作区，禁止执行命令。".to_string()
-                } else {
-                    let v: serde_json::Value = serde_json::from_str(&args).unwrap_or_default();
-                    let cmd = v
-                        .get("command")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("")
-                        .trim()
-                        .to_lowercase();
-                    let arg_preview = v
-                        .get("args")
-                        .and_then(|x| x.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|x| x.as_str())
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        })
-                        .unwrap_or_default();
-                    let mut effective_allowed = cfg.allowed_commands.clone();
-                    if !cmd.is_empty()
-                        && !effective_allowed.iter().any(|c| c.eq_ignore_ascii_case(&cmd))
-                    {
-                        let already_allowed = persistent_allowlist_shared.lock().await.contains(&cmd);
-                        if already_allowed {
-                            effective_allowed.push(cmd.clone());
-                            crate::tools::run_tool(
-                                &name,
-                                &args,
-                                cfg.command_max_output_len,
-                                cfg.weather_timeout_secs,
-                                &effective_allowed,
-                                effective_working_dir,
-                            )
-                        } else {
-                            let decision = {
-                                let _guard = approval_request_guard.lock().await;
-                                if let Some(tx) = out_tx_cloned.as_ref() {
-                                    let payload = serde_json::json!({
-                                        "command_approval_request": {
-                                            "command": cmd,
-                                            "args": arg_preview
-                                        }
-                                    });
-                                    let _ = tx.send(payload.to_string()).await;
-                                }
-                                let mut rx_guard = approval_rx_shared.lock().await;
-                                rx_guard.recv().await.unwrap_or(CommandApprovalDecision::Deny)
-                            };
-                            match decision {
-                                CommandApprovalDecision::Deny => {
-                                    let cmd_show = if arg_preview.is_empty() {
-                                        cmd
-                                    } else {
-                                        format!("{} {}", cmd, arg_preview)
-                                    };
-                                    format!("用户拒绝执行命令：{}", cmd_show.trim())
-                                }
-                                CommandApprovalDecision::AllowOnce => {
-                                    effective_allowed.push(cmd.clone());
-                                    crate::tools::run_tool(
-                                        &name,
-                                        &args,
-                                        cfg.command_max_output_len,
-                                        cfg.weather_timeout_secs,
-                                        &effective_allowed,
-                                        effective_working_dir,
-                                    )
-                                }
-                                CommandApprovalDecision::AllowAlways => {
-                                    persistent_allowlist_shared.lock().await.insert(cmd.clone());
-                                    effective_allowed.push(cmd.clone());
-                                    crate::tools::run_tool(
-                                        &name,
-                                        &args,
-                                        cfg.command_max_output_len,
-                                        cfg.weather_timeout_secs,
-                                        &effective_allowed,
-                                        effective_working_dir,
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        crate::tools::run_tool(
-                            &name,
-                            &args,
-                            cfg.command_max_output_len,
-                            cfg.weather_timeout_secs,
-                            &effective_allowed,
-                            effective_working_dir,
-                        )
-                    }
-                }
-            } else {
-                crate::tools::run_tool(
-                    &name,
-                    &args,
-                    cfg.command_max_output_len,
-                    cfg.weather_timeout_secs,
-                    &cfg.allowed_commands,
-                    effective_working_dir,
-                )
-            };
+            let (result, reflection_inject) = crate::tool_registry::dispatch_tool(
+                crate::tool_registry::ToolRuntime::Tui {
+                    ctx: &tui_tool_ctx,
+                },
+                &mut per_coord,
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                &name,
+                &args,
+                tc,
+            )
+            .await;
             if let Some(tx) = out {
                 if tx.is_closed() {
                     break 'outer;
                 }
-                let payload = serde_json::json!({
-                    "tool_result": {
-                        "name": tc.function.name,
-                        "output": result,
-                    }
-                });
-                let _ = tx.send(payload.to_string()).await;
+                let _ = tx
+                    .send(crate::sse_protocol::encode_message(
+                        crate::sse_protocol::SsePayload::ToolResult {
+                            tool_result: crate::sse_protocol::ToolResultBody {
+                                name: tc.function.name.clone(),
+                                output: result.clone(),
+                            },
+                        },
+                    ))
+                    .await;
             }
-            messages.push(Message {
-                role: "tool".to_string(),
-                content: Some(result),
-                tool_calls: None,
-                name: None,
-                tool_call_id: Some(id),
-            });
-
-            if let Some(instruction) = reflection_after_tool {
-                let instruction_str = serde_json::to_string(&instruction)
-                    .unwrap_or_else(|_| "".to_string());
-                messages.push(Message {
-                    role: "user".to_string(),
-                    content: Some(instruction_str),
-                    tool_calls: None,
-                    name: None,
-                    tool_call_id: None,
-                });
-            }
+            crate::per_coord::PerCoordinator::append_tool_result_and_reflection(
+                messages,
+                id,
+                result,
+                reflection_inject,
+            );
         }
         if let Some(tx) = out {
-            let _ = tx.send(r#"{"tool_running":false}"#.to_string()).await;
+            let _ = tx
+                .send(crate::sse_protocol::encode_message(
+                    crate::sse_protocol::SsePayload::ToolRunning {
+                        tool_running: false,
+                    },
+                ))
+                .await;
         }
     }
     Ok(())
 }
 
+/// TUI 按键处理所需的 Agent / 通道 / 配置上下文，避免 `handle_key` 参数过长。
+struct HandleKeyContext<'a> {
+    agent_running: &'a mut Option<tokio::task::JoinHandle<()>>,
+    assistant_buf: &'a mut String,
+    approval_tx: &'a mut Option<mpsc::Sender<CommandApprovalDecision>>,
+    tx: &'a mpsc::Sender<String>,
+    sync_tx: mpsc::Sender<Vec<Message>>,
+    cfg: &'a AgentConfig,
+    client: &'a reqwest::Client,
+    api_key: &'a str,
+    tools: &'a [crate::types::Tool],
+    no_stream: bool,
+}
+
 async fn handle_key(
     key: KeyEvent,
     state: &mut TuiState,
-    agent_running: &mut Option<tokio::task::JoinHandle<()>>,
-    assistant_buf: &mut String,
-    approval_tx: &mut Option<mpsc::Sender<CommandApprovalDecision>>,
-    tx: &mpsc::Sender<String>,
-    cfg: &AgentConfig,
-    client: &reqwest::Client,
-    api_key: &str,
-    tools: &[crate::types::Tool],
-    no_stream: bool,
+    ctx: HandleKeyContext<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    let HandleKeyContext {
+        agent_running,
+        assistant_buf,
+        approval_tx,
+        tx,
+        sync_tx,
+        cfg,
+        client,
+        api_key,
+        tools,
+        no_stream,
+    } = ctx;
     // exit
     if key.key == KeyCode::Char('c') && key.modifiers.contains(Modifiers::CTRL) {
         return Ok(true);
@@ -876,6 +868,7 @@ async fn handle_key(
         match key.key {
             KeyCode::Escape => {
                 state.mode = Mode::Normal;
+                state.mouse_leak_scratch.clear();
                 state.prompt.clear();
                 state.prompt_title.clear();
             }
@@ -904,15 +897,22 @@ async fn handle_key(
                     }
                 }
                 state.mode = Mode::Normal;
+                state.mouse_leak_scratch.clear();
                 state.prompt.clear();
                 state.prompt_title.clear();
             }
             KeyCode::Backspace => {
-                state.prompt.pop();
+                if !state.mouse_leak_scratch.is_empty() {
+                    state.mouse_leak_scratch.pop();
+                } else {
+                    state.prompt.pop();
+                }
             }
             KeyCode::Char(ch) => {
                 if !key.modifiers.contains(Modifiers::CTRL) && !key.modifiers.contains(Modifiers::ALT) {
-                    state.prompt.push(ch);
+                    feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ch, |c| {
+                        state.prompt.push(c);
+                    });
                 }
             }
             _ => {}
@@ -1159,6 +1159,7 @@ async fn handle_key(
             if agent_running.is_none() && state.focus == Focus::ChatInput {
                 let q = state.input.trim().to_string();
                 if !q.is_empty() {
+                    state.mouse_leak_scratch.clear();
                     state.cursor_override = None;
                     state.input.clear();
                     // 若当前在底部，则保持自动滚动；否则保留用户的历史查看位置
@@ -1186,7 +1187,6 @@ async fn handle_key(
                     let tx2 = tx.clone();
                     let work_dir = state.workspace_dir.clone();
                     let workspace_is_set = true; // TUI 以 CLI/work_dir 为准，视为已设置
-                    let _no_stream = no_stream;
                     let cfg = cfg.clone();
                     let client = client.clone();
                     let api_key = api_key.to_string();
@@ -1195,9 +1195,10 @@ async fn handle_key(
                     let (approve_tx_ch, approve_rx_ch) =
                         mpsc::channel::<CommandApprovalDecision>(8);
                     *approval_tx = Some(approve_tx_ch);
+                    let sync_tx2 = sync_tx.clone();
                     *agent_running = Some(tokio::spawn(async move {
                         let out = Some(&tx2);
-                        let _ = run_agent_turn_tui(
+                        let res = run_agent_turn_tui(
                             &client,
                             &api_key,
                             &cfg,
@@ -1206,11 +1207,31 @@ async fn handle_key(
                             out,
                             &work_dir,
                             workspace_is_set,
+                            no_stream,
                             persistent_allowlist,
                             approve_rx_ch,
-                        ).await;
-                        // 结束标记交给上层通过 join handle 检测
-                        let _ = tx2.send(r#"{"tool_running":false}"#.to_string()).await;
+                        )
+                        .await;
+                        let _ = sync_tx2.send(messages).await;
+                        if let Err(e) = res {
+                            let _ = tx2
+                                .send(crate::sse_protocol::encode_message(
+                                    crate::sse_protocol::SsePayload::Error(
+                                        crate::sse_protocol::SseErrorBody {
+                                            error: e.to_string(),
+                                            code: Some("AGENT_TURN".to_string()),
+                                        },
+                                    ),
+                                ))
+                                .await;
+                        }
+                        let _ = tx2
+                            .send(crate::sse_protocol::encode_message(
+                                crate::sse_protocol::SsePayload::ToolRunning {
+                                    tool_running: false,
+                                },
+                            ))
+                            .await;
                     }));
                 }
             }
@@ -1222,7 +1243,11 @@ async fn handle_key(
                 workspace_go_up(state);
             } else if state.focus == Focus::ChatInput {
                 state.cursor_override = None;
-                state.input.pop();
+                if !state.mouse_leak_scratch.is_empty() {
+                    state.mouse_leak_scratch.pop();
+                } else {
+                    state.input.pop();
+                }
             }
         }
         KeyCode::Char(' ') => {
@@ -1240,11 +1265,14 @@ async fn handle_key(
                 }
             } else {
                 state.cursor_override = None;
-                state.input.push(' ');
+                feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ' ', |c| {
+                    state.input.push(c);
+                });
             }
         }
         KeyCode::Char('a') => {
             if state.focus == Focus::Right && state.tab == RightTab::Schedule && state.schedule_sub == 0 {
+                state.mouse_leak_scratch.clear();
                 state.mode = Mode::Prompt;
                 state.prompt.clear();
                 state.prompt_title = "新增提醒：输入「标题 @ 2026-03-20 09:00」（@ 后可省略）".to_string();
@@ -1261,12 +1289,13 @@ async fn handle_key(
             }
         }
         KeyCode::Char(ch) => {
-            if !key.modifiers.contains(Modifiers::CTRL) && !key.modifiers.contains(Modifiers::ALT) {
-                if state.focus == Focus::ChatInput {
+            if !key.modifiers.contains(Modifiers::CTRL) && !key.modifiers.contains(Modifiers::ALT)
+                && state.focus == Focus::ChatInput {
                     state.cursor_override = None;
-                    state.input.push(ch);
+                    feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ch, |c| {
+                        state.input.push(c);
+                    });
                 }
-            }
         }
         _ => {}
     }
@@ -1723,23 +1752,23 @@ fn draw_chat(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
             let text = match (state.md_style, state.high_contrast) {
                 (0, false) => {
                     let options = Options::new(DarkStyleSheet).with_code_theme(theme);
-                    markdown_to_text(&rendered, &options)
+                    markdown_to_text(rendered, &options)
                 }
                 (0, true) => {
                     let options = Options::new(HighContrastDarkStyleSheet).with_code_theme(theme);
-                    markdown_to_text(&rendered, &options)
+                    markdown_to_text(rendered, &options)
                 }
                 (1, false) => {
                     let options = Options::new(LightStyleSheet).with_code_theme(theme);
-                    markdown_to_text(&rendered, &options)
+                    markdown_to_text(rendered, &options)
                 }
                 (1, true) => {
                     let options = Options::new(HighContrastLightStyleSheet).with_code_theme(theme);
-                    markdown_to_text(&rendered, &options)
+                    markdown_to_text(rendered, &options)
                 }
                 _ => {
                     let options = Options::new(DarkStyleSheet).with_code_theme(theme);
-                    markdown_to_text(&rendered, &options)
+                    markdown_to_text(rendered, &options)
                 }
             };
             lines.extend(text.lines.into_iter());
@@ -2238,24 +2267,22 @@ fn draw_right(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
                         }
                     }
                 }
+            } else if state.event_items.is_empty() {
+                lines.push(Line::raw("（无日程）"));
             } else {
-                if state.event_items.is_empty() {
-                    lines.push(Line::raw("（无日程）"));
-                } else {
-                    for (i, (_id, title, start_at)) in state.event_items.iter().enumerate().take(50) {
-                        let s = if start_at.is_empty() {
-                            title.clone()
-                        } else {
-                            format!("{} (有开始时间)", title)
-                        };
-                        if state.focus == Focus::Right && i == state.event_sel {
-                            lines.push(Line::from(Span::styled(
-                                s,
-                                Style::default().add_modifier(Modifier::REVERSED),
-                            )));
-                        } else {
-                            lines.push(Line::raw(s));
-                        }
+                for (i, (_id, title, start_at)) in state.event_items.iter().enumerate().take(50) {
+                    let s = if start_at.is_empty() {
+                        title.clone()
+                    } else {
+                        format!("{} (有开始时间)", title)
+                    };
+                    if state.focus == Focus::Right && i == state.event_sel {
+                        lines.push(Line::from(Span::styled(
+                            s,
+                            Style::default().add_modifier(Modifier::REVERSED),
+                        )));
+                    } else {
+                        lines.push(Line::raw(s));
                     }
                 }
             }

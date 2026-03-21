@@ -54,7 +54,7 @@ pub(crate) fn format_month_calendar(year: i32, month: u32) -> String {
 
     let mut line = " ".repeat(wd_first * 3);
     for day in 1..=last_day {
-        if day > 1 && (wd_first + (day as usize) - 1) % 7 == 0 {
+        if day > 1 && (wd_first + (day as usize) - 1).is_multiple_of(7) {
             out.push_str(line.trim_end());
             out.push('\n');
             line = String::new();

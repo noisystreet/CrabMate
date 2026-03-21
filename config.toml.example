@@ -1,6 +1,6 @@
 # Agent Demo 配置示例（覆盖 default_config.toml 中的默认值）
 # 复制为 config.toml 或 .agent_demo.toml 后按需修改
-# 环境变量 AGENT_* 会覆盖对应项
+# 环境变量 AGENT_* 会覆盖对应项（如 AGENT_REFLECTION_DEFAULT_MAX_ROUNDS）
 
 [agent]
 # api_base = "https://api.deepseek.com/v1"
@@ -16,6 +16,7 @@
 # api_max_retries = 3
 # api_retry_delay_secs = 1
 # weather_timeout_secs = 15
+# reflection_default_max_rounds = 5
 # system_prompt = "你是专业的助手，回答简洁。"
 # system_prompt_file = "system_prompt.txt"
 model = "deepseek-chat"

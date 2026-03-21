@@ -37,6 +37,8 @@ pub struct AgentConfig {
     pub api_retry_delay_secs: u64,
     /// get_weather 工具请求超时（秒）
     pub weather_timeout_secs: u64,
+    /// workflow 反思：模型未在 `workflow.reflection.max_rounds` 中指定时的默认上限（传给 `WorkflowReflectionController` / `PerCoordinator`）
+    pub reflection_default_max_rounds: usize,
     /// 系统提示词（可由 system_prompt 或 system_prompt_file 配置）
     pub system_prompt: String,
 }
@@ -61,6 +63,7 @@ struct AgentSection {
     api_max_retries: Option<u64>,
     api_retry_delay_secs: Option<u64>,
     weather_timeout_secs: Option<u64>,
+    reflection_default_max_rounds: Option<u64>,
     system_prompt: Option<String>,
     system_prompt_file: Option<String>,
     env: Option<String>,
@@ -92,6 +95,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut api_max_retries: Option<u64> = None;
     let mut api_retry_delay_secs: Option<u64> = None;
     let mut weather_timeout_secs: Option<u64> = None;
+    let mut reflection_default_max_rounds: Option<u64> = None;
     let mut allowed_commands: Option<Vec<String>> = None;
     let mut allowed_commands_dev: Option<Vec<String>> = None;
     let mut allowed_commands_prod: Option<Vec<String>> = None;
@@ -104,21 +108,18 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         max_message_history = agent.max_message_history.or(max_message_history);
         command_timeout_secs = agent.command_timeout_secs.or(command_timeout_secs);
         command_max_output_len = agent.command_max_output_len.or(command_max_output_len);
-        if let Some(ref v) = agent.allowed_commands {
-            if !v.is_empty() {
+        if let Some(ref v) = agent.allowed_commands
+            && !v.is_empty() {
                 allowed_commands = Some(v.clone());
             }
-        }
-        if let Some(ref v) = agent.allowed_commands_dev {
-            if !v.is_empty() {
+        if let Some(ref v) = agent.allowed_commands_dev
+            && !v.is_empty() {
                 allowed_commands_dev = Some(v.clone());
             }
-        }
-        if let Some(ref v) = agent.allowed_commands_prod {
-            if !v.is_empty() {
+        if let Some(ref v) = agent.allowed_commands_prod
+            && !v.is_empty() {
                 allowed_commands_prod = Some(v.clone());
             }
-        }
         if let Some(ref p) = agent.run_command_working_dir {
             let p = p.trim().to_string();
             if !p.is_empty() {
@@ -131,6 +132,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         api_max_retries = agent.api_max_retries.or(api_max_retries);
         api_retry_delay_secs = agent.api_retry_delay_secs.or(api_retry_delay_secs);
         weather_timeout_secs = agent.weather_timeout_secs.or(weather_timeout_secs);
+        reflection_default_max_rounds = agent
+            .reflection_default_max_rounds
+            .or(reflection_default_max_rounds);
         if let Some(s) = agent.system_prompt {
             let s = s.trim().to_string();
             if !s.is_empty() {
@@ -189,21 +193,18 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 if let Some(v) = agent.command_max_output_len {
                     command_max_output_len = Some(v);
                 }
-                if let Some(ref v) = agent.allowed_commands {
-                    if !v.is_empty() {
+                if let Some(ref v) = agent.allowed_commands
+                    && !v.is_empty() {
                         allowed_commands = Some(v.clone());
                     }
-                }
-                if let Some(ref v) = agent.allowed_commands_dev {
-                    if !v.is_empty() {
+                if let Some(ref v) = agent.allowed_commands_dev
+                    && !v.is_empty() {
                         allowed_commands_dev = Some(v.clone());
                     }
-                }
-                if let Some(ref v) = agent.allowed_commands_prod {
-                    if !v.is_empty() {
+                if let Some(ref v) = agent.allowed_commands_prod
+                    && !v.is_empty() {
                         allowed_commands_prod = Some(v.clone());
                     }
-                }
                 if let Some(ref p) = agent.run_command_working_dir {
                     let p = p.trim().to_string();
                     if !p.is_empty() {
@@ -227,6 +228,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 }
                 if let Some(v) = agent.weather_timeout_secs {
                     weather_timeout_secs = Some(v);
+                }
+                if let Some(v) = agent.reflection_default_max_rounds {
+                    reflection_default_max_rounds = Some(v);
                 }
                 if let Some(ss) = agent.system_prompt {
                     let ss = ss.trim().to_string();
@@ -267,21 +271,18 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             model = m;
         }
     }
-    if let Ok(v) = std::env::var("AGENT_MAX_MESSAGE_HISTORY") {
-        if let Ok(n) = v.trim().parse::<u64>() {
+    if let Ok(v) = std::env::var("AGENT_MAX_MESSAGE_HISTORY")
+        && let Ok(n) = v.trim().parse::<u64>() {
             max_message_history = Some(n);
         }
-    }
-    if let Ok(v) = std::env::var("AGENT_COMMAND_TIMEOUT_SECS") {
-        if let Ok(n) = v.trim().parse::<u64>() {
+    if let Ok(v) = std::env::var("AGENT_COMMAND_TIMEOUT_SECS")
+        && let Ok(n) = v.trim().parse::<u64>() {
             command_timeout_secs = Some(n);
         }
-    }
-    if let Ok(v) = std::env::var("AGENT_COMMAND_MAX_OUTPUT_LEN") {
-        if let Ok(n) = v.trim().parse::<u64>() {
+    if let Ok(v) = std::env::var("AGENT_COMMAND_MAX_OUTPUT_LEN")
+        && let Ok(n) = v.trim().parse::<u64>() {
             command_max_output_len = Some(n);
         }
-    }
     if let Ok(v) = std::env::var("AGENT_ALLOWED_COMMANDS") {
         let list = v
             .split(',')
@@ -298,36 +299,34 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             run_command_working_dir = Some(v);
         }
     }
-    if let Ok(v) = std::env::var("AGENT_MAX_TOKENS") {
-        if let Ok(n) = v.trim().parse::<u64>() {
+    if let Ok(v) = std::env::var("AGENT_MAX_TOKENS")
+        && let Ok(n) = v.trim().parse::<u64>() {
             max_tokens = Some(n);
         }
-    }
-    if let Ok(v) = std::env::var("AGENT_TEMPERATURE") {
-        if let Ok(n) = v.trim().parse::<f64>() {
+    if let Ok(v) = std::env::var("AGENT_TEMPERATURE")
+        && let Ok(n) = v.trim().parse::<f64>() {
             temperature = Some(n);
         }
-    }
-    if let Ok(v) = std::env::var("AGENT_API_TIMEOUT_SECS") {
-        if let Ok(n) = v.trim().parse::<u64>() {
+    if let Ok(v) = std::env::var("AGENT_API_TIMEOUT_SECS")
+        && let Ok(n) = v.trim().parse::<u64>() {
             api_timeout_secs = Some(n);
         }
-    }
-    if let Ok(v) = std::env::var("AGENT_API_MAX_RETRIES") {
-        if let Ok(n) = v.trim().parse::<u64>() {
+    if let Ok(v) = std::env::var("AGENT_API_MAX_RETRIES")
+        && let Ok(n) = v.trim().parse::<u64>() {
             api_max_retries = Some(n);
         }
-    }
-    if let Ok(v) = std::env::var("AGENT_API_RETRY_DELAY_SECS") {
-        if let Ok(n) = v.trim().parse::<u64>() {
+    if let Ok(v) = std::env::var("AGENT_API_RETRY_DELAY_SECS")
+        && let Ok(n) = v.trim().parse::<u64>() {
             api_retry_delay_secs = Some(n);
         }
-    }
-    if let Ok(v) = std::env::var("AGENT_WEATHER_TIMEOUT_SECS") {
-        if let Ok(n) = v.trim().parse::<u64>() {
+    if let Ok(v) = std::env::var("AGENT_WEATHER_TIMEOUT_SECS")
+        && let Ok(n) = v.trim().parse::<u64>() {
             weather_timeout_secs = Some(n);
         }
-    }
+    if let Ok(v) = std::env::var("AGENT_REFLECTION_DEFAULT_MAX_ROUNDS")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            reflection_default_max_rounds = Some(n);
+        }
     if let Ok(s) = std::env::var("AGENT_SYSTEM_PROMPT") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -358,6 +357,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let api_max_retries = api_max_retries.unwrap_or(2).min(10) as u32;
     let api_retry_delay_secs = api_retry_delay_secs.unwrap_or(2).max(1);
     let weather_timeout_secs = weather_timeout_secs.unwrap_or(15).max(1);
+    let reflection_default_max_rounds =
+        reflection_default_max_rounds.unwrap_or(5).max(1) as usize;
 
     let allowed_commands = if let Some(env) = env_tag.as_deref() {
         match env {
@@ -413,10 +414,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
 
     let system_prompt = if let Some(path) = system_prompt_file {
         let path = Path::new(&path);
-        let content = std::fs::read_to_string(path).map_err(|e| {
+        
+        std::fs::read_to_string(path).map_err(|e| {
             format!("无法读取 system_prompt_file \"{}\": {}", path.display(), e)
-        })?;
-        content
+        })?
     } else {
         system_prompt
     };
@@ -438,6 +439,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         api_max_retries,
         api_retry_delay_secs,
         weather_timeout_secs,
+        reflection_default_max_rounds,
         system_prompt,
     })
 }
