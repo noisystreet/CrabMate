@@ -57,6 +57,8 @@ pub(super) struct TuiState {
     // runtime
     pub status_line: String,
     pub tool_running: bool,
+    /// 收到 `ToolRunning(false)` 后延迟到本帧 `draw` 之后再清状态，避免与 `true` 在同一轮 `try_recv` 里被冲掉导致状态栏从不显示「工具运行中」。
+    pub tool_running_clear_pending: bool,
     pub focus: Focus,
     pub mode: Mode,
     // right panel
@@ -88,8 +90,10 @@ pub(super) struct TuiState {
     pub input_rows: u16,
     pub input_dragging: bool,
     pub input_drag_row: u16,
-    // chat scroll offset (0 = bottom, >0 = scrolled up)
-    pub chat_scroll: i32,
+    /// 聊天区首行在「完整行列表」中的索引（与 `chat_follow_tail` 配合，避免用 offset-from-bottom 在流式重排时闪屏）。
+    pub chat_first_line: usize,
+    /// 为 true 时每帧将视口钉在最新内容底部（流式输出）；为 false 时保持 `chat_first_line` 只看历史。
+    pub chat_follow_tail: bool,
     pub cursor_override: Option<(u16, u16)>,
     pub pending_focus: Option<Focus>,
     pub pending_tab: Option<RightTab>,
