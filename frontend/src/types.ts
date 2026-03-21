@@ -20,6 +20,8 @@ export interface StatusData {
       | 'blocking_sync'
   }>
   reflection_default_max_rounds?: number
+  /** 与 `[agent] final_plan_requirement` 一致 */
+  final_plan_requirement?: 'never' | 'workflow_reflection' | 'always'
 }
 
 export interface WorkspaceEntry {

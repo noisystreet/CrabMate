@@ -32,6 +32,32 @@
     - 预留 `plan_required` 等扩展键
 - **协议版本 `v`**：当前为 `1`；演进时递增 `sse_protocol::SSE_PROTOCOL_VERSION`，前端 `api.ts` 的 `sendChatStream` 已按字段形状解析（`tool_call` / `tool_result` / `plan_required` / `error.code` 等），新事件需在前后端同步扩展。
 
+### PER 与终答 `agent_reply_plan` 强制策略
+
+- **`per_coord::PerCoordinator`**（`src/per_coord.rs`）在 Web/TUI 共用：串联 **workflow 反思**（`workflow_reflection_controller`）与 **终答正文**是否含 `plan_artifact` 可解析的 v1 规划。
+- **配置项** `[agent] final_plan_requirement`（环境变量 `AGENT_FINAL_PLAN_REQUIREMENT`）→ `FinalPlanRequirementMode`：
+  - **`never`**：不进入「缺规划则追加 user 重写提示」循环；反思注入仍会下发，但不置位强制标记。
+  - **`workflow_reflection`（默认）**：仅当工具路径注入了 `instruction_type == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT` 时，对随后的**最终** assistant 校验；避免与反思 JSON 的字符串散落耦合。
+  - **`always`**：每次 `finish_reason != tool_calls` 的终答均校验（实验性）。
+
+```mermaid
+flowchart LR
+  subgraph E[工具批 E]
+    WF[workflow_execute]
+  end
+  subgraph PER[per_coord]
+    PRE[prepare_workflow_execute]
+    FLAG[require_plan_in_final_content]
+    AFA[after_final_assistant]
+  end
+  WF --> PRE
+  PRE -->|"policy=WorkflowReflection 且注入 plan_next"| FLAG
+  AFA -->|"缺 JSON 且未超重写次数"| REW[追加 user 重写提示]
+  AFA -->|"有 JSON 或 policy=Never 等"| STOP[结束本轮外层循环]
+```
+
+- **`GET /status`** 返回 `final_plan_requirement`，便于与 `reflection_default_max_rounds` 一起核对运行态。
+
 ## 后端模块说明（`src/`）
 
 ### `src/lib.rs` / `src/main.rs`
@@ -42,7 +68,7 @@
 - **Web 服务**：使用 axum 路由，核心接口包括：
   - `POST /chat`：非流式对话
   - `POST /chat/stream`：SSE 流式对话（前端默认走这个）
-  - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`）
+  - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement`**）
   - `GET /health`：健康检查（API_KEY/静态目录/工作区可写/依赖命令）
   - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件
   - `GET|POST /tasks`：任务清单读写

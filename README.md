@@ -305,6 +305,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_MODEL`：模型 ID  
    - `AGENT_SYSTEM_PROMPT`：系统提示词（内联）  
    - `AGENT_SYSTEM_PROMPT_FILE`：系统提示词文件路径（与上二选一，文件优先）  
+   - `AGENT_FINAL_PLAN_REQUIREMENT`：终答是否必须含结构化 `agent_reply_plan`，取值 `never` / `workflow_reflection` / `always`（与 `[agent] final_plan_requirement` 一致，默认 `workflow_reflection`）  
    ```bash
    export AGENT_MODEL=deepseek-reasoner
    cargo run
@@ -319,6 +320,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    # system_prompt_file = "system_prompt.txt"
    ```
    可参考 `config.toml.example`。
+
+**终答规划策略**（`[agent] final_plan_requirement`）：控制模型以**非 tool_calls**结束一轮时，是否必须嵌入可解析的 `agent_reply_plan` JSON（见 `docs/DEVELOPMENT.md`）。`workflow_reflection` 为默认：仅在工作流反思首轮注入「下一步须带规划」指令后启用校验；`never` 关闭该校验；`always` 对每次终答都校验（实验性，易多耗 API 轮次）。
 
 **系统提示词**：在 `default_config.toml` 中通过 `system_prompt`（多行字符串）或 `system_prompt_file`（文件路径）配置；若同时设置，以文件内容为准。未配置则启动报错。
 

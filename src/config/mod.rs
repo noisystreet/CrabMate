@@ -2,6 +2,7 @@
 
 pub mod cli;
 
+use crate::per_coord::FinalPlanRequirementMode;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -39,6 +40,8 @@ pub struct AgentConfig {
     pub weather_timeout_secs: u64,
     /// workflow 反思：模型未在 `workflow.reflection.max_rounds` 中指定时的默认上限（传给 `WorkflowReflectionController` / `PerCoordinator`）
     pub reflection_default_max_rounds: usize,
+    /// 何时强制终答含 `agent_reply_plan` v1（见 `per_coord::FinalPlanRequirementMode`）
+    pub final_plan_requirement: FinalPlanRequirementMode,
     /// 系统提示词（可由 system_prompt 或 system_prompt_file 配置）
     pub system_prompt: String,
 }
@@ -64,6 +67,8 @@ struct AgentSection {
     api_retry_delay_secs: Option<u64>,
     weather_timeout_secs: Option<u64>,
     reflection_default_max_rounds: Option<u64>,
+    /// `never` / `workflow_reflection` / `always`
+    final_plan_requirement: Option<String>,
     system_prompt: Option<String>,
     system_prompt_file: Option<String>,
     env: Option<String>,
@@ -96,6 +101,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut api_retry_delay_secs: Option<u64> = None;
     let mut weather_timeout_secs: Option<u64> = None;
     let mut reflection_default_max_rounds: Option<u64> = None;
+    let mut final_plan_requirement_str: Option<String> = None;
     let mut allowed_commands: Option<Vec<String>> = None;
     let mut allowed_commands_dev: Option<Vec<String>> = None;
     let mut allowed_commands_prod: Option<Vec<String>> = None;
@@ -135,6 +141,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         reflection_default_max_rounds = agent
             .reflection_default_max_rounds
             .or(reflection_default_max_rounds);
+        if let Some(ref s) = agent.final_plan_requirement {
+            let s = s.trim().to_string();
+            if !s.is_empty() {
+                final_plan_requirement_str = Some(s);
+            }
+        }
         if let Some(s) = agent.system_prompt {
             let s = s.trim().to_string();
             if !s.is_empty() {
@@ -232,6 +244,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 if let Some(v) = agent.reflection_default_max_rounds {
                     reflection_default_max_rounds = Some(v);
                 }
+                if let Some(ref s) = agent.final_plan_requirement {
+                    let s = s.trim().to_string();
+                    if !s.is_empty() {
+                        final_plan_requirement_str = Some(s);
+                    }
+                }
                 if let Some(ss) = agent.system_prompt {
                     let ss = ss.trim().to_string();
                     if !ss.is_empty() {
@@ -327,6 +345,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         && let Ok(n) = v.trim().parse::<u64>() {
             reflection_default_max_rounds = Some(n);
         }
+    if let Ok(s) = std::env::var("AGENT_FINAL_PLAN_REQUIREMENT") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            final_plan_requirement_str = Some(s);
+        }
+    }
     if let Ok(s) = std::env::var("AGENT_SYSTEM_PROMPT") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -425,6 +449,11 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         return Err("配置错误：未设置 system_prompt 或 system_prompt_file".to_string());
     }
 
+    let final_plan_requirement = match final_plan_requirement_str.as_deref() {
+        Some(s) => FinalPlanRequirementMode::parse(s)?,
+        None => FinalPlanRequirementMode::default(),
+    };
+
     Ok(AgentConfig {
         api_base,
         model,
@@ -440,6 +469,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         api_retry_delay_secs,
         weather_timeout_secs,
         reflection_default_max_rounds,
+        final_plan_requirement,
         system_prompt,
     })
 }
