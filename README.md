@@ -306,6 +306,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_SYSTEM_PROMPT`：系统提示词（内联）  
    - `AGENT_SYSTEM_PROMPT_FILE`：系统提示词文件路径（与上二选一，文件优先）  
    - `AGENT_FINAL_PLAN_REQUIREMENT`：终答是否必须含结构化 `agent_reply_plan`，取值 `never` / `workflow_reflection` / `always`（与 `[agent] final_plan_requirement` 一致，默认 `workflow_reflection`）  
+   - `AGENT_PLAN_REWRITE_MAX_ATTEMPTS`：规划不合格时最多重写轮次（默认 `2`，与 `[agent] plan_rewrite_max_attempts` 一致；用尽后 SSE 带 `code=plan_rewrite_exhausted`）  
    ```bash
    export AGENT_MODEL=deepseek-reasoner
    cargo run
@@ -321,7 +322,9 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    ```
    可参考 `config.toml.example`。
 
-**终答规划策略**（`[agent] final_plan_requirement`）：控制模型以**非 tool_calls**结束一轮时，是否必须嵌入可解析的 `agent_reply_plan` JSON（见 `docs/DEVELOPMENT.md`）。`workflow_reflection` 为默认：仅在工作流反思首轮注入「下一步须带规划」指令后启用校验；`never` 关闭该校验；`always` 对每次终答都校验（实验性，易多耗 API 轮次）。
+**终答规划策略**（`[agent] final_plan_requirement`）：控制模型以**非 tool_calls**结束一轮时，是否必须嵌入可解析的 `agent_reply_plan` JSON（见 `docs/DEVELOPMENT.md`）。`workflow_reflection` 为默认：仅在工作流反思首轮注入「下一步须带规划」指令后启用校验；`never` 关闭该校验；`always` 对每次终答都校验（实验性，易多耗 API 轮次）。若近期存在 `workflow_validate_only` 结果，服务端还会按 `spec.layer_count` 要求规划步骤条数不少于层数。
+
+**规划重写次数**（`[agent] plan_rewrite_max_attempts`）：不合格时追加「请重写」user 消息的上限；超过后结束本轮，流式场景下前端会收到 `error` + `code: plan_rewrite_exhausted`。
 
 **系统提示词**：在 `default_config.toml` 中通过 `system_prompt`（多行字符串）或 `system_prompt_file`（文件路径）配置；若同时设置，以文件内容为准。未配置则启动报错。
 

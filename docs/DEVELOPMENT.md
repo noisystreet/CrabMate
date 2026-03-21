@@ -39,6 +39,9 @@
   - **`never`**：不进入「缺规划则追加 user 重写提示」循环；反思注入仍会下发，但不置位强制标记。
   - **`workflow_reflection`（默认）**：仅当工具路径注入了 `instruction_type == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT` 时，对随后的**最终** assistant 校验；避免与反思 JSON 的字符串散落耦合。
   - **`always`**：每次 `finish_reason != tool_calls` 的终答均校验（实验性）。
+- **`[agent] plan_rewrite_max_attempts`**（`AGENT_PLAN_REWRITE_MAX_ATTEMPTS`，默认 `2`， clamp `1..=20`）：终答规划不合格时，最多追加多少次「请重写」user 消息；用尽后结束外层循环，并在 **有 SSE 通道** 时发送 `{"error":"…","code":"plan_rewrite_exhausted"}`（与 `sse_protocol::SsePayload::Error` 一致）。
+- **规则化语义（相对 `workflow_validate_only`）**：当策略要求校验规划，且历史中最近一次 `workflow_execute` 的 tool 结果为 `report_type == workflow_validate_result` 时，读取 `spec.layer_count`（拓扑层数），要求 `agent_reply_plan.steps.len() >= layer_count`；否则仅做 JSON 形态校验。重写提示中会附带 `layer_count` 说明。
+- **可观测性**：`tracing` 目标 `crabmate::per`（`RUST_LOG=crabmate::per=info` 或 `RUST_LOG=info`）记录 `after_final_assistant` 的 outcome、`reflection_stage_round`、`plan_rewrite_attempts` 等；`workflow_reflection_controller::WorkflowReflectionController::stage_round()` 供排错对照反思轮次。
 
 ```mermaid
 flowchart LR
@@ -52,11 +55,12 @@ flowchart LR
   end
   WF --> PRE
   PRE -->|"policy=WorkflowReflection 且注入 plan_next"| FLAG
-  AFA -->|"缺 JSON 且未超重写次数"| REW[追加 user 重写提示]
-  AFA -->|"有 JSON 或 policy=Never 等"| STOP[结束本轮外层循环]
+  AFA -->|"不合格且未超重写次数"| REW[追加 user 重写提示]
+  AFA -->|"用尽重写次数"| ERR[SSE error plan_rewrite_exhausted]
+  AFA -->|"JSON+层数语义 OK 或无需校验"| STOP[结束本轮外层循环]
 ```
 
-- **`GET /status`** 返回 `final_plan_requirement`，便于与 `reflection_default_max_rounds` 一起核对运行态。
+- **`GET /status`** 返回 `final_plan_requirement`、`plan_rewrite_max_attempts`，便于与 `reflection_default_max_rounds` 一起核对运行态。
 
 ## 后端模块说明（`src/`）
 
@@ -68,7 +72,7 @@ flowchart LR
 - **Web 服务**：使用 axum 路由，核心接口包括：
   - `POST /chat`：非流式对话
   - `POST /chat/stream`：SSE 流式对话（前端默认走这个）
-  - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement`**）
+  - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement` / `plan_rewrite_max_attempts`**）
   - `GET /health`：健康检查（API_KEY/静态目录/工作区可写/依赖命令）
   - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件
   - `GET|POST /tasks`：任务清单读写

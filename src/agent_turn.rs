@@ -14,7 +14,9 @@ use tracing::{error, info};
 use crate::api::stream_chat;
 use crate::config::AgentConfig;
 use crate::per_coord::PerCoordinator;
-use crate::sse_protocol::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
+use crate::sse_protocol::{
+    SseErrorBody, SsePayload, ToolCallSummary, ToolResultBody, encode_message,
+};
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result::ToolResult as StructuredToolResult;
 use crate::tools;
@@ -102,6 +104,8 @@ pub(crate) enum ReflectOnAssistantOutcome {
     ContinueOuterForPlanRewrite,
     /// 进入工具执行阶段
     ProceedToExecuteTools,
+    /// 规划重写次数用尽（已尝试发 SSE 错误码 `plan_rewrite_exhausted`）
+    PlanRewriteExhausted,
 }
 
 pub(crate) fn per_reflect_after_assistant(
@@ -113,11 +117,14 @@ pub(crate) fn per_reflect_after_assistant(
     if finish_reason == "tool_calls" {
         return ReflectOnAssistantOutcome::ProceedToExecuteTools;
     }
-    match per_coord.after_final_assistant(msg) {
+    match per_coord.after_final_assistant(msg, messages.as_slice()) {
         crate::per_coord::AfterFinalAssistant::StopTurn => ReflectOnAssistantOutcome::StopTurn,
         crate::per_coord::AfterFinalAssistant::RequestPlanRewrite(m) => {
             messages.push(m);
             ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
+        }
+        crate::per_coord::AfterFinalAssistant::StopTurnPlanRewriteExhausted => {
+            ReflectOnAssistantOutcome::PlanRewriteExhausted
         }
     }
 }
@@ -364,8 +371,11 @@ pub(crate) async fn run_agent_turn_common(
     no_stream: bool,
     mode: AgentRunMode<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut per_coord =
-        PerCoordinator::new(cfg.reflection_default_max_rounds, cfg.final_plan_requirement);
+    let mut per_coord = PerCoordinator::new(
+        cfg.reflection_default_max_rounds,
+        cfg.final_plan_requirement,
+        cfg.plan_rewrite_max_attempts,
+    );
 
     'outer: loop {
         if sse_sender_closed(out) {
@@ -394,6 +404,17 @@ pub(crate) async fn run_agent_turn_common(
             ReflectOnAssistantOutcome::StopTurn => break,
             ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => continue 'outer,
             ReflectOnAssistantOutcome::ProceedToExecuteTools => {}
+            ReflectOnAssistantOutcome::PlanRewriteExhausted => {
+                if let Some(tx) = out {
+                    let _ = tx
+                        .send(encode_message(SsePayload::Error(SseErrorBody {
+                            error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
+                            code: Some("plan_rewrite_exhausted".to_string()),
+                        })))
+                        .await;
+                }
+                break;
+            }
         }
 
         let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;

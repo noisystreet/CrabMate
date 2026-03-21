@@ -22,6 +22,8 @@ export interface StatusData {
   reflection_default_max_rounds?: number
   /** 与 `[agent] final_plan_requirement` 一致 */
   final_plan_requirement?: 'never' | 'workflow_reflection' | 'always'
+  /** 终答规划重写次数上限 */
+  plan_rewrite_max_attempts?: number
 }
 
 export interface WorkspaceEntry {
