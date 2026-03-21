@@ -4,6 +4,7 @@
 //!
 //! 大文件：`read_file` 按行流式读取并默认限制单次返回行数；`modify_file` 支持按行区间替换，避免整文件读入内存。
 
+use glob::Pattern;
 use regex::RegexBuilder;
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -19,6 +20,18 @@ const READ_FILE_ABS_MAX_LINES: usize = 8000;
 const READ_BINARY_META_PREFIX_DEFAULT: usize = 8192;
 /// read_binary_meta：前缀哈希最多读取字节（避免大文件读入过多）
 const READ_BINARY_META_PREFIX_MAX: usize = 256 * 1024;
+
+/// glob_files：默认/上限
+const GLOB_DEFAULT_MAX_DEPTH: usize = 20;
+const GLOB_ABS_MAX_DEPTH: usize = 100;
+const GLOB_DEFAULT_MAX_RESULTS: usize = 200;
+const GLOB_ABS_MAX_RESULTS: usize = 5000;
+
+/// list_tree：默认/上限
+const TREE_DEFAULT_MAX_DEPTH: usize = 8;
+const TREE_ABS_MAX_DEPTH: usize = 60;
+const TREE_DEFAULT_MAX_ENTRIES: usize = 500;
+const TREE_ABS_MAX_ENTRIES: usize = 10000;
 
 fn canonical_workspace_root(base: &Path) -> Result<PathBuf, String> {
     base.canonicalize()
@@ -569,6 +582,338 @@ pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
         }
         Err(e) => format!("读取目录失败：{}", e),
     }
+}
+
+fn rel_path_posix(rel: &Path) -> String {
+    rel.to_string_lossy().replace('\\', "/")
+}
+
+/// 在 `abs_dir`（已位于工作区内）下列目录，按 glob 收集文件相对路径（相对**起始目录** `scan_root_display`）。
+fn walk_glob_collect(
+    abs_dir: &Path,
+    rel_from_scan_root: &Path,
+    workspace_canonical: &Path,
+    pattern: &Pattern,
+    max_depth: usize,
+    include_hidden: bool,
+    max_results: usize,
+    results: &mut Vec<String>,
+) -> Result<(), String> {
+    if results.len() >= max_results {
+        return Ok(());
+    }
+    let rd = std::fs::read_dir(abs_dir).map_err(|e| format!("读取目录失败: {}", e))?;
+    let mut entries: Vec<(PathBuf, bool)> = Vec::new();
+    for ent in rd.flatten() {
+        let name = ent.file_name();
+        if !include_hidden && name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let path = ent.path();
+        let Ok(canon) = path.canonicalize() else {
+            continue;
+        };
+        if !canon.starts_with(workspace_canonical) {
+            continue;
+        }
+        let is_dir = ent.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        entries.push((path, is_dir));
+    }
+    entries.sort_by(|a, b| {
+        let na = a.0.file_name().unwrap_or_default();
+        let nb = b.0.file_name().unwrap_or_default();
+        na.to_string_lossy()
+            .to_lowercase()
+            .cmp(&nb.to_string_lossy().to_lowercase())
+    });
+    for (path, is_dir) in entries {
+        if results.len() >= max_results {
+            break;
+        }
+        let file_name = path.file_name().unwrap_or_default();
+        let child_rel = rel_from_scan_root.join(file_name);
+        if is_dir {
+            let depth = child_rel.components().count();
+            if depth <= max_depth {
+                let Ok(canon_dir) = path.canonicalize() else {
+                    continue;
+                };
+                if !canon_dir.starts_with(workspace_canonical) {
+                    continue;
+                }
+                walk_glob_collect(
+                    &canon_dir,
+                    &child_rel,
+                    workspace_canonical,
+                    pattern,
+                    max_depth,
+                    include_hidden,
+                    max_results,
+                    results,
+                )?;
+            }
+        } else {
+            let rel_s = rel_path_posix(&child_rel);
+            if pattern.matches(&rel_s) {
+                results.push(rel_s);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 按 glob 模式递归查找工作区内文件路径（相对起始目录）。
+/// 参数：`pattern`（必填，如 `**/*.rs`）、`path`（可选起始子目录，默认 `.`）、`max_depth`、`max_results`、`include_hidden`
+pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数 JSON 无效: {}", e),
+    };
+    let pattern_s = match v.get("pattern").and_then(|p| p.as_str()).map(str::trim) {
+        Some(p) if !p.is_empty() => p,
+        _ => return "错误：缺少 pattern 参数（glob，如 **/*.rs）".to_string(),
+    };
+    if pattern_s.starts_with('/') || pattern_s.contains("..") {
+        return "错误：pattern 不能使用绝对路径或包含 ..".to_string();
+    }
+    let pattern = match Pattern::new(pattern_s) {
+        Ok(p) => p,
+        Err(e) => return format!("错误：glob 模式无效: {}", e),
+    };
+
+    let root = v
+        .get("path")
+        .and_then(|p| p.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(".");
+    if root.starts_with('/') || root.contains("..") {
+        return "错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string();
+    }
+
+    let max_depth = v
+        .get("max_depth")
+        .and_then(|n| n.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(GLOB_DEFAULT_MAX_DEPTH)
+        .clamp(0, GLOB_ABS_MAX_DEPTH);
+    let max_results = v
+        .get("max_results")
+        .and_then(|n| n.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(GLOB_DEFAULT_MAX_RESULTS)
+        .clamp(1, GLOB_ABS_MAX_RESULTS);
+    let include_hidden = v
+        .get("include_hidden")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+
+    let scan_root = match resolve_for_read(working_dir, root) {
+        Ok(p) => p,
+        Err(e) => return format!("错误：无法解析起始目录：{}", e),
+    };
+    if !scan_root.is_dir() {
+        return format!("错误：path 不是目录：{}", scan_root.display());
+    }
+    let workspace_canonical = match canonical_workspace_root(working_dir) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    let mut results: Vec<String> = Vec::new();
+    if let Err(e) = walk_glob_collect(
+        &scan_root,
+        Path::new(""),
+        &workspace_canonical,
+        &pattern,
+        max_depth,
+        include_hidden,
+        max_results,
+        &mut results,
+    ) {
+        return e;
+    }
+
+    results.sort();
+    results.dedup();
+    let truncated = results.len() >= max_results;
+    let mut out = String::new();
+    out.push_str(&format!(
+        "起始目录（相对工作区）: {}\n模式: {}\nmax_depth={} max_results={} include_hidden={}\n---\n",
+        root,
+        pattern_s,
+        max_depth,
+        max_results,
+        include_hidden
+    ));
+    for r in &results {
+        out.push_str(r);
+        out.push('\n');
+    }
+    out.push_str(&format!(
+        "---\n匹配 {} 条路径{}",
+        results.len(),
+        if truncated {
+            format!("（已达上限 {}，可能仍有未扫描到的匹配）", max_results)
+        } else {
+            String::new()
+        }
+    ));
+    out
+}
+
+fn walk_list_tree(
+    abs_dir: &Path,
+    rel_from_scan_root: &Path,
+    workspace_canonical: &Path,
+    max_depth: usize,
+    include_hidden: bool,
+    max_entries: usize,
+    lines: &mut Vec<(String, bool)>,
+) -> Result<(), String> {
+    if lines.len() >= max_entries {
+        return Ok(());
+    }
+    let rd = std::fs::read_dir(abs_dir).map_err(|e| format!("读取目录失败: {}", e))?;
+    let mut entries: Vec<(PathBuf, bool)> = Vec::new();
+    for ent in rd.flatten() {
+        let name = ent.file_name();
+        if !include_hidden && name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let path = ent.path();
+        let Ok(canon) = path.canonicalize() else {
+            continue;
+        };
+        if !canon.starts_with(workspace_canonical) {
+            continue;
+        }
+        let is_dir = ent.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        entries.push((path, is_dir));
+    }
+    entries.sort_by(|a, b| {
+        let na = a.0.file_name().unwrap_or_default();
+        let nb = b.0.file_name().unwrap_or_default();
+        na.to_string_lossy()
+            .to_lowercase()
+            .cmp(&nb.to_string_lossy().to_lowercase())
+    });
+    for (path, is_dir) in entries {
+        if lines.len() >= max_entries {
+            break;
+        }
+        let file_name = path.file_name().unwrap_or_default();
+        let child_rel = rel_from_scan_root.join(file_name);
+        let rel_s = rel_path_posix(&child_rel);
+        lines.push((rel_s.clone(), is_dir));
+        if is_dir {
+            let depth = child_rel.components().count();
+            if depth <= max_depth {
+                let Ok(canon_dir) = path.canonicalize() else {
+                    continue;
+                };
+                if !canon_dir.starts_with(workspace_canonical) {
+                    continue;
+                }
+                walk_list_tree(
+                    &canon_dir,
+                    &child_rel,
+                    workspace_canonical,
+                    max_depth,
+                    include_hidden,
+                    max_entries,
+                    lines,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 自起始目录起递归列出子路径（先序、字典序），含 `dir:` / `file:` 前缀。
+/// 参数：`path`（可选，默认 `.`）、`max_depth`、`max_entries`、`include_hidden`
+pub fn list_tree(args_json: &str, working_dir: &Path) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数 JSON 无效: {}", e),
+    };
+    let root = v
+        .get("path")
+        .and_then(|p| p.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(".");
+    if root.starts_with('/') || root.contains("..") {
+        return "错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string();
+    }
+    let max_depth = v
+        .get("max_depth")
+        .and_then(|n| n.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(TREE_DEFAULT_MAX_DEPTH)
+        .clamp(0, TREE_ABS_MAX_DEPTH);
+    let max_entries = v
+        .get("max_entries")
+        .and_then(|n| n.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(TREE_DEFAULT_MAX_ENTRIES)
+        .clamp(1, TREE_ABS_MAX_ENTRIES);
+    let include_hidden = v
+        .get("include_hidden")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+
+    let scan_root = match resolve_for_read(working_dir, root) {
+        Ok(p) => p,
+        Err(e) => return format!("错误：无法解析起始目录：{}", e),
+    };
+    if !scan_root.is_dir() {
+        return format!("错误：path 不是目录：{}", scan_root.display());
+    }
+    let workspace_canonical = match canonical_workspace_root(working_dir) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+
+    let mut lines: Vec<(String, bool)> = Vec::new();
+    lines.push((".".to_string(), true));
+    if let Err(e) = walk_list_tree(
+        &scan_root,
+        Path::new(""),
+        &workspace_canonical,
+        max_depth,
+        include_hidden,
+        max_entries,
+        &mut lines,
+    ) {
+        return e;
+    }
+
+    let truncated = lines.len() >= max_entries;
+    let mut out = String::new();
+    out.push_str(&format!(
+        "起始目录（相对工作区）: {}\nmax_depth={} max_entries={} include_hidden={}\n---\n",
+        root, max_depth, max_entries, include_hidden
+    ));
+    out.push_str("dir: .\n");
+    for (rel, is_dir) in lines.iter().skip(1) {
+        out.push_str(if *is_dir { "dir: " } else { "file: " });
+        out.push_str(rel);
+        if *is_dir && !rel.ends_with('/') {
+            out.push('/');
+        }
+        out.push('\n');
+    }
+    out.push_str(&format!(
+        "---\n共 {} 条（含起点 .）{}",
+        lines.len(),
+        if truncated {
+            format!("（已达上限 {}，树可能不完整）", max_entries)
+        } else {
+            String::new()
+        }
+    ));
+    out
 }
 
 /// 检查文件/目录是否存在。
@@ -1358,5 +1703,32 @@ pub fn bar() { println!("hi"); }
 
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn test_glob_files_recursive_rs() {
+        let dir = make_test_dir();
+        std::fs::create_dir_all(dir.join("src/nested")).unwrap();
+        std::fs::write(dir.join("src/a.rs"), "").unwrap();
+        std::fs::write(dir.join("src/nested/b.rs"), "").unwrap();
+        std::fs::write(dir.join("readme.txt"), "").unwrap();
+        let out = glob_files(r#"{"pattern":"**/*.rs"}"#, &dir);
+        assert!(out.contains("src/a.rs"), "{}", out);
+        assert!(out.contains("src/nested/b.rs"), "{}", out);
+        assert!(!out.contains("readme.txt"), "{}", out);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_list_tree_respects_max_depth() {
+        let dir = make_test_dir();
+        std::fs::create_dir_all(dir.join("a/b")).unwrap();
+        std::fs::write(dir.join("a/x.txt"), "").unwrap();
+        std::fs::write(dir.join("a/b/y.txt"), "").unwrap();
+        let out = list_tree(r#"{"max_depth":1}"#, &dir);
+        assert!(out.contains("a/") && out.contains("dir:"), "{}", out);
+        assert!(out.contains("a/x.txt"), "{}", out);
+        assert!(!out.contains("y.txt"), "不应列出 a/b 内文件: {}", out);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -30,6 +30,19 @@ export interface StatusData {
   context_char_budget?: number
   /** 0 表示未启用 LLM 摘要 */
   context_summary_trigger_chars?: number
+  /** 进程内对话任务队列（/chat、/chat/stream） */
+  chat_queue_max_concurrent?: number
+  chat_queue_max_pending?: number
+  chat_queue_running?: number
+  chat_queue_completed_ok?: number
+  chat_queue_completed_err?: number
+  chat_queue_recent_jobs?: Array<{
+    job_id: number
+    kind: string
+    ok: boolean
+    duration_ms: number
+    error_preview?: string
+  }>
 }
 
 export interface WorkspaceEntry {

@@ -22,6 +22,10 @@ context_summary_tail_messages = 12
 context_summary_max_tokens = 1024
 # 送入摘要模型的中间段转写最大字符数
 context_summary_transcript_max_chars = 120000
+# Web 对话任务：同时执行的 Agent 回合上限（单进程）
+chat_queue_max_concurrent = 2
+# Web 对话任务：有界等待队列长度（含正在排队的任务；满则返回 503 QUEUE_FULL）
+chat_queue_max_pending = 32
 # run_command 最长执行时间（秒）
 command_timeout_secs = 10
 # run_command 输出最大长度（字符），超出则截断

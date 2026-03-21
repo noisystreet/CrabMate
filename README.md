@@ -12,6 +12,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`head`、`tail`、`wc`、`cmake`、`gcc`、`g++`、`make` 等），带超时与输出截断。
   - `run_executable`：在工作区目录下运行可执行文件（路径、参数均做安全校验）。
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。
+  - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
@@ -33,9 +34,9 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 ## 部署与安全提示
 
-- **默认监听 `0.0.0.0`**（`--serve`）：局域网内任意机器可访问 HTTP 接口；**无内置鉴权**，`API_KEY` 仅用于服务端调用模型，**不能**防止他人调用你的 Web API 或滥用配额。
+- **默认仅本机监听**（`--serve`）：绑定 **`127.0.0.1`**，局域网其它设备默认无法直连。若需局域网访问，请显式使用 `--host 0.0.0.0` 或设置环境变量 `AGENT_HTTP_HOST=0.0.0.0`（未传 `--host` 时生效）；**无内置鉴权**，暴露后他人可滥用接口与模型配额。
 - **工作区**：Web 端可将工作区设为服务器本机任意路径（在进程权限范围内），请勿在不可信网络暴露本服务。
-- **建议**：仅本机使用时优先 `127.0.0.1` / 反向代理 + 鉴权；生产或公网需自行加固（TLS、mTLS、防火墙等）。
+- **建议**：公网或不可信网络请配合反向代理、鉴权、TLS、防火墙等自行加固。
 
 ## Rust 开发工具示例
 
@@ -307,6 +308,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_SYSTEM_PROMPT_FILE`：系统提示词文件路径（与上二选一，文件优先）  
    - `AGENT_FINAL_PLAN_REQUIREMENT`：终答是否必须含结构化 `agent_reply_plan`，取值 `never` / `workflow_reflection` / `always`（与 `[agent] final_plan_requirement` 一致，默认 `workflow_reflection`）  
    - `AGENT_PLAN_REWRITE_MAX_ATTEMPTS`：规划不合格时最多重写轮次（默认 `2`，与 `[agent] plan_rewrite_max_attempts` 一致；用尽后 SSE 带 `code=plan_rewrite_exhausted`）  
+   - `AGENT_HTTP_HOST`：Web 监听 IP（如 `0.0.0.0`）；**未**传 `--host` 时生效，默认仍为 `127.0.0.1`  
+   - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）  
    - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`  
    ```bash
    export AGENT_MODEL=deepseek-reasoner
@@ -330,6 +333,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 **系统提示词**：在 `default_config.toml` 中通过 `system_prompt`（多行字符串）或 `system_prompt_file`（文件路径）配置；若同时设置，以文件内容为准。未配置则启动报错。
 
 **上下文窗口**（`[agent]`）：每次向模型发请求前会压缩 `messages`——`tool_message_max_chars` 截断工具输出；`max_message_history` 限制条数；`context_char_budget > 0` 时按近似字符删最旧消息；`context_summary_trigger_chars > 0` 且总长超阈值时再调一次无 tools 的 API 生成「较早对话摘要」（尾部保留 `context_summary_tail_messages` 条）。TUI/REPL 长会话下裁剪会缩短本地消息列表；Web 单请求内工具多轮仍受益。
+
+**Web 对话任务队列**（`chat_queue_max_concurrent` / `chat_queue_max_pending`）：`POST /chat` 与 `POST /chat/stream` 经进程内有界队列调度，限制**同时执行**的 Agent 回合数与**排队**长度；队列满时返回 **503**，JSON 体含 `code: "QUEUE_FULL"`。`GET /status` 会返回 `chat_queue_running`、`chat_queue_recent_jobs` 等便于观测。多副本/跨进程需自行接外部消息队列（见 `docs/TODOLIST.md`）。
 
 **与模型网关的 HTTP 连接**：进程内**一个**共享 `reqwest::Client`（连接池、空闲连接保留、TCP keepalive、`User-Agent`），多次调用 `chat/completions` 时可复用 **TLS/HTTP Keep-Alive**；协议仍是 HTTP（JSON 或 SSE），不是 WebSocket「单条长连接」。细节见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) 中 `http_client`。
 
@@ -429,6 +434,7 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `-h, --help`      | 显示命令行帮助与示例。|
 | `--config <path>` | 显式指定配置文件路径。指定后仅从该文件合并配置，不再查找当前目录下的 `config.toml` / `.agent_demo.toml`。|
 | `--serve [port]`  | 以 Web 服务模式启动，默认端口 `8080`。可传入端口号，如 `--serve 3000`。|
+| `--host <ADDR>`   | 仅 `--serve` 时生效：监听 IP，默认 `127.0.0.1`。局域网访问可传 `0.0.0.0`（会打印安全警告）。|
 | `--query <问题>`  | 单次提问模式：命令行参数中直接给出问题，输出回答后进程退出，适合脚本调用。|
 | `--stdin`         | 管道模式：从标准输入读取问题（多行直到 EOF），输出回答后退出，适合 `echo ... | crabmate --stdin` 这种用法。|
 | `--workspace <path>` | 启动时指定初始工作区路径（覆盖配置中的 `run_command_working_dir`，仅当前进程生效）。|
@@ -456,6 +462,9 @@ cargo run -- --serve 3000
 
 # Web 服务模式并指定初始工作区
 cargo run -- --serve 8080 --workspace /path/to/project
+
+# 允许局域网访问（监听所有网卡，注意安全）
+cargo run -- --serve --host 0.0.0.0
 
 # 单次提问
 cargo run -- --query "北京今天天气怎么样"

@@ -776,6 +776,70 @@ fn params_read_dir() -> serde_json::Value {
     })
 }
 
+fn params_glob_files() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "glob 模式（相对起始目录），如 **/*.rs、*.toml、src/**/*.ts；禁止 .. 与绝对路径"
+            },
+            "path": {
+                "type": "string",
+                "description": "可选：起始子目录（相对工作区，默认 .）"
+            },
+            "max_depth": {
+                "type": "integer",
+                "description": "可选：相对起始目录最大路径层数（默认 20，上限 100）；0 表示仅起始目录下的一层，不进入子目录",
+                "minimum": 0,
+                "maximum": 100
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "可选：最多返回多少条匹配路径（默认 200，上限 5000）",
+                "minimum": 1,
+                "maximum": 5000
+            },
+            "include_hidden": {
+                "type": "boolean",
+                "description": "可选：是否进入/匹配以 . 开头的文件与目录，默认 false"
+            }
+        },
+        "required": ["pattern"],
+        "additionalProperties": false
+    })
+}
+
+fn params_list_tree() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "可选：起始目录（相对工作区，默认 .）"
+            },
+            "max_depth": {
+                "type": "integer",
+                "description": "可选：相对起始目录最大路径层数（默认 8，上限 60）；控制向下递归层数",
+                "minimum": 0,
+                "maximum": 60
+            },
+            "max_entries": {
+                "type": "integer",
+                "description": "可选：最多列出多少条路径（含起点 .，默认 500，上限 10000）",
+                "minimum": 1,
+                "maximum": 10000
+            },
+            "include_hidden": {
+                "type": "boolean",
+                "description": "可选：是否列出以 . 开头的项，默认 false"
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
 fn params_file_exists() -> serde_json::Value {
     serde_json::json!({
         "type":"object",
@@ -1284,6 +1348,14 @@ fn runner_read_dir(args: &str, ctx: &ToolContext<'_>) -> String {
     file::read_dir(args, ctx.working_dir)
 }
 
+fn runner_glob_files(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::glob_files(args, ctx.working_dir)
+}
+
+fn runner_list_tree(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::list_tree(args, ctx.working_dir)
+}
+
 fn runner_file_exists(args: &str, ctx: &ToolContext<'_>) -> String {
     file::file_exists(args, ctx.working_dir)
 }
@@ -1749,6 +1821,20 @@ fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_read_dir,
         },
         ToolSpec {
+            name: "glob_files",
+            description: "在工作区内从指定子目录起递归扫描，按 glob 模式匹配**文件**相对路径（如 **/*.rs）。带 max_depth、max_results 上限；路径均在工作区内解析，禁止 ..。优先于 run_command find。",
+            category: ToolCategory::File,
+            parameters: params_glob_files,
+            runner: runner_glob_files,
+        },
+        ToolSpec {
+            name: "list_tree",
+            description: "在工作区内从指定目录起递归列出子路径（先序、字典序），前缀 dir:/file:；带 max_depth、max_entries。用于快速看目录树而不用 find。",
+            category: ToolCategory::File,
+            parameters: params_list_tree,
+            runner: runner_list_tree,
+        },
+        ToolSpec {
             name: "file_exists",
             description: "检查工作区内某路径（文件或目录）是否存在，并可按 kind=file|dir|any 过滤。",
             category: ToolCategory::Utility,
@@ -2130,6 +2216,18 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
                 Some(format!("读取目录：{}", path))
             }
         }
+        "glob_files" => {
+            let pat = v.get("pattern")?.as_str()?.trim();
+            let root = v.get("path").and_then(|x| x.as_str()).unwrap_or(".").trim();
+            Some(format!("glob 匹配：{} @ {}", pat, if root.is_empty() { "." } else { root }))
+        }
+        "list_tree" => {
+            let root = v.get("path").and_then(|x| x.as_str()).unwrap_or(".").trim();
+            Some(format!(
+                "递归列目录：{}",
+                if root.is_empty() { "." } else { root }
+            ))
+        }
         "file_exists" => {
             let path = v.get("path")?.as_str()?.trim();
             Some(format!("检查是否存在：{}", path))
@@ -2379,6 +2477,8 @@ mod tests {
         assert!(names.contains(&"modify_file"));
         assert!(names.contains(&"read_file"));
         assert!(names.contains(&"read_dir"));
+        assert!(names.contains(&"glob_files"));
+        assert!(names.contains(&"list_tree"));
         assert!(names.contains(&"file_exists"));
         assert!(names.contains(&"read_binary_meta"));
         assert!(names.contains(&"extract_in_file"));

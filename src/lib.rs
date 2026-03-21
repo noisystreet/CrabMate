@@ -18,6 +18,7 @@ mod tool_registry;
 mod sse_protocol;
 mod agent_turn;
 mod context_window;
+mod chat_job_queue;
 mod runtime;
 mod ui;
 
@@ -87,6 +88,8 @@ pub(crate) struct AppState {
     /// 前端设置的工作区路径覆盖；为 None 时使用 cfg.run_command_working_dir
     workspace_override: std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
     uploads_dir: std::path::PathBuf,
+    /// `/chat` / `/chat/stream` 进程内任务队列（有界排队 + 并发上限）
+    chat_queue: chat_job_queue::ChatJobQueue,
 }
 
 impl AppState {
@@ -423,7 +426,7 @@ async fn chat_handler(
             }),
         ));
     }
-    let mut messages: Vec<Message> = vec![
+    let messages: Vec<Message> = vec![
         Message {
             role: "system".to_string(),
             content: Some(state.cfg.system_prompt.clone()),
@@ -440,24 +443,44 @@ async fn chat_handler(
         },
     ];
     let work_dir_str = state.effective_workspace_path().await;
-    let work_dir = std::path::Path::new(&work_dir_str);
+    let work_dir = work_dir_str.clone();
     let workspace_is_set = state.workspace_is_set().await;
-    run_agent_turn(
-        &state.client,
-        &state.api_key,
-        &state.cfg,
-        &state.tools,
-        &mut messages,
-        None,
-        work_dir,
-        workspace_is_set,
-        true,
-        false,
-    )
-    .await
+    let job_id = state.chat_queue.next_job_id();
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    info!(job_id, "chat json 任务入队");
+    state
+        .chat_queue
+        .try_submit_json(
+            job_id,
+            state.clone(),
+            messages,
+            std::path::PathBuf::from(work_dir),
+            workspace_is_set,
+            reply_tx,
+        )
+        .map_err(|e| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApiError {
+                    code: "QUEUE_FULL",
+                    message: format!(
+                        "对话任务队列已满（最多等待 {} 个），请稍后重试",
+                        e.max_pending
+                    ),
+                }),
+            )
+        })?;
+    let messages = reply_rx.await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError {
+                code: "INTERNAL_ERROR",
+                message: "对话任务被取消或内部错误".to_string(),
+            }),
+        )
+    })?
     .map_err(|e| {
-        // 记录具体错误到日志，但对前端仅暴露通用友好文案与错误码
-        error!(error = %e, "chat_handler 调用 run_agent_turn 失败");
+        error!(error = %e, job_id, "chat_handler 队列任务失败");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiError {
@@ -489,7 +512,7 @@ async fn chat_stream_handler(
             }),
         ));
     }
-    let mut messages: Vec<Message> = vec![
+    let messages: Vec<Message> = vec![
         Message {
             role: "system".to_string(),
             content: Some(state.cfg.system_prompt.clone()),
@@ -505,38 +528,30 @@ async fn chat_stream_handler(
             tool_call_id: None,
         },
     ];
+    let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let workspace_is_set = state.workspace_is_set().await;
+    let job_id = state.chat_queue.next_job_id();
     let (tx, rx) = mpsc::channel::<String>(1024);
-    let state_clone = state.clone();
-    tokio::spawn(async move {
-        let work_dir = std::path::PathBuf::from(state_clone.effective_workspace_path().await);
-        let workspace_is_set = state_clone.workspace_is_set().await;
-        let out = Some(&tx);
-        if let Err(e) = run_agent_turn(
-            &state_clone.client,
-            &state_clone.api_key,
-            &state_clone.cfg,
-            &state_clone.tools,
-            &mut messages,
-            out,
-            &work_dir,
-            workspace_is_set,
-            false,
-            false,
-        )
-        .await
-        {
-            // 将具体错误记录在日志中，仅通过统一的错误码和友好提示回传给前端
-            error!(error = %e, "chat_stream_handler 中 run_agent_turn 失败");
-            let err_line = crate::sse_protocol::encode_message(crate::sse_protocol::SsePayload::Error(
-                crate::sse_protocol::SseErrorBody {
-                    error: "对话失败，请稍后重试".to_string(),
-                    code: Some("INTERNAL_ERROR".to_string()),
-                },
-            ));
-            let _ = tx.send(err_line).await;
-        }
-        drop(tx);
-    });
+    info!(job_id, "chat stream 任务入队");
+    if let Err(e) = state.chat_queue.try_submit_stream(
+        job_id,
+        state.clone(),
+        messages,
+        work_dir,
+        workspace_is_set,
+        tx,
+    ) {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiError {
+                code: "QUEUE_FULL",
+                message: format!(
+                    "对话任务队列已满（最多等待 {} 个），请稍后重试",
+                    e.max_pending
+                ),
+            }),
+        ));
+    }
     let stream = ReceiverStream::new(rx).map(|s| Ok(Event::default().data(s)));
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
@@ -731,6 +746,12 @@ struct StatusResponse {
     tool_message_max_chars: usize,
     context_char_budget: usize,
     context_summary_trigger_chars: usize,
+    chat_queue_max_concurrent: usize,
+    chat_queue_max_pending: usize,
+    chat_queue_running: usize,
+    chat_queue_completed_ok: u64,
+    chat_queue_completed_err: u64,
+    chat_queue_recent_jobs: Vec<chat_job_queue::ChatJobRecord>,
 }
 
 async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -755,6 +776,12 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         tool_message_max_chars: state.cfg.tool_message_max_chars,
         context_char_budget: state.cfg.context_char_budget,
         context_summary_trigger_chars: state.cfg.context_summary_trigger_chars,
+        chat_queue_max_concurrent: state.chat_queue.max_concurrent(),
+        chat_queue_max_pending: state.chat_queue.max_pending(),
+        chat_queue_running: state.chat_queue.running_count(),
+        chat_queue_completed_ok: state.chat_queue.completed_ok(),
+        chat_queue_completed_err: state.chat_queue.completed_err(),
+        chat_queue_recent_jobs: state.chat_queue.recent_jobs(),
     })
 }
 
@@ -766,6 +793,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         config_path,
         single_shot,
         serve_port,
+        http_bind_host,
         workspace_cli,
         output_mode,
         no_tools,
@@ -828,6 +856,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let initial_workspace = workspace_cli.clone();
             let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
             std::fs::create_dir_all(&uploads_dir).ok();
+        let chat_queue = chat_job_queue::ChatJobQueue::new(
+            cfg.chat_queue_max_concurrent,
+            cfg.chat_queue_max_pending,
+        );
         let state = Arc::new(AppState {
             cfg: cfg.clone(),
             api_key: api_key.clone(),
@@ -835,6 +867,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             tools,
             workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
                 uploads_dir: uploads_dir.clone(),
+            chat_queue,
         });
             let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
             let uploads_dir_for_static = uploads_dir.clone();
@@ -885,11 +918,19 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             app = app.nest_service("/", ServeDir::new(static_dir));
         }
         let app = app.with_state(state);
-        let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
+        let bind_ip: std::net::IpAddr = http_bind_host.parse().map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("无效的 Web 监听地址 {:?}（请使用有效 IP，如 127.0.0.1 或 0.0.0.0）", http_bind_host),
+            )
+        })?;
+        let addr = std::net::SocketAddr::from((bind_ip, port));
         println!("Web 服务已启动");
-        println!("  本地访问: http://127.0.0.1:{}", port);
-        println!("  监听地址: http://0.0.0.0:{}", port);
-        info!(port = %port, "Web 服务监听 http://{}", addr);
+        println!("  监听: http://{}/", addr);
+        if bind_ip.is_unspecified() {
+            eprintln!("  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露", addr);
+        }
+        info!(%addr, "Web 服务监听");
         let listener = tokio::net::TcpListener::bind(addr).await?;
         // uploads 自动清理：每 10 分钟执行一次；保留 24h；总容量上限 500MB
         tokio::spawn({
