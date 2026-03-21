@@ -29,6 +29,7 @@ mod security_tools;
 mod structured_data;
 mod symbol;
 mod time;
+mod unit_convert;
 mod weather;
 mod web_search;
 
@@ -127,6 +128,36 @@ fn params_calc() -> serde_json::Value {
             }
         },
         "required": ["expression"]
+    })
+}
+
+fn params_convert_units() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "category": {
+                "type": "string",
+                "description": "物理量类别：length（长度）、mass（质量）、temperature（温度）、data（信息量：bit/byte/KB/MB…与 KiB/MiB…）、time（时间）、area（面积）、pressure（压强）、speed（速度）。可用英文或中文别名（如 温度、数据量）。",
+                "enum": [
+                    "length", "mass", "temperature", "data", "time", "area", "pressure", "speed",
+                    "距离", "长度", "质量", "重量", "温度", "存储", "数据量", "时间", "时长", "面积", "压强", "压力", "速度"
+                ]
+            },
+            "value": {
+                "type": "number",
+                "description": "待换算的数值（有限浮点数）"
+            },
+            "from": {
+                "type": "string",
+                "description": "源单位符号或别名。示例：长度 km、m、mile、英尺；温度 C、F、K；数据 GiB、MB、byte；时间 h、min、s；速度 m/s、km/h、mph；压强 Pa、bar、atm。"
+            },
+            "to": {
+                "type": "string",
+                "description": "目标单位，与 from 同类别。"
+            }
+        },
+        "required": ["category", "value", "from", "to"],
+        "additionalProperties": false
     })
 }
 
@@ -1573,6 +1604,10 @@ fn runner_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
     calc::run(&expr)
 }
 
+fn runner_convert_units(args: &str, _ctx: &ToolContext<'_>) -> String {
+    unit_convert::run(args)
+}
+
 fn runner_get_weather(args: &str, ctx: &ToolContext<'_>) -> String {
     weather::run(args, ctx.weather_timeout_secs)
 }
@@ -1949,6 +1984,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: params_calc,
             runner: runner_calc,
+        },
+        ToolSpec {
+            name: "convert_units",
+            description: "物理量与数据量单位换算（Rust uom 库，不调用外部程序）。category：length|mass|temperature|data|time|area|pressure|speed（或中文如 温度、数据量）。参数 value、from、to：如 {\"category\":\"length\",\"value\":5,\"from\":\"km\",\"to\":\"mile\"}；数据量区分十进制 KB/MB/GB 与二进制 KiB/MiB/GiB。",
+            category: ToolCategory::Basic,
+            parameters: params_convert_units,
+            runner: runner_convert_units,
         },
         ToolSpec {
             name: "get_weather",
@@ -3039,6 +3081,12 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             Some(format!("格式检查：{}", path))
         }
         "quality_workspace" => Some("工作区质量检查".to_string()),
+        "convert_units" => {
+            let cat = v.get("category")?.as_str()?.trim();
+            let from = v.get("from")?.as_str()?.trim();
+            let to = v.get("to")?.as_str()?.trim();
+            Some(format!("单位换算：{}（{} → {}）", cat, from, to))
+        }
         _ => None,
     }
 }
@@ -3136,6 +3184,18 @@ mod tests {
     }
 
     #[test]
+    fn test_run_tool_convert_units() {
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool(
+            "convert_units",
+            r#"{"category":"length","value":1,"from":"km","to":"mile"}"#,
+            &ctx,
+        );
+        assert!(out.contains("换算结果"), "应成功换算，得到: {out}");
+    }
+
+    #[test]
     fn test_run_tool_run_command_pwd() {
         let allowed = test_allowed_commands();
         let ctx = test_ctx(&allowed);
@@ -3181,6 +3241,7 @@ mod tests {
         let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
         assert!(names.contains(&"get_current_time"));
         assert!(names.contains(&"calc"));
+        assert!(names.contains(&"convert_units"));
         assert!(names.contains(&"get_weather"));
         assert!(names.contains(&"web_search"));
         assert!(names.contains(&"http_fetch"));
@@ -3275,6 +3336,7 @@ mod tests {
         assert_eq!(basic.len() + dev.len(), full.len());
         let bn: Vec<_> = basic.iter().map(|t| t.function.name.as_str()).collect();
         assert!(bn.contains(&"get_current_time"));
+        assert!(bn.contains(&"convert_units"));
         assert!(bn.contains(&"add_reminder"));
         assert!(!bn.contains(&"cargo_check"));
         let dn: Vec<_> = dev.iter().map(|t| t.function.name.as_str()).collect();
@@ -3303,6 +3365,7 @@ mod tests {
         });
         let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
         assert!(names.contains(&"calc"));
+        assert!(names.contains(&"convert_units"));
         assert!(names.contains(&"cargo_check"));
         assert!(!names.contains(&"git_status"));
     }

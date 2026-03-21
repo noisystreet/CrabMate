@@ -8,6 +8,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 - **内置多种工具，由模型按需调用**：
   - `get_current_time`：获取当前日期时间。
   - `calc`：使用 Linux 的 `bc -l` 执行数学表达式（四则、乘方 ^、sqrt/sin/cos/tan/ln/exp、pi/e 等）。
+  - `convert_units`：物理量与数据量**单位换算**（Rust [`uom`](https://crates.io/crates/uom) 库，不调用外部程序）。`category` 含 length / mass / temperature / data / time / area / pressure / speed（或中文别名），`value` + `from` + `to` 指定数值与单位；数据量区分十进制 KB/MB/GB 与二进制 KiB/MiB/GiB。
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
   - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
   - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。**Web** 端仅当 URL 以 `http_fetch_allowed_prefixes` 中某一前缀开头时才执行；**TUI** 下未匹配前缀时可像 `run_command` 一样 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键）。

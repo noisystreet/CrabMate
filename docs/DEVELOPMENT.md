@@ -109,6 +109,7 @@ flowchart TB
 | 文件 | 职责域 |
 |------|--------|
 | `calc.rs` | 数学表达式（`bc`） |
+| `unit_convert.rs` | `convert_units`：基于 [`uom`](https://crates.io/crates/uom) 的长度/质量/温度/信息量/时间/面积/压强/速度换算 |
 | `cargo_tools.rs` | Cargo 子命令封装 |
 | `ci_tools.rs` | 本地 CI / 流水线类工具 |
 | `code_nav.rs` | 代码导航、文件大纲等 |
@@ -266,6 +267,7 @@ flowchart LR
 
 - **`time.rs`**：本地时间与月历格式化（`mode=time|calendar|both`）。
 - **`calc.rs`**：通过 `bc -l` 计算表达式（避免 shell 注入：通常用 stdin 传参、限制输出）。
+- **`unit_convert.rs`**：`convert_units`，基于 **`uom`**（`si` + `f64`）做长度/质量/温度/信息量/时间/面积/压强/速度换算；不执行外部程序。
 - **`weather.rs`**：调用 Open‑Meteo（无需 key），带超时控制。
 - **`web_search.rs`**：`reqwest::blocking` + `serde` 调用 Brave Web Search 或 Tavily；Key 与 `web_search_provider` 来自 `AgentConfig`。Web 路径在 `tool_registry` 中登记为 `WebSearchSpawnTimeout`（`spawn_blocking` + 超时）。
 - **`http_fetch.rs`**：阻塞 GET/HEAD（`method` 参数，默认 GET）；自定义 `redirect::Policy` 记录重定向跳数；`tool_registry` 登记为 `HttpFetchSpawnTimeout`。Web 仅当 URL 以 `http_fetch_allowed_prefixes` 中任一项为前缀时执行；TUI 另可经 `CommandApproval`（`allowlist_key` 为上述持久化键；`args` 对 HEAD 带 `HEAD` 前缀）在「本次允许 / 永久允许」后执行。`CommandApprovalBody.allowlist_key` 可选；`run_command` 审批不传时 TUI 仍以命令名小写写入白名单。
