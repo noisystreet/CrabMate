@@ -1,4 +1,4 @@
-//! Rust 开发工具：cargo check/test/clippy/metadata/run/tree/clean/doc/publish dry-run
+//! Rust 开发工具：cargo check/test/clippy/metadata/run/tree/clean/doc/outdated/machete/udeps/publish dry-run
 
 use std::path::Path;
 use std::process::Command;
@@ -229,6 +229,81 @@ pub fn cargo_outdated(args_json: &str, workspace_root: &Path, max_output_len: us
     let out = run_and_format(cmd, max_output_len, "cargo outdated");
     if out.contains("no such command: `outdated`") || out.contains("no such command: outdated") {
         return "cargo outdated: 未安装 cargo-outdated，请先运行 `cargo install cargo-outdated`"
+            .to_string();
+    }
+    out
+}
+
+/// 运行 **cargo machete**（需已安装 `cargo-machete`）：启发式查找 **Cargo.toml 中声明但未在源码中引用** 的依赖；与 `cargo_outdated`（版本是否可升级）互补。误报可用 `with_metadata` 或 `package.metadata.cargo-machete` 缓解。
+pub fn cargo_machete(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    if !workspace_root.join("Cargo.toml").is_file() {
+        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+    }
+    let with_metadata = v
+        .get("with_metadata")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let path_rel = v.get("path").and_then(|x| x.as_str()).map(str::trim);
+
+    if let Some(p) = path_rel
+        && (p.is_empty() || p.contains(".."))
+    {
+        return "错误：path 无效（不可为空或含 ..）".to_string();
+    }
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("machete");
+    if with_metadata {
+        cmd.arg("--with-metadata");
+    }
+    if let Some(p) = path_rel.filter(|s| !s.is_empty()) {
+        let root_canon = workspace_root
+            .canonicalize()
+            .unwrap_or_else(|_| workspace_root.to_path_buf());
+        let joined = workspace_root.join(p);
+        match joined.canonicalize() {
+            Ok(abs) => {
+                if !abs.starts_with(&root_canon) {
+                    return "错误：path 必须位于工作区内".to_string();
+                }
+                cmd.arg(abs);
+            }
+            Err(e) => return format!("错误：无法解析 path（{}）", e),
+        }
+    }
+    cmd.current_dir(workspace_root);
+    let out = run_and_format(cmd, max_output_len, "cargo machete");
+    if out.contains("no such command: `machete`") || out.contains("no such command: machete") {
+        return "cargo machete: 未安装 cargo-machete，请先运行 `cargo install cargo-machete`"
+            .to_string();
+    }
+    out
+}
+
+/// 运行 **cargo udeps**（需已安装 `cargo-udeps`）：基于构建信息查找未使用依赖，通常比 machete 更准但更重；**官方文档要求 nightly 工具链**，可用参数 `nightly: true` 调用 `cargo +nightly udeps`。
+pub fn cargo_udeps(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    if !workspace_root.join("Cargo.toml").is_file() {
+        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+    }
+    let nightly = v.get("nightly").and_then(|x| x.as_bool()).unwrap_or(false);
+
+    let mut cmd = Command::new("cargo");
+    if nightly {
+        cmd.arg("+nightly");
+    }
+    cmd.arg("udeps");
+    cmd.current_dir(workspace_root);
+    let out = run_and_format(cmd, max_output_len, "cargo udeps");
+    if out.contains("no such command: `udeps`") || out.contains("no such command: udeps") {
+        return "cargo udeps: 未安装 cargo-udeps，请先运行 `cargo install cargo-udeps`（运行期通常需 nightly，可传 nightly: true）"
             .to_string();
     }
     out

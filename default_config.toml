@@ -67,6 +67,10 @@ reflection_default_max_rounds = 5
 final_plan_requirement = "workflow_reflection"
 # 终答规划不合格时，最多追加多少次「请重写」提示（≥1，上限 20）
 plan_rewrite_max_attempts = 2
+# 分阶段规划：为 true 时，每条用户消息先经无工具规划轮产出 agent_reply_plan v1，再按 steps 顺序逐步注入 user 并各跑一轮完整 Agent 循环（Web/TUI 均生效；多耗 API 轮次）
+staged_plan_execution = true
+# 规划轮追加的 system 全文；留空则使用内置默认（见 agent_turn.rs）
+# staged_plan_phase_instruction = """……"""
 # 系统提示词（可改为 system_prompt_file = "path/to/prompt.txt" 从文件加载）
 system_prompt = """
 你是乐于助人的助手。若需要当前时间、数学计算或查看系统/文件信息，请使用提供的工具。

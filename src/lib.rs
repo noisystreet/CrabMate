@@ -9,6 +9,7 @@ mod config;
 mod health;
 mod http_client;
 mod llm;
+mod redact;
 mod runtime;
 mod sse;
 mod tool_registry;
@@ -564,6 +565,8 @@ struct StatusResponse {
     reflection_default_max_rounds: usize,
     final_plan_requirement: crate::agent::per_coord::FinalPlanRequirementMode,
     plan_rewrite_max_attempts: usize,
+    /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`）。
+    staged_plan_execution: bool,
     max_message_history: usize,
     tool_message_max_chars: usize,
     context_char_budget: usize,
@@ -597,6 +600,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         reflection_default_max_rounds: state.cfg.reflection_default_max_rounds,
         final_plan_requirement: state.cfg.final_plan_requirement,
         plan_rewrite_max_attempts: state.cfg.plan_rewrite_max_attempts,
+        staged_plan_execution: state.cfg.staged_plan_execution,
         max_message_history: state.cfg.max_message_history,
         tool_message_max_chars: state.cfg.tool_message_max_chars,
         context_char_budget: state.cfg.context_char_budget,

@@ -22,7 +22,8 @@ use super::clipboard;
 use super::draw;
 use super::edit_history;
 use super::state::{
-    Focus, Mode, ModelPhase, RightTab, TuiState, collect_feed_chars_after_sgr_filter,
+    Focus, Mode, ModelPhase, RightTab, TuiState, TuiTurnOutcome,
+    collect_feed_chars_after_sgr_filter,
 };
 use super::status::{set_high_contrast_status_line, set_normal_status_line};
 use super::styles::code_themes;
@@ -88,6 +89,7 @@ pub(super) struct HandleKeyContext<'a> {
     pub approval_tx: &'a mut Option<mpsc::Sender<CommandApprovalDecision>>,
     pub tx: &'a mpsc::Sender<String>,
     pub sync_tx: mpsc::Sender<Vec<Message>>,
+    pub turn_outcome_tx: mpsc::Sender<TuiTurnOutcome>,
     pub agent_cancel: Arc<AtomicBool>,
     pub cfg: &'a AgentConfig,
     pub client: &'a reqwest::Client,
@@ -108,6 +110,7 @@ pub(super) async fn handle_key(
         approval_tx,
         tx,
         sync_tx,
+        turn_outcome_tx,
         agent_cancel,
         cfg,
         client,
@@ -132,6 +135,7 @@ pub(super) async fn handle_key(
                 }
                 *approval_tx = None;
                 agent_cancel.store(false, Ordering::SeqCst);
+                state.apply_tui_turn_hard_abort();
                 state.tool_running = false;
                 state.tool_running_clear_pending = false;
                 state.model_phase = ModelPhase::Idle;
@@ -533,7 +537,8 @@ pub(super) async fn handle_key(
                 insert_tab_chat(state);
             } else {
                 state.tab = match state.tab {
-                    RightTab::Workspace => RightTab::Tasks,
+                    RightTab::Workspace => RightTab::Queue,
+                    RightTab::Queue => RightTab::Tasks,
                     RightTab::Tasks => RightTab::Schedule,
                     RightTab::Schedule => RightTab::Workspace,
                 };
@@ -544,6 +549,7 @@ pub(super) async fn handle_key(
                     RightTab::Workspace => refresh_workspace(state),
                     RightTab::Tasks => refresh_tasks(state),
                     RightTab::Schedule => refresh_schedule(state),
+                    RightTab::Queue => {}
                 }
             }
         }
@@ -572,6 +578,7 @@ pub(super) async fn handle_key(
                             state.event_sel = state.event_sel.saturating_sub(1);
                         }
                     }
+                    RightTab::Queue => {}
                 }
             }
         }
@@ -603,6 +610,7 @@ pub(super) async fn handle_key(
                                 (state.event_sel + 1).min(state.event_items.len() - 1);
                         }
                     }
+                    RightTab::Queue => {}
                 }
             }
         }
@@ -627,7 +635,7 @@ pub(super) async fn handle_key(
                     RightTab::Workspace => {
                         workspace_open_or_enter(state);
                     }
-                    RightTab::Tasks | RightTab::Schedule => {}
+                    RightTab::Tasks | RightTab::Schedule | RightTab::Queue => {}
                 }
                 return Ok(false);
             } else if agent_running.is_none()
@@ -673,10 +681,17 @@ pub(super) async fn handle_key(
                         mpsc::channel::<CommandApprovalDecision>(8);
                     *approval_tx = Some(approve_tx_ch);
                     let sync_tx2 = sync_tx.clone();
+                    let turn_outcome_tx2 = turn_outcome_tx.clone();
                     agent_cancel.store(false, Ordering::SeqCst);
                     let cancel_arc = agent_cancel.clone();
+                    state.next_tui_job_id = state.next_tui_job_id.saturating_add(1);
+                    let tui_job_id = state.next_tui_job_id;
+                    state.staged_plan_log.clear();
+                    state.tui_active_job_id = Some(tui_job_id);
+                    state.tui_active_job_started = Some(std::time::Instant::now());
                     *agent_running = Some(tokio::spawn(async move {
                         let out = Some(&tx2);
+                        let started = std::time::Instant::now();
                         let res = run_agent_turn_tui(
                             &client,
                             &api_key,
@@ -692,11 +707,38 @@ pub(super) async fn handle_key(
                             Some(cancel_arc.as_ref()),
                         )
                         .await;
+                        let duration_ms = started.elapsed().as_millis() as u64;
                         let user_cancelled =
                             matches!(&res, Err(e) if format!("{e}") == LLM_CANCELLED_ERROR);
                         if !user_cancelled {
                             let _ = sync_tx2.send(messages).await;
                         }
+                        let error_preview = match &res {
+                            Ok(()) => None,
+                            Err(e) => {
+                                let s = e.to_string();
+                                if s == LLM_CANCELLED_ERROR {
+                                    None
+                                } else {
+                                    let max = 120usize;
+                                    let t: String = s.chars().take(max).collect();
+                                    Some(if t.len() < s.len() {
+                                        format!("{t}…")
+                                    } else {
+                                        t
+                                    })
+                                }
+                            }
+                        };
+                        let _ = turn_outcome_tx2
+                            .send(TuiTurnOutcome {
+                                job_id: tui_job_id,
+                                duration_ms,
+                                ok: res.is_ok(),
+                                user_cancelled,
+                                error_preview,
+                            })
+                            .await;
                         if let Err(e) = res
                             && format!("{e}") != LLM_CANCELLED_ERROR
                         {
@@ -940,7 +982,7 @@ fn apply_click_focus_and_tab(
 
         let titles = RightTab::titles();
         let mut cursor: u16 = 0;
-        let mut tab_idx: u16 = 2;
+        let mut tab_idx: u16 = titles.len().saturating_sub(1) as u16;
         for (i, t) in titles.iter().enumerate() {
             let w = (t.width() as u16).saturating_add(2);
             if inner_x >= cursor && inner_x < cursor.saturating_add(w) {
@@ -951,13 +993,13 @@ fn apply_click_focus_and_tab(
         }
         let new_tab = match tab_idx {
             0 => RightTab::Workspace,
-            1 => RightTab::Tasks,
+            1 => RightTab::Queue,
+            2 => RightTab::Tasks,
             _ => RightTab::Schedule,
         };
         let new_focus = match new_tab {
             RightTab::Workspace => Focus::Workspace,
-            RightTab::Tasks => Focus::Right,
-            RightTab::Schedule => Focus::Right,
+            RightTab::Tasks | RightTab::Schedule | RightTab::Queue => Focus::Right,
         };
 
         if defer_to_release {
@@ -973,6 +1015,7 @@ fn apply_click_focus_and_tab(
                 RightTab::Workspace => refresh_workspace(state),
                 RightTab::Tasks => refresh_tasks(state),
                 RightTab::Schedule => refresh_schedule(state),
+                RightTab::Queue => {}
             }
         }
         if state.focus != new_focus {
@@ -1024,6 +1067,7 @@ fn apply_pending_focus_and_tab(state: &mut TuiState, model: &str) -> bool {
             RightTab::Workspace => refresh_workspace(state),
             RightTab::Tasks => refresh_tasks(state),
             RightTab::Schedule => refresh_schedule(state),
+            RightTab::Queue => {}
         }
     }
     if let Some(focus) = state.pending_focus.take()

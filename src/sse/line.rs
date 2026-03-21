@@ -14,6 +14,11 @@ pub enum AgentLineKind {
         allowlist_key: Option<String>,
     },
     StreamError,
+    /// 分阶段规划摘要（仅 TUI 队列页/状态栏使用；Web 忽略）
+    StagedPlanNotice {
+        text: String,
+        clear_before: bool,
+    },
     /// 已识别为协议行但无需刷新 UI（如 workspace_changed:false）
     Ignore,
     Plain,
@@ -44,6 +49,9 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 };
             }
             super::protocol::SsePayload::Error(_) => return AgentLineKind::StreamError,
+            super::protocol::SsePayload::StagedPlanNotice { text, clear_before } => {
+                return AgentLineKind::StagedPlanNotice { text, clear_before };
+            }
             super::protocol::SsePayload::ToolCall { .. }
             | super::protocol::SsePayload::ToolResult { .. }
             | super::protocol::SsePayload::PlanRequired { .. } => {

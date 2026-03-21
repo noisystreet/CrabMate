@@ -27,7 +27,7 @@ CrabMate 在**单个 Rust 进程**内使用 **Tokio** 异步运行时：通过 *
 
 1. **接入层**：HTTP 路由与 multipart（`lib.rs`）、CLI/TUI 参数与交互循环（`runtime/`）。
 2. **编排层**：Web 对话排队（`chat_job_queue`）、Agent 主循环与上下文/PER/工作流（**`agent/`**：`agent_turn`、`context_window`、`per_coord` 等）。
-3. **模型层**：共享 HTTP 客户端（`http_client`）、请求拼装与重试（`llm`）、流式响应解析（**`llm::api`**，`stream_chat`）。
+3. **模型层**：共享 HTTP 客户端（`http_client`）、请求拼装与重试（`llm`）、流式响应解析（**`llm::api`**，`stream_chat`）；上游错误体仅经 **`redact`** 截断后写入日志，避免整包进 tracing 或 `Err` 链。
 4. **工具与工作流**：工具表驱动执行（`tools/mod.rs`）、按名分发与 Web 侧阻塞超时（`tool_registry`）、DAG 工作流（**`agent::workflow`**）。
 5. **横向契约**：OpenAI 兼容类型（`types`）、SSE 控制面（**`sse/`**：`protocol` + `line`）、工具结构化结果（`tool_result`）、配置（`config`）、Web 工作区/任务 API（`web/*`）。
 
@@ -87,6 +87,7 @@ flowchart TB
 | `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限；运行中任务的 `PerTurnFlight` 注册供 `GET /status` 的 `per_active_jobs`。 |
 | `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数。 |
 | `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
+| `redact.rs` | 上游 HTTP 响应体等长文本的**日志预览截断**（`preview_chars` / `single_line_preview`），供 `llm::api`、`tools::web_search` 等使用。 |
 | `health.rs` | 与 `GET /health` 一致的运行状况报告（`build_health_report` / `format_health_report_terminal`）；供 `lib.rs` 的 health handler 与 TUI **F10** 弹层共用，不依赖本机再起 HTTP 服务。 |
 | `llm/` | **`mod`**：`ChatRequest` 构造、指数退避 **`complete_chat_retrying`**；**`api`**：`chat/completions` HTTP + SSE/JSON 解析、终端 Markdown（公式见 `runtime::latex_unicode`）。 |
 | `runtime/` | `cli`：单次问答/REPL；`tui`：全屏终端 UI；`latex_unicode`；`chat_export`（会话 JSON/Markdown 导出，对齐 `frontend/src/chatExport.ts`）。 |
@@ -110,7 +111,7 @@ flowchart TB
 |------|--------|
 | `calc.rs` | 数学表达式（`bc`） |
 | `unit_convert.rs` | `convert_units`：基于 [`uom`](https://crates.io/crates/uom) 的长度/质量/温度/信息量/时间/面积/压强/速度换算 |
-| `cargo_tools.rs` | Cargo 子命令封装 |
+| `cargo_tools.rs` | Cargo 子命令封装（含 `cargo_outdated` / `cargo_machete` / `cargo_udeps` 等） |
 | `ci_tools.rs` | 本地 CI / 流水线类工具 |
 | `code_nav.rs` | 代码导航、文件大纲等 |
 | `command.rs` | `run_command` 白名单与进程执行 |
@@ -123,6 +124,7 @@ flowchart TB
 | `frontend_tools.rs` | 前端 npm 脚本类 |
 | `git.rs` | Git 只读与受控写入 |
 | `grep.rs` / `symbol.rs` | 工作区内文本搜索、Rust 符号 |
+| `spell_astgrep_tools.rs` | `typos_check`、`codespell_check`（拼写，只读）、`ast_grep_run`（ast-grep 结构化搜索；路径与 glob 受限） |
 | `markdown_links.rs` | `markdown_check_links`：Markdown 相对链接存在性检查，可选外链前缀 HEAD |
 | `structured_data.rs` | `structured_validate` / `structured_query` / `structured_diff`：JSON·YAML·TOML 校验、路径查询、结构化 diff |
 | `patch.rs` | unified diff 应用 |
@@ -143,6 +145,7 @@ flowchart TB
 - **输入**：构造 `ChatRequest`（`src/types.rs`）并携带 `tools`（Function Calling 定义）。
 - **P（命名上的「规划」步）**：`per_plan_call_model_retrying` —— **一次** `stream_chat`，由模型产出正文或 `tool_calls`，并非独立规划器。
 - **调用模型**：通过 **`src/llm/api.rs`** 的 `stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `run_agent_turn(..., no_stream: true)` 时为 `stream: false`，按 OpenAI 兼容 `ChatResponse` 解析 `choices[0].message`（有正文则经 `out` 整段下发）；其它 API 形态需自行适配。
+- **分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 true 时 `run_agent_turn_common` 先走无 tools 的规划轮（`llm::nl_only_chat_request`），解析 `agent_reply_plan` v1 后按 `steps` 顺序多次进入外层 Agent 循环；规划轮若出现 `tool_calls` 或 JSON 不合格，SSE 分别带 `staged_plan_tool_calls`、`staged_plan_invalid`。
 - **上下文窗口策略**（`src/agent/context_window.rs`）：在 `agent::agent_turn::run_agent_turn_common` 的**每次** P 步（`per_plan_call_model_retrying`）之前调用 `prepare_messages_for_model`：**`tool` 消息正文截断**（`tool_message_max_chars`）、**按条数保留**（沿用 `max_message_history`）、可选 **`context_char_budget` 按近似字符删旧消息**；若 `context_summary_trigger_chars > 0` 且非 system 总字符超阈值，则额外发起**无 tools** 的 `chat/completions` 将「中间段」压成一条 user 摘要，尾部保留 `context_summary_tail_messages` 条。TUI/Web 在同步回 `messages` 后，列表长度会随裁剪/摘要变化（工具截断不改变条数）。配置见 `default_config.toml` 与 `AGENT_CONTEXT_*` / `AGENT_TOOL_MESSAGE_MAX_CHARS`。
 - **处理结束原因**：
   - `finish_reason != "tool_calls"`：本轮对话结束，最后一条 assistant message 即最终回复。
@@ -152,6 +155,7 @@ flowchart TB
   - **控制类 JSON**（由 **`src/sse/protocol.rs`** 序列化）：统一带版本字段 `v`（当前为 `1`），并与原有键名兼容，例如：
     - `tool_running`、`tool_call`、`tool_result`、`workspace_changed`
     - `error`（+ 可选 `code`）、`command_approval_request`（TUI/工作流审批）
+    - `staged_plan_notice`（+ 可选 `staged_plan_notice_clear`）：分阶段规划进度；TUI 状态栏与「队列」页消费；`frontend/src/api.ts` 识别为控制面并吞掉，避免当作正文 delta
     - 预留 `plan_required` 等扩展键
 - **协议版本 `v`**：当前为 `1`；演进时递增 **`sse::protocol::SSE_PROTOCOL_VERSION`**，前端 `api.ts` 的 `sendChatStream` 已按字段形状解析（`tool_call` / `tool_result` / `plan_required` / `error.code` 等），新事件需在前后端同步扩展。
 
@@ -275,14 +279,15 @@ flowchart LR
 - **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）。
 - **`file.rs`**：工作区内创建/覆盖/复制/移动文件；`resolve_for_read` / `resolve_for_write` 与祖先 symlink 校验是安全边界的关键；`copy_file` / `move_file` 仅针对常规文件，`overwrite` 控制目标已存在时的覆盖策略；`hash_file` 仅对常规文件流式哈希（`sha256` / `sha512` / `blake3`），可选 `max_bytes` 前缀模式。
 - **`schedule.rs`**：提醒/日程；以 JSON 持久化到 `<working_dir>/.crabmate/reminders.json` 与 `events.json`。
-- **`grep.rs` / `format.rs` / `lint.rs`**：面向开发工作流的辅助能力（搜索/格式化/静态检查聚合）；`format` 对 `.py` 使用 `ruff format`，对 `.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh` 使用 `clang-format`（检查模式为 `--dry-run --Werror`）；`run_lints` 可选聚合 `ruff check`（`run_python_ruff`）。`run_command` 默认可含 `cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make`（见配置 `allowed_commands`）；`cmake`、`c++filt` 与 `clang-format` 等可选依赖会在 **`GET /health`** 中体现为 `dep_cmake` / `dep_cxxfilt` / `dep_clang_format`（缺失为 degraded，不阻止启动）。**`run_command` 参数**仍禁止 `..` 与以 `/` 开头的实参，CMake 场景宜使用相对 `-S`/`-B` 与 `--build`。Autotools 会执行项目内生成逻辑，**prod** 白名单默认不含构建类命令。
+- **`spell_astgrep_tools.rs`**：`typos_check` / `codespell_check` 仅传相对路径、不写回；`ast_grep_run` 调用 `ast-grep run`，内置排除大目录 glob，可选追加 `globs`。
+- **`grep.rs` / `format.rs` / `lint.rs`**：面向开发工作流的辅助能力（搜索/格式化/静态检查聚合）；`format` 对 `.py` 使用 `ruff format`，对 `.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh` 使用 `clang-format`（检查模式为 `--dry-run --Werror`）；`run_lints` 可选聚合 `ruff check`（`run_python_ruff`）。`run_command` 默认可含 `cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make`（见配置 `allowed_commands`）；`cmake`、`c++filt` 与 `clang-format` 等可选依赖会在 **`GET /health`** 中体现为 `dep_cmake` / `dep_cxxfilt` / `dep_clang_format`；可选 CLI **typos** / **codespell** / **ast-grep** 对应 `dep_typos` / `dep_codespell` / `dep_ast_grep`（缺失为 degraded，不阻止启动）。**`run_command` 参数**仍禁止 `..` 与以 `/` 开头的实参，CMake 场景宜使用相对 `-S`/`-B` 与 `--build`。Autotools 会执行项目内生成逻辑，**prod** 白名单默认不含构建类命令。
 - **`python_tools.rs` / `precommit_tools.rs`**：见上表；`quality_workspace` / `ci_pipeline_local` 可选步骤含 ruff/pytest/mypy；`pre_commit_run` 依赖仓库根 `.pre-commit-config.yaml`（或 `.yml`）。
 
 ### `src/web/*` 与 `src/runtime/*`
 
 - **`web`**：承载 Web 侧的“工作区/任务”等 axum handler（与前端面板直接对应）；**不是**终端 TUI。
 - **`runtime`**：CLI/TUI 运行时逻辑，负责 REPL、单次问答、TUI 的交互渲染与调用 `run_agent_turn`。
-  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_session`（`.crabmate/tui_session.json` 与导出；启动加载时按 `[agent] tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断，总条数含 `system`，超出则保留首条 system 与尾部最近若干条）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐）、`workspace_ops`、（SSE 控制行分类：`crate::sse::classify_agent_sse_line`）、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`（底栏右侧 `status_line`：默认仅模型名等，不常驻快捷键说明）、`allowlist`、`agent`（委托 `crate::agent::agent_turn`）。
+  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_session`（`.crabmate/tui_session.json` 与导出；启动加载时按 `[agent] tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断，总条数含 `system`，超出则保留首条 system 与尾部最近若干条）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐）、`workspace_ops`（右栏 **工作区** 右侧相邻 **队列**：本会话内 Agent 回合摘要 + 与 Web 共用的 `chat_queue_*` 配置说明；**不**镜像 `--serve` 的 HTTP `ChatJobQueue`）、（SSE 控制行分类：`crate::sse::classify_agent_sse_line`）、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`（底栏右侧 `status_line`：默认仅模型名等，不常驻快捷键说明）、`allowlist`、`agent`（委托 `crate::agent::agent_turn`）。
 
 ## 前端模块说明（`frontend/src/`）
 

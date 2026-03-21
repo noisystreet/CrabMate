@@ -1,4 +1,4 @@
-//! 终端 UI：左侧对话、右侧工作区/任务/日程；与 Agent 通过 channel + `agent_turn` 协作。
+//! 终端 UI：左侧对话、右侧工作区/任务/日程/队列；与 Agent 通过 channel + `agent_turn` 协作。
 
 mod agent;
 mod allowlist;
@@ -37,8 +37,8 @@ use allowlist::{command_approval_message, load_persistent_allowlist};
 use chat_session::{load_tui_session, save_tui_session};
 use draw::draw_ui;
 use input::{HandleKeyContext, handle_crossterm_mouse, handle_key};
-use state::{Focus, Mode, ModelPhase, TuiState, strip_sgr_mouse_leaks};
-use status::set_normal_status_line;
+use state::{Focus, Mode, ModelPhase, TuiState, TuiTurnOutcome, strip_sgr_mouse_leaks};
+use status::{build_normal_status_line, set_normal_status_line};
 use workspace_ops::{refresh_schedule, refresh_tasks, refresh_workspace, upsert_assistant_message};
 
 /// 退出全屏 TUI：关鼠标、离开备用屏幕、关 raw，并丢弃 stdin 中残留的鼠标 CSI（避免退出后 shell 上出现 `12;34;56M` 等泄漏）。
@@ -160,6 +160,12 @@ pub async fn run_tui(
         focus: Focus::ChatInput,
         mode: Mode::Normal,
         tab: state::RightTab::Workspace,
+        chat_queue_max_concurrent: cfg.chat_queue_max_concurrent,
+        chat_queue_max_pending: cfg.chat_queue_max_pending,
+        next_tui_job_id: 0,
+        tui_turn_recent: std::collections::VecDeque::new(),
+        tui_active_job_id: None,
+        tui_active_job_started: None,
         workspace_dir,
         workspace_entries: Vec::new(),
         workspace_sel: 0,
@@ -193,6 +199,7 @@ pub async fn run_tui(
         prompt_undo: Vec::new(),
         prompt_redo: Vec::new(),
         chat_line_build_cache: Default::default(),
+        staged_plan_log: Vec::new(),
     };
     refresh_workspace(&mut state);
     refresh_tasks(&mut state);
@@ -208,6 +215,7 @@ pub async fn run_tui(
 
     let (tx, mut rx) = mpsc::channel::<String>(2048);
     let (sync_tx, mut sync_rx) = mpsc::channel::<Vec<Message>>(1);
+    let (turn_outcome_tx, mut turn_outcome_rx) = mpsc::channel::<TuiTurnOutcome>(4);
     let mut approval_tx: Option<mpsc::Sender<crate::types::CommandApprovalDecision>> = None;
     let mut agent_running: Option<tokio::task::JoinHandle<()>> = None;
     let agent_cancel = Arc::new(AtomicBool::new(false));
@@ -273,6 +281,30 @@ pub async fn run_tui(
                     // 不把错误 JSON 写入对话区；底栏左侧阶段词显示为「异常」。
                     set_normal_status_line(&mut state, &cfg.model);
                 }
+                AgentLineKind::StagedPlanNotice { text, clear_before } => {
+                    const MAX_STAGED_PLAN_LOG: usize = 48;
+                    if clear_before {
+                        state.staged_plan_log.clear();
+                    }
+                    for line in text.lines() {
+                        let t = line.trim_end();
+                        if !t.is_empty() {
+                            state.staged_plan_log.push(t.to_string());
+                            while state.staged_plan_log.len() > MAX_STAGED_PLAN_LOG {
+                                state.staged_plan_log.remove(0);
+                            }
+                        }
+                    }
+                    let hint: String = text
+                        .lines()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or("")
+                        .chars()
+                        .take(52)
+                        .collect();
+                    state.status_line =
+                        format!("{} · {}", hint, build_normal_status_line(&cfg.model));
+                }
                 AgentLineKind::Ignore => {}
                 AgentLineKind::Plain => {
                     state.model_phase = ModelPhase::Answering;
@@ -290,17 +322,28 @@ pub async fn run_tui(
             state.messages = msgs;
             assistant_buf.clear();
         }
+        while let Ok(o) = turn_outcome_rx.try_recv() {
+            inbox_changed = true;
+            state.apply_tui_turn_outcome(o);
+        }
 
         if let Some(handle) = agent_running.as_ref()
             && handle.is_finished()
         {
             inbox_changed = true;
+            while let Ok(o) = turn_outcome_rx.try_recv() {
+                state.apply_tui_turn_outcome(o);
+            }
             agent_running = None;
             approval_tx = None;
             state.tool_running = false;
             state.tool_running_clear_pending = false;
             state.model_phase = ModelPhase::Idle;
             set_normal_status_line(&mut state, &cfg.model);
+            if state.tui_active_job_id.is_some() {
+                state.tui_active_job_id = None;
+                state.tui_active_job_started = None;
+            }
         }
 
         let streaming = agent_running.as_ref().is_some_and(|h| !h.is_finished());
@@ -338,6 +381,7 @@ pub async fn run_tui(
                                 approval_tx: &mut approval_tx,
                                 tx: &tx,
                                 sync_tx: sync_tx.clone(),
+                                turn_outcome_tx: turn_outcome_tx.clone(),
                                 agent_cancel: agent_cancel.clone(),
                                 cfg,
                                 client,

@@ -14,6 +14,6 @@ alwaysApply: true
 
 ## 清单
 
-- [ ] 字段增删改名 → **serde 类型**、**前端 TypeScript**、**可选 README / DEVELOPMENT** 协议说明一致。
+- [ ] 字段增删改名 → **serde 类型**、**前端 TypeScript**、**可选 README / DEVELOPMENT** 协议说明一致。（例：`staged_plan_notice` / `staged_plan_notice_clear` 须在 `api.ts` 的 `tryDispatchSseControlPayload` 中返回 `handled`，避免进入 `onDelta`。）
 - [ ] 新错误码或 `code:` → 前端是否展示/重试；**勿**在响应体中泄露密钥或完整鉴权头（见 **`.cursor/rules/secrets-and-logging.mdc`**）。
 - [ ] 准备提交 → **`cd frontend && npx tsc -b --noEmit`**；大改时 **`npm run build`**（见 **`frontend-typescript-react.mdc`**）。

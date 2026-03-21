@@ -103,6 +103,10 @@ pub struct AgentConfig {
     pub chat_queue_max_concurrent: usize,
     /// Web 对话任务有界等待队列长度（`try_send` 满则 503）
     pub chat_queue_max_pending: usize,
+    /// 为 true 时：用户每条消息先经**无工具**规划轮产出 `agent_reply_plan` v1，再按 `steps` 顺序各注入一条 user 并跑完整 Agent 循环直至该步终答。
+    pub staged_plan_execution: bool,
+    /// 规划轮追加的 **system** 指令；空字符串则使用内置默认文案。
+    pub staged_plan_phase_instruction: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,6 +155,8 @@ struct AgentSection {
     context_summary_transcript_max_chars: Option<u64>,
     chat_queue_max_concurrent: Option<u64>,
     chat_queue_max_pending: Option<u64>,
+    staged_plan_execution: Option<bool>,
+    staged_plan_phase_instruction: Option<String>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None
@@ -200,6 +206,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut context_summary_transcript_max_chars: Option<u64> = None;
     let mut chat_queue_max_concurrent: Option<u64> = None;
     let mut chat_queue_max_pending: Option<u64> = None;
+    let mut staged_plan_execution: Option<bool> = None;
+    let mut staged_plan_phase_instruction: Option<String> = None;
 
     if let Some(agent) = parse_agent_section(DEFAULT_CONFIG) {
         api_base = agent.api_base.unwrap_or_default().trim().to_string();
@@ -306,6 +314,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             .chat_queue_max_concurrent
             .or(chat_queue_max_concurrent);
         chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
+        staged_plan_execution = agent.staged_plan_execution.or(staged_plan_execution);
+        if let Some(ref s) = agent.staged_plan_phase_instruction {
+            staged_plan_phase_instruction = Some(s.clone());
+        }
     }
 
     let config_paths: Vec<&str> = match config_path {
@@ -460,6 +472,11 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                     .chat_queue_max_concurrent
                     .or(chat_queue_max_concurrent);
                 chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
+                staged_plan_execution = agent.staged_plan_execution.or(staged_plan_execution);
+                if let Some(ref s) = agent.staged_plan_phase_instruction {
+                    let s = s.trim().to_string();
+                    staged_plan_phase_instruction = Some(s);
+                }
             }
             if config_path.is_some() {
                 break;
@@ -659,6 +676,17 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     {
         chat_queue_max_pending = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_EXECUTION") {
+        let v = v.trim().to_ascii_lowercase();
+        if matches!(v.as_str(), "1" | "true" | "yes" | "on") {
+            staged_plan_execution = Some(true);
+        } else if matches!(v.as_str(), "0" | "false" | "no" | "off") {
+            staged_plan_execution = Some(false);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_PHASE_INSTRUCTION") {
+        staged_plan_phase_instruction = Some(v);
+    }
 
     if api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
@@ -774,6 +802,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         .clamp(10_000, 2_000_000) as usize;
     let chat_queue_max_concurrent = chat_queue_max_concurrent.unwrap_or(2).clamp(1, 256) as usize;
     let chat_queue_max_pending = chat_queue_max_pending.unwrap_or(32).clamp(1, 8192) as usize;
+    let staged_plan_execution = staged_plan_execution.unwrap_or(true);
+    let staged_plan_phase_instruction = staged_plan_phase_instruction.unwrap_or_default();
 
     let web_search_provider = match web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
@@ -824,5 +854,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         context_summary_transcript_max_chars,
         chat_queue_max_concurrent,
         chat_queue_max_pending,
+        staged_plan_execution,
+        staged_plan_phase_instruction,
     })
 }

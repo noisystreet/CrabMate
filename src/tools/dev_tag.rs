@@ -60,7 +60,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "rust_analyzer_goto_definition"
         | "rust_analyzer_find_references" => &[GENERAL, RUST],
         "cargo_check" | "cargo_test" | "cargo_clippy" | "cargo_fmt_check" | "cargo_outdated"
-        | "rust_compiler_json" | "cargo_audit" | "cargo_deny" => &[GENERAL, RUST, QUALITY],
+        | "cargo_machete" | "cargo_udeps" | "rust_compiler_json" | "cargo_audit" | "cargo_deny" => {
+            &[GENERAL, RUST, QUALITY]
+        }
         "find_symbol" | "find_references" | "rust_file_outline" => &[GENERAL, RUST],
 
         // --- 前端 ---
@@ -73,6 +75,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
 
         // --- pre-commit（跨语言）---
         "pre_commit_run" => &[GENERAL, QUALITY],
+        "typos_check" | "codespell_check" | "ast_grep_run" => &[GENERAL, QUALITY],
 
         // --- 质量聚合（跨栈）---
         "ci_pipeline_local" | "release_ready_check" => &[GENERAL, QUALITY],

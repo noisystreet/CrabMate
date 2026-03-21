@@ -56,6 +56,7 @@ fn draw_pane_separator_horizontal(f: &mut Frame<'_>, row: Rect) {
 fn right_tab_color(tab: RightTab) -> Color {
     match tab {
         RightTab::Workspace => Color::Green,
+        RightTab::Queue => Color::Magenta,
         RightTab::Tasks => Color::Yellow,
         RightTab::Schedule => Color::Cyan,
     }
@@ -194,7 +195,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
             ),
             Line::from("【焦点 F2】循环：聊天视图 → 聊天输入 → 工作区列表 → 右侧面板 → 聊天视图。"),
             Line::from(
-                "【右侧】Tab 在工作区 / 任务 / 日程 标签间切换。鼠标：可点标签与列表；在输入区外松开左键会按落点切换焦点/标签（与 F2 配合）。",
+                "【右侧】Tab 在工作区 / 队列 / 任务 / 日程 标签间切换。鼠标：可点标签与列表；在输入区外松开左键会按落点切换焦点/标签（与 F2 配合）。",
             ),
             Line::from(
                 "【聊天输入·键盘】Enter 发送消息。Shift+Enter 在输入框内换行（多行编辑）。←→↑↓ 移动光标（↑↓ 按折行后显示行）；Home/End 行首/行尾；Backspace、Delete。PgUp/PgDn 上下翻动聊天区。",
@@ -637,6 +638,34 @@ fn render_message_chat_lines(
     (draw_lines, plain_lines)
 }
 
+/// 分阶段规划摘要：参考 Cursor「思考」——终端无法缩小字号，用 **粗体 + DIM** 弱化层级；高对比度下略提高明度以免过淡。
+fn staged_plan_think_style(state: &TuiState) -> Style {
+    if state.high_contrast {
+        Style::default()
+            .add_modifier(Modifier::BOLD)
+            .fg(Color::DarkGray)
+    } else {
+        Style::default().add_modifier(Modifier::BOLD | Modifier::DIM)
+    }
+}
+
+fn push_staged_plan_chat_block(
+    draw_lines: &mut Vec<Line<'static>>,
+    plain_lines: &mut Vec<String>,
+    state: &TuiState,
+) {
+    if state.staged_plan_log.is_empty() {
+        return;
+    }
+    let sty = staged_plan_think_style(state);
+    draw_lines.push(Line::from(vec![Span::styled("【规划】", sty)]));
+    plain_lines.push("【规划】".to_string());
+    for row in &state.staged_plan_log {
+        draw_lines.push(Line::from(vec![Span::styled(row.clone(), sty)]));
+        plain_lines.push(row.clone());
+    }
+}
+
 /// 与 `draw_chat` 相同的逻辑行：第一项为带样式绘制行；第二项为同序纯文本（供 Ctrl+F 匹配）；第三项为每条非 system 消息首行索引。
 pub(super) fn build_chat_scroll_lines(
     state: &mut TuiState,
@@ -669,17 +698,23 @@ pub(super) fn build_chat_scroll_lines(
             continue;
         }
         message_start_lines.push(draw_lines.len());
+        let is_last_visible = i + 1 == state.messages.len();
+        if m.role == "assistant" && is_last_visible && !state.staged_plan_log.is_empty() {
+            push_staged_plan_chat_block(&mut draw_lines, &mut plain_lines, state);
+            draw_lines.push(Line::raw(""));
+            plain_lines.push(String::new());
+        }
+
         let fp = line_cache_fingerprint(m);
 
-        let cache_hit = state
+        let cached = state
             .chat_line_build_cache
             .per_message
             .get(i)
             .and_then(|slot| slot.as_ref())
-            .is_some_and(|e| e.content_fingerprint == fp);
+            .filter(|e| e.content_fingerprint == fp);
 
-        let (mut d, mut p) = if cache_hit {
-            let e = state.chat_line_build_cache.per_message[i].as_ref().unwrap();
+        let (mut d, mut p) = if let Some(e) = cached {
             (e.draw.clone(), e.plain.clone())
         } else {
             let rendered = message_body_for_chat_display(m);
@@ -697,6 +732,14 @@ pub(super) fn build_chat_scroll_lines(
         draw_lines.push(Line::raw(""));
         plain_lines.push(String::new());
     }
+
+    if let Some(m) = state.messages.iter().rev().find(|msg| msg.role != "system")
+        && m.role == "user"
+        && !state.staged_plan_log.is_empty()
+    {
+        push_staged_plan_chat_block(&mut draw_lines, &mut plain_lines, state);
+    }
+
     (draw_lines, plain_lines, message_start_lines)
 }
 
@@ -876,6 +919,72 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
                 .padding(Padding::symmetric(1, 1));
             let w = Paragraph::new(lines)
                 .block(workspace_block)
+                .wrap(Wrap { trim: false });
+            f.render_widget(w, vchunks[2]);
+        }
+        RightTab::Queue => {
+            let mut lines = Vec::new();
+            lines.push(Line::raw(
+                "本页：终端会话内的对话回合摘要；与浏览器 `--serve` 的 HTTP 队列相互独立。",
+            ));
+            lines.push(Line::raw(""));
+            lines.push(Line::raw(format!(
+                "配置（与 Web 共用 `[agent] chat_queue_*`）：并发上限 {}，等待槽 {}。",
+                state.chat_queue_max_concurrent, state.chat_queue_max_pending
+            )));
+            lines.push(Line::raw(
+                "`--serve` 时由 ChatJobQueue 执行多路排队；此处仅作对照。",
+            ));
+            lines.push(Line::raw(""));
+            if let Some(jid) = state.tui_active_job_id {
+                let phase = state.model_phase.label();
+                lines.push(Line::raw(format!(
+                    "当前回合：job_id={jid} 进行中（状态栏阶段：{phase}）"
+                )));
+            } else {
+                lines.push(Line::raw("当前回合：空闲"));
+            }
+            lines.push(Line::raw(""));
+            lines.push(Line::from(Span::styled(
+                "分阶段规划日志（本轮）",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            if state.staged_plan_log.is_empty() {
+                lines.push(Line::raw(
+                    "（未启用 staged_plan_execution 或尚无步骤通知；启用后此处显示规划摘要与各步进度）",
+                ));
+            } else {
+                for row in &state.staged_plan_log {
+                    lines.push(Line::raw(row.as_str()));
+                }
+            }
+            lines.push(Line::raw(""));
+            lines.push(Line::raw("最近本会话回合（最新在上）："));
+            if state.tui_turn_recent.is_empty() {
+                lines.push(Line::raw("（尚无记录）"));
+            } else {
+                for rec in state.tui_turn_recent.iter().rev().take(24) {
+                    let status = if rec.hard_aborted {
+                        "中止"
+                    } else if rec.user_cancelled {
+                        "已取消"
+                    } else if rec.ok {
+                        "成功"
+                    } else {
+                        "失败"
+                    };
+                    let mut s = format!("#{} tui {} {}ms", rec.job_id, status, rec.duration_ms);
+                    if let Some(ref e) = rec.error_preview {
+                        s.push_str(&format!(" — {e}"));
+                    }
+                    lines.push(Line::raw(s));
+                }
+            }
+            let queue_block = Block::default()
+                .borders(Borders::NONE)
+                .padding(Padding::symmetric(1, 1));
+            let w = Paragraph::new(lines)
+                .block(queue_block)
                 .wrap(Wrap { trim: false });
             f.render_widget(w, vchunks[2]);
         }

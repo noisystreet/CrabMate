@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
+use crate::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crate::runtime::latex_unicode::latex_math_to_unicode;
 
 /// 尝试获取终端宽度；获取失败时返回 None
@@ -167,8 +168,18 @@ pub async fn stream_chat(
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
-        error!(status = %status, body = %body, "API 返回错误");
-        return Err(format!("API 错误 {}: {}", status, body).into());
+        let preview = redact::single_line_preview(&body, HTTP_BODY_PREVIEW_LOG_CHARS);
+        error!(
+            status = %status,
+            body_len = body.len(),
+            body_preview = %preview,
+            "chat completions API 返回非成功状态"
+        );
+        return Err(format!(
+            "模型接口返回错误（HTTP {}），请检查 API 密钥与配额，或稍后重试",
+            status.as_u16()
+        )
+        .into());
     }
 
     if no_stream {
@@ -176,13 +187,19 @@ pub async fn stream_chat(
             return Err(crate::types::LLM_CANCELLED_ERROR.into());
         }
         let body = res.text().await?;
-        let parsed: crate::types::ChatResponse = serde_json::from_str(&body).map_err(|e| {
-            format!(
-                "非流式响应 JSON 解析失败: {} — 正文开头: {}",
-                e,
-                body.chars().take(240).collect::<String>()
-            )
-        })?;
+        let parsed: crate::types::ChatResponse =
+            serde_json::from_str(&body).map_err(|parse_err| {
+                let preview = redact::single_line_preview(&body, HTTP_BODY_PREVIEW_LOG_CHARS);
+                error!(
+                    err = %parse_err,
+                    body_len = body.len(),
+                    body_preview = %preview,
+                    "非流式 chat 响应 JSON 解析失败"
+                );
+                Box::<dyn std::error::Error + Send + Sync>::from(
+                    "模型返回内容无法解析为预期格式，请稍后重试",
+                )
+            })?;
         let choice = parsed.choices.into_iter().next().ok_or_else(
             || -> Box<dyn std::error::Error + Send + Sync> {
                 "非流式响应 choices 为空".into()

@@ -419,6 +419,9 @@ type SseControlPayload = {
     stdout?: string
     stderr?: string
   }
+  /** 分阶段规划进度文案（可多行）；TUI 展示；Web 吞掉不当下文 */
+  staged_plan_notice?: string
+  staged_plan_notice_clear?: boolean
 }
 
 /** 解析单条 `data:` 合并后的字符串：若为控制面 JSON 则调用 callbacks 并返回 `stop` | `handled`；否则返回 `plain`（由调用方按正文 delta 处理）。 */
@@ -475,6 +478,12 @@ function tryDispatchSseControlPayload(
         stdout: parsed.tool_result.stdout,
         stderr: parsed.tool_result.stderr,
       })
+      return 'handled'
+    }
+    if (
+      typeof parsed.staged_plan_notice === 'string' ||
+      parsed.staged_plan_notice_clear === true
+    ) {
       return 'handled'
     }
   } catch {
