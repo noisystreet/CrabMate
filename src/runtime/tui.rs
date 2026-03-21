@@ -504,10 +504,7 @@ pub async fn run_tui(
         approve_choice: 0,
         persistent_command_allowlist,
         allowlist_file,
-        status_line: format!(
-            "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：输入）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-            cfg.model
-        ),
+        status_line: String::new(),
         tool_running: false,
         focus: Focus::ChatInput,
         mode: Mode::Normal,
@@ -541,6 +538,7 @@ pub async fn run_tui(
     refresh_workspace(&mut state);
     refresh_tasks(&mut state);
     refresh_schedule(&mut state);
+    set_normal_status_line(&mut state, &cfg.model);
 
     // terminal init
     // TermwizBackend will enable raw mode and alternate screen automatically.
@@ -575,11 +573,7 @@ pub async fn run_tui(
                 AgentLineKind::ToolRunning(false) => {
                     state.tool_running = false;
                     if state.status_line == "工具运行中…" {
-                        state.status_line = format!(
-                            "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                            cfg.model,
-                            focus_name(state.focus)
-                        );
+                        set_normal_status_line(&mut state, &cfg.model);
                     }
                 }
                 AgentLineKind::WorkspaceRefresh => {
@@ -629,11 +623,7 @@ pub async fn run_tui(
             && handle.is_finished() {
                 agent_running = None;
                 approval_tx = None;
-                state.status_line = format!(
-                    "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                    cfg.model,
-                    focus_name(state.focus)
-                );
+                set_normal_status_line(&mut state, &cfg.model);
             }
 
         // input events (termwiz backend)
@@ -947,11 +937,7 @@ async fn handle_key(
                 let _ = ch.send(decision).await;
             }
             state.mode = Mode::Normal;
-            state.status_line = format!(
-                "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                cfg.model,
-                focus_name(state.focus)
-            );
+            set_normal_status_line(state, &cfg.model);
             state.pending_command.clear();
             state.pending_command_args.clear();
         }
@@ -1034,11 +1020,7 @@ async fn handle_key(
                 Focus::Workspace => Focus::Right,
                 Focus::Right => Focus::ChatView,
             };
-            state.status_line = format!(
-                "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                cfg.model,
-                focus_name(state.focus)
-            );
+            set_normal_status_line(state, &cfg.model);
         }
         KeyCode::Function(3) => {
             state.code_theme_idx = (state.code_theme_idx + 1) % code_themes().len();
@@ -1053,12 +1035,7 @@ async fn handle_key(
         }
         KeyCode::Function(5) => {
             state.high_contrast = !state.high_contrast;
-            state.status_line = format!(
-                "高对比度：{}（F5 切换）  |  模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                if state.high_contrast { "开" } else { "关" },
-                cfg.model,
-                focus_name(state.focus)
-            );
+            set_high_contrast_status_line(state, &cfg.model);
         }
         KeyCode::PageUp => {
             // 向上翻一屏（不再强制要求聊天聚焦，避免误锁死）
@@ -2119,11 +2096,23 @@ fn apply_click_focus_and_tab(
     }
 }
 
-fn set_normal_status_line(state: &mut TuiState, model: &str) {
-    state.status_line = format!(
+fn build_normal_status_line(model: &str, focus: Focus) -> String {
+    format!(
         "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
         model,
-        focus_name(state.focus)
+        focus_name(focus)
+    )
+}
+
+fn set_normal_status_line(state: &mut TuiState, model: &str) {
+    state.status_line = build_normal_status_line(model, state.focus);
+}
+
+fn set_high_contrast_status_line(state: &mut TuiState, model: &str) {
+    state.status_line = format!(
+        "高对比度：{}（F5 切换）  |  {}",
+        if state.high_contrast { "开" } else { "关" },
+        build_normal_status_line(model, state.focus)
     );
 }
 
