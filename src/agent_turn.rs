@@ -1,5 +1,9 @@
-//! 单轮 Agent 循环的步骤拆分：与「规划–执行–反思」对齐的调用边界（P/E/R）。
-//! 被 crate 根 `run_agent_turn`（Web）与 `run_agent_turn_tui`（TUI）共同复用。
+//! 单轮 Agent 循环的步骤拆分：与「规划–执行–反思」命名对齐的调用边界（P/E/R）。
+//!
+//! **命名说明**：此处的 **P（Plan）** 指「向模型要本轮输出」——即一次 `stream_chat` 调用，由模型产出正文或 `tool_calls`，
+//! **不是**独立的符号规划器。**E** 为执行工具；**R** 为终答阶段是否满足结构化规划等（见 `per_coord::after_final_assistant`）。
+//!
+//! 被 crate 根 `run_agent_turn`（Web）与 `runtime::tui`（TUI）共同复用。
 
 use std::path::Path;
 use std::time::{Duration, Instant};

@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use tokio::sync::{mpsc, Mutex};
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::config::AgentConfig;
 use crate::per_coord::PerCoordinator;
@@ -21,7 +21,8 @@ use crate::workflow_reflection_controller;
 // --- 元数据（文档 / 将来 OpenAPI 生成）---
 
 /// 工具在运行时的执行类别。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ToolExecutionClass {
     Workflow,
     CommandSpawnTimeout,
@@ -30,7 +31,7 @@ pub enum ToolExecutionClass {
     BlockingSync,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct ToolDispatchMeta {
     pub name: &'static str,
     pub requires_workspace: bool,
@@ -173,12 +174,26 @@ pub async fn dispatch_tool(
                     .await
             }
         },
-        HandlerId::RunExecutable => {
-            let ToolRuntime::Web { .. } = runtime else {
-                unreachable!("TUI remaps RunExecutable to SyncDefault");
-            };
-            execute_run_executable_web(cfg, effective_working_dir, workspace_is_set, name, args).await
-        }
+        HandlerId::RunExecutable => match runtime {
+            ToolRuntime::Web { .. } => {
+                execute_run_executable_web(cfg, effective_working_dir, workspace_is_set, name, args).await
+            }
+            ToolRuntime::Tui { .. } => {
+                // TUI 入口通常将 RunExecutable remap 为 SyncDefault；若未 remap，退回通用 run_tool 以免 panic。
+                warn!(tool = %name, "RunExecutable on TUI without remap; using sync run_tool");
+                (
+                    tools::run_tool(
+                        &tc.function.name,
+                        &tc.function.arguments,
+                        cfg.command_max_output_len,
+                        cfg.weather_timeout_secs,
+                        &cfg.allowed_commands,
+                        effective_working_dir,
+                    ),
+                    None,
+                )
+            }
+        },
         HandlerId::GetWeather => {
             execute_get_weather_web(cfg, effective_working_dir, name, args).await
         }

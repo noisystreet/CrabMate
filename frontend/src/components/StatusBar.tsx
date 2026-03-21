@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Cpu, Globe, Circle, Loader2, AlertCircle } from 'lucide-react'
+import { Cpu, Globe, Circle, Loader2, AlertCircle, Wrench } from 'lucide-react'
 import { fetchStatus } from '../api'
 import type { StatusData } from '../types'
 
@@ -104,6 +104,11 @@ export function StatusBar({ busy = false, toolBusy = false, error = null }: Stat
           <Globe size={14} className="text-primary flex-shrink-0" />
           <span className="font-medium opacity-80">API</span>
           <span>{status?.api_base ?? '—'}</span>
+        </span>
+        <span className="flex items-center gap-2 text-base-content/70" title={status?.tool_names?.join(', ') ?? ''}>
+          <Wrench size={14} className="text-primary flex-shrink-0" />
+          <span className="font-medium opacity-80">工具</span>
+          <span>{status?.tool_count != null ? `${status.tool_count} 个` : '—'}</span>
         </span>
         <span
           className={
