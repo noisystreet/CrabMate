@@ -493,15 +493,13 @@ pub async fn workspace_file_write_handler(
         });
     }
 
-    if let Some(parent) = canonical.parent() {
-        if !parent.as_os_str().is_empty() {
-            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+    if let Some(parent) = canonical.parent()
+        && !parent.as_os_str().is_empty()
+            && let Err(e) = tokio::fs::create_dir_all(parent).await {
                 return Json(WorkspaceFileWriteResponse {
                     error: Some(format!("创建目录失败: {}", e)),
                 });
             }
-        }
-    }
     match tokio::fs::write(&canonical, body.content.as_bytes()).await {
         Ok(()) => Json(WorkspaceFileWriteResponse { error: None }),
         Err(e) => Json(WorkspaceFileWriteResponse {

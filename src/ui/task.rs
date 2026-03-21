@@ -76,11 +76,10 @@ pub async fn tasks_set_handler(
             return Json(body);
         }
     };
-    if let Some(parent) = path.parent() {
-        if let Err(e) = tokio::fs::create_dir_all(parent).await {
+    if let Some(parent) = path.parent()
+        && let Err(e) = tokio::fs::create_dir_all(parent).await {
             error!(error = %e, "创建 tasks.json 目录失败");
         }
-    }
     if let Err(e) = tokio::fs::write(&path, content.as_bytes()).await {
         error!(error = %e, "写入 tasks.json 失败");
     }

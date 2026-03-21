@@ -769,7 +769,7 @@ async fn run_node(
     }
 
     // 节点 SLA：timeout_secs 优先；否则按工具类型使用 cfg 默认值（run_command/run_executable 为 command_timeout_secs）
-    let timeout_secs = node.timeout_secs.or_else(|| match node.tool_name.as_str() {
+    let timeout_secs = node.timeout_secs.or(match node.tool_name.as_str() {
         "run_command" | "run_executable" => Some(tool_exec_ctx.cfg_command_timeout_secs),
         "get_weather" => Some(tool_exec_ctx.cfg_weather_timeout_secs),
         _ => None,
@@ -851,11 +851,10 @@ fn output_indicates_failure(output: &str) -> bool {
         // 兼容：类似 “... (exit=0):” 或 “... (exit=1):”
         if let Some(idx) = first.find("(exit=") {
             let rest = &first[idx + "(exit=".len()..];
-            if let Some(end) = rest.find(')') {
-                if let Ok(code) = rest[..end].trim().parse::<i32>() {
+            if let Some(end) = rest.find(')')
+                && let Ok(code) = rest[..end].trim().parse::<i32>() {
                     return code != 0;
                 }
-            }
         }
     }
     // 兜底：如果输出第一行明确包含 “失败”，认为失败
@@ -871,13 +870,13 @@ async fn request_approval(
 ) -> CommandApprovalDecision {
     // 保证同一时间只有一个审批请求处于“发送 -> 等待决策”的进行中，避免并发覆盖 TUI 状态。
     let _guard = approval_request_guard.lock().await;
-    let payload = serde_json::json!({
-        "command_approval_request": {
-            "command": command,
-            "args": args
-        }
+    let line = crate::sse_protocol::encode_message(crate::sse_protocol::SsePayload::CommandApproval {
+        command_approval_request: crate::sse_protocol::CommandApprovalBody {
+            command: command.to_string(),
+            args: args.to_string(),
+        },
     });
-    let _ = out_tx.send(payload.to_string()).await;
+    let _ = out_tx.send(line).await;
 
     let mut rx_guard = approval_rx.lock().await;
     rx_guard.recv().await.unwrap_or(CommandApprovalDecision::Deny)
@@ -1363,7 +1362,7 @@ mod tests {
     #[test]
     fn test_node_ready() {
         let completed: HashMap<String, NodeRunResult> = HashMap::new();
-        let ready = node_ready(&vec![], &completed);
+        let ready = node_ready(&[] as &[String], &completed);
         assert!(ready);
     }
 

@@ -80,11 +80,10 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
             truncate_line(&line, 300)
         ));
         // 可选上下文：重新读取文件并输出附近行
-        if params.context_lines > 0 {
-            if let Ok(ctx) = read_context_lines(&path, line_no, params.context_lines) {
+        if params.context_lines > 0
+            && let Ok(ctx) = read_context_lines(&path, line_no, params.context_lines) {
                 out.push_str(&ctx);
             }
-        }
         out.push('\n');
     }
 
@@ -130,7 +129,7 @@ fn parse_params(args_json: &str) -> Result<SymbolParams, String> {
     let context_lines = v
         .get("context_lines")
         .and_then(|n| n.as_u64())
-        .map(|n| n.max(0) as usize)
+        .map(|n| n as usize)
         .unwrap_or(DEFAULT_CONTEXT_LINES);
 
     let kind = v
@@ -173,6 +172,18 @@ fn resolve_root(base: &Path, sub: Option<&str>) -> Result<PathBuf, String> {
             }
             Ok(canon_joined)
         }
+    }
+}
+
+/// 判断单行是否像 Rust 中某符号的「定义」行（与 `find_symbol` 规则一致），供 `find_references` 排除定义处重复命中。
+pub(crate) fn line_looks_like_rust_definition(
+    line: &str,
+    symbol: &str,
+    case_insensitive: bool,
+) -> bool {
+    match build_symbol_regex(symbol, None, case_insensitive) {
+        Ok(re) => re.is_match(line),
+        Err(_) => false,
     }
 }
 
@@ -253,11 +264,10 @@ fn walk_and_match(
             )?;
         } else if path.is_file() {
             *visited_files += 1;
-            if search_file(&path, re, results, max_results).unwrap_or(false) {
-                if results.len() >= max_results {
+            if search_file(&path, re, results, max_results).unwrap_or(false)
+                && results.len() >= max_results {
                     break;
                 }
-            }
         }
     }
     Ok(())

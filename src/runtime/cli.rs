@@ -5,6 +5,7 @@ use crossterm::{cursor::MoveToColumn, terminal::{Clear, ClearType}, ExecutableCo
 use std::io::{self, Write};
 
 /// 单次提问模式（--query / --stdin），执行一轮对话后退出
+#[allow(clippy::too_many_arguments)]
 pub async fn run_single_shot(
     cfg: &AgentConfig,
     client: &reqwest::Client,
@@ -58,14 +59,15 @@ pub async fn run_single_shot(
         work_dir,
         true,
         !no_stream,
+        no_stream,
     )
     .await
     {
         eprintln!("{}", e);
         std::process::exit(1);
     }
-    if let Some(mode) = output_mode.as_deref() {
-        if mode == "json" {
+    if let Some(mode) = output_mode.as_deref()
+        && mode == "json" {
             let reply = messages
                 .iter()
                 .rev()
@@ -76,9 +78,8 @@ pub async fn run_single_shot(
                 "reply": reply,
                 "model": cfg.model,
             });
-            println!("{}", obj.to_string());
+            println!("{}", obj);
         }
-    }
     Ok(())
 }
 
@@ -155,6 +156,7 @@ pub async fn run_repl(
             std::path::Path::new(&work_dir_str),
             true,
             !no_stream,
+            no_stream,
         )
         .await
         {
