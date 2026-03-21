@@ -28,7 +28,6 @@
 ## P3 — 架构（PER）与文档澄清
 
 - [ ] **终答「反思」深化（可选）**：`after_final_assistant` 目前只校验 `agent_reply_plan` JSON 是否存在，不校验步骤是否覆盖刚执行的 workflow/工具结果。若要做「语义一致」反思，需规则或二次 LLM（成本与产品边界需定案）。
-- [ ] **强制规划的触发策略**：除 `workflow_reflection_plan_next` 外，其它场景若也要终答带规划，需配置或工具元数据驱动，避免隐式耦合。
 
 ---
 

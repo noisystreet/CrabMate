@@ -364,7 +364,8 @@ pub(crate) async fn run_agent_turn_common(
     no_stream: bool,
     mode: AgentRunMode<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut per_coord = PerCoordinator::new(cfg.reflection_default_max_rounds);
+    let mut per_coord =
+        PerCoordinator::new(cfg.reflection_default_max_rounds, cfg.final_plan_requirement);
 
     'outer: loop {
         if sse_sender_closed(out) {

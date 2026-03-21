@@ -17,6 +17,7 @@
 # api_retry_delay_secs = 1
 # weather_timeout_secs = 15
 # reflection_default_max_rounds = 5
+# final_plan_requirement = "workflow_reflection"  # never | workflow_reflection | always
 # system_prompt = "你是专业的助手，回答简洁。"
 # system_prompt_file = "system_prompt.txt"
 model = "deepseek-chat"

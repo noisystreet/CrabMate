@@ -2,6 +2,9 @@
 
 use serde_json::{json, Value};
 
+/// 反思首轮注入 JSON 的 `instruction_type`，与 `per_coord` 中「是否强制终答含 `agent_reply_plan`」对齐。
+pub const INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT: &str = "workflow_reflection_plan_next";
+
 #[derive(Debug, Clone, Copy)]
 struct ReflectionControl {
     enabled: bool,
@@ -166,7 +169,7 @@ impl WorkflowReflectionController {
             stop_output: None,
             inject_instruction: Some(json!({
                 "instruction_type": if self.round == 1 {
-                    "workflow_reflection_plan_next"
+                    INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT
                 } else {
                     "workflow_reflection_next"
                 },
