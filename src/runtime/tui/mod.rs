@@ -107,7 +107,8 @@ pub async fn run_tui(
         input_rows: 5,
         input_dragging: false,
         input_drag_row: 0,
-        chat_scroll: 0,
+        chat_first_line: 0,
+        chat_follow_tail: true,
         cursor_override: None,
         cursor_mouse_pos: None,
         pending_focus: None,
@@ -131,6 +132,9 @@ pub async fn run_tui(
 
     let tick_rate = Duration::from_millis(50);
     let mut last_tick = Instant::now();
+    // 已离开底部且模型仍在流式输出时，限制重绘频率，减轻 Markdown 每帧重算带来的闪屏。
+    let mut last_draw_at = Instant::now();
+    let stream_scroll_min_draw_interval = Duration::from_millis(160);
 
     loop {
         while let Ok(s) = rx.try_recv() {
@@ -185,10 +189,6 @@ pub async fn run_tui(
             assistant_buf.clear();
         }
 
-        terminal.draw(|f| draw_ui(f, &state))?;
-        state.cursor_mouse_pos = None;
-        state.cursor_override = None;
-
         if let Some(handle) = agent_running.as_ref()
             && handle.is_finished()
         {
@@ -201,12 +201,14 @@ pub async fn run_tui(
             .checked_sub(last_tick.elapsed())
             .unwrap_or(Duration::from_secs(0));
         let screen_size = terminal.size()?;
+        let mut had_input = false;
         if let Some(input_event) = terminal
             .backend_mut()
             .buffered_terminal_mut()
             .terminal()
             .poll_input(Some(timeout))?
         {
+            had_input = true;
             match input_event {
                 InputEvent::Key(key) => {
                     if handle_key(
@@ -243,6 +245,21 @@ pub async fn run_tui(
                 InputEvent::Paste(_) | InputEvent::Wake | InputEvent::PixelMouse(_) => {}
             }
         }
+
+        let streaming = agent_running
+            .as_ref()
+            .is_some_and(|h| !h.is_finished());
+        let throttle_draw = streaming
+            && !state.chat_follow_tail
+            && !had_input
+            && last_draw_at.elapsed() < stream_scroll_min_draw_interval;
+        if !throttle_draw {
+            terminal.draw(|f| draw_ui(f, &mut state))?;
+            last_draw_at = Instant::now();
+            state.cursor_mouse_pos = None;
+            state.cursor_override = None;
+        }
+
         if last_tick.elapsed() >= tick_rate {
             last_tick = Instant::now();
         }

@@ -46,6 +46,11 @@ impl WorkflowReflectionController {
         }
     }
 
+    /// 反思会话内当前「stage」轮次（每轮 `decide` 可能递增），供 PER 日志与排错。
+    pub fn stage_round(&self) -> usize {
+        self.round
+    }
+
     fn parse_control(&self, args_json: &str) -> ReflectionControl {
         let default = self.default_max_rounds;
         let enabled = false;

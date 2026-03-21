@@ -42,6 +42,8 @@ pub struct AgentConfig {
     pub reflection_default_max_rounds: usize,
     /// 何时强制终答含 `agent_reply_plan` v1（见 `per_coord::FinalPlanRequirementMode`）
     pub final_plan_requirement: FinalPlanRequirementMode,
+    /// 终答缺合格规划时，最多追加多少次「请重写」user 消息（达到后结束本轮并发 SSE `plan_rewrite_exhausted`）
+    pub plan_rewrite_max_attempts: usize,
     /// 系统提示词（可由 system_prompt 或 system_prompt_file 配置）
     pub system_prompt: String,
 }
@@ -69,6 +71,7 @@ struct AgentSection {
     reflection_default_max_rounds: Option<u64>,
     /// `never` / `workflow_reflection` / `always`
     final_plan_requirement: Option<String>,
+    plan_rewrite_max_attempts: Option<u64>,
     system_prompt: Option<String>,
     system_prompt_file: Option<String>,
     env: Option<String>,
@@ -102,6 +105,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut weather_timeout_secs: Option<u64> = None;
     let mut reflection_default_max_rounds: Option<u64> = None;
     let mut final_plan_requirement_str: Option<String> = None;
+    let mut plan_rewrite_max_attempts: Option<u64> = None;
     let mut allowed_commands: Option<Vec<String>> = None;
     let mut allowed_commands_dev: Option<Vec<String>> = None;
     let mut allowed_commands_prod: Option<Vec<String>> = None;
@@ -147,6 +151,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 final_plan_requirement_str = Some(s);
             }
         }
+        plan_rewrite_max_attempts = agent
+            .plan_rewrite_max_attempts
+            .or(plan_rewrite_max_attempts);
         if let Some(s) = agent.system_prompt {
             let s = s.trim().to_string();
             if !s.is_empty() {
@@ -250,6 +257,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                         final_plan_requirement_str = Some(s);
                     }
                 }
+                if let Some(v) = agent.plan_rewrite_max_attempts {
+                    plan_rewrite_max_attempts = Some(v);
+                }
                 if let Some(ss) = agent.system_prompt {
                     let ss = ss.trim().to_string();
                     if !ss.is_empty() {
@@ -351,6 +361,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             final_plan_requirement_str = Some(s);
         }
     }
+    if let Ok(v) = std::env::var("AGENT_PLAN_REWRITE_MAX_ATTEMPTS")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            plan_rewrite_max_attempts = Some(n);
+        }
     if let Ok(s) = std::env::var("AGENT_SYSTEM_PROMPT") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -453,6 +467,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         Some(s) => FinalPlanRequirementMode::parse(s)?,
         None => FinalPlanRequirementMode::default(),
     };
+    let plan_rewrite_max_attempts = plan_rewrite_max_attempts.unwrap_or(2).clamp(1, 20) as usize;
 
     Ok(AgentConfig {
         api_base,
@@ -470,6 +485,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         weather_timeout_secs,
         reflection_default_max_rounds,
         final_plan_requirement,
+        plan_rewrite_max_attempts,
         system_prompt,
     })
 }

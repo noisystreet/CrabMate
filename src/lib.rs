@@ -737,6 +737,7 @@ struct StatusResponse {
     tool_dispatch_registry: &'static [tool_registry::ToolDispatchMeta],
     reflection_default_max_rounds: usize,
     final_plan_requirement: crate::per_coord::FinalPlanRequirementMode,
+    plan_rewrite_max_attempts: usize,
 }
 
 async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -756,6 +757,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         tool_dispatch_registry: tool_registry::all_dispatch_metadata(),
         reflection_default_max_rounds: state.cfg.reflection_default_max_rounds,
         final_plan_requirement: state.cfg.final_plan_requirement,
+        plan_rewrite_max_attempts: state.cfg.plan_rewrite_max_attempts,
     })
 }
 

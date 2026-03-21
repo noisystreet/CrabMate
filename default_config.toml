@@ -36,6 +36,8 @@ weather_timeout_secs = 15
 reflection_default_max_rounds = 5
 # 何时强制终答含 agent_reply_plan：never | workflow_reflection（默认）| always
 final_plan_requirement = "workflow_reflection"
+# 终答规划不合格时，最多追加多少次「请重写」提示（≥1，上限 20）
+plan_rewrite_max_attempts = 2
 # 系统提示词（可改为 system_prompt_file = "path/to/prompt.txt" 从文件加载）
 system_prompt = """
 你是乐于助人的助手。若需要当前时间、数学计算或查看系统/文件信息，请使用提供的工具。

@@ -40,6 +40,7 @@ pub fn parse_agent_reply_plan_v1(content: &str) -> Result<AgentReplyPlanV1, Plan
     Err(PlanArtifactError::NotFound)
 }
 
+#[allow(dead_code)] // `per_coord::content_has_plan` 等封装使用
 pub fn content_has_valid_agent_reply_plan_v1(content: &str) -> bool {
     parse_agent_reply_plan_v1(content).is_ok()
 }

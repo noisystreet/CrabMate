@@ -6,6 +6,9 @@ use crate::types::Message;
 use crate::workflow_reflection_controller::{self, WorkflowReflectionController};
 use serde_json::Value;
 
+const PLAN_REWRITE_EXHAUSTED_SSE: &str =
+    "结构化规划仍未满足要求（已达最大重写次数），已结束本轮；请调整需求后重试。";
+
 /// 何时要求模型在**最终** assistant 正文中嵌入可解析的 `agent_reply_plan` v1（见 `plan_artifact`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,6 +55,8 @@ pub enum AfterFinalAssistant {
     StopTurn,
     /// 追加一条 user 消息并继续请求模型
     RequestPlanRewrite(Message),
+    /// 已达 `plan_rewrite_max_attempts` 且规划仍不合格；assistant 已在 `messages` 中，由运行时发 SSE 后结束。
+    StopTurnPlanRewriteExhausted,
 }
 
 /// `workflow_execute` 经反思控制器处理后的结果：要么执行补丁后的参数，要么直接返回跳过结果字符串。
@@ -68,49 +73,119 @@ pub struct PreparedWorkflowExecute {
 pub struct PerCoordinator {
     reflection: WorkflowReflectionController,
     final_plan_policy: FinalPlanRequirementMode,
+    plan_rewrite_max_attempts: usize,
     /// 在 [`FinalPlanRequirementMode::WorkflowReflection`] 下，由 `prepare_workflow_execute` 根据反思注入置位。
     require_plan_in_final_content: bool,
     plan_rewrite_attempts: usize,
 }
 
 impl PerCoordinator {
-    pub const MAX_PLAN_REWRITE_ATTEMPTS: usize = 2;
+    pub fn plan_rewrite_exhausted_sse_message() -> &'static str {
+        PLAN_REWRITE_EXHAUSTED_SSE
+    }
 
-    pub fn new(reflection_default_max_rounds: usize, final_plan_policy: FinalPlanRequirementMode) -> Self {
+    pub fn new(
+        reflection_default_max_rounds: usize,
+        final_plan_policy: FinalPlanRequirementMode,
+        plan_rewrite_max_attempts: usize,
+    ) -> Self {
         Self {
             reflection: WorkflowReflectionController::new(reflection_default_max_rounds),
             final_plan_policy,
+            plan_rewrite_max_attempts: plan_rewrite_max_attempts.max(1),
             require_plan_in_final_content: false,
             plan_rewrite_attempts: 0,
         }
     }
 
     /// 是否包含可解析的 `agent_reply_plan` v1 JSON（见 `plan_artifact`）。
+    #[allow(dead_code)] // 供外部集成或调试保留；主路径用 `parse_agent_reply_plan_v1`
     pub fn content_has_plan(content: &str) -> bool {
         plan_artifact::content_has_valid_agent_reply_plan_v1(content)
     }
 
     /// 在已将 assistant 消息推入 `messages` 之后调用，根据是否需要「规划」段落决定下一步。
-    pub fn after_final_assistant(&mut self, msg: &Message) -> AfterFinalAssistant {
+    pub fn after_final_assistant(&mut self, msg: &Message, messages: &[Message]) -> AfterFinalAssistant {
         let require_plan = match self.final_plan_policy {
             FinalPlanRequirementMode::Never => false,
             FinalPlanRequirementMode::WorkflowReflection => self.require_plan_in_final_content,
             FinalPlanRequirementMode::Always => true,
         };
+
+        tracing::info!(
+            target: "crabmate::per",
+            policy = ?self.final_plan_policy,
+            require_plan,
+            require_plan_from_wf = self.require_plan_in_final_content,
+            reflection_stage_round = self.reflection.stage_round(),
+            plan_rewrite_attempts = self.plan_rewrite_attempts,
+            plan_rewrite_max = self.plan_rewrite_max_attempts,
+            "after_final_assistant enter"
+        );
+
         if !require_plan {
+            tracing::info!(target: "crabmate::per", outcome = "stop_no_requirement", "after_final_assistant");
             return AfterFinalAssistant::StopTurn;
         }
+
+        let apply_layer_semantics = match self.final_plan_policy {
+            FinalPlanRequirementMode::Never => false,
+            FinalPlanRequirementMode::WorkflowReflection => self.require_plan_in_final_content,
+            FinalPlanRequirementMode::Always => true,
+        };
+        let layer_need = last_workflow_validate_layer_count(messages);
+
         let content = msg.content.as_deref().unwrap_or("");
-        if Self::content_has_plan(content) {
-            return AfterFinalAssistant::StopTurn;
+        if let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1(content) {
+            let layers_ok = match layer_need {
+                Some(n) if n > 0 && apply_layer_semantics => plan.steps.len() >= n,
+                _ => true,
+            };
+            if layers_ok {
+                tracing::info!(
+                    target: "crabmate::per",
+                    outcome = "stop_plan_ok",
+                    plan_steps = plan.steps.len(),
+                    layer_need,
+                    "after_final_assistant"
+                );
+                return AfterFinalAssistant::StopTurn;
+            }
+            tracing::info!(
+                target: "crabmate::per",
+                outcome = "plan_schema_ok_semantics_fail",
+                plan_steps = plan.steps.len(),
+                layer_need,
+                "after_final_assistant"
+            );
         }
-        if self.plan_rewrite_attempts >= Self::MAX_PLAN_REWRITE_ATTEMPTS {
-            return AfterFinalAssistant::StopTurn;
+
+        if self.plan_rewrite_attempts >= self.plan_rewrite_max_attempts {
+            tracing::warn!(
+                target: "crabmate::per",
+                outcome = "plan_rewrite_exhausted",
+                layer_need,
+                "after_final_assistant"
+            );
+            return AfterFinalAssistant::StopTurnPlanRewriteExhausted;
         }
         self.plan_rewrite_attempts += 1;
+        let rewrite_text = match layer_need.filter(|&n| n > 0 && apply_layer_semantics) {
+            Some(n) => format!(
+                "{PLAN_REWRITE_USER_TEXT}\n\n补充：最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。"
+            ),
+            None => PLAN_REWRITE_USER_TEXT.to_string(),
+        };
+        tracing::info!(
+            target: "crabmate::per",
+            outcome = "request_plan_rewrite",
+            attempt = self.plan_rewrite_attempts,
+            layer_need,
+            "after_final_assistant"
+        );
         AfterFinalAssistant::RequestPlanRewrite(Message {
             role: "user".to_string(),
-            content: Some(PLAN_REWRITE_USER_TEXT.to_string()),
+            content: Some(rewrite_text),
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -127,6 +202,12 @@ impl PerCoordinator {
                 == Some(workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT)
         {
             self.require_plan_in_final_content = true;
+            tracing::info!(
+                target: "crabmate::per",
+                event = "require_final_plan_set",
+                reflection_stage_round = self.reflection.stage_round(),
+                "prepare_workflow_execute"
+            );
         }
         let patched_args = match decision.workflow_args_patch.as_ref() {
             Some(patch) => workflow_reflection_controller::apply_workflow_patch(args_json, patch),
@@ -172,6 +253,52 @@ impl PerCoordinator {
     }
 }
 
+/// 从对话历史中取**最近一次** `workflow_execute` 的 `workflow_validate_only` 工具结果里的 `spec.layer_count`。
+fn last_workflow_validate_layer_count(messages: &[Message]) -> Option<usize> {
+    for i in (0..messages.len()).rev() {
+        let m = &messages[i];
+        if m.role != "tool" {
+            continue;
+        }
+        let tid = m.tool_call_id.as_deref()?;
+        let aidx = assistant_index_for_tool_call(messages, i, tid)?;
+        let assistant = &messages[aidx];
+        let name = assistant
+            .tool_calls
+            .as_ref()?
+            .iter()
+            .find(|c| c.id == tid)
+            .map(|c| c.function.name.as_str())?;
+        if name != "workflow_execute" {
+            continue;
+        }
+        let body = m.content.as_deref()?;
+        let v: Value = serde_json::from_str(body).ok()?;
+        if v.get("report_type").and_then(|x| x.as_str()) != Some("workflow_validate_result") {
+            continue;
+        }
+        let n = v
+            .get("spec")
+            .and_then(|s| s.get("layer_count"))
+            .and_then(|x| x.as_u64())? as usize;
+        return Some(n);
+    }
+    None
+}
+
+fn assistant_index_for_tool_call(messages: &[Message], tool_idx: usize, tool_call_id: &str) -> Option<usize> {
+    for j in (0..tool_idx).rev() {
+        if messages[j].role != "assistant" {
+            continue;
+        }
+        let calls = messages[j].tool_calls.as_ref()?;
+        if calls.iter().any(|c| c.id == tool_call_id) {
+            return Some(j);
+        }
+    }
+    None
+}
+
 fn stop_output_to_string(stop_output: Option<Value>) -> String {
     let stop_v = stop_output.unwrap_or_else(|| {
         Value::String("workflow_execute 已停止（反思控制器拒绝继续执行）。".to_string())
@@ -185,10 +312,11 @@ fn stop_output_to_string(stop_output: Option<Value>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{FunctionCall, ToolCall};
 
     #[test]
     fn final_assistant_rewrites_then_stops() {
-        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection);
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection, 2);
         let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
         let _ = c.prepare_workflow_execute(wf_args);
         let empty = Message {
@@ -198,23 +326,24 @@ mod tests {
             name: None,
             tool_call_id: None,
         };
+        let hist: Vec<Message> = vec![];
         assert!(matches!(
-            c.after_final_assistant(&empty),
+            c.after_final_assistant(&empty, &hist),
             AfterFinalAssistant::RequestPlanRewrite(_)
         ));
         assert!(matches!(
-            c.after_final_assistant(&empty),
+            c.after_final_assistant(&empty, &hist),
             AfterFinalAssistant::RequestPlanRewrite(_)
         ));
         assert!(matches!(
-            c.after_final_assistant(&empty),
-            AfterFinalAssistant::StopTurn
+            c.after_final_assistant(&empty, &hist),
+            AfterFinalAssistant::StopTurnPlanRewriteExhausted
         ));
     }
 
     #[test]
     fn final_assistant_stops_when_plan_present() {
-        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection);
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection, 2);
         let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
         let _ = c.prepare_workflow_execute(wf_args);
         let ok = Message {
@@ -229,12 +358,84 @@ mod tests {
             name: None,
             tool_call_id: None,
         };
-        assert!(matches!(c.after_final_assistant(&ok), AfterFinalAssistant::StopTurn));
+        assert!(matches!(
+            c.after_final_assistant(&ok, &[]),
+            AfterFinalAssistant::StopTurn
+        ));
+    }
+
+    #[test]
+    fn plan_semantics_requires_enough_steps_vs_validate_layers() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection, 3);
+        let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
+        let _ = c.prepare_workflow_execute(wf_args);
+        let hist = vec![
+            Message {
+                role: "assistant".to_string(),
+                content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "tc1".to_string(),
+                    typ: "function".to_string(),
+                    function: FunctionCall {
+                        name: "workflow_execute".to_string(),
+                        arguments: "{}".to_string(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "tool".to_string(),
+                content: Some(
+                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3}}"#
+                        .to_string(),
+                ),
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc1".to_string()),
+            },
+        ];
+        let one_step = Message {
+            role: "assistant".to_string(),
+            content: Some(
+                r#"```json
+{"type":"agent_reply_plan","version":1,"steps":[{"id":"only","description":"only one step here"}]}
+```"#
+                    .to_string(),
+            ),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&one_step, &hist),
+            AfterFinalAssistant::RequestPlanRewrite(_)
+        ));
+        let three_steps = Message {
+            role: "assistant".to_string(),
+            content: Some(
+                r#"```json
+{"type":"agent_reply_plan","version":1,"steps":[
+  {"id":"a","description":"layer 0"},
+  {"id":"b","description":"layer 1"},
+  {"id":"c","description":"layer 2"}
+]}
+```"#
+                .to_string(),
+            ),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&three_steps, &hist),
+            AfterFinalAssistant::StopTurn
+        ));
     }
 
     #[test]
     fn prepare_workflow_first_round_injects_plan_next() {
-        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection);
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection, 2);
         let args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
         let prep = c.prepare_workflow_execute(args);
         assert!(prep.execute);
@@ -252,7 +453,7 @@ mod tests {
 
     #[test]
     fn never_policy_skips_plan_rewrite_even_after_workflow_reflection_inject() {
-        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Never);
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Never, 2);
         let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
         let _ = c.prepare_workflow_execute(wf_args);
         let empty = Message {
@@ -263,14 +464,14 @@ mod tests {
             tool_call_id: None,
         };
         assert!(matches!(
-            c.after_final_assistant(&empty),
+            c.after_final_assistant(&empty, &[]),
             AfterFinalAssistant::StopTurn
         ));
     }
 
     #[test]
     fn always_policy_requests_rewrite_without_workflow() {
-        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Always);
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Always, 2);
         let empty = Message {
             role: "assistant".to_string(),
             content: Some("no plan".to_string()),
@@ -279,7 +480,7 @@ mod tests {
             tool_call_id: None,
         };
         assert!(matches!(
-            c.after_final_assistant(&empty),
+            c.after_final_assistant(&empty, &[]),
             AfterFinalAssistant::RequestPlanRewrite(_)
         ));
     }
