@@ -1,6 +1,0 @@
-{
-  "name": "crabmate-agent-demo",
-  "user": "root",
-  "install": "set -euxo pipefail\napt-get update\napt-get install -y --no-install-recommends git curl ca-certificates build-essential pkg-config libssl-dev libssh2-1-dev openssh-client openssh-server\n\n# Node.js >= 22\nif ! command -v node >/dev/null 2>&1 || [ \"$(node -v | sed 's/^v//' | cut -d. -f1)\" -lt 22 ]; then\n  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -\n  apt-get install -y nodejs\nfi\nnode -v\nnpm -v\n\n# Rust (supports edition 2024 via Cargo.toml edition)\nif ! command -v rustc >/dev/null 2>&1; then\n  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal\nfi\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\nrustup toolchain install stable --profile minimal -y\nrustup default stable\nrustc --version\ncargo --version\n",
-  "start": "true"
-}
