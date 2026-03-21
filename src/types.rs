@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 拼接在 `api_base` 后的 OpenAI 兼容 chat 路径（无前导斜杠）。
+pub const OPENAI_CHAT_COMPLETIONS_REL_PATH: &str = "chat/completions";
+
 // ---------- 消息与请求 ----------
 
 /// 对话消息（OpenAI 兼容格式）

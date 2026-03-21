@@ -4,6 +4,7 @@
 //! 日志由 `RUST_LOG` 控制（与原先一致）。
 
 mod api;
+mod llm;
 mod config;
 mod tool_result;
 mod tools;

@@ -1,18 +1,18 @@
 //! 单轮 Agent 循环的步骤拆分：与「规划–执行–反思」命名对齐的调用边界（P/E/R）。
 //!
-//! **命名说明**：此处的 **P（Plan）** 指「向模型要本轮输出」——即一次 `stream_chat` 调用，由模型产出正文或 `tool_calls`，
+//! **命名说明**：此处的 **P（Plan）** 指「向模型要本轮输出」——即一次 `llm::complete_chat_retrying`（内部 `api::stream_chat`），由模型产出正文或 `tool_calls`，
 //! **不是**独立的符号规划器。**E** 为执行工具；**R** 为终答阶段是否满足结构化规划等（见 `per_coord::after_final_assistant`）。
 //!
 //! 被 crate 根 `run_agent_turn`（Web）与 `runtime::tui`（TUI）共同复用。
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::info;
 
-use crate::api::stream_chat;
 use crate::config::AgentConfig;
+use crate::llm::{complete_chat_retrying, tool_chat_request};
 use crate::per_coord::PerCoordinator;
 use crate::sse_protocol::{
     SseErrorBody, SsePayload, ToolCallSummary, ToolResultBody, encode_message,
@@ -20,7 +20,7 @@ use crate::sse_protocol::{
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result::ToolResult as StructuredToolResult;
 use crate::tools;
-use crate::types::{ChatRequest, Message, ToolCall};
+use crate::types::{Message, ToolCall};
 
 // --- P：向模型要本轮输出（含重试）---
 
@@ -35,63 +35,17 @@ pub(crate) async fn per_plan_call_model_retrying(
     render_to_terminal: bool,
     no_stream: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
-    let req = ChatRequest {
-        model: cfg.model.clone(),
-        messages: messages.to_vec(),
-        tools: Some(tools_defs.to_vec()),
-        tool_choice: Some("auto".to_string()),
-        max_tokens: cfg.max_tokens,
-        temperature: cfg.temperature,
-        stream: None,
-    };
-
-    let t0 = Instant::now();
-    let max_attempts = cfg.api_max_retries + 1;
-    let mut msg_and_reason = None;
-    for attempt in 0..max_attempts {
-        match stream_chat(
-            client,
-            api_key,
-            &cfg.api_base,
-            &req,
-            out,
-            render_to_terminal,
-            no_stream,
-        )
-        .await
-        {
-            Ok(r) => {
-                info!(
-                    model = %req.model,
-                    elapsed_ms = t0.elapsed().as_millis(),
-                    attempt = attempt + 1,
-                    "chat 完成"
-                );
-                msg_and_reason = Some(r);
-                break;
-            }
-            Err(e) => {
-                error!(
-                    error = %e,
-                    attempt = attempt + 1,
-                    max_attempts = max_attempts,
-                    "API 请求失败"
-                );
-                if attempt < max_attempts - 1 {
-                    let delay_secs = cfg
-                        .api_retry_delay_secs
-                        .saturating_mul(2_u64.saturating_pow(attempt));
-                    info!(delay_secs = delay_secs, "等待后重试");
-                    tokio::time::sleep(Duration::from_secs(delay_secs)).await;
-                } else {
-                    return Err(e);
-                }
-            }
-        }
-    }
-    msg_and_reason.ok_or_else(|| {
-        std::io::Error::other("chat 请求成功但未拿到消息内容（msg_and_reason 为空）").into()
-    })
+    let req = tool_chat_request(cfg, messages, tools_defs);
+    complete_chat_retrying(
+        client,
+        api_key,
+        cfg,
+        &req,
+        out,
+        render_to_terminal,
+        no_stream,
+    )
+    .await
 }
 
 // --- R：终答阶段（须含规划等）---
