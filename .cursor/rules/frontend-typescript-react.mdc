@@ -1,0 +1,24 @@
+---
+description: 修改 frontend 时跑 TypeScript 与构建；与后端 API/SSE 契约对齐
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# 前端（Vite + React + TypeScript）
+
+## 自检命令（仓库根目录）
+
+- 类型检查：`cd frontend && npx tsc -b --noEmit`
+- 与生产一致构建：`cd frontend && npm run build`（含 `tsc -b` + `vite build`）
+
+大改组件、路由消费或打包配置后至少执行其一；准备合并或发版前建议执行 **`npm run build`**。
+
+## 与后端一致
+
+- 变更 **`POST /chat`**、**`/chat/stream`**、SSE `data:` JSON 形状、错误码时：同步 **`frontend/src/api.ts`**（及消费 SSE 的组件，如聊天面板）。
+- 新增/改名用户可见文案或行为时，按 **`.cursor/rules/todolist-and-documentation.mdc`** 评估是否更新 **`README.md`**。
+
+## 其它
+
+- 勿将真实 **API Key**、token 写入前端源码或提交到仓库；环境变量示例用占位符（见 **`.cursor/rules/secrets-and-logging.mdc`**）。
+- 样式与结构尽量沿用现有 **Tailwind / DaisyUI** 与组件组织方式，避免无关大重构。

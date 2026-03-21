@@ -1,0 +1,19 @@
+---
+description: 在 src/tools 增删改工具时的登记、分类与文档清单
+globs: src/tools/**/*.rs
+alwaysApply: false
+---
+
+# 工具（`src/tools/`）注册与文档
+
+## 新增或重命名工具时（按顺序核对）
+
+1. **`src/tools/mod.rs`**：`mod` 子模块（若有新文件）、在 **`tool_specs()`** / 表驱动注册处加入 **`ToolSpec`**（`name`、`description`、`parameters`、`runner`、**`ToolCategory`**）。
+2. **JSON Schema**：`parameters` 与运行时解析一致；`runner_*` 中对 `args` 的校验与错误信息对用户可读。
+3. **白名单 / 审批**：若工具会执行命令、访问网络或写盘，确认与 **`run_command` 白名单**、**`http_fetch` 前缀**、TUI **`CommandApproval`** 等策略一致，不扩大未意图的攻击面。
+4. **文档**：更新 **`docs/DEVELOPMENT.md`** 中 **`src/tools/` 子文件**表（若增删 `mod xxx`）；用户可见能力同步 **`README.md`**（见 **`.cursor/rules/todolist-and-documentation.mdc`**）。
+5. **架构索引**：若动到 `tools/mod.rs` 的模块列表，遵守 **`.cursor/rules/architecture-docs-sync.mdc`**。
+
+## 仅改实现时
+
+- 不改变工具名、参数形状与语义时，通常无需改 README；若行为或错误码对用户可见，仍建议在 **DEVELOPMENT** 或 **README** 中一句带过。
