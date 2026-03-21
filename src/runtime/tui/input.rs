@@ -139,8 +139,7 @@ pub(super) async fn handle_key(
                 state.status_line = "已强制中止本轮（工具执行中可能无法立刻停下）".to_string();
             } else {
                 agent_cancel.store(true, Ordering::SeqCst);
-                state.status_line =
-                    "正在停止生成…（Ctrl+Shift+G 强制中止；工具执行中需等待或强制）".to_string();
+                state.status_line = "正在停止生成…".to_string();
             }
             return Ok(false);
         }
@@ -413,7 +412,7 @@ pub(super) async fn handle_key(
         KeyCode::F(4) => {
             state.md_style = if state.md_style == 0 { 1 } else { 0 };
             state.status_line = format!(
-                "Markdown样式：{}（F4 切换）",
+                "Markdown样式：{}",
                 if state.md_style == 0 { "dark" } else { "light" }
             );
         }
@@ -876,10 +875,7 @@ pub(super) fn handle_crossterm_mouse(
         MouseEventKind::Up(MouseButton::Left) => {
             if state.input_dragging {
                 state.input_dragging = false;
-                state.status_line = format!(
-                    "输入区域高度已调整为 {} 行（在输入区与状态栏之间的横线上拖动可再次调整）",
-                    state.input_rows
-                );
+                state.status_line = format!("输入区域高度已调整为 {} 行", state.input_rows);
                 true
             } else {
                 apply_pending_focus_and_tab(state, model)

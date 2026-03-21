@@ -185,7 +185,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(Span::styled(
-                "（底栏为摘要；以下与真实绑定一致）",
+                "（底栏左侧为阶段词；完整键位见下文）",
                 Style::default().fg(Color::DarkGray),
             )),
             Line::raw(""),
@@ -410,6 +410,74 @@ fn truncate_display_width(s: &str, max_w: usize) -> String {
         out.push('…');
     }
     out
+}
+
+/// 底栏 `status_line`：`模型：` 与模型名分色；`高对比度：… | 模型：…` 同理。其余整段粗体截断。
+fn status_meta_spans(
+    meta: &str,
+    max_display_width: usize,
+    high_contrast: bool,
+) -> Vec<Span<'static>> {
+    const MODEL_PREFIX: &str = "模型：";
+    if max_display_width == 0 {
+        return Vec::new();
+    }
+
+    let label_style = Style::default()
+        .fg(if high_contrast {
+            Color::Gray
+        } else {
+            Color::DarkGray
+        })
+        .add_modifier(Modifier::BOLD);
+    let model_name_style = Style::default()
+        .fg(if high_contrast {
+            Color::LightYellow
+        } else {
+            Color::LightCyan
+        })
+        .add_modifier(Modifier::BOLD);
+    let hc_prefix_style = Style::default()
+        .fg(if high_contrast {
+            Color::White
+        } else {
+            Color::Gray
+        })
+        .add_modifier(Modifier::BOLD);
+
+    let fallback_plain = || {
+        vec![Span::styled(
+            truncate_display_width(meta, max_display_width),
+            Style::default().add_modifier(Modifier::BOLD),
+        )]
+    };
+
+    if let Some(name) = meta.strip_prefix(MODEL_PREFIX) {
+        let pw = MODEL_PREFIX.width();
+        if pw >= max_display_width {
+            return fallback_plain();
+        }
+        let name_show = truncate_display_width(name, max_display_width.saturating_sub(pw));
+        return vec![
+            Span::styled(MODEL_PREFIX.to_string(), label_style),
+            Span::styled(name_show, model_name_style),
+        ];
+    }
+
+    if let Some((left, name)) = meta.split_once(" | 模型：") {
+        let prefix = format!("{} | {}", left, MODEL_PREFIX);
+        let pw = prefix.width();
+        if pw >= max_display_width {
+            return fallback_plain();
+        }
+        let name_show = truncate_display_width(name, max_display_width.saturating_sub(pw));
+        return vec![
+            Span::styled(prefix, hc_prefix_style),
+            Span::styled(name_show, model_name_style),
+        ];
+    }
+
+    fallback_plain()
 }
 
 /// 与 `draw_ui` 左侧聊天列宽度一致（65% 列减去左右 padding）。
@@ -720,28 +788,35 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     let phase_label = phase.label();
     let phase_color = model_phase_color(phase);
     let bold = Style::default().add_modifier(Modifier::BOLD);
-    let meta = state.status_line.trim();
-    let meta = if meta.is_empty() {
-        "Ctrl+C 退出  F1 键位表"
+    let meta = state.status_line.trim().replace(['\n', '\r'], " ");
+    let status_line = if meta.is_empty() {
+        Line::from(vec![
+            Span::styled(" ", bold),
+            Span::styled(
+                phase_label,
+                Style::default()
+                    .fg(phase_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
     } else {
-        meta
+        // 「 ␣阶段 │ 」占宽，右侧说明单独按列宽截断，避免整串截断吃掉彩色阶段词
+        let prefix_w = 1usize.saturating_add(phase_label.width()).saturating_add(3); // " │ "
+        let meta_max = inner_cols.saturating_sub(prefix_w).max(1);
+        let mut spans = vec![
+            Span::styled(" ", bold),
+            Span::styled(
+                phase_label,
+                Style::default()
+                    .fg(phase_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" │ ", bold),
+        ];
+        spans.extend(status_meta_spans(&meta, meta_max, state.high_contrast));
+        Line::from(spans)
     };
-    let meta = meta.replace(['\n', '\r'], " ");
-    // 「 ␣阶段 │ 」占宽，右侧说明单独按列宽截断，避免整串截断吃掉彩色阶段词
-    let prefix_w = 1usize.saturating_add(phase_label.width()).saturating_add(3); // " │ "
-    let meta_max = inner_cols.saturating_sub(prefix_w).max(1);
-    let bar_meta = truncate_display_width(&meta, meta_max);
-    let status = Paragraph::new(Line::from(vec![
-        Span::styled(" ", bold),
-        Span::styled(
-            phase_label,
-            Style::default()
-                .fg(phase_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" │ ", bold),
-        Span::styled(bar_meta, bold),
-    ]));
+    let status = Paragraph::new(status_line);
     f.render_widget(status, status_rect);
 }
 

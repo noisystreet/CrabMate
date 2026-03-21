@@ -41,10 +41,7 @@ pub(super) fn apply_chat_search(state: &mut TuiState, query: &str, term_cols: u1
     state.chat_search_matches = matches;
     state.chat_search_active_idx = 0;
     jump_to_search_match(state);
-    state.status_line = format!(
-        "找到 {} 处（F6 下一处，Shift+F6 上一处）",
-        state.chat_search_matches.len()
-    );
+    state.status_line = format!("找到 {} 处", state.chat_search_matches.len());
 }
 
 pub(super) fn jump_to_search_match(state: &mut TuiState) {

@@ -5,6 +5,7 @@
 
 mod agent_turn;
 mod api;
+mod chat_export;
 mod chat_job_queue;
 mod config;
 mod context_window;
@@ -15,6 +16,7 @@ mod llm;
 mod per_coord;
 mod plan_artifact;
 mod runtime;
+mod sse_line;
 mod sse_protocol;
 mod tool_registry;
 mod tool_result;
@@ -44,7 +46,7 @@ use tower::ServiceBuilder;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{error, info};
-use types::Message;
+use types::{Message, messages_chat_seed};
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
 /// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）；`no_stream` 为 true 时 API 使用 `stream: false`，
@@ -444,22 +446,7 @@ async fn chat_handler(
             }),
         ));
     }
-    let messages: Vec<Message> = vec![
-        Message {
-            role: "system".to_string(),
-            content: Some(state.cfg.system_prompt.clone()),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
-        Message {
-            role: "user".to_string(),
-            content: Some(msg.to_string()),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
-    ];
+    let messages = messages_chat_seed(&state.cfg.system_prompt, msg);
     let work_dir_str = state.effective_workspace_path().await;
     let work_dir = work_dir_str.clone();
     let workspace_is_set = state.workspace_is_set().await;
@@ -535,22 +522,7 @@ async fn chat_stream_handler(
             }),
         ));
     }
-    let messages: Vec<Message> = vec![
-        Message {
-            role: "system".to_string(),
-            content: Some(state.cfg.system_prompt.clone()),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
-        Message {
-            role: "user".to_string(),
-            content: Some(msg.to_string()),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
-    ];
+    let messages = messages_chat_seed(&state.cfg.system_prompt, msg);
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
     let workspace_is_set = state.workspace_is_set().await;
     let job_id = state.chat_queue.next_job_id();

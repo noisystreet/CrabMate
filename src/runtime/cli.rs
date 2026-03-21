@@ -1,6 +1,6 @@
 use crate::config::AgentConfig;
 use crate::run_agent_turn;
-use crate::types::Message;
+use crate::types::{Message, messages_chat_seed};
 use crossterm::{
     ExecutableCommand,
     cursor::MoveToColumn,
@@ -20,26 +20,12 @@ pub async fn run_single_shot(
     no_stream: bool,
     question: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut messages: Vec<Message> = vec![Message {
-        role: "system".to_string(),
-        content: Some(cfg.system_prompt.clone()),
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    }];
-
     let q = question.trim();
     if q.is_empty() {
         eprintln!("错误：--query 或 --stdin 内容为空");
         std::process::exit(1);
     }
-    messages.push(Message {
-        role: "user".to_string(),
-        content: Some(q.to_string()),
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    });
+    let mut messages = messages_chat_seed(&cfg.system_prompt, q);
     let work_dir_str = workspace_cli
         .as_deref()
         .filter(|s| !s.trim().is_empty())
@@ -92,13 +78,7 @@ pub async fn run_repl(
     workspace_cli: &Option<String>,
     no_stream: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut messages: Vec<Message> = vec![Message {
-        role: "system".to_string(),
-        content: Some(cfg.system_prompt.clone()),
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    }];
+    let mut messages: Vec<Message> = vec![Message::system_only(cfg.system_prompt.clone())];
 
     println!(
         "=== DeepSeek Agent Demo ===\n当前模型: {}\n输入内容与 Agent 对话，输入 quit/exit 或 Ctrl+D 退出。\n",
@@ -125,13 +105,7 @@ pub async fn run_repl(
             continue;
         }
 
-        messages.push(Message {
-            role: "user".to_string(),
-            content: Some(input.to_string()),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        });
+        messages.push(Message::user_only(input.to_string()));
 
         let work_dir_str = workspace_cli
             .as_deref()

@@ -123,6 +123,7 @@ function classifyErrorKind(msg: string): ErrorKind {
   return 'unknown'
 }
 import { sendChatStream, uploadFiles } from '../api'
+import { buildCrabmateSessionFile, crabmateSessionFileToPrettyJson, downloadBlob } from '../chatExport'
 
 const INPUT_HEIGHT_KEY = 'agent-demo-input-height'
 const MIN_INPUT_HEIGHT = 80
@@ -555,32 +556,15 @@ export function ChatPanel({
 
   const exportConversation = () => {
     if (messages.length === 0) return
-    const data = {
-      exportedAt: new Date().toISOString(),
-      messages: messages.map(({ role, text, state, images, audioUrls, videoUrls }) => ({
-        role,
-        text,
-        state,
-        images,
-        audioUrls,
-        videoUrls,
-      })),
-    }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
+    const file = buildCrabmateSessionFile(messages)
+    const blob = new Blob([crabmateSessionFileToPrettyJson(file)], { type: 'application/json' })
     const date = new Date()
     const ts = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
       date.getDate(),
     ).padStart(2, '0')}_${String(date.getHours()).padStart(2, '0')}${String(
       date.getMinutes(),
     ).padStart(2, '0')}`
-    a.href = url
-    a.download = `chat_session_${ts}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    downloadBlob(`chat_session_${ts}.json`, blob)
   }
 
   const handleInputResizeMouseDown = useCallback((e: React.MouseEvent) => {

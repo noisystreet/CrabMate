@@ -7,6 +7,10 @@ import { ResizeHandle } from './components/ResizeHandle'
 import { ThemeSwitcher } from './components/ThemeSwitcher'
 import { deleteUploads, fetchTasks, saveTasks } from './api'
 import type { TasksData } from './types'
+import {
+  downloadCrabmateSessionJson,
+  downloadCrabmateSessionMarkdown,
+} from './chatExport'
 import { ensureAtLeastOneSession, loadSessions, makeSessionId, saveSessions, type ChatSession, type StoredMessage } from './sessionStore'
 
 const WORKSPACE_WIDTH_KEY = 'agent-demo-workspace-width'
@@ -179,58 +183,22 @@ export default function App() {
   }
 
   const exportOneSession = (s: ChatSession) => {
-    const data = { exportedAt: new Date().toISOString(), session: s }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `chat_session_${s.id}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    downloadCrabmateSessionJson(`chat_session_${s.id}.json`, s.messages || [])
   }
 
+  const sessionMarkdownExportOpts = (s: ChatSession) => ({
+    title: s.title || '未命名会话',
+    preamble: [
+      `- id: \`${s.id}\``,
+      `- updatedAt: ${new Date(s.updatedAt).toISOString()}`,
+      ...(s.tags?.length ? [`- tags: ${s.tags.join(', ')}`] : []),
+      ...(s.starred ? ['- starred: true'] : []),
+      ...(s.archived ? ['- archived: true'] : []),
+    ],
+  })
+
   const exportSessionMarkdown = (s: ChatSession) => {
-    const lines: string[] = []
-    lines.push(`# ${s.title || '未命名会话'}`)
-    lines.push('')
-    lines.push(`- id: \`${s.id}\``)
-    lines.push(`- updatedAt: ${new Date(s.updatedAt).toISOString()}`)
-    if (s.tags?.length) lines.push(`- tags: ${s.tags.join(', ')}`)
-    if (s.starred) lines.push(`- starred: true`)
-    if (s.archived) lines.push(`- archived: true`)
-    lines.push('')
-    lines.push('---')
-    lines.push('')
-    for (const m of s.messages || []) {
-      const role = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : 'System'
-      lines.push(`## ${role}`)
-      lines.push('')
-      if (m.text) lines.push(m.text)
-      const att: string[] = []
-      for (const u of m.images || []) att.push(`- 图片：${u}`)
-      for (const u of m.audioUrls || []) att.push(`- 音频：${u}`)
-      for (const u of m.videoUrls || []) att.push(`- 视频：${u}`)
-      if (att.length) {
-        lines.push('')
-        lines.push('附件：')
-        lines.push(...att)
-      }
-      lines.push('')
-      lines.push('---')
-      lines.push('')
-    }
-    const content = lines.join('\n')
-    const blob = new Blob([content], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `chat_session_${s.id}.md`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    downloadCrabmateSessionMarkdown(`chat_session_${s.id}.md`, s.messages || [], sessionMarkdownExportOpts(s))
   }
 
   const exportSessionPdf = (s: ChatSession) => {
@@ -315,9 +283,25 @@ export default function App() {
             className="btn btn-ghost btn-sm"
             onClick={() => setChatExportTrigger((v) => v + 1)}
             disabled={!chatHasMessages}
-            title={chatHasMessages ? '将当前会话保存为 JSON 文件' : '当前没有可保存的对话'}
+            title={chatHasMessages ? '导出与 TUI tui_session.json 同形的 JSON（version + messages）' : '当前没有可保存的对话'}
           >
-            保存会话
+            导出 JSON
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              if (!activeSession?.messages?.length) return
+              downloadCrabmateSessionMarkdown(
+                `chat_session_${activeSession.id}.md`,
+                activeSession.messages,
+                sessionMarkdownExportOpts(activeSession),
+              )
+            }}
+            disabled={!chatHasMessages}
+            title={chatHasMessages ? '导出 Markdown（正文与 TUI F9 导出格式一致，含会话元信息）' : '当前没有可导出的对话'}
+          >
+            导出 MD
           </button>
           <button
             type="button"
@@ -711,7 +695,7 @@ export default function App() {
               </div>
 
               <div className="text-xs text-base-content/60">
-                提示：会话与草稿会自动保存在浏览器本地存储中；“保存会话”按钮仍会导出当前会话单独 JSON。
+                提示：会话与草稿会自动保存在浏览器本地存储中；「导出 JSON」与 TUI `.crabmate/tui_session.json` 同形（version + messages），可尝试手工合并导入；「导出 MD」与 TUI F9 正文格式一致。
               </div>
             </div>
           </div>
