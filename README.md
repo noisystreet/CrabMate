@@ -328,6 +328,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 **系统提示词**：在 `default_config.toml` 中通过 `system_prompt`（多行字符串）或 `system_prompt_file`（文件路径）配置；若同时设置，以文件内容为准。未配置则启动报错。
 
+**与模型网关的 HTTP 连接**：进程内**一个**共享 `reqwest::Client`（连接池、空闲连接保留、TCP keepalive、`User-Agent`），多次调用 `chat/completions` 时可复用 **TLS/HTTP Keep-Alive**；协议仍是 HTTP（JSON 或 SSE），不是 WebSocket「单条长连接」。细节见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) 中 `http_client`。
+
 常用模型 ID：`deepseek-chat`（默认）、`deepseek-reasoner`（推理链更长，适合复杂推理）。
 
 ## 编译与运行（命令行选项）

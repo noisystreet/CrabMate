@@ -4,6 +4,7 @@
 //! 日志由 `RUST_LOG` 控制（与原先一致）。
 
 mod api;
+mod http_client;
 mod llm;
 mod config;
 mod tool_result;
@@ -811,9 +812,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("配置检查通过：API_KEY 已设置，配置可用，前端静态目录存在：{}", static_dir.display());
         return Ok(());
     }
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(cfg.api_timeout_secs))
-        .build()?;
+    let client = http_client::build_shared_api_client(&cfg)?;
     let all_tools = tools::build_tools();
     let tools = if no_tools { Vec::new() } else { all_tools };
 
