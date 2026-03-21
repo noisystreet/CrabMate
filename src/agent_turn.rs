@@ -141,20 +141,23 @@ pub(crate) enum ExecuteToolsBatchOutcome {
     AbortedSse,
 }
 
-/// E：执行一批 tool 调用，写入 tool / 反思 user，并发送 SSE 片段。
-pub(crate) async fn per_execute_tools_web(
+#[derive(Clone, Copy)]
+enum ExecuteDispatchMode<'a> {
+    Web,
+    Tui(&'a tool_registry::TuiToolRuntime),
+}
+
+/// E：执行一批 tool 调用（Web/TUI 共用骨架），写入 tool / 反思 user，并发送 SSE 片段。
+async fn per_execute_tools_common(
     tool_calls: &[ToolCall],
     per_coord: &mut PerCoordinator,
     messages: &mut Vec<Message>,
-    ctx: WebExecuteCtx<'_>,
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    out: Option<&mpsc::Sender<String>>,
+    dispatch_mode: ExecuteDispatchMode<'_>,
 ) -> ExecuteToolsBatchOutcome {
-    let WebExecuteCtx {
-        cfg,
-        effective_working_dir,
-        workspace_is_set,
-        out,
-    } = ctx;
-
     let mut workspace_changed = false;
 
     if let Some(tx) = out {
@@ -192,19 +195,36 @@ pub(crate) async fn per_execute_tools_web(
         }
 
         let t_tool = Instant::now();
-        let (result, reflection_inject) = tool_registry::dispatch_tool(
-            ToolRuntime::Web {
-                workspace_changed: &mut workspace_changed,
-            },
-            per_coord,
-            cfg,
-            effective_working_dir,
-            workspace_is_set,
-            &name,
-            &args,
-            tc,
-        )
-        .await;
+        let (result, reflection_inject) = match dispatch_mode {
+            ExecuteDispatchMode::Web => {
+                tool_registry::dispatch_tool(
+                    ToolRuntime::Web {
+                        workspace_changed: &mut workspace_changed,
+                    },
+                    per_coord,
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    &name,
+                    &args,
+                    tc,
+                )
+                .await
+            }
+            ExecuteDispatchMode::Tui(tui_tool_ctx) => {
+                tool_registry::dispatch_tool(
+                    ToolRuntime::Tui { ctx: tui_tool_ctx },
+                    per_coord,
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    &name,
+                    &args,
+                    tc,
+                )
+                .await
+            }
+        };
 
         info!(tool = %name, elapsed_ms = t_tool.elapsed().as_millis(), "工具调用完成");
 
@@ -223,7 +243,7 @@ pub(crate) async fn per_execute_tools_web(
     }
 
     if let Some(tx) = out {
-        if workspace_changed {
+        if matches!(dispatch_mode, ExecuteDispatchMode::Web) && workspace_changed {
             let _ = tx
                 .send(encode_message(SsePayload::WorkspaceChanged {
                     workspace_changed: true,
@@ -238,6 +258,33 @@ pub(crate) async fn per_execute_tools_web(
     }
 
     ExecuteToolsBatchOutcome::Finished
+}
+
+/// E：执行一批 tool 调用，写入 tool / 反思 user，并发送 SSE 片段。
+pub(crate) async fn per_execute_tools_web(
+    tool_calls: &[ToolCall],
+    per_coord: &mut PerCoordinator,
+    messages: &mut Vec<Message>,
+    ctx: WebExecuteCtx<'_>,
+) -> ExecuteToolsBatchOutcome {
+    let WebExecuteCtx {
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        out,
+    } = ctx;
+
+    per_execute_tools_common(
+        tool_calls,
+        per_coord,
+        messages,
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        out,
+        ExecuteDispatchMode::Web,
+    )
+    .await
 }
 
 /// E（TUI）：执行一批 tool 调用，写入 tool / 反思 user，并发送 SSE 片段。
@@ -255,78 +302,17 @@ pub(crate) async fn per_execute_tools_tui(
         tui_tool_ctx,
     } = ctx;
 
-    if let Some(tx) = out {
-        let _ = tx
-            .send(encode_message(SsePayload::ToolRunning {
-                tool_running: true,
-            }))
-            .await;
-    }
-
-    for tc in tool_calls {
-        if let Some(tx) = out
-            && tx.is_closed()
-        {
-            info!("SSE sender closed during tool execution, aborting remaining tools");
-            return ExecuteToolsBatchOutcome::AbortedSse;
-        }
-
-        let name = tc.function.name.clone();
-        let args = tc.function.arguments.clone();
-        let id = tc.id.clone();
-        println!("  [调用工具: {}]", name);
-
-        if let Some(tx) = out
-            && let Some(summary) = tools::summarize_tool_call(&name, &args)
-        {
-            let _ = tx
-                .send(encode_message(SsePayload::ToolCall {
-                    tool_call: ToolCallSummary {
-                        name: name.clone(),
-                        summary,
-                    },
-                }))
-                .await;
-        }
-
-        let t_tool = Instant::now();
-        let (result, reflection_inject) = tool_registry::dispatch_tool(
-            ToolRuntime::Tui { ctx: tui_tool_ctx },
-            per_coord,
-            cfg,
-            effective_working_dir,
-            workspace_is_set,
-            &name,
-            &args,
-            tc,
-        )
-        .await;
-
-        info!(tool = %name, elapsed_ms = t_tool.elapsed().as_millis(), "工具调用完成");
-
-        if let Some(tx) = out {
-            let _ = tx
-                .send(encode_message(SsePayload::ToolResult {
-                    tool_result: ToolResultBody {
-                        name: name.clone(),
-                        output: result.clone(),
-                    },
-                }))
-                .await;
-        }
-
-        PerCoordinator::append_tool_result_and_reflection(messages, id, result, reflection_inject);
-    }
-
-    if let Some(tx) = out {
-        let _ = tx
-            .send(encode_message(SsePayload::ToolRunning {
-                tool_running: false,
-            }))
-            .await;
-    }
-
-    ExecuteToolsBatchOutcome::Finished
+    per_execute_tools_common(
+        tool_calls,
+        per_coord,
+        messages,
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        out,
+        ExecuteDispatchMode::Tui(tui_tool_ctx),
+    )
+    .await
 }
 
 /// SSE 发送端已关闭时，应尽快结束外层循环。
