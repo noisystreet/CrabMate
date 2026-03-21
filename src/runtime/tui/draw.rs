@@ -173,35 +173,65 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
         let h = area.height.saturating_mul(8) / 10;
         let x = area.x + (area.width.saturating_sub(w)) / 2;
         let y = area.y + (area.height.saturating_sub(h)) / 2;
-        let popup = Rect::new(x, y, w.max(40), h.max(15));
+        let popup = Rect::new(x, y, w.max(40), h.max(22));
 
         let help_lines: Vec<Line<'_>> = vec![
             Line::from(Span::styled(
-                "Crabmate TUI 小教程",
+                "Crabmate TUI · 完整键位表",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             )),
+            Line::from(Span::styled(
+                "（底栏为摘要；以下与真实绑定一致）",
+                Style::default().fg(Color::DarkGray),
+            )),
             Line::raw(""),
             Line::from(
-                "布局：左侧对话与输入区以横线分隔，左右主区域以竖线分隔；右侧为 工作区 / 任务 / 日程 标签页。",
+                "【全局】Ctrl+C 退出。F1 开关本页。Esc 关闭本页；另可关闭文件预览、提示行等（见各模式说明）。",
             ),
-            Line::from("焦点切换：F2 在 聊天 和 右侧 面板之间切换，Tab 在右侧标签页间切换。"),
+            Line::from("【焦点 F2】循环：聊天视图 → 聊天输入 → 工作区列表 → 右侧面板 → 聊天视图。"),
             Line::from(
-                "发送：Enter 发送；Shift+Enter 换行。←→ 移动光标、↑↓ 按显示行移动、Home/End 行首行尾、Delete 向后删。",
+                "【右侧】Tab 在工作区 / 任务 / 日程 标签间切换。鼠标：可点标签与列表；在输入区外松开左键会按落点切换焦点/标签（与 F2 配合）。",
             ),
             Line::from(
-                "剪贴板：Ctrl+V 从系统剪贴板粘贴（Linux 需 X11/Wayland 与剪贴板环境；失败时静默跳过）。",
+                "【聊天输入·键盘】Enter 发送消息。Shift+Enter 在输入框内换行（多行编辑）。←→↑↓ 移动光标（↑↓ 按折行后显示行）；Home/End 行首/行尾；Backspace、Delete。PgUp/PgDn 上下翻动聊天区。",
             ),
-            Line::from("制表符：Tab 在右侧标签间切换；Ctrl+Tab 或 Ctrl+I 在输入中插入 Tab 字符。"),
             Line::from(
-                "撤销/重做：Ctrl+Z 撤销，Ctrl+Y 或 Ctrl+Shift+Z 重做（多行编辑）。折行与显示可能与 Markdown 区略有偏差，属预期范围。",
+                "【聊天输入·鼠标】在输入框内点击可定位光标（含提示行模式）。鼠标在左侧聊天区滚轮：向上/向下滚动历史。在「输入框与状态栏之间的横线」按住左键拖拽：调节输入区高度（约 3～12 行）。",
             ),
-            Line::from("Markdown：F3 切换代码主题，F4 切换 Markdown 暗/亮样式。"),
-            Line::from("高对比度：F5 在普通 / 高对比度模式之间切换（适合弱光/弱视）。"),
-            Line::from("任务 / 日程：右侧标签页中查看和勾选任务、提醒和事件。"),
+            Line::from(
+                "【剪贴板与 Tab】Ctrl+V 粘贴（Linux 需剪贴板环境；失败则静默跳过）。未按 Ctrl 时 Tab 在右侧三个标签间循环。在聊天输入中插入制表符：Ctrl+Tab 或 Ctrl+I。",
+            ),
+            Line::from("【撤销】Ctrl+Z 撤销，Ctrl+Y 或 Ctrl+Shift+Z 重做（聊天输入与提示行内）。"),
+            Line::from(
+                "【搜索 / 跳转】Ctrl+F 或 F6（无搜索结果时）打开关键词搜索，Enter 执行；有结果时 F6 下一处、Shift+F6 上一处。F7 打开「按序号跳转」（可见消息从 1 起，不含系统提示）。",
+            ),
+            Line::from(
+                "【导出 / 会话】F8 导出 JSON、F9 导出 Markdown 到 .crabmate/exports/。退出时保存 .crabmate/tui_session.json，启动自动加载（首条 system 随当前配置更新）。",
+            ),
+            Line::from(
+                "【模型运行中】Ctrl+G 协作停止生成；Ctrl+Shift+G 强制中止任务（子进程工具可能仍须等待或依赖强制）。",
+            ),
+            Line::from("【外观】F3 代码高亮主题；F4 Markdown 暗/亮；F5 高对比度。"),
+            Line::from("【工作区列表】Enter 打开/进入目录；Backspace 上级；↑↓ 选择；r 刷新。"),
+            Line::from("【任务】Space 勾选/取消；↑↓；r 刷新。"),
+            Line::from(
+                "【日程】t 提醒子列表、e 日程子列表；Space 完成/取消提醒；a 新增提醒（打开提示行）；↑↓；r 刷新。",
+            ),
+            Line::from(
+                "【提示行】搜索/跳转/新增提醒等弹出的一行编辑：Shift+Enter 换行，Enter 提交，Esc 取消。",
+            ),
+            Line::from(
+                "【命令审批】←/→ 或 1/2/3；D、O、P 快捷提交；Enter 按当前选项确认。Esc 将选项切到「拒绝」，再 Enter 或 D 可确认拒绝。",
+            ),
+            Line::from("【文件预览】Esc 或 q 关闭。"),
             Line::raw(""),
-            Line::from("按 F1 或 Esc 关闭此帮助，随时再次按 F1 重新查看。"),
+            Line::from(
+                "说明：聊天区折行算法与 Markdown 渲染区在极端长行上可能与 ratatui Wrap 略有差异，属预期范围。",
+            ),
+            Line::raw(""),
+            Line::from("按 F1 或 Esc 关闭本帮助。"),
         ];
 
         let block = Block::default()
@@ -340,20 +370,29 @@ fn truncate_display_width(s: &str, max_w: usize) -> String {
     out
 }
 
-fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
-    let vchunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(3),
-            Constraint::Length(1), // 聊天区下横线
-            Constraint::Length(state.input_rows.max(2)),
-            Constraint::Length(1), // 输入区与状态栏之间横线
-            Constraint::Length(1), // 状态栏（单行文字）
-        ])
-        .split(area);
+/// 与 `draw_ui` 左侧聊天列宽度一致（65% 列减去左右 padding）。
+pub(super) fn chat_inner_width_from_term_cols(term_cols: u16) -> usize {
+    term_cols
+        .saturating_mul(65)
+        .saturating_div(100)
+        .max(3)
+        .saturating_sub(2) as usize
+}
 
-    let mut lines: Vec<Line<'_>> = Vec::new();
-    let chat_inner_width = vchunks[0].width.saturating_sub(2) as usize;
+fn ratatui_line_to_plain(line: &Line<'_>) -> String {
+    line.spans.iter().fold(String::new(), |mut acc, s| {
+        acc.push_str(s.content.as_ref());
+        acc
+    })
+}
+
+/// 与 `draw_chat` 相同的逻辑行（用于搜索/跳转）；第二项为每条非 system 消息对应的首行索引。
+pub(super) fn build_chat_scroll_line_strings(
+    state: &TuiState,
+    chat_inner_width: usize,
+) -> (Vec<String>, Vec<usize>) {
+    let mut lines: Vec<String> = Vec::new();
+    let mut message_start_lines: Vec<usize> = Vec::new();
     let chat_msgs: Vec<&Message> = state
         .messages
         .iter()
@@ -382,6 +421,7 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         .collect();
 
     for (idx, m) in chat_msgs.iter().enumerate() {
+        message_start_lines.push(lines.len());
         let role = if m.role == "user" { "我" } else { "模型" };
         let rendered = rendered_list[idx].as_str();
         if m.role == "user" {
@@ -395,16 +435,9 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
                     role_text
                 )
             };
-            lines.push(Line::from(Span::styled(
-                role_padded,
-                Style::default().add_modifier(Modifier::BOLD),
-            )));
+            lines.push(role_padded);
         } else if m.role != "assistant" {
-            // tool 等仍显示标签；assistant 不画「模型:」，避免与正文里的「模型：」叠成两行。
-            lines.push(Line::from(Span::styled(
-                format!("{}:", role),
-                Style::default().add_modifier(Modifier::BOLD),
-            )));
+            lines.push(format!("{}:", role));
         }
         if m.role == "assistant" {
             let theme = code_themes()[state.code_theme_idx];
@@ -430,10 +463,11 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
                     markdown_to_text(rendered, &options)
                 }
             };
-            lines.extend(text.lines.into_iter());
+            for tl in &text.lines {
+                lines.push(ratatui_line_to_plain(tl));
+            }
         } else {
             for l in rendered.lines() {
-                // 仅用户气泡内正文保持靠右；模型回复与工具输出一律左对齐。
                 let line_str = if m.role == "user" {
                     if l.width() >= chat_inner_width {
                         l.to_string()
@@ -447,11 +481,48 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
                 } else {
                     l.to_string()
                 };
-                lines.push(Line::raw(line_str));
+                lines.push(line_str);
             }
         }
-        lines.push(Line::raw(""));
+        lines.push(String::new());
     }
+    (lines, message_start_lines)
+}
+
+fn is_chat_role_header_line(s: &str) -> bool {
+    let t = s.trim();
+    t == "我:" || t == "模型:"
+}
+
+fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
+    let vchunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(3),
+            Constraint::Length(1), // 聊天区下横线
+            Constraint::Length(state.input_rows.max(2)),
+            Constraint::Length(1), // 输入区与状态栏之间横线
+            Constraint::Length(1), // 状态栏（单行文字）
+        ])
+        .split(area);
+
+    let chat_inner_width = vchunks[0].width.saturating_sub(2) as usize;
+    let (line_strings, _) = build_chat_scroll_line_strings(state, chat_inner_width);
+    let mut lines: Vec<Line<'_>> = line_strings
+        .into_iter()
+        .map(|s| {
+            if s.is_empty() {
+                Line::raw("")
+            } else if is_chat_role_header_line(&s) {
+                Line::from(Span::styled(
+                    s,
+                    Style::default().add_modifier(Modifier::BOLD),
+                ))
+            } else {
+                Line::raw(s)
+            }
+        })
+        .collect();
     let chat_height = vchunks[0].height.saturating_sub(2) as usize;
     let total_lines = lines.len();
     if chat_height > 0 && !lines.is_empty() {
@@ -528,7 +599,7 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     let bold = Style::default().add_modifier(Modifier::BOLD);
     let meta = state.status_line.trim();
     let meta = if meta.is_empty() {
-        "Ctrl+C 退出  F1 帮助"
+        "Ctrl+C 退出  F1 键位表"
     } else {
         meta
     };

@@ -1,8 +1,8 @@
-//! 质量与一致性：组合多项检查（fmt/clippy/test/前端），便于 agent 一键拉齐。
+//! 质量与一致性：组合多项检查（Rust / 前端 / 可选 Python），便于 agent 一键拉齐。
 
 use std::path::Path;
 
-use super::{cargo_tools, ci_tools, frontend_tools};
+use super::{cargo_tools, ci_tools, frontend_tools, python_tools};
 
 /// 按开关组合运行多项质量检查；默认仅 Rust 侧 fmt + clippy（轻量）。
 pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
@@ -31,6 +31,15 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         .get("run_frontend_prettier_check")
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
+    let run_ruff_check = v
+        .get("run_ruff_check")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let run_pytest = v
+        .get("run_pytest")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let run_mypy = v.get("run_mypy").and_then(|x| x.as_bool()).unwrap_or(false);
     let fail_fast = v.get("fail_fast").and_then(|x| x.as_bool()).unwrap_or(true);
     let summary_only = v
         .get("summary_only")
@@ -42,8 +51,11 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         && !run_cargo_test
         && !run_frontend_lint
         && !run_frontend_prettier_check
+        && !run_ruff_check
+        && !run_pytest
+        && !run_mypy
     {
-        return "错误：至少启用一项检查（run_cargo_fmt_check / run_cargo_clippy / run_cargo_test / run_frontend_lint / run_frontend_prettier_check）".to_string();
+        return "错误：至少启用一项检查（含 run_cargo_* / run_frontend_* / run_ruff_check / run_pytest / run_mypy）".to_string();
     }
 
     let mut sections: Vec<String> = Vec::new();
@@ -65,6 +77,7 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 run_frontend_lint,
                 run_frontend_prettier_check,
             );
+            skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -88,6 +101,7 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 run_frontend_lint,
                 run_frontend_prettier_check,
             );
+            skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -111,6 +125,7 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 run_frontend_lint,
                 run_frontend_prettier_check,
             );
+            skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -134,6 +149,7 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 false,
                 run_frontend_prettier_check,
             );
+            skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -152,8 +168,54 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
+        if fail_fast && failed {
+            skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
+            return build_output(&summary, &sections, summary_only);
+        }
     } else {
         summary.push(("frontend prettier --check", "skipped"));
+    }
+
+    if run_ruff_check {
+        let r = python_tools::ruff_check("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("ruff check", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+        if fail_fast && failed {
+            if run_pytest {
+                summary.push(("pytest", "skipped"));
+            }
+            if run_mypy {
+                summary.push(("mypy", "skipped"));
+            }
+            return build_output(&summary, &sections, summary_only);
+        }
+    } else {
+        summary.push(("ruff check", "skipped"));
+    }
+
+    if run_pytest {
+        let r = python_tools::pytest_run("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("pytest", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+        if fail_fast && failed {
+            if run_mypy {
+                summary.push(("mypy", "skipped"));
+            }
+            return build_output(&summary, &sections, summary_only);
+        }
+    } else {
+        summary.push(("pytest", "skipped"));
+    }
+
+    if run_mypy {
+        let r = python_tools::mypy_check("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("mypy", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+    } else {
+        summary.push(("mypy", "skipped"));
     }
 
     build_output(&summary, &sections, summary_only)
@@ -180,6 +242,14 @@ fn section_failed(text: &str) -> bool {
             return parse_exit_nonzero(&line[idx..]);
         }
         if line.contains("npx prettier")
+            && line.contains("(exit=")
+            && let Some(idx) = line.find("(exit=")
+        {
+            return parse_exit_nonzero(&line[idx..]);
+        }
+        if (line.starts_with("ruff check")
+            || line.starts_with("python3 -m pytest")
+            || line.starts_with("mypy"))
             && line.contains("(exit=")
             && let Some(idx) = line.find("(exit=")
         {
@@ -219,6 +289,23 @@ fn push_skipped(
     }
     if fe_fmt {
         summary.push(("frontend prettier --check", "skipped"));
+    }
+}
+
+fn skip_python_steps(
+    summary: &mut Vec<(&'static str, &'static str)>,
+    ruff: bool,
+    pytest: bool,
+    mypy: bool,
+) {
+    if ruff {
+        summary.push(("ruff check", "skipped"));
+    }
+    if pytest {
+        summary.push(("pytest", "skipped"));
+    }
+    if mypy {
+        summary.push(("mypy", "skipped"));
     }
 }
 

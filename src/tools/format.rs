@@ -2,6 +2,7 @@
 //!
 //! 根据文件扩展名自动选择本地格式化器：
 //! - `.rs`   -> `rustfmt`
+//! - `.py`   -> `ruff format`
 //! - `.ts` / `.tsx` / `.js` / `.jsx` / `.json` -> `npx prettier --write`
 //!
 //! 参数：{ "path": "相对工作区根目录的文件路径" }
@@ -9,6 +10,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+use super::python_tools;
 
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
@@ -40,6 +43,8 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
 
     let formatter = if ext == "rs" {
         Formatter::Rustfmt
+    } else if ext == "py" {
+        Formatter::Ruff
     } else if matches!(ext.as_str(), "ts" | "tsx" | "js" | "jsx" | "json") {
         Formatter::Prettier
     } else {
@@ -83,6 +88,8 @@ pub fn run_check(args_json: &str, workspace_root: &Path) -> String {
 
     let formatter = if ext == "rs" {
         Formatter::Rustfmt
+    } else if ext == "py" {
+        Formatter::Ruff
     } else if matches!(ext.as_str(), "ts" | "tsx" | "js" | "jsx" | "json") {
         Formatter::Prettier
     } else {
@@ -99,6 +106,7 @@ pub fn run_check(args_json: &str, workspace_root: &Path) -> String {
 enum Formatter {
     Rustfmt,
     Prettier,
+    Ruff,
 }
 
 fn resolve_target(base: &Path, sub: &str) -> Result<PathBuf, String> {
@@ -128,6 +136,7 @@ fn run_formatter(
     match formatter {
         Formatter::Rustfmt => run_rustfmt(target, check_only),
         Formatter::Prettier => run_prettier(target, workspace_root, check_only),
+        Formatter::Ruff => python_tools::ruff_format_file(target, workspace_root, check_only),
     }
 }
 

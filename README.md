@@ -478,6 +478,7 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
 | `--no-stream`     | 对 API 使用 `stream: false`（非 SSE），并在 CLI 下等待完整回答后一次性 Markdown 打印；TUI 侧亦为整块正文刷新。|
+| `--tui`           | 全屏终端 UI。会话默认持久化到当前工作区下 `.crabmate/tui_session.json`（退出保存、启动加载）；可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止（详见 F1 帮助）。|
 
 对应示例：
 

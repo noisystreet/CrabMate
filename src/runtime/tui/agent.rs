@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use tokio::sync::{Mutex, mpsc};
 
@@ -22,6 +23,7 @@ pub(super) async fn run_agent_turn_tui(
     no_stream: bool,
     persistent_allowlist: HashSet<String>,
     approval_rx: mpsc::Receiver<crate::types::CommandApprovalDecision>,
+    cancel: Option<&AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let out_tx = out.cloned();
     let approval_rx_shared: Arc<Mutex<mpsc::Receiver<crate::types::CommandApprovalDecision>>> =
@@ -44,6 +46,7 @@ pub(super) async fn run_agent_turn_tui(
         effective_working_dir,
         workspace_is_set,
         no_stream,
+        cancel,
         crate::agent_turn::AgentRunMode::Tui {
             tui_tool_ctx: &tui_tool_ctx,
         },

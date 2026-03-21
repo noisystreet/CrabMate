@@ -5,6 +5,7 @@
 //!
 //! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent_turn` 中散落重试与请求拼装逻辑。
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc::Sender;
@@ -29,6 +30,7 @@ pub fn tool_chat_request(cfg: &AgentConfig, messages: &[Message], tools: &[Tool]
 }
 
 /// 调用 `chat/completions`：失败时按 `AgentConfig::api_retry_delay_secs` 做指数退避，最多 `api_max_retries + 1` 次。
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_chat_retrying(
     http: &Client,
     api_key: &str,
@@ -37,11 +39,15 @@ pub async fn complete_chat_retrying(
     out: Option<&Sender<String>>,
     render_to_terminal: bool,
     no_stream: bool,
+    cancel: Option<&AtomicBool>,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let t0 = Instant::now();
     let max_attempts = cfg.api_max_retries + 1;
     let mut last_ok = None;
     for attempt in 0..max_attempts {
+        if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            return Err(crate::types::LLM_CANCELLED_ERROR.into());
+        }
         match stream_chat(
             http,
             api_key,
@@ -50,6 +56,7 @@ pub async fn complete_chat_retrying(
             out,
             render_to_terminal,
             no_stream,
+            cancel,
         )
         .await
         {
@@ -76,6 +83,9 @@ pub async fn complete_chat_retrying(
                         .saturating_mul(2_u64.saturating_pow(attempt));
                     info!(delay_secs = delay_secs, "llm 等待后重试");
                     tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+                    if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+                        return Err(crate::types::LLM_CANCELLED_ERROR.into());
+                    }
                 } else {
                     return Err(e);
                 }

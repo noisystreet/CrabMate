@@ -2,7 +2,9 @@
 //!
 //! 带 **tools** 的 `ChatRequest` 构造、**退避重试**与 Agent 侧调用入口见 [`crate::llm`]；本模块专注传输与响应拼装。
 
-use crate::types::{ChatRequest, FunctionCall, Message, StreamChunk, ToolCall};
+use crate::types::{
+    ChatRequest, FunctionCall, Message, StreamChunk, ToolCall, USER_CANCELLED_FINISH_REASON,
+};
 use crossterm::{
     ExecutableCommand,
     cursor::{MoveToColumn, MoveUp},
@@ -13,6 +15,7 @@ use markdown_to_ansi::{Options, render};
 use regex::Regex;
 use reqwest::Client;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 use unicodeit::replace as latex_to_unicode;
@@ -61,12 +64,100 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .sum()
 }
 
+/// 解析 SSE 中一行 `data:` 后的 JSON 负载，累积正文与 tool_calls，并经 `out` 下发流式增量。
+#[allow(clippy::too_many_arguments)]
+async fn ingest_sse_data_payload(
+    payload: &str,
+    out: Option<&Sender<String>>,
+    render_to_terminal: bool,
+    first_content: &mut bool,
+    content_acc: &mut String,
+    finish_reason: &mut String,
+    tool_calls_acc: &mut Vec<(String, String, String, String)>,
+    parsing_tool_calls_notified: &mut bool,
+) {
+    if payload.is_empty() {
+        return;
+    }
+    let Ok(chunk) = serde_json::from_str::<StreamChunk>(payload) else {
+        return;
+    };
+    let Some(choice) = chunk.choices.and_then(|c| c.into_iter().next()) else {
+        return;
+    };
+    if let Some(reason) = choice.finish_reason
+        && !reason.is_empty()
+    {
+        *finish_reason = reason;
+    }
+    let delta = choice.delta;
+    if let Some(ref s) = delta.content
+        && !s.is_empty()
+    {
+        if let Some(tx) = out {
+            let _ = tx.send(s.clone()).await;
+        }
+        if render_to_terminal {
+            let mut stdout = io::stdout();
+            if *first_content {
+                let _ = write!(stdout, "Agent: ");
+                let _ = stdout.flush();
+                *first_content = false;
+            }
+            let _ = write!(stdout, "{}", s);
+            let _ = stdout.flush();
+        }
+        content_acc.push_str(s);
+    }
+    if let Some(tcs) = delta.tool_calls {
+        if !*parsing_tool_calls_notified && !tcs.is_empty() {
+            *parsing_tool_calls_notified = true;
+            if let Some(tx) = out {
+                let _ = tx
+                    .send(crate::sse_protocol::encode_message(
+                        crate::sse_protocol::SsePayload::ParsingToolCalls {
+                            parsing_tool_calls: true,
+                        },
+                    ))
+                    .await;
+            }
+        }
+        for tc in tcs {
+            let idx = tc.index;
+            while tool_calls_acc.len() <= idx {
+                tool_calls_acc.push((
+                    String::new(),
+                    "function".to_string(),
+                    String::new(),
+                    String::new(),
+                ));
+            }
+            let acc = &mut tool_calls_acc[idx];
+            if let Some(id) = tc.id {
+                acc.0 = id;
+            }
+            if let Some(t) = tc.typ {
+                acc.1 = t;
+            }
+            if let Some(f) = tc.function {
+                if let Some(n) = f.name {
+                    acc.2 = n;
+                }
+                if let Some(a) = f.arguments {
+                    acc.3.push_str(&a);
+                }
+            }
+        }
+    }
+}
+
 /// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
 /// `render_to_terminal` 仅在流式时边收边打；非流式时在完整 `message` 到达后一次性按 Markdown 渲染（若启用）。
 /// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 TUI/SSE 等）。
 ///
 /// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；
 /// DeepSeek 等兼容实现可用；字段形态不同的网关需在调用侧适配或扩展解析。
+#[allow(clippy::too_many_arguments)] // HTTP + 流式/终端/out/cancel 为固定组合，拆结构体收益有限
 pub async fn stream_chat(
     client: &Client,
     api_key: &str,
@@ -75,6 +166,7 @@ pub async fn stream_chat(
     out: Option<&Sender<String>>,
     render_to_terminal: bool,
     no_stream: bool,
+    cancel: Option<&AtomicBool>,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
         "{}/{}",
@@ -103,6 +195,9 @@ pub async fn stream_chat(
     }
 
     if no_stream {
+        if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            return Err(crate::types::LLM_CANCELLED_ERROR.into());
+        }
         let body = res.text().await?;
         let parsed: crate::types::ChatResponse = serde_json::from_str(&body).map_err(|e| {
             format!(
@@ -170,10 +265,16 @@ pub async fn stream_chat(
     let mut first_content = true;
     let mut parsing_tool_calls_notified = false;
 
-    while let Some(chunk) = stream.next().await {
+    'stream_read: while let Some(chunk) = stream.next().await {
+        if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            break 'stream_read;
+        }
         let chunk = chunk?;
         buf.extend_from_slice(&chunk);
         while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+                break 'stream_read;
+            }
             let line = std::str::from_utf8(&buf[..pos])
                 .unwrap_or("")
                 .trim()
@@ -182,84 +283,40 @@ pub async fn stream_chat(
             if line.starts_with("data: ") {
                 let payload = line.strip_prefix("data: ").unwrap_or("").trim();
                 if payload == "[DONE]" {
-                    break;
+                    break 'stream_read;
                 }
-                if payload.is_empty() {
-                    continue;
-                }
-                let chunk: StreamChunk = match serde_json::from_str(payload) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-                let choice = match chunk.choices.and_then(|c| c.into_iter().next()) {
-                    Some(c) => c,
-                    None => continue,
-                };
-                if let Some(reason) = choice.finish_reason
-                    && !reason.is_empty()
-                {
-                    finish_reason = reason;
-                }
-                let delta = choice.delta;
-                if let Some(ref s) = delta.content
-                    && !s.is_empty()
-                {
-                    if let Some(tx) = out {
-                        let _ = tx.send(s.clone()).await;
-                    }
-                    if render_to_terminal {
-                        // 这里保持“边收边打印”，但统一通过 stdout 句柄写入，便于后续进一步抽象终端输出。
-                        let mut stdout = io::stdout();
-                        if first_content {
-                            write!(stdout, "Agent: ")?;
-                            stdout.flush()?;
-                            first_content = false;
-                        }
-                        write!(stdout, "{}", s)?;
-                        stdout.flush()?;
-                    }
-                    content_acc.push_str(s);
-                }
-                if let Some(tcs) = delta.tool_calls {
-                    if !parsing_tool_calls_notified && !tcs.is_empty() {
-                        parsing_tool_calls_notified = true;
-                        if let Some(tx) = out {
-                            let _ = tx
-                                .send(crate::sse_protocol::encode_message(
-                                    crate::sse_protocol::SsePayload::ParsingToolCalls {
-                                        parsing_tool_calls: true,
-                                    },
-                                ))
-                                .await;
-                        }
-                    }
-                    for tc in tcs {
-                        let idx = tc.index;
-                        while tool_calls_acc.len() <= idx {
-                            tool_calls_acc.push((
-                                String::new(),
-                                "function".to_string(),
-                                String::new(),
-                                String::new(),
-                            ));
-                        }
-                        let acc = &mut tool_calls_acc[idx];
-                        if let Some(id) = tc.id {
-                            acc.0 = id;
-                        }
-                        if let Some(t) = tc.typ {
-                            acc.1 = t;
-                        }
-                        if let Some(f) = tc.function {
-                            if let Some(n) = f.name {
-                                acc.2 = n;
-                            }
-                            if let Some(a) = f.arguments {
-                                acc.3.push_str(&a);
-                            }
-                        }
-                    }
-                }
+                ingest_sse_data_payload(
+                    payload,
+                    out,
+                    render_to_terminal,
+                    &mut first_content,
+                    &mut content_acc,
+                    &mut finish_reason,
+                    &mut tool_calls_acc,
+                    &mut parsing_tool_calls_notified,
+                )
+                .await;
+            }
+        }
+    }
+    // 连接关闭时，最后一条 `data:` 可能未带换行符，原先会一直留在 buf 中导致正文/工具参数尾部丢失。
+    if !buf.is_empty() {
+        let line = String::from_utf8_lossy(&buf);
+        let line = line.trim();
+        if line.starts_with("data: ") {
+            let payload = line.strip_prefix("data: ").unwrap_or("").trim();
+            if payload != "[DONE]" {
+                ingest_sse_data_payload(
+                    payload,
+                    out,
+                    render_to_terminal,
+                    &mut first_content,
+                    &mut content_acc,
+                    &mut finish_reason,
+                    &mut tool_calls_acc,
+                    &mut parsing_tool_calls_notified,
+                )
+                .await;
             }
         }
     }
@@ -312,7 +369,12 @@ pub async fn stream_chat(
         name: None,
         tool_call_id: None,
     };
-    Ok((msg, finish_reason))
+    let finish = if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        USER_CANCELLED_FINISH_REASON.to_string()
+    } else {
+        finish_reason
+    };
+    Ok((msg, finish))
 }
 
 #[cfg(test)]

@@ -2,6 +2,8 @@
 
 mod agent;
 mod allowlist;
+mod chat_nav;
+mod chat_session;
 mod clipboard;
 mod draw;
 mod edit_history;
@@ -24,10 +26,13 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 use std::io::stdout;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use allowlist::{command_approval_message, load_persistent_allowlist};
+use chat_session::{load_tui_session, save_tui_session};
 use draw::draw_ui;
 use input::{HandleKeyContext, handle_crossterm_mouse, handle_key};
 use sse_line::{AgentLineKind, classify_agent_sse_line};
@@ -110,14 +115,19 @@ pub async fn run_tui(
         .join("tui_command_allowlist.json");
     let persistent_command_allowlist = load_persistent_allowlist(&allowlist_file);
 
+    let initial_messages =
+        load_tui_session(&workspace_dir, &cfg.system_prompt).unwrap_or_else(|| {
+            vec![Message {
+                role: "system".to_string(),
+                content: Some(cfg.system_prompt.clone()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            }]
+        });
+
     let mut state = TuiState {
-        messages: vec![Message {
-            role: "system".to_string(),
-            content: Some(cfg.system_prompt.clone()),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }],
+        messages: initial_messages,
         input: String::new(),
         input_cursor: 0,
         prompt: String::new(),
@@ -157,6 +167,8 @@ pub async fn run_tui(
         input_drag_row: 0,
         chat_first_line: 0,
         chat_follow_tail: true,
+        chat_search_matches: Vec::new(),
+        chat_search_active_idx: 0,
         pending_focus: None,
         pending_tab: None,
         mouse_leak_scratch: String::new(),
@@ -181,6 +193,7 @@ pub async fn run_tui(
     let (sync_tx, mut sync_rx) = mpsc::channel::<Vec<Message>>(1);
     let mut approval_tx: Option<mpsc::Sender<crate::types::CommandApprovalDecision>> = None;
     let mut agent_running: Option<tokio::task::JoinHandle<()>> = None;
+    let agent_cancel = Arc::new(AtomicBool::new(false));
     let mut assistant_buf = String::new();
 
     let tick_rate = Duration::from_millis(50);
@@ -285,6 +298,7 @@ pub async fn run_tui(
                                 approval_tx: &mut approval_tx,
                                 tx: &tx,
                                 sync_tx: sync_tx.clone(),
+                                agent_cancel: agent_cancel.clone(),
                                 cfg,
                                 client,
                                 api_key,
@@ -348,6 +362,7 @@ pub async fn run_tui(
     }
 
     drop(terminal);
+    let _ = save_tui_session(&state.workspace_dir, &state.messages);
     let _ = tui_restore_tty_mouse_and_stdin();
 
     Ok(())

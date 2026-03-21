@@ -119,6 +119,7 @@ flowchart TB
 | `command.rs` | `run_command` 白名单与进程执行 |
 | `debug_tools.rs` | 调试辅助类工具 |
 | `diagnostics.rs` | `diagnostic_summary`：脱敏环境/工具链/工作区路径摘要 |
+| `dev_tag.rs` | Development 子域标签：`tags_for_tool_name`、`suggest_dev_tags_for_workspace`（供 `build_tools_with_options` 过滤） |
 | `exec.rs` | `run_executable` |
 | `file.rs` | 创建/读/改/复制/移动文件、`glob_files`、`list_tree`、`hash_file`（流式 SHA-256/512、BLAKE3）等 |
 | `format.rs` / `lint.rs` | 格式化与 lint 聚合 |
@@ -128,6 +129,7 @@ flowchart TB
 | `markdown_links.rs` | `markdown_check_links`：Markdown 相对链接存在性检查，可选外链前缀 HEAD |
 | `structured_data.rs` | `structured_validate` / `structured_query` / `structured_diff`：JSON·YAML·TOML 校验、路径查询、结构化 diff |
 | `patch.rs` | unified diff 应用 |
+| `python_tools.rs` | Python：`ruff check`、`python3 -m pytest`、`mypy`、可编辑安装（uv / pip）；供 `format`（`.py` 的 ruff format）、`lint`、`quality_workspace`、`ci_pipeline_local` 调用 |
 | `quality_tools.rs` | 工作区质量组合检查 |
 | `release_docs.rs` | `changelog_draft`（git log → Markdown 草稿）、`license_notice`（cargo metadata → 许可证表） |
 | `rust_ide.rs` | 编译器 JSON、rust-analyzer 等 |
@@ -191,7 +193,7 @@ flowchart LR
 
 ### `src/lib.rs` / `src/main.rs`
 
-- **`lib.rs`**：crate 根模块；Agent 主循环（`run_agent_turn`）、Axum Web 路由与 handler、上传清理等。**对外再导出** `run`、`load_config`、`AgentConfig`、`Message`、`Tool`、`build_tools` 等，供集成测试与其它二进制复用。
+- **`lib.rs`**：crate 根模块；Agent 主循环（`run_agent_turn`）、Axum Web 路由与 handler、上传清理等。**对外再导出** `run`、`load_config`、`AgentConfig`、`Message`、`Tool`、`build_tools`、`build_tools_filtered`、`build_tools_with_options`、`ToolsBuildOptions`、`dev_tag` 等，供集成测试与其它二进制复用。
 - **`main.rs`**：薄入口，仅 `#[tokio::main] async fn main() { crabmate::run().await }`。
 - **运行模式**：由 `run()` 内解析 CLI（`--serve`/`--host`/`--query`/`--stdin`/`--no-tools`/`--no-web`/`--dry-run` 等），选择启动 Web 服务、REPL、单次提问或 TUI。`--serve` 默认绑定 `127.0.0.1`；`0.0.0.0` 需显式 `--host` 或环境变量 `AGENT_HTTP_HOST`（见 README）。
 - **Web 服务**：使用 axum 路由，核心接口包括：
@@ -218,7 +220,7 @@ flowchart LR
 
 ### `src/api.rs`
 
-- **单次 HTTP 传输**：`POST {api_base}/chat/completions`，`stream: true` 时对响应进行 `data: ...` 行拆解，聚合 assistant content 与 tool_calls（按 index 累积 arguments）。
+- **单次 HTTP 传输**：`POST {api_base}/chat/completions`，`stream: true` 时对响应进行 `data: ...` 行拆解，聚合 assistant content 与 tool_calls（按 index 累积 arguments）。流结束时若缓冲区内仍有**未以换行结尾**的最后一帧，会在关闭读循环后补解析一次，避免尾部 delta 丢失（此前仅按 `\n` 切行时易丢末包）。
 - **终端渲染增强（CLI/TUI）**：对终端输出做 Markdown 渲染与 LaTeX→Unicode 转换，提升命令行交互体验（Web 模式不依赖这部分展示）。
 
 ### `src/sse_protocol.rs`
@@ -238,8 +240,14 @@ flowchart LR
 ### `src/tools/mod.rs`（工具注册与分发的“表驱动”中心）
 
 - **工具注册**：通过 `ToolSpec { name, description, category, parameters, runner }` 静态表定义每个工具。
-- **对外接口**：
-  - `build_tools()`：生成给模型的 tools 定义（Function Calling schema）。
+- **顶层分类 `ToolCategory`**（供 `build_tools_filtered` 与文档）：**`Basic`（基础工具）**——时间/计算/天气、`web_search`、`http_fetch`、日程提醒等；**`Development`（开发工具）**——工作区文件、Git、Cargo/前端构建与测试、Lint、补丁、符号搜索、工作流等。
+- **Development 子域标签**（`src/tools/dev_tag.rs`）：按 **工具名** 映射到字符串标签（可多枚），用于在不增加 `ToolCategory` 枚举的前提下按语言栈/场景裁剪发给模型的工具列表。约定标签名：`general`（工作区/壳/编排/元数据等跨语言）、`vcs`（Git）、`rust`（Cargo/RA 等）、`frontend`（npm 脚本类）、`python`（ruff/pytest/mypy/uv/pip 等）、`quality`（Lint/审计/CI 聚合等与质量相关的工具，常与 `rust`/`frontend`/`python` 重叠）。映射函数为 `dev_tag::tags_for_tool_name`；**新增 `Development` 工具时须在该 `match` 中补全对应分支**（未列出的名称会回落到仅 `general`，便于不崩，但应显式维护）。
+- **构建与过滤**：
+  - `build_tools()`：等价于 `build_tools_with_options(ToolsBuildOptions::default())`，不按分类与标签过滤。
+  - `build_tools_filtered(categories)`：仅按 `ToolCategory` 过滤；`dev_tags` 为不限制。
+  - `build_tools_with_options(ToolsBuildOptions { categories, dev_tags })`：`categories` 为 `None` 或空切片时不按分类过滤；`dev_tags` 为 `None` 或空切片时不按标签过滤；否则 **仅对 `Development` 工具** 要求 `tags_for_tool_name(name)` 与 `dev_tags` **有交集**，`Basic` 仍只受 `categories` 约束。
+  - `dev_tag::suggest_dev_tags_for_workspace(root)`：根据是否存在 `Cargo.toml`、`frontend/package.json` 或根目录 `package.json`、`pyproject.toml` / `setup.py` / `setup.cfg` / `requirements.txt` 等，返回建议标签列表（始终含 `general` 与 `vcs`）。
+- **对外接口**（库根 `lib.rs` 再导出 `build_tools_filtered`、`build_tools_with_options`、`ToolsBuildOptions`、`dev_tag`）：
   - `tool_context_for(cfg, allowed_commands, working_dir)`：从 `AgentConfig` 构造 `ToolContext`（含 `web_search_*` 等）。
   - `run_tool(name, args_json, &ToolContext)`：按 name 分发执行。
   - `summarize_tool_call(...)`：生成前端展示的“工具调用摘要”。
@@ -251,6 +259,7 @@ flowchart LR
     - 增加参数 schema builder（`params_xxx`）
     - 增加 runner（`runner_xxx`）
     - 在 `tool_specs()` 中注册 `ToolSpec`
+  - 若为 **`Development`**：在 **`src/tools/dev_tag.rs`** 的 `tags_for_tool_name` 中增加该 `name` 的标签映射
 
 ### 典型工具实现说明（`src/tools/`）
 
@@ -263,13 +272,13 @@ flowchart LR
 - **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）。
 - **`file.rs`**：工作区内创建/覆盖/复制/移动文件；`resolve_for_read` / `resolve_for_write` 与祖先 symlink 校验是安全边界的关键；`copy_file` / `move_file` 仅针对常规文件，`overwrite` 控制目标已存在时的覆盖策略；`hash_file` 仅对常规文件流式哈希（`sha256` / `sha512` / `blake3`），可选 `max_bytes` 前缀模式。
 - **`schedule.rs`**：提醒/日程；以 JSON 持久化到 `<working_dir>/.crabmate/reminders.json` 与 `events.json`。
-- **`grep.rs` / `format.rs` / `lint.rs`**：面向开发工作流的辅助能力（搜索/格式化/静态检查聚合）。
+- **`grep.rs` / `format.rs` / `lint.rs`**：面向开发工作流的辅助能力（搜索/格式化/静态检查聚合）；`format` 对 `.py` 使用 `ruff format`，`run_lints` 可选聚合 `ruff check`（`run_python_ruff`）。
 
 ### `src/ui/*` 与 `src/runtime/*`
 
 - **`ui`**：承载 Web 侧的“工作区/任务”等 API handler（与前端面板直接对应）。
 - **`runtime`**：CLI/TUI 运行时逻辑，负责 REPL、单次问答、TUI 的交互渲染与调用 `run_agent_turn`。
-  - TUI 实现位于 `runtime/tui/`：`mod`（主循环）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`workspace_ops`、`sse_line`、`styles`、`status`、`allowlist`、`agent`（委托 `agent_turn`）。
+  - TUI 实现位于 `runtime/tui/`：`mod`（主循环）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_session`（`.crabmate/tui_session.json` 与导出）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_line_strings` 对齐）、`workspace_ops`、`sse_line`、`styles`、`status`、`allowlist`、`agent`（委托 `agent_turn`）。
 
 ## 前端模块说明（`frontend/src/`）
 

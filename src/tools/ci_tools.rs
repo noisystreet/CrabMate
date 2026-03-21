@@ -1,8 +1,8 @@
-//! 本地 CI 流水线工具：fmt + clippy + test + frontend lint
+//! 本地 CI 流水线工具：fmt + clippy + test + frontend lint + 可选 Python（ruff/pytest/mypy）
 
 use std::path::Path;
 
-use super::{cargo_tools, frontend_tools, security_tools};
+use super::{cargo_tools, frontend_tools, python_tools, security_tools};
 
 pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
@@ -19,6 +19,15 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         .get("run_frontend_lint")
         .and_then(|x| x.as_bool())
         .unwrap_or(true);
+    let run_ruff_check = v
+        .get("run_ruff_check")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(true);
+    let run_pytest = v
+        .get("run_pytest")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let run_mypy = v.get("run_mypy").and_then(|x| x.as_bool()).unwrap_or(false);
     let fail_fast = v
         .get("fail_fast")
         .and_then(|x| x.as_bool())
@@ -39,7 +48,15 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         ));
         sections.push(r);
         if fail_fast && failed {
-            push_skipped(&mut summary, run_clippy, run_test, run_frontend_lint);
+            push_skipped(
+                &mut summary,
+                run_clippy,
+                run_test,
+                run_frontend_lint,
+                run_ruff_check,
+                run_pytest,
+                run_mypy,
+            );
             return build_output(&summary, &sections, summary_only, true);
         }
     } else {
@@ -55,7 +72,15 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         ));
         sections.push(r);
         if fail_fast && failed {
-            push_skipped(&mut summary, false, run_test, run_frontend_lint);
+            push_skipped(
+                &mut summary,
+                false,
+                run_test,
+                run_frontend_lint,
+                run_ruff_check,
+                run_pytest,
+                run_mypy,
+            );
             return build_output(&summary, &sections, summary_only, true);
         }
     } else {
@@ -70,7 +95,15 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         ));
         sections.push(r);
         if fail_fast && failed {
-            push_skipped(&mut summary, false, false, run_frontend_lint);
+            push_skipped(
+                &mut summary,
+                false,
+                false,
+                run_frontend_lint,
+                run_ruff_check,
+                run_pytest,
+                run_mypy,
+            );
             return build_output(&summary, &sections, summary_only, true);
         }
     } else {
@@ -88,9 +121,70 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
             if failed { "failed" } else { "passed" },
         ));
         sections.push(r);
+        if fail_fast && failed {
+            push_skipped(
+                &mut summary,
+                false,
+                false,
+                false,
+                run_ruff_check,
+                run_pytest,
+                run_mypy,
+            );
+            return build_output(&summary, &sections, summary_only, true);
+        }
     } else {
         summary.push(("frontend lint".to_string(), "skipped"));
     }
+
+    if run_ruff_check {
+        let r = python_tools::ruff_check("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push((
+            "ruff check".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if fail_fast && failed {
+            if run_pytest {
+                summary.push(("pytest".to_string(), "skipped"));
+            }
+            if run_mypy {
+                summary.push(("mypy".to_string(), "skipped"));
+            }
+            return build_output(&summary, &sections, summary_only, true);
+        }
+    } else {
+        summary.push(("ruff check".to_string(), "skipped"));
+    }
+
+    if run_pytest {
+        let r = python_tools::pytest_run("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push((
+            "pytest".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if fail_fast && failed {
+            if run_mypy {
+                summary.push(("mypy".to_string(), "skipped"));
+            }
+            return build_output(&summary, &sections, summary_only, true);
+        }
+    } else {
+        summary.push(("pytest".to_string(), "skipped"));
+    }
+
+    if run_mypy {
+        let r = python_tools::mypy_check("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("mypy".to_string(), if failed { "failed" } else { "passed" }));
+        sections.push(r);
+    } else {
+        summary.push(("mypy".to_string(), "skipped"));
+    }
+
     build_output(&summary, &sections, summary_only, false)
 }
 
@@ -290,6 +384,9 @@ fn push_skipped(
     clippy: bool,
     test: bool,
     frontend: bool,
+    ruff: bool,
+    pytest: bool,
+    mypy: bool,
 ) {
     if clippy {
         summary.push(("cargo clippy".to_string(), "skipped"));
@@ -299,6 +396,15 @@ fn push_skipped(
     }
     if frontend {
         summary.push(("frontend lint".to_string(), "skipped"));
+    }
+    if ruff {
+        summary.push(("ruff check".to_string(), "skipped"));
+    }
+    if pytest {
+        summary.push(("pytest".to_string(), "skipped"));
+    }
+    if mypy {
+        summary.push(("mypy".to_string(), "skipped"));
     }
 }
 
