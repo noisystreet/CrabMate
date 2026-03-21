@@ -1,5 +1,5 @@
-//! Web 端单轮 Agent 循环的步骤拆分：与「规划–执行–反思」对齐的调用边界（P/E/R）。
-//! 仅被 crate 根 `run_agent_turn`（Web）使用；工具实际执行见 `tool_registry`（TUI 与 Web 共用）。
+//! 单轮 Agent 循环的步骤拆分：与「规划–执行–反思」对齐的调用边界（P/E/R）。
+//! 被 crate 根 `run_agent_turn`（Web）与 `run_agent_turn_tui`（TUI）共同复用。
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -132,6 +132,12 @@ pub(crate) struct TuiExecuteCtx<'a> {
     pub workspace_is_set: bool,
     pub out: Option<&'a mpsc::Sender<String>>,
     pub tui_tool_ctx: &'a tool_registry::TuiToolRuntime,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum AgentRunMode<'a> {
+    Web { render_to_terminal: bool },
+    Tui { tui_tool_ctx: &'a tool_registry::TuiToolRuntime },
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -318,4 +324,87 @@ pub(crate) async fn per_execute_tools_tui(
 /// SSE 发送端已关闭时，应尽快结束外层循环。
 pub(crate) fn sse_sender_closed(out: Option<&mpsc::Sender<String>>) -> bool {
     out.is_some_and(|tx| tx.is_closed())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_agent_turn_common(
+    client: &reqwest::Client,
+    api_key: &str,
+    cfg: &AgentConfig,
+    tools_defs: &[crate::types::Tool],
+    messages: &mut Vec<Message>,
+    out: Option<&mpsc::Sender<String>>,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    no_stream: bool,
+    mode: AgentRunMode<'_>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut per_coord = PerCoordinator::new(cfg.reflection_default_max_rounds);
+
+    'outer: loop {
+        if sse_sender_closed(out) {
+            info!("SSE sender closed, aborting run_agent_turn loop early");
+            break;
+        }
+
+        let render_to_terminal = match mode {
+            AgentRunMode::Web { render_to_terminal } => render_to_terminal,
+            AgentRunMode::Tui { .. } => false,
+        };
+        let (msg, finish_reason) = per_plan_call_model_retrying(
+            client,
+            api_key,
+            cfg,
+            tools_defs,
+            messages,
+            out,
+            render_to_terminal,
+            no_stream,
+        )
+        .await?;
+        messages.push(msg.clone());
+
+        match per_reflect_after_assistant(&mut per_coord, &finish_reason, &msg, messages) {
+            ReflectOnAssistantOutcome::StopTurn => break,
+            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => continue 'outer,
+            ReflectOnAssistantOutcome::ProceedToExecuteTools => {}
+        }
+
+        let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+        let exec_outcome = match mode {
+            AgentRunMode::Web { .. } => {
+                per_execute_tools_web(
+                    tool_calls,
+                    &mut per_coord,
+                    messages,
+                    WebExecuteCtx {
+                        cfg,
+                        effective_working_dir,
+                        workspace_is_set,
+                        out,
+                    },
+                )
+                .await
+            }
+            AgentRunMode::Tui { tui_tool_ctx } => {
+                per_execute_tools_tui(
+                    tool_calls,
+                    &mut per_coord,
+                    messages,
+                    TuiExecuteCtx {
+                        cfg,
+                        effective_working_dir,
+                        workspace_is_set,
+                        out,
+                        tui_tool_ctx,
+                    },
+                )
+                .await
+            }
+        };
+        if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+            break;
+        }
+    }
+    Ok(())
 }

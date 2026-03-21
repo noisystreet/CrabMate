@@ -708,56 +708,21 @@ async fn run_agent_turn_tui(
         approval_request_guard,
         persistent_allowlist_shared,
     };
-    let mut per_coord =
-        crate::per_coord::PerCoordinator::new(cfg.reflection_default_max_rounds);
-
-    'outer: loop {
-        if crate::agent_turn::sse_sender_closed(out) {
-            break;
-        }
-        let (msg, finish_reason) = crate::agent_turn::per_plan_call_model_retrying(
-            client,
-            api_key,
-            cfg,
-            tools,
-            messages,
-            out,
-            false,
-            no_stream,
-        )
-        .await?;
-        messages.push(msg.clone());
-        match crate::agent_turn::per_reflect_after_assistant(
-            &mut per_coord,
-            &finish_reason,
-            &msg,
-            messages,
-        ) {
-            crate::agent_turn::ReflectOnAssistantOutcome::StopTurn => break,
-            crate::agent_turn::ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
-                continue 'outer;
-            }
-            crate::agent_turn::ReflectOnAssistantOutcome::ProceedToExecuteTools => {}
-        }
-        let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
-        match crate::agent_turn::per_execute_tools_tui(
-            tool_calls,
-            &mut per_coord,
-            messages,
-            crate::agent_turn::TuiExecuteCtx {
-                cfg,
-                effective_working_dir,
-                workspace_is_set,
-                out,
-                tui_tool_ctx: &tui_tool_ctx,
-            },
-        )
-        .await {
-            crate::agent_turn::ExecuteToolsBatchOutcome::Finished => {}
-            crate::agent_turn::ExecuteToolsBatchOutcome::AbortedSse => break,
-        }
-    }
-    Ok(())
+    crate::agent_turn::run_agent_turn_common(
+        client,
+        api_key,
+        cfg,
+        tools,
+        messages,
+        out,
+        effective_working_dir,
+        workspace_is_set,
+        no_stream,
+        crate::agent_turn::AgentRunMode::Tui {
+            tui_tool_ctx: &tui_tool_ctx,
+        },
+    )
+    .await
 }
 
 /// TUI 按键处理所需的 Agent / 通道 / 配置上下文，避免 `handle_key` 参数过长。
