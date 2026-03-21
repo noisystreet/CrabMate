@@ -50,6 +50,7 @@ pub(super) async fn run_agent_turn_tui(
         crate::agent_turn::AgentRunMode::Tui {
             tui_tool_ctx: &tui_tool_ctx,
         },
+        None,
     )
     .await
 }

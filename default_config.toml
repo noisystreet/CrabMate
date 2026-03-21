@@ -61,7 +61,7 @@ weather_timeout_secs = 15
 # http_fetch_max_response_bytes = 524288
 # workflow 反思：模型未指定 workflow.reflection.max_rounds 时使用的默认轮数上限（≥1）
 reflection_default_max_rounds = 5
-# 何时强制终答含 agent_reply_plan：never | workflow_reflection（默认）| always
+# 何时强制终答含 agent_reply_plan：never | workflow_reflection（默认）| always（实验性，每轮终答均校验，易多耗 API 轮次与费用）
 final_plan_requirement = "workflow_reflection"
 # 终答规划不合格时，最多追加多少次「请重写」提示（≥1，上限 20）
 plan_rewrite_max_attempts = 2

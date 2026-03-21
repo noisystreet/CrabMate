@@ -43,6 +43,13 @@ export interface StatusData {
     duration_ms: number
     error_preview?: string
   }>
+  /** 队列内正在执行的对话任务之 PER 镜像（无运行中任务时省略或为空数组） */
+  per_active_jobs?: Array<{
+    job_id: number
+    awaiting_plan_rewrite_model: boolean
+    plan_rewrite_attempts: number
+    require_plan_in_final_content: boolean
+  }>
 }
 
 export interface WorkspaceEntry {

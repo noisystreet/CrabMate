@@ -6,6 +6,7 @@
 //! 被 crate 根 `run_agent_turn`（Web）与 `runtime::tui`（TUI）共同复用。
 
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -331,6 +332,7 @@ pub(crate) async fn run_agent_turn_common(
     no_stream: bool,
     cancel: Option<&AtomicBool>,
     mode: AgentRunMode<'_>,
+    per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut per_coord = PerCoordinator::new(
         cfg.reflection_default_max_rounds,
@@ -364,16 +366,38 @@ pub(crate) async fn run_agent_turn_common(
             cancel,
         )
         .await?;
+        if let Some(f) = per_flight.as_ref() {
+            f.awaiting_plan_rewrite_model
+                .store(false, Ordering::Relaxed);
+        }
         messages.push(msg.clone());
         if finish_reason == USER_CANCELLED_FINISH_REASON {
             break;
         }
 
         match per_reflect_after_assistant(&mut per_coord, &finish_reason, &msg, messages) {
-            ReflectOnAssistantOutcome::StopTurn => break,
-            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => continue 'outer,
-            ReflectOnAssistantOutcome::ProceedToExecuteTools => {}
+            ReflectOnAssistantOutcome::StopTurn => {
+                if let Some(f) = per_flight.as_ref() {
+                    f.sync_from_per_coord(&per_coord);
+                }
+                break;
+            }
+            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
+                if let Some(f) = per_flight.as_ref() {
+                    f.sync_from_per_coord(&per_coord);
+                    f.awaiting_plan_rewrite_model.store(true, Ordering::Relaxed);
+                }
+                continue 'outer;
+            }
+            ReflectOnAssistantOutcome::ProceedToExecuteTools => {
+                if let Some(f) = per_flight.as_ref() {
+                    f.sync_from_per_coord(&per_coord);
+                }
+            }
             ReflectOnAssistantOutcome::PlanRewriteExhausted => {
+                if let Some(f) = per_flight.as_ref() {
+                    f.sync_from_per_coord(&per_coord);
+                }
                 if let Some(tx) = out {
                     let _ = tx
                         .send(encode_message(SsePayload::Error(SseErrorBody {
@@ -420,6 +444,9 @@ pub(crate) async fn run_agent_turn_common(
         };
         if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
             break;
+        }
+        if let Some(f) = per_flight.as_ref() {
+            f.sync_from_per_coord(&per_coord);
         }
     }
     Ok(())

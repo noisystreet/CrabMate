@@ -95,6 +95,7 @@ where
         parser,
         options.styles.clone(),
         options.code_theme.as_deref(),
+        options.outline_heading_numbers,
     );
     writer.run();
     writer.text
@@ -189,6 +190,11 @@ struct TextWriter<'a, I, S: StyleSheet> {
 
     needs_newline: bool,
 
+    /// When true, render `1. ` / `1.2. ` style prefixes instead of `#` repeats.
+    outline_heading_numbers: bool,
+    /// Counters for [`Self::outline_heading_numbers`] (length == current heading depth).
+    heading_outline: Vec<u32>,
+
     // --- table support (compact) ---
     in_table: bool,
     table_alignments: Vec<pulldown_cmark::Alignment>,
@@ -207,7 +213,7 @@ where
     I: Iterator<Item = Event<'a>>,
     S: StyleSheet,
 {
-    fn new(iter: I, styles: S, code_theme: Option<&str>) -> Self {
+    fn new(iter: I, styles: S, code_theme: Option<&str>, outline_heading_numbers: bool) -> Self {
         Self {
             iter,
             text: Text::default(),
@@ -224,6 +230,8 @@ where
             code_theme: code_theme.unwrap_or("base16-ocean.dark").to_string(),
             heading_meta: None,
             in_metadata_block: false,
+            outline_heading_numbers,
+            heading_outline: Vec::new(),
             in_table: false,
             table_alignments: Vec::new(),
             table_rows: Vec::new(),
@@ -345,7 +353,12 @@ where
             HeadingLevel::H6 => 6,
         };
         let style = self.styles.heading(heading_level);
-        let content = format!("{} ", "#".repeat(heading_level as usize));
+        let content = if self.outline_heading_numbers {
+            self.bump_heading_outline(heading_level);
+            format!("{} ", self.format_heading_outline())
+        } else {
+            format!("{} ", "#".repeat(heading_level as usize))
+        };
         self.push_line(Line::styled(content, style));
         self.heading_meta = heading_meta.into_option();
         self.needs_newline = false;
@@ -358,6 +371,24 @@ where
             }
         }
         self.needs_newline = true
+    }
+
+    fn bump_heading_outline(&mut self, level: u8) {
+        let l = level as usize;
+        if self.heading_outline.len() < l {
+            self.heading_outline.resize(l, 0);
+        } else if self.heading_outline.len() > l {
+            self.heading_outline.truncate(l);
+        }
+        self.heading_outline[l - 1] += 1;
+    }
+
+    fn format_heading_outline(&self) -> String {
+        self.heading_outline
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     fn start_blockquote(&mut self, _kind: Option<BlockQuoteKind>) {
@@ -861,6 +892,34 @@ mod tests {
                 Line::from_iter(["##### ", "Heading 5"]).style(h5),
                 Line::default(),
                 Line::from_iter(["###### ", "Heading 6"]).style(h6),
+            ])
+        );
+    }
+
+    #[rstest]
+    fn headings_outline_numbers(_with_tracing: DefaultGuard) {
+        let h1 = Style::new().on_cyan().bold().underlined();
+        let h2 = Style::new().cyan().bold();
+        let h3 = Style::new().cyan().bold().italic();
+        let options = Options::default().with_outline_heading_numbers(true);
+        assert_eq!(
+            from_str_with_options(
+                indoc! {"
+                # A
+                ## B
+                ## C
+                ### D
+            "},
+                &options,
+            ),
+            Text::from_iter([
+                Line::from_iter(["1. ", "A"]).style(h1),
+                Line::default(),
+                Line::from_iter(["1.1. ", "B"]).style(h2),
+                Line::default(),
+                Line::from_iter(["1.2. ", "C"]).style(h2),
+                Line::default(),
+                Line::from_iter(["1.2.1. ", "D"]).style(h3),
             ])
         );
     }

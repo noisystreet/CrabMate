@@ -364,7 +364,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    ```
    可参考 `config.toml.example`。
 
-**终答规划策略**（`[agent] final_plan_requirement`）：控制模型以**非 tool_calls**结束一轮时，是否必须嵌入可解析的 `agent_reply_plan` JSON（见 `docs/DEVELOPMENT.md`）。`workflow_reflection` 为默认：仅在工作流反思首轮注入「下一步须带规划」指令后启用校验；`never` 关闭该校验；`always` 对每次终答都校验（实验性，易多耗 API 轮次）。若近期存在 `workflow_validate_only` 结果，服务端还会按 `spec.layer_count` 要求规划步骤条数不少于层数。
+**终答规划策略**（`[agent] final_plan_requirement`）：控制模型以**非 tool_calls**结束一轮时，是否必须嵌入可解析的 `agent_reply_plan` JSON（见 `docs/DEVELOPMENT.md`）。`workflow_reflection` 为默认：仅在工作流反思首轮注入「下一步须带规划」指令后启用校验；`never` 关闭该校验；**`always`（实验性）** 对**每一次**终答都校验：只要模型以正文结束（非 `tool_calls`）且规划 JSON 不合格，就会占用 `plan_rewrite_max_attempts` 额度并可能追加多轮 `chat/completions`，**API 费用与延迟明显高于**默认策略，适合强合规/审计场景或调试规划格式；日常对话、低成本场景请保持 `workflow_reflection` 或 `never`。若近期存在 `workflow_validate_only` 结果，服务端还会按 `spec.layer_count` 要求规划步骤条数不少于层数。
 
 **规划重写次数**（`[agent] plan_rewrite_max_attempts`）：不合格时追加「请重写」user 消息的上限；超过后结束本轮，流式场景下前端会收到 `error` + `code: plan_rewrite_exhausted`。
 
@@ -372,7 +372,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 **上下文窗口**（`[agent]`）：每次向模型发请求前会压缩 `messages`——`tool_message_max_chars` 截断工具输出；`max_message_history` 限制条数；`context_char_budget > 0` 时按近似字符删最旧消息；`context_summary_trigger_chars > 0` 且总长超阈值时再调一次无 tools 的 API 生成「较早对话摘要」（尾部保留 `context_summary_tail_messages` 条）。TUI/REPL 长会话下裁剪会缩短本地消息列表；Web 单请求内工具多轮仍受益。
 
-**Web 对话任务队列**（`chat_queue_max_concurrent` / `chat_queue_max_pending`）：`POST /chat` 与 `POST /chat/stream` 经进程内有界队列调度，限制**同时执行**的 Agent 回合数与**排队**长度；队列满时返回 **503**，JSON 体含 `code: "QUEUE_FULL"`。`GET /status` 会返回 `chat_queue_running`、`chat_queue_recent_jobs` 等便于观测。多副本/跨进程需自行接外部消息队列（见 `docs/TODOLIST.md`）。
+**Web 对话任务队列**（`chat_queue_max_concurrent` / `chat_queue_max_pending`）：`POST /chat` 与 `POST /chat/stream` 经进程内有界队列调度，限制**同时执行**的 Agent 回合数与**排队**长度；队列满时返回 **503**，JSON 体含 `code: "QUEUE_FULL"`。`GET /status` 会返回 `chat_queue_running`、`chat_queue_recent_jobs`，以及运行中任务的 **`per_active_jobs`**（PER 镜像：`awaiting_plan_rewrite_model`、`plan_rewrite_attempts`、`require_plan_in_final_content` 等；按队列 `job_id` 区分，**与浏览器会话无绑定**，完整「本会话是否在规划重写」需日后会话协议扩展）。多副本/跨进程需自行接外部消息队列（见 `docs/TODOLIST.md`）。
 
 **与模型网关的 HTTP 连接**：进程内**一个**共享 `reqwest::Client`（连接池、空闲连接保留、TCP keepalive、`User-Agent`），多次调用 `chat/completions` 时可复用 **TLS/HTTP Keep-Alive**；协议仍是 HTTP（JSON 或 SSE），不是 WebSocket「单条长连接」。细节见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) 中 `http_client`。
 
@@ -497,14 +497,14 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--host <ADDR>`   | 仅 `--serve` 时生效：监听 IP，默认 `127.0.0.1`。局域网访问可传 `0.0.0.0`（会打印安全警告）。|
 | `--query <问题>`  | 单次提问模式：命令行参数中直接给出问题，输出回答后进程退出，适合脚本调用。|
 | `--stdin`         | 管道模式：从标准输入读取问题（多行直到 EOF），输出回答后退出，适合 `echo ... | crabmate --stdin` 这种用法。|
-| `--workspace <path>` | 启动时指定初始工作区路径（覆盖配置中的 `run_command_working_dir`，仅当前进程生效）。|
+| `--workspace <path>` | 启动时指定初始工作区路径（覆盖配置中的 `run_command_working_dir`，仅当前进程生效）。**TUI** 下会规范为绝对路径；若目录尚不存在则自动创建（路径不得为已存在的普通文件）。|
 | `--output <mode>` | 仅对 `--query` / `--stdin` 生效；`plain` 为默认，`json` 会在末尾额外输出一行 JSON 结果。|
 | `--no-tools`      | 禁用所有工具调用，仅作为普通 Chat 使用。|
 | `--no-web`        | 仅提供后端 API，不挂载前端静态页面（适合部署为纯后端服务）。|
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
 | `--no-stream`     | 对 API 使用 `stream: false`（非 SSE），并在 CLI 下等待完整回答后一次性 Markdown 打印；TUI 侧亦为整块正文刷新。|
-| `--tui`           | 全屏终端 UI。会话默认持久化到当前工作区下 `.crabmate/tui_session.json`（退出保存、启动加载）；可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止（详见 F1 帮助）。|
+| `--tui`           | 全屏终端 UI。会话默认持久化到当前工作区下 `.crabmate/tui_session.json`（退出保存、启动加载）；可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止（详见 F1 帮助）。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
 
 对应示例：
 
