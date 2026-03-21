@@ -8,7 +8,8 @@ CrabMate is a Rust AI Agent (DeepSeek API) with a Vite+React+TypeScript web fron
 
 ### System requirements
 
-- **Rust >= 1.85** (edition 2024 in `Cargo.toml`). Run `rustup update stable && rustup default stable` if the installed version is too old.
+- **Rust stable >= 1.85** (edition 2024 in `Cargo.toml`). Run `rustup update stable && rustup default stable` if the installed version is too old.
+- **Rust nightly** — 预装在环境中，可直接使用 `cargo +nightly test` 等命令。
 - **Node.js >= 22** (for the frontend build)
 - **System packages**: `build-essential`, `pkg-config`, `libssl-dev`, `libssh2-1-dev`
 
@@ -21,6 +22,7 @@ CrabMate is a Rust AI Agent (DeepSeek API) with a Vite+React+TypeScript web fron
 | Frontend dev server | `cd frontend && npm run dev` (port 5173, proxies to backend 8080) |
 | Build backend | `cargo build` |
 | Run tests | `cargo test` |
+| Run tests (nightly) | `cargo +nightly test` |
 | Lint (Rust) | `cargo clippy` |
 | Format check (Rust) | `cargo fmt --check` |
 | Run server | `API_KEY="..." cargo run -- --serve` (port 8080) |
