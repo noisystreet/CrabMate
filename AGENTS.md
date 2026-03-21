@@ -4,39 +4,40 @@
 
 ### Project overview
 
-CrabMate is a Rust AI Agent wrapping the DeepSeek LLM API with function-calling capabilities. It includes:
-- **Rust backend** (Axum HTTP server) in `src/`
-- **React/TypeScript frontend** (Vite + Tailwind + DaisyUI) in `frontend/`
-- A TUI mode and CLI modes for terminal usage
+CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web UI (Axum + React), TUI, and CLI interfaces. See `README.md` for full feature list and `docs/DEVELOPMENT.md` for architecture details.
 
-### Prerequisites
+### Required environment variable
 
-- **Rust toolchain**: edition 2024 requires Rust 1.85+. The environment snapshot installs stable Rust via rustup.
-- **Node.js 22+** and npm for the frontend.
-- **System packages**: `libssl-dev` and `pkg-config` are required for the `openssl-sys` crate to compile. The environment snapshot installs these.
-- **`API_KEY` env var**: Required at runtime. Set it to a valid [DeepSeek API key](https://platform.deepseek.com/). Without it, the server refuses to start.
+- `API_KEY` — DeepSeek API key. Required at runtime; without it, the server starts but chat requests fail with `INTERNAL_ERROR`. Use `--dry-run` to verify config without making API calls.
 
-### Common commands
+### Running services
 
-See `README.md` for full details. Quick reference:
+- **Backend + Web UI**: `API_KEY="..." cargo run -- --serve` (default port 8080)
+- **Frontend dev server** (optional, for hot-reload): `cd frontend && npm run dev` (Vite proxies API calls to `:8080`)
+- Frontend must be built (`cd frontend && npm run build`) before running the backend in serve mode, since it serves `frontend/dist` as static assets.
+
+### Lint / Test / Build
+
+Standard commands from `README.md`:
 
 | Task | Command |
 |------|---------|
-| Install frontend deps | `cd frontend && npm install` |
-| Build frontend | `cd frontend && npm run build` |
-| Frontend dev server | `cd frontend && npm run dev` (proxies API to backend on :8080) |
-| Build backend | `cargo build` |
-| Run tests | `cargo test` |
-| Clippy lint | `cargo clippy` |
-| Format check | `cargo fmt --check` |
+| Rust build | `cargo build` |
+| Rust tests | `cargo test` |
+| Rust tests (nightly) | `cargo +nightly test` |
+| Rust clippy | `cargo clippy` |
+| Rust format check | `cargo fmt --check` |
 | TypeScript check | `cd frontend && npx tsc -b --noEmit` |
-| Start web server | `API_KEY=<key> cargo run -- --serve 8080` |
-| Dry-run config check | `API_KEY=<key> cargo run -- --dry-run` |
+| Frontend install | `cd frontend && npm install` |
+| Frontend build | `cd frontend && npm run build` |
 
 ### Gotchas
 
-- The frontend must be built (`npm run build` in `frontend/`) before starting the backend in `--serve` mode; the backend serves static files from `frontend/dist/`.
+- The project uses Rust **edition 2024**, which requires **Rust 1.85+**. The VM snapshot installs the latest stable toolchain. If `cargo build` fails with an edition error, run `rustup update stable && rustup default stable`.
+- **Rust nightly** is pre-installed in the environment. You can use `cargo +nightly test` and similar commands directly.
+- System libraries `libssl-dev` and `libssh2-1-dev` are required for the Rust build (installed by the VM snapshot).
+- The `bc` command-line calculator is used by the `calc` tool at runtime. It may not be pre-installed; this causes `/health` to report `dep_bc` as degraded, but does not block the server from starting.
 - `cargo clippy -- -D warnings` will fail on existing code (pre-existing warnings like `too_many_arguments`, `collapsible_if`). Use `cargo clippy` without `-D warnings` for a non-blocking lint check.
-- `cargo fmt --check` also reports minor pre-existing formatting diffs (trailing whitespace). This is expected.
+- `cargo fmt --check` may report pre-existing formatting differences in the codebase; this is not caused by agent changes.
 - The `rfd` crate (file dialog) is a dependency but won't work headlessly; this doesn't affect the web server mode.
 - The vendored `tui-markdown` crate is at `vendor/tui-markdown/` and is referenced via `path` in `Cargo.toml`.

@@ -504,10 +504,7 @@ pub async fn run_tui(
         approve_choice: 0,
         persistent_command_allowlist,
         allowlist_file,
-        status_line: format!(
-            "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：输入）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-            cfg.model
-        ),
+        status_line: String::new(),
         tool_running: false,
         focus: Focus::ChatInput,
         mode: Mode::Normal,
@@ -541,6 +538,7 @@ pub async fn run_tui(
     refresh_workspace(&mut state);
     refresh_tasks(&mut state);
     refresh_schedule(&mut state);
+    set_normal_status_line(&mut state, &cfg.model);
 
     // terminal init
     // TermwizBackend will enable raw mode and alternate screen automatically.
@@ -575,11 +573,7 @@ pub async fn run_tui(
                 AgentLineKind::ToolRunning(false) => {
                     state.tool_running = false;
                     if state.status_line == "工具运行中…" {
-                        state.status_line = format!(
-                            "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                            cfg.model,
-                            focus_name(state.focus)
-                        );
+                        set_normal_status_line(&mut state, &cfg.model);
                     }
                 }
                 AgentLineKind::WorkspaceRefresh => {
@@ -604,6 +598,7 @@ pub async fn run_tui(
                     if cleaned != assistant_buf {
                         assistant_buf = cleaned;
                     }
+                    upsert_assistant_message(&mut state.messages, &assistant_buf);
                 }
                 AgentLineKind::Ignore => {}
                 AgentLineKind::Plain => {
@@ -628,11 +623,7 @@ pub async fn run_tui(
             && handle.is_finished() {
                 agent_running = None;
                 approval_tx = None;
-                state.status_line = format!(
-                    "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                    cfg.model,
-                    focus_name(state.focus)
-                );
+                set_normal_status_line(&mut state, &cfg.model);
             }
 
         // input events (termwiz backend)
@@ -670,7 +661,13 @@ pub async fn run_tui(
                     }
                 }
                 InputEvent::Mouse(m) => {
-                    handle_mouse(m, &mut state, screen_size.width, screen_size.height);
+                    handle_mouse(
+                        m,
+                        &mut state,
+                        screen_size.width,
+                        screen_size.height,
+                        &cfg.model,
+                    );
                 }
                 InputEvent::Resized { .. } => {
                     // ignore, layout will be recomputed on next draw
@@ -940,11 +937,7 @@ async fn handle_key(
                 let _ = ch.send(decision).await;
             }
             state.mode = Mode::Normal;
-            state.status_line = format!(
-                "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                cfg.model,
-                focus_name(state.focus)
-            );
+            set_normal_status_line(state, &cfg.model);
             state.pending_command.clear();
             state.pending_command_args.clear();
         }
@@ -1027,11 +1020,7 @@ async fn handle_key(
                 Focus::Workspace => Focus::Right,
                 Focus::Right => Focus::ChatView,
             };
-            state.status_line = format!(
-                "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                cfg.model,
-                focus_name(state.focus)
-            );
+            set_normal_status_line(state, &cfg.model);
         }
         KeyCode::Function(3) => {
             state.code_theme_idx = (state.code_theme_idx + 1) % code_themes().len();
@@ -1046,12 +1035,7 @@ async fn handle_key(
         }
         KeyCode::Function(5) => {
             state.high_contrast = !state.high_contrast;
-            state.status_line = format!(
-                "高对比度：{}（F5 切换）  |  模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                if state.high_contrast { "开" } else { "关" },
-                cfg.model,
-                focus_name(state.focus)
-            );
+            set_high_contrast_status_line(state, &cfg.model);
         }
         KeyCode::PageUp => {
             // 向上翻一屏（不再强制要求聊天聚焦，避免误锁死）
@@ -1263,7 +1247,7 @@ async fn handle_key(
                     }
                     _ => {}
                 }
-            } else {
+            } else if state.focus == Focus::ChatInput {
                 state.cursor_override = None;
                 feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ' ', |c| {
                     state.input.push(c);
@@ -1443,7 +1427,11 @@ fn workspace_open_or_enter(state: &mut TuiState) {
     // open file viewer
     let content = std::fs::read_to_string(&path).unwrap_or_else(|e| format!("读取失败：{}", e));
     let content = if content.len() > 200_000 {
-        format!("{}\n\n...(内容过长已截断)", &content[..200_000])
+        let mut end = 200_000usize;
+        while end > 0 && !content.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}\n\n...(内容过长已截断)", &content[..end])
     } else {
         content
     };
@@ -1795,9 +1783,10 @@ fn draw_chat(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
         let total = lines.len() as i32;
         let height = chat_height as i32;
         let max_offset = (total - height).max(0);
-        let offset = state.chat_scroll.clamp(0, max_offset);
-        let start = offset as usize;
-        let end = (offset + height).min(total) as usize;
+        // chat_scroll: 0 = 底部；值越大，越向上查看历史。
+        let offset_from_bottom = state.chat_scroll.clamp(0, max_offset);
+        let start = (max_offset - offset_from_bottom) as usize;
+        let end = (start as i32 + height).min(total) as usize;
         lines = lines[start..end].to_vec();
     }
     // 顶部聊天区：使用角标替代边框线
@@ -1932,21 +1921,21 @@ fn draw_chat(f: &mut ratatui::Frame<'_>, area: Rect, state: &TuiState) {
 
 }
 
-fn handle_mouse(me: MouseEvent, state: &mut TuiState, cols: u16, rows: u16) {
+fn handle_mouse(me: MouseEvent, state: &mut TuiState, cols: u16, rows: u16, model: &str) {
     let x = me.x;
     let y = me.y;
 
     // 1) 滚轮事件（termwiz：Button4=wheel up，Button5=wheel down）
     if me.mouse_buttons.contains(MouseButtons::VERT_WHEEL) {
         if me.mouse_buttons.contains(MouseButtons::WHEEL_POSITIVE) {
-            // wheel up
+            // wheel up: 向上看历史（离底部更远）
+            state.chat_scroll += 3;
+        } else {
+            // wheel down: 回到底部方向
             state.chat_scroll -= 3;
             if state.chat_scroll < 0 {
                 state.chat_scroll = 0;
             }
-        } else {
-            // wheel down
-            state.chat_scroll += 3;
         }
         return;
     }
@@ -1980,6 +1969,12 @@ fn handle_mouse(me: MouseEvent, state: &mut TuiState, cols: u16, rows: u16) {
         return;
     }
 
+    // 延迟应用右侧点击（mouse-down 记录，mouse-up 生效）
+    if !left_pressed {
+        apply_pending_focus_and_tab(state, model);
+        return;
+    }
+
     // 非拖动：左键按下时做命中（点击聚焦/底部进入高度拖动模式）
     if left_pressed {
         let chat_width = cols.saturating_mul(65) / 100;
@@ -2003,7 +1998,7 @@ fn handle_mouse(me: MouseEvent, state: &mut TuiState, cols: u16, rows: u16) {
             return;
         }
 
-        apply_click_focus_and_tab(x, y, cols, rows, state);
+        apply_click_focus_and_tab(x, y, cols, rows, state, model);
     }
 }
 
@@ -2013,6 +2008,7 @@ fn apply_click_focus_and_tab(
     cols: u16,
     rows: u16,
     state: &mut TuiState,
+    model: &str,
 ) {
     let chat_width = cols.saturating_mul(65) / 100;
     // 右侧面板的鼠标点击：为避免“mouse-down”视觉闪烁，将焦点/Tab 切换延迟到鼠标释放。
@@ -2057,11 +2053,7 @@ fn apply_click_focus_and_tab(
         } else {
             state.tab = new_tab;
             state.focus = new_focus;
-            state.status_line = format!(
-                "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                state.status_line.split('：').nth(1).unwrap_or("").trim(),
-                focus_name(state.focus)
-            );
+            set_normal_status_line(state, model);
         }
         return;
     }
@@ -2093,11 +2085,7 @@ fn apply_click_focus_and_tab(
                 // Arm a one-shot cursor override so it appears where the user clicked.
                 state.cursor_override = Some((col, row));
             }
-            state.status_line = format!(
-                "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
-                state.status_line.split('：').nth(1).unwrap_or("").trim(),
-                focus_name(state.focus)
-            );
+            set_normal_status_line(state, model);
         }
     }
 
@@ -2105,6 +2093,51 @@ fn apply_click_focus_and_tab(
     // This is safe for the requested flicker fix (right-panel clicks are deferred).
     if new_focus == Focus::ChatInput && !defer_to_release {
         state.cursor_override = Some((col, row));
+    }
+}
+
+fn build_normal_status_line(model: &str, focus: Focus) -> String {
+    format!(
+        "模型：{}  |  Ctrl+C 退出  |  F2 切焦点（当前：{}）  |  Tab 切右侧面板  |  F3 代码主题  |  F4 Markdown样式",
+        model,
+        focus_name(focus)
+    )
+}
+
+fn set_normal_status_line(state: &mut TuiState, model: &str) {
+    state.status_line = build_normal_status_line(model, state.focus);
+}
+
+fn set_high_contrast_status_line(state: &mut TuiState, model: &str) {
+    state.status_line = format!(
+        "高对比度：{}（F5 切换）  |  {}",
+        if state.high_contrast { "开" } else { "关" },
+        build_normal_status_line(model, state.focus)
+    );
+}
+
+fn apply_pending_focus_and_tab(state: &mut TuiState, model: &str) {
+    let mut changed = false;
+
+    if let Some(tab) = state.pending_tab.take() {
+        if state.tab != tab {
+            state.tab = tab;
+            changed = true;
+            match state.tab {
+                RightTab::Workspace => refresh_workspace(state),
+                RightTab::Tasks => refresh_tasks(state),
+                RightTab::Schedule => refresh_schedule(state),
+            }
+        }
+    }
+    if let Some(focus) = state.pending_focus.take()
+        && state.focus != focus {
+            state.focus = focus;
+            changed = true;
+        }
+
+    if changed {
+        set_normal_status_line(state, model);
     }
 }
 

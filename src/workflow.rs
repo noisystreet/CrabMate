@@ -540,7 +540,7 @@ async fn execute_workflow_dag(
                         &completion_order,
                         &completed,
                         approval_mode,
-                        tool_exec_ctx,
+                        tool_exec_ctx.clone(),
                         command_max_output_len,
                     )
                     .await;
