@@ -41,6 +41,10 @@ pub enum SsePayload {
     ToolRunning {
         tool_running: bool,
     },
+    /// 模型正在流式输出 tool_calls（选工具 / 解析参数），尚未进入本地工具执行
+    ParsingToolCalls {
+        parsing_tool_calls: bool,
+    },
     /// 预留：例如 PER 要求前端提示「须补充结构化规划」
     PlanRequired {
         plan_required: bool,
@@ -97,6 +101,20 @@ pub fn encode_message(payload: SsePayload) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn roundtrip_parsing_tool_calls() {
+        let s = encode_message(SsePayload::ParsingToolCalls {
+            parsing_tool_calls: true,
+        });
+        let m: SseMessage = serde_json::from_str(&s).unwrap();
+        assert!(matches!(
+            m.payload,
+            SsePayload::ParsingToolCalls {
+                parsing_tool_calls: true
+            }
+        ));
+    }
 
     #[test]
     fn roundtrip_tool_running() {

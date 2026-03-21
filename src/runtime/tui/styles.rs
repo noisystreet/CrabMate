@@ -75,7 +75,7 @@ impl StyleSheet for HighContrastDarkStyleSheet {
     }
 
     fn code(&self) -> Style {
-        Style::new().fg(Color::White).bg(Color::Black)
+        Style::new().fg(Color::White)
     }
 
     fn link(&self) -> Style {
@@ -103,7 +103,7 @@ impl StyleSheet for HighContrastLightStyleSheet {
     }
 
     fn code(&self) -> Style {
-        Style::new().fg(Color::Black).bg(Color::White)
+        Style::new().fg(Color::Black)
     }
 
     fn link(&self) -> Style {

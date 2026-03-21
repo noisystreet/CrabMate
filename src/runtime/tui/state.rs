@@ -43,6 +43,40 @@ pub(super) fn focus_name(f: Focus) -> &'static str {
     }
 }
 
+/// 大模型当前阶段（状态栏「状态」字段）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(super) enum ModelPhase {
+    /// 空闲，本轮已结束或未开始
+    #[default]
+    Idle,
+    /// 已发起请求，尚未收到流式正文
+    Thinking,
+    /// 模型正在流式输出 tool_calls（选工具 / 解析参数）
+    SelectingTools,
+    /// 正在接收模型输出
+    Answering,
+    /// 正在执行工具
+    ToolRunning,
+    /// 等待用户审批 shell 命令
+    AwaitingApproval,
+    /// 流式或协议报错（内容仍可能写入助手消息）
+    Error,
+}
+
+impl ModelPhase {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            ModelPhase::Idle => "完成",
+            ModelPhase::Thinking => "思考中",
+            ModelPhase::SelectingTools => "选用工具",
+            ModelPhase::Answering => "回答中",
+            ModelPhase::ToolRunning => "工具执行中",
+            ModelPhase::AwaitingApproval => "等待审批",
+            ModelPhase::Error => "出错",
+        }
+    }
+}
+
 pub(super) struct TuiState {
     // chat
     pub messages: Vec<Message>,
@@ -56,6 +90,7 @@ pub(super) struct TuiState {
     pub allowlist_file: std::path::PathBuf,
     // runtime
     pub status_line: String,
+    pub model_phase: ModelPhase,
     pub tool_running: bool,
     /// 收到 `ToolRunning(false)` 后延迟到本帧 `draw` 之后再清状态，避免与 `true` 在同一轮 `try_recv` 里被冲掉导致状态栏从不显示「工具运行中」。
     pub tool_running_clear_pending: bool,

@@ -150,6 +150,18 @@ pub async fn stream_chat(
                 }
             }
         }
+        if let Some(ref tcs) = msg.tool_calls
+            && !tcs.is_empty()
+            && let Some(tx) = out
+        {
+            let _ = tx
+                .send(crate::sse_protocol::encode_message(
+                    crate::sse_protocol::SsePayload::ParsingToolCalls {
+                        parsing_tool_calls: true,
+                    },
+                ))
+                .await;
+        }
         return Ok((msg, finish_reason));
     }
 
@@ -159,6 +171,7 @@ pub async fn stream_chat(
     let mut tool_calls_acc: Vec<(String, String, String, String)> = Vec::new();
     let mut finish_reason = String::new();
     let mut first_content = true;
+    let mut parsing_tool_calls_notified = false;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
@@ -211,6 +224,18 @@ pub async fn stream_chat(
                     content_acc.push_str(s);
                 }
                 if let Some(tcs) = delta.tool_calls {
+                    if !parsing_tool_calls_notified && !tcs.is_empty() {
+                        parsing_tool_calls_notified = true;
+                        if let Some(tx) = out {
+                            let _ = tx
+                                .send(crate::sse_protocol::encode_message(
+                                    crate::sse_protocol::SsePayload::ParsingToolCalls {
+                                        parsing_tool_calls: true,
+                                    },
+                                ))
+                                .await;
+                        }
+                    }
                     for tc in tcs {
                         let idx = tc.index;
                         while tool_calls_acc.len() <= idx {

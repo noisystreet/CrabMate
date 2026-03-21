@@ -17,6 +17,7 @@ mod plan_artifact;
 mod tool_registry;
 mod sse_protocol;
 mod agent_turn;
+mod context_window;
 mod runtime;
 mod ui;
 
@@ -438,13 +439,6 @@ async fn chat_handler(
             tool_call_id: None,
         },
     ];
-    if messages.len() > 1 + state.cfg.max_message_history {
-        let keep = messages.len() - state.cfg.max_message_history;
-        messages = [messages[0].clone()]
-            .into_iter()
-            .chain(messages.into_iter().skip(keep))
-            .collect();
-    }
     let work_dir_str = state.effective_workspace_path().await;
     let work_dir = std::path::Path::new(&work_dir_str);
     let workspace_is_set = state.workspace_is_set().await;
@@ -511,13 +505,6 @@ async fn chat_stream_handler(
             tool_call_id: None,
         },
     ];
-    if messages.len() > 1 + state.cfg.max_message_history {
-        let keep = messages.len() - state.cfg.max_message_history;
-        messages = [messages[0].clone()]
-            .into_iter()
-            .chain(messages.into_iter().skip(keep))
-            .collect();
-    }
     let (tx, rx) = mpsc::channel::<String>(1024);
     let state_clone = state.clone();
     tokio::spawn(async move {
@@ -740,6 +727,10 @@ struct StatusResponse {
     reflection_default_max_rounds: usize,
     final_plan_requirement: crate::per_coord::FinalPlanRequirementMode,
     plan_rewrite_max_attempts: usize,
+    max_message_history: usize,
+    tool_message_max_chars: usize,
+    context_char_budget: usize,
+    context_summary_trigger_chars: usize,
 }
 
 async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -760,6 +751,10 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         reflection_default_max_rounds: state.cfg.reflection_default_max_rounds,
         final_plan_requirement: state.cfg.final_plan_requirement,
         plan_rewrite_max_attempts: state.cfg.plan_rewrite_max_attempts,
+        max_message_history: state.cfg.max_message_history,
+        tool_message_max_chars: state.cfg.tool_message_max_chars,
+        context_char_budget: state.cfg.context_char_budget,
+        context_summary_trigger_chars: state.cfg.context_summary_trigger_chars,
     })
 }
 

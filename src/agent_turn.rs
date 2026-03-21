@@ -342,6 +342,7 @@ pub(crate) async fn run_agent_turn_common(
             AgentRunMode::Web { render_to_terminal } => render_to_terminal,
             AgentRunMode::Tui { .. } => false,
         };
+        crate::context_window::prepare_messages_for_model(client, api_key, cfg, messages).await?;
         let (msg, finish_reason) = per_plan_call_model_retrying(
             client,
             api_key,

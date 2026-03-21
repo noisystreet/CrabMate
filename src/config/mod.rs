@@ -46,6 +46,20 @@ pub struct AgentConfig {
     pub plan_rewrite_max_attempts: usize,
     /// 系统提示词（可由 system_prompt 或 system_prompt_file 配置）
     pub system_prompt: String,
+    /// `role: tool` 的 `content` 超过此字符数时截断（每次调模型前应用）
+    pub tool_message_max_chars: usize,
+    /// 非 system 消息总字符预算（近似）；`0` 表示不启用按字符删旧消息
+    pub context_char_budget: usize,
+    /// 启用 `context_char_budget` 时，system 之后至少保留的消息条数
+    pub context_min_messages_after_system: usize,
+    /// 非 system 总字符超过此值时触发一次 LLM 摘要；`0` 表示关闭
+    pub context_summary_trigger_chars: usize,
+    /// 摘要后保留的尾部消息条数（须 ≥4，与工具轮次衔接）
+    pub context_summary_tail_messages: usize,
+    /// 摘要请求 `max_tokens`
+    pub context_summary_max_tokens: u32,
+    /// 送入摘要模型的中间段转写最大字符数（防摘要请求本身过大）
+    pub context_summary_transcript_max_chars: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,6 +91,13 @@ struct AgentSection {
     env: Option<String>,
     allowed_commands_dev: Option<Vec<String>>,
     allowed_commands_prod: Option<Vec<String>>,
+    tool_message_max_chars: Option<u64>,
+    context_char_budget: Option<u64>,
+    context_min_messages_after_system: Option<u64>,
+    context_summary_trigger_chars: Option<u64>,
+    context_summary_tail_messages: Option<u64>,
+    context_summary_max_tokens: Option<u64>,
+    context_summary_transcript_max_chars: Option<u64>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None
@@ -111,6 +132,13 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut allowed_commands_prod: Option<Vec<String>> = None;
     let mut run_command_working_dir: Option<String> = None;
     let mut env_tag: Option<String> = None;
+    let mut tool_message_max_chars: Option<u64> = None;
+    let mut context_char_budget: Option<u64> = None;
+    let mut context_min_messages_after_system: Option<u64> = None;
+    let mut context_summary_trigger_chars: Option<u64> = None;
+    let mut context_summary_tail_messages: Option<u64> = None;
+    let mut context_summary_max_tokens: Option<u64> = None;
+    let mut context_summary_transcript_max_chars: Option<u64> = None;
 
     if let Some(agent) = parse_agent_section(DEFAULT_CONFIG) {
         api_base = agent.api_base.unwrap_or_default().trim().to_string();
@@ -172,6 +200,21 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 env_tag = Some(e);
             }
         }
+        tool_message_max_chars = agent.tool_message_max_chars.or(tool_message_max_chars);
+        context_char_budget = agent.context_char_budget.or(context_char_budget);
+        context_min_messages_after_system = agent
+            .context_min_messages_after_system
+            .or(context_min_messages_after_system);
+        context_summary_trigger_chars = agent
+            .context_summary_trigger_chars
+            .or(context_summary_trigger_chars);
+        context_summary_tail_messages = agent
+            .context_summary_tail_messages
+            .or(context_summary_tail_messages);
+        context_summary_max_tokens = agent.context_summary_max_tokens.or(context_summary_max_tokens);
+        context_summary_transcript_max_chars = agent
+            .context_summary_transcript_max_chars
+            .or(context_summary_transcript_max_chars);
     }
 
     let config_paths: Vec<&str> = match config_path {
@@ -278,6 +321,22 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                         env_tag = Some(e);
                     }
                 }
+                tool_message_max_chars = agent.tool_message_max_chars.or(tool_message_max_chars);
+                context_char_budget = agent.context_char_budget.or(context_char_budget);
+                context_min_messages_after_system = agent
+                    .context_min_messages_after_system
+                    .or(context_min_messages_after_system);
+                context_summary_trigger_chars = agent
+                    .context_summary_trigger_chars
+                    .or(context_summary_trigger_chars);
+                context_summary_tail_messages = agent
+                    .context_summary_tail_messages
+                    .or(context_summary_tail_messages);
+                context_summary_max_tokens =
+                    agent.context_summary_max_tokens.or(context_summary_max_tokens);
+                context_summary_transcript_max_chars = agent
+                    .context_summary_transcript_max_chars
+                    .or(context_summary_transcript_max_chars);
             }
             if config_path.is_some() {
                 break;
@@ -377,6 +436,34 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             system_prompt_file = Some(p);
         }
     }
+    if let Ok(v) = std::env::var("AGENT_TOOL_MESSAGE_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            tool_message_max_chars = Some(n);
+        }
+    if let Ok(v) = std::env::var("AGENT_CONTEXT_CHAR_BUDGET")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            context_char_budget = Some(n);
+        }
+    if let Ok(v) = std::env::var("AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            context_min_messages_after_system = Some(n);
+        }
+    if let Ok(v) = std::env::var("AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            context_summary_trigger_chars = Some(n);
+        }
+    if let Ok(v) = std::env::var("AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            context_summary_tail_messages = Some(n);
+        }
+    if let Ok(v) = std::env::var("AGENT_CONTEXT_SUMMARY_MAX_TOKENS")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            context_summary_max_tokens = Some(n);
+        }
+    if let Ok(v) = std::env::var("AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            context_summary_transcript_max_chars = Some(n);
+        }
 
     if api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
@@ -468,6 +555,24 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         None => FinalPlanRequirementMode::default(),
     };
     let plan_rewrite_max_attempts = plan_rewrite_max_attempts.unwrap_or(2).clamp(1, 20) as usize;
+    let tool_message_max_chars = tool_message_max_chars
+        .unwrap_or(32768)
+        .clamp(1024, 1_048_576) as usize;
+    let context_char_budget = context_char_budget.unwrap_or(0).min(50_000_000) as usize;
+    let context_min_messages_after_system = context_min_messages_after_system
+        .unwrap_or(4)
+        .clamp(1, 128) as usize;
+    let context_summary_trigger_chars =
+        context_summary_trigger_chars.unwrap_or(0).min(50_000_000) as usize;
+    let context_summary_tail_messages = context_summary_tail_messages
+        .unwrap_or(12)
+        .clamp(4, 64) as usize;
+    let context_summary_max_tokens = context_summary_max_tokens
+        .unwrap_or(1024)
+        .clamp(256, 8192) as u32;
+    let context_summary_transcript_max_chars = context_summary_transcript_max_chars
+        .unwrap_or(120_000)
+        .clamp(10_000, 2_000_000) as usize;
 
     Ok(AgentConfig {
         api_base,
@@ -487,6 +592,13 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         final_plan_requirement,
         plan_rewrite_max_attempts,
         system_prompt,
+        tool_message_max_chars,
+        context_char_budget,
+        context_min_messages_after_system,
+        context_summary_trigger_chars,
+        context_summary_tail_messages,
+        context_summary_max_tokens,
+        context_summary_transcript_max_chars,
     })
 }
 

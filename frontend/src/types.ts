@@ -24,6 +24,12 @@ export interface StatusData {
   final_plan_requirement?: 'never' | 'workflow_reflection' | 'always'
   /** 终答规划重写次数上限 */
   plan_rewrite_max_attempts?: number
+  /** 上下文：system 后最多保留消息条数 */
+  max_message_history?: number
+  tool_message_max_chars?: number
+  context_char_budget?: number
+  /** 0 表示未启用 LLM 摘要 */
+  context_summary_trigger_chars?: number
 }
 
 export interface WorkspaceEntry {

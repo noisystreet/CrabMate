@@ -4,6 +4,7 @@
 #[derive(Debug)]
 pub(super) enum AgentLineKind {
     ToolRunning(bool),
+    ParsingToolCalls(bool),
     WorkspaceRefresh,
     CommandApproval {
         command: String,
@@ -20,6 +21,11 @@ pub(super) fn classify_agent_sse_line(s: &str) -> AgentLineKind {
         match msg.payload {
             crate::sse_protocol::SsePayload::ToolRunning { tool_running } => {
                 return AgentLineKind::ToolRunning(tool_running);
+            }
+            crate::sse_protocol::SsePayload::ParsingToolCalls {
+                parsing_tool_calls,
+            } => {
+                return AgentLineKind::ParsingToolCalls(parsing_tool_calls);
             }
             crate::sse_protocol::SsePayload::WorkspaceChanged {
                 workspace_changed: true,
@@ -42,6 +48,11 @@ pub(super) fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 return AgentLineKind::Ignore;
             }
         }
+    }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(s)
+        && let Some(b) = v.get("parsing_tool_calls").and_then(|x| x.as_bool())
+    {
+        return AgentLineKind::ParsingToolCalls(b);
     }
     if s == r#"{"tool_running":true}"# {
         return AgentLineKind::ToolRunning(true);

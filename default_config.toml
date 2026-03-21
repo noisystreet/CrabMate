@@ -8,6 +8,20 @@ model = "deepseek-chat"
 env = "dev"
 # 保留的最近对话轮数（user+assistant 算一轮）
 max_message_history = 24
+# role: tool 的正文超过此字符数时在每次调模型前截断（近似 token 控制）
+tool_message_max_chars = 32768
+# 非 system 消息总字符预算（近似）；0 = 不启用按字符删旧消息
+context_char_budget = 0
+# 启用 context_char_budget 时，system 之后至少保留的消息条数
+context_min_messages_after_system = 4
+# 非 system 总字符超过此值时触发一次 LLM 摘要；0 = 关闭（需 API_KEY）
+context_summary_trigger_chars = 0
+# 摘要后保留的尾部消息条数（须与最近工具轮对齐，不宜过小）
+context_summary_tail_messages = 12
+# 摘要请求的 max_tokens
+context_summary_max_tokens = 1024
+# 送入摘要模型的中间段转写最大字符数
+context_summary_transcript_max_chars = 120000
 # run_command 最长执行时间（秒）
 command_timeout_secs = 10
 # run_command 输出最大长度（字符），超出则截断

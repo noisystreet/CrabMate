@@ -36,13 +36,6 @@ pub async fn run_single_shot(
         name: None,
         tool_call_id: None,
     });
-    if messages.len() > 1 + cfg.max_message_history {
-        let keep = messages.len() - cfg.max_message_history;
-        messages = [messages[0].clone()]
-            .into_iter()
-            .chain(messages.into_iter().skip(keep))
-            .collect();
-    }
     let work_dir_str = workspace_cli
         .as_deref()
         .filter(|s| !s.trim().is_empty())
@@ -132,14 +125,6 @@ pub async fn run_repl(
             name: None,
             tool_call_id: None,
         });
-
-        if messages.len() > 1 + cfg.max_message_history {
-            let keep = messages.len() - cfg.max_message_history;
-            messages = [messages[0].clone()]
-                .into_iter()
-                .chain(messages.into_iter().skip(keep))
-                .collect();
-        }
 
         let work_dir_str = workspace_cli
             .as_deref()

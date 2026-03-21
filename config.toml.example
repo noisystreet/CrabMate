@@ -6,6 +6,9 @@
 # api_base = "https://api.deepseek.com/v1"
 # model = "deepseek-chat"
 # max_message_history = 24
+# tool_message_max_chars = 32768
+# context_char_budget = 0
+# context_summary_trigger_chars = 0
 # command_timeout_secs = 10
 # command_max_output_len = 8192
 # allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat"]
