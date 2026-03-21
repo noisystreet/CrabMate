@@ -1,7 +1,5 @@
 use crate::config::AgentConfig;
-use crate::api::stream_chat;
 use crate::types::{CommandApprovalDecision, Message};
-use crate::types::ChatRequest;
 use regex::Regex;
 use std::sync::LazyLock;
 use ratatui::termwiz::input::{InputEvent, KeyCode, KeyEvent, Modifiers, MouseEvent, MouseButtons};
@@ -700,111 +698,63 @@ async fn run_agent_turn_tui(
     approval_rx: mpsc::Receiver<CommandApprovalDecision>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let out_tx = out.cloned();
-    let out_tx_cloned = out_tx.clone();
     let approval_rx_shared: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>> =
         Arc::new(Mutex::new(approval_rx));
     let approval_request_guard = Arc::new(Mutex::new(()));
     let persistent_allowlist_shared = Arc::new(Mutex::new(persistent_allowlist));
+    let tui_tool_ctx = crate::tool_registry::TuiToolRuntime {
+        out_tx,
+        approval_rx_shared,
+        approval_request_guard,
+        persistent_allowlist_shared,
+    };
     let mut per_coord =
         crate::per_coord::PerCoordinator::new(cfg.reflection_default_max_rounds);
+
     'outer: loop {
-        let req = ChatRequest {
-            model: cfg.model.clone(),
-            messages: messages.clone(),
-            tools: Some(tools.to_vec()),
-            tool_choice: Some("auto".to_string()),
-            max_tokens: cfg.max_tokens,
-            temperature: cfg.temperature,
-            stream: None,
-        };
-        let (msg, finish_reason) =
-            stream_chat(client, api_key, &cfg.api_base, &req, out, false, no_stream).await?;
+        if crate::agent_turn::sse_sender_closed(out) {
+            break;
+        }
+        let (msg, finish_reason) = crate::agent_turn::per_plan_call_model_retrying(
+            client,
+            api_key,
+            cfg,
+            tools,
+            messages,
+            out,
+            false,
+            no_stream,
+        )
+        .await?;
         messages.push(msg.clone());
-        if finish_reason != "tool_calls" {
-            match per_coord.after_final_assistant(&msg) {
-                crate::per_coord::AfterFinalAssistant::StopTurn => break,
-                crate::per_coord::AfterFinalAssistant::RequestPlanRewrite(m) => {
-                    messages.push(m);
-                    continue 'outer;
-                }
+        match crate::agent_turn::per_reflect_after_assistant(
+            &mut per_coord,
+            &finish_reason,
+            &msg,
+            messages,
+        ) {
+            crate::agent_turn::ReflectOnAssistantOutcome::StopTurn => break,
+            crate::agent_turn::ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
+                continue 'outer;
             }
+            crate::agent_turn::ReflectOnAssistantOutcome::ProceedToExecuteTools => {}
         }
         let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
-        let tui_tool_ctx = crate::tool_registry::TuiToolRuntime {
-            out_tx: out_tx_cloned.clone(),
-            approval_rx_shared: approval_rx_shared.clone(),
-            approval_request_guard: approval_request_guard.clone(),
-            persistent_allowlist_shared: persistent_allowlist_shared.clone(),
-        };
-        if let Some(tx) = out_tx_cloned.as_ref() {
-            let _ = tx
-                .send(crate::sse_protocol::encode_message(
-                    crate::sse_protocol::SsePayload::ToolRunning {
-                        tool_running: true,
-                    },
-                ))
-                .await;
-        }
-        for tc in tool_calls {
-            let name = tc.function.name.clone();
-            let args = tc.function.arguments.clone();
-            let id = tc.id.clone();
-            if let Some(tx) = out_tx_cloned.as_ref()
-                && let Some(summary) = crate::tools::summarize_tool_call(&name, &args) {
-                    let _ = tx
-                        .send(crate::sse_protocol::encode_message(
-                            crate::sse_protocol::SsePayload::ToolCall {
-                                tool_call: crate::sse_protocol::ToolCallSummary {
-                                    name: name.clone(),
-                                    summary,
-                                },
-                            },
-                        ))
-                        .await;
-                }
-            let (result, reflection_inject) = crate::tool_registry::dispatch_tool(
-                crate::tool_registry::ToolRuntime::Tui {
-                    ctx: &tui_tool_ctx,
-                },
-                &mut per_coord,
+        match crate::agent_turn::per_execute_tools_tui(
+            tool_calls,
+            &mut per_coord,
+            messages,
+            crate::agent_turn::TuiExecuteCtx {
                 cfg,
                 effective_working_dir,
                 workspace_is_set,
-                &name,
-                &args,
-                tc,
-            )
-            .await;
-            if let Some(tx) = out {
-                if tx.is_closed() {
-                    break 'outer;
-                }
-                let _ = tx
-                    .send(crate::sse_protocol::encode_message(
-                        crate::sse_protocol::SsePayload::ToolResult {
-                            tool_result: crate::sse_protocol::ToolResultBody {
-                                name: tc.function.name.clone(),
-                                output: result.clone(),
-                            },
-                        },
-                    ))
-                    .await;
-            }
-            crate::per_coord::PerCoordinator::append_tool_result_and_reflection(
-                messages,
-                id,
-                result,
-                reflection_inject,
-            );
-        }
-        if let Some(tx) = out {
-            let _ = tx
-                .send(crate::sse_protocol::encode_message(
-                    crate::sse_protocol::SsePayload::ToolRunning {
-                        tool_running: false,
-                    },
-                ))
-                .await;
+                out,
+                tui_tool_ctx: &tui_tool_ctx,
+            },
+        )
+        .await {
+            crate::agent_turn::ExecuteToolsBatchOutcome::Finished => {}
+            crate::agent_turn::ExecuteToolsBatchOutcome::AbortedSse => break,
         }
     }
     Ok(())
