@@ -689,6 +689,15 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         let rustfmt = check_cmd("rustfmt", &["--version"]);
         m.insert("rustfmt", rustfmt);
 
+        let clang_format = check_cmd("clang-format", &["--version"]);
+        m.insert("clang_format", clang_format);
+
+        let cmake = check_cmd("cmake", &["--version"]);
+        m.insert("cmake", cmake);
+
+        let cxxfilt = check_cmd("c++filt", &["--version"]);
+        m.insert("cxxfilt", cxxfilt);
+
         let npm = check_cmd("npm", &["--version"]);
         m.insert("npm", npm);
 
@@ -702,6 +711,9 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         let key: &'static str = match k {
             "bc" => "dep_bc",
             "rustfmt" => "dep_rustfmt",
+            "clang_format" => "dep_clang_format",
+            "cmake" => "dep_cmake",
+            "cxxfilt" => "dep_cxxfilt",
             "npm" => "dep_npm",
             _ => continue,
         };

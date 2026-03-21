@@ -191,7 +191,7 @@ fn params_run_command() -> serde_json::Value {
         "properties": {
             "command": {
                 "type": "string",
-                "description": "命令名，必须是允许列表中的一个：ls, pwd, whoami, date, echo, id, uname, env, df, du, head, tail, wc, cat, cmake, gcc, g++, make"
+                "description": "命令名，必须是允许列表中的一个：ls, pwd, whoami, date, echo, id, uname, env, df, du, head, tail, wc, cat, cmake, ninja, gcc, g++, clang, clang++, c++filt, autoreconf, autoconf, automake, aclocal, make"
             },
             "args": {
                 "type": "array",
@@ -1429,7 +1429,7 @@ fn params_format_file() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作区根目录的文件路径，如 src/main.rs、frontend/src/App.tsx、src/pkg/__init__.py（.py 使用 ruff format）"
+                "description": "相对工作区根目录的文件路径，如 src/main.rs、frontend/src/App.tsx、src/pkg/__init__.py、src/foo.cpp（.py 使用 ruff format；.c/.h/.cpp 等使用 clang-format）"
             }
         },
         "required": ["path"]
@@ -1973,7 +1973,7 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "run_command",
-            description: "在服务器上执行有限的 Linux 命令。允许的命令：ls, pwd, whoami, date, echo, id, uname, env, df, du, head, tail, wc, cat, cmake, gcc, g++, make。用于列出目录、查看文件、编译 C/C++ 项目（gcc/g++/make）、CMake 配置与构建等。参数 args 为字符串数组，如 [\"-l\"], [\"-n\", \"5\", \"file.txt\"], [\"..\"], [\"--build\", \".\"]。不要执行 rm、mv、chmod 等未在白名单中的命令。",
+            description: "在服务器上执行有限的 Linux 命令。允许的命令：ls, pwd, whoami, date, echo, id, uname, env, df, du, head, tail, wc, cat, cmake, ninja, gcc, g++, clang, clang++, c++filt, autoreconf, autoconf, automake, aclocal, make。用于列出目录、查看文件、编译 C/C++ 项目（gcc/g++/clang/clang++/make/ninja）、CMake 配置与构建、**Autotools**（autoreconf/autoconf/automake/aclocal，维护 configure.ac/Makefile.am 的老项目）、**Itanium C++ ABI 符号反修饰**（c++filt）等。参数 args 为字符串数组；仍禁止含 \"..\" 或以 \"/\" 开头的实参。不要执行 rm、mv、chmod 等未在白名单中的命令。",
             category: ToolCategory::Development,
             parameters: params_run_command,
             runner: runner_run_command,
@@ -2519,14 +2519,14 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "format_file",
-            description: "对工作区内的文件进行代码格式化。根据文件扩展名自动选择合适的本地格式化器，例如 Rust 文件使用 rustfmt，前端 TypeScript/JavaScript 文件使用项目内的 Prettier。适合在修改代码后统一整理缩进和风格。注意：需要本地已安装相应格式化工具（如 rustfmt、npm 项目内的 prettier）。",
+            description: "对工作区内的文件进行代码格式化。根据文件扩展名自动选择合适的本地格式化器，例如 Rust 使用 rustfmt，C/C++ 使用 clang-format，前端 TypeScript/JavaScript 使用项目内的 Prettier，Python 使用 ruff format。适合在修改代码后统一整理缩进和风格。注意：需要本地已安装相应格式化工具。",
             category: ToolCategory::Development,
             parameters: params_format_file,
             runner: runner_format_file,
         },
         ToolSpec {
             name: "format_check_file",
-            description: "对单个文件做格式检查（不修改磁盘）：Rust 使用 rustfmt --check，前端类文件使用 prettier --check。适合在提交前确认风格一致。",
+            description: "对单个文件做格式检查（不修改磁盘）：Rust 使用 rustfmt --check，C/C++ 使用 clang-format --dry-run --Werror，前端类文件使用 prettier --check，Python 使用 ruff format --check。适合在提交前确认风格一致。",
             category: ToolCategory::Development,
             parameters: params_format_check_file,
             runner: runner_format_check_file,
@@ -2681,7 +2681,7 @@ pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> To
     ToolResult::from_legacy_output(name, output)
 }
 
-/// 判断本次 run_command 是否为“成功的编译命令”（gcc/g++/make/cmake 且退出码为 0）
+/// 判断本次 run_command 是否为“成功的编译命令”（常见 C/C++ 构建工具且退出码为 0）
 pub(crate) fn is_compile_command_success(args_json: &str, result: &str) -> bool {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
@@ -2691,9 +2691,12 @@ pub(crate) fn is_compile_command_success(args_json: &str, result: &str) -> bool 
         .get("command")
         .and_then(|c| c.as_str())
         .map(|s| s.trim().to_lowercase());
-    let is_compile_cmd = cmd
-        .as_deref()
-        .is_some_and(|c| matches!(c, "gcc" | "g++" | "make" | "cmake"));
+    let is_compile_cmd = cmd.as_deref().is_some_and(|c| {
+        matches!(
+            c,
+            "gcc" | "g++" | "clang" | "clang++" | "make" | "cmake" | "ninja"
+        )
+    });
     if !is_compile_cmd {
         return false;
     }
@@ -3079,8 +3082,16 @@ mod tests {
             "wc".into(),
             "cat".into(),
             "cmake".into(),
+            "ninja".into(),
             "gcc".into(),
             "g++".into(),
+            "clang".into(),
+            "clang++".into(),
+            "c++filt".into(),
+            "autoreconf".into(),
+            "autoconf".into(),
+            "automake".into(),
+            "aclocal".into(),
             "make".into(),
         ]
     }
