@@ -8,18 +8,22 @@ mod ci_tools;
 mod code_nav;
 mod command;
 mod debug_tools;
+mod diagnostics;
 mod exec;
 mod file;
 mod format;
 mod frontend_tools;
 mod git;
 mod grep;
+pub mod http_fetch;
 mod lint;
+mod markdown_links;
 mod patch;
 mod quality_tools;
 mod rust_ide;
 mod schedule;
 mod security_tools;
+mod structured_data;
 mod symbol;
 mod time;
 mod weather;
@@ -49,6 +53,9 @@ pub struct ToolContext<'a> {
     pub web_search_provider: crate::config::WebSearchProvider,
     pub web_search_api_key: &'a str,
     pub web_search_max_results: u32,
+    pub http_fetch_allowed_prefixes: &'a [String],
+    pub http_fetch_timeout_secs: u64,
+    pub http_fetch_max_response_bytes: usize,
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
@@ -66,6 +73,9 @@ pub fn tool_context_for<'a>(
         web_search_provider: cfg.web_search_provider,
         web_search_api_key: cfg.web_search_api_key.as_str(),
         web_search_max_results: cfg.web_search_max_results,
+        http_fetch_allowed_prefixes: cfg.http_fetch_allowed_prefixes.as_slice(),
+        http_fetch_timeout_secs: cfg.http_fetch_timeout_secs,
+        http_fetch_max_response_bytes: cfg.http_fetch_max_response_bytes,
     }
 }
 
@@ -150,6 +160,19 @@ fn params_web_search() -> serde_json::Value {
             }
         },
         "required": ["query"]
+    })
+}
+
+fn params_http_fetch() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "完整 http(s) URL（GET）。Web 仅允许匹配配置的 http_fetch_allowed_prefixes；TUI 未匹配时可人工审批（与 run_command 相同交互）。"
+            }
+        },
+        "required": ["url"]
     })
 }
 
@@ -725,6 +748,32 @@ fn params_empty_object() -> serde_json::Value {
     })
 }
 
+fn params_diagnostic_summary() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "include_toolchain": {
+                "type": "boolean",
+                "description": "是否输出 rustc/cargo/rustup/bc 与 OS 架构，默认 true"
+            },
+            "include_workspace_paths": {
+                "type": "boolean",
+                "description": "是否检查工作区 target/、Cargo.toml、frontend 等路径，默认 true"
+            },
+            "include_env": {
+                "type": "boolean",
+                "description": "是否列出关键环境变量仅状态（永不输出取值），默认 true"
+            },
+            "extra_env_vars": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "额外变量名，须为大写 [A-Z0-9_]+（如 CI）；与内置列表合并且去重"
+            }
+        },
+        "required": []
+    })
+}
+
 fn params_file_write() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -1055,6 +1104,106 @@ fn params_search_in_files() -> serde_json::Value {
     })
 }
 
+fn params_markdown_check_links() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "roots": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "要扫描的相对路径（文件须为 .md，目录则递归收集 .md）。默认 [\"README.md\",\"docs\"]"
+            },
+            "max_files": {
+                "type": "integer",
+                "description": "最多处理多少个 Markdown 文件，默认 300，上限 3000",
+                "minimum": 1,
+                "maximum": 3000
+            },
+            "max_depth": {
+                "type": "integer",
+                "description": "目录递归深度上限，默认 24，上限 80",
+                "minimum": 1,
+                "maximum": 80
+            },
+            "allowed_external_prefixes": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：仅对这些前缀匹配的 http(s) 或 // 外链发起 HEAD 探测；为空则所有外链仅计数、不联网"
+            },
+            "external_timeout_secs": {
+                "type": "integer",
+                "description": "外链探测超时（秒），默认 10，上限 60",
+                "minimum": 1,
+                "maximum": 60
+            }
+        },
+        "required": []
+    })
+}
+
+fn params_structured_validate() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "相对工作区的 JSON / YAML / TOML 文件路径（如 package.json、Cargo.toml、.github/workflows/ci.yml）"
+            },
+            "format": {
+                "type": "string",
+                "description": "可选：auto（按扩展名推断）或 json / yaml|yml / toml",
+                "enum": ["auto", "json", "yaml", "yml", "toml"]
+            },
+            "summarize": {
+                "type": "boolean",
+                "description": "可选：校验通过后是否输出顶层结构摘要，默认 true"
+            }
+        },
+        "required": ["path"]
+    })
+}
+
+fn params_structured_query() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": { "type": "string", "description": "相对工作区的数据文件路径" },
+            "query": {
+                "type": "string",
+                "description": "路径：以 / 开头为 JSON Pointer（RFC 6901，如 /dependencies/serde）；否则为点号路径（如 dependencies.serde；纯数字段作数组下标）"
+            },
+            "format": {
+                "type": "string",
+                "description": "可选：auto / json / yaml|yml / toml",
+                "enum": ["auto", "json", "yaml", "yml", "toml"]
+            }
+        },
+        "required": ["path", "query"]
+    })
+}
+
+fn params_structured_diff() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path_a": { "type": "string", "description": "相对工作区的第一份文件（如 openapi.old.json）" },
+            "path_b": { "type": "string", "description": "相对工作区的第二份文件（如 openapi.new.json）" },
+            "format": {
+                "type": "string",
+                "description": "可选：对两边使用同一格式；auto 时按各自扩展名分别推断",
+                "enum": ["auto", "json", "yaml", "yml", "toml"]
+            },
+            "max_diff_lines": {
+                "type": "integer",
+                "description": "最多输出多少条差异路径，默认 200，上限 2000",
+                "minimum": 1,
+                "maximum": 2000
+            }
+        },
+        "required": ["path_a", "path_b"]
+    })
+}
+
 fn params_format_file() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -1209,6 +1358,10 @@ fn runner_web_search(args: &str, ctx: &ToolContext<'_>) -> String {
     web_search::run(args, ctx)
 }
 
+fn runner_http_fetch(args: &str, ctx: &ToolContext<'_>) -> String {
+    http_fetch::run_direct(args, ctx)
+}
+
 fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
     command::run(
         args,
@@ -1306,6 +1459,10 @@ fn runner_cargo_deny(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 fn runner_backtrace_analyze(args: &str, _ctx: &ToolContext<'_>) -> String {
     debug_tools::rust_backtrace_analyze(args)
+}
+
+fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
+    diagnostics::diagnostic_summary(args, ctx.working_dir)
 }
 
 fn runner_ci_pipeline_local(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -1426,6 +1583,22 @@ fn runner_search_in_files(args: &str, ctx: &ToolContext<'_>) -> String {
     grep::run(args, ctx.working_dir)
 }
 
+fn runner_markdown_check_links(args: &str, ctx: &ToolContext<'_>) -> String {
+    markdown_links::markdown_check_links(args, ctx.working_dir)
+}
+
+fn runner_structured_validate(args: &str, ctx: &ToolContext<'_>) -> String {
+    structured_data::structured_validate(args, ctx.working_dir)
+}
+
+fn runner_structured_query(args: &str, ctx: &ToolContext<'_>) -> String {
+    structured_data::structured_query(args, ctx.working_dir)
+}
+
+fn runner_structured_diff(args: &str, ctx: &ToolContext<'_>) -> String {
+    structured_data::structured_diff(args, ctx.working_dir)
+}
+
 fn runner_find_symbol(args: &str, ctx: &ToolContext<'_>) -> String {
     symbol::run(args, ctx.working_dir)
 }
@@ -1519,6 +1692,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Search,
             parameters: params_web_search,
             runner: runner_web_search,
+        },
+        ToolSpec {
+            name: "http_fetch",
+            description: "对 **http/https** URL 发起 **GET**，返回状态、Content-Type 与正文（按配置截断）。**Web**：仅当 URL 以 `http_fetch_allowed_prefixes` 中某一前缀开头时执行。**TUI**：未匹配前缀时弹出与 `run_command` 相同的审批（拒绝 / 本次同意 / 永久同意）；永久同意写入白名单键 `http_fetch:<归一化URL>`（无 query）。勿在 URL 中放真实密钥；审批展示会隐藏 query。`workflow_execute` 节点内仅白名单 URL 可成功。",
+            category: ToolCategory::Search,
+            parameters: params_http_fetch,
+            runner: runner_http_fetch,
         },
         ToolSpec {
             name: "run_command",
@@ -1715,6 +1895,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Utility,
             parameters: params_backtrace_analyze,
             runner: runner_backtrace_analyze,
+        },
+        ToolSpec {
+            name: "diagnostic_summary",
+            description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `frontend/package.json` / `frontend/dist` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `AGENT_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。",
+            category: ToolCategory::Utility,
+            parameters: params_diagnostic_summary,
+            runner: runner_diagnostic_summary,
         },
         ToolSpec {
             name: "git_status",
@@ -1925,6 +2112,34 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Search,
             parameters: params_search_in_files,
             runner: runner_search_in_files,
+        },
+        ToolSpec {
+            name: "markdown_check_links",
+            description: "扫描工作区内 Markdown（默认 README.md 与 docs/）：校验**相对路径**链接目标是否存在（含 `[]()`、`![]()`、`<https://…>` 与引用式 `[ref]:`）。`http(s)://` 与 `//` 外链默认**不联网**；仅当提供 `allowed_external_prefixes` 时对匹配前缀做 HEAD 探测（失败时 GET Range 回退）。`mailto:`/`tel:` 等跳过。",
+            category: ToolCategory::File,
+            parameters: params_markdown_check_links,
+            runner: runner_markdown_check_links,
+        },
+        ToolSpec {
+            name: "structured_validate",
+            description: "解析并校验工作区内的 **JSON / YAML / TOML**（按扩展名或 `format`）。用于确认 `package.json`、CI 配置、`Cargo.toml` 等是否语法合法；可选输出顶层键/数组长度摘要。单文件上限 4MiB。",
+            category: ToolCategory::Utility,
+            parameters: params_structured_validate,
+            runner: runner_structured_validate,
+        },
+        ToolSpec {
+            name: "structured_query",
+            description: "在解析后的 JSON 模型上按 **JSON Pointer**（`/a/b`）或 **点号路径**（`a.b.0`）取值，返回类型与格式化 JSON。比整文件 `read_file` 更省上下文，适合查单键或嵌套字段是否存在。",
+            category: ToolCategory::Utility,
+            parameters: params_structured_query,
+            runner: runner_structured_query,
+        },
+        ToolSpec {
+            name: "structured_diff",
+            description: "将两份 **JSON / YAML / TOML** 解析为同一结构化模型后做**键路径级**差异（缺失键、数组项、标量不等），非文本行 diff；与 `git_diff` 互补（适合对比两份 `openapi.json` 或迁移前后配置）。",
+            category: ToolCategory::Utility,
+            parameters: params_structured_diff,
+            runner: runner_structured_diff,
         },
         ToolSpec {
             name: "find_symbol",
@@ -2161,6 +2376,7 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         "release_ready_check" => Some("运行发布前一键检查".to_string()),
         "workflow_execute" => Some("执行 DAG 工作流".to_string()),
         "rust_backtrace_analyze" => Some("分析 Rust backtrace".to_string()),
+        "diagnostic_summary" => Some("环境/工具链诊断摘要（脱敏）".to_string()),
         "git_status" => Some("查看 Git 状态".to_string()),
         "git_clean_check" => Some("检查 Git 工作区是否干净".to_string()),
         "git_diff" => {
@@ -2255,6 +2471,10 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             let q = v.get("query")?.as_str()?.trim();
             Some(format!("联网搜索：{}", q))
         }
+        "http_fetch" => {
+            let u = v.get("url")?.as_str()?.trim();
+            Some(format!("HTTP GET：{}", u))
+        }
         "glob_files" => {
             let pat = v.get("pattern")?.as_str()?.trim();
             let root = v.get("path").and_then(|x| x.as_str()).unwrap_or(".").trim();
@@ -2263,6 +2483,35 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
                 pat,
                 if root.is_empty() { "." } else { root }
             ))
+        }
+        "markdown_check_links" => {
+            let roots = v
+                .get("roots")
+                .and_then(|x| x.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(str::trim))
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "README.md, docs".to_string());
+            Some(format!("Markdown 死链检查：{}", roots))
+        }
+        "structured_validate" => {
+            let path = v.get("path")?.as_str()?.trim();
+            Some(format!("结构化校验：{}", path))
+        }
+        "structured_query" => {
+            let path = v.get("path")?.as_str()?.trim();
+            let q = v.get("query")?.as_str()?.trim();
+            Some(format!("结构化查询：{} [{}]", path, q))
+        }
+        "structured_diff" => {
+            let a = v.get("path_a")?.as_str()?.trim();
+            let b = v.get("path_b")?.as_str()?.trim();
+            Some(format!("结构化 diff：{} vs {}", a, b))
         }
         "list_tree" => {
             let root = v.get("path").and_then(|x| x.as_str()).unwrap_or(".").trim();
@@ -2360,6 +2609,9 @@ mod tests {
             web_search_provider: crate::config::WebSearchProvider::Brave,
             web_search_api_key: "",
             web_search_max_results: 5,
+            http_fetch_allowed_prefixes: &[] as &[String],
+            http_fetch_timeout_secs: 30,
+            http_fetch_max_response_bytes: 8192,
         }
     }
     fn test_allowed_commands() -> Vec<String> {
@@ -2472,6 +2724,7 @@ mod tests {
         assert!(names.contains(&"calc"));
         assert!(names.contains(&"get_weather"));
         assert!(names.contains(&"web_search"));
+        assert!(names.contains(&"http_fetch"));
         assert!(names.contains(&"run_command"));
         assert!(names.contains(&"cargo_check"));
         assert!(names.contains(&"cargo_test"));
@@ -2499,6 +2752,7 @@ mod tests {
         assert!(names.contains(&"release_ready_check"));
         assert!(names.contains(&"workflow_execute"));
         assert!(names.contains(&"rust_backtrace_analyze"));
+        assert!(names.contains(&"diagnostic_summary"));
         assert!(names.contains(&"git_status"));
         assert!(names.contains(&"git_clean_check"));
         assert!(names.contains(&"git_diff"));
@@ -2527,6 +2781,10 @@ mod tests {
         assert!(names.contains(&"file_exists"));
         assert!(names.contains(&"read_binary_meta"));
         assert!(names.contains(&"extract_in_file"));
+        assert!(names.contains(&"markdown_check_links"));
+        assert!(names.contains(&"structured_validate"));
+        assert!(names.contains(&"structured_query"));
+        assert!(names.contains(&"structured_diff"));
         assert!(names.contains(&"find_symbol"));
         assert!(names.contains(&"find_references"));
         assert!(names.contains(&"rust_file_outline"));

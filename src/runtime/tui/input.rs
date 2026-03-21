@@ -12,13 +12,31 @@ use crate::types::{CommandApprovalDecision, Message};
 
 use super::agent::run_agent_turn_tui;
 use super::allowlist::save_persistent_allowlist;
+use super::draw;
 use super::state::{Focus, Mode, ModelPhase, RightTab, TuiState, feed_char_filter_sgr_mouse_leak};
 use super::status::{set_high_contrast_status_line, set_normal_status_line};
 use super::styles::code_themes;
+use super::text_input;
 use super::workspace_ops::{
     refresh_schedule, refresh_tasks, refresh_workspace, split_title_due, toggle_reminder_done,
     toggle_task_done, workspace_go_up, workspace_open_or_enter,
 };
+
+/// 焦点在聊天输入且无 Ctrl/Alt 时写入输入缓冲；成功则返回 `true`。
+///
+/// 用于在 `match key.code` 里先于通用 `Char(_)` 匹配的专用字母键分支，避免条件不成立时把字符吞掉。
+fn try_feed_chat_input(key: &KeyEvent, state: &mut TuiState, ch: char) -> bool {
+    if state.focus != Focus::ChatInput {
+        return false;
+    }
+    if key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT) {
+        return false;
+    }
+    feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ch, |c| {
+        text_input::insert_at_cursor(&mut state.input, &mut state.input_cursor, c);
+    });
+    true
+}
 
 /// TUI 按键处理所需的 Agent / 通道 / 配置上下文，避免 `handle_key` 参数过长。
 pub(super) struct HandleKeyContext<'a> {
@@ -32,6 +50,7 @@ pub(super) struct HandleKeyContext<'a> {
     pub api_key: &'a str,
     pub tools: &'a [crate::types::Tool],
     pub no_stream: bool,
+    pub term_cols: u16,
 }
 
 pub(super) async fn handle_key(
@@ -50,6 +69,7 @@ pub(super) async fn handle_key(
         api_key,
         tools,
         no_stream,
+        term_cols,
     } = ctx;
     if key.kind == KeyEventKind::Release {
         return Ok(false);
@@ -57,8 +77,6 @@ pub(super) async fn handle_key(
     if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Ok(true);
     }
-
-    state.cursor_mouse_pos = None;
 
     if state.mode == Mode::FileView {
         match key.code {
@@ -72,50 +90,82 @@ pub(super) async fn handle_key(
         return Ok(false);
     }
     if state.mode == Mode::Prompt {
+        let mw = text_input::left_column_inner_text_width(term_cols);
         match key.code {
             KeyCode::Esc => {
                 state.mode = Mode::Normal;
                 state.mouse_leak_scratch.clear();
                 state.prompt.clear();
+                state.prompt_cursor = 0;
                 state.prompt_title.clear();
             }
             KeyCode::Enter => {
-                if state.prompt_title.starts_with("新增提醒") {
-                    let raw = state.prompt.trim();
-                    if !raw.is_empty() {
-                        let (title, due_at) = split_title_due(raw);
-                        let args = if let Some(d) = due_at {
-                            serde_json::json!({ "title": title, "due_at": d }).to_string()
-                        } else {
-                            serde_json::json!({ "title": title }).to_string()
-                        };
-                        let ctx = crate::tools::tool_context_for(
-                            cfg,
-                            &cfg.allowed_commands,
-                            &state.workspace_dir,
-                        );
-                        let _ = crate::tools::run_tool("add_reminder", &args, &ctx);
-                        refresh_schedule(state);
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    text_input::insert_at_cursor(&mut state.prompt, &mut state.prompt_cursor, '\n');
+                } else {
+                    if state.prompt_title.starts_with("新增提醒") {
+                        let raw = state.prompt.trim();
+                        if !raw.is_empty() {
+                            let (title, due_at) = split_title_due(raw);
+                            let args = if let Some(d) = due_at {
+                                serde_json::json!({ "title": title, "due_at": d }).to_string()
+                            } else {
+                                serde_json::json!({ "title": title }).to_string()
+                            };
+                            let tool_ctx = crate::tools::tool_context_for(
+                                cfg,
+                                &cfg.allowed_commands,
+                                &state.workspace_dir,
+                            );
+                            let _ = crate::tools::run_tool("add_reminder", &args, &tool_ctx);
+                            refresh_schedule(state);
+                        }
                     }
+                    state.mode = Mode::Normal;
+                    state.mouse_leak_scratch.clear();
+                    state.prompt.clear();
+                    state.prompt_cursor = 0;
+                    state.prompt_title.clear();
                 }
-                state.mode = Mode::Normal;
-                state.mouse_leak_scratch.clear();
-                state.prompt.clear();
-                state.prompt_title.clear();
             }
             KeyCode::Backspace => {
                 if !state.mouse_leak_scratch.is_empty() {
                     state.mouse_leak_scratch.pop();
                 } else {
-                    state.prompt.pop();
+                    text_input::delete_before_cursor(&mut state.prompt, &mut state.prompt_cursor);
                 }
+            }
+            KeyCode::Delete => {
+                text_input::delete_after_cursor(&mut state.prompt, &mut state.prompt_cursor);
+            }
+            KeyCode::Left => {
+                text_input::cursor_step_left(&state.prompt, &mut state.prompt_cursor);
+            }
+            KeyCode::Right => {
+                text_input::cursor_step_right(&state.prompt, &mut state.prompt_cursor);
+            }
+            KeyCode::Up => {
+                text_input::cursor_move_vertical(&state.prompt, &mut state.prompt_cursor, mw, -1);
+            }
+            KeyCode::Down => {
+                text_input::cursor_move_vertical(&state.prompt, &mut state.prompt_cursor, mw, 1);
+            }
+            KeyCode::Home => {
+                text_input::home_logical_line(&state.prompt, &mut state.prompt_cursor);
+            }
+            KeyCode::End => {
+                text_input::end_logical_line(&state.prompt, &mut state.prompt_cursor);
             }
             KeyCode::Char(ch) => {
                 if !key.modifiers.contains(KeyModifiers::CONTROL)
                     && !key.modifiers.contains(KeyModifiers::ALT)
                 {
                     feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ch, |c| {
-                        state.prompt.push(c);
+                        text_input::insert_at_cursor(
+                            &mut state.prompt,
+                            &mut state.prompt_cursor,
+                            c,
+                        );
                     });
                 }
             }
@@ -131,14 +181,19 @@ pub(super) async fn handle_key(
             decision: CommandApprovalDecision,
         ) {
             if let CommandApprovalDecision::AllowAlways = decision {
-                let cmd = state.pending_command.trim().to_lowercase();
-                if !cmd.is_empty() {
-                    state.persistent_command_allowlist.insert(cmd);
+                let key_to_store = state
+                    .pending_approval_allowlist_key
+                    .take()
+                    .unwrap_or_else(|| state.pending_command.trim().to_lowercase());
+                if !key_to_store.is_empty() {
+                    state.persistent_command_allowlist.insert(key_to_store);
                     save_persistent_allowlist(
                         &state.allowlist_file,
                         &state.persistent_command_allowlist,
                     );
                 }
+            } else {
+                state.pending_approval_allowlist_key = None;
             }
             if let Some(ch) = approval_tx.as_ref() {
                 let _ = ch.send(decision).await;
@@ -206,7 +261,6 @@ pub(super) async fn handle_key(
             state.show_help = !state.show_help;
         }
         KeyCode::F(2) => {
-            state.cursor_override = None;
             state.focus = match state.focus {
                 Focus::ChatView => Focus::ChatInput,
                 Focus::ChatInput => Focus::Workspace,
@@ -217,10 +271,8 @@ pub(super) async fn handle_key(
         }
         KeyCode::F(3) => {
             state.code_theme_idx = (state.code_theme_idx + 1) % code_themes().len();
-            state.status_line = format!(
-                "代码主题：{}（F3 切换）",
-                code_themes()[state.code_theme_idx]
-            );
+            // 底栏暂不提示代码主题切换（F3 仍生效）
+            set_normal_status_line(state, &cfg.model);
         }
         KeyCode::F(4) => {
             state.md_style = if state.md_style == 0 { 1 } else { 0 };
@@ -258,7 +310,10 @@ pub(super) async fn handle_key(
             }
         }
         KeyCode::Up => {
-            if state.focus == Focus::Right || state.focus == Focus::Workspace {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                let mw = text_input::left_column_inner_text_width(term_cols);
+                text_input::cursor_move_vertical(&state.input, &mut state.input_cursor, mw, -1);
+            } else if state.focus == Focus::Right || state.focus == Focus::Workspace {
                 match state.tab {
                     RightTab::Workspace => {
                         if !state.workspace_entries.is_empty() {
@@ -283,7 +338,10 @@ pub(super) async fn handle_key(
             }
         }
         KeyCode::Down => {
-            if state.focus == Focus::Right || state.focus == Focus::Workspace {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                let mw = text_input::left_column_inner_text_width(term_cols);
+                text_input::cursor_move_vertical(&state.input, &mut state.input_cursor, mw, 1);
+            } else if state.focus == Focus::Right || state.focus == Focus::Workspace {
                 match state.tab {
                     RightTab::Workspace => {
                         if !state.workspace_entries.is_empty() {
@@ -311,12 +369,21 @@ pub(super) async fn handle_key(
             }
         }
         KeyCode::Char('r') => {
-            refresh_workspace(state);
-            refresh_tasks(state);
-            refresh_schedule(state);
+            if !try_feed_chat_input(&key, state, 'r') {
+                refresh_workspace(state);
+                refresh_tasks(state);
+                refresh_schedule(state);
+            }
         }
         KeyCode::Enter => {
-            if state.focus == Focus::Right || state.focus == Focus::Workspace {
+            if agent_running.is_none()
+                && state.focus == Focus::ChatInput
+                && state.mode == Mode::Normal
+                && key.modifiers.contains(KeyModifiers::SHIFT)
+            {
+                state.mouse_leak_scratch.clear();
+                text_input::insert_at_cursor(&mut state.input, &mut state.input_cursor, '\n');
+            } else if state.focus == Focus::Right || state.focus == Focus::Workspace {
                 match state.tab {
                     RightTab::Workspace => {
                         workspace_open_or_enter(state);
@@ -324,13 +391,15 @@ pub(super) async fn handle_key(
                     RightTab::Tasks | RightTab::Schedule => {}
                 }
                 return Ok(false);
-            }
-            if agent_running.is_none() && state.focus == Focus::ChatInput {
+            } else if agent_running.is_none()
+                && state.focus == Focus::ChatInput
+                && state.mode == Mode::Normal
+            {
                 let q = state.input.trim().to_string();
                 if !q.is_empty() {
                     state.mouse_leak_scratch.clear();
-                    state.cursor_override = None;
                     state.input.clear();
+                    state.input_cursor = 0;
                     state.chat_follow_tail = true;
                     state.messages.push(Message {
                         role: "user".to_string(),
@@ -408,12 +477,36 @@ pub(super) async fn handle_key(
             {
                 workspace_go_up(state);
             } else if state.focus == Focus::ChatInput {
-                state.cursor_override = None;
                 if !state.mouse_leak_scratch.is_empty() {
                     state.mouse_leak_scratch.pop();
                 } else {
-                    state.input.pop();
+                    text_input::delete_before_cursor(&mut state.input, &mut state.input_cursor);
                 }
+            }
+        }
+        KeyCode::Delete => {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                text_input::delete_after_cursor(&mut state.input, &mut state.input_cursor);
+            }
+        }
+        KeyCode::Left => {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                text_input::cursor_step_left(&state.input, &mut state.input_cursor);
+            }
+        }
+        KeyCode::Right => {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                text_input::cursor_step_right(&state.input, &mut state.input_cursor);
+            }
+        }
+        KeyCode::Home => {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                text_input::home_logical_line(&state.input, &mut state.input_cursor);
+            }
+        }
+        KeyCode::End => {
+            if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
+                text_input::end_logical_line(&state.input, &mut state.input_cursor);
             }
         }
         KeyCode::Char(' ') => {
@@ -430,9 +523,8 @@ pub(super) async fn handle_key(
                     _ => {}
                 }
             } else if state.focus == Focus::ChatInput {
-                state.cursor_override = None;
                 feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ' ', |c| {
-                    state.input.push(c);
+                    text_input::insert_at_cursor(&mut state.input, &mut state.input_cursor, c);
                 });
             }
         }
@@ -444,18 +536,25 @@ pub(super) async fn handle_key(
                 state.mouse_leak_scratch.clear();
                 state.mode = Mode::Prompt;
                 state.prompt.clear();
+                state.prompt_cursor = 0;
                 state.prompt_title =
                     "新增提醒：输入「标题 @ 2026-03-20 09:00」（@ 后可省略）".to_string();
+            } else {
+                let _ = try_feed_chat_input(&key, state, 'a');
             }
         }
         KeyCode::Char('e') => {
             if state.focus == Focus::Right && state.tab == RightTab::Schedule {
                 state.schedule_sub = 1;
+            } else {
+                let _ = try_feed_chat_input(&key, state, 'e');
             }
         }
         KeyCode::Char('t') => {
             if state.focus == Focus::Right && state.tab == RightTab::Schedule {
                 state.schedule_sub = 0;
+            } else {
+                let _ = try_feed_chat_input(&key, state, 't');
             }
         }
         KeyCode::Char(ch) => {
@@ -463,9 +562,8 @@ pub(super) async fn handle_key(
                 && !key.modifiers.contains(KeyModifiers::ALT)
                 && state.focus == Focus::ChatInput
             {
-                state.cursor_override = None;
                 feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ch, |c| {
-                    state.input.push(c);
+                    text_input::insert_at_cursor(&mut state.input, &mut state.input_cursor, c);
                 });
             }
         }
@@ -532,7 +630,23 @@ pub(super) fn handle_crossterm_mouse(
             }
 
             if x < chat_width && y >= input_start_row && y < rows.saturating_sub(below_input) {
-                state.cursor_mouse_pos = Some((x, y));
+                let inner = draw::chat_input_text_inner(cols, rows, state.input_rows);
+                if x >= inner.x
+                    && x < inner.x.saturating_add(inner.width)
+                    && y >= inner.y
+                    && y < inner.y.saturating_add(inner.height)
+                {
+                    let mw = inner.width.max(1) as usize;
+                    let rel_x = x.saturating_sub(inner.x);
+                    let rel_y = y.saturating_sub(inner.y);
+                    if state.mode == Mode::Prompt {
+                        state.prompt_cursor =
+                            text_input::byte_index_from_mouse_cell(&state.prompt, mw, rel_x, rel_y);
+                    } else {
+                        state.input_cursor =
+                            text_input::byte_index_from_mouse_cell(&state.input, mw, rel_x, rel_y);
+                    }
+                }
             }
 
             apply_click_focus_and_tab(x, y, cols, rows, state, model);
@@ -611,15 +725,8 @@ fn apply_click_focus_and_tab(
             state.pending_focus = Some(new_focus);
         } else {
             state.focus = new_focus;
-            if new_focus == Focus::ChatInput {
-                state.cursor_override = Some((col, row));
-            }
             set_normal_status_line(state, model);
         }
-    }
-
-    if new_focus == Focus::ChatInput && !defer_to_release {
-        state.cursor_override = Some((col, row));
     }
 }
 

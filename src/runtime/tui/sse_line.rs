@@ -9,6 +9,7 @@ pub(super) enum AgentLineKind {
     CommandApproval {
         command: String,
         args: String,
+        allowlist_key: Option<String>,
     },
     StreamError,
     /// 已识别为协议行但无需刷新 UI（如 workspace_changed:false）
@@ -37,6 +38,7 @@ pub(super) fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 return AgentLineKind::CommandApproval {
                     command: command_approval_request.command,
                     args: command_approval_request.args,
+                    allowlist_key: command_approval_request.allowlist_key,
                 };
             }
             crate::sse_protocol::SsePayload::Error(_) => return AgentLineKind::StreamError,
@@ -79,6 +81,10 @@ pub(super) fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 .and_then(|x| x.as_str())
                 .unwrap_or("")
                 .to_string(),
+            allowlist_key: obj
+                .get("allowlist_key")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string()),
         };
     }
     AgentLineKind::Plain

@@ -33,7 +33,7 @@ const TREE_ABS_MAX_DEPTH: usize = 60;
 const TREE_DEFAULT_MAX_ENTRIES: usize = 500;
 const TREE_ABS_MAX_ENTRIES: usize = 10000;
 
-fn canonical_workspace_root(base: &Path) -> Result<PathBuf, String> {
+pub(crate) fn canonical_workspace_root(base: &Path) -> Result<PathBuf, String> {
     base.canonicalize()
         .map_err(|e| format!("工作目录无法解析: {}", e))
 }
@@ -64,7 +64,7 @@ fn ensure_existing_ancestor_within_workspace(
 }
 
 /// 解析用于读取或修改的路径（目标必须存在；path 必须为相对工作目录的相对路径）
-fn resolve_for_read(base: &Path, sub: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_for_read(base: &Path, sub: &str) -> Result<PathBuf, String> {
     let sub = sub.trim();
     if sub.is_empty() {
         return Err("path 不能为空".to_string());

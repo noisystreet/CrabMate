@@ -8,6 +8,7 @@ mod sse_line;
 mod state;
 mod status;
 mod styles;
+mod text_input;
 mod workspace_ops;
 
 use crate::config::AgentConfig;
@@ -80,10 +81,13 @@ pub async fn run_tui(
             tool_call_id: None,
         }],
         input: String::new(),
+        input_cursor: 0,
         prompt: String::new(),
+        prompt_cursor: 0,
         prompt_title: String::new(),
         pending_command: String::new(),
         pending_command_args: String::new(),
+        pending_approval_allowlist_key: None,
         approve_choice: 0,
         persistent_command_allowlist,
         allowlist_file,
@@ -115,8 +119,6 @@ pub async fn run_tui(
         input_drag_row: 0,
         chat_first_line: 0,
         chat_follow_tail: true,
-        cursor_override: None,
-        cursor_mouse_pos: None,
         pending_focus: None,
         pending_tab: None,
         mouse_leak_scratch: String::new(),
@@ -173,9 +175,14 @@ pub async fn run_tui(
                     refresh_tasks(&mut state);
                     refresh_schedule(&mut state);
                 }
-                AgentLineKind::CommandApproval { command, args } => {
+                AgentLineKind::CommandApproval {
+                    command,
+                    args,
+                    allowlist_key,
+                } => {
                     state.pending_command = command;
                     state.pending_command_args = args;
+                    state.pending_approval_allowlist_key = allowlist_key;
                     state.approve_choice = 0;
                     state.mode = Mode::CommandApprove;
                     state.model_phase = ModelPhase::AwaitingApproval;
@@ -186,13 +193,8 @@ pub async fn run_tui(
                 }
                 AgentLineKind::StreamError => {
                     state.model_phase = ModelPhase::Error;
-                    assistant_buf.push('\n');
-                    assistant_buf.push_str(&s);
-                    let cleaned = strip_sgr_mouse_leaks(&assistant_buf);
-                    if cleaned != assistant_buf {
-                        assistant_buf = cleaned;
-                    }
-                    upsert_assistant_message(&mut state.messages, &assistant_buf);
+                    // 不把错误 JSON 写入对话区；底栏左侧阶段词显示为「异常」，右侧保持常规快捷键说明。
+                    set_normal_status_line(&mut state, &cfg.model);
                 }
                 AgentLineKind::Ignore => {}
                 AgentLineKind::Plain => {
@@ -246,6 +248,7 @@ pub async fn run_tui(
                                 api_key,
                                 tools,
                                 no_stream,
+                                term_cols: screen_size.width,
                             },
                         )
                         .await?
@@ -283,8 +286,6 @@ pub async fn run_tui(
         if did_draw {
             terminal.draw(|f| draw_ui(f, &mut state))?;
             last_draw_at = Instant::now();
-            state.cursor_mouse_pos = None;
-            state.cursor_override = None;
         }
         if did_draw && state.tool_running_clear_pending {
             state.tool_running_clear_pending = false;

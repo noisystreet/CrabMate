@@ -25,6 +25,9 @@
 # web_search_api_key = "YOUR_BRAVE_OR_TAVILY_KEY"
 # web_search_timeout_secs = 30
 # web_search_max_results = 8
+# http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/"]
+# http_fetch_timeout_secs = 30
+# http_fetch_max_response_bytes = 524288
 # reflection_default_max_rounds = 5
 # final_plan_requirement = "workflow_reflection"  # never | workflow_reflection | always
 # plan_rewrite_max_attempts = 2

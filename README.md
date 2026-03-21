@@ -10,10 +10,14 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `calc`：使用 Linux 的 `bc -l` 执行数学表达式（四则、乘方 ^、sqrt/sin/cos/tan/ln/exp、pi/e 等）。
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
   - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
+  - `http_fetch`：对给定 URL 发起 **GET** 并返回正文（有超时与响应体大小上限）。**Web** 端仅当 URL 以配置的 `http_fetch_allowed_prefixes` 中某一前缀开头时才执行；**TUI** 下未匹配前缀时可像 `run_command` 一样 **拒绝 / 本次允许 / 永久允许**（永久同意会把该 URL 的归一化键写入持久白名单）。
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`head`、`tail`、`wc`、`cmake`、`gcc`、`g++`、`make` 等），带超时与输出截断。
   - `run_executable`：在工作区目录下运行可执行文件（路径、参数均做安全校验）。
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
+  - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接目标是否存在；`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测。
+  - `structured_validate` / `structured_query` / `structured_diff`：校验 **JSON / YAML / TOML**（如 `package.json`、`Cargo.toml`、CI 配置）；按 **JSON Pointer**（`/a/b`）或**点号路径**查询嵌套键；对两份文件做**结构化 diff**（与 `git_diff` 文本 diff 互补）。
+  - `diagnostic_summary`：只读排障摘要——Rust 工具链（`rustc`/`cargo`/`rustup`/`bc`）、工作区 `target/` 与 `Cargo.toml` / `frontend` 常见路径、关键环境变量**是否设置**（**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
@@ -188,7 +192,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`。
+另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`diagnostic_summary`。
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
 
 ## Git 工具示例
@@ -313,6 +317,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_HTTP_HOST`：Web 监听 IP（如 `0.0.0.0`）；**未**传 `--host` 时生效，默认仍为 `127.0.0.1`  
    - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）
    - **联网搜索**（`web_search` 工具）：`AGENT_WEB_SEARCH_PROVIDER`（`brave` / `tavily`）、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`（1～20，默认 8）
+   - **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`（逗号分隔 URL 前缀）、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`（与 `default_config.toml` / `[agent]` 中同名项对应）
    - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
    ```bash
    export AGENT_MODEL=deepseek-reasoner
@@ -383,6 +388,28 @@ cargo run
   若你只处理 Rust，可使用函数块模式（从匹配到的 `fn` 签名开始，抓取花括号 `{}` 配对的完整块）：
   ```json
   {"path":"src/main.rs","pattern":"pub\\s+fn\\s+run_agent_turn","mode":"rust_fn_block","max_matches":1}
+  ```
+- `markdown_check_links`（维护 `README.md` / `docs/`：相对链接是否存在；外链仅在对 `allowed_external_prefixes` 命中时才发 HTTP）：
+  ```json
+  {"roots":["README.md","docs"],"max_files":300,"allowed_external_prefixes":["https://example.com/docs/"],"external_timeout_secs":10}
+  ```
+  省略 `roots` 时默认扫描 `README.md` 与 `docs` 目录。
+- `structured_validate`（解析 `package.json` / `Cargo.toml` / `.yml` 等是否合法，可选顶层摘要）：
+  ```json
+  {"path":"frontend/package.json","format":"auto","summarize":true}
+  ```
+- `structured_query`（取嵌套字段，省上下文）：
+  ```json
+  {"path":"Cargo.toml","query":"/package/name","format":"toml"}
+  ```
+  点号路径示例：`{"path":"frontend/package.json","query":"devDependencies.vite"}`。
+- `structured_diff`（两份 OpenAPI/配置的结构差异，非行级 diff）：
+  ```json
+  {"path_a":"specs/openapi.v1.json","path_b":"specs/openapi.v2.json","max_diff_lines":200}
+  ```
+- `diagnostic_summary`（脱敏排障：工具链、`target/`、关键 env 是否设置，**不输出任何 env 取值**）：
+  ```json
+  {"include_toolchain":true,"include_workspace_paths":true,"include_env":true,"extra_env_vars":["CI"]}
   ```
 - `apply_patch`（**统一 unified diff**，先 dry-run 再应用；强调 **小步、可回滚、带上下文**）：
   - **格式**：与 `git diff` 相同：`---` / `+++` 文件头、`@@ -旧起始,行数 +新起始,行数 @@`，变更行 `-`/`+`，**上下文行必须以单个空格开头**。

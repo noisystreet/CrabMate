@@ -34,15 +34,6 @@ impl RightTab {
     }
 }
 
-pub(super) fn focus_name(f: Focus) -> &'static str {
-    match f {
-        Focus::ChatView => "聊天区",
-        Focus::ChatInput => "输入区",
-        Focus::Workspace => "工作区",
-        Focus::Right => "右侧面板",
-    }
-}
-
 /// 大模型当前阶段（状态栏「状态」字段）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(super) enum ModelPhase {
@@ -59,7 +50,7 @@ pub(super) enum ModelPhase {
     ToolRunning,
     /// 等待用户审批 shell 命令
     AwaitingApproval,
-    /// 流式或协议报错（内容仍可能写入助手消息）
+    /// 流式或协议报错（错误正文不写入对话区，仅状态栏提示）
     Error,
 }
 
@@ -72,7 +63,7 @@ impl ModelPhase {
             ModelPhase::Answering => "回答中",
             ModelPhase::ToolRunning => "工具执行中",
             ModelPhase::AwaitingApproval => "等待审批",
-            ModelPhase::Error => "出错",
+            ModelPhase::Error => "异常",
         }
     }
 }
@@ -81,10 +72,15 @@ pub(super) struct TuiState {
     // chat
     pub messages: Vec<Message>,
     pub input: String,
+    /// `input` 内光标（字节偏移，UTF-8 字符边界）。
+    pub input_cursor: usize,
     pub prompt: String,
+    pub prompt_cursor: usize,
     pub prompt_title: String,
     pub pending_command: String,
     pub pending_command_args: String,
+    /// 与 `command_approval_request.allowlist_key` 对齐；`http_fetch` 永久允许时写入该键而非仅 `pending_command`。
+    pub pending_approval_allowlist_key: Option<String>,
     pub approve_choice: u8, // 0=拒绝 1=本次允许 2=永久允许
     pub persistent_command_allowlist: HashSet<String>,
     pub allowlist_file: std::path::PathBuf,
@@ -129,10 +125,8 @@ pub(super) struct TuiState {
     pub chat_first_line: usize,
     /// 为 true 时每帧将视口钉在最新内容底部（流式输出）；为 false 时保持 `chat_first_line` 只看历史。
     pub chat_follow_tail: bool,
-    pub cursor_override: Option<(u16, u16)>,
     pub pending_focus: Option<Focus>,
     pub pending_tab: Option<RightTab>,
-    pub cursor_mouse_pos: Option<(u16, u16)>,
     pub mouse_leak_scratch: String,
 }
 

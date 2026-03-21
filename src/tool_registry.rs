@@ -29,6 +29,7 @@ pub enum ToolExecutionClass {
     ExecutableSpawnTimeout,
     WeatherSpawnTimeout,
     WebSearchSpawnTimeout,
+    HttpFetchSpawnTimeout,
     BlockingSync,
 }
 
@@ -66,6 +67,11 @@ pub fn all_dispatch_metadata() -> &'static [ToolDispatchMeta] {
             name: "web_search",
             requires_workspace: false,
             class: ToolExecutionClass::WebSearchSpawnTimeout,
+        },
+        ToolDispatchMeta {
+            name: "http_fetch",
+            requires_workspace: false,
+            class: ToolExecutionClass::HttpFetchSpawnTimeout,
         },
     ]
 }
@@ -107,6 +113,7 @@ enum HandlerId {
     RunExecutable,
     GetWeather,
     WebSearch,
+    HttpFetch,
     SyncDefault,
 }
 
@@ -121,6 +128,7 @@ fn handler_id_for(name: &str) -> HandlerId {
             m.insert("run_executable", HandlerId::RunExecutable);
             m.insert("get_weather", HandlerId::GetWeather);
             m.insert("web_search", HandlerId::WebSearch);
+            m.insert("http_fetch", HandlerId::HttpFetch);
             m
         })
         .get(name)
@@ -207,6 +215,10 @@ pub async fn dispatch_tool(
         HandlerId::WebSearch => {
             execute_web_search_web(cfg, effective_working_dir, name, args).await
         }
+        HandlerId::HttpFetch => match runtime {
+            ToolRuntime::Web { .. } => execute_http_fetch_web(cfg, name, args).await,
+            ToolRuntime::Tui { ctx } => execute_http_fetch_tui(cfg, ctx, name, args).await,
+        },
         HandlerId::SyncDefault => {
             let ctx = tools::tool_context_for(cfg, &cfg.allowed_commands, effective_working_dir);
             (
@@ -295,6 +307,9 @@ async fn execute_run_command_web(
     let ws_provider = cfg.web_search_provider;
     let ws_max = cfg.web_search_max_results;
     let ws_key = cfg.web_search_api_key.clone();
+    let hf_pfx = cfg.http_fetch_allowed_prefixes.clone();
+    let hf_to = cfg.http_fetch_timeout_secs;
+    let hf_mb = cfg.http_fetch_max_response_bytes;
     let allowed = cfg.allowed_commands.clone();
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
@@ -308,6 +323,9 @@ async fn execute_run_command_web(
             web_search_provider: ws_provider,
             web_search_api_key: ws_key.as_str(),
             web_search_max_results: ws_max,
+            http_fetch_allowed_prefixes: hf_pfx.as_slice(),
+            http_fetch_timeout_secs: hf_to,
+            http_fetch_max_response_bytes: hf_mb,
         };
         tools::run_tool(&name_in, &args_cloned, &ctx)
     });
@@ -376,6 +394,7 @@ async fn execute_run_command_tui(
                         command_approval_request: crate::sse_protocol::CommandApprovalBody {
                             command: cmd.clone(),
                             args: arg_preview.clone(),
+                            allowlist_key: None,
                         },
                     },
                 );
@@ -417,6 +436,122 @@ async fn execute_run_command_tui(
     }
 }
 
+async fn execute_http_fetch_web(
+    cfg: &AgentConfig,
+    name: &str,
+    args: &str,
+) -> (String, Option<serde_json::Value>) {
+    let url = match tools::http_fetch::parse_url_from_args(args) {
+        Ok(u) => u,
+        Err(e) => return (format!("错误：{}", e), None),
+    };
+    let url_str = url.as_str().to_string();
+    if !tools::http_fetch::url_matches_allowed_prefixes(&url_str, &cfg.http_fetch_allowed_prefixes)
+    {
+        return (
+            "错误：Web 模式下 http_fetch 仅允许 URL 以配置的 http_fetch_allowed_prefixes 中某一前缀开头（参见 README）。TUI 下可对未匹配 URL 使用人工审批（拒绝/本次同意/永久同意）。"
+                .to_string(),
+            None,
+        );
+    }
+    let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
+    let max_body = cfg.http_fetch_max_response_bytes;
+    let name_in = name.to_string();
+    let args_owned = args.to_string();
+    let cmd_timeout = cfg.command_timeout_secs.max(timeout_secs);
+    let handle = tokio::task::spawn_blocking(move || {
+        let u = match tools::http_fetch::parse_url_from_args(&args_owned) {
+            Ok(u) => u,
+            Err(e) => return format!("错误：{}", e),
+        };
+        tools::http_fetch::fetch_url(&u, timeout_secs, max_body)
+    });
+    let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            error!(tool = %name_in, error = ?e, "http_fetch 任务异常");
+            format!("http_fetch 执行异常：{:?}", e)
+        }
+        Err(_) => format!("http_fetch 超时（{} 秒）", cmd_timeout),
+    };
+    (s, None)
+}
+
+async fn execute_http_fetch_tui(
+    cfg: &AgentConfig,
+    ctx: &TuiToolRuntime,
+    name: &str,
+    args: &str,
+) -> (String, Option<serde_json::Value>) {
+    let url = match tools::http_fetch::parse_url_from_args(args) {
+        Ok(u) => u,
+        Err(e) => return (format!("错误：{}", e), None),
+    };
+    let url_str = url.as_str().to_string();
+    let key = tools::http_fetch::storage_key(&url);
+    let redacted = tools::http_fetch::display_redacted(&url);
+    let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
+    let max_body = cfg.http_fetch_max_response_bytes;
+
+    let allowed_by_cfg =
+        tools::http_fetch::url_matches_allowed_prefixes(&url_str, &cfg.http_fetch_allowed_prefixes);
+    let allowed_by_list = ctx.persistent_allowlist_shared.lock().await.contains(&key);
+
+    if !(allowed_by_cfg || allowed_by_list) {
+        let decision = {
+            let _guard = ctx.approval_request_guard.lock().await;
+            if let Some(tx) = ctx.out_tx.as_ref() {
+                let line = crate::sse_protocol::encode_message(
+                    crate::sse_protocol::SsePayload::CommandApproval {
+                        command_approval_request: crate::sse_protocol::CommandApprovalBody {
+                            command: "http_fetch".to_string(),
+                            args: redacted.clone(),
+                            allowlist_key: Some(key.clone()),
+                        },
+                    },
+                );
+                let _ = tx.send(line).await;
+            }
+            let mut rx_guard = ctx.approval_rx_shared.lock().await;
+            rx_guard
+                .recv()
+                .await
+                .unwrap_or(CommandApprovalDecision::Deny)
+        };
+        match decision {
+            CommandApprovalDecision::Deny => {
+                return (format!("用户拒绝 http_fetch：{}", redacted), None);
+            }
+            CommandApprovalDecision::AllowOnce => {}
+            CommandApprovalDecision::AllowAlways => {
+                ctx.persistent_allowlist_shared
+                    .lock()
+                    .await
+                    .insert(key.clone());
+            }
+        }
+    }
+
+    let args_owned = args.to_string();
+    let cmd_timeout = cfg.command_timeout_secs.max(timeout_secs);
+    let handle = tokio::task::spawn_blocking(move || {
+        let u = match tools::http_fetch::parse_url_from_args(&args_owned) {
+            Ok(u) => u,
+            Err(e) => return format!("错误：{}", e),
+        };
+        tools::http_fetch::fetch_url(&u, timeout_secs, max_body)
+    });
+    let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            error!(tool = %name, error = ?e, "http_fetch 任务异常");
+            format!("http_fetch 执行异常：{:?}", e)
+        }
+        Err(_) => format!("http_fetch 超时（{} 秒）", cmd_timeout),
+    };
+    (s, None)
+}
+
 async fn execute_run_executable_web(
     cfg: &AgentConfig,
     effective_working_dir: &Path,
@@ -439,6 +574,9 @@ async fn execute_run_executable_web(
     let ws_provider = cfg.web_search_provider;
     let ws_max = cfg.web_search_max_results;
     let ws_key = cfg.web_search_api_key.clone();
+    let hf_pfx = cfg.http_fetch_allowed_prefixes.clone();
+    let hf_to = cfg.http_fetch_timeout_secs;
+    let hf_mb = cfg.http_fetch_max_response_bytes;
     let allowed = cfg.allowed_commands.clone();
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
@@ -452,6 +590,9 @@ async fn execute_run_executable_web(
             web_search_provider: ws_provider,
             web_search_api_key: ws_key.as_str(),
             web_search_max_results: ws_max,
+            http_fetch_allowed_prefixes: hf_pfx.as_slice(),
+            http_fetch_timeout_secs: hf_to,
+            http_fetch_max_response_bytes: hf_mb,
         };
         tools::run_tool(&name_in, &args_owned, &ctx)
     });
@@ -482,6 +623,9 @@ async fn execute_get_weather_web(
     let ws_provider = cfg.web_search_provider;
     let ws_max = cfg.web_search_max_results;
     let ws_key = cfg.web_search_api_key.clone();
+    let hf_pfx = cfg.http_fetch_allowed_prefixes.clone();
+    let hf_to = cfg.http_fetch_timeout_secs;
+    let hf_mb = cfg.http_fetch_max_response_bytes;
     let allowed = cfg.allowed_commands.clone();
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
@@ -495,6 +639,9 @@ async fn execute_get_weather_web(
             web_search_provider: ws_provider,
             web_search_api_key: ws_key.as_str(),
             web_search_max_results: ws_max,
+            http_fetch_allowed_prefixes: hf_pfx.as_slice(),
+            http_fetch_timeout_secs: hf_to,
+            http_fetch_max_response_bytes: hf_mb,
         };
         tools::run_tool(&name_in, &args_owned, &ctx)
     });
@@ -525,6 +672,9 @@ async fn execute_web_search_web(
     let ws_provider = cfg.web_search_provider;
     let ws_max = cfg.web_search_max_results;
     let ws_key = cfg.web_search_api_key.clone();
+    let hf_pfx = cfg.http_fetch_allowed_prefixes.clone();
+    let hf_to = cfg.http_fetch_timeout_secs;
+    let hf_mb = cfg.http_fetch_max_response_bytes;
     let allowed = cfg.allowed_commands.clone();
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
@@ -538,6 +688,9 @@ async fn execute_web_search_web(
             web_search_provider: ws_provider,
             web_search_api_key: ws_key.as_str(),
             web_search_max_results: ws_max,
+            http_fetch_allowed_prefixes: hf_pfx.as_slice(),
+            http_fetch_timeout_secs: hf_to,
+            http_fetch_max_response_bytes: hf_mb,
         };
         tools::run_tool(&name_in, &args_owned, &ctx)
     });

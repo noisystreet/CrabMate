@@ -330,6 +330,9 @@ pub async fn run_workflow_execute_tool(
     let web_search_provider = cfg.web_search_provider;
     let web_search_api_key = cfg.web_search_api_key.clone();
     let web_search_max_results = cfg.web_search_max_results;
+    let http_fetch_timeout_secs = cfg.http_fetch_timeout_secs;
+    let http_fetch_max_response_bytes = cfg.http_fetch_max_response_bytes;
+    let http_fetch_allowed_prefixes = cfg.http_fetch_allowed_prefixes.clone();
 
     let tool_exec_ctx = WorkflowToolExecCtx {
         cfg_command_timeout_secs: command_timeout_secs,
@@ -338,6 +341,9 @@ pub async fn run_workflow_execute_tool(
         cfg_web_search_provider: web_search_provider,
         cfg_web_search_api_key: web_search_api_key,
         cfg_web_search_max_results: web_search_max_results,
+        cfg_http_fetch_timeout_secs: http_fetch_timeout_secs,
+        cfg_http_fetch_max_response_bytes: http_fetch_max_response_bytes,
+        cfg_http_fetch_allowed_prefixes: http_fetch_allowed_prefixes,
         cfg_allowed_commands: allowed_commands,
         effective_working_dir: workdir,
         workspace_is_set,
@@ -413,6 +419,9 @@ struct WorkflowToolExecCtx {
     cfg_web_search_provider: crate::config::WebSearchProvider,
     cfg_web_search_api_key: String,
     cfg_web_search_max_results: u32,
+    cfg_http_fetch_timeout_secs: u64,
+    cfg_http_fetch_max_response_bytes: usize,
+    cfg_http_fetch_allowed_prefixes: Vec<String>,
     cfg_allowed_commands: Vec<String>,
     effective_working_dir: PathBuf,
     workspace_is_set: bool,
@@ -899,6 +908,11 @@ async fn run_node(
         "run_command" | "run_executable" => Some(tool_exec_ctx.cfg_command_timeout_secs),
         "get_weather" => Some(tool_exec_ctx.cfg_weather_timeout_secs),
         "web_search" => Some(tool_exec_ctx.cfg_web_search_timeout_secs),
+        "http_fetch" => Some(
+            tool_exec_ctx
+                .cfg_http_fetch_timeout_secs
+                .max(tool_exec_ctx.cfg_command_timeout_secs),
+        ),
         _ => None,
     });
 
@@ -913,6 +927,9 @@ async fn run_node(
     let ws_provider = tool_exec_ctx.cfg_web_search_provider;
     let ws_max = tool_exec_ctx.cfg_web_search_max_results;
     let ws_key = tool_exec_ctx.cfg_web_search_api_key.clone();
+    let hf_pfx = tool_exec_ctx.cfg_http_fetch_allowed_prefixes.clone();
+    let hf_to = tool_exec_ctx.cfg_http_fetch_timeout_secs;
+    let hf_mb = tool_exec_ctx.cfg_http_fetch_max_response_bytes;
 
     let output_res = async move {
         let work_dir = run_command_working_dir;
@@ -927,6 +944,9 @@ async fn run_node(
                 web_search_provider: ws_provider,
                 web_search_api_key: ws_key.as_str(),
                 web_search_max_results: ws_max,
+                http_fetch_allowed_prefixes: hf_pfx.as_slice(),
+                http_fetch_timeout_secs: hf_to,
+                http_fetch_max_response_bytes: hf_mb,
             };
             crate::tools::run_tool_result(&tool_name, &exec_args, &ctx)
         });
@@ -1009,6 +1029,7 @@ async fn request_approval(
             command_approval_request: crate::sse_protocol::CommandApprovalBody {
                 command: command.to_string(),
                 args: args.to_string(),
+                allowlist_key: None,
             },
         });
     let _ = out_tx.send(line).await;

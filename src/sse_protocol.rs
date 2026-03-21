@@ -62,6 +62,9 @@ pub struct SseErrorBody {
 pub struct CommandApprovalBody {
     pub command: String,
     pub args: String,
+    /// TUI 永久允许时写入磁盘白名单的键；缺省则使用 `command` 小写（与 `run_command` 行为一致）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowlist_key: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

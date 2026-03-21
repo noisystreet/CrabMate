@@ -1,7 +1,7 @@
 //! CrabMate 库：DeepSeek Agent、HTTP 服务、工具与工作流。
 //! 二进制入口见 `src/main.rs` 的 [`run`] 包装。
 //!
-//! 日志由 `RUST_LOG` 控制（与原先一致）。
+//! 日志由 `RUST_LOG` 控制；`--tui` 时不向终端写 tracing 行，以免打乱全屏界面。
 
 mod agent_turn;
 mod api;
@@ -795,8 +795,6 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
 
 /// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL / TUI。
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
-
     let (
         config_path,
         single_shot,
@@ -810,6 +808,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         no_stream,
         tui,
     ) = parse_args();
+
+    init_logging(tui);
 
     let api_key = match env::var("API_KEY") {
         Ok(v) => v,
