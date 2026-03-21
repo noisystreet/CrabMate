@@ -69,6 +69,12 @@ pub struct AgentConfig {
     pub web_search_timeout_secs: u64,
     /// web_search 默认返回条数上限（工具参数 max_results 可覆盖，整体限制在 1～20）
     pub web_search_max_results: u32,
+    /// http_fetch：Web 模式仅允许此前缀列表中的 URL；TUI 未匹配时可人工审批
+    pub http_fetch_allowed_prefixes: Vec<String>,
+    /// http_fetch GET 超时（秒）
+    pub http_fetch_timeout_secs: u64,
+    /// http_fetch 响应体截断上限（字节）
+    pub http_fetch_max_response_bytes: usize,
     /// workflow 反思：模型未在 `workflow.reflection.max_rounds` 中指定时的默认上限（传给 `WorkflowReflectionController` / `PerCoordinator`）
     pub reflection_default_max_rounds: usize,
     /// 何时强制终答含 `agent_reply_plan` v1（见 `per_coord::FinalPlanRequirementMode`）
@@ -121,6 +127,9 @@ struct AgentSection {
     web_search_api_key: Option<String>,
     web_search_timeout_secs: Option<u64>,
     web_search_max_results: Option<u64>,
+    http_fetch_allowed_prefixes: Option<Vec<String>>,
+    http_fetch_timeout_secs: Option<u64>,
+    http_fetch_max_response_bytes: Option<u64>,
     reflection_default_max_rounds: Option<u64>,
     /// `never` / `workflow_reflection` / `always`
     final_plan_requirement: Option<String>,
@@ -167,6 +176,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut web_search_api_key: Option<String> = None;
     let mut web_search_timeout_secs: Option<u64> = None;
     let mut web_search_max_results: Option<u64> = None;
+    let mut http_fetch_allowed_prefixes: Option<Vec<String>> = None;
+    let mut http_fetch_timeout_secs: Option<u64> = None;
+    let mut http_fetch_max_response_bytes: Option<u64> = None;
     let mut reflection_default_max_rounds: Option<u64> = None;
     let mut final_plan_requirement_str: Option<String> = None;
     let mut plan_rewrite_max_attempts: Option<u64> = None;
@@ -229,6 +241,15 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         }
         web_search_timeout_secs = agent.web_search_timeout_secs.or(web_search_timeout_secs);
         web_search_max_results = agent.web_search_max_results.or(web_search_max_results);
+        if let Some(ref v) = agent.http_fetch_allowed_prefixes
+            && !v.is_empty()
+        {
+            http_fetch_allowed_prefixes = Some(v.clone());
+        }
+        http_fetch_timeout_secs = agent.http_fetch_timeout_secs.or(http_fetch_timeout_secs);
+        http_fetch_max_response_bytes = agent
+            .http_fetch_max_response_bytes
+            .or(http_fetch_max_response_bytes);
         reflection_default_max_rounds = agent
             .reflection_default_max_rounds
             .or(reflection_default_max_rounds);
@@ -368,6 +389,17 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 }
                 if let Some(v) = agent.web_search_max_results {
                     web_search_max_results = Some(v);
+                }
+                if let Some(ref v) = agent.http_fetch_allowed_prefixes
+                    && !v.is_empty()
+                {
+                    http_fetch_allowed_prefixes = Some(v.clone());
+                }
+                if let Some(v) = agent.http_fetch_timeout_secs {
+                    http_fetch_timeout_secs = Some(v);
+                }
+                if let Some(v) = agent.http_fetch_max_response_bytes {
+                    http_fetch_max_response_bytes = Some(v);
                 }
                 if let Some(v) = agent.reflection_default_max_rounds {
                     reflection_default_max_rounds = Some(v);
@@ -520,6 +552,26 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         web_search_max_results = Some(n);
+    }
+    if let Ok(s) = std::env::var("AGENT_HTTP_FETCH_ALLOWED_PREFIXES") {
+        let list: Vec<String> = s
+            .split(',')
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty())
+            .collect();
+        if !list.is_empty() {
+            http_fetch_allowed_prefixes = Some(list);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_HTTP_FETCH_TIMEOUT_SECS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        http_fetch_timeout_secs = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        http_fetch_max_response_bytes = Some(n);
     }
     if let Ok(v) = std::env::var("AGENT_REFLECTION_DEFAULT_MAX_ROUNDS")
         && let Ok(n) = v.trim().parse::<u64>()
@@ -708,6 +760,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let web_search_timeout_secs = web_search_timeout_secs.unwrap_or(30).max(1);
     let web_search_max_results = web_search_max_results.unwrap_or(8).clamp(1, 20) as u32;
 
+    let http_fetch_allowed_prefixes = http_fetch_allowed_prefixes.unwrap_or_default();
+    let http_fetch_timeout_secs = http_fetch_timeout_secs.unwrap_or(30).max(1);
+    let http_fetch_max_response_bytes = http_fetch_max_response_bytes
+        .unwrap_or(524_288)
+        .clamp(1024, 4_194_304) as usize;
+
     Ok(AgentConfig {
         api_base,
         model,
@@ -726,6 +784,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         web_search_api_key,
         web_search_timeout_secs,
         web_search_max_results,
+        http_fetch_allowed_prefixes,
+        http_fetch_timeout_secs,
+        http_fetch_max_response_bytes,
         reflection_default_max_rounds,
         final_plan_requirement,
         plan_rewrite_max_attempts,

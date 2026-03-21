@@ -33,6 +33,7 @@ Standard commands from `README.md`:
 
 ### Gotchas
 
+- **排障摘要**：模型可调用工具 **`diagnostic_summary`**（参数均可选）收集只读、脱敏信息：Rust 工具链版本、`target/` 与常见路径是否存在、关键环境变量是否已设置（**不输出任何变量值**；与 `API_KEY` 同类变量亦不报告长度）。勿将真实密钥粘贴进对话或工具入参。
 - The project uses Rust **edition 2024**, which requires **Rust 1.85+**. The VM snapshot installs the latest stable toolchain. If `cargo build` fails with an edition error, run `rustup update stable && rustup default stable`.
 - **Rust nightly** is pre-installed in the environment. You can use `cargo +nightly test` and similar commands directly.
 - System libraries `libssl-dev` and `libssh2-1-dev` are required for the Rust build (installed by the VM snapshot).

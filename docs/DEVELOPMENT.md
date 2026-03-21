@@ -118,18 +118,22 @@ flowchart TB
 | `code_nav.rs` | 代码导航、文件大纲等 |
 | `command.rs` | `run_command` 白名单与进程执行 |
 | `debug_tools.rs` | 调试辅助类工具 |
+| `diagnostics.rs` | `diagnostic_summary`：脱敏环境/工具链/工作区路径摘要 |
 | `exec.rs` | `run_executable` |
 | `file.rs` | 创建/读/改文件、`glob_files`、`list_tree` 等 |
 | `format.rs` / `lint.rs` | 格式化与 lint 聚合 |
 | `frontend_tools.rs` | 前端 npm 脚本类 |
 | `git.rs` | Git 只读与受控写入 |
 | `grep.rs` / `symbol.rs` | 工作区内文本搜索、Rust 符号 |
+| `markdown_links.rs` | `markdown_check_links`：Markdown 相对链接存在性检查，可选外链前缀 HEAD |
+| `structured_data.rs` | `structured_validate` / `structured_query` / `structured_diff`：JSON·YAML·TOML 校验、路径查询、结构化 diff |
 | `patch.rs` | unified diff 应用 |
 | `quality_tools.rs` | 工作区质量组合检查 |
 | `rust_ide.rs` | 编译器 JSON、rust-analyzer 等 |
 | `schedule.rs` | 提醒与日程持久化 |
 | `security_tools.rs` | 安全审计类 |
 | `time.rs` / `weather.rs` / `web_search.rs` | 时间、天气（Open-Meteo）、联网搜索（Brave/Tavily） |
+| `http_fetch.rs` | `http_fetch`：GET 指定 URL（体长上限）；Web 仅允许 `http_fetch_allowed_prefixes` 前缀；TUI 未匹配时可审批，永久同意写入 `persistent_allowlist`（键 `http_fetch:`+ 归一化 URL，无 query/fragment） |
 
 ## 核心机制：Agent 主循环与工具调用
 
@@ -228,6 +232,7 @@ flowchart LR
 ### `src/tools/file.rs`（节选）
 
 - 除 `read_dir` 外，`glob_files`（`glob` crate 模式 + 工作区内递归）与 `list_tree`（先序目录树）均带 **深度/条数上限**，并对 `canonicalize` 结果做工作区根校验，避免符号链接逃逸。
+- **`resolve_for_read`**、**`canonical_workspace_root`** 为 `pub(crate)`，供 `markdown_links`、`structured_data`、`diagnostics` 等只读工具复用（`resolve_for_read` 要求目标已存在）。
 
 ### `src/tools/mod.rs`（工具注册与分发的“表驱动”中心）
 
@@ -252,6 +257,7 @@ flowchart LR
 - **`calc.rs`**：通过 `bc -l` 计算表达式（避免 shell 注入：通常用 stdin 传参、限制输出）。
 - **`weather.rs`**：调用 Open‑Meteo（无需 key），带超时控制。
 - **`web_search.rs`**：`reqwest::blocking` + `serde` 调用 Brave Web Search 或 Tavily；Key 与 `web_search_provider` 来自 `AgentConfig`。Web 路径在 `tool_registry` 中登记为 `WebSearchSpawnTimeout`（`spawn_blocking` + 超时）。
+- **`http_fetch.rs`**：阻塞 GET；`tool_registry` 登记为 `HttpFetchSpawnTimeout`。Web 仅当 URL 以 `http_fetch_allowed_prefixes` 中任一项为前缀时执行；TUI 另可经 `CommandApproval`（`allowlist_key` 为上述持久化键）在「本次允许 / 永久允许」后执行。`CommandApprovalBody.allowlist_key` 可选；`run_command` 审批不传时 TUI 仍以命令名小写写入白名单。
 - **`command.rs`**：命令白名单 + 超时 + 输出截断；配合 `allowed_commands` 与工作区路径限制。
 - **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）。
 - **`file.rs`**：工作区内创建/覆盖文件；路径归一化与越界检查是安全边界的关键。
@@ -262,7 +268,7 @@ flowchart LR
 
 - **`ui`**：承载 Web 侧的“工作区/任务”等 API handler（与前端面板直接对应）。
 - **`runtime`**：CLI/TUI 运行时逻辑，负责 REPL、单次问答、TUI 的交互渲染与调用 `run_agent_turn`。
-  - TUI 实现位于 `runtime/tui/`：`mod`（主循环）、`state`、`draw`、`input`（键鼠）、`workspace_ops`、`sse_line`、`styles`、`status`、`allowlist`、`agent`（委托 `agent_turn`）。
+  - TUI 实现位于 `runtime/tui/`：`mod`（主循环）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行）、`workspace_ops`、`sse_line`、`styles`、`status`、`allowlist`、`agent`（委托 `agent_turn`）。
 
 ## 前端模块说明（`frontend/src/`）
 

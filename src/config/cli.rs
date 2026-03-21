@@ -1,14 +1,28 @@
 use clap::Parser;
 use std::io::{self, Read};
 
-/// 初始化日志订阅器（使用 RUST_LOG 环境变量控制级别）
-pub fn init_logging() {
+/// 初始化日志订阅器（使用 `RUST_LOG` 环境变量控制级别）。
+///
+/// `suppress_stdio_logs`：为 **TUI 全屏** 设为 `true`，避免 `tracing` 的 stderr 输出破坏备用屏幕界面；
+/// 仍可通过 `EnvFilter` 参与过滤逻辑，但格式化日志不会写入终端（调试可暂时不用 `--tui` 或后续加文件层）。
+pub fn init_logging(suppress_stdio_logs: bool) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_default_env())
-        .with(tracing_subscriber::fmt::layer().with_target(true))
-        .init();
+    let registry =
+        tracing_subscriber::registry().with(tracing_subscriber::EnvFilter::from_default_env());
+    if suppress_stdio_logs {
+        registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(true)
+                    .with_writer(std::io::sink),
+            )
+            .init();
+    } else {
+        registry
+            .with(tracing_subscriber::fmt::layer().with_target(true))
+            .init();
+    }
 }
 
 /// 从标准输入读取全部内容（直到 EOF）

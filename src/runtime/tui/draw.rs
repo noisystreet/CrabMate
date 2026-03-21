@@ -22,6 +22,7 @@ use super::styles::{
     DarkStyleSheet, HighContrastDarkStyleSheet, HighContrastLightStyleSheet, LightStyleSheet,
     code_themes,
 };
+use super::text_input;
 
 /// 左右主窗格之间的竖线分隔（独立一列 `│`，不挡内容）。
 fn draw_pane_separator_vertical(f: &mut Frame<'_>, col: Rect) {
@@ -56,6 +57,34 @@ fn right_tab_color(tab: RightTab) -> Color {
         RightTab::Tasks => Color::Yellow,
         RightTab::Schedule => Color::Cyan,
     }
+}
+
+/// 与 `draw_chat` 中输入 `Paragraph` 内层一致（光标定位、鼠标落点）。
+pub(super) fn chat_input_text_inner(term_cols: u16, term_rows: u16, input_rows: u16) -> Rect {
+    let full = Rect::new(0, 0, term_cols, term_rows);
+    let hchunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(65),
+            Constraint::Length(1),
+            Constraint::Percentage(35),
+        ])
+        .split(full);
+    let left = hchunks[0];
+    let vchunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(3),
+            Constraint::Length(1),
+            Constraint::Length(input_rows.max(2)),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(left);
+    vchunks[2].inner(Margin {
+        vertical: 1,
+        horizontal: 1,
+    })
 }
 
 /// 状态栏左侧阶段词颜色（与 `ModelPhase::label` 对应）。
@@ -114,13 +143,13 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
         };
         let lines = vec![
             Line::from(Span::styled(
-                "命令执行审批",
+                "工具审批（命令 / http_fetch 等）",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::raw(format!("命令: {}", state.pending_command)),
-            Line::raw(format!("参数: {}", args_text)),
+            Line::raw(format!("标识: {}", state.pending_command)),
+            Line::raw(format!("详情: {}", args_text)),
             Line::raw(""),
             Line::from(option_line),
             Line::raw("←/→ 选择，Enter 确认（1/2/3 选项，Esc=拒绝）"),
@@ -159,7 +188,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
             ),
             Line::from("焦点切换：F2 在 聊天 和 右侧 面板之间切换，Tab 在右侧标签页间切换。"),
             Line::from(
-                "发送：在输入框中按 Enter；底栏为横线 + 单行加粗状态；左侧阶段词着色（如就绪绿、思考中青、回答中蓝等）。",
+                "发送：Enter 发送；Shift+Enter 换行。←→ 移动光标、↑↓ 按显示行移动、Home/End 行首行尾、Delete 向后删。",
             ),
             Line::from("Markdown：F3 切换代码主题，F4 切换 Markdown 暗/亮样式。"),
             Line::from("高对比度：F5 在普通 / 高对比度模式之间切换（适合弱光/弱视）。"),
@@ -461,44 +490,25 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     f.render_widget(input, vchunks[2]);
     draw_pane_separator_horizontal(f, vchunks[3]);
 
-    if state.mode != Mode::CommandApprove && !state.show_help {
-        if let Some((mx, my)) = state.cursor_mouse_pos {
-            let area = f.area();
-            let max_x = area.x.saturating_add(area.width.saturating_sub(1));
-            let max_y = area.y.saturating_add(area.height.saturating_sub(1));
-            let x = mx.min(max_x);
-            let y = my.min(max_y);
+    if state.mode != Mode::CommandApprove && !state.show_help && input_focused {
+        let inner = vchunks[2].inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        });
+        if inner.width > 0 && inner.height > 0 {
+            let mw = inner.width.max(1) as usize;
+            let cur = if state.mode == Mode::Prompt {
+                state.prompt_cursor
+            } else {
+                state.input_cursor
+            };
+            let (row, col_w) = text_input::coords_before_cursor(input_text, cur, mw);
+            let x = inner
+                .x
+                .saturating_add((col_w as u16).min(inner.width.saturating_sub(1)));
+            let max_row = inner.height.saturating_sub(1);
+            let y = inner.y.saturating_add(row.min(max_row));
             f.set_cursor_position((x, y));
-        } else if input_focused {
-            let inner = vchunks[2].inner(Margin {
-                vertical: 1,
-                horizontal: 1,
-            });
-            if inner.width > 0 && inner.height > 0 {
-                if let Some((cx, cy)) = state.cursor_override {
-                    let rel_x = cx.saturating_sub(inner.x);
-                    let rel_y = cy.saturating_sub(inner.y);
-                    let max_dx = inner.width.saturating_sub(1);
-                    let max_dy = inner.height.saturating_sub(1);
-                    let x = inner.x.saturating_add(rel_x.min(max_dx));
-                    let y = inner.y.saturating_add(rel_y.min(max_dy));
-                    f.set_cursor_position((x, y));
-                } else {
-                    let lines: Vec<&str> = input_text.split('\n').collect();
-                    let line_idx = lines.len().saturating_sub(1);
-                    let last = lines.get(line_idx).copied().unwrap_or("");
-                    let x_off = last.width() as u16;
-                    let x = inner
-                        .x
-                        .saturating_add(x_off)
-                        .min(inner.x + inner.width.saturating_sub(1));
-                    let y = inner
-                        .y
-                        .saturating_add(line_idx as u16)
-                        .min(inner.y + inner.height.saturating_sub(1));
-                    f.set_cursor_position((x, y));
-                }
-            }
         }
     }
 
