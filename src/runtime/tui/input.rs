@@ -520,7 +520,7 @@ pub(super) fn handle_crossterm_mouse(
             if state.input_dragging {
                 state.input_dragging = false;
                 state.status_line = format!(
-                    "输入区域高度已调整为 {} 行（在底部拖动可再次调整）",
+                    "输入区域高度已调整为 {} 行（在输入区与状态栏之间的横线上拖动可再次调整）",
                     state.input_rows
                 );
             } else {
@@ -529,13 +529,12 @@ pub(super) fn handle_crossterm_mouse(
         }
         MouseEventKind::Down(MouseButton::Left) => {
             let chat_width = cols.saturating_mul(65) / 100;
-            let input_start_row = rows.saturating_sub(state.input_rows + 1);
+            let below_input = super::draw::LEFT_COLUMN_ROWS_BELOW_INPUT;
+            let input_start_row =
+                rows.saturating_sub(state.input_rows.saturating_add(below_input));
 
-            if x < chat_width && y >= input_start_row {
-                state.cursor_mouse_pos = Some((x, y));
-            }
-
-            if x < chat_width && y >= rows.saturating_sub(1) {
+            // 输入区与状态栏之间的横线：拖动调整输入区高度（勿点在状态文字行上）
+            if x < chat_width && y == rows.saturating_sub(below_input) {
                 state.input_dragging = true;
                 state.input_drag_row = y;
                 state.status_line = format!(
@@ -543,6 +542,13 @@ pub(super) fn handle_crossterm_mouse(
                     state.input_rows
                 );
                 return;
+            }
+
+            if x < chat_width
+                && y >= input_start_row
+                && y < rows.saturating_sub(below_input)
+            {
+                state.cursor_mouse_pos = Some((x, y));
             }
 
             apply_click_focus_and_tab(x, y, cols, rows, state, model);
@@ -562,7 +568,7 @@ fn apply_click_focus_and_tab(
     let chat_width = cols.saturating_mul(65) / 100;
     let defer_to_release = col >= chat_width;
 
-    if col >= chat_width && row <= 3 {
+    if col >= chat_width && row < super::draw::RIGHT_PANEL_TAB_ROWS {
         let right_x = col.saturating_sub(chat_width);
         let right_w = cols.saturating_sub(chat_width).max(3);
         let inner_w = right_w.saturating_sub(2).max(3);
@@ -602,15 +608,16 @@ fn apply_click_focus_and_tab(
     }
 
     let new_focus = if col < chat_width {
-        let input_start_row = rows.saturating_sub(state.input_rows + 1);
-        if row >= input_start_row {
+        let below_input = super::draw::LEFT_COLUMN_ROWS_BELOW_INPUT;
+        let input_start_row =
+            rows.saturating_sub(state.input_rows.saturating_add(below_input));
+        if row >= input_start_row && row < rows.saturating_sub(below_input) {
             Focus::ChatInput
         } else {
             Focus::ChatView
         }
     } else {
-        let tabs_h: u16 = 3;
-        if state.tab == RightTab::Workspace && row > tabs_h {
+        if state.tab == RightTab::Workspace && row >= super::draw::RIGHT_PANEL_ROWS_ABOVE_CONTENT {
             Focus::Workspace
         } else {
             Focus::Right

@@ -12,7 +12,7 @@ use ratatui::{
 use regex::Regex;
 use std::sync::LazyLock;
 use tui_markdown::{from_str_with_options as markdown_to_text, Options};
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use unicodeit::replace as latex_to_unicode;
 
 use crate::types::Message;
@@ -23,40 +23,31 @@ use super::styles::{
     LightStyleSheet,
 };
 
-fn draw_rect_corners(
-    f: &mut Frame<'_>,
-    rect: Rect,
-    tl: &'static str,
-    tr: &'static str,
-    bl: &'static str,
-    br: &'static str,
-    style: Style,
-) {
-    if rect.width < 2 || rect.height < 2 {
+/// 左右主窗格之间的竖线分隔（独立一列 `│`，不挡内容）。
+fn draw_pane_separator_vertical(f: &mut Frame<'_>, col: Rect) {
+    if col.width == 0 || col.height == 0 {
         return;
     }
-    let buf = f.buffer_mut();
-    let x0 = rect.x;
-    let x1 = rect.x + rect.width.saturating_sub(1);
-    let y0 = rect.y;
-    let y1 = rect.y + rect.height.saturating_sub(1);
+    let style = Style::default().fg(Color::DarkGray);
+    let vbar_lines: Vec<Line<'_>> = (0..col.height).map(|_| Line::raw("│")).collect();
+    f.render_widget(Paragraph::new(vbar_lines).style(style), col);
+}
 
-    if let Some(cell) = buf.cell_mut((x0, y0)) {
-        cell.set_symbol(tl);
-        cell.set_style(style);
+/// 左侧列：输入区下方「横线 1 行 + 状态栏 1 行」（用于鼠标命中与布局对齐）。
+pub(super) const LEFT_COLUMN_ROWS_BELOW_INPUT: u16 = 2;
+
+/// 右侧：标签栏行数（与 `draw_right` 中 `Constraint::Length` 一致；单行 tabs，无上下留白）。
+pub(super) const RIGHT_PANEL_TAB_ROWS: u16 = 1;
+/// 右侧：标签栏 + 与内容区之间的横线，共占行数（用于鼠标命中与布局对齐）。
+pub(super) const RIGHT_PANEL_ROWS_ABOVE_CONTENT: u16 = RIGHT_PANEL_TAB_ROWS + 1;
+
+fn draw_pane_separator_horizontal(f: &mut Frame<'_>, row: Rect) {
+    if row.width == 0 || row.height == 0 {
+        return;
     }
-    if let Some(cell) = buf.cell_mut((x1, y0)) {
-        cell.set_symbol(tr);
-        cell.set_style(style);
-    }
-    if let Some(cell) = buf.cell_mut((x0, y1)) {
-        cell.set_symbol(bl);
-        cell.set_style(style);
-    }
-    if let Some(cell) = buf.cell_mut((x1, y1)) {
-        cell.set_symbol(br);
-        cell.set_style(style);
-    }
+    let style = Style::default().fg(Color::DarkGray);
+    let text = "─".repeat(row.width as usize);
+    f.render_widget(Paragraph::new(text).style(style), row);
 }
 
 fn right_tab_color(tab: RightTab) -> Color {
@@ -71,85 +62,16 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
     let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
+        .constraints([
+            Constraint::Percentage(65),
+            Constraint::Length(1),
+            Constraint::Percentage(35),
+        ])
         .split(area);
 
     draw_chat(f, chunks[0], state);
-    draw_right(f, chunks[1], &*state);
-
-    const SHOW_SEPARATORS: bool = false;
-    if SHOW_SEPARATORS {
-        let sep_style = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
-
-        let left_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(3),
-                Constraint::Length(state.input_rows.max(2)),
-                Constraint::Length(1),
-            ])
-            .split(chunks[0]);
-
-        let left_sep1_y = left_chunks[1].y;
-        for dy in 0..2u16 {
-            let y = left_sep1_y.saturating_add(dy);
-            if y >= area.y.saturating_add(area.height) {
-                continue;
-            }
-            let sep_area = Rect::new(chunks[0].x, y, chunks[0].width, 1);
-            f.render_widget(Clear, sep_area);
-            f.render_widget(
-                Paragraph::new("━".repeat(chunks[0].width as usize)).style(sep_style),
-                sep_area,
-            );
-        }
-
-        let left_sep2_y = left_chunks[2].y;
-        for dy in 0..2u16 {
-            let y = left_sep2_y.saturating_add(dy);
-            if y >= area.y.saturating_add(area.height) {
-                continue;
-            }
-            let sep_area = Rect::new(chunks[0].x, y, chunks[0].width, 1);
-            f.render_widget(Clear, sep_area);
-            f.render_widget(
-                Paragraph::new("━".repeat(chunks[0].width as usize)).style(sep_style),
-                sep_area,
-            );
-        }
-
-        let right_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(3)])
-            .split(chunks[1]);
-
-        let right_sep_y = right_chunks[1].y;
-        for dy in 0..2u16 {
-            let y = right_sep_y.saturating_add(dy);
-            if y >= area.y.saturating_add(area.height) {
-                continue;
-            }
-            let sep_area = Rect::new(chunks[1].x, y, chunks[1].width, 1);
-            f.render_widget(Clear, sep_area);
-            f.render_widget(
-                Paragraph::new("━".repeat(chunks[1].width as usize)).style(sep_style),
-                sep_area,
-            );
-        }
-
-        let separator_x_start = chunks[1].x.saturating_sub(1);
-        for dx in 0..2u16 {
-            let x = separator_x_start.saturating_add(dx);
-            if x >= area.x.saturating_add(area.width) {
-                continue;
-            }
-            let sep_area = Rect::new(x, area.y, 1, area.height);
-            f.render_widget(Clear, sep_area);
-            let vbar_lines: Vec<Line<'_>> =
-                (0..sep_area.height).map(|_| Line::raw("┃")).collect();
-            f.render_widget(Paragraph::new(vbar_lines).style(sep_style), sep_area);
-        }
-    }
+    draw_pane_separator_vertical(f, chunks[1]);
+    draw_right(f, chunks[2], &*state);
 
     if state.mode == Mode::CommandApprove {
         let w = area.width.saturating_mul(7) / 10;
@@ -215,9 +137,9 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
                     .add_modifier(Modifier::BOLD),
             )),
             Line::raw(""),
-            Line::from("布局：左侧对话 + 输入区域，右侧 工作区 / 任务 / 日程 标签页。"),
+            Line::from("布局：左侧对话与输入区以横线分隔，左右主区域以竖线分隔；右侧为 工作区 / 任务 / 日程 标签页。"),
             Line::from("焦点切换：F2 在 聊天 和 右侧 面板之间切换，Tab 在右侧标签页间切换。"),
-            Line::from("发送：在输入框中按 Enter；底栏「状态」含思考中/选用工具/回答中/工具执行中/完成等。"),
+            Line::from("发送：在输入框中按 Enter；底栏为横线 + 单行状态（就绪/思考/选用工具/回答/工具执行中等）。"),
             Line::from("Markdown：F3 切换代码主题，F4 切换 Markdown 暗/亮样式。"),
             Line::from("高对比度：F5 在普通 / 高对比度模式之间切换（适合弱光/弱视）。"),
             Line::from("任务 / 日程：右侧标签页中查看和勾选任务、提醒和事件。"),
@@ -329,13 +251,39 @@ fn strip_assistant_echo_label(content: &str) -> String {
     s
 }
 
+/// 按终端显示宽度截断（宽字符计列宽），超出加省略号。
+fn truncate_display_width(s: &str, max_w: usize) -> String {
+    if max_w == 0 {
+        return String::new();
+    }
+    if s.width() <= max_w {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    let mut w = 0usize;
+    for ch in s.chars() {
+        let cw = ch.width().unwrap_or(0);
+        if w + cw > max_w.saturating_sub(1) {
+            break;
+        }
+        out.push(ch);
+        w += cw;
+    }
+    if out.width() < s.width() {
+        out.push('…');
+    }
+    out
+}
+
 fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     let vchunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(3),
+            Constraint::Length(1), // 聊天区下横线
             Constraint::Length(state.input_rows.max(2)),
-            Constraint::Length(1),
+            Constraint::Length(1), // 输入区与状态栏之间横线
+            Constraint::Length(1), // 状态栏（单行文字）
         ])
         .split(area);
 
@@ -451,7 +399,6 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     } else {
         state.chat_first_line = 0;
     }
-    let chat_focused = state.focus == Focus::ChatView;
     let chat_block = Block::default()
         .borders(Borders::NONE)
         .padding(Padding::symmetric(1, 1));
@@ -459,18 +406,7 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         .block(chat_block)
         .wrap(Wrap { trim: false });
     f.render_widget(chat, vchunks[0]);
-    let chat_corner_style = Style::default()
-        .fg(if chat_focused { Color::Cyan } else { Color::DarkGray })
-        .add_modifier(Modifier::BOLD);
-    draw_rect_corners(
-        f,
-        vchunks[0],
-        "┏",
-        "┓",
-        "┗",
-        "┛",
-        chat_corner_style,
-    );
+    draw_pane_separator_horizontal(f, vchunks[1]);
 
     let input_text = if state.mode == Mode::Prompt {
         state.prompt.as_str()
@@ -485,20 +421,8 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         .block(input_block)
         .style(Style::default().fg(Color::Gray))
         .wrap(Wrap { trim: false });
-    f.render_widget(input, vchunks[1]);
-
-    let input_corner_style = Style::default()
-        .fg(if input_focused { Color::Yellow } else { Color::DarkGray })
-        .add_modifier(Modifier::BOLD);
-    draw_rect_corners(
-        f,
-        vchunks[1],
-        "┏",
-        "┓",
-        "┗",
-        "┛",
-        input_corner_style,
-    );
+    f.render_widget(input, vchunks[2]);
+    draw_pane_separator_horizontal(f, vchunks[3]);
 
     if state.mode != Mode::CommandApprove && !state.show_help {
         if let Some((mx, my)) = state.cursor_mouse_pos {
@@ -509,7 +433,7 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
             let y = my.min(max_y);
             f.set_cursor_position((x, y));
         } else if input_focused {
-            let inner = vchunks[1].inner(Margin { vertical: 1, horizontal: 1 });
+            let inner = vchunks[2].inner(Margin { vertical: 1, horizontal: 1 });
             if inner.width > 0 && inner.height > 0 {
                 if let Some((cx, cy)) = state.cursor_override {
                     let rel_x = cx.saturating_sub(inner.x);
@@ -538,52 +462,41 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         }
     }
 
-    let status_color = match state.focus {
-        Focus::ChatView => Color::Cyan,
-        Focus::ChatInput => Color::Yellow,
-        Focus::Workspace => Color::Green,
-        Focus::Right => Color::Magenta,
+    // 底栏：固定 1 行，无 Block 上下留白；终端默认前景/背景
+    let status_rect = vchunks[3];
+    let inner_cols = status_rect.width.max(1) as usize;
+    let phase = state.model_phase.label();
+    let meta = state.status_line.trim();
+    let meta = if meta.is_empty() {
+        "Ctrl+C 退出  F1 帮助"
+    } else {
+        meta
     };
-    let status_block = Block::default()
-        .borders(Borders::NONE)
-        .padding(Padding::symmetric(1, 1));
-    let status_full = format!(
-        "状态：{} | {}",
-        state.model_phase.label(),
-        state.status_line
-    );
-    let status = Paragraph::new(status_full)
-        .block(status_block)
-        .style(Style::default().fg(status_color));
-    f.render_widget(status, vchunks[2]);
-    let status_corner_style = Style::default()
-        .fg(status_color)
-        .add_modifier(Modifier::BOLD);
-    draw_rect_corners(
-        f,
-        vchunks[2],
-        "┏",
-        "┓",
-        "┗",
-        "┛",
-        status_corner_style,
-    );
+    let meta = meta.replace(['\n', '\r'], " ");
+    // 左段为阶段、右段为模型/快捷键等说明
+    let raw = format!(" {} │ {} ", phase, meta);
+    let bar_text = truncate_display_width(&raw, inner_cols);
+    let status = Paragraph::new(Line::raw(bar_text));
+    f.render_widget(status, status_rect);
 }
 
 fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
     let vchunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(3)])
+        .constraints([
+            Constraint::Length(RIGHT_PANEL_TAB_ROWS),
+            Constraint::Length(1), // 标签栏与内容区横线
+            Constraint::Min(3),
+        ])
         .split(area);
 
     let titles: Vec<Line> = RightTab::titles()
         .iter()
         .map(|t| Line::from(Span::raw(*t)))
         .collect();
-    let right_focused = state.focus == Focus::Right;
     let tabs_block = Block::default()
         .borders(Borders::NONE)
-        .padding(Padding::symmetric(1, 1));
+        .padding(Padding::horizontal(1));
     let tabs = Tabs::new(titles)
         .select(state.tab as usize)
         .block(tabs_block)
@@ -593,22 +506,7 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         );
     f.render_widget(tabs, vchunks[0]);
-    let tabs_corner_color = if right_focused {
-        right_tab_color(state.tab)
-    } else {
-        Color::DarkGray
-    };
-    draw_rect_corners(
-        f,
-        vchunks[0],
-        "┏",
-        "┓",
-        "┗",
-        "┛",
-        Style::default()
-            .fg(tabs_corner_color)
-            .add_modifier(Modifier::BOLD),
-    );
+    draw_pane_separator_horizontal(f, vchunks[1]);
 
     match state.tab {
         RightTab::Workspace => {
@@ -625,28 +523,13 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
                     lines.push(Line::raw(s));
                 }
             }
-            let workspace_focused = state.focus == Focus::Workspace;
             let workspace_block = Block::default()
                 .borders(Borders::NONE)
                 .padding(Padding::symmetric(1, 1));
             let w = Paragraph::new(lines)
                 .block(workspace_block)
                 .wrap(Wrap { trim: false });
-            f.render_widget(w, vchunks[1]);
-            let c = if workspace_focused {
-                Color::Green
-            } else {
-                Color::DarkGray
-            };
-            draw_rect_corners(
-                f,
-                vchunks[1],
-                "┏",
-                "┓",
-                "┗",
-                "┛",
-                Style::default().fg(c).add_modifier(Modifier::BOLD),
-            );
+            f.render_widget(w, vchunks[2]);
         }
         RightTab::Tasks => {
             let mut lines = Vec::new();
@@ -667,28 +550,13 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
                     }
                 }
             }
-            let tasks_focused = state.focus == Focus::Right && state.tab == RightTab::Tasks;
             let tasks_block = Block::default()
                 .borders(Borders::NONE)
                 .padding(Padding::symmetric(1, 1));
             let w = Paragraph::new(lines)
                 .block(tasks_block)
                 .wrap(Wrap { trim: false });
-            f.render_widget(w, vchunks[1]);
-            let c = if tasks_focused {
-                Color::Yellow
-            } else {
-                Color::DarkGray
-            };
-            draw_rect_corners(
-                f,
-                vchunks[1],
-                "┏",
-                "┓",
-                "┗",
-                "┛",
-                Style::default().fg(c).add_modifier(Modifier::BOLD),
-            );
+            f.render_widget(w, vchunks[2]);
         }
         RightTab::Schedule => {
             let mut lines = Vec::new();
@@ -741,28 +609,13 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
                     }
                 }
             }
-            let schedule_focused = state.focus == Focus::Right && state.tab == RightTab::Schedule;
             let schedule_block = Block::default()
                 .borders(Borders::NONE)
                 .padding(Padding::symmetric(1, 1));
             let w = Paragraph::new(lines)
                 .block(schedule_block)
                 .wrap(Wrap { trim: false });
-            f.render_widget(w, vchunks[1]);
-            let c = if schedule_focused {
-                Color::Cyan
-            } else {
-                Color::DarkGray
-            };
-            draw_rect_corners(
-                f,
-                vchunks[1],
-                "┏",
-                "┓",
-                "┗",
-                "┛",
-                Style::default().fg(c).add_modifier(Modifier::BOLD),
-            );
+            f.render_widget(w, vchunks[2]);
         }
     }
 
@@ -775,15 +628,6 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
         let content = Paragraph::new(full)
             .block(block)
             .wrap(Wrap { trim: false });
-        f.render_widget(content, vchunks[1]);
-        draw_rect_corners(
-            f,
-            vchunks[1],
-            "┏",
-            "┓",
-            "┗",
-            "┛",
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
-        );
+        f.render_widget(content, vchunks[2]);
     }
 }

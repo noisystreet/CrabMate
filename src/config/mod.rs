@@ -60,6 +60,10 @@ pub struct AgentConfig {
     pub context_summary_max_tokens: u32,
     /// 送入摘要模型的中间段转写最大字符数（防摘要请求本身过大）
     pub context_summary_transcript_max_chars: usize,
+    /// Web `/chat` 任务最大并发执行数（单进程）
+    pub chat_queue_max_concurrent: usize,
+    /// Web 对话任务有界等待队列长度（`try_send` 满则 503）
+    pub chat_queue_max_pending: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,6 +102,8 @@ struct AgentSection {
     context_summary_tail_messages: Option<u64>,
     context_summary_max_tokens: Option<u64>,
     context_summary_transcript_max_chars: Option<u64>,
+    chat_queue_max_concurrent: Option<u64>,
+    chat_queue_max_pending: Option<u64>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None
@@ -139,6 +145,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut context_summary_tail_messages: Option<u64> = None;
     let mut context_summary_max_tokens: Option<u64> = None;
     let mut context_summary_transcript_max_chars: Option<u64> = None;
+    let mut chat_queue_max_concurrent: Option<u64> = None;
+    let mut chat_queue_max_pending: Option<u64> = None;
 
     if let Some(agent) = parse_agent_section(DEFAULT_CONFIG) {
         api_base = agent.api_base.unwrap_or_default().trim().to_string();
@@ -215,6 +223,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         context_summary_transcript_max_chars = agent
             .context_summary_transcript_max_chars
             .or(context_summary_transcript_max_chars);
+        chat_queue_max_concurrent = agent.chat_queue_max_concurrent.or(chat_queue_max_concurrent);
+        chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
     }
 
     let config_paths: Vec<&str> = match config_path {
@@ -337,6 +347,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 context_summary_transcript_max_chars = agent
                     .context_summary_transcript_max_chars
                     .or(context_summary_transcript_max_chars);
+                chat_queue_max_concurrent = agent.chat_queue_max_concurrent.or(chat_queue_max_concurrent);
+                chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
             }
             if config_path.is_some() {
                 break;
@@ -464,6 +476,14 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         && let Ok(n) = v.trim().parse::<u64>() {
             context_summary_transcript_max_chars = Some(n);
         }
+    if let Ok(v) = std::env::var("AGENT_CHAT_QUEUE_MAX_CONCURRENT")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            chat_queue_max_concurrent = Some(n);
+        }
+    if let Ok(v) = std::env::var("AGENT_CHAT_QUEUE_MAX_PENDING")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            chat_queue_max_pending = Some(n);
+        }
 
     if api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
@@ -573,6 +593,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let context_summary_transcript_max_chars = context_summary_transcript_max_chars
         .unwrap_or(120_000)
         .clamp(10_000, 2_000_000) as usize;
+    let chat_queue_max_concurrent = chat_queue_max_concurrent
+        .unwrap_or(2)
+        .clamp(1, 256) as usize;
+    let chat_queue_max_pending = chat_queue_max_pending
+        .unwrap_or(32)
+        .clamp(1, 8192) as usize;
 
     Ok(AgentConfig {
         api_base,
@@ -599,6 +625,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         context_summary_tail_messages,
         context_summary_max_tokens,
         context_summary_transcript_max_chars,
+        chat_queue_max_concurrent,
+        chat_queue_max_pending,
     })
 }
 

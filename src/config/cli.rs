@@ -34,6 +34,10 @@ pub struct Cli {
     #[arg(long, num_args = 0..=1, value_name = "PORT")]
     pub serve: Option<Option<u16>>,
 
+    /// Web 监听 IP（仅 `--serve` 时生效）。默认 127.0.0.1；需局域网/容器对外暴露时可传 0.0.0.0
+    #[arg(long, value_name = "ADDR")]
+    pub host: Option<String>,
+
     /// 单次提问：直接在命令行参数中给出问题
     #[arg(long, value_name = "QUESTION")]
     pub query: Option<String>,
@@ -71,11 +75,12 @@ pub struct Cli {
     pub tui: bool,
 }
 
-/// `parse_args` 的返回值：配置路径、单次提问、serve 端口、输出模式、工作区 CLI、各类布尔开关。
+/// `parse_args` 的返回值：配置路径、单次提问、serve 端口、Web 绑定地址、输出模式、工作区 CLI、各类布尔开关。
 pub type ParsedCliArgs = (
     Option<String>,
     Option<String>,
     Option<u16>,
+    String, // http_bind_host（`--serve` 时使用；由 `--host` 或 AGENT_HTTP_HOST 或默认 127.0.0.1）
     Option<String>,
     Option<String>,
     bool, // no_tools
@@ -114,10 +119,24 @@ pub fn parse_args() -> ParsedCliArgs {
         }
     });
 
+    let http_bind_host = cli
+        .host
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            std::env::var("AGENT_HTTP_HOST")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+
     (
         cli.config,
         single_shot,
         serve_port,
+        http_bind_host,
         cli.workspace,
         output_mode,
         cli.no_tools,

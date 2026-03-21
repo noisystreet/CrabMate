@@ -66,7 +66,7 @@ pub(super) enum ModelPhase {
 impl ModelPhase {
     pub(super) fn label(self) -> &'static str {
         match self {
-            ModelPhase::Idle => "完成",
+            ModelPhase::Idle => "就绪",
             ModelPhase::Thinking => "思考中",
             ModelPhase::SelectingTools => "选用工具",
             ModelPhase::Answering => "回答中",
