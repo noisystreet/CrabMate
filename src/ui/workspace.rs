@@ -325,14 +325,12 @@ pub async fn workspace_search_handler(
     if let Some(ih) = body.ignore_hidden {
         args["ignore_hidden"] = serde_json::json!(ih);
     }
-    let output = crate::tools::run_tool(
-        "search_in_files",
-        &args.to_string(),
-        state.cfg.command_max_output_len,
-        state.cfg.weather_timeout_secs,
+    let ctx = crate::tools::tool_context_for(
+        &state.cfg,
         &state.cfg.allowed_commands,
         &base_canonical,
     );
+    let output = crate::tools::run_tool("search_in_files", &args.to_string(), &ctx);
     Json(WorkspaceSearchResponse {
         output,
         error: None,

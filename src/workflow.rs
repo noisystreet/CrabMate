@@ -314,10 +314,18 @@ pub async fn run_workflow_execute_tool(
     let allowed_commands = cfg.allowed_commands.clone();
     let weather_timeout_secs = cfg.weather_timeout_secs;
     let command_timeout_secs = cfg.command_timeout_secs;
+    let web_search_timeout_secs = cfg.web_search_timeout_secs;
+    let web_search_provider = cfg.web_search_provider;
+    let web_search_api_key = cfg.web_search_api_key.clone();
+    let web_search_max_results = cfg.web_search_max_results;
 
     let tool_exec_ctx = WorkflowToolExecCtx {
         cfg_command_timeout_secs: command_timeout_secs,
         cfg_weather_timeout_secs: weather_timeout_secs,
+        cfg_web_search_timeout_secs: web_search_timeout_secs,
+        cfg_web_search_provider: web_search_provider,
+        cfg_web_search_api_key: web_search_api_key,
+        cfg_web_search_max_results: web_search_max_results,
         cfg_allowed_commands: allowed_commands,
         effective_working_dir: workdir,
         workspace_is_set,
@@ -389,6 +397,10 @@ fn topo_layers(nodes: &[WorkflowNodeSpec]) -> Result<Vec<Vec<String>>, String> {
 struct WorkflowToolExecCtx {
     cfg_command_timeout_secs: u64,
     cfg_weather_timeout_secs: u64,
+    cfg_web_search_timeout_secs: u64,
+    cfg_web_search_provider: crate::config::WebSearchProvider,
+    cfg_web_search_api_key: String,
+    cfg_web_search_max_results: u32,
     cfg_allowed_commands: Vec<String>,
     effective_working_dir: PathBuf,
     workspace_is_set: bool,
@@ -857,6 +869,7 @@ async fn run_node(
     let timeout_secs = node.timeout_secs.or(match node.tool_name.as_str() {
         "run_command" | "run_executable" => Some(tool_exec_ctx.cfg_command_timeout_secs),
         "get_weather" => Some(tool_exec_ctx.cfg_weather_timeout_secs),
+        "web_search" => Some(tool_exec_ctx.cfg_web_search_timeout_secs),
         _ => None,
     });
 
@@ -867,19 +880,26 @@ async fn run_node(
     let allowed_slice = effective_allowed.clone();
     let command_max_output_len = tool_exec_ctx.command_max_output_len;
     let weather_timeout_secs = tool_exec_ctx.cfg_weather_timeout_secs;
+    let ws_timeout = tool_exec_ctx.cfg_web_search_timeout_secs;
+    let ws_provider = tool_exec_ctx.cfg_web_search_provider;
+    let ws_max = tool_exec_ctx.cfg_web_search_max_results;
+    let ws_key = tool_exec_ctx.cfg_web_search_api_key.clone();
 
     let output_res = async move {
         let work_dir = run_command_working_dir;
         let allowed = allowed_slice;
         let handle = tokio::task::spawn_blocking(move || {
-            crate::tools::run_tool_result(
-                &tool_name,
-                &exec_args,
+            let ctx = crate::tools::ToolContext {
                 command_max_output_len,
                 weather_timeout_secs,
-                &allowed,
-                &work_dir,
-            )
+                allowed_commands: &allowed,
+                working_dir: &work_dir,
+                web_search_timeout_secs: ws_timeout,
+                web_search_provider: ws_provider,
+                web_search_api_key: ws_key.as_str(),
+                web_search_max_results: ws_max,
+            };
+            crate::tools::run_tool_result(&tool_name, &exec_args, &ctx)
         });
         handle.await.unwrap_or_else(|e| crate::tool_result::ToolResult {
             ok: false,

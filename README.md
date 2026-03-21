@@ -9,6 +9,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `get_current_time`：获取当前日期时间。
   - `calc`：使用 Linux 的 `bc -l` 执行数学表达式（四则、乘方 ^、sqrt/sin/cos/tan/ln/exp、pi/e 等）。
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
+  - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`head`、`tail`、`wc`、`cmake`、`gcc`、`g++`、`make` 等），带超时与输出截断。
   - `run_executable`：在工作区目录下运行可执行文件（路径、参数均做安全校验）。
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。
@@ -36,6 +37,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 - **默认仅本机监听**（`--serve`）：绑定 **`127.0.0.1`**，局域网其它设备默认无法直连。若需局域网访问，请显式使用 `--host 0.0.0.0` 或设置环境变量 `AGENT_HTTP_HOST=0.0.0.0`（未传 `--host` 时生效）；**无内置鉴权**，暴露后他人可滥用接口与模型配额。
 - **工作区**：Web 端可将工作区设为服务器本机任意路径（在进程权限范围内），请勿在不可信网络暴露本服务。
+- **联网搜索 Key**：`web_search_api_key` 与 DeepSeek 的 `API_KEY` 无关；若写入配置文件，请妥善保管文件权限，避免泄露第三方搜索配额。
 - **建议**：公网或不可信网络请配合反向代理、鉴权、TLS、防火墙等自行加固。
 
 ## Rust 开发工具示例
@@ -309,8 +311,9 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_FINAL_PLAN_REQUIREMENT`：终答是否必须含结构化 `agent_reply_plan`，取值 `never` / `workflow_reflection` / `always`（与 `[agent] final_plan_requirement` 一致，默认 `workflow_reflection`）  
    - `AGENT_PLAN_REWRITE_MAX_ATTEMPTS`：规划不合格时最多重写轮次（默认 `2`，与 `[agent] plan_rewrite_max_attempts` 一致；用尽后 SSE 带 `code=plan_rewrite_exhausted`）  
    - `AGENT_HTTP_HOST`：Web 监听 IP（如 `0.0.0.0`）；**未**传 `--host` 时生效，默认仍为 `127.0.0.1`  
-   - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）  
-   - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`  
+   - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）
+   - **联网搜索**（`web_search` 工具）：`AGENT_WEB_SEARCH_PROVIDER`（`brave` / `tavily`）、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`（1～20，默认 8）
+   - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
    ```bash
    export AGENT_MODEL=deepseek-reasoner
    cargo run

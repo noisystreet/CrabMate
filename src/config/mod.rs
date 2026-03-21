@@ -9,6 +9,29 @@ use std::path::Path;
 /// 编译时嵌入的默认配置（与项目根 default_config.toml 一致）
 const DEFAULT_CONFIG: &str = include_str!("../../default_config.toml");
 
+/// `web_search` 工具使用的第三方搜索 API 提供商
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WebSearchProvider {
+    /// [Brave Search API](https://brave.com/search/api/)
+    #[default]
+    Brave,
+    /// [Tavily Search API](https://tavily.com/)
+    Tavily,
+}
+
+impl WebSearchProvider {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "brave" => Ok(Self::Brave),
+            "tavily" => Ok(Self::Tavily),
+            _ => Err(format!(
+                "未知的 web_search_provider: {:?}（支持 brave、tavily）",
+                s.trim()
+            )),
+        }
+    }
+}
+
 /// Agent 运行配置
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -38,6 +61,14 @@ pub struct AgentConfig {
     pub api_retry_delay_secs: u64,
     /// get_weather 工具请求超时（秒）
     pub weather_timeout_secs: u64,
+    /// web_search 工具使用的搜索 API 提供商
+    pub web_search_provider: WebSearchProvider,
+    /// web_search 的 API Key（空字符串表示未启用联网搜索）
+    pub web_search_api_key: String,
+    /// web_search HTTP 超时（秒）
+    pub web_search_timeout_secs: u64,
+    /// web_search 默认返回条数上限（工具参数 max_results 可覆盖，整体限制在 1～20）
+    pub web_search_max_results: u32,
     /// workflow 反思：模型未在 `workflow.reflection.max_rounds` 中指定时的默认上限（传给 `WorkflowReflectionController` / `PerCoordinator`）
     pub reflection_default_max_rounds: usize,
     /// 何时强制终答含 `agent_reply_plan` v1（见 `per_coord::FinalPlanRequirementMode`）
@@ -86,6 +117,10 @@ struct AgentSection {
     api_max_retries: Option<u64>,
     api_retry_delay_secs: Option<u64>,
     weather_timeout_secs: Option<u64>,
+    web_search_provider: Option<String>,
+    web_search_api_key: Option<String>,
+    web_search_timeout_secs: Option<u64>,
+    web_search_max_results: Option<u64>,
     reflection_default_max_rounds: Option<u64>,
     /// `never` / `workflow_reflection` / `always`
     final_plan_requirement: Option<String>,
@@ -130,6 +165,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut api_max_retries: Option<u64> = None;
     let mut api_retry_delay_secs: Option<u64> = None;
     let mut weather_timeout_secs: Option<u64> = None;
+    let mut web_search_provider_str: Option<String> = None;
+    let mut web_search_api_key: Option<String> = None;
+    let mut web_search_timeout_secs: Option<u64> = None;
+    let mut web_search_max_results: Option<u64> = None;
     let mut reflection_default_max_rounds: Option<u64> = None;
     let mut final_plan_requirement_str: Option<String> = None;
     let mut plan_rewrite_max_attempts: Option<u64> = None;
@@ -178,6 +217,21 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         api_max_retries = agent.api_max_retries.or(api_max_retries);
         api_retry_delay_secs = agent.api_retry_delay_secs.or(api_retry_delay_secs);
         weather_timeout_secs = agent.weather_timeout_secs.or(weather_timeout_secs);
+        if let Some(ref s) = agent.web_search_provider {
+            let s = s.trim().to_string();
+            if !s.is_empty() {
+                web_search_provider_str = Some(s);
+            }
+        }
+        if let Some(ref k) = agent.web_search_api_key {
+            web_search_api_key = Some(k.clone());
+        }
+        web_search_timeout_secs = agent
+            .web_search_timeout_secs
+            .or(web_search_timeout_secs);
+        web_search_max_results = agent
+            .web_search_max_results
+            .or(web_search_max_results);
         reflection_default_max_rounds = agent
             .reflection_default_max_rounds
             .or(reflection_default_max_rounds);
@@ -301,6 +355,21 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 if let Some(v) = agent.weather_timeout_secs {
                     weather_timeout_secs = Some(v);
                 }
+                if let Some(ref s) = agent.web_search_provider {
+                    let s = s.trim().to_string();
+                    if !s.is_empty() {
+                        web_search_provider_str = Some(s);
+                    }
+                }
+                if let Some(ref k) = agent.web_search_api_key {
+                    web_search_api_key = Some(k.clone());
+                }
+                if let Some(v) = agent.web_search_timeout_secs {
+                    web_search_timeout_secs = Some(v);
+                }
+                if let Some(v) = agent.web_search_max_results {
+                    web_search_max_results = Some(v);
+                }
                 if let Some(v) = agent.reflection_default_max_rounds {
                     reflection_default_max_rounds = Some(v);
                 }
@@ -421,6 +490,23 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     if let Ok(v) = std::env::var("AGENT_WEATHER_TIMEOUT_SECS")
         && let Ok(n) = v.trim().parse::<u64>() {
             weather_timeout_secs = Some(n);
+        }
+    if let Ok(s) = std::env::var("AGENT_WEB_SEARCH_PROVIDER") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            web_search_provider_str = Some(s);
+        }
+    }
+    if let Ok(k) = std::env::var("AGENT_WEB_SEARCH_API_KEY") {
+        web_search_api_key = Some(k);
+    }
+    if let Ok(v) = std::env::var("AGENT_WEB_SEARCH_TIMEOUT_SECS")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            web_search_timeout_secs = Some(n);
+        }
+    if let Ok(v) = std::env::var("AGENT_WEB_SEARCH_MAX_RESULTS")
+        && let Ok(n) = v.trim().parse::<u64>() {
+            web_search_max_results = Some(n);
         }
     if let Ok(v) = std::env::var("AGENT_REFLECTION_DEFAULT_MAX_ROUNDS")
         && let Ok(n) = v.trim().parse::<u64>() {
@@ -600,6 +686,14 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         .unwrap_or(32)
         .clamp(1, 8192) as usize;
 
+    let web_search_provider = match web_search_provider_str.as_deref() {
+        Some(s) => WebSearchProvider::parse(s)?,
+        None => WebSearchProvider::default(),
+    };
+    let web_search_api_key = web_search_api_key.unwrap_or_default();
+    let web_search_timeout_secs = web_search_timeout_secs.unwrap_or(30).max(1);
+    let web_search_max_results = web_search_max_results.unwrap_or(8).clamp(1, 20) as u32;
+
     Ok(AgentConfig {
         api_base,
         model,
@@ -614,6 +708,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         api_max_retries,
         api_retry_delay_secs,
         weather_timeout_secs,
+        web_search_provider,
+        web_search_api_key,
+        web_search_timeout_secs,
+        web_search_max_results,
         reflection_default_max_rounds,
         final_plan_requirement,
         plan_rewrite_max_attempts,

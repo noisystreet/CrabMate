@@ -23,7 +23,9 @@ mod schedule;
 mod security_tools;
 mod time;
 mod weather;
+mod web_search;
 
+use crate::config::AgentConfig;
 use crate::tool_result::ToolResult;
 use crate::types::{FunctionDef, Tool};
 
@@ -43,6 +45,28 @@ pub struct ToolContext<'a> {
     pub weather_timeout_secs: u64,
     pub allowed_commands: &'a [String],
     pub working_dir: &'a std::path::Path,
+    pub web_search_timeout_secs: u64,
+    pub web_search_provider: crate::config::WebSearchProvider,
+    pub web_search_api_key: &'a str,
+    pub web_search_max_results: u32,
+}
+
+/// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
+pub fn tool_context_for<'a>(
+    cfg: &'a AgentConfig,
+    allowed_commands: &'a [String],
+    working_dir: &'a std::path::Path,
+) -> ToolContext<'a> {
+    ToolContext {
+        command_max_output_len: cfg.command_max_output_len,
+        weather_timeout_secs: cfg.weather_timeout_secs,
+        allowed_commands,
+        working_dir,
+        web_search_timeout_secs: cfg.web_search_timeout_secs,
+        web_search_provider: cfg.web_search_provider,
+        web_search_api_key: cfg.web_search_api_key.as_str(),
+        web_search_max_results: cfg.web_search_max_results,
+    }
 }
 
 type ToolRunner = fn(args_json: &str, ctx: &ToolContext<'_>) -> String;
@@ -107,6 +131,25 @@ fn params_weather() -> serde_json::Value {
             }
         },
         "required": []
+    })
+}
+
+fn params_web_search() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "搜索关键词或问句（联网检索网页摘要）"
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "返回条数上限，1～20，默认取配置 web_search_max_results",
+                "minimum": 1,
+                "maximum": 20
+            }
+        },
+        "required": ["query"]
     })
 }
 
@@ -1159,6 +1202,10 @@ fn runner_get_weather(args: &str, ctx: &ToolContext<'_>) -> String {
     weather::run(args, ctx.weather_timeout_secs)
 }
 
+fn runner_web_search(args: &str, ctx: &ToolContext<'_>) -> String {
+    web_search::run(args, ctx)
+}
+
 fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
     command::run(
         args,
@@ -1462,6 +1509,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Utility,
             parameters: params_weather,
             runner: runner_get_weather,
+        },
+        ToolSpec {
+            name: "web_search",
+            description: "联网搜索网页：根据关键词返回若干条结果的标题、URL 与摘要。需在配置中设置 web_search_api_key，并选择 web_search_provider 为 brave（Brave Search API）或 tavily（Tavily）。适合查新闻、文档、事实类问题；代码仓库内查找请优先用 search_in_files。",
+            category: ToolCategory::Search,
+            parameters: params_web_search,
+            runner: runner_web_search,
         },
         ToolSpec {
             name: "run_command",
@@ -2007,44 +2061,17 @@ pub fn build_tools_filtered(allowed: Option<&[ToolCategory]>) -> Vec<Tool> {
 }
 
 /// 执行本地工具并返回结果字符串。
-/// `command_max_output_len`、`allowed_commands`、`run_command_working_dir` 仅用于 run_command；`weather_timeout_secs` 仅用于 get_weather。
-pub fn run_tool(
-    name: &str,
-    args_json: &str,
-    command_max_output_len: usize,
-    weather_timeout_secs: u64,
-    allowed_commands: &[String],
-    run_command_working_dir: &std::path::Path,
-) -> String {
-    let ctx = ToolContext {
-        command_max_output_len,
-        weather_timeout_secs,
-        allowed_commands,
-        working_dir: run_command_working_dir,
-    };
+/// `ToolContext` 聚合 `run_command`、`get_weather`、`web_search` 等工具所需的配置项。
+pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     match tool_specs().iter().find(|s| s.name == name) {
-        Some(spec) => (spec.runner)(args_json, &ctx),
+        Some(spec) => (spec.runner)(args_json, ctx),
         None => format!("未知工具：{}", name),
     }
 }
 
 /// 执行本地工具并返回结构化结果（兼容既有字符串输出）。
-pub fn run_tool_result(
-    name: &str,
-    args_json: &str,
-    command_max_output_len: usize,
-    weather_timeout_secs: u64,
-    allowed_commands: &[String],
-    run_command_working_dir: &std::path::Path,
-) -> ToolResult {
-    let output = run_tool(
-        name,
-        args_json,
-        command_max_output_len,
-        weather_timeout_secs,
-        allowed_commands,
-        run_command_working_dir,
-    );
+pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> ToolResult {
+    let output = run_tool(name, args_json, ctx);
     ToolResult::from_legacy_output(name, output)
 }
 
@@ -2216,6 +2243,10 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
                 Some(format!("读取目录：{}", path))
             }
         }
+        "web_search" => {
+            let q = v.get("query")?.as_str()?.trim();
+            Some(format!("联网搜索：{}", q))
+        }
         "glob_files" => {
             let pat = v.get("pattern")?.as_str()?.trim();
             let root = v.get("path").and_then(|x| x.as_str()).unwrap_or(".").trim();
@@ -2303,6 +2334,18 @@ mod tests {
 
     const TEST_COMMAND_MAX_OUTPUT_LEN: usize = 8192;
     const TEST_WEATHER_TIMEOUT_SECS: u64 = 15;
+    fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
+        ToolContext {
+            command_max_output_len: TEST_COMMAND_MAX_OUTPUT_LEN,
+            weather_timeout_secs: TEST_WEATHER_TIMEOUT_SECS,
+            allowed_commands,
+            working_dir: test_work_dir(),
+            web_search_timeout_secs: 15,
+            web_search_provider: crate::config::WebSearchProvider::Brave,
+            web_search_api_key: "",
+            web_search_max_results: 5,
+        }
+    }
     fn test_allowed_commands() -> Vec<String> {
         vec![
             "ls".into(),
@@ -2331,93 +2374,74 @@ mod tests {
 
     #[test]
     fn test_run_tool_unknown() {
-        let out = run_tool(
-            "unknown_tool",
-            "{}",
-            TEST_COMMAND_MAX_OUTPUT_LEN,
-            TEST_WEATHER_TIMEOUT_SECS,
-            &test_allowed_commands(),
-            test_work_dir(),
-        );
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool("unknown_tool", "{}", &ctx);
         assert_eq!(out, "未知工具：unknown_tool");
     }
 
     #[test]
     fn test_run_tool_calc_missing_expression() {
-        let out = run_tool(
-            "calc",
-            "{}",
-            TEST_COMMAND_MAX_OUTPUT_LEN,
-            TEST_WEATHER_TIMEOUT_SECS,
-            &test_allowed_commands(),
-            test_work_dir(),
-        );
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool("calc", "{}", &ctx);
         assert_eq!(out, "错误：缺少 expression 参数");
     }
 
     #[test]
     fn test_run_tool_calc_expression() {
-        let out = run_tool(
-            "calc",
-            r#"{"expression":"1+1"}"#,
-            TEST_COMMAND_MAX_OUTPUT_LEN,
-            TEST_WEATHER_TIMEOUT_SECS,
-            &test_allowed_commands(),
-            test_work_dir(),
-        );
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool("calc", r#"{"expression":"1+1"}"#, &ctx);
         assert!(out.contains("2"), "calc 1+1 应得到 2，得到: {}", out);
     }
 
     #[test]
     fn test_run_tool_get_current_time() {
-        let out = run_tool(
-            "get_current_time",
-            "{}",
-            TEST_COMMAND_MAX_OUTPUT_LEN,
-            TEST_WEATHER_TIMEOUT_SECS,
-            &test_allowed_commands(),
-            test_work_dir(),
-        );
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool("get_current_time", "{}", &ctx);
         assert!(out.contains("当前时间"), "时间工具应包含「当前时间」，得到: {}", out);
     }
 
     #[test]
     fn test_run_tool_run_command_pwd() {
-        let out = run_tool(
-            "run_command",
-            r#"{"command":"pwd"}"#,
-            TEST_COMMAND_MAX_OUTPUT_LEN,
-            TEST_WEATHER_TIMEOUT_SECS,
-            &test_allowed_commands(),
-            test_work_dir(),
-        );
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool("run_command", r#"{"command":"pwd"}"#, &ctx);
         assert!(out.contains("退出码：0"), "pwd 应成功，得到: {}", out);
     }
 
     #[test]
     fn test_run_tool_run_command_disallowed() {
-        let out = run_tool(
-            "run_command",
-            r#"{"command":"rm"}"#,
-            TEST_COMMAND_MAX_OUTPUT_LEN,
-            TEST_WEATHER_TIMEOUT_SECS,
-            &test_allowed_commands(),
-            test_work_dir(),
-        );
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool("run_command", r#"{"command":"rm"}"#, &ctx);
         assert!(out.contains("不允许的命令"), "应拒绝 rm，得到: {}", out);
     }
 
     #[test]
     fn test_run_tool_get_weather_missing_param() {
-        let out = run_tool(
-            "get_weather",
-            "{}",
-            TEST_COMMAND_MAX_OUTPUT_LEN,
-            TEST_WEATHER_TIMEOUT_SECS,
-            &test_allowed_commands(),
-            test_work_dir(),
-        );
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool("get_weather", "{}", &ctx);
         assert!(out.contains("city") || out.contains("location"), "缺少参数应提示，得到: {}", out);
+    }
+
+    #[test]
+    fn test_run_tool_web_search_no_api_key() {
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool(
+            "web_search",
+            r#"{"query":"Rust programming"}"#,
+            &ctx,
+        );
+        assert!(
+            out.contains("未配置") && out.contains("web_search"),
+            "无 Key 时应提示配置，得到: {}",
+            out
+        );
     }
 
     #[test]
@@ -2427,6 +2451,7 @@ mod tests {
         assert!(names.contains(&"get_current_time"));
         assert!(names.contains(&"calc"));
         assert!(names.contains(&"get_weather"));
+        assert!(names.contains(&"web_search"));
         assert!(names.contains(&"run_command"));
         assert!(names.contains(&"cargo_check"));
         assert!(names.contains(&"cargo_test"));
