@@ -19,6 +19,7 @@ pub mod http_fetch;
 mod lint;
 mod markdown_links;
 mod patch;
+mod precommit_tools;
 mod python_tools;
 mod quality_tools;
 mod release_docs;
@@ -497,7 +498,6 @@ fn params_mypy_check() -> serde_json::Value {
     })
 }
 
-#[allow(dead_code)]
 fn params_python_install_editable() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -509,6 +509,49 @@ fn params_python_install_editable() -> serde_json::Value {
             }
         },
         "required": ["backend"]
+    })
+}
+
+fn params_uv_sync() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "frozen": { "type": "boolean", "description": "可选：是否传 --frozen（与 lock 严格一致），默认 false" },
+            "no_dev": { "type": "boolean", "description": "可选：是否传 --no-dev，默认 false" },
+            "all_packages": { "type": "boolean", "description": "可选：是否传 --all-packages（workspace），默认 false" }
+        },
+        "required": []
+    })
+}
+
+fn params_uv_run() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "传给 `uv run` 的参数列表（必填、非空），如 [\"pytest\",\"-q\"]、[\"ruff\",\"check\",\".\"]。禁止空白与 shell 元字符，逐项不经 shell 解析"
+            }
+        },
+        "required": ["args"]
+    })
+}
+
+fn params_pre_commit_run() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "hook": { "type": "string", "description": "可选：仅运行指定 hook id（字母数字与 ._-）" },
+            "all_files": { "type": "boolean", "description": "可选：是否 --all-files（与 files 同时存在时以 files 为准），默认 false" },
+            "files": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：--files 相对路径列表；非空时不加 --all-files"
+            },
+            "verbose": { "type": "boolean", "description": "可选：是否 --verbose，默认 false" }
+        },
+        "required": []
     })
 }
 
@@ -1635,6 +1678,18 @@ fn runner_python_install_editable(args: &str, ctx: &ToolContext<'_>) -> String {
     python_tools::python_install_editable(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
+fn runner_uv_sync(args: &str, ctx: &ToolContext<'_>) -> String {
+    python_tools::uv_sync(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_uv_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    python_tools::uv_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_pre_commit_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    precommit_tools::pre_commit_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
 fn runner_frontend_lint(args: &str, ctx: &ToolContext<'_>) -> String {
     frontend_tools::frontend_lint(args, ctx.working_dir, ctx.command_max_output_len)
 }
@@ -2078,6 +2133,27 @@ fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_python_install_editable,
         },
         ToolSpec {
+            name: "uv_sync",
+            description: "在工作区根运行 `uv sync`（须存在 pyproject.toml）。可选 frozen（--frozen）、no_dev（--no-dev）、all_packages（--all-packages）。需本机已安装 uv。",
+            category: ToolCategory::Development,
+            parameters: params_uv_sync,
+            runner: runner_uv_sync,
+        },
+        ToolSpec {
+            name: "uv_run",
+            description: "在工作区根运行 `uv run`：`args` 为非空字符串数组（如 [\"pytest\",\"-q\"]），逐项作为子进程参数、不经 shell。须存在 pyproject.toml。",
+            category: ToolCategory::Development,
+            parameters: params_uv_run,
+            runner: runner_uv_run,
+        },
+        ToolSpec {
+            name: "pre_commit_run",
+            description: "在工作区根运行 `pre-commit run`。须存在 .pre-commit-config.yaml（或 .yml）。可选 hook、all_files、files（--files 相对路径）、verbose。默认检查暂存文件。",
+            category: ToolCategory::Development,
+            parameters: params_pre_commit_run,
+            runner: runner_pre_commit_run,
+        },
+        ToolSpec {
             name: "frontend_lint",
             description: "运行前端 npm lint（结构化参数）。支持指定前端子目录和 script 名称。",
             category: ToolCategory::Development,
@@ -2114,7 +2190,7 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "ci_pipeline_local",
-            description: "本地一键执行 CI 关键检查（fmt/clippy/test/frontend_lint）。",
+            description: "本地一键执行 CI 关键检查（cargo fmt/clippy/test、frontend lint、可选 ruff/pytest/mypy）。",
             category: ToolCategory::Development,
             parameters: params_ci_pipeline_local,
             runner: runner_ci_pipeline_local,
@@ -2689,6 +2765,33 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             let b = v.get("backend").and_then(|x| x.as_str()).unwrap_or("?");
             Some(format!("Python 可编辑安装（{}）", b))
         }
+        "uv_sync" => Some("运行 uv sync".to_string()),
+        "uv_run" => {
+            let args = v
+                .get("args")
+                .and_then(|a| a.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str())
+                        .take(3)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            if args.is_empty() {
+                Some("uv run".to_string())
+            } else {
+                Some(format!("uv run {}", args))
+            }
+        }
+        "pre_commit_run" => {
+            let hook = v.get("hook").and_then(|x| x.as_str()).unwrap_or("");
+            if hook.is_empty() {
+                Some("运行 pre-commit".to_string())
+            } else {
+                Some(format!("pre-commit：{}", hook))
+            }
+        }
         "cargo_audit" => Some("运行 cargo audit".to_string()),
         "cargo_deny" => Some("运行 cargo deny".to_string()),
         "ci_pipeline_local" => Some("运行本地 CI 流水线".to_string()),
@@ -3092,6 +3195,9 @@ mod tests {
         assert!(names.contains(&"pytest_run"));
         assert!(names.contains(&"mypy_check"));
         assert!(names.contains(&"python_install_editable"));
+        assert!(names.contains(&"uv_sync"));
+        assert!(names.contains(&"uv_run"));
+        assert!(names.contains(&"pre_commit_run"));
         assert!(names.contains(&"frontend_lint"));
         assert!(names.contains(&"frontend_build"));
         assert!(names.contains(&"frontend_test"));

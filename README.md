@@ -22,6 +22,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `license_notice`：运行 **cargo metadata**，生成 **crate → license** 的 Markdown 表（未声明项有占位说明）；**非法律意见**，发版前需人工核对。
   - `hash_file`：对工作区内文件做只读 **SHA-256 / SHA-512 / BLAKE3**（流式读取）；可选仅哈希前 `max_bytes` 字节，便于大文件或抽样校验。
   - `diagnostic_summary`：只读排障摘要——Rust 工具链（`rustc`/`cargo`/`rustup`/`bc`）、工作区 `target/` 与 `Cargo.toml` / `frontend` 常见路径、关键环境变量**是否设置**（**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。
+  - **Python / uv / pre-commit**（均在**工作区根**执行，需本机已安装对应 CLI；未安装时工具返回说明性错误）：`ruff_check`、`pytest_run`（`python3 -m pytest`）、`mypy_check`、`python_install_editable`（`uv` 或 `pip` 可编辑安装）、`uv_sync`、`uv_run`（`args` 为字符串数组，不经 shell）、`pre_commit_run`（需 `.pre-commit-config.yaml`）。**`.py` 格式化**：`format_file` / `format_check_file` 使用 **ruff format**。**标签裁剪**：集成方可通过库 API `build_tools_with_options` 与 `dev_tag` 子域标签（如 `python`、`quality`）限制发给模型的工具列表，详见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
@@ -64,9 +65,9 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   ```json
   {"deny_warnings":true}
   ```
-- `ci_pipeline_local`（本地 CI 关键检查）：
+- `ci_pipeline_local`（本地 CI 关键检查；可选 Python：`run_ruff_check` / `run_pytest` / `run_mypy`）：
   ```json
-  {"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"fail_fast":true,"summary_only":false}
+  {"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"run_ruff_check":true,"run_pytest":false,"run_mypy":false,"fail_fast":true,"summary_only":false}
   ```
 - `release_ready_check`（发布前一键检查）：
   ```json
@@ -198,6 +199,31 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`diagnostic_summary`。
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
+
+**Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`pre_commit_run`；聚合类还有 `run_lints`（可选 ruff）、`quality_workspace`（可选 ruff/pytest/mypy）。
+
+### Python 与 pre-commit 工具示例
+
+- `ruff_check`：
+  ```json
+  {}
+  ```
+- `pytest_run`：
+  ```json
+  {"test_path":"tests","quiet":true}
+  ```
+- `uv_sync`：
+  ```json
+  {"frozen":false,"no_dev":false}
+  ```
+- `uv_run`（`args` 逐项为子进程参数，不经 shell）：
+  ```json
+  {"args":["pytest","-q"]}
+  ```
+- `pre_commit_run`（默认检查**暂存**文件；可与 `all_files` / `files` 组合，见工具说明）：
+  ```json
+  {"all_files":true}
+  ```
 
 ## Git 工具示例
 

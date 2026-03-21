@@ -1,6 +1,6 @@
-//! 聊天区搜索与按消息跳转（逻辑行与 `draw::build_chat_scroll_line_strings` 一致）。
+//! 聊天区搜索与按消息跳转（逻辑行与 `draw::build_chat_scroll_lines` 的纯文本列一致）。
 
-use super::draw::{build_chat_scroll_line_strings, chat_inner_width_from_term_cols};
+use super::draw::{build_chat_scroll_lines, chat_inner_width_from_term_cols};
 use super::state::TuiState;
 
 pub(super) const PROMPT_TITLE_SEARCH: &str = "搜索聊天";
@@ -24,9 +24,9 @@ pub(super) fn apply_chat_search(state: &mut TuiState, query: &str, term_cols: u1
         return;
     }
     let w = chat_inner_width_from_term_cols(term_cols);
-    let (lines, _) = build_chat_scroll_line_strings(state, w);
+    let (_, plain_lines, _) = build_chat_scroll_lines(state, w);
     let low = q.to_lowercase();
-    let matches: Vec<usize> = lines
+    let matches: Vec<usize> = plain_lines
         .iter()
         .enumerate()
         .filter(|(_, line)| line.to_lowercase().contains(&low))
@@ -85,7 +85,7 @@ pub(super) fn apply_jump_to_message(state: &mut TuiState, input: &str, term_cols
         }
     };
     let w = chat_inner_width_from_term_cols(term_cols);
-    let (_, starts) = build_chat_scroll_line_strings(state, w);
+    let (_, _, starts) = build_chat_scroll_lines(state, w);
     if n > starts.len() {
         state.status_line = format!("仅有 {} 条可见消息", starts.len());
         return false;

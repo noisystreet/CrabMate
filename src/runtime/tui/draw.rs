@@ -379,20 +379,38 @@ pub(super) fn chat_inner_width_from_term_cols(term_cols: u16) -> usize {
         .saturating_sub(2) as usize
 }
 
-fn ratatui_line_to_plain(line: &Line<'_>) -> String {
+/// 拼接一行内全部 span 的文本（与搜索、折行估算一致）。
+fn line_to_plain(line: &Line<'_>) -> String {
     line.spans.iter().fold(String::new(), |mut acc, s| {
         acc.push_str(s.content.as_ref());
         acc
     })
 }
 
-/// 与 `draw_chat` 相同的逻辑行（用于搜索/跳转）；第二项为每条非 system 消息对应的首行索引。
-pub(super) fn build_chat_scroll_line_strings(
+/// 将 `tui_markdown` 产出的行变为可存入 `Vec` 的 `Line<'static>`（保留样式）。
+fn line_into_static(line: Line<'_>) -> Line<'static> {
+    let style = line.style;
+    let alignment = line.alignment;
+    let spans: Vec<Span<'static>> = line
+        .spans
+        .into_iter()
+        .map(|s| Span::styled(s.content.into_owned(), s.style))
+        .collect();
+    let mut out = Line::from(spans);
+    out.style = style;
+    out.alignment = alignment;
+    out
+}
+
+/// 与 `draw_chat` 相同的逻辑行：第一项为带样式绘制行；第二项为同序纯文本（供 Ctrl+F 匹配）；第三项为每条非 system 消息首行索引。
+pub(super) fn build_chat_scroll_lines(
     state: &TuiState,
     chat_inner_width: usize,
-) -> (Vec<String>, Vec<usize>) {
-    let mut lines: Vec<String> = Vec::new();
+) -> (Vec<Line<'static>>, Vec<String>, Vec<usize>) {
+    let mut draw_lines: Vec<Line<'static>> = Vec::new();
+    let mut plain_lines: Vec<String> = Vec::new();
     let mut message_start_lines: Vec<usize> = Vec::new();
+    let header_style = Style::default().add_modifier(Modifier::BOLD);
     let chat_msgs: Vec<&Message> = state
         .messages
         .iter()
@@ -420,10 +438,10 @@ pub(super) fn build_chat_scroll_line_strings(
         })
         .collect();
 
-    for (idx, m) in chat_msgs.iter().enumerate() {
-        message_start_lines.push(lines.len());
+    for (m, rendered_owned) in chat_msgs.iter().zip(rendered_list.iter()) {
+        message_start_lines.push(draw_lines.len());
         let role = if m.role == "user" { "我" } else { "模型" };
-        let rendered = rendered_list[idx].as_str();
+        let rendered = rendered_owned.as_str();
         if m.role == "user" {
             let role_text = format!("{}:", role);
             let role_padded = if role_text.width() >= chat_inner_width {
@@ -435,9 +453,12 @@ pub(super) fn build_chat_scroll_line_strings(
                     role_text
                 )
             };
-            lines.push(role_padded);
+            draw_lines.push(Line::from(Span::styled(role_padded.clone(), header_style)));
+            plain_lines.push(role_padded);
         } else if m.role != "assistant" {
-            lines.push(format!("{}:", role));
+            let h = format!("{}:", role);
+            draw_lines.push(Line::from(Span::styled(h.clone(), header_style)));
+            plain_lines.push(h);
         }
         if m.role == "assistant" {
             let theme = code_themes()[state.code_theme_idx];
@@ -463,8 +484,10 @@ pub(super) fn build_chat_scroll_line_strings(
                     markdown_to_text(rendered, &options)
                 }
             };
-            for tl in &text.lines {
-                lines.push(ratatui_line_to_plain(tl));
+            for tl in text.lines {
+                let owned = line_into_static(tl);
+                plain_lines.push(line_to_plain(&owned));
+                draw_lines.push(owned);
             }
         } else {
             for l in rendered.lines() {
@@ -481,17 +504,14 @@ pub(super) fn build_chat_scroll_line_strings(
                 } else {
                     l.to_string()
                 };
-                lines.push(line_str);
+                plain_lines.push(line_str.clone());
+                draw_lines.push(Line::raw(line_str));
             }
         }
-        lines.push(String::new());
+        draw_lines.push(Line::raw(""));
+        plain_lines.push(String::new());
     }
-    (lines, message_start_lines)
-}
-
-fn is_chat_role_header_line(s: &str) -> bool {
-    let t = s.trim();
-    t == "我:" || t == "模型:"
+    (draw_lines, plain_lines, message_start_lines)
 }
 
 fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
@@ -507,22 +527,7 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         .split(area);
 
     let chat_inner_width = vchunks[0].width.saturating_sub(2) as usize;
-    let (line_strings, _) = build_chat_scroll_line_strings(state, chat_inner_width);
-    let mut lines: Vec<Line<'_>> = line_strings
-        .into_iter()
-        .map(|s| {
-            if s.is_empty() {
-                Line::raw("")
-            } else if is_chat_role_header_line(&s) {
-                Line::from(Span::styled(
-                    s,
-                    Style::default().add_modifier(Modifier::BOLD),
-                ))
-            } else {
-                Line::raw(s)
-            }
-        })
-        .collect();
+    let (mut lines, _, _) = build_chat_scroll_lines(state, chat_inner_width);
     let chat_height = vchunks[0].height.saturating_sub(2) as usize;
     let total_lines = lines.len();
     if chat_height > 0 && !lines.is_empty() {

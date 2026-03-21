@@ -1,9 +1,11 @@
-//! Python 生态工具：ruff、pytest、mypy、可编辑安装（uv / pip）。
+//! Python 生态工具：ruff、pytest、mypy、uv sync/run、可编辑安装（uv / pip）。
 
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 const MAX_OUTPUT_LINES: usize = 800;
+const MAX_UV_RUN_ARGS: usize = 48;
+const MAX_UV_RUN_ARG_LEN: usize = 512;
 
 /// 工作区根下是否存在常见 Python 项目标记。
 pub fn workspace_has_python_project(root: &Path) -> bool {
@@ -141,8 +143,97 @@ pub fn mypy_check(args_json: &str, workspace_root: &Path, max_output_len: usize)
     run_and_format(cmd, max_output_len, "mypy")
 }
 
+/// 在工作区根执行 `uv sync`（须存在 `pyproject.toml`）。
+pub fn uv_sync(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    if !workspace_root.join("pyproject.toml").is_file() {
+        return "uv sync: 跳过（工作区根未找到 pyproject.toml）".to_string();
+    }
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    let base = match workspace_root.canonicalize() {
+        Ok(p) => p,
+        Err(e) => return format!("工作区根目录无法解析: {}", e),
+    };
+
+    let mut cmd = Command::new("uv");
+    cmd.arg("sync").current_dir(&base);
+    if v.get("frozen").and_then(|x| x.as_bool()).unwrap_or(false) {
+        cmd.arg("--frozen");
+    }
+    if v.get("no_dev").and_then(|x| x.as_bool()).unwrap_or(false) {
+        cmd.arg("--no-dev");
+    }
+    if v.get("all_packages")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false)
+    {
+        cmd.arg("--all-packages");
+    }
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    run_and_format(cmd, max_output_len, "uv sync")
+}
+
+/// 在工作区根执行 `uv run <args...>`：`args` 为**非空**字符串数组，逐项传给子进程（不经 shell）。
+/// 每项须通过保守字符校验，禁止空白与 shell 元字符。
+pub fn uv_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    if !workspace_root.join("pyproject.toml").is_file() {
+        return "uv run: 跳过（工作区根未找到 pyproject.toml）".to_string();
+    }
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    let Some(arr) = v.get("args").and_then(|x| x.as_array()) else {
+        return "错误：缺少 args 数组（至少一项，如 [\"pytest\",\"-q\"]）".to_string();
+    };
+    if arr.is_empty() || arr.len() > MAX_UV_RUN_ARGS {
+        return format!("错误：args 须非空且最多 {} 项", MAX_UV_RUN_ARGS);
+    }
+    let mut argv: Vec<String> = Vec::new();
+    for x in arr {
+        let s = match x.as_str() {
+            Some(t) => t.trim(),
+            None => return "错误：args 须全部为字符串".to_string(),
+        };
+        if !is_safe_uv_run_arg(s) {
+            return format!(
+                "错误：非法参数项（禁止空白与 shell 元字符，单段最长 {} 字符）：{:?}",
+                MAX_UV_RUN_ARG_LEN, s
+            );
+        }
+        argv.push(s.to_string());
+    }
+
+    let base = match workspace_root.canonicalize() {
+        Ok(p) => p,
+        Err(e) => return format!("工作区根目录无法解析: {}", e),
+    };
+
+    let mut cmd = Command::new("uv");
+    cmd.arg("run").current_dir(&base);
+    for a in &argv {
+        cmd.arg(a);
+    }
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let title = format!(
+        "uv run {}",
+        argv.iter().take(4).cloned().collect::<Vec<_>>().join(" ")
+    );
+    let title = if argv.len() > 4 {
+        format!("{} …(+{} 项)", title, argv.len() - 4)
+    } else {
+        title
+    };
+    run_and_format(cmd, max_output_len, &title)
+}
+
 /// 在工作区根执行可编辑安装：`uv pip install -e .` 或 `python3 -m pip install -e .`。
-#[allow(dead_code)] // 待 tool 注册后由 `run_tool` 调用
 pub fn python_install_editable(
     args_json: &str,
     workspace_root: &Path,
@@ -191,6 +282,18 @@ pub fn python_install_editable(
 
 fn is_safe_rel_path(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('/') && !s.contains("..")
+}
+
+fn is_safe_uv_run_arg(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= MAX_UV_RUN_ARG_LEN
+        && !s.chars().any(|c| {
+            c.is_whitespace()
+                || matches!(
+                    c,
+                    ';' | '|' | '&' | '`' | '$' | '<' | '>' | '(' | ')' | '\'' | '"' | '\\' | '*'
+                )
+        })
 }
 
 /// 用于 pytest `-k` / `-m` 的保守校验（避免注入）。
@@ -351,5 +454,11 @@ mod tests {
     fn safe_expr_rejects_shellish() {
         assert!(!is_safe_py_expr("foo; rm -rf"));
         assert!(is_safe_py_expr("test_foo and not slow"));
+    }
+
+    #[test]
+    fn uv_run_arg_accepts_pytest_node_id() {
+        assert!(is_safe_uv_run_arg("tests/test_x.py::test_foo[case1]"));
+        assert!(!is_safe_uv_run_arg("pytest;rm"));
     }
 }
