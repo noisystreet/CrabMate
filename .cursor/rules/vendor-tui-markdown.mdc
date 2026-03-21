@@ -1,0 +1,12 @@
+---
+description: 修改 vendor/tui-markdown 时的边界与主仓联动
+globs: vendor/tui-markdown/**/*
+alwaysApply: false
+---
+
+# vendored `tui-markdown`（`vendor/tui-markdown/`）
+
+- 本 crate 通过根目录 **`Cargo.toml`** 的 **`path`** 依赖引入；改动会直接影响 **TUI Markdown 渲染**（`src/runtime/tui/draw.rs`、`styles` 等）。
+- **不要**提交或依赖 **`vendor/tui-markdown/target/`**；构建产物应留在本地并由 **`.gitignore`** 忽略。
+- 若修复为通用改进，可考虑向 **上游仓库** 提 PR，再在 vendor 中同步版本，减少与主仓的永久分叉。
+- 修改渲染行为时，核对 **F1 帮助 / 主题切换** 等是否仍一致；必要时在 **`docs/DEVELOPMENT.md`** 的 TUI 小节补一句（见 **`.cursor/rules/architecture-docs-sync.mdc`**）。

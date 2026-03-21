@@ -62,6 +62,8 @@ env/
 # Rust
 ########################
 /target/
+# vendored crate 本地构建（path 依赖）
+vendor/**/target/
 
 ########################
 # 本机 CrabMate 数据（工作区下 .crabmate，勿提交）

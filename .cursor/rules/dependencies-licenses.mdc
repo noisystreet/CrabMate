@@ -1,0 +1,22 @@
+---
+description: 升级或新增依赖时关注许可证与供应链风险
+alwaysApply: true
+---
+
+# 依赖与许可证
+
+## 何时触发
+
+- 修改根目录 **`Cargo.toml`** / **`Cargo.lock`**（新增 crate、升级 major、启用新 feature）。
+- 修改 **`frontend/package.json`** / **`package-lock.json`**（新 npm 包、大版本升级）。
+
+## 建议动作
+
+- **Rust**：核对新 crate **许可证** 是否与项目分发方式兼容；警惕 **copyleft**（如 GPL）与 **网络条款**（如 AGPL）是否在你们的分发/部署场景下可接受。
+- **npm**：同样核对许可证；优先使用维护活跃、下载量稳定的包。
+- **锁文件**：提交时保持 **`Cargo.lock`** / **`package-lock.json`** 与清单一致，避免可复现构建被破坏。
+- 若引入 **本地 path / git** 依赖，在 PR 或 **`docs/DEVELOPMENT.md`** 中说明来源与更新策略。
+
+## 范围
+
+- 本规则**不**替代法律意见；重大合规决策需人工确认。
