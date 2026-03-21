@@ -1,6 +1,8 @@
-//! 键盘与鼠标输入。
+//! 键盘与鼠标输入（crossterm，与 `CrosstermBackend` 一致）。
 
-use ratatui::termwiz::input::{KeyCode, KeyEvent, Modifiers, MouseEvent, MouseButtons};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use unicode_width::UnicodeWidthStr;
 
 use tokio::sync::mpsc;
@@ -51,15 +53,18 @@ pub(super) async fn handle_key(
         tools,
         no_stream,
     } = ctx;
-    if key.key == KeyCode::Char('c') && key.modifiers.contains(Modifiers::CTRL) {
+    if key.kind == KeyEventKind::Release {
+        return Ok(false);
+    }
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Ok(true);
     }
 
     state.cursor_mouse_pos = None;
 
     if state.mode == Mode::FileView {
-        match key.key {
-            KeyCode::Escape | KeyCode::Char('q') => {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
                 state.mode = Mode::Normal;
                 state.file_view_title.clear();
                 state.file_view_content.clear();
@@ -69,8 +74,8 @@ pub(super) async fn handle_key(
         return Ok(false);
     }
     if state.mode == Mode::Prompt {
-        match key.key {
-            KeyCode::Escape => {
+        match key.code {
+            KeyCode::Esc => {
                 state.mode = Mode::Normal;
                 state.mouse_leak_scratch.clear();
                 state.prompt.clear();
@@ -110,7 +115,9 @@ pub(super) async fn handle_key(
                 }
             }
             KeyCode::Char(ch) => {
-                if !key.modifiers.contains(Modifiers::CTRL) && !key.modifiers.contains(Modifiers::ALT) {
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                {
                     feed_char_filter_sgr_mouse_leak(&mut state.mouse_leak_scratch, ch, |c| {
                         state.prompt.push(c);
                     });
@@ -146,14 +153,14 @@ pub(super) async fn handle_key(
             state.pending_command_args.clear();
         }
 
-        match key.key {
-            KeyCode::Escape => {
+        match key.code {
+            KeyCode::Esc => {
                 state.approve_choice = 0;
             }
-            KeyCode::LeftArrow => {
+            KeyCode::Left => {
                 state.approve_choice = state.approve_choice.saturating_sub(1);
             }
-            KeyCode::RightArrow => {
+            KeyCode::Right => {
                 state.approve_choice = (state.approve_choice + 1).min(2);
             }
             KeyCode::Char('1') => state.approve_choice = 0,
@@ -200,8 +207,8 @@ pub(super) async fn handle_key(
     }
 
     if state.show_help {
-        match key.key {
-            KeyCode::Function(1) | KeyCode::Escape => {
+        match key.code {
+            KeyCode::F(1) | KeyCode::Esc => {
                 state.show_help = false;
             }
             _ => {}
@@ -209,11 +216,11 @@ pub(super) async fn handle_key(
         return Ok(false);
     }
 
-    match key.key {
-        KeyCode::Function(1) => {
+    match key.code {
+        KeyCode::F(1) => {
             state.show_help = !state.show_help;
         }
-        KeyCode::Function(2) => {
+        KeyCode::F(2) => {
             state.cursor_override = None;
             state.focus = match state.focus {
                 Focus::ChatView => Focus::ChatInput,
@@ -223,31 +230,29 @@ pub(super) async fn handle_key(
             };
             set_normal_status_line(state, &cfg.model);
         }
-        KeyCode::Function(3) => {
+        KeyCode::F(3) => {
             state.code_theme_idx = (state.code_theme_idx + 1) % code_themes().len();
             state.status_line = format!("代码主题：{}（F3 切换）", code_themes()[state.code_theme_idx]);
         }
-        KeyCode::Function(4) => {
+        KeyCode::F(4) => {
             state.md_style = if state.md_style == 0 { 1 } else { 0 };
             state.status_line = format!(
                 "Markdown样式：{}（F4 切换）",
                 if state.md_style == 0 { "dark" } else { "light" }
             );
         }
-        KeyCode::Function(5) => {
+        KeyCode::F(5) => {
             state.high_contrast = !state.high_contrast;
             set_high_contrast_status_line(state, &cfg.model);
         }
         KeyCode::PageUp => {
-            let step = state.input_rows.max(3) as i32;
-            state.chat_scroll += step;
+            let step = state.input_rows.max(3) as usize;
+            state.chat_follow_tail = false;
+            state.chat_first_line = state.chat_first_line.saturating_sub(step);
         }
         KeyCode::PageDown => {
-            let step = state.input_rows.max(3) as i32;
-            state.chat_scroll -= step;
-            if state.chat_scroll < 0 {
-                state.chat_scroll = 0;
-            }
+            let step = state.input_rows.max(3) as usize;
+            state.chat_first_line = state.chat_first_line.saturating_add(step);
         }
         KeyCode::Tab => {
             state.tab = match state.tab {
@@ -264,7 +269,7 @@ pub(super) async fn handle_key(
                 RightTab::Schedule => refresh_schedule(state),
             }
         }
-        KeyCode::UpArrow => {
+        KeyCode::Up => {
             if state.focus == Focus::Right || state.focus == Focus::Workspace {
                 match state.tab {
                     RightTab::Workspace => {
@@ -289,7 +294,7 @@ pub(super) async fn handle_key(
                 }
             }
         }
-        KeyCode::DownArrow => {
+        KeyCode::Down => {
             if state.focus == Focus::Right || state.focus == Focus::Workspace {
                 match state.tab {
                     RightTab::Workspace => {
@@ -337,9 +342,7 @@ pub(super) async fn handle_key(
                     state.mouse_leak_scratch.clear();
                     state.cursor_override = None;
                     state.input.clear();
-                    if state.chat_scroll <= 0 {
-                        state.chat_scroll = 0;
-                    }
+                    state.chat_follow_tail = true;
                     state.messages.push(Message {
                         role: "user".to_string(),
                         content: Some(q),
@@ -462,7 +465,8 @@ pub(super) async fn handle_key(
             }
         }
         KeyCode::Char(ch) => {
-            if !key.modifiers.contains(Modifiers::CTRL) && !key.modifiers.contains(Modifiers::ALT)
+            if !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT)
                 && state.focus == Focus::ChatInput
             {
                 state.cursor_override = None;
@@ -477,26 +481,26 @@ pub(super) async fn handle_key(
     Ok(false)
 }
 
-pub(super) fn handle_mouse(me: MouseEvent, state: &mut TuiState, cols: u16, rows: u16, model: &str) {
-    let x = me.x;
-    let y = me.y;
+/// crossterm 鼠标事件（与 `EnableMouseCapture` / `DisableMouseCapture` 配套）。
+pub(super) fn handle_crossterm_mouse(
+    me: MouseEvent,
+    state: &mut TuiState,
+    cols: u16,
+    rows: u16,
+    model: &str,
+) {
+    let x = me.column;
+    let y = me.row;
 
-    if me.mouse_buttons.contains(MouseButtons::VERT_WHEEL) {
-        if me.mouse_buttons.contains(MouseButtons::WHEEL_POSITIVE) {
-            state.chat_scroll += 3;
-        } else {
-            state.chat_scroll -= 3;
-            if state.chat_scroll < 0 {
-                state.chat_scroll = 0;
-            }
+    match me.kind {
+        MouseEventKind::ScrollUp => {
+            state.chat_follow_tail = false;
+            state.chat_first_line = state.chat_first_line.saturating_sub(3);
         }
-        return;
-    }
-
-    let left_pressed = me.mouse_buttons.contains(MouseButtons::LEFT);
-
-    if state.input_dragging {
-        if left_pressed {
+        MouseEventKind::ScrollDown => {
+            state.chat_first_line = state.chat_first_line.saturating_add(3);
+        }
+        MouseEventKind::Drag(MouseButton::Left) if state.input_dragging => {
             let prev = state.input_drag_row;
             let cur = y;
             if cur != prev {
@@ -509,40 +513,39 @@ pub(super) fn handle_mouse(me: MouseEvent, state: &mut TuiState, cols: u16, rows
                     state.input_rows
                 );
             }
-        } else {
-            state.input_dragging = false;
-            state.status_line = format!(
-                "输入区域高度已调整为 {} 行（在底部拖动可再次调整）",
-                state.input_rows
-            );
         }
-        return;
-    }
-
-    if !left_pressed {
-        apply_pending_focus_and_tab(state, model);
-        return;
-    }
-
-    if left_pressed {
-        let chat_width = cols.saturating_mul(65) / 100;
-        let input_start_row = rows.saturating_sub(state.input_rows + 1);
-
-        if x < chat_width && y >= input_start_row {
-            state.cursor_mouse_pos = Some((x, y));
+        MouseEventKind::Up(MouseButton::Left) => {
+            if state.input_dragging {
+                state.input_dragging = false;
+                state.status_line = format!(
+                    "输入区域高度已调整为 {} 行（在底部拖动可再次调整）",
+                    state.input_rows
+                );
+            } else {
+                apply_pending_focus_and_tab(state, model);
+            }
         }
+        MouseEventKind::Down(MouseButton::Left) => {
+            let chat_width = cols.saturating_mul(65) / 100;
+            let input_start_row = rows.saturating_sub(state.input_rows + 1);
 
-        if x < chat_width && y >= rows.saturating_sub(1) {
-            state.input_dragging = true;
-            state.input_drag_row = y;
-            state.status_line = format!(
-                "正在拖动输入区域高度（当前：{} 行）",
-                state.input_rows
-            );
-            return;
+            if x < chat_width && y >= input_start_row {
+                state.cursor_mouse_pos = Some((x, y));
+            }
+
+            if x < chat_width && y >= rows.saturating_sub(1) {
+                state.input_dragging = true;
+                state.input_drag_row = y;
+                state.status_line = format!(
+                    "正在拖动输入区域高度（当前：{} 行）",
+                    state.input_rows
+                );
+                return;
+            }
+
+            apply_click_focus_and_tab(x, y, cols, rows, state, model);
         }
-
-        apply_click_focus_and_tab(x, y, cols, rows, state, model);
+        _ => {}
     }
 }
 

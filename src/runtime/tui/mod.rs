@@ -12,31 +12,33 @@ mod workspace_ops;
 
 use crate::config::AgentConfig;
 use crate::types::Message;
-use crossterm::event::DisableMouseCapture;
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use crossterm::execute;
-use ratatui::termwiz::input::InputEvent;
-use ratatui::termwiz::terminal::Terminal as TermwizTerminal;
-use ratatui::{backend::TermwizBackend, Terminal};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Rect;
+use ratatui::Terminal;
+use std::io::stdout;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use allowlist::{command_approval_message, load_persistent_allowlist};
 use draw::draw_ui;
-use input::{handle_key, handle_mouse, HandleKeyContext};
+use input::{handle_crossterm_mouse, handle_key, HandleKeyContext};
 use sse_line::{classify_agent_sse_line, AgentLineKind};
 use state::{strip_sgr_mouse_leaks, Focus, Mode, TuiState};
 use status::set_normal_status_line;
 use workspace_ops::{refresh_schedule, refresh_tasks, refresh_workspace, upsert_assistant_message};
 
-/// 退出全屏 TUI 前关闭 xterm 鼠标报告并尽量清空 tty 输入队列，避免回到 shell 后出现
-/// `51;18;17M` 这类 SGR 鼠标片段被回显在提示符上。
-fn tui_restore_tty_mouse_and_stdin(terminal: &mut Terminal<TermwizBackend>) {
-    let _ = terminal.backend_mut().buffered_terminal_mut().flush();
-    let mut out = std::io::stdout().lock();
-    let _ = execute!(out, DisableMouseCapture);
-    let _ = std::io::Write::flush(&mut out);
+/// 退出全屏 TUI：关鼠标、离开备用屏幕、关 raw，并 flush stdin（crossterm 与 ratatui 一致）。
+fn tui_restore_tty_mouse_and_stdin() -> std::io::Result<()> {
+    let mut out = stdout();
+    execute!(out, DisableMouseCapture)?;
+    execute!(out, LeaveAlternateScreen)?;
+    disable_raw_mode()?;
     #[cfg(unix)]
     flush_stdin_tty_queue();
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -85,6 +87,7 @@ pub async fn run_tui(
         allowlist_file,
         status_line: String::new(),
         tool_running: false,
+        tool_running_clear_pending: false,
         focus: Focus::ChatInput,
         mode: Mode::Normal,
         tab: state::RightTab::Workspace,
@@ -120,7 +123,10 @@ pub async fn run_tui(
     refresh_schedule(&mut state);
     set_normal_status_line(&mut state, &cfg.model);
 
-    let backend = TermwizBackend::new()?;
+    enable_raw_mode()?;
+    let mut stdout = stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
@@ -141,13 +147,12 @@ pub async fn run_tui(
             match classify_agent_sse_line(&s) {
                 AgentLineKind::ToolRunning(true) => {
                     state.tool_running = true;
+                    state.tool_running_clear_pending = false;
                     state.status_line = "工具运行中…".to_string();
                 }
                 AgentLineKind::ToolRunning(false) => {
-                    state.tool_running = false;
-                    if state.status_line == "工具运行中…" {
-                        set_normal_status_line(&mut state, &cfg.model);
-                    }
+                    // 不在此处立即清掉：否则与 true 同一次 try_recv 排空时，draw 前状态已被还原，用户看不到提示。
+                    state.tool_running_clear_pending = true;
                 }
                 AgentLineKind::WorkspaceRefresh => {
                     refresh_workspace(&mut state);
@@ -194,6 +199,8 @@ pub async fn run_tui(
         {
             agent_running = None;
             approval_tx = None;
+            state.tool_running = false;
+            state.tool_running_clear_pending = false;
             set_normal_status_line(&mut state, &cfg.model);
         }
 
@@ -202,38 +209,34 @@ pub async fn run_tui(
             .unwrap_or(Duration::from_secs(0));
         let screen_size = terminal.size()?;
         let mut had_input = false;
-        if let Some(input_event) = terminal
-            .backend_mut()
-            .buffered_terminal_mut()
-            .terminal()
-            .poll_input(Some(timeout))?
-        {
+        if event::poll(timeout)? {
             had_input = true;
-            match input_event {
-                InputEvent::Key(key) => {
-                    if handle_key(
-                        key,
-                        &mut state,
-                        HandleKeyContext {
-                            agent_running: &mut agent_running,
-                            assistant_buf: &mut assistant_buf,
-                            approval_tx: &mut approval_tx,
-                            tx: &tx,
-                            sync_tx: sync_tx.clone(),
-                            cfg,
-                            client,
-                            api_key,
-                            tools,
-                            no_stream,
-                        },
-                    )
-                    .await?
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Release
+                        && handle_key(
+                            key,
+                            &mut state,
+                            HandleKeyContext {
+                                agent_running: &mut agent_running,
+                                assistant_buf: &mut assistant_buf,
+                                approval_tx: &mut approval_tx,
+                                tx: &tx,
+                                sync_tx: sync_tx.clone(),
+                                cfg,
+                                client,
+                                api_key,
+                                tools,
+                                no_stream,
+                            },
+                        )
+                        .await?
                     {
                         break;
                     }
                 }
-                InputEvent::Mouse(m) => {
-                    handle_mouse(
+                Event::Mouse(m) => {
+                    handle_crossterm_mouse(
                         m,
                         &mut state,
                         screen_size.width,
@@ -241,8 +244,13 @@ pub async fn run_tui(
                         &cfg.model,
                     );
                 }
-                InputEvent::Resized { .. } => {}
-                InputEvent::Paste(_) | InputEvent::Wake | InputEvent::PixelMouse(_) => {}
+                Event::Resize(w, h) => {
+                    if w > 0 && h > 0 {
+                        let _ = terminal.resize(Rect::new(0, 0, w, h));
+                    }
+                }
+                Event::FocusLost | Event::FocusGained => {}
+                _ => {}
             }
         }
 
@@ -252,12 +260,21 @@ pub async fn run_tui(
         let throttle_draw = streaming
             && !state.chat_follow_tail
             && !had_input
+            && !state.tool_running
             && last_draw_at.elapsed() < stream_scroll_min_draw_interval;
-        if !throttle_draw {
+        let did_draw = !throttle_draw;
+        if did_draw {
             terminal.draw(|f| draw_ui(f, &mut state))?;
             last_draw_at = Instant::now();
             state.cursor_mouse_pos = None;
             state.cursor_override = None;
+        }
+        if did_draw && state.tool_running_clear_pending {
+            state.tool_running_clear_pending = false;
+            state.tool_running = false;
+            if state.status_line == "工具运行中…" {
+                set_normal_status_line(&mut state, &cfg.model);
+            }
         }
 
         if last_tick.elapsed() >= tick_rate {
@@ -265,8 +282,7 @@ pub async fn run_tui(
         }
     }
 
-    // 在 TermwizBackend Drop 之前显式关鼠标并 flush stdin，减轻退出后 shell 回显鼠标序列。
-    tui_restore_tty_mouse_and_stdin(&mut terminal);
+    let _ = tui_restore_tty_mouse_and_stdin();
 
     Ok(())
 }

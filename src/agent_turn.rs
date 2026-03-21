@@ -155,7 +155,8 @@ async fn per_execute_tools_common(
         let name = tc.function.name.clone();
         let args = tc.function.arguments.clone();
         let id = tc.id.clone();
-        println!("  [调用工具: {}]", name);
+        // 禁止 println：TUI 下 stdout 与 ratatui 共用终端，会在当前光标（常为输入区）插入乱字。
+        info!(tool = %name, "调用工具");
 
         if let Some(tx) = out
             && let Some(summary) = tools::summarize_tool_call(&name, &args)

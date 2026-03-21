@@ -8,7 +8,7 @@
 //! 会直接对目标文件就地格式化，并返回简要的结果说明。
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
@@ -139,14 +139,33 @@ fn run_rustfmt(target: &Path, check_only: bool) -> Result<String, String> {
         cmd.arg("--emit").arg("files");
     }
     cmd.arg(target);
-    let status = cmd
-        .status()
+    // TUI 全屏下若继承 stdout/stderr，子进程输出会直接画到终端（常落在输入框区域），必须捕获。
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = cmd
+        .output()
         .map_err(|e| format!("无法执行 rustfmt：{}（请确认已安装 rustfmt）", e))?;
-    if !status.success() {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if !stderr.trim().is_empty() {
+            stderr.trim_end().to_string()
+        } else if !stdout.trim().is_empty() {
+            stdout.trim_end().to_string()
+        } else {
+            String::new()
+        };
+        let suffix = if detail.is_empty() {
+            String::new()
+        } else {
+            format!("\n{}", detail)
+        };
         return Err(format!(
-            "rustfmt {}失败，退出码：{}",
+            "rustfmt {}失败，退出码：{}{}",
             if check_only { "检查" } else { "格式化" },
-            status.code().unwrap_or(-1)
+            output.status.code().unwrap_or(-1),
+            suffix
         ));
     }
     Ok(format!(
@@ -174,17 +193,35 @@ fn run_prettier(target: &Path, workspace_root: &Path, check_only: bool) -> Resul
         cmd.arg("--write");
     }
     cmd.arg(relative).current_dir(workspace_root);
-    let status = cmd.status().map_err(|e| {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = cmd.output().map_err(|e| {
         format!(
             "无法执行 prettier：{}（请确认已在工作区内安装 prettier 或可通过 npx 调用）",
             e
         )
     })?;
-    if !status.success() {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if !stderr.trim().is_empty() {
+            stderr.trim_end().to_string()
+        } else if !stdout.trim().is_empty() {
+            stdout.trim_end().to_string()
+        } else {
+            String::new()
+        };
+        let suffix = if detail.is_empty() {
+            String::new()
+        } else {
+            format!("\n{}", detail)
+        };
         return Err(format!(
-            "prettier {}失败，退出码：{}",
+            "prettier {}失败，退出码：{}{}",
             if check_only { "检查" } else { "格式化" },
-            status.code().unwrap_or(-1)
+            output.status.code().unwrap_or(-1),
+            suffix
         ));
     }
     Ok(format!(

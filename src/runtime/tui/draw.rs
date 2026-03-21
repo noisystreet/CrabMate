@@ -9,6 +9,8 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     Frame,
 };
+use regex::Regex;
+use std::sync::LazyLock;
 use tui_markdown::{from_str_with_options as markdown_to_text, Options};
 use unicode_width::UnicodeWidthStr;
 use unicodeit::replace as latex_to_unicode;
@@ -65,7 +67,7 @@ fn right_tab_color(tab: RightTab) -> Color {
     }
 }
 
-pub(super) fn draw_ui(f: &mut Frame<'_>, state: &TuiState) {
+pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
     let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -73,7 +75,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &TuiState) {
         .split(area);
 
     draw_chat(f, chunks[0], state);
-    draw_right(f, chunks[1], state);
+    draw_right(f, chunks[1], &*state);
 
     const SHOW_SEPARATORS: bool = false;
     if SHOW_SEPARATORS {
@@ -239,26 +241,95 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &TuiState) {
     }
 }
 
-fn strip_assistant_echo_label(content: &str) -> &str {
-    let s = content.trim_start();
-    for p in ["模型：", "模型:", "Assistant：", "Assistant:", "助手：", "助手:"] {
-        if let Some(rest) = s.strip_prefix(p) {
-            return rest.trim_start();
-        }
+/// TUI 已单独画一行「模型:」；正文里常见 `模型：…`、`## 模型：`、`**模型：**` 等重复标签，用正则循环剥掉。
+static ASSISTANT_LEADING_ROLE_ECHO: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?x)
+        ^[\s\u{feff}\u{3000}]*
+        (?:
+            (?: \#+ | > ) \s*
+            (模型|助手|Assistant|Model)
+            \s* [：:]
+          | \*{1,2} \s* (模型|助手|Assistant|Model) \s* [：:] \s* \*{1,2}
+          | _{1,2} \s* (模型|助手|Assistant|Model) \s* [：:] \s* _{1,2}
+          | 【 \s* 模型 \s* 】 \s* [：:]
+          | (模型|助手|Assistant|Model) \s* [：:]
+        )
+        \s*",
+    )
+    .expect("ASSISTANT_LEADING_ROLE_ECHO")
+});
+
+/// 整行只有「角色称呼」时（含 `# 模型：`、`**模型：**` 等），与 TUI 顶栏「模型:」重复，应剥掉。
+static STANDALONE_ROLE_LINE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?x) ^ \s*
+        (?: \#+ \s* )?
+        (?: > \s* )?
+        (?: \*{1,2} | _{1,2} )? \s*
+        (?: 【 \s* 模型 \s* 】 \s* [：:] | (模型|助手|Assistant|Model) \s* [：:] )
+        \s*
+        (?: \*{1,2} | _{1,2} )? \s*
+        $",
+    )
+    .expect("STANDALONE_ROLE_LINE")
+});
+
+fn is_standalone_role_echo_line(t: &str) -> bool {
+    let t = t.trim().trim_matches('\u{3000}');
+    if t.is_empty() {
+        return false;
     }
-    if let Some((first, rest)) = s.split_once('\n') {
-        let t = first.trim();
-        if matches!(
-            t,
-            "模型" | "模型：" | "模型:" | "Assistant" | "Assistant：" | "Assistant:" | "助手" | "助手：" | "助手:"
-        ) {
-            return rest.trim_start();
+    matches!(
+        t,
+        "模型" | "模型：" | "模型:"
+            | "Assistant" | "Assistant：" | "Assistant:"
+            | "助手" | "助手：" | "助手:"
+            | "Model" | "Model：" | "Model:"
+    ) || STANDALONE_ROLE_LINE.is_match(t)
+}
+
+fn strip_leading_blank_and_role_lines(s: &str) -> String {
+    let lines: Vec<&str> = s.lines().collect();
+    let mut i = 0usize;
+    while i < lines.len() {
+        let t = lines[i].trim().trim_matches('\u{3000}');
+        if t.is_empty() || is_standalone_role_echo_line(t) {
+            i += 1;
+            continue;
+        }
+        break;
+    }
+    lines[i..].join("\n")
+}
+
+fn strip_assistant_echo_label(content: &str) -> String {
+    let mut s = content
+        .trim_start()
+        .trim_start_matches('\u{feff}')
+        .to_string();
+    for _ in 0..32 {
+        let before = s.clone();
+        // 1) 字符串开头的「模型：」块（含 Markdown 前缀）
+        for _ in 0..12 {
+            let trimmed = s.trim_start().trim_start_matches('\u{feff}');
+            let next = ASSISTANT_LEADING_ROLE_ECHO.replace(trimmed, "");
+            let next = next.trim_start().trim_start_matches('\u{feff}').to_string();
+            if next == s {
+                break;
+            }
+            s = next;
+        }
+        // 2) 前导空行 + 单独一行的「模型：」（API 常见：\n\n模型：\n正文）
+        s = strip_leading_blank_and_role_lines(&s);
+        if s == before {
+            break;
         }
     }
     s
 }
 
-fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
+fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     let vchunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -281,7 +352,7 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
                     .and_then(|v| v.get("human_summary").and_then(|x| x.as_str()).map(|s| s.to_string()))
                     .unwrap_or_else(|| raw.to_string())
             } else if m.role == "assistant" {
-                strip_assistant_echo_label(raw).to_string()
+                strip_assistant_echo_label(raw)
             } else {
                 raw.to_string()
             };
@@ -307,7 +378,8 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
                 role_padded,
                 Style::default().add_modifier(Modifier::BOLD),
             )));
-        } else {
+        } else if m.role != "assistant" {
+            // tool 等仍显示标签；assistant 不画「模型:」，避免与正文里的「模型：」叠成两行。
             lines.push(Line::from(Span::styled(
                 format!("{}:", role),
                 Style::default().add_modifier(Modifier::BOLD),
@@ -354,15 +426,25 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
         }
         lines.push(Line::raw(""));
     }
-    let chat_height = vchunks[0].height.saturating_sub(2);
+    let chat_height = vchunks[0].height.saturating_sub(2) as usize;
+    let total_lines = lines.len();
     if chat_height > 0 && !lines.is_empty() {
-        let total = lines.len() as i32;
-        let height = chat_height as i32;
-        let max_offset = (total - height).max(0);
-        let offset_from_bottom = state.chat_scroll.clamp(0, max_offset);
-        let start = (max_offset - offset_from_bottom) as usize;
-        let end = (start as i32 + height).min(total) as usize;
+        let max_start = total_lines.saturating_sub(chat_height);
+        if state.chat_follow_tail {
+            state.chat_first_line = max_start;
+        } else {
+            state.chat_first_line = state.chat_first_line.min(max_start);
+            // 滚到最底一行后自动恢复「跟随尾部」，便于继续看流式输出
+            if max_start > 0 && state.chat_first_line >= max_start {
+                state.chat_follow_tail = true;
+            }
+        }
+        let start = state.chat_first_line.min(max_start);
+        state.chat_first_line = start;
+        let end = (start + chat_height).min(total_lines);
         lines = lines[start..end].to_vec();
+    } else {
+        state.chat_first_line = 0;
     }
     let chat_focused = state.focus == Focus::ChatView;
     let chat_block = Block::default()
