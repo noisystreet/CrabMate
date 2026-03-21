@@ -3,6 +3,7 @@
 
 mod api;
 mod config;
+mod tool_result;
 mod tools;
 mod types;
 mod workflow;
