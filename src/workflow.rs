@@ -401,8 +401,9 @@ async fn execute_workflow_dag(
     approval_mode: WorkflowApprovalMode,
     tool_exec_ctx: WorkflowToolExecCtx,
 ) -> (String, bool) {
+    let workflow_run_id = tool_exec_ctx.workflow_run_id;
     info!(
-        workflow_run_id = tool_exec_ctx.workflow_run_id,
+        workflow_run_id = workflow_run_id,
         nodes_count = spec.nodes.len(),
         max_parallelism = spec.max_parallelism,
         fail_fast = spec.fail_fast,
@@ -598,7 +599,7 @@ async fn execute_workflow_dag(
                         &completion_order,
                         &completed,
                         approval_mode,
-                        tool_exec_ctx,
+                        tool_exec_ctx.clone(),
                         command_max_output_len,
                     )
                     .await;
@@ -644,7 +645,7 @@ async fn execute_workflow_dag(
 
     let json = serde_json::to_string(&report).unwrap_or_else(|_| report.human_summary.clone());
     info!(
-        workflow_run_id = tool_exec_ctx.workflow_run_id,
+        workflow_run_id = workflow_run_id,
         status = %report.status,
         passed = passed,
         failed = failed,
