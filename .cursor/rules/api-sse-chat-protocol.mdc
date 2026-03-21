@@ -8,8 +8,8 @@ alwaysApply: true
 以下路径或概念变更时，**必须**同时核对 **Rust 路由/handler**、**前端解析** 与（若对外）**文档**：
 
 - **路由与请求体**：`src/lib.rs` 中 **`/chat`**、**`/chat/stream`** 等；请求/响应 JSON 字段。
-- **SSE 行协议**：`src/sse_protocol.rs`；流式 payload 类型、错误码、`data:` 行格式。
-- **TUI 侧解析**：`src/sse_line.rs`（`classify_agent_sse_line` 等）是否与 Web 消费语义一致或刻意分叉（若分叉须在注释与 DEVELOPMENT 中说明）。
+- **SSE 行协议**：`src/sse/protocol.rs`（及 `sse/mod.rs` 再导出）；流式 payload 类型、错误码、`data:` 行格式。
+- **TUI 侧解析**：`src/sse/line.rs`（`classify_agent_sse_line` 等；常用符号亦经 `crate::sse::…`）是否与 Web 消费语义一致或刻意分叉（若分叉须在注释与 DEVELOPMENT 中说明）。
 - **前端**：**`frontend/src/api.ts`** 及订阅流式结果的组件（错误分支、`tool_*` 等事件）。
 
 ## 清单

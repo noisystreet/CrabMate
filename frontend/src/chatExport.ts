@@ -1,6 +1,6 @@
 /**
- * 与 Rust `chat_export` / `.crabmate/tui_session.json` 对齐的会话导出（JSON + Markdown）。
- * 版本号须与 `src/chat_export.rs` 中 `CHAT_SESSION_FILE_VERSION` 一致。
+ * 与 Rust `runtime::chat_export` / `.crabmate/tui_session.json` 对齐的会话导出（JSON + Markdown）。
+ * 版本号须与 `src/runtime/chat_export.rs` 中 `CHAT_SESSION_FILE_VERSION` 一致。
  */
 import type { StoredMessage } from './sessionStore'
 
@@ -60,7 +60,7 @@ export function crabmateSessionFileToPrettyJson(file: CrabmateChatSessionFile): 
 }
 
 /**
- * Markdown 正文与 Rust `chat_export::messages_to_markdown` 一致（默认标题）。
+ * Markdown 正文与 Rust `runtime::chat_export::messages_to_markdown` 一致（默认标题）。
  * 若传入 `title`，则替换首行标题，并可加 `preamble`（如会话 id、标签）。
  */
 export function buildCrabmateMarkdownFromMessages(

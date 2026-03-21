@@ -1,6 +1,6 @@
 //! OpenAI 兼容 **`chat/completions`** 的单次 HTTP 调用：SSE/JSON 解析、终端 Markdown 与 LaTeX→Unicode。
 //!
-//! 带 **tools** 的 `ChatRequest` 构造、**退避重试**与 Agent 侧调用入口见 [`crate::llm`]；本模块专注传输与响应拼装。
+//! 带 **tools** 的 `ChatRequest` 构造、**退避重试**与 Agent 侧调用入口见同目录 [`super`]（`llm`）；本模块专注传输与响应拼装。
 
 use crate::types::{
     ChatRequest, FunctionCall, Message, StreamChunk, ToolCall, USER_CANCELLED_FINISH_REASON,
@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
-use crate::latex_unicode::latex_math_to_unicode;
+use crate::runtime::latex_unicode::latex_math_to_unicode;
 
 /// 尝试获取终端宽度；获取失败时返回 None
 fn terminal_width() -> Option<usize> {
@@ -91,8 +91,8 @@ async fn ingest_sse_data_payload(
             *parsing_tool_calls_notified = true;
             if let Some(tx) = out {
                 let _ = tx
-                    .send(crate::sse_protocol::encode_message(
-                        crate::sse_protocol::SsePayload::ParsingToolCalls {
+                    .send(crate::sse::encode_message(
+                        crate::sse::SsePayload::ParsingToolCalls {
                             parsing_tool_calls: true,
                         },
                     ))
@@ -224,8 +224,8 @@ pub async fn stream_chat(
             && let Some(tx) = out
         {
             let _ = tx
-                .send(crate::sse_protocol::encode_message(
-                    crate::sse_protocol::SsePayload::ParsingToolCalls {
+                .send(crate::sse::encode_message(
+                    crate::sse::SsePayload::ParsingToolCalls {
                         parsing_tool_calls: true,
                     },
                 ))

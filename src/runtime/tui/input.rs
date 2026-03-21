@@ -701,19 +701,17 @@ pub(super) async fn handle_key(
                             && format!("{e}") != LLM_CANCELLED_ERROR
                         {
                             let _ = tx2
-                                .send(crate::sse_protocol::encode_message(
-                                    crate::sse_protocol::SsePayload::Error(
-                                        crate::sse_protocol::SseErrorBody {
-                                            error: e.to_string(),
-                                            code: Some("AGENT_TURN".to_string()),
-                                        },
-                                    ),
-                                ))
+                                .send(crate::sse::encode_message(crate::sse::SsePayload::Error(
+                                    crate::sse::SseErrorBody {
+                                        error: e.to_string(),
+                                        code: Some("AGENT_TURN".to_string()),
+                                    },
+                                )))
                                 .await;
                         }
                         let _ = tx2
-                            .send(crate::sse_protocol::encode_message(
-                                crate::sse_protocol::SsePayload::ToolRunning {
+                            .send(crate::sse::encode_message(
+                                crate::sse::SsePayload::ToolRunning {
                                     tool_running: false,
                                 },
                             ))

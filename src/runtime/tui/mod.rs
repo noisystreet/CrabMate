@@ -15,7 +15,7 @@ mod text_input;
 mod workspace_ops;
 
 use crate::config::AgentConfig;
-use crate::sse_line::{AgentLineKind, classify_agent_sse_line};
+use crate::sse::{AgentLineKind, classify_agent_sse_line};
 use crate::types::Message;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use crossterm::execute;

@@ -1024,14 +1024,13 @@ async fn request_approval(
 ) -> CommandApprovalDecision {
     // 保证同一时间只有一个审批请求处于“发送 -> 等待决策”的进行中，避免并发覆盖 TUI 状态。
     let _guard = approval_request_guard.lock().await;
-    let line =
-        crate::sse_protocol::encode_message(crate::sse_protocol::SsePayload::CommandApproval {
-            command_approval_request: crate::sse_protocol::CommandApprovalBody {
-                command: command.to_string(),
-                args: args.to_string(),
-                allowlist_key: None,
-            },
-        });
+    let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
+        command_approval_request: crate::sse::CommandApprovalBody {
+            command: command.to_string(),
+            args: args.to_string(),
+            allowlist_key: None,
+        },
+    });
     let _ = out_tx.send(line).await;
 
     let mut rx_guard = approval_rx.lock().await;

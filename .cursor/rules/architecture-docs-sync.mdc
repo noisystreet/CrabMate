@@ -16,7 +16,8 @@ alwaysApply: true
 - `src/lib.rs`：增删 `mod`、重组 `Router`、`AppState` 职责迁移。
 - 新建/删除/重命名 `src/` 下文件或子目录，或某文件**主要职责**改变（不仅是私有重构）。
 - `tool_registry.rs`：新增执行类别（如新的 `spawn_blocking` + 超时策略）或分发逻辑分层变化。
-- `runtime/`、`ui/` 子模块边界变化（拆分、合并、新目录）。
+- `runtime/`、`web/` 子模块边界变化（拆分、合并、新目录）。
+- `agent/`、`sse/`、`llm/` 等顶层子目录增删或职责迁移（与 `lib.rs` 的 `mod` 一致）。
 
 ## 不必改索引的情况
 

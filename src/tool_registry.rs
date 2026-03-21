@@ -11,12 +11,12 @@ use std::time::Duration;
 use tokio::sync::{Mutex, mpsc};
 use tracing::{error, warn};
 
+use crate::agent::per_coord::PerCoordinator;
+use crate::agent::workflow;
+use crate::agent::workflow_reflection_controller;
 use crate::config::AgentConfig;
-use crate::per_coord::PerCoordinator;
 use crate::tools;
 use crate::types::{CommandApprovalDecision, ToolCall};
-use crate::workflow;
-use crate::workflow_reflection_controller;
 
 // --- 元数据（文档 / 将来 OpenAPI 生成）---
 
@@ -389,15 +389,13 @@ async fn execute_run_command_tui(
         let decision = {
             let _guard = ctx.approval_request_guard.lock().await;
             if let Some(tx) = ctx.out_tx.as_ref() {
-                let line = crate::sse_protocol::encode_message(
-                    crate::sse_protocol::SsePayload::CommandApproval {
-                        command_approval_request: crate::sse_protocol::CommandApprovalBody {
-                            command: cmd.clone(),
-                            args: arg_preview.clone(),
-                            allowlist_key: None,
-                        },
+                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
+                    command_approval_request: crate::sse::CommandApprovalBody {
+                        command: cmd.clone(),
+                        args: arg_preview.clone(),
+                        allowlist_key: None,
                     },
-                );
+                });
                 let _ = tx.send(line).await;
             }
             let mut rx_guard = ctx.approval_rx_shared.lock().await;
@@ -501,15 +499,13 @@ async fn execute_http_fetch_tui(
         let decision = {
             let _guard = ctx.approval_request_guard.lock().await;
             if let Some(tx) = ctx.out_tx.as_ref() {
-                let line = crate::sse_protocol::encode_message(
-                    crate::sse_protocol::SsePayload::CommandApproval {
-                        command_approval_request: crate::sse_protocol::CommandApprovalBody {
-                            command: "http_fetch".to_string(),
-                            args: approval_args.clone(),
-                            allowlist_key: Some(key.clone()),
-                        },
+                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
+                    command_approval_request: crate::sse::CommandApprovalBody {
+                        command: "http_fetch".to_string(),
+                        args: approval_args.clone(),
+                        allowlist_key: Some(key.clone()),
                     },
-                );
+                });
                 let _ = tx.send(line).await;
             }
             let mut rx_guard = ctx.approval_rx_shared.lock().await;

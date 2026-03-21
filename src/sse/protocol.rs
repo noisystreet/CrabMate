@@ -1,4 +1,4 @@
-//! 经 SSE `data:` 行发往浏览器 / TUI 的**控制类** JSON 协议（与 `api::stream_chat` 下发的纯文本 delta 区分）。
+//! 经 SSE `data:` 行发往浏览器 / TUI 的**控制类** JSON 协议（与 `llm::api::stream_chat` 下发的纯文本 delta 区分）。
 //!
 //! 统一带版本字段 `v`，键名与现有前端 `frontend/src/api.ts` 兼容；新增事件通过新键扩展。
 
