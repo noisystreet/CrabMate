@@ -9,6 +9,7 @@ mod chat_job_queue;
 mod config;
 mod context_window;
 mod http_client;
+mod latex_unicode;
 mod llm;
 mod per_coord;
 mod plan_artifact;
@@ -50,6 +51,7 @@ use types::Message;
 /// 若 `render_to_terminal` 为 true，则在终端渲染助手回复（流式边收边打，非流式完成后一次性 Markdown）。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供 TUI 等场景中止生成。
+/// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI/TUI 传 `None`。
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent_turn(
     client: &reqwest::Client,
@@ -63,6 +65,7 @@ pub async fn run_agent_turn(
     render_to_terminal: bool,
     no_stream: bool,
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     agent_turn::run_agent_turn_common(
         client,
@@ -76,6 +79,7 @@ pub async fn run_agent_turn(
         no_stream,
         cancel.as_deref(),
         agent_turn::AgentRunMode::Web { render_to_terminal },
+        per_flight,
     )
     .await
 }
@@ -763,6 +767,9 @@ struct StatusResponse {
     chat_queue_completed_ok: u64,
     chat_queue_completed_err: u64,
     chat_queue_recent_jobs: Vec<chat_job_queue::ChatJobRecord>,
+    /// 队列中正在执行的 `/chat`、`/chat/stream` 任务之 PER 镜像（无任务或无非队列调用时为空）。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    per_active_jobs: Vec<chat_job_queue::PerFlightStatusEntry>,
 }
 
 async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -793,6 +800,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         chat_queue_completed_ok: state.chat_queue.completed_ok(),
         chat_queue_completed_err: state.chat_queue.completed_err(),
         chat_queue_recent_jobs: state.chat_queue.recent_jobs(),
+        per_active_jobs: state.chat_queue.active_per_jobs(),
     })
 }
 

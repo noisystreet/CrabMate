@@ -84,6 +84,16 @@ impl PerCoordinator {
         PLAN_REWRITE_EXHAUSTED_SSE
     }
 
+    /// 供 `/status` 等只读镜像：`after_final_assistant` 已递增后的重写次数。
+    pub fn plan_rewrite_attempts_snapshot(&self) -> usize {
+        self.plan_rewrite_attempts
+    }
+
+    /// 下一回模型若以非 `tool_calls` 结束，是否必须嵌入可解析的 `agent_reply_plan`（工作流反思路径下由工具结果置位）。
+    pub fn require_plan_in_final_flag_snapshot(&self) -> bool {
+        self.require_plan_in_final_content
+    }
+
     pub fn new(
         reflection_default_max_rounds: usize,
         final_plan_policy: FinalPlanRequirementMode,

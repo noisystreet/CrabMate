@@ -25,7 +25,9 @@ use crossterm::terminal::{
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
+use std::fs;
 use std::io::stdout;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
@@ -96,6 +98,23 @@ fn drain_stdin_nonblocking_best_effort() {
     let _ = unsafe { libc::fcntl(fd, libc::F_SETFL, flags) };
 }
 
+/// 将 CLI/配置中的工作区解析为绝对路径；不存在则创建。必须为目录（不能是普通文件）。
+fn resolve_tui_workspace_dir(work_dir_str: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let trimmed = work_dir_str.trim();
+    if trimmed.is_empty() {
+        return Err("工作区路径不能为空".into());
+    }
+    let p = PathBuf::from(trimmed);
+    if !p.exists() {
+        fs::create_dir_all(&p)?;
+    }
+    let meta = fs::metadata(&p)?;
+    if !meta.is_dir() {
+        return Err(format!("工作区必须是目录：{}", p.display()).into());
+    }
+    Ok(fs::canonicalize(&p)?)
+}
+
 pub async fn run_tui(
     cfg: &AgentConfig,
     client: &reqwest::Client,
@@ -109,7 +128,7 @@ pub async fn run_tui(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or(&cfg.run_command_working_dir)
         .to_string();
-    let workspace_dir = std::path::PathBuf::from(work_dir_str);
+    let workspace_dir = resolve_tui_workspace_dir(&work_dir_str)?;
     let allowlist_file = workspace_dir
         .join(".crabmate")
         .join("tui_command_allowlist.json");
@@ -202,8 +221,13 @@ pub async fn run_tui(
     let mut last_draw_at = Instant::now();
     let stream_scroll_min_draw_interval = Duration::from_millis(160);
 
+    // 首帧与任意状态变化后为 true；空闲时跳过重绘，避免每 tick 全量重算 Markdown 占满 CPU。
+    let mut need_redraw = true;
+
     loop {
+        let mut inbox_changed = false;
         while let Ok(s) = rx.try_recv() {
+            inbox_changed = true;
             match classify_agent_sse_line(&s) {
                 AgentLineKind::ToolRunning(true) => {
                     state.tool_running = true;
@@ -264,6 +288,7 @@ pub async fn run_tui(
             }
         }
         while let Ok(msgs) = sync_rx.try_recv() {
+            inbox_changed = true;
             state.messages = msgs;
             assistant_buf.clear();
         }
@@ -271,12 +296,28 @@ pub async fn run_tui(
         if let Some(handle) = agent_running.as_ref()
             && handle.is_finished()
         {
+            inbox_changed = true;
             agent_running = None;
             approval_tx = None;
             state.tool_running = false;
             state.tool_running_clear_pending = false;
             state.model_phase = ModelPhase::Idle;
             set_normal_status_line(&mut state, &cfg.model);
+        }
+
+        let streaming = agent_running.as_ref().is_some_and(|h| !h.is_finished());
+        if state.tool_running_clear_pending {
+            state.tool_running_clear_pending = false;
+            state.tool_running = false;
+            if state.model_phase == ModelPhase::ToolRunning {
+                state.model_phase = if streaming {
+                    ModelPhase::Thinking
+                } else {
+                    ModelPhase::Idle
+                };
+                set_normal_status_line(&mut state, &cfg.model);
+            }
+            inbox_changed = true;
         }
 
         let timeout = tick_rate
@@ -286,6 +327,7 @@ pub async fn run_tui(
         let mut had_input = false;
         if event::poll(timeout)? {
             had_input = true;
+            inbox_changed = true;
             match event::read()? {
                 Event::Key(key) => {
                     if key.kind != KeyEventKind::Release
@@ -331,29 +373,19 @@ pub async fn run_tui(
             }
         }
 
-        let streaming = agent_running.as_ref().is_some_and(|h| !h.is_finished());
-        let throttle_draw = streaming
+        let stream_throttled = streaming
             && !state.chat_follow_tail
             && !had_input
             && !state.tool_running
             && state.model_phase != ModelPhase::SelectingTools
             && last_draw_at.elapsed() < stream_scroll_min_draw_interval;
-        let did_draw = !throttle_draw;
-        if did_draw {
+
+        let should_paint = need_redraw || inbox_changed || (streaming && !stream_throttled);
+        need_redraw = false;
+
+        if should_paint {
             terminal.draw(|f| draw_ui(f, &mut state))?;
             last_draw_at = Instant::now();
-        }
-        if did_draw && state.tool_running_clear_pending {
-            state.tool_running_clear_pending = false;
-            state.tool_running = false;
-            if state.model_phase == ModelPhase::ToolRunning {
-                state.model_phase = if streaming {
-                    ModelPhase::Thinking
-                } else {
-                    ModelPhase::Idle
-                };
-                set_normal_status_line(&mut state, &cfg.model);
-            }
         }
 
         if last_tick.elapsed() >= tick_rate {

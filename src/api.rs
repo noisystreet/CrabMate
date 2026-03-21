@@ -12,36 +12,13 @@ use crossterm::{
 };
 use futures_util::StreamExt;
 use markdown_to_ansi::{Options, render};
-use regex::Regex;
 use reqwest::Client;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
-use unicodeit::replace as latex_to_unicode;
 
-/// 将文本中的 LaTeX 数学公式（$...$、$$...$$、\(...\)、\[...\]）转为 Unicode，便于终端显示
-fn latex_math_to_unicode(s: &str) -> String {
-    // 按顺序替换，避免 $ 与 \( 等嵌套问题
-    let patterns = [
-        (r"\\\[([\s\S]*?)\\\]", "display"), // \[ ... \]
-        (r"\\\(([\s\S]*?)\\\)", "inline"),  // \( ... \)
-        (r"\$\$([\s\S]*?)\$\$", "display"), // $$ ... $$
-        (r"\$([^$\n]+)\$", "inline"),       // $ ... $（单行）
-    ];
-    let mut out = s.to_string();
-    for (pat, _) in patterns {
-        if let Ok(re) = Regex::new(pat) {
-            out = re
-                .replace_all(&out, |caps: &regex::Captures<'_>| {
-                    let inner = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-                    latex_to_unicode(inner.trim())
-                })
-                .into_owned();
-        }
-    }
-    out
-}
+use crate::latex_unicode::latex_math_to_unicode;
 
 /// 尝试获取终端宽度；获取失败时返回 None
 fn terminal_width() -> Option<usize> {
@@ -380,26 +357,6 @@ pub async fn stream_chat(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_latex_math_to_unicode_inline() {
-        // $x$ -> 转为 Unicode 字母 x（unicodeit 可能保留或转换）
-        let out = latex_math_to_unicode("公式 $x^2$ 结束");
-        assert!(!out.contains("$"));
-        assert!(out.contains("x") || out.contains("²"));
-    }
-
-    #[test]
-    fn test_latex_math_to_unicode_display() {
-        let out = latex_math_to_unicode("$$1+1=2$$");
-        assert!(!out.contains("$$"));
-    }
-
-    #[test]
-    fn test_latex_math_to_unicode_plain_unchanged() {
-        let s = "纯文本无公式";
-        assert_eq!(latex_math_to_unicode(s), s);
-    }
 
     #[test]
     fn test_count_display_lines() {

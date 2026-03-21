@@ -63,6 +63,8 @@ pub struct Options<S: StyleSheet = DefaultStyleSheet> {
     ///
     /// Defaults to `"base16-ocean.dark"` to match previous behavior.
     pub(crate) code_theme: Option<String>,
+    /// When `true`, headings show an auto-incrementing outline prefix (`1. `, `1.2. `, …) instead of `#` marks.
+    pub(crate) outline_heading_numbers: bool,
 }
 
 impl<S: StyleSheet> Options<S> {
@@ -71,12 +73,19 @@ impl<S: StyleSheet> Options<S> {
         Self {
             styles,
             code_theme: None,
+            outline_heading_numbers: false,
         }
     }
 
     /// Set the syntect theme name used for fenced code blocks when `highlight-code` is enabled.
     pub fn with_code_theme(mut self, theme: impl Into<String>) -> Self {
         self.code_theme = Some(theme.into());
+        self
+    }
+
+    /// Use multi-level outline numbers (`1. `, `1.2. `, …) as the visible heading prefix instead of `#`/`##`/… .
+    pub fn with_outline_heading_numbers(mut self, enabled: bool) -> Self {
+        self.outline_heading_numbers = enabled;
         self
     }
 }
@@ -138,6 +147,8 @@ mod tests {
 
         let options = Options {
             styles: CustomStyleSheet,
+            code_theme: None,
+            outline_heading_numbers: false,
         };
 
         assert_eq!(options.styles.heading(1), Style::new().red().bold());

@@ -13,8 +13,8 @@ use regex::Regex;
 use std::sync::LazyLock;
 use tui_markdown::{Options, from_str_with_options as markdown_to_text};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-use unicodeit::replace as latex_to_unicode;
 
+use crate::latex_unicode::latex_math_to_unicode;
 use crate::types::Message;
 
 use super::state::{Focus, Mode, ModelPhase, RightTab, TuiState};
@@ -230,6 +230,9 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
             Line::from(
                 "说明：聊天区折行算法与 Markdown 渲染区在极端长行上可能与 ratatui Wrap 略有差异，属预期范围。",
             ),
+            Line::from(
+                "说明：助手 Markdown 标题行首为自动大纲编号（如 1. / 1.2. / 1.2.1.），不再显示 # 符号。",
+            ),
             Line::raw(""),
             Line::from("按 F1 或 Esc 关闭本帮助。"),
         ];
@@ -434,7 +437,7 @@ pub(super) fn build_chat_scroll_lines(
             } else {
                 raw.to_string()
             };
-            latex_to_unicode(&display_raw)
+            latex_math_to_unicode(&display_raw)
         })
         .collect();
 
@@ -464,23 +467,33 @@ pub(super) fn build_chat_scroll_lines(
             let theme = code_themes()[state.code_theme_idx];
             let text = match (state.md_style, state.high_contrast) {
                 (0, false) => {
-                    let options = Options::new(DarkStyleSheet).with_code_theme(theme);
+                    let options = Options::new(DarkStyleSheet)
+                        .with_code_theme(theme)
+                        .with_outline_heading_numbers(true);
                     markdown_to_text(rendered, &options)
                 }
                 (0, true) => {
-                    let options = Options::new(HighContrastDarkStyleSheet).with_code_theme(theme);
+                    let options = Options::new(HighContrastDarkStyleSheet)
+                        .with_code_theme(theme)
+                        .with_outline_heading_numbers(true);
                     markdown_to_text(rendered, &options)
                 }
                 (1, false) => {
-                    let options = Options::new(LightStyleSheet).with_code_theme(theme);
+                    let options = Options::new(LightStyleSheet)
+                        .with_code_theme(theme)
+                        .with_outline_heading_numbers(true);
                     markdown_to_text(rendered, &options)
                 }
                 (1, true) => {
-                    let options = Options::new(HighContrastLightStyleSheet).with_code_theme(theme);
+                    let options = Options::new(HighContrastLightStyleSheet)
+                        .with_code_theme(theme)
+                        .with_outline_heading_numbers(true);
                     markdown_to_text(rendered, &options)
                 }
                 _ => {
-                    let options = Options::new(DarkStyleSheet).with_code_theme(theme);
+                    let options = Options::new(DarkStyleSheet)
+                        .with_code_theme(theme)
+                        .with_outline_heading_numbers(true);
                     markdown_to_text(rendered, &options)
                 }
             };

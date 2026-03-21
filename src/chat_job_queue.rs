@@ -3,9 +3,9 @@
 //! - **多副本 / 跨进程重放**：需外部消息代理（Redis、SQS 等）与持久化；本模块仅单进程协调。
 //! - **可观测**：`job_id` 写入 tracing；`/status` 暴露运行中任务数与近期任务摘要。
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -16,6 +16,46 @@ use crate::AppState;
 use crate::types::Message;
 
 const RECENT_CAP: usize = 32;
+
+/// 单条 `/chat` / `/chat/stream` 任务在跑 `run_agent_turn` 时，PER 相关状态的只读镜像（进程内、按 `job_id` 区分）。
+///
+/// **局限**：与浏览器「会话」无稳定绑定；同一客户端连续请求会得到不同 `job_id`。完整「本会话是否在规划重写」需会话级协议（如 `conversation_id`）再关联。
+#[derive(Debug, Default)]
+pub struct PerTurnFlight {
+    /// 已追加「请重写终答规划」的 user 消息，正在等待下一轮模型输出。
+    pub awaiting_plan_rewrite_model: AtomicBool,
+    pub plan_rewrite_attempts: AtomicUsize,
+    pub require_plan_in_final_content: AtomicBool,
+}
+
+impl PerTurnFlight {
+    pub fn sync_from_per_coord(&self, p: &crate::per_coord::PerCoordinator) {
+        self.plan_rewrite_attempts
+            .store(p.plan_rewrite_attempts_snapshot(), Ordering::Relaxed);
+        self.require_plan_in_final_content
+            .store(p.require_plan_in_final_flag_snapshot(), Ordering::Relaxed);
+    }
+}
+
+/// `GET /status` 中 `per_active_jobs` 的单项（与 [`PerTurnFlight`] 原子字段对应）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PerFlightStatusEntry {
+    pub job_id: u64,
+    pub awaiting_plan_rewrite_model: bool,
+    pub plan_rewrite_attempts: usize,
+    pub require_plan_in_final_content: bool,
+}
+
+struct PerFlightJobGuard {
+    queue: ChatJobQueue,
+    job_id: u64,
+}
+
+impl Drop for PerFlightJobGuard {
+    fn drop(&mut self) {
+        self.queue.unregister_per_job_per_flight(self.job_id);
+    }
+}
 
 /// 队列拒绝：有界通道已满（等待槽位过多）
 #[derive(Debug, Clone, Copy)]
@@ -83,6 +123,8 @@ struct Inner {
     next_job_id: AtomicU64,
     metrics: Arc<QueueMetrics>,
     recent: Arc<Mutex<VecDeque<ChatJobRecord>>>,
+    /// 正在执行的队列任务的 PER 飞行快照（任务结束即移除）。
+    active_per_flights: Arc<Mutex<HashMap<u64, Arc<PerTurnFlight>>>>,
 }
 
 /// `POST /chat` 与 `/chat/stream` 共用的进程内队列句柄（`Clone` 为轻量 `Arc`）。
@@ -112,6 +154,7 @@ impl ChatJobQueue {
                 next_job_id: AtomicU64::new(1),
                 metrics,
                 recent,
+                active_per_flights: Arc::new(Mutex::new(HashMap::new())),
             }),
         }
     }
@@ -147,6 +190,44 @@ impl ChatJobQueue {
             .ok()
             .map(|g| g.iter().rev().cloned().collect())
             .unwrap_or_default()
+    }
+
+    fn begin_per_flight_job(&self, job_id: u64, flight: Arc<PerTurnFlight>) -> PerFlightJobGuard {
+        if let Ok(mut g) = self.inner.active_per_flights.lock() {
+            g.insert(job_id, flight);
+        }
+        PerFlightJobGuard {
+            queue: self.clone(),
+            job_id,
+        }
+    }
+
+    fn unregister_per_job_per_flight(&self, job_id: u64) {
+        if let Ok(mut g) = self.inner.active_per_flights.lock() {
+            g.remove(&job_id);
+        }
+    }
+
+    /// 当前正在执行的队列任务及其 PER 镜像（无运行中任务时为空 Vec）。
+    pub fn active_per_jobs(&self) -> Vec<PerFlightStatusEntry> {
+        let Ok(g) = self.inner.active_per_flights.lock() else {
+            return Vec::new();
+        };
+        let mut v: Vec<PerFlightStatusEntry> = g
+            .iter()
+            .map(|(&job_id, flight)| PerFlightStatusEntry {
+                job_id,
+                awaiting_plan_rewrite_model: flight
+                    .awaiting_plan_rewrite_model
+                    .load(Ordering::Relaxed),
+                plan_rewrite_attempts: flight.plan_rewrite_attempts.load(Ordering::Relaxed),
+                require_plan_in_final_content: flight
+                    .require_plan_in_final_content
+                    .load(Ordering::Relaxed),
+            })
+            .collect();
+        v.sort_by_key(|e| e.job_id);
+        v
     }
 
     pub fn try_submit_stream(
@@ -280,6 +361,10 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             sse_tx,
         } => {
             info!(job_id, "chat stream 任务开始执行");
+            let flight = Arc::new(PerTurnFlight::default());
+            let _per_guard = state
+                .chat_queue
+                .begin_per_flight_job(job_id, flight.clone());
             let out = Some(&sse_tx);
             let r = crate::run_agent_turn(
                 &state.client,
@@ -293,6 +378,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 false,
                 false,
                 None,
+                Some(flight),
             )
             .await;
             let (ok, err) = match r {
@@ -321,6 +407,10 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             reply_tx,
         } => {
             info!(job_id, "chat json 任务开始执行");
+            let flight = Arc::new(PerTurnFlight::default());
+            let _per_guard = state
+                .chat_queue
+                .begin_per_flight_job(job_id, flight.clone());
             let r = crate::run_agent_turn(
                 &state.client,
                 &state.api_key,
@@ -333,6 +423,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 true,
                 false,
                 None,
+                Some(flight),
             )
             .await;
             let (ok, err) = match r {

@@ -83,11 +83,12 @@ flowchart TB
 | 路径 | 职责摘要 |
 |------|----------|
 | `agent_turn.rs` | Agent 主循环共用实现（Web/TUI）：调模型、解析 `tool_calls`、串联 `tool_registry` 与 PER。 |
-| `api.rs` | `chat/completions` 单次 HTTP 与 SSE 行解析；CLI/TUI 下终端 Markdown 等展示增强。 |
-| `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限。 |
+| `api.rs` | `chat/completions` 单次 HTTP 与 SSE 行解析；CLI 下终端 Markdown 展示（公式转 Unicode 见 `latex_unicode`）。 |
+| `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限；运行中任务的 `PerTurnFlight` 注册供 `GET /status` 的 `per_active_jobs`。 |
 | `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数。 |
 | `context_window.rs` | 每次调模型前：`tool` 截断、条数/字符预算、可选摘要请求。 |
 | `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
+| `latex_unicode.rs` | LaTeX 数学定界符（`$…$`、`$$…$$`、`\(...\)`、`\[...\]`）内先做小规模结构化预处理：`\text`/`\mathrm`/`\operatorname` 等拆壳、`\sqrt`/`[n]` 根式、`\frac` 线性化、常见 `\left`/`\right` 剥离、`\quad` 等空白命令，再 `unicodeit` 转 Unicode；供 `api` 终端 Markdown 与 TUI 聊天区一致渲染。 |
 | `llm/mod.rs` | 构造 `ChatRequest`、封装带指数退避的补全调用。 |
 | `per_coord.rs` | PER：工作流反思注入与终答 `agent_reply_plan` 策略。 |
 | `plan_artifact.rs` | 终答中规划 JSON（v1）解析与规则校验辅助。 |
@@ -164,7 +165,7 @@ flowchart TB
 - **配置项** `[agent] final_plan_requirement`（环境变量 `AGENT_FINAL_PLAN_REQUIREMENT`）→ `FinalPlanRequirementMode`：
   - **`never`**：不进入「缺规划则追加 user 重写提示」循环；反思注入仍会下发，但不置位强制标记。
   - **`workflow_reflection`（默认）**：仅当工具路径注入了 `instruction_type == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT` 时，对随后的**最终** assistant 校验；避免与反思 JSON 的字符串散落耦合。
-  - **`always`**：每次 `finish_reason != tool_calls` 的终答均校验（实验性）。
+  - **`always`**（实验性）：每次 `finish_reason != tool_calls` 的终答均校验。只要终答缺合格 `agent_reply_plan`，就会计入重写次数并可能再调模型，**轮次与费用通常明显高于** `workflow_reflection`；适用于强约束输出形态、联调规划解析、或审计场景。低成本/闲聊场景不建议开启。
 - **`[agent] plan_rewrite_max_attempts`**（`AGENT_PLAN_REWRITE_MAX_ATTEMPTS`，默认 `2`， clamp `1..=20`）：终答规划不合格时，最多追加多少次「请重写」user 消息；用尽后结束外层循环，并在 **有 SSE 通道** 时发送 `{"error":"…","code":"plan_rewrite_exhausted"}`（与 `sse_protocol::SsePayload::Error` 一致）。
 - **规则化语义（相对 `workflow_validate_only`）**：当策略要求校验规划，且历史中最近一次 `workflow_execute` 的 tool 结果为 `report_type == workflow_validate_result` 时，读取 `spec.layer_count`（拓扑层数），要求 `agent_reply_plan.steps.len() >= layer_count`；否则仅做 JSON 形态校验。重写提示中会附带 `layer_count` 说明。
 - **可观测性**：`tracing` 目标 `crabmate::per`（`RUST_LOG=crabmate::per=info` 或 `RUST_LOG=info`）记录 `after_final_assistant` 的 outcome、`reflection_stage_round`、`plan_rewrite_attempts` 等；`workflow_reflection_controller::WorkflowReflectionController::stage_round()` 供排错对照反思轮次。
@@ -186,7 +187,7 @@ flowchart LR
   AFA -->|"JSON+层数语义 OK 或无需校验"| STOP[结束本轮外层循环]
 ```
 
-- **`GET /status`** 返回 `final_plan_requirement`、`plan_rewrite_max_attempts`，便于与 `reflection_default_max_rounds` 一起核对运行态。
+- **`GET /status`** 返回 `final_plan_requirement`、`plan_rewrite_max_attempts`，便于与 `reflection_default_max_rounds` 一起核对运行态；另返回 **`per_active_jobs`**（仅队列内**正在执行**的 `/chat`、`/chat/stream` 任务）：每项含 `job_id`、`awaiting_plan_rewrite_model`（已追加规划重写 user 消息、等待下一轮模型输出）、`plan_rewrite_attempts`、`require_plan_in_final_content`。与前端「会话」无稳定 id 对应；若需按会话展示，需扩展请求体/存储后再关联 `job_id` 或自建会话字段。
 
 ## 后端模块说明（`src/`）
 
@@ -200,7 +201,7 @@ flowchart LR
 - **Web 服务**：使用 axum 路由，核心接口包括：
   - `POST /chat`：非流式对话
   - `POST /chat/stream`：SSE 流式对话（前端默认走这个）
-  - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement` / `plan_rewrite_max_attempts`**、**`max_message_history` / `tool_message_max_chars` / `context_char_budget` / `context_summary_trigger_chars`**、**`chat_queue_*` 与 `chat_queue_recent_jobs`**）
+  - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement` / `plan_rewrite_max_attempts`**、**`max_message_history` / `tool_message_max_chars` / `context_char_budget` / `context_summary_trigger_chars`**、**`chat_queue_*` / `chat_queue_recent_jobs` / `per_active_jobs`**）
   - `GET /health`：健康检查（API_KEY/静态目录/工作区可写/依赖命令）
   - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件
   - `GET|POST /tasks`：任务清单读写
@@ -280,7 +281,7 @@ flowchart LR
 
 - **`ui`**：承载 Web 侧的“工作区/任务”等 API handler（与前端面板直接对应）。
 - **`runtime`**：CLI/TUI 运行时逻辑，负责 REPL、单次问答、TUI 的交互渲染与调用 `run_agent_turn`。
-  - TUI 实现位于 `runtime/tui/`：`mod`（主循环）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_session`（`.crabmate/tui_session.json` 与导出）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐）、`workspace_ops`、`sse_line`、`styles`、`status`、`allowlist`、`agent`（委托 `agent_turn`）。
+  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`，避免空闲时每 tick 全量重算 Markdown 占满 CPU；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`）、`state`、`draw`、`input`（键鼠）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_session`（`.crabmate/tui_session.json` 与导出）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐）、`workspace_ops`、`sse_line`、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`、`allowlist`、`agent`（委托 `agent_turn`）。
 
 ## 前端模块说明（`frontend/src/`）
 
