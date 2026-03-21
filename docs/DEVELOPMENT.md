@@ -7,7 +7,7 @@
 
 - **`docs/TODOLIST.md`**：只保留**未完成**项。实现某条后**从文件中删除该条目**（不要用 `[x]` 长期占位）；空的小节可删掉标题。历史追溯用 Git。
 - **新功能 / 用户可见变更**（新 CLI 标志、HTTP 接口、配置键、工具名、TUI/Web 行为等）：合并代码时同步更新 **`README.md`**（面向使用者：功能、命令、配置、安全提示）和/或 **`docs/DEVELOPMENT.md`**（面向维护者：模块、协议、扩展点）。纯内部重构且无行为变化时，可只改 `DEVELOPMENT` 或注释。
-- **Cursor 规则**：项目内 `.cursor/rules/todolist-and-documentation.mdc` 对 Agent 重申上述约定。
+- **Cursor 规则**：项目内 `.cursor/rules/todolist-and-documentation.mdc` 对 Agent 重申上述约定；**架构或 `src/` 模块组织变更**时另见 `.cursor/rules/architecture-docs-sync.mdc`（须同步更新本节「架构设计」与「代码模块索引」）。
 - **提交前检查**：根目录 `.pre-commit-config.yaml`（含 **`cargo fmt --all`**、**`cargo clippy --all-targets -- -D warnings`**、**commit-msg：Conventional Commits 校验**）。安装：`pip install pre-commit && pre-commit install`（配置里含 `default_install_hook_types: [pre-commit, commit-msg]` 时会一并安装 **pre-commit** 与 **commit-msg** 钩子；若本机是旧配置下已装过，请补跑 **`pre-commit install --hook-type commit-msg`**）。手动执行文件检查：`pre-commit run --all-files`（**不**会跑 commit-msg；说明校验仅在 **`git commit`** 时触发）。Cursor 规则 **`.cursor/rules/pre-commit-before-commit.mdc`** 要求 Agent 在 `git commit` 前先跑 pre-commit（无则至少 `fmt` + `clippy`）。改 `src/` 时另见 **`.cursor/rules/rust-clippy-and-tests.mdc`**（测试范围）、**`.cursor/rules/rust-error-handling.mdc`**（unwrap/unsafe）。配置/路由/环境变量与文档的对应关系见 **`.cursor/rules/todolist-and-documentation.mdc`** 中「Rust：默认配置、环境变量与 HTTP 路由」。
 - **提交说明**：使用 **Conventional Commits**（`feat:` / `fix:` / `refactor:` 等），见 **`.cursor/rules/conventional-commits.mdc`**；本地由 **conventional-pre-commit** 钩子强制校验。
 
@@ -15,6 +15,121 @@
 
 - **Rust 后端（`src/`）**：负责与 DeepSeek API 通信、实现 Agent 主循环、提供 HTTP API（含 SSE 流式输出）、执行工具、提供工作区/任务/上传等能力。
 - **Web 前端（`frontend/`）**：Vite + React + TS + Tailwind。负责聊天 UI、工作区浏览/编辑、任务清单、状态栏展示，以及消费后端 SSE 流。
+
+## 架构设计
+
+### 总体结构
+
+CrabMate 在**单个 Rust 进程**内使用 **Tokio** 异步运行时：通过 **Axum** 暴露 HTTP，通过 **`runtime/`** 提供 CLI/TUI，共享同一套 **Agent 回合**（`run_agent_turn` → `agent_turn`）、**工具**（`tools`）与 **`AgentConfig`**。
+
+### 逻辑分层（自外而内）
+
+1. **接入层**：HTTP 路由与 multipart（`lib.rs`）、CLI/TUI 参数与交互循环（`runtime/`）。
+2. **编排层**：Web 对话排队（`chat_job_queue`）、Agent 主循环（`agent_turn`）、上下文裁剪/摘要（`context_window`）、PER 与终答规划（`per_coord`、`plan_artifact`、`workflow_reflection_controller`）。
+3. **模型层**：共享 HTTP 客户端（`http_client`）、请求拼装与重试（`llm`）、流式响应解析（`api`）。
+4. **工具与工作流**：工具表驱动执行（`tools/mod.rs`）、按名分发与 Web 侧阻塞超时（`tool_registry`）、DAG 工作流（`workflow`）。
+5. **横向契约**：OpenAI 兼容类型（`types`）、SSE 帧（`sse_protocol`）、工具结构化结果（`tool_result`）、配置（`config`）、Web 工作区/任务 API（`ui/*`）。
+
+```mermaid
+flowchart TB
+  subgraph entry [接入]
+    WEB["Axum HTTP\n(lib.rs)"]
+    CLI["CLI / TUI\n(runtime)"]
+  end
+  subgraph agent [Agent 编排]
+    Q[chat_job_queue]
+    AT[agent_turn]
+    CW[context_window]
+    PC["per_coord +\nplan_artifact"]
+    WRC[workflow_reflection_controller]
+  end
+  subgraph model [模型调用]
+    HC[http_client]
+    LLM[llm]
+    API[api stream_chat]
+  end
+  subgraph exec [工具与工作流]
+    TR[tool_registry]
+    TS[tools]
+    WF[workflow]
+  end
+  WEB --> Q
+  Q --> AT
+  CLI --> AT
+  AT --> CW
+  AT --> PC
+  AT --> LLM
+  LLM --> API
+  API --> HC
+  AT --> TR
+  TR --> TS
+  TR --> WF
+```
+
+### Web 流式对话数据流（概要）
+
+1. 客户端 `POST /chat/stream` → **`ChatJobQueue`** 限流排队。  
+2. **`run_agent_turn`** 携带 `messages` 与 `tools` 定义进入循环。  
+3. **`llm` / `api`** 请求 `/chat/completions`（SSE），直到得到最终文本或 **`tool_calls`**。  
+4. 若有工具调用 → **`tool_registry::dispatch_tool`** → **`tools::run_tool`**（或 workflow 路径）→ 结果以 `role: "tool"` 写回 `messages`。  
+5. 控制面事件经 **`sse_protocol`** 编码为 SSE 行下发前端。
+
+## `src/` 代码模块索引
+
+> **维护约定**：增删 `lib.rs` 顶层 `mod`、调整目录/文件职责边界、或改变工具/路由/工作流的调用关系时，应同步更新**本节表格**与上文**架构设计**（含 Mermaid 是否与现状一致）。Cursor 规则见 **`.cursor/rules/architecture-docs-sync.mdc`**。
+
+### 顶层模块（与 `src/lib.rs` 中 `mod` 声明一致）
+
+| 路径 | 职责摘要 |
+|------|----------|
+| `agent_turn.rs` | Agent 主循环共用实现（Web/TUI）：调模型、解析 `tool_calls`、串联 `tool_registry` 与 PER。 |
+| `api.rs` | `chat/completions` 单次 HTTP 与 SSE 行解析；CLI/TUI 下终端 Markdown 等展示增强。 |
+| `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限。 |
+| `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数。 |
+| `context_window.rs` | 每次调模型前：`tool` 截断、条数/字符预算、可选摘要请求。 |
+| `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
+| `llm/mod.rs` | 构造 `ChatRequest`、封装带指数退避的补全调用。 |
+| `per_coord.rs` | PER：工作流反思注入与终答 `agent_reply_plan` 策略。 |
+| `plan_artifact.rs` | 终答中规划 JSON（v1）解析与规则校验辅助。 |
+| `runtime/` | `cli`：单次问答/REPL；`tui`：全屏界面、绘制与输入。 |
+| `sse_protocol.rs` | SSE 负载枚举、`encode_message`、协议版本字段。 |
+| `tool_registry.rs` | 按工具名选择 Workflow / 命令超时 / 天气与联网搜索超时 / 默认同步等策略。 |
+| `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
+| `tools/` | 全部 Function Calling 定义、`ToolContext`、`run_tool`；子模块见下表。 |
+| `types.rs` | `Message`、`Tool`、流式 chunk 等 OpenAI 兼容类型。 |
+| `ui/` | Web 专用 axum handler：`workspace`、`task` 等。 |
+| `workflow.rs` | `workflow_execute`：DAG 拓扑、节点并行、工具调用与输出注入。 |
+| `workflow_reflection_controller.rs` | 反思回合状态、注入 `plan_next` 等契约校验。 |
+
+### `lib.rs` 额外职责（非独立文件但需知）
+
+- 组装 **完整 axum `Router`**（chat、status、health、workspace、tasks、upload、静态前端 `dist` 等）。
+- **`AppState`**：`Arc` 持有 `AgentConfig`、共享 `reqwest::Client`、工作区覆盖路径、上传清理句柄、对话队列等。
+
+### `src/tools/` 子文件（实现域一览）
+
+与 `tools/mod.rs` 中 `mod` 声明保持一致；新增工具文件时请在此**增行**。
+
+| 文件 | 职责域 |
+|------|--------|
+| `calc.rs` | 数学表达式（`bc`） |
+| `cargo_tools.rs` | Cargo 子命令封装 |
+| `ci_tools.rs` | 本地 CI / 流水线类工具 |
+| `code_nav.rs` | 代码导航、文件大纲等 |
+| `command.rs` | `run_command` 白名单与进程执行 |
+| `debug_tools.rs` | 调试辅助类工具 |
+| `exec.rs` | `run_executable` |
+| `file.rs` | 创建/读/改文件、`glob_files`、`list_tree` 等 |
+| `format.rs` / `lint.rs` | 格式化与 lint 聚合 |
+| `frontend_tools.rs` | 前端 npm 脚本类 |
+| `git.rs` | Git 只读与受控写入 |
+| `grep.rs` / `symbol.rs` | 工作区内文本搜索、Rust 符号 |
+| `patch.rs` | unified diff 应用 |
+| `quality_tools.rs` | 工作区质量组合检查 |
+| `rust_ide.rs` | 编译器 JSON、rust-analyzer 等 |
+| `schedule.rs` | 提醒与日程持久化 |
+| `security_tools.rs` | 安全审计类 |
+| `time.rs` / `weather.rs` / `web_search.rs` | 时间、天气（Open-Meteo）、联网搜索（Brave/Tavily） |
 
 ## 核心机制：Agent 主循环与工具调用
 
@@ -66,6 +181,8 @@ flowchart LR
 - **`GET /status`** 返回 `final_plan_requirement`、`plan_rewrite_max_attempts`，便于与 `reflection_default_max_rounds` 一起核对运行态。
 
 ## 后端模块说明（`src/`）
+
+**按文件/目录的职责一览见上文「`src/` 代码模块索引」与「`src/tools/` 子文件」**；本节按主题补充实现细节与扩展点。
 
 ### `src/lib.rs` / `src/main.rs`
 

@@ -125,4 +125,3 @@ pub enum CommandApprovalDecision {
     AllowOnce,
     AllowAlways,
 }
-

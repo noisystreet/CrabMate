@@ -1,0 +1,37 @@
+---
+description: 提交代码前须运行 pre-commit（格式化与检查），通过后再 git commit
+alwaysApply: true
+---
+
+# 提交前：pre-commit
+
+在代表用户执行 **`git commit`** 之前，必须先完成本地检查与格式化，避免把未格式化的代码提交进仓库。
+
+## 必须执行的命令
+
+1. **优先**（仓库根目录）：
+   ```bash
+   pre-commit run --all-files
+   ```
+   若当前改动已暂存、且希望与 hook 默认行为一致，可使用：
+   ```bash
+   pre-commit run
+   ```
+2. **当本机未安装 `pre-commit` 或命令不存在时**，对本仓库至少依次执行：
+   ```bash
+   cargo fmt --all
+   cargo clippy --all-targets --all-features -- -D warnings
+   ```
+   若改动 **`src/`** 或共享契约，另按 **`.cursor/rules/rust-clippy-and-tests.mdc`** 决定是否跑 **`cargo test`**（全量或增量）。
+   若 `pre-commit` 已配置但首次未装钩子，可提示用户执行：`pip install pre-commit && pre-commit install`（或 `uv tool install pre-commit` 等）。
+
+## 流程要求
+
+- **`pre-commit run` 失败**：根据输出修复格式/克隆失败等问题后**重新运行**，直至通过，再执行 `git add`（若 hook 改动了文件）与 `git commit`。
+- **不要**在跳过上述步骤的情况下直接提交；用户明确要求 `--no-verify` 等例外时，须在回复中说明风险。
+- **`git commit -m` 的说明**：须符合 **Conventional Commits**（见 **`.cursor/rules/conventional-commits.mdc`**）。
+
+## 与本仓库的对应关系
+
+- 钩子定义见仓库根目录 **`.pre-commit-config.yaml`**（含 **`cargo fmt`**、**`cargo clippy -D warnings`**、**`commit-msg`：Conventional Commits** 等）；新增语言/工具时同步更新该文件与本规则中的说明（若有必要）。
+- 安装后须能拦截非法提交说明：若 `git commit` 未触发说明校验，执行 **`pre-commit install --hook-type commit-msg`**（或重新 **`pre-commit install`**）。

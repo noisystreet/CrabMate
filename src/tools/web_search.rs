@@ -69,8 +69,12 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
     };
 
     let raw = match ctx.web_search_provider {
-        WebSearchProvider::Brave => search_brave(&client, ctx.web_search_api_key, &query, max_results),
-        WebSearchProvider::Tavily => search_tavily(&client, ctx.web_search_api_key, &query, max_results),
+        WebSearchProvider::Brave => {
+            search_brave(&client, ctx.web_search_api_key, &query, max_results)
+        }
+        WebSearchProvider::Tavily => {
+            search_tavily(&client, ctx.web_search_api_key, &query, max_results)
+        }
     };
 
     let raw = match raw {
@@ -99,20 +103,14 @@ fn search_brave(
         let status = res.status();
         let body = res.text().unwrap_or_default();
         let tail: String = body.chars().take(500).collect();
-        return Err(format!(
-            "Brave 搜索 API 错误：HTTP {} — {}",
-            status, tail
-        ));
+        return Err(format!("Brave 搜索 API 错误：HTTP {} — {}", status, tail));
     }
 
     let parsed: BraveWebSearchResponse = res
         .json()
         .map_err(|e| format!("解析 Brave 响应失败：{}", e))?;
 
-    let results = parsed
-        .web
-        .and_then(|w| w.results)
-        .unwrap_or_default();
+    let results = parsed.web.and_then(|w| w.results).unwrap_or_default();
 
     if results.is_empty() {
         return Ok("（无网页结果）".to_string());
@@ -158,10 +156,7 @@ fn search_tavily(
         let status = res.status();
         let text = res.text().unwrap_or_default();
         let tail: String = text.chars().take(500).collect();
-        return Err(format!(
-            "Tavily 搜索 API 错误：HTTP {} — {}",
-            status, tail
-        ));
+        return Err(format!("Tavily 搜索 API 错误：HTTP {} — {}", status, tail));
     }
 
     let parsed: TavilySearchResponse = res

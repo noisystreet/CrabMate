@@ -48,7 +48,8 @@ pub fn rust_backtrace_analyze(args_json: &str) -> String {
     }
 
     if frame_hits.is_empty() {
-        return "未识别到可分析的业务调用栈帧。可尝试传入 crate_hint（如你的 crate 名）。".to_string();
+        return "未识别到可分析的业务调用栈帧。可尝试传入 crate_hint（如你的 crate 名）。"
+            .to_string();
     }
 
     let first = frame_hits.first().cloned().unwrap_or_default();
@@ -62,7 +63,9 @@ pub fn rust_backtrace_analyze(args_json: &str) -> String {
     for (name, count) in top_modules.into_iter().take(5) {
         out.push_str(&format!("  - {}: {} 次\n", name, count));
     }
-    out.push_str("- 建议: 优先从首个可疑业务帧对应函数开始排查参数、unwrap、索引越界和并发共享状态。");
+    out.push_str(
+        "- 建议: 优先从首个可疑业务帧对应函数开始排查参数、unwrap、索引越界和并发共享状态。",
+    );
     out
 }
 
@@ -77,4 +80,3 @@ fn is_noise_frame(line: &str) -> bool {
     ];
     noise.iter().any(|n| line.contains(n))
 }
-

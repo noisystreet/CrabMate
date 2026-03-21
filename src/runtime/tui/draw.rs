@@ -3,15 +3,15 @@
 use ratatui::layout::Margin;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs, Wrap};
 use ratatui::widgets::Padding;
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs, Wrap};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
     Frame,
+    layout::{Constraint, Direction, Layout, Rect},
 };
 use regex::Regex;
 use std::sync::LazyLock;
-use tui_markdown::{from_str_with_options as markdown_to_text, Options};
+use tui_markdown::{Options, from_str_with_options as markdown_to_text};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use unicodeit::replace as latex_to_unicode;
 
@@ -19,8 +19,8 @@ use crate::types::Message;
 
 use super::state::{Focus, Mode, ModelPhase, RightTab, TuiState};
 use super::styles::{
-    code_themes, DarkStyleSheet, HighContrastDarkStyleSheet, HighContrastLightStyleSheet,
-    LightStyleSheet,
+    DarkStyleSheet, HighContrastDarkStyleSheet, HighContrastLightStyleSheet, LightStyleSheet,
+    code_themes,
 };
 
 /// 左右主窗格之间的竖线分隔（独立一列 `│`，不挡内容）。
@@ -128,7 +128,11 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
         ];
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .border_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
             .title(" 命令审批 ");
         let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
         f.render_widget(Clear, popup);
@@ -150,9 +154,13 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
                     .add_modifier(Modifier::BOLD),
             )),
             Line::raw(""),
-            Line::from("布局：左侧对话与输入区以横线分隔，左右主区域以竖线分隔；右侧为 工作区 / 任务 / 日程 标签页。"),
+            Line::from(
+                "布局：左侧对话与输入区以横线分隔，左右主区域以竖线分隔；右侧为 工作区 / 任务 / 日程 标签页。",
+            ),
             Line::from("焦点切换：F2 在 聊天 和 右侧 面板之间切换，Tab 在右侧标签页间切换。"),
-            Line::from("发送：在输入框中按 Enter；底栏为横线 + 单行加粗状态；左侧阶段词着色（如就绪绿、思考中青、回答中蓝等）。"),
+            Line::from(
+                "发送：在输入框中按 Enter；底栏为横线 + 单行加粗状态；左侧阶段词着色（如就绪绿、思考中青、回答中蓝等）。",
+            ),
             Line::from("Markdown：F3 切换代码主题，F4 切换 Markdown 暗/亮样式。"),
             Line::from("高对比度：F5 在普通 / 高对比度模式之间切换（适合弱光/弱视）。"),
             Line::from("任务 / 日程：右侧标签页中查看和勾选任务、提醒和事件。"),
@@ -217,10 +225,18 @@ fn is_standalone_role_echo_line(t: &str) -> bool {
     }
     matches!(
         t,
-        "模型" | "模型：" | "模型:"
-            | "Assistant" | "Assistant：" | "Assistant:"
-            | "助手" | "助手：" | "助手:"
-            | "Model" | "Model：" | "Model:"
+        "模型"
+            | "模型："
+            | "模型:"
+            | "Assistant"
+            | "Assistant："
+            | "Assistant:"
+            | "助手"
+            | "助手："
+            | "助手:"
+            | "Model"
+            | "Model："
+            | "Model:"
     ) || STANDALONE_ROLE_LINE.is_match(t)
 }
 
@@ -302,7 +318,11 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
 
     let mut lines: Vec<Line<'_>> = Vec::new();
     let chat_inner_width = vchunks[0].width.saturating_sub(2) as usize;
-    let chat_msgs: Vec<&Message> = state.messages.iter().filter(|m| m.role != "system").collect();
+    let chat_msgs: Vec<&Message> = state
+        .messages
+        .iter()
+        .filter(|m| m.role != "system")
+        .collect();
     let rendered_list: Vec<String> = chat_msgs
         .iter()
         .map(|m| {
@@ -310,7 +330,11 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
             let display_raw = if m.role == "tool" {
                 serde_json::from_str::<serde_json::Value>(raw)
                     .ok()
-                    .and_then(|v| v.get("human_summary").and_then(|x| x.as_str()).map(|s| s.to_string()))
+                    .and_then(|v| {
+                        v.get("human_summary")
+                            .and_then(|x| x.as_str())
+                            .map(|s| s.to_string())
+                    })
                     .unwrap_or_else(|| raw.to_string())
             } else if m.role == "assistant" {
                 strip_assistant_echo_label(raw)
@@ -446,7 +470,10 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
             let y = my.min(max_y);
             f.set_cursor_position((x, y));
         } else if input_focused {
-            let inner = vchunks[2].inner(Margin { vertical: 1, horizontal: 1 });
+            let inner = vchunks[2].inner(Margin {
+                vertical: 1,
+                horizontal: 1,
+            });
             if inner.width > 0 && inner.height > 0 {
                 if let Some((cx, cy)) = state.cursor_override {
                     let rel_x = cx.saturating_sub(inner.x);
@@ -490,9 +517,7 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     };
     let meta = meta.replace(['\n', '\r'], " ");
     // 「 ␣阶段 │ 」占宽，右侧说明单独按列宽截断，避免整串截断吃掉彩色阶段词
-    let prefix_w = 1usize
-        .saturating_add(phase_label.width())
-        .saturating_add(3); // " │ "
+    let prefix_w = 1usize.saturating_add(phase_label.width()).saturating_add(3); // " │ "
     let meta_max = inner_cols.saturating_sub(prefix_w).max(1);
     let bar_meta = truncate_display_width(&meta, meta_max);
     let status = Paragraph::new(Line::from(vec![
@@ -540,14 +565,22 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
     match state.tab {
         RightTab::Workspace => {
             let mut lines = Vec::new();
-            lines.push(Line::raw(format!("根目录：{}", state.workspace_dir.display())));
-            lines.push(Line::raw("快捷键：F2 聚焦 | Enter 打开/进入 | Backspace 上级 | ↑↓ 选择 | r 刷新"));
+            lines.push(Line::raw(format!(
+                "根目录：{}",
+                state.workspace_dir.display()
+            )));
+            lines.push(Line::raw(
+                "快捷键：F2 聚焦 | Enter 打开/进入 | Backspace 上级 | ↑↓ 选择 | r 刷新",
+            ));
             lines.push(Line::raw(""));
             for (i, (name, is_dir)) in state.workspace_entries.iter().enumerate().take(200) {
                 let prefix = if *is_dir { "[D]" } else { "   " };
                 let s = format!("{} {}", prefix, name);
                 if i == state.workspace_sel {
-                    lines.push(Line::from(Span::styled(s, Style::default().add_modifier(Modifier::REVERSED))));
+                    lines.push(Line::from(Span::styled(
+                        s,
+                        Style::default().add_modifier(Modifier::REVERSED),
+                    )));
                 } else {
                     lines.push(Line::raw(s));
                 }
@@ -562,7 +595,9 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
         }
         RightTab::Tasks => {
             let mut lines = Vec::new();
-            lines.push(Line::raw("快捷键：F2 聚焦 | Space 勾选/取消 | ↑↓ 选择 | r 刷新"));
+            lines.push(Line::raw(
+                "快捷键：F2 聚焦 | Space 勾选/取消 | ↑↓ 选择 | r 刷新",
+            ));
             lines.push(Line::raw(""));
             if state.task_items.is_empty() {
                 lines.push(Line::raw("tasks.json 不存在或为空。"));
@@ -593,7 +628,11 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
                 "快捷键：F2 聚焦 | t=提醒 e=日程 | Space 完成/取消提醒 | a 新增提醒 | ↑↓ 选择 | r 刷新",
             ));
             lines.push(Line::raw(""));
-            let sub_title = if state.schedule_sub == 0 { "提醒" } else { "日程" };
+            let sub_title = if state.schedule_sub == 0 {
+                "提醒"
+            } else {
+                "日程"
+            };
             lines.push(Line::from(Span::styled(
                 format!("当前：{}", sub_title),
                 Style::default().add_modifier(Modifier::BOLD),
@@ -604,7 +643,9 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
                 if state.reminder_items.is_empty() {
                     lines.push(Line::raw("（无提醒）"));
                 } else {
-                    for (i, (_id, title, done, due_at)) in state.reminder_items.iter().enumerate().take(50) {
+                    for (i, (_id, title, done, due_at)) in
+                        state.reminder_items.iter().enumerate().take(50)
+                    {
                         let mut s = format!("[{}] {}", if *done { "✓" } else { " " }, title);
                         if due_at.is_some() {
                             s.push_str(" (有到期时间)");
@@ -654,9 +695,7 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
             .padding(Padding::symmetric(1, 1));
         let title = format!("查看文件（Esc/q 关闭）：{}", state.file_view_title);
         let full = format!("{}\n{}\n", title, state.file_view_content);
-        let content = Paragraph::new(full)
-            .block(block)
-            .wrap(Wrap { trim: false });
+        let content = Paragraph::new(full).block(block).wrap(Wrap { trim: false });
         f.render_widget(content, vchunks[2]);
     }
 }

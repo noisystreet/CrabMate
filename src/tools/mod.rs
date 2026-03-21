@@ -10,17 +10,17 @@ mod command;
 mod debug_tools;
 mod exec;
 mod file;
+mod format;
 mod frontend_tools;
 mod git;
-mod symbol;
-mod patch;
+mod grep;
 mod lint;
-mod format;
+mod patch;
 mod quality_tools;
 mod rust_ide;
-mod grep;
 mod schedule;
 mod security_tools;
+mod symbol;
 mod time;
 mod weather;
 mod web_search;
@@ -1190,8 +1190,11 @@ fn runner_get_current_time(args: &str, _ctx: &ToolContext<'_>) -> String {
 fn runner_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
     let expr = match serde_json::from_str::<serde_json::Value>(args)
         .ok()
-        .and_then(|v| v.get("expression").and_then(|e| e.as_str()).map(String::from))
-    {
+        .and_then(|v| {
+            v.get("expression")
+                .and_then(|e| e.as_str())
+                .map(String::from)
+        }) {
         Some(s) => s,
         None => return "错误：缺少 expression 参数".to_string(),
     };
@@ -2094,9 +2097,10 @@ pub(crate) fn is_compile_command_success(args_json: &str, result: &str) -> bool 
     // run_command 输出的第一行形如：退出码：0
     let first_line = result.lines().next().unwrap_or("");
     if let Some(rest) = first_line.strip_prefix("退出码：")
-        && let Ok(code) = rest.trim().parse::<i32>() {
-            return code == 0;
-        }
+        && let Ok(code) = rest.trim().parse::<i32>()
+    {
+        return code == 0;
+    }
     false
 }
 
@@ -2140,12 +2144,12 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             let path = v.get("path")?.as_str()?.trim();
             let line = v.get("line").and_then(|x| x.as_u64());
             Some(format!("RA 跳转定义：{}:{}", path, line.unwrap_or(0)))
-        },
+        }
         "rust_analyzer_find_references" => {
             let path = v.get("path")?.as_str()?.trim();
             let line = v.get("line").and_then(|x| x.as_u64());
             Some(format!("RA 查找引用：{}:{}", path, line.unwrap_or(0)))
-        },
+        }
         "cargo_fix" => Some("运行 cargo fix（受控写入）".to_string()),
         "rust_test_one" => Some("运行单个 Rust 测试".to_string()),
         "frontend_lint" => Some("运行前端 lint".to_string()),
@@ -2183,7 +2187,11 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             if path.trim().is_empty() {
                 Some(format!("查看 Git diff 变更文件名（{}）", mode))
             } else {
-                Some(format!("查看 Git diff 变更文件名（{}）：{}", mode, path.trim()))
+                Some(format!(
+                    "查看 Git diff 变更文件名（{}）：{}",
+                    mode,
+                    path.trim()
+                ))
             }
         }
         "git_log" => Some("查看 Git 提交历史".to_string()),
@@ -2250,7 +2258,11 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
         "glob_files" => {
             let pat = v.get("pattern")?.as_str()?.trim();
             let root = v.get("path").and_then(|x| x.as_str()).unwrap_or(".").trim();
-            Some(format!("glob 匹配：{} @ {}", pat, if root.is_empty() { "." } else { root }))
+            Some(format!(
+                "glob 匹配：{} @ {}",
+                pat,
+                if root.is_empty() { "." } else { root }
+            ))
         }
         "list_tree" => {
             let root = v.get("path").and_then(|x| x.as_str()).unwrap_or(".").trim();
@@ -2279,7 +2291,11 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
                 .filter_map(|line| line.strip_prefix("+++ "))
                 .map(|s| s.split_whitespace().next().unwrap_or(""))
                 .filter(|s| !s.is_empty() && *s != "/dev/null")
-                .map(|s| s.trim_start_matches("b/").trim_start_matches("a/").to_string())
+                .map(|s| {
+                    s.trim_start_matches("b/")
+                        .trim_start_matches("a/")
+                        .to_string()
+                })
                 .collect::<Vec<_>>();
             if files.is_empty() {
                 Some("应用补丁".to_string())
@@ -2401,7 +2417,11 @@ mod tests {
         let allowed = test_allowed_commands();
         let ctx = test_ctx(&allowed);
         let out = run_tool("get_current_time", "{}", &ctx);
-        assert!(out.contains("当前时间"), "时间工具应包含「当前时间」，得到: {}", out);
+        assert!(
+            out.contains("当前时间"),
+            "时间工具应包含「当前时间」，得到: {}",
+            out
+        );
     }
 
     #[test]
@@ -2425,18 +2445,18 @@ mod tests {
         let allowed = test_allowed_commands();
         let ctx = test_ctx(&allowed);
         let out = run_tool("get_weather", "{}", &ctx);
-        assert!(out.contains("city") || out.contains("location"), "缺少参数应提示，得到: {}", out);
+        assert!(
+            out.contains("city") || out.contains("location"),
+            "缺少参数应提示，得到: {}",
+            out
+        );
     }
 
     #[test]
     fn test_run_tool_web_search_no_api_key() {
         let allowed = test_allowed_commands();
         let ctx = test_ctx(&allowed);
-        let out = run_tool(
-            "web_search",
-            r#"{"query":"Rust programming"}"#,
-            &ctx,
-        );
+        let out = run_tool("web_search", r#"{"query":"Rust programming"}"#, &ctx);
         assert!(
             out.contains("未配置") && out.contains("web_search"),
             "无 Key 时应提示配置，得到: {}",

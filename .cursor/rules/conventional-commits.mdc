@@ -1,0 +1,41 @@
+---
+description: git commit 说明须符合 Conventional Commits（feat:/fix:/refactor: 等）
+alwaysApply: true
+---
+
+# Commit message：Conventional Commits
+
+代表用户执行 **`git commit`** 时，**说明（subject）**须符合 [Conventional Commits](https://www.conventionalcommits.org/) 习惯：
+
+## 格式
+
+```
+<type>(<optional scope>): <简短描述>
+
+[可选正文与脚注]
+```
+
+- **type**（常用）：`feat` 新功能、`fix` 修复、`refactor` 重构、`docs` 文档、`test` 测试、`chore` 杂项（工具/配置）、`perf` 性能、`ci` CI、`build` 构建、`style` 纯格式/排版、`revert` 回滚。
+- **scope**（可选）：模块或区域，如 `tui`、`api`、`frontend`、小写英文或项目内约定。
+- **描述**：动词开头、简明；**中文或英文**与仓库历史保持一致即可（本仓库多为中文描述时可写中文）。
+
+## 示例
+
+```
+feat(tui): 状态栏阶段词按 ModelPhase 着色
+fix(api): 修正流式响应边界条件
+refactor(config): 拆分 AgentConfig 加载逻辑
+docs: 补充 pre-commit 与 Cursor 规则说明
+chore: 更新依赖
+```
+
+## 要求
+
+- **禁止**无 type 的笼统说明（如仅写「更新」「修改」）；合并多类改动时优先拆 commit，或选最主要 type 并在正文列出其余变更。
+- **BREAKING CHANGE**：不兼容变更在正文或脚注标明（`BREAKING CHANGE: …`），或 type 后加 `!`（如 `feat(api)!: …`）。
+
+## 本地强制校验
+
+- 仓库 **`.pre-commit-config.yaml`** 使用 **`compilerla/conventional-pre-commit`** 的 **`commit-msg`** 阶段；执行 **`git commit`** 时会校验首行是否符合上述 type 列表。
+- 安装钩子后需包含 **commit-msg**（配置中已设 `default_install_hook_types` 时，执行 **`pre-commit install`** 即可；若曾只装过 `pre-commit` 类型，请再执行 **`pre-commit install --hook-type commit-msg`**）。
+- 手动试跑（不写 git 对象）：`echo "feat: ok" > /tmp/msg && pre-commit run --hook-stage commit-msg conventional-pre-commit --commit-msg-filename /tmp/msg`

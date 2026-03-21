@@ -52,7 +52,10 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
     if run_cargo_fmt_check {
         let r = ci_tools::cargo_fmt_check_tool("{}", workspace_root, max_output_len);
         let failed = section_failed(&r);
-        summary.push(("cargo fmt --check", if failed { "failed" } else { "passed" }));
+        summary.push((
+            "cargo fmt --check",
+            if failed { "failed" } else { "passed" },
+        ));
         sections.push(r);
         if fail_fast && failed {
             push_skipped(
@@ -124,7 +127,13 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         summary.push(("frontend lint", if failed { "failed" } else { "passed" }));
         sections.push(r);
         if fail_fast && failed {
-            push_skipped(&mut summary, false, false, false, run_frontend_prettier_check);
+            push_skipped(
+                &mut summary,
+                false,
+                false,
+                false,
+                run_frontend_prettier_check,
+            );
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -132,8 +141,11 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
     }
 
     if run_frontend_prettier_check {
-        let r =
-            frontend_tools::frontend_prettier_check(r#"{"subdir":"frontend"}"#, workspace_root, max_output_len);
+        let r = frontend_tools::frontend_prettier_check(
+            r#"{"subdir":"frontend"}"#,
+            workspace_root,
+            max_output_len,
+        );
         let failed = section_failed(&r) && !r.contains("跳过（");
         summary.push((
             "frontend prettier --check",
@@ -155,18 +167,24 @@ fn section_failed(text: &str) -> bool {
         if let Some(rest) = line.strip_prefix("cargo fmt --check (exit=") {
             return parse_exit_nonzero(rest);
         }
-        if line.starts_with("cargo ") && line.contains("(exit=")
-            && let Some(idx) = line.find("(exit=") {
-                return parse_exit_nonzero(&line[idx..]);
-            }
-        if line.contains("npm run") && line.contains("(exit=")
-            && let Some(idx) = line.find("(exit=") {
-                return parse_exit_nonzero(&line[idx..]);
-            }
-        if line.contains("npx prettier") && line.contains("(exit=")
-            && let Some(idx) = line.find("(exit=") {
-                return parse_exit_nonzero(&line[idx..]);
-            }
+        if line.starts_with("cargo ")
+            && line.contains("(exit=")
+            && let Some(idx) = line.find("(exit=")
+        {
+            return parse_exit_nonzero(&line[idx..]);
+        }
+        if line.contains("npm run")
+            && line.contains("(exit=")
+            && let Some(idx) = line.find("(exit=")
+        {
+            return parse_exit_nonzero(&line[idx..]);
+        }
+        if line.contains("npx prettier")
+            && line.contains("(exit=")
+            && let Some(idx) = line.find("(exit=")
+        {
+            return parse_exit_nonzero(&line[idx..]);
+        }
     }
     text.contains("error: could not compile") || text.contains("error[E")
 }
@@ -174,9 +192,7 @@ fn section_failed(text: &str) -> bool {
 fn parse_exit_nonzero(s: &str) -> bool {
     // s 形如 "(exit=1):"、"1):"（fmt 首行 strip 后）等
     let s = s.trim();
-    let rest = s
-        .strip_prefix("(exit=")
-        .unwrap_or(s);
+    let rest = s.strip_prefix("(exit=").unwrap_or(s);
     let code = rest
         .split(':')
         .next()

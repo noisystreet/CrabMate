@@ -86,7 +86,8 @@ fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> Strin
                 body = "(无输出)".to_string();
             }
             if status != 0 && body.contains("no such command: `audit`") {
-                return "cargo audit: 未安装 cargo-audit，请先运行 `cargo install cargo-audit`".to_string();
+                return "cargo audit: 未安装 cargo-audit，请先运行 `cargo install cargo-audit`"
+                    .to_string();
             }
             format!(
                 "{} (exit={}):\n{}",
@@ -113,7 +114,8 @@ fn truncate_output(s: &str, max_bytes: usize) -> String {
     };
     format!(
         "{}\n\n... (输出已截断，保留前 {} 行，共 {} 行)",
-        truncated, kept_lines, lines.len()
+        truncated,
+        kept_lines,
+        lines.len()
     )
 }
-

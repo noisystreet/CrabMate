@@ -83,7 +83,9 @@ pub fn diff(args_json: &str, max_output_len: usize, working_dir: &Path) -> Strin
         }
         "staged" => {
             let mut cmd = Command::new("git");
-            cmd.arg("diff").arg("--staged").arg(format!("-U{}", context));
+            cmd.arg("diff")
+                .arg("--staged")
+                .arg(format!("-U{}", context));
             if let Some(p) = path {
                 cmd.arg("--").arg(p);
             }
@@ -100,7 +102,10 @@ pub fn diff(args_json: &str, max_output_len: usize, working_dir: &Path) -> Strin
             let a = run_and_format(unstaged, max_output_len, "git diff");
 
             let mut staged = Command::new("git");
-            staged.arg("diff").arg("--staged").arg(format!("-U{}", context));
+            staged
+                .arg("diff")
+                .arg("--staged")
+                .arg(format!("-U{}", context));
             if let Some(ref p) = path {
                 staged.arg("--").arg(p);
             }
@@ -130,10 +135,7 @@ pub fn clean_check(_args_json: &str, max_output_len: usize, working_dir: &Path) 
                 return format!(
                     "git clean check (exit={}):\n{}",
                     status,
-                    truncate_output(
-                        &stdout,
-                        max_output_len
-                    )
+                    truncate_output(&stdout, max_output_len)
                 );
             }
             if stdout.trim().is_empty() {
@@ -274,9 +276,10 @@ pub fn diff_names(args_json: &str, max_output_len: usize, working_dir: &Path) ->
             let mut staged = Command::new("git");
             staged.arg("diff").arg("--name-only").arg("--staged");
             if let Some(p) = v.get("path").and_then(|x| x.as_str())
-                && is_safe_rel_path(p) {
-                    staged.arg("--").arg(p.trim());
-                }
+                && is_safe_rel_path(p)
+            {
+                staged.arg("--").arg(p.trim());
+            }
             staged.current_dir(working_dir);
             let b = run_and_format(staged, max_output_len, "git diff --name-only --staged");
             format!("{}\n\n====================\n\n{}", a, b)
@@ -508,14 +511,25 @@ pub fn apply(args_json: &str, max_output_len: usize, working_dir: &Path) -> Stri
         Some(p) if is_safe_rel_path(p) => p.trim(),
         _ => return "错误：缺少合法 patch_path 参数".to_string(),
     };
-    let check_only = v.get("check_only").and_then(|x| x.as_bool()).unwrap_or(true);
+    let check_only = v
+        .get("check_only")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(true);
     let mut cmd = Command::new("git");
     cmd.arg("apply");
     if check_only {
         cmd.arg("--check");
     }
     cmd.arg("--").arg(patch).current_dir(working_dir);
-    run_and_format(cmd, max_output_len, if check_only { "git apply --check" } else { "git apply" })
+    run_and_format(
+        cmd,
+        max_output_len,
+        if check_only {
+            "git apply --check"
+        } else {
+            "git apply"
+        },
+    )
 }
 
 pub fn clone_repo(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
@@ -599,7 +613,10 @@ pub fn commit(args_json: &str, max_output_len: usize, working_dir: &Path) -> Str
         Some(s) if !s.is_empty() => s.to_string(),
         _ => return "错误：缺少 message 参数".to_string(),
     };
-    let stage_all = v.get("stage_all").and_then(|x| x.as_bool()).unwrap_or(false);
+    let stage_all = v
+        .get("stage_all")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     if stage_all {
         let mut add = Command::new("git");
         add.arg("add").arg("-A").current_dir(working_dir);
@@ -609,7 +626,10 @@ pub fn commit(args_json: &str, max_output_len: usize, working_dir: &Path) -> Str
         }
     }
     let mut cmd = Command::new("git");
-    cmd.arg("commit").arg("-m").arg(message).current_dir(working_dir);
+    cmd.arg("commit")
+        .arg("-m")
+        .arg(message)
+        .current_dir(working_dir);
     run_and_format(cmd, max_output_len, "git commit")
 }
 
@@ -644,7 +664,11 @@ fn section_failed(s: &str) -> bool {
     let Some(end) = rest.find(')') else {
         return false;
     };
-    rest[..end].trim().parse::<i32>().map(|c| c != 0).unwrap_or(false)
+    rest[..end]
+        .trim()
+        .parse::<i32>()
+        .map(|c| c != 0)
+        .unwrap_or(false)
 }
 
 fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> String {

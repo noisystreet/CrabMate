@@ -156,9 +156,7 @@ pub fn rust_file_outline(args_json: &str, workspace_root: &Path) -> String {
     }
 
     let mut buf = String::new();
-    if let Err(e) = fs::File::open(&target)
-        .and_then(|mut f| f.read_to_string(&mut buf))
-    {
+    if let Err(e) = fs::File::open(&target).and_then(|mut f| f.read_to_string(&mut buf)) {
         return format!("读取文件失败：{}", e);
     }
     if buf.len() > MAX_FILE_SIZE_BYTES {
@@ -324,7 +322,8 @@ fn search_refs_in_file(
         if !ref_re.is_match(line) {
             continue;
         }
-        if exclude_definitions && symbol::line_looks_like_rust_definition(line, symbol, case_insensitive)
+        if exclude_definitions
+            && symbol::line_looks_like_rust_definition(line, symbol, case_insensitive)
         {
             continue;
         }

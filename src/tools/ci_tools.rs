@@ -19,7 +19,10 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         .get("run_frontend_lint")
         .and_then(|x| x.as_bool())
         .unwrap_or(true);
-    let fail_fast = v.get("fail_fast").and_then(|x| x.as_bool()).unwrap_or(false);
+    let fail_fast = v
+        .get("fail_fast")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let summary_only = v
         .get("summary_only")
         .and_then(|x| x.as_bool())
@@ -30,7 +33,10 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
     if run_fmt {
         let r = cargo_fmt_check(workspace_root, max_output_len);
         let failed = section_failed(&r);
-        summary.push(("cargo fmt --check".to_string(), if failed { "failed" } else { "passed" }));
+        summary.push((
+            "cargo fmt --check".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
         sections.push(r);
         if fail_fast && failed {
             push_skipped(&mut summary, run_clippy, run_test, run_frontend_lint);
@@ -40,13 +46,13 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         summary.push(("cargo fmt --check".to_string(), "skipped"));
     }
     if run_clippy {
-        let r = cargo_tools::cargo_clippy(
-            r#"{"all_targets":true}"#,
-            workspace_root,
-            max_output_len,
-        );
+        let r =
+            cargo_tools::cargo_clippy(r#"{"all_targets":true}"#, workspace_root, max_output_len);
         let failed = section_failed(&r);
-        summary.push(("cargo clippy".to_string(), if failed { "failed" } else { "passed" }));
+        summary.push((
+            "cargo clippy".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
         sections.push(r);
         if fail_fast && failed {
             push_skipped(&mut summary, false, run_test, run_frontend_lint);
@@ -58,7 +64,10 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
     if run_test {
         let r = cargo_tools::cargo_test("{}", workspace_root, max_output_len);
         let failed = section_failed(&r);
-        summary.push(("cargo test".to_string(), if failed { "failed" } else { "passed" }));
+        summary.push((
+            "cargo test".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
         sections.push(r);
         if fail_fast && failed {
             push_skipped(&mut summary, false, false, run_frontend_lint);
@@ -74,7 +83,10 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
             max_output_len,
         );
         let failed = section_failed(&r) && !r.contains("跳过（");
-        summary.push(("frontend lint".to_string(), if failed { "failed" } else { "passed" }));
+        summary.push((
+            "frontend lint".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
         sections.push(r);
     } else {
         summary.push(("frontend lint".to_string(), "skipped"));
@@ -82,7 +94,11 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
     build_output(&summary, &sections, summary_only, false)
 }
 
-pub fn release_ready_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+pub fn release_ready_check(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数解析错误：{}", e),
@@ -94,7 +110,10 @@ pub fn release_ready_check(args_json: &str, workspace_root: &Path, max_output_le
         .get("require_clean_worktree")
         .and_then(|x| x.as_bool())
         .unwrap_or(true);
-    let fail_fast = v.get("fail_fast").and_then(|x| x.as_bool()).unwrap_or(false);
+    let fail_fast = v
+        .get("fail_fast")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let summary_only = v
         .get("summary_only")
         .and_then(|x| x.as_bool())
@@ -110,7 +129,10 @@ pub fn release_ready_check(args_json: &str, workspace_root: &Path, max_output_le
             max_output_len,
         );
         let failed = r.contains("failed=");
-        summary.push(("ci_pipeline_local".to_string(), if failed { "failed" } else { "passed" }));
+        summary.push((
+            "ci_pipeline_local".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
         sections.push(r);
         if fail_fast && failed {
             push_release_skipped(&mut summary, run_audit, run_deny, require_clean);
@@ -123,7 +145,10 @@ pub fn release_ready_check(args_json: &str, workspace_root: &Path, max_output_le
     if run_audit {
         let r = security_tools::cargo_audit("{}", workspace_root, max_output_len);
         let failed = section_failed(&r);
-        summary.push(("cargo_audit".to_string(), if failed { "failed" } else { "passed" }));
+        summary.push((
+            "cargo_audit".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
         sections.push(r);
         if fail_fast && failed {
             push_release_skipped(&mut summary, false, run_deny, require_clean);
@@ -136,7 +161,10 @@ pub fn release_ready_check(args_json: &str, workspace_root: &Path, max_output_le
     if run_deny {
         let r = security_tools::cargo_deny("{}", workspace_root, max_output_len);
         let failed = section_failed(&r);
-        summary.push(("cargo_deny".to_string(), if failed { "failed" } else { "passed" }));
+        summary.push((
+            "cargo_deny".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
         sections.push(r);
         if fail_fast && failed {
             push_release_skipped(&mut summary, false, false, require_clean);
@@ -149,7 +177,10 @@ pub fn release_ready_check(args_json: &str, workspace_root: &Path, max_output_le
     if require_clean {
         let r = git_clean_check(workspace_root, max_output_len);
         let failed = section_failed(&r);
-        summary.push(("git_clean_check".to_string(), if failed { "failed" } else { "passed" }));
+        summary.push((
+            "git_clean_check".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
         sections.push(r);
     } else {
         summary.push(("git_clean_check".to_string(), "skipped"));
@@ -158,7 +189,12 @@ pub fn release_ready_check(args_json: &str, workspace_root: &Path, max_output_le
     build_release_output(&summary, &sections, summary_only, false)
 }
 
-fn push_release_skipped(summary: &mut Vec<(String, &'static str)>, audit: bool, deny: bool, clean: bool) {
+fn push_release_skipped(
+    summary: &mut Vec<(String, &'static str)>,
+    audit: bool,
+    deny: bool,
+    clean: bool,
+) {
     if audit {
         summary.push(("cargo_audit".to_string(), "skipped"));
     }
@@ -197,7 +233,11 @@ fn build_release_output(
     if sections.is_empty() {
         summary_text
     } else {
-        format!("{}\n\n====================\n\n{}", summary_text, sections.join("\n\n====================\n\n"))
+        format!(
+            "{}\n\n====================\n\n{}",
+            summary_text,
+            sections.join("\n\n====================\n\n")
+        )
     }
 }
 
@@ -213,13 +253,24 @@ fn git_clean_check(workspace_root: &Path, max_output_len: usize) -> String {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             if status != 0 {
-                let msg = if !stderr.trim().is_empty() { stderr } else { stdout };
-                return format!("git clean check (exit={}):\n{}", status, truncate_simple(&msg, max_output_len));
+                let msg = if !stderr.trim().is_empty() {
+                    stderr
+                } else {
+                    stdout
+                };
+                return format!(
+                    "git clean check (exit={}):\n{}",
+                    status,
+                    truncate_simple(&msg, max_output_len)
+                );
             }
             if stdout.trim().is_empty() {
                 "git clean check (exit=0):\n工作区干净".to_string()
             } else {
-                format!("git clean check (exit=1):\n存在未提交改动：\n{}", truncate_simple(&stdout, max_output_len))
+                format!(
+                    "git clean check (exit=1):\n存在未提交改动：\n{}",
+                    truncate_simple(&stdout, max_output_len)
+                )
             }
         }
         Err(e) => format!("git clean check (exit=1):\n执行失败: {}", e),
@@ -234,7 +285,12 @@ fn truncate_simple(s: &str, max_output_len: usize) -> String {
     }
 }
 
-fn push_skipped(summary: &mut Vec<(String, &'static str)>, clippy: bool, test: bool, frontend: bool) {
+fn push_skipped(
+    summary: &mut Vec<(String, &'static str)>,
+    clippy: bool,
+    test: bool,
+    frontend: bool,
+) {
     if clippy {
         summary.push(("cargo clippy".to_string(), "skipped"));
     }
@@ -273,7 +329,11 @@ fn build_output(
     if sections.is_empty() {
         summary_text
     } else {
-        format!("{}\n\n====================\n\n{}", summary_text, sections.join("\n\n====================\n\n"))
+        format!(
+            "{}\n\n====================\n\n{}",
+            summary_text,
+            sections.join("\n\n====================\n\n")
+        )
     }
 }
 
@@ -286,7 +346,11 @@ fn section_failed(s: &str) -> bool {
     let Some(end) = rest.find(')') else {
         return false;
     };
-    rest[..end].trim().parse::<i32>().map(|c| c != 0).unwrap_or(false)
+    rest[..end]
+        .trim()
+        .parse::<i32>()
+        .map(|c| c != 0)
+        .unwrap_or(false)
 }
 
 fn cargo_fmt_check(workspace_root: &Path, max_output_len: usize) -> String {
@@ -321,7 +385,10 @@ fn cargo_fmt_check(workspace_root: &Path, max_output_len: usize) -> String {
     }
 }
 
-pub fn cargo_fmt_check_tool(_args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+pub fn cargo_fmt_check_tool(
+    _args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> String {
     cargo_fmt_check(workspace_root, max_output_len)
 }
-

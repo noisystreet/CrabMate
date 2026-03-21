@@ -81,9 +81,10 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         ));
         // 可选上下文：重新读取文件并输出附近行
         if params.context_lines > 0
-            && let Ok(ctx) = read_context_lines(&path, line_no, params.context_lines) {
-                out.push_str(&ctx);
-            }
+            && let Ok(ctx) = read_context_lines(&path, line_no, params.context_lines)
+        {
+            out.push_str(&ctx);
+        }
         out.push('\n');
     }
 
@@ -265,9 +266,10 @@ fn walk_and_match(
         } else if path.is_file() {
             *visited_files += 1;
             if search_file(&path, re, results, max_results).unwrap_or(false)
-                && results.len() >= max_results {
-                    break;
-                }
+                && results.len() >= max_results
+            {
+                break;
+            }
         }
     }
     Ok(())
@@ -331,4 +333,3 @@ fn truncate_line(s: &str, max_chars: usize) -> String {
         out
     }
 }
-

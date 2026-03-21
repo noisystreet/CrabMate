@@ -2,7 +2,7 @@
 //!
 //! rust-analyzer 需已安装并在 PATH 中（或由 `server_path` 指定）。LSP 为最小实现：initialize → didOpen → 单次请求。
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -36,10 +36,24 @@ pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len
         return "错误：工作区根目录未找到 Cargo.toml".to_string();
     }
 
-    let all_targets = v.get("all_targets").and_then(|x| x.as_bool()).unwrap_or(false);
-    let package = v.get("package").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
-    let features = v.get("features").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty());
-    let all_features = v.get("all_features").and_then(|x| x.as_bool()).unwrap_or(false);
+    let all_targets = v
+        .get("all_targets")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let package = v
+        .get("package")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let features = v
+        .get("features")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let all_features = v
+        .get("all_features")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let max_diag = v
         .get("max_diagnostics")
         .and_then(|x| x.as_u64())
@@ -117,7 +131,11 @@ pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len
     if diags.is_empty() {
         out.push_str("（未解析到 compiler-message 行；若仅有 stderr 请见上文。可能编译通过或无 JSON 行。）\n");
     } else {
-        out.push_str(&format!("共 {} 条诊断（最多展示 {} 条）：\n\n", diags.len(), max_diag));
+        out.push_str(&format!(
+            "共 {} 条诊断（最多展示 {} 条）：\n\n",
+            diags.len(),
+            max_diag
+        ));
         for (i, d) in diags.iter().enumerate() {
             out.push_str(&format!("--- [{}] ---\n{}\n", i + 1, d));
         }
@@ -127,18 +145,12 @@ pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len
 }
 
 fn format_compiler_message(m: &Value) -> String {
-    let level = m
-        .get("level")
-        .and_then(|x| x.as_str())
-        .unwrap_or("?");
+    let level = m.get("level").and_then(|x| x.as_str()).unwrap_or("?");
     let code = m
         .get("code")
         .and_then(|c| c.get("code").and_then(|x| x.as_str()))
         .unwrap_or("");
-    let text = m
-        .get("message")
-        .and_then(|x| x.as_str())
-        .unwrap_or("");
+    let text = m.get("message").and_then(|x| x.as_str()).unwrap_or("");
     let mut s = format!("[{}]", level);
     if !code.is_empty() {
         s.push_str(&format!(" {}", code));
@@ -146,22 +158,31 @@ fn format_compiler_message(m: &Value) -> String {
     s.push_str(&format!(" {}\n", text));
 
     if let Some(rendered) = m.get("rendered").and_then(|x| x.as_str())
-        && !rendered.trim().is_empty() {
-            s.push_str(rendered.trim_end());
-            s.push('\n');
-        }
+        && !rendered.trim().is_empty()
+    {
+        s.push_str(rendered.trim_end());
+        s.push('\n');
+    }
 
     if let Some(spans) = m.get("spans").and_then(|x| x.as_array()) {
         for sp in spans.iter().take(5) {
             let file = sp.get("file_name").and_then(|x| x.as_str()).unwrap_or("?");
             let line = sp.get("line_start").and_then(|x| x.as_u64()).unwrap_or(0);
             let col = sp.get("column_start").and_then(|x| x.as_u64()).unwrap_or(0);
-            let is_primary = sp.get("is_primary").and_then(|x| x.as_bool()).unwrap_or(false);
+            let is_primary = sp
+                .get("is_primary")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
             let label = sp.get("label").and_then(|x| x.as_str()).unwrap_or("");
             let p = if is_primary { " (primary)" } else { "" };
             s.push_str(&format!(
                 "  {}{}:{}:{}{} {}\n",
-                file, p, line, col, if label.is_empty() { "" } else { " — " }, label
+                file,
+                p,
+                line,
+                col,
+                if label.is_empty() { "" } else { " — " },
+                label
             ));
         }
         if spans.len() > 5 {
@@ -221,11 +242,11 @@ fn lsp_definition_or_references(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "缺少 path".to_string())?;
-    let line = v.get("line").and_then(|x| x.as_u64()).ok_or("缺少 line（0-based）")? as u32;
-    let character = v
-        .get("character")
+    let line = v
+        .get("line")
         .and_then(|x| x.as_u64())
-        .unwrap_or(0) as u32;
+        .ok_or("缺少 line（0-based）")? as u32;
+    let character = v.get("character").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
     let server_path = v
         .get("server_path")
         .and_then(|x| x.as_str())
@@ -394,7 +415,9 @@ fn format_one_location(v: &Value) -> String {
             .unwrap_or_else(|| "?".to_string());
         format!("  {} @ {}", uri_to_brief_path(target_uri), pos)
     } else if let Some(target) = v.get("targetUri").and_then(|x| x.as_str()) {
-        let range = v.get("targetRange").or_else(|| v.get("targetSelectionRange"));
+        let range = v
+            .get("targetRange")
+            .or_else(|| v.get("targetSelectionRange"));
         let pos = range
             .and_then(|r| r.get("start"))
             .map(|s| {
@@ -441,9 +464,7 @@ fn path_to_file_uri(p: &Path) -> Result<String, String> {
     let raw = canon.to_string_lossy().to_string();
     #[cfg(windows)]
     {
-        let t = raw
-            .trim_start_matches(r"\\?\")
-            .replace('\\', "/");
+        let t = raw.trim_start_matches(r"\\?\").replace('\\', "/");
         Ok(format!("file:///{}", t))
     }
     #[cfg(not(windows))]
@@ -490,8 +511,7 @@ fn read_one_lsp_message<R: BufRead>(reader: &mut R) -> Result<Vec<u8>, String> {
         }
         if let Some(rest) = line.strip_prefix("Content-Length:") {
             content_len = Some(
-                rest
-                    .trim()
+                rest.trim()
                     .parse::<usize>()
                     .map_err(|_| "Content-Length 无效".to_string())?,
             );

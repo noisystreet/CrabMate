@@ -91,7 +91,11 @@ where
     parse_opts.insert(ParseOptions::ENABLE_SUBSCRIPT);
     let parser = Parser::new_ext(input, parse_opts);
 
-    let mut writer = TextWriter::new(parser, options.styles.clone(), options.code_theme.as_deref());
+    let mut writer = TextWriter::new(
+        parser,
+        options.styles.clone(),
+        options.code_theme.as_deref(),
+    );
     writer.run();
     writer.text
 }

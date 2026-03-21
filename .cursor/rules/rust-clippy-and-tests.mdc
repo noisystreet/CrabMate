@@ -1,0 +1,27 @@
+---
+description: 改 Rust 后端时跑 cargo clippy -D warnings；按约定跑 cargo test
+globs: src/**/*.rs
+alwaysApply: false
+---
+
+# Clippy 与测试
+
+在编辑、审查或准备提交 **`src/`** 下 Rust 代码时，在仓库根目录执行（或确保 **pre-commit** 已跑通，其中含 `cargo clippy`，见 `.pre-commit-config.yaml`）：
+
+## Clippy（必做）
+
+```bash
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+- 修复全部 **warning 与 error** 后再提交；不要依赖 `#[allow]` 掩盖可修问题；若必须 `allow`，在代码旁用**一行注释**说明原因。
+
+## `cargo test`（按范围）
+
+| 场景 | 建议 |
+|------|------|
+| 只改单个模块/文件 | 优先 **`cargo test -p crabmate <可选过滤名>`** 或只跑与改动相关的测试（若有集成测试则包含相关文件路径） |
+| 改 **`Cargo.toml`**、workspace、**跨模块类型**、**`src/lib.rs` / 公共 API**、**协议/SSE/配置加载** | **`cargo test`**（工作区全量） |
+| 用户即将合并 / 发版 / CI 对齐 | **`cargo test`** 全量 |
+
+- 无测试覆盖的新逻辑：能测则补单元测试或最小集成测试；暂不能测须在 PR/回复中说明风险与后续计划。

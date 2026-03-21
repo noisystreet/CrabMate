@@ -143,9 +143,7 @@ struct AgentSection {
 
 /// 读取 [agent] 段，缺失字段保持为 None
 fn parse_agent_section(s: &str) -> Option<AgentSection> {
-    toml::from_str::<ConfigFile>(s)
-        .ok()?
-        .agent
+    toml::from_str::<ConfigFile>(s).ok()?.agent
 }
 
 /// 加载配置：嵌入的 default 为底，再被配置文件覆盖，最后被环境变量覆盖。
@@ -194,17 +192,20 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         command_timeout_secs = agent.command_timeout_secs.or(command_timeout_secs);
         command_max_output_len = agent.command_max_output_len.or(command_max_output_len);
         if let Some(ref v) = agent.allowed_commands
-            && !v.is_empty() {
-                allowed_commands = Some(v.clone());
-            }
+            && !v.is_empty()
+        {
+            allowed_commands = Some(v.clone());
+        }
         if let Some(ref v) = agent.allowed_commands_dev
-            && !v.is_empty() {
-                allowed_commands_dev = Some(v.clone());
-            }
+            && !v.is_empty()
+        {
+            allowed_commands_dev = Some(v.clone());
+        }
         if let Some(ref v) = agent.allowed_commands_prod
-            && !v.is_empty() {
-                allowed_commands_prod = Some(v.clone());
-            }
+            && !v.is_empty()
+        {
+            allowed_commands_prod = Some(v.clone());
+        }
         if let Some(ref p) = agent.run_command_working_dir {
             let p = p.trim().to_string();
             if !p.is_empty() {
@@ -226,12 +227,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         if let Some(ref k) = agent.web_search_api_key {
             web_search_api_key = Some(k.clone());
         }
-        web_search_timeout_secs = agent
-            .web_search_timeout_secs
-            .or(web_search_timeout_secs);
-        web_search_max_results = agent
-            .web_search_max_results
-            .or(web_search_max_results);
+        web_search_timeout_secs = agent.web_search_timeout_secs.or(web_search_timeout_secs);
+        web_search_max_results = agent.web_search_max_results.or(web_search_max_results);
         reflection_default_max_rounds = agent
             .reflection_default_max_rounds
             .or(reflection_default_max_rounds);
@@ -273,30 +270,29 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         context_summary_tail_messages = agent
             .context_summary_tail_messages
             .or(context_summary_tail_messages);
-        context_summary_max_tokens = agent.context_summary_max_tokens.or(context_summary_max_tokens);
+        context_summary_max_tokens = agent
+            .context_summary_max_tokens
+            .or(context_summary_max_tokens);
         context_summary_transcript_max_chars = agent
             .context_summary_transcript_max_chars
             .or(context_summary_transcript_max_chars);
-        chat_queue_max_concurrent = agent.chat_queue_max_concurrent.or(chat_queue_max_concurrent);
+        chat_queue_max_concurrent = agent
+            .chat_queue_max_concurrent
+            .or(chat_queue_max_concurrent);
         chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
     }
 
     let config_paths: Vec<&str> = match config_path {
         Some(p) => {
             let p = p.trim();
-            if p.is_empty() {
-                vec![]
-            } else {
-                vec![p]
-            }
+            if p.is_empty() { vec![] } else { vec![p] }
         }
         None => vec!["config.toml", ".agent_demo.toml"],
     };
     for path in config_paths {
         if Path::new(path).exists() {
-            let s = std::fs::read_to_string(path).map_err(|e| {
-                format!("无法读取配置文件 \"{}\": {}", path, e)
-            })?;
+            let s = std::fs::read_to_string(path)
+                .map_err(|e| format!("无法读取配置文件 \"{}\": {}", path, e))?;
             if let Some(agent) = parse_agent_section(&s) {
                 if let Some(a) = agent.api_base {
                     let a = a.trim().to_string();
@@ -320,17 +316,20 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                     command_max_output_len = Some(v);
                 }
                 if let Some(ref v) = agent.allowed_commands
-                    && !v.is_empty() {
-                        allowed_commands = Some(v.clone());
-                    }
+                    && !v.is_empty()
+                {
+                    allowed_commands = Some(v.clone());
+                }
                 if let Some(ref v) = agent.allowed_commands_dev
-                    && !v.is_empty() {
-                        allowed_commands_dev = Some(v.clone());
-                    }
+                    && !v.is_empty()
+                {
+                    allowed_commands_dev = Some(v.clone());
+                }
                 if let Some(ref v) = agent.allowed_commands_prod
-                    && !v.is_empty() {
-                        allowed_commands_prod = Some(v.clone());
-                    }
+                    && !v.is_empty()
+                {
+                    allowed_commands_prod = Some(v.clone());
+                }
                 if let Some(ref p) = agent.run_command_working_dir {
                     let p = p.trim().to_string();
                     if !p.is_empty() {
@@ -411,12 +410,15 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 context_summary_tail_messages = agent
                     .context_summary_tail_messages
                     .or(context_summary_tail_messages);
-                context_summary_max_tokens =
-                    agent.context_summary_max_tokens.or(context_summary_max_tokens);
+                context_summary_max_tokens = agent
+                    .context_summary_max_tokens
+                    .or(context_summary_max_tokens);
                 context_summary_transcript_max_chars = agent
                     .context_summary_transcript_max_chars
                     .or(context_summary_transcript_max_chars);
-                chat_queue_max_concurrent = agent.chat_queue_max_concurrent.or(chat_queue_max_concurrent);
+                chat_queue_max_concurrent = agent
+                    .chat_queue_max_concurrent
+                    .or(chat_queue_max_concurrent);
                 chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
             }
             if config_path.is_some() {
@@ -440,17 +442,20 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         }
     }
     if let Ok(v) = std::env::var("AGENT_MAX_MESSAGE_HISTORY")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            max_message_history = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        max_message_history = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_COMMAND_TIMEOUT_SECS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            command_timeout_secs = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        command_timeout_secs = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_COMMAND_MAX_OUTPUT_LEN")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            command_max_output_len = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        command_max_output_len = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_ALLOWED_COMMANDS") {
         let list = v
             .split(',')
@@ -468,29 +473,35 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         }
     }
     if let Ok(v) = std::env::var("AGENT_MAX_TOKENS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            max_tokens = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        max_tokens = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_TEMPERATURE")
-        && let Ok(n) = v.trim().parse::<f64>() {
-            temperature = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<f64>()
+    {
+        temperature = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_API_TIMEOUT_SECS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            api_timeout_secs = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        api_timeout_secs = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_API_MAX_RETRIES")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            api_max_retries = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        api_max_retries = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_API_RETRY_DELAY_SECS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            api_retry_delay_secs = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        api_retry_delay_secs = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_WEATHER_TIMEOUT_SECS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            weather_timeout_secs = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        weather_timeout_secs = Some(n);
+    }
     if let Ok(s) = std::env::var("AGENT_WEB_SEARCH_PROVIDER") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -501,17 +512,20 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         web_search_api_key = Some(k);
     }
     if let Ok(v) = std::env::var("AGENT_WEB_SEARCH_TIMEOUT_SECS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            web_search_timeout_secs = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        web_search_timeout_secs = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_WEB_SEARCH_MAX_RESULTS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            web_search_max_results = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        web_search_max_results = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_REFLECTION_DEFAULT_MAX_ROUNDS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            reflection_default_max_rounds = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        reflection_default_max_rounds = Some(n);
+    }
     if let Ok(s) = std::env::var("AGENT_FINAL_PLAN_REQUIREMENT") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -519,9 +533,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         }
     }
     if let Ok(v) = std::env::var("AGENT_PLAN_REWRITE_MAX_ATTEMPTS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            plan_rewrite_max_attempts = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        plan_rewrite_max_attempts = Some(n);
+    }
     if let Ok(s) = std::env::var("AGENT_SYSTEM_PROMPT") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -535,41 +550,50 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         }
     }
     if let Ok(v) = std::env::var("AGENT_TOOL_MESSAGE_MAX_CHARS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            tool_message_max_chars = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        tool_message_max_chars = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_CONTEXT_CHAR_BUDGET")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            context_char_budget = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        context_char_budget = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            context_min_messages_after_system = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        context_min_messages_after_system = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            context_summary_trigger_chars = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        context_summary_trigger_chars = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            context_summary_tail_messages = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        context_summary_tail_messages = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_CONTEXT_SUMMARY_MAX_TOKENS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            context_summary_max_tokens = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        context_summary_max_tokens = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            context_summary_transcript_max_chars = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        context_summary_transcript_max_chars = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_CHAT_QUEUE_MAX_CONCURRENT")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            chat_queue_max_concurrent = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        chat_queue_max_concurrent = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_CHAT_QUEUE_MAX_PENDING")
-        && let Ok(n) = v.trim().parse::<u64>() {
-            chat_queue_max_pending = Some(n);
-        }
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        chat_queue_max_pending = Some(n);
+    }
 
     if api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
@@ -577,19 +601,17 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     if model.is_empty() {
         return Err("配置错误：未设置 model（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_MODEL 中设置）".to_string());
     }
-    let max_message_history = max_message_history
-        .unwrap_or(32)
-        .clamp(1, 1024) as usize;
+    let max_message_history = max_message_history.unwrap_or(32).clamp(1, 1024) as usize;
     let command_timeout_secs = command_timeout_secs.unwrap_or(30).max(1);
-    let command_max_output_len = command_max_output_len.unwrap_or(8192).clamp(1024, 131072) as usize;
+    let command_max_output_len =
+        command_max_output_len.unwrap_or(8192).clamp(1024, 131072) as usize;
     let max_tokens = max_tokens.unwrap_or(4096).clamp(256, 32768) as u32;
     let temperature = temperature.unwrap_or(0.3).clamp(0.0, 2.0) as f32;
     let api_timeout_secs = api_timeout_secs.unwrap_or(60).max(1);
     let api_max_retries = api_max_retries.unwrap_or(2).min(10) as u32;
     let api_retry_delay_secs = api_retry_delay_secs.unwrap_or(2).max(1);
     let weather_timeout_secs = weather_timeout_secs.unwrap_or(15).max(1);
-    let reflection_default_max_rounds =
-        reflection_default_max_rounds.unwrap_or(5).max(1) as usize;
+    let reflection_default_max_rounds = reflection_default_max_rounds.unwrap_or(5).max(1) as usize;
 
     let allowed_commands = if let Some(env) = env_tag.as_deref() {
         match env {
@@ -645,10 +667,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
 
     let system_prompt = if let Some(path) = system_prompt_file {
         let path = Path::new(&path);
-        
-        std::fs::read_to_string(path).map_err(|e| {
-            format!("无法读取 system_prompt_file \"{}\": {}", path.display(), e)
-        })?
+
+        std::fs::read_to_string(path)
+            .map_err(|e| format!("无法读取 system_prompt_file \"{}\": {}", path.display(), e))?
     } else {
         system_prompt
     };
@@ -665,26 +686,19 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         .unwrap_or(32768)
         .clamp(1024, 1_048_576) as usize;
     let context_char_budget = context_char_budget.unwrap_or(0).min(50_000_000) as usize;
-    let context_min_messages_after_system = context_min_messages_after_system
-        .unwrap_or(4)
-        .clamp(1, 128) as usize;
+    let context_min_messages_after_system =
+        context_min_messages_after_system.unwrap_or(4).clamp(1, 128) as usize;
     let context_summary_trigger_chars =
         context_summary_trigger_chars.unwrap_or(0).min(50_000_000) as usize;
-    let context_summary_tail_messages = context_summary_tail_messages
-        .unwrap_or(12)
-        .clamp(4, 64) as usize;
-    let context_summary_max_tokens = context_summary_max_tokens
-        .unwrap_or(1024)
-        .clamp(256, 8192) as u32;
+    let context_summary_tail_messages =
+        context_summary_tail_messages.unwrap_or(12).clamp(4, 64) as usize;
+    let context_summary_max_tokens =
+        context_summary_max_tokens.unwrap_or(1024).clamp(256, 8192) as u32;
     let context_summary_transcript_max_chars = context_summary_transcript_max_chars
         .unwrap_or(120_000)
         .clamp(10_000, 2_000_000) as usize;
-    let chat_queue_max_concurrent = chat_queue_max_concurrent
-        .unwrap_or(2)
-        .clamp(1, 256) as usize;
-    let chat_queue_max_pending = chat_queue_max_pending
-        .unwrap_or(32)
-        .clamp(1, 8192) as usize;
+    let chat_queue_max_concurrent = chat_queue_max_concurrent.unwrap_or(2).clamp(1, 256) as usize;
+    let chat_queue_max_pending = chat_queue_max_pending.unwrap_or(32).clamp(1, 8192) as usize;
 
     let web_search_provider = match web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
@@ -727,4 +741,3 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         chat_queue_max_pending,
     })
 }
-

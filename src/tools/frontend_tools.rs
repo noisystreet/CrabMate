@@ -47,7 +47,10 @@ pub fn frontend_prettier_check(
     }
 
     let mut cmd = Command::new("npx");
-    cmd.arg("prettier").arg("--check").arg(".").current_dir(&dir);
+    cmd.arg("prettier")
+        .arg("--check")
+        .arg(".")
+        .current_dir(&dir);
     run_and_format(
         cmd,
         max_output_len,
@@ -142,4 +145,3 @@ fn truncate_output(s: &str, max_bytes: usize) -> String {
         lines.len()
     )
 }
-

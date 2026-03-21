@@ -146,4 +146,3 @@ pub fn parse_args() -> ParsedCliArgs {
         cli.tui,
     )
 }
-

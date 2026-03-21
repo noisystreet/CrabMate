@@ -34,7 +34,9 @@ pub(super) fn refresh_workspace(state: &mut TuiState) {
         });
     }
     state.workspace_entries = entries;
-    state.workspace_sel = state.workspace_sel.min(state.workspace_entries.len().saturating_sub(1));
+    state.workspace_sel = state
+        .workspace_sel
+        .min(state.workspace_entries.len().saturating_sub(1));
 }
 
 pub(super) fn refresh_tasks(state: &mut TuiState) {
@@ -48,11 +50,23 @@ pub(super) fn refresh_tasks(state: &mut TuiState) {
         }
     };
     let v: serde_json::Value = serde_json::from_str(&s).unwrap_or(serde_json::json!({}));
-    let items = v.get("items").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+    let items = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
     let mut out = Vec::new();
     for it in items {
-        let id = it.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-        let title = it.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let id = it
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let title = it
+            .get("title")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         let done = it.get("done").and_then(|x| x.as_bool()).unwrap_or(false);
         if !title.is_empty() {
             out.push((id, title, done));
@@ -69,10 +83,21 @@ pub(super) fn refresh_schedule(state: &mut TuiState) {
         let v: serde_json::Value = serde_json::from_str(&s).unwrap_or(serde_json::json!({}));
         if let Some(arr) = v.get("items").and_then(|x| x.as_array()) {
             for it in arr.iter().take(200) {
-                let id = it.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let title = it.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let id = it
+                    .get("id")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let title = it
+                    .get("title")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let done = it.get("done").and_then(|x| x.as_bool()).unwrap_or(false);
-                let due_at = it.get("due_at").and_then(|x| x.as_str()).map(|s| s.to_string());
+                let due_at = it
+                    .get("due_at")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string());
                 if !title.is_empty() {
                     reminders.push((id, title, done, due_at));
                 }
@@ -90,9 +115,21 @@ pub(super) fn refresh_schedule(state: &mut TuiState) {
         let v: serde_json::Value = serde_json::from_str(&s).unwrap_or(serde_json::json!({}));
         if let Some(arr) = v.get("items").and_then(|x| x.as_array()) {
             for it in arr.iter().take(200) {
-                let id = it.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let title = it.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let start = it.get("start_at").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let id = it
+                    .get("id")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let title = it
+                    .get("title")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let start = it
+                    .get("start_at")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 if !title.is_empty() {
                     events.push((id, title, start));
                 }
@@ -100,7 +137,9 @@ pub(super) fn refresh_schedule(state: &mut TuiState) {
         }
     }
     state.event_items = events;
-    state.event_sel = state.event_sel.min(state.event_items.len().saturating_sub(1));
+    state.event_sel = state
+        .event_sel
+        .min(state.event_items.len().saturating_sub(1));
 }
 
 pub(super) fn split_title_due(s: &str) -> (String, Option<String>) {

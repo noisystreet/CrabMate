@@ -4,18 +4,18 @@
 
 use crate::types::{ChatRequest, FunctionCall, Message, StreamChunk, ToolCall};
 use crossterm::{
+    ExecutableCommand,
     cursor::{MoveToColumn, MoveUp},
     terminal::{Clear, ClearType},
-    ExecutableCommand,
 };
 use futures_util::StreamExt;
-use markdown_to_ansi::{render, Options};
+use markdown_to_ansi::{Options, render};
 use regex::Regex;
 use reqwest::Client;
 use std::io::{self, Write};
+use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 use unicodeit::replace as latex_to_unicode;
-use tokio::sync::mpsc::Sender;
 
 /// 将文本中的 LaTeX 数学公式（$...$、$$...$$、\(...\)、\[...\]）转为 Unicode，便于终端显示
 fn latex_math_to_unicode(s: &str) -> String {
@@ -111,44 +111,41 @@ pub async fn stream_chat(
                 body.chars().take(240).collect::<String>()
             )
         })?;
-        let choice = parsed
-            .choices
-            .into_iter()
-            .next()
-            .ok_or_else(|| -> Box<dyn std::error::Error + Send + Sync> {
+        let choice = parsed.choices.into_iter().next().ok_or_else(
+            || -> Box<dyn std::error::Error + Send + Sync> {
                 "非流式响应 choices 为空".into()
-            })?;
+            },
+        )?;
         let crate::types::Choice {
             message: msg,
             finish_reason,
         } = choice;
 
-        if let Some(content) = msg.content.as_ref().filter(|c| !c.is_empty()) {
-            if let Some(tx) = out {
-                let _ = tx.send(content.clone()).await;
-            }
+        if let Some(content) = msg.content.as_ref().filter(|c| !c.is_empty())
+            && let Some(tx) = out
+        {
+            let _ = tx.send(content.clone()).await;
         }
-        if render_to_terminal {
-            if let Some(ref content_acc) = msg.content {
-                if !content_acc.is_empty() {
-                    let term_w = terminal_width().unwrap_or(80);
-                    let mut stdout = io::stdout();
-                    write!(stdout, "Agent: ")?;
-                    stdout.flush()?;
-                    let opts = Options {
-                        syntax_highlight: true,
-                        width: Some(term_w),
-                        code_bg: true,
-                    };
-                    let content = latex_math_to_unicode(content_acc.trim());
-                    let rendered = render(&content, &opts);
-                    write!(stdout, "{}", rendered)?;
-                    if !rendered.ends_with('\n') {
-                        writeln!(stdout)?;
-                    }
-                    stdout.flush()?;
-                }
+        if render_to_terminal
+            && let Some(ref content_acc) = msg.content
+            && !content_acc.is_empty()
+        {
+            let term_w = terminal_width().unwrap_or(80);
+            let mut stdout = io::stdout();
+            write!(stdout, "Agent: ")?;
+            stdout.flush()?;
+            let opts = Options {
+                syntax_highlight: true,
+                width: Some(term_w),
+                code_bg: true,
+            };
+            let content = latex_math_to_unicode(content_acc.trim());
+            let rendered = render(&content, &opts);
+            write!(stdout, "{}", rendered)?;
+            if !rendered.ends_with('\n') {
+                writeln!(stdout)?;
             }
+            stdout.flush()?;
         }
         if let Some(ref tcs) = msg.tool_calls
             && !tcs.is_empty()
@@ -239,7 +236,12 @@ pub async fn stream_chat(
                     for tc in tcs {
                         let idx = tc.index;
                         while tool_calls_acc.len() <= idx {
-                            tool_calls_acc.push((String::new(), "function".to_string(), String::new(), String::new()));
+                            tool_calls_acc.push((
+                                String::new(),
+                                "function".to_string(),
+                                String::new(),
+                                String::new(),
+                            ));
                         }
                         let acc = &mut tool_calls_acc[idx];
                         if let Some(id) = tc.id {
@@ -301,7 +303,11 @@ pub async fn stream_chat(
     };
     let msg = Message {
         role: "assistant".to_string(),
-        content: if content_acc.is_empty() { None } else { Some(content_acc) },
+        content: if content_acc.is_empty() {
+            None
+        } else {
+            Some(content_acc)
+        },
         tool_calls,
         name: None,
         tool_call_id: None,

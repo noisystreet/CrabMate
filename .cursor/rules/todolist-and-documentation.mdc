@@ -17,3 +17,8 @@ alwaysApply: true
   - **`README.md`**：功能概览、常用命令、配置示例、安全提示等面向使用者的部分。
   - **`docs/DEVELOPMENT.md`**：模块职责、协议、架构扩展点等面向维护者的部分。
 - 若变更仅内部重构且无行为变化，可只更新 `DEVELOPMENT.md` 或代码注释，不必硬改 `README.md`。
+
+## Rust：默认配置、环境变量与 HTTP 路由
+
+- 修改 **`default_config.toml`**、**`config.toml.example`**，或在 **`src/`** 中变更 **axum 路由/handler**（路径、方法、请求/响应体、新接口）、或 **新增/改名/废弃** 通过 `std::env::var` 等读取的 **`AGENT_*` 等环境变量** 时：必须同步 **README.md**（使用者：如何配置、默认值、变量名）与 **docs/DEVELOPMENT.md**（维护者：键含义、模块边界、扩展点）。
+- 仅内部实现重构且对外配置形状与 HTTP 契约不变时，可只改注释或 `DEVELOPMENT.md`。

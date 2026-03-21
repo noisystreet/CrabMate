@@ -83,6 +83,10 @@ mod tests {
     #[test]
     fn test_run_disallowed_chars() {
         let out = run("1+1; ls");
-        assert!(out.contains("不允许的字符"), "应拒绝含 ; 的表达式，得到: {}", out);
+        assert!(
+            out.contains("不允许的字符"),
+            "应拒绝含 ; 的表达式，得到: {}",
+            out
+        );
     }
 }

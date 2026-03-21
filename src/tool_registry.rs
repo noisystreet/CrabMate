@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tracing::{error, warn};
 
 use crate::config::AgentConfig;
@@ -89,12 +89,8 @@ fn meta_by_name(name: &str) -> Option<&'static ToolDispatchMeta> {
 // --- 运行时上下文 ---
 
 pub enum ToolRuntime<'a> {
-    Web {
-        workspace_changed: &'a mut bool,
-    },
-    Tui {
-        ctx: &'a TuiToolRuntime,
-    },
+    Web { workspace_changed: &'a mut bool },
+    Tui { ctx: &'a TuiToolRuntime },
 }
 
 pub struct TuiToolRuntime {
@@ -178,18 +174,27 @@ pub async fn dispatch_tool(
                 .await
             }
             ToolRuntime::Tui { ctx } => {
-                execute_run_command_tui(cfg, effective_working_dir, workspace_is_set, ctx, name, args)
-                    .await
+                execute_run_command_tui(
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    ctx,
+                    name,
+                    args,
+                )
+                .await
             }
         },
         HandlerId::RunExecutable => match runtime {
             ToolRuntime::Web { .. } => {
-                execute_run_executable_web(cfg, effective_working_dir, workspace_is_set, name, args).await
+                execute_run_executable_web(cfg, effective_working_dir, workspace_is_set, name, args)
+                    .await
             }
             ToolRuntime::Tui { .. } => {
                 // TUI 入口通常将 RunExecutable remap 为 SyncDefault；若未 remap，退回通用 run_tool 以免 panic。
                 warn!(tool = %name, "RunExecutable on TUI without remap; using sync run_tool");
-                let ctx = tools::tool_context_for(cfg, &cfg.allowed_commands, effective_working_dir);
+                let ctx =
+                    tools::tool_context_for(cfg, &cfg.allowed_commands, effective_working_dir);
                 (
                     tools::run_tool(&tc.function.name, &tc.function.arguments, &ctx),
                     None,
@@ -199,10 +204,15 @@ pub async fn dispatch_tool(
         HandlerId::GetWeather => {
             execute_get_weather_web(cfg, effective_working_dir, name, args).await
         }
-        HandlerId::WebSearch => execute_web_search_web(cfg, effective_working_dir, name, args).await,
+        HandlerId::WebSearch => {
+            execute_web_search_web(cfg, effective_working_dir, name, args).await
+        }
         HandlerId::SyncDefault => {
             let ctx = tools::tool_context_for(cfg, &cfg.allowed_commands, effective_working_dir);
-            (tools::run_tool(&tc.function.name, &tc.function.arguments, &ctx), None)
+            (
+                tools::run_tool(&tc.function.name, &tc.function.arguments, &ctx),
+                None,
+            )
         }
     }
 }
@@ -220,7 +230,9 @@ async fn execute_workflow(
 
     let result = if prep.execute {
         if let Err(contract_err) =
-            workflow_reflection_controller::validate_workflow_execute_do_contract(&prep.patched_args)
+            workflow_reflection_controller::validate_workflow_execute_do_contract(
+                &prep.patched_args,
+            )
         {
             contract_err.to_string()
         } else {
@@ -338,15 +350,18 @@ async fn execute_run_command_tui(
         .get("args")
         .and_then(|x| x.as_array())
         .map(|arr| {
-            arr
-                .iter()
+            arr.iter()
                 .filter_map(|x| x.as_str())
                 .collect::<Vec<_>>()
                 .join(" ")
         })
         .unwrap_or_default();
     let mut effective_allowed = cfg.allowed_commands.clone();
-    if !cmd.is_empty() && !effective_allowed.iter().any(|c| c.eq_ignore_ascii_case(&cmd)) {
+    if !cmd.is_empty()
+        && !effective_allowed
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(&cmd))
+    {
         let already_allowed = ctx.persistent_allowlist_shared.lock().await.contains(&cmd);
         if already_allowed {
             effective_allowed.push(cmd.clone());
@@ -379,10 +394,7 @@ async fn execute_run_command_tui(
                 } else {
                     format!("{} {}", cmd, arg_preview)
                 };
-                (
-                    format!("用户拒绝执行命令：{}", cmd_show.trim()),
-                    None,
-                )
+                (format!("用户拒绝执行命令：{}", cmd_show.trim()), None)
             }
             CommandApprovalDecision::AllowOnce => {
                 effective_allowed.push(cmd.clone());
@@ -390,7 +402,10 @@ async fn execute_run_command_tui(
                 (tools::run_tool(name, args, &ctx), None)
             }
             CommandApprovalDecision::AllowAlways => {
-                ctx.persistent_allowlist_shared.lock().await.insert(cmd.clone());
+                ctx.persistent_allowlist_shared
+                    .lock()
+                    .await
+                    .insert(cmd.clone());
                 effective_allowed.push(cmd.clone());
                 let ctx = tools::tool_context_for(cfg, &effective_allowed, effective_working_dir);
                 (tools::run_tool(name, args, &ctx), None)
@@ -569,6 +584,9 @@ mod tests {
         let rc = try_dispatch_meta("run_command").unwrap();
         assert!(rc.requires_workspace);
         assert_eq!(rc.class, ToolExecutionClass::CommandSpawnTimeout);
-        assert_eq!(execution_class_for_tool("calc"), ToolExecutionClass::BlockingSync);
+        assert_eq!(
+            execution_class_for_tool("calc"),
+            ToolExecutionClass::BlockingSync
+        );
     }
 }

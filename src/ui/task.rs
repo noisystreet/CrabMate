@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
@@ -77,12 +77,12 @@ pub async fn tasks_set_handler(
         }
     };
     if let Some(parent) = path.parent()
-        && let Err(e) = tokio::fs::create_dir_all(parent).await {
-            error!(error = %e, "创建 tasks.json 目录失败");
-        }
+        && let Err(e) = tokio::fs::create_dir_all(parent).await
+    {
+        error!(error = %e, "创建 tasks.json 目录失败");
+    }
     if let Err(e) = tokio::fs::write(&path, content.as_bytes()).await {
         error!(error = %e, "写入 tasks.json 失败");
     }
     Json(body)
 }
-

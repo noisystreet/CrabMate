@@ -1,6 +1,6 @@
 //! 状态栏文案。
 
-use super::state::{focus_name, Focus, TuiState};
+use super::state::{Focus, TuiState, focus_name};
 
 pub(super) fn build_normal_status_line(model: &str, focus: Focus) -> String {
     format!(
