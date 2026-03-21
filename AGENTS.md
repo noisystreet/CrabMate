@@ -27,6 +27,7 @@ Standard commands from `README.md`:
 | Rust tests (nightly) | `cargo +nightly test` |
 | Rust clippy | `cargo clippy` |
 | Rust format check | `cargo fmt --check` |
+| TypeScript check | `cd frontend && npx tsc -b --noEmit` |
 | Frontend install | `cd frontend && npm install` |
 | Frontend build | `cd frontend && npm run build` |
 
@@ -36,4 +37,7 @@ Standard commands from `README.md`:
 - **Rust nightly** is pre-installed in the environment. You can use `cargo +nightly test` and similar commands directly.
 - System libraries `libssl-dev` and `libssh2-1-dev` are required for the Rust build (installed by the VM snapshot).
 - The `bc` command-line calculator is used by the `calc` tool at runtime. It may not be pre-installed; this causes `/health` to report `dep_bc` as degraded, but does not block the server from starting.
+- `cargo clippy -- -D warnings` will fail on existing code (pre-existing warnings like `too_many_arguments`, `collapsible_if`). Use `cargo clippy` without `-D warnings` for a non-blocking lint check.
 - `cargo fmt --check` may report pre-existing formatting differences in the codebase; this is not caused by agent changes.
+- The `rfd` crate (file dialog) is a dependency but won't work headlessly; this doesn't affect the web server mode.
+- The vendored `tui-markdown` crate is at `vendor/tui-markdown/` and is referenced via `path` in `Cargo.toml`.
