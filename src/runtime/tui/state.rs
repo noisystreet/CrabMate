@@ -1,6 +1,7 @@
 //! TUI 焦点、模式与主状态；SGR 鼠标泄漏过滤。
 
 use crate::types::Message;
+use ratatui::text::Line;
 use regex::Regex;
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -66,6 +67,24 @@ impl ModelPhase {
             ModelPhase::Error => "异常",
         }
     }
+}
+
+/// 单条非 system 消息的聊天行片段（不含消息之间的空行）。
+#[derive(Clone)]
+pub(super) struct ChatMessageLineCacheEntry {
+    pub content_fingerprint: u64,
+    pub draw: Vec<Line<'static>>,
+    pub plain: Vec<String>,
+}
+
+/// 按 `messages` 下标缓存 Markdown 展开结果；宽度或主题变化时整表作废。
+#[derive(Clone, Default)]
+pub(super) struct ChatLineBuildCache {
+    pub chat_inner_width: usize,
+    pub md_style: u8,
+    pub high_contrast: bool,
+    pub code_theme_idx: usize,
+    pub per_message: Vec<Option<ChatMessageLineCacheEntry>>,
 }
 
 pub(super) struct TuiState {
@@ -136,6 +155,8 @@ pub(super) struct TuiState {
     pub input_redo: Vec<(String, usize)>,
     pub prompt_undo: Vec<(String, usize)>,
     pub prompt_redo: Vec<(String, usize)>,
+    /// 聊天区 Markdown 按消息缓存（见 `draw::build_chat_scroll_lines`）。
+    pub chat_line_build_cache: ChatLineBuildCache,
 }
 
 /// xterm SGR 鼠标报告：`\x1b[<btn;col;rowM`；若 CSI 被吞掉，可见部分形如 `<35;50;30M`。

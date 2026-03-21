@@ -134,16 +134,20 @@ pub async fn run_tui(
         .join("tui_command_allowlist.json");
     let persistent_command_allowlist = load_persistent_allowlist(&allowlist_file);
 
-    let initial_messages =
-        load_tui_session(&workspace_dir, &cfg.system_prompt).unwrap_or_else(|| {
-            vec![Message {
-                role: "system".to_string(),
-                content: Some(cfg.system_prompt.clone()),
-                tool_calls: None,
-                name: None,
-                tool_call_id: None,
-            }]
-        });
+    let initial_messages = load_tui_session(
+        &workspace_dir,
+        &cfg.system_prompt,
+        cfg.tui_session_max_messages,
+    )
+    .unwrap_or_else(|| {
+        vec![Message {
+            role: "system".to_string(),
+            content: Some(cfg.system_prompt.clone()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }]
+    });
 
     let mut state = TuiState {
         messages: initial_messages,
@@ -195,6 +199,7 @@ pub async fn run_tui(
         input_redo: Vec::new(),
         prompt_undo: Vec::new(),
         prompt_redo: Vec::new(),
+        chat_line_build_cache: Default::default(),
     };
     refresh_workspace(&mut state);
     refresh_tasks(&mut state);
@@ -327,9 +332,9 @@ pub async fn run_tui(
         let mut had_input = false;
         if event::poll(timeout)? {
             had_input = true;
-            inbox_changed = true;
             match event::read()? {
                 Event::Key(key) => {
+                    inbox_changed = true;
                     if key.kind != KeyEventKind::Release
                         && handle_key(
                             key,
@@ -355,15 +360,18 @@ pub async fn run_tui(
                     }
                 }
                 Event::Mouse(m) => {
-                    handle_crossterm_mouse(
+                    if handle_crossterm_mouse(
                         m,
                         &mut state,
                         screen_size.width,
                         screen_size.height,
                         &cfg.model,
-                    );
+                    ) {
+                        inbox_changed = true;
+                    }
                 }
                 Event::Resize(w, h) => {
+                    inbox_changed = true;
                     if w > 0 && h > 0 {
                         let _ = terminal.resize(Rect::new(0, 0, w, h));
                     }

@@ -6,6 +6,7 @@
 # api_base = "https://api.deepseek.com/v1"
 # model = "deepseek-chat"
 # max_message_history = 24
+# tui_session_max_messages = 400
 # tool_message_max_chars = 32768
 # context_char_budget = 0
 # context_summary_trigger_chars = 0
