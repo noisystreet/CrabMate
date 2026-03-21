@@ -816,13 +816,14 @@ pub(super) async fn handle_key(
 }
 
 /// crossterm 鼠标事件（与 `EnableMouseCapture` / `DisableMouseCapture` 配套）。
+/// 返回是否改变了需要重绘的 UI 状态（用于主循环避免无意义的 `draw`）。
 pub(super) fn handle_crossterm_mouse(
     me: MouseEvent,
     state: &mut TuiState,
     cols: u16,
     rows: u16,
     model: &str,
-) {
+) -> bool {
     let x = me.column;
     let y = me.row;
 
@@ -830,9 +831,11 @@ pub(super) fn handle_crossterm_mouse(
         MouseEventKind::ScrollUp => {
             state.chat_follow_tail = false;
             state.chat_first_line = state.chat_first_line.saturating_sub(3);
+            true
         }
         MouseEventKind::ScrollDown => {
             state.chat_first_line = state.chat_first_line.saturating_add(3);
+            true
         }
         MouseEventKind::Drag(MouseButton::Left) if state.input_dragging => {
             let prev = state.input_drag_row;
@@ -844,6 +847,9 @@ pub(super) fn handle_crossterm_mouse(
                 state.input_drag_row = cur;
                 state.status_line =
                     format!("正在拖动输入区域高度（当前：{} 行）", state.input_rows);
+                true
+            } else {
+                false
             }
         }
         MouseEventKind::Up(MouseButton::Left) => {
@@ -853,8 +859,9 @@ pub(super) fn handle_crossterm_mouse(
                     "输入区域高度已调整为 {} 行（在输入区与状态栏之间的横线上拖动可再次调整）",
                     state.input_rows
                 );
+                true
             } else {
-                apply_pending_focus_and_tab(state, model);
+                apply_pending_focus_and_tab(state, model)
             }
         }
         MouseEventKind::Down(MouseButton::Left) => {
@@ -868,9 +875,10 @@ pub(super) fn handle_crossterm_mouse(
                 state.input_drag_row = y;
                 state.status_line =
                     format!("正在拖动输入区域高度（当前：{} 行）", state.input_rows);
-                return;
+                return true;
             }
 
+            let mut changed = false;
             if x < chat_width && y >= input_start_row && y < rows.saturating_sub(below_input) {
                 let inner = draw::chat_input_text_inner(cols, rows, state.input_rows);
                 if x >= inner.x
@@ -888,12 +896,13 @@ pub(super) fn handle_crossterm_mouse(
                         state.input_cursor =
                             text_input::byte_index_from_mouse_cell(&state.input, mw, rel_x, rel_y);
                     }
+                    changed = true;
                 }
             }
 
-            apply_click_focus_and_tab(x, y, cols, rows, state, model);
+            changed | apply_click_focus_and_tab(x, y, cols, rows, state, model)
         }
-        _ => {}
+        _ => false,
     }
 }
 
@@ -904,7 +913,7 @@ fn apply_click_focus_and_tab(
     rows: u16,
     state: &mut TuiState,
     model: &str,
-) {
+) -> bool {
     let chat_width = cols.saturating_mul(65) / 100;
     let defer_to_release = col >= chat_width;
 
@@ -939,12 +948,26 @@ fn apply_click_focus_and_tab(
         if defer_to_release {
             state.pending_tab = Some(new_tab);
             state.pending_focus = Some(new_focus);
-        } else {
+            return false;
+        }
+        let mut changed = false;
+        if state.tab != new_tab {
             state.tab = new_tab;
+            changed = true;
+            match state.tab {
+                RightTab::Workspace => refresh_workspace(state),
+                RightTab::Tasks => refresh_tasks(state),
+                RightTab::Schedule => refresh_schedule(state),
+            }
+        }
+        if state.focus != new_focus {
             state.focus = new_focus;
+            changed = true;
+        }
+        if changed {
             set_normal_status_line(state, model);
         }
-        return;
+        return changed;
     }
 
     let new_focus = if col < chat_width {
@@ -965,14 +988,16 @@ fn apply_click_focus_and_tab(
     if new_focus != state.focus {
         if defer_to_release {
             state.pending_focus = Some(new_focus);
-        } else {
-            state.focus = new_focus;
-            set_normal_status_line(state, model);
+            return false;
         }
+        state.focus = new_focus;
+        set_normal_status_line(state, model);
+        return true;
     }
+    false
 }
 
-fn apply_pending_focus_and_tab(state: &mut TuiState, model: &str) {
+fn apply_pending_focus_and_tab(state: &mut TuiState, model: &str) -> bool {
     let mut changed = false;
 
     if let Some(tab) = state.pending_tab.take()
@@ -996,4 +1021,5 @@ fn apply_pending_focus_and_tab(state: &mut TuiState, model: &str) {
     if changed {
         set_normal_status_line(state, model);
     }
+    changed
 }

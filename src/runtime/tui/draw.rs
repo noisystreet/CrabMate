@@ -10,6 +10,8 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 use regex::Regex;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 use tui_markdown::{Options, from_str_with_options as markdown_to_text};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -17,7 +19,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::latex_unicode::latex_math_to_unicode;
 use crate::types::Message;
 
-use super::state::{Focus, Mode, ModelPhase, RightTab, TuiState};
+use super::state::{ChatMessageLineCacheEntry, Focus, Mode, ModelPhase, RightTab, TuiState};
 use super::styles::{
     DarkStyleSheet, HighContrastDarkStyleSheet, HighContrastLightStyleSheet, LightStyleSheet,
     code_themes,
@@ -405,122 +407,188 @@ fn line_into_static(line: Line<'_>) -> Line<'static> {
     out
 }
 
-/// 与 `draw_chat` 相同的逻辑行：第一项为带样式绘制行；第二项为同序纯文本（供 Ctrl+F 匹配）；第三项为每条非 system 消息首行索引。
-pub(super) fn build_chat_scroll_lines(
+/// 仅用原始 `Message` 字段做指纹，缓存命中时不必再跑 LaTeX / 剥标签。
+fn line_cache_fingerprint(m: &Message) -> u64 {
+    let mut h = DefaultHasher::new();
+    m.role.hash(&mut h);
+    match &m.content {
+        Some(s) => {
+            1u8.hash(&mut h);
+            s.hash(&mut h);
+        }
+        None => {
+            0u8.hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
+fn message_body_for_chat_display(m: &Message) -> String {
+    let raw = m.content.as_deref().unwrap_or("");
+    let display_raw = if m.role == "tool" {
+        serde_json::from_str::<serde_json::Value>(raw)
+            .ok()
+            .and_then(|v| {
+                v.get("human_summary")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| raw.to_string())
+    } else if m.role == "assistant" {
+        strip_assistant_echo_label(raw)
+    } else {
+        raw.to_string()
+    };
+    latex_math_to_unicode(&display_raw)
+}
+
+/// 单条消息对应的绘制行与纯文本行（不含尾部消息间空行）。
+fn render_message_chat_lines(
+    m: &Message,
+    rendered: &str,
     state: &TuiState,
     chat_inner_width: usize,
+) -> (Vec<Line<'static>>, Vec<String>) {
+    let mut draw_lines: Vec<Line<'static>> = Vec::new();
+    let mut plain_lines: Vec<String> = Vec::new();
+    let header_style = Style::default().add_modifier(Modifier::BOLD);
+    let role = if m.role == "user" { "我" } else { "模型" };
+    if m.role == "user" {
+        let role_text = format!("{}:", role);
+        let role_padded = if role_text.width() >= chat_inner_width {
+            role_text
+        } else {
+            format!(
+                "{}{}",
+                " ".repeat(chat_inner_width.saturating_sub(role_text.width())),
+                role_text
+            )
+        };
+        draw_lines.push(Line::from(Span::styled(role_padded.clone(), header_style)));
+        plain_lines.push(role_padded);
+    } else if m.role != "assistant" {
+        let h = format!("{}:", role);
+        draw_lines.push(Line::from(Span::styled(h.clone(), header_style)));
+        plain_lines.push(h);
+    }
+    if m.role == "assistant" {
+        let theme = code_themes()[state.code_theme_idx];
+        let text = match (state.md_style, state.high_contrast) {
+            (0, false) => {
+                let options = Options::new(DarkStyleSheet)
+                    .with_code_theme(theme)
+                    .with_outline_heading_numbers(true);
+                markdown_to_text(rendered, &options)
+            }
+            (0, true) => {
+                let options = Options::new(HighContrastDarkStyleSheet)
+                    .with_code_theme(theme)
+                    .with_outline_heading_numbers(true);
+                markdown_to_text(rendered, &options)
+            }
+            (1, false) => {
+                let options = Options::new(LightStyleSheet)
+                    .with_code_theme(theme)
+                    .with_outline_heading_numbers(true);
+                markdown_to_text(rendered, &options)
+            }
+            (1, true) => {
+                let options = Options::new(HighContrastLightStyleSheet)
+                    .with_code_theme(theme)
+                    .with_outline_heading_numbers(true);
+                markdown_to_text(rendered, &options)
+            }
+            _ => {
+                let options = Options::new(DarkStyleSheet)
+                    .with_code_theme(theme)
+                    .with_outline_heading_numbers(true);
+                markdown_to_text(rendered, &options)
+            }
+        };
+        for tl in text.lines {
+            let owned = line_into_static(tl);
+            plain_lines.push(line_to_plain(&owned));
+            draw_lines.push(owned);
+        }
+    } else {
+        for l in rendered.lines() {
+            let line_str = if m.role == "user" {
+                if l.width() >= chat_inner_width {
+                    l.to_string()
+                } else {
+                    format!(
+                        "{}{}",
+                        " ".repeat(chat_inner_width.saturating_sub(l.width())),
+                        l
+                    )
+                }
+            } else {
+                l.to_string()
+            };
+            plain_lines.push(line_str.clone());
+            draw_lines.push(Line::raw(line_str));
+        }
+    }
+    (draw_lines, plain_lines)
+}
+
+/// 与 `draw_chat` 相同的逻辑行：第一项为带样式绘制行；第二项为同序纯文本（供 Ctrl+F 匹配）；第三项为每条非 system 消息首行索引。
+pub(super) fn build_chat_scroll_lines(
+    state: &mut TuiState,
+    chat_inner_width: usize,
 ) -> (Vec<Line<'static>>, Vec<String>, Vec<usize>) {
+    {
+        let c = &mut state.chat_line_build_cache;
+        if c.chat_inner_width != chat_inner_width
+            || c.md_style != state.md_style
+            || c.high_contrast != state.high_contrast
+            || c.code_theme_idx != state.code_theme_idx
+        {
+            c.per_message.clear();
+            c.chat_inner_width = chat_inner_width;
+            c.md_style = state.md_style;
+            c.high_contrast = state.high_contrast;
+            c.code_theme_idx = state.code_theme_idx;
+        }
+        if c.per_message.len() != state.messages.len() {
+            c.per_message.resize_with(state.messages.len(), || None);
+        }
+    }
+
     let mut draw_lines: Vec<Line<'static>> = Vec::new();
     let mut plain_lines: Vec<String> = Vec::new();
     let mut message_start_lines: Vec<usize> = Vec::new();
-    let header_style = Style::default().add_modifier(Modifier::BOLD);
-    let chat_msgs: Vec<&Message> = state
-        .messages
-        .iter()
-        .filter(|m| m.role != "system")
-        .collect();
-    let rendered_list: Vec<String> = chat_msgs
-        .iter()
-        .map(|m| {
-            let raw = m.content.as_deref().unwrap_or("");
-            let display_raw = if m.role == "tool" {
-                serde_json::from_str::<serde_json::Value>(raw)
-                    .ok()
-                    .and_then(|v| {
-                        v.get("human_summary")
-                            .and_then(|x| x.as_str())
-                            .map(|s| s.to_string())
-                    })
-                    .unwrap_or_else(|| raw.to_string())
-            } else if m.role == "assistant" {
-                strip_assistant_echo_label(raw)
-            } else {
-                raw.to_string()
-            };
-            latex_math_to_unicode(&display_raw)
-        })
-        .collect();
 
-    for (m, rendered_owned) in chat_msgs.iter().zip(rendered_list.iter()) {
+    for (i, m) in state.messages.iter().enumerate() {
+        if m.role == "system" {
+            continue;
+        }
         message_start_lines.push(draw_lines.len());
-        let role = if m.role == "user" { "我" } else { "模型" };
-        let rendered = rendered_owned.as_str();
-        if m.role == "user" {
-            let role_text = format!("{}:", role);
-            let role_padded = if role_text.width() >= chat_inner_width {
-                role_text
-            } else {
-                format!(
-                    "{}{}",
-                    " ".repeat(chat_inner_width.saturating_sub(role_text.width())),
-                    role_text
-                )
-            };
-            draw_lines.push(Line::from(Span::styled(role_padded.clone(), header_style)));
-            plain_lines.push(role_padded);
-        } else if m.role != "assistant" {
-            let h = format!("{}:", role);
-            draw_lines.push(Line::from(Span::styled(h.clone(), header_style)));
-            plain_lines.push(h);
-        }
-        if m.role == "assistant" {
-            let theme = code_themes()[state.code_theme_idx];
-            let text = match (state.md_style, state.high_contrast) {
-                (0, false) => {
-                    let options = Options::new(DarkStyleSheet)
-                        .with_code_theme(theme)
-                        .with_outline_heading_numbers(true);
-                    markdown_to_text(rendered, &options)
-                }
-                (0, true) => {
-                    let options = Options::new(HighContrastDarkStyleSheet)
-                        .with_code_theme(theme)
-                        .with_outline_heading_numbers(true);
-                    markdown_to_text(rendered, &options)
-                }
-                (1, false) => {
-                    let options = Options::new(LightStyleSheet)
-                        .with_code_theme(theme)
-                        .with_outline_heading_numbers(true);
-                    markdown_to_text(rendered, &options)
-                }
-                (1, true) => {
-                    let options = Options::new(HighContrastLightStyleSheet)
-                        .with_code_theme(theme)
-                        .with_outline_heading_numbers(true);
-                    markdown_to_text(rendered, &options)
-                }
-                _ => {
-                    let options = Options::new(DarkStyleSheet)
-                        .with_code_theme(theme)
-                        .with_outline_heading_numbers(true);
-                    markdown_to_text(rendered, &options)
-                }
-            };
-            for tl in text.lines {
-                let owned = line_into_static(tl);
-                plain_lines.push(line_to_plain(&owned));
-                draw_lines.push(owned);
-            }
+        let fp = line_cache_fingerprint(m);
+
+        let cache_hit = state
+            .chat_line_build_cache
+            .per_message
+            .get(i)
+            .and_then(|slot| slot.as_ref())
+            .is_some_and(|e| e.content_fingerprint == fp);
+
+        let (mut d, mut p) = if cache_hit {
+            let e = state.chat_line_build_cache.per_message[i].as_ref().unwrap();
+            (e.draw.clone(), e.plain.clone())
         } else {
-            for l in rendered.lines() {
-                let line_str = if m.role == "user" {
-                    if l.width() >= chat_inner_width {
-                        l.to_string()
-                    } else {
-                        format!(
-                            "{}{}",
-                            " ".repeat(chat_inner_width.saturating_sub(l.width())),
-                            l
-                        )
-                    }
-                } else {
-                    l.to_string()
-                };
-                plain_lines.push(line_str.clone());
-                draw_lines.push(Line::raw(line_str));
-            }
-        }
+            let rendered = message_body_for_chat_display(m);
+            let (draw, plain) = render_message_chat_lines(m, &rendered, state, chat_inner_width);
+            state.chat_line_build_cache.per_message[i] = Some(ChatMessageLineCacheEntry {
+                content_fingerprint: fp,
+                draw: draw.clone(),
+                plain: plain.clone(),
+            });
+            (draw, plain)
+        };
+
+        draw_lines.append(&mut d);
+        plain_lines.append(&mut p);
         draw_lines.push(Line::raw(""));
         plain_lines.push(String::new());
     }

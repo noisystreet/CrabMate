@@ -8,6 +8,8 @@ model = "deepseek-chat"
 env = "dev"
 # 保留的最近对话轮数（user+assistant 算一轮）
 max_message_history = 24
+# TUI 启动时从 .crabmate/tui_session.json 加载的消息条数上限（含 system）；超出则丢弃最旧非 system 消息（默认 400，有效范围 2～50000）
+tui_session_max_messages = 400
 # role: tool 的正文超过此字符数时在每次调模型前截断（近似 token 控制）
 tool_message_max_chars = 32768
 # 非 system 消息总字符预算（近似）；0 = 不启用按字符删旧消息
@@ -31,9 +33,9 @@ command_timeout_secs = 10
 # run_command 输出最大长度（字符），超出则截断
 command_max_output_len = 8192
 # run_command 通用命令白名单（若未按环境拆分，则使用该列表）
-allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "gcc", "g++", "make"]
+allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "ninja", "gcc", "g++", "clang", "clang++", "c++filt", "make"]
 # 开发环境（dev）专用命令白名单（若配置则覆盖 allowed_commands）
-allowed_commands_dev = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "gcc", "g++", "make"]
+allowed_commands_dev = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "ninja", "gcc", "g++", "clang", "clang++", "c++filt", "make"]
 # 生产环境（prod）专用命令白名单（例如去掉编译/构建命令）
 allowed_commands_prod = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat"]
 # run_command 的工作目录（命令在该目录下执行，需存在且为目录）

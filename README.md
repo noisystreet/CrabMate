@@ -11,7 +11,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
   - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
   - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。**Web** 端仅当 URL 以 `http_fetch_allowed_prefixes` 中某一前缀开头时才执行；**TUI** 下未匹配前缀时可像 `run_command` 一样 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键）。
-  - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`head`、`tail`、`wc`、`cmake`、`gcc`、`g++`、`make` 等），带超时与输出截断。
+  - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`head`、`tail`、`wc`、`cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`make` 等），带超时与输出截断。**CMake**：已列入白名单，常用 `cmake -S . -B build`、`cmake --build build`；参数不得含 `..` 或以 `/` 开头，建议构建目录用相对路径（勿在 args 里写绝对路径的 `-D`）。未安装时 `/health` 中 `dep_cmake` 可能为 degraded。**c++filt**：可将链接器/栈追踪中的修饰名（mangled）反解为可读 C++ 名（Binutils/LLVM 通常提供）；未安装时 `dep_cxxfilt` 可能为 degraded。
   - `run_executable`：在工作区目录下运行可执行文件（路径、参数均做安全校验）。
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
@@ -22,7 +22,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `license_notice`：运行 **cargo metadata**，生成 **crate → license** 的 Markdown 表（未声明项有占位说明）；**非法律意见**，发版前需人工核对。
   - `hash_file`：对工作区内文件做只读 **SHA-256 / SHA-512 / BLAKE3**（流式读取）；可选仅哈希前 `max_bytes` 字节，便于大文件或抽样校验。
   - `diagnostic_summary`：只读排障摘要——Rust 工具链（`rustc`/`cargo`/`rustup`/`bc`）、工作区 `target/` 与 `Cargo.toml` / `frontend` 常见路径、关键环境变量**是否设置**（**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。
-  - **Python / uv / pre-commit**（均在**工作区根**执行，需本机已安装对应 CLI；未安装时工具返回说明性错误）：`ruff_check`、`pytest_run`（`python3 -m pytest`）、`mypy_check`、`python_install_editable`（`uv` 或 `pip` 可编辑安装）、`uv_sync`、`uv_run`（`args` 为字符串数组，不经 shell）、`pre_commit_run`（需 `.pre-commit-config.yaml`）。**`.py` 格式化**：`format_file` / `format_check_file` 使用 **ruff format**。**标签裁剪**：集成方可通过库 API `build_tools_with_options` 与 `dev_tag` 子域标签（如 `python`、`quality`）限制发给模型的工具列表，详见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
+  - **Python / uv / pre-commit**（均在**工作区根**执行，需本机已安装对应 CLI；未安装时工具返回说明性错误）：`ruff_check`、`pytest_run`（`python3 -m pytest`）、`mypy_check`、`python_install_editable`（`uv` 或 `pip` 可编辑安装）、`uv_sync`、`uv_run`（`args` 为字符串数组，不经 shell）、`pre_commit_run`（需 `.pre-commit-config.yaml`）。**格式化**：`format_file` / `format_check_file` 按扩展名选用 **ruff format**（`.py`）、**clang-format**（`.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh`）、`rustfmt` / `prettier` 等。**标签裁剪**：集成方可通过库 API `build_tools_with_options` 与 `dev_tag` 子域标签（如 `python`、`cpp`、`quality`）限制发给模型的工具列表，详见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
@@ -348,7 +348,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）
    - **联网搜索**（`web_search` 工具）：`AGENT_WEB_SEARCH_PROVIDER`（`brave` / `tavily`）、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`（1～20，默认 8）
    - **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`（逗号分隔 URL 前缀）、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`（与 `default_config.toml` / `[agent]` 中同名项对应）
-   - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
+   - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
+   - **TUI 会话文件**：`AGENT_TUI_SESSION_MAX_MESSAGES` 与 `[agent] tui_session_max_messages` 对应；启动从 `.crabmate/tui_session.json` 恢复时限制总消息条数（含 `system`），超出则丢弃最旧非 system 消息（默认 `400`，有效范围 `2`～`50000`）
    ```bash
    export AGENT_MODEL=deepseek-reasoner
    cargo run
@@ -371,6 +372,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 **系统提示词**：在 `default_config.toml` 中通过 `system_prompt`（多行字符串）或 `system_prompt_file`（文件路径）配置；若同时设置，以文件内容为准。未配置则启动报错。
 
 **上下文窗口**（`[agent]`）：每次向模型发请求前会压缩 `messages`——`tool_message_max_chars` 截断工具输出；`max_message_history` 限制条数；`context_char_budget > 0` 时按近似字符删最旧消息；`context_summary_trigger_chars > 0` 且总长超阈值时再调一次无 tools 的 API 生成「较早对话摘要」（尾部保留 `context_summary_tail_messages` 条）。TUI/REPL 长会话下裁剪会缩短本地消息列表；Web 单请求内工具多轮仍受益。
+
+**TUI 历史加载**（`[agent] tui_session_max_messages`）：仅影响从磁盘加载 `tui_session.json` 时的消息条数上限（含 `system`），与上述「每次请求前」的上下文裁剪相互独立；极长历史可避免首屏渲染与 Markdown 缓存压力过大。
 
 **Web 对话任务队列**（`chat_queue_max_concurrent` / `chat_queue_max_pending`）：`POST /chat` 与 `POST /chat/stream` 经进程内有界队列调度，限制**同时执行**的 Agent 回合数与**排队**长度；队列满时返回 **503**，JSON 体含 `code: "QUEUE_FULL"`。`GET /status` 会返回 `chat_queue_running`、`chat_queue_recent_jobs`，以及运行中任务的 **`per_active_jobs`**（PER 镜像：`awaiting_plan_rewrite_model`、`plan_rewrite_attempts`、`require_plan_in_final_content` 等；按队列 `job_id` 区分，**与浏览器会话无绑定**，完整「本会话是否在规划重写」需日后会话协议扩展）。多副本/跨进程需自行接外部消息队列（见 `docs/TODOLIST.md`）。
 
@@ -476,7 +479,7 @@ cargo run
   ```json
   {"path":"src/tools/mod.rs","include_use":false,"max_items":200}
   ```
-- `format_check_file`（单文件格式检查，不写盘：`rustfmt --check` / `prettier --check`）：
+- `format_check_file`（单文件格式检查，不写盘：`rustfmt --check` / `clang-format --dry-run --Werror` / `prettier --check` / `ruff format --check`）：
   ```json
   {"path":"src/main.rs"}
   ```

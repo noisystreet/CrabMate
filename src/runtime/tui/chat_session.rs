@@ -14,8 +14,27 @@ pub(super) fn session_file_path(workspace: &Path) -> PathBuf {
     workspace.join(".crabmate").join("tui_session.json")
 }
 
+/// 超过上限时保留首条 `system` 与尾部最近若干条，减轻启动与 TUI 渲染负担。
+fn truncate_loaded_messages(mut msgs: Vec<Message>, max_total: usize) -> Vec<Message> {
+    let max_total = max_total.max(2);
+    if msgs.len() <= max_total {
+        return msgs;
+    }
+    let system = msgs.remove(0);
+    let tail_keep = max_total.saturating_sub(1);
+    let skip = msgs.len().saturating_sub(tail_keep);
+    let mut out = vec![system];
+    out.extend(msgs.into_iter().skip(skip));
+    out
+}
+
 /// 若存在会话文件则加载；首条 `system` 会替换为当前配置的 `system_prompt`。
-pub(super) fn load_tui_session(workspace: &Path, system_prompt: &str) -> Option<Vec<Message>> {
+/// `max_messages` 为加载后的消息条数上限（含 `system`）；超出则丢弃最旧的用户/助手/工具消息。
+pub(super) fn load_tui_session(
+    workspace: &Path,
+    system_prompt: &str,
+    max_messages: usize,
+) -> Option<Vec<Message>> {
     let path = session_file_path(workspace);
     let data = std::fs::read_to_string(&path).ok()?;
     let parsed: TuiSessionFile = serde_json::from_str(&data).ok()?;
@@ -37,7 +56,7 @@ pub(super) fn load_tui_session(workspace: &Path, system_prompt: &str) -> Option<
             },
         );
     }
-    Some(msgs)
+    Some(truncate_loaded_messages(msgs, max_messages))
 }
 
 pub(super) fn save_tui_session(workspace: &Path, messages: &[Message]) -> std::io::Result<()> {
@@ -97,4 +116,42 @@ pub(super) fn export_markdown(workspace: &Path, messages: &[Message]) -> std::io
     }
     std::fs::write(&path, md)?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(role: &str, content: &str) -> Message {
+        Message {
+            role: role.to_string(),
+            content: Some(content.to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn truncate_keeps_system_and_tail() {
+        let v = vec![
+            msg("system", "s"),
+            msg("user", "a"),
+            msg("assistant", "b"),
+            msg("user", "c"),
+            msg("assistant", "d"),
+        ];
+        let t = truncate_loaded_messages(v, 3);
+        assert_eq!(t.len(), 3);
+        assert_eq!(t[0].role, "system");
+        assert_eq!(t[1].content.as_deref(), Some("c"));
+        assert_eq!(t[2].content.as_deref(), Some("d"));
+    }
+
+    #[test]
+    fn truncate_noop_when_short() {
+        let v = vec![msg("system", "s"), msg("user", "u")];
+        let t = truncate_loaded_messages(v, 10);
+        assert_eq!(t.len(), 2);
+    }
 }
