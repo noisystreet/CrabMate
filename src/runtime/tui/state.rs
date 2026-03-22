@@ -3,7 +3,7 @@
 use crate::types::Message;
 use ratatui::text::Line;
 use regex::Regex;
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -37,17 +37,6 @@ impl RightTab {
     }
 }
 
-/// 本会话内一轮 TUI Agent 的结束摘要（与 Web `ChatJobRecord` 对照，便于「队列」页展示）。
-#[derive(Debug, Clone)]
-pub(super) struct TuiTurnRecord {
-    pub job_id: u64,
-    pub duration_ms: u64,
-    pub ok: bool,
-    pub user_cancelled: bool,
-    pub hard_aborted: bool,
-    pub error_preview: Option<String>,
-}
-
 /// 由后台 `tokio::spawn` 在 `run_agent_turn_tui` 结束后发往主循环。
 #[derive(Debug, Clone)]
 pub(super) struct TuiTurnOutcome {
@@ -57,8 +46,6 @@ pub(super) struct TuiTurnOutcome {
     pub user_cancelled: bool,
     pub error_preview: Option<String>,
 }
-
-const TUI_TURN_RECENT_CAP: usize = 24;
 
 /// 大模型当前阶段（状态栏「状态」字段）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -138,11 +125,7 @@ pub(super) struct TuiState {
     pub mode: Mode,
     // right panel
     pub tab: RightTab,
-    /// 与 Web `chat_queue_max_concurrent` 一致（`--serve` 时生效）；TUI 页用于对照说明。
-    pub chat_queue_max_concurrent: usize,
-    pub chat_queue_max_pending: usize,
     pub next_tui_job_id: u64,
-    pub tui_turn_recent: VecDeque<TuiTurnRecord>,
     pub tui_active_job_id: Option<u64>,
     pub tui_active_job_started: Option<Instant>,
     // workspace view
@@ -192,63 +175,51 @@ pub(super) struct TuiState {
     pub prompt_redo: Vec<(String, usize)>,
     /// 聊天区 Markdown 按消息缓存（见 `draw::build_chat_scroll_lines`）。
     pub chat_line_build_cache: ChatLineBuildCache,
-    /// 分阶段规划：`staged_plan_notice` SSE 累积行，在「队列」页展示。
+    /// 分阶段规划：`staged_plan_notice` SSE 累积行；「队列」页绘规划摘要（步骤行内 `[ ]`/`[✓]`）。
     pub staged_plan_log: Vec<String>,
 }
 
 impl TuiState {
     pub(super) fn apply_tui_turn_outcome(&mut self, o: TuiTurnOutcome) {
+        log::debug!(
+            target: "crabmate::tui_print",
+            "TUI 回合结束 job_id={} ok={} duration_ms={} user_cancelled={} error_preview={:?}",
+            o.job_id,
+            o.ok,
+            o.duration_ms,
+            o.user_cancelled,
+            o.error_preview
+        );
         self.tui_active_job_id = None;
         self.tui_active_job_started = None;
-        self.tui_turn_recent.push_back(TuiTurnRecord {
-            job_id: o.job_id,
-            duration_ms: o.duration_ms,
-            ok: o.ok,
-            user_cancelled: o.user_cancelled,
-            hard_aborted: false,
-            error_preview: o.error_preview,
-        });
-        while self.tui_turn_recent.len() > TUI_TURN_RECENT_CAP {
-            self.tui_turn_recent.pop_front();
-        }
     }
 
     /// `Ctrl+Shift+G` 强制中止：任务被 `abort()`，不会产生正常的 `TuiTurnOutcome`。
     pub(super) fn apply_tui_turn_hard_abort(&mut self) {
-        let Some(jid) = self.tui_active_job_id.take() else {
-            self.tui_active_job_started = None;
-            return;
-        };
-        let duration_ms = self
-            .tui_active_job_started
-            .take()
-            .map(|s| s.elapsed().as_millis() as u64)
-            .unwrap_or(0);
-        self.tui_turn_recent.push_back(TuiTurnRecord {
-            job_id: jid,
-            duration_ms,
-            ok: false,
-            user_cancelled: false,
-            hard_aborted: true,
-            error_preview: None,
-        });
-        while self.tui_turn_recent.len() > TUI_TURN_RECENT_CAP {
-            self.tui_turn_recent.pop_front();
-        }
+        self.tui_active_job_id = None;
+        self.tui_active_job_started = None;
     }
 }
 
 /// xterm SGR 鼠标报告：`\x1b[<btn;col;rowM`；若 CSI 被吞掉，可见部分形如 `<35;50;30M`。
 static SGR_MOUSE_LEAK_TAIL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^<\d+;\d+;\d+[Mm]$").unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "SGR_MOUSE_LEAK_TAIL regex invalid; using no-match fallback");
+        log::warn!(
+            target: "crabmate",
+            "SGR_MOUSE_LEAK_TAIL regex invalid; using no-match fallback error={}",
+            e
+        );
         Regex::new("a^").expect("infallible empty-match regex")
     })
 });
 
 static SGR_MOUSE_LEAK_EMBEDDED: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\x1b\[<\d+;\d+;\d+[Mm]|<\d+;\d+;\d+[Mm]").unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "SGR_MOUSE_LEAK_EMBEDDED regex invalid; using no-match fallback");
+        log::warn!(
+            target: "crabmate",
+            "SGR_MOUSE_LEAK_EMBEDDED regex invalid; using no-match fallback error={}",
+            e
+        );
         Regex::new("a^").expect("infallible empty-match regex")
     })
 });

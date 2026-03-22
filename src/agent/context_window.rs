@@ -3,9 +3,9 @@
 //! - **工具压缩**：缩小 `role: tool` 的 `content`，不改变消息条数（TUI 气泡仍在，仅变短）。
 //! - **裁剪 / 摘要**：会 **删除** 或 **合并** 较早消息；TUI 在 `sync` 后聊天列表会相应变短，属预期权衡。
 
+use log::{info, warn};
 use reqwest::Client;
 use tokio::sync::mpsc::Sender;
-use tracing::{info, warn};
 
 use crate::config::AgentConfig;
 use crate::llm::complete_chat_retrying;
@@ -216,7 +216,7 @@ pub async fn maybe_summarize_with_llm(
         Ok((msg, _)) => {
             let summary = msg.content.unwrap_or_default();
             if summary.trim().is_empty() {
-                warn!("上下文摘要模型返回空正文，跳过替换");
+                warn!(target: "crabmate", "上下文摘要模型返回空正文，跳过替换");
                 return Ok(());
             }
             let tail_start = messages.len() - tail;
@@ -234,14 +234,19 @@ pub async fn maybe_summarize_with_llm(
             });
             messages.extend(tail_part);
             info!(
-                tail_kept = tail,
-                new_len = messages.len(),
-                "已用 LLM 压缩上下文"
+                target: "crabmate",
+                "已用 LLM 压缩上下文 tail_kept={} new_len={}",
+                tail,
+                messages.len()
             );
             prepare_messages_before_model_call_sync(messages, cfg);
         }
         Err(e) => {
-            warn!(error = %e, "上下文摘要请求失败，继续使用裁剪后的消息");
+            warn!(
+                target: "crabmate",
+                "上下文摘要请求失败，继续使用裁剪后的消息 error={}",
+                e
+            );
         }
     }
     Ok(())

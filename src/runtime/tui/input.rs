@@ -12,12 +12,12 @@ use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
 use crate::health::{build_health_report, format_health_report_terminal};
+use crate::redact;
 use crate::types::{CommandApprovalDecision, LLM_CANCELLED_ERROR, Message};
 
 use super::agent::run_agent_turn_tui;
 use super::allowlist::save_persistent_allowlist;
 use super::chat_nav;
-use super::chat_session;
 use super::clipboard;
 use super::draw;
 use super::edit_history;
@@ -32,6 +32,8 @@ use super::workspace_ops::{
     refresh_schedule, refresh_tasks, refresh_workspace, split_title_due, toggle_reminder_done,
     toggle_task_done, workspace_go_up, workspace_open_or_enter,
 };
+use crate::runtime::workspace_session;
+use log::debug;
 
 fn insert_tab_chat(state: &mut TuiState) {
     if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
@@ -450,7 +452,7 @@ pub(super) async fn handle_key(
             );
         }
         KeyCode::F(8) if state.mode == Mode::Normal => {
-            match chat_session::export_json(&state.workspace_dir, &state.messages) {
+            match workspace_session::export_json(&state.workspace_dir, &state.messages) {
                 Ok(p) => {
                     state.status_line = format!("已导出 JSON：{}", p.display());
                 }
@@ -460,7 +462,7 @@ pub(super) async fn handle_key(
             }
         }
         KeyCode::F(9) if state.mode == Mode::Normal => {
-            match chat_session::export_markdown(&state.workspace_dir, &state.messages) {
+            match workspace_session::export_markdown(&state.workspace_dir, &state.messages) {
                 Ok(p) => {
                     state.status_line = format!("已导出 Markdown：{}", p.display());
                 }
@@ -644,6 +646,12 @@ pub(super) async fn handle_key(
             {
                 let q = state.input.trim().to_string();
                 if !q.is_empty() {
+                    debug!(
+                        target: "crabmate::tui_print",
+                        "TUI 用户提交问题 len={} preview={}",
+                        q.len(),
+                        redact::preview_chars(&q, redact::MESSAGE_LOG_PREVIEW_CHARS)
+                    );
                     state.mouse_leak_scratch.clear();
                     state.input.clear();
                     state.input_cursor = 0;

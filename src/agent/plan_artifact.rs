@@ -123,6 +123,37 @@ pub fn format_plan_steps_markdown(plan: &AgentReplyPlanV1) -> String {
     out.trim_end().to_string()
 }
 
+/// 分阶段规划**队列**区：每步前加 `[ ]` 未完成 / `[✓]` 已完成（`completed_count` 为已完成步数，与 `run_staged_plan_then_execute_steps` 中步下标一致）。
+pub fn format_plan_steps_markdown_for_staged_queue(
+    plan: &AgentReplyPlanV1,
+    completed_count: usize,
+) -> String {
+    use std::fmt::Write;
+
+    let mut out = String::new();
+    let n = plan.steps.len();
+    let done = completed_count.min(n);
+    let mut line_no = 1usize;
+    for (idx, st) in plan.steps.iter().enumerate() {
+        let desc = crate::text_sanitize::naturalize_plan_step_description(&st.description);
+        let id = st.id.trim();
+        if id.is_empty() {
+            continue;
+        }
+        let id_esc = id.replace('`', "'");
+        let mark = if idx < done { "[✓]" } else { "[ ]" };
+        let _ = writeln!(
+            &mut out,
+            "{mark} {}. `{}`: {}",
+            line_no,
+            id_esc,
+            desc.trim()
+        );
+        line_no += 1;
+    }
+    out.trim_end().to_string()
+}
+
 /// 若 `content` 中含合法 `agent_reply_plan` v1，返回**简单 Markdown 有序列表**（可选围栏前自然语言段落；每步一行 `1. \`id\`: description`），不含原始 JSON。
 /// 仅影响展示层；`Message.content` 仍为原文以便服务端继续解析。
 pub fn format_agent_reply_plan_for_display(content: &str) -> Option<String> {
@@ -205,6 +236,25 @@ not json
 ```
 "#;
         assert!(parse_agent_reply_plan_v1(content).is_ok());
+    }
+
+    #[test]
+    fn staged_queue_marks_done_steps() {
+        let plan = parse_agent_reply_plan_v1(
+            r#"{"type":"agent_reply_plan","version":1,"steps":[
+                {"id":"a","description":"one"},
+                {"id":"b","description":"two"}
+            ]}"#,
+        )
+        .unwrap();
+        let s0 = format_plan_steps_markdown_for_staged_queue(&plan, 0);
+        assert!(s0.contains("[ ]"));
+        assert!(!s0.contains("[✓]"));
+        let s1 = format_plan_steps_markdown_for_staged_queue(&plan, 1);
+        assert!(s1.lines().next().unwrap_or("").contains("[✓]"));
+        assert!(s1.lines().nth(1).unwrap_or("").contains("[ ]"));
+        let s2 = format_plan_steps_markdown_for_staged_queue(&plan, 2);
+        assert_eq!(s2.matches("[✓]").count(), 2);
     }
 
     #[test]

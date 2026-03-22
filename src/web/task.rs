@@ -2,8 +2,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use axum::{Json, extract::State};
+use log::error;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 use crate::AppState;
 
@@ -39,7 +39,7 @@ pub async fn tasks_get_handler(State(state): State<Arc<AppState>>) -> Json<Tasks
         Ok(s) => match serde_json::from_str::<TasksData>(&s) {
             Ok(data) => Json(data),
             Err(e) => {
-                error!(error = %e, "解析 tasks.json 失败，将返回空任务列表");
+                error!(target: "crabmate", "解析 tasks.json 失败，将返回空任务列表 error={}", e);
                 Json(TasksData {
                     source: None,
                     updated_at: None,
@@ -48,7 +48,7 @@ pub async fn tasks_get_handler(State(state): State<Arc<AppState>>) -> Json<Tasks
             }
         },
         Err(e) => {
-            error!(error = %e, "读取 tasks.json 失败，将返回空任务列表");
+            error!(target: "crabmate", "读取 tasks.json 失败，将返回空任务列表 error={}", e);
             Json(TasksData {
                 source: None,
                 updated_at: None,
@@ -72,17 +72,17 @@ pub async fn tasks_set_handler(
     let content = match serde_json::to_string_pretty(&body) {
         Ok(c) => c,
         Err(e) => {
-            error!(error = %e, "序列化任务数据失败");
+            error!(target: "crabmate", "序列化任务数据失败 error={}", e);
             return Json(body);
         }
     };
     if let Some(parent) = path.parent()
         && let Err(e) = tokio::fs::create_dir_all(parent).await
     {
-        error!(error = %e, "创建 tasks.json 目录失败");
+        error!(target: "crabmate", "创建 tasks.json 目录失败 error={}", e);
     }
     if let Err(e) = tokio::fs::write(&path, content.as_bytes()).await {
-        error!(error = %e, "写入 tasks.json 失败");
+        error!(target: "crabmate", "写入 tasks.json 失败 error={}", e);
     }
     Json(body)
 }

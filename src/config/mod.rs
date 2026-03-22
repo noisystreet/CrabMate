@@ -41,7 +41,9 @@ pub struct AgentConfig {
     pub model: String,
     /// 保留的最近对话轮数（user+assistant 算一轮）
     pub max_message_history: usize,
-    /// TUI 启动时从 `.crabmate/tui_session.json` 加载的消息条数上限（含 `system`）；超出则丢弃最旧非 system 消息
+    /// 为 `true` 时 TUI / CLI REPL 启动从 `.crabmate/tui_session.json` 恢复会话；默认 `false` 仅含当前配置的 `system` 一条
+    pub tui_load_session_on_start: bool,
+    /// `tui_load_session_on_start` 为 `true` 时：从会话文件加载的消息条数上限（含 `system`）；超出则丢弃最旧非 system 消息
     pub tui_session_max_messages: usize,
     /// run_command 最长执行时间（秒）
     pub command_timeout_secs: u64,
@@ -119,6 +121,7 @@ struct AgentSection {
     api_base: Option<String>,
     model: Option<String>,
     max_message_history: Option<u64>,
+    tui_load_session_on_start: Option<bool>,
     tui_session_max_messages: Option<u64>,
     command_timeout_secs: Option<u64>,
     command_max_output_len: Option<u64>,
@@ -171,6 +174,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut api_base = String::new();
     let mut model = String::new();
     let mut max_message_history: Option<u64> = None;
+    let mut tui_load_session_on_start: Option<bool> = None;
     let mut tui_session_max_messages: Option<u64> = None;
     let mut command_timeout_secs: Option<u64> = None;
     let mut command_max_output_len: Option<u64> = None;
@@ -213,6 +217,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         api_base = agent.api_base.unwrap_or_default().trim().to_string();
         model = agent.model.unwrap_or_default().trim().to_string();
         max_message_history = agent.max_message_history.or(max_message_history);
+        tui_load_session_on_start = agent
+            .tui_load_session_on_start
+            .or(tui_load_session_on_start);
         tui_session_max_messages = agent.tui_session_max_messages.or(tui_session_max_messages);
         command_timeout_secs = agent.command_timeout_secs.or(command_timeout_secs);
         command_max_output_len = agent.command_max_output_len.or(command_max_output_len);
@@ -314,6 +321,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             .chat_queue_max_concurrent
             .or(chat_queue_max_concurrent);
         chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
+        tui_load_session_on_start = agent
+            .tui_load_session_on_start
+            .or(tui_load_session_on_start);
         staged_plan_execution = agent.staged_plan_execution.or(staged_plan_execution);
         if let Some(ref s) = agent.staged_plan_phase_instruction {
             staged_plan_phase_instruction = Some(s.clone());
@@ -347,6 +357,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 if let Some(v) = agent.max_message_history {
                     max_message_history = Some(v);
                 }
+                tui_load_session_on_start = agent
+                    .tui_load_session_on_start
+                    .or(tui_load_session_on_start);
                 if let Some(v) = agent.tui_session_max_messages {
                     tui_session_max_messages = Some(v);
                 }
@@ -472,6 +485,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                     .chat_queue_max_concurrent
                     .or(chat_queue_max_concurrent);
                 chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
+                tui_load_session_on_start = agent
+                    .tui_load_session_on_start
+                    .or(tui_load_session_on_start);
                 staged_plan_execution = agent.staged_plan_execution.or(staged_plan_execution);
                 if let Some(ref s) = agent.staged_plan_phase_instruction {
                     let s = s.trim().to_string();
@@ -507,6 +523,14 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         tui_session_max_messages = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_TUI_LOAD_SESSION_ON_START") {
+        let v = v.trim().to_ascii_lowercase();
+        if matches!(v.as_str(), "1" | "true" | "yes" | "on") {
+            tui_load_session_on_start = Some(true);
+        } else if matches!(v.as_str(), "0" | "false" | "no" | "off") {
+            tui_load_session_on_start = Some(false);
+        }
     }
     if let Ok(v) = std::env::var("AGENT_COMMAND_TIMEOUT_SECS")
         && let Ok(n) = v.trim().parse::<u64>()
@@ -695,6 +719,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         return Err("配置错误：未设置 model（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_MODEL 中设置）".to_string());
     }
     let max_message_history = max_message_history.unwrap_or(32).clamp(1, 1024) as usize;
+    let tui_load_session_on_start = tui_load_session_on_start.unwrap_or(false);
     let tui_session_max_messages =
         tui_session_max_messages.unwrap_or(400).clamp(2, 50_000) as usize;
     let command_timeout_secs = command_timeout_secs.unwrap_or(30).max(1);
@@ -823,6 +848,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         api_base,
         model,
         max_message_history,
+        tui_load_session_on_start,
         tui_session_max_messages,
         command_timeout_secs,
         command_max_output_len,

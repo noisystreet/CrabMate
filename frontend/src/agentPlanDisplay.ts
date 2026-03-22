@@ -3,6 +3,29 @@
  * 将可解析的 `agent_reply_plan` v1 转为简单 Markdown 有序列表（可选围栏前自然语言 + `1. \`id\`: description`），不展示原始 JSON。
  */
 
+/** 与后端 `message_display::SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 对齐：规划轮不在主聊天区重复展示（侧栏/通知另有呈现）。 */
+export const SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT = false
+
+/** 与 `plan_section::STAGED_STEP_USER_BOILERPLATE` 一致（分步注入 user 长句）。 */
+export const STAGED_STEP_USER_BOILERPLATE =
+  '请只专注完成下列规划步骤，本步完成后以非 tool_calls 的终答结束；不要提前执行后续步骤。'
+
+/** 与后端 `message_display::SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT` 对齐。 */
+export const SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT = false
+
+/** 与 `user_message_for_chat_display` / `is_staged_step_injection_user_content` 同形。 */
+function isStagedStepInjectionUserContent(s: string): boolean {
+  const t = s.trimStart()
+  return t.startsWith('【分步执行') && t.includes('\n- id:') && t.includes('\n- 描述:')
+}
+
+/** 聊天区展示用：分步注入 `user` 在 `SHOW_…` 为 `false` 时整段不展示；`messages` 原文与导出不变。 */
+export function formatStagedStepUserForChat(raw: string): string {
+  if (SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT) return raw
+  if (isStagedStepInjectionUserContent(raw)) return ''
+  return raw
+}
+
 function proseBeforeFirstFence(content: string): string {
   const i = content.indexOf('```')
   if (i < 0) return ''

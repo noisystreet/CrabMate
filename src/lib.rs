@@ -1,7 +1,7 @@
 //! CrabMate 库：DeepSeek Agent、HTTP 服务、工具与工作流。
 //! 二进制入口见 `src/main.rs` 的 [`run`] 包装。
 //!
-//! 日志由 `RUST_LOG` 控制；`--tui` 时不向终端写 tracing 行，以免打乱全屏界面。
+//! 日志由 `log` + `env_logger` 处理，`RUST_LOG` 控制级别；`--tui` 时不向终端写日志行，以免打乱全屏界面。
 
 mod agent;
 mod chat_job_queue;
@@ -30,6 +30,7 @@ use axum::{
 };
 use config::cli::{init_logging, parse_args};
 use futures_util::StreamExt;
+use log::{debug, error, info};
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,14 +39,13 @@ use tokio_stream::wrappers::ReceiverStream;
 use tower::ServiceBuilder;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
-use tracing::{error, info};
 use types::{Message, messages_chat_seed};
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
 /// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）；`no_stream` 为 true 时 API 使用 `stream: false`，
 /// 有正文则通过 `out` 一次性下发整段。
 /// 若 `render_to_terminal` 为 true，则在终端用 `markdown_to_ansi` 渲染助手回复（流式与非流式均在**整段正文到达后**输出，避免半段 Markdown）。
-/// 当 `out` 为 `None` 且 `render_to_terminal` 为 true（典型 CLI）时，分阶段规划通知与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout，与 TUI 展示对齐；助手正文与 TUI 共用 `runtime::message_display::assistant_markdown_source_for_display`。
+/// 当 `out` 为 `None` 且 `render_to_terminal` 为 true（典型 CLI）时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文与 TUI 一致经 `user_message_for_chat_display`（分步长句可压缩）；助手正文与 TUI 共用 `assistant_markdown_source_for_display`。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供 TUI 等场景中止生成。
 /// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI/TUI 传 `None`。
@@ -178,7 +178,12 @@ async fn cleanup_uploads_dir(dir: std::path::PathBuf, max_age: Duration, max_byt
     let mut rd = match tokio::fs::read_dir(&dir).await {
         Ok(r) => r,
         Err(e) => {
-            error!(error = %e, dir = %dir.display(), "uploads 清理：无法读取目录");
+            error!(
+                target: "crabmate",
+                "uploads 清理：无法读取目录 dir={} error={}",
+                dir.display(),
+                e
+            );
             return;
         }
     };
@@ -446,7 +451,14 @@ async fn chat_handler(
     let workspace_is_set = state.workspace_is_set().await;
     let job_id = state.chat_queue.next_job_id();
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-    info!(job_id, "chat json 任务入队");
+    debug!(
+        target: "crabmate",
+        "chat json 请求摘要 job_id={} user_len={} user_preview={}",
+        job_id,
+        msg.len(),
+        redact::preview_chars(msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
+    info!(target: "crabmate", "chat json 任务入队 job_id={}", job_id);
     state
         .chat_queue
         .try_submit_json(
@@ -481,7 +493,12 @@ async fn chat_handler(
             )
         })?
         .map_err(|e| {
-            error!(error = %e, job_id, "chat_handler 队列任务失败");
+            error!(
+                target: "crabmate",
+                "chat_handler 队列任务失败 job_id={} error={}",
+                job_id,
+                e
+            );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiError {
@@ -521,7 +538,14 @@ async fn chat_stream_handler(
     let workspace_is_set = state.workspace_is_set().await;
     let job_id = state.chat_queue.next_job_id();
     let (tx, rx) = mpsc::channel::<String>(1024);
-    info!(job_id, "chat stream 任务入队");
+    debug!(
+        target: "crabmate",
+        "chat stream 请求摘要 job_id={} user_len={} user_preview={}",
+        job_id,
+        msg.len(),
+        redact::preview_chars(msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
+    info!(target: "crabmate", "chat stream 任务入队 job_id={}", job_id);
     if let Err(e) = state.chat_queue.try_submit_stream(
         job_id,
         state.clone(),
@@ -569,6 +593,8 @@ struct StatusResponse {
     plan_rewrite_max_attempts: usize,
     /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`）。
     staged_plan_execution: bool,
+    /// TUI / CLI REPL 是否在启动时从 `.crabmate/tui_session.json` 恢复会话（默认 false）。
+    tui_load_session_on_start: bool,
     max_message_history: usize,
     tool_message_max_chars: usize,
     context_char_budget: usize,
@@ -603,6 +629,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         final_plan_requirement: state.cfg.final_plan_requirement,
         plan_rewrite_max_attempts: state.cfg.plan_rewrite_max_attempts,
         staged_plan_execution: state.cfg.staged_plan_execution,
+        tui_load_session_on_start: state.cfg.tui_load_session_on_start,
         max_message_history: state.cfg.max_message_history,
         tool_message_max_chars: state.cfg.tool_message_max_chars,
         context_char_budget: state.cfg.context_char_budget,
@@ -631,9 +658,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         dry_run,
         no_stream,
         tui,
+        log_file,
     ) = parse_args();
 
-    init_logging(tui);
+    init_logging(tui, log_file.as_deref().map(std::path::Path::new));
 
     let api_key = match env::var("API_KEY") {
         Ok(v) => v,
@@ -654,7 +682,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(1);
         }
     };
-    info!(api_base = %cfg.api_base, model = %cfg.model, "配置已加载");
+    info!(
+        target: "crabmate",
+        "配置已加载 api_base={} model={}",
+        cfg.api_base,
+        cfg.model
+    );
     if dry_run {
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
         if !static_dir.is_dir() {
@@ -767,7 +800,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 addr
             );
         }
-        info!(%addr, "Web 服务监听");
+        info!(target: "crabmate", "Web 服务监听 addr={}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;
         // uploads 自动清理：每 10 分钟执行一次；保留 24h；总容量上限 500MB
         tokio::spawn({

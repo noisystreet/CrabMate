@@ -7,3 +7,4 @@ pub(crate) mod plan_section;
 pub(crate) mod terminal_cli_transcript;
 pub(crate) mod terminal_labels;
 pub mod tui;
+pub mod workspace_session;

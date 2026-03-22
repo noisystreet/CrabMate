@@ -10,8 +10,8 @@ mod api;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use log::{debug, error, info};
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info};
 
 use crate::config::AgentConfig;
 use crate::types::{ChatRequest, Message, Tool};
@@ -76,27 +76,41 @@ pub async fn complete_chat_retrying(
         .await
         {
             Ok(r) => {
+                let (ref msg, ref finish_reason) = r;
                 info!(
-                    model = %request.model,
-                    elapsed_ms = t0.elapsed().as_millis(),
-                    attempt = attempt + 1,
-                    "llm chat 完成"
+                    target: "crabmate",
+                    "llm chat 完成 model={} elapsed_ms={} attempt={}",
+                    request.model,
+                    t0.elapsed().as_millis(),
+                    attempt + 1
+                );
+                debug!(
+                    target: "crabmate",
+                    "llm chat 响应摘要（含重试后成功） finish_reason={} message_in_request={} assistant_preview={}",
+                    finish_reason,
+                    request.messages.len(),
+                    crate::redact::assistant_message_preview_for_log(msg)
                 );
                 last_ok = Some(r);
                 break;
             }
             Err(e) => {
                 error!(
-                    error = %e,
-                    attempt = attempt + 1,
-                    max_attempts = max_attempts,
-                    "llm chat 请求失败"
+                    target: "crabmate",
+                    "llm chat 请求失败 error={} attempt={} max_attempts={}",
+                    e,
+                    attempt + 1,
+                    max_attempts
                 );
                 if attempt < max_attempts - 1 {
                     let delay_secs = cfg
                         .api_retry_delay_secs
                         .saturating_mul(2_u64.saturating_pow(attempt));
-                    info!(delay_secs = delay_secs, "llm 等待后重试");
+                    info!(
+                        target: "crabmate",
+                        "llm 等待后重试 delay_secs={}",
+                        delay_secs
+                    );
                     tokio::time::sleep(Duration::from_secs(delay_secs)).await;
                     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
                         return Err(crate::types::LLM_CANCELLED_ERROR.into());

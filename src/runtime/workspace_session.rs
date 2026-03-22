@@ -1,10 +1,12 @@
-//! TUI 会话：工作区 `.crabmate/tui_session.json` 与导出（实现委托 `runtime::chat_export`）。
+//! 工作区 `.crabmate/tui_session.json`：加载/保存与导出（实现委托 `runtime::chat_export`）。
+//! CLI REPL 与 TUI 共用 `initial_workspace_messages`；TUI 退出时另调用 `save_workspace_session`。
 
+use crate::config::AgentConfig;
 use crate::runtime::chat_export::{self, ChatSessionFile, session_to_json_pretty};
 use crate::types::Message;
 use std::path::{Path, PathBuf};
 
-pub(super) fn session_file_path(workspace: &Path) -> PathBuf {
+pub fn session_file_path(workspace: &Path) -> PathBuf {
     workspace.join(".crabmate").join("tui_session.json")
 }
 
@@ -24,7 +26,7 @@ fn truncate_loaded_messages(mut msgs: Vec<Message>, max_total: usize) -> Vec<Mes
 
 /// 若存在会话文件则加载；首条 `system` 会替换为当前配置的 `system_prompt`。
 /// `max_messages` 为加载后的消息条数上限（含 `system`）；超出则丢弃最旧的用户/助手/工具消息。
-pub(super) fn load_tui_session(
+pub fn load_workspace_session(
     workspace: &Path,
     system_prompt: &str,
     max_messages: usize,
@@ -44,7 +46,20 @@ pub(super) fn load_tui_session(
     Some(truncate_loaded_messages(msgs, max_messages))
 }
 
-pub(super) fn save_tui_session(workspace: &Path, messages: &[Message]) -> std::io::Result<()> {
+/// TUI / CLI REPL 启动时：按配置决定是否从磁盘恢复会话，否则仅一条 `system`（与当前 `system_prompt` 对齐）。
+pub fn initial_workspace_messages(
+    cfg: &AgentConfig,
+    workspace: &Path,
+    load_from_disk: bool,
+) -> Vec<Message> {
+    if !load_from_disk {
+        return vec![Message::system_only(cfg.system_prompt.clone())];
+    }
+    load_workspace_session(workspace, &cfg.system_prompt, cfg.tui_session_max_messages)
+        .unwrap_or_else(|| vec![Message::system_only(cfg.system_prompt.clone())])
+}
+
+pub fn save_workspace_session(workspace: &Path, messages: &[Message]) -> std::io::Result<()> {
     let dir = workspace.join(".crabmate");
     std::fs::create_dir_all(&dir)?;
     let path = session_file_path(workspace);
@@ -53,11 +68,11 @@ pub(super) fn save_tui_session(workspace: &Path, messages: &[Message]) -> std::i
     std::fs::write(&path, json)
 }
 
-pub(super) fn export_json(workspace: &Path, messages: &[Message]) -> std::io::Result<PathBuf> {
+pub fn export_json(workspace: &Path, messages: &[Message]) -> std::io::Result<PathBuf> {
     chat_export::write_json_export(workspace, messages)
 }
 
-pub(super) fn export_markdown(workspace: &Path, messages: &[Message]) -> std::io::Result<PathBuf> {
+pub fn export_markdown(workspace: &Path, messages: &[Message]) -> std::io::Result<PathBuf> {
     chat_export::write_markdown_export(workspace, messages)
 }
 

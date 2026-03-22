@@ -8,7 +8,11 @@ import 'katex/dist/katex.min.css'
 import { Send, User, Bot, Loader2, ImagePlus, FileText, Mic, Video, Square } from 'lucide-react'
 import type { Components } from 'react-markdown'
 import { Virtuoso } from 'react-virtuoso'
-import { tryFormatAgentReplyPlanForDisplay } from '../agentPlanDisplay'
+import {
+  SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT,
+  formatStagedStepUserForChat,
+  tryFormatAgentReplyPlanForDisplay,
+} from '../agentPlanDisplay'
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024
@@ -77,6 +81,9 @@ function preprocessLatexBlocks(text: string): string {
 /** 尝试为缺少换行的回答自动插入一些换行，提升可读性（尤其是中文长句和编号列表） */
 function formatAssistantText(raw: string): string {
   const planText = tryFormatAgentReplyPlanForDisplay(raw)
+  if (!SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT && planText !== null) {
+    return ''
+  }
   const source = planText ?? raw
   // 先做 LaTeX 预处理
   let s = preprocessLatexBlocks(source.replace(/\\n/g, '\n'))
@@ -914,7 +921,10 @@ export function ChatPanel({
               data={messages}
               atBottomStateChange={handleAtBottomStateChange}
               followOutput={isNearBottomRef.current ? 'smooth' : false}
-              itemContent={(_idx, m) => (
+              itemContent={(_idx, m) => {
+                const userTextForChat =
+                  m.role === 'user' ? formatStagedStepUserForChat(m.text) : m.text
+                return (
               m.role === 'system' && m.isToolOutput ? (
             // 命令输出：使用卡片样式，可折叠 + 复制
             <div key={m.id} className="flex justify-center text-xs text-base-content/70 px-4 pt-4">
@@ -978,7 +988,11 @@ export function ChatPanel({
                 <span className="text-[9px]">{m.collapsed ? '展开' : '收起'}</span>
               </button>
             </div>
-          ) : (
+          ) : m.role === 'user' &&
+            !userTextForChat &&
+            !(m.images && m.images.length) &&
+            !(m.audioUrls && m.audioUrls.length) &&
+            !(m.videoUrls && m.videoUrls.length) ? null : (
             <div
               key={m.id}
               className={`flex gap-3 items-end px-4 pt-4 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
@@ -1073,9 +1087,11 @@ export function ChatPanel({
                         ))}
                       </div>
                     )}
-                    {m.text && (
+                    {m.text && (m.role !== 'user' || userTextForChat) && (
                       <div className="space-y-1">
-                        <span className="whitespace-pre-wrap break-words">{m.text}</span>
+                        <span className="whitespace-pre-wrap break-words">
+                          {userTextForChat}
+                        </span>
                         {m.state === 'error' && m.role === 'assistant' && lastPrompt && m.canRetry && (
                           <div className="flex items-center justify-between text-[11px] text-base-content/70 pt-1 border-t border-base-content/10">
                             <span>
@@ -1107,7 +1123,8 @@ export function ChatPanel({
               </div>
             </div>
           )
-            )}
+            );
+            }}
             />
 
             <div className="absolute right-3 bottom-3 flex flex-col gap-2">

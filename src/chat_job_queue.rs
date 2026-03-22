@@ -1,7 +1,7 @@
 //! Web `/chat` / `/chat/stream` 的**进程内任务队列**：有界排队 + 并发上限，避免高并发时无界 `tokio::spawn`。
 //!
 //! - **多副本 / 跨进程重放**：需外部消息代理（Redis、SQS 等）与持久化；本模块仅单进程协调。
-//! - **可观测**：`job_id` 写入 tracing；`/status` 暴露运行中任务数与近期任务摘要。
+//! - **可观测**：`job_id` 写入日志；`/status` 暴露运行中任务数与近期任务摘要。
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use log::{debug, error, info};
 use tokio::sync::{Semaphore, mpsc, oneshot};
-use tracing::{error, info};
 
 use crate::AppState;
 use crate::types::Message;
@@ -335,6 +335,15 @@ async fn dispatcher_loop(
                 }
             };
 
+            debug!(
+                target: "crabmate",
+                "chat 队列任务结束 job_id={} kind={} ok={} duration_ms={}",
+                job_id,
+                record.kind,
+                record.ok,
+                record.duration_ms
+            );
+
             if let Ok(mut g) = recent.lock() {
                 g.push_back(record);
                 while g.len() > RECENT_CAP {
@@ -360,7 +369,18 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             workspace_is_set,
             sse_tx,
         } => {
-            info!(job_id, "chat stream 任务开始执行");
+            info!(
+                target: "crabmate",
+                "chat stream 任务开始执行 job_id={}",
+                job_id
+            );
+            debug!(
+                target: "crabmate",
+                "chat stream 执行上下文 job_id={} message_count={} last_user_preview={}",
+                job_id,
+                messages.len(),
+                crate::redact::last_user_message_preview_for_log(&messages)
+            );
             let flight = Arc::new(PerTurnFlight::default());
             let _per_guard = state
                 .chat_queue
@@ -384,7 +404,12 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             let (ok, err) = match r {
                 Ok(()) => (true, None),
                 Err(e) => {
-                    error!(job_id, error = %e, "chat stream 任务失败");
+                    error!(
+                        target: "crabmate",
+                        "chat stream 任务失败 job_id={} error={}",
+                        job_id,
+                        e
+                    );
                     let err_line = crate::sse::encode_message(crate::sse::SsePayload::Error(
                         crate::sse::SseErrorBody {
                             error: "对话失败，请稍后重试".to_string(),
@@ -406,7 +431,18 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             workspace_is_set,
             reply_tx,
         } => {
-            info!(job_id, "chat json 任务开始执行");
+            info!(
+                target: "crabmate",
+                "chat json 任务开始执行 job_id={}",
+                job_id
+            );
+            debug!(
+                target: "crabmate",
+                "chat json 执行上下文 job_id={} message_count={} last_user_preview={}",
+                job_id,
+                messages.len(),
+                crate::redact::last_user_message_preview_for_log(&messages)
+            );
             let flight = Arc::new(PerTurnFlight::default());
             let _per_guard = state
                 .chat_queue
@@ -432,7 +468,12 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     (true, None)
                 }
                 Err(e) => {
-                    error!(job_id, error = %e, "chat json 任务失败");
+                    error!(
+                        target: "crabmate",
+                        "chat json 任务失败 job_id={} error={}",
+                        job_id,
+                        e
+                    );
                     let prev = truncate_chars(&e.to_string(), 120);
                     let _ = reply_tx.send(Err(e.to_string()));
                     (false, Some(prev))

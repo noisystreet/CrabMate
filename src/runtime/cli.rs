@@ -1,4 +1,5 @@
 use crate::config::AgentConfig;
+use crate::redact;
 use crate::run_agent_turn;
 use crate::types::{Message, messages_chat_seed};
 use crossterm::{
@@ -6,6 +7,7 @@ use crossterm::{
     cursor::MoveToColumn,
     terminal::{Clear, ClearType},
 };
+use log::debug;
 use std::io::{self, Write};
 
 /// 单次提问模式（--query / --stdin），执行一轮对话后退出
@@ -26,6 +28,11 @@ pub async fn run_single_shot(
         std::process::exit(1);
     }
     let mut messages = messages_chat_seed(&cfg.system_prompt, q);
+    debug!(
+        target: "crabmate::print",
+        "单次提问模式 seed 消息已构造 user_preview={}",
+        redact::preview_chars(q, redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
     let work_dir_str = workspace_cli
         .as_deref()
         .filter(|s| !s.trim().is_empty())
@@ -78,7 +85,17 @@ pub async fn run_repl(
     workspace_cli: &Option<String>,
     no_stream: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut messages: Vec<Message> = vec![Message::system_only(cfg.system_prompt.clone())];
+    let work_dir_str = workspace_cli
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(&cfg.run_command_working_dir)
+        .to_string();
+    let work_dir = std::path::Path::new(&work_dir_str);
+    let mut messages = crate::runtime::workspace_session::initial_workspace_messages(
+        cfg,
+        work_dir,
+        cfg.tui_load_session_on_start,
+    );
 
     println!(
         "=== DeepSeek Agent Demo ===\n当前模型: {}\n输入内容与 Agent 对话，输入 quit/exit 或 Ctrl+D 退出。\n",
@@ -106,12 +123,13 @@ pub async fn run_repl(
         }
 
         messages.push(Message::user_only(input.to_string()));
+        debug!(
+            target: "crabmate::print",
+            "REPL 用户输入已入队 history_len={} input_preview={}",
+            messages.len(),
+            redact::preview_chars(input, redact::MESSAGE_LOG_PREVIEW_CHARS)
+        );
 
-        let work_dir_str = workspace_cli
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or(&cfg.run_command_working_dir)
-            .to_string();
         if let Err(e) = run_agent_turn(
             client,
             api_key,
@@ -119,7 +137,7 @@ pub async fn run_repl(
             tools,
             &mut messages,
             None,
-            std::path::Path::new(&work_dir_str),
+            work_dir,
             true,
             !no_stream,
             no_stream,

@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
+use log::{debug, info};
 use tokio::sync::mpsc;
-use tracing::info;
 
 use super::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
@@ -30,8 +30,12 @@ const STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT: &str = r#"【分阶段规划模式 
 - "steps" 为非空数组，每项含非空字符串 "id" 与 "description"
 可辅以简短自然语言说明；后续系统将按 steps 顺序逐步下发执行指令。"#;
 
-fn staged_plan_summary_text(plan: &super::plan_artifact::AgentReplyPlanV1) -> String {
-    let steps_md = super::plan_artifact::format_plan_steps_markdown(plan);
+fn staged_plan_queue_summary_text(
+    plan: &super::plan_artifact::AgentReplyPlanV1,
+    completed_count: usize,
+) -> String {
+    let steps_md =
+        super::plan_artifact::format_plan_steps_markdown_for_staged_queue(plan, completed_count);
     format!(
         "{}共 {} 步\n\n{}",
         crate::runtime::plan_section::STAGED_PLAN_SECTION_HEADER,
@@ -199,7 +203,7 @@ async fn per_execute_tools_common(
         if let Some(tx) = out
             && tx.is_closed()
         {
-            info!("SSE sender closed during tool execution, aborting remaining tools");
+            info!(target: "crabmate", "SSE sender closed during tool execution, aborting remaining tools");
             return ExecuteToolsBatchOutcome::AbortedSse;
         }
 
@@ -207,7 +211,13 @@ async fn per_execute_tools_common(
         let args = tc.function.arguments.clone();
         let id = tc.id.clone();
         // 禁止 println：TUI 下 stdout 与 ratatui 共用终端，会在当前光标（常为输入区）插入乱字。
-        info!(tool = %name, "调用工具");
+        info!(target: "crabmate", "调用工具 tool={}", name);
+        debug!(
+            target: "crabmate",
+            "工具调用参数摘要 tool={} args_preview={}",
+            name,
+            crate::redact::tool_arguments_preview_for_log(&args)
+        );
 
         if let Some(tx) = out
             && let Some(summary) = tools::summarize_tool_call(&name, &args)
@@ -254,7 +264,12 @@ async fn per_execute_tools_common(
             }
         };
 
-        info!(tool = %name, elapsed_ms = t_tool.elapsed().as_millis(), "工具调用完成");
+        info!(
+            target: "crabmate",
+            "工具调用完成 tool={} elapsed_ms={}",
+            name,
+            t_tool.elapsed().as_millis()
+        );
 
         if echo_terminal_transcript {
             let _ = crate::runtime::terminal_cli_transcript::print_tool_result_terminal(
@@ -395,7 +410,7 @@ async fn run_agent_outer_loop(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     'outer: loop {
         if sse_sender_closed(out) {
-            info!("SSE sender closed, aborting run_agent_turn loop early");
+            info!(target: "crabmate", "SSE sender closed, aborting run_agent_turn loop early");
             break;
         }
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
@@ -423,6 +438,13 @@ async fn run_agent_outer_loop(
             f.awaiting_plan_rewrite_model
                 .store(false, Ordering::Relaxed);
         }
+        debug!(
+            target: "crabmate",
+            "模型轮次输出 finish_reason={} message_count_before_push={} assistant_preview={}",
+            finish_reason,
+            messages.len(),
+            crate::redact::assistant_message_preview_for_log(&msg)
+        );
         messages.push(msg.clone());
         if finish_reason == USER_CANCELLED_FINISH_REASON {
             break;
@@ -553,6 +575,13 @@ async fn run_staged_plan_then_execute_steps(
     )
     .await?;
 
+    debug!(
+        target: "crabmate",
+        "分阶段规划轮模型输出 finish_reason={} assistant_preview={}",
+        finish_reason,
+        crate::redact::assistant_message_preview_for_log(&msg)
+    );
+
     if finish_reason == USER_CANCELLED_FINISH_REASON {
         return Ok(());
     }
@@ -592,7 +621,7 @@ async fn run_staged_plan_then_execute_steps(
         out,
         echo_terminal_staged,
         true,
-        staged_plan_summary_text(&plan),
+        staged_plan_queue_summary_text(&plan, 0),
     )
     .await;
 
@@ -601,24 +630,26 @@ async fn run_staged_plan_then_execute_steps(
         if sse_sender_closed(out) || cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             break;
         }
-        let desc_display =
-            crate::text_sanitize::naturalize_plan_step_description(&step.description);
-        let step_head = format!(
-            "—— 第 {}/{} 步 [{}] ——\n{}",
-            i + 1,
-            n,
-            step.id.trim(),
-            desc_display.trim()
-        );
-        send_staged_plan_notice(out, echo_terminal_staged, false, step_head).await;
 
         let body = format!(
-            "【分步执行 {}/{}】请只专注完成下列规划步骤，本步完成后以非 tool_calls 的终答结束；不要提前执行后续步骤。\n- id: {}\n- 描述: {}",
+            "【分步执行 {}/{}】{}\n- id: {}\n- 描述: {}",
             i + 1,
             n,
+            crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE,
             step.id,
             step.description
         );
+        debug!(
+            target: "crabmate",
+            "分步注入 user（完整正文，供排障与日志） step={}/{} body_len={} body_preview={}",
+            i + 1,
+            n,
+            body.len(),
+            crate::redact::preview_chars(&body, crate::redact::MESSAGE_LOG_PREVIEW_CHARS)
+        );
+        if echo_terminal_staged {
+            let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
+        }
         messages.push(Message {
             role: "user".to_string(),
             content: Some(body),
@@ -645,8 +676,8 @@ async fn run_staged_plan_then_execute_steps(
         send_staged_plan_notice(
             out,
             echo_terminal_staged,
-            false,
-            format!("✓ 第 {}/{} 步已完成", i + 1, n),
+            true,
+            staged_plan_queue_summary_text(&plan, i + 1),
         )
         .await;
     }
@@ -668,6 +699,14 @@ pub(crate) async fn run_agent_turn_common(
     mode: AgentRunMode<'_>,
     per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    debug!(
+        target: "crabmate",
+        "run_agent_turn 开始 message_count={} last_user_preview={} staged_plan={} work_dir={}",
+        messages.len(),
+        crate::redact::last_user_message_preview_for_log(messages),
+        cfg.staged_plan_execution,
+        effective_working_dir.display()
+    );
     let mut per_coord = PerCoordinator::new(
         cfg.reflection_default_max_rounds,
         cfg.final_plan_requirement,

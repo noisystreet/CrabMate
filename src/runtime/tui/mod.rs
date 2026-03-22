@@ -3,7 +3,6 @@
 mod agent;
 mod allowlist;
 mod chat_nav;
-mod chat_session;
 mod clipboard;
 mod draw;
 mod edit_history;
@@ -15,6 +14,7 @@ mod text_input;
 mod workspace_ops;
 
 use crate::config::AgentConfig;
+use crate::redact;
 use crate::sse::{AgentLineKind, classify_agent_sse_line};
 use crate::types::Message;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
@@ -33,10 +33,11 @@ use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
+use crate::runtime::workspace_session::{initial_workspace_messages, save_workspace_session};
 use allowlist::{command_approval_message, load_persistent_allowlist};
-use chat_session::{load_tui_session, save_tui_session};
 use draw::draw_ui;
 use input::{HandleKeyContext, handle_crossterm_mouse, handle_key};
+use log::debug;
 use state::{Focus, Mode, ModelPhase, TuiState, TuiTurnOutcome, strip_sgr_mouse_leaks};
 use status::{build_normal_status_line, set_normal_status_line};
 use workspace_ops::{refresh_schedule, refresh_tasks, refresh_workspace, upsert_assistant_message};
@@ -133,12 +134,8 @@ pub async fn run_tui(
         .join("tui_command_allowlist.json");
     let persistent_command_allowlist = load_persistent_allowlist(&allowlist_file);
 
-    let initial_messages = load_tui_session(
-        &workspace_dir,
-        &cfg.system_prompt,
-        cfg.tui_session_max_messages,
-    )
-    .unwrap_or_else(|| vec![Message::system_only(cfg.system_prompt.clone())]);
+    let initial_messages =
+        initial_workspace_messages(cfg, &workspace_dir, cfg.tui_load_session_on_start);
 
     let mut state = TuiState {
         messages: initial_messages,
@@ -160,10 +157,7 @@ pub async fn run_tui(
         focus: Focus::ChatInput,
         mode: Mode::Normal,
         tab: state::RightTab::Workspace,
-        chat_queue_max_concurrent: cfg.chat_queue_max_concurrent,
-        chat_queue_max_pending: cfg.chat_queue_max_pending,
         next_tui_job_id: 0,
-        tui_turn_recent: std::collections::VecDeque::new(),
         tui_active_job_id: None,
         tui_active_job_started: None,
         workspace_dir,
@@ -282,6 +276,13 @@ pub async fn run_tui(
                     set_normal_status_line(&mut state, &cfg.model);
                 }
                 AgentLineKind::StagedPlanNotice { text, clear_before } => {
+                    debug!(
+                        target: "crabmate::tui_print",
+                        "TUI 分阶段规划通知 clear_before={} text_len={} preview={}",
+                        clear_before,
+                        text.len(),
+                        redact::preview_chars(&text, redact::MESSAGE_LOG_PREVIEW_CHARS)
+                    );
                     const MAX_STAGED_PLAN_LOG: usize = 48;
                     if clear_before {
                         state.staged_plan_log.clear();
@@ -319,6 +320,26 @@ pub async fn run_tui(
         }
         while let Ok(msgs) = sync_rx.try_recv() {
             inbox_changed = true;
+            let n = msgs.len();
+            let (last_role, last_preview) = msgs
+                .last()
+                .map(|m| {
+                    (
+                        m.role.as_str(),
+                        m.content
+                            .as_deref()
+                            .map(|c| redact::preview_chars(c, redact::MESSAGE_LOG_PREVIEW_CHARS))
+                            .unwrap_or_else(|| "<empty>".to_string()),
+                    )
+                })
+                .unwrap_or(("<none>", String::new()));
+            debug!(
+                target: "crabmate::tui_print",
+                "TUI 会话消息全量同步 count={} last_role={} last_preview={}",
+                n,
+                last_role,
+                last_preview
+            );
             state.messages = msgs;
             assistant_buf.clear();
         }
@@ -439,7 +460,7 @@ pub async fn run_tui(
     }
 
     drop(terminal);
-    let _ = save_tui_session(&state.workspace_dir, &state.messages);
+    let _ = save_workspace_session(&state.workspace_dir, &state.messages);
     let _ = tui_restore_tty_mouse_and_stdin();
 
     Ok(())
