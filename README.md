@@ -34,7 +34,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - Agent 通过工具创建/修改文件后，前端会自动检测并刷新工作区。
 - **命令执行与结果展示**：
   - Agent 下发 `run_command` / `run_executable` 时，前端会显示一条“系统消息”摘要（例如 `执行命令：g++ main.cpp -o main`）。
-  - 命令执行完成后，命令输出（stdout/stderr、退出码）会以单独的系统气泡展示在聊天框中，便于直接查看 `ls`、编译日志等。
+  - 命令执行完成后，聊天区会以**单独系统气泡**展示「描述与总结」与 JSON **human_summary**（若有）；**不展示**「【执行结果】」整块（成功/失败、退出码、stdout/stderr、完整工具正文）；**完整内容**仍保存在对话消息与服务端日志中，**导出 JSON/MD** 仍为全文。无 SSE 的终端 CLI 回显仍打印完整格式化结果（含【执行结果】）。
 - **流式输出与状态栏**：
   - Web Chat 回复支持流式增量显示。
   - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout（与 TUI 右栏「队列」及状态栏/`human_summary` 展示逻辑一致），便于对照「写代码—编译—运行」等多步任务。
