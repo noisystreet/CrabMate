@@ -47,7 +47,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 ## 文档与维护
 
 - **架构与二次开发**：见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)（模块职责、SSE 协议、TUI 目录结构等）。
-- **待办清单**：[`docs/TODOLIST.md`](docs/TODOLIST.md) 仅列未完成项；**完成某项后应从该文件删除对应条目**（不要只打勾保留），约定详见 `DEVELOPMENT.md`。
+- **待办清单**：[`docs/TODOLIST.md`](docs/TODOLIST.md) 仅列未完成项；**上半**为全局优先级（P0–P5），**下半**为按模块的中长期方向；**完成某项后应从该文件删除对应条目**（不要只打勾保留），约定详见 `DEVELOPMENT.md`。
 - **新功能**：合并用户可见能力时，请同步更新本 README（功能/命令/配置）与/或 `DEVELOPMENT.md`（架构与协议），便于他人了解与支持。
 
 ## 部署与安全提示
