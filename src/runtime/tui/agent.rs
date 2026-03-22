@@ -37,22 +37,22 @@ pub(super) async fn run_agent_turn_tui(
         approval_request_guard,
         persistent_allowlist_shared,
     };
-    crate::agent::agent_turn::run_agent_turn_common(
+    let mut loop_params = crate::agent::agent_turn::RunLoopParams {
         client,
         api_key,
         cfg,
-        tools,
+        tools_defs: tools,
         messages,
         out,
         effective_working_dir,
         workspace_is_set,
         no_stream,
         cancel,
-        crate::agent::agent_turn::AgentRunMode::Tui {
+        mode: crate::agent::agent_turn::AgentRunMode::Tui {
             tui_tool_ctx: &tui_tool_ctx,
         },
-        None,
-        messages_sync.as_ref(),
-    )
-    .await
+        per_flight: None,
+        tui_messages_sync: messages_sync.as_ref(),
+    };
+    crate::agent::agent_turn::run_agent_turn_common(&mut loop_params).await
 }

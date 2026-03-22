@@ -64,22 +64,22 @@ pub async fn run_agent_turn(
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    agent::agent_turn::run_agent_turn_common(
+    let mut loop_params = agent::agent_turn::RunLoopParams {
         client,
         api_key,
         cfg,
-        tools,
+        tools_defs: tools,
         messages,
         out,
         effective_working_dir,
         workspace_is_set,
         no_stream,
-        cancel.as_deref(),
-        agent::agent_turn::AgentRunMode::Web { render_to_terminal },
+        cancel: cancel.as_deref(),
+        mode: agent::agent_turn::AgentRunMode::Web { render_to_terminal },
         per_flight,
-        None,
-    )
-    .await
+        tui_messages_sync: None,
+    };
+    agent::agent_turn::run_agent_turn_common(&mut loop_params).await
 }
 
 // ---------- Web 服务 ----------

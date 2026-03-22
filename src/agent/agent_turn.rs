@@ -211,6 +211,23 @@ pub(crate) enum AgentRunMode<'a> {
     },
 }
 
+/// Web/TUI 共用：外层循环与分阶段规划注入共用的一套运行期参数。
+pub(crate) struct RunLoopParams<'a> {
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub cfg: &'a AgentConfig,
+    pub tools_defs: &'a [crate::types::Tool],
+    pub messages: &'a mut Vec<Message>,
+    pub out: Option<&'a mpsc::Sender<String>>,
+    pub effective_working_dir: &'a Path,
+    pub workspace_is_set: bool,
+    pub no_stream: bool,
+    pub cancel: Option<&'a AtomicBool>,
+    pub mode: AgentRunMode<'a>,
+    pub per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
+    pub tui_messages_sync: Option<&'a mpsc::Sender<Vec<Message>>>,
+}
+
 pub(crate) enum ExecuteToolsBatchOutcome {
     /// 本批工具跑完，继续外层循环
     Finished,
@@ -431,50 +448,38 @@ pub(crate) fn sse_sender_closed(out: Option<&mpsc::Sender<String>>) -> bool {
     out.is_some_and(|tx| tx.is_closed())
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn run_agent_outer_loop(
-    client: &reqwest::Client,
-    api_key: &str,
-    cfg: &AgentConfig,
-    tools_defs: &[crate::types::Tool],
-    messages: &mut Vec<Message>,
-    out: Option<&mpsc::Sender<String>>,
-    effective_working_dir: &Path,
-    workspace_is_set: bool,
-    no_stream: bool,
-    cancel: Option<&AtomicBool>,
-    mode: AgentRunMode<'_>,
-    per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
-    tui_messages_sync: Option<&mpsc::Sender<Vec<Message>>>,
+    p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     'outer: loop {
-        if sse_sender_closed(out) {
+        if sse_sender_closed(p.out) {
             info!(target: "crabmate", "SSE sender closed, aborting run_agent_turn loop early");
             break;
         }
-        if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        if p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             break;
         }
 
-        let render_to_terminal = match mode {
+        let render_to_terminal = match p.mode {
             AgentRunMode::Web { render_to_terminal } => render_to_terminal,
             AgentRunMode::Tui { .. } => false,
         };
-        super::context_window::prepare_messages_for_model(client, api_key, cfg, messages).await?;
+        super::context_window::prepare_messages_for_model(p.client, p.api_key, p.cfg, p.messages)
+            .await?;
         let (msg, finish_reason) = per_plan_call_model_retrying(
-            client,
-            api_key,
-            cfg,
-            tools_defs,
-            messages,
-            out,
+            p.client,
+            p.api_key,
+            p.cfg,
+            p.tools_defs,
+            p.messages,
+            p.out,
             render_to_terminal,
-            no_stream,
-            cancel,
+            p.no_stream,
+            p.cancel,
         )
         .await?;
-        if let Some(f) = per_flight.as_ref() {
+        if let Some(f) = p.per_flight.as_ref() {
             f.awaiting_plan_rewrite_model
                 .store(false, Ordering::Relaxed);
         }
@@ -482,39 +487,39 @@ async fn run_agent_outer_loop(
             target: "crabmate",
             "模型轮次输出 finish_reason={} message_count_before_push={} assistant_preview={}",
             finish_reason,
-            messages.len(),
+            p.messages.len(),
             crate::redact::assistant_message_preview_for_log(&msg)
         );
-        messages.push(msg.clone());
-        tui_push_messages_snapshot(tui_messages_sync, messages).await;
+        p.messages.push(msg.clone());
+        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         if finish_reason == USER_CANCELLED_FINISH_REASON {
             break;
         }
 
-        match per_reflect_after_assistant(per_coord, &finish_reason, &msg, messages) {
+        match per_reflect_after_assistant(per_coord, &finish_reason, &msg, p.messages) {
             ReflectOnAssistantOutcome::StopTurn => {
-                if let Some(f) = per_flight.as_ref() {
+                if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);
                 }
                 break;
             }
             ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
-                if let Some(f) = per_flight.as_ref() {
+                if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);
                     f.awaiting_plan_rewrite_model.store(true, Ordering::Relaxed);
                 }
                 continue 'outer;
             }
             ReflectOnAssistantOutcome::ProceedToExecuteTools => {
-                if let Some(f) = per_flight.as_ref() {
+                if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);
                 }
             }
             ReflectOnAssistantOutcome::PlanRewriteExhausted => {
-                if let Some(f) = per_flight.as_ref() {
+                if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);
                 }
-                if let Some(tx) = out {
+                if let Some(tx) = p.out {
                     let _ = tx
                         .send(encode_message(SsePayload::Error(SseErrorBody {
                             error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
@@ -527,18 +532,18 @@ async fn run_agent_outer_loop(
         }
 
         let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
-        let echo_terminal_transcript = render_to_terminal && out.is_none();
-        let exec_outcome = match mode {
+        let echo_terminal_transcript = render_to_terminal && p.out.is_none();
+        let exec_outcome = match p.mode {
             AgentRunMode::Web { .. } => {
                 per_execute_tools_web(
                     tool_calls,
                     per_coord,
-                    messages,
+                    p.messages,
                     WebExecuteCtx {
-                        cfg,
-                        effective_working_dir,
-                        workspace_is_set,
-                        out,
+                        cfg: p.cfg,
+                        effective_working_dir: p.effective_working_dir,
+                        workspace_is_set: p.workspace_is_set,
+                        out: p.out,
                         echo_terminal_transcript,
                     },
                 )
@@ -548,12 +553,12 @@ async fn run_agent_outer_loop(
                 per_execute_tools_tui(
                     tool_calls,
                     per_coord,
-                    messages,
+                    p.messages,
                     TuiExecuteCtx {
-                        cfg,
-                        effective_working_dir,
-                        workspace_is_set,
-                        out,
+                        cfg: p.cfg,
+                        effective_working_dir: p.effective_working_dir,
+                        workspace_is_set: p.workspace_is_set,
+                        out: p.out,
                         tui_tool_ctx,
                     },
                 )
@@ -563,45 +568,34 @@ async fn run_agent_outer_loop(
         if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
             break;
         }
-        tui_push_messages_snapshot(tui_messages_sync, messages).await;
-        if let Some(f) = per_flight.as_ref() {
+        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
+        if let Some(f) = p.per_flight.as_ref() {
             f.sync_from_per_coord(per_coord);
         }
     }
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn run_staged_plan_then_execute_steps(
-    client: &reqwest::Client,
-    api_key: &str,
-    cfg: &AgentConfig,
-    tools_defs: &[crate::types::Tool],
-    messages: &mut Vec<Message>,
-    out: Option<&mpsc::Sender<String>>,
-    effective_working_dir: &Path,
-    workspace_is_set: bool,
-    no_stream: bool,
-    cancel: Option<&AtomicBool>,
-    mode: AgentRunMode<'_>,
-    per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
-    tui_messages_sync: Option<&mpsc::Sender<Vec<Message>>>,
+    p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let render_to_terminal = match mode {
+    let render_to_terminal = match p.mode {
         AgentRunMode::Web { render_to_terminal } => render_to_terminal,
         AgentRunMode::Tui { .. } => false,
     };
-    let echo_terminal_staged = render_to_terminal && out.is_none();
+    let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
-    super::context_window::prepare_messages_for_model(client, api_key, cfg, messages).await?;
+    super::context_window::prepare_messages_for_model(p.client, p.api_key, p.cfg, p.messages)
+        .await?;
 
-    let mut plan_messages: Vec<Message> = messages
+    let mut plan_messages: Vec<Message> = p
+        .messages
         .iter()
         .filter(|m| !is_chat_ui_separator(m))
         .cloned()
         .collect();
-    let instr = cfg.staged_plan_phase_instruction.trim();
+    let instr = p.cfg.staged_plan_phase_instruction.trim();
     let plan_system = if instr.is_empty() {
         STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT.to_string()
     } else {
@@ -609,16 +603,16 @@ async fn run_staged_plan_then_execute_steps(
     };
     plan_messages.push(Message::system_only(plan_system));
 
-    let req = nl_only_chat_request(cfg, &plan_messages);
+    let req = nl_only_chat_request(p.cfg, &plan_messages);
     let (msg, finish_reason) = complete_chat_retrying(
-        client,
-        api_key,
-        cfg,
+        p.client,
+        p.api_key,
+        p.cfg,
         &req,
-        out,
+        p.out,
         render_to_terminal,
-        no_stream,
-        cancel,
+        p.no_stream,
+        p.cancel,
     )
     .await?;
 
@@ -634,7 +628,7 @@ async fn run_staged_plan_then_execute_steps(
     }
 
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
-        if let Some(tx) = out {
+        if let Some(tx) = p.out {
             let _ = tx
                 .send(encode_message(SsePayload::Error(SseErrorBody {
                     error: "规划轮不应调用工具；请关闭 staged_plan_execution 或重试。".to_string(),
@@ -645,14 +639,14 @@ async fn run_staged_plan_then_execute_steps(
         return Ok(());
     }
 
-    messages.push(msg.clone());
-    tui_push_messages_snapshot(tui_messages_sync, messages).await;
+    p.messages.push(msg.clone());
+    tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
 
     let content = msg.content.as_deref().unwrap_or("");
     let plan = match super::plan_artifact::parse_agent_reply_plan_v1(content) {
-        Ok(p) => p,
+        Ok(plan_v1) => plan_v1,
         Err(_) => {
-            if let Some(tx) = out {
+            if let Some(tx) = p.out {
                 let _ = tx
                     .send(encode_message(SsePayload::Error(SseErrorBody {
                         error: "规划轮未解析出合法的 agent_reply_plan v1（需 ```json 围栏或单对象 JSON）。"
@@ -666,7 +660,7 @@ async fn run_staged_plan_then_execute_steps(
     };
 
     send_staged_plan_notice(
-        out,
+        p.out,
         echo_terminal_staged,
         true,
         staged_plan_queue_summary_text(&plan, 0),
@@ -676,7 +670,7 @@ async fn run_staged_plan_then_execute_steps(
     let n = plan.steps.len();
     let mut staged_loop_cancelled = false;
     for (i, step) in plan.steps.iter().enumerate() {
-        if sse_sender_closed(out) || cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             staged_loop_cancelled = true;
             break;
         }
@@ -700,46 +694,30 @@ async fn run_staged_plan_then_execute_steps(
         if echo_terminal_staged {
             let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
         }
-        messages.push(Message {
+        p.messages.push(Message {
             role: "user".to_string(),
             content: Some(body),
             tool_calls: None,
             name: None,
             tool_call_id: None,
         });
-        tui_push_messages_snapshot(tui_messages_sync, messages).await;
-        run_agent_outer_loop(
-            client,
-            api_key,
-            cfg,
-            tools_defs,
-            messages,
-            out,
-            effective_working_dir,
-            workspace_is_set,
-            no_stream,
-            cancel,
-            mode,
-            per_flight.clone(),
-            tui_messages_sync,
-            per_coord,
-        )
-        .await?;
-        messages.push(Message::chat_ui_separator(true));
+        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
+        run_agent_outer_loop(p, per_coord).await?;
+        p.messages.push(Message::chat_ui_separator(true));
         // 先发队列摘要 SSE，再 await 全量同步：sync 通道容量为 1，若先 tui_push 可能阻塞，导致队列区迟迟收不到最后一步的更新。
         send_staged_plan_notice(
-            out,
+            p.out,
             echo_terminal_staged,
             true,
             staged_plan_queue_summary_text(&plan, i + 1),
         )
         .await;
-        tui_push_messages_snapshot(tui_messages_sync, messages).await;
-        emit_chat_ui_separator_sse(out, true).await;
+        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
+        emit_chat_ui_separator_sse(p.out, true).await;
     }
     if !staged_loop_cancelled && !plan.steps.is_empty() {
         send_staged_plan_notice(
-            out,
+            p.out,
             echo_terminal_staged,
             true,
             staged_plan_queue_summary_text(&plan, plan.steps.len()),
@@ -749,74 +727,29 @@ async fn run_staged_plan_then_execute_steps(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_agent_turn_common(
-    client: &reqwest::Client,
-    api_key: &str,
-    cfg: &AgentConfig,
-    tools_defs: &[crate::types::Tool],
-    messages: &mut Vec<Message>,
-    out: Option<&mpsc::Sender<String>>,
-    effective_working_dir: &Path,
-    workspace_is_set: bool,
-    no_stream: bool,
-    cancel: Option<&AtomicBool>,
-    mode: AgentRunMode<'_>,
-    per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
-    tui_messages_sync: Option<&mpsc::Sender<Vec<Message>>>,
+    p: &mut RunLoopParams<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     debug!(
         target: "crabmate",
         "run_agent_turn 开始 message_count={} last_user_preview={} staged_plan={} work_dir={}",
-        messages.len(),
-        crate::redact::last_user_message_preview_for_log(messages),
-        cfg.staged_plan_execution,
-        effective_working_dir.display()
+        p.messages.len(),
+        crate::redact::last_user_message_preview_for_log(p.messages),
+        p.cfg.staged_plan_execution,
+        p.effective_working_dir.display()
     );
-    insert_separator_after_last_user_for_turn(messages);
-    tui_push_messages_snapshot(tui_messages_sync, messages).await;
+    insert_separator_after_last_user_for_turn(p.messages);
+    tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
 
     let mut per_coord = PerCoordinator::new(
-        cfg.reflection_default_max_rounds,
-        cfg.final_plan_requirement,
-        cfg.plan_rewrite_max_attempts,
+        p.cfg.reflection_default_max_rounds,
+        p.cfg.final_plan_requirement,
+        p.cfg.plan_rewrite_max_attempts,
     );
 
-    if cfg.staged_plan_execution {
-        run_staged_plan_then_execute_steps(
-            client,
-            api_key,
-            cfg,
-            tools_defs,
-            messages,
-            out,
-            effective_working_dir,
-            workspace_is_set,
-            no_stream,
-            cancel,
-            mode,
-            per_flight,
-            tui_messages_sync,
-            &mut per_coord,
-        )
-        .await
+    if p.cfg.staged_plan_execution {
+        run_staged_plan_then_execute_steps(p, &mut per_coord).await
     } else {
-        run_agent_outer_loop(
-            client,
-            api_key,
-            cfg,
-            tools_defs,
-            messages,
-            out,
-            effective_working_dir,
-            workspace_is_set,
-            no_stream,
-            cancel,
-            mode,
-            per_flight,
-            tui_messages_sync,
-            &mut per_coord,
-        )
-        .await
+        run_agent_outer_loop(p, &mut per_coord).await
     }
 }
