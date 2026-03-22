@@ -7,6 +7,8 @@
 
 use std::path::Path;
 use std::sync::Arc;
+
+use crate::config::AgentConfig;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -14,7 +16,6 @@ use log::{debug, info};
 use tokio::sync::mpsc;
 
 use super::per_coord::PerCoordinator;
-use crate::config::AgentConfig;
 use crate::llm::{complete_chat_retrying, nl_only_chat_request, tool_chat_request};
 use crate::sse::{SseErrorBody, SsePayload, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
@@ -185,7 +186,7 @@ pub(crate) fn per_reflect_after_assistant(
 // --- E：执行 tool_calls（Web）---
 
 pub(crate) struct WebExecuteCtx<'a> {
-    pub cfg: &'a AgentConfig,
+    pub cfg: &'a Arc<AgentConfig>,
     pub effective_working_dir: &'a Path,
     pub workspace_is_set: bool,
     pub out: Option<&'a mpsc::Sender<String>>,
@@ -194,7 +195,7 @@ pub(crate) struct WebExecuteCtx<'a> {
 }
 
 pub(crate) struct TuiExecuteCtx<'a> {
-    pub cfg: &'a AgentConfig,
+    pub cfg: &'a Arc<AgentConfig>,
     pub effective_working_dir: &'a Path,
     pub workspace_is_set: bool,
     pub out: Option<&'a mpsc::Sender<String>>,
@@ -215,7 +216,7 @@ pub(crate) enum AgentRunMode<'a> {
 pub(crate) struct RunLoopParams<'a> {
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
-    pub cfg: &'a AgentConfig,
+    pub cfg: &'a Arc<AgentConfig>,
     pub tools_defs: &'a [crate::types::Tool],
     pub messages: &'a mut Vec<Message>,
     pub out: Option<&'a mpsc::Sender<String>>,
@@ -247,7 +248,7 @@ async fn per_execute_tools_common(
     tool_calls: &[ToolCall],
     per_coord: &mut PerCoordinator,
     messages: &mut Vec<Message>,
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     out: Option<&mpsc::Sender<String>>,
@@ -465,12 +466,17 @@ async fn run_agent_outer_loop(
             AgentRunMode::Web { render_to_terminal } => render_to_terminal,
             AgentRunMode::Tui { .. } => false,
         };
-        super::context_window::prepare_messages_for_model(p.client, p.api_key, p.cfg, p.messages)
-            .await?;
+        super::context_window::prepare_messages_for_model(
+            p.client,
+            p.api_key,
+            p.cfg.as_ref(),
+            p.messages,
+        )
+        .await?;
         let (msg, finish_reason) = per_plan_call_model_retrying(
             p.client,
             p.api_key,
-            p.cfg,
+            p.cfg.as_ref(),
             p.tools_defs,
             p.messages,
             p.out,
@@ -586,8 +592,13 @@ async fn run_staged_plan_then_execute_steps(
     };
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
-    super::context_window::prepare_messages_for_model(p.client, p.api_key, p.cfg, p.messages)
-        .await?;
+    super::context_window::prepare_messages_for_model(
+        p.client,
+        p.api_key,
+        p.cfg.as_ref(),
+        p.messages,
+    )
+    .await?;
 
     let mut plan_messages: Vec<Message> = p
         .messages
@@ -603,11 +614,11 @@ async fn run_staged_plan_then_execute_steps(
     };
     plan_messages.push(Message::system_only(plan_system));
 
-    let req = nl_only_chat_request(p.cfg, &plan_messages);
+    let req = nl_only_chat_request(p.cfg.as_ref(), &plan_messages);
     let (msg, finish_reason) = complete_chat_retrying(
         p.client,
         p.api_key,
-        p.cfg,
+        p.cfg.as_ref(),
         &req,
         p.out,
         render_to_terminal,

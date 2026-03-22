@@ -14,7 +14,7 @@ use crate::types::Message;
 pub(super) async fn run_agent_turn_tui(
     client: &reqwest::Client,
     api_key: &str,
-    cfg: &AgentConfig,
+    cfg: &std::sync::Arc<AgentConfig>,
     tools: &[crate::types::Tool],
     messages: &mut Vec<Message>,
     out: Option<&mpsc::Sender<String>>,

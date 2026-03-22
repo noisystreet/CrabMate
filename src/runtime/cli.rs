@@ -9,11 +9,12 @@ use crossterm::{
 };
 use log::debug;
 use std::io::{self, Write};
+use std::sync::Arc;
 
 /// 单次提问模式（--query / --stdin），执行一轮对话后退出
 #[allow(clippy::too_many_arguments)]
 pub async fn run_single_shot(
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     client: &reqwest::Client,
     api_key: &str,
     tools: &[crate::types::Tool],
@@ -78,7 +79,7 @@ pub async fn run_single_shot(
 
 /// 交互式 REPL 模式
 pub async fn run_repl(
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     client: &reqwest::Client,
     api_key: &str,
     tools: &[crate::types::Tool],
@@ -92,7 +93,7 @@ pub async fn run_repl(
         .to_string();
     let work_dir = std::path::Path::new(&work_dir_str);
     let mut messages = crate::runtime::workspace_session::initial_workspace_messages(
-        cfg,
+        cfg.as_ref(),
         work_dir,
         cfg.tui_load_session_on_start,
     );

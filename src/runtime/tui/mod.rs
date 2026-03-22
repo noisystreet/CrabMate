@@ -117,7 +117,7 @@ fn resolve_tui_workspace_dir(work_dir_str: &str) -> Result<PathBuf, Box<dyn std:
 }
 
 pub async fn run_tui(
-    cfg: &AgentConfig,
+    cfg: &std::sync::Arc<AgentConfig>,
     client: &reqwest::Client,
     api_key: &str,
     tools: &[crate::types::Tool],
@@ -136,7 +136,7 @@ pub async fn run_tui(
     let persistent_command_allowlist = load_persistent_allowlist(&allowlist_file);
 
     let initial_messages =
-        initial_workspace_messages(cfg, &workspace_dir, cfg.tui_load_session_on_start);
+        initial_workspace_messages(cfg.as_ref(), &workspace_dir, cfg.tui_load_session_on_start);
 
     let mut state = TuiState {
         messages: initial_messages,
