@@ -20,7 +20,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接目标是否存在；`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测。
   - `typos_check` / `codespell_check`：文档拼写检查（**只读**，需本机安装 [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)）；默认优先检查存在的 `README.md` 与 `docs/`，可用 `paths` 收窄；`codespell_check` 可选 `skip` 传给 `--skip`。
   - `ast_grep_run`：用 [ast-grep](https://ast-grep.github.io/) 做**语法树级**搜索（需本机安装 `ast-grep`，如 `cargo install ast-grep`）；必填 `pattern` 与 `lang`，默认在存在的 `src` 下搜索，并内置排除 `target`、`node_modules`、`.git` 等；可用 `paths` / `globs` 进一步限制范围。
-  - `structured_validate` / `structured_query` / `structured_diff`：校验 **JSON / YAML / TOML**（如 `package.json`、`Cargo.toml`、CI 配置）；按 **JSON Pointer**（`/a/b`）或**点号路径**查询嵌套键；对两份文件做**结构化 diff**（与 `git_diff` 文本 diff 互补）。
+  - `structured_validate` / `structured_query` / `structured_diff`：校验 **JSON / YAML / TOML**（如 `package.json`、`Cargo.toml`、CI 配置）；**CSV / TSV** 会先解析为 JSON 数组（有表头时为对象数组）再校验、按路径查询或键级 diff。按 **JSON Pointer**（`/a/b`）或**点号路径**查询嵌套键；对两份文件做**结构化 diff**（与 `git_diff` 文本 diff 互补）。
+  - `table_text`：对工作区内 **CSV / TSV / 分号或管道分隔**等表格做**预览、列数校验、按列下标导出、按列筛选、数值聚合**（流式扫描，单文件 4MiB）；与 `structured_*` 的「整表载入为 JSON + 路径查询」分工不同，按需选用。
   - `text_transform`：纯内存字符串变换（Base64、URL 百分号编解码、短哈希、按行合并/按分隔符切分），不落盘，输入/输出有长度上限。
   - `text_diff`：两段 UTF-8 文本或工作区内两文件的**行级 unified diff**（与 Git 无关）；`structured_diff` 为键级结构化差异，二者互补。
   - `changelog_draft`：根据 **git log** 生成 **Markdown 变更说明草稿**（不写仓库）；可按提交日聚合、`flat` 平铺，或按 **相邻 tag** 分段（`tag_ranges`）。
@@ -213,7 +214,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`text_diff`、`diagnostic_summary`。
+另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`table_text`、`text_diff`、`diagnostic_summary`。
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
 
 **Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`pre_commit_run`；聚合类还有 `run_lints`（可选 ruff）、`quality_workspace`（可选 ruff/pytest/mypy）。
@@ -461,6 +462,8 @@ cargo run
   ```json
   {"path_a":"specs/openapi.v1.json","path_b":"specs/openapi.v2.json","max_diff_lines":200}
   ```
+  **CSV/TSV**：`format` 可用 `csv`/`tsv` 或依赖扩展名；`has_header`（默认 `true`）为 `false` 时表解析为「数组的数组」，便于无表头导出。查询示例：`{"path":"data/sample.csv","query":"/0/name"}`。
+- `table_text`（表格行操作，与 `structured_query` 的整表 JSON 路径不同）：例如预览 `{"action":"preview","path":"data/foo.tsv","preview_rows":15}`；按列筛选 `{"action":"filter_rows","path":"data/foo.csv","column":2,"contains":"ERR","max_output_rows":100}`。
 - `diagnostic_summary`（脱敏排障：工具链、`target/`、关键 env 是否设置，**不输出任何 env 取值**）：
   ```json
   {"include_toolchain":true,"include_workspace_paths":true,"include_env":true,"extra_env_vars":["CI"]}

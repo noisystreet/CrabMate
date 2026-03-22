@@ -1,6 +1,7 @@
-//! JSON / YAML / TOML：解析校验、类 JSON Pointer / 点号路径查询、结构化 diff（与 `git_diff` 互补）。
+//! JSON / YAML / TOML / CSV / TSV：解析校验、类 JSON Pointer / 点号路径查询、结构化 diff（与 `git_diff` 互补）。
+//! 表格类与按行工具 `table_text` 互补：此处将整表载入为 JSON 模型后做路径查询与键级 diff。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -18,6 +19,8 @@ enum DataFormat {
     Json,
     Yaml,
     Toml,
+    Csv,
+    Tsv,
 }
 
 fn detect_format(path: &str, explicit: Option<&str>) -> Result<DataFormat, String> {
@@ -28,8 +31,10 @@ fn detect_format(path: &str, explicit: Option<&str>) -> Result<DataFormat, Strin
             "json" => Ok(DataFormat::Json),
             "yaml" | "yml" => Ok(DataFormat::Yaml),
             "toml" => Ok(DataFormat::Toml),
+            "csv" => Ok(DataFormat::Csv),
+            "tsv" => Ok(DataFormat::Tsv),
             _ => Err(format!(
-                "不支持的 format：{}（可用 auto/json/yaml/toml）",
+                "不支持的 format：{}（可用 auto/json/yaml/toml/csv/tsv）",
                 f
             )),
         };
@@ -48,7 +53,83 @@ fn detect_from_path(path: &str) -> Result<DataFormat, String> {
     if lower.ends_with(".toml") {
         return Ok(DataFormat::Toml);
     }
-    Err("无法从扩展名推断格式，请显式传 format（json / yaml / yml / toml）".to_string())
+    if lower.ends_with(".csv") {
+        return Ok(DataFormat::Csv);
+    }
+    if lower.ends_with(".tsv") {
+        return Ok(DataFormat::Tsv);
+    }
+    Err("无法从扩展名推断格式，请显式传 format（json / yaml / yml / toml / csv / tsv）".to_string())
+}
+
+fn parse_has_header(v: &JsonValue) -> bool {
+    v.get("has_header")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(true)
+}
+
+fn unique_header_keys(header: &csv::StringRecord) -> Vec<String> {
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut out = Vec::with_capacity(header.len());
+    for (i, h) in header.iter().enumerate() {
+        let base = if h.trim().is_empty() {
+            format!("column_{}", i)
+        } else {
+            h.trim().to_string()
+        };
+        let n = seen.entry(base.clone()).or_insert(0);
+        *n += 1;
+        let key = if *n == 1 {
+            base
+        } else {
+            format!("{}__{}", base, n)
+        };
+        out.push(key);
+    }
+    out
+}
+
+/// 将 CSV/TSV 文本解析为 JSON：`has_header=true` 时为对象数组（列名来自首行），否则为「字符串数组」的数组。
+fn tabular_text_to_json(text: &str, delim: u8, has_header: bool) -> Result<JsonValue, String> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(delim)
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(text.as_bytes());
+
+    if has_header {
+        let mut it = rdr.records();
+        let header_rec = it
+            .next()
+            .transpose()
+            .map_err(|e| format!("CSV/TSV 表头解析失败: {}", e))?;
+        let Some(header_rec) = header_rec else {
+            return Ok(JsonValue::Array(vec![]));
+        };
+        let keys = unique_header_keys(&header_rec);
+        let mut rows = Vec::new();
+        for result in it {
+            let rec = result.map_err(|e| format!("CSV/TSV 数据行解析失败: {}", e))?;
+            let mut map = serde_json::Map::new();
+            for (i, k) in keys.iter().enumerate() {
+                let cell = rec.get(i).unwrap_or("");
+                map.insert(k.clone(), JsonValue::String(cell.to_string()));
+            }
+            rows.push(JsonValue::Object(map));
+        }
+        Ok(JsonValue::Array(rows))
+    } else {
+        let mut rows = Vec::new();
+        for result in rdr.records() {
+            let rec = result.map_err(|e| format!("CSV/TSV 行解析失败: {}", e))?;
+            let arr: Vec<JsonValue> = rec
+                .iter()
+                .map(|s| JsonValue::String(s.to_string()))
+                .collect();
+            rows.push(JsonValue::Array(arr));
+        }
+        Ok(JsonValue::Array(rows))
+    }
 }
 
 fn read_limited(path: &Path) -> Result<String, String> {
@@ -63,7 +144,7 @@ fn read_limited(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| format!("读取文件失败: {}", e))
 }
 
-fn parse_to_json(text: &str, fmt: DataFormat) -> Result<JsonValue, String> {
+fn parse_to_json(text: &str, fmt: DataFormat, has_header: bool) -> Result<JsonValue, String> {
     match fmt {
         DataFormat::Json => serde_json::from_str(text).map_err(|e| format!("JSON 解析错误: {}", e)),
         DataFormat::Yaml => serde_yaml::from_str(text).map_err(|e| format!("YAML 解析错误: {}", e)),
@@ -72,6 +153,8 @@ fn parse_to_json(text: &str, fmt: DataFormat) -> Result<JsonValue, String> {
                 toml::from_str(text).map_err(|e| format!("TOML 解析错误: {}", e))?;
             Ok(toml_value_to_json(tv))
         }
+        DataFormat::Csv => tabular_text_to_json(text, b',', has_header),
+        DataFormat::Tsv => tabular_text_to_json(text, b'\t', has_header),
     }
 }
 
@@ -217,7 +300,7 @@ fn json_pointer_escape(s: &str) -> String {
 }
 
 /// 校验并可选摘要顶层结构。
-/// 参数：`path`，`format?`（auto/json/yaml/toml），`summarize?` 默认 true
+/// 参数：`path`，`format?`（auto/json/yaml/toml/csv/tsv），`has_header?`（仅 CSV/TSV；默认 true），`summarize?` 默认 true
 pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
     let v: JsonValue = match serde_json::from_str(args_json) {
         Ok(v) => v,
@@ -233,6 +316,7 @@ pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
         .map(str::trim)
         .filter(|s| !s.is_empty());
     let summarize = v.get("summarize").and_then(|x| x.as_bool()).unwrap_or(true);
+    let has_header = parse_has_header(&v);
 
     let abs = match file::resolve_for_read(working_dir, path) {
         Ok(p) => p,
@@ -246,7 +330,7 @@ pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
         Ok(t) => t,
         Err(e) => return format!("错误：{}", e),
     };
-    match parse_to_json(&text, data_fmt) {
+    match parse_to_json(&text, data_fmt, has_header) {
         Ok(jv) => {
             let mut out = format!("校验通过: {}\n格式: {:?}\n", path, data_fmt);
             if summarize {
@@ -260,7 +344,7 @@ pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
 }
 
 /// 解析后按路径取值（JSON Pointer 或点号路径）。
-/// 参数：`path`，`query`（必填），`format?`
+/// 参数：`path`，`query`（必填），`format?`，`has_header?`（仅 CSV/TSV；默认 true）
 pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
     let v: JsonValue = match serde_json::from_str(args_json) {
         Ok(v) => v,
@@ -279,6 +363,7 @@ pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
         .and_then(|x| x.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty());
+    let has_header = parse_has_header(&v);
 
     let abs = match file::resolve_for_read(working_dir, path) {
         Ok(p) => p,
@@ -292,7 +377,7 @@ pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
         Ok(t) => t,
         Err(e) => return format!("错误：{}", e),
     };
-    let jv = match parse_to_json(&text, data_fmt) {
+    let jv = match parse_to_json(&text, data_fmt, has_header) {
         Ok(j) => j,
         Err(e) => return format!("解析失败: {}", e),
     };
@@ -322,7 +407,7 @@ fn json_type_name(v: &JsonValue) -> &'static str {
 }
 
 /// 将两份文件解析为同一 JSON 模型后做键级差异（非文本 diff）。
-/// 参数：`path_a`，`path_b`，`format?`（对两边使用同一解释；若 auto 则分别按扩展名推断），`max_diff_lines?` 默认 200，上限 2000
+/// 参数：`path_a`，`path_b`，`format?`（对两边使用同一解释；若 auto 则分别按扩展名推断），`has_header?`（仅 CSV/TSV；默认 true），`max_diff_lines?` 默认 200，上限 2000
 pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
     let v: JsonValue = match serde_json::from_str(args_json) {
         Ok(v) => v,
@@ -347,6 +432,7 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
         .map(|n| n as usize)
         .unwrap_or(DEFAULT_DIFF_MAX_LINES)
         .clamp(1, ABS_DIFF_MAX_LINES);
+    let has_header = parse_has_header(&v);
 
     let abs_a = match file::resolve_for_read(working_dir, path_a) {
         Ok(p) => p,
@@ -379,11 +465,11 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
         Err(e) => return format!("错误：{}", e),
     };
 
-    let jv_a = match parse_to_json(&text_a, fmt_a) {
+    let jv_a = match parse_to_json(&text_a, fmt_a, has_header) {
         Ok(j) => j,
         Err(e) => return format!("解析 path_a 失败: {}", e),
     };
-    let jv_b = match parse_to_json(&text_b, fmt_b) {
+    let jv_b = match parse_to_json(&text_b, fmt_b, has_header) {
         Ok(j) => j,
         Err(e) => return format!("解析 path_b 失败: {}", e),
     };
@@ -435,5 +521,29 @@ mod tests {
         let mut lines = Vec::new();
         diff_recursive("", &a, &b, &mut lines, 50);
         assert!(lines.iter().any(|l| l.contains("z") && l.contains("不同")));
+    }
+
+    #[test]
+    fn csv_with_header_to_json_and_query() {
+        let text = "name,score\nAlice,10\nBob,20\n";
+        let jv = tabular_text_to_json(text, b',', true).unwrap();
+        assert_eq!(
+            resolve_query_path(&jv, "/0/name").and_then(JsonValue::as_str),
+            Some("Alice")
+        );
+        assert_eq!(
+            resolve_query_path(&jv, "1.score").and_then(JsonValue::as_str),
+            Some("20")
+        );
+    }
+
+    #[test]
+    fn csv_without_header_is_array_of_arrays() {
+        let text = "a,b\n1,2\n";
+        let jv = tabular_text_to_json(text, b',', false).unwrap();
+        assert_eq!(
+            resolve_query_path(&jv, "/0/1").and_then(JsonValue::as_str),
+            Some("b")
+        );
     }
 }

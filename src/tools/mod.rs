@@ -1484,12 +1484,16 @@ fn params_structured_validate() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作区的 JSON / YAML / TOML 文件路径（如 package.json、Cargo.toml、.github/workflows/ci.yml）"
+                "description": "相对工作区的 JSON / YAML / TOML / CSV / TSV 文件路径（如 package.json、data.csv）"
             },
             "format": {
                 "type": "string",
-                "description": "可选：auto（按扩展名推断）或 json / yaml|yml / toml",
-                "enum": ["auto", "json", "yaml", "yml", "toml"]
+                "description": "可选：auto（按扩展名推断）或 json / yaml|yml / toml / csv / tsv",
+                "enum": ["auto", "json", "yaml", "yml", "toml", "csv", "tsv"]
+            },
+            "has_header": {
+                "type": "boolean",
+                "description": "仅 CSV/TSV：首行是否为列名；true 时解析为对象数组，false 时为字符串数组的数组；JSON/YAML/TOML 忽略。默认 true"
             },
             "summarize": {
                 "type": "boolean",
@@ -1511,8 +1515,12 @@ fn params_structured_query() -> serde_json::Value {
             },
             "format": {
                 "type": "string",
-                "description": "可选：auto / json / yaml|yml / toml",
-                "enum": ["auto", "json", "yaml", "yml", "toml"]
+                "description": "可选：auto / json / yaml|yml / toml / csv / tsv",
+                "enum": ["auto", "json", "yaml", "yml", "toml", "csv", "tsv"]
+            },
+            "has_header": {
+                "type": "boolean",
+                "description": "仅 CSV/TSV：首行是否为列名；默认 true"
             }
         },
         "required": ["path", "query"]
@@ -1528,7 +1536,11 @@ fn params_structured_diff() -> serde_json::Value {
             "format": {
                 "type": "string",
                 "description": "可选：对两边使用同一格式；auto 时按各自扩展名分别推断",
-                "enum": ["auto", "json", "yaml", "yml", "toml"]
+                "enum": ["auto", "json", "yaml", "yml", "toml", "csv", "tsv"]
+            },
+            "has_header": {
+                "type": "boolean",
+                "description": "仅 CSV/TSV：首行是否为列名；对 path_a 与 path_b 使用同一语义；默认 true"
             },
             "max_diff_lines": {
                 "type": "integer",
@@ -2783,21 +2795,21 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "structured_validate",
-            description: "解析并校验工作区内的 **JSON / YAML / TOML**（按扩展名或 `format`）。用于确认 `package.json`、CI 配置、`Cargo.toml` 等是否语法合法；可选输出顶层键/数组长度摘要。单文件上限 4MiB。",
+            description: "解析并校验工作区内的 **JSON / YAML / TOML / CSV / TSV**（按扩展名或 `format`）。JSON 系用于 `package.json`、CI、`Cargo.toml` 等；**CSV/TSV** 会解析为 JSON 数组（`has_header=true` 时为对象数组，列名来自首行；`false` 时为字符串数组的数组），再输出顶层摘要。单文件上限 4MiB。与 `table_text`（按行预览/筛选/聚合、不落 JSON 模型）互补。",
             category: ToolCategory::Development,
             parameters: params_structured_validate,
             runner: runner_structured_validate,
         },
         ToolSpec {
             name: "structured_query",
-            description: "在解析后的 JSON 模型上按 **JSON Pointer**（`/a/b`）或 **点号路径**（`a.b.0`）取值，返回类型与格式化 JSON。比整文件 `read_file` 更省上下文，适合查单键或嵌套字段是否存在。",
+            description: "在解析后的 JSON 模型上按 **JSON Pointer**（`/a/b`）或 **点号路径**（`a.b.0`）取值，返回类型与格式化 JSON。**CSV/TSV** 先整表解析为数组（有表头时 `/0/col` 为第 0 行某列）。比整文件 `read_file` 更省上下文。",
             category: ToolCategory::Development,
             parameters: params_structured_query,
             runner: runner_structured_query,
         },
         ToolSpec {
             name: "structured_diff",
-            description: "将两份 **JSON / YAML / TOML** 解析为同一结构化模型后做**键路径级**差异（缺失键、数组项、标量不等），非文本行 diff；与 `git_diff` 互补（适合对比两份 `openapi.json` 或迁移前后配置）。",
+            description: "将两份 **JSON / YAML / TOML / CSV / TSV** 解析为同一结构化模型后做**键路径级**差异（缺失键、数组项、标量不等），非文本行 diff；与 `git_diff` 互补（如两份导出表、两份 `openapi.json`）。CSV/TSV 使用相同 `has_header` 语义解析两边。",
             category: ToolCategory::Development,
             parameters: params_structured_diff,
             runner: runner_structured_diff,
