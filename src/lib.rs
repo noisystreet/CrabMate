@@ -45,6 +45,7 @@ use types::{Message, messages_chat_seed};
 /// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）；`no_stream` 为 true 时 API 使用 `stream: false`，
 /// 有正文则通过 `out` 一次性下发整段。
 /// 若 `render_to_terminal` 为 true，则在终端用 `markdown_to_ansi` 渲染助手回复（流式与非流式均在**整段正文到达后**输出，避免半段 Markdown）。
+/// 当 `out` 为 `None` 且 `render_to_terminal` 为 true（典型 CLI）时，分阶段规划通知与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout，与 TUI 展示对齐；助手正文与 TUI 共用 `runtime::message_display::assistant_markdown_source_for_display`。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供 TUI 等场景中止生成。
 /// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI/TUI 传 `None`。

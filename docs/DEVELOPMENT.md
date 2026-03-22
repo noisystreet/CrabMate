@@ -91,7 +91,7 @@ flowchart TB
 | `text_sanitize.rs` | 用户可见正文轻量清洗（DSML 剥离、规划步骤描述自然化等）；供 **`plan_artifact::format_agent_reply_plan_for_display`** 等使用。 |
 | `health.rs` | 与 `GET /health` 一致的运行状况报告（`build_health_report` / `format_health_report_terminal`）；供 `lib.rs` 的 health handler 与 TUI **F10** 弹层共用，不依赖本机再起 HTTP 服务。 |
 | `llm/` | **`mod`**：`ChatRequest` 构造、指数退避 **`complete_chat_retrying`**；**`api`**：`chat/completions` HTTP + SSE/JSON 解析、终端 Markdown（公式见 `runtime::latex_unicode`）。 |
-| `runtime/` | `cli`：单次问答/REPL；`tui`：全屏终端 UI；`terminal_labels`：CLI 下「我:」「Agent:」前缀的加粗着色；`latex_unicode`；`chat_export`（会话 JSON/Markdown 导出，对齐 `frontend/src/chatExport.ts`）。 |
+| `runtime/` | `cli`：单次问答/REPL；`tui`：全屏终端 UI；`terminal_labels` / `terminal_cli_transcript`：CLI 前缀着色与无 SSE 时的规划/工具 stdout；`plan_section`：分阶段规划块节标题常量；**`message_display`**：`assistant_markdown_source_for_display`（剥重复「模型：」前缀、规划可读化、LaTeX）+ `tool_content_for_display`（TUI / CLI / 可复用于导出）；`latex_unicode`；`chat_export`（会话 JSON/Markdown 导出，对齐 `frontend/src/chatExport.ts`）。 |
 | `sse/` | **`protocol`**：`SsePayload` / `encode_message`；**`line`**：`classify_agent_sse_line`（TUI）；根再导出常用类型，与 `frontend/src/api.ts` 控制面解析对齐。 |
 | `tool_registry.rs` | 按工具名选择 Workflow / 命令超时 / 天气与联网搜索超时 / 默认同步等策略。 |
 | `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
@@ -156,14 +156,14 @@ flowchart TB
   - **控制类 JSON**（由 **`src/sse/protocol.rs`** 序列化）：统一带版本字段 `v`（当前为 `1`），并与原有键名兼容，例如：
     - `tool_running`、`tool_call`、`tool_result`、`workspace_changed`
     - `error`（+ 可选 `code`）、`command_approval_request`（TUI/工作流审批）
-    - `staged_plan_notice`（+ 可选 `staged_plan_notice_clear`）：分阶段规划进度；TUI 状态栏与「队列」页消费；`frontend/src/api.ts` 识别为控制面并吞掉，避免当作正文 delta
+    - `staged_plan_notice`（+ 可选 `staged_plan_notice_clear`）：分阶段规划进度；TUI 累积到 `staged_plan_log`，在**主聊天区**紧接本轮**真人 user**（排除正文含 `【分步执行` 的分步注入 user，见 `draw::staged_plan_anchor_after_message_index`）之后绘制，并用于状态栏与「队列」页；`frontend/src/api.ts` 识别为控制面并吞掉，避免当作正文 delta
     - 预留 `plan_required` 等扩展键
 - **协议版本 `v`**：当前为 `1`；演进时递增 **`sse::protocol::SSE_PROTOCOL_VERSION`**，前端 `api.ts` 的 `sendChatStream` 已按字段形状解析（`tool_call` / `tool_result` / `plan_required` / `error.code` 等），新事件需在前后端同步扩展。
 
 ### PER 与终答 `agent_reply_plan` 强制策略
 
 - **`agent::per_coord::PerCoordinator`**（`src/agent/per_coord.rs`）在 Web/TUI 共用：串联 **workflow 反思**（`workflow_reflection_controller`）与 **终答正文**是否含 `plan_artifact` 可解析的 v1 规划。
-- **`plan_artifact::format_agent_reply_plan_for_display`**：对合法 `agent_reply_plan` v1 生成**简单 Markdown 有序列表**（可选代码围栏前的自然语言段落 + `1. \`id\`: 说明` 形式）；TUI `draw::message_body_for_chat_display` 与前端 `agentPlanDisplay.ts` / `ChatPanel` 展示用，**不**改写 `Message.content`。
+- **`plan_artifact::format_plan_steps_markdown` / `format_agent_reply_plan_for_display`**：对合法 v1 规划生成**简单 Markdown 有序列表**（后者另含围栏前自然语言段落）；`staged_plan_execution` 的 SSE 摘要与各步标题与前者同源逻辑；TUI `draw::message_body_for_chat_display` 与前端 `agentPlanDisplay.ts` / `ChatPanel` 展示用，**不**改写 `Message.content`。
 - **配置项** `[agent] final_plan_requirement`（环境变量 `AGENT_FINAL_PLAN_REQUIREMENT`）→ `FinalPlanRequirementMode`：
   - **`never`**：不进入「缺规划则追加 user 重写提示」循环；反思注入仍会下发，但不置位强制标记。
   - **`workflow_reflection`（默认）**：仅当工具路径注入了 `instruction_type == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT` 时，对随后的**最终** assistant 校验；避免与反思 JSON 的字符串散落耦合。
@@ -225,7 +225,7 @@ flowchart LR
 ### `src/llm/api.rs`
 
 - **单次 HTTP 传输**：`POST {api_base}/chat/completions`，`stream: true` 时对响应进行 `data: ...` 行拆解，聚合 assistant content 与 tool_calls（按 index 累积 arguments）。流结束时若缓冲区内仍有**未以换行结尾**的最后一帧，会在关闭读循环后补解析一次，避免尾部 delta 丢失（此前仅按 `\n` 切行时易丢末包）。
-- **终端输出（CLI）**：`render_to_terminal` 为 true 时，SSE **不在**收包过程中向 stdout 写正文（避免半段 Markdown）；**整段到达后**与 **`--no-stream`** 一致：先输出加粗着色的 **`Agent: `** 前缀（`runtime::terminal_labels::write_agent_message_prefix`，洋红），再经 **`plan_artifact::format_agent_reply_plan_for_display`**（若可解析）+ LaTeX→Unicode + **`markdown_to_ansi`** 输出基本 Markdown（标题、列表、代码高亮等）。REPL 输入提示 **`我: `** 为加粗青色（`write_user_message_prefix`）。**不得**用光标上移 + `Clear(FromCursorDown)` 整屏重绘，以免与 **run_command** 等工具 stdout 错位。TUI 走 `render_to_terminal: false`，由 ratatui 绘制。
+- **终端输出（CLI）**：`render_to_terminal` 为 true 时，SSE **不在**收包过程中向 stdout 写正文（避免半段 Markdown）；**整段到达后**与 **`--no-stream`** 一致：先输出加粗着色的 **`Agent: `** 前缀（`runtime::terminal_labels::write_agent_message_prefix`，洋红），正文经 **`message_display::assistant_markdown_source_for_display`**（与 TUI 气泡同源）再 **`markdown_to_ansi`**。REPL 输入提示 **`我: `** 为加粗青色（`write_user_message_prefix`）。当 **`out: None`**（`run_agent_turn` 的 CLI 路径）时，另由 **`runtime::terminal_cli_transcript`** 打印 **`staged_plan_notice` 等价文本**（`send_staged_plan_notice` 内）以及**各工具返回**（与 **`message_display::tool_content_for_display`** 一致，超长按 `command_max_output_len` 截断），与 TUI 侧信息对齐。**不得**用光标上移 + `Clear(FromCursorDown)` 整屏重绘，以免与 **run_command** 等子进程输出错位。TUI 走 `render_to_terminal: false`，由 ratatui 绘制；工具/规划走 SSE，不写裸 stdout。
 
 ### `src/sse/protocol.rs`
 
@@ -282,7 +282,7 @@ flowchart LR
 - **`file.rs`**：工作区内创建/覆盖/复制/移动文件；`resolve_for_read` / `resolve_for_write` 与祖先 symlink 校验是安全边界的关键；`copy_file` / `move_file` 仅针对常规文件，`overwrite` 控制目标已存在时的覆盖策略；`hash_file` 仅对常规文件流式哈希（`sha256` / `sha512` / `blake3`），可选 `max_bytes` 前缀模式。
 - **`schedule.rs`**：提醒/日程；以 JSON 持久化到 `<working_dir>/.crabmate/reminders.json` 与 `events.json`。
 - **`spell_astgrep_tools.rs`**：`typos_check` / `codespell_check` 仅传相对路径、不写回；`ast_grep_run` 调用 `ast-grep run`，内置排除大目录 glob，可选追加 `globs`。
-- **`grep.rs` / `format.rs` / `lint.rs`**：面向开发工作流的辅助能力（搜索/格式化/静态检查聚合）；`format` 对 `.py` 使用 `ruff format`，对 `.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh` 使用 `clang-format`（检查模式为 `--dry-run --Werror`）；`run_lints` 可选聚合 `ruff check`（`run_python_ruff`）。`run_command` 默认可含 `cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make`（见配置 `allowed_commands`）；`cmake`、`c++filt` 与 `clang-format` 等可选依赖会在 **`GET /health`** 中体现为 `dep_cmake` / `dep_cxxfilt` / `dep_clang_format`；可选 CLI **typos** / **codespell** / **ast-grep** 对应 `dep_typos` / `dep_codespell` / `dep_ast_grep`（缺失为 degraded，不阻止启动）。**`run_command` 参数**仍禁止 `..` 与以 `/` 开头的实参，CMake 场景宜使用相对 `-S`/`-B` 与 `--build`。Autotools 会执行项目内生成逻辑，**prod** 白名单默认不含构建类命令。
+- **`grep.rs` / `format.rs` / `lint.rs`**：面向开发工作流的辅助能力（搜索/格式化/静态检查聚合）；`format` 对 `.py` 使用 `ruff format`，对 `.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh` 使用 `clang-format`（检查模式为 `--dry-run --Werror`）；`run_lints` 可选聚合 `ruff check`（`run_python_ruff`）。`run_command` 默认可含 `cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`file`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make`（见配置 `allowed_commands`）；`cmake`、`c++filt` 与 `clang-format` 等可选依赖会在 **`GET /health`** 中体现为 `dep_cmake` / `dep_cxxfilt` / `dep_clang_format`；可选 CLI **typos** / **codespell** / **ast-grep** 对应 `dep_typos` / `dep_codespell` / `dep_ast_grep`（缺失为 degraded，不阻止启动）。**`run_command` 参数**仍禁止 `..` 与以 `/` 开头的实参，CMake 场景宜使用相对 `-S`/`-B` 与 `--build`。Autotools 会执行项目内生成逻辑，**prod** 白名单默认不含构建类命令。
 - **`python_tools.rs` / `precommit_tools.rs`**：见上表；`quality_workspace` / `ci_pipeline_local` 可选步骤含 ruff/pytest/mypy；`pre_commit_run` 依赖仓库根 `.pre-commit-config.yaml`（或 `.yml`）。
 
 ### `src/web/*` 与 `src/runtime/*`
@@ -335,7 +335,7 @@ flowchart LR
 
 - **新增/调整工具**：优先在 `src/tools/mod.rs` 的表驱动体系里注册，保证 schema/runner/分类一致。
 - **安全边界**：
-  - `run_command` 必须受白名单控制，避免破坏性命令。
+  - `run_command` 必须受白名单控制，避免破坏性命令；**仅**用于白名单内的系统命令（编译器、make、ls 等）。运行工作区内可执行文件（如 `./main`、编译产物）须用 **`run_executable`**，不要用 `run_command`。
   - 文件读写与 `run_executable` 必须做路径归一化与越界限制。
   - Web 模式下的工作区设置会影响“工具执行目录”，需要明确这一点避免误操作。
   - **密钥与日志**：勿将真实 API key、token、`.env` 内容写入代码、示例配置、commit message 或日志；日志与错误回显须脱敏。Cursor 规则见 **`.cursor/rules/secrets-and-logging.mdc`**。

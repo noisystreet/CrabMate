@@ -223,12 +223,12 @@ fn params_run_command() -> serde_json::Value {
         "properties": {
             "command": {
                 "type": "string",
-                "description": "命令名，必须是允许列表中的一个：ls, pwd, whoami, date, echo, id, uname, env, df, du, head, tail, wc, cat, cmake, ninja, gcc, g++, clang, clang++, c++filt, autoreconf, autoconf, automake, aclocal, make"
+                "description": "命令名（小写），须为配置中 allowed_commands 白名单之一（如 ls、gcc、cmake、make、file 等）。**不要**用本工具运行工作区内的可执行文件（例如 ./main、./a.out、./build/app）；此类请改用 **run_executable**，参数 path 填相对工作目录的路径。"
             },
             "args": {
                 "type": "array",
                 "items": { "type": "string" },
-                "description": "命令参数（可选），如 [\"-l\"], [\"-n\", \"5\", \"file.txt\"]"
+                "description": "传给白名单命令的参数（可选）。**不要**用 args 拼出「执行当前目录下程序」——应使用 run_executable。"
             }
         },
         "required": ["command"]
@@ -241,7 +241,7 @@ fn params_run_executable() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作目录的可执行文件路径，如 ./main、./build/app"
+                "description": "相对工作目录的可执行文件路径（如 ./main、./a.out、./build/app）。编译或构建得到的程序应**优先用本工具运行**，不要用 run_command。"
             },
             "args": {
                 "type": "array",
@@ -2119,14 +2119,14 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "run_command",
-            description: "在服务器上执行有限的 Linux 命令。允许的命令：ls, pwd, whoami, date, echo, id, uname, env, df, du, head, tail, wc, cat, cmake, ninja, gcc, g++, clang, clang++, c++filt, autoreconf, autoconf, automake, aclocal, make。用于列出目录、查看文件、编译 C/C++ 项目（gcc/g++/clang/clang++/make/ninja）、CMake 配置与构建、**Autotools**（autoreconf/autoconf/automake/aclocal，维护 configure.ac/Makefile.am 的老项目）、**Itanium C++ ABI 符号反修饰**（c++filt）等。参数 args 为字符串数组；仍禁止含 \"..\" 或以 \"/\" 开头的实参。不要执行 rm、mv、chmod 等未在白名单中的命令。",
+            description: "在服务器上执行**白名单内**的 Linux 系统命令（见配置 allowed_commands：如 ls、gcc、cmake、make、file 等）。用于列目录、读文件、**编译/链接**（gcc/clang/make/ninja/cmake）、Autotools、c++filt 等。**不要**用本工具去「运行当前工作区里已生成的可执行文件」（./main、./a.out、./build/…）；那种情况必须用 **run_executable**。参数 args 为字符串数组；禁止含 \"..\" 或以 \"/\" 开头的实参。不要执行 rm、mv、chmod 等未在白名单中的命令。",
             category: ToolCategory::Development,
             parameters: params_run_command,
             runner: runner_run_command,
         },
         ToolSpec {
             name: "run_executable",
-            description: "在工作目录下执行可执行程序。path 为相对于工作目录的可执行文件路径（如 ./main、./build/app、out/run_tests），不能使用绝对路径或 .. 超出工作目录。用于运行编译产物、脚本等。参数 path 为相对路径，args 为传给程序的参数数组（可选）。",
+            description: "在工作区内按**相对路径**执行可执行文件（path 如 ./main、./a.out、./build/app、target/release/foo）。**编译或构建完成后要运行产物时，必须用本工具**，不要用 run_command 拼 shell、也不要把本地程序名当成白名单命令。args 为传给该程序的参数（可选）；路径不得为绝对路径，不得含 .. 逃出工作区。",
             category: ToolCategory::Development,
             parameters: params_run_executable,
             runner: runner_run_executable,
@@ -3276,6 +3276,7 @@ mod tests {
             "id".into(),
             "uname".into(),
             "env".into(),
+            "file".into(),
             "df".into(),
             "du".into(),
             "head".into(),
