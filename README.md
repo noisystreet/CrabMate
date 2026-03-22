@@ -34,7 +34,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - Agent 下发 `run_command` / `run_executable` 时，前端会显示一条“系统消息”摘要（例如 `执行命令：g++ main.cpp -o main`）。
   - 命令执行完成后，命令输出（stdout/stderr、退出码）会以单独的系统气泡展示在聊天框中，便于直接查看 `ls`、编译日志等。
 - **流式输出与状态栏**：
-  - Chat 回复支持流式增量显示。
+  - Web Chat 回复支持流式增量显示。
+  - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。
   - 状态栏区分“模型生成中…”和“工具运行中…”，命令完成后不会一直显示忙碌。
 - **会话导出（Web 与 TUI 对齐）**：
   - Web：顶部「**导出 JSON**」生成 `{ "version": 1, "messages": [...] }`，与 TUI 工作区内 `.crabmate/tui_session.json` 及 F8 导出同形（`role` / `content` 等字段与 OpenAI 兼容消息一致；工具气泡在 JSON 中为 `role: "tool"`）。
@@ -523,7 +524,7 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--no-web`        | 仅提供后端 API，不挂载前端静态页面（适合部署为纯后端服务）。|
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
-| `--no-stream`     | 对 API 使用 `stream: false`（非 SSE），并在 CLI 下等待完整回答后一次性 Markdown 打印；TUI 侧亦为整块正文刷新。|
+| `--no-stream`     | 对 API 使用 `stream: false`（非 SSE）。CLI 终端仍在**整段到达后** Markdown 打印，与默认流式在**终端观感**上一致；差异主要是 API 是否分段返回。TUI 侧亦为整块正文刷新。|
 | `--tui`           | 全屏终端 UI。底栏左侧为运行阶段、右侧为状态摘要（默认仅模型名）；完整键位见 **F1**。右栏含工作区 / **队列** / 任务 / 日程（「队列」紧挨工作区，为当前终端会话内的对话回合摘要，与 `--serve` 的 HTTP `ChatJobQueue` 相互独立）。会话默认持久化到当前工作区下 `.crabmate/tui_session.json`（退出保存、启动加载）；可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`；**F10** 查看与 `GET /health` 同逻辑的本机运行状况（无需启动 Web）。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
 
 对应示例：
@@ -585,7 +586,7 @@ cargo run -- --query "北京今天天气怎么样"
 echo "1+1等于几" | cargo run -- --stdin
 ```
 
-运行后（交互模式）输入问题，例如：
+运行后（交互模式）下，提示符为加粗着色的 **「我: 」**（青色）与助手行前 **「Agent: 」**（洋红），正文仍为 Markdown 着色；输入问题，例如：
 
 - 「现在几点？」
 - 「(123 + 456) * 2 等于多少？」

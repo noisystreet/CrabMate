@@ -88,9 +88,10 @@ flowchart TB
 | `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数。 |
 | `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
 | `redact.rs` | 上游 HTTP 响应体等长文本的**日志预览截断**（`preview_chars` / `single_line_preview`），供 `llm::api`、`tools::web_search` 等使用。 |
+| `text_sanitize.rs` | 用户可见正文轻量清洗（DSML 剥离、规划步骤描述自然化等）；供 **`plan_artifact::format_agent_reply_plan_for_display`** 等使用。 |
 | `health.rs` | 与 `GET /health` 一致的运行状况报告（`build_health_report` / `format_health_report_terminal`）；供 `lib.rs` 的 health handler 与 TUI **F10** 弹层共用，不依赖本机再起 HTTP 服务。 |
 | `llm/` | **`mod`**：`ChatRequest` 构造、指数退避 **`complete_chat_retrying`**；**`api`**：`chat/completions` HTTP + SSE/JSON 解析、终端 Markdown（公式见 `runtime::latex_unicode`）。 |
-| `runtime/` | `cli`：单次问答/REPL；`tui`：全屏终端 UI；`latex_unicode`；`chat_export`（会话 JSON/Markdown 导出，对齐 `frontend/src/chatExport.ts`）。 |
+| `runtime/` | `cli`：单次问答/REPL；`tui`：全屏终端 UI；`terminal_labels`：CLI 下「我:」「Agent:」前缀的加粗着色；`latex_unicode`；`chat_export`（会话 JSON/Markdown 导出，对齐 `frontend/src/chatExport.ts`）。 |
 | `sse/` | **`protocol`**：`SsePayload` / `encode_message`；**`line`**：`classify_agent_sse_line`（TUI）；根再导出常用类型，与 `frontend/src/api.ts` 控制面解析对齐。 |
 | `tool_registry.rs` | 按工具名选择 Workflow / 命令超时 / 天气与联网搜索超时 / 默认同步等策略。 |
 | `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
@@ -162,6 +163,7 @@ flowchart TB
 ### PER 与终答 `agent_reply_plan` 强制策略
 
 - **`agent::per_coord::PerCoordinator`**（`src/agent/per_coord.rs`）在 Web/TUI 共用：串联 **workflow 反思**（`workflow_reflection_controller`）与 **终答正文**是否含 `plan_artifact` 可解析的 v1 规划。
+- **`plan_artifact::format_agent_reply_plan_for_display`**：对合法 `agent_reply_plan` v1 生成**简单 Markdown 有序列表**（可选代码围栏前的自然语言段落 + `1. \`id\`: 说明` 形式）；TUI `draw::message_body_for_chat_display` 与前端 `agentPlanDisplay.ts` / `ChatPanel` 展示用，**不**改写 `Message.content`。
 - **配置项** `[agent] final_plan_requirement`（环境变量 `AGENT_FINAL_PLAN_REQUIREMENT`）→ `FinalPlanRequirementMode`：
   - **`never`**：不进入「缺规划则追加 user 重写提示」循环；反思注入仍会下发，但不置位强制标记。
   - **`workflow_reflection`（默认）**：仅当工具路径注入了 `instruction_type == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT` 时，对随后的**最终** assistant 校验；避免与反思 JSON 的字符串散落耦合。
@@ -223,7 +225,7 @@ flowchart LR
 ### `src/llm/api.rs`
 
 - **单次 HTTP 传输**：`POST {api_base}/chat/completions`，`stream: true` 时对响应进行 `data: ...` 行拆解，聚合 assistant content 与 tool_calls（按 index 累积 arguments）。流结束时若缓冲区内仍有**未以换行结尾**的最后一帧，会在关闭读循环后补解析一次，避免尾部 delta 丢失（此前仅按 `\n` 切行时易丢末包）。
-- **终端渲染增强（CLI/TUI）**：对终端输出做 Markdown 渲染与 LaTeX→Unicode 转换，提升命令行交互体验（Web 模式不依赖这部分展示）。
+- **终端输出（CLI）**：`render_to_terminal` 为 true 时，SSE **不在**收包过程中向 stdout 写正文（避免半段 Markdown）；**整段到达后**与 **`--no-stream`** 一致：先输出加粗着色的 **`Agent: `** 前缀（`runtime::terminal_labels::write_agent_message_prefix`，洋红），再经 **`plan_artifact::format_agent_reply_plan_for_display`**（若可解析）+ LaTeX→Unicode + **`markdown_to_ansi`** 输出基本 Markdown（标题、列表、代码高亮等）。REPL 输入提示 **`我: `** 为加粗青色（`write_user_message_prefix`）。**不得**用光标上移 + `Clear(FromCursorDown)` 整屏重绘，以免与 **run_command** 等工具 stdout 错位。TUI 走 `render_to_terminal: false`，由 ratatui 绘制。
 
 ### `src/sse/protocol.rs`
 

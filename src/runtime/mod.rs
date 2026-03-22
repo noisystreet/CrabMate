@@ -2,4 +2,5 @@
 pub mod chat_export;
 pub mod cli;
 pub mod latex_unicode;
+pub(crate) mod terminal_labels;
 pub mod tui;

@@ -541,7 +541,9 @@ fn message_body_for_chat_display(m: &Message) -> String {
             })
             .unwrap_or_else(|| raw.to_string())
     } else if m.role == "assistant" {
-        strip_assistant_echo_label(raw)
+        let stripped = strip_assistant_echo_label(raw);
+        crate::agent::plan_artifact::format_agent_reply_plan_for_display(&stripped)
+            .unwrap_or(stripped)
     } else {
         raw.to_string()
     };

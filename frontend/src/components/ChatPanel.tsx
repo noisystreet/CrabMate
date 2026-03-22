@@ -8,6 +8,7 @@ import 'katex/dist/katex.min.css'
 import { Send, User, Bot, Loader2, ImagePlus, FileText, Mic, Video, Square } from 'lucide-react'
 import type { Components } from 'react-markdown'
 import { Virtuoso } from 'react-virtuoso'
+import { tryFormatAgentReplyPlanForDisplay } from '../agentPlanDisplay'
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024
@@ -75,8 +76,10 @@ function preprocessLatexBlocks(text: string): string {
 
 /** 尝试为缺少换行的回答自动插入一些换行，提升可读性（尤其是中文长句和编号列表） */
 function formatAssistantText(raw: string): string {
+  const planText = tryFormatAgentReplyPlanForDisplay(raw)
+  const source = planText ?? raw
   // 先做 LaTeX 预处理
-  let s = preprocessLatexBlocks(raw.replace(/\\n/g, '\n'))
+  let s = preprocessLatexBlocks(source.replace(/\\n/g, '\n'))
   // 若本身已有换行，则直接返回（交给后端/模型自行控制段落），不再做任何空行压缩
   if (s.includes('\n')) {
     return s
