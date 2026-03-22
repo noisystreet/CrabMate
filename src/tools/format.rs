@@ -119,6 +119,20 @@ fn is_c_cpp_extension(ext: &str) -> bool {
     matches!(ext, "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hh")
 }
 
+/// 工具返回说明中的路径：相对工作区根（POSIX），不输出绝对路径。
+fn display_in_workspace(workspace_root: &Path, target: &Path) -> String {
+    let Ok(base) = workspace_root.canonicalize() else {
+        return target.display().to_string();
+    };
+    match target.strip_prefix(&base) {
+        Ok(rel) => {
+            let s = rel.to_string_lossy().replace('\\', "/");
+            if s.is_empty() { ".".to_string() } else { s }
+        }
+        Err(_) => target.display().to_string(),
+    }
+}
+
 fn resolve_target(base: &Path, sub: &str) -> Result<PathBuf, String> {
     let sub_path = Path::new(sub);
     if sub_path.is_absolute() {
@@ -144,14 +158,14 @@ fn run_formatter(
     check_only: bool,
 ) -> Result<String, String> {
     match formatter {
-        Formatter::Rustfmt => run_rustfmt(target, check_only),
+        Formatter::Rustfmt => run_rustfmt(target, workspace_root, check_only),
         Formatter::Prettier => run_prettier(target, workspace_root, check_only),
         Formatter::Ruff => python_tools::ruff_format_file(target, workspace_root, check_only),
-        Formatter::ClangFormat => run_clang_format(target, check_only),
+        Formatter::ClangFormat => run_clang_format(target, workspace_root, check_only),
     }
 }
 
-fn run_rustfmt(target: &Path, check_only: bool) -> Result<String, String> {
+fn run_rustfmt(target: &Path, workspace_root: &Path, check_only: bool) -> Result<String, String> {
     let mut cmd = Command::new("rustfmt");
     if check_only {
         cmd.arg("--check");
@@ -195,7 +209,7 @@ fn run_rustfmt(target: &Path, check_only: bool) -> Result<String, String> {
         } else {
             "格式化"
         },
-        target.display()
+        display_in_workspace(workspace_root, target)
     ))
 }
 
@@ -249,18 +263,21 @@ fn run_prettier(target: &Path, workspace_root: &Path, check_only: bool) -> Resul
         ));
     }
     Ok(format!(
-        "已使用 prettier {}：{}（相对路径：{}）",
+        "已使用 prettier {}：{}",
         if check_only {
             "检查通过"
         } else {
             "格式化"
         },
-        target.display(),
-        relative.display()
+        display_in_workspace(workspace_root, target)
     ))
 }
 
-fn run_clang_format(target: &Path, check_only: bool) -> Result<String, String> {
+fn run_clang_format(
+    target: &Path,
+    workspace_root: &Path,
+    check_only: bool,
+) -> Result<String, String> {
     let mut cmd = Command::new("clang-format");
     if check_only {
         cmd.args(["--dry-run", "--Werror"]);
@@ -306,6 +323,6 @@ fn run_clang_format(target: &Path, check_only: bool) -> Result<String, String> {
         } else {
             "格式化"
         },
-        target.display()
+        display_in_workspace(workspace_root, target)
     ))
 }

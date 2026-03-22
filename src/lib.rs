@@ -609,6 +609,8 @@ struct StatusResponse {
     /// 队列中正在执行的 `/chat`、`/chat/stream` 任务之 PER 镜像（无任务或无非队列调用时为空）。
     #[serde(skip_serializing_if = "Vec::is_empty")]
     per_active_jobs: Vec<chat_job_queue::PerFlightStatusEntry>,
+    /// Web `POST /workspace` 允许的工作区根目录个数（未配置 `workspace_allowed_roots` 时为 1，即仅 `run_command_working_dir`）。
+    workspace_allowed_roots_count: usize,
 }
 
 async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -642,6 +644,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         chat_queue_completed_err: state.chat_queue.completed_err(),
         chat_queue_recent_jobs: state.chat_queue.recent_jobs(),
         per_active_jobs: state.chat_queue.active_per_jobs(),
+        workspace_allowed_roots_count: state.cfg.workspace_allowed_roots.len(),
     })
 }
 

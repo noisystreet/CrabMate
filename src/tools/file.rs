@@ -119,6 +119,31 @@ fn normalize_path(p: &Path) -> PathBuf {
     out
 }
 
+/// 相对工作区根的 POSIX 风格路径（供工具返回给模型，不暴露绝对路径）。
+fn path_relative_to_workspace(working_dir: &Path, absolute: &Path) -> String {
+    let Ok(base) = canonical_workspace_root(working_dir) else {
+        return absolute.display().to_string();
+    };
+    match absolute.strip_prefix(&base) {
+        Ok(rel) => {
+            let s = rel.to_string_lossy().replace('\\', "/");
+            if s.is_empty() { ".".to_string() } else { s }
+        }
+        Err(_) => absolute.display().to_string(),
+    }
+}
+
+/// 工具输出中的路径：优先使用用户传入的相对路径（POSIX `/`），否则由绝对路径反推相对工作区路径。
+fn path_for_tool_display(working_dir: &Path, absolute: &Path, user_rel: Option<&str>) -> String {
+    if let Some(s) = user_rel {
+        let t = s.trim();
+        if !t.is_empty() {
+            return t.replace('\\', "/");
+        }
+    }
+    path_relative_to_workspace(working_dir, absolute)
+}
+
 /// 创建文件：仅在文件不存在时创建；若已存在则报错。
 /// 参数 args_json: { "path": string, "content": string }
 pub fn create_file(args_json: &str, working_dir: &Path) -> String {
@@ -140,7 +165,10 @@ pub fn create_file(args_json: &str, working_dir: &Path) -> String {
         return format!("创建目录失败: {}", e);
     }
     match std::fs::write(&target, content.as_bytes()) {
-        Ok(()) => format!("已创建文件: {}", target.display()),
+        Ok(()) => format!(
+            "已创建文件: {}",
+            path_for_tool_display(working_dir, &target, Some(&path))
+        ),
         Err(e) => format!("写入文件失败: {}", e),
     }
 }
@@ -316,7 +344,8 @@ pub fn modify_file(args_json: &str, working_dir: &Path) -> String {
     }
 
     if mode == "replace_lines" || mode == "lines" {
-        modify_file_replace_lines(&v, &target)
+        let display = path_for_tool_display(working_dir, &target, Some(&path));
+        modify_file_replace_lines(&v, &target, &display)
     } else if mode == "full" || mode.is_empty() {
         let content = v
             .get("content")
@@ -324,7 +353,10 @@ pub fn modify_file(args_json: &str, working_dir: &Path) -> String {
             .map(String::from)
             .unwrap_or_default();
         match std::fs::write(&target, content.as_bytes()) {
-            Ok(()) => format!("已整文件覆盖: {}", target.display()),
+            Ok(()) => format!(
+                "已整文件覆盖: {}",
+                path_for_tool_display(working_dir, &target, Some(&path))
+            ),
             Err(e) => format!("写入文件失败: {}", e),
         }
     } else {
@@ -332,7 +364,7 @@ pub fn modify_file(args_json: &str, working_dir: &Path) -> String {
     }
 }
 
-fn modify_file_replace_lines(v: &serde_json::Value, target: &Path) -> String {
+fn modify_file_replace_lines(v: &serde_json::Value, target: &Path, display_path: &str) -> String {
     let start_line = match v.get("start_line").and_then(|n| n.as_u64()) {
         Some(n) if n >= 1 => n as usize,
         _ => return "错误：replace_lines 需要 start_line（>=1）".to_string(),
@@ -449,7 +481,7 @@ fn modify_file_replace_lines(v: &serde_json::Value, target: &Path) -> String {
 
     format!(
         "已按行替换: {} (行 {}-{}，共删除 {} 行，写入新内容 {} 字节)",
-        target.display(),
+        display_path,
         start_line,
         end_line,
         end_line - start_line + 1,
@@ -516,7 +548,10 @@ pub fn read_file(args_json: &str, working_dir: &Path) -> String {
         Err(e) => return format!("读取元数据失败: {}", e),
     };
     if meta.len() == 0 {
-        return format!("文件为空: {}", target.display());
+        return format!(
+            "文件为空: {}",
+            path_for_tool_display(working_dir, &target, Some(&path))
+        );
     }
 
     let total_lines = if count_total {
@@ -605,7 +640,10 @@ pub fn read_file(args_json: &str, working_dir: &Path) -> String {
 
     let last_shown = collected.last().map(|(l, _)| *l).unwrap_or(start_line);
     let mut out = String::new();
-    out.push_str(&format!("文件: {}\n", target.display()));
+    out.push_str(&format!(
+        "文件: {}\n",
+        path_for_tool_display(working_dir, &target, Some(&path))
+    ));
     if let Some(t) = total_lines {
         out.push_str(&format!("总行数: {}\n", t));
     } else {
@@ -691,11 +729,17 @@ pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
         Err(e) => return format!("错误：无法解析目录路径：{}", e),
     };
     if !root.is_dir() {
-        return format!("错误：指定路径不是目录：{}", root.display());
+        return format!(
+            "错误：指定路径不是目录：{}",
+            path_for_tool_display(working_dir, &root, Some(path))
+        );
     }
 
     let mut out = String::new();
-    out.push_str(&format!("目录: {}\n", root.display()));
+    out.push_str(&format!(
+        "目录: {}\n",
+        path_for_tool_display(working_dir, &root, Some(path))
+    ));
     match std::fs::read_dir(&root) {
         Ok(rd) => {
             let mut count = 0usize;
@@ -861,7 +905,10 @@ pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
         Err(e) => return format!("错误：无法解析起始目录：{}", e),
     };
     if !scan_root.is_dir() {
-        return format!("错误：path 不是目录：{}", scan_root.display());
+        return format!(
+            "错误：path 不是目录：{}",
+            path_for_tool_display(working_dir, &scan_root, Some(root))
+        );
     }
     let workspace_canonical = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
@@ -1016,7 +1063,10 @@ pub fn list_tree(args_json: &str, working_dir: &Path) -> String {
         Err(e) => return format!("错误：无法解析起始目录：{}", e),
     };
     if !scan_root.is_dir() {
-        return format!("错误：path 不是目录：{}", scan_root.display());
+        return format!(
+            "错误：path 不是目录：{}",
+            path_for_tool_display(working_dir, &scan_root, Some(root))
+        );
     }
     let workspace_canonical = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
@@ -1154,8 +1204,10 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
         .map(|d| d.as_secs());
 
     let mut out = String::new();
-    out.push_str(&format!("path: {}\n", path));
-    out.push_str(&format!("resolved: {}\n", target.display()));
+    out.push_str(&format!(
+        "path: {}\n",
+        path_for_tool_display(working_dir, &target, Some(&path))
+    ));
     out.push_str(&format!("size_bytes: {}\n", size));
 
     if let Some(secs) = modified_unix {
@@ -1256,8 +1308,10 @@ pub fn hash_file(args_json: &str, working_dir: &Path) -> String {
     match hash_result {
         Ok(hex_digest) => {
             let mut out = String::new();
-            out.push_str(&format!("path: {}\n", path));
-            out.push_str(&format!("resolved: {}\n", target.display()));
+            out.push_str(&format!(
+                "path: {}\n",
+                path_for_tool_display(working_dir, &target, Some(&path))
+            ));
             out.push_str(&format!("size_bytes: {}\n", size));
             out.push_str(&format!("hashed_bytes: {}\n", limit));
             out.push_str(&format!("algorithm: {}\n", algo));
@@ -1428,7 +1482,10 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
     let all_lines: Vec<&str> = content.lines().collect();
     let total = all_lines.len();
     if total == 0 {
-        return format!("文件为空: {}", target.display());
+        return format!(
+            "文件为空: {}",
+            path_for_tool_display(working_dir, &target, Some(&path))
+        );
     }
 
     let from = start_line.unwrap_or(1);
@@ -1462,7 +1519,7 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
             return format!(
                 "未找到匹配：pattern=\"{}\"（文件: {}, 行范围 {}-{}）",
                 pattern,
-                target.display(),
+                path_for_tool_display(working_dir, &target, Some(&path)),
                 from,
                 to
             );
@@ -1471,7 +1528,7 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         let mut out = String::new();
         out.push_str(&format!(
             "文件: {}\npattern: \"{}\"\n行范围: {}-{} / 总行数 {}\n匹配结果（最多 {} 条，实际 {} 条）：\n",
-            target.display(),
+            path_for_tool_display(working_dir, &target, Some(&path)),
             pattern,
             from,
             to,
@@ -1516,7 +1573,7 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         return format!(
             "未找到 Rust 代码块：pattern=\"{}\"（文件: {}, 行范围 {}-{}）",
             pattern,
-            target.display(),
+            path_for_tool_display(working_dir, &target, Some(&path)),
             from,
             to
         );
@@ -1525,7 +1582,7 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "文件: {}\nmode: rust_fn_block\npattern: \"{}\"\n行范围: {}-{} / 总行数 {}\n块结果（最多 {} 条，实际 {} 条）：\n",
-        target.display(),
+        path_for_tool_display(working_dir, &target, Some(&path)),
         pattern,
         from,
         to,

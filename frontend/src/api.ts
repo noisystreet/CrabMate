@@ -203,9 +203,9 @@ export async function fetchWorkspace(dirPath?: string | null): Promise<Workspace
   return request<WorkspaceData>(url, { timeoutMs: 15000, retries: 1 })
 }
 
-/** 设置后端当前工作区路径（与前端工作区一致，Agent 和文件 API 将使用该路径）；path 为空表示使用服务端配置默认 */
+/** 设置后端当前工作区路径（与前端工作区一致，Agent 和文件 API 将使用该路径）；path 为空表示使用服务端配置默认。路径须落在服务端允许的根目录下，否则返回 403。 */
 export async function setWorkspacePath(path: string): Promise<{ ok: boolean; path: string }> {
-  return request<{ ok: boolean; path: string }>('/workspace', {
+  return request<{ ok: boolean; path: string; error?: string }>('/workspace', {
     method: 'POST',
     timeoutMs: 15000,
     retries: 0,

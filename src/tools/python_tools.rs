@@ -442,7 +442,7 @@ pub fn ruff_format_file(
         } else {
             "格式化"
         },
-        target.display()
+        relative.to_string_lossy().replace('\\', "/")
     ))
 }
 
