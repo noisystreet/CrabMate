@@ -93,7 +93,7 @@ pub(super) struct HandleKeyContext<'a> {
     pub sync_tx: mpsc::Sender<Vec<Message>>,
     pub turn_outcome_tx: mpsc::Sender<TuiTurnOutcome>,
     pub agent_cancel: Arc<AtomicBool>,
-    pub cfg: &'a AgentConfig,
+    pub cfg: &'a Arc<AgentConfig>,
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
     pub tools: &'a [crate::types::Tool],
@@ -307,7 +307,7 @@ pub(super) async fn handle_key(
         async fn submit_approval(
             state: &mut TuiState,
             approval_tx: &mut Option<mpsc::Sender<CommandApprovalDecision>>,
-            cfg: &AgentConfig,
+            cfg: &Arc<AgentConfig>,
             decision: CommandApprovalDecision,
         ) {
             if let CommandApprovalDecision::AllowAlways = decision {

@@ -16,6 +16,18 @@ use tokio::sync::mpsc::Sender;
 use crate::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crate::runtime::message_display::assistant_markdown_source_for_display;
 
+/// 流式正文 delta 在发往 `out`（SSE/TUI）前合并，减少 `mpsc` 次与 `String` 小片 clone。
+/// 前端/TUI 仍按 UTF-8 拼接，语义与逐 token 发送一致。
+const SSE_STREAM_DELTA_FLUSH_BYTES: usize = 256;
+
+async fn flush_sse_delta_buffer(pending: &mut String, tx: Option<&Sender<String>>) {
+    if let Some(t) = tx
+        && !pending.is_empty()
+    {
+        let _ = t.send(std::mem::take(pending)).await;
+    }
+}
+
 /// 尝试获取终端宽度；获取失败时返回 None
 fn terminal_width() -> Option<usize> {
     crossterm::terminal::size()
@@ -65,10 +77,12 @@ fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
 }
 
 /// 解析 SSE 中一行 `data:` 后的 JSON 负载，累积正文与 tool_calls，并经 `out` 下发流式增量。
+/// `pending_sse_delta`：仅当 `out` 为 `Some` 时使用；与 `content_acc` 同步追加，达阈值或发送控制帧前再 `send`。
 #[allow(clippy::too_many_arguments)]
 async fn ingest_sse_data_payload(
     payload: &str,
     out: Option<&Sender<String>>,
+    pending_sse_delta: &mut String,
     content_acc: &mut String,
     finish_reason: &mut String,
     tool_calls_acc: &mut Vec<(String, String, String, String)>,
@@ -92,15 +106,19 @@ async fn ingest_sse_data_payload(
     if let Some(ref s) = delta.content
         && !s.is_empty()
     {
-        if let Some(tx) = out {
-            let _ = tx.send(s.clone()).await;
-        }
         content_acc.push_str(s);
+        if let Some(tx) = out {
+            pending_sse_delta.push_str(s);
+            if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
+                let _ = tx.send(std::mem::take(pending_sse_delta)).await;
+            }
+        }
     }
     if let Some(tcs) = delta.tool_calls {
         if !*parsing_tool_calls_notified && !tcs.is_empty() {
             *parsing_tool_calls_notified = true;
             if let Some(tx) = out {
+                flush_sse_delta_buffer(pending_sse_delta, Some(tx)).await;
                 let _ = tx
                     .send(crate::sse::encode_message(
                         crate::sse::SsePayload::ParsingToolCalls {
@@ -260,6 +278,7 @@ pub async fn stream_chat(
     let mut stream = res.bytes_stream();
     let mut buf = Vec::new();
     let mut content_acc = String::new();
+    let mut pending_sse_delta = String::new();
     let mut tool_calls_acc: Vec<(String, String, String, String)> = Vec::new();
     let mut finish_reason = String::new();
     let mut parsing_tool_calls_notified = false;
@@ -287,6 +306,7 @@ pub async fn stream_chat(
                 ingest_sse_data_payload(
                     payload,
                     out,
+                    &mut pending_sse_delta,
                     &mut content_acc,
                     &mut finish_reason,
                     &mut tool_calls_acc,
@@ -306,6 +326,7 @@ pub async fn stream_chat(
                 ingest_sse_data_payload(
                     payload,
                     out,
+                    &mut pending_sse_delta,
                     &mut content_acc,
                     &mut finish_reason,
                     &mut tool_calls_acc,
@@ -315,6 +336,7 @@ pub async fn stream_chat(
             }
         }
     }
+    flush_sse_delta_buffer(&mut pending_sse_delta, out).await;
     // 流式阶段不向 stdout 逐 delta 打印（避免半段 Markdown）；整段结束后与 `--no-stream` 相同走 `terminal_render_agent_markdown`。
     // **不得**用 MoveUp + Clear 重绘：会与工具子进程 stdout 及真实折行错位。
     if render_to_terminal && !content_acc.is_empty() {

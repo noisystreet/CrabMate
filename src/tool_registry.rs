@@ -1,5 +1,7 @@
 //! 工具分发注册表：按工具名解析执行策略（workflow / 阻塞+超时 / 同步），Web 与 TUI 共用实现。
 //!
+//! **`spawn_blocking` 与配置**：进入阻塞池前对 [`AgentConfig`] 使用 [`Arc::clone`]（仅增引用计数），闭包内通过 [`tools::tool_context_for`] 借用同一份配置与白名单，避免每次工具调用深度克隆 `allowed_commands`、`http_fetch_allowed_prefixes`、`web_search_api_key` 等大分配。
+//!
 //! 新增「需特殊运行时」的工具：在 `HANDLER_MAP` 初始化与 `all_dispatch_metadata()` 中各增一项，并在 `dispatch_tool` 的 `match hid` 中补分支。
 
 use std::collections::{HashMap, HashSet};
@@ -141,7 +143,7 @@ fn handler_id_for(name: &str) -> HandlerId {
 pub async fn dispatch_tool(
     runtime: ToolRuntime<'_>,
     per_coord: &mut PerCoordinator,
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     name: &str,
@@ -205,8 +207,11 @@ pub async fn dispatch_tool(
                     "RunExecutable on TUI without remap; using sync run_tool tool={}",
                     name
                 );
-                let ctx =
-                    tools::tool_context_for(cfg, &cfg.allowed_commands, effective_working_dir);
+                let ctx = tools::tool_context_for(
+                    cfg.as_ref(),
+                    &cfg.allowed_commands,
+                    effective_working_dir,
+                );
                 (
                     tools::run_tool(&tc.function.name, &tc.function.arguments, &ctx),
                     None,
@@ -224,7 +229,8 @@ pub async fn dispatch_tool(
             ToolRuntime::Tui { ctx } => execute_http_fetch_tui(cfg, ctx, name, args).await,
         },
         HandlerId::SyncDefault => {
-            let ctx = tools::tool_context_for(cfg, &cfg.allowed_commands, effective_working_dir);
+            let ctx =
+                tools::tool_context_for(cfg.as_ref(), &cfg.allowed_commands, effective_working_dir);
             (
                 tools::run_tool(&tc.function.name, &tc.function.arguments, &ctx),
                 None,
@@ -236,7 +242,7 @@ pub async fn dispatch_tool(
 async fn execute_workflow(
     runtime: ToolRuntime<'_>,
     per_coord: &mut PerCoordinator,
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     args: &str,
@@ -269,7 +275,7 @@ async fn execute_workflow(
             };
             let (wf_out, wf_ws_changed) = workflow::run_workflow_execute_tool(
                 &prep.patched_args,
-                cfg,
+                cfg.as_ref(),
                 effective_working_dir,
                 workspace_is_set,
                 approval_mode,
@@ -289,7 +295,7 @@ async fn execute_workflow(
 }
 
 async fn execute_run_command_web(
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     workspace_changed: &mut bool,
@@ -305,32 +311,15 @@ async fn execute_run_command_web(
     }
     let name_in = name.to_string();
     let cmd_timeout = cfg.command_timeout_secs;
-    let cmd_max_len = cfg.command_max_output_len;
-    let weather_secs = cfg.weather_timeout_secs;
-    let ws_timeout = cfg.web_search_timeout_secs;
-    let ws_provider = cfg.web_search_provider;
-    let ws_max = cfg.web_search_max_results;
-    let ws_key = cfg.web_search_api_key.clone();
-    let hf_pfx = cfg.http_fetch_allowed_prefixes.clone();
-    let hf_to = cfg.http_fetch_timeout_secs;
-    let hf_mb = cfg.http_fetch_max_response_bytes;
-    let allowed = cfg.allowed_commands.clone();
+    let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
     let handle = tokio::task::spawn_blocking(move || {
-        let ctx = tools::ToolContext {
-            command_max_output_len: cmd_max_len,
-            weather_timeout_secs: weather_secs,
-            allowed_commands: &allowed,
-            working_dir: &work_dir,
-            web_search_timeout_secs: ws_timeout,
-            web_search_provider: ws_provider,
-            web_search_api_key: ws_key.as_str(),
-            web_search_max_results: ws_max,
-            http_fetch_allowed_prefixes: hf_pfx.as_slice(),
-            http_fetch_timeout_secs: hf_to,
-            http_fetch_max_response_bytes: hf_mb,
-        };
+        let ctx = tools::tool_context_for(
+            cfg.as_ref(),
+            cfg.allowed_commands.as_slice(),
+            work_dir.as_path(),
+        );
         tools::run_tool(&name_in, &args_cloned, &ctx)
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
@@ -356,7 +345,7 @@ async fn execute_run_command_web(
 }
 
 async fn execute_run_command_tui(
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     ctx: &TuiToolRuntime,
@@ -392,7 +381,8 @@ async fn execute_run_command_tui(
         let already_allowed = ctx.persistent_allowlist_shared.lock().await.contains(&cmd);
         if already_allowed {
             effective_allowed.push(cmd.clone());
-            let ctx = tools::tool_context_for(cfg, &effective_allowed, effective_working_dir);
+            let ctx =
+                tools::tool_context_for(cfg.as_ref(), &effective_allowed, effective_working_dir);
             return (tools::run_tool(name, args, &ctx), None);
         }
         let decision = {
@@ -424,7 +414,11 @@ async fn execute_run_command_tui(
             }
             CommandApprovalDecision::AllowOnce => {
                 effective_allowed.push(cmd.clone());
-                let ctx = tools::tool_context_for(cfg, &effective_allowed, effective_working_dir);
+                let ctx = tools::tool_context_for(
+                    cfg.as_ref(),
+                    &effective_allowed,
+                    effective_working_dir,
+                );
                 (tools::run_tool(name, args, &ctx), None)
             }
             CommandApprovalDecision::AllowAlways => {
@@ -433,18 +427,22 @@ async fn execute_run_command_tui(
                     .await
                     .insert(cmd.clone());
                 effective_allowed.push(cmd.clone());
-                let ctx = tools::tool_context_for(cfg, &effective_allowed, effective_working_dir);
+                let ctx = tools::tool_context_for(
+                    cfg.as_ref(),
+                    &effective_allowed,
+                    effective_working_dir,
+                );
                 (tools::run_tool(name, args, &ctx), None)
             }
         }
     } else {
-        let ctx = tools::tool_context_for(cfg, &effective_allowed, effective_working_dir);
+        let ctx = tools::tool_context_for(cfg.as_ref(), &effective_allowed, effective_working_dir);
         (tools::run_tool(name, args, &ctx), None)
     }
 }
 
 async fn execute_http_fetch_web(
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
@@ -490,7 +488,7 @@ async fn execute_http_fetch_web(
 }
 
 async fn execute_http_fetch_tui(
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     ctx: &TuiToolRuntime,
     name: &str,
     args: &str,
@@ -568,7 +566,7 @@ async fn execute_http_fetch_tui(
 }
 
 async fn execute_run_executable_web(
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     name: &str,
@@ -583,32 +581,15 @@ async fn execute_run_executable_web(
     }
     let name_in = name.to_string();
     let cmd_timeout = cfg.command_timeout_secs;
-    let cmd_max_len = cfg.command_max_output_len;
-    let weather_secs = cfg.weather_timeout_secs;
-    let ws_timeout = cfg.web_search_timeout_secs;
-    let ws_provider = cfg.web_search_provider;
-    let ws_max = cfg.web_search_max_results;
-    let ws_key = cfg.web_search_api_key.clone();
-    let hf_pfx = cfg.http_fetch_allowed_prefixes.clone();
-    let hf_to = cfg.http_fetch_timeout_secs;
-    let hf_mb = cfg.http_fetch_max_response_bytes;
-    let allowed = cfg.allowed_commands.clone();
+    let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
     let handle = tokio::task::spawn_blocking(move || {
-        let ctx = tools::ToolContext {
-            command_max_output_len: cmd_max_len,
-            weather_timeout_secs: weather_secs,
-            allowed_commands: &allowed,
-            working_dir: &work_dir,
-            web_search_timeout_secs: ws_timeout,
-            web_search_provider: ws_provider,
-            web_search_api_key: ws_key.as_str(),
-            web_search_max_results: ws_max,
-            http_fetch_allowed_prefixes: hf_pfx.as_slice(),
-            http_fetch_timeout_secs: hf_to,
-            http_fetch_max_response_bytes: hf_mb,
-        };
+        let ctx = tools::tool_context_for(
+            cfg.as_ref(),
+            cfg.allowed_commands.as_slice(),
+            work_dir.as_path(),
+        );
         tools::run_tool(&name_in, &args_owned, &ctx)
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
@@ -631,38 +612,22 @@ async fn execute_run_executable_web(
 }
 
 async fn execute_get_weather_web(
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
     let name_in = name.to_string();
-    let cmd_max_len = cfg.command_max_output_len;
     let weather_timeout = cfg.weather_timeout_secs;
-    let ws_timeout = cfg.web_search_timeout_secs;
-    let ws_provider = cfg.web_search_provider;
-    let ws_max = cfg.web_search_max_results;
-    let ws_key = cfg.web_search_api_key.clone();
-    let hf_pfx = cfg.http_fetch_allowed_prefixes.clone();
-    let hf_to = cfg.http_fetch_timeout_secs;
-    let hf_mb = cfg.http_fetch_max_response_bytes;
-    let allowed = cfg.allowed_commands.clone();
+    let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
     let handle = tokio::task::spawn_blocking(move || {
-        let ctx = tools::ToolContext {
-            command_max_output_len: cmd_max_len,
-            weather_timeout_secs: weather_timeout,
-            allowed_commands: &allowed,
-            working_dir: &work_dir,
-            web_search_timeout_secs: ws_timeout,
-            web_search_provider: ws_provider,
-            web_search_api_key: ws_key.as_str(),
-            web_search_max_results: ws_max,
-            http_fetch_allowed_prefixes: hf_pfx.as_slice(),
-            http_fetch_timeout_secs: hf_to,
-            http_fetch_max_response_bytes: hf_mb,
-        };
+        let ctx = tools::tool_context_for(
+            cfg.as_ref(),
+            cfg.allowed_commands.as_slice(),
+            work_dir.as_path(),
+        );
         tools::run_tool(&name_in, &args_owned, &ctx)
     });
     let s = match tokio::time::timeout(Duration::from_secs(weather_timeout), handle).await {
@@ -685,38 +650,22 @@ async fn execute_get_weather_web(
 }
 
 async fn execute_web_search_web(
-    cfg: &AgentConfig,
+    cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
     let name_in = name.to_string();
-    let cmd_max_len = cfg.command_max_output_len;
-    let weather_timeout = cfg.weather_timeout_secs;
     let search_timeout = cfg.web_search_timeout_secs;
-    let ws_provider = cfg.web_search_provider;
-    let ws_max = cfg.web_search_max_results;
-    let ws_key = cfg.web_search_api_key.clone();
-    let hf_pfx = cfg.http_fetch_allowed_prefixes.clone();
-    let hf_to = cfg.http_fetch_timeout_secs;
-    let hf_mb = cfg.http_fetch_max_response_bytes;
-    let allowed = cfg.allowed_commands.clone();
+    let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
     let handle = tokio::task::spawn_blocking(move || {
-        let ctx = tools::ToolContext {
-            command_max_output_len: cmd_max_len,
-            weather_timeout_secs: weather_timeout,
-            allowed_commands: &allowed,
-            working_dir: &work_dir,
-            web_search_timeout_secs: search_timeout,
-            web_search_provider: ws_provider,
-            web_search_api_key: ws_key.as_str(),
-            web_search_max_results: ws_max,
-            http_fetch_allowed_prefixes: hf_pfx.as_slice(),
-            http_fetch_timeout_secs: hf_to,
-            http_fetch_max_response_bytes: hf_mb,
-        };
+        let ctx = tools::tool_context_for(
+            cfg.as_ref(),
+            cfg.allowed_commands.as_slice(),
+            work_dir.as_path(),
+        );
         tools::run_tool(&name_in, &args_owned, &ctx)
     });
     let s = match tokio::time::timeout(Duration::from_secs(search_timeout), handle).await {

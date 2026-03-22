@@ -42,6 +42,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use types::{Message, messages_chat_seed};
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
+/// `cfg` 建议使用 [`Arc`] 共享（与进程内 Web 服务状态一致），以便工具在 `spawn_blocking` 路径中复用同一份配置而不反复深拷贝。
 /// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）；`no_stream` 为 true 时 API 使用 `stream: false`，
 /// 有正文则通过 `out` 一次性下发整段。
 /// 若 `render_to_terminal` 为 true，则在终端用 `markdown_to_ansi` 渲染助手回复（流式与非流式均在**整段正文到达后**输出，避免半段 Markdown）。
@@ -53,7 +54,7 @@ use types::{Message, messages_chat_seed};
 pub async fn run_agent_turn(
     client: &reqwest::Client,
     api_key: &str,
-    cfg: &config::AgentConfig,
+    cfg: &Arc<config::AgentConfig>,
     tools: &[crate::types::Tool],
     messages: &mut Vec<Message>,
     out: Option<&tokio::sync::mpsc::Sender<String>>,
@@ -86,7 +87,7 @@ pub async fn run_agent_turn(
 
 #[derive(Clone)]
 pub(crate) struct AppState {
-    cfg: config::AgentConfig,
+    cfg: Arc<config::AgentConfig>,
     api_key: String,
     client: reqwest::Client,
     tools: Vec<crate::types::Tool>,
@@ -685,7 +686,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let cfg = match config::load_config(config_path.as_deref()) {
-        Ok(c) => c,
+        Ok(c) => Arc::new(c),
         Err(e) => {
             eprintln!("{}", e);
             std::process::exit(1);
@@ -712,7 +713,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-    let client = http_client::build_shared_api_client(&cfg)?;
+    let client = http_client::build_shared_api_client(cfg.as_ref())?;
     let all_tools = tools::build_tools();
     let tools = if no_tools { Vec::new() } else { all_tools };
 
@@ -731,7 +732,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             cfg.chat_queue_max_pending,
         );
         let state = Arc::new(AppState {
-            cfg: cfg.clone(),
+            cfg: Arc::clone(&cfg),
             api_key: api_key.clone(),
             client,
             tools,
