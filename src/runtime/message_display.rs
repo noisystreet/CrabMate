@@ -1,20 +1,152 @@
 //! 对话消息在 UI/终端上的展示用正文（与 `Message.content` 存储形态解耦）。
 
 use regex::Regex;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
 use crate::agent::plan_artifact::{format_agent_reply_plan_for_display, parse_agent_reply_plan_v1};
 use crate::runtime::latex_unicode::latex_math_to_unicode;
-/// `role: tool` 的 `content` 若为 JSON 且含 `human_summary`，与 TUI 一致优先展示该字段；否则回退为原文。
+use crate::tool_result::ToolResult;
+use crate::types::Message;
+
+/// `role: tool` 的展示：与 Web `ChatPanel` 的 `buildToolOutputCardText` 对齐——
+/// 先自然语言总结（JSON 的 `human_summary`），再 **【执行结果】**（状态码 + 标准输出/错误等）；
+/// 纯文本若为 `run_command` 风格（`退出码：` / `(exit=` / 含标准输出块），则结构化展示，避免与状态行重复。
 pub(crate) fn tool_content_for_display(raw: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(raw)
-        .ok()
-        .and_then(|v| {
-            v.get("human_summary")
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| raw.to_string())
+    let t = raw.trim();
+    if t.starts_with('{')
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(t)
+    {
+        if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
+            let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
+            return format!("{h}\n\n【执行结果】\n{pretty}");
+        }
+        return serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
+    }
+    if should_format_as_structured_plain_tool(t) {
+        return format_structured_plain_tool(t);
+    }
+    t.to_string()
+}
+
+fn should_format_as_structured_plain_tool(raw: &str) -> bool {
+    let first = raw.lines().next().unwrap_or("").trim();
+    if first.starts_with("退出码：") {
+        return true;
+    }
+    if first.contains("(exit=") && first.contains(')') {
+        return true;
+    }
+    raw.contains("标准输出：\n") || raw.contains("标准错误：\n")
+}
+
+fn strip_first_tool_status_line(raw: &str) -> String {
+    let lines: Vec<&str> = raw.lines().collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    let first = lines[0].trim();
+    if first.starts_with("退出码：") || (first.contains("(exit=") && first.contains(')')) {
+        return lines[1..].join("\n").trim().to_string();
+    }
+    raw.to_string()
+}
+
+fn format_structured_plain_tool(raw: &str) -> String {
+    let structured = ToolResult::from_legacy_output("tool", raw.to_string());
+    let mut status_parts = Vec::new();
+    status_parts.push(if structured.ok {
+        "成功".to_string()
+    } else {
+        "失败".to_string()
+    });
+    if let Some(c) = structured.exit_code {
+        status_parts.push(format!("exit={c}"));
+    }
+    if let Some(ref e) = structured.error_code {
+        status_parts.push(format!("code={e}"));
+    }
+    let status_line = format!("状态：{}", status_parts.join(" | "));
+
+    let result_body = if !structured.stdout.is_empty() || !structured.stderr.is_empty() {
+        let mut chunks = Vec::new();
+        if !structured.stdout.is_empty() {
+            chunks.push(format!("标准输出：\n{}", structured.stdout));
+        }
+        if !structured.stderr.is_empty() {
+            chunks.push(format!("标准错误：\n{}", structured.stderr));
+        }
+        chunks.join("\n\n")
+    } else {
+        let rest = strip_first_tool_status_line(raw);
+        if rest.trim().is_empty() {
+            "(无)".to_string()
+        } else {
+            rest
+        }
+    };
+
+    format!("【执行结果】\n{status_line}\n{result_body}")
+}
+
+/// 根据对条 `assistant.tool_calls` 解析 `summarize_tool_call`（与 Web SSE `tool_result.summary` 同源）。
+fn find_tool_call_for_display(messages: &[Message], tool_idx: usize) -> Option<(String, String)> {
+    let tid = messages.get(tool_idx)?.tool_call_id.as_deref()?;
+    for j in (0..tool_idx).rev() {
+        let a = &messages[j];
+        if a.role != "assistant" {
+            continue;
+        }
+        let calls = a.tool_calls.as_ref()?;
+        for c in calls {
+            if c.id == tid {
+                return Some((c.function.name.clone(), c.function.arguments.clone()));
+            }
+        }
+    }
+    None
+}
+
+/// TUI 行缓存指纹：同一条 `tool` 消息在「assistant 已带上 tool_calls」前后，展示可能多出一节「描述与总结」。
+pub(crate) fn tool_display_context_fingerprint(messages: &[Message], tool_msg_idx: usize) -> u64 {
+    let mut h = DefaultHasher::new();
+    if let Some((name, args)) = find_tool_call_for_display(messages, tool_msg_idx) {
+        name.hash(&mut h);
+        args.hash(&mut h);
+    }
+    h.finish()
+}
+
+/// **TUI / 导出**：在 [`tool_content_for_display`] 之上，为 `role: tool` 追加与 Web 一致的「描述与总结」
+///（来自 `summarize_tool_call`，依赖历史中**对条** assistant 的 `tool_calls`）。
+pub(crate) fn tool_content_for_display_for_message(
+    raw: &str,
+    messages: &[Message],
+    tool_msg_idx: usize,
+) -> String {
+    let body = tool_content_for_display(raw);
+    let Some((name, args)) = find_tool_call_for_display(messages, tool_msg_idx) else {
+        return body;
+    };
+    let Some(prefix) = crate::tools::summarize_tool_call(&name, &args) else {
+        return body;
+    };
+    let t = prefix.trim();
+    if t.is_empty() {
+        return body;
+    }
+    // JSON 已以 human_summary 开头且与 summarize 重复时不再加前缀
+    if raw.trim().starts_with('{')
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(raw.trim())
+        && let Some(h) = v.get("human_summary").and_then(|x| x.as_str())
+    {
+        let hs = h.trim();
+        if hs == t || hs.contains(t) || (t.len() > 5 && t.contains(hs)) {
+            return body;
+        }
+    }
+    format!("【描述与总结】\n{prefix}\n\n{body}")
 }
 
 // --- 助手正文：剥重复「模型：」标签 → 规划可读化 → LaTeX（与 TUI / CLI `terminal_render_agent_markdown` 共用）---
@@ -151,15 +283,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tool_prefers_human_summary() {
+    fn tool_json_human_summary_then_result_block() {
         let raw = r#"{"human_summary":"编译成功","ok":true}"#;
-        assert_eq!(tool_content_for_display(raw), "编译成功");
+        let out = tool_content_for_display(raw);
+        assert!(out.starts_with("编译成功"));
+        assert!(out.contains("【执行结果】"));
+        assert!(out.contains("\"ok\": true"));
     }
 
     #[test]
     fn tool_non_json_is_passthrough() {
         let raw = "plain tool output";
         assert_eq!(tool_content_for_display(raw), "plain tool output");
+    }
+
+    #[test]
+    fn tool_plain_run_command_structured() {
+        let raw = "退出码：0\n标准输出：\nhello\n";
+        let out = tool_content_for_display(raw);
+        assert!(out.contains("【执行结果】"));
+        assert!(out.contains("状态："));
+        assert!(out.contains("成功"));
+        assert!(out.contains("标准输出："));
+        assert!(out.contains("hello"));
+        assert!(!out.lines().next().unwrap_or("").starts_with("退出码："));
+    }
+
+    #[test]
+    fn tool_for_message_prepends_summary_from_assistant_tool_calls() {
+        use crate::types::{FunctionCall, Message, ToolCall};
+        let messages = vec![
+            Message::user_only("hi"),
+            Message {
+                role: "assistant".into(),
+                content: Some("I'll run ls".into()),
+                tool_calls: Some(vec![ToolCall {
+                    id: "c1".into(),
+                    typ: "function".into(),
+                    function: FunctionCall {
+                        name: "run_command".into(),
+                        arguments: r#"{"command":"ls","args":[]}"#.into(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "tool".into(),
+                content: Some("退出码：0\n(无输出)".into()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("c1".into()),
+            },
+        ];
+        let raw = messages[2].content.as_deref().unwrap();
+        let out = tool_content_for_display_for_message(raw, &messages, 2);
+        assert!(out.contains("【描述与总结】"));
+        assert!(out.contains("执行命令：ls"));
+        assert!(out.contains("【执行结果】"));
     }
 
     #[test]

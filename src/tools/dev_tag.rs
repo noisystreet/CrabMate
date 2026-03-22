@@ -37,7 +37,11 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "apply_patch"
         | "search_in_files"
         | "markdown_check_links" => &[GENERAL],
-        "structured_validate" | "structured_query" | "structured_diff" => &[GENERAL],
+        "structured_validate"
+        | "structured_query"
+        | "structured_diff"
+        | "text_diff"
+        | "table_text" => &[GENERAL],
 
         // --- Git ---
         "git_status" | "git_diff" | "git_clean_check" | "git_diff_stat" | "git_diff_names"

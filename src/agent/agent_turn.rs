@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 use super::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::llm::{complete_chat_retrying, nl_only_chat_request, tool_chat_request};
-use crate::sse::{SseErrorBody, SsePayload, ToolCallSummary, ToolResultBody, encode_message};
+use crate::sse::{SseErrorBody, SsePayload, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result::ToolResult as StructuredToolResult;
 use crate::tools;
@@ -219,18 +219,7 @@ async fn per_execute_tools_common(
             crate::redact::tool_arguments_preview_for_log(&args)
         );
 
-        if let Some(tx) = out
-            && let Some(summary) = tools::summarize_tool_call(&name, &args)
-        {
-            let _ = tx
-                .send(encode_message(SsePayload::ToolCall {
-                    tool_call: ToolCallSummary {
-                        name: name.clone(),
-                        summary,
-                    },
-                }))
-                .await;
-        }
+        let tool_summary = tools::summarize_tool_call(&name, &args);
 
         let t_tool = Instant::now();
         let (result, reflection_inject) = match dispatch_mode {
@@ -295,6 +284,7 @@ async fn per_execute_tools_common(
                 .send(encode_message(SsePayload::ToolResult {
                     tool_result: ToolResultBody {
                         name: name.clone(),
+                        summary: tool_summary,
                         output: result.clone(),
                         ok: Some(structured.ok),
                         exit_code: structured.exit_code,

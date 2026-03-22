@@ -162,6 +162,10 @@ pub(super) struct TuiState {
     pub chat_first_line: usize,
     /// 为 true 时每帧将视口钉在最新内容底部（流式输出）；为 false 时保持 `chat_first_line` 只看历史。
     pub chat_follow_tail: bool,
+    /// 由 `draw_chat` 每帧更新：向上滚动下界（与 `draw::CHAT_SCROLL_UP_MAX_LINES` 一致）。
+    pub chat_scroll_min_first_line: usize,
+    /// 由 `draw_chat` 每帧更新：视口首行下标上界。
+    pub chat_scroll_max_start: usize,
     /// 聊天区逻辑行索引（与 `draw::build_chat_scroll_lines` 纯文本列一致），用于 Ctrl+F 搜索后 F6 切换。
     pub chat_search_matches: Vec<usize>,
     pub chat_search_active_idx: usize,

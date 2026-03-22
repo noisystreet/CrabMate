@@ -99,6 +99,7 @@ pub(super) struct HandleKeyContext<'a> {
     pub tools: &'a [crate::types::Tool],
     pub no_stream: bool,
     pub term_cols: u16,
+    pub term_rows: u16,
 }
 
 pub(super) async fn handle_key(
@@ -120,6 +121,7 @@ pub(super) async fn handle_key(
         tools,
         no_stream,
         term_cols,
+        term_rows,
     } = ctx;
     if key.kind == KeyEventKind::Release {
         return Ok(false);
@@ -183,10 +185,10 @@ pub(super) async fn handle_key(
                         .starts_with(chat_nav::PROMPT_TITLE_SEARCH)
                     {
                         let q = state.prompt.clone();
-                        chat_nav::apply_chat_search(state, &q, term_cols);
+                        chat_nav::apply_chat_search(state, &q, term_cols, term_rows);
                     } else if state.prompt_title.starts_with(chat_nav::PROMPT_TITLE_JUMP) {
                         let raw = state.prompt.clone();
-                        let _ = chat_nav::apply_jump_to_message(state, &raw, term_cols);
+                        let _ = chat_nav::apply_jump_to_message(state, &raw, term_cols, term_rows);
                     } else if state.prompt_title.starts_with("新增提醒") {
                         let raw = state.prompt.trim();
                         if !raw.is_empty() {
@@ -428,7 +430,7 @@ pub(super) async fn handle_key(
         }
         KeyCode::F(6) if state.mode == Mode::Normal => {
             if key.modifiers.contains(KeyModifiers::SHIFT) {
-                chat_nav::search_next(state, -1);
+                chat_nav::search_next(state, -1, term_rows, term_cols);
             } else if state.chat_search_matches.is_empty() {
                 state.mouse_leak_scratch.clear();
                 state.mode = Mode::Prompt;
@@ -437,7 +439,7 @@ pub(super) async fn handle_key(
                 edit_history::clear_prompt_history(state);
                 state.prompt_title = format!("{}：输入关键词 Enter", chat_nav::PROMPT_TITLE_SEARCH);
             } else {
-                chat_nav::search_next(state, 1);
+                chat_nav::search_next(state, 1, term_rows, term_cols);
             }
         }
         KeyCode::F(7) if state.mode == Mode::Normal => {
@@ -529,10 +531,12 @@ pub(super) async fn handle_key(
             let step = state.input_rows.max(3) as usize;
             state.chat_follow_tail = false;
             state.chat_first_line = state.chat_first_line.saturating_sub(step);
+            state.chat_first_line = state.chat_first_line.max(state.chat_scroll_min_first_line);
         }
         KeyCode::PageDown => {
             let step = state.input_rows.max(3) as usize;
             state.chat_first_line = state.chat_first_line.saturating_add(step);
+            state.chat_first_line = state.chat_first_line.min(state.chat_scroll_max_start);
         }
         KeyCode::Tab => {
             if key.modifiers.contains(KeyModifiers::CONTROL) {

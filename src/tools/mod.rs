@@ -29,6 +29,9 @@ mod security_tools;
 mod spell_astgrep_tools;
 mod structured_data;
 mod symbol;
+mod table_text;
+mod text_diff;
+mod text_transform;
 mod time;
 mod unit_convert;
 mod weather;
@@ -1538,6 +1541,109 @@ fn params_structured_diff() -> serde_json::Value {
     })
 }
 
+fn params_text_transform() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "op": {
+                "type": "string",
+                "description": "base64_encode | base64_decode | url_encode | url_decode | hash_short | lines_join | lines_split",
+                "enum": [
+                    "base64_encode",
+                    "base64_decode",
+                    "url_encode",
+                    "url_decode",
+                    "hash_short",
+                    "lines_join",
+                    "lines_split"
+                ]
+            },
+            "text": {
+                "type": "string",
+                "description": "输入文本；单次上限 256KiB。lines_split 时按 delimiter 切分；lines_join 时按行拆开再用 delimiter 连接。"
+            },
+            "delimiter": {
+                "type": "string",
+                "description": "lines_join 默认空格；lines_split 必填非空；最大 256 字节"
+            },
+            "hash_algo": {
+                "type": "string",
+                "description": "仅 hash_short：sha256（默认）或 blake3；输出 16 位十六进制前缀",
+                "enum": ["sha256", "blake3"]
+            }
+        },
+        "required": ["op", "text"]
+    })
+}
+
+fn params_table_text() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "preview：抽样预览；validate：检查每行列数是否一致；select_columns：按 0 起列下标抽取为 TSV；filter_rows：按列 equals/contains 筛选行；aggregate：对列做 sum/mean/min/max/count 等",
+                "enum": ["preview", "validate", "select_columns", "filter_rows", "aggregate"]
+            },
+            "path": { "type": "string", "description": "相对工作区的表格文件（与 text 二选一）；单文件上限 4MiB" },
+            "text": { "type": "string", "description": "内联 CSV/TSV 文本（上限 256KiB）；与 path 二选一" },
+            "delimiter": {
+                "type": "string",
+                "description": "auto（默认：.tsv→tab、.csv→comma，否则按首行 sniff）、comma/csv、tab/tsv、semicolon、pipe",
+                "enum": ["auto", "comma", "csv", "tab", "tsv", "semicolon", "pipe"]
+            },
+            "has_header": { "type": "boolean", "description": "首行是否为表头；aggregate/filter/select 在 true 时会跳过首行数据，默认 true" },
+            "preview_rows": { "type": "integer", "description": "preview：预览数据行数，默认 20，上限 200", "minimum": 1, "maximum": 200 },
+            "max_rows_scan": { "type": "integer", "description": "validate/aggregate：最多扫描的数据行，默认 200000，上限 200000" },
+            "columns": {
+                "type": "array",
+                "items": { "type": "integer", "minimum": 0 },
+                "description": "select_columns：要保留的列下标（从 0 开始）"
+            },
+            "column": { "type": "integer", "description": "filter_rows/aggregate：列下标（从 0 开始）", "minimum": 0 },
+            "equals": { "type": "string", "description": "filter_rows：该列全等匹配" },
+            "contains": { "type": "string", "description": "filter_rows：该列子串匹配（与 equals 二选一）" },
+            "op": {
+                "type": "string",
+                "description": "aggregate：count_non_empty、count_numeric、sum、mean、min、max",
+                "enum": ["count", "count_non_empty", "count_numeric", "sum", "mean", "avg", "min", "max"]
+            },
+            "max_output_rows": { "type": "integer", "description": "select_columns/filter_rows：最多输出行数，默认 500，上限 10000", "minimum": 1, "maximum": 10000 }
+        },
+        "required": ["action"]
+    })
+}
+
+fn params_text_diff() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "description": "inline：比较 left 与 right 字符串；paths：比较工作区内 left_path 与 right_path 两个 UTF-8 文件",
+                "enum": ["inline", "paths"]
+            },
+            "left": { "type": "string", "description": "mode=inline 时左侧文本（单侧最多 256KiB）" },
+            "right": { "type": "string", "description": "mode=inline 时右侧文本" },
+            "left_path": { "type": "string", "description": "mode=paths 时相对工作区的左文件路径" },
+            "right_path": { "type": "string", "description": "mode=paths 时相对工作区的右文件路径" },
+            "context_lines": {
+                "type": "integer",
+                "description": "unified diff 上下文行数，默认 3，上限 20；可为 0",
+                "minimum": 0,
+                "maximum": 20
+            },
+            "max_output_bytes": {
+                "type": "integer",
+                "description": "diff 正文最大字节，默认 50000，上限 500000",
+                "minimum": 1,
+                "maximum": 500000
+            }
+        },
+        "required": []
+    })
+}
+
 fn params_format_file() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -2009,6 +2115,18 @@ fn runner_structured_diff(args: &str, ctx: &ToolContext<'_>) -> String {
     structured_data::structured_diff(args, ctx.working_dir)
 }
 
+fn runner_text_transform(args: &str, _ctx: &ToolContext<'_>) -> String {
+    text_transform::run(args)
+}
+
+fn runner_text_diff(args: &str, ctx: &ToolContext<'_>) -> String {
+    text_diff::run(args, ctx.working_dir)
+}
+
+fn runner_table_text(args: &str, ctx: &ToolContext<'_>) -> String {
+    table_text::run(args, ctx.working_dir)
+}
+
 fn runner_find_symbol(args: &str, ctx: &ToolContext<'_>) -> String {
     symbol::run(args, ctx.working_dir)
 }
@@ -2095,6 +2213,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: params_convert_units,
             runner: runner_convert_units,
+        },
+        ToolSpec {
+            name: "text_transform",
+            description: "纯内存字符串变换（不落盘）：Base64 编解码、URL 百分号编解码、短哈希（sha256/blake3 各取 16 位十六进制前缀）、lines_join（按行拆开后以 delimiter 连接，默认空格）、lines_split（按 delimiter 切分，段数上限 50000）。输入 text 单次上限 256KiB，输出上限 512KiB。",
+            category: ToolCategory::Basic,
+            parameters: params_text_transform,
+            runner: runner_text_transform,
         },
         ToolSpec {
             name: "get_weather",
@@ -2676,6 +2801,20 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: params_structured_diff,
             runner: runner_structured_diff,
+        },
+        ToolSpec {
+            name: "text_diff",
+            description: "任意两段 **UTF-8 纯文本**的行级 unified diff（与 Git 无关）。mode=inline 时比较 left/right 字符串（各 256KiB）；mode=paths 时比较工作区内两文件（各 4MiB 内）。可调 context_lines 与 max_output_bytes。与 `structured_diff`（结构化键）互补。",
+            category: ToolCategory::Development,
+            parameters: params_text_diff,
+            runner: runner_text_diff,
+        },
+        ToolSpec {
+            name: "table_text",
+            description: "工作区内 **CSV / TSV / 简单分隔** 纯文本：`preview` 抽样预览，`validate` 检查列数是否一致，`select_columns` 按列下标导出 TSV，`filter_rows` 按列 equals/contains 筛选，`aggregate` 对列做 sum/mean/min/max/count。单文件 4MiB；内联 `text` 256KiB；扫描/输出行数有上限。",
+            category: ToolCategory::Development,
+            parameters: params_table_text,
+            runner: runner_table_text,
         },
         ToolSpec {
             name: "find_symbol",
@@ -3487,6 +3626,9 @@ mod tests {
         assert!(names.contains(&"structured_validate"));
         assert!(names.contains(&"structured_query"));
         assert!(names.contains(&"structured_diff"));
+        assert!(names.contains(&"text_transform"));
+        assert!(names.contains(&"text_diff"));
+        assert!(names.contains(&"table_text"));
         assert!(names.contains(&"find_symbol"));
         assert!(names.contains(&"find_references"));
         assert!(names.contains(&"rust_file_outline"));
@@ -3507,10 +3649,12 @@ mod tests {
         let bn: Vec<_> = basic.iter().map(|t| t.function.name.as_str()).collect();
         assert!(bn.contains(&"get_current_time"));
         assert!(bn.contains(&"convert_units"));
+        assert!(bn.contains(&"text_transform"));
         assert!(bn.contains(&"add_reminder"));
         assert!(!bn.contains(&"cargo_check"));
         let dn: Vec<_> = dev.iter().map(|t| t.function.name.as_str()).collect();
         assert!(dn.contains(&"cargo_check"));
+        assert!(dn.contains(&"text_diff"));
         assert!(!dn.contains(&"get_current_time"));
     }
 

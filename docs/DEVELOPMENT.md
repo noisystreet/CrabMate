@@ -91,7 +91,7 @@ flowchart TB
 | `text_sanitize.rs` | 用户可见正文轻量清洗（DSML 剥离、规划步骤描述自然化等）；供 **`plan_artifact::format_agent_reply_plan_for_display`** 等使用。 |
 | `health.rs` | 与 `GET /health` 一致的运行状况报告（`build_health_report` / `format_health_report_terminal`）；供 `lib.rs` 的 health handler 与 TUI **F10** 弹层共用，不依赖本机再起 HTTP 服务。 |
 | `llm/` | **`mod`**：`ChatRequest` 构造、指数退避 **`complete_chat_retrying`**；**`api`**：`chat/completions` HTTP + SSE/JSON 解析、终端 Markdown（公式见 `runtime::latex_unicode`）。 |
-| `runtime/` | `cli`：单次问答/REPL；`tui`：全屏终端 UI；`workspace_session`：`.crabmate/tui_session.json` 加载/保存与导出入口（TUI 与 CLI REPL 共用 **`initial_workspace_messages`**）；`terminal_labels` / `terminal_cli_transcript`：CLI 前缀着色与无 SSE 时的规划/工具 stdout；`plan_section`：分阶段规划块节标题常量；**`message_display`**：`assistant_markdown_source_for_display`（剥重复「模型：」前缀；内部常量 **`SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT`** 默认 `false` 时不展示分阶段规划轮可解析的 `agent_reply_plan` 正文，与右栏「队列」互补；LaTeX）+ **`user_message_for_chat_display`**（**`SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT`** 默认 `false` 时在展示层**整段**不展示分步注入 `user`（与 `run_staged_plan_then_execute_steps` 注入同形）；`Message` 与导出仍为全文；`agent_turn` 对注入有 `debug!` 全文预览）+ `tool_content_for_display`（TUI / CLI / 可复用于导出）；`latex_unicode`；`chat_export`（会话 JSON/Markdown 导出，对齐 `frontend/src/chatExport.ts`）。前端 **`agentPlanDisplay.ts`** 有同名展示常量与 **`formatStagedStepUserForChat`**（与后端同形匹配，默认整段不展示）。 |
+| `runtime/` | `cli`：单次问答/REPL；`tui`：全屏终端 UI；`workspace_session`：`.crabmate/tui_session.json` 加载/保存与导出入口（TUI 与 CLI REPL 共用 **`initial_workspace_messages`**）；`terminal_labels` / `terminal_cli_transcript`：CLI 前缀着色与无 SSE 时的规划/工具 stdout；`plan_section`：分阶段规划块节标题常量；**`message_display`**：`assistant_markdown_source_for_display`（剥重复「模型：」前缀；内部常量 **`SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT`** 默认 `false` 时不展示分阶段规划轮可解析的 `agent_reply_plan` 正文，与右栏「队列」互补；LaTeX）+ **`user_message_for_chat_display`**（**`SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT`** 默认 `false` 时在展示层**整段**不展示分步注入 `user`（与 `run_staged_plan_then_execute_steps` 注入同形）；`Message` 与导出仍为全文；`agent_turn` 对注入有 `debug!` 全文预览）+ `tool_content_for_display` / **`tool_content_for_display_for_message`**（TUI **`draw`** 聊天区用后者：按 `tool_call_id` 回溯 assistant 的 `tool_calls`，经 **`summarize_tool_call`** 在「执行结果」前加「描述与总结」，与 Web 的 `tool_result.summary` 对齐；CLI 无完整会话上下文时仍用前者）；`latex_unicode`；`chat_export`（会话 JSON/Markdown 导出，对齐 `frontend/src/chatExport.ts`）。前端 **`agentPlanDisplay.ts`** 有同名展示常量与 **`formatStagedStepUserForChat`**（与后端同形匹配，默认整段不展示）。 |
 | `sse/` | **`protocol`**：`SsePayload` / `encode_message`；**`line`**：`classify_agent_sse_line`（TUI）；根再导出常用类型，与 `frontend/src/api.ts` 控制面解析对齐。 |
 | `tool_registry.rs` | 按工具名选择 Workflow / 命令超时 / 天气与联网搜索超时 / 默认同步等策略。 |
 | `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
@@ -128,6 +128,8 @@ flowchart TB
 | `spell_astgrep_tools.rs` | `typos_check`、`codespell_check`（拼写，只读）、`ast_grep_run`（ast-grep 结构化搜索；路径与 glob 受限） |
 | `markdown_links.rs` | `markdown_check_links`：Markdown 相对链接存在性检查，可选外链前缀 HEAD |
 | `structured_data.rs` | `structured_validate` / `structured_query` / `structured_diff`：JSON·YAML·TOML 校验、路径查询、结构化 diff |
+| `text_transform.rs` | `text_transform`：纯内存 Base64/URL 编解码、短哈希、按行合并与按分隔符切分（不落盘，有长度上限） |
+| `text_diff.rs` | `text_diff`：两段 UTF-8 文本或工作区内两文件的行级 unified diff（与 Git 无关，输出可截断） |
 | `patch.rs` | unified diff 应用 |
 | `precommit_tools.rs` | `pre-commit run` 封装（依赖 `.pre-commit-config.yaml`） |
 | `python_tools.rs` | Python：`ruff check`、`python3 -m pytest`、`mypy`、`uv sync` / `uv run`、可编辑安装（uv / pip）；供 `format`（`.py` 的 ruff format）、`lint`、`quality_workspace`、`ci_pipeline_local` 调用 |
@@ -154,7 +156,7 @@ flowchart TB
 - **SSE 通道协作**：若本轮由 `/chat/stream` 触发，会通过 channel 向前端发送：
   - 文本 delta（assistant 内容增量）
   - **控制类 JSON**（由 **`src/sse/protocol.rs`** 序列化）：统一带版本字段 `v`（当前为 `1`），并与原有键名兼容，例如：
-    - `tool_running`、`tool_call`、`tool_result`、`workspace_changed`
+    - `tool_running`、`tool_result`（可选 `summary`：与 `summarize_tool_call` 同源，与 `output` 同帧；**不再**在工具执行前单独下发 `tool_call`，避免 Web 在工具未完成时先插入摘要）、`workspace_changed`
     - `error`（+ 可选 `code`）、`command_approval_request`（TUI/工作流审批）
     - `staged_plan_notice`（+ 可选 `staged_plan_notice_clear`）：分阶段规划进度；TUI 累积到 `staged_plan_log`，在**「队列」**页与状态栏展示（步骤行内 `[ ]`/`[✓]`，每步结束可 `clear_before` 整段刷新；**不**再插入左侧主聊天区，避免与队列重复）；`frontend/src/api.ts` 识别为控制面并吞掉，避免当作正文 delta
     - 预留 `plan_required` 等扩展键
@@ -163,7 +165,7 @@ flowchart TB
 ### PER 与终答 `agent_reply_plan` 强制策略
 
 - **`agent::per_coord::PerCoordinator`**（`src/agent/per_coord.rs`）在 Web/TUI 共用：串联 **workflow 反思**（`workflow_reflection_controller`）与 **终答正文**是否含 `plan_artifact` 可解析的 v1 规划。
-- **`plan_artifact::format_plan_steps_markdown` / `format_agent_reply_plan_for_display`**：对合法 v1 规划生成**简单 Markdown 有序列表**（后者另含围栏前自然语言段落）；**`format_plan_steps_markdown_for_staged_queue`** 为 TUI/CLI「队列」区在步骤前加 `[ ]`/`[✓]`，每步完成后 **`send_staged_plan_notice(clear_before: true)`** 整段刷新，不再单独追加「第 i 步」标题行与「✓ 已完成」行；TUI `draw` 与前端 `agentPlanDisplay` / `ChatPanel` 展示用，**不**改写 `Message.content`。
+- **`plan_artifact::format_plan_steps_markdown` / `format_agent_reply_plan_for_display`**：对合法 v1 规划生成**简单 Markdown 有序列表**（后者另含围栏前自然语言段落）；**`format_plan_steps_markdown_for_staged_queue`** 为 TUI/CLI「队列」区在步骤前加 `[ ]`/`[✓]`（仅展示 `description`，不显示 `step.id`），每步完成后 **`send_staged_plan_notice(clear_before: true)`** 整段刷新，不再单独追加「第 i 步」标题行与「✓ 已完成」行；TUI `draw` 与前端 `agentPlanDisplay` / `ChatPanel` 展示用，**不**改写 `Message.content`。
 - **配置项** `[agent] final_plan_requirement`（环境变量 `AGENT_FINAL_PLAN_REQUIREMENT`）→ `FinalPlanRequirementMode`：
   - **`never`**：不进入「缺规划则追加 user 重写提示」循环；反思注入仍会下发，但不置位强制标记。
   - **`workflow_reflection`（默认）**：仅当工具路径注入了 `instruction_type == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT` 时，对随后的**最终** assistant 校验；避免与反思 JSON 的字符串散落耦合。
@@ -227,7 +229,7 @@ flowchart LR
 ### `src/llm/api.rs`
 
 - **单次 HTTP 传输**：`POST {api_base}/chat/completions`，`stream: true` 时对响应进行 `data: ...` 行拆解，聚合 assistant content 与 tool_calls（按 index 累积 arguments）。流结束时若缓冲区内仍有**未以换行结尾**的最后一帧，会在关闭读循环后补解析一次，避免尾部 delta 丢失（此前仅按 `\n` 切行时易丢末包）。
-- **终端输出（CLI）**：`render_to_terminal` 为 true 时，SSE **不在**收包过程中向 stdout 写正文（避免半段 Markdown）；**整段到达后**与 **`--no-stream`** 一致：先输出加粗着色的 **`Agent: `** 前缀（`runtime::terminal_labels::write_agent_message_prefix`，洋红），正文经 **`message_display::assistant_markdown_source_for_display`**（与 TUI 气泡同源）再 **`markdown_to_ansi`**。REPL 输入提示 **`我: `** 为加粗青色（`write_user_message_prefix`）。当 **`out: None`**（`run_agent_turn` 的 CLI 路径）时，另由 **`runtime::terminal_cli_transcript`** 打印 **`staged_plan_notice` 等价文本**（`send_staged_plan_notice` 内；经 **`user_message_for_chat_display`**）、**分步注入 user**（`agent_turn` 在 `echo_terminal_staged` 时另调 **`print_staged_plan_notice`**，与 TUI 侧压缩长句一致）以及**各工具返回**（与 **`message_display::tool_content_for_display`** 一致，超长按 `command_max_output_len` 截断），与 TUI 侧信息对齐。**不得**用光标上移 + `Clear(FromCursorDown)` 整屏重绘，以免与 **run_command** 等子进程输出错位。TUI 走 `render_to_terminal: false`，由 ratatui 绘制；工具/规划走 SSE，不写裸 stdout。
+- **终端输出（CLI）**：`render_to_terminal` 为 true 时，SSE **不在**收包过程中向 stdout 写正文（避免半段 Markdown）；**整段到达后**与 **`--no-stream`** 一致：先输出加粗着色的 **`Agent: `** 前缀（`runtime::terminal_labels::write_agent_message_prefix`，洋红），正文经 **`message_display::assistant_markdown_source_for_display`**（与 TUI 气泡同源）再 **`markdown_to_ansi`**。REPL 输入提示 **`我: `** 为加粗青色（`write_user_message_prefix`）。当 **`out: None`**（`run_agent_turn` 的 CLI 路径）时，另由 **`runtime::terminal_cli_transcript`** 打印 **`staged_plan_notice` 等价文本**（`send_staged_plan_notice` 内；经 **`user_message_for_chat_display`**）、**分步注入 user**（`agent_turn` 在 `echo_terminal_staged` 时另调 **`print_staged_plan_notice`**，与 TUI 侧压缩长句一致）以及**各工具返回**（与 **`message_display::tool_content_for_display`** 一致，超长按 `command_max_output_len` 截断；TUI 主聊天区另见 **`tool_content_for_display_for_message`**），与 TUI 侧信息对齐。**不得**用光标上移 + `Clear(FromCursorDown)` 整屏重绘，以免与 **run_command** 等子进程输出错位。TUI 走 `render_to_terminal: false`，由 ratatui 绘制；工具/规划走 SSE，不写裸 stdout。
 
 ### `src/sse/protocol.rs`
 
@@ -292,7 +294,7 @@ flowchart LR
 - **`web`**：承载 Web 侧的“工作区/任务”等 axum handler（与前端面板直接对应）；**不是**终端 TUI。
 - **`runtime`**：CLI/TUI 运行时逻辑，负责 REPL、单次问答、TUI 的交互渲染与调用 `run_agent_turn`。
   - **`runtime/workspace_session`**：`.crabmate/tui_session.json` 加载/保存；F8/F9 导出经此委托 `chat_export`；**`initial_workspace_messages`** 供 TUI `run_tui` 与 CLI REPL 共用；**仅当** `[agent] tui_load_session_on_start` 为 true 时终端启动才从磁盘恢复，并按 `tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断，总条数含 `system`，超出则保留首条 system 与尾部最近若干条；默认不加载。TUI 退出时 `save_workspace_session`。
-  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`）、`state`、`draw`、`input`（键鼠；F8/F9 调用 `workspace_session::export_*`）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐）、`workspace_ops`（右栏 **工作区**；**队列** 标签页将 `staged_plan_log` **按行**渲染（`latex_math_to_unicode`），**不**走 `tui_markdown`，避免规划步骤被 Markdown 合并成一段）、（SSE 控制行分类：`crate::sse::classify_agent_sse_line`）、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`（底栏右侧 `status_line`：默认仅模型名等，不常驻快捷键说明）、`allowlist`、`agent`（委托 `crate::agent::agent_turn`）。
+  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`）、`state`、`draw`、`input`（键鼠；F8/F9 调用 `workspace_session::export_*`）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐；`draw::CHAT_SCROLL_UP_MAX_LINES` 限制相对底部向上滚动的最多逻辑行数）、`workspace_ops`（右栏 **工作区**；**队列** 标签页将 `staged_plan_log` **按行**渲染（`latex_math_to_unicode`），**不**走 `tui_markdown`，避免规划步骤被 Markdown 合并成一段）、（SSE 控制行分类：`crate::sse::classify_agent_sse_line`）、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`（底栏右侧 `status_line`：默认仅模型名等，不常驻快捷键说明）、`allowlist`、`agent`（委托 `crate::agent::agent_turn`）。
 
 ## 前端模块说明（`frontend/src/`）
 
@@ -301,7 +303,7 @@ flowchart LR
 - **统一请求封装**：超时、重试、错误分类（`ApiError`）、GET 去重与轻量缓存（SWR）。
 - **流式聊天**：`sendChatStream` 消费 `/chat/stream` 的 SSE，把：
   - 纯文本 `data:` 当作 delta
-  - JSON `data:` 识别 `tool_running`/`tool_call`/`tool_result`/`workspace_changed` 并分发回调
+  - JSON `data:` 识别 `tool_running`/`tool_call`（兼容旧服务端）/`tool_result`（含可选 `summary`）/`workspace_changed` 并分发回调；工具卡片在 **`onToolResult`** 中单条展示「摘要 + 实际输出」
 
 ### `frontend/src/components/ChatPanel.tsx`
 

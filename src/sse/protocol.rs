@@ -85,6 +85,9 @@ pub struct ToolCallSummary {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolResultBody {
     pub name: String,
+    /// 与 `summarize_tool_call` 同源；与 `output` 同帧下发，供 Web 在工具结束后再展示「先摘要后输出」。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
     pub output: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ok: Option<bool>,
@@ -170,6 +173,7 @@ mod tests {
         let s = encode_message(SsePayload::ToolResult {
             tool_result: ToolResultBody {
                 name: "run_command".into(),
+                summary: Some("执行命令 ls".into()),
                 output: "退出码：1".into(),
                 ok: Some(false),
                 exit_code: Some(1),
@@ -182,6 +186,7 @@ mod tests {
         match m.payload {
             SsePayload::ToolResult { tool_result } => {
                 assert_eq!(tool_result.name, "run_command");
+                assert_eq!(tool_result.summary.as_deref(), Some("执行命令 ls"));
                 assert_eq!(tool_result.ok, Some(false));
                 assert_eq!(tool_result.exit_code, Some(1));
                 assert_eq!(tool_result.error_code.as_deref(), Some("command_failed"));

@@ -1,5 +1,8 @@
 //! 布局与绘制（聊天区、右侧面板、弹窗）。
 
+/// 从底部锚点起，聊天区可向上滚动的最大逻辑行数（视口首行下标不小于 `max_start - 本值`）。
+pub(super) const CHAT_SCROLL_UP_MAX_LINES: usize = 10000;
+
 use ratatui::layout::Margin;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -17,7 +20,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::redact;
 use crate::runtime::latex_unicode::latex_math_to_unicode;
 use crate::runtime::message_display::{
-    assistant_markdown_source_for_display, tool_content_for_display, user_message_for_chat_display,
+    assistant_markdown_source_for_display, tool_content_for_display_for_message,
+    tool_display_context_fingerprint, user_message_for_chat_display,
 };
 use crate::types::Message;
 use log::debug;
@@ -421,7 +425,7 @@ fn line_into_static(line: Line<'_>) -> Line<'static> {
 }
 
 /// 仅用原始 `Message` 字段做指纹，缓存命中时不必再跑 LaTeX / 剥标签。
-fn line_cache_fingerprint(m: &Message) -> u64 {
+fn line_cache_fingerprint(m: &Message, messages: &[Message], idx: usize) -> u64 {
     let mut h = DefaultHasher::new();
     m.role.hash(&mut h);
     match &m.content {
@@ -433,16 +437,19 @@ fn line_cache_fingerprint(m: &Message) -> u64 {
             0u8.hash(&mut h);
         }
     }
+    if m.role == "tool" {
+        tool_display_context_fingerprint(messages, idx).hash(&mut h);
+    }
     h.finish()
 }
 
-fn message_body_for_chat_display(m: &Message) -> String {
+fn message_body_for_chat_display(m: &Message, messages: &[Message], msg_idx: usize) -> String {
     let raw = m.content.as_deref().unwrap_or("");
     if m.role == "assistant" {
         return assistant_markdown_source_for_display(raw);
     }
     let display_raw = if m.role == "tool" {
-        tool_content_for_display(raw)
+        tool_content_for_display_for_message(raw, messages, msg_idx)
     } else if m.role == "user" {
         user_message_for_chat_display(raw)
     } else {
@@ -510,6 +517,10 @@ fn render_message_chat_lines(
     let mut plain_lines: Vec<String> = Vec::new();
     let header_style = Style::default().add_modifier(Modifier::BOLD);
     let role = if m.role == "user" { "我" } else { "模型" };
+    if m.role == "user" && rendered.trim().is_empty() {
+        // 与 Web `formatStagedStepUserForChat` 一致：分步注入等展示层置空时不画「我:」占位行
+        return (Vec::new(), Vec::new());
+    }
     if m.role == "user" {
         let role_text = format!("{}:", role);
         let role_padded = if role_text.width() >= chat_inner_width {
@@ -585,9 +596,16 @@ pub(super) fn build_chat_scroll_lines(
         if m.role == "system" {
             continue;
         }
+
+        let rendered = message_body_for_chat_display(m, &state.messages, i);
+        if m.role == "user" && rendered.trim().is_empty() {
+            state.chat_line_build_cache.per_message[i] = None;
+            continue;
+        }
+
         message_start_lines.push(draw_lines.len());
 
-        let fp = line_cache_fingerprint(m);
+        let fp = line_cache_fingerprint(m, &state.messages, i);
 
         let cached = state
             .chat_line_build_cache
@@ -599,7 +617,6 @@ pub(super) fn build_chat_scroll_lines(
         let (mut d, mut p) = if let Some(e) = cached {
             (e.draw.clone(), e.plain.clone())
         } else {
-            let rendered = message_body_for_chat_display(m);
             let quiet_streaming_assistant =
                 m.role == "assistant" && state.model_phase == ModelPhase::Answering;
             if !quiet_streaming_assistant {
@@ -631,6 +648,59 @@ pub(super) fn build_chat_scroll_lines(
     (draw_lines, plain_lines, message_start_lines)
 }
 
+/// 与 `draw_ui` → `draw_chat` 的左列水平/垂直拆分一致，返回 `(total_lines, min_first_line, max_start)`。
+#[allow(dead_code)] // 供后续滚动/搜索与布局对齐复用
+pub(super) fn chat_scroll_bounds(
+    state: &mut TuiState,
+    term_rows: u16,
+    term_cols: u16,
+) -> Option<(usize, usize, usize)> {
+    let area = Rect::new(0, 0, term_cols, term_rows);
+    let hchunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(65),
+            Constraint::Length(1),
+            Constraint::Percentage(35),
+        ])
+        .split(area);
+    let left = hchunks[0];
+    let inner_w = left.width.saturating_sub(2) as usize;
+    let (lines, _, _) = build_chat_scroll_lines(state, inner_w);
+    let total_lines = lines.len();
+    if total_lines == 0 {
+        return None;
+    }
+    let vchunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(3),
+            Constraint::Length(1),
+            Constraint::Length(state.input_rows.max(2)),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(left);
+    let chat_height = vchunks[0].height.saturating_sub(2) as usize;
+    let max_start = total_lines.saturating_sub(chat_height);
+    let min_first_line = max_start.saturating_sub(CHAT_SCROLL_UP_MAX_LINES);
+    Some((total_lines, min_first_line, max_start))
+}
+
+/// 将期望的视口首行下标钳在 `[min_first_line, max_start]` 内。
+#[allow(dead_code)]
+pub(super) fn chat_scroll_clamp_line(
+    state: &mut TuiState,
+    desired: usize,
+    term_rows: u16,
+    term_cols: u16,
+) -> usize {
+    match chat_scroll_bounds(state, term_rows, term_cols) {
+        Some((_, min_fl, max_st)) => desired.min(max_st).max(min_fl),
+        None => desired,
+    }
+}
+
 fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     let vchunks = Layout::default()
         .direction(Direction::Vertical)
@@ -649,6 +719,9 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     let total_lines = lines.len();
     if chat_height > 0 && !lines.is_empty() {
         let max_start = total_lines.saturating_sub(chat_height);
+        let min_first_line = max_start.saturating_sub(CHAT_SCROLL_UP_MAX_LINES);
+        state.chat_scroll_min_first_line = min_first_line;
+        state.chat_scroll_max_start = max_start;
         if state.chat_follow_tail {
             state.chat_first_line = max_start;
         } else {
@@ -658,12 +731,14 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
                 state.chat_follow_tail = true;
             }
         }
-        let start = state.chat_first_line.min(max_start);
+        let start = state.chat_first_line.min(max_start).max(min_first_line);
         state.chat_first_line = start;
         let end = (start + chat_height).min(total_lines);
         lines = lines[start..end].to_vec();
     } else {
         state.chat_first_line = 0;
+        state.chat_scroll_min_first_line = 0;
+        state.chat_scroll_max_start = 0;
     }
     let chat_block = Block::default()
         .borders(Borders::NONE)
@@ -679,7 +754,6 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     } else {
         state.input.as_str()
     };
-    let input_focused = state.mode == Mode::Prompt || state.focus == Focus::ChatInput;
     let input_block = Block::default()
         .borders(Borders::NONE)
         .padding(Padding::symmetric(1, 1));
@@ -690,7 +764,12 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     f.render_widget(input, vchunks[2]);
     draw_pane_separator_horizontal(f, vchunks[3]);
 
-    if state.mode != Mode::CommandApprove && !state.show_help && input_focused {
+    // 提示行或主输入：只要底部输入区可见就绘制文本光标（不必 F2 切到「聊天输入」焦点）。
+    let show_input_cursor = state.mode != Mode::CommandApprove
+        && !state.show_help
+        && !state.show_health
+        && matches!(state.mode, Mode::Prompt | Mode::Normal | Mode::FileView);
+    if show_input_cursor {
         let inner = vchunks[2].inner(Margin {
             vertical: 1,
             horizontal: 1,
