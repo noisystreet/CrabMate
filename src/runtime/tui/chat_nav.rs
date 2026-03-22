@@ -1,6 +1,8 @@
 //! 聊天区搜索与按消息跳转（逻辑行与 `draw::build_chat_scroll_lines` 的纯文本列一致）。
 
-use super::draw::{build_chat_scroll_lines, chat_inner_width_from_term_cols};
+use super::draw::{
+    build_chat_scroll_lines, chat_inner_width_from_term_cols, chat_scroll_clamp_line,
+};
 use super::state::TuiState;
 
 pub(super) const PROMPT_TITLE_SEARCH: &str = "搜索聊天";
@@ -15,7 +17,7 @@ fn truncate_status_query(s: &str) -> String {
     t
 }
 
-pub(super) fn apply_chat_search(state: &mut TuiState, query: &str, term_cols: u16) {
+pub(super) fn apply_chat_search(state: &mut TuiState, query: &str, term_cols: u16, term_rows: u16) {
     let q = query.trim();
     if q.is_empty() {
         state.chat_search_matches.clear();
@@ -40,11 +42,11 @@ pub(super) fn apply_chat_search(state: &mut TuiState, query: &str, term_cols: u1
     }
     state.chat_search_matches = matches;
     state.chat_search_active_idx = 0;
-    jump_to_search_match(state);
+    jump_to_search_match(state, term_rows, term_cols);
     state.status_line = format!("找到 {} 处", state.chat_search_matches.len());
 }
 
-pub(super) fn jump_to_search_match(state: &mut TuiState) {
+pub(super) fn jump_to_search_match(state: &mut TuiState, term_rows: u16, term_cols: u16) {
     if state.chat_search_matches.is_empty() {
         return;
     }
@@ -53,10 +55,10 @@ pub(super) fn jump_to_search_match(state: &mut TuiState) {
         .min(state.chat_search_matches.len() - 1);
     let line = state.chat_search_matches[i];
     state.chat_follow_tail = false;
-    state.chat_first_line = line;
+    state.chat_first_line = chat_scroll_clamp_line(state, line, term_rows, term_cols);
 }
 
-pub(super) fn search_next(state: &mut TuiState, dir: i32) {
+pub(super) fn search_next(state: &mut TuiState, dir: i32, term_rows: u16, term_cols: u16) {
     if state.chat_search_matches.is_empty() {
         return;
     }
@@ -68,12 +70,17 @@ pub(super) fn search_next(state: &mut TuiState, dir: i32) {
         (cur + len - 1) % len
     };
     state.chat_search_active_idx = next;
-    jump_to_search_match(state);
+    jump_to_search_match(state, term_rows, term_cols);
     state.status_line = format!("搜索结果 {}/{}", state.chat_search_active_idx + 1, len);
 }
 
 /// `n` 为从 1 起的「非 system」可见消息序号（与聊天区展示顺序一致）。
-pub(super) fn apply_jump_to_message(state: &mut TuiState, input: &str, term_cols: u16) -> bool {
+pub(super) fn apply_jump_to_message(
+    state: &mut TuiState,
+    input: &str,
+    term_cols: u16,
+    term_rows: u16,
+) -> bool {
     let n: usize = match input.trim().parse::<usize>() {
         Ok(v) if v >= 1 => v,
         _ => {
@@ -90,7 +97,7 @@ pub(super) fn apply_jump_to_message(state: &mut TuiState, input: &str, term_cols
     state.chat_search_matches.clear();
     state.chat_search_active_idx = 0;
     state.chat_follow_tail = false;
-    state.chat_first_line = starts[n - 1];
+    state.chat_first_line = chat_scroll_clamp_line(state, starts[n - 1], term_rows, term_cols);
     state.status_line = format!("已跳到第 {} 条消息", n);
     true
 }

@@ -183,6 +183,8 @@ pub async fn run_tui(
         input_drag_row: 0,
         chat_first_line: 0,
         chat_follow_tail: true,
+        chat_scroll_min_first_line: 0,
+        chat_scroll_max_start: 0,
         chat_search_matches: Vec::new(),
         chat_search_active_idx: 0,
         pending_focus: None,
@@ -410,6 +412,7 @@ pub async fn run_tui(
                                 tools,
                                 no_stream,
                                 term_cols: screen_size.width,
+                                term_rows: screen_size.height,
                             },
                         )
                         .await?

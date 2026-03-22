@@ -286,6 +286,8 @@ export interface WorkspaceSearchResponse {
 
 export interface ToolResultInfo {
   name: string
+  /** 与后端 `summarize_tool_call` 同源；与 output 同帧到达，用于「先摘要后实际输出」 */
+  summary?: string
   output: string
   ok?: boolean
   exit_code?: number
@@ -412,6 +414,7 @@ type SseControlPayload = {
   parsing_tool_calls?: boolean
   tool_result?: {
     name?: string
+    summary?: string
     output?: string
     ok?: boolean
     exit_code?: number
@@ -471,6 +474,7 @@ function tryDispatchSseControlPayload(
     if (parsed.tool_result?.output != null) {
       callbacks.onToolResult?.({
         name: parsed.tool_result.name || '',
+        summary: parsed.tool_result.summary,
         output: parsed.tool_result.output,
         ok: parsed.tool_result.ok,
         exit_code: parsed.tool_result.exit_code,

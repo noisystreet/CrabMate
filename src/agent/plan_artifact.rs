@@ -124,6 +124,7 @@ pub fn format_plan_steps_markdown(plan: &AgentReplyPlanV1) -> String {
 }
 
 /// 分阶段规划**队列**区：每步前加 `[ ]` 未完成 / `[✓]` 已完成（`completed_count` 为已完成步数，与 `run_staged_plan_then_execute_steps` 中步下标一致）。
+/// 仅展示 `description`（**不**输出 `step.id`，便于阅读；`Message` / `debug!` 等仍含 id）。
 pub fn format_plan_steps_markdown_for_staged_queue(
     plan: &AgentReplyPlanV1,
     completed_count: usize,
@@ -140,15 +141,8 @@ pub fn format_plan_steps_markdown_for_staged_queue(
         if id.is_empty() {
             continue;
         }
-        let id_esc = id.replace('`', "'");
         let mark = if idx < done { "[✓]" } else { "[ ]" };
-        let _ = writeln!(
-            &mut out,
-            "{mark} {}. `{}`: {}",
-            line_no,
-            id_esc,
-            desc.trim()
-        );
+        let _ = writeln!(&mut out, "{mark} {}. {}", line_no, desc.trim());
         line_no += 1;
     }
     out.trim_end().to_string()

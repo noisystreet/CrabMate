@@ -107,6 +107,86 @@ function normalizeToolOutput(raw: string): string {
     .replace(/\n+$/g, '')       // 去掉末尾多余空行
 }
 
+/** 工具返回为 JSON 时抽取 human_summary，作为「总结」展示在「执行结果」之前 */
+function tryParseHumanSummaryFromToolOutput(raw: string): string | undefined {
+  const t = raw.trim()
+  if (!t.startsWith('{')) return undefined
+  try {
+    const v = JSON.parse(t) as { human_summary?: unknown }
+    return typeof v.human_summary === 'string' && v.human_summary.trim()
+      ? v.human_summary.trim()
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 与状态行重复时去掉 legacy 首行「退出码：n」（结构化 stdout/stderr 已单独下发时不会走这里） */
+function stripLegacyExitCodePrefix(raw: string): string {
+  const lines = raw.split('\n')
+  if (lines.length > 0 && /^退出码：\d+\s*$/.test(lines[0].trim())) {
+    return lines.slice(1).join('\n').replace(/^\n+/, '').replace(/\n+$/g, '')
+  }
+  return raw
+}
+
+/**
+ * 工具卡片全文：首行作折叠标题，其余为正文。
+ * 顺序：【描述与总结】（完整 summary + 可选 JSON human_summary）→ 【执行结果】（状态码 + 实际输出）。
+ * 单行 summary 时也会在展开区显式展示「描述与总结」，避免展开后第一眼只有【执行结果】像「先出工具输出」。
+ */
+function buildToolOutputCardText(info: ToolResultInfo): string {
+  const { name, output, summary, ok, exit_code, error_code, stdout, stderr } = info
+
+  const statusParts: string[] = []
+  if (typeof ok === 'boolean') statusParts.push(ok ? '成功' : '失败')
+  if (typeof exit_code === 'number') statusParts.push(`exit=${exit_code}`)
+  if (error_code) statusParts.push(`code=${error_code}`)
+  const statusLine = statusParts.length ? `状态：${statusParts.join(' | ')}` : ''
+
+  let resultBody: string
+  if (stdout !== undefined || stderr !== undefined) {
+    const chunks: string[] = []
+    if (stdout !== undefined) chunks.push(`标准输出：\n${stdout || '(无)'}`)
+    if (stderr !== undefined) chunks.push(`标准错误：\n${stderr || '(无)'}`)
+    resultBody = chunks.join('\n\n')
+  } else {
+    resultBody = normalizeToolOutput(stripLegacyExitCodePrefix(output))
+  }
+
+  const sum = summary?.trim() ?? ''
+  const sumLines = sum.split(/\n/).map((l) => l.trim()).filter(Boolean)
+  const sumFirst = sumLines[0] ?? ''
+
+  const human = tryParseHumanSummaryFromToolOutput(output)
+  const humanLines = human
+    ? human.split(/\n/).map((l) => l.trim()).filter(Boolean)
+    : []
+
+  const titleLine =
+    sumFirst || (humanLines[0] ?? '') || (name ? `工具输出（${name}）` : '工具输出')
+
+  const narrativeParts: string[] = []
+  if (sum) {
+    narrativeParts.push(`【描述与总结】\n${sum}`)
+  }
+  if (human) {
+    if (sum) {
+      if (human !== sum && !sum.includes(human)) {
+        narrativeParts.push(human)
+      }
+    } else {
+      narrativeParts.push(`【描述与总结】\n${human}`)
+    }
+  }
+  const narrativeBlock = narrativeParts.join('\n\n')
+
+  const resultBlock = ['【执行结果】', statusLine, resultBody].filter(Boolean).join('\n')
+  const body = narrativeBlock ? `${narrativeBlock}\n\n${resultBlock}` : resultBlock
+
+  return `${titleLine}\n${body}`
+}
+
 function langFromClassName(className?: string): string {
   if (!className) return ''
   const m = className.match(/language-([a-zA-Z0-9_-]+)/)
@@ -132,7 +212,7 @@ function classifyErrorKind(msg: string): ErrorKind {
   if (lower.includes('internal_error') || lower.includes('对话失败')) return 'server'
   return 'unknown'
 }
-import { sendChatStream, uploadFiles } from '../api'
+import { sendChatStream, uploadFiles, type ToolResultInfo } from '../api'
 import { buildCrabmateSessionFile, crabmateSessionFileToPrettyJson, downloadBlob } from '../chatExport'
 
 const INPUT_HEIGHT_KEY = 'agent-demo-input-height'
@@ -713,34 +793,17 @@ export function ChatPanel({
           enqueueDelta(text)
         },
         onWorkspaceChanged,
-        onToolCall: ({ summary }) => {
-          setMessages((m) => [
-            ...m,
-            {
-              id: makeMessageId(),
-              role: 'system',
-              text: summary,
-              collapsed: true,
-            },
-          ])
-          scheduleScrollToBottom()
-        },
         onToolStatusChange,
-        onToolResult: ({ name, output, ok, exit_code, error_code }) => {
-          // 将工具输出也插入到对话中，使用专门的 system 样式，便于查看 ls 等命令结果
-          const header = name ? `命令输出（${name}）` : '命令输出'
-          const statusParts: string[] = []
-          if (typeof ok === 'boolean') statusParts.push(ok ? '成功' : '失败')
-          if (typeof exit_code === 'number') statusParts.push(`exit=${exit_code}`)
-          if (error_code) statusParts.push(`code=${error_code}`)
-          const statusLine = statusParts.length ? `状态：${statusParts.join(' | ')}` : ''
-          const body = normalizeToolOutput(output)
+        onToolResult: (toolInfo) => {
+          // 先把已收到的助手流式正文刷进 DOM，再插入工具卡，避免视觉上「工具块先于助手说明」
+          flushPendingDeltas()
+          const text = buildToolOutputCardText(toolInfo)
           setMessages((m) => [
             ...m,
             {
               id: makeMessageId(),
               role: 'system',
-              text: statusLine ? `${header}\n${statusLine}\n${body}` : `${header}\n${body}`,
+              text,
               collapsed: true,
               isToolOutput: true,
             },
@@ -1395,6 +1458,7 @@ export function ChatPanel({
           </div>
           <textarea
             dir="ltr"
+            autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -1406,7 +1470,7 @@ export function ChatPanel({
             placeholder="输入消息，Enter 发送 / Shift+Enter 换行…"
             rows={1}
             style={{ height: inputHeight - 16, minHeight: MIN_INPUT_HEIGHT - 16, maxHeight: MAX_INPUT_HEIGHT - 16 }}
-            className="flex-1 min-w-0 resize-none border-0 bg-transparent pl-0 pr-2 py-1.5 text-left text-[15px] leading-relaxed placeholder:text-base-content/50 focus:outline-none focus:ring-0"
+            className="flex-1 min-w-0 resize-none border-0 bg-transparent pl-0 pr-2 py-1.5 text-left text-[15px] leading-relaxed caret-primary placeholder:text-base-content/50 focus:outline-none focus:ring-0"
           />
           <div className="flex flex-col items-end gap-1">
             <div className="flex gap-2">
