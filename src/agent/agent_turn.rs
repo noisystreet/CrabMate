@@ -20,7 +20,18 @@ use crate::sse::{SseErrorBody, SsePayload, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result::ToolResult as StructuredToolResult;
 use crate::tools;
-use crate::types::{Message, ToolCall, USER_CANCELLED_FINISH_REASON};
+use crate::types::{Message, ToolCall, USER_CANCELLED_FINISH_REASON, is_chat_ui_separator};
+
+/// TUI 主循环用 `sync_rx` 拉取对话快照；仅在 TUI 路径传入 `Some`。
+async fn tui_push_messages_snapshot(
+    sync: Option<&mpsc::Sender<Vec<Message>>>,
+    messages: &[Message],
+) {
+    let Some(tx) = sync else {
+        return;
+    };
+    let _ = tx.send(messages.to_vec()).await;
+}
 
 /// 规划轮默认 system 追加（可被 `[agent] staged_plan_phase_instruction` 覆盖）。
 const STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT: &str = r#"【分阶段规划模式 · 规划轮】请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。
@@ -34,14 +45,47 @@ fn staged_plan_queue_summary_text(
     plan: &super::plan_artifact::AgentReplyPlanV1,
     completed_count: usize,
 ) -> String {
+    let n = plan.steps.len();
     let steps_md =
         super::plan_artifact::format_plan_steps_markdown_for_staged_queue(plan, completed_count);
-    format!(
-        "{}共 {} 步\n\n{}",
+    let header = format!(
+        "{}共 {} 步",
         crate::runtime::plan_section::STAGED_PLAN_SECTION_HEADER,
-        plan.steps.len(),
-        steps_md
-    )
+        n,
+    );
+    let body = format!("{}\n\n{}", header, steps_md);
+    if n > 0 && completed_count >= n {
+        format!("[✓] 全部完成\n\n{}", body)
+    } else {
+        body
+    }
+}
+
+async fn emit_chat_ui_separator_sse(out: Option<&mpsc::Sender<String>>, short: bool) {
+    if let Some(tx) = out {
+        let _ = tx
+            .send(encode_message(SsePayload::ChatUiSeparator { short }))
+            .await;
+    }
+}
+
+/// 本轮用户消息之后插入与分步结束相同的短分隔线（不进入模型）；若下一条已是分隔线则跳过。
+fn insert_separator_after_last_user_for_turn(messages: &mut Vec<Message>) {
+    let Some(user_idx) = messages.iter().rposition(|m| m.role == "user") else {
+        return;
+    };
+    if messages.get(user_idx + 1).is_some_and(is_chat_ui_separator) {
+        return;
+    }
+    let sep = Message::chat_ui_separator(true);
+    match messages.get(user_idx + 1) {
+        Some(m) if m.role == "assistant" => {
+            messages.insert(user_idx + 1, sep);
+        }
+        _ => {
+            messages.push(sep);
+        }
+    }
 }
 
 async fn send_staged_plan_notice(
@@ -84,7 +128,12 @@ pub(crate) async fn per_plan_call_model_retrying(
     no_stream: bool,
     cancel: Option<&AtomicBool>,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
-    let req = tool_chat_request(cfg, messages, tools_defs);
+    let filtered: Vec<Message> = messages
+        .iter()
+        .filter(|m| !is_chat_ui_separator(m))
+        .cloned()
+        .collect();
+    let req = tool_chat_request(cfg, &filtered, tools_defs);
     complete_chat_retrying(
         client,
         api_key,
@@ -396,6 +445,7 @@ async fn run_agent_outer_loop(
     cancel: Option<&AtomicBool>,
     mode: AgentRunMode<'_>,
     per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
+    tui_messages_sync: Option<&mpsc::Sender<Vec<Message>>>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     'outer: loop {
@@ -436,6 +486,7 @@ async fn run_agent_outer_loop(
             crate::redact::assistant_message_preview_for_log(&msg)
         );
         messages.push(msg.clone());
+        tui_push_messages_snapshot(tui_messages_sync, messages).await;
         if finish_reason == USER_CANCELLED_FINISH_REASON {
             break;
         }
@@ -512,6 +563,7 @@ async fn run_agent_outer_loop(
         if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
             break;
         }
+        tui_push_messages_snapshot(tui_messages_sync, messages).await;
         if let Some(f) = per_flight.as_ref() {
             f.sync_from_per_coord(per_coord);
         }
@@ -533,6 +585,7 @@ async fn run_staged_plan_then_execute_steps(
     cancel: Option<&AtomicBool>,
     mode: AgentRunMode<'_>,
     per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
+    tui_messages_sync: Option<&mpsc::Sender<Vec<Message>>>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let render_to_terminal = match mode {
@@ -543,7 +596,11 @@ async fn run_staged_plan_then_execute_steps(
 
     super::context_window::prepare_messages_for_model(client, api_key, cfg, messages).await?;
 
-    let mut plan_messages = messages.clone();
+    let mut plan_messages: Vec<Message> = messages
+        .iter()
+        .filter(|m| !is_chat_ui_separator(m))
+        .cloned()
+        .collect();
     let instr = cfg.staged_plan_phase_instruction.trim();
     let plan_system = if instr.is_empty() {
         STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT.to_string()
@@ -589,6 +646,7 @@ async fn run_staged_plan_then_execute_steps(
     }
 
     messages.push(msg.clone());
+    tui_push_messages_snapshot(tui_messages_sync, messages).await;
 
     let content = msg.content.as_deref().unwrap_or("");
     let plan = match super::plan_artifact::parse_agent_reply_plan_v1(content) {
@@ -616,8 +674,10 @@ async fn run_staged_plan_then_execute_steps(
     .await;
 
     let n = plan.steps.len();
+    let mut staged_loop_cancelled = false;
     for (i, step) in plan.steps.iter().enumerate() {
         if sse_sender_closed(out) || cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            staged_loop_cancelled = true;
             break;
         }
 
@@ -647,6 +707,7 @@ async fn run_staged_plan_then_execute_steps(
             name: None,
             tool_call_id: None,
         });
+        tui_push_messages_snapshot(tui_messages_sync, messages).await;
         run_agent_outer_loop(
             client,
             api_key,
@@ -660,14 +721,28 @@ async fn run_staged_plan_then_execute_steps(
             cancel,
             mode,
             per_flight.clone(),
+            tui_messages_sync,
             per_coord,
         )
         .await?;
+        messages.push(Message::chat_ui_separator(true));
+        // 先发队列摘要 SSE，再 await 全量同步：sync 通道容量为 1，若先 tui_push 可能阻塞，导致队列区迟迟收不到最后一步的更新。
         send_staged_plan_notice(
             out,
             echo_terminal_staged,
             true,
             staged_plan_queue_summary_text(&plan, i + 1),
+        )
+        .await;
+        tui_push_messages_snapshot(tui_messages_sync, messages).await;
+        emit_chat_ui_separator_sse(out, true).await;
+    }
+    if !staged_loop_cancelled && !plan.steps.is_empty() {
+        send_staged_plan_notice(
+            out,
+            echo_terminal_staged,
+            true,
+            staged_plan_queue_summary_text(&plan, plan.steps.len()),
         )
         .await;
     }
@@ -688,6 +763,7 @@ pub(crate) async fn run_agent_turn_common(
     cancel: Option<&AtomicBool>,
     mode: AgentRunMode<'_>,
     per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
+    tui_messages_sync: Option<&mpsc::Sender<Vec<Message>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     debug!(
         target: "crabmate",
@@ -697,6 +773,9 @@ pub(crate) async fn run_agent_turn_common(
         cfg.staged_plan_execution,
         effective_working_dir.display()
     );
+    insert_separator_after_last_user_for_turn(messages);
+    tui_push_messages_snapshot(tui_messages_sync, messages).await;
+
     let mut per_coord = PerCoordinator::new(
         cfg.reflection_default_max_rounds,
         cfg.final_plan_requirement,
@@ -717,6 +796,7 @@ pub(crate) async fn run_agent_turn_common(
             cancel,
             mode,
             per_flight,
+            tui_messages_sync,
             &mut per_coord,
         )
         .await
@@ -734,6 +814,7 @@ pub(crate) async fn run_agent_turn_common(
             cancel,
             mode,
             per_flight,
+            tui_messages_sync,
             &mut per_coord,
         )
         .await

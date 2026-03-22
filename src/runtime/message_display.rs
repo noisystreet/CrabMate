@@ -5,7 +5,10 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
-use crate::agent::plan_artifact::{format_agent_reply_plan_for_display, parse_agent_reply_plan_v1};
+use crate::agent::plan_artifact::{
+    format_agent_reply_plan_for_display, parse_agent_reply_plan_v1,
+    strip_agent_reply_plan_fence_blocks_for_display,
+};
 use crate::runtime::latex_unicode::latex_math_to_unicode;
 use crate::tool_result::ToolResult;
 use crate::types::Message;
@@ -269,12 +272,26 @@ pub(crate) fn strip_assistant_echo_label(content: &str) -> String {
 }
 
 /// 助手气泡 / CLI ANSI / 导出共用：剥标签 → `agent_reply_plan` 可读化 → LaTeX。
+/// `SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 为 `false` 时：整段可解析为 v1 规划 → 不展示；
+/// 若仅围栏内为规划 JSON（含解析失败但形状明显的块），从展示串中移除围栏，**不**把原始 JSON 打到终端/气泡；`Message.content` 与日志不变。
 pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
     let stripped = strip_assistant_echo_label(raw);
-    if !SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT && parse_agent_reply_plan_v1(&stripped).is_ok() {
+    if SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT {
+        let display = format_agent_reply_plan_for_display(&stripped).unwrap_or(stripped);
+        return latex_math_to_unicode(&display);
+    }
+    if parse_agent_reply_plan_v1(&stripped).is_ok() {
         return String::new();
     }
-    let display = format_agent_reply_plan_for_display(&stripped).unwrap_or(stripped);
+    let without_fences = strip_agent_reply_plan_fence_blocks_for_display(&stripped);
+    let trimmed = without_fences.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if parse_agent_reply_plan_v1(trimmed).is_ok() {
+        return String::new();
+    }
+    let display = format_agent_reply_plan_for_display(&without_fences).unwrap_or(without_fences);
     latex_math_to_unicode(&display)
 }
 
@@ -365,6 +382,17 @@ mod tests {
         let raw =
             r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"do"}]}"#;
         assert_eq!(assistant_markdown_source_for_display(raw), "");
+    }
+
+    #[test]
+    fn assistant_hides_plan_json_in_fence_keeps_prose_when_show_flag_false() {
+        let raw = format!(
+            "说明文字\n```json\n{}\n```\n",
+            r#"{"type":"agent_reply_plan","version":1,"steps":[]}"#
+        );
+        let out = assistant_markdown_source_for_display(&raw);
+        assert!(out.contains("说明"));
+        assert!(!out.contains("agent_reply_plan"));
     }
 
     #[test]

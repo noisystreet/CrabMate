@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Sender;
 
 use crate::config::AgentConfig;
 use crate::llm::complete_chat_retrying;
-use crate::types::{ChatRequest, Message};
+use crate::types::{ChatRequest, Message, is_chat_ui_separator};
 
 const SUMMARY_SYSTEM: &str = "你只负责压缩对话历史。使用简洁中文要点列表，保留：用户目标、关键路径/命令、错误信息、未决问题。不要编造事实。";
 
@@ -135,6 +135,7 @@ fn build_transcript_middle(messages: &[Message], tail: usize, cap: usize) -> Opt
     let end = messages.len() - tail;
     let mut s: String = messages[1..end]
         .iter()
+        .filter(|m| !is_chat_ui_separator(m))
         .map(format_message_for_transcript)
         .collect();
     if s.chars().count() > cap {

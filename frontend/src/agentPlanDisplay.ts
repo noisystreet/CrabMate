@@ -69,6 +69,37 @@ function isValidPlanV1(o: unknown): o is { steps: { id: string; description: str
   return true
 }
 
+/** 与后端 `plan_artifact::strip_agent_reply_plan_fence_blocks_for_display` 一致：去掉含 agent_reply_plan 的 ``` 块，避免聊天区打印原始 JSON。 */
+export function stripAgentReplyPlanFenceBlocksForDisplay(content: string): string {
+  const parts = content.split('```')
+  let out = ''
+  let i = 0
+  while (i < parts.length) {
+    out += parts[i]
+    i += 1
+    if (i >= parts.length) break
+    const inner = parts[i]
+    i += 1
+    if (fenceInnerShouldHideAgentReplyPlanJson(inner)) {
+      continue
+    }
+    out += '```' + inner + '```'
+  }
+  return out
+}
+
+function fenceInnerShouldHideAgentReplyPlanJson(inner: string): boolean {
+  const body = stripOptionalJsonFenceLabel(inner)
+  if (!body.startsWith('{')) return false
+  try {
+    const o = JSON.parse(body) as unknown
+    if (isValidPlanV1(o)) return true
+  } catch {
+    /* fall through */
+  }
+  return body.includes('"agent_reply_plan"') && body.includes('"steps"')
+}
+
 /** 返回可读规划文本；无法解析则 `null`（由调用方继续展示原文/Markdown）。 */
 export function tryFormatAgentReplyPlanForDisplay(content: string): string | null {
   let plan: { steps: { id: string; description: string }[] } | null = null

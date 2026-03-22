@@ -178,6 +178,44 @@ fn strip_optional_json_fence_label(raw: &str) -> String {
     }
 }
 
+fn fence_inner_should_hide_agent_reply_plan_json(inner: &str) -> bool {
+    let raw = inner.trim();
+    let body = strip_optional_json_fence_label(raw);
+    if !body.starts_with('{') {
+        return false;
+    }
+    if parse_agent_reply_plan_v1(&body).is_ok() {
+        return true;
+    }
+    // 拒绝解析但明显是 agent_reply_plan 形状的 JSON，展示层也不打印原文
+    let b = body.trim();
+    b.contains("\"agent_reply_plan\"") && b.contains("\"steps\"")
+}
+
+/// 从展示用正文中移除含 `agent_reply_plan` 的 Markdown 代码围栏块（``` … ```），
+/// 不修改 `Message.content`；日志仍可用 `debug!` 打印原文。
+pub fn strip_agent_reply_plan_fence_blocks_for_display(content: &str) -> String {
+    let parts: Vec<&str> = content.split("```").collect();
+    let mut out = String::new();
+    let mut i = 0usize;
+    while i < parts.len() {
+        out.push_str(parts[i]);
+        i += 1;
+        if i >= parts.len() {
+            break;
+        }
+        let inner = parts[i];
+        i += 1;
+        if fence_inner_should_hide_agent_reply_plan_json(inner) {
+            continue;
+        }
+        out.push_str("```");
+        out.push_str(inner);
+        out.push_str("```");
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +223,15 @@ mod tests {
     fn sample_json() -> String {
         r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"do a"}]}"#
             .to_string()
+    }
+
+    #[test]
+    fn strip_fence_removes_plan_json_keeps_prose() {
+        let bad = r#"{"type":"agent_reply_plan","version":1,"steps":[]}"#;
+        let content = format!("说明\n```json\n{bad}\n```\n");
+        let s = strip_agent_reply_plan_fence_blocks_for_display(&content);
+        assert!(s.contains("说明"));
+        assert!(!s.contains("agent_reply_plan"));
     }
 
     #[test]

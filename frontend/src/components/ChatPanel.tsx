@@ -11,6 +11,7 @@ import { Virtuoso } from 'react-virtuoso'
 import {
   SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT,
   formatStagedStepUserForChat,
+  stripAgentReplyPlanFenceBlocksForDisplay,
   tryFormatAgentReplyPlanForDisplay,
 } from '../agentPlanDisplay'
 
@@ -84,7 +85,12 @@ function formatAssistantText(raw: string): string {
   if (!SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT && planText !== null) {
     return ''
   }
-  const source = planText ?? raw
+  const stripped = stripAgentReplyPlanFenceBlocksForDisplay(raw)
+  const planFromStripped = tryFormatAgentReplyPlanForDisplay(stripped)
+  if (!SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT && planFromStripped !== null) {
+    return ''
+  }
+  const source = planFromStripped ?? planText ?? stripped
   // 先做 LaTeX 预处理
   let s = preprocessLatexBlocks(source.replace(/\\n/g, '\n'))
   // 若本身已有换行，则直接返回（交给后端/模型自行控制段落），不再做任何空行压缩
@@ -239,6 +245,10 @@ type Message = {
   state?: 'loading' | 'error'
   collapsed?: boolean
   isToolOutput?: boolean
+  /** 分阶段规划：聊天区短/长分隔线（仅展示） */
+  isChatSeparator?: boolean
+  /** `true` 短分隔线，`false` 长分隔线 */
+  chatSeparatorShort?: boolean
   errorKind?: ErrorKind
   canRetry?: boolean
 }
@@ -767,6 +777,7 @@ export function ChatPanel({
     if (videoUrls?.length) attachmentLines.push(...videoUrls.map((u) => `- 视频：${u}`))
     const fullMsg = attachmentLines.length ? `${msg || fallback}\n\n附件：\n${attachmentLines.join('\n')}` : (msg || fallback)
     const userId = makeMessageId()
+    const sepId = makeMessageId()
     const assistantId = makeMessageId()
     streamingMsgIdRef.current = assistantId
     streamingTextRef.current = ''
@@ -775,6 +786,13 @@ export function ChatPanel({
     setMessages((m) => [
       ...m,
       { id: userId, role: 'user', text: fullMsg, images, audioUrls, videoUrls },
+      {
+        id: sepId,
+        role: 'system',
+        text: '',
+        isChatSeparator: true,
+        chatSeparatorShort: true,
+      },
       { id: assistantId, role: 'assistant', text: '', state: 'loading' },
     ])
     scheduleScrollToBottom()
@@ -794,6 +812,20 @@ export function ChatPanel({
         },
         onWorkspaceChanged,
         onToolStatusChange,
+        onChatUiSeparator: (short) => {
+          if (!short) return
+          setMessages((m) => [
+            ...m,
+            {
+              id: makeMessageId(),
+              role: 'system',
+              text: '',
+              isChatSeparator: true,
+              chatSeparatorShort: true,
+            },
+          ])
+          scheduleScrollToBottom()
+        },
         onToolResult: (toolInfo) => {
           // 先把已收到的助手流式正文刷进 DOM，再插入工具卡，避免视觉上「工具块先于助手说明」
           flushPendingDeltas()
@@ -988,7 +1020,17 @@ export function ChatPanel({
                 const userTextForChat =
                   m.role === 'user' ? formatStagedStepUserForChat(m.text) : m.text
                 return (
-              m.role === 'system' && m.isToolOutput ? (
+              m.role === 'system' && m.isChatSeparator ? (
+            <div key={m.id} className="flex justify-center px-4 py-2">
+              <div
+                className={`w-full max-w-[720px] ${
+                  m.chatSeparatorShort
+                    ? 'border-t border-dashed border-base-content/30'
+                    : 'border-t-2 border-solid border-base-content/45'
+                }`}
+              />
+            </div>
+          ) : m.role === 'system' && m.isToolOutput ? (
             // 命令输出：使用卡片样式，可折叠 + 复制
             <div key={m.id} className="flex justify-center text-xs text-base-content/70 px-4 pt-4">
               <div className="w-full max-w-[720px] border border-base-300 bg-base-200 rounded-md overflow-hidden">

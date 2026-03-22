@@ -52,6 +52,10 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
             super::protocol::SsePayload::StagedPlanNotice { text, clear_before } => {
                 return AgentLineKind::StagedPlanNotice { text, clear_before };
             }
+            super::protocol::SsePayload::ChatUiSeparator { .. } => {
+                // TUI 聊天区分隔线已随 `messages` 全量同步，勿再追加。
+                return AgentLineKind::Ignore;
+            }
             super::protocol::SsePayload::ToolCall { .. }
             | super::protocol::SsePayload::ToolResult { .. }
             | super::protocol::SsePayload::PlanRequired { .. } => {

@@ -717,6 +717,7 @@ pub(super) async fn handle_key(
                             persistent_allowlist,
                             approve_rx_ch,
                             Some(cancel_arc.as_ref()),
+                            Some(sync_tx2.clone()),
                         )
                         .await;
                         let duration_ms = started.elapsed().as_millis() as u64;
