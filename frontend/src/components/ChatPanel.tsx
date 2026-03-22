@@ -15,6 +15,9 @@ import {
   tryFormatAgentReplyPlanForDisplay,
 } from '../agentPlanDisplay'
 
+/** 与后端 `message_display::SHOW_TOOL_RAW_OUTPUT_IN_CHAT` 对齐；false 时聊天区不展示工具 stdout/stderr 与完整 output，服务端日志仍为全文 */
+const SHOW_TOOL_RAW_OUTPUT_IN_CHAT = false
+
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024
 const MAX_VIDEO_BYTES = 80 * 1024 * 1024
@@ -138,27 +141,11 @@ function stripLegacyExitCodePrefix(raw: string): string {
 
 /**
  * 工具卡片全文：首行作折叠标题，其余为正文。
- * 顺序：【描述与总结】（完整 summary + 可选 JSON human_summary）→ 【执行结果】（状态码 + 实际输出）。
- * 单行 summary 时也会在展开区显式展示「描述与总结」，避免展开后第一眼只有【执行结果】像「先出工具输出」。
+ * `SHOW_TOOL_RAW_OUTPUT_IN_CHAT === false` 时仅【描述与总结】/ human_summary，**不**含【执行结果】（状态、stdout/stderr、完整 output 均在日志与消息存储中）。
+ * 为 true 时顺序：【描述与总结】→ 【执行结果】（状态码 + 实际输出）。
  */
 function buildToolOutputCardText(info: ToolResultInfo): string {
   const { name, output, summary, ok, exit_code, error_code, stdout, stderr } = info
-
-  const statusParts: string[] = []
-  if (typeof ok === 'boolean') statusParts.push(ok ? '成功' : '失败')
-  if (typeof exit_code === 'number') statusParts.push(`exit=${exit_code}`)
-  if (error_code) statusParts.push(`code=${error_code}`)
-  const statusLine = statusParts.length ? `状态：${statusParts.join(' | ')}` : ''
-
-  let resultBody: string
-  if (stdout !== undefined || stderr !== undefined) {
-    const chunks: string[] = []
-    if (stdout !== undefined) chunks.push(`标准输出：\n${stdout || '(无)'}`)
-    if (stderr !== undefined) chunks.push(`标准错误：\n${stderr || '(无)'}`)
-    resultBody = chunks.join('\n\n')
-  } else {
-    resultBody = normalizeToolOutput(stripLegacyExitCodePrefix(output))
-  }
 
   const sum = summary?.trim() ?? ''
   const sumLines = sum.split(/\n/).map((l) => l.trim()).filter(Boolean)
@@ -186,6 +173,26 @@ function buildToolOutputCardText(info: ToolResultInfo): string {
     }
   }
   const narrativeBlock = narrativeParts.join('\n\n')
+
+  if (!SHOW_TOOL_RAW_OUTPUT_IN_CHAT) {
+    return narrativeBlock ? `${titleLine}\n${narrativeBlock}` : `${titleLine}`
+  }
+
+  const statusParts: string[] = []
+  if (typeof ok === 'boolean') statusParts.push(ok ? '成功' : '失败')
+  if (typeof exit_code === 'number') statusParts.push(`exit=${exit_code}`)
+  if (error_code) statusParts.push(`code=${error_code}`)
+  const statusLine = statusParts.length ? `状态：${statusParts.join(' | ')}` : ''
+
+  let resultBody: string
+  if (stdout !== undefined || stderr !== undefined) {
+    const chunks: string[] = []
+    if (stdout !== undefined) chunks.push(`标准输出：\n${stdout || '(无)'}`)
+    if (stderr !== undefined) chunks.push(`标准错误：\n${stderr || '(无)'}`)
+    resultBody = chunks.join('\n\n')
+  } else {
+    resultBody = normalizeToolOutput(stripLegacyExitCodePrefix(output))
+  }
 
   const resultBlock = ['【执行结果】', statusLine, resultBody].filter(Boolean).join('\n')
   const body = narrativeBlock ? `${narrativeBlock}\n\n${resultBlock}` : resultBlock

@@ -11,7 +11,7 @@ use crossterm::{
 use std::io::{self, Write};
 
 use super::latex_unicode::latex_math_to_unicode;
-use super::message_display::{tool_content_for_display, user_message_for_chat_display};
+use super::message_display::{tool_content_for_display_full, user_message_for_chat_display};
 use super::plan_section::STAGED_PLAN_SECTION_HEADER;
 
 /// 与 TUI 聊天区展示一致：正文经 **`user_message_for_chat_display`**（含分步注入 user 长句压缩、LaTeX），再按行打印到 stdout。
@@ -46,7 +46,7 @@ pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Re
     w.flush()
 }
 
-/// 工具执行结束后打印名称与正文（正文与 TUI 一致取 `human_summary`），过长按 `max_chars` 截断（近似字符数）。
+/// 工具执行结束后打印名称与正文（正文用完整格式化，与聊天区「可省略实际输出」策略独立），过长按 `max_chars` 截断（近似字符数）。
 pub(crate) fn print_tool_result_terminal(
     name: &str,
     raw_result: &str,
@@ -59,7 +59,7 @@ pub(crate) fn print_tool_result_terminal(
         raw_result.len(),
         redact::preview_chars(raw_result, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
-    let mut body = tool_content_for_display(raw_result);
+    let mut body = tool_content_for_display_full(raw_result);
     body = latex_math_to_unicode(&body);
     let n = body.chars().count();
     if n > max_chars {

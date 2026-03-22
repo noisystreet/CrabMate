@@ -13,24 +13,53 @@ use crate::runtime::latex_unicode::latex_math_to_unicode;
 use crate::tool_result::ToolResult;
 use crate::types::Message;
 
-/// `role: tool` 的展示：与 Web `ChatPanel` 的 `buildToolOutputCardText` 对齐——
-/// 先自然语言总结（JSON 的 `human_summary`），再 **【执行结果】**（状态码 + 标准输出/错误等）；
-/// 纯文本若为 `run_command` 风格（`退出码：` / `(exit=` / 含标准输出块），则结构化展示，避免与状态行重复。
+/// 聊天区（TUI / Web 工具卡）是否展示 **【执行结果】** 整块（状态行、stdout/stderr、完整 JSON、纯文本正文等）。
+/// `false` 时仅展示 **【描述与总结】** / JSON `human_summary` 等摘要；**不打印**「【执行结果】」及其下任何内容；`Message.content` 与 tracing 仍为全文。
+pub(crate) const SHOW_TOOL_RAW_OUTPUT_IN_CHAT: bool = false;
+
+/// `role: tool` 的展示：与 Web `ChatPanel` 的 `buildToolOutputCardText` 对齐。
+/// [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 为 `false` 时仅 JSON `human_summary` 等摘要，**无**「【执行结果】」；
+/// 为 `true` 时：先 `human_summary`，再 **【执行结果】**（状态 + stdout/stderr 等）；纯文本 `run_command` 风格则结构化展示。
+///
+/// 受 [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 控制；CLI 无 SSE 回显请用 [`tool_content_for_display_full`]。
 pub(crate) fn tool_content_for_display(raw: &str) -> String {
+    tool_content_for_display_impl(raw, SHOW_TOOL_RAW_OUTPUT_IN_CHAT)
+}
+
+/// 终端 CLI 等需与「聊天区省略策略」独立时：始终包含完整工具输出（与日志/对话历史一致）。
+pub(crate) fn tool_content_for_display_full(raw: &str) -> String {
+    tool_content_for_display_impl(raw, true)
+}
+
+pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> String {
     let t = raw.trim();
     if t.starts_with('{')
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(t)
     {
-        if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
-            let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
-            return format!("{h}\n\n【执行结果】\n{pretty}");
+        if include_raw {
+            if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
+                let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
+                return format!("{h}\n\n【执行结果】\n{pretty}");
+            }
+            return serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
         }
-        return serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
+        if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
+            let hs = h.trim();
+            if hs.is_empty() {
+                return String::new();
+            }
+            return hs.to_string();
+        }
+        return String::new();
     }
     if should_format_as_structured_plain_tool(t) {
-        return format_structured_plain_tool(t);
+        return format_structured_plain_tool(t, include_raw);
     }
-    t.to_string()
+    if include_raw {
+        t.to_string()
+    } else {
+        String::new()
+    }
 }
 
 fn should_format_as_structured_plain_tool(raw: &str) -> bool {
@@ -56,7 +85,10 @@ fn strip_first_tool_status_line(raw: &str) -> String {
     raw.to_string()
 }
 
-fn format_structured_plain_tool(raw: &str) -> String {
+fn format_structured_plain_tool(raw: &str, include_raw: bool) -> String {
+    if !include_raw {
+        return String::new();
+    }
     let structured = ToolResult::from_legacy_output("tool", raw.to_string());
     let mut status_parts = Vec::new();
     status_parts.push(if structured.ok {
@@ -148,6 +180,9 @@ pub(crate) fn tool_content_for_display_for_message(
         if hs == t || hs.contains(t) || (t.len() > 5 && t.contains(hs)) {
             return body;
         }
+    }
+    if body.is_empty() {
+        return format!("【描述与总结】\n{prefix}");
     }
     format!("【描述与总结】\n{prefix}\n\n{body}")
 }
@@ -298,26 +333,40 @@ pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{FunctionCall, Message, ToolCall};
 
     #[test]
     fn tool_json_human_summary_then_result_block() {
         let raw = r#"{"human_summary":"编译成功","ok":true}"#;
-        let out = tool_content_for_display(raw);
+        let out = tool_content_for_display_impl(raw, true);
         assert!(out.starts_with("编译成功"));
         assert!(out.contains("【执行结果】"));
         assert!(out.contains("\"ok\": true"));
     }
 
     #[test]
+    fn tool_json_hides_pretty_json_in_chat_mode() {
+        let raw = r#"{"human_summary":"编译成功","ok":true}"#;
+        let out = tool_content_for_display_impl(raw, false);
+        assert_eq!(out, "编译成功");
+        assert!(!out.contains("【执行结果】"));
+        assert!(!out.contains("\"ok\""));
+    }
+
+    #[test]
     fn tool_non_json_is_passthrough() {
         let raw = "plain tool output";
-        assert_eq!(tool_content_for_display(raw), "plain tool output");
+        assert_eq!(
+            tool_content_for_display_impl(raw, true),
+            "plain tool output"
+        );
+        assert_eq!(tool_content_for_display_impl(raw, false), "");
     }
 
     #[test]
     fn tool_plain_run_command_structured() {
         let raw = "退出码：0\n标准输出：\nhello\n";
-        let out = tool_content_for_display(raw);
+        let out = tool_content_for_display_impl(raw, true);
         assert!(out.contains("【执行结果】"));
         assert!(out.contains("状态："));
         assert!(out.contains("成功"));
@@ -327,8 +376,14 @@ mod tests {
     }
 
     #[test]
+    fn tool_plain_run_command_structured_hides_stdout_in_chat_mode() {
+        let raw = "退出码：0\n标准输出：\nhello\n";
+        let out = tool_content_for_display_impl(raw, false);
+        assert!(out.is_empty());
+    }
+
+    #[test]
     fn tool_for_message_prepends_summary_from_assistant_tool_calls() {
-        use crate::types::{FunctionCall, Message, ToolCall};
         let messages = vec![
             Message::user_only("hi"),
             Message {
@@ -355,9 +410,8 @@ mod tests {
         ];
         let raw = messages[2].content.as_deref().unwrap();
         let out = tool_content_for_display_for_message(raw, &messages, 2);
-        assert!(out.contains("【描述与总结】"));
-        assert!(out.contains("执行命令：ls"));
-        assert!(out.contains("【执行结果】"));
+        assert_eq!(out, "【描述与总结】\n执行命令：ls");
+        assert!(!out.contains("【执行结果】"));
     }
 
     #[test]
