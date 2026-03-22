@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+use log::{error, warn};
 use tokio::sync::{Mutex, mpsc};
-use tracing::{error, warn};
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::workflow;
@@ -200,7 +200,11 @@ pub async fn dispatch_tool(
             }
             ToolRuntime::Tui { .. } => {
                 // TUI 入口通常将 RunExecutable remap 为 SyncDefault；若未 remap，退回通用 run_tool 以免 panic。
-                warn!(tool = %name, "RunExecutable on TUI without remap; using sync run_tool");
+                warn!(
+                    target: "crabmate",
+                    "RunExecutable on TUI without remap; using sync run_tool tool={}",
+                    name
+                );
                 let ctx =
                     tools::tool_context_for(cfg, &cfg.allowed_commands, effective_working_dir);
                 (
@@ -332,11 +336,16 @@ async fn execute_run_command_web(
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => {
-            error!(tool = %name, error = ?e, "工具执行异常");
+            error!(
+                target: "crabmate",
+                "工具执行异常 tool={} error={:?}",
+                name,
+                e
+            );
             format!("工具执行异常：{:?}", e)
         }
         Err(_) => {
-            error!(tool = %name, "命令执行超时");
+            error!(target: "crabmate", "命令执行超时 tool={}", name);
             format!("命令执行超时（{} 秒）", cmd_timeout)
         }
     };
@@ -467,7 +476,12 @@ async fn execute_http_fetch_web(
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => {
-            error!(tool = %name_in, error = ?e, "http_fetch 任务异常");
+            error!(
+                target: "crabmate",
+                "http_fetch 任务异常 tool={} error={:?}",
+                name_in,
+                e
+            );
             format!("http_fetch 执行异常：{:?}", e)
         }
         Err(_) => format!("http_fetch 超时（{} 秒）", cmd_timeout),
@@ -540,7 +554,12 @@ async fn execute_http_fetch_tui(
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => {
-            error!(tool = %name, error = ?e, "http_fetch 任务异常");
+            error!(
+                target: "crabmate",
+                "http_fetch 任务异常 tool={} error={:?}",
+                name,
+                e
+            );
             format!("http_fetch 执行异常：{:?}", e)
         }
         Err(_) => format!("http_fetch 超时（{} 秒）", cmd_timeout),
@@ -595,11 +614,16 @@ async fn execute_run_executable_web(
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => {
-            error!(tool = %name, error = ?e, "工具执行异常");
+            error!(
+                target: "crabmate",
+                "工具执行异常 tool={} error={:?}",
+                name,
+                e
+            );
             format!("工具执行异常：{:?}", e)
         }
         Err(_) => {
-            error!(tool = %name, "可执行程序运行超时");
+            error!(target: "crabmate", "可执行程序运行超时 tool={}", name);
             format!("可执行程序运行超时（{} 秒）", cmd_timeout)
         }
     };
@@ -644,11 +668,16 @@ async fn execute_get_weather_web(
     let s = match tokio::time::timeout(Duration::from_secs(weather_timeout), handle).await {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => {
-            error!(tool = %name, error = ?e, "工具执行异常");
+            error!(
+                target: "crabmate",
+                "工具执行异常 tool={} error={:?}",
+                name,
+                e
+            );
             format!("工具执行异常：{:?}", e)
         }
         Err(_) => {
-            error!(tool = %name, "天气请求超时");
+            error!(target: "crabmate", "天气请求超时 tool={}", name);
             format!("天气请求超时（{} 秒）", weather_timeout)
         }
     };
@@ -693,11 +722,16 @@ async fn execute_web_search_web(
     let s = match tokio::time::timeout(Duration::from_secs(search_timeout), handle).await {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => {
-            error!(tool = %name, error = ?e, "工具执行异常");
+            error!(
+                target: "crabmate",
+                "工具执行异常 tool={} error={:?}",
+                name,
+                e
+            );
             format!("工具执行异常：{:?}", e)
         }
         Err(_) => {
-            error!(tool = %name, "联网搜索超时");
+            error!(target: "crabmate", "联网搜索超时 tool={}", name);
             format!("联网搜索超时（{} 秒）", search_timeout)
         }
     };

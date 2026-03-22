@@ -200,7 +200,7 @@ pub async fn workspace_handler(
         Ok(p) => p,
         Err(e) => {
             let msg = format!("工作目录无法解析: {}", e);
-            tracing::warn!("{}", msg);
+            log::warn!("{}", msg);
             return Json(WorkspaceResponse {
                 path: String::new(),
                 entries: Vec::new(),
@@ -224,7 +224,7 @@ pub async fn workspace_handler(
         Ok(d) => d,
         Err(e) => {
             let msg = format!("无法读取工作目录: {}", e);
-            tracing::warn!("{}", msg);
+            log::warn!("{}", msg);
             return Json(WorkspaceResponse {
                 path: path_str,
                 entries: Vec::new(),
@@ -238,7 +238,7 @@ pub async fn workspace_handler(
             Ok(None) => break,
             Err(e) => {
                 let msg = format!("读取目录项失败: {}", e);
-                tracing::warn!("{}", msg);
+                log::warn!("{}", msg);
                 break;
             }
         };

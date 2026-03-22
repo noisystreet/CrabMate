@@ -127,19 +127,22 @@ impl PerCoordinator {
             FinalPlanRequirementMode::Always => true,
         };
 
-        tracing::info!(
+        log::info!(
             target: "crabmate::per",
-            policy = ?self.final_plan_policy,
+            "after_final_assistant enter policy={:?} require_plan={} require_plan_from_wf={} reflection_stage_round={} plan_rewrite_attempts={} plan_rewrite_max={}",
+            self.final_plan_policy,
             require_plan,
-            require_plan_from_wf = self.require_plan_in_final_content,
-            reflection_stage_round = self.reflection.stage_round(),
-            plan_rewrite_attempts = self.plan_rewrite_attempts,
-            plan_rewrite_max = self.plan_rewrite_max_attempts,
-            "after_final_assistant enter"
+            self.require_plan_in_final_content,
+            self.reflection.stage_round(),
+            self.plan_rewrite_attempts,
+            self.plan_rewrite_max_attempts
         );
 
         if !require_plan {
-            tracing::info!(target: "crabmate::per", outcome = "stop_no_requirement", "after_final_assistant");
+            log::info!(
+                target: "crabmate::per",
+                "after_final_assistant outcome=stop_no_requirement"
+            );
             return AfterFinalAssistant::StopTurn;
         }
 
@@ -157,30 +160,27 @@ impl PerCoordinator {
                 _ => true,
             };
             if layers_ok {
-                tracing::info!(
+                log::info!(
                     target: "crabmate::per",
-                    outcome = "stop_plan_ok",
-                    plan_steps = plan.steps.len(),
-                    layer_need,
-                    "after_final_assistant"
+                    "after_final_assistant outcome=stop_plan_ok plan_steps={} layer_need={:?}",
+                    plan.steps.len(),
+                    layer_need
                 );
                 return AfterFinalAssistant::StopTurn;
             }
-            tracing::info!(
+            log::info!(
                 target: "crabmate::per",
-                outcome = "plan_schema_ok_semantics_fail",
-                plan_steps = plan.steps.len(),
-                layer_need,
-                "after_final_assistant"
+                "after_final_assistant outcome=plan_schema_ok_semantics_fail plan_steps={} layer_need={:?}",
+                plan.steps.len(),
+                layer_need
             );
         }
 
         if self.plan_rewrite_attempts >= self.plan_rewrite_max_attempts {
-            tracing::warn!(
+            log::warn!(
                 target: "crabmate::per",
-                outcome = "plan_rewrite_exhausted",
-                layer_need,
-                "after_final_assistant"
+                "after_final_assistant outcome=plan_rewrite_exhausted layer_need={:?}",
+                layer_need
             );
             return AfterFinalAssistant::StopTurnPlanRewriteExhausted;
         }
@@ -191,12 +191,11 @@ impl PerCoordinator {
             ),
             None => PLAN_REWRITE_USER_TEXT.to_string(),
         };
-        tracing::info!(
+        log::info!(
             target: "crabmate::per",
-            outcome = "request_plan_rewrite",
-            attempt = self.plan_rewrite_attempts,
-            layer_need,
-            "after_final_assistant"
+            "after_final_assistant outcome=request_plan_rewrite attempt={} layer_need={:?}",
+            self.plan_rewrite_attempts,
+            layer_need
         );
         AfterFinalAssistant::RequestPlanRewrite(Message {
             role: "user".to_string(),
@@ -219,11 +218,10 @@ impl PerCoordinator {
                 == Some(workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT)
         {
             self.require_plan_in_final_content = true;
-            tracing::info!(
+            log::info!(
                 target: "crabmate::per",
-                event = "require_final_plan_set",
-                reflection_stage_round = self.reflection.stage_round(),
-                "prepare_workflow_execute"
+                "prepare_workflow_execute event=require_final_plan_set reflection_stage_round={}",
+                self.reflection.stage_round()
             );
         }
         let patched_args = match decision.workflow_args_patch.as_ref() {

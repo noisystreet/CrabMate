@@ -35,7 +35,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - 命令执行完成后，命令输出（stdout/stderr、退出码）会以单独的系统气泡展示在聊天框中，便于直接查看 `ls`、编译日志等。
 - **流式输出与状态栏**：
   - Web Chat 回复支持流式增量显示。
-  - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout（与 TUI 聊天区/`human_summary` 展示逻辑一致），便于对照「写代码—编译—运行」等多步任务。
+  - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout（与 TUI 右栏「队列」及状态栏/`human_summary` 展示逻辑一致），便于对照「写代码—编译—运行」等多步任务。
   - 状态栏区分“模型生成中…”和“工具运行中…”，命令完成后不会一直显示忙碌。
 - **会话导出（Web 与 TUI 对齐）**：
   - Web：顶部「**导出 JSON**」生成 `{ "version": 1, "messages": [...] }`，与 TUI 工作区内 `.crabmate/tui_session.json` 及 F8 导出同形（`role` / `content` 等字段与 OpenAI 兼容消息一致；工具气泡在 JSON 中为 `role: "tool"`）。
@@ -365,7 +365,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - **联网搜索**（`web_search` 工具）：`AGENT_WEB_SEARCH_PROVIDER`（`brave` / `tavily`）、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`（1～20，默认 8）
    - **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`（逗号分隔 URL 前缀）、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`（与 `default_config.toml` / `[agent]` 中同名项对应）
    - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
-   - **TUI 会话文件**：`AGENT_TUI_SESSION_MAX_MESSAGES` 与 `[agent] tui_session_max_messages` 对应；启动从 `.crabmate/tui_session.json` 恢复时限制总消息条数（含 `system`），超出则丢弃最旧非 system 消息（默认 `400`，有效范围 `2`～`50000`）
+   - **终端会话文件（TUI / CLI REPL）**：`AGENT_TUI_LOAD_SESSION_ON_START` / `[agent] tui_load_session_on_start` 为 `true` 时，TUI 或 REPL 启动才从 `.crabmate/tui_session.json` 恢复历史；默认 `false`（仅空白会话 + 当前 `system_prompt`）。**若启用加载**：`AGENT_TUI_SESSION_MAX_MESSAGES` / `[agent] tui_session_max_messages` 限制总消息条数（含 `system`），超出则丢弃最旧非 system 消息（默认 `400`，有效范围 `2`～`50000`）
    ```bash
    export AGENT_MODEL=deepseek-reasoner
    cargo run
@@ -391,7 +391,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 **上下文窗口**（`[agent]`）：每次向模型发请求前会压缩 `messages`——`tool_message_max_chars` 截断工具输出；`max_message_history` 限制条数；`context_char_budget > 0` 时按近似字符删最旧消息；`context_summary_trigger_chars > 0` 且总长超阈值时再调一次无 tools 的 API 生成「较早对话摘要」（尾部保留 `context_summary_tail_messages` 条）。TUI/REPL 长会话下裁剪会缩短本地消息列表；Web 单请求内工具多轮仍受益。
 
-**TUI 历史加载**（`[agent] tui_session_max_messages`）：仅影响从磁盘加载 `tui_session.json` 时的消息条数上限（含 `system`），与上述「每次请求前」的上下文裁剪相互独立；极长历史可避免首屏渲染与 Markdown 缓存压力过大。
+**终端历史加载（TUI / CLI REPL）**（`[agent] tui_load_session_on_start` / `AGENT_TUI_LOAD_SESSION_ON_START`）：默认 **`false`**，启动不读磁盘；设为 `true` 时从 `.crabmate/tui_session.json` 恢复会话（与 `--workspace` / `run_command_working_dir` 所指工作区一致）。此时 **`tui_session_max_messages`** 才限制加载条数（含 `system`），与上述「每次请求前」的上下文裁剪相互独立。仅 TUI 会在退出时写回 `tui_session.json`；REPL 不自动保存该文件。
 
 **Web 对话任务队列**（`chat_queue_max_concurrent` / `chat_queue_max_pending`）：`POST /chat` 与 `POST /chat/stream` 经进程内有界队列调度，限制**同时执行**的 Agent 回合数与**排队**长度；队列满时返回 **503**，JSON 体含 `code: "QUEUE_FULL"`。`GET /status` 会返回 `chat_queue_running`、`chat_queue_recent_jobs`，以及运行中任务的 **`per_active_jobs`**（PER 镜像：`awaiting_plan_rewrite_model`、`plan_rewrite_attempts`、`require_plan_in_final_content` 等；按队列 `job_id` 区分，**与浏览器会话无绑定**，完整「本会话是否在规划重写」需日后会话协议扩展）。多副本/跨进程需自行接外部消息队列（见 `docs/TODOLIST.md`）。
 
@@ -525,7 +525,8 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
 | `--no-stream`     | 对 API 使用 `stream: false`（非 SSE）。CLI 终端仍在**整段到达后** Markdown 打印，与默认流式在**终端观感**上一致；差异主要是 API 是否分段返回。TUI 侧亦为整块正文刷新。|
-| `--tui`           | 全屏终端 UI。底栏左侧为运行阶段、右侧为状态摘要（默认仅模型名）；完整键位见 **F1**。右栏含工作区 / **队列** / 任务 / 日程（「队列」紧挨工作区，为当前终端会话内的对话回合摘要，与 `--serve` 的 HTTP `ChatJobQueue` 相互独立）。会话默认持久化到当前工作区下 `.crabmate/tui_session.json`（退出保存、启动加载）；可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`；**F10** 查看与 `GET /health` 同逻辑的本机运行状况（无需启动 Web）。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
+| `--log <FILE>`    | 将 `log`（`env_logger`）日志**追加**写入指定文件（与 `RUST_LOG` 配合）。**非 TUI**（含 `--serve`、单次 `--query` 等）时同时写 stderr 与文件；**TUI** 下不向终端写日志行，仅写入该文件，便于后台 `tail -f` 排障。|
+| `--tui`           | 全屏终端 UI。底栏左侧为运行阶段、右侧为状态摘要（默认仅模型名）；完整键位见 **F1**。右栏含工作区 / **队列** / 任务 / 日程（「队列」为分阶段规划摘要：步骤行前 `[ ]` 待办、`[✓]` 已完成，每步结束整段刷新；与 `staged_plan_notice` 同源；按行展示、不经 Markdown 解析以免挤成一行）。退出时会保存 `.crabmate/tui_session.json`；**默认不在启动时加载历史**（见 `[agent] tui_load_session_on_start` 与 `AGENT_TUI_LOAD_SESSION_ON_START`）。可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`；**F10** 查看与 `GET /health` 同逻辑的本机运行状况（无需启动 Web）。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
 
 对应示例：
 
@@ -535,6 +536,9 @@ cargo run
 
 # 使用指定配置文件（覆盖默认 config.toml / .agent_demo.toml 搜索）
 cargo run -- --config /path/to/my.toml
+
+# TUI 下将 debug 日志写入文件（终端不写日志行，另开终端 tail -f）
+RUST_LOG=debug cargo run -- --tui --log /tmp/crabmate.log
 
 # Web 服务模式（默认 8080）
 cargo run -- --serve

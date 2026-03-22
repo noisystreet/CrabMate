@@ -26,6 +26,8 @@ export interface StatusData {
   plan_rewrite_max_attempts?: number
   /** 为 true 时先无工具规划轮再按 agent_reply_plan 分步执行 */
   staged_plan_execution?: boolean
+  /** TUI 启动是否从 .crabmate/tui_session.json 恢复会话（默认 false） */
+  tui_load_session_on_start?: boolean
   /** 上下文：system 后最多保留消息条数 */
   max_message_history?: number
   tool_message_max_chars?: number

@@ -12,7 +12,7 @@ CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web U
 
 ### Running services
 
-- **Backend + Web UI**: `API_KEY="..." cargo run -- --serve` (default port 8080, binds **127.0.0.1** only). For LAN access use `--host 0.0.0.0` (see README security notes).
+- **Backend + Web UI**: `API_KEY="..." cargo run -- --serve` (default port 8080, binds **127.0.0.1** only). For LAN access use `--host 0.0.0.0` (see README security notes). Optional `--log /path/to.log` appends `log`/`env_logger` output to a file (with `RUST_LOG`); useful for TUI/background debugging.
 - **Frontend dev server** (optional, for hot-reload): `cd frontend && npm run dev` (Vite proxies API calls to `:8080`)
 - Frontend must be built (`cd frontend && npm run build`) before running the backend in serve mode, since it serves `frontend/dist` as static assets.
 

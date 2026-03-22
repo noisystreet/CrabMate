@@ -8,7 +8,9 @@ model = "deepseek-chat"
 env = "dev"
 # 保留的最近对话轮数（user+assistant 算一轮）
 max_message_history = 24
-# TUI 启动时从 .crabmate/tui_session.json 加载的消息条数上限（含 system）；超出则丢弃最旧非 system 消息（默认 400，有效范围 2～50000）
+# TUI 启动时是否从 .crabmate/tui_session.json 恢复上次对话（默认 false，仅空白会话 + 当前 system_prompt）
+tui_load_session_on_start = false
+# 当 tui_load_session_on_start 为 true 时：从会话文件加载的消息条数上限（含 system）；超出则丢弃最旧非 system 消息（默认 400，有效范围 2～50000）
 tui_session_max_messages = 400
 # role: tool 的正文超过此字符数时在每次调模型前截断（近似 token 控制）
 tool_message_max_chars = 32768

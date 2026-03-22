@@ -1,0 +1,24 @@
+---
+description: 新功能与重构时优先让 CLI / TUI / Web 共用后端与契约逻辑
+alwaysApply: true
+---
+
+# CLI / TUI / Web 逻辑复用
+
+在**添加新功能**或**重构**时，先问一句：**这条能力能否（或应否）在终端（CLI/TUI）与 Web 之间共用同一套逻辑？** 避免在三个入口各写一套分叉，除非交互形态确实无法抽象。
+
+## 优先方向
+
+- **Rust 后端**：把「与 UI 无关」的规则放在可复用模块（如 **`agent/`**、**`types`**、**`sse::protocol`**、**`tool_registry`**、**`runtime/`** 下与 UI 无关的子模块），由 `runtime/cli`、`runtime/tui`、`lib` 的 HTTP handler 分别薄封装调用。
+- **会话与导出**：工作区会话文件、导出形状等已在 **`runtime/workspace_session`** 与 **`runtime/chat_export`**；同类能力扩展时延续同一契约，而不是再开 TUI 专用路径。
+- **HTTP 与 SSE**：Web 与 TUI 若消费同一事件流，优先对齐 **`sse` 协议**与 **`run_agent_turn`** 的编排，避免在 `agent_turn` 里写死「仅某一侧」的分支（除非用配置/上下文显式区分）。
+- **前端**：展示与状态在 `frontend/`，但**请求体、SSE 事件、错误码**应与后端契约一致；可复用的校验/转换尽量与后端字段语义对齐（见 **`api-sse-chat-protocol.mdc`**）。
+
+## 不必强行共用的情形
+
+- 纯 UI（键盘、焦点、React 组件）或终端绘制细节。
+- 某一侧明确不需要该能力（例如仅 Web 的某条路由）时，可只实现该侧，但**核心数据结构与工具执行**仍应走共享层。
+
+## 与文档的关系
+
+若复用关系导致**模块边界或调用链**变化，按 **`.cursor/rules/architecture-docs-sync.mdc`** 更新 **`docs/DEVELOPMENT.md`**；若用户可见行为变化，按 **`.cursor/rules/todolist-and-documentation.mdc`** 更新 **`README.md`** 等。

@@ -105,7 +105,11 @@ pub fn encode_message(payload: SsePayload) -> String {
         payload,
     })
     .unwrap_or_else(|e| {
-        tracing::error!(%e, "sse_protocol encode failed");
+        log::error!(
+            target: "crabmate",
+            "sse_protocol encode failed error={}",
+            e
+        );
         r#"{"v":1,"error":"内部协议序列化失败","code":"SSE_ENCODE"}"#.to_string()
     })
 }

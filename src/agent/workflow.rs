@@ -6,6 +6,7 @@ use crate::config::AgentConfig;
 use crate::types::CommandApprovalDecision;
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
+use log::{info, warn};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -13,7 +14,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tokio::sync::{Mutex, Semaphore, mpsc};
-use tracing::{info, warn};
 
 #[derive(Debug, Clone)]
 pub struct WorkflowSpec {
@@ -126,9 +126,10 @@ pub async fn run_workflow_execute_tool(
 ) -> (String, bool) {
     let workflow_run_id = WORKFLOW_RUN_SEQ.fetch_add(1, Ordering::Relaxed);
     info!(
-        workflow_run_id = workflow_run_id,
-        workspace_is_set = workspace_is_set,
-        "workflow_execute start"
+        target: "crabmate",
+        "workflow_execute start workflow_run_id={} workspace_is_set={}",
+        workflow_run_id,
+        workspace_is_set
     );
     // 支持反思阶段的“done=true”：运行时应跳过 DAG 执行，
     // 只返回一个明确的结果，避免模型误触发重复执行。
@@ -136,8 +137,9 @@ pub async fn run_workflow_execute_tool(
         Ok(v) => v,
         Err(_) => {
             warn!(
-                workflow_run_id = workflow_run_id,
-                "workflow_execute args parse failed"
+                target: "crabmate",
+                "workflow_execute args parse failed workflow_run_id={}",
+                workflow_run_id
             );
             let report = serde_json::json!({
                 "type": "workflow_execute_error",
@@ -156,8 +158,9 @@ pub async fn run_workflow_execute_tool(
         .unwrap_or(false);
     if done {
         info!(
-            workflow_run_id = workflow_run_id,
-            "workflow_execute skip by done=true"
+            target: "crabmate",
+            "workflow_execute skip by done=true workflow_run_id={}",
+            workflow_run_id
         );
         let report = serde_json::json!({
             "type": "workflow_execute_done_skip",
@@ -179,13 +182,19 @@ pub async fn run_workflow_execute_tool(
         .unwrap_or(false);
     if validate_only {
         info!(
-            workflow_run_id = workflow_run_id,
-            "workflow_validate_only start"
+            target: "crabmate",
+            "workflow_validate_only start workflow_run_id={}",
+            workflow_run_id
         );
         let spec = match parse_workflow_spec(args_json) {
             Ok(s) => s,
             Err(e) => {
-                warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_validate_only parse failed");
+                warn!(
+                    target: "crabmate",
+                    "workflow_validate_only parse failed workflow_run_id={} error={}",
+                    workflow_run_id,
+                    e
+                );
                 let report = serde_json::json!({
                     "type": "workflow_validate_error",
                     "status": "failed",
@@ -197,7 +206,12 @@ pub async fn run_workflow_execute_tool(
         };
 
         if let Err(e) = validate_dag(&spec.nodes) {
-            warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_validate_only dag validation failed");
+            warn!(
+                target: "crabmate",
+                "workflow_validate_only dag validation failed workflow_run_id={} error={}",
+                workflow_run_id,
+                e
+            );
             let report = serde_json::json!({
                 "type": "workflow_validate_error",
                 "status": "failed",
@@ -211,7 +225,12 @@ pub async fn run_workflow_execute_tool(
         let execution_layers = match topo_layers(&spec.nodes) {
             Ok(l) => l,
             Err(e) => {
-                warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_validate_only topo layer failed");
+                warn!(
+                    target: "crabmate",
+                    "workflow_validate_only topo layer failed workflow_run_id={} error={}",
+                    workflow_run_id,
+                    e
+                );
                 let report = serde_json::json!({
                     "type": "workflow_validate_error",
                     "status": "failed",
@@ -287,10 +306,11 @@ pub async fn run_workflow_execute_tool(
         };
 
         info!(
-            workflow_run_id = workflow_run_id,
-            nodes_count = spec.nodes.len(),
-            layer_count = execution_layers.len(),
-            "workflow_validate_only planned"
+            target: "crabmate",
+            "workflow_validate_only planned workflow_run_id={} nodes_count={} layer_count={}",
+            workflow_run_id,
+            spec.nodes.len(),
+            execution_layers.len()
         );
         let json = serde_json::to_string(&report).unwrap_or_else(|_| report.human_summary.clone());
         return (json, false);
@@ -299,7 +319,12 @@ pub async fn run_workflow_execute_tool(
     let spec = match parse_workflow_spec(args_json) {
         Ok(s) => s,
         Err(e) => {
-            warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_execute parse spec failed");
+            warn!(
+                target: "crabmate",
+                "workflow_execute parse spec failed workflow_run_id={} error={}",
+                workflow_run_id,
+                e
+            );
             let report = serde_json::json!({
                 "type": "workflow_execute_error",
                 "status": "failed",
@@ -311,7 +336,12 @@ pub async fn run_workflow_execute_tool(
     };
 
     if let Err(e) = validate_dag(&spec.nodes) {
-        warn!(workflow_run_id = workflow_run_id, error = %e, "workflow_execute dag validation failed");
+        warn!(
+            target: "crabmate",
+            "workflow_execute dag validation failed workflow_run_id={} error={}",
+            workflow_run_id,
+            e
+        );
         let report = serde_json::json!({
             "type": "workflow_execute_error",
             "status": "failed",
@@ -354,9 +384,10 @@ pub async fn run_workflow_execute_tool(
     let (main_result, workspace_changed) =
         execute_workflow_dag(spec, approval_mode, tool_exec_ctx).await;
     info!(
-        workflow_run_id = workflow_run_id,
-        workspace_changed = workspace_changed,
-        "workflow_execute finished"
+        target: "crabmate",
+        "workflow_execute finished workflow_run_id={} workspace_changed={}",
+        workflow_run_id,
+        workspace_changed
     );
     (main_result, workspace_changed)
 }
@@ -436,12 +467,13 @@ async fn execute_workflow_dag(
 ) -> (String, bool) {
     let workflow_run_id = tool_exec_ctx.workflow_run_id;
     info!(
-        workflow_run_id = workflow_run_id,
-        nodes_count = spec.nodes.len(),
-        max_parallelism = spec.max_parallelism,
-        fail_fast = spec.fail_fast,
-        compensate_on_failure = spec.compensate_on_failure,
-        "workflow dag execute start"
+        target: "crabmate",
+        "workflow dag execute start workflow_run_id={} nodes_count={} max_parallelism={} fail_fast={} compensate_on_failure={}",
+        workflow_run_id,
+        spec.nodes.len(),
+        spec.max_parallelism,
+        spec.fail_fast,
+        spec.compensate_on_failure
     );
     let nodes: HashMap<String, WorkflowNodeSpec> = spec
         .nodes
@@ -690,13 +722,14 @@ async fn execute_workflow_dag(
 
     let json = serde_json::to_string(&report).unwrap_or_else(|_| report.human_summary.clone());
     info!(
-        workflow_run_id = workflow_run_id,
-        status = %report.status,
-        passed = passed,
-        failed = failed,
-        skipped = skipped,
-        workspace_changed = workspace_changed_final,
-        "workflow dag execute finished"
+        target: "crabmate",
+        "workflow dag execute finished workflow_run_id={} status={} passed={} failed={} skipped={} workspace_changed={}",
+        workflow_run_id,
+        report.status,
+        passed,
+        failed,
+        skipped,
+        workspace_changed_final
     );
     (json, workspace_changed)
 }
@@ -718,10 +751,11 @@ async fn run_node(
 ) -> NodeRunResult {
     let node_start = Instant::now();
     info!(
-        workflow_run_id = tool_exec_ctx.workflow_run_id,
-        node_id = %node.id,
-        tool_name = %node.tool_name,
-        "workflow node start"
+        target: "crabmate",
+        "workflow node start workflow_run_id={} node_id={} tool_name={}",
+        tool_exec_ctx.workflow_run_id,
+        node.id,
+        node.tool_name
     );
     // 人工审批：仅对“非 run_command 的人工审批节点”提供通用入口；
     // run_command 的审批仍按 cmd allowlist 逻辑处理。
@@ -1001,16 +1035,17 @@ async fn run_node(
         error_code: tool_result.error_code.clone(),
     };
     info!(
-        workflow_run_id = tool_exec_ctx.workflow_run_id,
-        node_id = %result.id,
-        tool_name = %node.tool_name,
-        status = ?result.status,
-        elapsed_ms = node_start.elapsed().as_millis(),
-        exit_code = result.exit_code,
-        error_code = ?result.error_code,
-        stdout_len = tool_result.stdout.len(),
-        stderr_len = tool_result.stderr.len(),
-        "workflow node finished"
+        target: "crabmate",
+        "workflow node finished workflow_run_id={} node_id={} tool_name={} status={:?} elapsed_ms={} exit_code={:?} error_code={:?} stdout_len={} stderr_len={}",
+        tool_exec_ctx.workflow_run_id,
+        result.id,
+        node.tool_name,
+        result.status,
+        node_start.elapsed().as_millis(),
+        result.exit_code,
+        result.error_code,
+        tool_result.stdout.len(),
+        tool_result.stderr.len()
     );
     result
 }

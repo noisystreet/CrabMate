@@ -6,12 +6,12 @@ use crate::types::{
     ChatRequest, FunctionCall, Message, StreamChunk, ToolCall, USER_CANCELLED_FINISH_REASON,
 };
 use futures_util::StreamExt;
+use log::{debug, error, info};
 use markdown_to_ansi::{Options, render};
 use reqwest::Client;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info};
 
 use crate::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crate::runtime::message_display::assistant_markdown_source_for_display;
@@ -40,6 +40,12 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
 
 /// CLI：加粗着色 `Agent: ` + 与 TUI 相同的助手展示管线（剥标签、规划可读化、LaTeX）+ `markdown_to_ansi`。
 fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
+    debug!(
+        target: "crabmate::print",
+        "CLI 终端渲染助手 Markdown content_len={} content_preview={}",
+        content_acc.len(),
+        redact::preview_chars(content_acc, redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
     let term_w = terminal_width().unwrap_or(80);
     let mut stdout = io::stdout();
     crate::runtime::terminal_labels::write_agent_message_prefix(&mut stdout)?;
@@ -156,10 +162,11 @@ pub async fn stream_chat(
         crate::types::OPENAI_CHAT_COMPLETIONS_REL_PATH
     );
     info!(
-        url = %url,
-        model = %req.model,
-        streaming = %(!no_stream),
-        "发起 chat 请求"
+        target: "crabmate",
+        "发起 chat 请求 url={} model={} streaming={}",
+        url,
+        req.model,
+        !no_stream
     );
     let mut stream_req = req.clone();
     stream_req.stream = Some(!no_stream);
@@ -174,10 +181,11 @@ pub async fn stream_chat(
         let body = res.text().await.unwrap_or_default();
         let preview = redact::single_line_preview(&body, HTTP_BODY_PREVIEW_LOG_CHARS);
         error!(
-            status = %status,
-            body_len = body.len(),
-            body_preview = %preview,
-            "chat completions API 返回非成功状态"
+            target: "crabmate",
+            "chat completions API 返回非成功状态 status={} body_len={} body_preview={}",
+            status,
+            body.len(),
+            preview
         );
         return Err(format!(
             "模型接口返回错误（HTTP {}），请检查 API 密钥与配额，或稍后重试",
@@ -195,10 +203,11 @@ pub async fn stream_chat(
             serde_json::from_str(&body).map_err(|parse_err| {
                 let preview = redact::single_line_preview(&body, HTTP_BODY_PREVIEW_LOG_CHARS);
                 error!(
-                    err = %parse_err,
-                    body_len = body.len(),
-                    body_preview = %preview,
-                    "非流式 chat 响应 JSON 解析失败"
+                    target: "crabmate",
+                    "非流式 chat 响应 JSON 解析失败 err={} body_len={} body_preview={}",
+                    parse_err,
+                    body.len(),
+                    preview
                 );
                 Box::<dyn std::error::Error + Send + Sync>::from(
                     "模型返回内容无法解析为预期格式，请稍后重试",
@@ -237,6 +246,14 @@ pub async fn stream_chat(
                 ))
                 .await;
         }
+        debug!(
+            target: "crabmate",
+            "chat completions 非流式响应 finish_reason={} content_len={} tool_calls={} assistant_preview={}",
+            finish_reason,
+            msg.content.as_ref().map(|s| s.len()).unwrap_or(0),
+            msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
+            redact::assistant_message_preview_for_log(&msg)
+        );
         return Ok((msg, finish_reason));
     }
 
@@ -333,6 +350,14 @@ pub async fn stream_chat(
     } else {
         finish_reason
     };
+    debug!(
+        target: "crabmate",
+        "chat completions 流式响应拼装完成 finish_reason={} content_len={} tool_calls={} assistant_preview={}",
+        finish,
+        msg.content.as_ref().map(|s| s.len()).unwrap_or(0),
+        msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
+        redact::assistant_message_preview_for_log(&msg)
+    );
     Ok((msg, finish))
 }
 

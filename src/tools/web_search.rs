@@ -2,8 +2,8 @@
 
 use crate::config::WebSearchProvider;
 use crate::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
+use log::warn;
 use serde::Deserialize;
-use tracing::warn;
 
 use super::ToolContext;
 
@@ -106,11 +106,11 @@ fn search_brave(
         let body = res.text().unwrap_or_default();
         let preview = redact::single_line_preview(&body, HTTP_BODY_PREVIEW_LOG_CHARS);
         warn!(
-            provider = "brave",
-            status = %status,
-            body_len = body.len(),
-            body_preview = %preview,
-            "Brave 搜索 API 非成功响应"
+            target: "crabmate",
+            "Brave 搜索 API 非成功响应 provider=brave status={} body_len={} body_preview={}",
+            status,
+            body.len(),
+            preview
         );
         return Err(format!(
             "Brave 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",
@@ -169,11 +169,11 @@ fn search_tavily(
         let text = res.text().unwrap_or_default();
         let preview = redact::single_line_preview(&text, HTTP_BODY_PREVIEW_LOG_CHARS);
         warn!(
-            provider = "tavily",
-            status = %status,
-            body_len = text.len(),
-            body_preview = %preview,
-            "Tavily 搜索 API 非成功响应"
+            target: "crabmate",
+            "Tavily 搜索 API 非成功响应 provider=tavily status={} body_len={} body_preview={}",
+            status,
+            text.len(),
+            preview
         );
         return Err(format!(
             "Tavily 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",

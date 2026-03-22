@@ -1,28 +1,87 @@
 use clap::Parser;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
+use std::path::Path;
+use std::sync::Mutex;
 
-/// 初始化日志订阅器（使用 `RUST_LOG` 环境变量控制级别）。
-///
-/// `suppress_stdio_logs`：为 **TUI 全屏** 设为 `true`，避免 `tracing` 的 stderr 输出破坏备用屏幕界面；
-/// 仍可通过 `EnvFilter` 参与过滤逻辑，但格式化日志不会写入终端（调试可暂时不用 `--tui` 或后续加文件层）。
-pub fn init_logging(suppress_stdio_logs: bool) {
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::util::SubscriberInitExt;
-    let registry =
-        tracing_subscriber::registry().with(tracing_subscriber::EnvFilter::from_default_env());
-    if suppress_stdio_logs {
-        registry
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .with_target(true)
-                    .with_writer(std::io::sink),
-            )
-            .init();
-    } else {
-        registry
-            .with(tracing_subscriber::fmt::layer().with_target(true))
-            .init();
+/// 同时写 stderr 与日志文件（单条日志一份内容；关闭 ANSI 便于 `tail`）。
+struct StderrAndFile {
+    stderr: io::Stderr,
+    file: std::fs::File,
+}
+
+impl Write for StderrAndFile {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.stderr.write_all(buf)?;
+        self.file.write_all(buf)?;
+        Ok(buf.len())
     }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stderr.flush()?;
+        self.file.flush()
+    }
+}
+
+/// 供 `env_logger::Target::Pipe` 使用的 `Write`（内部 `Mutex`）。
+struct MutexWrite<W: Write + Send>(Mutex<W>);
+
+impl<W: Write + Send> Write for MutexWrite<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.lock().unwrap().flush()
+    }
+}
+
+fn open_log_append(path: &Path) -> std::fs::File {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap_or_else(|e| {
+            eprintln!("无法打开日志文件 {}: {}", path.display(), e);
+            std::process::exit(1);
+        })
+}
+
+/// 初始化 [`log`] + [`env_logger`]（未设置 `RUST_LOG` 时默认 `info`）。
+///
+/// `suppress_stdio_logs`：为 **TUI 全屏** 设为 `true`，避免日志行破坏界面；若同时传入 `log_file`，则只写文件。
+pub fn init_logging(suppress_stdio_logs: bool, log_file: Option<&Path>) {
+    use env_logger::{Builder, Env, Target, WriteStyle};
+
+    let env = Env::default().default_filter_or("info");
+    let mut builder = Builder::from_env(env);
+    builder.format_target(true);
+    builder.format_timestamp_secs();
+    match (suppress_stdio_logs, log_file) {
+        (true, None) => {
+            builder.target(Target::Pipe(Box::new(MutexWrite(Mutex::new(
+                std::io::sink(),
+            )))));
+            builder.write_style(WriteStyle::Never);
+        }
+        (false, None) => {
+            builder.target(Target::Stderr);
+        }
+        (true, Some(path)) => {
+            let f = open_log_append(path);
+            builder.target(Target::Pipe(Box::new(MutexWrite(Mutex::new(f)))));
+            builder.write_style(WriteStyle::Never);
+        }
+        (false, Some(path)) => {
+            let f = open_log_append(path);
+            let w = MutexWrite(Mutex::new(StderrAndFile {
+                stderr: io::stderr(),
+                file: f,
+            }));
+            builder.target(Target::Pipe(Box::new(w)));
+            builder.write_style(WriteStyle::Never);
+        }
+    }
+    builder.init();
 }
 
 /// 从标准输入读取全部内容（直到 EOF）
@@ -87,9 +146,13 @@ pub struct Cli {
     /// 启动完整终端 UI（TUI，左侧对话，右侧工作区/任务/日程）
     #[arg(long)]
     pub tui: bool,
+
+    /// 将日志追加写入指定文件（与 `RUST_LOG` 配合）。CLI 下可同时输出到 stderr；TUI 下默认不写 stderr，可用本选项后台 `tail -f` 查看
+    #[arg(long, value_name = "FILE")]
+    pub log: Option<String>,
 }
 
-/// `parse_args` 的返回值：配置路径、单次提问、serve 端口、Web 绑定地址、输出模式、工作区 CLI、各类布尔开关。
+/// `parse_args` 的返回值：配置路径、单次提问、serve 端口、Web 绑定地址、输出模式、工作区 CLI、各类布尔开关、日志文件路径。
 pub type ParsedCliArgs = (
     Option<String>,
     Option<String>,
@@ -97,11 +160,12 @@ pub type ParsedCliArgs = (
     String, // http_bind_host（`--serve` 时使用；由 `--host` 或 AGENT_HTTP_HOST 或默认 127.0.0.1）
     Option<String>,
     Option<String>,
-    bool, // no_tools
-    bool, // no_web
-    bool, // dry_run
-    bool, // no_stream
-    bool, // tui
+    bool,           // no_tools
+    bool,           // no_web
+    bool,           // dry_run
+    bool,           // no_stream
+    bool,           // tui
+    Option<String>, // log file path
 );
 
 /// 兼容原有调用处的解析函数，基于 clap::Parser 实现
@@ -146,6 +210,12 @@ pub fn parse_args() -> ParsedCliArgs {
         })
         .unwrap_or_else(|| "127.0.0.1".to_string());
 
+    let log_path = cli
+        .log
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
     (
         cli.config,
         single_shot,
@@ -158,5 +228,6 @@ pub fn parse_args() -> ParsedCliArgs {
         cli.dry_run,
         cli.no_stream,
         cli.tui,
+        log_path,
     )
 }

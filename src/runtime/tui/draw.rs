@@ -14,12 +14,13 @@ use std::hash::{Hash, Hasher};
 use tui_markdown::{Options, from_str_with_options as markdown_to_text};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::redact;
 use crate::runtime::latex_unicode::latex_math_to_unicode;
 use crate::runtime::message_display::{
-    assistant_markdown_source_for_display, tool_content_for_display,
+    assistant_markdown_source_for_display, tool_content_for_display, user_message_for_chat_display,
 };
-use crate::runtime::plan_section::STAGED_PLAN_SECTION_HEADER;
 use crate::types::Message;
+use log::debug;
 
 use super::state::{ChatMessageLineCacheEntry, Focus, Mode, ModelPhase, RightTab, TuiState};
 use super::styles::{
@@ -213,7 +214,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
                 "【搜索 / 跳转】Ctrl+F 或 F6（无搜索结果时）打开关键词搜索，Enter 执行；有结果时 F6 下一处、Shift+F6 上一处。F7 打开「按序号跳转」（可见消息从 1 起，不含系统提示）。",
             ),
             Line::from(
-                "【导出 / 会话 / 健康】F8 导出 JSON、F9 导出 Markdown 到 .crabmate/exports/；F10 本机运行状况（无需启动 HTTP）。退出时保存 .crabmate/tui_session.json，启动自动加载（首条 system 随当前配置更新）。",
+                "【导出 / 会话 / 健康】F8 导出 JSON、F9 导出 Markdown 到 .crabmate/exports/；F10 本机运行状况（无需启动 HTTP）。退出时保存 .crabmate/tui_session.json；是否在启动时从该文件恢复会话由配置 tui_load_session_on_start 决定（默认 false，首条 system 随当前配置更新）。",
             ),
             Line::from(
                 "【模型运行中】Ctrl+G 协作停止生成；Ctrl+Shift+G 强制中止任务（子进程工具可能仍须等待或依赖强制）。",
@@ -442,10 +443,60 @@ fn message_body_for_chat_display(m: &Message) -> String {
     }
     let display_raw = if m.role == "tool" {
         tool_content_for_display(raw)
+    } else if m.role == "user" {
+        user_message_for_chat_display(raw)
     } else {
         raw.to_string()
     };
     latex_math_to_unicode(&display_raw)
+}
+
+/// 与主聊天区助手气泡相同：`tui_markdown` 渲染（主题、代码高亮、`with_outline_heading_numbers`）。
+fn chat_markdown_to_draw_lines(
+    markdown_source: &str,
+    state: &TuiState,
+) -> (Vec<Line<'static>>, Vec<String>) {
+    let mut draw_lines: Vec<Line<'static>> = Vec::new();
+    let mut plain_lines: Vec<String> = Vec::new();
+    let theme = code_themes()[state.code_theme_idx];
+    let text = match (state.md_style, state.high_contrast) {
+        (0, false) => {
+            let options = Options::new(DarkStyleSheet)
+                .with_code_theme(theme)
+                .with_outline_heading_numbers(true);
+            markdown_to_text(markdown_source, &options)
+        }
+        (0, true) => {
+            let options = Options::new(HighContrastDarkStyleSheet)
+                .with_code_theme(theme)
+                .with_outline_heading_numbers(true);
+            markdown_to_text(markdown_source, &options)
+        }
+        (1, false) => {
+            let options = Options::new(LightStyleSheet)
+                .with_code_theme(theme)
+                .with_outline_heading_numbers(true);
+            markdown_to_text(markdown_source, &options)
+        }
+        (1, true) => {
+            let options = Options::new(HighContrastLightStyleSheet)
+                .with_code_theme(theme)
+                .with_outline_heading_numbers(true);
+            markdown_to_text(markdown_source, &options)
+        }
+        _ => {
+            let options = Options::new(DarkStyleSheet)
+                .with_code_theme(theme)
+                .with_outline_heading_numbers(true);
+            markdown_to_text(markdown_source, &options)
+        }
+    };
+    for tl in text.lines {
+        let owned = line_into_static(tl);
+        plain_lines.push(line_to_plain(&owned));
+        draw_lines.push(owned);
+    }
+    (draw_lines, plain_lines)
 }
 
 /// 单条消息对应的绘制行与纯文本行（不含尾部消息间空行）。
@@ -478,44 +529,9 @@ fn render_message_chat_lines(
         plain_lines.push(h);
     }
     if m.role == "assistant" {
-        let theme = code_themes()[state.code_theme_idx];
-        let text = match (state.md_style, state.high_contrast) {
-            (0, false) => {
-                let options = Options::new(DarkStyleSheet)
-                    .with_code_theme(theme)
-                    .with_outline_heading_numbers(true);
-                markdown_to_text(rendered, &options)
-            }
-            (0, true) => {
-                let options = Options::new(HighContrastDarkStyleSheet)
-                    .with_code_theme(theme)
-                    .with_outline_heading_numbers(true);
-                markdown_to_text(rendered, &options)
-            }
-            (1, false) => {
-                let options = Options::new(LightStyleSheet)
-                    .with_code_theme(theme)
-                    .with_outline_heading_numbers(true);
-                markdown_to_text(rendered, &options)
-            }
-            (1, true) => {
-                let options = Options::new(HighContrastLightStyleSheet)
-                    .with_code_theme(theme)
-                    .with_outline_heading_numbers(true);
-                markdown_to_text(rendered, &options)
-            }
-            _ => {
-                let options = Options::new(DarkStyleSheet)
-                    .with_code_theme(theme)
-                    .with_outline_heading_numbers(true);
-                markdown_to_text(rendered, &options)
-            }
-        };
-        for tl in text.lines {
-            let owned = line_into_static(tl);
-            plain_lines.push(line_to_plain(&owned));
-            draw_lines.push(owned);
-        }
+        let (d, p) = chat_markdown_to_draw_lines(rendered, state);
+        draw_lines.extend(d);
+        plain_lines.extend(p);
     } else {
         for l in rendered.lines() {
             let line_str = if m.role == "user" {
@@ -536,55 +552,6 @@ fn render_message_chat_lines(
         }
     }
     (draw_lines, plain_lines)
-}
-
-/// 分阶段规划摘要：参考 Cursor「思考」——终端无法缩小字号，用 **粗体 + DIM** 弱化层级；高对比度下略提高明度以免过淡。
-fn staged_plan_think_style(state: &TuiState) -> Style {
-    if state.high_contrast {
-        Style::default()
-            .add_modifier(Modifier::BOLD)
-            .fg(Color::DarkGray)
-    } else {
-        Style::default().add_modifier(Modifier::BOLD | Modifier::DIM)
-    }
-}
-
-/// 与 `agent_turn` 注入的分步 user（正文含 `【分步执行`）区分，取**本轮真人提问**所在下标，供主聊天区挂载 `staged_plan_log`。
-/// 从后往前找：最后一条「非分步注入」的 `user` 即当前轮用户（同步全量 `messages` 后仍成立）。
-fn staged_plan_anchor_after_message_index(messages: &[Message]) -> Option<usize> {
-    const STAGED_STEP_USER_MARKER: &str = "【分步执行";
-    for (i, m) in messages.iter().enumerate().rev() {
-        if m.role != "user" {
-            continue;
-        }
-        let c = m.content.as_deref().unwrap_or("");
-        if c.contains(STAGED_STEP_USER_MARKER) {
-            continue;
-        }
-        return Some(i);
-    }
-    None
-}
-
-fn push_staged_plan_chat_block(
-    draw_lines: &mut Vec<Line<'static>>,
-    plain_lines: &mut Vec<String>,
-    state: &TuiState,
-) {
-    if state.staged_plan_log.is_empty() {
-        return;
-    }
-    let sty = staged_plan_think_style(state);
-    draw_lines.push(Line::from(vec![Span::styled(
-        STAGED_PLAN_SECTION_HEADER,
-        sty,
-    )]));
-    plain_lines.push(STAGED_PLAN_SECTION_HEADER.to_string());
-    for row in &state.staged_plan_log {
-        let row = latex_math_to_unicode(row);
-        draw_lines.push(Line::from(vec![Span::styled(row.clone(), sty)]));
-        plain_lines.push(row);
-    }
 }
 
 /// 与 `draw_chat` 相同的逻辑行：第一项为带样式绘制行；第二项为同序纯文本（供 Ctrl+F 匹配）；第三项为每条非 system 消息首行索引。
@@ -614,8 +581,6 @@ pub(super) fn build_chat_scroll_lines(
     let mut plain_lines: Vec<String> = Vec::new();
     let mut message_start_lines: Vec<usize> = Vec::new();
 
-    let plan_anchor_idx = staged_plan_anchor_after_message_index(&state.messages);
-
     for (i, m) in state.messages.iter().enumerate() {
         if m.role == "system" {
             continue;
@@ -635,6 +600,19 @@ pub(super) fn build_chat_scroll_lines(
             (e.draw.clone(), e.plain.clone())
         } else {
             let rendered = message_body_for_chat_display(m);
+            let quiet_streaming_assistant =
+                m.role == "assistant" && state.model_phase == ModelPhase::Answering;
+            if !quiet_streaming_assistant {
+                let raw = m.content.as_deref().unwrap_or("");
+                debug!(
+                    target: "crabmate::tui_print",
+                    "TUI 聊天区消息行重建 idx={} role={} content_len={} preview={}",
+                    i,
+                    m.role,
+                    raw.len(),
+                    redact::preview_chars(raw, redact::MESSAGE_LOG_PREVIEW_CHARS)
+                );
+            }
             let (draw, plain) = render_message_chat_lines(m, &rendered, state, chat_inner_width);
             state.chat_line_build_cache.per_message[i] = Some(ChatMessageLineCacheEntry {
                 content_fingerprint: fp,
@@ -648,13 +626,6 @@ pub(super) fn build_chat_scroll_lines(
         plain_lines.append(&mut p);
         draw_lines.push(Line::raw(""));
         plain_lines.push(String::new());
-
-        // 分阶段规划：挂在**真人 user** 之后。若用「最后一条 user」会在同步后命中 `【分步执行` 注入行，规划块被挤到会话末尾，看起来像「没打印规划」。
-        if Some(i) == plan_anchor_idx && !state.staged_plan_log.is_empty() {
-            push_staged_plan_chat_block(&mut draw_lines, &mut plain_lines, state);
-            draw_lines.push(Line::raw(""));
-            plain_lines.push(String::new());
-        }
     }
 
     (draw_lines, plain_lines, message_start_lines)
@@ -840,63 +811,12 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
             f.render_widget(w, vchunks[2]);
         }
         RightTab::Queue => {
-            let mut lines = Vec::new();
-            lines.push(Line::raw(
-                "本页：终端会话内的对话回合摘要；与浏览器 `--serve` 的 HTTP 队列相互独立。",
-            ));
-            lines.push(Line::raw(""));
-            lines.push(Line::raw(format!(
-                "配置（与 Web 共用 `[agent] chat_queue_*`）：并发上限 {}，等待槽 {}。",
-                state.chat_queue_max_concurrent, state.chat_queue_max_pending
-            )));
-            lines.push(Line::raw(
-                "`--serve` 时由 ChatJobQueue 执行多路排队；此处仅作对照。",
-            ));
-            lines.push(Line::raw(""));
-            if let Some(jid) = state.tui_active_job_id {
-                let phase = state.model_phase.label();
-                lines.push(Line::raw(format!(
-                    "当前回合：job_id={jid} 进行中（状态栏阶段：{phase}）"
-                )));
-            } else {
-                lines.push(Line::raw("当前回合：空闲"));
-            }
-            lines.push(Line::raw(""));
-            lines.push(Line::from(Span::styled(
-                "分阶段规划日志（本轮）",
-                Style::default().add_modifier(Modifier::BOLD),
-            )));
-            if state.staged_plan_log.is_empty() {
-                lines.push(Line::raw(
-                    "（未启用 staged_plan_execution 或尚无步骤通知；启用后此处显示规划摘要与各步进度）",
-                ));
-            } else {
-                for row in &state.staged_plan_log {
-                    lines.push(Line::raw(row.as_str()));
-                }
-            }
-            lines.push(Line::raw(""));
-            lines.push(Line::raw("最近本会话回合（最新在上）："));
-            if state.tui_turn_recent.is_empty() {
-                lines.push(Line::raw("（尚无记录）"));
-            } else {
-                for rec in state.tui_turn_recent.iter().rev().take(24) {
-                    let status = if rec.hard_aborted {
-                        "中止"
-                    } else if rec.user_cancelled {
-                        "已取消"
-                    } else if rec.ok {
-                        "成功"
-                    } else {
-                        "失败"
-                    };
-                    let mut s = format!("#{} tui {} {}ms", rec.job_id, status, rec.duration_ms);
-                    if let Some(ref e) = rec.error_preview {
-                        s.push_str(&format!(" — {e}"));
-                    }
-                    lines.push(Line::raw(s));
-                }
-            }
+            // 规划摘要已是「一行一步」的纯文本；不走 Markdown 管线，避免 `[ ]`、`1.` 等被解析成段落而挤成一行。
+            let lines: Vec<Line<'static>> = state
+                .staged_plan_log
+                .iter()
+                .map(|s| Line::raw(latex_math_to_unicode(s)))
+                .collect();
             let queue_block = Block::default()
                 .borders(Borders::NONE)
                 .padding(Padding::symmetric(1, 1));
@@ -1010,39 +930,4 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
         let content = Paragraph::new(full).block(block).wrap(Wrap { trim: false });
         f.render_widget(content, vchunks[2]);
     }
-}
-
-#[cfg(test)]
-fn test_assistant_message(content: &str) -> Message {
-    Message {
-        role: "assistant".to_string(),
-        content: Some(content.to_string()),
-        tool_calls: None,
-        name: None,
-        tool_call_id: None,
-    }
-}
-
-#[cfg(test)]
-#[test]
-fn staged_plan_anchor_skips_step_injection_users() {
-    let messages = vec![
-        Message::system_only("s"),
-        Message::user_only("写个 cpp"),
-        test_assistant_message("plan"),
-        Message::user_only("【分步执行 1/2】只完成本步"),
-        test_assistant_message("done step"),
-    ];
-    assert_eq!(staged_plan_anchor_after_message_index(&messages), Some(1));
-}
-
-#[cfg(test)]
-#[test]
-fn staged_plan_anchor_plain_user_when_no_injection() {
-    let messages = vec![
-        Message::system_only("s"),
-        Message::user_only("hi"),
-        test_assistant_message("ok"),
-    ];
-    assert_eq!(staged_plan_anchor_after_message_index(&messages), Some(1));
 }
