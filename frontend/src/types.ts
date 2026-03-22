@@ -47,6 +47,8 @@ export interface StatusData {
     duration_ms: number
     error_preview?: string
   }>
+  /** Web `POST /workspace` 允许的根目录个数（未配置多根时为 1） */
+  workspace_allowed_roots_count?: number
   /** 队列内正在执行的对话任务之 PER 镜像（无运行中任务时省略或为空数组） */
   per_active_jobs?: Array<{
     job_id: number

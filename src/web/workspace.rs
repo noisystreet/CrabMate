@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 
 use crate::AppState;
+use crate::config::AgentConfig;
 
 #[derive(Serialize)]
 pub struct WorkspacePickResponse {
@@ -103,6 +104,47 @@ fn normalize_path(p: &Path) -> std::path::PathBuf {
     out
 }
 
+/// 校验 Web `POST /workspace` 非空 `path`：须为已存在目录，`canonicalize` 后落在 `workspace_allowed_roots` 某一根之下（见配置项 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS`）。
+pub(crate) fn validate_workspace_set_path(
+    cfg: &AgentConfig,
+    raw: &str,
+) -> Result<std::path::PathBuf, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err("路径不能为空".to_string());
+    }
+    let cwd = std::env::current_dir().map_err(|e| format!("无法获取当前目录: {}", e))?;
+    let p = Path::new(raw);
+    let joined = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        cwd.join(p)
+    };
+    let canon = joined
+        .canonicalize()
+        .map_err(|e| format!("工作区路径无效或不存在: {}", e))?;
+    if !canon.is_dir() {
+        return Err("工作区路径必须是已存在的目录".to_string());
+    }
+    if !cfg
+        .workspace_allowed_roots
+        .iter()
+        .any(|root| canon.starts_with(root))
+    {
+        let roots = cfg
+            .workspace_allowed_roots
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "工作区路径不在允许范围内（须位于以下根目录之一下: {}）",
+            roots
+        ));
+    }
+    Ok(canon)
+}
+
 fn ensure_within_workspace(
     base_canonical: &Path,
     candidate: std::path::PathBuf,
@@ -176,17 +218,30 @@ pub async fn workspace_pick_handler() -> Json<WorkspacePickResponse> {
     Json(WorkspacePickResponse { path })
 }
 
-/// 设置当前工作区根目录（来自前端）
+/// 设置当前工作区根目录（来自前端）。非空路径须已存在、为目录，且落在配置的 `workspace_allowed_roots` 内（未配置时仅允许 `run_command_working_dir` 及其子目录）。
 pub async fn workspace_set_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<WorkspaceSetBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let raw = body.path.as_deref().map(|s| s.trim()).unwrap_or("");
-    let path = if raw.is_empty() { "" } else { raw };
     let mut guard = state.workspace_override.write().await;
-    // None 表示“从未设置过”；Some("") 表示“显式选择默认目录”；Some("...") 表示指定路径
-    *guard = Some(path.to_string());
-    Ok(Json(serde_json::json!({ "ok": true, "path": path })))
+    // None 表示“从未设置过”；Some("") 表示“显式选择默认目录”；Some("...") 表示指定路径（存规范绝对路径）
+    if raw.is_empty() {
+        *guard = Some(String::new());
+        return Ok(Json(serde_json::json!({ "ok": true, "path": "" })));
+    }
+    let canon = match validate_workspace_set_path(&state.cfg, raw) {
+        Ok(p) => p,
+        Err(msg) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "ok": false, "error": msg })),
+            ));
+        }
+    };
+    let path_str = canon.display().to_string();
+    *guard = Some(path_str.clone());
+    Ok(Json(serde_json::json!({ "ok": true, "path": path_str })))
 }
 
 /// 列出当前工作区或子目录

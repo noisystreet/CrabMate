@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { FolderOpen, FileText, Loader2, Settings, FilePlus, Save, Download, Trash2, ChevronRight, Home, Search, Copy, Terminal } from 'lucide-react'
-import { fetchWorkspace, fetchWorkspacePick, fetchWorkspaceFile, writeWorkspaceFile, setWorkspacePath, deleteWorkspaceFile, searchWorkspace } from '../api'
+import { ApiError, fetchWorkspace, fetchWorkspacePick, fetchWorkspaceFile, writeWorkspaceFile, setWorkspacePath, deleteWorkspaceFile, searchWorkspace } from '../api'
 import type { WorkspaceData } from '../types'
 
 function joinPath(dir: string, name: string): string {
@@ -89,8 +89,8 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
     setDirInput('')
     try {
       await setWorkspacePath(v)
-    } catch {
-      setError('同步工作区到服务端失败')
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : '同步工作区到服务端失败')
     }
   }
 
@@ -107,7 +107,15 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
         localStorage.setItem(WORKSPACE_DIR_KEY, path)
         setMenuOpen(false)
         setDirInput('')
-        await setWorkspacePath(path)
+        try {
+          await setWorkspacePath(path)
+        } catch (e) {
+          if (e instanceof ApiError) {
+            setError(e.message)
+          } else {
+            setError('同步工作区到服务端失败')
+          }
+        }
       }
     } catch {
       // 认为当前环境无法正常弹出目录选择框（例如无 GUI 的服务器环境），后续禁用按钮并提示手动输入

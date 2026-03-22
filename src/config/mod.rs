@@ -101,6 +101,9 @@ pub struct AgentConfig {
     pub context_summary_max_tokens: u32,
     /// 送入摘要模型的中间段转写最大字符数（防摘要请求本身过大）
     pub context_summary_transcript_max_chars: usize,
+    /// Web `POST /workspace` 允许设置的工作区根路径：规范化为绝对路径后的白名单。
+    /// 未在配置中指定 `workspace_allowed_roots` 时，仅含 `run_command_working_dir` 的 canonical 路径。
+    pub workspace_allowed_roots: Vec<std::path::PathBuf>,
     /// Web `/chat` 任务最大并发执行数（单进程）
     pub chat_queue_max_concurrent: usize,
     /// Web 对话任务有界等待队列长度（`try_send` 满则 503）
@@ -160,11 +163,62 @@ struct AgentSection {
     chat_queue_max_pending: Option<u64>,
     staged_plan_execution: Option<bool>,
     staged_plan_phase_instruction: Option<String>,
+    /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
+    workspace_allowed_roots: Option<Vec<String>>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None
 fn parse_agent_section(s: &str) -> Option<AgentSection> {
     toml::from_str::<ConfigFile>(s).ok()?.agent
+}
+
+/// 解析 Web 工作区白名单：未配置或空列表时仅允许 `run_command_working_dir`；否则每项须为已存在目录的绝对或相对路径（相对路径相对**进程当前目录**）。
+fn resolve_workspace_allowed_roots(
+    roots_opt: Option<Vec<String>>,
+    run_root: &Path,
+) -> Result<Vec<std::path::PathBuf>, String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("无法获取当前工作目录: {}", e))?;
+    let Some(roots_in) = roots_opt.filter(|v| !v.is_empty()) else {
+        return Ok(vec![run_root.to_path_buf()]);
+    };
+    let mut out: Vec<std::path::PathBuf> = Vec::new();
+    for s in roots_in {
+        let s = s.trim();
+        if s.is_empty() {
+            continue;
+        }
+        let p = Path::new(s);
+        let joined = if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            cwd.join(p)
+        };
+        let canon = joined
+            .canonicalize()
+            .map_err(|e| format!("workspace_allowed_roots 项 {:?} 无法解析为目录: {}", s, e))?;
+        if !canon.is_dir() {
+            return Err(format!(
+                "workspace_allowed_roots 项 {} 不是目录",
+                canon.display()
+            ));
+        }
+        out.push(canon);
+    }
+    if out.is_empty() {
+        return Err(
+            "workspace_allowed_roots 配置为空：请省略该项（仅用 run_command_working_dir）或至少填写一个有效路径"
+                .to_string(),
+        );
+    }
+    out.sort();
+    out.dedup();
+    if !out.iter().any(|root| run_root.starts_with(root)) {
+        return Err(format!(
+            "配置错误：run_command_working_dir（{}）不在任何 workspace_allowed_roots 之下；请调整配置使默认工作目录落在某一允许根目录下",
+            run_root.display()
+        ));
+    }
+    Ok(out)
 }
 
 /// 加载配置：嵌入的 default 为底，再被配置文件覆盖，最后被环境变量覆盖。
@@ -212,6 +266,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut chat_queue_max_pending: Option<u64> = None;
     let mut staged_plan_execution: Option<bool> = None;
     let mut staged_plan_phase_instruction: Option<String> = None;
+    let mut workspace_allowed_roots: Option<Vec<String>> = None;
 
     if let Some(agent) = parse_agent_section(DEFAULT_CONFIG) {
         api_base = agent.api_base.unwrap_or_default().trim().to_string();
@@ -327,6 +382,11 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         staged_plan_execution = agent.staged_plan_execution.or(staged_plan_execution);
         if let Some(ref s) = agent.staged_plan_phase_instruction {
             staged_plan_phase_instruction = Some(s.clone());
+        }
+        if let Some(ref v) = agent.workspace_allowed_roots
+            && !v.is_empty()
+        {
+            workspace_allowed_roots = Some(v.clone());
         }
     }
 
@@ -493,6 +553,11 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                     let s = s.trim().to_string();
                     staged_plan_phase_instruction = Some(s);
                 }
+                if let Some(ref v) = agent.workspace_allowed_roots
+                    && !v.is_empty()
+                {
+                    workspace_allowed_roots = Some(v.clone());
+                }
             }
             if config_path.is_some() {
                 break;
@@ -556,6 +621,16 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         let v = v.trim().to_string();
         if !v.is_empty() {
             run_command_working_dir = Some(v);
+        }
+    }
+    if let Ok(s) = std::env::var("AGENT_WORKSPACE_ALLOWED_ROOTS") {
+        let list: Vec<String> = s
+            .split(',')
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty())
+            .collect();
+        if !list.is_empty() {
+            workspace_allowed_roots = Some(list);
         }
     }
     if let Ok(v) = std::env::var("AGENT_MAX_TOKENS")
@@ -793,6 +868,11 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         ));
     }
 
+    let workspace_allowed_roots = resolve_workspace_allowed_roots(
+        workspace_allowed_roots,
+        run_command_working_dir.as_path(),
+    )?;
+
     let system_prompt = if let Some(path) = system_prompt_file {
         let path = Path::new(&path);
 
@@ -878,6 +958,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         context_summary_tail_messages,
         context_summary_max_tokens,
         context_summary_transcript_max_chars,
+        workspace_allowed_roots,
         chat_queue_max_concurrent,
         chat_queue_max_pending,
         staged_plan_execution,
