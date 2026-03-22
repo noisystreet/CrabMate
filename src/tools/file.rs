@@ -4,6 +4,7 @@
 //!
 //! 大文件：`read_file` 按行流式读取并默认限制单次返回行数；`modify_file` 支持按行区间替换，避免整文件读入内存。
 
+use crate::path_workspace::absolutize_relative_under_root;
 use glob::Pattern;
 use regex::RegexBuilder;
 use sha2::{Digest, Sha256, Sha512};
@@ -96,27 +97,9 @@ fn resolve_for_write(base: &Path, sub: &str) -> Result<PathBuf, String> {
         return Err("路径必须为相对于工作目录的相对路径，不能使用绝对路径".to_string());
     }
     let base_canonical = canonical_workspace_root(base)?;
-    let joined = base_canonical.join(sub);
-    // 规范化 .. 和 . 并确保仍在 base 下（路径穿越检查）
-    let normalized = normalize_path(&joined);
-    ensure_within_workspace(&base_canonical, &normalized)?;
+    let normalized = absolutize_relative_under_root(&base_canonical, sub)?;
     ensure_existing_ancestor_within_workspace(&base_canonical, &normalized)?;
     Ok(normalized)
-}
-
-/// 简单规范化：去掉 . 和 .. 段（不访问文件系统）
-fn normalize_path(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in p.components() {
-        match c {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 /// 相对工作区根的 POSIX 风格路径（供工具返回给模型，不暴露绝对路径）。

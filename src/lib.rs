@@ -9,6 +9,7 @@ mod config;
 mod health;
 mod http_client;
 mod llm;
+mod path_workspace;
 mod redact;
 mod runtime;
 mod sse;
