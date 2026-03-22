@@ -425,6 +425,8 @@ type SseControlPayload = {
   /** 分阶段规划进度文案（可多行）；TUI 展示；Web 吞掉不当下文 */
   staged_plan_notice?: string
   staged_plan_notice_clear?: boolean
+  /** 分阶段规划聊天区分隔线：`true` 短、`false` 长 */
+  chat_ui_separator?: boolean
 }
 
 /** 解析单条 `data:` 合并后的字符串：若为控制面 JSON 则调用 callbacks 并返回 `stop` | `handled`；否则返回 `plain`（由调用方按正文 delta 处理）。 */
@@ -438,6 +440,8 @@ function tryDispatchSseControlPayload(
     onParsingToolCallsChange?: (parsing: boolean) => void
     onToolResult?: (info: ToolResultInfo) => void
     onPlanRequired?: () => void
+    /** `true` 短分隔线，`false` 长分隔线（分阶段规划队列） */
+    onChatUiSeparator?: (short: boolean) => void
   },
 ): 'stop' | 'handled' | 'plain' {
   try {
@@ -490,6 +494,10 @@ function tryDispatchSseControlPayload(
     ) {
       return 'handled'
     }
+    if (typeof parsed.chat_ui_separator === 'boolean') {
+      callbacks.onChatUiSeparator?.(parsed.chat_ui_separator)
+      return 'handled'
+    }
   } catch {
     // 非 JSON，按正文处理
   }
@@ -511,6 +519,7 @@ export async function sendChatStream(
     onToolResult?: (info: ToolResultInfo) => void
     /** 预留：后端 `plan_required`（如 PER 结构化规划提示） */
     onPlanRequired?: () => void
+    onChatUiSeparator?: (short: boolean) => void
   },
   signal?: AbortSignal,
 ): Promise<void> {

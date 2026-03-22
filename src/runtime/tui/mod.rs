@@ -10,6 +10,7 @@ mod input;
 mod state;
 mod status;
 mod styles;
+mod sync_merge;
 mod text_input;
 mod workspace_ops;
 
@@ -342,7 +343,11 @@ pub async fn run_tui(
                 last_role,
                 last_preview
             );
-            state.messages = msgs;
+            // Agent 侧可能已裁剪上下文：直接替换会丢掉较早分步气泡；合并保留前缀再接上尾部。
+            state.messages = sync_merge::merge_tui_messages_after_agent_sync(
+                std::mem::take(&mut state.messages),
+                msgs,
+            );
             assistant_buf.clear();
         }
         while let Ok(o) = turn_outcome_rx.try_recv() {

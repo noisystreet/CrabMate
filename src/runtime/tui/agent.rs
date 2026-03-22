@@ -24,6 +24,7 @@ pub(super) async fn run_agent_turn_tui(
     persistent_allowlist: HashSet<String>,
     approval_rx: mpsc::Receiver<crate::types::CommandApprovalDecision>,
     cancel: Option<&AtomicBool>,
+    messages_sync: Option<mpsc::Sender<Vec<Message>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let out_tx = out.cloned();
     let approval_rx_shared: Arc<Mutex<mpsc::Receiver<crate::types::CommandApprovalDecision>>> =
@@ -51,6 +52,7 @@ pub(super) async fn run_agent_turn_tui(
             tui_tool_ctx: &tui_tool_ctx,
         },
         None,
+        messages_sync.as_ref(),
     )
     .await
 }

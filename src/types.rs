@@ -8,7 +8,7 @@ pub const OPENAI_CHAT_COMPLETIONS_REL_PATH: &str = "chat/completions";
 // ---------- 消息与请求 ----------
 
 /// 对话消息（OpenAI 兼容格式）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
     pub role: String,
     pub content: Option<String>,
@@ -20,7 +20,24 @@ pub struct Message {
     pub tool_call_id: Option<String>,
 }
 
+/// 聊天区装饰短分隔线（分阶段规划每步结束等）；`name` 标记，不送入模型。
+#[inline]
+pub fn is_chat_ui_separator(m: &Message) -> bool {
+    m.role == "system" && m.name.as_deref() == Some("crabmate_ui_sep")
+}
+
 impl Message {
+    /// 分阶段规划：每步完成后的短分隔线。仅用于 UI 与同步，调用模型前须过滤。
+    pub fn chat_ui_separator(short: bool) -> Self {
+        Self {
+            role: "system".to_string(),
+            content: Some(if short { "short" } else { "long" }.to_string()),
+            tool_calls: None,
+            name: Some("crabmate_ui_sep".to_string()),
+            tool_call_id: None,
+        }
+    }
+
     /// 无 `tool_calls` 的 `system` 消息（Web 首轮、CLI、TUI 空会话等共用）。
     pub fn system_only(content: impl Into<String>) -> Self {
         Self {
@@ -52,7 +69,7 @@ pub fn messages_chat_seed(system_prompt: &str, user_text: &str) -> Vec<Message> 
     ]
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: String,
     #[serde(rename = "type")]
@@ -60,7 +77,7 @@ pub struct ToolCall {
     pub function: FunctionCall,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionCall {
     pub name: String,
     pub arguments: String,

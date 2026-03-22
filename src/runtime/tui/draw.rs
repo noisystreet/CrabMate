@@ -23,7 +23,7 @@ use crate::runtime::message_display::{
     assistant_markdown_source_for_display, tool_content_for_display_for_message,
     tool_display_context_fingerprint, user_message_for_chat_display,
 };
-use crate::types::Message;
+use crate::types::{Message, is_chat_ui_separator};
 use log::debug;
 
 use super::state::{ChatMessageLineCacheEntry, Focus, Mode, ModelPhase, RightTab, TuiState};
@@ -565,6 +565,51 @@ fn render_message_chat_lines(
     (draw_lines, plain_lines)
 }
 
+fn center_chat_separator_text(inner: &str, width: usize) -> String {
+    let tw = inner.width();
+    if tw >= width {
+        let mut out = String::new();
+        let mut w = 0;
+        for ch in inner.chars() {
+            let cw = ch.width().unwrap_or(0);
+            if w + cw > width {
+                break;
+            }
+            out.push(ch);
+            w += cw;
+        }
+        return out;
+    }
+    let pad = width - tw;
+    let left = pad / 2;
+    let right = pad - left;
+    format!("{}{}{}", " ".repeat(left), inner, " ".repeat(right))
+}
+
+fn fill_line_with_char(fill_ch: char, width: usize) -> String {
+    let cw = fill_ch.width().unwrap_or(1).max(1);
+    let n = (width / cw).min(4096);
+    std::iter::repeat_n(fill_ch, n).collect()
+}
+
+fn render_chat_ui_separator_lines(
+    is_short: bool,
+    chat_inner_width: usize,
+) -> (Vec<Line<'static>>, Vec<String>) {
+    let w = chat_inner_width.max(8);
+    let dim = Style::default().fg(Color::DarkGray);
+    if is_short {
+        let inner = " ─── · ─── · ─── · ─── ";
+        let s = center_chat_separator_text(inner, w);
+        let line = Line::from(Span::styled(s.clone(), dim));
+        (vec![line], vec![s])
+    } else {
+        let line_str = fill_line_with_char('─', w);
+        let line = Line::from(Span::styled(line_str.clone(), dim));
+        (vec![line], vec![line_str])
+    }
+}
+
 /// 与 `draw_chat` 相同的逻辑行：第一项为带样式绘制行；第二项为同序纯文本（供 Ctrl+F 匹配）；第三项为每条非 system 消息首行索引。
 pub(super) fn build_chat_scroll_lines(
     state: &mut TuiState,
@@ -594,6 +639,15 @@ pub(super) fn build_chat_scroll_lines(
 
     for (i, m) in state.messages.iter().enumerate() {
         if m.role == "system" {
+            if is_chat_ui_separator(m) {
+                let is_short = m.content.as_deref() == Some("short");
+                message_start_lines.push(draw_lines.len());
+                let (mut d, mut p) = render_chat_ui_separator_lines(is_short, chat_inner_width);
+                draw_lines.append(&mut d);
+                plain_lines.append(&mut p);
+                draw_lines.push(Line::raw(""));
+                plain_lines.push(String::new());
+            }
             continue;
         }
 
@@ -830,6 +884,28 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
     f.render_widget(status, status_rect);
 }
 
+/// 队列页：行首 `[✓]` 绿色加粗，未完成 `[ ]` 置灰。
+fn staged_queue_plain_line_to_styled(s: String) -> Line<'static> {
+    if let Some(rest) = s.strip_prefix("[✓]") {
+        Line::from(vec![
+            Span::styled(
+                "[✓]",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(rest.to_string()),
+        ])
+    } else if let Some(rest) = s.strip_prefix("[ ]") {
+        Line::from(vec![
+            Span::styled("[ ]", Style::default().fg(Color::DarkGray)),
+            Span::raw(rest.to_string()),
+        ])
+    } else {
+        Line::raw(s)
+    }
+}
+
 fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
     let vchunks = Layout::default()
         .direction(Direction::Vertical)
@@ -894,7 +970,7 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
             let lines: Vec<Line<'static>> = state
                 .staged_plan_log
                 .iter()
-                .map(|s| Line::raw(latex_math_to_unicode(s)))
+                .map(|s| staged_queue_plain_line_to_styled(latex_math_to_unicode(s)))
                 .collect();
             let queue_block = Block::default()
                 .borders(Borders::NONE)

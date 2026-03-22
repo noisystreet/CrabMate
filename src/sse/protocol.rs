@@ -58,6 +58,12 @@ pub enum SsePayload {
         #[serde(default, rename = "staged_plan_notice_clear")]
         clear_before: bool,
     },
+    /// 分阶段规划：每步结束短分隔线。TUI 随 `messages` 同步已有行；Web 用本事件追加。（`false` 保留兼容，客户端可忽略。）
+    ChatUiSeparator {
+        /// `true` 为短分隔线。
+        #[serde(rename = "chat_ui_separator")]
+        short: bool,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -210,5 +216,22 @@ mod tests {
             }
             _ => panic!("expected staged_plan_notice payload"),
         }
+    }
+
+    #[test]
+    fn roundtrip_chat_ui_separator() {
+        let s = encode_message(SsePayload::ChatUiSeparator { short: true });
+        assert!(s.contains("\"chat_ui_separator\":true"));
+        let m: SseMessage = serde_json::from_str(&s).unwrap();
+        assert!(matches!(
+            m.payload,
+            SsePayload::ChatUiSeparator { short: true }
+        ));
+        let s2 = encode_message(SsePayload::ChatUiSeparator { short: false });
+        let m2: SseMessage = serde_json::from_str(&s2).unwrap();
+        assert!(matches!(
+            m2.payload,
+            SsePayload::ChatUiSeparator { short: false }
+        ));
     }
 }

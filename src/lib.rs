@@ -77,6 +77,7 @@ pub async fn run_agent_turn(
         cancel.as_deref(),
         agent::agent_turn::AgentRunMode::Web { render_to_terminal },
         per_flight,
+        None,
     )
     .await
 }
