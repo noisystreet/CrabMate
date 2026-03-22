@@ -98,6 +98,32 @@ pub fn trim_messages_by_char_budget(
     }
 }
 
+/// 删除「无前驱 `assistant` + `tool_calls`」的 `role: tool` 消息。
+///
+/// 按条数/字符裁剪历史时，可能截掉带 `tool_calls` 的 `assistant`，却保留其后的 `tool`，
+/// OpenAI 兼容 API 会返回 400：`Messages with role 'tool' must be a response to a preceding message with 'tool_calls'`。
+pub fn drop_orphan_tool_messages(messages: &mut Vec<Message>) {
+    let mut i = 0;
+    while i < messages.len() {
+        if messages[i].role != "tool" {
+            i += 1;
+            continue;
+        }
+        let ok = i > 0
+            && (messages[i - 1].role == "tool"
+                || (messages[i - 1].role == "assistant"
+                    && messages[i - 1]
+                        .tool_calls
+                        .as_ref()
+                        .is_some_and(|c| !c.is_empty())));
+        if ok {
+            i += 1;
+        } else {
+            messages.remove(i);
+        }
+    }
+}
+
 /// 每次调用模型前执行：工具压缩 → 条数裁剪 →（可选）字符预算裁剪。
 pub fn prepare_messages_before_model_call_sync(messages: &mut Vec<Message>, cfg: &AgentConfig) {
     compress_tool_message_contents(messages, cfg.tool_message_max_chars);
@@ -110,6 +136,7 @@ pub fn prepare_messages_before_model_call_sync(messages: &mut Vec<Message>, cfg:
         );
         compress_tool_message_contents(messages, cfg.tool_message_max_chars);
     }
+    drop_orphan_tool_messages(messages);
 }
 
 fn format_message_for_transcript(m: &Message) -> String {
@@ -358,5 +385,97 @@ mod tests {
         trim_messages_by_char_budget(&mut v, 6, 1);
         assert_eq!(v.len(), 2);
         assert_eq!(v[1].content.as_deref(), Some("bbbbbbbb"));
+    }
+
+    fn assistant_with_tool_calls() -> Message {
+        use crate::types::{FunctionCall, ToolCall};
+        Message {
+            role: "assistant".to_string(),
+            content: None,
+            tool_calls: Some(vec![ToolCall {
+                id: "call_1".to_string(),
+                typ: "function".to_string(),
+                function: FunctionCall {
+                    name: "x".to_string(),
+                    arguments: "{}".to_string(),
+                },
+            }]),
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn drop_orphan_tool_removes_leading_tools_after_trim() {
+        let mut v = vec![
+            Message {
+                role: "system".to_string(),
+                content: Some("s".into()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+            tool_msg("orphan1"),
+            tool_msg("orphan2"),
+            Message {
+                role: "user".to_string(),
+                content: Some("last".into()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+        ];
+        drop_orphan_tool_messages(&mut v);
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[1].role, "user");
+        assert_eq!(v[1].content.as_deref(), Some("last"));
+    }
+
+    #[test]
+    fn drop_orphan_tool_keeps_chain_after_assistant_tool_calls() {
+        let mut v = vec![
+            Message {
+                role: "system".to_string(),
+                content: Some("s".into()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+            assistant_with_tool_calls(),
+            tool_msg("a"),
+            tool_msg("b"),
+            Message {
+                role: "user".to_string(),
+                content: Some("u".into()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+        ];
+        drop_orphan_tool_messages(&mut v);
+        assert_eq!(v.len(), 5);
+    }
+
+    #[test]
+    fn drop_orphan_tool_removes_tool_after_assistant_without_tool_calls() {
+        let mut v = vec![
+            Message {
+                role: "system".to_string(),
+                content: Some("s".into()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "assistant".to_string(),
+                content: Some("text only".into()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+            tool_msg("bad"),
+        ];
+        drop_orphan_tool_messages(&mut v);
+        assert_eq!(v.len(), 2);
     }
 }

@@ -53,7 +53,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 ## 部署与安全提示
 
 - **默认仅本机监听**（`--serve`）：绑定 **`127.0.0.1`**，局域网其它设备默认无法直连。若需局域网访问，请显式使用 `--host 0.0.0.0` 或设置环境变量 `AGENT_HTTP_HOST=0.0.0.0`（未传 `--host` 时生效）；**无内置鉴权**，暴露后他人可滥用接口与模型配额。
-- **工作区**：Web 端可将工作区设为服务器本机任意路径（在进程权限范围内），请勿在不可信网络暴露本服务。
+- **工作区**：Web 端通过 `POST /workspace` 设置的路径**必须已存在且为目录**，且（`canonicalize` 后）须落在配置的**允许根目录**之下。未配置 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS` 时，仅允许 **`run_command_working_dir` 及其子目录**；若配置了多个根路径，则 `run_command_working_dir` 本身也须落在其中某一根之下（否则启动报错）。请勿在不可信网络暴露本服务（仍无内置 HTTP 鉴权）。
 - **联网搜索 Key**：`web_search_api_key` 与 DeepSeek 的 `API_KEY` 无关；若写入配置文件，请妥善保管文件权限，避免泄露第三方搜索配额。
 - **建议**：公网或不可信网络请配合反向代理、鉴权、TLS、防火墙等自行加固。
 
@@ -368,6 +368,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`（逗号分隔 URL 前缀）、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`（与 `default_config.toml` / `[agent]` 中同名项对应）
    - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
    - **终端会话文件（TUI / CLI REPL）**：`AGENT_TUI_LOAD_SESSION_ON_START` / `[agent] tui_load_session_on_start` 为 `true` 时，TUI 或 REPL 启动才从 `.crabmate/tui_session.json` 恢复历史；默认 `false`（仅空白会话 + 当前 `system_prompt`）。**若启用加载**：`AGENT_TUI_SESSION_MAX_MESSAGES` / `[agent] tui_session_max_messages` 限制总消息条数（含 `system`），超出则丢弃最旧非 system 消息（默认 `400`，有效范围 `2`～`50000`）
+   - **Web 工作区白名单**：`AGENT_WORKSPACE_ALLOWED_ROOTS`（逗号分隔绝对或相对路径，相对路径相对**进程启动时当前目录**）；与 `[agent] workspace_allowed_roots` 数组等价。省略或空列表表示仅允许 `run_command_working_dir` 下路径；`GET /status` 返回 `workspace_allowed_roots_count` 便于确认策略宽度。
    ```bash
    export AGENT_MODEL=deepseek-reasoner
    cargo run
