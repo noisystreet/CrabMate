@@ -527,8 +527,10 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
 | `--no-stream`     | 对 API 使用 `stream: false`（非 SSE）。CLI 终端仍在**整段到达后** Markdown 打印，与默认流式在**终端观感**上一致；差异主要是 API 是否分段返回。TUI 侧亦为整块正文刷新。|
-| `--log <FILE>`    | 将 `log`（`env_logger`）日志**追加**写入指定文件（与 `RUST_LOG` 配合）。**非 TUI**（含 `--serve`、单次 `--query` 等）时同时写 stderr 与文件；**TUI** 下不向终端写日志行，仅写入该文件，便于后台 `tail -f` 排障。|
+| `--log <FILE>`    | 将 `log`（`env_logger`）日志**追加**写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别。**非 TUI**（含 `--serve`、单次 `--query` 等）时同时写 stderr 与文件；**TUI** 下不向终端写日志行，仅写入该文件，便于后台 `tail -f` 排障。|
 | `--tui`           | 全屏终端 UI。底栏左侧为运行阶段、右侧为状态摘要（默认仅模型名）；完整键位见 **F1**。右栏含工作区 / **队列** / 任务 / 日程（「队列」为分阶段规划摘要：步骤行前 `[ ]` 待办、`[✓]` 已完成，每步结束整段刷新；与 `staged_plan_notice` 同源；按行展示、不经 Markdown 解析以免挤成一行）。退出时会保存 `.crabmate/tui_session.json`；**默认不在启动时加载历史**（见 `[agent] tui_load_session_on_start` 与 `AGENT_TUI_LOAD_SESSION_ON_START`）。可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`；**F10** 查看与 `GET /health` 同逻辑的本机运行状况（无需启动 Web）。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
+
+**日志默认级别**：未设置 `RUST_LOG` 时，`--serve` 默认 **info**；其它子命令（默认 REPL、单次 `--query`/`--stdin`、`--tui` 等）默认 **warn**，不输出 `info`。需要 info 时请设置 `RUST_LOG`（如 `RUST_LOG=info`）或使用 `--log <FILE>`（未设置 `RUST_LOG` 时对文件与 stderr 使用默认 info）。
 
 对应示例：
 

@@ -1,7 +1,7 @@
 //! CrabMate 库：DeepSeek Agent、HTTP 服务、工具与工作流。
 //! 二进制入口见 `src/main.rs` 的 [`run`] 包装。
 //!
-//! 日志由 `log` + `env_logger` 处理，`RUST_LOG` 控制级别；`--tui` 时不向终端写日志行，以免打乱全屏界面。
+//! 日志由 `log` + `env_logger` 处理；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。`--tui` 时不向终端写日志行，以免打乱全屏界面。
 
 mod agent;
 mod chat_job_queue;
@@ -662,7 +662,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         log_file,
     ) = parse_args();
 
-    init_logging(tui, log_file.as_deref().map(std::path::Path::new));
+    // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_logging`）
+    init_logging(
+        tui,
+        log_file.as_deref().map(std::path::Path::new),
+        serve_port.is_none(),
+    );
 
     let api_key = match env::var("API_KEY") {
         Ok(v) => v,

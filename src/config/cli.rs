@@ -46,13 +46,27 @@ fn open_log_append(path: &Path) -> std::fs::File {
         })
 }
 
-/// 初始化 [`log`] + [`env_logger`]（未设置 `RUST_LOG` 时默认 `info`）。
+/// 初始化 [`log`] + [`env_logger`]。
+///
+/// - 若已设置环境变量 **`RUST_LOG`**：完全按该变量解析（不强行覆盖默认级别）。
+/// - 若未设置 **`RUST_LOG`**：
+///   - 指定了 **`log_file`**（`--log <FILE>`）：默认 **`info`**，便于与文件 tail 配套；
+///   - **`quiet_cli_default == true`**（非 `--serve` 的 CLI 模式：单次提问、REPL、TUI 等）：默认 **`warn`**，不输出 `info`；
+///   - 否则（**`--serve`**）：默认 **`info`**。
 ///
 /// `suppress_stdio_logs`：为 **TUI 全屏** 设为 `true`，避免日志行破坏界面；若同时传入 `log_file`，则只写文件。
-pub fn init_logging(suppress_stdio_logs: bool, log_file: Option<&Path>) {
+pub fn init_logging(suppress_stdio_logs: bool, log_file: Option<&Path>, quiet_cli_default: bool) {
     use env_logger::{Builder, Env, Target, WriteStyle};
 
-    let env = Env::default().default_filter_or("info");
+    let env = if std::env::var_os("RUST_LOG").is_some() {
+        Env::default()
+    } else if log_file.is_some() {
+        Env::default().default_filter_or("info")
+    } else if quiet_cli_default {
+        Env::default().default_filter_or("warn")
+    } else {
+        Env::default().default_filter_or("info")
+    };
     let mut builder = Builder::from_env(env);
     builder.format_target(true);
     builder.format_timestamp_secs();
@@ -147,7 +161,7 @@ pub struct Cli {
     #[arg(long)]
     pub tui: bool,
 
-    /// 将日志追加写入指定文件（与 `RUST_LOG` 配合）。CLI 下可同时输出到 stderr；TUI 下默认不写 stderr，可用本选项后台 `tail -f` 查看
+    /// 将日志追加写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别写入。CLI 下可同时输出到 stderr；TUI 下默认不写 stderr，可用本选项后台 `tail -f` 查看
     #[arg(long, value_name = "FILE")]
     pub log: Option<String>,
 }
