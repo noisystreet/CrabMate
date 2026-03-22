@@ -5,11 +5,6 @@
 use crate::types::{
     ChatRequest, FunctionCall, Message, StreamChunk, ToolCall, USER_CANCELLED_FINISH_REASON,
 };
-use crossterm::{
-    ExecutableCommand,
-    cursor::{MoveToColumn, MoveUp},
-    terminal::{Clear, ClearType},
-};
 use futures_util::StreamExt;
 use markdown_to_ansi::{Options, render};
 use reqwest::Client;
@@ -29,7 +24,8 @@ fn terminal_width() -> Option<usize> {
         .filter(|w| *w > 0)
 }
 
-/// 按终端显示宽度估算行数（宽字符如中文按 2 列计，避免换行错位）
+/// 按终端显示宽度估算行数（宽字符如中文按 2 列计）；仅单测使用——流式结束不再依赖行数做光标回退。
+#[cfg(test)]
 fn count_display_lines(content: &str, term_width: usize) -> usize {
     use unicode_width::UnicodeWidthStr;
     let w = term_width.max(1);
@@ -42,13 +38,33 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .sum()
 }
 
+/// CLI：加粗着色 `Agent: ` + 规划可读化（若可解析）+ LaTeX→Unicode + `markdown_to_ansi` 基本 Markdown（标题、列表、代码块高亮等）。
+fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
+    let term_w = terminal_width().unwrap_or(80);
+    let mut stdout = io::stdout();
+    crate::runtime::terminal_labels::write_agent_message_prefix(&mut stdout)?;
+    stdout.flush()?;
+    let opts = Options {
+        syntax_highlight: true,
+        width: Some(term_w),
+        code_bg: true,
+    };
+    let content = crate::agent::plan_artifact::format_agent_reply_plan_for_display(content_acc)
+        .map(|s| latex_math_to_unicode(s.trim()))
+        .unwrap_or_else(|| latex_math_to_unicode(content_acc.trim()));
+    let rendered = render(&content, &opts);
+    write!(stdout, "{}", rendered)?;
+    if !rendered.ends_with('\n') {
+        writeln!(stdout)?;
+    }
+    stdout.flush()
+}
+
 /// 解析 SSE 中一行 `data:` 后的 JSON 负载，累积正文与 tool_calls，并经 `out` 下发流式增量。
 #[allow(clippy::too_many_arguments)]
 async fn ingest_sse_data_payload(
     payload: &str,
     out: Option<&Sender<String>>,
-    render_to_terminal: bool,
-    first_content: &mut bool,
     content_acc: &mut String,
     finish_reason: &mut String,
     tool_calls_acc: &mut Vec<(String, String, String, String)>,
@@ -74,16 +90,6 @@ async fn ingest_sse_data_payload(
     {
         if let Some(tx) = out {
             let _ = tx.send(s.clone()).await;
-        }
-        if render_to_terminal {
-            let mut stdout = io::stdout();
-            if *first_content {
-                let _ = write!(stdout, "Agent: ");
-                let _ = stdout.flush();
-                *first_content = false;
-            }
-            let _ = write!(stdout, "{}", s);
-            let _ = stdout.flush();
         }
         content_acc.push_str(s);
     }
@@ -130,7 +136,7 @@ async fn ingest_sse_data_payload(
 }
 
 /// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
-/// `render_to_terminal` 仅在流式时边收边打；非流式时在完整 `message` 到达后一次性按 Markdown 渲染（若启用）。
+/// `render_to_terminal` 为 true 时：流式**不在**收包过程中写 stdout（避免半段 Markdown）；整段到达后与 **`--no-stream`** 相同，经 `markdown_to_ansi` 做基本 Markdown 渲染。非流式时在完整 `message` 到达后同样渲染。
 /// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 TUI/SSE 等）。
 ///
 /// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；
@@ -219,22 +225,7 @@ pub async fn stream_chat(
             && let Some(ref content_acc) = msg.content
             && !content_acc.is_empty()
         {
-            let term_w = terminal_width().unwrap_or(80);
-            let mut stdout = io::stdout();
-            write!(stdout, "Agent: ")?;
-            stdout.flush()?;
-            let opts = Options {
-                syntax_highlight: true,
-                width: Some(term_w),
-                code_bg: true,
-            };
-            let content = latex_math_to_unicode(content_acc.trim());
-            let rendered = render(&content, &opts);
-            write!(stdout, "{}", rendered)?;
-            if !rendered.ends_with('\n') {
-                writeln!(stdout)?;
-            }
-            stdout.flush()?;
+            terminal_render_agent_markdown(content_acc)?;
         }
         if let Some(ref tcs) = msg.tool_calls
             && !tcs.is_empty()
@@ -256,7 +247,6 @@ pub async fn stream_chat(
     let mut content_acc = String::new();
     let mut tool_calls_acc: Vec<(String, String, String, String)> = Vec::new();
     let mut finish_reason = String::new();
-    let mut first_content = true;
     let mut parsing_tool_calls_notified = false;
 
     'stream_read: while let Some(chunk) = stream.next().await {
@@ -282,8 +272,6 @@ pub async fn stream_chat(
                 ingest_sse_data_payload(
                     payload,
                     out,
-                    render_to_terminal,
-                    &mut first_content,
                     &mut content_acc,
                     &mut finish_reason,
                     &mut tool_calls_acc,
@@ -303,8 +291,6 @@ pub async fn stream_chat(
                 ingest_sse_data_payload(
                     payload,
                     out,
-                    render_to_terminal,
-                    &mut first_content,
                     &mut content_acc,
                     &mut finish_reason,
                     &mut tool_calls_acc,
@@ -314,29 +300,10 @@ pub async fn stream_chat(
             }
         }
     }
+    // 流式阶段不向 stdout 逐 delta 打印（避免半段 Markdown）；整段结束后与 `--no-stream` 相同走 `terminal_render_agent_markdown`。
+    // **不得**用 MoveUp + Clear 重绘：会与工具子进程 stdout 及真实折行错位。
     if render_to_terminal && !content_acc.is_empty() {
-        let term_w = terminal_width().unwrap_or(80);
-        let with_prefix = format!("Agent: {}", content_acc);
-        let total_lines = count_display_lines(&with_prefix, term_w);
-        // 光标上移、回到行首并清除至屏幕末尾，再重绘为 Markdown
-        let mut stdout = io::stdout();
-        stdout.execute(MoveUp(total_lines as u16))?;
-        stdout.execute(MoveToColumn(0))?;
-        stdout.execute(Clear(ClearType::FromCursorDown))?;
-        write!(stdout, "Agent: ")?;
-        stdout.flush()?;
-        let opts = Options {
-            syntax_highlight: true,
-            width: Some(term_w),
-            code_bg: true,
-        };
-        let content = latex_math_to_unicode(content_acc.trim());
-        let rendered = render(&content, &opts);
-        write!(stdout, "{}", rendered)?;
-        if !rendered.ends_with('\n') {
-            writeln!(stdout)?;
-        }
-        stdout.flush()?;
+        terminal_render_agent_markdown(&content_acc)?;
     }
     let tool_calls = if tool_calls_acc.is_empty() {
         None

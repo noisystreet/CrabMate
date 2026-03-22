@@ -90,7 +90,7 @@ pub async fn run_repl(
         let mut stdout = io::stdout();
         let _ = stdout.execute(MoveToColumn(0));
         let _ = stdout.execute(Clear(ClearType::CurrentLine));
-        write!(stdout, "你: ")?;
+        crate::runtime::terminal_labels::write_user_message_prefix(&mut stdout)?;
         stdout.flush()?;
         let mut input = String::new();
         let n = io::stdin().read_line(&mut input)?;

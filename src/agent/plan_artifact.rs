@@ -96,6 +96,42 @@ fn collect_json_candidates(content: &str) -> Vec<String> {
     out
 }
 
+/// 首个 \`\`\` 代码围栏之前的正文（模型常在此写任务概括），与 JSON 块合读作「目标」。
+fn prose_before_first_fence(content: &str) -> String {
+    if !content.contains("```") {
+        return String::new();
+    }
+    content.split("```").next().unwrap_or("").trim().to_string()
+}
+
+/// 若 `content` 中含合法 `agent_reply_plan` v1，返回**简单 Markdown 有序列表**（可选围栏前自然语言段落；每步一行 `1. \`id\`: description`），不含原始 JSON。
+/// 仅影响展示层；`Message.content` 仍为原文以便服务端继续解析。
+pub fn format_agent_reply_plan_for_display(content: &str) -> Option<String> {
+    use std::fmt::Write;
+
+    let plan = parse_agent_reply_plan_v1(content).ok()?;
+    let raw_goal = prose_before_first_fence(content);
+    let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
+    let goal_t = goal.trim();
+    let mut out = String::new();
+    if !goal_t.is_empty() {
+        out.push_str(goal_t);
+        out.push_str("\n\n");
+    }
+    let mut n = 1usize;
+    for st in &plan.steps {
+        let desc = crate::text_sanitize::naturalize_plan_step_description(&st.description);
+        let id = st.id.trim();
+        if id.is_empty() {
+            continue;
+        }
+        let id_esc = id.replace('`', "'");
+        let _ = writeln!(&mut out, "{}. `{}`: {}", n, id_esc, desc.trim());
+        n += 1;
+    }
+    Some(out.trim_end().to_string())
+}
+
 fn strip_optional_json_fence_label(raw: &str) -> String {
     let mut lines = raw.lines();
     let Some(first) = lines.next() else {
@@ -161,5 +197,23 @@ not json
 ```
 "#;
         assert!(parse_agent_reply_plan_v1(content).is_ok());
+    }
+
+    #[test]
+    fn format_display_includes_goal_and_steps() {
+        let content = "先调研再改代码。\n```json\n{\"type\":\"agent_reply_plan\",\"version\":1,\"steps\":[{\"id\":\"s1\",\"description\":\"读 README\"},{\"id\":\"s2\",\"description\":\"改 main\"}]}\n```\n";
+        let s = format_agent_reply_plan_for_display(content).expect("formatted");
+        assert!(s.contains("调研"));
+        assert!(s.contains("1. `s1`: 读 README"));
+        assert!(s.contains("2. `s2`: 改 main"));
+        assert!(!s.contains("agent_reply_plan"));
+    }
+
+    #[test]
+    fn format_display_raw_json_only_still_works() {
+        let content =
+            r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"do"}]}"#;
+        let s = format_agent_reply_plan_for_display(content).expect("formatted");
+        assert_eq!(s, "1. `a`: do");
     }
 }
