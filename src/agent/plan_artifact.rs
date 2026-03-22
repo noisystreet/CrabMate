@@ -104,20 +104,11 @@ fn prose_before_first_fence(content: &str) -> String {
     content.split("```").next().unwrap_or("").trim().to_string()
 }
 
-/// 若 `content` 中含合法 `agent_reply_plan` v1，返回**简单 Markdown 有序列表**（可选围栏前自然语言段落；每步一行 `1. \`id\`: description`），不含原始 JSON。
-/// 仅影响展示层；`Message.content` 仍为原文以便服务端继续解析。
-pub fn format_agent_reply_plan_for_display(content: &str) -> Option<String> {
+/// 将已解析的 v1 规划格式化为与终答展示相同的 Markdown 有序列表（`1. \`id\`: description`），供 TUI/CLI 分步通知与气泡展示共用。
+pub fn format_plan_steps_markdown(plan: &AgentReplyPlanV1) -> String {
     use std::fmt::Write;
 
-    let plan = parse_agent_reply_plan_v1(content).ok()?;
-    let raw_goal = prose_before_first_fence(content);
-    let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
-    let goal_t = goal.trim();
     let mut out = String::new();
-    if !goal_t.is_empty() {
-        out.push_str(goal_t);
-        out.push_str("\n\n");
-    }
     let mut n = 1usize;
     for st in &plan.steps {
         let desc = crate::text_sanitize::naturalize_plan_step_description(&st.description);
@@ -129,6 +120,23 @@ pub fn format_agent_reply_plan_for_display(content: &str) -> Option<String> {
         let _ = writeln!(&mut out, "{}. `{}`: {}", n, id_esc, desc.trim());
         n += 1;
     }
+    out.trim_end().to_string()
+}
+
+/// 若 `content` 中含合法 `agent_reply_plan` v1，返回**简单 Markdown 有序列表**（可选围栏前自然语言段落；每步一行 `1. \`id\`: description`），不含原始 JSON。
+/// 仅影响展示层；`Message.content` 仍为原文以便服务端继续解析。
+pub fn format_agent_reply_plan_for_display(content: &str) -> Option<String> {
+    let plan = parse_agent_reply_plan_v1(content).ok()?;
+    let raw_goal = prose_before_first_fence(content);
+    let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
+    let goal_t = goal.trim();
+    let steps = format_plan_steps_markdown(&plan);
+    let mut out = String::new();
+    if !goal_t.is_empty() {
+        out.push_str(goal_t);
+        out.push_str("\n\n");
+    }
+    out.push_str(&steps);
     Some(out.trim_end().to_string())
 }
 

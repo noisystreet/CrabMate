@@ -12,8 +12,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
   - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
   - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。**Web** 端仅当 URL 以 `http_fetch_allowed_prefixes` 中某一前缀开头时才执行；**TUI** 下未匹配前缀时可像 `run_command` 一样 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键）。
-  - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`head`、`tail`、`wc`、`cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make` 等），带超时与输出截断。**CMake**：已列入白名单，常用 `cmake -S . -B build`、`cmake --build build`；参数不得含 `..` 或以 `/` 开头，建议构建目录用相对路径（勿在 args 里写绝对路径的 `-D`）。未安装时 `/health` 中 `dep_cmake` 可能为 degraded。**c++filt**：可将链接器/栈追踪中的修饰名（mangled）反解为可读 C++ 名（Binutils/LLVM 通常提供）；未安装时 `dep_cxxfilt` 可能为 degraded。**Autotools**：默认白名单含 `autoreconf`/`autoconf`/`automake`/`aclocal`，便于维护仍使用 `configure.ac` / `Makefile.am` 的仓库；会处理项目内 m4/shell，仅应在**信任的工作区**使用，且 `run_command` 参数规则仍生效。
-  - `run_executable`：在工作区目录下运行可执行文件（路径、参数均做安全校验）。
+  - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`file`、`head`、`tail`、`wc`、`cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make` 等），带超时与输出截断。**CMake**：已列入白名单，常用 `cmake -S . -B build`、`cmake --build build`；参数不得含 `..` 或以 `/` 开头，建议构建目录用相对路径（勿在 args 里写绝对路径的 `-D`）。未安装时 `/health` 中 `dep_cmake` 可能为 degraded。**c++filt**：可将链接器/栈追踪中的修饰名（mangled）反解为可读 C++ 名（Binutils/LLVM 通常提供）；未安装时 `dep_cxxfilt` 可能为 degraded。**Autotools**：默认白名单含 `autoreconf`/`autoconf`/`automake`/`aclocal`，便于维护仍使用 `configure.ac` / `Makefile.am` 的仓库；会处理项目内 m4/shell，仅应在**信任的工作区**使用，且 `run_command` 参数规则仍生效。
+  - `run_executable`：在工作区目录下按**相对路径**运行可执行文件（如 `./main`、编译产物）；与 `run_command`（仅白名单系统命令）分工——**运行当前目录/工作区内的程序请用本工具**，不要用 `run_command`。
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
@@ -35,7 +35,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - 命令执行完成后，命令输出（stdout/stderr、退出码）会以单独的系统气泡展示在聊天框中，便于直接查看 `ls`、编译日志等。
 - **流式输出与状态栏**：
   - Web Chat 回复支持流式增量显示。
-  - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。
+  - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout（与 TUI 聊天区/`human_summary` 展示逻辑一致），便于对照「写代码—编译—运行」等多步任务。
   - 状态栏区分“模型生成中…”和“工具运行中…”，命令完成后不会一直显示忙碌。
 - **会话导出（Web 与 TUI 对齐）**：
   - Web：顶部「**导出 JSON**」生成 `{ "version": 1, "messages": [...] }`，与 TUI 工作区内 `.crabmate/tui_session.json` 及 F8 导出同形（`role` / `content` 等字段与 OpenAI 兼容消息一致；工具气泡在 JSON 中为 `role: "tool"`）。

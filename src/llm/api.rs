@@ -14,7 +14,7 @@ use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
 use crate::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
-use crate::runtime::latex_unicode::latex_math_to_unicode;
+use crate::runtime::message_display::assistant_markdown_source_for_display;
 
 /// 尝试获取终端宽度；获取失败时返回 None
 fn terminal_width() -> Option<usize> {
@@ -38,7 +38,7 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .sum()
 }
 
-/// CLI：加粗着色 `Agent: ` + 规划可读化（若可解析）+ LaTeX→Unicode + `markdown_to_ansi` 基本 Markdown（标题、列表、代码块高亮等）。
+/// CLI：加粗着色 `Agent: ` + 与 TUI 相同的助手展示管线（剥标签、规划可读化、LaTeX）+ `markdown_to_ansi`。
 fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
     let term_w = terminal_width().unwrap_or(80);
     let mut stdout = io::stdout();
@@ -49,9 +49,7 @@ fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
         width: Some(term_w),
         code_bg: true,
     };
-    let content = crate::agent::plan_artifact::format_agent_reply_plan_for_display(content_acc)
-        .map(|s| latex_math_to_unicode(s.trim()))
-        .unwrap_or_else(|| latex_math_to_unicode(content_acc.trim()));
+    let content = assistant_markdown_source_for_display(content_acc);
     let rendered = render(&content, &opts);
     write!(stdout, "{}", rendered)?;
     if !rendered.ends_with('\n') {

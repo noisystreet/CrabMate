@@ -9,14 +9,16 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
 };
-use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::LazyLock;
 use tui_markdown::{Options, from_str_with_options as markdown_to_text};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::runtime::latex_unicode::latex_math_to_unicode;
+use crate::runtime::message_display::{
+    assistant_markdown_source_for_display, tool_content_for_display,
+};
+use crate::runtime::plan_section::STAGED_PLAN_SECTION_HEADER;
 use crate::types::Message;
 
 use super::state::{ChatMessageLineCacheEntry, Focus, Mode, ModelPhase, RightTab, TuiState};
@@ -293,102 +295,6 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
     }
 }
 
-/// TUI 已单独画一行「模型:」；正文里常见 `模型：…`、`## 模型：`、`**模型：**` 等重复标签，用正则循环剥掉。
-static ASSISTANT_LEADING_ROLE_ECHO: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?x)
-        ^[\s\u{feff}\u{3000}]*
-        (?:
-            (?: \#+ | > ) \s*
-            (模型|助手|Assistant|Model)
-            \s* [：:]
-          | \*{1,2} \s* (模型|助手|Assistant|Model) \s* [：:] \s* \*{1,2}
-          | _{1,2} \s* (模型|助手|Assistant|Model) \s* [：:] \s* _{1,2}
-          | 【 \s* 模型 \s* 】 \s* [：:]
-          | (模型|助手|Assistant|Model) \s* [：:]
-        )
-        \s*",
-    )
-    .expect("ASSISTANT_LEADING_ROLE_ECHO")
-});
-
-/// 整行只有「角色称呼」时（含 `# 模型：`、`**模型：**` 等），与 TUI 顶栏「模型:」重复，应剥掉。
-static STANDALONE_ROLE_LINE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?x) ^ \s*
-        (?: \#+ \s* )?
-        (?: > \s* )?
-        (?: \*{1,2} | _{1,2} )? \s*
-        (?: 【 \s* 模型 \s* 】 \s* [：:] | (模型|助手|Assistant|Model) \s* [：:] )
-        \s*
-        (?: \*{1,2} | _{1,2} )? \s*
-        $",
-    )
-    .expect("STANDALONE_ROLE_LINE")
-});
-
-fn is_standalone_role_echo_line(t: &str) -> bool {
-    let t = t.trim().trim_matches('\u{3000}');
-    if t.is_empty() {
-        return false;
-    }
-    matches!(
-        t,
-        "模型"
-            | "模型："
-            | "模型:"
-            | "Assistant"
-            | "Assistant："
-            | "Assistant:"
-            | "助手"
-            | "助手："
-            | "助手:"
-            | "Model"
-            | "Model："
-            | "Model:"
-    ) || STANDALONE_ROLE_LINE.is_match(t)
-}
-
-fn strip_leading_blank_and_role_lines(s: &str) -> String {
-    let lines: Vec<&str> = s.lines().collect();
-    let mut i = 0usize;
-    while i < lines.len() {
-        let t = lines[i].trim().trim_matches('\u{3000}');
-        if t.is_empty() || is_standalone_role_echo_line(t) {
-            i += 1;
-            continue;
-        }
-        break;
-    }
-    lines[i..].join("\n")
-}
-
-fn strip_assistant_echo_label(content: &str) -> String {
-    let mut s = content
-        .trim_start()
-        .trim_start_matches('\u{feff}')
-        .to_string();
-    for _ in 0..32 {
-        let before = s.clone();
-        // 1) 字符串开头的「模型：」块（含 Markdown 前缀）
-        for _ in 0..12 {
-            let trimmed = s.trim_start().trim_start_matches('\u{feff}');
-            let next = ASSISTANT_LEADING_ROLE_ECHO.replace(trimmed, "");
-            let next = next.trim_start().trim_start_matches('\u{feff}').to_string();
-            if next == s {
-                break;
-            }
-            s = next;
-        }
-        // 2) 前导空行 + 单独一行的「模型：」（API 常见：\n\n模型：\n正文）
-        s = strip_leading_blank_and_role_lines(&s);
-        if s == before {
-            break;
-        }
-    }
-    s
-}
-
 /// 按终端显示宽度截断（宽字符计列宽），超出加省略号。
 fn truncate_display_width(s: &str, max_w: usize) -> String {
     if max_w == 0 {
@@ -531,19 +437,11 @@ fn line_cache_fingerprint(m: &Message) -> u64 {
 
 fn message_body_for_chat_display(m: &Message) -> String {
     let raw = m.content.as_deref().unwrap_or("");
+    if m.role == "assistant" {
+        return assistant_markdown_source_for_display(raw);
+    }
     let display_raw = if m.role == "tool" {
-        serde_json::from_str::<serde_json::Value>(raw)
-            .ok()
-            .and_then(|v| {
-                v.get("human_summary")
-                    .and_then(|x| x.as_str())
-                    .map(|s| s.to_string())
-            })
-            .unwrap_or_else(|| raw.to_string())
-    } else if m.role == "assistant" {
-        let stripped = strip_assistant_echo_label(raw);
-        crate::agent::plan_artifact::format_agent_reply_plan_for_display(&stripped)
-            .unwrap_or(stripped)
+        tool_content_for_display(raw)
     } else {
         raw.to_string()
     };
@@ -651,6 +549,23 @@ fn staged_plan_think_style(state: &TuiState) -> Style {
     }
 }
 
+/// 与 `agent_turn` 注入的分步 user（正文含 `【分步执行`）区分，取**本轮真人提问**所在下标，供主聊天区挂载 `staged_plan_log`。
+/// 从后往前找：最后一条「非分步注入」的 `user` 即当前轮用户（同步全量 `messages` 后仍成立）。
+fn staged_plan_anchor_after_message_index(messages: &[Message]) -> Option<usize> {
+    const STAGED_STEP_USER_MARKER: &str = "【分步执行";
+    for (i, m) in messages.iter().enumerate().rev() {
+        if m.role != "user" {
+            continue;
+        }
+        let c = m.content.as_deref().unwrap_or("");
+        if c.contains(STAGED_STEP_USER_MARKER) {
+            continue;
+        }
+        return Some(i);
+    }
+    None
+}
+
 fn push_staged_plan_chat_block(
     draw_lines: &mut Vec<Line<'static>>,
     plain_lines: &mut Vec<String>,
@@ -660,11 +575,15 @@ fn push_staged_plan_chat_block(
         return;
     }
     let sty = staged_plan_think_style(state);
-    draw_lines.push(Line::from(vec![Span::styled("【规划】", sty)]));
-    plain_lines.push("【规划】".to_string());
+    draw_lines.push(Line::from(vec![Span::styled(
+        STAGED_PLAN_SECTION_HEADER,
+        sty,
+    )]));
+    plain_lines.push(STAGED_PLAN_SECTION_HEADER.to_string());
     for row in &state.staged_plan_log {
+        let row = latex_math_to_unicode(row);
         draw_lines.push(Line::from(vec![Span::styled(row.clone(), sty)]));
-        plain_lines.push(row.clone());
+        plain_lines.push(row);
     }
 }
 
@@ -695,17 +614,13 @@ pub(super) fn build_chat_scroll_lines(
     let mut plain_lines: Vec<String> = Vec::new();
     let mut message_start_lines: Vec<usize> = Vec::new();
 
+    let plan_anchor_idx = staged_plan_anchor_after_message_index(&state.messages);
+
     for (i, m) in state.messages.iter().enumerate() {
         if m.role == "system" {
             continue;
         }
         message_start_lines.push(draw_lines.len());
-        let is_last_visible = i + 1 == state.messages.len();
-        if m.role == "assistant" && is_last_visible && !state.staged_plan_log.is_empty() {
-            push_staged_plan_chat_block(&mut draw_lines, &mut plain_lines, state);
-            draw_lines.push(Line::raw(""));
-            plain_lines.push(String::new());
-        }
 
         let fp = line_cache_fingerprint(m);
 
@@ -733,13 +648,13 @@ pub(super) fn build_chat_scroll_lines(
         plain_lines.append(&mut p);
         draw_lines.push(Line::raw(""));
         plain_lines.push(String::new());
-    }
 
-    if let Some(m) = state.messages.iter().rev().find(|msg| msg.role != "system")
-        && m.role == "user"
-        && !state.staged_plan_log.is_empty()
-    {
-        push_staged_plan_chat_block(&mut draw_lines, &mut plain_lines, state);
+        // 分阶段规划：挂在**真人 user** 之后。若用「最后一条 user」会在同步后命中 `【分步执行` 注入行，规划块被挤到会话末尾，看起来像「没打印规划」。
+        if Some(i) == plan_anchor_idx && !state.staged_plan_log.is_empty() {
+            push_staged_plan_chat_block(&mut draw_lines, &mut plain_lines, state);
+            draw_lines.push(Line::raw(""));
+            plain_lines.push(String::new());
+        }
     }
 
     (draw_lines, plain_lines, message_start_lines)
@@ -1095,4 +1010,39 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
         let content = Paragraph::new(full).block(block).wrap(Wrap { trim: false });
         f.render_widget(content, vchunks[2]);
     }
+}
+
+#[cfg(test)]
+fn test_assistant_message(content: &str) -> Message {
+    Message {
+        role: "assistant".to_string(),
+        content: Some(content.to_string()),
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn staged_plan_anchor_skips_step_injection_users() {
+    let messages = vec![
+        Message::system_only("s"),
+        Message::user_only("写个 cpp"),
+        test_assistant_message("plan"),
+        Message::user_only("【分步执行 1/2】只完成本步"),
+        test_assistant_message("done step"),
+    ];
+    assert_eq!(staged_plan_anchor_after_message_index(&messages), Some(1));
+}
+
+#[cfg(test)]
+#[test]
+fn staged_plan_anchor_plain_user_when_no_injection() {
+    let messages = vec![
+        Message::system_only("s"),
+        Message::user_only("hi"),
+        test_assistant_message("ok"),
+    ];
+    assert_eq!(staged_plan_anchor_after_message_index(&messages), Some(1));
 }

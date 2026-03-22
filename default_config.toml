@@ -33,11 +33,11 @@ command_timeout_secs = 10
 # run_command 输出最大长度（字符），超出则截断
 command_max_output_len = 8192
 # run_command 通用命令白名单（若未按环境拆分，则使用该列表）
-allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "ninja", "gcc", "g++", "clang", "clang++", "c++filt", "autoreconf", "autoconf", "automake", "aclocal", "make"]
+allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "file", "df", "du", "head", "tail", "wc", "cat", "cmake", "ninja", "gcc", "g++", "clang", "clang++", "c++filt", "autoreconf", "autoconf", "automake", "aclocal", "make"]
 # 开发环境（dev）专用命令白名单（若配置则覆盖 allowed_commands）
-allowed_commands_dev = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat", "cmake", "ninja", "gcc", "g++", "clang", "clang++", "c++filt", "autoreconf", "autoconf", "automake", "aclocal", "make"]
+allowed_commands_dev = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "file", "df", "du", "head", "tail", "wc", "cat", "cmake", "ninja", "gcc", "g++", "clang", "clang++", "c++filt", "autoreconf", "autoconf", "automake", "aclocal", "make"]
 # 生产环境（prod）专用命令白名单（例如去掉编译/构建命令）
-allowed_commands_prod = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "df", "du", "head", "tail", "wc", "cat"]
+allowed_commands_prod = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "file", "df", "du", "head", "tail", "wc", "cat"]
 # run_command 的工作目录（命令在该目录下执行，需存在且为目录）
 run_command_working_dir = "."
 # 对话 API 单次请求最大 token 数
@@ -79,6 +79,7 @@ system_prompt = """
 - 若需要在代码仓库内查找定义、引用或包含某段文本，请优先使用 search_in_files 工具（基于 grep），不要盲目猜测文件位置。
 - 若在编译/构建命令（如 gcc/g++/cmake/make）输出中看到明显的格式/缩进问题（例如 Rust/TypeScript/JavaScript 的格式不规范导致的错误），请优先调用 format_file 工具对相关源文件进行格式化，然后再重新尝试编译。
 - 仅使用 run_command 中白名单允许的命令，不要尝试执行 rm、mv、chmod 等修改类命令。
+- 运行**当前工作区内**已生成或可执行文件（如 ./main、./a.out、./build/app）时，必须使用 **run_executable**，不要使用 run_command；run_command 只用于白名单内的系统工具（如 gcc、ls、cmake）。
 
 在应对「非 trivially 简单」的开发需求（例如新增功能、较大范围重构、修一个涉及多文件的 bug）时，请使用一个轻量的“任务/计划层”，形成稳定的循环：
 1. 在第一次响应中，先用自然语言向用户展示一个简短的任务清单（3～7 条），说明你打算如何拆分这次工作。

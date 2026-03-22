@@ -30,32 +30,30 @@ const STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT: &str = r#"【分阶段规划模式 
 - "steps" 为非空数组，每项含非空字符串 "id" 与 "description"
 可辅以简短自然语言说明；后续系统将按 steps 顺序逐步下发执行指令。"#;
 
-fn truncate_staged_desc(s: &str, max_chars: usize) -> String {
-    let n = s.chars().count();
-    if n <= max_chars {
-        return s.to_string();
-    }
-    let t: String = s.chars().take(max_chars).collect();
-    format!("{t}…")
-}
-
 fn staged_plan_summary_text(plan: &super::plan_artifact::AgentReplyPlanV1) -> String {
-    let mut out = format!("【规划】共 {} 步\n", plan.steps.len());
-    for (i, st) in plan.steps.iter().enumerate() {
-        let d = truncate_staged_desc(&st.description, 72);
-        out.push_str(&format!("  {}. [{}] {}\n", i + 1, st.id, d));
-    }
-    out
+    let steps_md = super::plan_artifact::format_plan_steps_markdown(plan);
+    format!(
+        "{}共 {} 步\n\n{}",
+        crate::runtime::plan_section::STAGED_PLAN_SECTION_HEADER,
+        plan.steps.len(),
+        steps_md
+    )
 }
 
 async fn send_staged_plan_notice(
     out: Option<&mpsc::Sender<String>>,
+    echo_terminal: bool,
     clear_before: bool,
     text: impl Into<String>,
 ) {
     let text = text.into();
     if text.is_empty() {
         return;
+    }
+    // CLI（`out: None` 且 `render_to_terminal`）无 SSE，与 TUI 对齐把规划/步骤打到 stdout
+    if echo_terminal {
+        let _ =
+            crate::runtime::terminal_cli_transcript::print_staged_plan_notice(clear_before, &text);
     }
     if let Some(tx) = out {
         let _ = tx
@@ -138,6 +136,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub effective_working_dir: &'a Path,
     pub workspace_is_set: bool,
     pub out: Option<&'a mpsc::Sender<String>>,
+    /// CLI：`render_to_terminal` 且 `out: None` 时为 true，工具结果打印到 stdout（与 TUI 气泡对齐）。
+    pub echo_terminal_transcript: bool,
 }
 
 pub(crate) struct TuiExecuteCtx<'a> {
@@ -181,6 +181,8 @@ async fn per_execute_tools_common(
     effective_working_dir: &Path,
     workspace_is_set: bool,
     out: Option<&mpsc::Sender<String>>,
+    echo_terminal_transcript: bool,
+    terminal_tool_display_max_chars: usize,
     dispatch_mode: ExecuteDispatchMode<'_>,
 ) -> ExecuteToolsBatchOutcome {
     let mut workspace_changed = false;
@@ -254,6 +256,14 @@ async fn per_execute_tools_common(
 
         info!(tool = %name, elapsed_ms = t_tool.elapsed().as_millis(), "工具调用完成");
 
+        if echo_terminal_transcript {
+            let _ = crate::runtime::terminal_cli_transcript::print_tool_result_terminal(
+                &name,
+                &result,
+                terminal_tool_display_max_chars,
+            );
+        }
+
         if let Some(tx) = out {
             let structured = StructuredToolResult::from_legacy_output(&name, result.clone());
             let stdout = if structured.stdout.is_empty() {
@@ -314,6 +324,7 @@ pub(crate) async fn per_execute_tools_web(
         effective_working_dir,
         workspace_is_set,
         out,
+        echo_terminal_transcript,
     } = ctx;
 
     per_execute_tools_common(
@@ -324,6 +335,8 @@ pub(crate) async fn per_execute_tools_web(
         effective_working_dir,
         workspace_is_set,
         out,
+        echo_terminal_transcript,
+        cfg.command_max_output_len,
         ExecuteDispatchMode::Web,
     )
     .await
@@ -352,6 +365,8 @@ pub(crate) async fn per_execute_tools_tui(
         effective_working_dir,
         workspace_is_set,
         out,
+        false,
+        cfg.command_max_output_len,
         ExecuteDispatchMode::Tui(tui_tool_ctx),
     )
     .await
@@ -449,6 +464,7 @@ async fn run_agent_outer_loop(
         }
 
         let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+        let echo_terminal_transcript = render_to_terminal && out.is_none();
         let exec_outcome = match mode {
             AgentRunMode::Web { .. } => {
                 per_execute_tools_web(
@@ -460,6 +476,7 @@ async fn run_agent_outer_loop(
                         effective_working_dir,
                         workspace_is_set,
                         out,
+                        echo_terminal_transcript,
                     },
                 )
                 .await
@@ -510,6 +527,7 @@ async fn run_staged_plan_then_execute_steps(
         AgentRunMode::Web { render_to_terminal } => render_to_terminal,
         AgentRunMode::Tui { .. } => false,
     };
+    let echo_terminal_staged = render_to_terminal && out.is_none();
 
     super::context_window::prepare_messages_for_model(client, api_key, cfg, messages).await?;
 
@@ -570,21 +588,29 @@ async fn run_staged_plan_then_execute_steps(
         }
     };
 
-    send_staged_plan_notice(out, true, staged_plan_summary_text(&plan)).await;
+    send_staged_plan_notice(
+        out,
+        echo_terminal_staged,
+        true,
+        staged_plan_summary_text(&plan),
+    )
+    .await;
 
     let n = plan.steps.len();
     for (i, step) in plan.steps.iter().enumerate() {
         if sse_sender_closed(out) || cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             break;
         }
+        let desc_display =
+            crate::text_sanitize::naturalize_plan_step_description(&step.description);
         let step_head = format!(
             "—— 第 {}/{} 步 [{}] ——\n{}",
             i + 1,
             n,
-            step.id,
-            truncate_staged_desc(&step.description, 120)
+            step.id.trim(),
+            desc_display.trim()
         );
-        send_staged_plan_notice(out, false, step_head).await;
+        send_staged_plan_notice(out, echo_terminal_staged, false, step_head).await;
 
         let body = format!(
             "【分步执行 {}/{}】请只专注完成下列规划步骤，本步完成后以非 tool_calls 的终答结束；不要提前执行后续步骤。\n- id: {}\n- 描述: {}",
@@ -616,7 +642,13 @@ async fn run_staged_plan_then_execute_steps(
             per_coord,
         )
         .await?;
-        send_staged_plan_notice(out, false, format!("✓ 第 {}/{} 步已完成", i + 1, n)).await;
+        send_staged_plan_notice(
+            out,
+            echo_terminal_staged,
+            false,
+            format!("✓ 第 {}/{} 步已完成", i + 1, n),
+        )
+        .await;
     }
     Ok(())
 }
