@@ -2,6 +2,7 @@
 //!
 //! 路径为相对于工作目录的相对路径，且不能通过 .. 超出工作目录。
 
+use crate::path_workspace::absolutize_relative_under_root;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -63,25 +64,9 @@ fn resolve_executable_path(base: &Path, sub: &str) -> Result<PathBuf, String> {
         return Err("路径必须为相对于工作目录的相对路径，不能使用绝对路径".to_string());
     }
     let base_canonical = canonical_workspace_root(base)?;
-    let joined = base_canonical.join(sub);
-    let normalized = normalize_path(&joined);
-    ensure_within_workspace(&base_canonical, &normalized)?;
+    let normalized = absolutize_relative_under_root(&base_canonical, sub)?;
     ensure_existing_ancestor_within_workspace(&base_canonical, &normalized)?;
     Ok(normalized)
-}
-
-fn normalize_path(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in p.components() {
-        match c {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 #[cfg(unix)]

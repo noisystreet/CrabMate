@@ -19,7 +19,8 @@
 //! - 必须落在工作区根目录下
 //! - 应用前先执行 `patch --dry-run` 预检查
 
-use std::path::{Component, Path, PathBuf};
+use crate::path_workspace::absolutize_relative_under_root;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -173,16 +174,8 @@ fn validate_single_path(raw_path: &str, root: &Path) -> Result<(), String> {
     if p.is_absolute() {
         return Err(format!("不允许绝对路径: {}", raw_path));
     }
-    for c in p.components() {
-        if matches!(c, Component::ParentDir) {
-            return Err(format!("不允许使用 .. 路径: {}", raw_path));
-        }
-    }
-    let joined = root.join(p);
-    let normalized = normalize_path(&joined);
-    if !normalized.starts_with(root) {
-        return Err(format!("路径超出工作区: {}", raw_path));
-    }
+    let normalized = absolutize_relative_under_root(root, path_no_prefix)
+        .map_err(|e| format!("路径超出工作区或无效: {} ({})", raw_path, e))?;
     ensure_existing_ancestor_within_workspace(root, &normalized)?;
     Ok(())
 }
@@ -202,20 +195,6 @@ fn ensure_existing_ancestor_within_workspace(root: &Path, target: &Path) -> Resu
         return Err(format!("路径超出工作区: {}", target.display()));
     }
     Ok(())
-}
-
-fn normalize_path(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in p.components() {
-        match c {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 fn truncate(s: &str, max_bytes: usize) -> String {
@@ -248,7 +227,11 @@ mod tests {
     fn test_validate_single_path_rejects_parent() {
         let root = std::env::current_dir().unwrap();
         let err = validate_single_path("../etc/passwd", &root).unwrap_err();
-        assert!(err.contains(".."));
+        assert!(
+            err.contains("超出") || err.contains("工作目录"),
+            "应拒绝越出工作区: {}",
+            err
+        );
     }
 
     #[test]

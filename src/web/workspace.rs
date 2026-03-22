@@ -11,6 +11,7 @@ use serde_json;
 
 use crate::AppState;
 use crate::config::AgentConfig;
+use crate::path_workspace::absolutize_workspace_subpath;
 
 #[derive(Serialize)]
 pub struct WorkspacePickResponse {
@@ -90,20 +91,6 @@ pub struct WorkspaceFileDeleteResponse {
     pub error: Option<String>,
 }
 
-fn normalize_path(p: &Path) -> std::path::PathBuf {
-    let mut out = std::path::PathBuf::new();
-    for c in p.components() {
-        match c {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
-}
-
 /// 校验 Web `POST /workspace` 非空 `path`：须为已存在目录，`canonicalize` 后落在 `workspace_allowed_roots` 某一根之下（见配置项 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS`）。
 pub(crate) fn validate_workspace_set_path(
     cfg: &AgentConfig,
@@ -164,13 +151,7 @@ fn resolve_workspace_write_path(base: &Path, sub: &str) -> Result<std::path::Pat
     let base_canonical = base
         .canonicalize()
         .map_err(|e| format!("工作目录无法解析: {}", e))?;
-    let joined = if Path::new(sub).is_absolute() {
-        std::path::PathBuf::from(sub)
-    } else {
-        base_canonical.join(sub)
-    };
-    let normalized = normalize_path(&joined);
-    ensure_within_workspace(&base_canonical, normalized.clone())?;
+    let normalized = absolutize_workspace_subpath(&base_canonical, sub)?;
 
     // 防止借助工作区内 symlink 写到外部：校验最近存在祖先路径的 canonical 结果仍在工作区内
     let mut ancestor = normalized.as_path();
@@ -197,12 +178,8 @@ pub(crate) fn resolve_workspace_path(
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return Ok(base_canonical),
     };
-    let joined = if Path::new(sub).is_absolute() {
-        std::path::PathBuf::from(sub)
-    } else {
-        base_canonical.join(sub)
-    };
-    let canonical = joined
+    let normalized = absolutize_workspace_subpath(&base_canonical, sub)?;
+    let canonical = normalized
         .canonicalize()
         .map_err(|e| format!("路径无法解析: {}", e))?;
     ensure_within_workspace(&base_canonical, canonical)
