@@ -127,7 +127,8 @@ flowchart TB
 | `grep.rs` / `symbol.rs` | 工作区内文本搜索、Rust 符号 |
 | `spell_astgrep_tools.rs` | `typos_check`、`codespell_check`（拼写，只读）、`ast_grep_run`（ast-grep 结构化搜索；路径与 glob 受限） |
 | `markdown_links.rs` | `markdown_check_links`：Markdown 相对链接存在性检查，可选外链前缀 HEAD |
-| `structured_data.rs` | `structured_validate` / `structured_query` / `structured_diff`：JSON·YAML·TOML 校验、路径查询、结构化 diff |
+| `structured_data.rs` | `structured_validate` / `structured_query` / `structured_diff`：JSON·YAML·TOML·CSV·TSV 校验、路径查询、结构化 diff（表格先解析为 JSON 数组） |
+| `table_text.rs` | `table_text`：CSV/TSV 等分隔文本的预览、列数校验、列筛选与聚合（与 `structured_*` 互补） |
 | `text_transform.rs` | `text_transform`：纯内存 Base64/URL 编解码、短哈希、按行合并与按分隔符切分（不落盘，有长度上限） |
 | `text_diff.rs` | `text_diff`：两段 UTF-8 文本或工作区内两文件的行级 unified diff（与 Git 无关，输出可截断） |
 | `patch.rs` | unified diff 应用 |
