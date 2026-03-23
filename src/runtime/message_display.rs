@@ -6,7 +6,8 @@ use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
 use crate::agent::plan_artifact::{
-    format_agent_reply_plan_for_display, parse_agent_reply_plan_v1,
+    augment_agent_reply_plan_goal_for_display, format_agent_reply_plan_for_display,
+    parse_agent_reply_plan_v1, prose_before_first_fence,
     strip_agent_reply_plan_fence_blocks_for_display,
 };
 use crate::runtime::latex_unicode::latex_math_to_unicode;
@@ -306,28 +307,141 @@ pub(crate) fn strip_assistant_echo_label(content: &str) -> String {
     s
 }
 
-/// 助手气泡 / CLI ANSI / 导出共用：剥标签 → `agent_reply_plan` 可读化 → LaTeX。
-/// `SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 为 `false` 时：整段可解析为 v1 规划 → 不展示；
-/// 若仅围栏内为规划 JSON（含解析失败但形状明显的块），从展示串中移除围栏，**不**把原始 JSON 打到终端/气泡；`Message.content` 与日志不变。
-pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
-    let stripped = strip_assistant_echo_label(raw);
+/// 流式阶段检测到「正在输出 agent_reply_plan」时，聊天区不刷 JSON 片段，展示**本占位 + 围栏前说明**（占位置顶）；**收齐后**走 [`assistant_markdown_source_for_display`] 再剥 JSON。
+const STAGED_PLAN_STREAMING_PLACEHOLDER: &str = "正在生成分阶段规划…";
+
+fn triple_backtick_fence_count(s: &str) -> usize {
+    s.match_indices("```").count()
+}
+
+/// 首段代码围栏（`parts[1]`）视为「JSON 规划流」：`json` 语言行后为空或 `{` 开头，或无语言行且以内联 `{` 开头。
+fn first_fence_inner_looks_like_json_object(s: &str) -> bool {
+    let mut it = s.split("```");
+    let _ = it.next();
+    let Some(inner) = it.next() else {
+        return false;
+    };
+    let rest = inner.trim_start();
+    let first_line = rest.lines().next().unwrap_or("").trim();
+    if first_line.eq_ignore_ascii_case("json") {
+        let body: String = rest.lines().skip(1).collect::<Vec<_>>().join("\n");
+        let b = body.trim();
+        return b.is_empty() || b.starts_with('{');
+    }
+    rest.trim().starts_with('{')
+}
+
+fn looks_like_incomplete_agent_reply_plan_whole_json(t: &str) -> bool {
+    let t = t.trim();
+    if !t.starts_with('{') {
+        return false;
+    }
+    if t.contains("\"agent_reply_plan\"") {
+        return true;
+    }
+    t.contains("\"type\"") && t.contains("\"version\"") && t.contains("\"steps\"")
+}
+
+/// 流式未结束时：若判定为 agent_reply_plan 相关输出，则不在 UI 上逐 delta 渲染 JSON。
+fn should_buffer_agent_reply_plan_stream(stripped: &str) -> bool {
+    if triple_backtick_fence_count(stripped) % 2 == 1
+        && first_fence_inner_looks_like_json_object(stripped)
+    {
+        return true;
+    }
+    let t = stripped.trim();
+    if !t.starts_with('{') {
+        return false;
+    }
+    if parse_agent_reply_plan_v1(stripped).is_ok() {
+        return false;
+    }
+    serde_json::from_str::<serde_json::Value>(t).is_err()
+        && looks_like_incomplete_agent_reply_plan_whole_json(t)
+}
+
+fn staged_plan_streaming_chat_body(stripped: &str) -> String {
+    let raw = prose_before_first_fence(stripped);
+    // 与收齐后 `staged_plan_hidden_chat_prose_only` 一致：DSML、相邻重复行、列表并句，避免流式阶段出现双行复读而收齐后变单段等不一致。
+    let prose_t = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
+    let prose_t = prose_t.trim();
+    if prose_t.is_empty() {
+        STAGED_PLAN_STREAMING_PLACEHOLDER.to_string()
+    } else {
+        // 占位置顶：围栏前说明往往较长（如「这个任务可以分成以下步骤」），放首位易把底部「正在生成…」顶出首屏，用户误以为被覆盖。
+        format!("{STAGED_PLAN_STREAMING_PLACEHOLDER}\n\n{prose_t}")
+    }
+}
+
+/// 主聊天区隐藏 v1 规划列表时，仍展示首个 \`\`\` 围栏**之前**的自然语言（与 `format_agent_reply_plan_for_display` 的 goal 段一致），
+/// 避免 JSON 一收齐展示层整段置空、首句在「打印分阶段规划/队列更新」瞬间消失。
+fn staged_plan_hidden_chat_prose_only(original: &str) -> String {
+    let raw_goal = prose_before_first_fence(original);
+    let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
+    let goal_t = goal.trim();
+    let merged = match parse_agent_reply_plan_v1(original) {
+        Ok(plan) => augment_agent_reply_plan_goal_for_display(goal_t, &plan),
+        Err(_) => goal_t.to_string(),
+    };
+    let merged = merged.trim();
+    if merged.is_empty() {
+        String::new()
+    } else {
+        latex_math_to_unicode(merged)
+    }
+}
+
+/// 剥标签后的助手正文：可读化规划、去围栏、LaTeX（**非流式**完整处理）。
+fn assistant_markdown_from_stripped(stripped: &str) -> String {
     if SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT {
-        let display = format_agent_reply_plan_for_display(&stripped).unwrap_or(stripped);
+        let display =
+            format_agent_reply_plan_for_display(stripped).unwrap_or_else(|| stripped.to_string());
         return latex_math_to_unicode(&display);
     }
-    if parse_agent_reply_plan_v1(&stripped).is_ok() {
-        return String::new();
+    if parse_agent_reply_plan_v1(stripped).is_ok() {
+        return staged_plan_hidden_chat_prose_only(stripped);
     }
-    let without_fences = strip_agent_reply_plan_fence_blocks_for_display(&stripped);
+    let without_fences = strip_agent_reply_plan_fence_blocks_for_display(stripped);
     let trimmed = without_fences.trim();
     if trimmed.is_empty() {
         return String::new();
     }
     if parse_agent_reply_plan_v1(trimmed).is_ok() {
-        return String::new();
+        return staged_plan_hidden_chat_prose_only(stripped);
     }
     let display = format_agent_reply_plan_for_display(&without_fences).unwrap_or(without_fences);
     latex_math_to_unicode(&display)
+}
+
+/// 助手气泡 / CLI ANSI / 导出共用：剥标签 → `agent_reply_plan` 可读化 → LaTeX。
+/// `SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 为 `false` 时：可解析为 v1 规划 → 不展示列表/JSON，但**保留**围栏前自然语言概括；纯 JSON 无前置说明时仍为空。
+/// 若仅围栏内为规划 JSON（含解析失败但形状明显的块），从展示串中移除围栏，**不**把原始 JSON 打到终端/气泡；`Message.content` 与日志不变。
+pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
+    let stripped = strip_assistant_echo_label(raw);
+    let stripped = preprocess_unfenced_assistant_prose_dedup(&stripped);
+    assistant_markdown_from_stripped(&stripped)
+}
+
+/// TUI 流式：仅对**最后一条助手**且仍处生成中时调用；`agent_reply_plan` 相关输出缓冲为占位，收齐后由普通路径一次性剥 JSON 再展示。
+pub(crate) fn assistant_markdown_source_for_display_streaming_last(raw: &str) -> String {
+    let stripped = strip_assistant_echo_label(raw);
+    if should_buffer_agent_reply_plan_stream(&stripped) {
+        return latex_math_to_unicode(&staged_plan_streaming_chat_body(&stripped));
+    }
+    let stripped = preprocess_unfenced_assistant_prose_dedup(&stripped);
+    assistant_markdown_from_stripped(&stripped)
+}
+
+/// 在打出首个 \`\`\` 之前，`should_buffer` 为 false，正文不经规划专用清洗；此处对**无围栏、非整段 JSON** 的助手气泡做与围栏前一致的复读折叠。
+fn preprocess_unfenced_assistant_prose_dedup(stripped: &str) -> String {
+    if stripped.contains("```") {
+        return stripped.to_string();
+    }
+    let t = stripped.trim_start();
+    if t.starts_with('{') {
+        return stripped.to_string();
+    }
+    crate::text_sanitize::dedupe_plain_assistant_preamble(stripped)
 }
 
 #[cfg(test)]
@@ -447,6 +561,83 @@ mod tests {
         let out = assistant_markdown_source_for_display(&raw);
         assert!(out.contains("说明"));
         assert!(!out.contains("agent_reply_plan"));
+    }
+
+    #[test]
+    fn assistant_valid_fenced_plan_keeps_prose_prefix_when_show_flag_false() {
+        let raw = format!(
+            "下面拆解任务。\n```json\n{}\n```\n",
+            r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x"}]}"#
+        );
+        let out = assistant_markdown_source_for_display(&raw);
+        assert!(out.contains("下面拆解"));
+        assert!(!out.contains("agent_reply_plan"));
+        assert!(!out.contains("```"));
+    }
+
+    #[test]
+    fn assistant_fenced_plan_dedupes_identical_prose_lines_before_fence() {
+        let line = "我将帮您编写一个简单的 C++ Hello World 程序，让我先规划任务步骤：";
+        let raw = format!(
+            "{line}\n{line}\n```json\n{}\n```\n",
+            r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"创建源文件"}]}"#
+        );
+        let out = assistant_markdown_source_for_display(&raw);
+        assert_eq!(out.matches(line).count(), 1, "{}", out);
+    }
+
+    #[test]
+    fn assistant_streaming_last_dedupes_duplicate_prose_before_partial_fence() {
+        let line = "我将帮您编写一个简单的 C++ Hello World 程序，让我先规划任务步骤：";
+        let raw = format!("{line}\n{line}\n```json\n{{\"type\":\"agent_reply_plan\"");
+        let out = assistant_markdown_source_for_display_streaming_last(&raw);
+        assert_eq!(out.matches(line).count(), 1, "{}", out);
+        assert!(out.contains("正在生成分阶段规划"));
+    }
+
+    #[test]
+    fn assistant_streaming_last_buffers_partial_fenced_plan_json() {
+        let raw = "下面拆解如下。\n```json\n{\"type\":\"agent_reply_plan\"";
+        let out = assistant_markdown_source_for_display_streaming_last(raw);
+        assert!(out.contains("下面拆解"));
+        assert!(out.contains("正在生成分阶段规划"));
+        assert!(!out.contains("\"steps\""));
+    }
+
+    #[test]
+    fn assistant_streaming_last_placeholder_before_fence_prose() {
+        let raw = "这个任务可以分成以下步骤\n```json\n{\"type\":\"agent_reply_plan\"";
+        let out = assistant_markdown_source_for_display_streaming_last(raw);
+        let ph = out.find("正在生成分阶段规划").expect("placeholder");
+        let prose = out
+            .find("这个任务可以分成以下步骤")
+            .expect("fence-before prose");
+        assert!(ph < prose, "占位置顶，避免长说明盖住状态：out={out:?}");
+    }
+
+    #[test]
+    fn assistant_streaming_last_plain_text_still_incremental() {
+        let raw = "先写一句说明，再考虑格式。";
+        let out = assistant_markdown_source_for_display_streaming_last(raw);
+        assert!(out.contains("先写一句"));
+        assert!(!out.contains("正在生成分阶段规划"));
+    }
+
+    /// 尚未输出 ``` 时 `should_buffer` 为 false；此前不经规划专用 naturalize，需在预处理中折叠围栏前同句复读。
+    #[test]
+    fn assistant_streaming_last_dedupes_duplicate_lines_before_any_fence() {
+        let line = "我将帮您编写 C++ Hello World，让我先规划任务步骤：";
+        let raw = format!("{line}\n{line}");
+        let out = assistant_markdown_source_for_display_streaming_last(&raw);
+        assert_eq!(out.matches(line).count(), 1, "{}", out);
+        assert!(!out.contains("正在生成分阶段规划"));
+    }
+
+    #[test]
+    fn assistant_streaming_last_whole_json_incomplete_uses_placeholder() {
+        let raw = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x""#;
+        let out = assistant_markdown_source_for_display_streaming_last(raw);
+        assert!(out.contains("正在生成分阶段规划"));
     }
 
     #[test]

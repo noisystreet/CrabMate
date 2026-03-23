@@ -20,8 +20,9 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::redact;
 use crate::runtime::latex_unicode::latex_math_to_unicode;
 use crate::runtime::message_display::{
-    assistant_markdown_source_for_display, tool_content_for_display_for_message,
-    tool_display_context_fingerprint, user_message_for_chat_display,
+    assistant_markdown_source_for_display, assistant_markdown_source_for_display_streaming_last,
+    tool_content_for_display_for_message, tool_display_context_fingerprint,
+    user_message_for_chat_display,
 };
 use crate::types::{Message, is_chat_ui_separator};
 use log::debug;
@@ -443,9 +444,19 @@ fn line_cache_fingerprint(m: &Message, messages: &[Message], idx: usize) -> u64 
     h.finish()
 }
 
-fn message_body_for_chat_display(m: &Message, messages: &[Message], msg_idx: usize) -> String {
+fn message_body_for_chat_display(
+    m: &Message,
+    messages: &[Message],
+    msg_idx: usize,
+    state: &TuiState,
+) -> String {
     let raw = m.content.as_deref().unwrap_or("");
     if m.role == "assistant" {
+        let streaming_last =
+            state.model_phase == ModelPhase::Answering && msg_idx + 1 == messages.len();
+        if streaming_last {
+            return assistant_markdown_source_for_display_streaming_last(raw);
+        }
         return assistant_markdown_source_for_display(raw);
     }
     let display_raw = if m.role == "tool" {
@@ -651,7 +662,7 @@ pub(super) fn build_chat_scroll_lines(
             continue;
         }
 
-        let rendered = message_body_for_chat_display(m, &state.messages, i);
+        let rendered = message_body_for_chat_display(m, &state.messages, i, state);
         if m.role == "user" && rendered.trim().is_empty() {
             state.chat_line_build_cache.per_message[i] = None;
             continue;
