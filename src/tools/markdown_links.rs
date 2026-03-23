@@ -7,6 +7,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use regex::Regex;
+use reqwest::blocking::Client;
 use reqwest::redirect::Policy;
 use std::sync::LazyLock;
 
@@ -29,11 +30,38 @@ static RE_REF_DEF: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[ \t]{0,3}\[([^\]]+)\]:[ \t]*<?([^ \t>]+)>?").expect("ref def"));
 static RE_REF_LINK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\[([^\]]*)\]").expect("ref link"));
+const RULE_LOCAL: &str = "md-link-local";
+const RULE_ANCHOR: &str = "md-link-anchor";
+const RULE_EXTERNAL: &str = "md-link-external";
+const RULE_ROOT: &str = "md-link-root";
 
 #[derive(Debug, Clone)]
 struct LinkHit {
     line: usize,
     raw: String,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedLocalTarget {
+    path: String,
+    had_fragment: bool,
+    fragment_slug: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct LinkIssue {
+    rule_id: &'static str,
+    file: Option<String>,
+    line: Option<usize>,
+    target: String,
+    message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputFormat {
+    Text,
+    Json,
+    Sarif,
 }
 
 fn canonical_workspace_root(base: &Path) -> Result<PathBuf, String> {
@@ -57,14 +85,13 @@ fn lexical_resolve_under(base: &Path, rel: &str) -> PathBuf {
     out
 }
 
-fn strip_link_url(raw: &str) -> String {
+fn strip_link_wrappers(raw: &str) -> String {
     let s = raw.trim();
-    let s = s
-        .strip_prefix('<')
+    s.strip_prefix('<')
         .and_then(|x| x.strip_suffix('>'))
-        .unwrap_or(s);
-    let s = s.split('#').next().unwrap_or("");
-    s.split('?').next().unwrap_or("").trim().to_string()
+        .unwrap_or(s)
+        .trim()
+        .to_string()
 }
 
 fn ref_key(label: &str) -> String {
@@ -115,14 +142,16 @@ fn allowed_external(url: &str, prefixes: &[String]) -> bool {
     prefixes.iter().any(|p| full.starts_with(p))
 }
 
-fn head_check_url(url: &str, timeout: Duration) -> Result<u16, String> {
-    let full = external_url_for_check(url);
-    let client = reqwest::blocking::Client::builder()
+fn build_http_client(timeout: Duration) -> Result<Client, String> {
+    Client::builder()
         .timeout(timeout)
         .redirect(Policy::limited(8))
         .build()
-        .map_err(|e| format!("HTTP 客户端构建失败: {}", e))?;
+        .map_err(|e| format!("HTTP 客户端构建失败: {}", e))
+}
 
+fn head_check_url(client: &Client, url: &str) -> Result<u16, String> {
+    let full = external_url_for_check(url);
     let resp = client
         .head(&full)
         .send()
@@ -137,6 +166,16 @@ fn head_check_url(url: &str, timeout: Duration) -> Result<u16, String> {
         return Ok(resp2.status().as_u16());
     }
     Ok(status)
+}
+
+fn parse_output_format(raw: Option<&str>) -> Result<OutputFormat, String> {
+    let raw = raw.map(str::trim).unwrap_or("text").to_ascii_lowercase();
+    match raw.as_str() {
+        "text" => Ok(OutputFormat::Text),
+        "json" => Ok(OutputFormat::Json),
+        "sarif" => Ok(OutputFormat::Sarif),
+        _ => Err("错误：output_format 仅支持 text/json/sarif".to_string()),
+    }
 }
 
 #[allow(clippy::too_many_arguments)] // 递归收集入口：根路径、上限与错误收集一次传入
@@ -248,8 +287,9 @@ fn extract_ref_definitions(content: &str) -> HashMap<String, String> {
             let id = c.get(1).map(|x| x.as_str()).unwrap_or("");
             let url = c.get(2).map(|x| x.as_str()).unwrap_or("");
             let key = ref_key(id);
-            if !key.is_empty() && !url.is_empty() {
-                m.insert(key, strip_link_url(url));
+            let cleaned = strip_link_wrappers(url);
+            if !key.is_empty() && !cleaned.is_empty() {
+                m.insert(key, cleaned);
             }
         }
     }
@@ -265,8 +305,8 @@ fn extract_link_hits(content: &str, ref_map: &HashMap<String, String>) -> Vec<Li
         }
         for c in RE_INLINE.captures_iter(line) {
             let raw = c.get(2).map(|x| x.as_str()).unwrap_or("");
-            let u = strip_link_url(raw);
-            if !u.is_empty() && !u.starts_with('#') {
+            let u = strip_link_wrappers(raw);
+            if !u.is_empty() {
                 hits.push(LinkHit {
                     line: line_no,
                     raw: u,
@@ -275,7 +315,7 @@ fn extract_link_hits(content: &str, ref_map: &HashMap<String, String>) -> Vec<Li
         }
         for c in RE_AUTOLINK.captures_iter(line) {
             let raw = c.get(1).map(|x| x.as_str()).unwrap_or("");
-            let u = strip_link_url(raw);
+            let u = strip_link_wrappers(raw);
             if !u.is_empty() {
                 hits.push(LinkHit {
                     line: line_no,
@@ -293,7 +333,6 @@ fn extract_link_hits(content: &str, ref_map: &HashMap<String, String>) -> Vec<Li
             };
             if let Some(url) = ref_map.get(&key)
                 && !url.is_empty()
-                && !url.starts_with('#')
             {
                 hits.push(LinkHit {
                     line: line_no,
@@ -311,16 +350,266 @@ fn rel_path_for_report(ws_canonical: &Path, abs: &Path) -> String {
         .unwrap_or_else(|_| abs.to_string_lossy().to_string())
 }
 
+fn from_hex(v: u8) -> Option<u8> {
+    match v {
+        b'0'..=b'9' => Some(v - b'0'),
+        b'a'..=b'f' => Some(v - b'a' + 10),
+        b'A'..=b'F' => Some(v - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn percent_decode_lossy(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(h), Some(l)) = (from_hex(bytes[i + 1]), from_hex(bytes[i + 2]))
+        {
+            out.push((h << 4) | l);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+fn slugify_heading_anchor(input: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in input.chars().flat_map(|c| c.to_lowercase()) {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            out.push(ch);
+            last_dash = false;
+        } else if ch.is_whitespace() && !out.is_empty() && !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
+fn normalize_fragment_slug(raw_fragment: &str) -> Option<String> {
+    let decoded = percent_decode_lossy(raw_fragment.trim());
+    let slug = slugify_heading_anchor(&decoded);
+    if slug.is_empty() { None } else { Some(slug) }
+}
+
+fn parse_local_target(url: &str) -> ParsedLocalTarget {
+    let cleaned = strip_link_wrappers(url);
+    let (path_raw, frag_raw, had_fragment) = match cleaned.split_once('#') {
+        Some((path, frag)) => (path, frag, true),
+        None => (cleaned.as_str(), "", false),
+    };
+    let path = path_raw.split('?').next().unwrap_or("").trim().to_string();
+    let fragment_slug = if had_fragment {
+        normalize_fragment_slug(frag_raw)
+    } else {
+        None
+    };
+    ParsedLocalTarget {
+        path,
+        had_fragment,
+        fragment_slug,
+    }
+}
+
+fn parse_heading_text(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with('#') {
+        return None;
+    }
+    let level = trimmed.chars().take_while(|c| *c == '#').count();
+    if !(1..=6).contains(&level) {
+        return None;
+    }
+    let mut text = trimmed[level..].trim_start();
+    if text.is_empty() {
+        return None;
+    }
+    text = text.trim_end();
+    while let Some(stripped) = text.strip_suffix('#') {
+        text = stripped.trim_end();
+    }
+    if text.is_empty() { None } else { Some(text) }
+}
+
+fn extract_markdown_anchor_set(content: &str) -> HashSet<String> {
+    let mut anchors = HashSet::new();
+    let mut dup_count: HashMap<String, usize> = HashMap::new();
+    for line in content.lines() {
+        let Some(title) = parse_heading_text(line) else {
+            continue;
+        };
+        let base = slugify_heading_anchor(title);
+        if base.is_empty() {
+            continue;
+        }
+        let c = dup_count.entry(base.clone()).or_insert(0);
+        let actual = if *c == 0 {
+            base.clone()
+        } else {
+            format!("{}-{}", base, *c)
+        };
+        *c += 1;
+        anchors.insert(actual);
+    }
+    anchors
+}
+
+fn load_markdown_anchor_set(path: &Path) -> Result<HashSet<String>, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("读取元数据失败: {}", e))?;
+    if meta.len() > MAX_MD_FILE_BYTES {
+        return Err(format!("文件超过 {} 字节，无法校验锚点", MAX_MD_FILE_BYTES));
+    }
+    let content = std::fs::read_to_string(path).map_err(|e| format!("读取失败: {}", e))?;
+    Ok(extract_markdown_anchor_set(&content))
+}
+
+fn issue_text(issue: &LinkIssue) -> String {
+    match (&issue.file, issue.line) {
+        (Some(file), Some(line)) => {
+            format!("{}:{} -> {}（{}）", file, line, issue.target, issue.message)
+        }
+        (Some(file), None) => format!("{} -> {}（{}）", file, issue.target, issue.message),
+        (None, _) => issue.message.clone(),
+    }
+}
+
+fn issue_json(issue: &LinkIssue) -> serde_json::Value {
+    serde_json::json!({
+        "rule_id": issue.rule_id,
+        "file": issue.file,
+        "line": issue.line,
+        "target": issue.target,
+        "message": issue.message,
+    })
+}
+
+fn issue_sarif(issue: &LinkIssue) -> serde_json::Value {
+    let mut result = serde_json::Map::new();
+    result.insert(
+        "ruleId".to_string(),
+        serde_json::Value::String(issue.rule_id.to_string()),
+    );
+    result.insert(
+        "message".to_string(),
+        serde_json::json!({ "text": issue_text(issue) }),
+    );
+    if let Some(file) = issue.file.as_ref() {
+        let loc = if let Some(line) = issue.line {
+            serde_json::json!({
+                "physicalLocation": {
+                    "artifactLocation": { "uri": file },
+                    "region": { "startLine": line }
+                }
+            })
+        } else {
+            serde_json::json!({
+                "physicalLocation": {
+                    "artifactLocation": { "uri": file }
+                }
+            })
+        };
+        result.insert("locations".to_string(), serde_json::json!([loc]));
+    }
+    serde_json::Value::Object(result)
+}
+
+#[allow(clippy::too_many_arguments)] // 仅用于文本渲染，集中接收统计字段便于保持输出结构稳定
+fn render_text_report(
+    ws_canonical: &Path,
+    roots: &[String],
+    md_files_len: usize,
+    allowed_prefixes: &[String],
+    rel_ok: usize,
+    fragment_ok: usize,
+    fragment_bad: usize,
+    external_checked_ok: usize,
+    external_ignored: usize,
+    special_skipped: usize,
+    external_probe_requests: usize,
+    external_cache_hits: usize,
+    local_issues: &[LinkIssue],
+    external_issues: &[LinkIssue],
+) -> String {
+    let mut out = String::new();
+    out.push_str("Markdown 链接检查\n");
+    out.push_str(&format!("工作区: {}\n", ws_canonical.display()));
+    out.push_str(&format!("扫描根: {}\n", roots.join(", ")));
+    out.push_str(&format!("已扫描 .md 文件: {} 个\n", md_files_len));
+    out.push_str(&format!(
+        "统计: 相对链接存在 {} / 本地问题 {} / 锚点通过 {} / 锚点问题 {} / 外链(允许列表内)成功 {} / 外链失败 {} / 外链未校验 {} / 特殊协议跳过 {}\n",
+        rel_ok,
+        local_issues.len(),
+        fragment_ok,
+        fragment_bad,
+        external_checked_ok,
+        external_issues.len(),
+        external_ignored,
+        special_skipped
+    ));
+    if allowed_prefixes.is_empty() {
+        out.push_str("说明: 未配置 allowed_external_prefixes，所有 http(s)/协议相对链接均只做计数、不发网络请求。\n");
+    } else {
+        out.push_str(&format!("外链允许前缀: {}\n", allowed_prefixes.join(" | ")));
+        out.push_str(&format!(
+            "外链探测请求（去重后）: {}，缓存命中: {}\n",
+            external_probe_requests, external_cache_hits
+        ));
+    }
+    out.push('\n');
+    if !local_issues.is_empty() {
+        out.push_str("【本地路径/锚点问题】\n");
+        for issue in local_issues {
+            out.push_str(&issue_text(issue));
+            out.push('\n');
+        }
+        out.push('\n');
+    }
+    if !external_issues.is_empty() {
+        out.push_str("【外链探测失败】\n");
+        for issue in external_issues {
+            out.push_str(&issue_text(issue));
+            out.push('\n');
+        }
+        out.push('\n');
+    }
+    let problems = local_issues.len() + external_issues.len();
+    if problems == 0 {
+        out.push_str("结论: 未发现已检查的失效链接。\n");
+    } else {
+        out.push_str(&format!(
+            "结论: 发现 {} 处问题，请根据上文路径修复。\n",
+            problems
+        ));
+    }
+    out.trim_end().to_string()
+}
+
 /// 参数 JSON：
 /// - `roots`?: string[]，默认 `["README.md","docs"]`
 /// - `max_files`?: number，默认 300，上限 3000
 /// - `max_depth`?: number，目录递归深度，默认 24，上限 80
 /// - `allowed_external_prefixes`?: string[]，非空时：以这些前缀开头的 http(s)/协议相对 URL 会发 HEAD（失败时 GET Range 回退）
 /// - `external_timeout_secs`?: number，默认 10，上限 60
+/// - `check_fragments`?: bool，默认 true；是否校验 `#fragment`（按目标 Markdown 标题锚点）
+/// - `output_format`?: string，默认 text；可选 text/json/sarif
 pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数 JSON 无效: {}", e),
+    };
+    let output_format = match parse_output_format(v.get("output_format").and_then(|x| x.as_str())) {
+        Ok(fmt) => fmt,
+        Err(e) => return e,
     };
 
     let roots: Vec<String> = v
@@ -365,6 +654,10 @@ pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
         .and_then(|n| n.as_u64())
         .unwrap_or(DEFAULT_EXTERNAL_TIMEOUT_SECS)
         .clamp(1, ABS_MAX_EXTERNAL_TIMEOUT_SECS);
+    let check_fragments = v
+        .get("check_fragments")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(true);
 
     let ws_canonical = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
@@ -389,42 +682,71 @@ pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
     md_files.sort();
 
     let mut rel_ok = 0usize;
-    let mut rel_broken: Vec<String> = Vec::new();
+    let mut local_issues: Vec<LinkIssue> = Vec::new();
     let mut external_checked_ok = 0usize;
-    let mut external_broken: Vec<String> = Vec::new();
+    let mut external_issues: Vec<LinkIssue> = Vec::new();
     let mut external_ignored = 0usize;
     let mut special_skipped = 0usize;
+    let mut fragment_ok = 0usize;
+    let mut fragment_bad = 0usize;
+    let mut external_probe_requests = 0usize;
+    let mut external_cache_hits = 0usize;
+    let mut external_cache: HashMap<String, Result<u16, String>> = HashMap::new();
+    let mut anchor_cache: HashMap<PathBuf, Result<HashSet<String>, String>> = HashMap::new();
 
     let timeout = Duration::from_secs(ext_timeout);
+    let http_client = if allowed_prefixes.is_empty() {
+        None
+    } else {
+        match build_http_client(timeout) {
+            Ok(c) => Some(c),
+            Err(e) => return format!("错误：{}", e),
+        }
+    };
+    for e in root_errors {
+        local_issues.push(LinkIssue {
+            rule_id: RULE_ROOT,
+            file: None,
+            line: None,
+            target: String::new(),
+            message: e,
+        });
+    }
 
     for md_abs in &md_files {
         let meta = match std::fs::metadata(md_abs) {
             Ok(m) => m,
             Err(e) => {
-                rel_broken.push(format!(
-                    "{}: 无法读取元数据: {}",
-                    rel_path_for_report(&ws_canonical, md_abs),
-                    e
-                ));
+                local_issues.push(LinkIssue {
+                    rule_id: RULE_LOCAL,
+                    file: Some(rel_path_for_report(&ws_canonical, md_abs)),
+                    line: None,
+                    target: "(file)".to_string(),
+                    message: format!("无法读取元数据: {}", e),
+                });
                 continue;
             }
         };
         if meta.len() > MAX_MD_FILE_BYTES {
-            rel_broken.push(format!(
-                "{}: 文件超过 {} 字节，已跳过解析",
-                rel_path_for_report(&ws_canonical, md_abs),
-                MAX_MD_FILE_BYTES
-            ));
+            local_issues.push(LinkIssue {
+                rule_id: RULE_LOCAL,
+                file: Some(rel_path_for_report(&ws_canonical, md_abs)),
+                line: None,
+                target: "(file)".to_string(),
+                message: format!("文件超过 {} 字节，已跳过解析", MAX_MD_FILE_BYTES),
+            });
             continue;
         }
         let content = match std::fs::read_to_string(md_abs) {
             Ok(s) => s,
             Err(e) => {
-                rel_broken.push(format!(
-                    "{}: 读取失败: {}",
-                    rel_path_for_report(&ws_canonical, md_abs),
-                    e
-                ));
+                local_issues.push(LinkIssue {
+                    rule_id: RULE_LOCAL,
+                    file: Some(rel_path_for_report(&ws_canonical, md_abs)),
+                    line: None,
+                    target: "(file)".to_string(),
+                    message: format!("读取失败: {}", e),
+                });
                 continue;
             }
         };
@@ -444,27 +766,40 @@ pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
             }
             if is_external(url) {
                 if allowed_external(url, &allowed_prefixes) {
-                    match head_check_url(url, timeout) {
+                    let full = external_url_for_check(url);
+                    let checked = if let Some(cached) = external_cache.get(&full) {
+                        external_cache_hits += 1;
+                        cached.clone()
+                    } else {
+                        external_probe_requests += 1;
+                        let Some(client) = http_client.as_ref() else {
+                            return "错误：HTTP 客户端未初始化".to_string();
+                        };
+                        let result = head_check_url(client, url);
+                        external_cache.insert(full, result.clone());
+                        result
+                    };
+                    match checked {
                         Ok(code) if (200..400).contains(&code) => {
                             external_checked_ok += 1;
                         }
                         Ok(code) => {
-                            external_broken.push(format!(
-                                "{}:{} -> {}（HTTP {}）",
-                                md_rel,
-                                h.line,
-                                url_for_display(url),
-                                code
-                            ));
+                            external_issues.push(LinkIssue {
+                                rule_id: RULE_EXTERNAL,
+                                file: Some(md_rel.clone()),
+                                line: Some(h.line),
+                                target: url_for_display(url),
+                                message: format!("HTTP {}", code),
+                            });
                         }
                         Err(e) => {
-                            external_broken.push(format!(
-                                "{}:{} -> {}（{}）",
-                                md_rel,
-                                h.line,
-                                url_for_display(url),
-                                e
-                            ));
+                            external_issues.push(LinkIssue {
+                                rule_id: RULE_EXTERNAL,
+                                file: Some(md_rel.clone()),
+                                line: Some(h.line),
+                                target: url_for_display(url),
+                                message: e,
+                            });
                         }
                     }
                 } else {
@@ -472,83 +807,188 @@ pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
                 }
                 continue;
             }
-            if Path::new(url).is_absolute() {
-                rel_broken.push(format!(
-                    "{}:{} -> {}（非相对路径，已标为问题；请改为相对链接）",
-                    md_rel, h.line, url
-                ));
+            let target = parse_local_target(url);
+            if target.path.is_empty() && !target.had_fragment {
                 continue;
             }
-            let target = lexical_resolve_under(md_dir, url);
-            if !target.starts_with(&ws_canonical) {
-                rel_broken.push(format!(
-                    "{}:{} -> {}（解析后越出工作区）",
-                    md_rel, h.line, url
-                ));
+            if Path::new(&target.path).is_absolute() {
+                local_issues.push(LinkIssue {
+                    rule_id: RULE_LOCAL,
+                    file: Some(md_rel.clone()),
+                    line: Some(h.line),
+                    target: strip_link_wrappers(url),
+                    message: "非相对路径，已标为问题；请改为相对链接".to_string(),
+                });
                 continue;
             }
-            if target.exists() {
+            let target_abs = if target.path.is_empty() {
+                md_abs.clone()
+            } else {
+                lexical_resolve_under(md_dir, &target.path)
+            };
+            if !target_abs.starts_with(&ws_canonical) {
+                local_issues.push(LinkIssue {
+                    rule_id: RULE_LOCAL,
+                    file: Some(md_rel.clone()),
+                    line: Some(h.line),
+                    target: strip_link_wrappers(url),
+                    message: "解析后越出工作区".to_string(),
+                });
+                continue;
+            }
+            if target_abs.exists() {
                 rel_ok += 1;
             } else {
-                rel_broken.push(format!("{}:{} -> {}（目标不存在）", md_rel, h.line, url));
+                local_issues.push(LinkIssue {
+                    rule_id: RULE_LOCAL,
+                    file: Some(md_rel.clone()),
+                    line: Some(h.line),
+                    target: strip_link_wrappers(url),
+                    message: "目标不存在".to_string(),
+                });
+                continue;
+            }
+            if !check_fragments || !target.had_fragment {
+                continue;
+            }
+            let Some(fragment_slug) = target.fragment_slug.as_ref() else {
+                fragment_bad += 1;
+                local_issues.push(LinkIssue {
+                    rule_id: RULE_ANCHOR,
+                    file: Some(md_rel.clone()),
+                    line: Some(h.line),
+                    target: strip_link_wrappers(url),
+                    message: "锚点为空或无法解析".to_string(),
+                });
+                continue;
+            };
+            if !target_abs
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("md"))
+            {
+                fragment_bad += 1;
+                local_issues.push(LinkIssue {
+                    rule_id: RULE_ANCHOR,
+                    file: Some(md_rel.clone()),
+                    line: Some(h.line),
+                    target: strip_link_wrappers(url),
+                    message: "锚点校验仅支持 Markdown 目标".to_string(),
+                });
+                continue;
+            }
+            let anchors = if let Some(cached) = anchor_cache.get(&target_abs) {
+                cached.clone()
+            } else {
+                let loaded = load_markdown_anchor_set(&target_abs);
+                anchor_cache.insert(target_abs.clone(), loaded.clone());
+                loaded
+            };
+            match anchors {
+                Ok(set) => {
+                    if set.contains(fragment_slug) {
+                        fragment_ok += 1;
+                    } else {
+                        fragment_bad += 1;
+                        local_issues.push(LinkIssue {
+                            rule_id: RULE_ANCHOR,
+                            file: Some(md_rel.clone()),
+                            line: Some(h.line),
+                            target: strip_link_wrappers(url),
+                            message: format!("锚点不存在: #{}", fragment_slug),
+                        });
+                    }
+                }
+                Err(e) => {
+                    fragment_bad += 1;
+                    local_issues.push(LinkIssue {
+                        rule_id: RULE_ANCHOR,
+                        file: Some(md_rel.clone()),
+                        line: Some(h.line),
+                        target: strip_link_wrappers(url),
+                        message: format!("锚点校验失败: {}", e),
+                    });
+                }
             }
         }
     }
-
-    let mut out = String::new();
-    out.push_str("Markdown 链接检查\n");
-    out.push_str(&format!("工作区: {}\n", ws_canonical.display()));
-    out.push_str(&format!("扫描根: {}\n", roots.join(", ")));
-    if !root_errors.is_empty() {
-        out.push_str("根路径提示:\n");
-        for e in &root_errors {
-            out.push_str(&format!("  - {}\n", e));
-        }
-    }
-    out.push_str(&format!("已扫描 .md 文件: {} 个\n", md_files.len()));
-    out.push_str(&format!(
-        "统计: 相对链接存在 {} / 相对问题 {} / 外链(允许列表内)成功 {} / 外链失败 {} / 外链未校验 {} / 特殊协议跳过 {}\n",
+    let text = render_text_report(
+        &ws_canonical,
+        &roots,
+        md_files.len(),
+        &allowed_prefixes,
         rel_ok,
-        rel_broken.len(),
+        fragment_ok,
+        fragment_bad,
         external_checked_ok,
-        external_broken.len(),
         external_ignored,
-        special_skipped
-    ));
-    if allowed_prefixes.is_empty() {
-        out.push_str("说明: 未配置 allowed_external_prefixes，所有 http(s)/协议相对链接均只做计数、不发网络请求。\n");
-    } else {
-        out.push_str(&format!("外链允许前缀: {}\n", allowed_prefixes.join(" | ")));
-    }
-    out.push('\n');
-
-    if !rel_broken.is_empty() {
-        out.push_str("【相对路径或其它本地问题】\n");
-        for line in &rel_broken {
-            out.push_str(line);
-            out.push('\n');
+        special_skipped,
+        external_probe_requests,
+        external_cache_hits,
+        &local_issues,
+        &external_issues,
+    );
+    let total_problems = local_issues.len() + external_issues.len();
+    let all_issues = local_issues
+        .iter()
+        .chain(external_issues.iter())
+        .map(issue_json)
+        .collect::<Vec<_>>();
+    match output_format {
+        OutputFormat::Text => text,
+        OutputFormat::Json => serde_json::to_string_pretty(&serde_json::json!({
+            "tool": "markdown_check_links",
+            "workspace": ws_canonical.to_string_lossy(),
+            "roots": roots,
+            "summary": {
+                "markdown_files_scanned": md_files.len(),
+                "relative_ok": rel_ok,
+                "local_issues": local_issues.len(),
+                "fragment_ok": fragment_ok,
+                "fragment_issues": fragment_bad,
+                "external_checked_ok": external_checked_ok,
+                "external_issues": external_issues.len(),
+                "external_ignored": external_ignored,
+                "special_skipped": special_skipped,
+                "external_probe_requests": external_probe_requests,
+                "external_cache_hits": external_cache_hits,
+                "problems": total_problems
+            },
+            "problems": all_issues
+        }))
+        .unwrap_or_else(|e| format!("JSON 序列化失败: {}", e)),
+        OutputFormat::Sarif => {
+            let results = local_issues
+                .iter()
+                .chain(external_issues.iter())
+                .map(issue_sarif)
+                .collect::<Vec<_>>();
+            serde_json::to_string_pretty(&serde_json::json!({
+                "version": "2.1.0",
+                "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                "runs": [{
+                    "tool": {
+                        "driver": {
+                            "name": "markdown_check_links",
+                            "rules": [
+                                { "id": RULE_LOCAL, "shortDescription": { "text": "Markdown 相对路径问题" } },
+                                { "id": RULE_ANCHOR, "shortDescription": { "text": "Markdown 锚点问题" } },
+                                { "id": RULE_EXTERNAL, "shortDescription": { "text": "Markdown 外链探测失败" } },
+                                { "id": RULE_ROOT, "shortDescription": { "text": "Markdown 扫描根路径问题" } }
+                            ]
+                        }
+                    },
+                    "results": results,
+                    "invocations": [{
+                        "executionSuccessful": true,
+                        "toolExecutionNotifications": [{
+                            "message": { "text": text }
+                        }]
+                    }]
+                }]
+            }))
+            .unwrap_or_else(|e| format!("SARIF 序列化失败: {}", e))
         }
-        out.push('\n');
     }
-    if !external_broken.is_empty() {
-        out.push_str("【外链探测失败】\n");
-        for line in &external_broken {
-            out.push_str(line);
-            out.push('\n');
-        }
-        out.push('\n');
-    }
-
-    let problems = rel_broken.len() + external_broken.len();
-    if problems == 0 {
-        out.push_str("结论: 未发现已检查的失效链接。\n");
-    } else {
-        out.push_str(&format!(
-            "结论: 发现 {} 处问题，请根据上文路径修复。\n",
-            problems
-        ));
-    }
-    out.trim_end().to_string()
 }
 
 #[cfg(test)]
@@ -592,5 +1032,64 @@ mod tests {
             "ref link should resolve: {}",
             out
         );
+    }
+
+    #[test]
+    fn anchor_miss_is_reported() {
+        let tmp = std::env::temp_dir().join(format!("crabmate_md_anchor_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join("docs")).unwrap();
+        fs::write(
+            tmp.join("README.md"),
+            "[ok](docs/a.md#hello-world)\n[bad](docs/a.md#missing-anchor)\n",
+        )
+        .unwrap();
+        fs::write(tmp.join("docs/a.md"), "# Hello World\n").unwrap();
+        let args = serde_json::json!({ "roots": ["README.md"] }).to_string();
+        let out = markdown_check_links(&args, &tmp);
+        assert!(out.contains("锚点不存在"), "{}", out);
+        assert!(out.contains("missing-anchor"), "{}", out);
+    }
+
+    #[test]
+    fn anchor_check_can_be_disabled() {
+        let tmp =
+            std::env::temp_dir().join(format!("crabmate_md_anchor_off_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join("docs")).unwrap();
+        fs::write(tmp.join("README.md"), "[bad](docs/a.md#missing-anchor)\n").unwrap();
+        fs::write(tmp.join("docs/a.md"), "# Hello World\n").unwrap();
+        let args =
+            serde_json::json!({ "roots": ["README.md"], "check_fragments": false }).to_string();
+        let out = markdown_check_links(&args, &tmp);
+        assert!(!out.contains("锚点不存在"), "{}", out);
+    }
+
+    #[test]
+    fn supports_json_output() {
+        let tmp = std::env::temp_dir().join(format!("crabmate_md_json_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("README.md"), "[bad](./missing.md)\n").unwrap();
+        let args =
+            serde_json::json!({ "roots": ["README.md"], "output_format": "json" }).to_string();
+        let out = markdown_check_links(&args, &tmp);
+        let v: serde_json::Value = serde_json::from_str(&out).expect("json output");
+        assert_eq!(v["tool"], "markdown_check_links");
+        assert!(v["summary"]["problems"].as_u64().unwrap_or(0) > 0);
+    }
+
+    #[test]
+    fn supports_sarif_output() {
+        let tmp = std::env::temp_dir().join(format!("crabmate_md_sarif_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("README.md"), "[bad](./missing.md)\n").unwrap();
+        let args =
+            serde_json::json!({ "roots": ["README.md"], "output_format": "sarif" }).to_string();
+        let out = markdown_check_links(&args, &tmp);
+        let v: serde_json::Value = serde_json::from_str(&out).expect("sarif output");
+        assert_eq!(v["version"], "2.1.0");
+        assert!(v["runs"][0]["results"].is_array());
     }
 }
