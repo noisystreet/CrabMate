@@ -162,7 +162,7 @@ flowchart TB
     - `tool_running`、`tool_result`（可选 `summary`：与 `summarize_tool_call` 同源，与 `output` 同帧；**不再**在工具执行前单独下发 `tool_call`，避免 Web 在工具未完成时先插入摘要）、`workspace_changed`
     - `error`（+ 可选 `code`）、`command_approval_request`（TUI / Web / 工作流审批）
     - `staged_plan_notice`（+ 可选 `staged_plan_notice_clear`）：分阶段规划进度；TUI 累积到 `staged_plan_log`，在**「队列」**页与状态栏展示（步骤行内 `[ ]`/`[✓]`，每步结束可 `clear_before` 整段刷新；**不**再插入左侧主聊天区，避免与队列重复）；`frontend/src/api.ts` 识别为控制面并吞掉，避免当作正文 delta
-    - `staged_plan_started` / `staged_plan_step_started` / `staged_plan_step_finished` / `staged_plan_finished`：分阶段规划结构化进度事件（含 `plan_id`、`step_id`、`step_index`、`status` 等），用于前端按状态机消费，避免解析自然语言文案
+    - `staged_plan_started` / `staged_plan_step_started` / `staged_plan_step_finished` / `staged_plan_finished`：分阶段规划结构化进度事件（含 `plan_id`、`step_id`、`step_index`、`status: ok|cancelled|failed` 等），用于前端按状态机消费，避免解析自然语言文案
     - 预留 `plan_required` 等扩展键
 - **协议版本 `v`**：当前为 `1`；演进时递增 **`sse::protocol::SSE_PROTOCOL_VERSION`**，前端 `api.ts` 的 `sendChatStream` 已按字段形状解析（`tool_call` / `tool_result` / `plan_required` / `error.code` 等），新事件需在前后端同步扩展。
 

@@ -463,12 +463,14 @@ type SseControlPayload = {
     step_id?: string
     step_index?: number
     total_steps?: number
+    /** `ok` / `cancelled` / `failed` */
     status?: string
   }
   staged_plan_finished?: {
     plan_id?: string
     total_steps?: number
     completed_steps?: number
+    /** `ok` / `cancelled` / `failed` */
     status?: string
   }
   /** 分阶段规划聊天区分隔线：`true` 短、`false` 长 */
