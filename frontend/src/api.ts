@@ -275,12 +275,12 @@ export async function saveTasks(data: TasksData): Promise<TasksData> {
   })
 }
 
-export async function sendChat(message: string): Promise<ChatResponse> {
+export async function sendChat(message: string, conversationId?: string): Promise<ChatResponse> {
   return request<ChatResponse>('/chat', {
     method: 'POST',
     timeoutMs: 60000,
     retries: 0,
-    json: { message },
+    json: conversationId ? { message, conversation_id: conversationId } : { message },
   })
 }
 
@@ -352,6 +352,10 @@ export async function uploadFiles(
     xhr.open('POST', url, true)
     xhr.responseType = 'json'
     xhr.timeout = timeoutMs
+    const bearerToken = getStoredWebApiBearerToken()
+    if (bearerToken) {
+      xhr.setRequestHeader('Authorization', `Bearer ${bearerToken}`)
+    }
 
     xhr.upload.onprogress = (e) => {
       if (!opts?.onProgress) return
@@ -634,13 +638,19 @@ export async function sendChatStream(
       status: string
     }) => void
     onChatUiSeparator?: (short: boolean) => void
+    /** 服务端返回会话 ID（首轮未传 conversation_id 时由后端生成） */
+    onConversationId?: (id: string) => void
   },
   signal?: AbortSignal,
+  conversationId?: string,
 ): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const bearerToken = getStoredWebApiBearerToken()
+  if (bearerToken) headers.Authorization = `Bearer ${bearerToken}`
   const r = await fetch(`${base}/chat/stream`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    headers,
+    body: JSON.stringify(conversationId ? { message, conversation_id: conversationId } : { message }),
     signal,
   })
   if (!r.ok) {
@@ -648,6 +658,8 @@ export async function sendChatStream(
     callbacks.onError((data as { message?: string }).message || r.statusText)
     return
   }
+  const serverConversationId = r.headers.get('x-conversation-id')?.trim() || ''
+  if (serverConversationId) callbacks.onConversationId?.(serverConversationId)
   const reader = r.body?.getReader()
   if (!reader) {
     callbacks.onError('无法读取响应流')
