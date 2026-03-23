@@ -39,11 +39,13 @@ export interface StatusData {
   chat_queue_max_pending?: number
   chat_queue_running?: number
   chat_queue_completed_ok?: number
+  chat_queue_completed_cancelled?: number
   chat_queue_completed_err?: number
   chat_queue_recent_jobs?: Array<{
     job_id: number
     kind: string
     ok: boolean
+    cancelled?: boolean
     duration_ms: number
     error_preview?: string
   }>
