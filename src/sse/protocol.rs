@@ -150,7 +150,7 @@ pub struct StagedPlanStepFinishedBody {
     /// 从 1 开始的人类可读序号。
     pub step_index: usize,
     pub total_steps: usize,
-    /// `ok` / `cancelled`
+    /// `ok` / `cancelled` / `failed`
     pub status: String,
 }
 
@@ -159,7 +159,7 @@ pub struct StagedPlanFinishedBody {
     pub plan_id: String,
     pub total_steps: usize,
     pub completed_steps: usize,
-    /// `ok` / `cancelled`
+    /// `ok` / `cancelled` / `failed`
     pub status: String,
 }
 
@@ -333,13 +333,13 @@ mod tests {
                 step_id: "collect-context".into(),
                 step_index: 1,
                 total_steps: 3,
-                status: "ok".into(),
+                status: "failed".into(),
             },
         });
         let msg_step_finished: SseMessage = serde_json::from_str(&step_finished).unwrap();
         match msg_step_finished.payload {
             SsePayload::StagedPlanStepFinished { finished } => {
-                assert_eq!(finished.status, "ok");
+                assert_eq!(finished.status, "failed");
                 assert_eq!(finished.step_index, 1);
             }
             _ => panic!("expected staged_plan_step_finished payload"),

@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::config::AgentConfig;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -26,6 +26,8 @@ use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result;
 use crate::tools;
 use crate::types::{Message, ToolCall, USER_CANCELLED_FINISH_REASON, is_chat_ui_separator};
+
+static STAGED_PLAN_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// TUI 主循环用 `sync_rx` 拉取对话快照；仅在 TUI 路径传入 `Some`。
 async fn tui_push_messages_snapshot(
@@ -123,7 +125,8 @@ fn next_staged_plan_id() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    format!("staged-{ts_ms}")
+    let seq = STAGED_PLAN_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("staged-{ts_ms}-{seq}")
 }
 
 async fn send_staged_plan_started(
@@ -836,7 +839,20 @@ async fn run_staged_plan_then_execute_steps(
             tool_call_id: None,
         });
         tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
-        run_agent_outer_loop(p, per_coord).await?;
+        let run_step = run_agent_outer_loop(p, per_coord).await;
+        if let Err(e) = run_step {
+            send_staged_plan_step_finished(
+                p.out,
+                &plan_id,
+                step.id.trim(),
+                step_index,
+                n,
+                "failed",
+            )
+            .await;
+            send_staged_plan_finished(p.out, &plan_id, n, completed_steps, "failed").await;
+            return Err(e);
+        }
         if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             send_staged_plan_step_finished(
                 p.out,
