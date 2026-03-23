@@ -183,11 +183,23 @@ export function stagedPlanStreamingChatBody(stripped: string): string {
 
 /**
  * Web 流式：`textContent` 用；与后端 `assistant_markdown_source_for_display_streaming_last` 决策一致。
- * 非缓冲路径仍展示**原始累积**（含 Markdown 标记），与改前行为一致；缓冲时仅展示说明句 + 占位，不收齐不刷 JSON。
+ * 非缓冲路径保留 Markdown 原文展示，但当规划 JSON 已完整可解析时会隐藏 JSON，仅保留围栏前说明。
  */
 export function assistantStreamPlainDisplay(accumulatedRaw: string): string {
   if (shouldBufferAgentReplyPlanStream(accumulatedRaw)) {
     return stagedPlanStreamingChatBody(accumulatedRaw)
+  }
+  if (!SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT) {
+    // 与后端 `assistant_markdown_source_for_display_streaming_last` 一致：
+    // 规划 JSON 一旦完整可解析，聊天区不再显示原始 JSON，仅保留围栏前说明。
+    if (parseAgentReplyPlanV1FromContentOk(accumulatedRaw)) {
+      return proseBeforeFirstFence(accumulatedRaw).trim()
+    }
+    const withoutPlanFence = stripAgentReplyPlanFenceBlocksForDisplay(accumulatedRaw)
+    if (parseAgentReplyPlanV1FromContentOk(withoutPlanFence.trim())) {
+      return proseBeforeFirstFence(accumulatedRaw).trim()
+    }
+    return withoutPlanFence
   }
   return accumulatedRaw
 }
