@@ -314,21 +314,21 @@ async fn dispatcher_loop(
     recent: Arc<Mutex<VecDeque<ChatJobRecord>>>,
 ) {
     while let Some(job) = rx.recv().await {
-        let sem = sem.clone();
+        // 先拿到并发令牌再 spawn，避免高积压时出现大量“已 spawn 但在等 permit”的任务。
+        let permit = match sem.clone().acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => return,
+        };
         let metrics = metrics.clone();
         let recent = recent.clone();
+        metrics.running.fetch_add(1, Ordering::SeqCst);
         tokio::spawn(async move {
             let job_id = job.job_id();
-            let permit = match sem.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => return,
-            };
-            metrics.running.fetch_add(1, Ordering::SeqCst);
+            let _permit = permit;
             let start = Instant::now();
             let outcome = run_queued_job(job).await;
             let ms = start.elapsed().as_millis() as u64;
             metrics.running.fetch_sub(1, Ordering::SeqCst);
-            drop(permit);
 
             let record = match outcome {
                 JobOutcome::Stream { ok, cancelled, err } => {
