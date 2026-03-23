@@ -281,11 +281,7 @@ pub async fn workspace_handler(
         let is_dir = entry.metadata().await.map(|m| m.is_dir()).unwrap_or(false);
         entries.push(WorkspaceEntry { name, is_dir });
     }
-    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-        (true, false) => std::cmp::Ordering::Less,
-        (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
+    entries.sort_by_cached_key(|e| (!e.is_dir, e.name.to_lowercase()));
     Json(WorkspaceResponse {
         path: path_str,
         entries,
