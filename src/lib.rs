@@ -23,10 +23,10 @@ mod web;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
     Json, Router,
-    extract::Multipart,
-    extract::State,
+    extract::{Multipart, Request, State},
     http::{HeaderValue, StatusCode, header},
-    response::IntoResponse,
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use config::cli::{init_logging, parse_args};
@@ -434,6 +434,45 @@ struct ApiError {
     message: String,
 }
 
+fn is_valid_bearer_header(
+    auth_header: Option<&axum::http::header::HeaderValue>,
+    token: &str,
+) -> bool {
+    if token.is_empty() {
+        return true;
+    }
+    let Some(raw) = auth_header else {
+        return false;
+    };
+    let Ok(v) = raw.to_str() else {
+        return false;
+    };
+    let expected = format!("Bearer {}", token);
+    v.trim() == expected
+}
+
+async fn require_web_api_bearer_auth(
+    State(state): State<Arc<AppState>>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let token = state.cfg.web_api_bearer_token.trim();
+    if token.is_empty() {
+        return next.run(req).await;
+    }
+    if is_valid_bearer_header(req.headers().get(header::AUTHORIZATION), token) {
+        return next.run(req).await;
+    }
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(ApiError {
+            code: "UNAUTHORIZED",
+            message: "缺少或无效的 Authorization Bearer token".to_string(),
+        }),
+    )
+        .into_response()
+}
+
 async fn chat_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ChatRequestBody>,
@@ -743,30 +782,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         });
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
         let uploads_dir_for_static = uploads_dir.clone();
-        let mut app = Router::new()
+        let mut protected_api = Router::new()
             .route("/chat", post(chat_handler))
             .route("/chat/stream", post(chat_stream_handler))
             .route("/upload", post(upload_handler))
             .route("/uploads/delete", post(delete_uploads_handler))
-            .route("/health", get(health_handler))
-            .route("/status", get(status_handler))
-            .nest_service(
-                "/uploads",
-                ServiceBuilder::new()
-                    .layer(SetResponseHeaderLayer::if_not_present(
-                        header::CACHE_CONTROL,
-                        HeaderValue::from_static("public, max-age=31536000, immutable"),
-                    ))
-                    .layer(SetResponseHeaderLayer::if_not_present(
-                        header::X_CONTENT_TYPE_OPTIONS,
-                        HeaderValue::from_static("nosniff"),
-                    ))
-                    .layer(SetResponseHeaderLayer::if_not_present(
-                        header::HeaderName::from_static("cross-origin-resource-policy"),
-                        HeaderValue::from_static("same-site"),
-                    ))
-                    .service(ServeDir::new(uploads_dir_for_static)),
-            )
             .route(
                 "/workspace",
                 get(web::workspace::workspace_handler).post(web::workspace::workspace_set_handler),
@@ -789,6 +809,33 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "/tasks",
                 get(web::task::tasks_get_handler).post(web::task::tasks_set_handler),
             );
+        if !state.cfg.web_api_bearer_token.trim().is_empty() {
+            protected_api = protected_api.route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                require_web_api_bearer_auth,
+            ));
+        }
+        let mut app = Router::new()
+            .merge(protected_api)
+            .route("/health", get(health_handler))
+            .route("/status", get(status_handler))
+            .nest_service(
+                "/uploads",
+                ServiceBuilder::new()
+                    .layer(SetResponseHeaderLayer::if_not_present(
+                        header::CACHE_CONTROL,
+                        HeaderValue::from_static("public, max-age=31536000, immutable"),
+                    ))
+                    .layer(SetResponseHeaderLayer::if_not_present(
+                        header::X_CONTENT_TYPE_OPTIONS,
+                        HeaderValue::from_static("nosniff"),
+                    ))
+                    .layer(SetResponseHeaderLayer::if_not_present(
+                        header::HeaderName::from_static("cross-origin-resource-policy"),
+                        HeaderValue::from_static("same-site"),
+                    ))
+                    .service(ServeDir::new(uploads_dir_for_static)),
+            );
         if !no_web {
             app = app.nest_service("/", ServeDir::new(static_dir));
         }
@@ -802,14 +849,25 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ),
             )
         })?;
+        let auth_enabled = !cfg.web_api_bearer_token.trim().is_empty();
+        if !bind_ip.is_loopback() && !auth_enabled && !cfg.allow_insecure_no_auth_for_non_loopback {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "当前监听地址为非 loopback（如 0.0.0.0），但未配置 web_api_bearer_token；请设置 [agent].web_api_bearer_token / AGENT_WEB_API_BEARER_TOKEN，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
+            )
+            .into());
+        }
         let addr = std::net::SocketAddr::from((bind_ip, port));
         println!("Web 服务已启动");
         println!("  监听: http://{}/", addr);
-        if bind_ip.is_unspecified() {
+        if bind_ip.is_unspecified() && !auth_enabled {
             eprintln!(
                 "  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露",
                 addr
             );
+        }
+        if bind_ip.is_unspecified() && auth_enabled {
+            println!("  安全: 已启用 Bearer 鉴权（Authorization 头）");
         }
         info!(target: "crabmate", "Web 服务监听 addr={}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;

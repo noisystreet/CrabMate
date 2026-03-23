@@ -141,7 +141,7 @@ flowchart TB
 | `schedule.rs` | 提醒与日程持久化 |
 | `security_tools.rs` | 安全审计类 |
 | `time.rs` / `weather.rs` / `web_search.rs` | 时间、天气（Open-Meteo）、联网搜索（Brave/Tavily） |
-| `http_fetch.rs` | `http_fetch`：GET/HEAD URL（GET 有体长上限；HEAD 无 body）；重定向链记录；Web 仅允许 `http_fetch_allowed_prefixes`；TUI 审批与白名单键同 GET（`http_fetch:`+ 归一化 URL） |
+| `http_fetch.rs` | `http_fetch`：GET/HEAD URL（GET 有体长上限；HEAD 无 body）；重定向链记录；Web 仅允许 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**匹配；TUI 审批与白名单键同 GET（`http_fetch:`+ 归一化 URL） |
 
 ## 核心机制：Agent 主循环与工具调用
 
@@ -205,13 +205,13 @@ flowchart LR
 
 - **`lib.rs`**：crate 根模块；Agent 主循环（`run_agent_turn`）、Axum Web 路由与 handler、上传清理等。**对外再导出** `run`、`load_config`、`AgentConfig`、`Message`、`Tool`、`build_tools`、`build_tools_filtered`、`build_tools_with_options`、`ToolsBuildOptions`、`dev_tag` 等，供集成测试与其它二进制复用。
 - **`main.rs`**：薄入口，仅 `#[tokio::main] async fn main() { crabmate::run().await }`。
-- **运行模式**：由 `run()` 内解析 CLI（`--serve`/`--host`/`--query`/`--stdin`/`--no-tools`/`--no-web`/`--dry-run` 等），选择启动 Web 服务、REPL、单次提问或 TUI。`--serve` 默认绑定 `127.0.0.1`；`0.0.0.0` 需显式 `--host` 或环境变量 `AGENT_HTTP_HOST`（见 README）。**日志**：`config::cli::init_logging` — 未设置 `RUST_LOG` 时 `--serve` 默认 **info**；非 serve 的 CLI 默认 **warn**；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
+- **运行模式**：由 `run()` 内解析 CLI（`--serve`/`--host`/`--query`/`--stdin`/`--no-tools`/`--no-web`/`--dry-run` 等），选择启动 Web 服务、REPL、单次提问或 TUI。`--serve` 默认绑定 `127.0.0.1`；`0.0.0.0` 需显式 `--host` 或环境变量 `AGENT_HTTP_HOST`（见 README）。当监听非 loopback 地址且未配置 `web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN` 时，默认拒绝启动；如需无鉴权运行，需显式打开 `allow_insecure_no_auth_for_non_loopback`（不安全）。**日志**：`config::cli::init_logging` — 未设置 `RUST_LOG` 时 `--serve` 默认 **info**；非 serve 的 CLI 默认 **warn**；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
 - **Web 服务**：使用 axum 路由，核心接口包括：
   - `POST /chat`：非流式对话
   - `POST /chat/stream`：SSE 流式对话（前端默认走这个）
   - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement` / `plan_rewrite_max_attempts`**、**`max_message_history` / `tool_message_max_chars` / `context_char_budget` / `context_summary_trigger_chars`**、**`chat_queue_*` / `chat_queue_recent_jobs` / `per_active_jobs`**）
   - `GET /health`：健康检查（API_KEY/静态目录/工作区可写/依赖命令）；实现见 `health.rs`，**TUI 按 F10** 弹层复用同一逻辑（无需起 HTTP）。
-  - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件
+  - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件（`GET /workspace/file` 仅读取不超过 1 MiB 的 UTF-8 文本，超限返回错误）
   - `GET|POST /tasks`：任务清单读写
   - `POST /upload` + `GET /uploads/...`：上传与静态访问
 - **状态与工作区选择**：`AppState` 内维护 `workspace_override`，由前端调用 `/workspace` POST 来设置，影响 Agent 的工具执行工作目录与文件 API 根目录。
@@ -282,7 +282,7 @@ flowchart LR
 - **`unit_convert.rs`**：`convert_units`，基于 **`uom`**（`si` + `f64`）做长度/质量/温度/信息量/时间/面积/压强/速度换算；不执行外部程序。
 - **`weather.rs`**：调用 Open‑Meteo（无需 key），带超时控制。
 - **`web_search.rs`**：`reqwest::blocking` + `serde` 调用 Brave Web Search 或 Tavily；Key 与 `web_search_provider` 来自 `AgentConfig`。Web 路径在 `tool_registry` 中登记为 `WebSearchSpawnTimeout`（`spawn_blocking` + 超时）。
-- **`http_fetch.rs`**：阻塞 GET/HEAD（`method` 参数，默认 GET）；自定义 `redirect::Policy` 记录重定向跳数；`tool_registry` 登记为 `HttpFetchSpawnTimeout`。Web 仅当 URL 以 `http_fetch_allowed_prefixes` 中任一项为前缀时执行；TUI 另可经 `CommandApproval`（`allowlist_key` 为上述持久化键；`args` 对 HEAD 带 `HEAD` 前缀）在「本次允许 / 永久允许」后执行。`CommandApprovalBody.allowlist_key` 可选；`run_command` 审批不传时 TUI 仍以命令名小写写入白名单。
+- **`http_fetch.rs`**：阻塞 GET/HEAD（`method` 参数，默认 GET）；自定义 `redirect::Policy` 记录重定向跳数；`tool_registry` 登记为 `HttpFetchSpawnTimeout`。Web 仅当 URL 满足 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时执行（不再仅按字符串 `startsWith`）；TUI 另可经 `CommandApproval`（`allowlist_key` 为上述持久化键；`args` 对 HEAD 带 `HEAD` 前缀）在「本次允许 / 永久允许」后执行。`CommandApprovalBody.allowlist_key` 可选；`run_command` 审批不传时 TUI 仍以命令名小写写入白名单。
 - **`command.rs`**：命令白名单 + 超时 + 输出截断；配合 `allowed_commands` 与工作区路径限制。
 - **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）。
 - **`file.rs`**：工作区内创建/覆盖/复制/移动文件；`resolve_for_read` / `resolve_for_write` 与祖先 symlink 校验是安全边界的关键；`copy_file` / `move_file` 仅针对常规文件，`overwrite` 控制目标已存在时的覆盖策略；`hash_file` 仅对常规文件流式哈希（`sha256` / `sha512` / `blake3`），可选 `max_bytes` 前缀模式。
@@ -315,7 +315,7 @@ flowchart LR
 
 ### `frontend/src/components/WorkspacePanel.tsx`
 
-- **工作区浏览/编辑**：调用 `/workspace` 与 `/workspace/file` 做目录浏览、文件读写、删除与下载。
+- **工作区浏览/编辑**：调用 `/workspace` 与 `/workspace/file` 做目录浏览、文件读写、删除与下载。`frontend/src/api.ts` 会在请求时自动附带 `localStorage["crabmate-api-bearer-token"]`（若存在）作为 `Authorization: Bearer <token>`，用于 Web API 鉴权。
 - **工作区设置**：把用户选择的目录同步到后端（`POST /workspace`），并本地持久化到 `localStorage`。
 - **目录内搜索**：调用 `/workspace/search`，并可“一键把结果发到聊天”。
 

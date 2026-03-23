@@ -87,10 +87,35 @@ pub fn approval_args_display(method: FetchMethod, url: &Url) -> String {
     }
 }
 
-pub fn url_matches_allowed_prefixes(url: &str, prefixes: &[String]) -> bool {
-    prefixes
-        .iter()
-        .any(|p| !p.trim().is_empty() && url.starts_with(p.trim()))
+fn url_path_matches_prefix(url_path: &str, prefix_path: &str) -> bool {
+    if prefix_path.ends_with('/') {
+        return url_path.starts_with(prefix_path);
+    }
+    url_path == prefix_path || url_path.starts_with(&format!("{}/", prefix_path))
+}
+
+fn same_origin(url: &Url, prefix: &Url) -> bool {
+    let port_url = url.port_or_known_default();
+    let port_prefix = prefix.port_or_known_default();
+    url.scheme() == prefix.scheme()
+        && url.host_str() == prefix.host_str()
+        && port_url == port_prefix
+}
+
+pub fn url_matches_allowed_prefixes(url: &Url, prefixes: &[String]) -> bool {
+    prefixes.iter().any(|raw| {
+        let p = raw.trim();
+        if p.is_empty() {
+            return false;
+        }
+        let Ok(prefix) = Url::parse(p) else {
+            return false;
+        };
+        if prefix.query().is_some() || prefix.fragment().is_some() {
+            return false;
+        }
+        same_origin(url, &prefix) && url_path_matches_prefix(url.path(), prefix.path())
+    })
 }
 
 fn build_client(
@@ -208,15 +233,14 @@ pub fn fetch_with_method(
     out
 }
 
-/// `run_tool` 同步路径：仅当 URL 以配置的 `http_fetch_allowed_prefixes` 之一为前缀时才请求；否则提示配置或 TUI。
+/// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（同源 + 路径前缀边界）时才请求；否则提示配置或 TUI。
 pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     let (url, method) = match parse_http_fetch_args(args_json) {
         Ok(x) => x,
         Err(e) => return format!("错误：{}", e),
     };
-    let url_str = url.as_str();
-    if !url_matches_allowed_prefixes(url_str, ctx.http_fetch_allowed_prefixes) {
-        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes。Web 模式仅允许白名单前缀；TUI 下可对单次请求使用审批（同意/拒绝/永久同意）。".to_string();
+    if !url_matches_allowed_prefixes(&url, ctx.http_fetch_allowed_prefixes) {
+        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。Web 模式仅允许白名单前缀；TUI 下可对单次请求使用审批（同意/拒绝/永久同意）。".to_string();
     }
     fetch_with_method(
         &url,
@@ -252,5 +276,30 @@ mod tests {
         assert!(s.starts_with("HEAD "));
         assert!(s.contains("ex.com/x"));
         assert!(!s.contains("q=1"), "query 应被脱敏: {}", s);
+    }
+
+    #[test]
+    fn allowed_prefix_requires_origin_and_path_boundary() {
+        let url = Url::parse("https://example.com/api/v1/users").unwrap();
+        assert!(url_matches_allowed_prefixes(
+            &url,
+            &["https://example.com/api/".to_string()]
+        ));
+        assert!(url_matches_allowed_prefixes(
+            &url,
+            &["https://example.com/api".to_string()]
+        ));
+        assert!(!url_matches_allowed_prefixes(
+            &url,
+            &["https://example.com/ap".to_string()]
+        ));
+        assert!(!url_matches_allowed_prefixes(
+            &url,
+            &["https://example.com/api2/".to_string()]
+        ));
+        assert!(!url_matches_allowed_prefixes(
+            &url,
+            &["https://example.comx/api/".to_string()]
+        ));
     }
 }

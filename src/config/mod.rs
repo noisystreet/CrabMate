@@ -104,6 +104,10 @@ pub struct AgentConfig {
     /// Web `POST /workspace` 允许设置的工作区根路径：规范化为绝对路径后的白名单。
     /// 未在配置中指定 `workspace_allowed_roots` 时，仅含 `run_command_working_dir` 的 canonical 路径。
     pub workspace_allowed_roots: Vec<std::path::PathBuf>,
+    /// Web API 的 Bearer 鉴权令牌（为空表示不启用鉴权）。
+    pub web_api_bearer_token: String,
+    /// 当监听非 loopback 地址且 `web_api_bearer_token` 为空时，是否允许继续启动（不安全，默认 false）。
+    pub allow_insecure_no_auth_for_non_loopback: bool,
     /// Web `/chat` 任务最大并发执行数（单进程）
     pub chat_queue_max_concurrent: usize,
     /// Web 对话任务有界等待队列长度（`try_send` 满则 503）
@@ -165,6 +169,8 @@ struct AgentSection {
     staged_plan_phase_instruction: Option<String>,
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     workspace_allowed_roots: Option<Vec<String>>,
+    web_api_bearer_token: Option<String>,
+    allow_insecure_no_auth_for_non_loopback: Option<bool>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None
@@ -267,6 +273,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut staged_plan_execution: Option<bool> = None;
     let mut staged_plan_phase_instruction: Option<String> = None;
     let mut workspace_allowed_roots: Option<Vec<String>> = None;
+    let mut web_api_bearer_token: Option<String> = None;
+    let mut allow_insecure_no_auth_for_non_loopback: Option<bool> = None;
 
     if let Some(agent) = parse_agent_section(DEFAULT_CONFIG) {
         api_base = agent.api_base.unwrap_or_default().trim().to_string();
@@ -388,6 +396,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         {
             workspace_allowed_roots = Some(v.clone());
         }
+        if let Some(ref s) = agent.web_api_bearer_token {
+            web_api_bearer_token = Some(s.trim().to_string());
+        }
+        allow_insecure_no_auth_for_non_loopback = agent
+            .allow_insecure_no_auth_for_non_loopback
+            .or(allow_insecure_no_auth_for_non_loopback);
     }
 
     let config_paths: Vec<&str> = match config_path {
@@ -558,6 +572,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 {
                     workspace_allowed_roots = Some(v.clone());
                 }
+                if let Some(ref s) = agent.web_api_bearer_token {
+                    web_api_bearer_token = Some(s.trim().to_string());
+                }
+                allow_insecure_no_auth_for_non_loopback = agent
+                    .allow_insecure_no_auth_for_non_loopback
+                    .or(allow_insecure_no_auth_for_non_loopback);
             }
             if config_path.is_some() {
                 break;
@@ -786,6 +806,17 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_PHASE_INSTRUCTION") {
         staged_plan_phase_instruction = Some(v);
     }
+    if let Ok(v) = std::env::var("AGENT_WEB_API_BEARER_TOKEN") {
+        web_api_bearer_token = Some(v.trim().to_string());
+    }
+    if let Ok(v) = std::env::var("AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK") {
+        let v = v.trim().to_ascii_lowercase();
+        if matches!(v.as_str(), "1" | "true" | "yes" | "on") {
+            allow_insecure_no_auth_for_non_loopback = Some(true);
+        } else if matches!(v.as_str(), "0" | "false" | "no" | "off") {
+            allow_insecure_no_auth_for_non_loopback = Some(false);
+        }
+    }
 
     if api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
@@ -909,6 +940,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let chat_queue_max_pending = chat_queue_max_pending.unwrap_or(32).clamp(1, 8192) as usize;
     let staged_plan_execution = staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = staged_plan_phase_instruction.unwrap_or_default();
+    let web_api_bearer_token = web_api_bearer_token.unwrap_or_default();
+    let allow_insecure_no_auth_for_non_loopback =
+        allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
 
     let web_search_provider = match web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
@@ -959,6 +993,8 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         context_summary_max_tokens,
         context_summary_transcript_max_chars,
         workspace_allowed_roots,
+        web_api_bearer_token,
+        allow_insecure_no_auth_for_non_loopback,
         chat_queue_max_concurrent,
         chat_queue_max_pending,
         staged_plan_execution,
