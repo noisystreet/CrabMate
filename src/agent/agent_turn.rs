@@ -880,15 +880,7 @@ async fn run_staged_plan_then_execute_steps(
         tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         emit_chat_ui_separator_sse(p.out, true).await;
     }
-    if !staged_loop_cancelled && !plan.steps.is_empty() {
-        send_staged_plan_notice(
-            p.out,
-            echo_terminal_staged,
-            true,
-            staged_plan_queue_summary_text(&plan, plan.steps.len()),
-        )
-        .await;
-    }
+    // 末步成功后循环内已发送含「[✓] 全部完成」的摘要，勿再发一次（否则 CLI/TUI 各重复一条）。
     send_staged_plan_finished(
         p.out,
         &plan_id,

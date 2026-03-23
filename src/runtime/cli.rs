@@ -100,7 +100,7 @@ pub async fn run_repl(
     );
 
     println!(
-        "=== DeepSeek Agent Demo ===\n当前模型: {}\n输入内容与 Agent 对话，输入 quit/exit 或 Ctrl+D 退出。\n",
+        "当前模型: {}\n输入内容与 Agent 对话，输入 quit/exit 或 Ctrl+D 退出。\n",
         cfg.model
     );
 

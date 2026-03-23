@@ -12,9 +12,10 @@ use std::io::{self, Write};
 
 use super::latex_unicode::latex_math_to_unicode;
 use super::message_display::{tool_content_for_display_full, user_message_for_chat_display};
-use super::plan_section::STAGED_PLAN_SECTION_HEADER;
 
 /// 与 TUI 聊天区展示一致：正文经 **`user_message_for_chat_display`**（含分步注入 user 长句压缩、LaTeX），再按行打印到 stdout。
+///
+/// `clear_before` 时先空一行，并对**首条非空行**用加粗暗黄（与原先单独一行「【规划】」同级），避免与摘要首行「【规划】共 N 步」重复输出「【规划】」。
 pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Result<()> {
     let display = user_message_for_chat_display(text);
     debug!(
@@ -26,22 +27,28 @@ pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Re
     );
     let mut w = io::stdout();
     if clear_before {
-        queue!(
-            w,
-            SetAttribute(Attribute::Bold),
-            SetForegroundColor(Color::DarkYellow)
-        )?;
-        writeln!(w, "\n{STAGED_PLAN_SECTION_HEADER}")?;
-        queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
+        writeln!(w)?;
     }
+    let mut highlight_first_nonempty = clear_before;
     for line in display.lines() {
         let t = line.trim_end();
         if t.is_empty() {
             continue;
         }
-        queue!(w, SetForegroundColor(Color::DarkGrey))?;
-        writeln!(w, "{t}")?;
-        queue!(w, ResetColor)?;
+        if highlight_first_nonempty {
+            highlight_first_nonempty = false;
+            queue!(
+                w,
+                SetAttribute(Attribute::Bold),
+                SetForegroundColor(Color::DarkYellow)
+            )?;
+            writeln!(w, "{t}")?;
+            queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
+        } else {
+            queue!(w, SetForegroundColor(Color::DarkGrey))?;
+            writeln!(w, "{t}")?;
+            queue!(w, ResetColor)?;
+        }
     }
     w.flush()
 }
