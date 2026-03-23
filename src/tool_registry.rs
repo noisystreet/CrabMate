@@ -75,6 +75,11 @@ pub fn all_dispatch_metadata() -> &'static [ToolDispatchMeta] {
             requires_workspace: false,
             class: ToolExecutionClass::HttpFetchSpawnTimeout,
         },
+        ToolDispatchMeta {
+            name: "http_request",
+            requires_workspace: false,
+            class: ToolExecutionClass::HttpFetchSpawnTimeout,
+        },
     ]
 }
 
@@ -116,6 +121,7 @@ enum HandlerId {
     GetWeather,
     WebSearch,
     HttpFetch,
+    HttpRequest,
     SyncDefault,
 }
 
@@ -131,6 +137,7 @@ fn handler_id_for(name: &str) -> HandlerId {
             m.insert("get_weather", HandlerId::GetWeather);
             m.insert("web_search", HandlerId::WebSearch);
             m.insert("http_fetch", HandlerId::HttpFetch);
+            m.insert("http_request", HandlerId::HttpRequest);
             m
         })
         .get(name)
@@ -228,6 +235,7 @@ pub async fn dispatch_tool(
             ToolRuntime::Web { .. } => execute_http_fetch_web(cfg, name, args).await,
             ToolRuntime::Tui { ctx } => execute_http_fetch_tui(cfg, ctx, name, args).await,
         },
+        HandlerId::HttpRequest => execute_http_request(cfg, name, args).await,
         HandlerId::SyncDefault => {
             let ctx =
                 tools::tool_context_for(cfg.as_ref(), &cfg.allowed_commands, effective_working_dir);
@@ -562,6 +570,49 @@ async fn execute_http_fetch_tui(
     (s, None)
 }
 
+async fn execute_http_request(
+    cfg: &Arc<AgentConfig>,
+    name: &str,
+    args: &str,
+) -> (String, Option<serde_json::Value>) {
+    let (url, _method, _json_body) = match tools::http_fetch::parse_http_request_args(args) {
+        Ok(x) => x,
+        Err(e) => return (format!("错误：{}", e), None),
+    };
+    if !tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes) {
+        return (
+            "错误：http_request 仅允许匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。"
+                .to_string(),
+            None,
+        );
+    }
+    let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
+    let max_body = cfg.http_fetch_max_response_bytes;
+    let args_owned = args.to_string();
+    let cmd_timeout = cfg.command_timeout_secs.max(timeout_secs);
+    let handle = tokio::task::spawn_blocking(move || {
+        let (u, m, b) = match tools::http_fetch::parse_http_request_args(&args_owned) {
+            Ok(x) => x,
+            Err(e) => return format!("错误：{}", e),
+        };
+        tools::http_fetch::request_with_json_body(&u, m, b.as_ref(), timeout_secs, max_body)
+    });
+    let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            error!(
+                target: "crabmate",
+                "http_request 任务异常 tool={} error={:?}",
+                name,
+                e
+            );
+            format!("http_request 执行异常：{:?}", e)
+        }
+        Err(_) => format!("http_request 超时（{} 秒）", cmd_timeout),
+    };
+    (s, None)
+}
+
 async fn execute_run_executable_web(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
@@ -693,6 +744,7 @@ mod tests {
         assert_eq!(handler_id_for("workflow_execute"), HandlerId::Workflow);
         assert_eq!(handler_id_for("run_command"), HandlerId::RunCommand);
         assert_eq!(handler_id_for("web_search"), HandlerId::WebSearch);
+        assert_eq!(handler_id_for("http_request"), HandlerId::HttpRequest);
         assert_eq!(handler_id_for("unknown_xyz"), HandlerId::SyncDefault);
     }
 

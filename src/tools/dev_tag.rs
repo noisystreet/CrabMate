@@ -40,6 +40,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "structured_validate"
         | "structured_query"
         | "structured_diff"
+        | "structured_patch"
         | "text_diff"
         | "table_text" => &[GENERAL],
 
@@ -79,7 +80,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
 
         // --- pre-commit（跨语言）---
         "pre_commit_run" => &[GENERAL, QUALITY],
-        "typos_check" | "codespell_check" | "ast_grep_run" => &[GENERAL, QUALITY],
+        "typos_check" | "codespell_check" | "ast_grep_run" | "ast_grep_rewrite" => {
+            &[GENERAL, QUALITY]
+        }
 
         // --- 质量聚合（跨栈）---
         "ci_pipeline_local" | "release_ready_check" => &[GENERAL, QUALITY],

@@ -12,6 +12,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
   - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
   - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。**Web** 端仅当 URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时才执行（避免仅字符串 `startsWith` 的误放行）；**TUI** 下未匹配前缀时可像 `run_command` 一样 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键）。
+  - `http_request`：对给定 URL 发起 **POST / PUT / PATCH / DELETE**（可选 `json_body`）。同样受 `http_fetch_allowed_prefixes` 约束（同源 + 路径前缀边界），返回状态、Content-Type、重定向链与正文预览。适合受控 API 联调（默认建议先 dry-run 规划参数，不在 body 中放真实密钥）。
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`file`、`head`、`tail`、`wc`、`cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make` 等），带超时与输出截断。**CMake**：已列入白名单，常用 `cmake -S . -B build`、`cmake --build build`；参数不得含 `..` 或以 `/` 开头，建议构建目录用相对路径（勿在 args 里写绝对路径的 `-D`）。未安装时 `/health` 中 `dep_cmake` 可能为 degraded。**c++filt**：可将链接器/栈追踪中的修饰名（mangled）反解为可读 C++ 名（Binutils/LLVM 通常提供）；未安装时 `dep_cxxfilt` 可能为 degraded。**Autotools**：默认白名单含 `autoreconf`/`autoconf`/`automake`/`aclocal`，便于维护仍使用 `configure.ac` / `Makefile.am` 的仓库；会处理项目内 m4/shell，仅应在**信任的工作区**使用，且 `run_command` 参数规则仍生效。
   - `run_executable`：在工作区目录下按**相对路径**运行可执行文件（如 `./main`、编译产物）；与 `run_command`（仅白名单系统命令）分工——**运行当前目录/工作区内的程序请用本工具**，不要用 `run_command`。
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的 UTF-8 文本，超出会返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
@@ -20,7 +21,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接目标是否存在；`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测。
   - `typos_check` / `codespell_check`：文档拼写检查（**只读**，需本机安装 [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)）；默认优先检查存在的 `README.md` 与 `docs/`，可用 `paths` 收窄；`codespell_check` 可选 `skip` 传给 `--skip`。
   - `ast_grep_run`：用 [ast-grep](https://ast-grep.github.io/) 做**语法树级**搜索（需本机安装 `ast-grep`，如 `cargo install ast-grep`）；必填 `pattern` 与 `lang`，默认在存在的 `src` 下搜索，并内置排除 `target`、`node_modules`、`.git` 等；可用 `paths` / `globs` 进一步限制范围。
-  - `structured_validate` / `structured_query` / `structured_diff`：校验 **JSON / YAML / TOML**（如 `package.json`、`Cargo.toml`、CI 配置）；**CSV / TSV** 会先解析为 JSON 数组（有表头时为对象数组）再校验、按路径查询或键级 diff。按 **JSON Pointer**（`/a/b`）或**点号路径**查询嵌套键；对两份文件做**结构化 diff**（与 `git_diff` 文本 diff 互补）。
+  - `ast_grep_rewrite`：用 `ast-grep run --rewrite` 做结构化改写。默认 `dry_run=true` 仅预览；当 `dry_run=false` 时必须 `confirm=true` 才会实际写盘（等价 `--update-all`）。
+  - `structured_validate` / `structured_query` / `structured_diff` / `structured_patch`：校验、查询、结构化 diff，以及对 **JSON / YAML / TOML** 做定点 `set/remove`（`structured_patch` 默认 dry-run，写盘需 `confirm=true`）。CSV/TSV 仍用于校验/查询/diff，不支持结构化写回。
   - `table_text`：对工作区内 **CSV / TSV / 分号或管道分隔**等表格做**预览、列数校验、按列下标导出、按列筛选、数值聚合**（流式扫描，单文件 4MiB）；与 `structured_*` 的「整表载入为 JSON + 路径查询」分工不同，按需选用。
   - `text_transform`：纯内存字符串变换（Base64、URL 百分号编解码、短哈希、按行合并/按分隔符切分），不落盘，输入/输出有长度上限。
   - `text_diff`：两段 UTF-8 文本或工作区内两文件的**行级 unified diff**（与 Git 无关）；`structured_diff` 为键级结构化差异，二者互补。
@@ -215,7 +217,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`table_text`、`text_diff`、`diagnostic_summary`。
+另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`structured_patch`、`table_text`、`text_diff`、`ast_grep_rewrite`、`diagnostic_summary`。
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
 
 **Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`pre_commit_run`；聚合类还有 `run_lints`（可选 ruff）、`quality_workspace`（可选 ruff/pytest/mypy）。
