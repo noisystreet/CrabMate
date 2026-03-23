@@ -4,7 +4,7 @@ pub mod cli;
 
 use crate::agent::per_coord::FinalPlanRequirementMode;
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 编译时嵌入的默认配置（与项目根 default_config.toml 一致）
 const DEFAULT_CONFIG: &str = include_str!("../../default_config.toml");
@@ -87,6 +87,14 @@ pub struct AgentConfig {
     pub plan_rewrite_max_attempts: usize,
     /// 系统提示词（可由 system_prompt 或 system_prompt_file 配置）
     pub system_prompt: String,
+    /// 启用后：读取 `cursor_rules_dir` 下的 `*.mdc` 并附加到系统提示词
+    pub cursor_rules_enabled: bool,
+    /// Cursor-like 规则目录（相对路径相对进程当前目录）
+    pub cursor_rules_dir: String,
+    /// 启用 cursor-like 规则时，是否附加工作区根 `AGENTS.md`
+    pub cursor_rules_include_agents_md: bool,
+    /// 规则附加段最大字符数，超出时截断并附提示
+    pub cursor_rules_max_chars: usize,
     /// `role: tool` 的 `content` 超过此字符数时截断（每次调模型前应用）
     pub tool_message_max_chars: usize,
     /// 非 system 消息总字符预算（近似）；`0` 表示不启用按字符删旧消息
@@ -153,6 +161,10 @@ struct AgentSection {
     plan_rewrite_max_attempts: Option<u64>,
     system_prompt: Option<String>,
     system_prompt_file: Option<String>,
+    cursor_rules_enabled: Option<bool>,
+    cursor_rules_dir: Option<String>,
+    cursor_rules_include_agents_md: Option<bool>,
+    cursor_rules_max_chars: Option<u64>,
     env: Option<String>,
     allowed_commands_dev: Option<Vec<String>>,
     allowed_commands_prod: Option<Vec<String>>,
@@ -176,6 +188,132 @@ struct AgentSection {
 /// 读取 [agent] 段，缺失字段保持为 None
 fn parse_agent_section(s: &str) -> Option<AgentSection> {
     toml::from_str::<ConfigFile>(s).ok()?.agent
+}
+
+fn parse_bool_like(s: &str) -> Option<bool> {
+    let v = s.trim().to_ascii_lowercase();
+    if matches!(v.as_str(), "1" | "true" | "yes" | "on") {
+        Some(true)
+    } else if matches!(v.as_str(), "0" | "false" | "no" | "off") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    s.chars().take(max_chars).collect()
+}
+
+fn load_cursor_rule_documents(
+    cwd: &Path,
+    rules_dir: &str,
+    include_agents_md: bool,
+) -> Result<Vec<(String, String)>, String> {
+    let rules_dir = rules_dir.trim();
+    if rules_dir.is_empty() {
+        return Err("配置错误：cursor_rules_dir 不能为空".to_string());
+    }
+    let dir_path = {
+        let p = Path::new(rules_dir);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            cwd.join(p)
+        }
+    };
+    if dir_path.exists() && !dir_path.is_dir() {
+        return Err(format!(
+            "配置错误：cursor_rules_dir \"{}\" 不是目录",
+            dir_path.display()
+        ));
+    }
+
+    let mut files: Vec<PathBuf> = Vec::new();
+    if include_agents_md {
+        let agents = cwd.join("AGENTS.md");
+        if agents.is_file() {
+            files.push(agents);
+        }
+    }
+    if dir_path.is_dir() {
+        let mut mdc_files: Vec<PathBuf> = std::fs::read_dir(&dir_path)
+            .map_err(|e| {
+                format!(
+                    "无法读取 cursor_rules_dir \"{}\": {}",
+                    dir_path.display(),
+                    e
+                )
+            })?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.is_file())
+            .filter(|p| {
+                p.extension()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("mdc"))
+            })
+            .collect();
+        mdc_files.sort();
+        files.extend(mdc_files);
+    }
+
+    let mut out: Vec<(String, String)> = Vec::new();
+    for path in files {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("无法读取规则文件 \"{}\": {}", path.display(), e))?;
+        if content.trim().is_empty() {
+            continue;
+        }
+        let display_path = path
+            .strip_prefix(cwd)
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| path.display().to_string());
+        out.push((display_path, content));
+    }
+    Ok(out)
+}
+
+fn render_cursor_rules_appendix(docs: &[(String, String)], max_chars: usize) -> String {
+    if docs.is_empty() {
+        return String::new();
+    }
+    let mut body = String::from(
+        "【项目规则（Cursor-like）】\n以下内容来自工作区规则文件；若与更高优先级指令冲突，以更高优先级为准。\n",
+    );
+    for (path, content) in docs {
+        body.push_str("\n\n---\n");
+        body.push_str(&format!("规则文件: {}\n\n", path));
+        body.push_str(content.trim());
+    }
+    if body.chars().count() <= max_chars {
+        return body;
+    }
+    let mut truncated = truncate_chars(&body, max_chars);
+    truncated.push_str("\n\n[提示] 规则内容已按 cursor_rules_max_chars 截断。");
+    truncated
+}
+
+fn merge_system_prompt_with_cursor_rules(
+    system_prompt: String,
+    cursor_rules_enabled: bool,
+    cursor_rules_dir: &str,
+    cursor_rules_include_agents_md: bool,
+    cursor_rules_max_chars: usize,
+) -> Result<String, String> {
+    if !cursor_rules_enabled {
+        return Ok(system_prompt);
+    }
+    let cwd = std::env::current_dir().map_err(|e| format!("无法获取当前工作目录: {}", e))?;
+    let docs = load_cursor_rule_documents(&cwd, cursor_rules_dir, cursor_rules_include_agents_md)?;
+    if docs.is_empty() {
+        return Ok(system_prompt);
+    }
+    let appendix = render_cursor_rules_appendix(&docs, cursor_rules_max_chars);
+    if appendix.is_empty() {
+        return Ok(system_prompt);
+    }
+    Ok(format!("{}\n\n{}", system_prompt.trim_end(), appendix))
 }
 
 /// 解析 Web 工作区白名单：未配置或空列表时仅允许 `run_command_working_dir`；否则每项须为已存在目录的绝对或相对路径（相对路径相对**进程当前目录**）。
@@ -240,6 +378,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut command_max_output_len: Option<u64> = None;
     let mut system_prompt = String::new();
     let mut system_prompt_file: Option<String> = None;
+    let mut cursor_rules_enabled: Option<bool> = None;
+    let mut cursor_rules_dir: Option<String> = None;
+    let mut cursor_rules_include_agents_md: Option<bool> = None;
+    let mut cursor_rules_max_chars: Option<u64> = None;
     let mut max_tokens: Option<u64> = None;
     let mut temperature: Option<f64> = None;
     let mut api_timeout_secs: Option<u64> = None;
@@ -357,6 +499,17 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 system_prompt_file = Some(p);
             }
         }
+        cursor_rules_enabled = agent.cursor_rules_enabled.or(cursor_rules_enabled);
+        if let Some(ref p) = agent.cursor_rules_dir {
+            let p = p.trim().to_string();
+            if !p.is_empty() {
+                cursor_rules_dir = Some(p);
+            }
+        }
+        cursor_rules_include_agents_md = agent
+            .cursor_rules_include_agents_md
+            .or(cursor_rules_include_agents_md);
+        cursor_rules_max_chars = agent.cursor_rules_max_chars.or(cursor_rules_max_chars);
         if let Some(e) = agent.env {
             let e = e.trim().to_string();
             if !e.is_empty() {
@@ -532,6 +685,17 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                         system_prompt_file = Some(p);
                     }
                 }
+                cursor_rules_enabled = agent.cursor_rules_enabled.or(cursor_rules_enabled);
+                if let Some(ref p) = agent.cursor_rules_dir {
+                    let p = p.trim().to_string();
+                    if !p.is_empty() {
+                        cursor_rules_dir = Some(p);
+                    }
+                }
+                cursor_rules_include_agents_md = agent
+                    .cursor_rules_include_agents_md
+                    .or(cursor_rules_include_agents_md);
+                cursor_rules_max_chars = agent.cursor_rules_max_chars.or(cursor_rules_max_chars);
                 if let Some(e) = agent.env {
                     let e = e.trim().to_string();
                     if !e.is_empty() {
@@ -750,6 +914,27 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             system_prompt_file = Some(p);
         }
     }
+    if let Ok(v) = std::env::var("AGENT_CURSOR_RULES_ENABLED")
+        && let Some(b) = parse_bool_like(&v)
+    {
+        cursor_rules_enabled = Some(b);
+    }
+    if let Ok(v) = std::env::var("AGENT_CURSOR_RULES_DIR") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            cursor_rules_dir = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD")
+        && let Some(b) = parse_bool_like(&v)
+    {
+        cursor_rules_include_agents_md = Some(b);
+    }
+    if let Ok(v) = std::env::var("AGENT_CURSOR_RULES_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        cursor_rules_max_chars = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_TOOL_MESSAGE_MAX_CHARS")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -915,6 +1100,19 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     if system_prompt.trim().is_empty() {
         return Err("配置错误：未设置 system_prompt 或 system_prompt_file".to_string());
     }
+    let cursor_rules_enabled = cursor_rules_enabled.unwrap_or(false);
+    let cursor_rules_dir = cursor_rules_dir.unwrap_or_else(|| ".cursor/rules".to_string());
+    let cursor_rules_include_agents_md = cursor_rules_include_agents_md.unwrap_or(true);
+    let cursor_rules_max_chars = cursor_rules_max_chars
+        .unwrap_or(48_000)
+        .clamp(1024, 1_000_000);
+    let system_prompt = merge_system_prompt_with_cursor_rules(
+        system_prompt,
+        cursor_rules_enabled,
+        &cursor_rules_dir,
+        cursor_rules_include_agents_md,
+        cursor_rules_max_chars as usize,
+    )?;
 
     let final_plan_requirement = match final_plan_requirement_str.as_deref() {
         Some(s) => FinalPlanRequirementMode::parse(s)?,
@@ -985,6 +1183,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         final_plan_requirement,
         plan_rewrite_max_attempts,
         system_prompt,
+        cursor_rules_enabled,
+        cursor_rules_dir,
+        cursor_rules_include_agents_md,
+        cursor_rules_max_chars: cursor_rules_max_chars as usize,
         tool_message_max_chars,
         context_char_budget,
         context_min_messages_after_system,
@@ -1000,4 +1202,107 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         staged_plan_execution,
         staged_plan_phase_instruction,
     })
+}
+
+#[cfg(test)]
+mod cursor_rules_tests {
+    use super::merge_system_prompt_with_cursor_rules;
+    use std::path::{Path, PathBuf};
+
+    struct CwdGuard {
+        prev: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn change_to(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("get cwd");
+            std::env::set_current_dir(path).expect("set cwd");
+            Self { prev }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
+
+    fn temp_workspace(name: &str) -> PathBuf {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "crabmate-cursor-rules-test-{}-{}-{}",
+            name,
+            std::process::id(),
+            ts
+        ));
+        std::fs::create_dir_all(&dir).expect("mkdir temp");
+        dir
+    }
+
+    #[test]
+    fn merge_system_prompt_appends_agents_and_sorted_rules() {
+        let ws = temp_workspace("merge-order");
+        std::fs::write(
+            ws.join("AGENTS.md"),
+            "agents_rule: must follow project instruction",
+        )
+        .expect("write agents");
+        let rules_dir = ws.join(".cursor/rules");
+        std::fs::create_dir_all(&rules_dir).expect("mkdir rules");
+        std::fs::write(rules_dir.join("b_rule.mdc"), "b-rule").expect("write b");
+        std::fs::write(rules_dir.join("a_rule.mdc"), "a-rule").expect("write a");
+        let _cwd = CwdGuard::change_to(&ws);
+
+        let merged = merge_system_prompt_with_cursor_rules(
+            "BASE_PROMPT".to_string(),
+            true,
+            ".cursor/rules",
+            true,
+            20_000,
+        )
+        .expect("merge ok");
+
+        assert!(merged.starts_with("BASE_PROMPT"));
+        let p_agents = merged.find("规则文件: AGENTS.md").expect("agents marker");
+        let p_a = merged
+            .find("规则文件: .cursor/rules/a_rule.mdc")
+            .expect("a marker");
+        let p_b = merged
+            .find("规则文件: .cursor/rules/b_rule.mdc")
+            .expect("b marker");
+        assert!(p_agents < p_a);
+        assert!(p_a < p_b);
+        assert!(merged.contains("agents_rule: must follow project instruction"));
+        assert!(merged.contains("a-rule"));
+        assert!(merged.contains("b-rule"));
+
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn merge_system_prompt_truncates_when_over_limit() {
+        let ws = temp_workspace("merge-truncate");
+        let rules_dir = ws.join(".cursor/rules");
+        std::fs::create_dir_all(&rules_dir).expect("mkdir rules");
+        std::fs::write(rules_dir.join("rule.mdc"), "x".repeat(4096)).expect("write rule");
+        let _cwd = CwdGuard::change_to(&ws);
+
+        let merged = merge_system_prompt_with_cursor_rules(
+            "BASE_PROMPT".to_string(),
+            true,
+            ".cursor/rules",
+            false,
+            180,
+        )
+        .expect("merge ok");
+
+        assert!(merged.contains("BASE_PROMPT"));
+        assert!(merged.contains("已按 cursor_rules_max_chars 截断"));
+        assert!(merged.len() > "BASE_PROMPT".len());
+
+        let _ = std::fs::remove_dir_all(&ws);
+    }
 }

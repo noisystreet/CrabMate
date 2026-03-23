@@ -86,7 +86,7 @@ flowchart TB
 |------|----------|
 | `agent/` | **`agent_turn`**：主循环（Web/TUI）；**`RunLoopParams`** 聚合 `run_agent_turn_common` 与 `run_agent_outer_loop` / `run_staged_plan_then_execute_steps` 共用字段；**`context_window`**：上下文裁剪/摘要；**`per_coord` / `plan_artifact` / `workflow_reflection_controller`**：PER 与终答规划；**`workflow`**：DAG 执行。 |
 | `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限；运行中任务的 `PerTurnFlight` 注册供 `GET /status` 的 `per_active_jobs`。 |
-| `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数。 |
+| `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数；`system_prompt` 可在加载阶段按 `cursor_rules_*` / `AGENT_CURSOR_RULES_*` 自动拼接工作区规则文件。 |
 | `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
 | `redact.rs` | 上游 HTTP 响应体等长文本的**日志预览截断**（`preview_chars` / `single_line_preview`），供 `llm::api`、`tools::web_search` 等使用。 |
 | `text_sanitize.rs` | 用户可见正文轻量清洗（DSML 剥离、规划步骤描述自然化等）；供 **`plan_artifact::format_agent_reply_plan_for_display`** 等使用。 |
@@ -154,6 +154,7 @@ flowchart TB
 - **调用模型**：通过 **`src/llm/api.rs`** 的 `stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `run_agent_turn(..., no_stream: true)` 时为 `stream: false`，按 OpenAI 兼容 `ChatResponse` 解析 `choices[0].message`（有正文则经 `out` 整段下发）；其它 API 形态需自行适配。
 - **分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 true 时 `run_agent_turn_common` 先走无 tools 的规划轮（`llm::nl_only_chat_request`），解析 `agent_reply_plan` v1 后按 `steps` 顺序多次进入外层 Agent 循环；规划轮若出现 `tool_calls` 或 JSON 不合格，SSE 分别带 `staged_plan_tool_calls`、`staged_plan_invalid`。
 - **上下文窗口策略**（`src/agent/context_window.rs`）：在 `agent::agent_turn::run_agent_turn_common` 的**每次** P 步（`per_plan_call_model_retrying`）之前调用 `prepare_messages_for_model`：**`tool` 消息正文截断**（`tool_message_max_chars`）、**按条数保留**（沿用 `max_message_history`）、可选 **`context_char_budget` 按近似字符删旧消息**；若 `context_summary_trigger_chars > 0` 且非 system 总字符超阈值，则额外发起**无 tools** 的 `chat/completions` 将「中间段」压成一条 user 摘要，尾部保留 `context_summary_tail_messages` 条。TUI/Web 在同步回 `messages` 后，列表长度会随裁剪/摘要变化（工具截断不改变条数）。配置见 `default_config.toml` 与 `AGENT_CONTEXT_*` / `AGENT_TOOL_MESSAGE_MAX_CHARS`。
+- **系统提示词规则拼接**（`[agent] cursor_rules_enabled` / `AGENT_CURSOR_RULES_ENABLED`）：在 `config::load_config` 阶段，`system_prompt`/`system_prompt_file` 读取后可追加 `cursor_rules_dir`（默认 `.cursor/rules`）下 `*.mdc`，并可选附加工作区根 `AGENTS.md`（`cursor_rules_include_agents_md`）；按文件名排序拼接，附加段受 `cursor_rules_max_chars` 限制，超出截断并加提示。该拼接结果即后续 `messages_chat_seed` 使用的首条 `system`。
 - **处理结束原因**：
   - `finish_reason != "tool_calls"`：本轮对话结束，最后一条 assistant message 即最终回复。
   - `finish_reason == "tool_calls"`：解析 tool calls，逐个执行本地工具，把工具结果作为 `role: "tool"` 的消息追加进 `messages`，然后继续下一轮请求，直到模型返回最终文本。
