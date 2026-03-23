@@ -29,7 +29,7 @@ alwaysApply: true
 
 - **`pre-commit run` 失败**：根据输出修复格式/克隆失败等问题后**重新运行**，直至通过，再执行 `git add`（若 hook 改动了文件）与 `git commit`。
 - **不要**在跳过上述步骤的情况下直接提交；用户明确要求 `--no-verify` 等例外时，须在回复中说明风险。
-- **`git commit -m` 的说明**：须符合 **Conventional Commits**（见 **`.cursor/rules/conventional-commits.mdc`**）。
+- **`git commit -m` 的说明**：须符合 **Conventional Commits**，且 **subject 中英双语**（见 **`.cursor/rules/conventional-commits.mdc`**）。
 
 ## 与本仓库的对应关系
 
