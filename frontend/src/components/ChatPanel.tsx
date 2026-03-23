@@ -225,7 +225,13 @@ function classifyErrorKind(msg: string): ErrorKind {
   if (lower.includes('internal_error') || lower.includes('对话失败')) return 'server'
   return 'unknown'
 }
-import { sendChatStream, uploadFiles, type ToolResultInfo } from '../api'
+import {
+  sendChatStream,
+  submitChatApproval,
+  uploadFiles,
+  type CommandApprovalRequestInfo,
+  type ToolResultInfo,
+} from '../api'
 import { buildCrabmateSessionFile, crabmateSessionFileToPrettyJson, downloadBlob } from '../chatExport'
 
 const INPUT_HEIGHT_KEY = 'agent-demo-input-height'
@@ -268,6 +274,12 @@ type PendingAttachment = {
   name: string
   size: number
   mime: string
+}
+
+type PendingApproval = CommandApprovalRequestInfo & {
+  sessionId: string
+  submitting?: boolean
+  error?: string
 }
 
 interface ChatPanelProps {
@@ -327,6 +339,7 @@ export function ChatPanel({
   const [pendingVideos, setPendingVideos] = useState<PendingAttachment[]>([])
   const [attachHint, setAttachHint] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const [, setPendingQueue] = useState<string[]>([])
   const inputRef = useRef('')
   const sendingRef = useRef(false)
@@ -345,6 +358,7 @@ export function ChatPanel({
   const virtuosoRef = useRef<null | { scrollToIndex?: (arg: any) => void }>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const approvalSessionIdRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textFileInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
@@ -367,6 +381,11 @@ export function ChatPanel({
       el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
     })
   }, [messages.length])
+
+  const makeApprovalSessionId = useCallback(() => {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+    return `approval_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  }, [])
 
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
     isNearBottomRef.current = atBottom
@@ -498,6 +517,8 @@ export function ChatPanel({
     setPendingImages([])
     setPendingAudios([])
     setPendingVideos([])
+    setPendingApproval(null)
+    approvalSessionIdRef.current = null
     setAttachHint(null)
     setInput(initialDraft ?? '')
     setMessages(initialMessages ? [...initialMessages] : [])
@@ -727,6 +748,19 @@ export function ChatPanel({
     window.addEventListener('pointerup', onPointerUp)
   }, [])
 
+  const submitApprovalDecision = useCallback(async (decision: 'deny' | 'allow_once' | 'allow_always') => {
+    const current = pendingApproval
+    if (!current || current.submitting) return
+    setPendingApproval((prev) => (prev ? { ...prev, submitting: true, error: undefined } : prev))
+    try {
+      await submitChatApproval(current.sessionId, decision)
+      setPendingApproval(null)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '审批提交失败'
+      setPendingApproval((prev) => (prev ? { ...prev, submitting: false, error: msg } : prev))
+    }
+  }, [pendingApproval])
+
   const send = async (overrideInput?: string) => {
     const msg = (overrideInput ?? inputRef.current).trim()
     const hasAny = pendingImages.length > 0 || pendingAudios.length > 0 || pendingVideos.length > 0
@@ -807,8 +841,11 @@ export function ChatPanel({
     scheduleScrollToBottom()
     sendingRef.current = true
     setSending(true)
+    setPendingApproval(null)
     onSendStart?.()
     let finished = false
+    const approvalSessionId = makeApprovalSessionId()
+    approvalSessionIdRef.current = approvalSessionId
     try {
       if (abortRef.current) {
         abortRef.current.abort()
@@ -854,6 +891,16 @@ export function ChatPanel({
           ])
           scheduleScrollToBottom()
         },
+        onCommandApprovalRequest: (approvalInfo) => {
+          const activeSessionId = approvalSessionIdRef.current
+          if (!activeSessionId) return
+          setPendingApproval({
+            ...approvalInfo,
+            sessionId: activeSessionId,
+            submitting: false,
+            error: undefined,
+          })
+        },
         onDone: () => {
           finished = true
           flushPendingDeltas()
@@ -875,6 +922,8 @@ export function ChatPanel({
           streamingMsgIdRef.current = null
           streamingSpanRef.current = null
           streamingTextRef.current = ''
+          approvalSessionIdRef.current = null
+          setPendingApproval(null)
           onSendEnd?.()
           sendingRef.current = false
           setSending(false)
@@ -910,6 +959,8 @@ export function ChatPanel({
           streamingMsgIdRef.current = null
           streamingSpanRef.current = null
           streamingTextRef.current = ''
+          approvalSessionIdRef.current = null
+          setPendingApproval(null)
           onSendEnd?.(errMsg)
           sendingRef.current = false
           setSending(false)
@@ -923,7 +974,7 @@ export function ChatPanel({
             return rest
           })
         },
-      }, controller.signal, conversationIdRef.current ?? sessionId ?? undefined)
+      }, approvalSessionId, controller.signal, conversationIdRef.current ?? sessionId ?? undefined)
     } catch (e) {
       const msgText = e instanceof Error ? e.message : '请求失败'
       flushPendingDeltas()
@@ -945,6 +996,8 @@ export function ChatPanel({
       streamingMsgIdRef.current = null
       streamingSpanRef.current = null
       streamingTextRef.current = ''
+      approvalSessionIdRef.current = null
+      setPendingApproval(null)
       finished = true
       onSendEnd?.(msgText)
       sendingRef.current = false
@@ -965,6 +1018,8 @@ export function ChatPanel({
         onSendEnd?.()
         sendingRef.current = false
         setSending(false)
+        approvalSessionIdRef.current = null
+        setPendingApproval(null)
       }
     }
   }
@@ -1001,6 +1056,8 @@ export function ChatPanel({
     streamingMsgIdRef.current = null
     streamingSpanRef.current = null
     streamingTextRef.current = ''
+    approvalSessionIdRef.current = null
+    setPendingApproval(null)
     onSendEnd?.('已中止')
   }
 
@@ -1557,6 +1614,55 @@ export function ChatPanel({
         </div>
         </div>
       </div>
+      {pendingApproval && (
+        <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-[680px] bg-base-100 border border-base-300 rounded-none shadow-xl">
+            <div className="px-4 py-3 border-b border-base-300 bg-base-200 flex items-center justify-between">
+              <div className="font-semibold">工具执行审批</div>
+              <span className="text-xs text-base-content/60">请确认是否执行</span>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-sm">
+                <span className="text-base-content/70">命令：</span>
+                <span className="font-mono break-all">{pendingApproval.command || '(未知)'}</span>
+              </div>
+              <div className="text-sm">
+                <span className="text-base-content/70">参数：</span>
+                <pre className="mt-1 max-h-44 overflow-auto text-[12px] bg-base-200 border border-base-300 p-2 whitespace-pre-wrap break-all">{pendingApproval.args || '(无)'}</pre>
+              </div>
+              {pendingApproval.error && (
+                <div className="text-xs text-error">{pendingApproval.error}</div>
+              )}
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-error rounded-none"
+                  disabled={!!pendingApproval.submitting}
+                  onClick={() => { void submitApprovalDecision('deny') }}
+                >
+                  拒绝
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-warning rounded-none"
+                  disabled={!!pendingApproval.submitting}
+                  onClick={() => { void submitApprovalDecision('allow_once') }}
+                >
+                  本次允许
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-success rounded-none"
+                  disabled={!!pendingApproval.submitting}
+                  onClick={() => { void submitApprovalDecision('allow_always') }}
+                >
+                  永久允许
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

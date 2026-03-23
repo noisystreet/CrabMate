@@ -11,7 +11,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `convert_units`：物理量与数据量**单位换算**（Rust [`uom`](https://crates.io/crates/uom) 库，不调用外部程序）。`category` 含 length / mass / temperature / data / time / area / pressure / speed（或中文别名），`value` + `from` + `to` 指定数值与单位；数据量区分十进制 KB/MB/GB 与二进制 KiB/MiB/GiB。
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
   - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
-  - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。**Web** 端仅当 URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时才执行（避免仅字符串 `startsWith` 的误放行）；**TUI** 下未匹配前缀时可像 `run_command` 一样 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键）。
+  - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时直接执行；不匹配时，TUI 与 Web（`/chat/stream` 携带 `approval_session_id`）均可人工审批 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键）。
   - `http_request`：对给定 URL 发起 **POST / PUT / PATCH / DELETE**（可选 `json_body`）。同样受 `http_fetch_allowed_prefixes` 约束（同源 + 路径前缀边界），返回状态、Content-Type、重定向链与正文预览。适合受控 API 联调（默认建议先 dry-run 规划参数，不在 body 中放真实密钥）。
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`file`、`head`、`tail`、`wc`、`cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make` 等），带超时与输出截断。**CMake**：已列入白名单，常用 `cmake -S . -B build`、`cmake --build build`；参数不得含 `..` 或以 `/` 开头，建议构建目录用相对路径（勿在 args 里写绝对路径的 `-D`）。未安装时 `/health` 中 `dep_cmake` 可能为 degraded。**c++filt**：可将链接器/栈追踪中的修饰名（mangled）反解为可读 C++ 名（Binutils/LLVM 通常提供）；未安装时 `dep_cxxfilt` 可能为 degraded。**Autotools**：默认白名单含 `autoreconf`/`autoconf`/`automake`/`aclocal`，便于维护仍使用 `configure.ac` / `Makefile.am` 的仓库；会处理项目内 m4/shell，仅应在**信任的工作区**使用，且 `run_command` 参数规则仍生效。
   - `run_executable`：在工作区目录下按**相对路径**运行可执行文件（如 `./main`、编译产物）；与 `run_command`（仅白名单系统命令）分工——**运行当前目录/工作区内的程序请用本工具**，不要用 `run_command`。
@@ -41,6 +41,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 - **流式输出与状态栏**：
   - Web Chat 回复支持流式增量显示。
   - Web `/chat` 与 `/chat/stream` 支持可选 `conversation_id` 以跨请求延续同一会话；未传时服务端自动分配会话 ID（流式接口通过响应头 `x-conversation-id` 返回）。
+  - Web Chat 支持流式审批：收到 `command_approval_request` 后前端可通过 `POST /chat/approval` 回传 `deny` / `allow_once` / `allow_always`。
   - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout（与 TUI 右栏「队列」及状态栏/`human_summary` 展示逻辑一致），便于对照「写代码—编译—运行」等多步任务。
   - 状态栏区分“模型生成中…”和“工具运行中…”，命令完成后不会一直显示忙碌。
 - **会话导出（Web 与 TUI 对齐）**：
@@ -587,7 +588,9 @@ cargo run -- --serve
 后端从 `frontend/dist` 提供静态页面，API 与页面同源，无需 CORS。
 
 - **GET /**：前端页面（聊天 + 工作区 + 状态栏），在浏览器打开即可对话。
-- **POST /chat**：请求体 `{"message": "你的问题"}`，返回 `{"reply": "助手回复"}`（会走完整 Agent 与工具调用）。
+- **POST /chat**：请求体 `{"message":"你的问题","conversation_id":"可选"}`，返回 `{"reply":"助手回复","conversation_id":"会话ID"}`（会走完整 Agent 与工具调用；不传 `conversation_id` 时服务端自动分配）。
+- **POST /chat/stream**：流式对话（SSE）；请求体支持可选 `conversation_id` 与 `approval_session_id`；响应头 `x-conversation-id` 回传会话 ID。
+- **POST /chat/approval**：Web 审批决策，请求体 `{"approval_session_id":"...","decision":"deny|allow_once|allow_always"}`。
 - **GET /status**：返回当前模型、API 地址等后台状态。
 - **GET /workspace**：返回当前工作目录路径及文件列表。
 - **GET /health**：健康检查，返回 `{"status": "ok"}`。

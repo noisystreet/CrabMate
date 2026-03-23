@@ -160,7 +160,7 @@ flowchart TB
   - 文本 delta（assistant 内容增量）
   - **控制类 JSON**（由 **`src/sse/protocol.rs`** 序列化）：统一带版本字段 `v`（当前为 `1`），并与原有键名兼容，例如：
     - `tool_running`、`tool_result`（可选 `summary`：与 `summarize_tool_call` 同源，与 `output` 同帧；**不再**在工具执行前单独下发 `tool_call`，避免 Web 在工具未完成时先插入摘要）、`workspace_changed`
-    - `error`（+ 可选 `code`）、`command_approval_request`（TUI/工作流审批）
+    - `error`（+ 可选 `code`）、`command_approval_request`（TUI / Web / 工作流审批）
     - `staged_plan_notice`（+ 可选 `staged_plan_notice_clear`）：分阶段规划进度；TUI 累积到 `staged_plan_log`，在**「队列」**页与状态栏展示（步骤行内 `[ ]`/`[✓]`，每步结束可 `clear_before` 整段刷新；**不**再插入左侧主聊天区，避免与队列重复）；`frontend/src/api.ts` 识别为控制面并吞掉，避免当作正文 delta
     - `staged_plan_started` / `staged_plan_step_started` / `staged_plan_step_finished` / `staged_plan_finished`：分阶段规划结构化进度事件（含 `plan_id`、`step_id`、`step_index`、`status` 等），用于前端按状态机消费，避免解析自然语言文案
     - 预留 `plan_required` 等扩展键
@@ -210,7 +210,8 @@ flowchart LR
 - **运行模式**：由 `run()` 内解析 CLI（`--serve`/`--host`/`--query`/`--stdin`/`--no-tools`/`--no-web`/`--dry-run` 等），选择启动 Web 服务、REPL、单次提问或 TUI。`--serve` 默认绑定 `127.0.0.1`；`0.0.0.0` 需显式 `--host` 或环境变量 `AGENT_HTTP_HOST`（见 README）。当监听非 loopback 地址且未配置 `web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN` 时，默认拒绝启动；如需无鉴权运行，需显式打开 `allow_insecure_no_auth_for_non_loopback`（不安全）。**日志**：`config::cli::init_logging` — 未设置 `RUST_LOG` 时 `--serve` 默认 **info**；非 serve 的 CLI 默认 **warn**；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
 - **Web 服务**：使用 axum 路由，核心接口包括：
   - `POST /chat`：非流式对话（请求体 `message` + 可选 `conversation_id`；响应含 `conversation_id`）
-  - `POST /chat/stream`：SSE 流式对话（请求体 `message` + 可选 `conversation_id`；响应头 `x-conversation-id` 回传会话 ID，前端默认走这个）
+  - `POST /chat/stream`：SSE 流式对话（请求体 `message` + 可选 `conversation_id`；响应头 `x-conversation-id` 回传会话 ID，前端默认走这个；可选 `approval_session_id` 用于 Web 审批会话绑定）
+  - `POST /chat/approval`：Web 审批回传（`deny` / `allow_once` / `allow_always`）
   - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement` / `plan_rewrite_max_attempts`**、**`max_message_history` / `tool_message_max_chars` / `context_char_budget` / `context_summary_trigger_chars`**、**`chat_queue_*` / `chat_queue_recent_jobs` / `per_active_jobs`**、`conversation_store_entries`）
   - `GET /health`：健康检查（API_KEY/静态目录/工作区可写/依赖命令）；实现见 `health.rs`，**TUI 按 F10** 弹层复用同一逻辑（无需起 HTTP）。
   - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件（`GET /workspace/file` 仅读取不超过 1 MiB 的 UTF-8 文本，超限返回错误）。`POST /workspace` 对非空路径执行目录存在性、`workspace_allowed_roots` 白名单与敏感系统目录黑名单校验，避免把运行时工作区切到 `/proc`、`/sys`、`/dev`、`/etc`、`/usr` 等区域。
@@ -284,7 +285,7 @@ flowchart LR
 - **`unit_convert.rs`**：`convert_units`，基于 **`uom`**（`si` + `f64`）做长度/质量/温度/信息量/时间/面积/压强/速度换算；不执行外部程序。
 - **`weather.rs`**：调用 Open‑Meteo（无需 key），带超时控制。
 - **`web_search.rs`**：`reqwest::blocking` + `serde` 调用 Brave Web Search 或 Tavily；Key 与 `web_search_provider` 来自 `AgentConfig`。Web 路径在 `tool_registry` 中登记为 `WebSearchSpawnTimeout`（`spawn_blocking` + 超时）。
-- **`http_fetch.rs`**：`http_fetch`（阻塞 GET/HEAD）与 `http_request`（阻塞 POST/PUT/PATCH/DELETE + 可选 JSON body）；共用 `redirect::Policy` 记录重定向跳数与响应截断。二者都要求 URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**；其中 `http_fetch` 在 TUI 未匹配前缀时可走审批白名单，而 `http_request` 默认仅白名单前缀放行（更保守）。
+- **`http_fetch.rs`**：`http_fetch`（阻塞 GET/HEAD）与 `http_request`（阻塞 POST/PUT/PATCH/DELETE + 可选 JSON body）；共用 `redirect::Policy` 记录重定向跳数与响应截断。二者都要求 URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**；其中 `http_fetch` 在 TUI、以及携带 `approval_session_id` 的 Web 流式会话中，对未匹配前缀可走审批白名单，而 `http_request` 默认仅白名单前缀放行（更保守）。
 - **`command.rs`**：命令白名单 + 超时 + 输出截断；配合 `allowed_commands` 与工作区路径限制。
 - **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）。
 - **`file.rs`**：工作区内创建/覆盖/复制/移动文件；`resolve_for_read` / `resolve_for_write` 与祖先 symlink 校验是安全边界的关键；`copy_file` / `move_file` 仅针对常规文件，`overwrite` 控制目标已存在时的覆盖策略；`hash_file` 仅对常规文件流式哈希（`sha256` / `sha512` / `blake3`），可选 `max_bytes` 前缀模式。
@@ -308,7 +309,7 @@ flowchart LR
 - **流式聊天**：`sendChatStream` 消费 `/chat/stream` 的 SSE，把：
   - 请求体中的可选 `conversation_id` 传给后端；若首轮未传，读取响应头 `x-conversation-id` 并缓存到面板状态
   - 纯文本 `data:` 当作 delta
-  - JSON `data:` 识别 `tool_running`/`tool_call`（兼容旧服务端）/`tool_result`（含可选 `summary`）/`workspace_changed` 并分发回调；工具卡片在 **`onToolResult`** 中单条展示「摘要 + 实际输出」
+  - JSON `data:` 识别 `tool_running`/`tool_call`（兼容旧服务端）/`tool_result`（含可选 `summary`）/`workspace_changed`/`command_approval_request` 并分发回调；审批决策通过 `submitChatApproval` 发到 `POST /chat/approval`
 
 ### `frontend/src/components/ChatPanel.tsx`
 

@@ -3,7 +3,7 @@
 //! - **多副本 / 跨进程重放**：需外部消息代理（Redis、SQS 等）与持久化；本模块仅单进程协调。
 //! - **可观测**：`job_id` 写入日志；`/status` 暴露运行中任务数与近期任务摘要。
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -13,7 +13,7 @@ use log::{debug, error, info};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
 use crate::AppState;
-use crate::types::Message;
+use crate::types::{CommandApprovalDecision, Message};
 
 const RECENT_CAP: usize = 32;
 
@@ -98,6 +98,7 @@ enum QueuedChatJob {
         work_dir: PathBuf,
         workspace_is_set: bool,
         sse_tx: mpsc::Sender<String>,
+        web_approval_session: Option<WebApprovalSession>,
     },
     Json {
         job_id: u64,
@@ -108,6 +109,11 @@ enum QueuedChatJob {
         workspace_is_set: bool,
         reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
     },
+}
+
+pub struct WebApprovalSession {
+    pub session_id: String,
+    pub approval_rx: mpsc::Receiver<CommandApprovalDecision>,
 }
 
 impl QueuedChatJob {
@@ -242,6 +248,7 @@ impl ChatJobQueue {
         work_dir: PathBuf,
         workspace_is_set: bool,
         sse_tx: mpsc::Sender<String>,
+        web_approval_session: Option<WebApprovalSession>,
     ) -> Result<(), ChatQueueFull> {
         let job = QueuedChatJob::Stream {
             job_id,
@@ -251,6 +258,7 @@ impl ChatJobQueue {
             work_dir,
             workspace_is_set,
             sse_tx,
+            web_approval_session,
         };
         self.inner
             .submit_tx
@@ -377,6 +385,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             work_dir,
             workspace_is_set,
             sse_tx,
+            web_approval_session,
         } => {
             info!(
                 target: "crabmate",
@@ -395,6 +404,21 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 .chat_queue
                 .begin_per_flight_job(job_id, flight.clone());
             let out = Some(&sse_tx);
+            let (web_tool_ctx, approval_session_id) = if let Some(session) = web_approval_session {
+                (
+                    Some(crate::tool_registry::WebToolRuntime {
+                        out_tx: sse_tx.clone(),
+                        approval_rx_shared: Arc::new(tokio::sync::Mutex::new(session.approval_rx)),
+                        approval_request_guard: Arc::new(tokio::sync::Mutex::new(())),
+                        persistent_allowlist_shared: Arc::new(tokio::sync::Mutex::new(
+                            HashSet::new(),
+                        )),
+                    }),
+                    Some(session.session_id),
+                )
+            } else {
+                (None, None)
+            };
             let cancel = Arc::new(AtomicBool::new(false));
             let cancel_watcher = {
                 let tx_for_watch = sse_tx.clone();
@@ -417,9 +441,13 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 false,
                 Some(cancel),
                 Some(flight),
+                web_tool_ctx.as_ref(),
             )
             .await;
             cancel_watcher.abort();
+            if let Some(session_id) = approval_session_id.as_deref() {
+                state.approval_sessions.write().await.remove(session_id);
+            }
             let (ok, err) = match r {
                 Ok(()) => {
                     state
@@ -485,6 +513,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 false,
                 None,
                 Some(flight),
+                None,
             )
             .await;
             let (ok, err) = match r {
