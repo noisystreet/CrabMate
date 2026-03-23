@@ -13,7 +13,10 @@ pub enum AgentLineKind {
         args: String,
         allowlist_key: Option<String>,
     },
-    StreamError,
+    StreamError {
+        error_preview: Option<String>,
+        code: Option<String>,
+    },
     /// 分阶段规划摘要（仅 TUI 队列页/状态栏使用；Web 忽略）
     StagedPlanNotice {
         text: String,
@@ -48,7 +51,12 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                     allowlist_key: command_approval_request.allowlist_key,
                 };
             }
-            super::protocol::SsePayload::Error(_) => return AgentLineKind::StreamError,
+            super::protocol::SsePayload::Error(body) => {
+                return AgentLineKind::StreamError {
+                    error_preview: summarize_stream_error(&body.error),
+                    code: body.code,
+                };
+            }
             super::protocol::SsePayload::StagedPlanNotice { text, clear_before } => {
                 return AgentLineKind::StagedPlanNotice { text, clear_before };
             }
@@ -78,7 +86,24 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
         return AgentLineKind::WorkspaceRefresh;
     }
     if s.starts_with("{\"error\"") {
-        return AgentLineKind::StreamError;
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+            let preview = v
+                .get("error")
+                .and_then(|x| x.as_str())
+                .and_then(summarize_stream_error);
+            let code = v
+                .get("code")
+                .and_then(|x| x.as_str())
+                .map(|x| x.to_string());
+            return AgentLineKind::StreamError {
+                error_preview: preview,
+                code,
+            };
+        }
+        return AgentLineKind::StreamError {
+            error_preview: None,
+            code: None,
+        };
     }
     if s.starts_with("{\"command_approval_request\"")
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(s)
@@ -102,4 +127,51 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
         };
     }
     AgentLineKind::Plain
+}
+
+fn summarize_stream_error(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let mut out: String = t.chars().take(80).collect();
+    if t.chars().count() > 80 {
+        out.push('…');
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_protocol_error_carries_code_and_preview() {
+        let line = r#"{"v":1,"error":"token expired when calling upstream","code":"AUTH"}"#;
+        match classify_agent_sse_line(line) {
+            AgentLineKind::StreamError {
+                error_preview,
+                code,
+            } => {
+                assert_eq!(code.as_deref(), Some("AUTH"));
+                assert!(error_preview.unwrap_or_default().contains("token expired"));
+            }
+            other => panic!("unexpected kind: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_legacy_error_json() {
+        let line = r#"{"error":"bad gateway","code":"UPSTREAM"}"#;
+        match classify_agent_sse_line(line) {
+            AgentLineKind::StreamError {
+                error_preview,
+                code,
+            } => {
+                assert_eq!(code.as_deref(), Some("UPSTREAM"));
+                assert_eq!(error_preview.as_deref(), Some("bad gateway"));
+            }
+            other => panic!("unexpected kind: {:?}", other),
+        }
+    }
 }

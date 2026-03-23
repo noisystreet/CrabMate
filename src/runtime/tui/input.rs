@@ -33,7 +33,7 @@ use super::workspace_ops::{
     toggle_task_done, workspace_go_up, workspace_open_or_enter,
 };
 use crate::runtime::workspace_session;
-use log::debug;
+use log::{debug, warn};
 
 fn insert_tab_chat(state: &mut TuiState) {
     if state.focus == Focus::ChatInput && state.mode == Mode::Normal {
@@ -51,16 +51,32 @@ fn paste_chat(state: &mut TuiState) {
     if state.focus != Focus::ChatInput || state.mode != Mode::Normal {
         return;
     }
-    if let Some(t) = clipboard::try_clipboard_text() {
-        edit_history::push_input_undo(state);
-        text_input::insert_str_at_cursor(&mut state.input, &mut state.input_cursor, &t);
+    match clipboard::try_clipboard_text() {
+        Ok(Some(t)) => {
+            edit_history::push_input_undo(state);
+            text_input::insert_str_at_cursor(&mut state.input, &mut state.input_cursor, &t);
+        }
+        Ok(None) => {
+            state.status_line = "剪贴板为空，未粘贴".to_string();
+        }
+        Err(e) => {
+            state.status_line = format!("剪贴板不可用：{}", e);
+        }
     }
 }
 
 fn paste_prompt(state: &mut TuiState) {
-    if let Some(t) = clipboard::try_clipboard_text() {
-        edit_history::push_prompt_undo(state);
-        text_input::insert_str_at_cursor(&mut state.prompt, &mut state.prompt_cursor, &t);
+    match clipboard::try_clipboard_text() {
+        Ok(Some(t)) => {
+            edit_history::push_prompt_undo(state);
+            text_input::insert_str_at_cursor(&mut state.prompt, &mut state.prompt_cursor, &t);
+        }
+        Ok(None) => {
+            state.status_line = "剪贴板为空，未粘贴".to_string();
+        }
+        Err(e) => {
+            state.status_line = format!("剪贴板不可用：{}", e);
+        }
     }
 }
 
@@ -325,8 +341,20 @@ pub(super) async fn handle_key(
             } else {
                 state.pending_approval_allowlist_key = None;
             }
-            if let Some(ch) = approval_tx.as_ref() {
-                let _ = ch.send(decision).await;
+            if let Some(ch) = approval_tx.as_ref()
+                && let Err(e) = ch.send(decision).await
+            {
+                warn!(
+                    target: "crabmate::tui_print",
+                    "TUI 审批发送失败 error={}",
+                    e
+                );
+                state.model_phase = ModelPhase::Error;
+                state.status_line = format!(
+                    "审批发送失败：{} · {}",
+                    e,
+                    super::status::build_normal_status_line(&cfg.model)
+                );
             }
             state.mode = Mode::Normal;
             state.model_phase = ModelPhase::Thinking;
@@ -723,8 +751,13 @@ pub(super) async fn handle_key(
                         let duration_ms = started.elapsed().as_millis() as u64;
                         let user_cancelled =
                             matches!(&res, Err(e) if format!("{e}") == LLM_CANCELLED_ERROR);
-                        if !user_cancelled {
-                            let _ = sync_tx2.send(messages).await;
+                        if !user_cancelled && let Err(e) = sync_tx2.send(messages).await {
+                            warn!(
+                                target: "crabmate::tui_print",
+                                "TUI 回合同步消息发送失败 job_id={} error={}",
+                                tui_job_id,
+                                e
+                            );
                         }
                         let error_preview = match &res {
                             Ok(()) => None,
@@ -743,7 +776,7 @@ pub(super) async fn handle_key(
                                 }
                             }
                         };
-                        let _ = turn_outcome_tx2
+                        if let Err(e) = turn_outcome_tx2
                             .send(TuiTurnOutcome {
                                 job_id: tui_job_id,
                                 duration_ms,
@@ -751,26 +784,48 @@ pub(super) async fn handle_key(
                                 user_cancelled,
                                 error_preview,
                             })
-                            .await;
+                            .await
+                        {
+                            warn!(
+                                target: "crabmate::tui_print",
+                                "TUI 回合结果发送失败 job_id={} error={}",
+                                tui_job_id,
+                                e
+                            );
+                        }
                         if let Err(e) = res
                             && format!("{e}") != LLM_CANCELLED_ERROR
-                        {
-                            let _ = tx2
+                            && let Err(se) = tx2
                                 .send(crate::sse::encode_message(crate::sse::SsePayload::Error(
                                     crate::sse::SseErrorBody {
                                         error: e.to_string(),
                                         code: Some("AGENT_TURN".to_string()),
                                     },
                                 )))
-                                .await;
+                                .await
+                        {
+                            warn!(
+                                target: "crabmate::tui_print",
+                                "TUI 发送错误协议行失败 job_id={} error={}",
+                                tui_job_id,
+                                se
+                            );
                         }
-                        let _ = tx2
+                        if let Err(e) = tx2
                             .send(crate::sse::encode_message(
                                 crate::sse::SsePayload::ToolRunning {
                                     tool_running: false,
                                 },
                             ))
-                            .await;
+                            .await
+                        {
+                            warn!(
+                                target: "crabmate::tui_print",
+                                "TUI 发送 ToolRunning(false) 失败 job_id={} error={}",
+                                tui_job_id,
+                                e
+                            );
+                        }
                     }));
                 }
             }

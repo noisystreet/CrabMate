@@ -211,7 +211,7 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
                 "【聊天输入·鼠标】在输入框内点击可定位光标（含提示行模式）。鼠标在左侧聊天区滚轮：向上/向下滚动历史。在「输入框与状态栏之间的横线」按住左键拖拽：调节输入区高度（约 3～12 行）。",
             ),
             Line::from(
-                "【剪贴板与 Tab】Ctrl+V 粘贴（Linux 需剪贴板环境；失败则静默跳过）。未按 Ctrl 时 Tab 在右侧三个标签间循环。在聊天输入中插入制表符：Ctrl+Tab 或 Ctrl+I。",
+                "【剪贴板与 Tab】Ctrl+V 粘贴（Linux 需剪贴板环境；失败会在状态栏提示）。未按 Ctrl 时 Tab 在右侧四个标签间循环。在聊天输入中插入制表符：Ctrl+Tab 或 Ctrl+I。",
             ),
             Line::from("【撤销】Ctrl+Z 撤销，Ctrl+Y 或 Ctrl+Shift+Z 重做（聊天输入与提示行内）。"),
             Line::from(

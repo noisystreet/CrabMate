@@ -4,6 +4,8 @@ use crate::types::Message;
 
 use super::state::{Mode, TuiState};
 
+const FILE_VIEW_PREVIEW_MAX_CHARS: usize = 800_000;
+
 pub(super) fn upsert_assistant_message(messages: &mut Vec<Message>, content: &str) {
     if let Some(last) = messages.iter_mut().rev().find(|m| m.role == "assistant") {
         last.content = Some(content.to_string());
@@ -178,12 +180,17 @@ pub(super) fn workspace_open_or_enter(state: &mut TuiState) {
         return;
     }
     let content = std::fs::read_to_string(&path).unwrap_or_else(|e| format!("读取失败：{}", e));
-    let content = if content.len() > 200_000 {
-        let mut end = 200_000usize;
+    let content = if content.len() > FILE_VIEW_PREVIEW_MAX_CHARS {
+        let mut end = FILE_VIEW_PREVIEW_MAX_CHARS;
         while end > 0 && !content.is_char_boundary(end) {
             end -= 1;
         }
-        format!("{}\n\n...(内容过长已截断)", &content[..end])
+        format!(
+            "{}\n\n...(内容过长已截断：预览前 {} 字符，共 {} 字符)",
+            &content[..end],
+            end,
+            content.chars().count()
+        )
     } else {
         content
     };
@@ -210,7 +217,13 @@ pub(super) fn toggle_task_done(state: &mut TuiState) {
         .collect();
     root["items"] = serde_json::Value::Array(items);
     if let Ok(s) = serde_json::to_string_pretty(&root) {
-        let _ = std::fs::write(&path, s.as_bytes());
+        if let Err(e) = std::fs::write(&path, s.as_bytes()) {
+            state.status_line = format!("写入 tasks.json 失败：{}", e);
+        } else {
+            state.status_line = "任务状态已更新".to_string();
+        }
+    } else {
+        state.status_line = "序列化 tasks.json 失败".to_string();
     }
 }
 
@@ -237,8 +250,17 @@ pub(super) fn toggle_reminder_done(state: &mut TuiState) {
         })
         .collect();
     root["items"] = serde_json::Value::Array(items);
-    let _ = std::fs::create_dir_all(state.workspace_dir.join(".crabmate"));
+    if let Err(e) = std::fs::create_dir_all(state.workspace_dir.join(".crabmate")) {
+        state.status_line = format!("创建 .crabmate 目录失败：{}", e);
+        return;
+    }
     if let Ok(s) = serde_json::to_string_pretty(&root) {
-        let _ = std::fs::write(&path, s.as_bytes());
+        if let Err(e) = std::fs::write(&path, s.as_bytes()) {
+            state.status_line = format!("写入 reminders.json 失败：{}", e);
+        } else {
+            state.status_line = "提醒状态已更新".to_string();
+        }
+    } else {
+        state.status_line = "序列化 reminders.json 失败".to_string();
     }
 }
