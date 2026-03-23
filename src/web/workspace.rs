@@ -6,6 +6,7 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
 };
+use log::error;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -359,9 +360,28 @@ pub async fn workspace_search_handler(
     if let Some(ih) = body.ignore_hidden {
         args["ignore_hidden"] = serde_json::json!(ih);
     }
-    let ctx =
-        crate::tools::tool_context_for(&state.cfg, &state.cfg.allowed_commands, &base_canonical);
-    let output = crate::tools::run_tool("search_in_files", &args.to_string(), &ctx);
+    let args_json = args.to_string();
+    let cfg = Arc::clone(&state.cfg);
+    let work_dir = base_canonical.clone();
+    let output = match tokio::task::spawn_blocking(move || {
+        let ctx = crate::tools::tool_context_for(cfg.as_ref(), &cfg.allowed_commands, &work_dir);
+        crate::tools::run_tool("search_in_files", &args_json, &ctx)
+    })
+    .await
+    {
+        Ok(output) => output,
+        Err(e) => {
+            error!(
+                target: "crabmate",
+                "workspace_search 阻塞任务异常 error={}",
+                e
+            );
+            return Json(WorkspaceSearchResponse {
+                output: String::new(),
+                error: Some("搜索执行失败，请稍后重试".to_string()),
+            });
+        }
+    };
     Json(WorkspaceSearchResponse {
         output,
         error: None,
