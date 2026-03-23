@@ -8,7 +8,7 @@ CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web U
 
 ### Required environment variable
 
-- `API_KEY` — DeepSeek API key. Required at runtime; without it, the server starts but chat requests fail with `INTERNAL_ERROR`. Use `--dry-run` to verify config without making API calls.
+- `API_KEY` — DeepSeek API key. Required at runtime; without it, the server **refuses to start** (exits with "未设置环境变量 API_KEY"). With an invalid key the server starts normally but chat requests fail with `INTERNAL_ERROR`. Use `--dry-run` to verify config without making API calls.
 
 ### Running services
 
@@ -46,3 +46,5 @@ Standard commands from `README.md`:
 - **`cargo fmt --check`**：若与 **`cargo fmt`** 结果不一致，先执行 **`cargo fmt --all`** 再提交；pre-commit 也会格式化 Rust 代码。
 - The `rfd` crate (file dialog) is a dependency but won't work headlessly; this doesn't affect the web server mode.
 - The vendored `tui-markdown` crate is at `vendor/tui-markdown/` and is referenced via `path` in `Cargo.toml`.
+- **pre-commit install** may fail with `core.hooksPath` set. Run `git config --unset-all core.hooksPath` first, then `pre-commit install && pre-commit install --hook-type commit-msg`.
+- When starting the server with `--host 0.0.0.0` (non-loopback), you must either set `AGENT_WEB_API_BEARER_TOKEN` or `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`; otherwise the server refuses to start.
