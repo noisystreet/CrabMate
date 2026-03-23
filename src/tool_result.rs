@@ -16,31 +16,54 @@ pub struct ToolResult {
     pub error_code: Option<String>,
 }
 
+/// 兼容旧字符串输出的解析结果（不复制整段 `message`）。
+#[derive(Debug, Clone)]
+pub struct ParsedLegacyOutput {
+    pub ok: bool,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub error_code: Option<String>,
+}
+
+/// 解析旧格式工具输出，仅返回状态与分流字段，避免复制完整 message。
+pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput {
+    let first = output.lines().next().unwrap_or("").trim();
+    let exit_code = parse_exit_code(first);
+    let (stdout, stderr) = extract_streams(output);
+
+    let ok = if let Some(code) = exit_code {
+        code == 0
+    } else {
+        !looks_like_failure(first)
+    };
+    let error_code = if ok {
+        None
+    } else {
+        Some(classify_error_code(first, tool_name))
+    };
+
+    ParsedLegacyOutput {
+        ok,
+        exit_code,
+        stdout,
+        stderr,
+        error_code,
+    }
+}
+
 impl ToolResult {
     /// 将既有“字符串工具输出”转换为结构化结果。
     pub fn from_legacy_output(tool_name: &str, output: String) -> Self {
-        let first = output.lines().next().unwrap_or("").trim();
-        let exit_code = parse_exit_code(first);
-        let (stdout, stderr) = extract_streams(&output);
-
-        let ok = if let Some(code) = exit_code {
-            code == 0
-        } else {
-            !looks_like_failure(first)
-        };
-        let error_code = if ok {
-            None
-        } else {
-            Some(classify_error_code(first, tool_name))
-        };
+        let parsed = parse_legacy_output(tool_name, &output);
 
         Self {
-            ok,
-            exit_code,
+            ok: parsed.ok,
+            exit_code: parsed.exit_code,
             message: output,
-            stdout,
-            stderr,
-            error_code,
+            stdout: parsed.stdout,
+            stderr: parsed.stderr,
+            error_code: parsed.error_code,
         }
     }
 }

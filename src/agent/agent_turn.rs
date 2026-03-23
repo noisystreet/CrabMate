@@ -19,7 +19,7 @@ use super::per_coord::PerCoordinator;
 use crate::llm::{complete_chat_retrying, nl_only_chat_request, tool_chat_request};
 use crate::sse::{SseErrorBody, SsePayload, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
-use crate::tool_result::ToolResult as StructuredToolResult;
+use crate::tool_result;
 use crate::tools;
 use crate::types::{Message, ToolCall, USER_CANCELLED_FINISH_REASON, is_chat_ui_separator};
 
@@ -336,16 +336,16 @@ async fn per_execute_tools_common(
         }
 
         if let Some(tx) = out {
-            let structured = StructuredToolResult::from_legacy_output(&name, result.clone());
-            let stdout = if structured.stdout.is_empty() {
+            let parsed = tool_result::parse_legacy_output(&name, &result);
+            let stdout = if parsed.stdout.is_empty() {
                 None
             } else {
-                Some(structured.stdout)
+                Some(parsed.stdout)
             };
-            let stderr = if structured.stderr.is_empty() {
+            let stderr = if parsed.stderr.is_empty() {
                 None
             } else {
-                Some(structured.stderr)
+                Some(parsed.stderr)
             };
             let _ = tx
                 .send(encode_message(SsePayload::ToolResult {
@@ -353,9 +353,9 @@ async fn per_execute_tools_common(
                         name: name.clone(),
                         summary: tool_summary,
                         output: result.clone(),
-                        ok: Some(structured.ok),
-                        exit_code: structured.exit_code,
-                        error_code: structured.error_code,
+                        ok: Some(parsed.ok),
+                        exit_code: parsed.exit_code,
+                        error_code: parsed.error_code,
                         stdout,
                         stderr,
                     },
