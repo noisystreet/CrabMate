@@ -13,7 +13,7 @@ use log::{debug, error, info};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
 use crate::AppState;
-use crate::types::{CommandApprovalDecision, Message};
+use crate::types::{CommandApprovalDecision, LLM_CANCELLED_ERROR, Message};
 
 const RECENT_CAP: usize = 32;
 
@@ -68,6 +68,7 @@ pub struct ChatJobRecord {
     pub job_id: u64,
     pub kind: String,
     pub ok: bool,
+    pub cancelled: bool,
     pub duration_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_preview: Option<String>,
@@ -76,6 +77,7 @@ pub struct ChatJobRecord {
 struct QueueMetrics {
     running: AtomicUsize,
     completed_ok: AtomicU64,
+    completed_cancelled: AtomicU64,
     completed_err: AtomicU64,
 }
 
@@ -84,6 +86,7 @@ impl Default for QueueMetrics {
         Self {
             running: AtomicUsize::new(0),
             completed_ok: AtomicU64::new(0),
+            completed_cancelled: AtomicU64::new(0),
             completed_err: AtomicU64::new(0),
         }
     }
@@ -189,6 +192,13 @@ impl ChatJobQueue {
 
     pub fn completed_err(&self) -> u64 {
         self.inner.metrics.completed_err.load(Ordering::SeqCst)
+    }
+
+    pub fn completed_cancelled(&self) -> u64 {
+        self.inner
+            .metrics
+            .completed_cancelled
+            .load(Ordering::SeqCst)
     }
 
     pub fn recent_jobs(&self) -> Vec<ChatJobRecord> {
@@ -321,8 +331,10 @@ async fn dispatcher_loop(
             drop(permit);
 
             let record = match outcome {
-                JobOutcome::Stream { ok, err } => {
-                    if ok {
+                JobOutcome::Stream { ok, cancelled, err } => {
+                    if cancelled {
+                        metrics.completed_cancelled.fetch_add(1, Ordering::SeqCst);
+                    } else if ok {
                         metrics.completed_ok.fetch_add(1, Ordering::SeqCst);
                     } else {
                         metrics.completed_err.fetch_add(1, Ordering::SeqCst);
@@ -331,12 +343,15 @@ async fn dispatcher_loop(
                         job_id,
                         kind: "stream".into(),
                         ok,
+                        cancelled,
                         duration_ms: ms,
                         error_preview: err,
                     }
                 }
-                JobOutcome::Json { ok, err } => {
-                    if ok {
+                JobOutcome::Json { ok, cancelled, err } => {
+                    if cancelled {
+                        metrics.completed_cancelled.fetch_add(1, Ordering::SeqCst);
+                    } else if ok {
                         metrics.completed_ok.fetch_add(1, Ordering::SeqCst);
                     } else {
                         metrics.completed_err.fetch_add(1, Ordering::SeqCst);
@@ -345,6 +360,7 @@ async fn dispatcher_loop(
                         job_id,
                         kind: "json".into(),
                         ok,
+                        cancelled,
                         duration_ms: ms,
                         error_preview: err,
                     }
@@ -359,6 +375,14 @@ async fn dispatcher_loop(
                 record.ok,
                 record.duration_ms
             );
+            if record.cancelled {
+                debug!(
+                    target: "crabmate",
+                    "chat 队列任务结束 job_id={} kind={} cancelled=true",
+                    job_id,
+                    record.kind
+                );
+            }
 
             if let Ok(mut g) = recent.lock() {
                 g.push_back(record);
@@ -371,8 +395,20 @@ async fn dispatcher_loop(
 }
 
 enum JobOutcome {
-    Stream { ok: bool, err: Option<String> },
-    Json { ok: bool, err: Option<String> },
+    Stream {
+        ok: bool,
+        cancelled: bool,
+        err: Option<String>,
+    },
+    Json {
+        ok: bool,
+        cancelled: bool,
+        err: Option<String>,
+    },
+}
+
+fn is_user_cancelled_error(s: &str) -> bool {
+    s.trim() == LLM_CANCELLED_ERROR
 }
 
 async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
@@ -439,7 +475,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 workspace_is_set,
                 false,
                 false,
-                Some(cancel),
+                Some(Arc::clone(&cancel)),
                 Some(flight),
                 web_tool_ctx.as_ref(),
             )
@@ -448,32 +484,48 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             if let Some(session_id) = approval_session_id.as_deref() {
                 state.approval_sessions.write().await.remove(session_id);
             }
-            let (ok, err) = match r {
+            let cancelled_by_signal = cancel.load(Ordering::SeqCst);
+            let (ok, cancelled, err) = match r {
+                Ok(()) if cancelled_by_signal => {
+                    info!(target: "crabmate", "chat stream 任务已取消 job_id={}", job_id);
+                    (false, true, None)
+                }
                 Ok(()) => {
                     state
                         .save_conversation_messages(conversation_id, messages)
                         .await;
-                    (true, None)
+                    (true, false, None)
                 }
                 Err(e) => {
-                    error!(
-                        target: "crabmate",
-                        "chat stream 任务失败 job_id={} error={}",
-                        job_id,
-                        e
-                    );
-                    let err_line = crate::sse::encode_message(crate::sse::SsePayload::Error(
-                        crate::sse::SseErrorBody {
-                            error: "对话失败，请稍后重试".to_string(),
-                            code: Some("INTERNAL_ERROR".to_string()),
-                        },
-                    ));
-                    let _ = sse_tx.send(err_line).await;
-                    (false, Some(truncate_chars(&e.to_string(), 120)))
+                    let e_text = e.to_string();
+                    if cancelled_by_signal || is_user_cancelled_error(&e_text) {
+                        info!(
+                            target: "crabmate",
+                            "chat stream 任务已取消 job_id={} reason={}",
+                            job_id,
+                            e_text
+                        );
+                        (false, true, None)
+                    } else {
+                        error!(
+                            target: "crabmate",
+                            "chat stream 任务失败 job_id={} error={}",
+                            job_id,
+                            e_text
+                        );
+                        let err_line = crate::sse::encode_message(crate::sse::SsePayload::Error(
+                            crate::sse::SseErrorBody {
+                                error: "对话失败，请稍后重试".to_string(),
+                                code: Some("INTERNAL_ERROR".to_string()),
+                            },
+                        ));
+                        let _ = sse_tx.send(err_line).await;
+                        (false, false, Some(truncate_chars(&e_text, 120)))
+                    }
                 }
             };
             drop(sse_tx);
-            JobOutcome::Stream { ok, err }
+            JobOutcome::Stream { ok, cancelled, err }
         }
         QueuedChatJob::Json {
             job_id,
@@ -516,27 +568,42 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 None,
             )
             .await;
-            let (ok, err) = match r {
+            let (ok, cancelled, err) = match r {
                 Ok(()) => {
                     state
                         .save_conversation_messages(conversation_id, messages.clone())
                         .await;
                     let _ = reply_tx.send(Ok(messages));
-                    (true, None)
+                    (true, false, None)
                 }
                 Err(e) => {
-                    error!(
-                        target: "crabmate",
-                        "chat json 任务失败 job_id={} error={}",
-                        job_id,
-                        e
-                    );
-                    let prev = truncate_chars(&e.to_string(), 120);
-                    let _ = reply_tx.send(Err(e.to_string()));
-                    (false, Some(prev))
+                    let e_text = e.to_string();
+                    let cancelled = is_user_cancelled_error(&e_text);
+                    if cancelled {
+                        info!(
+                            target: "crabmate",
+                            "chat json 任务已取消 job_id={} reason={}",
+                            job_id,
+                            e_text
+                        );
+                    } else {
+                        error!(
+                            target: "crabmate",
+                            "chat json 任务失败 job_id={} error={}",
+                            job_id,
+                            e_text
+                        );
+                    }
+                    let prev = if cancelled {
+                        None
+                    } else {
+                        Some(truncate_chars(&e_text, 120))
+                    };
+                    let _ = reply_tx.send(Err(e_text));
+                    (false, cancelled, prev)
                 }
             };
-            JobOutcome::Json { ok, err }
+            JobOutcome::Json { ok, cancelled, err }
         }
     }
 }
