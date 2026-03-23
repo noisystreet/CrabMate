@@ -1,32 +1,35 @@
 ---
-description: git commit 说明须符合 Conventional Commits（feat:/fix:/refactor: 等）
+description: git commit 须 Conventional Commits，且 subject 中英双语简述
 alwaysApply: true
 ---
 
-# Commit message：Conventional Commits
+# Commit message：Conventional Commits + 中英双语
 
-代表用户执行 **`git commit`** 时，**说明（subject）**须符合 [Conventional Commits](https://www.conventionalcommits.org/) 习惯：
+代表用户执行 **`git commit`** 时，**首行（subject）**须同时满足：
+
+1. [Conventional Commits](https://www.conventionalcommits.org/) 结构；
+2. **中英双语**：`type(scope):` 之后同时给出中文与英文简述（见下）。
 
 ## 格式
 
 ```
-<type>(<optional scope>): <简短描述>
+<type>(<optional scope>): <中文简述> / <English brief>
 
 [可选正文与脚注]
 ```
 
 - **type**（常用）：`feat` 新功能、`fix` 修复、`refactor` 重构、`docs` 文档、`test` 测试、`chore` 杂项（工具/配置）、`perf` 性能、`ci` CI、`build` 构建、`style` 纯格式/排版、`revert` 回滚。
-- **scope**（可选）：模块或区域，如 `tui`、`api`、`frontend`、小写英文或项目内约定。
-- **描述**：动词开头、简明；**中文或英文**与仓库历史保持一致即可（本仓库多为中文描述时可写中文）。
+- **scope**（可选）：模块或区域，如 `tui`、`api`、`frontend`，**小写英文**或项目内约定。
+- **双语描述**：推荐用 **` / `**（半角空格 + 斜杠 + 半角空格）分隔；两侧均宜**动词开头**、简短对称。**scope 仅写一份**（英文），不要拆成两套。
 
 ## 示例
 
 ```
-feat(tui): 状态栏阶段词按 ModelPhase 着色
-fix(api): 修正流式响应边界条件
-refactor(config): 拆分 AgentConfig 加载逻辑
-docs: 补充 pre-commit 与 Cursor 规则说明
-chore: 更新依赖
+feat(tui): 状态栏阶段词按 ModelPhase 着色 / color status bar phase by ModelPhase
+fix(api): 修正流式响应边界条件 / fix streaming response edge case
+refactor(config): 拆分 AgentConfig 加载逻辑 / split AgentConfig loading
+docs: 补充 pre-commit 与 Cursor 规则说明 / document pre-commit and Cursor rules
+chore: 更新依赖 / bump dependencies
 ```
 
 ## 要求
@@ -38,4 +41,4 @@ chore: 更新依赖
 
 - 仓库 **`.pre-commit-config.yaml`** 使用 **`compilerla/conventional-pre-commit`** 的 **`commit-msg`** 阶段；执行 **`git commit`** 时会校验首行是否符合上述 type 列表。
 - 安装钩子后需包含 **commit-msg**（配置中已设 `default_install_hook_types` 时，执行 **`pre-commit install`** 即可；若曾只装过 `pre-commit` 类型，请再执行 **`pre-commit install --hook-type commit-msg`**）。
-- 手动试跑（不写 git 对象）：`echo "feat: ok" > /tmp/msg && pre-commit run --hook-stage commit-msg conventional-pre-commit --commit-msg-filename /tmp/msg`
+- 手动试跑（不写 git 对象）：`echo "feat: 示例 / example change" > /tmp/msg && pre-commit run --hook-stage commit-msg conventional-pre-commit --commit-msg-filename /tmp/msg`
