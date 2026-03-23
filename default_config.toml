@@ -42,11 +42,11 @@ allowed_commands_dev = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "e
 allowed_commands_prod = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "file", "df", "du", "head", "tail", "wc", "cat"]
 # run_command 的工作目录（命令在该目录下执行，需存在且为目录）
 run_command_working_dir = "."
-# Web API Bearer 鉴权令牌（留空表示不启用）。设置后，/chat、/workspace、/tasks、/upload 等接口都需
+# Web API Bearer 鉴权令牌。默认要求非空；设置后，/chat、/workspace、/tasks、/upload 等接口都需
 # Authorization: Bearer <token>。前端可在浏览器 localStorage 写入 crabmate-api-bearer-token。
 # web_api_bearer_token = ""
-# 当监听非 loopback 地址（如 0.0.0.0）且未配置 web_api_bearer_token 时，默认拒绝启动；
-# 设为 true 可强制允许无鉴权启动（不安全，仅用于受控内网调试）。
+# 未配置 web_api_bearer_token 时，默认拒绝启动；
+# 设为 true 可强制允许无鉴权启动（不安全，仅用于受控调试环境）。
 # allow_insecure_no_auth_for_non_loopback = false
 # 对话 API 单次请求最大 token 数
 max_tokens = 2048

@@ -205,7 +205,7 @@ flowchart LR
 
 - **`lib.rs`**：crate 根模块；Agent 主循环（`run_agent_turn`）、Axum Web 路由与 handler、上传清理等。**对外再导出** `run`、`load_config`、`AgentConfig`、`Message`、`Tool`、`build_tools`、`build_tools_filtered`、`build_tools_with_options`、`ToolsBuildOptions`、`dev_tag` 等，供集成测试与其它二进制复用。
 - **`main.rs`**：薄入口，仅 `#[tokio::main] async fn main() { crabmate::run().await }`。
-- **运行模式**：由 `run()` 内解析 CLI（`--serve`/`--host`/`--query`/`--stdin`/`--no-tools`/`--no-web`/`--dry-run` 等），选择启动 Web 服务、REPL、单次提问或 TUI。`--serve` 默认绑定 `127.0.0.1`；`0.0.0.0` 需显式 `--host` 或环境变量 `AGENT_HTTP_HOST`（见 README）。当监听非 loopback 地址且未配置 `web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN` 时，默认拒绝启动；如需无鉴权运行，需显式打开 `allow_insecure_no_auth_for_non_loopback`（不安全）。**日志**：`config::cli::init_logging` — 未设置 `RUST_LOG` 时 `--serve` 默认 **info**；非 serve 的 CLI 默认 **warn**；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
+- **运行模式**：由 `run()` 内解析 CLI（`--serve`/`--host`/`--query`/`--stdin`/`--no-tools`/`--no-web`/`--dry-run` 等），选择启动 Web 服务、REPL、单次提问或 TUI。`--serve` 默认绑定 `127.0.0.1`；`0.0.0.0` 需显式 `--host` 或环境变量 `AGENT_HTTP_HOST`（见 README）。Web 受保护接口默认要求 Bearer 鉴权：若未配置 `web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN`，服务拒绝启动；仅在显式设置 `allow_insecure_no_auth_for_non_loopback` 时允许无鉴权（不安全）。**日志**：`config::cli::init_logging` — 未设置 `RUST_LOG` 时 `--serve` 默认 **info**；非 serve 的 CLI 默认 **warn**；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
 - **Web 服务**：使用 axum 路由，核心接口包括：
   - `POST /chat`：非流式对话
   - `POST /chat/stream`：SSE 流式对话（前端默认走这个）

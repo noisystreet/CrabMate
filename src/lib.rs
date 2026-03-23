@@ -850,23 +850,23 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             )
         })?;
         let auth_enabled = !cfg.web_api_bearer_token.trim().is_empty();
-        if !bind_ip.is_loopback() && !auth_enabled && !cfg.allow_insecure_no_auth_for_non_loopback {
+        if !auth_enabled && !cfg.allow_insecure_no_auth_for_non_loopback {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
-                "当前监听地址为非 loopback（如 0.0.0.0），但未配置 web_api_bearer_token；请设置 [agent].web_api_bearer_token / AGENT_WEB_API_BEARER_TOKEN，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
+                "未配置 web_api_bearer_token，默认拒绝无鉴权启动；请设置 [agent].web_api_bearer_token / AGENT_WEB_API_BEARER_TOKEN，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
             )
             .into());
         }
         let addr = std::net::SocketAddr::from((bind_ip, port));
         println!("Web 服务已启动");
         println!("  监听: http://{}/", addr);
-        if bind_ip.is_unspecified() && !auth_enabled {
+        if !auth_enabled {
             eprintln!(
-                "  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露",
+                "  警告: 当前按 allow_insecure_no_auth_for_non_loopback=true 无鉴权运行（{}），请勿在不可信网络暴露",
                 addr
             );
         }
-        if bind_ip.is_unspecified() && auth_enabled {
+        if auth_enabled {
             println!("  安全: 已启用 Bearer 鉴权（Authorization 头）");
         }
         info!(target: "crabmate", "Web 服务监听 addr={}", addr);

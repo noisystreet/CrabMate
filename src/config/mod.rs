@@ -104,9 +104,9 @@ pub struct AgentConfig {
     /// Web `POST /workspace` 允许设置的工作区根路径：规范化为绝对路径后的白名单。
     /// 未在配置中指定 `workspace_allowed_roots` 时，仅含 `run_command_working_dir` 的 canonical 路径。
     pub workspace_allowed_roots: Vec<std::path::PathBuf>,
-    /// Web API 的 Bearer 鉴权令牌（为空表示不启用鉴权）。
+    /// Web API 的 Bearer 鉴权令牌（默认要求非空；为空时需显式开启不安全开关才允许启动）。
     pub web_api_bearer_token: String,
-    /// 当监听非 loopback 地址且 `web_api_bearer_token` 为空时，是否允许继续启动（不安全，默认 false）。
+    /// 当 `web_api_bearer_token` 为空时，是否允许继续启动（不安全，默认 false）。
     pub allow_insecure_no_auth_for_non_loopback: bool,
     /// Web `/chat` 任务最大并发执行数（单进程）
     pub chat_queue_max_concurrent: usize,

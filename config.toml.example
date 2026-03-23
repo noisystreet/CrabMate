@@ -18,7 +18,7 @@
 # allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "file", "df", "du", "head", "tail", "wc", "cat"]
 # run_command_working_dir = "."
 # web_api_bearer_token = "YOUR_STRONG_RANDOM_TOKEN"
-# allow_insecure_no_auth_for_non_loopback = false
+# allow_insecure_no_auth_for_non_loopback = false   # 无 token 时默认拒绝启动；仅调试环境可改 true（不安全）
 # max_tokens = 2048
 # temperature = 0.7
 # api_timeout_secs = 60
