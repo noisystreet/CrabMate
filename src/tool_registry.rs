@@ -102,8 +102,21 @@ fn meta_by_name(name: &str) -> Option<&'static ToolDispatchMeta> {
 // --- 运行时上下文 ---
 
 pub enum ToolRuntime<'a> {
-    Web { workspace_changed: &'a mut bool },
-    Tui { ctx: &'a TuiToolRuntime },
+    Web {
+        workspace_changed: &'a mut bool,
+        /// 仅 Web 流式会话在启用审批时提供；普通 `/chat` 或旧客户端为 `None`。
+        ctx: Option<&'a WebToolRuntime>,
+    },
+    Tui {
+        ctx: &'a TuiToolRuntime,
+    },
+}
+
+pub struct WebToolRuntime {
+    pub out_tx: mpsc::Sender<String>,
+    pub approval_rx_shared: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
+    pub approval_request_guard: Arc<Mutex<()>>,
+    pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
 }
 
 pub struct TuiToolRuntime {
@@ -179,12 +192,16 @@ pub async fn dispatch_tool(
             .await
         }
         HandlerId::RunCommand => match runtime {
-            ToolRuntime::Web { workspace_changed } => {
+            ToolRuntime::Web {
+                workspace_changed,
+                ctx,
+            } => {
                 execute_run_command_web(
                     cfg,
                     effective_working_dir,
                     workspace_is_set,
                     workspace_changed,
+                    ctx,
                     name,
                     args,
                 )
@@ -232,7 +249,7 @@ pub async fn dispatch_tool(
             execute_web_search_web(cfg, effective_working_dir, name, args).await
         }
         HandlerId::HttpFetch => match runtime {
-            ToolRuntime::Web { .. } => execute_http_fetch_web(cfg, name, args).await,
+            ToolRuntime::Web { ctx, .. } => execute_http_fetch_web(cfg, ctx, name, args).await,
             ToolRuntime::Tui { ctx } => execute_http_fetch_tui(cfg, ctx, name, args).await,
         },
         HandlerId::HttpRequest => execute_http_request(cfg, name, args).await,
@@ -267,7 +284,18 @@ async fn execute_workflow(
             contract_err.to_string()
         } else {
             let approval_mode = match &runtime {
-                ToolRuntime::Web { .. } => workflow::WorkflowApprovalMode::NoApproval,
+                ToolRuntime::Web { ctx, .. } => {
+                    if let Some(web_ctx) = ctx {
+                        workflow::WorkflowApprovalMode::Tui {
+                            out_tx: web_ctx.out_tx.clone(),
+                            approval_rx: web_ctx.approval_rx_shared.clone(),
+                            approval_request_guard: web_ctx.approval_request_guard.clone(),
+                            persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
+                        }
+                    } else {
+                        workflow::WorkflowApprovalMode::NoApproval
+                    }
+                }
                 ToolRuntime::Tui { ctx } => {
                     if let Some(tx) = ctx.out_tx.as_ref() {
                         workflow::WorkflowApprovalMode::Tui {
@@ -290,7 +318,10 @@ async fn execute_workflow(
                 cfg.command_max_output_len,
             )
             .await;
-            if let ToolRuntime::Web { workspace_changed } = runtime {
+            if let ToolRuntime::Web {
+                workspace_changed, ..
+            } = runtime
+            {
                 *workspace_changed |= wf_ws_changed;
             }
             wf_out
@@ -307,6 +338,7 @@ async fn execute_run_command_web(
     effective_working_dir: &Path,
     workspace_is_set: bool,
     workspace_changed: &mut bool,
+    web_ctx: Option<&WebToolRuntime>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
@@ -317,15 +349,88 @@ async fn execute_run_command_web(
             None,
         );
     }
+    let v: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
+    let cmd = v
+        .get("command")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+    let arg_preview = v
+        .get("args")
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_default();
+    let mut effective_allowed = cfg.allowed_commands.clone();
+    if !cmd.is_empty()
+        && !effective_allowed
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(&cmd))
+    {
+        let already_allowed = if let Some(ctx) = web_ctx {
+            ctx.persistent_allowlist_shared.lock().await.contains(&cmd)
+        } else {
+            false
+        };
+        if already_allowed {
+            effective_allowed.push(cmd.clone());
+        } else if let Some(ctx) = web_ctx {
+            let decision = {
+                let _guard = ctx.approval_request_guard.lock().await;
+                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
+                    command_approval_request: crate::sse::CommandApprovalBody {
+                        command: cmd.clone(),
+                        args: arg_preview.clone(),
+                        allowlist_key: None,
+                    },
+                });
+                if ctx.out_tx.send(line).await.is_err() {
+                    return ("错误：审批通道不可用，请重试。".to_string(), None);
+                }
+                let mut rx_guard = ctx.approval_rx_shared.lock().await;
+                rx_guard
+                    .recv()
+                    .await
+                    .unwrap_or(CommandApprovalDecision::Deny)
+            };
+            match decision {
+                CommandApprovalDecision::Deny => {
+                    let cmd_show = if arg_preview.is_empty() {
+                        cmd
+                    } else {
+                        format!("{} {}", cmd, arg_preview)
+                    };
+                    return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
+                }
+                CommandApprovalDecision::AllowOnce => {
+                    effective_allowed.push(cmd.clone());
+                }
+                CommandApprovalDecision::AllowAlways => {
+                    ctx.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(cmd.clone());
+                    effective_allowed.push(cmd.clone());
+                }
+            }
+        }
+    }
+
     let name_in = name.to_string();
     let cmd_timeout = cfg.command_timeout_secs;
     let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
+    let effective_allowed_for_run = effective_allowed.clone();
     let handle = tokio::task::spawn_blocking(move || {
         let ctx = tools::tool_context_for(
             cfg.as_ref(),
-            cfg.allowed_commands.as_slice(),
+            effective_allowed_for_run.as_slice(),
             work_dir.as_path(),
         );
         tools::run_tool(&name_in, &args_cloned, &ctx)
@@ -451,19 +556,62 @@ async fn execute_run_command_tui(
 
 async fn execute_http_fetch_web(
     cfg: &Arc<AgentConfig>,
+    web_ctx: Option<&WebToolRuntime>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
-    let (url, _method) = match tools::http_fetch::parse_http_fetch_args(args) {
+    let (url, method) = match tools::http_fetch::parse_http_fetch_args(args) {
         Ok(x) => x,
         Err(e) => return (format!("错误：{}", e), None),
     };
-    if !tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes) {
-        return (
-            "错误：Web 模式下 http_fetch 仅允许匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界，参见 README）。TUI 下可对未匹配 URL 使用人工审批（拒绝/本次同意/永久同意）。"
-                .to_string(),
-            None,
-        );
+    let key = tools::http_fetch::storage_key(&url);
+    let approval_args = tools::http_fetch::approval_args_display(method, &url);
+    let allowed_by_cfg =
+        tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes);
+    let allowed_by_list = if let Some(ctx) = web_ctx {
+        ctx.persistent_allowlist_shared.lock().await.contains(&key)
+    } else {
+        false
+    };
+    if !(allowed_by_cfg || allowed_by_list) {
+        if let Some(ctx) = web_ctx {
+            let decision = {
+                let _guard = ctx.approval_request_guard.lock().await;
+                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
+                    command_approval_request: crate::sse::CommandApprovalBody {
+                        command: "http_fetch".to_string(),
+                        args: approval_args.clone(),
+                        allowlist_key: Some(key.clone()),
+                    },
+                });
+                if ctx.out_tx.send(line).await.is_err() {
+                    return ("错误：审批通道不可用，请重试。".to_string(), None);
+                }
+                let mut rx_guard = ctx.approval_rx_shared.lock().await;
+                rx_guard
+                    .recv()
+                    .await
+                    .unwrap_or(CommandApprovalDecision::Deny)
+            };
+            match decision {
+                CommandApprovalDecision::Deny => {
+                    return (format!("用户拒绝 http_fetch：{}", approval_args), None);
+                }
+                CommandApprovalDecision::AllowOnce => {}
+                CommandApprovalDecision::AllowAlways => {
+                    ctx.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(key.clone());
+                }
+            }
+        } else {
+            return (
+                "错误：Web 模式下 http_fetch 仅允许匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。若需人工审批，请升级前端并在 /chat/stream 传 approval_session_id。"
+                    .to_string(),
+                None,
+            );
+        }
     }
     let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch_max_response_bytes;

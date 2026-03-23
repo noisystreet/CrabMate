@@ -290,6 +290,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub effective_working_dir: &'a Path,
     pub workspace_is_set: bool,
     pub out: Option<&'a mpsc::Sender<String>>,
+    pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// CLI：`render_to_terminal` 且 `out: None` 时为 true，工具结果打印到 stdout（与 TUI 气泡对齐）。
     pub echo_terminal_transcript: bool,
 }
@@ -306,6 +307,7 @@ pub(crate) struct TuiExecuteCtx<'a> {
 pub(crate) enum AgentRunMode<'a> {
     Web {
         render_to_terminal: bool,
+        web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     },
     Tui {
         tui_tool_ctx: &'a tool_registry::TuiToolRuntime,
@@ -338,7 +340,7 @@ pub(crate) enum ExecuteToolsBatchOutcome {
 
 #[derive(Clone, Copy)]
 enum ExecuteDispatchMode<'a> {
-    Web,
+    Web(Option<&'a tool_registry::WebToolRuntime>),
     Tui(&'a tool_registry::TuiToolRuntime),
 }
 
@@ -390,10 +392,11 @@ async fn per_execute_tools_common(
 
         let t_tool = Instant::now();
         let (result, reflection_inject) = match dispatch_mode {
-            ExecuteDispatchMode::Web => {
+            ExecuteDispatchMode::Web(web_tool_ctx) => {
                 tool_registry::dispatch_tool(
                     ToolRuntime::Web {
                         workspace_changed: &mut workspace_changed,
+                        ctx: web_tool_ctx,
                     },
                     per_coord,
                     cfg,
@@ -467,7 +470,7 @@ async fn per_execute_tools_common(
     }
 
     if let Some(tx) = out {
-        if matches!(dispatch_mode, ExecuteDispatchMode::Web) && workspace_changed {
+        if matches!(dispatch_mode, ExecuteDispatchMode::Web(_)) && workspace_changed {
             let _ = tx
                 .send(encode_message(SsePayload::WorkspaceChanged {
                     workspace_changed: true,
@@ -496,6 +499,7 @@ pub(crate) async fn per_execute_tools_web(
         effective_working_dir,
         workspace_is_set,
         out,
+        web_tool_ctx,
         echo_terminal_transcript,
     } = ctx;
 
@@ -509,7 +513,7 @@ pub(crate) async fn per_execute_tools_web(
         out,
         echo_terminal_transcript,
         cfg.command_max_output_len,
-        ExecuteDispatchMode::Web,
+        ExecuteDispatchMode::Web(web_tool_ctx),
     )
     .await
 }
@@ -563,7 +567,9 @@ async fn run_agent_outer_loop(
         }
 
         let render_to_terminal = match p.mode {
-            AgentRunMode::Web { render_to_terminal } => render_to_terminal,
+            AgentRunMode::Web {
+                render_to_terminal, ..
+            } => render_to_terminal,
             AgentRunMode::Tui { .. } => false,
         };
         super::context_window::prepare_messages_for_model(
@@ -640,7 +646,7 @@ async fn run_agent_outer_loop(
         let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
         let echo_terminal_transcript = render_to_terminal && p.out.is_none();
         let exec_outcome = match p.mode {
-            AgentRunMode::Web { .. } => {
+            AgentRunMode::Web { web_tool_ctx, .. } => {
                 per_execute_tools_web(
                     tool_calls,
                     per_coord,
@@ -650,6 +656,7 @@ async fn run_agent_outer_loop(
                         effective_working_dir: p.effective_working_dir,
                         workspace_is_set: p.workspace_is_set,
                         out: p.out,
+                        web_tool_ctx,
                         echo_terminal_transcript,
                     },
                 )
@@ -687,7 +694,9 @@ async fn run_staged_plan_then_execute_steps(
     per_coord: &mut PerCoordinator,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let render_to_terminal = match p.mode {
-        AgentRunMode::Web { render_to_terminal } => render_to_terminal,
+        AgentRunMode::Web {
+            render_to_terminal, ..
+        } => render_to_terminal,
         AgentRunMode::Tui { .. } => false,
     };
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
