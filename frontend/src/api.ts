@@ -275,12 +275,12 @@ export async function saveTasks(data: TasksData): Promise<TasksData> {
   })
 }
 
-export async function sendChat(message: string): Promise<ChatResponse> {
+export async function sendChat(message: string, conversationId?: string): Promise<ChatResponse> {
   return request<ChatResponse>('/chat', {
     method: 'POST',
     timeoutMs: 60000,
     retries: 0,
-    json: { message },
+    json: conversationId ? { message, conversation_id: conversationId } : { message },
   })
 }
 
@@ -352,6 +352,10 @@ export async function uploadFiles(
     xhr.open('POST', url, true)
     xhr.responseType = 'json'
     xhr.timeout = timeoutMs
+    const bearerToken = getStoredWebApiBearerToken()
+    if (bearerToken) {
+      xhr.setRequestHeader('Authorization', `Bearer ${bearerToken}`)
+    }
 
     xhr.upload.onprogress = (e) => {
       if (!opts?.onProgress) return
@@ -437,6 +441,30 @@ type SseControlPayload = {
   /** 分阶段规划进度文案（可多行）；TUI 展示；Web 吞掉不当下文 */
   staged_plan_notice?: string
   staged_plan_notice_clear?: boolean
+  staged_plan_started?: {
+    plan_id?: string
+    total_steps?: number
+  }
+  staged_plan_step_started?: {
+    plan_id?: string
+    step_id?: string
+    step_index?: number
+    total_steps?: number
+    description?: string
+  }
+  staged_plan_step_finished?: {
+    plan_id?: string
+    step_id?: string
+    step_index?: number
+    total_steps?: number
+    status?: string
+  }
+  staged_plan_finished?: {
+    plan_id?: string
+    total_steps?: number
+    completed_steps?: number
+    status?: string
+  }
   /** 分阶段规划聊天区分隔线：`true` 短、`false` 长 */
   chat_ui_separator?: boolean
 }
@@ -452,6 +480,27 @@ function tryDispatchSseControlPayload(
     onParsingToolCallsChange?: (parsing: boolean) => void
     onToolResult?: (info: ToolResultInfo) => void
     onPlanRequired?: () => void
+    onStagedPlanStarted?: (info: { planId: string; totalSteps: number }) => void
+    onStagedPlanStepStarted?: (info: {
+      planId: string
+      stepId: string
+      stepIndex: number
+      totalSteps: number
+      description: string
+    }) => void
+    onStagedPlanStepFinished?: (info: {
+      planId: string
+      stepId: string
+      stepIndex: number
+      totalSteps: number
+      status: string
+    }) => void
+    onStagedPlanFinished?: (info: {
+      planId: string
+      totalSteps: number
+      completedSteps: number
+      status: string
+    }) => void
     /** `true` 短分隔线，`false` 长分隔线（分阶段规划队列） */
     onChatUiSeparator?: (short: boolean) => void
   },
@@ -466,6 +515,42 @@ function tryDispatchSseControlPayload(
     }
     if (parsed.plan_required === true) {
       callbacks.onPlanRequired?.()
+      return 'handled'
+    }
+    if (parsed.staged_plan_started != null) {
+      callbacks.onStagedPlanStarted?.({
+        planId: parsed.staged_plan_started.plan_id || '',
+        totalSteps: parsed.staged_plan_started.total_steps || 0,
+      })
+      return 'handled'
+    }
+    if (parsed.staged_plan_step_started != null) {
+      callbacks.onStagedPlanStepStarted?.({
+        planId: parsed.staged_plan_step_started.plan_id || '',
+        stepId: parsed.staged_plan_step_started.step_id || '',
+        stepIndex: parsed.staged_plan_step_started.step_index || 0,
+        totalSteps: parsed.staged_plan_step_started.total_steps || 0,
+        description: parsed.staged_plan_step_started.description || '',
+      })
+      return 'handled'
+    }
+    if (parsed.staged_plan_step_finished != null) {
+      callbacks.onStagedPlanStepFinished?.({
+        planId: parsed.staged_plan_step_finished.plan_id || '',
+        stepId: parsed.staged_plan_step_finished.step_id || '',
+        stepIndex: parsed.staged_plan_step_finished.step_index || 0,
+        totalSteps: parsed.staged_plan_step_finished.total_steps || 0,
+        status: parsed.staged_plan_step_finished.status || '',
+      })
+      return 'handled'
+    }
+    if (parsed.staged_plan_finished != null) {
+      callbacks.onStagedPlanFinished?.({
+        planId: parsed.staged_plan_finished.plan_id || '',
+        totalSteps: parsed.staged_plan_finished.total_steps || 0,
+        completedSteps: parsed.staged_plan_finished.completed_steps || 0,
+        status: parsed.staged_plan_finished.status || '',
+      })
       return 'handled'
     }
     if (parsed.workspace_changed === true) {
@@ -531,14 +616,41 @@ export async function sendChatStream(
     onToolResult?: (info: ToolResultInfo) => void
     /** 预留：后端 `plan_required`（如 PER 结构化规划提示） */
     onPlanRequired?: () => void
+    onStagedPlanStarted?: (info: { planId: string; totalSteps: number }) => void
+    onStagedPlanStepStarted?: (info: {
+      planId: string
+      stepId: string
+      stepIndex: number
+      totalSteps: number
+      description: string
+    }) => void
+    onStagedPlanStepFinished?: (info: {
+      planId: string
+      stepId: string
+      stepIndex: number
+      totalSteps: number
+      status: string
+    }) => void
+    onStagedPlanFinished?: (info: {
+      planId: string
+      totalSteps: number
+      completedSteps: number
+      status: string
+    }) => void
     onChatUiSeparator?: (short: boolean) => void
+    /** 服务端返回会话 ID（首轮未传 conversation_id 时由后端生成） */
+    onConversationId?: (id: string) => void
   },
   signal?: AbortSignal,
+  conversationId?: string,
 ): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const bearerToken = getStoredWebApiBearerToken()
+  if (bearerToken) headers.Authorization = `Bearer ${bearerToken}`
   const r = await fetch(`${base}/chat/stream`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    headers,
+    body: JSON.stringify(conversationId ? { message, conversation_id: conversationId } : { message }),
     signal,
   })
   if (!r.ok) {
@@ -546,6 +658,8 @@ export async function sendChatStream(
     callbacks.onError((data as { message?: string }).message || r.statusText)
     return
   }
+  const serverConversationId = r.headers.get('x-conversation-id')?.trim() || ''
+  if (serverConversationId) callbacks.onConversationId?.(serverConversationId)
   const reader = r.body?.getReader()
   if (!reader) {
     callbacks.onError('无法读取响应流')

@@ -393,6 +393,7 @@ export function ChatPanel({
   const streamingSpanRef = useRef<HTMLSpanElement | null>(null)
   const deltaBufferRef = useRef('')
   const deltaFlushRafRef = useRef<number | null>(null)
+  const conversationIdRef = useRef<string | null>(sessionId ?? null)
 
   const flushPendingDeltas = useCallback(() => {
     if (!deltaBufferRef.current) return
@@ -500,6 +501,7 @@ export function ChatPanel({
     setAttachHint(null)
     setInput(initialDraft ?? '')
     setMessages(initialMessages ? [...initialMessages] : [])
+    conversationIdRef.current = sessionId
     scheduleScrollToBottom()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
@@ -833,6 +835,9 @@ export function ChatPanel({
           ])
           scheduleScrollToBottom()
         },
+        onConversationId: (cid) => {
+          conversationIdRef.current = cid
+        },
         onToolResult: (toolInfo) => {
           // 先把已收到的助手流式正文刷进 DOM，再插入工具卡，避免视觉上「工具块先于助手说明」
           flushPendingDeltas()
@@ -918,7 +923,7 @@ export function ChatPanel({
             return rest
           })
         },
-      }, controller.signal)
+      }, controller.signal, conversationIdRef.current ?? sessionId ?? undefined)
     } catch (e) {
       const msgText = e instanceof Error ? e.message : '请求失败'
       flushPendingDeltas()
