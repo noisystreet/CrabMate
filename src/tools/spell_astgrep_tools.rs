@@ -7,6 +7,7 @@ use std::process::{Command, Stdio};
 
 const MAX_OUTPUT_LINES: usize = 800;
 const MAX_SPELL_PATHS: usize = 24;
+const MAX_SPELL_DICT_PATHS: usize = 8;
 const MAX_AST_PATHS: usize = 8;
 const MAX_AST_GLOBS: usize = 10;
 const MAX_PATTERN_LEN: usize = 4096;
@@ -51,6 +52,23 @@ fn parse_rel_paths_limited(
         }
     }
     Ok(arr)
+}
+
+fn parse_optional_rel_path(v: &serde_json::Value, key: &str) -> Result<Option<String>, String> {
+    let Some(raw) = v.get(key).and_then(|x| x.as_str()) else {
+        return Ok(None);
+    };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    if !is_safe_rel_path(raw) {
+        return Err(format!(
+            "错误：{} 中含非法相对路径（须非空、非绝对、不含 ..）：{}",
+            key, raw
+        ));
+    }
+    Ok(Some(raw.to_string()))
 }
 
 /// 仅保留工作区内存在的路径；若全部不存在则退回 `.`（由调用方决定是否允许）。
@@ -164,10 +182,20 @@ pub fn typos_check(args_json: &str, workspace_root: &Path, max_output_len: usize
         Ok(p) => p,
         Err(e) => return e,
     };
+    let config_path = match parse_optional_rel_path(&v, "config_path") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
     let paths = filter_existing(&base, &paths);
 
     let mut cmd = Command::new("typos");
     cmd.arg("--format").arg("brief").current_dir(&base);
+    if let Some(cfg) = config_path {
+        if !base.join(&cfg).is_file() {
+            return format!("错误：config_path 文件不存在：{}", cfg);
+        }
+        cmd.arg("--config").arg(cfg);
+    }
     for p in &paths {
         cmd.arg(p);
     }
@@ -189,6 +217,11 @@ pub fn codespell_check(args_json: &str, workspace_root: &Path, max_output_len: u
         Ok(p) => p,
         Err(e) => return e,
     };
+    let dictionary_paths =
+        match parse_rel_paths_limited(&v, "dictionary_paths", &[], MAX_SPELL_DICT_PATHS) {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
     let paths = filter_existing(&base, &paths);
 
     let mut cmd = Command::new("codespell");
@@ -200,6 +233,24 @@ pub fn codespell_check(args_json: &str, workspace_root: &Path, max_output_len: u
         if !skip.is_empty() {
             cmd.arg("--skip").arg(skip);
         }
+    }
+    if let Some(list) = v
+        .get("ignore_words_list")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+    {
+        if list.len() > 512 || list.contains('\n') {
+            return "错误：ignore_words_list 过长或含非法字符".to_string();
+        }
+        if !list.is_empty() {
+            cmd.arg("-L").arg(list);
+        }
+    }
+    for dict in &dictionary_paths {
+        if !base.join(dict).is_file() {
+            return format!("错误：dictionary_paths 文件不存在：{}", dict);
+        }
+        cmd.arg("-I").arg(dict);
     }
     for p in &paths {
         cmd.arg(p);
@@ -394,5 +445,21 @@ mod tests {
             4096,
         );
         assert!(out.contains("confirm=true"));
+    }
+
+    #[test]
+    fn typos_check_rejects_bad_config_path() {
+        let out = typos_check(r#"{"config_path":"../.typos.toml"}"#, Path::new("."), 4096);
+        assert!(out.contains("非法相对路径"), "{}", out);
+    }
+
+    #[test]
+    fn codespell_check_requires_existing_dictionary_file() {
+        let out = codespell_check(
+            r#"{"dictionary_paths":["docs/nope.dict"]}"#,
+            Path::new("."),
+            4096,
+        );
+        assert!(out.contains("dictionary_paths 文件不存在"), "{}", out);
     }
 }

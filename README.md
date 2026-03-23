@@ -19,8 +19,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的 UTF-8 文本，超出会返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
-  - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接目标是否存在；`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测。
-  - `typos_check` / `codespell_check`：文档拼写检查（**只读**，需本机安装 [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)）；默认优先检查存在的 `README.md` 与 `docs/`，可用 `paths` 收窄；`codespell_check` 可选 `skip` 传给 `--skip`。
+  - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接与 `#fragment` 锚点；支持 `output_format=text|json|sarif`。`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测（同 URL 去重缓存）。
+  - `typos_check` / `codespell_check`：文档拼写检查（**只读**，需本机安装 [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)）；默认优先检查存在的 `README.md` 与 `docs/`，可用 `paths` 收窄；`typos_check` 支持 `config_path`（项目词典通常在 `.typos.toml`），`codespell_check` 支持 `dictionary_paths`（`-I` 词典文件）与 `ignore_words_list`（`-L`）。
   - `ast_grep_run`：用 [ast-grep](https://ast-grep.github.io/) 做**语法树级**搜索（需本机安装 `ast-grep`，如 `cargo install ast-grep`）；必填 `pattern` 与 `lang`，默认在存在的 `src` 下搜索，并内置排除 `target`、`node_modules`、`.git` 等；可用 `paths` / `globs` 进一步限制范围。
   - `ast_grep_rewrite`：用 `ast-grep run --rewrite` 做结构化改写。默认 `dry_run=true` 仅预览；当 `dry_run=false` 时必须 `confirm=true` 才会实际写盘（等价 `--update-all`）。
   - `structured_validate` / `structured_query` / `structured_diff` / `structured_patch`：校验、查询、结构化 diff，以及对 **JSON / YAML / TOML** 做定点 `set/remove`（`structured_patch` 默认 dry-run，写盘需 `confirm=true`）。CSV/TSV 仍用于校验/查询/diff，不支持结构化写回。
@@ -450,9 +450,9 @@ cargo run
   ```json
   {"path":"src/main.rs","pattern":"pub\\s+fn\\s+run_agent_turn","mode":"rust_fn_block","max_matches":1}
   ```
-- `markdown_check_links`（维护 `README.md` / `docs/`：相对链接是否存在；外链仅在对 `allowed_external_prefixes` 命中时才发 HTTP）：
+- `markdown_check_links`（维护 `README.md` / `docs/`：相对链接与 `#fragment` 是否有效；外链仅在对 `allowed_external_prefixes` 命中时才发 HTTP）：
   ```json
-  {"roots":["README.md","docs"],"max_files":300,"allowed_external_prefixes":["https://example.com/docs/"],"external_timeout_secs":10}
+  {"roots":["README.md","docs"],"max_files":300,"check_fragments":true,"output_format":"text","allowed_external_prefixes":["https://example.com/docs/"],"external_timeout_secs":10}
   ```
   省略 `roots` 时默认扫描 `README.md` 与 `docs` 目录。
 - `structured_validate`（解析 `package.json` / `Cargo.toml` / `.yml` 等是否合法，可选顶层摘要）：

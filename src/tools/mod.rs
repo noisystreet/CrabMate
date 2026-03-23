@@ -670,6 +670,10 @@ fn params_typos_check() -> serde_json::Value {
                 "type": "array",
                 "items": { "type": "string" },
                 "description": "可选：相对工作区根的待检查路径（文件或目录），默认 [\"README.md\",\"docs\"]；仅当路径存在时才会传入 typos，最多 24 项。禁止 .. 与绝对路径。"
+            },
+            "config_path": {
+                "type": "string",
+                "description": "可选：typos 配置文件相对路径（如 .typos.toml / typos.toml），可在配置中维护项目词典。"
             }
         },
         "required": [],
@@ -689,6 +693,15 @@ fn params_codespell_check() -> serde_json::Value {
             "skip": {
                 "type": "string",
                 "description": "可选：传给 codespell 的 --skip（如 \"*.svg,*.lock\"），不含换行，最长 512 字符"
+            },
+            "dictionary_paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：项目词典文件列表（相对路径，逐个传给 codespell -I，最多 8 项）。"
+            },
+            "ignore_words_list": {
+                "type": "string",
+                "description": "可选：传给 codespell -L 的逗号分隔忽略词列表（不含换行，最长 512 字符）。"
             }
         },
         "required": [],
@@ -1563,6 +1576,15 @@ fn params_markdown_check_links() -> serde_json::Value {
                 "description": "外链探测超时（秒），默认 10，上限 60",
                 "minimum": 1,
                 "maximum": 60
+            },
+            "check_fragments": {
+                "type": "boolean",
+                "description": "是否校验 Markdown 锚点（#fragment），默认 true。"
+            },
+            "output_format": {
+                "type": "string",
+                "description": "输出格式：text（默认）/ json / sarif",
+                "enum": ["text", "json", "sarif"]
             }
         },
         "required": []
@@ -2965,7 +2987,7 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "markdown_check_links",
-            description: "扫描工作区内 Markdown（默认 README.md 与 docs/）：校验**相对路径**链接目标是否存在（含 `[]()`、`![]()`、`<https://…>` 与引用式 `[ref]:`）。`http(s)://` 与 `//` 外链默认**不联网**；仅当提供 `allowed_external_prefixes` 时对匹配前缀做 HEAD 探测（失败时 GET Range 回退）。`mailto:`/`tel:` 等跳过。",
+            description: "扫描工作区内 Markdown（默认 README.md 与 docs/）：校验**相对路径**链接目标是否存在，并可校验 `#fragment` 是否命中目标 Markdown 标题锚点。支持 `output_format=text|json|sarif`。`http(s)://` 与 `//` 外链默认**不联网**；仅当提供 `allowed_external_prefixes` 时对匹配前缀做 HEAD 探测（失败时 GET Range 回退，且同 URL 去重缓存）。`mailto:`/`tel:` 等跳过。",
             category: ToolCategory::Development,
             parameters: params_markdown_check_links,
             runner: runner_markdown_check_links,
