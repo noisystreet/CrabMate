@@ -309,6 +309,7 @@ pub(crate) fn strip_assistant_echo_label(content: &str) -> String {
 
 /// 流式阶段检测到「正在输出 agent_reply_plan」时，聊天区不刷 JSON 片段，展示**本占位 + 围栏前说明**（占位置顶）；**收齐后**走 [`assistant_markdown_source_for_display`] 再剥 JSON。
 const STAGED_PLAN_STREAMING_PLACEHOLDER: &str = "正在生成分阶段规划…";
+const STAGED_PLAN_STREAMING_PLACEHOLDER_BASE: &str = "正在生成分阶段规划";
 
 fn triple_backtick_fence_count(s: &str) -> usize {
     s.match_indices("```").count()
@@ -360,6 +361,30 @@ fn should_buffer_agent_reply_plan_stream(stripped: &str) -> bool {
         && looks_like_incomplete_agent_reply_plan_whole_json(t)
 }
 
+fn is_staged_plan_placeholder_like_line(line: &str) -> bool {
+    let t = line.trim();
+    if t.is_empty() {
+        return false;
+    }
+    let t = t.trim_end_matches(|c: char| {
+        matches!(c, '…' | '.' | '。' | '!' | '！' | '?' | '？' | ':' | '：')
+    });
+    let t = t.trim();
+    t == STAGED_PLAN_STREAMING_PLACEHOLDER_BASE
+        || t.starts_with(STAGED_PLAN_STREAMING_PLACEHOLDER_BASE)
+}
+
+fn drop_leading_placeholder_like_prose_line(prose: &str) -> String {
+    let mut lines = prose.lines();
+    let Some(first) = lines.next() else {
+        return String::new();
+    };
+    if !is_staged_plan_placeholder_like_line(first) {
+        return prose.to_string();
+    }
+    lines.collect::<Vec<_>>().join("\n").trim().to_string()
+}
+
 fn staged_plan_streaming_chat_body(stripped: &str) -> String {
     let raw = prose_before_first_fence(stripped);
     // 与收齐后 `staged_plan_hidden_chat_prose_only` 一致：DSML、相邻重复行、列表并句，避免流式阶段出现双行复读而收齐后变单段等不一致。
@@ -368,8 +393,14 @@ fn staged_plan_streaming_chat_body(stripped: &str) -> String {
     if prose_t.is_empty() {
         STAGED_PLAN_STREAMING_PLACEHOLDER.to_string()
     } else {
-        // 占位置顶：围栏前说明往往较长（如「这个任务可以分成以下步骤」），放首位易把底部「正在生成…」顶出首屏，用户误以为被覆盖。
-        format!("{STAGED_PLAN_STREAMING_PLACEHOLDER}\n\n{prose_t}")
+        // TUI 默认「跟随尾部」滚动；将占位放在末尾可避免长开场白把「正在生成…」挤出可视区。
+        // 若模型开场白本身就是同义占位（如“正在生成分阶段规划...”），去重后仅保留一处。
+        let prose_wo_dup = drop_leading_placeholder_like_prose_line(prose_t);
+        if prose_wo_dup.is_empty() {
+            STAGED_PLAN_STREAMING_PLACEHOLDER.to_string()
+        } else {
+            format!("{prose_wo_dup}\n\n{STAGED_PLAN_STREAMING_PLACEHOLDER}")
+        }
     }
 }
 
@@ -605,14 +636,28 @@ mod tests {
     }
 
     #[test]
-    fn assistant_streaming_last_placeholder_before_fence_prose() {
+    fn assistant_streaming_last_placeholder_after_fence_prose() {
         let raw = "这个任务可以分成以下步骤\n```json\n{\"type\":\"agent_reply_plan\"";
         let out = assistant_markdown_source_for_display_streaming_last(raw);
         let ph = out.find("正在生成分阶段规划").expect("placeholder");
         let prose = out
             .find("这个任务可以分成以下步骤")
             .expect("fence-before prose");
-        assert!(ph < prose, "占位置顶，避免长说明盖住状态：out={out:?}");
+        assert!(
+            ph > prose,
+            "占位置尾，避免跟随尾部时被开场白挤出可视区：out={out:?}"
+        );
+    }
+
+    #[test]
+    fn assistant_streaming_last_dedupes_placeholder_like_opening_line() {
+        let raw = "正在生成分阶段规划...\n```json\n{\"type\":\"agent_reply_plan\"";
+        let out = assistant_markdown_source_for_display_streaming_last(raw);
+        assert_eq!(
+            out.matches("正在生成分阶段规划").count(),
+            1,
+            "开场白与占位同义时应去重：{out:?}"
+        );
     }
 
     #[test]
