@@ -203,7 +203,7 @@ fn trim_assistant_prose_line(s: &str) -> String {
 
 /// 仅用于**判等**：全角标点与 ASCII 混用时仍视为同一句，避免相邻行「看起来一样」却去重失败。
 fn prose_dedup_normalize(s: &str) -> String {
-    trim_assistant_prose_line(s)
+    let mapped: String = trim_assistant_prose_line(s)
         .chars()
         .map(|c| match c {
             '\u{ff1a}' => ':',
@@ -212,7 +212,14 @@ fn prose_dedup_normalize(s: &str) -> String {
             '\u{ff1f}' => '?',
             _ => c,
         })
-        .collect()
+        .collect();
+    // 仅用于「相邻同句」判等：忽略句末语气/冒号差异，避免“同句仅标点不同”去重失败。
+    mapped
+        .trim_end_matches(|c: char| {
+            matches!(c, '。' | '！' | '？' | '：' | '…' | '.' | '!' | '?' | ':')
+        })
+        .trim()
+        .to_string()
 }
 
 /// 去掉**相邻**的、去首尾空白后完全相同的非空行（模型在围栏前偶发整段复读）。
@@ -417,6 +424,14 @@ mod tests {
     fn naturalize_plan_prose_dedupes_fullwidth_colon_variant() {
         let a = "我将帮您编写步骤：";
         let b = "我将帮您编写步骤:"; // ASCII colon
+        let raw = format!("{a}\n{b}");
+        assert_eq!(naturalize_assistant_plan_prose_tail(&raw), a);
+    }
+
+    #[test]
+    fn naturalize_plan_prose_dedupes_terminal_punctuation_variant() {
+        let a = "我将先拆解任务步骤：";
+        let b = "我将先拆解任务步骤。";
         let raw = format!("{a}\n{b}");
         assert_eq!(naturalize_assistant_plan_prose_tail(&raw), a);
     }
