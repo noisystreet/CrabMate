@@ -6,7 +6,8 @@ use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
 use crate::agent::plan_artifact::{
-    format_agent_reply_plan_for_display, parse_agent_reply_plan_v1, prose_before_first_fence,
+    augment_agent_reply_plan_goal_for_display, format_agent_reply_plan_for_display,
+    parse_agent_reply_plan_v1, prose_before_first_fence,
     strip_agent_reply_plan_fence_blocks_for_display,
 };
 use crate::runtime::latex_unicode::latex_math_to_unicode;
@@ -403,11 +404,20 @@ fn staged_plan_streaming_chat_body(stripped: &str) -> String {
     }
 }
 
-/// 主聊天区隐藏 v1 规划列表时，展示一条固定短提示，避免：
-/// 1) 规划轮与执行轮出现“开场白双写”；2) 纯 JSON 规划消息在聊天区“消失”。
+/// 主聊天区隐藏 v1 规划列表时：
+/// - 若围栏前有自然语言开场白，优先展示开场白（避免首句被覆盖）；
+/// - 若只有纯 JSON，回退固定短提示（避免消息消失）。
 fn staged_plan_hidden_chat_prose_only(original: &str) -> String {
     if let Ok(plan) = parse_agent_reply_plan_v1(original) {
-        format!("已生成分阶段规划（共 {} 步）。", plan.steps.len())
+        let raw_goal = prose_before_first_fence(original);
+        let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
+        let merged = augment_agent_reply_plan_goal_for_display(goal.trim(), &plan);
+        let merged = merged.trim();
+        if merged.is_empty() {
+            format!("已生成分阶段规划（共 {} 步）。", plan.steps.len())
+        } else {
+            latex_math_to_unicode(merged)
+        }
     } else {
         // 兜底：无法解析时沿用原有“围栏前自然语言”展示逻辑。
         let raw_goal = prose_before_first_fence(original);
@@ -444,7 +454,8 @@ fn assistant_markdown_from_stripped(stripped: &str) -> String {
 }
 
 /// 助手气泡 / CLI ANSI / 导出共用：剥标签 → `agent_reply_plan` 可读化 → LaTeX。
-/// `SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 为 `false` 时：可解析为 v1 规划 → 不展示列表/JSON，改为固定短提示（避免“开场白双写”与消息隐藏）。
+/// `SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 为 `false` 时：可解析为 v1 规划 → 不展示列表/JSON，
+/// 优先展示围栏前开场白；纯 JSON 时回退固定短提示，避免消息隐藏。
 /// 若仅围栏内为规划 JSON（含解析失败但形状明显的块），从展示串中移除围栏，**不**把原始 JSON 打到终端/气泡；`Message.content` 与日志不变。
 pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
     let stripped = strip_assistant_echo_label(raw);
@@ -602,20 +613,23 @@ mod tests {
             r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x"}]}"#
         );
         let out = assistant_markdown_source_for_display(&raw);
-        assert!(out.contains("已生成分阶段规划"));
-        assert!(out.contains("共 1 步"));
+        assert!(out.contains("下面拆解任务"));
         assert!(!out.contains("agent_reply_plan"));
         assert!(!out.contains("```"));
     }
 
     #[test]
-    fn assistant_valid_plan_replaces_preamble_with_fixed_summary() {
+    fn assistant_valid_plan_keeps_preamble_when_present() {
         let raw = format!(
             "我将帮您编写一个简单的C++ Hello World程序，并完成编译执行。以下是任务拆解：\n```json\n{}\n```\n",
             r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x"},{"id":"b","description":"y"}]}"#
         );
         let out = assistant_markdown_source_for_display(&raw);
-        assert_eq!(out, "已生成分阶段规划（共 2 步）。");
+        assert!(
+            out.contains("我将帮您编写一个简单的C++ Hello World程序"),
+            "{out}"
+        );
+        assert!(!out.contains("已生成分阶段规划"), "{out}");
     }
 
     #[test]
@@ -626,8 +640,7 @@ mod tests {
             r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"创建源文件"}]}"#
         );
         let out = assistant_markdown_source_for_display(&raw);
-        assert!(out.contains("已生成分阶段规划"), "{}", out);
-        assert!(out.contains("共 1 步"), "{}", out);
+        assert_eq!(out.matches(line).count(), 1, "{}", out);
     }
 
     #[test]
