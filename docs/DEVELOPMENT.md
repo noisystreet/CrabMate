@@ -118,6 +118,7 @@ flowchart TB
 | `ci_tools.rs` | 本地 CI / 流水线类工具 |
 | `code_nav.rs` | 代码导航、文件大纲等 |
 | `command.rs` | `run_command` 白名单与进程执行 |
+| `package_query.rs` | `package_query`：apt/rpm 只读包查询（安装状态/版本/来源统一抽象） |
 | `debug_tools.rs` | 调试辅助类工具 |
 | `diagnostics.rs` | `diagnostic_summary`：脱敏环境/工具链/工作区路径摘要 |
 | `dev_tag.rs` | Development 子域标签：`tags_for_tool_name`、`suggest_dev_tags_for_workspace`（供 `build_tools_with_options` 过滤） |
@@ -287,6 +288,7 @@ flowchart LR
 - **`web_search.rs`**：`reqwest::blocking` + `serde` 调用 Brave Web Search 或 Tavily；Key 与 `web_search_provider` 来自 `AgentConfig`。Web 路径在 `tool_registry` 中登记为 `WebSearchSpawnTimeout`（`spawn_blocking` + 超时）。
 - **`http_fetch.rs`**：`http_fetch`（阻塞 GET/HEAD）与 `http_request`（阻塞 POST/PUT/PATCH/DELETE + 可选 JSON body）；共用 `redirect::Policy` 记录重定向跳数与响应截断。二者都要求 URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**；其中 `http_fetch` 在 TUI、以及携带 `approval_session_id` 的 Web 流式会话中，对未匹配前缀可走审批白名单，而 `http_request` 默认仅白名单前缀放行（更保守）。
 - **`command.rs`**：命令白名单 + 超时 + 输出截断；配合 `allowed_commands` 与工作区路径限制。
+- **`package_query.rs`**：Linux 包查询（`dpkg-query` / `rpm`）只读封装，统一返回安装状态、版本与来源字段，不执行安装/卸载。
 - **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）。
 - **`file.rs`**：工作区内创建/覆盖/复制/移动文件；`resolve_for_read` / `resolve_for_write` 与祖先 symlink 校验是安全边界的关键；`copy_file` / `move_file` 仅针对常规文件，`overwrite` 控制目标已存在时的覆盖策略；`hash_file` 仅对常规文件流式哈希（`sha256` / `sha512` / `blake3`），可选 `max_bytes` 前缀模式。
 - **`schedule.rs`**：提醒/日程；以 JSON 持久化到 `<working_dir>/.crabmate/reminders.json` 与 `events.json`。
