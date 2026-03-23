@@ -42,7 +42,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tower::ServiceBuilder;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
-use types::{Message, messages_chat_seed};
+use types::{CommandApprovalDecision, Message, messages_chat_seed};
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
 /// `cfg` 建议使用 [`Arc`] 共享（与进程内 Web 服务状态一致），以便工具在 `spawn_blocking` 路径中复用同一份配置而不反复深拷贝。
@@ -67,6 +67,7 @@ pub async fn run_agent_turn(
     no_stream: bool,
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
+    web_tool_ctx: Option<&tool_registry::WebToolRuntime>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut loop_params = agent::agent_turn::RunLoopParams {
         client,
@@ -79,7 +80,10 @@ pub async fn run_agent_turn(
         workspace_is_set,
         no_stream,
         cancel: cancel.as_deref(),
-        mode: agent::agent_turn::AgentRunMode::Web { render_to_terminal },
+        mode: agent::agent_turn::AgentRunMode::Web {
+            render_to_terminal,
+            web_tool_ctx,
+        },
         per_flight,
         tui_messages_sync: None,
     };
@@ -113,6 +117,9 @@ pub(crate) struct AppState {
     conversation_store: std::sync::Arc<tokio::sync::RwLock<HashMap<String, ConversationEntry>>>,
     /// 新会话 ID 递增计数器（仅用于生成默认 conversation_id）。
     conversation_id_counter: std::sync::Arc<AtomicU64>,
+    /// Web 流式审批会话 -> 决策通道。
+    approval_sessions:
+        std::sync::Arc<tokio::sync::RwLock<HashMap<String, mpsc::Sender<CommandApprovalDecision>>>>,
 }
 
 impl AppState {
@@ -190,6 +197,34 @@ struct ChatRequestBody {
     message: String,
     #[serde(default)]
     conversation_id: Option<String>,
+    approval_session_id: Option<String>,
+    #[serde(default)]
+    conversation_id: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct ChatApprovalRequestBody {
+    approval_session_id: String,
+    decision: String,
+}
+
+#[derive(serde::Serialize)]
+struct ChatApprovalResponseBody {
+    ok: bool,
+}
+
+fn normalize_approval_session_id(raw: &str) -> Option<String> {
+    let s = raw.trim();
+    if s.is_empty() || s.len() > 128 {
+        return None;
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
+    {
+        return None;
+    }
+    Some(s.to_string())
 }
 
 #[derive(serde::Serialize)]
@@ -674,6 +709,55 @@ async fn chat_handler(
     }))
 }
 
+async fn chat_approval_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatApprovalRequestBody>,
+) -> Result<Json<ChatApprovalResponseBody>, (StatusCode, Json<ApiError>)> {
+    let session_id = normalize_approval_session_id(&body.approval_session_id).ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(ApiError {
+            code: "INVALID_APPROVAL_SESSION_ID",
+            message: "approval_session_id 非法或为空".to_string(),
+        }),
+    ))?;
+    let decision = match body.decision.trim().to_ascii_lowercase().as_str() {
+        "deny" => CommandApprovalDecision::Deny,
+        "allow_once" => CommandApprovalDecision::AllowOnce,
+        "allow_always" => CommandApprovalDecision::AllowAlways,
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_APPROVAL_DECISION",
+                    message: "decision 仅支持 deny / allow_once / allow_always".to_string(),
+                }),
+            ));
+        }
+    };
+    let tx = {
+        let guard = state.approval_sessions.read().await;
+        guard.get(&session_id).cloned()
+    }
+    .ok_or((
+        StatusCode::NOT_FOUND,
+        Json(ApiError {
+            code: "APPROVAL_SESSION_NOT_FOUND",
+            message: "审批会话不存在或已结束".to_string(),
+        }),
+    ))?;
+    if tx.send(decision).await.is_err() {
+        state.approval_sessions.write().await.remove(&session_id);
+        return Err((
+            StatusCode::GONE,
+            Json(ApiError {
+                code: "APPROVAL_SESSION_CLOSED",
+                message: "审批会话已关闭".to_string(),
+            }),
+        ));
+    }
+    Ok(Json(ChatApprovalResponseBody { ok: true }))
+}
+
 /// 流式 chat：返回 SSE，每个 event 的 data 为一段 content delta（或结束时一条 error JSON）
 async fn chat_stream_handler(
     State(state): State<Arc<AppState>>,
@@ -703,6 +787,29 @@ async fn chat_stream_handler(
     let messages = build_messages_for_turn(&state, &conversation_id, msg).await;
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
     let workspace_is_set = state.workspace_is_set().await;
+    let approval_session_id = match body.approval_session_id.as_deref() {
+        Some(v) => Some(normalize_approval_session_id(v).ok_or((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_APPROVAL_SESSION_ID",
+                message: "approval_session_id 非法或为空".to_string(),
+            }),
+        ))?),
+        None => None,
+    };
+    let mut web_approval_session = None;
+    if let Some(session_id) = approval_session_id.as_ref() {
+        let (approval_tx, approval_rx) = mpsc::channel::<CommandApprovalDecision>(8);
+        state
+            .approval_sessions
+            .write()
+            .await
+            .insert(session_id.clone(), approval_tx);
+        web_approval_session = Some(chat_job_queue::WebApprovalSession {
+            session_id: session_id.clone(),
+            approval_rx,
+        });
+    }
     let job_id = state.chat_queue.next_job_id();
     let (tx, rx) = mpsc::channel::<String>(1024);
     debug!(
@@ -721,7 +828,11 @@ async fn chat_stream_handler(
         work_dir,
         workspace_is_set,
         tx,
+        web_approval_session,
     ) {
+        if let Some(session_id) = approval_session_id {
+            state.approval_sessions.write().await.remove(&session_id);
+        }
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ApiError {
@@ -918,12 +1029,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             chat_queue,
             conversation_store: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
+            approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         });
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
         let uploads_dir_for_static = uploads_dir.clone();
         let mut protected_api = Router::new()
             .route("/chat", post(chat_handler))
             .route("/chat/stream", post(chat_stream_handler))
+            .route("/chat/approval", post(chat_approval_handler))
             .route("/upload", post(upload_handler))
             .route("/uploads/delete", post(delete_uploads_handler))
             .route(

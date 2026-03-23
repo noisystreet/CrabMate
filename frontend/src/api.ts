@@ -308,6 +308,12 @@ export interface ToolResultInfo {
   stderr?: string
 }
 
+export interface CommandApprovalRequestInfo {
+  command: string
+  args: string
+  allowlistKey?: string
+}
+
 /** 在工作区内搜索文件内容（基于后端 grep 工具），path 为空则从工作区根目录开始；否则从指定目录递归搜索 */
 export async function searchWorkspace(body: WorkspaceSearchRequest): Promise<WorkspaceSearchResponse> {
   return request<WorkspaceSearchResponse>('/workspace/search', {
@@ -467,6 +473,11 @@ type SseControlPayload = {
   }
   /** 分阶段规划聊天区分隔线：`true` 短、`false` 长 */
   chat_ui_separator?: boolean
+  command_approval_request?: {
+    command?: string
+    args?: string
+    allowlist_key?: string
+  }
 }
 
 /** 解析单条 `data:` 合并后的字符串：若为控制面 JSON 则调用 callbacks 并返回 `stop` | `handled`；否则返回 `plain`（由调用方按正文 delta 处理）。 */
@@ -479,6 +490,7 @@ function tryDispatchSseControlPayload(
     onToolStatusChange?: (running: boolean) => void
     onParsingToolCallsChange?: (parsing: boolean) => void
     onToolResult?: (info: ToolResultInfo) => void
+    onCommandApprovalRequest?: (info: CommandApprovalRequestInfo) => void
     onPlanRequired?: () => void
     onStagedPlanStarted?: (info: { planId: string; totalSteps: number }) => void
     onStagedPlanStepStarted?: (info: {
@@ -585,6 +597,14 @@ function tryDispatchSseControlPayload(
       })
       return 'handled'
     }
+    if (parsed.command_approval_request != null) {
+      callbacks.onCommandApprovalRequest?.({
+        command: parsed.command_approval_request.command || '',
+        args: parsed.command_approval_request.args || '',
+        allowlistKey: parsed.command_approval_request.allowlist_key || undefined,
+      })
+      return 'handled'
+    }
     if (
       typeof parsed.staged_plan_notice === 'string' ||
       parsed.staged_plan_notice_clear === true
@@ -614,6 +634,7 @@ export async function sendChatStream(
     /** 模型正在流式解析 tool_calls（选工具 / 拼参数） */
     onParsingToolCallsChange?: (parsing: boolean) => void
     onToolResult?: (info: ToolResultInfo) => void
+    onCommandApprovalRequest?: (info: CommandApprovalRequestInfo) => void
     /** 预留：后端 `plan_required`（如 PER 结构化规划提示） */
     onPlanRequired?: () => void
     onStagedPlanStarted?: (info: { planId: string; totalSteps: number }) => void
@@ -641,16 +662,23 @@ export async function sendChatStream(
     /** 服务端返回会话 ID（首轮未传 conversation_id 时由后端生成） */
     onConversationId?: (id: string) => void
   },
+  approvalSessionId?: string,
   signal?: AbortSignal,
   conversationId?: string,
 ): Promise<void> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const headers = new Headers({ 'Content-Type': 'application/json' })
   const bearerToken = getStoredWebApiBearerToken()
-  if (bearerToken) headers.Authorization = `Bearer ${bearerToken}`
+  if (bearerToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${bearerToken}`)
+  }
   const r = await fetch(`${base}/chat/stream`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(conversationId ? { message, conversation_id: conversationId } : { message }),
+    body: JSON.stringify({
+      message,
+      conversation_id: conversationId || undefined,
+      approval_session_id: approvalSessionId || undefined,
+    }),
     signal,
   })
   if (!r.ok) {
@@ -700,4 +728,19 @@ export async function sendChatStream(
     }
     callbacks.onError(e instanceof Error ? e.message : '流式读取失败')
   }
+}
+
+export async function submitChatApproval(
+  approvalSessionId: string,
+  decision: 'deny' | 'allow_once' | 'allow_always',
+): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>('/chat/approval', {
+    method: 'POST',
+    timeoutMs: 15000,
+    retries: 0,
+    json: {
+      approval_session_id: approvalSessionId,
+      decision,
+    },
+  })
 }
