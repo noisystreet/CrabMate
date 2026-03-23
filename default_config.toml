@@ -79,6 +79,14 @@ plan_rewrite_max_attempts = 2
 staged_plan_execution = true
 # 规划轮追加的 system 全文；留空则使用内置默认（见 agent_turn.rs）
 # staged_plan_phase_instruction = """……"""
+# Cursor-like 规则注入：启用后自动读取 cursor_rules_dir 下的 *.mdc，并附加到 system_prompt 后
+cursor_rules_enabled = false
+# 规则目录（相对路径相对进程当前目录）
+cursor_rules_dir = ".cursor/rules"
+# 是否额外附加工作区根 AGENTS.md
+cursor_rules_include_agents_md = true
+# 规则附加段最大字符数（超出截断并附提示）
+cursor_rules_max_chars = 48000
 # 系统提示词（可改为 system_prompt_file = "path/to/prompt.txt" 从文件加载）
 system_prompt = """
 你是乐于助人的助手。若需要当前时间、数学计算或查看系统/文件信息，请使用提供的工具。

@@ -37,6 +37,10 @@
 # plan_rewrite_max_attempts = 2
 # staged_plan_execution = false   # true：先无工具产出 agent_reply_plan，再按步执行
 # staged_plan_phase_instruction = """……"""  # 可选；空则用内置规划轮说明
+# cursor_rules_enabled = false    # true：自动拼接 cursor_rules_dir/*.mdc 到 system_prompt
+# cursor_rules_dir = ".cursor/rules"
+# cursor_rules_include_agents_md = true
+# cursor_rules_max_chars = 48000
 # system_prompt = "你是专业的助手，回答简洁。"
 # system_prompt_file = "system_prompt.txt"
 model = "deepseek-chat"
