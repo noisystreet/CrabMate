@@ -6,4 +6,7 @@ pub mod line;
 pub mod protocol;
 
 pub use line::{AgentLineKind, classify_agent_sse_line};
-pub use protocol::{CommandApprovalBody, SseErrorBody, SsePayload, ToolResultBody, encode_message};
+pub use protocol::{
+    CommandApprovalBody, SseErrorBody, SsePayload, StagedPlanFinishedBody, StagedPlanStartedBody,
+    StagedPlanStepFinishedBody, StagedPlanStepStartedBody, ToolResultBody, encode_message,
+};
