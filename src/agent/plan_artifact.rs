@@ -97,7 +97,7 @@ fn collect_json_candidates(content: &str) -> Vec<String> {
 }
 
 /// 首个 \`\`\` 代码围栏之前的正文（模型常在此写任务概括），与 JSON 块合读作「目标」。
-fn prose_before_first_fence(content: &str) -> String {
+pub(crate) fn prose_before_first_fence(content: &str) -> String {
     if !content.contains("```") {
         return String::new();
     }
@@ -148,17 +148,103 @@ pub fn format_plan_steps_markdown_for_staged_queue(
     out.trim_end().to_string()
 }
 
+/// 模型常把「以下是任务拆解」写在首步 `description`，围栏前只有开场白；隐藏 JSON 时该句会随步骤列表一并从主气泡消失。若围栏前 goal 未同时含「以下」与「拆解」，则从首步描述里取**一行**简短引导拼到 goal 前。
+pub(crate) fn augment_agent_reply_plan_goal_for_display(
+    goal: &str,
+    plan: &AgentReplyPlanV1,
+) -> String {
+    let goal = goal.trim();
+    let lead = breakdown_lead_line_from_first_step_description(plan);
+    let Some(lead) = lead else {
+        return goal.to_string();
+    };
+    if goal.contains("以下") && goal.contains("拆解") {
+        return goal.to_string();
+    }
+    if goal.is_empty() {
+        return lead;
+    }
+    if goal.contains(&lead) {
+        return goal.to_string();
+    }
+    format!("{lead}\n\n{goal}")
+}
+
+fn breakdown_lead_line_from_first_step_description(plan: &AgentReplyPlanV1) -> Option<String> {
+    let st = plan.steps.first()?;
+    let desc = crate::text_sanitize::naturalize_plan_step_description(&st.description);
+    let desc = desc.trim();
+    if desc.is_empty() {
+        return None;
+    }
+    for line in desc.lines() {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if let Some(frag) = extract_task_breakdown_lead_fragment(t) {
+            return Some(frag);
+        }
+    }
+    None
+}
+
+/// 从首步描述的一行里取出「以下是…拆解」类短引导，在句末标点或冒号处截断，避免把整步描述拼进主气泡。
+fn extract_task_breakdown_lead_fragment(line: &str) -> Option<String> {
+    let t = line.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let candidate = t.contains("以下是任务拆解")
+        || (t.contains("以下") && t.contains("拆解") && t.chars().count() <= 72);
+    if !candidate {
+        return None;
+    }
+    let start = t.find("以下")?;
+    let tail = t[start..].trim_start();
+    let clipped = clip_task_breakdown_lead_at_punct(tail);
+    let clipped = clipped.trim();
+    if clipped.chars().count() < 4 {
+        return None;
+    }
+    Some(cap_display_fragment(clipped, 80))
+}
+
+fn clip_task_breakdown_lead_at_punct(s: &str) -> &str {
+    for (i, c) in s.char_indices() {
+        if matches!(c, '。' | '！' | '？') {
+            return &s[..i + c.len_utf8()];
+        }
+    }
+    for (i, c) in s.char_indices() {
+        if c == '：' {
+            return &s[..i + c.len_utf8()];
+        }
+    }
+    s
+}
+
+fn cap_display_fragment(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        let mut out: String = s.chars().take(max_chars).collect();
+        out.push('…');
+        out
+    }
+}
+
 /// 若 `content` 中含合法 `agent_reply_plan` v1，返回**简单 Markdown 有序列表**（可选围栏前自然语言段落；每步一行 `1. \`id\`: description`），不含原始 JSON。
 /// 仅影响展示层；`Message.content` 仍为原文以便服务端继续解析。
 pub fn format_agent_reply_plan_for_display(content: &str) -> Option<String> {
     let plan = parse_agent_reply_plan_v1(content).ok()?;
     let raw_goal = prose_before_first_fence(content);
     let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
-    let goal_t = goal.trim();
+    let goal_t = augment_agent_reply_plan_goal_for_display(goal.trim(), &plan);
     let steps = format_plan_steps_markdown(&plan);
     let mut out = String::new();
     if !goal_t.is_empty() {
-        out.push_str(goal_t);
+        out.push_str(&goal_t);
         out.push_str("\n\n");
     }
     out.push_str(&steps);
@@ -187,9 +273,14 @@ fn fence_inner_should_hide_agent_reply_plan_json(inner: &str) -> bool {
     if parse_agent_reply_plan_v1(&body).is_ok() {
         return true;
     }
-    // 拒绝解析但明显是 agent_reply_plan 形状的 JSON，展示层也不打印原文
     let b = body.trim();
-    b.contains("\"agent_reply_plan\"") && b.contains("\"steps\"")
+    // 流式输出时半截 JSON 往往已含 "agent_reply_plan" / "steps" 子串；若仅凭子串就隐去围栏，
+    // 展示层会在 `assistant_markdown_source_for_display` 里得到空串，用户看不到围栏前的说明句。
+    // 仅当围栏内已是**语法闭合**的 JSON 值、却仍不能通过 v1 规划校验时，再按形状隐去原文。
+    if !b.contains("\"agent_reply_plan\"") || !b.contains("\"steps\"") {
+        return false;
+    }
+    serde_json::from_str::<serde_json::Value>(b).is_ok()
 }
 
 /// 从展示用正文中移除含 `agent_reply_plan` 的 Markdown 代码围栏块（``` … ```），
@@ -235,11 +326,40 @@ mod tests {
     }
 
     #[test]
+    fn strip_fence_keeps_streaming_incomplete_plan_inside_fence() {
+        let partial =
+            r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x""#;
+        let content = format!("先说明一句。\n```json\n{partial}");
+        let s = strip_agent_reply_plan_fence_blocks_for_display(&content);
+        assert!(s.contains("先说明一句"));
+        assert!(
+            s.contains("agent_reply_plan"),
+            "语法未闭合时不应剥掉围栏内流式正文"
+        );
+    }
+
+    #[test]
     fn parses_fenced_json() {
         let content = format!("说明\n```json\n{}\n```\n", sample_json());
         let p = parse_agent_reply_plan_v1(&content).unwrap();
         assert_eq!(p.steps.len(), 1);
         assert_eq!(p.steps[0].id, "a");
+    }
+
+    #[test]
+    fn augment_goal_prepends_breakdown_lead_when_only_in_first_step() {
+        let step_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"以下是任务拆解。创建 hello.cpp"}]}"#;
+        let content = format!("让我先规划一下任务步骤：\n```json\n{step_json}\n```\n");
+        let plan = parse_agent_reply_plan_v1(&content).unwrap();
+        let raw = prose_before_first_fence(&content);
+        let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
+        let out = augment_agent_reply_plan_goal_for_display(goal.trim(), &plan);
+        assert!(
+            out.contains("以下是任务拆解"),
+            "应拼回首步里的拆解引导句: {}",
+            out
+        );
+        assert!(out.contains("让我先规划"), "{}", out);
     }
 
     #[test]

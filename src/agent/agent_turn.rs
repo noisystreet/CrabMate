@@ -40,6 +40,30 @@ async fn tui_push_messages_snapshot(
     let _ = tx.send(messages.to_vec()).await;
 }
 
+/// TUI（及与 TUI 同形预置占位的会话）在提交前会追加一条 `content` 为空的 `assistant` 供流式写入。
+/// Agent 侧若再 `push` 一条同轮助手，会得到 `[…, 空助手, 真助手]`，与 UI 仅一条气泡不对齐，`sync_merge` 后表现为首轮/规划轮输出被「挤没」或错乱。
+/// 对**末尾**且仍为空、无 `tool_calls` 的助手占位则**就地替换**。
+fn push_assistant_merging_trailing_empty_placeholder(messages: &mut Vec<Message>, msg: Message) {
+    if msg.role != "assistant" {
+        messages.push(msg);
+        return;
+    }
+    if let Some(last) = messages.last_mut()
+        && last.role == "assistant"
+        && last.tool_calls.is_none()
+        && last
+            .content
+            .as_deref()
+            .map(|s| s.trim())
+            .unwrap_or("")
+            .is_empty()
+    {
+        *last = msg;
+        return;
+    }
+    messages.push(msg);
+}
+
 /// 规划轮默认 system 追加（可被 `[agent] staged_plan_phase_instruction` 覆盖）。
 const STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT: &str = r#"【分阶段规划模式 · 规划轮】请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。
 在回复正文中必须用 Markdown 代码围栏（语言标记为 json）给出一个合法 JSON 对象，且满足：
@@ -605,7 +629,7 @@ async fn run_agent_outer_loop(
             p.messages.len(),
             crate::redact::assistant_message_preview_for_log(&msg)
         );
-        p.messages.push(msg.clone());
+        push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
         tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         if finish_reason == USER_CANCELLED_FINISH_REASON {
             break;
@@ -762,7 +786,7 @@ async fn run_staged_plan_then_execute_steps(
         return Ok(());
     }
 
-    p.messages.push(msg.clone());
+    push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
     tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
 
     let content = msg.content.as_deref().unwrap_or("");
@@ -920,5 +944,47 @@ pub(crate) async fn run_agent_turn_common(
         run_staged_plan_then_execute_steps(p, &mut per_coord).await
     } else {
         run_agent_outer_loop(p, &mut per_coord).await
+    }
+}
+
+#[cfg(test)]
+mod push_assistant_merge_tests {
+    use super::push_assistant_merging_trailing_empty_placeholder;
+    use crate::types::Message;
+
+    fn empty_assistant() -> Message {
+        Message {
+            role: "assistant".to_string(),
+            content: Some(String::new()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    fn assistant_body(s: &str) -> Message {
+        Message {
+            role: "assistant".to_string(),
+            content: Some(s.to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn replaces_trailing_empty_assistant_placeholder() {
+        let mut m = vec![Message::user_only("hi"), empty_assistant()];
+        push_assistant_merging_trailing_empty_placeholder(&mut m, assistant_body("plan"));
+        assert_eq!(m.len(), 2);
+        assert_eq!(m[1].content.as_deref(), Some("plan"));
+    }
+
+    #[test]
+    fn pushes_when_last_assistant_has_content() {
+        let mut m = vec![Message::user_only("hi"), assistant_body("first")];
+        push_assistant_merging_trailing_empty_placeholder(&mut m, assistant_body("second"));
+        assert_eq!(m.len(), 3);
+        assert_eq!(m[2].content.as_deref(), Some("second"));
     }
 }

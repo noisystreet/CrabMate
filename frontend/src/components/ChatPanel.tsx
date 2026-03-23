@@ -10,6 +10,7 @@ import type { Components } from 'react-markdown'
 import { Virtuoso } from 'react-virtuoso'
 import {
   SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT,
+  assistantStreamPlainDisplay,
   formatStagedStepUserForChat,
   stripAgentReplyPlanFenceBlocksForDisplay,
   tryFormatAgentReplyPlanForDisplay,
@@ -84,15 +85,25 @@ function preprocessLatexBlocks(text: string): string {
 
 /** 尝试为缺少换行的回答自动插入一些换行，提升可读性（尤其是中文长句和编号列表） */
 function formatAssistantText(raw: string): string {
-  const planText = tryFormatAgentReplyPlanForDisplay(raw)
-  if (!SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT && planText !== null) {
-    return ''
+  let work = raw
+
+  // 分阶段规划：同一条 Web 流式 assistant 会拼接「规划轮 JSON + 各步正文」。主聊天区不重复展示规划时，
+  // 不能因检测到 v1 规划就把**整段**置空，须剥掉规划 ``` 块后若仍有正文则继续展示（否则后续步骤覆盖掉用户已看到的规划外输出）。
+  if (!SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT) {
+    for (let i = 0; i < 4; i++) {
+      if (tryFormatAgentReplyPlanForDisplay(work) === null) break
+      const stripped = stripAgentReplyPlanFenceBlocksForDisplay(work)
+      const remainder = stripped.trim()
+      if (!remainder || remainder === work.trim()) {
+        return ''
+      }
+      work = stripped
+    }
   }
-  const stripped = stripAgentReplyPlanFenceBlocksForDisplay(raw)
+
+  const planText = tryFormatAgentReplyPlanForDisplay(work)
+  const stripped = stripAgentReplyPlanFenceBlocksForDisplay(work)
   const planFromStripped = tryFormatAgentReplyPlanForDisplay(stripped)
-  if (!SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT && planFromStripped !== null) {
-    return ''
-  }
   const source = planFromStripped ?? planText ?? stripped
   // 先做 LaTeX 预处理
   let s = preprocessLatexBlocks(source.replace(/\\n/g, '\n'))
@@ -420,7 +431,8 @@ export function ChatPanel({
     deltaBufferRef.current = ''
     streamingTextRef.current += chunk
     if (streamingSpanRef.current) {
-      streamingSpanRef.current.textContent = streamingTextRef.current || '\u00A0'
+      const display = assistantStreamPlainDisplay(streamingTextRef.current)
+      streamingSpanRef.current.textContent = display || '\u00A0'
     }
     scheduleScrollToBottom()
   }, [scheduleScrollToBottom])
@@ -1210,7 +1222,8 @@ export function ChatPanel({
                         if (!el) return
                         if (m.id === streamingMsgIdRef.current) {
                           streamingSpanRef.current = el
-                          el.textContent = streamingTextRef.current || '\u00A0'
+                          el.textContent =
+                            assistantStreamPlainDisplay(streamingTextRef.current) || '\u00A0'
                         }
                       }}
                       className="whitespace-pre-wrap break-words"
