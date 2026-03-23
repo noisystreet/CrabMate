@@ -142,6 +142,12 @@ mod tests {
     }
 
     #[test]
+    fn package_query_is_general() {
+        let t = tags_for_tool_name("package_query");
+        assert!(t.contains(&GENERAL));
+    }
+
+    #[test]
     fn suggest_tags_includes_python_when_pyproject() {
         let dir = std::env::temp_dir().join(format!("crabmate_dev_tag_py_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
