@@ -32,8 +32,10 @@ use axum::{
 use config::cli::{init_logging, parse_args};
 use futures_util::StreamExt;
 use log::{debug, error, info};
+use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -86,6 +88,16 @@ pub async fn run_agent_turn(
 
 // ---------- Web 服务 ----------
 
+const CONVERSATION_ID_MAX_LEN: usize = 128;
+const CONVERSATION_STORE_MAX_ENTRIES: usize = 512;
+const CONVERSATION_STORE_TTL: Duration = Duration::from_secs(24 * 3600);
+
+#[derive(Clone)]
+struct ConversationEntry {
+    messages: Vec<Message>,
+    updated_at: std::time::Instant,
+}
+
 #[derive(Clone)]
 pub(crate) struct AppState {
     cfg: Arc<config::AgentConfig>,
@@ -97,6 +109,10 @@ pub(crate) struct AppState {
     uploads_dir: std::path::PathBuf,
     /// `/chat` / `/chat/stream` 进程内任务队列（有界排队 + 并发上限）
     chat_queue: chat_job_queue::ChatJobQueue,
+    /// 基于 `conversation_id` 的进程内会话存储（PR-1：内存实现；后续可替换 Redis/DB）。
+    conversation_store: std::sync::Arc<tokio::sync::RwLock<HashMap<String, ConversationEntry>>>,
+    /// 新会话 ID 递增计数器（仅用于生成默认 conversation_id）。
+    conversation_id_counter: std::sync::Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -115,11 +131,65 @@ impl AppState {
         let guard = self.workspace_override.read().await;
         guard.is_some()
     }
+
+    fn next_conversation_id(&self) -> String {
+        let n = self.conversation_id_counter.fetch_add(1, Ordering::Relaxed);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        format!("conv_{}_{}", ts, n)
+    }
+
+    async fn load_conversation_messages(&self, conversation_id: &str) -> Option<Vec<Message>> {
+        let mut guard = self.conversation_store.write().await;
+        let entry = guard.get_mut(conversation_id)?;
+        if entry.updated_at.elapsed() > CONVERSATION_STORE_TTL {
+            guard.remove(conversation_id);
+            return None;
+        }
+        entry.updated_at = std::time::Instant::now();
+        Some(entry.messages.clone())
+    }
+
+    pub(crate) async fn save_conversation_messages(
+        &self,
+        conversation_id: String,
+        messages: Vec<Message>,
+    ) {
+        let mut guard = self.conversation_store.write().await;
+        let now = std::time::Instant::now();
+        guard.insert(
+            conversation_id,
+            ConversationEntry {
+                messages,
+                updated_at: now,
+            },
+        );
+        guard.retain(|_, v| now.duration_since(v.updated_at) <= CONVERSATION_STORE_TTL);
+        if guard.len() > CONVERSATION_STORE_MAX_ENTRIES {
+            let mut order: Vec<(String, std::time::Instant)> = guard
+                .iter()
+                .map(|(k, v)| (k.clone(), v.updated_at))
+                .collect();
+            order.sort_by_key(|(_, t)| *t);
+            let to_drop = guard.len() - CONVERSATION_STORE_MAX_ENTRIES;
+            for (k, _) in order.into_iter().take(to_drop) {
+                guard.remove(&k);
+            }
+        }
+    }
+
+    async fn conversation_count(&self) -> usize {
+        self.conversation_store.read().await.len()
+    }
 }
 
 #[derive(serde::Deserialize)]
 struct ChatRequestBody {
     message: String,
+    #[serde(default)]
+    conversation_id: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -423,6 +493,7 @@ async fn upload_handler(
 #[derive(serde::Serialize)]
 struct ChatResponseBody {
     reply: String,
+    conversation_id: String,
 }
 
 /// 统一的 API 错误结构：包含错误码与面向用户的友好提示
@@ -432,6 +503,37 @@ struct ApiError {
     code: &'static str,
     /// 面向用户展示的友好错误信息
     message: String,
+}
+
+fn normalize_client_conversation_id(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(id) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    if id.len() > CONVERSATION_ID_MAX_LEN {
+        return Err(format!(
+            "conversation_id 过长（最多 {} 个字符）",
+            CONVERSATION_ID_MAX_LEN
+        ));
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
+    {
+        return Err("conversation_id 仅允许字母、数字、- _ . :".to_string());
+    }
+    Ok(Some(id.to_string()))
+}
+
+async fn build_messages_for_turn(
+    state: &Arc<AppState>,
+    conversation_id: &str,
+    user_msg: &str,
+) -> Vec<Message> {
+    if let Some(mut messages) = state.load_conversation_messages(conversation_id).await {
+        messages.push(Message::user_only(user_msg.to_string()));
+        return messages;
+    }
+    messages_chat_seed(&state.cfg.system_prompt, user_msg)
 }
 
 fn is_valid_bearer_header(
@@ -487,7 +589,18 @@ async fn chat_handler(
             }),
         ));
     }
-    let messages = messages_chat_seed(&state.cfg.system_prompt, msg);
+    let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CONVERSATION_ID",
+                    message: e,
+                }),
+            )
+        })?
+        .unwrap_or_else(|| state.next_conversation_id());
+    let messages = build_messages_for_turn(&state, &conversation_id, msg).await;
     let work_dir_str = state.effective_workspace_path().await;
     let work_dir = work_dir_str.clone();
     let workspace_is_set = state.workspace_is_set().await;
@@ -506,6 +619,7 @@ async fn chat_handler(
         .try_submit_json(
             job_id,
             state.clone(),
+            conversation_id.clone(),
             messages,
             std::path::PathBuf::from(work_dir),
             workspace_is_set,
@@ -554,17 +668,17 @@ async fn chat_handler(
         .and_then(|m| m.content.as_deref())
         .unwrap_or("")
         .to_string();
-    Ok(Json(ChatResponseBody { reply }))
+    Ok(Json(ChatResponseBody {
+        reply,
+        conversation_id,
+    }))
 }
 
 /// 流式 chat：返回 SSE，每个 event 的 data 为一段 content delta（或结束时一条 error JSON）
 async fn chat_stream_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ChatRequestBody>,
-) -> Result<
-    Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>>,
-    (StatusCode, Json<ApiError>),
-> {
+) -> Result<Response, (StatusCode, Json<ApiError>)> {
     let msg = body.message.trim();
     if msg.is_empty() {
         return Err((
@@ -575,7 +689,18 @@ async fn chat_stream_handler(
             }),
         ));
     }
-    let messages = messages_chat_seed(&state.cfg.system_prompt, msg);
+    let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CONVERSATION_ID",
+                    message: e,
+                }),
+            )
+        })?
+        .unwrap_or_else(|| state.next_conversation_id());
+    let messages = build_messages_for_turn(&state, &conversation_id, msg).await;
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
     let workspace_is_set = state.workspace_is_set().await;
     let job_id = state.chat_queue.next_job_id();
@@ -591,6 +716,7 @@ async fn chat_stream_handler(
     if let Err(e) = state.chat_queue.try_submit_stream(
         job_id,
         state.clone(),
+        conversation_id.clone(),
         messages,
         work_dir,
         workspace_is_set,
@@ -607,8 +733,15 @@ async fn chat_stream_handler(
             }),
         ));
     }
-    let stream = ReceiverStream::new(rx).map(|s| Ok(Event::default().data(s)));
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    let stream = ReceiverStream::new(rx)
+        .map(|s| Ok::<Event, std::convert::Infallible>(Event::default().data(s)));
+    let mut resp = Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response();
+    if let Ok(v) = HeaderValue::from_str(&conversation_id) {
+        resp.headers_mut().insert("x-conversation-id", v);
+    }
+    Ok(resp)
 }
 
 async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -652,9 +785,12 @@ struct StatusResponse {
     per_active_jobs: Vec<chat_job_queue::PerFlightStatusEntry>,
     /// Web `POST /workspace` 允许的工作区根目录个数（未配置 `workspace_allowed_roots` 时为 1，即仅 `run_command_working_dir`）。
     workspace_allowed_roots_count: usize,
+    /// 当前内存会话存储中的会话数量（按 `conversation_id`）。
+    conversation_store_entries: usize,
 }
 
 async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let conversation_store_entries = state.conversation_count().await;
     let tool_names: Vec<String> = state
         .tools
         .iter()
@@ -686,6 +822,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         chat_queue_recent_jobs: state.chat_queue.recent_jobs(),
         per_active_jobs: state.chat_queue.active_per_jobs(),
         workspace_allowed_roots_count: state.cfg.workspace_allowed_roots.len(),
+        conversation_store_entries,
     })
 }
 
@@ -779,6 +916,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
             uploads_dir: uploads_dir.clone(),
             chat_queue,
+            conversation_store: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
         });
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
         let uploads_dir_for_static = uploads_dir.clone();
@@ -916,3 +1055,21 @@ pub use tool_registry::{
 };
 pub use tools::dev_tag;
 pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options};
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_client_conversation_id;
+
+    #[test]
+    fn normalize_conversation_id_accepts_expected_charset() {
+        let got = normalize_client_conversation_id(Some("conv_abc-123:xyz.test"))
+            .expect("id should parse");
+        assert_eq!(got.as_deref(), Some("conv_abc-123:xyz.test"));
+    }
+
+    #[test]
+    fn normalize_conversation_id_rejects_invalid_chars() {
+        let err = normalize_client_conversation_id(Some("abc/def")).expect_err("should reject /");
+        assert!(err.contains("仅允许"));
+    }
+}
