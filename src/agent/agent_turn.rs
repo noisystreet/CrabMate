@@ -31,7 +31,19 @@ async fn tui_push_messages_snapshot(
     let Some(tx) = sync else {
         return;
     };
-    let _ = tx.send(messages.to_vec()).await;
+    if tx.send(messages.to_vec()).await.is_err() {
+        debug!(target: "crabmate", "TUI 消息快照同步失败（接收端已关闭）");
+    }
+}
+
+async fn send_sse_line(tx: &mpsc::Sender<String>, line: String, reason: &str) {
+    if tx.send(line).await.is_err() {
+        debug!(
+            target: "crabmate",
+            "SSE 控制帧发送失败（下游已关闭） reason={}",
+            reason
+        );
+    }
 }
 
 /// 规划轮默认 system 追加（可被 `[agent] staged_plan_phase_instruction` 覆盖）。
@@ -64,9 +76,12 @@ fn staged_plan_queue_summary_text(
 
 async fn emit_chat_ui_separator_sse(out: Option<&mpsc::Sender<String>>, short: bool) {
     if let Some(tx) = out {
-        let _ = tx
-            .send(encode_message(SsePayload::ChatUiSeparator { short }))
-            .await;
+        send_sse_line(
+            tx,
+            encode_message(SsePayload::ChatUiSeparator { short }),
+            "chat_ui_separator",
+        )
+        .await;
     }
 }
 
@@ -105,12 +120,12 @@ async fn send_staged_plan_notice(
             crate::runtime::terminal_cli_transcript::print_staged_plan_notice(clear_before, &text);
     }
     if let Some(tx) = out {
-        let _ = tx
-            .send(encode_message(SsePayload::StagedPlanNotice {
-                text,
-                clear_before,
-            }))
-            .await;
+        send_sse_line(
+            tx,
+            encode_message(SsePayload::StagedPlanNotice { text, clear_before }),
+            "staged_plan_notice",
+        )
+        .await;
     }
 }
 
@@ -259,11 +274,12 @@ async fn per_execute_tools_common(
     let mut workspace_changed = false;
 
     if let Some(tx) = out {
-        let _ = tx
-            .send(encode_message(SsePayload::ToolRunning {
-                tool_running: true,
-            }))
-            .await;
+        send_sse_line(
+            tx,
+            encode_message(SsePayload::ToolRunning { tool_running: true }),
+            "tool_running_start",
+        )
+        .await;
     }
 
     for tc in tool_calls {
@@ -347,8 +363,9 @@ async fn per_execute_tools_common(
             } else {
                 Some(parsed.stderr)
             };
-            let _ = tx
-                .send(encode_message(SsePayload::ToolResult {
+            send_sse_line(
+                tx,
+                encode_message(SsePayload::ToolResult {
                     tool_result: ToolResultBody {
                         name: name.clone(),
                         summary: tool_summary,
@@ -359,8 +376,10 @@ async fn per_execute_tools_common(
                         stdout,
                         stderr,
                     },
-                }))
-                .await;
+                }),
+                "tool_result",
+            )
+            .await;
         }
 
         PerCoordinator::append_tool_result_and_reflection(messages, id, result, reflection_inject);
@@ -368,17 +387,23 @@ async fn per_execute_tools_common(
 
     if let Some(tx) = out {
         if matches!(dispatch_mode, ExecuteDispatchMode::Web) && workspace_changed {
-            let _ = tx
-                .send(encode_message(SsePayload::WorkspaceChanged {
+            send_sse_line(
+                tx,
+                encode_message(SsePayload::WorkspaceChanged {
                     workspace_changed: true,
-                }))
-                .await;
-        }
-        let _ = tx
-            .send(encode_message(SsePayload::ToolRunning {
-                tool_running: false,
-            }))
+                }),
+                "workspace_changed",
+            )
             .await;
+        }
+        send_sse_line(
+            tx,
+            encode_message(SsePayload::ToolRunning {
+                tool_running: false,
+            }),
+            "tool_running_end",
+        )
+        .await;
     }
 
     ExecuteToolsBatchOutcome::Finished
@@ -526,12 +551,15 @@ async fn run_agent_outer_loop(
                     f.sync_from_per_coord(per_coord);
                 }
                 if let Some(tx) = p.out {
-                    let _ = tx
-                        .send(encode_message(SsePayload::Error(SseErrorBody {
+                    send_sse_line(
+                        tx,
+                        encode_message(SsePayload::Error(SseErrorBody {
                             error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
                             code: Some("plan_rewrite_exhausted".to_string()),
-                        })))
-                        .await;
+                        })),
+                        "plan_rewrite_exhausted",
+                    )
+                    .await;
                 }
                 break;
             }
@@ -640,12 +668,15 @@ async fn run_staged_plan_then_execute_steps(
 
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         if let Some(tx) = p.out {
-            let _ = tx
-                .send(encode_message(SsePayload::Error(SseErrorBody {
+            send_sse_line(
+                tx,
+                encode_message(SsePayload::Error(SseErrorBody {
                     error: "规划轮不应调用工具；请关闭 staged_plan_execution 或重试。".to_string(),
                     code: Some("staged_plan_tool_calls".to_string()),
-                })))
-                .await;
+                })),
+                "staged_plan_tool_calls",
+            )
+            .await;
         }
         return Ok(());
     }
@@ -658,13 +689,16 @@ async fn run_staged_plan_then_execute_steps(
         Ok(plan_v1) => plan_v1,
         Err(_) => {
             if let Some(tx) = p.out {
-                let _ = tx
-                    .send(encode_message(SsePayload::Error(SseErrorBody {
+                send_sse_line(
+                    tx,
+                    encode_message(SsePayload::Error(SseErrorBody {
                         error: "规划轮未解析出合法的 agent_reply_plan v1（需 ```json 围栏或单对象 JSON）。"
                             .to_string(),
                         code: Some("staged_plan_invalid".to_string()),
-                    })))
-                    .await;
+                    })),
+                    "staged_plan_invalid",
+                )
+                .await;
             }
             return Ok(());
         }

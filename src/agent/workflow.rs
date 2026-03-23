@@ -1066,7 +1066,9 @@ async fn request_approval(
             allowlist_key: None,
         },
     });
-    let _ = out_tx.send(line).await;
+    if out_tx.send(line).await.is_err() {
+        warn!(target: "crabmate", "workflow 审批请求发送失败（下游已关闭）");
+    }
 
     let mut rx_guard = approval_rx.lock().await;
     rx_guard

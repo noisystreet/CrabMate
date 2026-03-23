@@ -20,11 +20,21 @@ use crate::runtime::message_display::assistant_markdown_source_for_display;
 /// 前端/TUI 仍按 UTF-8 拼接，语义与逐 token 发送一致。
 const SSE_STREAM_DELTA_FLUSH_BYTES: usize = 256;
 
+async fn send_out_chunk(tx: &Sender<String>, payload: String, reason: &str) {
+    if tx.send(payload).await.is_err() {
+        debug!(
+            target: "crabmate",
+            "SSE 下发失败（下游已关闭） reason={}",
+            reason
+        );
+    }
+}
+
 async fn flush_sse_delta_buffer(pending: &mut String, tx: Option<&Sender<String>>) {
     if let Some(t) = tx
         && !pending.is_empty()
     {
-        let _ = t.send(std::mem::take(pending)).await;
+        send_out_chunk(t, std::mem::take(pending), "flush_delta_buffer").await;
     }
 }
 
@@ -110,7 +120,7 @@ async fn ingest_sse_data_payload(
         if let Some(tx) = out {
             pending_sse_delta.push_str(s);
             if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
-                let _ = tx.send(std::mem::take(pending_sse_delta)).await;
+                send_out_chunk(tx, std::mem::take(pending_sse_delta), "delta_threshold").await;
             }
         }
     }
@@ -119,13 +129,14 @@ async fn ingest_sse_data_payload(
             *parsing_tool_calls_notified = true;
             if let Some(tx) = out {
                 flush_sse_delta_buffer(pending_sse_delta, Some(tx)).await;
-                let _ = tx
-                    .send(crate::sse::encode_message(
-                        crate::sse::SsePayload::ParsingToolCalls {
-                            parsing_tool_calls: true,
-                        },
-                    ))
-                    .await;
+                send_out_chunk(
+                    tx,
+                    crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
+                        parsing_tool_calls: true,
+                    }),
+                    "parsing_tool_calls_begin",
+                )
+                .await;
             }
         }
         for tc in tcs {
@@ -244,7 +255,7 @@ pub async fn stream_chat(
         if let Some(content) = msg.content.as_ref().filter(|c| !c.is_empty())
             && let Some(tx) = out
         {
-            let _ = tx.send(content.clone()).await;
+            send_out_chunk(tx, content.clone(), "non_stream_content").await;
         }
         if render_to_terminal
             && let Some(ref content_acc) = msg.content
@@ -256,13 +267,14 @@ pub async fn stream_chat(
             && !tcs.is_empty()
             && let Some(tx) = out
         {
-            let _ = tx
-                .send(crate::sse::encode_message(
-                    crate::sse::SsePayload::ParsingToolCalls {
-                        parsing_tool_calls: true,
-                    },
-                ))
-                .await;
+            send_out_chunk(
+                tx,
+                crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
+                    parsing_tool_calls: true,
+                }),
+                "non_stream_parsing_tool_calls",
+            )
+            .await;
         }
         debug!(
             target: "crabmate",

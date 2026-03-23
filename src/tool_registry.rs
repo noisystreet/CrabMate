@@ -403,7 +403,9 @@ async fn execute_run_command_tui(
                         allowlist_key: None,
                     },
                 });
-                let _ = tx.send(line).await;
+                if tx.send(line).await.is_err() {
+                    warn!(target: "crabmate", "命令审批请求发送失败（下游已关闭）");
+                }
             }
             let mut rx_guard = ctx.approval_rx_shared.lock().await;
             rx_guard
@@ -523,7 +525,12 @@ async fn execute_http_fetch_tui(
                         allowlist_key: Some(key.clone()),
                     },
                 });
-                let _ = tx.send(line).await;
+                if tx.send(line).await.is_err() {
+                    warn!(
+                        target: "crabmate",
+                        "http_fetch 审批请求发送失败（下游已关闭）"
+                    );
+                }
             }
             let mut rx_guard = ctx.approval_rx_shared.lock().await;
             rx_guard

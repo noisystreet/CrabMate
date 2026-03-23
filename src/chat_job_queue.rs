@@ -416,7 +416,13 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             code: Some("INTERNAL_ERROR".to_string()),
                         },
                     ));
-                    let _ = sse_tx.send(err_line).await;
+                    if sse_tx.send(err_line).await.is_err() {
+                        debug!(
+                            target: "crabmate",
+                            "chat stream 错误帧发送失败（下游已关闭） job_id={}",
+                            job_id
+                        );
+                    }
                     (false, Some(truncate_chars(&e.to_string(), 120)))
                 }
             };
@@ -464,7 +470,13 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             .await;
             let (ok, err) = match r {
                 Ok(()) => {
-                    let _ = reply_tx.send(Ok(messages));
+                    if reply_tx.send(Ok(messages)).is_err() {
+                        debug!(
+                            target: "crabmate",
+                            "chat json 结果回传失败（接收端已关闭） job_id={}",
+                            job_id
+                        );
+                    }
                     (true, None)
                 }
                 Err(e) => {
@@ -475,7 +487,13 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                         e
                     );
                     let prev = truncate_chars(&e.to_string(), 120);
-                    let _ = reply_tx.send(Err(e.to_string()));
+                    if reply_tx.send(Err(e.to_string())).is_err() {
+                        debug!(
+                            target: "crabmate",
+                            "chat json 错误回传失败（接收端已关闭） job_id={}",
+                            job_id
+                        );
+                    }
                     (false, Some(prev))
                 }
             };
