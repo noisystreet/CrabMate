@@ -43,7 +43,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - Web `/chat` 与 `/chat/stream` 支持可选 `conversation_id` 以跨请求延续同一会话；未传时服务端自动分配会话 ID（流式接口通过响应头 `x-conversation-id` 返回）。
   - Web Chat 支持流式审批：收到 `command_approval_request` 后前端可通过 `POST /chat/approval` 回传 `deny` / `allow_once` / `allow_always`。
   - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout（与 TUI 右栏「队列」及状态栏/`human_summary` 展示逻辑一致），便于对照「写代码—编译—运行」等多步任务。
-  - 状态栏区分“模型生成中…”和“工具运行中…”，命令完成后不会一直显示忙碌。
+  - 状态栏区分“模型生成中…”和“工具运行中…”；TUI 收到 `tool_result` 后会提示“工具执行完成/失败”，失败时附带 `error_code` / `exit_code`（若有），便于快速定位问题。
 - **会话导出（Web 与 TUI 对齐）**：
   - Web：顶部「**导出 JSON**」生成 `{ "version": 1, "messages": [...] }`，与 TUI 工作区内 `.crabmate/tui_session.json` 及 F8 导出同形（`role` / `content` 等字段与 OpenAI 兼容消息一致；工具气泡在 JSON 中为 `role: "tool"`）。
   - Web：「**导出 MD**」正文与 TUI **F9** 一致（`# CrabMate 聊天记录`、按轮 `## 用户` / `## 助手` / `## 工具`）；可选会话标题与 id、标签等元信息前缀。

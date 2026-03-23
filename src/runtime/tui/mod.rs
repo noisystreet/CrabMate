@@ -273,6 +273,38 @@ pub async fn run_tui(
                         &state.pending_command_args,
                     );
                 }
+                AgentLineKind::ToolResult {
+                    name,
+                    summary,
+                    ok,
+                    exit_code,
+                    error_code,
+                } => {
+                    let failed = matches!(ok, Some(false))
+                        || exit_code.is_some_and(|c| c != 0)
+                        || error_code.as_deref().is_some_and(|s| !s.is_empty());
+                    let mut msg = if failed {
+                        "工具执行失败".to_string()
+                    } else {
+                        "工具执行完成".to_string()
+                    };
+                    if let Some(n) = name.as_deref().filter(|s| !s.is_empty()) {
+                        msg.push_str(&format!(" [{}]", n));
+                    }
+                    if let Some(s) = summary.as_deref().filter(|s| !s.is_empty()) {
+                        msg.push_str(&format!("：{}", s));
+                    }
+                    if failed {
+                        if let Some(c) = error_code.as_deref().filter(|s| !s.is_empty()) {
+                            msg.push_str(&format!(" (code={})", c));
+                        }
+                        if let Some(code) = exit_code {
+                            msg.push_str(&format!(" (exit={})", code));
+                        }
+                    }
+                    state.status_line =
+                        format!("{} · {}", msg, build_normal_status_line(&cfg.model));
+                }
                 AgentLineKind::StreamError {
                     error_preview,
                     code,

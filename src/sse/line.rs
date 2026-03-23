@@ -13,6 +13,13 @@ pub enum AgentLineKind {
         args: String,
         allowlist_key: Option<String>,
     },
+    ToolResult {
+        name: Option<String>,
+        summary: Option<String>,
+        ok: Option<bool>,
+        exit_code: Option<i32>,
+        error_code: Option<String>,
+    },
     StreamError {
         error_preview: Option<String>,
         code: Option<String>,
@@ -51,6 +58,20 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                     allowlist_key: command_approval_request.allowlist_key,
                 };
             }
+            super::protocol::SsePayload::ToolResult { tool_result } => {
+                let name = non_empty_string(tool_result.name);
+                let summary = tool_result
+                    .summary
+                    .as_deref()
+                    .and_then(summarize_stream_error);
+                return AgentLineKind::ToolResult {
+                    name,
+                    summary,
+                    ok: tool_result.ok,
+                    exit_code: tool_result.exit_code,
+                    error_code: tool_result.error_code,
+                };
+            }
             super::protocol::SsePayload::Error(body) => {
                 return AgentLineKind::StreamError {
                     error_preview: summarize_stream_error(&body.error),
@@ -72,7 +93,6 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 return AgentLineKind::Ignore;
             }
             super::protocol::SsePayload::ToolCall { .. }
-            | super::protocol::SsePayload::ToolResult { .. }
             | super::protocol::SsePayload::PlanRequired { .. } => {
                 return AgentLineKind::Ignore;
             }
@@ -148,6 +168,15 @@ fn summarize_stream_error(s: &str) -> Option<String> {
     Some(out)
 }
 
+fn non_empty_string(s: String) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +206,27 @@ mod tests {
             } => {
                 assert_eq!(code.as_deref(), Some("UPSTREAM"));
                 assert_eq!(error_preview.as_deref(), Some("bad gateway"));
+            }
+            other => panic!("unexpected kind: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_result_failure_with_fields() {
+        let line = r#"{"v":1,"tool_result":{"name":"run_command","summary":"执行命令 git status","output":"退出码：1","ok":false,"exit_code":1,"error_code":"command_failed","stderr":"permission denied"}}"#;
+        match classify_agent_sse_line(line) {
+            AgentLineKind::ToolResult {
+                name,
+                summary,
+                ok,
+                exit_code,
+                error_code,
+            } => {
+                assert_eq!(name.as_deref(), Some("run_command"));
+                assert_eq!(summary.as_deref(), Some("执行命令 git status"));
+                assert_eq!(ok, Some(false));
+                assert_eq!(exit_code, Some(1));
+                assert_eq!(error_code.as_deref(), Some("command_failed"));
             }
             other => panic!("unexpected kind: {:?}", other),
         }
