@@ -93,6 +93,7 @@ enum QueuedChatJob {
     Stream {
         job_id: u64,
         state: Arc<AppState>,
+        conversation_id: String,
         messages: Vec<Message>,
         work_dir: PathBuf,
         workspace_is_set: bool,
@@ -101,6 +102,7 @@ enum QueuedChatJob {
     Json {
         job_id: u64,
         state: Arc<AppState>,
+        conversation_id: String,
         messages: Vec<Message>,
         work_dir: PathBuf,
         workspace_is_set: bool,
@@ -230,10 +232,12 @@ impl ChatJobQueue {
         v
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn try_submit_stream(
         &self,
         job_id: u64,
         state: Arc<AppState>,
+        conversation_id: String,
         messages: Vec<Message>,
         work_dir: PathBuf,
         workspace_is_set: bool,
@@ -242,6 +246,7 @@ impl ChatJobQueue {
         let job = QueuedChatJob::Stream {
             job_id,
             state,
+            conversation_id,
             messages,
             work_dir,
             workspace_is_set,
@@ -255,10 +260,12 @@ impl ChatJobQueue {
             })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn try_submit_json(
         &self,
         job_id: u64,
         state: Arc<AppState>,
+        conversation_id: String,
         messages: Vec<Message>,
         work_dir: PathBuf,
         workspace_is_set: bool,
@@ -267,6 +274,7 @@ impl ChatJobQueue {
         let job = QueuedChatJob::Json {
             job_id,
             state,
+            conversation_id,
             messages,
             work_dir,
             workspace_is_set,
@@ -364,6 +372,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
         QueuedChatJob::Stream {
             job_id,
             state,
+            conversation_id,
             mut messages,
             work_dir,
             workspace_is_set,
@@ -386,6 +395,15 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 .chat_queue
                 .begin_per_flight_job(job_id, flight.clone());
             let out = Some(&sse_tx);
+            let cancel = Arc::new(AtomicBool::new(false));
+            let cancel_watcher = {
+                let tx_for_watch = sse_tx.clone();
+                let cancel_for_watch = Arc::clone(&cancel);
+                tokio::spawn(async move {
+                    tx_for_watch.closed().await;
+                    cancel_for_watch.store(true, Ordering::SeqCst);
+                })
+            };
             let r = crate::run_agent_turn(
                 &state.client,
                 &state.api_key,
@@ -397,12 +415,18 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 workspace_is_set,
                 false,
                 false,
-                None,
+                Some(cancel),
                 Some(flight),
             )
             .await;
+            cancel_watcher.abort();
             let (ok, err) = match r {
-                Ok(()) => (true, None),
+                Ok(()) => {
+                    state
+                        .save_conversation_messages(conversation_id, messages)
+                        .await;
+                    (true, None)
+                }
                 Err(e) => {
                     error!(
                         target: "crabmate",
@@ -432,6 +456,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
         QueuedChatJob::Json {
             job_id,
             state,
+            conversation_id,
             mut messages,
             work_dir,
             workspace_is_set,
@@ -470,6 +495,9 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             .await;
             let (ok, err) = match r {
                 Ok(()) => {
+                    state
+                        .save_conversation_messages(conversation_id, messages.clone())
+                        .await;
                     if reply_tx.send(Ok(messages)).is_err() {
                         debug!(
                             target: "crabmate",

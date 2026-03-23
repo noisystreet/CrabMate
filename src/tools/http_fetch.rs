@@ -402,7 +402,6 @@ pub fn request_with_json_body(
     }
     out
 }
-
 /// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（同源 + 路径前缀边界）时才请求；否则提示配置或 TUI。
 pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     let (url, method) = match parse_http_fetch_args(args_json) {
@@ -490,7 +489,6 @@ mod tests {
             &["https://example.comx/api/".to_string()]
         ));
     }
-
     #[test]
     fn parse_http_request_supports_patch_with_body() {
         let (u, m, body) = parse_http_request_args(

@@ -11,13 +11,17 @@ use std::sync::Arc;
 use crate::config::AgentConfig;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{debug, info};
 use tokio::sync::mpsc;
 
 use super::per_coord::PerCoordinator;
 use crate::llm::{complete_chat_retrying, nl_only_chat_request, tool_chat_request};
-use crate::sse::{SseErrorBody, SsePayload, ToolResultBody, encode_message};
+use crate::sse::{
+    SseErrorBody, SsePayload, StagedPlanFinishedBody, StagedPlanStartedBody,
+    StagedPlanStepFinishedBody, StagedPlanStepStartedBody, ToolResultBody, encode_message,
+};
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result;
 use crate::tools;
@@ -127,6 +131,102 @@ async fn send_staged_plan_notice(
         )
         .await;
     }
+}
+
+fn next_staged_plan_id() -> String {
+    let ts_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!("staged-{ts_ms}")
+}
+
+async fn send_staged_plan_started(
+    out: Option<&mpsc::Sender<String>>,
+    plan_id: &str,
+    total_steps: usize,
+) {
+    let Some(tx) = out else {
+        return;
+    };
+    let _ = tx
+        .send(encode_message(SsePayload::StagedPlanStarted {
+            started: StagedPlanStartedBody {
+                plan_id: plan_id.to_string(),
+                total_steps,
+            },
+        }))
+        .await;
+}
+
+async fn send_staged_plan_step_started(
+    out: Option<&mpsc::Sender<String>>,
+    plan_id: &str,
+    step_id: &str,
+    step_index: usize,
+    total_steps: usize,
+    description: &str,
+) {
+    let Some(tx) = out else {
+        return;
+    };
+    let _ = tx
+        .send(encode_message(SsePayload::StagedPlanStepStarted {
+            started: StagedPlanStepStartedBody {
+                plan_id: plan_id.to_string(),
+                step_id: step_id.to_string(),
+                step_index,
+                total_steps,
+                description: description.to_string(),
+            },
+        }))
+        .await;
+}
+
+async fn send_staged_plan_step_finished(
+    out: Option<&mpsc::Sender<String>>,
+    plan_id: &str,
+    step_id: &str,
+    step_index: usize,
+    total_steps: usize,
+    status: &str,
+) {
+    let Some(tx) = out else {
+        return;
+    };
+    let _ = tx
+        .send(encode_message(SsePayload::StagedPlanStepFinished {
+            finished: StagedPlanStepFinishedBody {
+                plan_id: plan_id.to_string(),
+                step_id: step_id.to_string(),
+                step_index,
+                total_steps,
+                status: status.to_string(),
+            },
+        }))
+        .await;
+}
+
+async fn send_staged_plan_finished(
+    out: Option<&mpsc::Sender<String>>,
+    plan_id: &str,
+    total_steps: usize,
+    completed_steps: usize,
+    status: &str,
+) {
+    let Some(tx) = out else {
+        return;
+    };
+    let _ = tx
+        .send(encode_message(SsePayload::StagedPlanFinished {
+            finished: StagedPlanFinishedBody {
+                plan_id: plan_id.to_string(),
+                total_steps,
+                completed_steps,
+                status: status.to_string(),
+            },
+        }))
+        .await;
 }
 
 // --- P：向模型要本轮输出（含重试）---
@@ -704,6 +804,10 @@ async fn run_staged_plan_then_execute_steps(
         }
     };
 
+    let plan_id = next_staged_plan_id();
+    let n = plan.steps.len();
+    send_staged_plan_started(p.out, &plan_id, n).await;
+
     send_staged_plan_notice(
         p.out,
         echo_terminal_staged,
@@ -712,17 +816,27 @@ async fn run_staged_plan_then_execute_steps(
     )
     .await;
 
-    let n = plan.steps.len();
     let mut staged_loop_cancelled = false;
+    let mut completed_steps = 0usize;
     for (i, step) in plan.steps.iter().enumerate() {
         if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             staged_loop_cancelled = true;
             break;
         }
+        let step_index = i + 1;
+        send_staged_plan_step_started(
+            p.out,
+            &plan_id,
+            step.id.trim(),
+            step_index,
+            n,
+            step.description.trim(),
+        )
+        .await;
 
         let body = format!(
             "【分步执行 {}/{}】{}\n- id: {}\n- 描述: {}",
-            i + 1,
+            step_index,
             n,
             crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE,
             step.id,
@@ -748,13 +862,28 @@ async fn run_staged_plan_then_execute_steps(
         });
         tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         run_agent_outer_loop(p, per_coord).await?;
+        if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            send_staged_plan_step_finished(
+                p.out,
+                &plan_id,
+                step.id.trim(),
+                step_index,
+                n,
+                "cancelled",
+            )
+            .await;
+            staged_loop_cancelled = true;
+            break;
+        }
+        send_staged_plan_step_finished(p.out, &plan_id, step.id.trim(), step_index, n, "ok").await;
+        completed_steps = step_index;
         p.messages.push(Message::chat_ui_separator(true));
         // 先发队列摘要 SSE，再 await 全量同步：sync 通道容量为 1，若先 tui_push 可能阻塞，导致队列区迟迟收不到最后一步的更新。
         send_staged_plan_notice(
             p.out,
             echo_terminal_staged,
             true,
-            staged_plan_queue_summary_text(&plan, i + 1),
+            staged_plan_queue_summary_text(&plan, step_index),
         )
         .await;
         tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
@@ -769,6 +898,18 @@ async fn run_staged_plan_then_execute_steps(
         )
         .await;
     }
+    send_staged_plan_finished(
+        p.out,
+        &plan_id,
+        n,
+        completed_steps,
+        if staged_loop_cancelled {
+            "cancelled"
+        } else {
+            "ok"
+        },
+    )
+    .await;
     Ok(())
 }
 

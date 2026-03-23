@@ -12,13 +12,11 @@
 ## P0 — 安全（非本机部署前建议处理）
 
 - [ ] **HTTP 无鉴权**：`/chat`、`/chat/stream`、工作区、文件、上传、任务等均未校验调用方身份；`API_KEY` 仅用于调模型，不能防止他人滥用接口与配额。
-- [ ] **`workspace_set` 任意路径**：`src/web/workspace.rs::workspace_set_handler` 直接写入 `workspace_override`，未校验路径存在性、是否落在允许根目录内、或敏感路径黑名单。攻击面：在进程权限内将工作区指向任意目录，再配合 Agent 工具与文件 API。
 
 ---
 
 ## P1 — 产品 / 协议
 
-- [ ] **Web 聊天无跨请求多轮历史**：`ChatRequestBody` 仍仅 `message: String`（`src/lib.rs`），服务端不持久化会话；单请求内的多轮工具循环已由 `context_window` 做截断/预算/可选摘要。若需浏览器侧连续对话，需扩展请求体（如 `messages` / `conversation_id` + 存储）并与 `run_agent_turn` 对齐。
 - [ ] **Web 侧 workflow 审批（可选）**：当前 TUI 可对命令/workflow 做人机审批，Web 为 `NoApproval`。若要对齐安全模型，需产品定案 + SSE/前端确认流 + 超时默认拒绝。
 
 ---
@@ -53,7 +51,6 @@
 
 **职责摘要**：`agent_turn` 主循环；`context_window` 裁剪/摘要；`per_coord` / `plan_artifact` / `workflow_reflection_controller`；`workflow` DAG 执行。
 
-- [ ] **服务端多轮会话模型**：与 Web/CLI 共享持久化或外置 `messages`、会话 id（与 P1 同向）。
 - [ ] **取消与资源边界**：统一「用户取消 / 队列丢弃 / 工具超时」下的状态机与 SSE 收尾，减少静默丢事件（与 P2、`mpsc` 债呼应）。
 - [ ] **规划与反思策略可插拔**：在现有 `FinalPlanRequirementMode` 之上，允许按场景关闭 PER、或接入轻量规则/二次模型校验（成本可控、可配置）。
 - [ ] **工作流可调试性**：DAG 执行轨迹导出、失败节点重试策略、与 `workflow_reflection` 日志字段对齐。
