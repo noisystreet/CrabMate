@@ -410,12 +410,18 @@ fn staged_plan_hidden_chat_prose_only(original: &str) -> String {
     let raw_goal = prose_before_first_fence(original);
     let goal = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
     let goal_t = goal.trim();
-    let merged = match parse_agent_reply_plan_v1(original) {
-        Ok(plan) => augment_agent_reply_plan_goal_for_display(goal_t, &plan),
-        Err(_) => goal_t.to_string(),
+    let parsed_plan = parse_agent_reply_plan_v1(original).ok();
+    let merged = match parsed_plan.as_ref() {
+        Some(plan) => augment_agent_reply_plan_goal_for_display(goal_t, plan),
+        None => goal_t.to_string(),
     };
     let merged = merged.trim();
     if merged.is_empty() {
+        if let Some(plan) = parsed_plan {
+            // 规划轮偶发只返回 JSON（无围栏前自然语言）；此前会导致这条 assistant 在聊天区整条“消失”。
+            // 保留一个短提示，避免用户误判为消息被覆盖/隐藏。
+            return format!("已生成分阶段规划（共 {} 步）。", plan.steps.len());
+        }
         String::new()
     } else {
         latex_math_to_unicode(merged)
@@ -445,7 +451,7 @@ fn assistant_markdown_from_stripped(stripped: &str) -> String {
 }
 
 /// 助手气泡 / CLI ANSI / 导出共用：剥标签 → `agent_reply_plan` 可读化 → LaTeX。
-/// `SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 为 `false` 时：可解析为 v1 规划 → 不展示列表/JSON，但**保留**围栏前自然语言概括；纯 JSON 无前置说明时仍为空。
+/// `SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 为 `false` 时：可解析为 v1 规划 → 不展示列表/JSON，但**保留**围栏前自然语言概括；纯 JSON 时回退短提示，避免气泡“消失”。
 /// 若仅围栏内为规划 JSON（含解析失败但形状明显的块），从展示串中移除围栏，**不**把原始 JSON 打到终端/气泡；`Message.content` 与日志不变。
 pub(crate) fn assistant_markdown_source_for_display(raw: &str) -> String {
     let stripped = strip_assistant_echo_label(raw);
@@ -580,7 +586,9 @@ mod tests {
     fn assistant_hides_staged_plan_v1_when_show_flag_false() {
         let raw =
             r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"do"}]}"#;
-        assert_eq!(assistant_markdown_source_for_display(raw), "");
+        let out = assistant_markdown_source_for_display(raw);
+        assert!(out.contains("已生成分阶段规划"));
+        assert!(out.contains("共 1 步"));
     }
 
     #[test]
