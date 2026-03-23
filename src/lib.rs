@@ -197,9 +197,8 @@ struct ChatRequestBody {
     message: String,
     #[serde(default)]
     conversation_id: Option<String>,
-    approval_session_id: Option<String>,
     #[serde(default)]
-    conversation_id: Option<String>,
+    approval_session_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
