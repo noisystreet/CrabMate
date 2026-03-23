@@ -273,10 +273,21 @@ pub async fn run_tui(
                         &state.pending_command_args,
                     );
                 }
-                AgentLineKind::StreamError => {
+                AgentLineKind::StreamError {
+                    error_preview,
+                    code,
+                } => {
                     state.model_phase = ModelPhase::Error;
-                    // 不把错误 JSON 写入对话区；底栏左侧阶段词显示为「异常」。
-                    set_normal_status_line(&mut state, &cfg.model);
+                    // 不把错误 JSON 写入对话区；在状态栏保留简要错误信息，便于排障。
+                    let mut msg = String::from("流式响应异常");
+                    if let Some(c) = code.as_deref().filter(|s| !s.is_empty()) {
+                        msg.push_str(&format!("({})", c));
+                    }
+                    if let Some(p) = error_preview.as_deref().filter(|s| !s.is_empty()) {
+                        msg.push_str(&format!("：{}", p));
+                    }
+                    state.status_line =
+                        format!("{} · {}", msg, build_normal_status_line(&cfg.model));
                 }
                 AgentLineKind::StagedPlanNotice { text, clear_before } => {
                     debug!(
@@ -286,7 +297,7 @@ pub async fn run_tui(
                         text.len(),
                         redact::preview_chars(&text, redact::MESSAGE_LOG_PREVIEW_CHARS)
                     );
-                    const MAX_STAGED_PLAN_LOG: usize = 48;
+                    const MAX_STAGED_PLAN_LOG: usize = 200;
                     if clear_before {
                         state.staged_plan_log.clear();
                     }
