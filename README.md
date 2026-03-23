@@ -365,6 +365,10 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_MODEL`：模型 ID  
    - `AGENT_SYSTEM_PROMPT`：系统提示词（内联）  
    - `AGENT_SYSTEM_PROMPT_FILE`：系统提示词文件路径（与上二选一，文件优先）  
+   - `AGENT_CURSOR_RULES_ENABLED`：是否启用 Cursor-like 规则注入（`1/true/yes/on` 启用；`0/false/no/off` 关闭）  
+   - `AGENT_CURSOR_RULES_DIR`：规则目录（默认 `.cursor/rules`，读取其中 `*.mdc`）  
+   - `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD`：启用规则注入时是否额外附加工作区根 `AGENTS.md`（默认 `true`）  
+   - `AGENT_CURSOR_RULES_MAX_CHARS`：规则附加段最大字符数（默认 `48000`，超出截断）  
    - `AGENT_FINAL_PLAN_REQUIREMENT`：终答是否必须含结构化 `agent_reply_plan`，取值 `never` / `workflow_reflection` / `always`（与 `[agent] final_plan_requirement` 一致，默认 `workflow_reflection`）  
    - `AGENT_PLAN_REWRITE_MAX_ATTEMPTS`：规划不合格时最多重写轮次（默认 `2`，与 `[agent] plan_rewrite_max_attempts` 一致；用尽后 SSE 带 `code=plan_rewrite_exhausted`）  
    - `AGENT_HTTP_HOST`：Web 监听 IP（如 `0.0.0.0`）；**未**传 `--host` 时生效，默认仍为 `127.0.0.1`  
@@ -388,6 +392,11 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    # 系统提示词：内联或从文件加载
    # system_prompt = "你是专业的助手。"
    # system_prompt_file = "system_prompt.txt"
+   # Cursor-like 规则注入（可选）
+   # cursor_rules_enabled = true
+   # cursor_rules_dir = ".cursor/rules"
+   # cursor_rules_include_agents_md = true
+   # cursor_rules_max_chars = 48000
    ```
    可参考 `config.toml.example`。
 
@@ -398,6 +407,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 **分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 `true` 时，**每条用户消息**会先走一轮**无工具**的 API 调用，要求模型在正文中产出可解析的 `agent_reply_plan` v1；服务端解析成功后，按 `steps` 顺序**各追加一条 user**（`【分步执行 i/n】…`）并**各跑完一整段** Agent 外层循环（该步内可多轮 tool_calls）。规划轮若误返回 `tool_calls` 或 JSON 不合格，流式下会收到 `error` + `code: staged_plan_tool_calls` / `staged_plan_invalid`（助手规划正文仍会写入消息列表以便排错）。**API 调用次数与费用通常明显高于关闭时**，适合需要「先出步骤再执行」的实验场景；日常对话建议保持 `false`。可选 `[agent] staged_plan_phase_instruction`（或 `AGENT_STAGED_PLAN_PHASE_INSTRUCTION`）覆盖规划轮的追加 system 说明，空则用内置文案。
 
 **系统提示词**：在 `default_config.toml` 中通过 `system_prompt`（多行字符串）或 `system_prompt_file`（文件路径）配置；若同时设置，以文件内容为准。未配置则启动报错。
+
+**Cursor-like 规则注入**：当 `cursor_rules_enabled=true`（或 `AGENT_CURSOR_RULES_ENABLED=1`）时，服务启动会自动读取 `cursor_rules_dir` 下全部 `*.mdc`（按文件名排序），并按配置可选附加工作区根 `AGENTS.md`，统一拼接到系统提示词末尾；总附加长度受 `cursor_rules_max_chars` 限制，超出会截断并写入提示。该能力可用于复用类似 Cursor Rule 的项目约束。
 
 **上下文窗口**（`[agent]`）：每次向模型发请求前会压缩 `messages`——`tool_message_max_chars` 截断工具输出；`max_message_history` 限制条数；`context_char_budget > 0` 时按近似字符删最旧消息；`context_summary_trigger_chars > 0` 且总长超阈值时再调一次无 tools 的 API 生成「较早对话摘要」（尾部保留 `context_summary_tail_messages` 条）。TUI/REPL 长会话下裁剪会缩短本地消息列表；Web 单请求内工具多轮仍受益。
 
