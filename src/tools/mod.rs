@@ -3773,6 +3773,26 @@ mod tests {
     }
 
     #[test]
+    fn test_run_tool_package_query_smoke() {
+        let allowed = test_allowed_commands();
+        let ctx = test_ctx(&allowed);
+        let out = run_tool("package_query", r#"{"package":"bash"}"#, &ctx);
+        if out.trim_start().starts_with('{') {
+            let v: serde_json::Value =
+                serde_json::from_str(&out).expect("package_query 输出应为 JSON");
+            assert_eq!(v.get("package").and_then(|x| x.as_str()), Some("bash"));
+            assert!(v.get("installed").is_some());
+            assert!(v.get("manager").is_some());
+        } else {
+            assert!(
+                out.contains("未检测到可用的包管理查询命令"),
+                "非 JSON 输出应是缺少包管理器的说明，得到: {}",
+                out
+            );
+        }
+    }
+
+    #[test]
     fn test_build_tools_names() {
         let tools = build_tools();
         let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
