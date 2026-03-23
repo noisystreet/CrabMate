@@ -218,7 +218,7 @@ flowchart LR
   - `GET|POST /tasks`：任务清单读写
   - `POST /upload` + `GET /uploads/...`：上传与静态访问
 - **状态与工作区选择**：`AppState` 内维护 `workspace_override`，由前端调用 `/workspace` POST 来设置，影响 Agent 的工具执行工作目录与文件 API 根目录。
-- **Web 对话队列**：`src/chat_job_queue.rs` 的 `ChatJobQueue` 对 `/chat`、`/chat/stream` 做**有界**排队与**并发上限**（`chat_queue_max_concurrent` / `chat_queue_max_pending`）；满则 **503** + `QUEUE_FULL`。单进程内协调，多副本需外部代理（见 `TODOLIST`）。
+- **Web 对话队列**：`src/chat_job_queue.rs` 的 `ChatJobQueue` 对 `/chat`、`/chat/stream` 做**有界**排队与**并发上限**（`chat_queue_max_concurrent` / `chat_queue_max_pending`）；满则 **503** + `QUEUE_FULL`。`/status` 暴露 `chat_queue_completed_ok` / `chat_queue_completed_cancelled` / `chat_queue_completed_err` 与 `chat_queue_recent_jobs[*].cancelled`，用于区分真实失败与用户断流取消。单进程内协调，多副本需外部代理（见 `TODOLIST`）。
 
 ### `src/llm/mod.rs`
 

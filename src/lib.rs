@@ -888,6 +888,7 @@ struct StatusResponse {
     chat_queue_max_pending: usize,
     chat_queue_running: usize,
     chat_queue_completed_ok: u64,
+    chat_queue_completed_cancelled: u64,
     chat_queue_completed_err: u64,
     chat_queue_recent_jobs: Vec<chat_job_queue::ChatJobRecord>,
     /// 队列中正在执行的 `/chat`、`/chat/stream` 任务之 PER 镜像（无任务或无非队列调用时为空）。
@@ -928,6 +929,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         chat_queue_max_pending: state.chat_queue.max_pending(),
         chat_queue_running: state.chat_queue.running_count(),
         chat_queue_completed_ok: state.chat_queue.completed_ok(),
+        chat_queue_completed_cancelled: state.chat_queue.completed_cancelled(),
         chat_queue_completed_err: state.chat_queue.completed_err(),
         chat_queue_recent_jobs: state.chat_queue.recent_jobs(),
         per_active_jobs: state.chat_queue.active_per_jobs(),
