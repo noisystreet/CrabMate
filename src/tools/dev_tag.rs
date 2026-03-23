@@ -20,6 +20,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
     match name {
         // --- 语言无关 / 工作区 ---
         "run_command" | "run_executable" | "workflow_execute" => &[GENERAL, CPP],
+        "package_query" => &[GENERAL],
         "diagnostic_summary" | "changelog_draft" | "license_notice" => &[GENERAL],
         "rust_backtrace_analyze" => &[GENERAL, RUST],
         "create_file"

@@ -18,6 +18,7 @@ mod grep;
 pub mod http_fetch;
 mod lint;
 mod markdown_links;
+mod package_query;
 mod patch;
 mod precommit_tools;
 mod python_tools;
@@ -284,6 +285,25 @@ fn params_run_executable() -> serde_json::Value {
             }
         },
         "required": ["path"]
+    })
+}
+
+fn params_package_query() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "package": {
+                "type": "string",
+                "description": "要查询的包名（如 bash、curl、openssl、libc6:amd64）。仅支持字母、数字及 . + - _ : @。"
+            },
+            "manager": {
+                "type": "string",
+                "description": "包管理器：auto（默认，优先 apt 后 rpm）、apt、rpm。",
+                "enum": ["auto", "apt", "rpm"]
+            }
+        },
+        "required": ["package"],
+        "additionalProperties": false
     })
 }
 
@@ -1959,6 +1979,10 @@ fn runner_run_executable(args: &str, ctx: &ToolContext<'_>) -> String {
     exec::run(args, ctx.command_max_output_len, ctx.working_dir)
 }
 
+fn runner_package_query(args: &str, ctx: &ToolContext<'_>) -> String {
+    package_query::run(args, ctx.command_max_output_len)
+}
+
 fn runner_cargo_check(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::cargo_check(args, ctx.working_dir, ctx.command_max_output_len)
 }
@@ -2406,6 +2430,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: params_run_executable,
             runner: runner_run_executable,
+        },
+        ToolSpec {
+            name: "package_query",
+            description: "只读查询 Linux 包信息（apt/rpm 统一抽象）：是否安装、版本、来源。默认 manager=auto（优先 dpkg-query，再尝试 rpm）；不执行安装/卸载操作。",
+            category: ToolCategory::Development,
+            parameters: params_package_query,
+            runner: runner_package_query,
         },
         ToolSpec {
             name: "cargo_check",
@@ -3548,6 +3579,16 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             };
             Some(s)
         }
+        "package_query" => {
+            let pkg = v.get("package")?.as_str()?.trim();
+            let mgr = v
+                .get("manager")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or("auto");
+            Some(format!("查询系统包：{}（{}）", pkg, mgr))
+        }
         "find_symbol" => {
             let symbol = v.get("symbol")?.as_str()?.trim();
             Some(format!("查找符号：{}", symbol))
@@ -3833,6 +3874,7 @@ mod tests {
         assert!(names.contains(&"quality_workspace"));
         assert!(names.contains(&"apply_patch"));
         assert!(names.contains(&"run_executable"));
+        assert!(names.contains(&"package_query"));
     }
 
     #[test]
