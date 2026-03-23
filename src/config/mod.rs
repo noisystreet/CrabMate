@@ -112,6 +112,8 @@ pub struct AgentConfig {
     pub chat_queue_max_concurrent: usize,
     /// Web 对话任务有界等待队列长度（`try_send` 满则 503）
     pub chat_queue_max_pending: usize,
+    /// Web `/chat` 与 `/chat/stream` 每分钟请求上限（按调用方 key 计数）
+    pub web_chat_rate_limit_per_minute: usize,
     /// 为 true 时：用户每条消息先经**无工具**规划轮产出 `agent_reply_plan` v1，再按 `steps` 顺序各注入一条 user 并跑完整 Agent 循环直至该步终答。
     pub staged_plan_execution: bool,
     /// 规划轮追加的 **system** 指令；空字符串则使用内置默认文案。
@@ -165,6 +167,7 @@ struct AgentSection {
     context_summary_transcript_max_chars: Option<u64>,
     chat_queue_max_concurrent: Option<u64>,
     chat_queue_max_pending: Option<u64>,
+    web_chat_rate_limit_per_minute: Option<u64>,
     staged_plan_execution: Option<bool>,
     staged_plan_phase_instruction: Option<String>,
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
@@ -270,6 +273,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut context_summary_transcript_max_chars: Option<u64> = None;
     let mut chat_queue_max_concurrent: Option<u64> = None;
     let mut chat_queue_max_pending: Option<u64> = None;
+    let mut web_chat_rate_limit_per_minute: Option<u64> = None;
     let mut staged_plan_execution: Option<bool> = None;
     let mut staged_plan_phase_instruction: Option<String> = None;
     let mut workspace_allowed_roots: Option<Vec<String>> = None;
@@ -384,6 +388,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             .chat_queue_max_concurrent
             .or(chat_queue_max_concurrent);
         chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
+        web_chat_rate_limit_per_minute = agent
+            .web_chat_rate_limit_per_minute
+            .or(web_chat_rate_limit_per_minute);
         tui_load_session_on_start = agent
             .tui_load_session_on_start
             .or(tui_load_session_on_start);
@@ -559,6 +566,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                     .chat_queue_max_concurrent
                     .or(chat_queue_max_concurrent);
                 chat_queue_max_pending = agent.chat_queue_max_pending.or(chat_queue_max_pending);
+                web_chat_rate_limit_per_minute = agent
+                    .web_chat_rate_limit_per_minute
+                    .or(web_chat_rate_limit_per_minute);
                 tui_load_session_on_start = agent
                     .tui_load_session_on_start
                     .or(tui_load_session_on_start);
@@ -795,6 +805,11 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     {
         chat_queue_max_pending = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_WEB_CHAT_RATE_LIMIT_PER_MINUTE")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        web_chat_rate_limit_per_minute = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_EXECUTION") {
         let v = v.trim().to_ascii_lowercase();
         if matches!(v.as_str(), "1" | "true" | "yes" | "on") {
@@ -938,6 +953,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         .clamp(10_000, 2_000_000) as usize;
     let chat_queue_max_concurrent = chat_queue_max_concurrent.unwrap_or(2).clamp(1, 256) as usize;
     let chat_queue_max_pending = chat_queue_max_pending.unwrap_or(32).clamp(1, 8192) as usize;
+    let web_chat_rate_limit_per_minute = web_chat_rate_limit_per_minute
+        .unwrap_or(60)
+        .clamp(1, 10_000) as usize;
     let staged_plan_execution = staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = staged_plan_phase_instruction.unwrap_or_default();
     let web_api_bearer_token = web_api_bearer_token.unwrap_or_default();
@@ -997,6 +1015,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         allow_insecure_no_auth_for_non_loopback,
         chat_queue_max_concurrent,
         chat_queue_max_pending,
+        web_chat_rate_limit_per_minute,
         staged_plan_execution,
         staged_plan_phase_instruction,
     })

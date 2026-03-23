@@ -32,6 +32,7 @@ use axum::{
 use config::cli::{init_logging, parse_args};
 use futures_util::StreamExt;
 use log::{debug, error, info};
+use std::collections::{HashMap, VecDeque};
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
@@ -97,6 +98,44 @@ pub(crate) struct AppState {
     uploads_dir: std::path::PathBuf,
     /// `/chat` / `/chat/stream` 进程内任务队列（有界排队 + 并发上限）
     chat_queue: chat_job_queue::ChatJobQueue,
+    /// Web 对话接口限流器（/chat、/chat/stream）。
+    chat_rate_limiter: ChatRateLimiter,
+}
+
+#[derive(Clone)]
+struct ChatRateLimiter {
+    max_per_minute: usize,
+    buckets: Arc<tokio::sync::Mutex<HashMap<String, VecDeque<u64>>>>,
+}
+
+impl ChatRateLimiter {
+    fn new(max_per_minute: usize) -> Self {
+        Self {
+            max_per_minute: max_per_minute.max(1),
+            buckets: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        }
+    }
+
+    async fn allow(&self, key: &str) -> bool {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let mut guard = self.buckets.lock().await;
+        let q = guard.entry(key.to_string()).or_default();
+        while let Some(&t) = q.front() {
+            if now.saturating_sub(t) >= 60 {
+                q.pop_front();
+            } else {
+                break;
+            }
+        }
+        if q.len() >= self.max_per_minute {
+            return false;
+        }
+        q.push_back(now);
+        true
+    }
 }
 
 impl AppState {
@@ -473,6 +512,59 @@ async fn require_web_api_bearer_auth(
         .into_response()
 }
 
+fn chat_rate_limit_key(req: &Request) -> String {
+    if let Some(v) = req.headers().get(header::AUTHORIZATION)
+        && let Ok(s) = v.to_str()
+        && !s.trim().is_empty()
+    {
+        return format!("auth:{}", s.trim());
+    }
+    if let Some(v) = req
+        .headers()
+        .get(header::HeaderName::from_static("x-forwarded-for"))
+        && let Ok(s) = v.to_str()
+    {
+        let ip = s.split(',').next().unwrap_or("").trim();
+        if !ip.is_empty() {
+            return format!("ip:{}", ip);
+        }
+    }
+    if let Some(v) = req
+        .headers()
+        .get(header::HeaderName::from_static("x-real-ip"))
+        && let Ok(s) = v.to_str()
+        && !s.trim().is_empty()
+    {
+        return format!("ip:{}", s.trim());
+    }
+    "anonymous".to_string()
+}
+
+async fn rate_limit_chat_api(
+    State(state): State<Arc<AppState>>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let path = req.uri().path();
+    if req.method() == axum::http::Method::POST && (path == "/chat" || path == "/chat/stream") {
+        let key = chat_rate_limit_key(&req);
+        if !state.chat_rate_limiter.allow(&key).await {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(ApiError {
+                    code: "RATE_LIMITED",
+                    message: format!(
+                        "请求过于频繁：每分钟最多 {} 次，请稍后重试",
+                        state.cfg.web_chat_rate_limit_per_minute
+                    ),
+                }),
+            )
+                .into_response();
+        }
+    }
+    next.run(req).await
+}
+
 async fn chat_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ChatRequestBody>,
@@ -643,6 +735,7 @@ struct StatusResponse {
     context_summary_trigger_chars: usize,
     chat_queue_max_concurrent: usize,
     chat_queue_max_pending: usize,
+    web_chat_rate_limit_per_minute: usize,
     chat_queue_running: usize,
     chat_queue_completed_ok: u64,
     chat_queue_completed_err: u64,
@@ -680,6 +773,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         context_summary_trigger_chars: state.cfg.context_summary_trigger_chars,
         chat_queue_max_concurrent: state.chat_queue.max_concurrent(),
         chat_queue_max_pending: state.chat_queue.max_pending(),
+        web_chat_rate_limit_per_minute: state.cfg.web_chat_rate_limit_per_minute,
         chat_queue_running: state.chat_queue.running_count(),
         chat_queue_completed_ok: state.chat_queue.completed_ok(),
         chat_queue_completed_err: state.chat_queue.completed_err(),
@@ -779,6 +873,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
             uploads_dir: uploads_dir.clone(),
             chat_queue,
+            chat_rate_limiter: ChatRateLimiter::new(cfg.web_chat_rate_limit_per_minute),
         });
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
         let uploads_dir_for_static = uploads_dir.clone();
@@ -808,7 +903,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .route(
                 "/tasks",
                 get(web::task::tasks_get_handler).post(web::task::tasks_set_handler),
-            );
+            )
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                rate_limit_chat_api,
+            ));
         if !state.cfg.web_api_bearer_token.trim().is_empty() {
             protected_api = protected_api.route_layer(middleware::from_fn_with_state(
                 state.clone(),

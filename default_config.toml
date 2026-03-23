@@ -30,6 +30,8 @@ context_summary_transcript_max_chars = 120000
 chat_queue_max_concurrent = 2
 # Web 对话任务：有界等待队列长度（含正在排队的任务；满则返回 503 QUEUE_FULL）
 chat_queue_max_pending = 32
+# Web 对话接口限流：/chat 与 /chat/stream 每分钟请求上限（按调用方 key）
+web_chat_rate_limit_per_minute = 60
 # run_command 最长执行时间（秒）
 command_timeout_secs = 10
 # run_command 输出最大长度（字符），超出则截断

@@ -37,6 +37,7 @@ export interface StatusData {
   /** 进程内对话任务队列（/chat、/chat/stream） */
   chat_queue_max_concurrent?: number
   chat_queue_max_pending?: number
+  web_chat_rate_limit_per_minute?: number
   chat_queue_running?: number
   chat_queue_completed_ok?: number
   chat_queue_completed_err?: number

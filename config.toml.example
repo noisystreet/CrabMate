@@ -13,6 +13,7 @@
 # context_summary_trigger_chars = 0
 # chat_queue_max_concurrent = 2
 # chat_queue_max_pending = 32
+# web_chat_rate_limit_per_minute = 60
 # command_timeout_secs = 10
 # command_max_output_len = 8192
 # allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "file", "df", "du", "head", "tail", "wc", "cat"]
