@@ -58,6 +58,26 @@ pub enum SsePayload {
         #[serde(default, rename = "staged_plan_notice_clear")]
         clear_before: bool,
     },
+    /// 分阶段规划：结构化「计划已生成」事件（供 Web/TUI 精准展示进度，不依赖文本解析）。
+    StagedPlanStarted {
+        #[serde(rename = "staged_plan_started")]
+        started: StagedPlanStartedBody,
+    },
+    /// 分阶段规划：单步开始事件。
+    StagedPlanStepStarted {
+        #[serde(rename = "staged_plan_step_started")]
+        started: StagedPlanStepStartedBody,
+    },
+    /// 分阶段规划：单步结束事件。
+    StagedPlanStepFinished {
+        #[serde(rename = "staged_plan_step_finished")]
+        finished: StagedPlanStepFinishedBody,
+    },
+    /// 分阶段规划：整轮计划结束事件。
+    StagedPlanFinished {
+        #[serde(rename = "staged_plan_finished")]
+        finished: StagedPlanFinishedBody,
+    },
     /// 分阶段规划：每步结束短分隔线。TUI 随 `messages` 同步已有行；Web 用本事件追加。（`false` 保留兼容，客户端可忽略。）
     ChatUiSeparator {
         /// `true` 为短分隔线。
@@ -105,6 +125,42 @@ pub struct ToolResultBody {
     pub stdout: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stderr: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StagedPlanStartedBody {
+    pub plan_id: String,
+    pub total_steps: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StagedPlanStepStartedBody {
+    pub plan_id: String,
+    pub step_id: String,
+    /// 从 1 开始的人类可读序号。
+    pub step_index: usize,
+    pub total_steps: usize,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StagedPlanStepFinishedBody {
+    pub plan_id: String,
+    pub step_id: String,
+    /// 从 1 开始的人类可读序号。
+    pub step_index: usize,
+    pub total_steps: usize,
+    /// `ok` / `cancelled`
+    pub status: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StagedPlanFinishedBody {
+    pub plan_id: String,
+    pub total_steps: usize,
+    pub completed_steps: usize,
+    /// `ok` / `cancelled`
+    pub status: String,
 }
 
 /// 序列化为单行 JSON，供 `Event::data(...)` 使用。
@@ -233,5 +289,77 @@ mod tests {
             m2.payload,
             SsePayload::ChatUiSeparator { short: false }
         ));
+    }
+
+    #[test]
+    fn roundtrip_staged_plan_structured_events() {
+        let started = encode_message(SsePayload::StagedPlanStarted {
+            started: StagedPlanStartedBody {
+                plan_id: "plan-1".into(),
+                total_steps: 3,
+            },
+        });
+        let msg_started: SseMessage = serde_json::from_str(&started).unwrap();
+        match msg_started.payload {
+            SsePayload::StagedPlanStarted { started } => {
+                assert_eq!(started.plan_id, "plan-1");
+                assert_eq!(started.total_steps, 3);
+            }
+            _ => panic!("expected staged_plan_started payload"),
+        }
+
+        let step_started = encode_message(SsePayload::StagedPlanStepStarted {
+            started: StagedPlanStepStartedBody {
+                plan_id: "plan-1".into(),
+                step_id: "collect-context".into(),
+                step_index: 1,
+                total_steps: 3,
+                description: "收集上下文".into(),
+            },
+        });
+        let msg_step_started: SseMessage = serde_json::from_str(&step_started).unwrap();
+        match msg_step_started.payload {
+            SsePayload::StagedPlanStepStarted { started } => {
+                assert_eq!(started.step_id, "collect-context");
+                assert_eq!(started.step_index, 1);
+                assert_eq!(started.total_steps, 3);
+            }
+            _ => panic!("expected staged_plan_step_started payload"),
+        }
+
+        let step_finished = encode_message(SsePayload::StagedPlanStepFinished {
+            finished: StagedPlanStepFinishedBody {
+                plan_id: "plan-1".into(),
+                step_id: "collect-context".into(),
+                step_index: 1,
+                total_steps: 3,
+                status: "ok".into(),
+            },
+        });
+        let msg_step_finished: SseMessage = serde_json::from_str(&step_finished).unwrap();
+        match msg_step_finished.payload {
+            SsePayload::StagedPlanStepFinished { finished } => {
+                assert_eq!(finished.status, "ok");
+                assert_eq!(finished.step_index, 1);
+            }
+            _ => panic!("expected staged_plan_step_finished payload"),
+        }
+
+        let finished = encode_message(SsePayload::StagedPlanFinished {
+            finished: StagedPlanFinishedBody {
+                plan_id: "plan-1".into(),
+                total_steps: 3,
+                completed_steps: 3,
+                status: "ok".into(),
+            },
+        });
+        let msg_finished: SseMessage = serde_json::from_str(&finished).unwrap();
+        match msg_finished.payload {
+            SsePayload::StagedPlanFinished { finished } => {
+                assert_eq!(finished.completed_steps, 3);
+                assert_eq!(finished.status, "ok");
+            }
+            _ => panic!("expected staged_plan_finished payload"),
+        }
     }
 }

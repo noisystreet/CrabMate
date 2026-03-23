@@ -15,6 +15,9 @@ use crate::config::AgentConfig;
 use crate::path_workspace::absolutize_workspace_subpath;
 
 const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
+const SENSITIVE_WORKSPACE_PREFIXES: &[&str] = &[
+    "/proc", "/sys", "/dev", "/etc", "/boot", "/root", "/bin", "/sbin", "/usr",
+];
 
 #[derive(Serialize)]
 pub struct WorkspacePickResponse {
@@ -116,6 +119,9 @@ pub(crate) fn validate_workspace_set_path(
     if !canon.is_dir() {
         return Err("工作区路径必须是已存在的目录".to_string());
     }
+    if is_sensitive_workspace_path(&canon) {
+        return Err("工作区路径命中敏感目录黑名单，请选择业务目录".to_string());
+    }
     if !cfg
         .workspace_allowed_roots
         .iter()
@@ -133,6 +139,13 @@ pub(crate) fn validate_workspace_set_path(
         ));
     }
     Ok(canon)
+}
+
+fn is_sensitive_workspace_path(path: &Path) -> bool {
+    SENSITIVE_WORKSPACE_PREFIXES.iter().any(|prefix| {
+        let p = Path::new(prefix);
+        path == p || path.starts_with(p)
+    })
 }
 
 fn ensure_within_workspace(
@@ -198,7 +211,7 @@ pub async fn workspace_pick_handler() -> Json<WorkspacePickResponse> {
     Json(WorkspacePickResponse { path })
 }
 
-/// 设置当前工作区根目录（来自前端）。非空路径须已存在、为目录，且落在配置的 `workspace_allowed_roots` 内（未配置时仅允许 `run_command_working_dir` 及其子目录）。
+/// 设置当前工作区根目录（来自前端）。非空路径须已存在、为目录，且落在配置的 `workspace_allowed_roots` 内（未配置时仅允许 `run_command_working_dir` 及其子目录），并且不得命中敏感系统目录黑名单。
 pub async fn workspace_set_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<WorkspaceSetBody>,
@@ -561,5 +574,20 @@ pub async fn workspace_file_write_handler(
         Err(e) => Json(WorkspaceFileWriteResponse {
             error: Some(format!("写入文件失败: {}", e)),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_sensitive_workspace_path;
+    use std::path::Path;
+
+    #[test]
+    fn sensitive_workspace_path_matches_prefixes() {
+        assert!(is_sensitive_workspace_path(Path::new("/proc")));
+        assert!(is_sensitive_workspace_path(Path::new("/proc/1234")));
+        assert!(is_sensitive_workspace_path(Path::new("/etc/nginx")));
+        assert!(!is_sensitive_workspace_path(Path::new("/workspace")));
+        assert!(!is_sensitive_workspace_path(Path::new("/tmp/project")));
     }
 }

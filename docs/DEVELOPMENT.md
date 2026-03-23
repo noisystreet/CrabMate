@@ -74,6 +74,7 @@ flowchart TB
 3. **`llm`**（含 **`llm::api::stream_chat`**）请求 `/chat/completions`（SSE），直到得到最终文本或 **`tool_calls`**。  
 4. 若有工具调用 → **`tool_registry::dispatch_tool`** → **`tools::run_tool`**（或 **`agent::workflow`** 路径）→ 结果以 `role: "tool"` 写回 `messages`。  
 5. 控制面事件经 **`sse::protocol`**（`encode_message` / `SsePayload`）编码为 SSE 行下发前端。
+6. 若请求携带 `conversation_id`（或服务端自动分配），回合结束后将 `messages` 写回进程内会话存储，用于下次同会话延续。
 
 ## `src/` 代码模块索引
 
@@ -141,7 +142,7 @@ flowchart TB
 | `schedule.rs` | 提醒与日程持久化 |
 | `security_tools.rs` | 安全审计类 |
 | `time.rs` / `weather.rs` / `web_search.rs` | 时间、天气（Open-Meteo）、联网搜索（Brave/Tavily） |
-| `http_fetch.rs` | `http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）；共享重定向记录、体长上限与 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**校验 |
+| `http_fetch.rs` | `http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）；共享重定向记录、体长上限与 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**校验；`http_fetch` 在 TUI 下支持审批白名单 |
 
 ## 核心机制：Agent 主循环与工具调用
 
@@ -161,6 +162,7 @@ flowchart TB
     - `tool_running`、`tool_result`（可选 `summary`：与 `summarize_tool_call` 同源，与 `output` 同帧；**不再**在工具执行前单独下发 `tool_call`，避免 Web 在工具未完成时先插入摘要）、`workspace_changed`
     - `error`（+ 可选 `code`）、`command_approval_request`（TUI/工作流审批）
     - `staged_plan_notice`（+ 可选 `staged_plan_notice_clear`）：分阶段规划进度；TUI 累积到 `staged_plan_log`，在**「队列」**页与状态栏展示（步骤行内 `[ ]`/`[✓]`，每步结束可 `clear_before` 整段刷新；**不**再插入左侧主聊天区，避免与队列重复）；`frontend/src/api.ts` 识别为控制面并吞掉，避免当作正文 delta
+    - `staged_plan_started` / `staged_plan_step_started` / `staged_plan_step_finished` / `staged_plan_finished`：分阶段规划结构化进度事件（含 `plan_id`、`step_id`、`step_index`、`status` 等），用于前端按状态机消费，避免解析自然语言文案
     - 预留 `plan_required` 等扩展键
 - **协议版本 `v`**：当前为 `1`；演进时递增 **`sse::protocol::SSE_PROTOCOL_VERSION`**，前端 `api.ts` 的 `sendChatStream` 已按字段形状解析（`tool_call` / `tool_result` / `plan_required` / `error.code` 等），新事件需在前后端同步扩展。
 
@@ -207,11 +209,11 @@ flowchart LR
 - **`main.rs`**：薄入口，仅 `#[tokio::main] async fn main() { crabmate::run().await }`。
 - **运行模式**：由 `run()` 内解析 CLI（`--serve`/`--host`/`--query`/`--stdin`/`--no-tools`/`--no-web`/`--dry-run` 等），选择启动 Web 服务、REPL、单次提问或 TUI。`--serve` 默认绑定 `127.0.0.1`；`0.0.0.0` 需显式 `--host` 或环境变量 `AGENT_HTTP_HOST`（见 README）。Web 受保护接口默认要求 Bearer 鉴权：若未配置 `web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN`，服务拒绝启动；仅在显式设置 `allow_insecure_no_auth_for_non_loopback` 时允许无鉴权（不安全）。**日志**：`config::cli::init_logging` — 未设置 `RUST_LOG` 时 `--serve` 默认 **info**；非 serve 的 CLI 默认 **warn**；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
 - **Web 服务**：使用 axum 路由，核心接口包括：
-  - `POST /chat`：非流式对话
-  - `POST /chat/stream`：SSE 流式对话（前端默认走这个）
-  - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement` / `plan_rewrite_max_attempts`**、**`max_message_history` / `tool_message_max_chars` / `context_char_budget` / `context_summary_trigger_chars`**、**`chat_queue_*` / `chat_queue_recent_jobs` / `per_active_jobs`**）
+  - `POST /chat`：非流式对话（请求体 `message` + 可选 `conversation_id`；响应含 `conversation_id`）
+  - `POST /chat/stream`：SSE 流式对话（请求体 `message` + 可选 `conversation_id`；响应头 `x-conversation-id` 回传会话 ID，前端默认走这个）
+  - `GET /status`：状态栏数据（模型、`api_base`、`max_tokens`、`temperature`、**`tool_count` / `tool_names` / `tool_dispatch_registry`**、`reflection_default_max_rounds`、**`final_plan_requirement` / `plan_rewrite_max_attempts`**、**`max_message_history` / `tool_message_max_chars` / `context_char_budget` / `context_summary_trigger_chars`**、**`chat_queue_*` / `chat_queue_recent_jobs` / `per_active_jobs`**、`conversation_store_entries`）
   - `GET /health`：健康检查（API_KEY/静态目录/工作区可写/依赖命令）；实现见 `health.rs`，**TUI 按 F10** 弹层复用同一逻辑（无需起 HTTP）。
-  - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件（`GET /workspace/file` 仅读取不超过 1 MiB 的 UTF-8 文本，超限返回错误）
+  - `GET|POST /workspace` + `GET|POST|DELETE /workspace/file`：工作区浏览与读写文件（`GET /workspace/file` 仅读取不超过 1 MiB 的 UTF-8 文本，超限返回错误）。`POST /workspace` 对非空路径执行目录存在性、`workspace_allowed_roots` 白名单与敏感系统目录黑名单校验，避免把运行时工作区切到 `/proc`、`/sys`、`/dev`、`/etc`、`/usr` 等区域。
   - `GET|POST /tasks`：任务清单读写
   - `POST /upload` + `GET /uploads/...`：上传与静态访问
 - **状态与工作区选择**：`AppState` 内维护 `workspace_override`，由前端调用 `/workspace` POST 来设置，影响 Agent 的工具执行工作目录与文件 API 根目录。
@@ -304,6 +306,7 @@ flowchart LR
 
 - **统一请求封装**：超时、重试、错误分类（`ApiError`）、GET 去重与轻量缓存（SWR）。
 - **流式聊天**：`sendChatStream` 消费 `/chat/stream` 的 SSE，把：
+  - 请求体中的可选 `conversation_id` 传给后端；若首轮未传，读取响应头 `x-conversation-id` 并缓存到面板状态
   - 纯文本 `data:` 当作 delta
   - JSON `data:` 识别 `tool_running`/`tool_call`（兼容旧服务端）/`tool_result`（含可选 `summary`）/`workspace_changed` 并分发回调；工具卡片在 **`onToolResult`** 中单条展示「摘要 + 实际输出」
 

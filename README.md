@@ -40,6 +40,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - 命令执行完成后，聊天区会以**单独系统气泡**展示「描述与总结」与 JSON **human_summary**（若有）；**不展示**「【执行结果】」整块（成功/失败、退出码、stdout/stderr、完整工具正文）；**完整内容**仍保存在对话消息与服务端日志中，**导出 JSON/MD** 仍为全文。无 SSE 的终端 CLI 回显仍打印完整格式化结果（含【执行结果】）。
 - **流式输出与状态栏**：
   - Web Chat 回复支持流式增量显示。
+  - Web `/chat` 与 `/chat/stream` 支持可选 `conversation_id` 以跨请求延续同一会话；未传时服务端自动分配会话 ID（流式接口通过响应头 `x-conversation-id` 返回）。
   - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout（与 TUI 右栏「队列」及状态栏/`human_summary` 展示逻辑一致），便于对照「写代码—编译—运行」等多步任务。
   - 状态栏区分“模型生成中…”和“工具运行中…”，命令完成后不会一直显示忙碌。
 - **会话导出（Web 与 TUI 对齐）**：
@@ -57,7 +58,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 - **默认仅本机监听**（`--serve`）：绑定 **`127.0.0.1`**，局域网其它设备默认无法直连。若需局域网访问，请显式使用 `--host 0.0.0.0` 或设置环境变量 `AGENT_HTTP_HOST=0.0.0.0`（未传 `--host` 时生效）。
 - **Web Bearer 鉴权（默认必需）**：`/chat`、`/workspace`、`/tasks`、`/upload` 等接口要求 `Authorization: Bearer <token>`。若未配置 `web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN`，服务默认拒绝启动；如确需无鉴权运行，需显式设置 `allow_insecure_no_auth_for_non_loopback=true`（或 `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`，不安全）。内置前端会从浏览器 `localStorage["crabmate-api-bearer-token"]` 读取 token 并自动附带该请求头（可在浏览器控制台手动设置）。
-- **工作区**：Web 端通过 `POST /workspace` 设置的路径**必须已存在且为目录**，且（`canonicalize` 后）须落在配置的**允许根目录**之下。未配置 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS` 时，仅允许 **`run_command_working_dir` 及其子目录**；若配置了多个根路径，则 `run_command_working_dir` 本身也须落在其中某一根之下（否则启动报错）。若你未配置 `web_api_bearer_token`，请勿在不可信网络暴露本服务。
+- **工作区**：Web 端通过 `POST /workspace` 设置的路径**必须已存在且为目录**，且（`canonicalize` 后）须落在配置的**允许根目录**之下，并避开敏感系统目录黑名单（如 `/proc`、`/sys`、`/dev`、`/etc`、`/usr`）。未配置 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS` 时，仅允许 **`run_command_working_dir` 及其子目录**；若配置了多个根路径，则 `run_command_working_dir` 本身也须落在其中某一根之下（否则启动报错）。若你未配置 `web_api_bearer_token`，请勿在不可信网络暴露本服务。
 - **联网搜索 Key**：`web_search_api_key` 与 DeepSeek 的 `API_KEY` 无关；若写入配置文件，请妥善保管文件权限，避免泄露第三方搜索配额。
 - **建议**：公网或不可信网络请配合反向代理、鉴权、TLS、防火墙等自行加固。
 

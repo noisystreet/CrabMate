@@ -64,6 +64,13 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 // TUI 聊天区分隔线已随 `messages` 全量同步，勿再追加。
                 return AgentLineKind::Ignore;
             }
+            super::protocol::SsePayload::StagedPlanStarted { .. }
+            | super::protocol::SsePayload::StagedPlanStepStarted { .. }
+            | super::protocol::SsePayload::StagedPlanStepFinished { .. }
+            | super::protocol::SsePayload::StagedPlanFinished { .. } => {
+                // 结构化分步事件当前由 Web 侧优先消费；TUI 继续使用 staged_plan_notice 队列文本。
+                return AgentLineKind::Ignore;
+            }
             super::protocol::SsePayload::ToolCall { .. }
             | super::protocol::SsePayload::ToolResult { .. }
             | super::protocol::SsePayload::PlanRequired { .. } => {
@@ -173,5 +180,14 @@ mod tests {
             }
             other => panic!("unexpected kind: {:?}", other),
         }
+    }
+
+    #[test]
+    fn parse_staged_plan_structured_event_as_ignore() {
+        let line = r#"{"v":1,"staged_plan_step_started":{"plan_id":"p-1","step_id":"s1","step_index":1,"total_steps":2,"description":"desc"}}"#;
+        assert!(matches!(
+            classify_agent_sse_line(line),
+            AgentLineKind::Ignore
+        ));
     }
 }
