@@ -386,6 +386,15 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 .chat_queue
                 .begin_per_flight_job(job_id, flight.clone());
             let out = Some(&sse_tx);
+            let cancel = Arc::new(AtomicBool::new(false));
+            let cancel_watcher = {
+                let tx_for_watch = sse_tx.clone();
+                let cancel_for_watch = Arc::clone(&cancel);
+                tokio::spawn(async move {
+                    tx_for_watch.closed().await;
+                    cancel_for_watch.store(true, Ordering::SeqCst);
+                })
+            };
             let r = crate::run_agent_turn(
                 &state.client,
                 &state.api_key,
@@ -397,10 +406,11 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 workspace_is_set,
                 false,
                 false,
-                None,
+                Some(cancel),
                 Some(flight),
             )
             .await;
+            cancel_watcher.abort();
             let (ok, err) = match r {
                 Ok(()) => (true, None),
                 Err(e) => {
