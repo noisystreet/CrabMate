@@ -283,25 +283,31 @@ pub async fn stream_chat(
     let mut finish_reason = String::new();
     let mut parsing_tool_calls_notified = false;
 
+    let mut stream_done = false;
     'stream_read: while let Some(chunk) = stream.next().await {
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             break 'stream_read;
         }
         let chunk = chunk?;
         buf.extend_from_slice(&chunk);
-        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+
+        // 以“消费偏移”扫描完整行，避免每行 `split_off` 导致重复分配与拷贝。
+        let mut consumed = 0usize;
+        let mut cancelled = false;
+        while let Some(rel_pos) = buf[consumed..].iter().position(|&b| b == b'\n') {
             if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-                break 'stream_read;
+                cancelled = true;
+                break;
             }
-            let line = std::str::from_utf8(&buf[..pos])
+            let pos = consumed + rel_pos;
+            let line = std::str::from_utf8(&buf[consumed..pos])
                 .unwrap_or("")
-                .trim()
-                .to_string();
-            buf = buf.split_off(pos + 1);
-            if line.starts_with("data: ") {
-                let payload = line.strip_prefix("data: ").unwrap_or("").trim();
+                .trim();
+            consumed = pos + 1;
+            if let Some(payload) = line.strip_prefix("data: ").map(str::trim) {
                 if payload == "[DONE]" {
-                    break 'stream_read;
+                    stream_done = true;
+                    break;
                 }
                 ingest_sse_data_payload(
                     payload,
@@ -315,9 +321,15 @@ pub async fn stream_chat(
                 .await;
             }
         }
+        if consumed > 0 {
+            buf.drain(..consumed);
+        }
+        if cancelled || stream_done {
+            break 'stream_read;
+        }
     }
     // 连接关闭时，最后一条 `data:` 可能未带换行符，原先会一直留在 buf 中导致正文/工具参数尾部丢失。
-    if !buf.is_empty() {
+    if !stream_done && !buf.is_empty() {
         let line = String::from_utf8_lossy(&buf);
         let line = line.trim();
         if line.starts_with("data: ") {
