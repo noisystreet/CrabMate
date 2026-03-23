@@ -15,7 +15,7 @@ use crate::tool_result::ToolResult;
 use crate::types::Message;
 
 /// 聊天区（TUI / Web 工具卡）是否展示 **【执行结果】** 整块（状态行、stdout/stderr、完整 JSON、纯文本正文等）。
-/// `false` 时仅展示 **【描述与总结】** / JSON `human_summary` 等摘要；**不打印**「【执行结果】」及其下任何内容；`Message.content` 与 tracing 仍为全文。
+/// `false` 时仅展示 `summarize_tool_call` / JSON `human_summary` 等摘要；**不打印**「【执行结果】」及其下任何内容；`Message.content` 与 tracing 仍为全文。
 pub(crate) const SHOW_TOOL_RAW_OUTPUT_IN_CHAT: bool = false;
 
 /// `role: tool` 的展示：与 Web `ChatPanel` 的 `buildToolOutputCardText` 对齐。
@@ -144,7 +144,7 @@ fn find_tool_call_for_display(messages: &[Message], tool_idx: usize) -> Option<(
     None
 }
 
-/// TUI 行缓存指纹：同一条 `tool` 消息在「assistant 已带上 tool_calls」前后，展示可能多出一节「描述与总结」。
+/// TUI 行缓存指纹：同一条 `tool` 消息在「assistant 已带上 tool_calls」前后，展示可能多出一节 `summarize_tool_call` 摘要。
 pub(crate) fn tool_display_context_fingerprint(messages: &[Message], tool_msg_idx: usize) -> u64 {
     let mut h = DefaultHasher::new();
     if let Some((name, args)) = find_tool_call_for_display(messages, tool_msg_idx) {
@@ -154,8 +154,8 @@ pub(crate) fn tool_display_context_fingerprint(messages: &[Message], tool_msg_id
     h.finish()
 }
 
-/// **TUI / 导出**：在 [`tool_content_for_display`] 之上，为 `role: tool` 追加与 Web 一致的「描述与总结」
-///（来自 `summarize_tool_call`，依赖历史中**对条** assistant 的 `tool_calls`）。
+/// **TUI / 导出**：在 [`tool_content_for_display`] 之上，为 `role: tool` 追加与 Web 一致的 `summarize_tool_call` 摘要
+///（依赖历史中**对条** assistant 的 `tool_calls`）。
 pub(crate) fn tool_content_for_display_for_message(
     raw: &str,
     messages: &[Message],
@@ -183,9 +183,9 @@ pub(crate) fn tool_content_for_display_for_message(
         }
     }
     if body.is_empty() {
-        return format!("【描述与总结】\n{prefix}");
+        return prefix.to_string();
     }
-    format!("【描述与总结】\n{prefix}\n\n{body}")
+    format!("{prefix}\n\n{body}")
 }
 
 // --- 助手正文：剥重复「模型：」标签 → 规划可读化 → LaTeX（与 TUI / CLI `terminal_render_agent_markdown` 共用）---
@@ -307,8 +307,8 @@ pub(crate) fn strip_assistant_echo_label(content: &str) -> String {
     s
 }
 
-/// 流式阶段检测到「正在输出 agent_reply_plan」时，聊天区不刷 JSON 片段，展示**本占位 + 围栏前说明**（占位置顶）；**收齐后**走 [`assistant_markdown_source_for_display`] 再剥 JSON。
-const STAGED_PLAN_STREAMING_PLACEHOLDER: &str = "正在生成分阶段规划…";
+/// 流式阶段检测到「正在输出 agent_reply_plan」时，聊天区不刷 JSON 片段；**仅展示围栏前自然语言**（无则空白，不占位文案）。**收齐后**走 [`assistant_markdown_source_for_display`] 再剥 JSON。
+/// 模型若输出同义开场白，用 [`is_staged_plan_placeholder_like_line`] 识别并在展示中去掉，避免复读。
 const STAGED_PLAN_STREAMING_PLACEHOLDER_BASE: &str = "正在生成分阶段规划";
 
 fn triple_backtick_fence_count(s: &str) -> usize {
@@ -361,7 +361,7 @@ fn should_buffer_agent_reply_plan_stream(stripped: &str) -> bool {
         && looks_like_incomplete_agent_reply_plan_whole_json(t)
 }
 
-fn is_staged_plan_placeholder_like_line(line: &str) -> bool {
+pub(crate) fn is_staged_plan_placeholder_like_line(line: &str) -> bool {
     let t = line.trim();
     if t.is_empty() {
         return false;
@@ -391,17 +391,21 @@ fn staged_plan_streaming_chat_body(stripped: &str) -> String {
     let prose_t = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
     let prose_t = prose_t.trim();
     if prose_t.is_empty() {
-        STAGED_PLAN_STREAMING_PLACEHOLDER.to_string()
+        String::new()
     } else {
-        // TUI 默认「跟随尾部」滚动；将占位放在末尾可避免长开场白把「正在生成…」挤出可视区。
-        // 若模型开场白本身就是同义占位（如“正在生成分阶段规划...”），去重后仅保留一处。
-        let prose_wo_dup = drop_leading_placeholder_like_prose_line(prose_t);
-        if prose_wo_dup.is_empty() {
-            STAGED_PLAN_STREAMING_PLACEHOLDER.to_string()
-        } else {
-            format!("{prose_wo_dup}\n\n{STAGED_PLAN_STREAMING_PLACEHOLDER}")
-        }
+        drop_leading_placeholder_like_prose_line(prose_t)
     }
+}
+
+/// TUI 状态栏：取 `staged_plan_notice` 首条**非占位**非空行（截断）；若无非占位行则空串（调用方回退仅模型名）。
+pub(crate) fn staged_plan_notice_status_hint(text: &str) -> String {
+    text.lines()
+        .map(|l| l.trim_end())
+        .find(|l| !l.trim().is_empty() && !is_staged_plan_placeholder_like_line(l))
+        .unwrap_or("")
+        .chars()
+        .take(52)
+        .collect()
 }
 
 /// 主聊天区隐藏 v1 规划列表时：
@@ -565,7 +569,7 @@ mod tests {
         ];
         let raw = messages[2].content.as_deref().unwrap();
         let out = tool_content_for_display_for_message(raw, &messages, 2);
-        assert_eq!(out, "【描述与总结】\n执行命令：ls");
+        assert_eq!(out, "执行命令：ls");
         assert!(!out.contains("【执行结果】"));
     }
 
@@ -649,7 +653,10 @@ mod tests {
         let raw = format!("{line}\n{line}\n```json\n{{\"type\":\"agent_reply_plan\"");
         let out = assistant_markdown_source_for_display_streaming_last(&raw);
         assert_eq!(out.matches(line).count(), 1, "{}", out);
-        assert!(out.contains("正在生成分阶段规划"));
+        assert!(
+            !out.contains("正在生成分阶段规划"),
+            "流式阶段不在 UI 展示占位文案：{out:?}"
+        );
     }
 
     #[test]
@@ -657,32 +664,25 @@ mod tests {
         let raw = "下面拆解如下。\n```json\n{\"type\":\"agent_reply_plan\"";
         let out = assistant_markdown_source_for_display_streaming_last(raw);
         assert!(out.contains("下面拆解"));
-        assert!(out.contains("正在生成分阶段规划"));
+        assert!(!out.contains("正在生成分阶段规划"));
         assert!(!out.contains("\"steps\""));
     }
 
     #[test]
-    fn assistant_streaming_last_placeholder_after_fence_prose() {
+    fn assistant_streaming_last_fence_prose_without_streaming_placeholder() {
         let raw = "这个任务可以分成以下步骤\n```json\n{\"type\":\"agent_reply_plan\"";
         let out = assistant_markdown_source_for_display_streaming_last(raw);
-        let ph = out.find("正在生成分阶段规划").expect("placeholder");
-        let prose = out
-            .find("这个任务可以分成以下步骤")
-            .expect("fence-before prose");
-        assert!(
-            ph > prose,
-            "占位置尾，避免跟随尾部时被开场白挤出可视区：out={out:?}"
-        );
+        assert!(out.contains("这个任务可以分成以下步骤"));
+        assert!(!out.contains("正在生成分阶段规划"), "out={out:?}");
     }
 
     #[test]
     fn assistant_streaming_last_dedupes_placeholder_like_opening_line() {
         let raw = "正在生成分阶段规划...\n```json\n{\"type\":\"agent_reply_plan\"";
         let out = assistant_markdown_source_for_display_streaming_last(raw);
-        assert_eq!(
-            out.matches("正在生成分阶段规划").count(),
-            1,
-            "开场白与占位同义时应去重：{out:?}"
+        assert!(
+            out.is_empty(),
+            "占位式开场白不展示，且无其它围栏前正文：{out:?}"
         );
     }
 
@@ -697,7 +697,7 @@ mod tests {
             1,
             "开场白仅句末标点不同也应去重：{out:?}"
         );
-        assert!(out.contains("正在生成分阶段规划"));
+        assert!(!out.contains("正在生成分阶段规划"));
     }
 
     #[test]
@@ -719,10 +719,19 @@ mod tests {
     }
 
     #[test]
-    fn assistant_streaming_last_whole_json_incomplete_uses_placeholder() {
+    fn assistant_streaming_last_whole_json_incomplete_shows_empty_until_complete() {
         let raw = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x""#;
         let out = assistant_markdown_source_for_display_streaming_last(raw);
-        assert!(out.contains("正在生成分阶段规划"));
+        assert!(out.is_empty(), "纯半截 JSON 流式阶段不占位文案：{out:?}");
+    }
+
+    #[test]
+    fn staged_plan_notice_status_hint_skips_placeholder_lines() {
+        assert_eq!(
+            staged_plan_notice_status_hint("正在生成分阶段规划…\n步骤 1 进行中"),
+            "步骤 1 进行中"
+        );
+        assert_eq!(staged_plan_notice_status_hint("正在生成分阶段规划…"), "");
     }
 
     #[test]

@@ -113,7 +113,29 @@ function fenceInnerShouldHideAgentReplyPlanJson(inner: string): boolean {
 
 // --- 与后端 `message_display` 流式缓冲对齐（`assistant_markdown_source_for_display_streaming_last`）---
 
+/** 历史占位文案；主聊天区不再展示，保留常量名供外部或文档对齐。 */
 export const STAGED_PLAN_STREAMING_PLACEHOLDER = '正在生成分阶段规划…'
+
+const STAGED_PLAN_STREAMING_PLACEHOLDER_BASE = '正在生成分阶段规划'
+
+function isStagedPlanPlaceholderLikeLine(line: string): boolean {
+  const t = line
+    .trim()
+    .replace(/[….。!！?？:：]+$/gu, '')
+    .trim()
+  return (
+    t === STAGED_PLAN_STREAMING_PLACEHOLDER_BASE ||
+    t.startsWith(STAGED_PLAN_STREAMING_PLACEHOLDER_BASE)
+  )
+}
+
+function dropLeadingPlaceholderLikeProseLine(prose: string): string {
+  const lines = prose.split('\n')
+  if (lines.length === 0) return ''
+  const first = lines[0] ?? ''
+  if (!isStagedPlanPlaceholderLikeLine(first)) return prose
+  return lines.slice(1).join('\n').trim()
+}
 
 function tripleBacktickFenceCount(s: string): number {
   const m = s.match(/```/g)
@@ -174,11 +196,11 @@ export function shouldBufferAgentReplyPlanStream(stripped: string): boolean {
   return !jsonValueParseOk(t) && looksLikeIncompleteAgentReplyPlanWholeJson(t)
 }
 
-/** 占位 + 围栏前说明（与后端 `staged_plan_streaming_chat_body` 一致；占位置顶以免长说明顶掉首屏状态）。 */
+/** 与后端 `staged_plan_streaming_chat_body` 一致：仅围栏前自然语言，无「正在生成…」占位。 */
 export function stagedPlanStreamingChatBody(stripped: string): string {
   const prose = proseBeforeFirstFence(stripped).trim()
-  if (!prose) return STAGED_PLAN_STREAMING_PLACEHOLDER
-  return `${STAGED_PLAN_STREAMING_PLACEHOLDER}\n\n${prose}`
+  if (!prose) return ''
+  return dropLeadingPlaceholderLikeProseLine(prose)
 }
 
 /**

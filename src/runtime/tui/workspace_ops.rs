@@ -9,11 +9,22 @@ const FILE_VIEW_PREVIEW_MAX_CHARS: usize = 800_000;
 /// 流式增量写入**当前轮**助手气泡。
 ///
 /// 必须只更新**列表末尾**的助手：若从尾部向前找「任意一条」助手并改写，会在分阶段规划下把**规划轮**正文覆盖成分步执行的流式输出（表现为「队列里已有步骤，上一轮模型气泡消失」）；工具链末尾为 `tool` 时也应**新推**助手而非改写更早的 `tool_calls` 那条。
+///
+/// 分步 `user` 已插入后，若滞后 SSE 仍送来**与上一条助手全文相同**的正文，不得再 `push` 第二条助手（否则与 `sync_merge` 去重前即出现相邻重复规划气泡）。
 pub(super) fn upsert_assistant_message(messages: &mut Vec<Message>, content: &str) {
     if let Some(last) = messages.last_mut()
         && last.role == "assistant"
     {
         last.content = Some(content.to_string());
+        return;
+    }
+    if messages.len() >= 2
+        && messages.last().is_some_and(|m| m.role == "user")
+        && let Some(prev) = messages.get(messages.len() - 2)
+        && prev.role == "assistant"
+        && prev.tool_calls.is_none()
+        && prev.content.as_deref() == Some(content)
+    {
         return;
     }
     messages.push(Message {
@@ -320,5 +331,14 @@ mod upsert_assistant_tests {
         upsert_assistant_message(&mut m, "xy");
         assert_eq!(m.len(), 2);
         assert_eq!(m[1].content.as_deref(), Some("xy"));
+    }
+
+    #[test]
+    fn upsert_ignores_stale_duplicate_plan_after_step_user() {
+        let plan = "full plan body identical";
+        let mut m = vec![Message::user_only("q"), a(plan), Message::user_only("step")];
+        upsert_assistant_message(&mut m, plan);
+        assert_eq!(m.len(), 3, "不得再推一条与规划全文相同的助手");
+        assert_eq!(m[1].content.as_deref(), Some(plan));
     }
 }
