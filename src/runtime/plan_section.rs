@@ -1,6 +1,6 @@
 //! 分阶段规划在 CLI 转录与 `staged_plan_queue_summary_text` 中的**节标题**统一入口（与「【规划】共 N 步」正文前缀一致）；TUI 规划行仅在右栏「队列」页展示（步骤行内 `[ ]`/`[✓]` 进度），主聊天区不再重复插入该标题块。
 
-/// 规划块顶栏（CLI `clear_before` 时打印的节标题；与 `terminal_cli_transcript` 一致）。
+/// 规划摘要首行前缀（`staged_plan_queue_summary_text` 与协议示例一致）；CLI 在 `clear_before` 时对**首条非空展示行**着色，不再单独多打一行本常量。
 pub const STAGED_PLAN_SECTION_HEADER: &str = "【规划】";
 
 /// 分步执行注入的 `user` 消息中、紧跟在 `【分步执行 i/n】` 后的那句模型约定说明（与 `agent_turn` 注入正文一致）。
