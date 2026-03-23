@@ -87,15 +87,34 @@ pub fn trim_messages_by_char_budget(
         return;
     }
     let min_total = 1 + min_messages_after_system;
-    while messages.len() > min_total && estimate_non_system_chars(messages) > budget {
-        if messages.len() > 1 && messages[0].role == "system" {
-            messages.remove(1);
-        } else if !messages.is_empty() {
-            messages.remove(0);
-        } else {
+    if messages.len() <= min_total {
+        return;
+    }
+    let current_chars = estimate_non_system_chars(messages);
+    if current_chars <= budget {
+        return;
+    }
+
+    let has_system_head = messages[0].role == "system";
+    let start_idx = if has_system_head { 1 } else { 0 };
+    let removable = messages.len().saturating_sub(min_total);
+    if removable == 0 {
+        return;
+    }
+
+    let mut remaining_chars = current_chars;
+    let mut remove_count = 0usize;
+    for msg in messages.iter().skip(start_idx).take(removable) {
+        if remaining_chars <= budget {
             break;
         }
+        remaining_chars = remaining_chars.saturating_sub(estimate_message_chars(msg));
+        remove_count += 1;
     }
+    if remove_count == 0 {
+        return;
+    }
+    messages.drain(start_idx..start_idx + remove_count);
 }
 
 /// 删除「无前驱 `assistant` + `tool_calls`」的 `role: tool` 消息。
