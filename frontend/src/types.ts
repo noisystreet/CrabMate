@@ -56,6 +56,8 @@ export interface StatusData {
     plan_rewrite_attempts: number
     require_plan_in_final_content: boolean
   }>
+  /** 当前内存会话存储中的会话数量（conversation_id 维度） */
+  conversation_store_entries?: number
 }
 
 export interface WorkspaceEntry {
@@ -71,6 +73,7 @@ export interface WorkspaceData {
 
 export interface ChatResponse {
   reply: string
+  conversation_id?: string
 }
 
 export interface TaskItem {
