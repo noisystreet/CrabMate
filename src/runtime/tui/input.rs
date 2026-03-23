@@ -699,6 +699,8 @@ pub(super) async fn handle_key(
                         tool_call_id: None,
                     });
                     assistant_buf.clear();
+                    // 后端回合消息不携带本地空 assistant 占位，避免最终同步时出现重复助手气泡。
+                    let mut messages = state.messages.clone();
                     state.messages.push(Message {
                         role: "assistant".to_string(),
                         content: Some(String::new()),
@@ -708,7 +710,6 @@ pub(super) async fn handle_key(
                     });
                     state.model_phase = ModelPhase::Thinking;
                     set_normal_status_line(state, &cfg.model);
-                    let mut messages = state.messages.clone();
                     let tx2 = tx.clone();
                     let work_dir = state.workspace_dir.clone();
                     let workspace_is_set = true;

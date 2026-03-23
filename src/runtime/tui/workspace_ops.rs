@@ -1,6 +1,6 @@
 //! 工作区列表、任务/日程、assistant 占位更新。
 
-use crate::types::Message;
+use crate::types::{Message, is_chat_ui_separator};
 
 use super::state::{Mode, TuiState};
 
@@ -10,10 +10,12 @@ const FILE_VIEW_PREVIEW_MAX_CHARS: usize = 800_000;
 ///
 /// 必须只更新**列表末尾**的助手：若从尾部向前找「任意一条」助手并改写，会在分阶段规划下把**规划轮**正文覆盖成分步执行的流式输出（表现为「队列里已有步骤，上一轮模型气泡消失」）；工具链末尾为 `tool` 时也应**新推**助手而非改写更早的 `tool_calls` 那条。
 pub(super) fn upsert_assistant_message(messages: &mut Vec<Message>, content: &str) {
-    if let Some(last) = messages.last_mut()
-        && last.role == "assistant"
+    if let Some(idx) = messages
+        .iter()
+        .rposition(|m| !(m.role == "system" && is_chat_ui_separator(m)))
+        && messages[idx].role == "assistant"
     {
-        last.content = Some(content.to_string());
+        messages[idx].content = Some(content.to_string());
         return;
     }
     messages.push(Message {
@@ -271,14 +273,18 @@ pub(super) fn toggle_reminder_done(state: &mut TuiState) {
 }
 
 #[cfg(test)]
-mod upsert_assistant_tests {
+mod tests {
     use super::upsert_assistant_message;
     use crate::types::Message;
 
-    fn a(content: &str) -> Message {
+    fn user_msg(s: &str) -> Message {
+        Message::user_only(s.to_string())
+    }
+
+    fn assistant_msg(s: &str) -> Message {
         Message {
             role: "assistant".to_string(),
-            content: Some(content.to_string()),
+            content: Some(s.to_string()),
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -286,20 +292,34 @@ mod upsert_assistant_tests {
     }
 
     #[test]
-    fn upsert_updates_only_trailing_assistant() {
-        let mut m = vec![
-            Message::user_only("u1"),
-            a("planning"),
-            Message::user_only("step"),
+    fn upsert_updates_trailing_assistant_only() {
+        let mut msgs = vec![
+            Message::system_only("sys"),
+            user_msg("u"),
+            assistant_msg("old"),
         ];
-        upsert_assistant_message(&mut m, "step reply");
-        assert_eq!(m.len(), 4);
-        assert_eq!(m[1].content.as_deref(), Some("planning"));
-        assert_eq!(m[3].content.as_deref(), Some("step reply"));
+        upsert_assistant_message(&mut msgs, "new");
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[2].content.as_deref(), Some("new"));
     }
 
     #[test]
-    fn upsert_after_tool_pushes_new_assistant() {
+    fn upsert_appends_when_user_is_latest_message() {
+        let mut msgs = vec![
+            Message::system_only("sys"),
+            user_msg("u1"),
+            assistant_msg("plan"),
+            user_msg("step"),
+        ];
+        upsert_assistant_message(&mut msgs, "hello");
+        assert_eq!(msgs.len(), 5);
+        assert_eq!(msgs[2].content.as_deref(), Some("plan"));
+        assert_eq!(msgs[4].role, "assistant");
+        assert_eq!(msgs[4].content.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn upsert_appends_when_tool_is_latest_message() {
         let tool = Message {
             role: "tool".to_string(),
             content: Some("{}".to_string()),
@@ -307,18 +327,16 @@ mod upsert_assistant_tests {
             name: None,
             tool_call_id: Some("c1".to_string()),
         };
-        let mut m = vec![Message::user_only("q"), a("call"), tool];
-        upsert_assistant_message(&mut m, "after tool");
-        assert_eq!(m.len(), 4);
-        assert_eq!(m[1].content.as_deref(), Some("call"));
-        assert_eq!(m[3].content.as_deref(), Some("after tool"));
-    }
-
-    #[test]
-    fn upsert_last_assistant_in_place() {
-        let mut m = vec![Message::user_only("q"), a("x")];
-        upsert_assistant_message(&mut m, "xy");
-        assert_eq!(m.len(), 2);
-        assert_eq!(m[1].content.as_deref(), Some("xy"));
+        let mut msgs = vec![
+            Message::system_only("sys"),
+            user_msg("u1"),
+            assistant_msg("call"),
+            tool,
+        ];
+        upsert_assistant_message(&mut msgs, "after tool");
+        assert_eq!(msgs.len(), 5);
+        assert_eq!(msgs[2].content.as_deref(), Some("call"));
+        assert_eq!(msgs[4].role, "assistant");
+        assert_eq!(msgs[4].content.as_deref(), Some("after tool"));
     }
 }
