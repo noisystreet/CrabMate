@@ -220,6 +220,37 @@ fn params_http_fetch() -> serde_json::Value {
     })
 }
 
+fn params_http_request() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "完整 http(s) URL。仅允许匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。"
+            },
+            "method": {
+                "type": "string",
+                "description": "HTTP 方法：POST / PUT / PATCH / DELETE（大小写均可）。",
+                "enum": ["POST", "PUT", "PATCH", "DELETE", "post", "put", "patch", "delete"]
+            },
+            "json_body": {
+                "description": "可选：JSON 请求体（任意合法 JSON 值）。序列化后上限 256KiB。",
+                "oneOf": [
+                    {"type":"object"},
+                    {"type":"array"},
+                    {"type":"string"},
+                    {"type":"number"},
+                    {"type":"integer"},
+                    {"type":"boolean"},
+                    {"type":"null"}
+                ]
+            }
+        },
+        "required": ["url", "method"],
+        "additionalProperties": false
+    })
+}
+
 fn params_run_command() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -669,6 +700,46 @@ fn params_ast_grep_run() -> serde_json::Value {
             }
         },
         "required": ["pattern", "lang"],
+        "additionalProperties": false
+    })
+}
+
+fn params_ast_grep_rewrite() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "ast-grep 模式串，最长 4096 字符"
+            },
+            "rewrite": {
+                "type": "string",
+                "description": "替换模板（ast-grep rewrite 模板），最长 4096 字符"
+            },
+            "lang": {
+                "type": "string",
+                "description": "语言：rust、c/cpp、python、javascript、typescript、tsx、jsx、go、java、kotlin、bash、html、css"
+            },
+            "paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：搜索根路径（相对工作区），默认 [\"src\"]；最多 8 项。"
+            },
+            "globs": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：额外 --globs，最多 10 项（禁止 .. 等非法字符）。"
+            },
+            "dry_run": {
+                "type": "boolean",
+                "description": "是否仅预览（默认 true）。false 时会写入文件。"
+            },
+            "confirm": {
+                "type": "boolean",
+                "description": "当 dry_run=false 时必须为 true，防止误改。"
+            }
+        },
+        "required": ["pattern", "rewrite", "lang"],
         "additionalProperties": false
     })
 }
@@ -1553,6 +1624,55 @@ fn params_structured_diff() -> serde_json::Value {
     })
 }
 
+fn params_structured_patch() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": { "type": "string", "description": "相对工作区的数据文件路径（json/yaml/yml/toml）" },
+            "query": {
+                "type": "string",
+                "description": "目标路径：JSON Pointer（/a/b）或点号路径（a.b.0）"
+            },
+            "action": {
+                "type": "string",
+                "enum": ["set", "remove"],
+                "description": "补丁动作，默认 set"
+            },
+            "value": {
+                "description": "仅 action=set 需要：写入值（任意 JSON 值）",
+                "oneOf": [
+                    {"type":"object"},
+                    {"type":"array"},
+                    {"type":"string"},
+                    {"type":"number"},
+                    {"type":"integer"},
+                    {"type":"boolean"},
+                    {"type":"null"}
+                ]
+            },
+            "format": {
+                "type": "string",
+                "description": "可选：auto / json / yaml|yml / toml",
+                "enum": ["auto", "json", "yaml", "yml", "toml"]
+            },
+            "create_missing": {
+                "type": "boolean",
+                "description": "action=set 时中间路径缺失是否自动创建，默认 true"
+            },
+            "dry_run": {
+                "type": "boolean",
+                "description": "默认 true：仅预览；false 将实际写入"
+            },
+            "confirm": {
+                "type": "boolean",
+                "description": "当 dry_run=false 时必须 true"
+            }
+        },
+        "required": ["path", "query"],
+        "additionalProperties": false
+    })
+}
+
 fn params_text_transform() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -1822,6 +1942,10 @@ fn runner_http_fetch(args: &str, ctx: &ToolContext<'_>) -> String {
     http_fetch::run_direct(args, ctx)
 }
 
+fn runner_http_request(args: &str, ctx: &ToolContext<'_>) -> String {
+    http_fetch::run_request_direct(args, ctx)
+}
+
 fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
     command::run(
         args,
@@ -1945,6 +2069,10 @@ fn runner_codespell_check(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_ast_grep_run(args: &str, ctx: &ToolContext<'_>) -> String {
     spell_astgrep_tools::ast_grep_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_ast_grep_rewrite(args: &str, ctx: &ToolContext<'_>) -> String {
+    spell_astgrep_tools::ast_grep_rewrite(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn runner_frontend_lint(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -2127,6 +2255,10 @@ fn runner_structured_diff(args: &str, ctx: &ToolContext<'_>) -> String {
     structured_data::structured_diff(args, ctx.working_dir)
 }
 
+fn runner_structured_patch(args: &str, ctx: &ToolContext<'_>) -> String {
+    structured_data::structured_patch(args, ctx.working_dir)
+}
+
 fn runner_text_transform(args: &str, _ctx: &ToolContext<'_>) -> String {
     text_transform::run(args)
 }
@@ -2253,6 +2385,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: params_http_fetch,
             runner: runner_http_fetch,
+        },
+        ToolSpec {
+            name: "http_request",
+            description: "对 **http/https** URL 发起 **POST/PUT/PATCH/DELETE**（可选 JSON body）。仅允许匹配 `http_fetch_allowed_prefixes` 的同源 + 路径前缀边界；响应含状态、Content-Type、重定向链与正文（按配置截断）。默认建议 dry-run 先验证，勿在 body 中放真实密钥。",
+            category: ToolCategory::Basic,
+            parameters: params_http_request,
+            runner: runner_http_request,
         },
         ToolSpec {
             name: "run_command",
@@ -2470,6 +2609,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: params_ast_grep_run,
             runner: runner_ast_grep_run,
+        },
+        ToolSpec {
+            name: "ast_grep_rewrite",
+            description: "运行 `ast-grep run --rewrite` 做结构化改写。默认 `dry_run=true` 仅预览；当 `dry_run=false` 时需 `confirm=true` 才会写盘（等价 `--update-all`）。路径与 globs 安全策略同 `ast_grep_run`。",
+            category: ToolCategory::Development,
+            parameters: params_ast_grep_rewrite,
+            runner: runner_ast_grep_rewrite,
         },
         ToolSpec {
             name: "frontend_lint",
@@ -2815,6 +2961,13 @@ fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_structured_diff,
         },
         ToolSpec {
+            name: "structured_patch",
+            description: "对 **JSON / YAML / TOML** 做结构化补丁（`set/remove`），路径支持 JSON Pointer（`/a/b`）或点号（`a.b.0`）。默认 `dry_run=true` 仅预览；写盘需 `confirm=true`。适合精确修改配置而非整段文本替换。",
+            category: ToolCategory::Development,
+            parameters: params_structured_patch,
+            runner: runner_structured_patch,
+        },
+        ToolSpec {
             name: "text_diff",
             description: "任意两段 **UTF-8 纯文本**的行级 unified diff（与 Git 无关）。mode=inline 时比较 left/right 字符串（各 256KiB）；mode=paths 时比较工作区内两文件（各 4MiB 内）。可调 context_lines 与 max_output_bytes。与 `structured_diff`（结构化键）互补。",
             category: ToolCategory::Development,
@@ -3141,6 +3294,22 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             };
             Some(format!("ast-grep [{}] {}", lang, short))
         }
+        "ast_grep_rewrite" => {
+            let lang = v.get("lang").and_then(|x| x.as_str()).unwrap_or("?");
+            let p = v.get("pattern").and_then(|x| x.as_str()).unwrap_or("");
+            let short = if p.chars().count() > 42 {
+                format!("{}…", p.chars().take(42).collect::<String>())
+            } else {
+                p.to_string()
+            };
+            let dry = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
+            Some(format!(
+                "ast-grep rewrite [{}] {}{}",
+                lang,
+                short,
+                if dry { "（dry-run）" } else { "" }
+            ))
+        }
         "cargo_audit" => Some("运行 cargo audit".to_string()),
         "cargo_deny" => Some("运行 cargo deny".to_string()),
         "ci_pipeline_local" => Some("运行本地 CI 流水线".to_string()),
@@ -3264,6 +3433,11 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
                 .unwrap_or("GET");
             Some(format!("HTTP {}：{}", m.to_ascii_uppercase(), u))
         }
+        "http_request" => {
+            let u = v.get("url")?.as_str()?.trim();
+            let m = v.get("method")?.as_str()?.trim();
+            Some(format!("HTTP {}：{}", m.to_ascii_uppercase(), u))
+        }
         "glob_files" => {
             let pat = v.get("pattern")?.as_str()?.trim();
             let root = v.get("path").and_then(|x| x.as_str()).unwrap_or(".").trim();
@@ -3301,6 +3475,12 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             let a = v.get("path_a")?.as_str()?.trim();
             let b = v.get("path_b")?.as_str()?.trim();
             Some(format!("结构化 diff：{} vs {}", a, b))
+        }
+        "structured_patch" => {
+            let p = v.get("path")?.as_str()?.trim();
+            let q = v.get("query")?.as_str()?.trim();
+            let a = v.get("action").and_then(|x| x.as_str()).unwrap_or("set");
+            Some(format!("结构化补丁：{} [{} @ {}]", p, a, q))
         }
         "list_tree" => {
             let root = v.get("path").and_then(|x| x.as_str()).unwrap_or(".").trim();
@@ -3561,6 +3741,7 @@ mod tests {
         assert!(names.contains(&"get_weather"));
         assert!(names.contains(&"web_search"));
         assert!(names.contains(&"http_fetch"));
+        assert!(names.contains(&"http_request"));
         assert!(names.contains(&"run_command"));
         assert!(names.contains(&"cargo_check"));
         assert!(names.contains(&"cargo_test"));
@@ -3591,6 +3772,7 @@ mod tests {
         assert!(names.contains(&"typos_check"));
         assert!(names.contains(&"codespell_check"));
         assert!(names.contains(&"ast_grep_run"));
+        assert!(names.contains(&"ast_grep_rewrite"));
         assert!(names.contains(&"frontend_lint"));
         assert!(names.contains(&"frontend_build"));
         assert!(names.contains(&"frontend_test"));
@@ -3638,6 +3820,7 @@ mod tests {
         assert!(names.contains(&"structured_validate"));
         assert!(names.contains(&"structured_query"));
         assert!(names.contains(&"structured_diff"));
+        assert!(names.contains(&"structured_patch"));
         assert!(names.contains(&"text_transform"));
         assert!(names.contains(&"text_diff"));
         assert!(names.contains(&"table_text"));

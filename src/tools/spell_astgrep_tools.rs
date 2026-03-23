@@ -280,9 +280,100 @@ pub fn ast_grep_run(args_json: &str, workspace_root: &Path, max_output_len: usiz
     run_and_format(cmd, max_output_len, "ast-grep run")
 }
 
+/// `ast-grep run --rewrite`：结构化改写。默认 dry-run；写盘需 `confirm=true`。
+pub fn ast_grep_rewrite(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    let pattern = match v.get("pattern").and_then(|x| x.as_str()) {
+        Some(s) if is_safe_ast_pattern(s) => s.to_string(),
+        Some(_) => return "错误：pattern 为空或过长或含非法字符".to_string(),
+        None => return "错误：缺少 pattern（ast-grep 模式串）".to_string(),
+    };
+    let rewrite = match v.get("rewrite").and_then(|x| x.as_str()) {
+        Some(s) if is_safe_ast_pattern(s) => s.to_string(),
+        Some(_) => return "错误：rewrite 为空或过长或含非法字符".to_string(),
+        None => return "错误：缺少 rewrite（目标替换模板）".to_string(),
+    };
+    let lang_raw = match v.get("lang").and_then(|x| x.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        Some(_) => return "错误：lang 不能为空（如 rust、typescript、python）".to_string(),
+        None => return "错误：缺少 lang（如 rust、typescript、python）".to_string(),
+    };
+    let lang = match normalize_ast_lang(lang_raw) {
+        Ok(l) => l,
+        Err(e) => return e,
+    };
+    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
+    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
+    if !dry_run && !confirm {
+        return "错误：ast_grep_rewrite 写盘需 confirm=true；建议先 dry_run=true 预览".to_string();
+    }
+
+    let base = match workspace_root.canonicalize() {
+        Ok(p) => p,
+        Err(e) => return format!("工作区根目录无法解析: {}", e),
+    };
+    let paths = match parse_rel_paths_limited(&v, "paths", &["src"], MAX_AST_PATHS) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let paths = filter_existing(&base, &paths);
+
+    let mut cmd = Command::new("ast-grep");
+    cmd.args(["run", "--color", "never"])
+        .arg("-p")
+        .arg(&pattern)
+        .arg("-r")
+        .arg(&rewrite)
+        .arg("-l")
+        .arg(lang)
+        .current_dir(&base);
+
+    const DEFAULT_GLOBS: &[&str] = &[
+        "!**/target/**",
+        "!**/node_modules/**",
+        "!**/.git/**",
+        "!**/vendor/**",
+        "!**/dist/**",
+        "!**/build/**",
+    ];
+    for g in DEFAULT_GLOBS {
+        cmd.arg("--globs").arg(*g);
+    }
+    if let Some(arr) = v.get("globs").and_then(|x| x.as_array()) {
+        if arr.len() > MAX_AST_GLOBS {
+            return format!("错误：globs 最多 {} 项", MAX_AST_GLOBS);
+        }
+        for x in arr {
+            let Some(s) = x.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+                return "错误：globs 须为非空字符串数组".to_string();
+            };
+            if !is_safe_glob_token(s) {
+                return format!("错误：非法 glob：{}", s);
+            }
+            cmd.arg("--globs").arg(s);
+        }
+    }
+    if !dry_run {
+        cmd.arg("--update-all");
+    }
+    for p in &paths {
+        cmd.arg(p);
+    }
+    let title = if dry_run {
+        "ast-grep rewrite (dry-run)"
+    } else {
+        "ast-grep rewrite (update-all)"
+    };
+    run_and_format(cmd, max_output_len, title)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn normalize_lang_accepts_aliases() {
@@ -293,5 +384,15 @@ mod tests {
     #[test]
     fn safe_glob_rejects_dotdot() {
         assert!(!is_safe_glob_token("**/../**"));
+    }
+
+    #[test]
+    fn rewrite_requires_confirm_when_not_dry_run() {
+        let out = ast_grep_rewrite(
+            r#"{"pattern":"foo($A)","rewrite":"bar($A)","lang":"rust","dry_run":false}"#,
+            Path::new("."),
+            4096,
+        );
+        assert!(out.contains("confirm=true"));
     }
 }

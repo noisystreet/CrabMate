@@ -299,6 +299,193 @@ fn json_pointer_escape(s: &str) -> String {
     s.replace('~', "~0").replace('/', "~1")
 }
 
+fn json_pointer_unescape(s: &str) -> String {
+    s.replace("~1", "/").replace("~0", "~")
+}
+
+fn parse_patch_query_tokens(query: &str) -> Result<Vec<String>, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let parts = if q.starts_with('/') {
+        q.split('/')
+            .skip(1)
+            .map(json_pointer_unescape)
+            .collect::<Vec<_>>()
+    } else {
+        q.split('.')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+    };
+    if parts.iter().any(|s| s.len() > 256) {
+        return Err("query 路径片段过长（单段最多 256 字符）".to_string());
+    }
+    Ok(parts)
+}
+
+fn ensure_parent_for_set<'a>(
+    root: &'a mut JsonValue,
+    tokens: &[String],
+    create_missing: bool,
+) -> Result<(&'a mut JsonValue, String), String> {
+    if tokens.is_empty() {
+        return Ok((root, String::new()));
+    }
+    let mut cur = root;
+    for seg in &tokens[..tokens.len() - 1] {
+        match cur {
+            JsonValue::Object(map) => {
+                if !map.contains_key(seg) {
+                    if !create_missing {
+                        return Err(format!("中间路径不存在: {}", seg));
+                    }
+                    map.insert(seg.clone(), JsonValue::Object(serde_json::Map::new()));
+                }
+                cur = map
+                    .get_mut(seg)
+                    .ok_or_else(|| format!("中间路径不存在: {}", seg))?;
+            }
+            JsonValue::Array(arr) => {
+                let idx = seg
+                    .parse::<usize>()
+                    .map_err(|_| format!("数组路径片段不是非负整数: {}", seg))?;
+                if idx >= arr.len() {
+                    if create_missing && idx == arr.len() {
+                        arr.push(JsonValue::Object(serde_json::Map::new()));
+                    } else {
+                        return Err(format!("数组下标越界: {}（长度 {}）", idx, arr.len()));
+                    }
+                }
+                let len_now = arr.len();
+                let Some(next) = arr.get_mut(idx) else {
+                    return Err(format!("数组下标越界: {}（长度 {}）", idx, len_now));
+                };
+                cur = next;
+            }
+            _ => return Err("中间路径不是 object/array，无法继续下钻".to_string()),
+        }
+    }
+    Ok((cur, tokens.last().cloned().unwrap_or_default()))
+}
+
+fn set_value_at_path(
+    root: &mut JsonValue,
+    tokens: &[String],
+    value: JsonValue,
+    create_missing: bool,
+) -> Result<(), String> {
+    if tokens.is_empty() {
+        *root = value;
+        return Ok(());
+    }
+    let (parent, last) = ensure_parent_for_set(root, tokens, create_missing)?;
+    match parent {
+        JsonValue::Object(map) => {
+            map.insert(last, value);
+            Ok(())
+        }
+        JsonValue::Array(arr) => {
+            let idx = last
+                .parse::<usize>()
+                .map_err(|_| format!("数组路径片段不是非负整数: {}", last))?;
+            if idx < arr.len() {
+                arr[idx] = value;
+                Ok(())
+            } else if create_missing && idx == arr.len() {
+                arr.push(value);
+                Ok(())
+            } else {
+                Err(format!("数组下标越界: {}（长度 {}）", idx, arr.len()))
+            }
+        }
+        _ => Err("目标父节点不是 object/array，无法写入".to_string()),
+    }
+}
+
+fn remove_value_at_path(root: &mut JsonValue, tokens: &[String]) -> Result<(), String> {
+    if tokens.is_empty() {
+        return Err("remove 不支持空路径（根节点）".to_string());
+    }
+    let (parent, last) = ensure_parent_for_set(root, tokens, false)?;
+    match parent {
+        JsonValue::Object(map) => {
+            if map.remove(&last).is_some() {
+                Ok(())
+            } else {
+                Err(format!("路径不存在: {}", last))
+            }
+        }
+        JsonValue::Array(arr) => {
+            let idx = last
+                .parse::<usize>()
+                .map_err(|_| format!("数组路径片段不是非负整数: {}", last))?;
+            if idx < arr.len() {
+                arr.remove(idx);
+                Ok(())
+            } else {
+                Err(format!("数组下标越界: {}（长度 {}）", idx, arr.len()))
+            }
+        }
+        _ => Err("目标父节点不是 object/array，无法删除".to_string()),
+    }
+}
+
+fn json_to_toml(v: &JsonValue) -> Result<toml::Value, String> {
+    Ok(match v {
+        JsonValue::Null => {
+            return Err("TOML 不支持 null，请改为字符串/数字/布尔或删除该键".to_string());
+        }
+        JsonValue::Bool(b) => toml::Value::Boolean(*b),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                toml::Value::Integer(i)
+            } else if let Some(u) = n.as_u64() {
+                if u > i64::MAX as u64 {
+                    return Err("TOML integer 超出 i64 范围".to_string());
+                }
+                toml::Value::Integer(u as i64)
+            } else if let Some(f) = n.as_f64() {
+                toml::Value::Float(f)
+            } else {
+                return Err("不支持的数字类型".to_string());
+            }
+        }
+        JsonValue::String(s) => toml::Value::String(s.clone()),
+        JsonValue::Array(arr) => toml::Value::Array(
+            arr.iter()
+                .map(json_to_toml)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        JsonValue::Object(map) => {
+            let mut t = toml::map::Map::new();
+            for (k, vv) in map {
+                t.insert(k.clone(), json_to_toml(vv)?);
+            }
+            toml::Value::Table(t)
+        }
+    })
+}
+
+fn serialize_by_format(v: &JsonValue, fmt: DataFormat) -> Result<String, String> {
+    let mut out = match fmt {
+        DataFormat::Json => serde_json::to_string_pretty(v).map_err(|e| e.to_string())?,
+        DataFormat::Yaml => serde_yaml::to_string(v).map_err(|e| e.to_string())?,
+        DataFormat::Toml => {
+            let tv = json_to_toml(v)?;
+            toml::to_string_pretty(&tv).map_err(|e| e.to_string())?
+        }
+        DataFormat::Csv | DataFormat::Tsv => {
+            return Err("structured_patch 仅支持 json/yaml/toml，不支持 csv/tsv".to_string());
+        }
+    };
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    Ok(out)
+}
+
 /// 校验并可选摘要顶层结构。
 /// 参数：`path`，`format?`（auto/json/yaml/toml/csv/tsv），`has_header?`（仅 CSV/TSV；默认 true），`summarize?` 默认 true
 pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
@@ -497,6 +684,104 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
     out.trim_end().to_string()
 }
 
+/// 结构化补丁：对 JSON/YAML/TOML 进行 set/remove（默认 dry-run，写入需 confirm=true）。
+pub fn structured_patch(args_json: &str, working_dir: &Path) -> String {
+    let v: JsonValue = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数 JSON 无效: {}", e),
+    };
+    let path = match v.get("path").and_then(|x| x.as_str()).map(str::trim) {
+        Some(p) if !p.is_empty() => p,
+        _ => return "错误：缺少 path".to_string(),
+    };
+    let query = match v.get("query").and_then(|x| x.as_str()).map(str::trim) {
+        Some(q) => q,
+        None => return "错误：缺少 query（JSON Pointer 或点号路径）".to_string(),
+    };
+    let action = v
+        .get("action")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("set");
+    if action != "set" && action != "remove" {
+        return "错误：action 仅支持 set/remove".to_string();
+    }
+    let create_missing = v
+        .get("create_missing")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(true);
+    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
+    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
+    if !dry_run && !confirm {
+        return "错误：structured_patch 写盘需 confirm=true；建议先 dry_run=true 预览".to_string();
+    }
+    let fmt = v
+        .get("format")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let abs = match file::resolve_for_read(working_dir, path) {
+        Ok(p) => p,
+        Err(e) => return format!("错误：{}", e),
+    };
+    let data_fmt = match detect_format(path, fmt) {
+        Ok(DataFormat::Csv | DataFormat::Tsv) => {
+            return "错误：structured_patch 不支持 csv/tsv，请改用 table_text 或直接编辑"
+                .to_string();
+        }
+        Ok(f) => f,
+        Err(e) => return format!("错误：{}", e),
+    };
+    let text = match read_limited(&abs) {
+        Ok(t) => t,
+        Err(e) => return format!("错误：{}", e),
+    };
+    let mut jv = match parse_to_json(&text, data_fmt, true) {
+        Ok(j) => j,
+        Err(e) => return format!("解析失败: {}", e),
+    };
+    let tokens = match parse_patch_query_tokens(query) {
+        Ok(t) => t,
+        Err(e) => return format!("query 无效: {}", e),
+    };
+
+    let apply_result = if action == "set" {
+        let Some(new_value) = v.get("value").cloned() else {
+            return "错误：action=set 时必须提供 value".to_string();
+        };
+        set_value_at_path(&mut jv, &tokens, new_value, create_missing)
+    } else {
+        remove_value_at_path(&mut jv, &tokens)
+    };
+    if let Err(e) = apply_result {
+        return format!("补丁失败: {}", e);
+    }
+    let serialized = match serialize_by_format(&jv, data_fmt) {
+        Ok(s) => s,
+        Err(e) => return format!("序列化失败: {}", e),
+    };
+    if dry_run {
+        return format!(
+            "structured_patch 预览成功（未写入）: path={} action={} query={}\n新文件大小: {} 字节",
+            path,
+            action,
+            if query.is_empty() { "(root)" } else { query },
+            serialized.len()
+        );
+    }
+    if let Err(e) = fs::write(&abs, serialized.as_bytes()) {
+        return format!("写入失败: {}", e);
+    }
+    format!(
+        "structured_patch 已写入: path={} action={} query={}",
+        path,
+        action,
+        if query.is_empty() { "(root)" } else { query }
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,5 +830,25 @@ mod tests {
             resolve_query_path(&jv, "/0/1").and_then(JsonValue::as_str),
             Some("b")
         );
+    }
+
+    #[test]
+    fn set_value_at_path_creates_missing_objects() {
+        let mut j = serde_json::json!({});
+        set_value_at_path(
+            &mut j,
+            &["a".to_string(), "b".to_string()],
+            serde_json::json!(1),
+            true,
+        )
+        .unwrap();
+        assert_eq!(j.pointer("/a/b").and_then(JsonValue::as_i64), Some(1));
+    }
+
+    #[test]
+    fn remove_value_at_path_removes_object_key() {
+        let mut j = serde_json::json!({"x":{"y":2}});
+        remove_value_at_path(&mut j, &["x".to_string(), "y".to_string()]).unwrap();
+        assert!(j.pointer("/x/y").is_none());
     }
 }

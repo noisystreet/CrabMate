@@ -126,9 +126,9 @@ flowchart TB
 | `frontend_tools.rs` | 前端 npm 脚本类 |
 | `git.rs` | Git 只读与受控写入 |
 | `grep.rs` / `symbol.rs` | 工作区内文本搜索、Rust 符号 |
-| `spell_astgrep_tools.rs` | `typos_check`、`codespell_check`（拼写，只读）、`ast_grep_run`（ast-grep 结构化搜索；路径与 glob 受限） |
+| `spell_astgrep_tools.rs` | `typos_check`、`codespell_check`（拼写，只读）、`ast_grep_run`（结构化搜索）、`ast_grep_rewrite`（结构化改写，默认 dry-run，写盘需 confirm） |
 | `markdown_links.rs` | `markdown_check_links`：Markdown 相对链接存在性检查，可选外链前缀 HEAD |
-| `structured_data.rs` | `structured_validate` / `structured_query` / `structured_diff`：JSON·YAML·TOML·CSV·TSV 校验、路径查询、结构化 diff（表格先解析为 JSON 数组） |
+| `structured_data.rs` | `structured_validate` / `structured_query` / `structured_diff` / `structured_patch`：JSON·YAML·TOML·CSV·TSV 校验、路径查询、结构化 diff；以及 JSON/YAML/TOML 的定点补丁（默认 dry-run） |
 | `table_text.rs` | `table_text`：CSV/TSV 等分隔文本的预览、列数校验、列筛选与聚合（与 `structured_*` 互补） |
 | `text_transform.rs` | `text_transform`：纯内存 Base64/URL 编解码、短哈希、按行合并与按分隔符切分（不落盘，有长度上限） |
 | `text_diff.rs` | `text_diff`：两段 UTF-8 文本或工作区内两文件的行级 unified diff（与 Git 无关，输出可截断） |
@@ -141,7 +141,7 @@ flowchart TB
 | `schedule.rs` | 提醒与日程持久化 |
 | `security_tools.rs` | 安全审计类 |
 | `time.rs` / `weather.rs` / `web_search.rs` | 时间、天气（Open-Meteo）、联网搜索（Brave/Tavily） |
-| `http_fetch.rs` | `http_fetch`：GET/HEAD URL（GET 有体长上限；HEAD 无 body）；重定向链记录；Web 仅允许 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**匹配；TUI 审批与白名单键同 GET（`http_fetch:`+ 归一化 URL） |
+| `http_fetch.rs` | `http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）；共享重定向记录、体长上限与 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**校验 |
 
 ## 核心机制：Agent 主循环与工具调用
 
@@ -254,7 +254,7 @@ flowchart LR
 ### `src/tools/mod.rs`（工具注册与分发的“表驱动”中心）
 
 - **工具注册**：通过 `ToolSpec { name, description, category, parameters, runner }` 静态表定义每个工具。
-- **顶层分类 `ToolCategory`**（供 `build_tools_filtered` 与文档）：**`Basic`（基础工具）**——时间/计算/天气、`web_search`、`http_fetch`、日程提醒等；**`Development`（开发工具）**——工作区文件、Git、**Rust**（Cargo/RA）、**前端**（npm）、**Python**（ruff、pytest、mypy、`uv sync`/`uv run`、pip/uv 可编辑安装）、**pre-commit**、Lint 聚合、补丁、符号搜索、工作流等。
+- **顶层分类 `ToolCategory`**（供 `build_tools_filtered` 与文档）：**`Basic`（基础工具）**——时间/计算/天气、`web_search`、`http_fetch` / `http_request`、日程提醒等；**`Development`（开发工具）**——工作区文件、Git、**Rust**（Cargo/RA）、**前端**（npm）、**Python**（ruff、pytest、mypy、`uv sync`/`uv run`、pip/uv 可编辑安装）、**pre-commit**、Lint 聚合、补丁、符号搜索、工作流等。
 - **Development 子域标签**（`src/tools/dev_tag.rs`）：按 **工具名** 映射到字符串标签（可多枚），用于在不增加 `ToolCategory` 枚举的前提下按语言栈/场景裁剪发给模型的工具列表。约定标签名：`general`（工作区/壳/编排/元数据等跨语言）、`vcs`（Git）、`rust`（Cargo/RA 等）、`frontend`（npm 脚本类）、`python`（ruff/pytest/mypy/uv/pip 等）、`quality`（Lint/审计/CI 聚合等与质量相关的工具，常与 `rust`/`frontend`/`python` 重叠）。映射函数为 `dev_tag::tags_for_tool_name`；**新增 `Development` 工具时须在该 `match` 中补全对应分支**（未列出的名称会回落到仅 `general`，便于不崩，但应显式维护）。
 - **构建与过滤**：
   - `build_tools()`：等价于 `build_tools_with_options(ToolsBuildOptions::default())`，不按分类与标签过滤。
@@ -282,12 +282,12 @@ flowchart LR
 - **`unit_convert.rs`**：`convert_units`，基于 **`uom`**（`si` + `f64`）做长度/质量/温度/信息量/时间/面积/压强/速度换算；不执行外部程序。
 - **`weather.rs`**：调用 Open‑Meteo（无需 key），带超时控制。
 - **`web_search.rs`**：`reqwest::blocking` + `serde` 调用 Brave Web Search 或 Tavily；Key 与 `web_search_provider` 来自 `AgentConfig`。Web 路径在 `tool_registry` 中登记为 `WebSearchSpawnTimeout`（`spawn_blocking` + 超时）。
-- **`http_fetch.rs`**：阻塞 GET/HEAD（`method` 参数，默认 GET）；自定义 `redirect::Policy` 记录重定向跳数；`tool_registry` 登记为 `HttpFetchSpawnTimeout`。Web 仅当 URL 满足 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时执行（不再仅按字符串 `startsWith`）；TUI 另可经 `CommandApproval`（`allowlist_key` 为上述持久化键；`args` 对 HEAD 带 `HEAD` 前缀）在「本次允许 / 永久允许」后执行。`CommandApprovalBody.allowlist_key` 可选；`run_command` 审批不传时 TUI 仍以命令名小写写入白名单。
+- **`http_fetch.rs`**：`http_fetch`（阻塞 GET/HEAD）与 `http_request`（阻塞 POST/PUT/PATCH/DELETE + 可选 JSON body）；共用 `redirect::Policy` 记录重定向跳数与响应截断。二者都要求 URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**；其中 `http_fetch` 在 TUI 未匹配前缀时可走审批白名单，而 `http_request` 默认仅白名单前缀放行（更保守）。
 - **`command.rs`**：命令白名单 + 超时 + 输出截断；配合 `allowed_commands` 与工作区路径限制。
 - **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）。
 - **`file.rs`**：工作区内创建/覆盖/复制/移动文件；`resolve_for_read` / `resolve_for_write` 与祖先 symlink 校验是安全边界的关键；`copy_file` / `move_file` 仅针对常规文件，`overwrite` 控制目标已存在时的覆盖策略；`hash_file` 仅对常规文件流式哈希（`sha256` / `sha512` / `blake3`），可选 `max_bytes` 前缀模式。
 - **`schedule.rs`**：提醒/日程；以 JSON 持久化到 `<working_dir>/.crabmate/reminders.json` 与 `events.json`。
-- **`spell_astgrep_tools.rs`**：`typos_check` / `codespell_check` 仅传相对路径、不写回；`ast_grep_run` 调用 `ast-grep run`，内置排除大目录 glob，可选追加 `globs`。
+- **`spell_astgrep_tools.rs`**：`typos_check` / `codespell_check` 仅传相对路径、不写回；`ast_grep_run` 调用 `ast-grep run` 做结构化搜索；`ast_grep_rewrite` 在此基础上增加 `--rewrite`，默认 dry-run，`dry_run=false` 时需 `confirm=true` 才执行 `--update-all` 写盘。
 - **`grep.rs` / `format.rs` / `lint.rs`**：面向开发工作流的辅助能力（搜索/格式化/静态检查聚合）；`format` 对 `.py` 使用 `ruff format`，对 `.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh` 使用 `clang-format`（检查模式为 `--dry-run --Werror`）；`run_lints` 可选聚合 `ruff check`（`run_python_ruff`）。`run_command` 默认可含 `cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`file`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make`（见配置 `allowed_commands`）；`cmake`、`c++filt` 与 `clang-format` 等可选依赖会在 **`GET /health`** 中体现为 `dep_cmake` / `dep_cxxfilt` / `dep_clang_format`；可选 CLI **typos** / **codespell** / **ast-grep** 对应 `dep_typos` / `dep_codespell` / `dep_ast_grep`（缺失为 degraded，不阻止启动）。**`run_command` 参数**仍禁止 `..` 与以 `/` 开头的实参，CMake 场景宜使用相对 `-S`/`-B` 与 `--build`。Autotools 会执行项目内生成逻辑，**prod** 白名单默认不含构建类命令。
 - **`python_tools.rs` / `precommit_tools.rs`**：见上表；`quality_workspace` / `ci_pipeline_local` 可选步骤含 ruff/pytest/mypy；`pre_commit_run` 依赖仓库根 `.pre-commit-config.yaml`（或 `.yml`）。
 
