@@ -242,7 +242,7 @@ flowchart LR
 
 ### `src/sse/line.rs`
 
-- **消费侧分类**：将单条 SSE `data:` 字符串分为工具状态、审批请求、`tool_result`（含 `name/summary/ok/exit_code/error_code`）、工作区刷新、流错误、忽略或正文（`Plain`），供 TUI 主循环分支；与 **`protocol`** 反序列化及若干历史裸 JSON 键名兼容。常用符号经 `sse/mod.rs` 再导出为 `crate::sse::classify_agent_sse_line` 等。
+- **消费侧分类**：将单条 SSE `data:` 字符串分为工具状态、`tool_call`（含 `name/summary`）、审批请求、`tool_result`（含 `name/summary/ok/exit_code/error_code`）、工作区刷新、流错误、忽略或正文（`Plain`），供 TUI 主循环分支；与 **`protocol`** 反序列化及若干历史裸 JSON 键名兼容。常用符号经 `sse/mod.rs` 再导出为 `crate::sse::classify_agent_sse_line` 等。
 
 ### `src/types.rs`
 
@@ -299,7 +299,7 @@ flowchart LR
 - **`web`**：承载 Web 侧的“工作区/任务”等 axum handler（与前端面板直接对应）；**不是**终端 TUI。
 - **`runtime`**：CLI/TUI 运行时逻辑，负责 REPL、单次问答、TUI 的交互渲染与调用 `run_agent_turn`。
   - **`runtime/workspace_session`**：`.crabmate/tui_session.json` 加载/保存；F8/F9 导出经此委托 `chat_export`；**`initial_workspace_messages`** 供 TUI `run_tui` 与 CLI REPL 共用；**仅当** `[agent] tui_load_session_on_start` 为 true 时终端启动才从磁盘恢复，并按 `tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断，总条数含 `system`，超出则保留首条 system 与尾部最近若干条；默认不加载。TUI 退出时 `save_workspace_session`。
-  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`；收到 `tool_result` 时更新状态栏“工具执行完成/失败”并附失败码）、`state`、`draw`、`input`（键鼠；F8/F9 调用 `workspace_session::export_*`）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐；`draw::CHAT_SCROLL_UP_MAX_LINES` 限制相对底部向上滚动的最多逻辑行数）、`workspace_ops`（右栏 **工作区**；**队列** 标签页将 `staged_plan_log` **按行**渲染（`latex_math_to_unicode`），**不**走 `tui_markdown`，避免规划步骤被 Markdown 合并成一段）、`sync_merge`（`sync_rx` 全量快照与当前 UI 合并，避免裁剪丢前缀）、（SSE 控制行分类：`crate::sse::classify_agent_sse_line`）、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`（底栏右侧 `status_line`：默认仅模型名等，不常驻快捷键说明）、`allowlist`、`agent`（委托 `crate::agent::agent_turn`）。
+  - TUI 实现位于 `runtime/tui/`：`mod`（主循环；**仅**在输入/缩放、SSE 信道、Agent 流式输出等状态变化时 `draw`；`draw::build_chat_scroll_lines` 对每条消息按 `role+content` 指纹缓存 Markdown 展开，**缓存命中**不再跑 LaTeX/解析；鼠标事件仅在实际改变焦点/滚动等时触发重绘；`run_tui` 将 `--workspace` 规范为**绝对路径**，若路径不存在则 `create_dir_all`；收到 `tool_call` 时状态栏提示“即将执行工具 + 摘要”，收到 `tool_result` 时更新“工具执行完成/失败”并附失败码）、`state`、`draw`、`input`（键鼠；F8/F9 调用 `workspace_session::export_*`）、`text_input`（输入光标与折行；折行近似 `Paragraph::Wrap`，极端情况与 Markdown 区可能略有偏差）、`clipboard`（`arboard` 读系统剪贴板）、`edit_history`（输入区撤销/重做栈）、`chat_nav`（聊天区逻辑行搜索/跳转，与 `draw::build_chat_scroll_lines` 的纯文本列对齐；`draw::CHAT_SCROLL_UP_MAX_LINES` 限制相对底部向上滚动的最多逻辑行数）、`workspace_ops`（右栏 **工作区**；**队列** 标签页将 `staged_plan_log` **按行**渲染（`latex_math_to_unicode`），**不**走 `tui_markdown`，避免规划步骤被 Markdown 合并成一段）、`sync_merge`（`sync_rx` 全量快照与当前 UI 合并，避免裁剪丢前缀）、（SSE 控制行分类：`crate::sse::classify_agent_sse_line`）、`styles`（`tui-markdown` 四套 `StyleSheet`：标题 **H1–H6** 分级颜色/字重、链接与代码块等；F3 代码高亮主题；`draw` 侧启用 `with_outline_heading_numbers`，标题前缀为 `1. ` / `1.2. ` 式自动编号而非 `#`）、`status`（底栏右侧 `status_line`：默认仅模型名等，不常驻快捷键说明）、`allowlist`、`agent`（委托 `crate::agent::agent_turn`）。
 
 ## 前端模块说明（`frontend/src/`）
 

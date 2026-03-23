@@ -273,6 +273,18 @@ pub async fn run_tui(
                         &state.pending_command_args,
                     );
                 }
+                AgentLineKind::ToolCall { name, summary } => {
+                    state.model_phase = ModelPhase::SelectingTools;
+                    let mut msg = String::from("即将执行工具");
+                    if let Some(n) = name.as_deref().filter(|s| !s.is_empty()) {
+                        msg.push_str(&format!(" [{}]", n));
+                    }
+                    if let Some(s) = summary.as_deref().filter(|s| !s.is_empty()) {
+                        msg.push_str(&format!("：{}", s));
+                    }
+                    state.status_line =
+                        format!("{} · {}", msg, build_normal_status_line(&cfg.model));
+                }
                 AgentLineKind::ToolResult {
                     name,
                     summary,

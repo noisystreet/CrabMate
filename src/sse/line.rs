@@ -8,6 +8,10 @@ pub enum AgentLineKind {
     ToolRunning(bool),
     ParsingToolCalls(bool),
     WorkspaceRefresh,
+    ToolCall {
+        name: Option<String>,
+        summary: Option<String>,
+    },
     CommandApproval {
         command: String,
         args: String,
@@ -49,6 +53,11 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
             super::protocol::SsePayload::WorkspaceChanged {
                 workspace_changed: false,
             } => return AgentLineKind::Ignore,
+            super::protocol::SsePayload::ToolCall { tool_call } => {
+                let name = non_empty_string(tool_call.name);
+                let summary = summarize_stream_error(&tool_call.summary);
+                return AgentLineKind::ToolCall { name, summary };
+            }
             super::protocol::SsePayload::CommandApproval {
                 command_approval_request,
             } => {
@@ -92,8 +101,7 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 // 结构化分步事件当前由 Web 侧优先消费；TUI 继续使用 staged_plan_notice 队列文本。
                 return AgentLineKind::Ignore;
             }
-            super::protocol::SsePayload::ToolCall { .. }
-            | super::protocol::SsePayload::PlanRequired { .. } => {
+            super::protocol::SsePayload::PlanRequired { .. } => {
                 return AgentLineKind::Ignore;
             }
         }
@@ -111,6 +119,21 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
     }
     if s == r#"{"workspace_changed":true}"# {
         return AgentLineKind::WorkspaceRefresh;
+    }
+    if s.starts_with("{\"tool_call\"")
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(s)
+        && let Some(obj) = v.get("tool_call")
+    {
+        let name = obj
+            .get("name")
+            .and_then(|x| x.as_str())
+            .map(|x| x.to_string())
+            .and_then(non_empty_string);
+        let summary = obj
+            .get("summary")
+            .and_then(|x| x.as_str())
+            .and_then(summarize_stream_error);
+        return AgentLineKind::ToolCall { name, summary };
     }
     if s.starts_with("{\"error\"") {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
@@ -227,6 +250,18 @@ mod tests {
                 assert_eq!(ok, Some(false));
                 assert_eq!(exit_code, Some(1));
                 assert_eq!(error_code.as_deref(), Some("command_failed"));
+            }
+            other => panic!("unexpected kind: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_call_summary() {
+        let line = r#"{"v":1,"tool_call":{"name":"run_command","summary":"执行命令 git status"}}"#;
+        match classify_agent_sse_line(line) {
+            AgentLineKind::ToolCall { name, summary } => {
+                assert_eq!(name.as_deref(), Some("run_command"));
+                assert_eq!(summary.as_deref(), Some("执行命令 git status"));
             }
             other => panic!("unexpected kind: {:?}", other),
         }
