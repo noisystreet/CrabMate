@@ -444,6 +444,11 @@ fn line_cache_fingerprint(m: &Message, messages: &[Message], idx: usize) -> u64 
     h.finish()
 }
 
+fn is_staged_plan_fixed_summary_line(s: &str) -> bool {
+    let t = s.trim();
+    t.starts_with("已生成分阶段规划（共 ") && t.ends_with(" 步）。")
+}
+
 fn message_body_for_chat_display(
     m: &Message,
     messages: &[Message],
@@ -647,6 +652,7 @@ pub(super) fn build_chat_scroll_lines(
     let mut draw_lines: Vec<Line<'static>> = Vec::new();
     let mut plain_lines: Vec<String> = Vec::new();
     let mut message_start_lines: Vec<usize> = Vec::new();
+    let mut last_visible_staged_plan_summary: Option<String> = None;
 
     for (i, m) in state.messages.iter().enumerate() {
         if m.role == "system" {
@@ -658,14 +664,25 @@ pub(super) fn build_chat_scroll_lines(
                 plain_lines.append(&mut p);
                 draw_lines.push(Line::raw(""));
                 plain_lines.push(String::new());
+                last_visible_staged_plan_summary = None;
             }
             continue;
         }
 
         let rendered = message_body_for_chat_display(m, &state.messages, i, state);
-        if m.role == "user" && rendered.trim().is_empty() {
+        if (m.role == "user" || m.role == "assistant") && rendered.trim().is_empty() {
             state.chat_line_build_cache.per_message[i] = None;
             continue;
+        }
+        if m.role == "assistant" && is_staged_plan_fixed_summary_line(&rendered) {
+            let current = rendered.trim().to_string();
+            if last_visible_staged_plan_summary
+                .as_deref()
+                .is_some_and(|prev| prev == current)
+            {
+                state.chat_line_build_cache.per_message[i] = None;
+                continue;
+            }
         }
 
         message_start_lines.push(draw_lines.len());
@@ -708,6 +725,11 @@ pub(super) fn build_chat_scroll_lines(
         plain_lines.append(&mut p);
         draw_lines.push(Line::raw(""));
         plain_lines.push(String::new());
+        if m.role == "assistant" && is_staged_plan_fixed_summary_line(&rendered) {
+            last_visible_staged_plan_summary = Some(rendered.trim().to_string());
+        } else {
+            last_visible_staged_plan_summary = None;
+        }
     }
 
     (draw_lines, plain_lines, message_start_lines)
