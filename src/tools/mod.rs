@@ -207,7 +207,7 @@ fn params_http_fetch() -> serde_json::Value {
         "properties": {
             "url": {
                 "type": "string",
-                "description": "完整 http(s) URL。Web 仅允许匹配 http_fetch_allowed_prefixes；TUI 未匹配时可人工审批（与 run_command 相同）。"
+                "description": "完整 http(s) URL。Web 仅允许匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）；TUI 未匹配时可人工审批（与 run_command 相同）。"
             },
             "method": {
                 "type": "string",
@@ -2249,7 +2249,7 @@ fn tool_specs() -> &'static [ToolSpec] {
         },
         ToolSpec {
             name: "http_fetch",
-            description: "对 **http/https** URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（按配置截断）；HEAD 不下载 body，仅元数据与重定向链，省流量。**Web**：仅当 URL 以 `http_fetch_allowed_prefixes` 中某一前缀开头时执行。**TUI**：未匹配前缀时与 `run_command` 相同审批；GET/HEAD 共用白名单键 `http_fetch:<归一化URL>`。勿在 URL 中放真实密钥。`workflow_execute` 节点内仅白名单 URL 可成功。",
+            description: "对 **http/https** URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（按配置截断）；HEAD 不下载 body，仅元数据与重定向链，省流量。**Web**：仅当 URL 匹配 `http_fetch_allowed_prefixes` 的同源 + 路径前缀边界时执行。**TUI**：未匹配前缀时与 `run_command` 相同审批；GET/HEAD 共用白名单键 `http_fetch:<归一化URL>`。勿在 URL 中放真实密钥。`workflow_execute` 节点内仅白名单 URL 可成功。",
             category: ToolCategory::Basic,
             parameters: params_http_fetch,
             runner: runner_http_fetch,
