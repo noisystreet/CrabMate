@@ -57,7 +57,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 - **默认仅本机监听**（`--serve`）：绑定 **`127.0.0.1`**，局域网其它设备默认无法直连。若需局域网访问，请显式使用 `--host 0.0.0.0` 或设置环境变量 `AGENT_HTTP_HOST=0.0.0.0`（未传 `--host` 时生效）。当监听**非 loopback** 地址时，若未配置 `web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN`，服务默认拒绝启动；如确需无鉴权运行，需显式设置 `allow_insecure_no_auth_for_non_loopback=true`（或 `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`，不安全）。
 - **Web Bearer 鉴权（可选）**：设置 `web_api_bearer_token` 后，`/chat`、`/workspace`、`/tasks`、`/upload` 等接口要求 `Authorization: Bearer <token>`。内置前端会从浏览器 `localStorage["crabmate-api-bearer-token"]` 读取 token 并自动附带该请求头（可在浏览器控制台手动设置）。
-- **工作区**：Web 端通过 `POST /workspace` 设置的路径**必须已存在且为目录**，且（`canonicalize` 后）须落在配置的**允许根目录**之下。未配置 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS` 时，仅允许 **`run_command_working_dir` 及其子目录**；若配置了多个根路径，则 `run_command_working_dir` 本身也须落在其中某一根之下（否则启动报错）。若你未配置 `web_api_bearer_token`，请勿在不可信网络暴露本服务。
+- **工作区**：Web 端通过 `POST /workspace` 设置的路径**必须已存在且为目录**，且（`canonicalize` 后）须落在配置的**允许根目录**之下，并避开敏感系统目录黑名单（如 `/proc`、`/sys`、`/dev`、`/etc`、`/usr`）。未配置 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS` 时，仅允许 **`run_command_working_dir` 及其子目录**；若配置了多个根路径，则 `run_command_working_dir` 本身也须落在其中某一根之下（否则启动报错）。
 - **联网搜索 Key**：`web_search_api_key` 与 DeepSeek 的 `API_KEY` 无关；若写入配置文件，请妥善保管文件权限，避免泄露第三方搜索配额。
 - **建议**：公网或不可信网络请配合反向代理、鉴权、TLS、防火墙等自行加固。
 
