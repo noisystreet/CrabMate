@@ -13,6 +13,8 @@ use crate::AppState;
 use crate::config::AgentConfig;
 use crate::path_workspace::absolutize_workspace_subpath;
 
+const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
+
 #[derive(Serialize)]
 pub struct WorkspacePickResponse {
     pub path: Option<String>,
@@ -418,6 +420,16 @@ pub async fn workspace_file_read_handler(
         return Json(WorkspaceFileReadResponse {
             content: String::new(),
             error: Some("路径是目录，无法读取为文件".to_string()),
+        });
+    }
+    if meta.len() > WORKSPACE_FILE_READ_MAX_BYTES {
+        return Json(WorkspaceFileReadResponse {
+            content: String::new(),
+            error: Some(format!(
+                "文件过大（{} 字节），当前最多读取 {} 字节",
+                meta.len(),
+                WORKSPACE_FILE_READ_MAX_BYTES
+            )),
         });
     }
     match tokio::fs::read_to_string(&canonical).await {

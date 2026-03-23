@@ -1,6 +1,14 @@
 import type { StatusData, WorkspaceData, ChatResponse, TasksData } from './types'
 
 const base = ''
+const WEB_API_BEARER_TOKEN_KEY = 'crabmate-api-bearer-token'
+
+function getStoredWebApiBearerToken(): string | null {
+  if (typeof window === 'undefined') return null
+  const v = window.localStorage.getItem(WEB_API_BEARER_TOKEN_KEY)
+  const t = (v || '').trim()
+  return t ? t : null
+}
 
 export type ApiErrorKind = 'http' | 'timeout' | 'network' | 'abort' | 'parse' | 'unknown'
 
@@ -75,6 +83,10 @@ async function requestImpl<T>(url: string, init: RequestOptions = {}): Promise<T
   const timeoutMs = init.timeoutMs ?? 15000
   const expectJson = init.expectJson ?? true
   const headers = new Headers(init.headers)
+  const bearerToken = getStoredWebApiBearerToken()
+  if (bearerToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${bearerToken}`)
+  }
   let body: BodyInit | undefined
   if (init.json !== undefined) {
     if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')

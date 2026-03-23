@@ -450,11 +450,9 @@ async fn execute_http_fetch_web(
         Ok(x) => x,
         Err(e) => return (format!("错误：{}", e), None),
     };
-    let url_str = url.as_str().to_string();
-    if !tools::http_fetch::url_matches_allowed_prefixes(&url_str, &cfg.http_fetch_allowed_prefixes)
-    {
+    if !tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes) {
         return (
-            "错误：Web 模式下 http_fetch 仅允许 URL 以配置的 http_fetch_allowed_prefixes 中某一前缀开头（参见 README）。TUI 下可对未匹配 URL 使用人工审批（拒绝/本次同意/永久同意）。"
+            "错误：Web 模式下 http_fetch 仅允许匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界，参见 README）。TUI 下可对未匹配 URL 使用人工审批（拒绝/本次同意/永久同意）。"
                 .to_string(),
             None,
         );
@@ -497,14 +495,13 @@ async fn execute_http_fetch_tui(
         Ok(x) => x,
         Err(e) => return (format!("错误：{}", e), None),
     };
-    let url_str = url.as_str().to_string();
     let key = tools::http_fetch::storage_key(&url);
     let approval_args = tools::http_fetch::approval_args_display(method, &url);
     let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch_max_response_bytes;
 
     let allowed_by_cfg =
-        tools::http_fetch::url_matches_allowed_prefixes(&url_str, &cfg.http_fetch_allowed_prefixes);
+        tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes);
     let allowed_by_list = ctx.persistent_allowlist_shared.lock().await.contains(&key);
 
     if !(allowed_by_cfg || allowed_by_list) {
