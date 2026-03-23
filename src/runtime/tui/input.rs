@@ -12,7 +12,6 @@ use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
 use crate::health::{build_health_report, format_health_report_terminal};
-use crate::redact;
 use crate::types::{CommandApprovalDecision, LLM_CANCELLED_ERROR, Message};
 
 use super::agent::run_agent_turn_tui;
@@ -680,9 +679,9 @@ pub(super) async fn handle_key(
                 if !q.is_empty() {
                     debug!(
                         target: "crabmate::tui_print",
-                        "TUI 用户提交问题 len={} preview={}",
+                        "TUI 用户提交问题 len={} content={}",
                         q.len(),
-                        redact::preview_chars(&q, redact::MESSAGE_LOG_PREVIEW_CHARS)
+                        q
                     );
                     state.mouse_leak_scratch.clear();
                     state.input.clear();

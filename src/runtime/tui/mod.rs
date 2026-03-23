@@ -15,7 +15,6 @@ mod text_input;
 mod workspace_ops;
 
 use crate::config::AgentConfig;
-use crate::redact;
 use crate::sse::{AgentLineKind, classify_agent_sse_line};
 use crate::types::Message;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
@@ -336,10 +335,10 @@ pub async fn run_tui(
                 AgentLineKind::StagedPlanNotice { text, clear_before } => {
                     debug!(
                         target: "crabmate::tui_print",
-                        "TUI 分阶段规划通知 clear_before={} text_len={} preview={}",
+                        "TUI 分阶段规划通知 clear_before={} text_len={} text={}",
                         clear_before,
                         text.len(),
-                        redact::preview_chars(&text, redact::MESSAGE_LOG_PREVIEW_CHARS)
+                        text
                     );
                     const MAX_STAGED_PLAN_LOG: usize = 200;
                     if clear_before {
@@ -347,22 +346,24 @@ pub async fn run_tui(
                     }
                     for line in text.lines() {
                         let t = line.trim_end();
-                        if !t.is_empty() {
+                        if !t.is_empty()
+                            && !crate::runtime::message_display::is_staged_plan_placeholder_like_line(
+                                t,
+                            )
+                        {
                             state.staged_plan_log.push(t.to_string());
                             while state.staged_plan_log.len() > MAX_STAGED_PLAN_LOG {
                                 state.staged_plan_log.remove(0);
                             }
                         }
                     }
-                    let hint: String = text
-                        .lines()
-                        .find(|l| !l.trim().is_empty())
-                        .unwrap_or("")
-                        .chars()
-                        .take(52)
-                        .collect();
-                    state.status_line =
-                        format!("{} · {}", hint, build_normal_status_line(&cfg.model));
+                    let hint =
+                        crate::runtime::message_display::staged_plan_notice_status_hint(&text);
+                    state.status_line = if hint.is_empty() {
+                        build_normal_status_line(&cfg.model)
+                    } else {
+                        format!("{} · {}", hint, build_normal_status_line(&cfg.model))
+                    };
                 }
                 AgentLineKind::Ignore => {}
                 AgentLineKind::Plain => {
@@ -379,24 +380,24 @@ pub async fn run_tui(
         while let Ok(msgs) = sync_rx.try_recv() {
             inbox_changed = true;
             let n = msgs.len();
-            let (last_role, last_preview) = msgs
+            let (last_role, last_content) = msgs
                 .last()
                 .map(|m| {
                     (
                         m.role.as_str(),
                         m.content
                             .as_deref()
-                            .map(|c| redact::preview_chars(c, redact::MESSAGE_LOG_PREVIEW_CHARS))
+                            .map(str::to_string)
                             .unwrap_or_else(|| "<empty>".to_string()),
                     )
                 })
                 .unwrap_or(("<none>", String::new()));
             debug!(
                 target: "crabmate::tui_print",
-                "TUI 会话消息全量同步 count={} last_role={} last_preview={}",
+                "TUI 会话消息全量同步 count={} last_role={} last_content={}",
                 n,
                 last_role,
-                last_preview
+                last_content
             );
             // Agent 侧可能已裁剪上下文：直接替换会丢掉较早分步气泡；合并保留前缀再接上尾部。
             state.messages = sync_merge::merge_tui_messages_after_agent_sync(

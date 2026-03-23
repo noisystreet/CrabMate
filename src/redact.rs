@@ -10,7 +10,8 @@ use crate::types::Message;
 /// 日志里展示的响应体预览最大字符数（Unicode 标量）。
 pub const HTTP_BODY_PREVIEW_LOG_CHARS: usize = 256;
 
-/// 对话消息写入日志时的正文预览长度（user/assistant 等）。
+/// 对话消息写入日志时的正文预览长度（HTTP/CLI 等仍截断处使用）。
+/// **`crabmate::tui_print`** 的会话与聊天区调试日志输出全文，不使用本长度。
 pub const MESSAGE_LOG_PREVIEW_CHARS: usize = 320;
 
 /// 按 Unicode 标量截断；超出则后缀 `…(truncated)`。

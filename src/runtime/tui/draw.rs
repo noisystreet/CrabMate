@@ -17,7 +17,6 @@ use std::hash::{Hash, Hasher};
 use tui_markdown::{Options, from_str_with_options as markdown_to_text};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::redact;
 use crate::runtime::latex_unicode::latex_math_to_unicode;
 use crate::runtime::message_display::{
     assistant_markdown_source_for_display, assistant_markdown_source_for_display_streaming_last,
@@ -705,11 +704,11 @@ pub(super) fn build_chat_scroll_lines(
                 let raw = m.content.as_deref().unwrap_or("");
                 debug!(
                     target: "crabmate::tui_print",
-                    "TUI 聊天区消息行重建 idx={} role={} content_len={} preview={}",
+                    "TUI 聊天区消息行重建 idx={} role={} content_len={} content={}",
                     i,
                     m.role,
                     raw.len(),
-                    redact::preview_chars(raw, redact::MESSAGE_LOG_PREVIEW_CHARS)
+                    raw
                 );
             }
             let (draw, plain) = render_message_chat_lines(m, &rendered, state, chat_inner_width);

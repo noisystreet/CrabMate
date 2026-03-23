@@ -69,18 +69,37 @@ fn non_tool_tail_matches(ui_tail: &[(usize, &Message)], fin_tail: &[(usize, &Mes
     true
 }
 
+/// 去掉**相邻**且 `content` 与 `tool_calls` 完全相同的助手（无 `tool_calls`）。
+/// 分阶段规划下全量同步后，滞后 SSE 可能再推一条与规划轮全文相同的助手，表现为双开场白；Agent 侧仅一条。
+fn dedupe_adjacent_identical_assistants(msgs: Vec<Message>) -> Vec<Message> {
+    let mut out: Vec<Message> = Vec::with_capacity(msgs.len());
+    for m in msgs {
+        let dup = m.role == "assistant"
+            && m.tool_calls.is_none()
+            && out.last().is_some_and(|p| {
+                p.role == "assistant" && p.tool_calls.is_none() && p.content == m.content
+            });
+        if dup {
+            continue;
+        }
+        out.push(m);
+    }
+    out
+}
+
 /// `ui`：回合过程中 TUI 侧流式积累的完整气泡；`fin`：Agent 返回的 `messages`（可能更短、含 `tool`）。
 pub(super) fn merge_tui_messages_after_agent_sync(
     ui: Vec<Message>,
     fin: Vec<Message>,
 ) -> Vec<Message> {
-    if fin.is_empty() {
-        return ui;
-    }
-    if let Some(m) = merge_by_non_tool_suffix(&ui, &fin) {
-        return m;
-    }
-    fin
+    let merged = if fin.is_empty() {
+        ui
+    } else if let Some(m) = merge_by_non_tool_suffix(&ui, &fin) {
+        m
+    } else {
+        fin
+    };
+    dedupe_adjacent_identical_assistants(merged)
 }
 
 fn merge_by_non_tool_suffix(ui: &[Message], fin: &[Message]) -> Option<Vec<Message>> {
@@ -233,6 +252,18 @@ mod tests {
         let m = merge_tui_messages_after_agent_sync(ui, fin);
         assert_eq!(m.len(), 3);
         assert_eq!(m[2].content.as_deref(), Some("full reply"));
+    }
+
+    #[test]
+    fn dedupe_drops_consecutive_identical_assistant_bodies() {
+        let ui = vec![Message::system_only("sys"), u("q"), a("same"), a("same")];
+        let fin = vec![Message::system_only("sys"), u("q"), a("same")];
+        let m = merge_tui_messages_after_agent_sync(ui, fin);
+        assert_eq!(
+            m.iter().filter(|x| x.role == "assistant").count(),
+            1,
+            "{m:?}"
+        );
     }
 
     #[test]
