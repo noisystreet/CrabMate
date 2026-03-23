@@ -661,6 +661,20 @@ mod tests {
     }
 
     #[test]
+    fn assistant_streaming_last_dedupes_punctuation_variant_opening_lines() {
+        let a = "我将先拆解任务步骤：";
+        let b = "我将先拆解任务步骤。";
+        let raw = format!("{a}\n{b}\n```json\n{{\"type\":\"agent_reply_plan\"");
+        let out = assistant_markdown_source_for_display_streaming_last(&raw);
+        assert_eq!(
+            out.matches("我将先拆解任务步骤").count(),
+            1,
+            "开场白仅句末标点不同也应去重：{out:?}"
+        );
+        assert!(out.contains("正在生成分阶段规划"));
+    }
+
+    #[test]
     fn assistant_streaming_last_plain_text_still_incremental() {
         let raw = "先写一句说明，再考虑格式。";
         let out = assistant_markdown_source_for_display_streaming_last(raw);
