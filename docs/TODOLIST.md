@@ -58,6 +58,8 @@
 **职责摘要**：`agent_turn` 主循环；`context_window` 裁剪/摘要；`per_coord` / `plan_artifact` / `workflow_reflection_controller`；`workflow` DAG 执行。
 
 - [ ] **取消与资源边界**：统一「用户取消 / 队列丢弃 / 工具超时」下的状态机与 SSE 收尾，减少静默丢事件（与 P2、`mpsc` 债呼应）。
+- [ ] **规划器/执行器阶段 2（模型与预算解耦）**：在阶段 1 逻辑双 agent 基础上，为 planner / executor 提供独立模型、温度、max_tokens 与上下文预算，建立成本/时延对照基线。
+- [ ] **规划器/执行器阶段 3（物理拆分可选）**：评估是否拆分为独立进程/服务（队列、会话与重试语义一致），目标是故障隔离与独立扩缩容；若收益不足则保留同进程架构。
 - [ ] **规划与反思策略可插拔**：在现有 `FinalPlanRequirementMode` 之上，允许按场景关闭 PER、或接入轻量规则/二次模型校验（成本可控、可配置）。
 - [ ] **工作流可调试性**：DAG 执行轨迹导出、失败节点重试策略、与 `workflow_reflection` 日志字段对齐。
 - [ ] **测试与回归基线**：对 `plan_artifact` 解析边界、`run_staged_plan_then_execute_steps` 与 `context_window` 组合增加 fixture/快照测试（与 P4 可合并实现）。

@@ -75,6 +75,8 @@ reflection_default_max_rounds = 5
 final_plan_requirement = "workflow_reflection"
 # 终答规划不合格时，最多追加多少次「请重写」提示（≥1，上限 20）
 plan_rewrite_max_attempts = 2
+# 阶段1：规划器/执行器模式。single_agent=历史单环路；logical_dual_agent=同进程逻辑双 agent（规划与执行分离）
+planner_executor_mode = "single_agent"
 # 分阶段规划：为 true 时，每条用户消息先经无工具规划轮产出 agent_reply_plan v1，再按 steps 顺序逐步注入 user 并各跑一轮完整 Agent 循环（Web/TUI 均生效；多耗 API 轮次）
 staged_plan_execution = true
 # 规划轮追加的 system 全文；留空则使用内置默认（见 agent_turn.rs）

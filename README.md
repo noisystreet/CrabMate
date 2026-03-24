@@ -373,7 +373,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_PLAN_REWRITE_MAX_ATTEMPTS`：规划不合格时最多重写轮次（默认 `2`，与 `[agent] plan_rewrite_max_attempts` 一致；用尽后 SSE 带 `code=plan_rewrite_exhausted`）  
    - `AGENT_HTTP_HOST`：Web 监听 IP（如 `0.0.0.0`）；**未**传 `--host` 时生效，默认仍为 `127.0.0.1`  
    - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）
-   - `AGENT_STAGED_PLAN_EXECUTION`：设为 `1`/`true`/`yes`/`on` 启用分阶段规划（先无工具 `agent_reply_plan`，再按步执行）；其它或未设置为关闭（与 `[agent] staged_plan_execution` 一致）
+  - `AGENT_PLANNER_EXECUTOR_MODE`：规划器/执行器模式，`single_agent`（默认，历史行为）或 `logical_dual_agent`（阶段 1：同进程逻辑双 agent，规划轮只看用户/助手自然语言，不看 `tool` 正文）
+  - `AGENT_STAGED_PLAN_EXECUTION`：设为 `1`/`true`/`yes`/`on` 启用分阶段规划（仅在 `planner_executor_mode=single_agent` 下生效）；其它或未设置为关闭（与 `[agent] staged_plan_execution` 一致）
    - `AGENT_STAGED_PLAN_PHASE_INSTRUCTION`：规划轮追加的 **system** 文案；空或未设置则用内置默认（与 `[agent] staged_plan_phase_instruction` 一致）
    - **联网搜索**（`web_search` 工具）：`AGENT_WEB_SEARCH_PROVIDER`（`brave` / `tavily`）、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`（1～20，默认 8）
    - **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`（逗号分隔 URL 前缀）、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`（与 `default_config.toml` / `[agent]` 中同名项对应）
@@ -404,7 +405,9 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 **规划重写次数**（`[agent] plan_rewrite_max_attempts`）：不合格时追加「请重写」user 消息的上限；超过后结束本轮，流式场景下前端会收到 `error` + `code: plan_rewrite_exhausted`。
 
-**分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 `true` 时，**每条用户消息**会先走一轮**无工具**的 API 调用，要求模型在正文中产出可解析的 `agent_reply_plan` v1；服务端解析成功后，按 `steps` 顺序**各追加一条 user**（`【分步执行 i/n】…`）并**各跑完一整段** Agent 外层循环（该步内可多轮 tool_calls）。规划轮若误返回 `tool_calls` 或 JSON 不合格，流式下会收到 `error` + `code: staged_plan_tool_calls` / `staged_plan_invalid`（助手规划正文仍会写入消息列表以便排错）。**API 调用次数与费用通常明显高于关闭时**，适合需要「先出步骤再执行」的实验场景；日常对话建议保持 `false`。可选 `[agent] staged_plan_phase_instruction`（或 `AGENT_STAGED_PLAN_PHASE_INSTRUCTION`）覆盖规划轮的追加 system 说明，空则用内置文案。
+**阶段 1：逻辑双 agent**（`[agent] planner_executor_mode` / `AGENT_PLANNER_EXECUTOR_MODE`）：设为 `logical_dual_agent` 时，每条用户消息先进入规划轮（planner，仅无工具），解析 `agent_reply_plan` 后逐步注入执行器（executor）外层循环。与 `single_agent` 差异：planner 上下文会过滤 `role: tool` 正文，仅保留用户/助手自然语言，降低工具噪声对规划的干扰；executor 仍按现有工具与审批策略执行。该模式与 `staged_plan_execution` 目标类似，但优先级更高（启用后直接走逻辑双 agent 路径）。
+
+**分阶段规划（单 agent 模式）**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：在 `planner_executor_mode=single_agent` 且本项为 `true` 时，**每条用户消息**先走一轮**无工具** API 调用，要求模型产出可解析 `agent_reply_plan` v1；解析成功后按 `steps` 顺序逐步执行。规划轮若误返回 `tool_calls` 或 JSON 不合格，流式下会收到 `error` + `code: staged_plan_tool_calls` / `staged_plan_invalid`（助手规划正文仍会写入消息列表以便排错）。**API 调用次数与费用通常明显高于关闭时**。
 
 **系统提示词**：在 `default_config.toml` 中通过 `system_prompt`（多行字符串）或 `system_prompt_file`（文件路径）配置；若同时设置，以文件内容为准。未配置则启动报错。
 

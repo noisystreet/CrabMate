@@ -24,6 +24,8 @@ export interface StatusData {
   final_plan_requirement?: 'never' | 'workflow_reflection' | 'always'
   /** 终答规划重写次数上限 */
   plan_rewrite_max_attempts?: number
+  /** 阶段1：规划器/执行器运行模式 */
+  planner_executor_mode?: 'single_agent' | 'logical_dual_agent'
   /** 为 true 时先无工具规划轮再按 agent_reply_plan 分步执行 */
   staged_plan_execution?: boolean
   /** TUI 启动是否从 .crabmate/tui_session.json 恢复会话（默认 false） */
