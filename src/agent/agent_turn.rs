@@ -17,7 +17,7 @@ use log::{debug, info};
 use tokio::sync::mpsc;
 
 use super::per_coord::PerCoordinator;
-use crate::llm::{complete_chat_retrying, nl_only_chat_request, tool_chat_request};
+use crate::llm::{complete_chat_retrying, no_tools_chat_request, tool_chat_request};
 use crate::sse::{
     SseErrorBody, SsePayload, StagedPlanFinishedBody, StagedPlanStartedBody,
     StagedPlanStepFinishedBody, StagedPlanStepStartedBody, ToolResultBody, encode_message,
@@ -742,7 +742,7 @@ async fn run_staged_plan_then_execute_steps(
     } else {
         instr.to_string()
     };
-    let req = nl_only_chat_request(
+    let req = no_tools_chat_request(
         p.cfg.as_ref(),
         &build_single_agent_planner_messages(p.messages, plan_system),
     );
@@ -1020,7 +1020,7 @@ async fn run_logical_dual_agent_then_execute_steps(
     } else {
         instr.to_string()
     };
-    let req = nl_only_chat_request(
+    let req = no_tools_chat_request(
         p.cfg.as_ref(),
         &build_logical_dual_planner_messages(p.messages, plan_system),
     );
