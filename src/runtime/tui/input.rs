@@ -158,6 +158,10 @@ pub(super) async fn handle_key(
                 state.tool_running = false;
                 state.tool_running_clear_pending = false;
                 state.model_phase = ModelPhase::Idle;
+                state.mouse_leak_scratch.clear();
+                if state.mode == Mode::Normal {
+                    state.focus = Focus::ChatInput;
+                }
                 set_normal_status_line(state, &cfg.model);
                 state.status_line = "已强制中止本轮（工具执行中可能无法立刻停下）".to_string();
             } else {

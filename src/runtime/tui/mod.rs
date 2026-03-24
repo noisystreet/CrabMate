@@ -544,6 +544,11 @@ pub async fn run_tui(
             state.tool_running = false;
             state.tool_running_clear_pending = false;
             state.model_phase = ModelPhase::Idle;
+            // 回合中滚轮/点击聊天区会把焦点留在 ChatView，Char 键不会进输入框；结束后拉回输入框
+            state.mouse_leak_scratch.clear();
+            if state.mode == Mode::Normal {
+                state.focus = Focus::ChatInput;
+            }
             set_normal_status_line(&mut state, &cfg.model);
             if state.tui_active_job_id.is_some() {
                 state.tui_active_job_id = None;
