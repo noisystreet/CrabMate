@@ -1,4 +1,5 @@
 use super::tool_params;
+use super::tool_summary as ts;
 use super::*;
 
 pub(super) fn tool_specs() -> &'static [ToolSpec] {
@@ -9,6 +10,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_get_current_time,
             runner: runner_get_current_time,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "calc",
@@ -16,6 +18,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_calc,
             runner: runner_calc,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "convert_units",
@@ -23,6 +26,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_convert_units,
             runner: runner_convert_units,
+            summary: ToolSummaryKind::Dynamic(ts::summary_convert_units),
         },
         ToolSpec {
             name: "text_transform",
@@ -30,6 +34,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_text_transform,
             runner: runner_text_transform,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "get_weather",
@@ -37,6 +42,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_weather,
             runner: runner_get_weather,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "web_search",
@@ -44,6 +50,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_web_search,
             runner: runner_web_search,
+            summary: ToolSummaryKind::Dynamic(ts::summary_web_search),
         },
         ToolSpec {
             name: "http_fetch",
@@ -51,6 +58,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_http_fetch,
             runner: runner_http_fetch,
+            summary: ToolSummaryKind::Dynamic(ts::summary_http_fetch),
         },
         ToolSpec {
             name: "http_request",
@@ -58,6 +66,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_http_request,
             runner: runner_http_request,
+            summary: ToolSummaryKind::Dynamic(ts::summary_http_request),
         },
         ToolSpec {
             name: "run_command",
@@ -65,6 +74,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_run_command,
             runner: runner_run_command,
+            summary: ToolSummaryKind::Dynamic(ts::summary_run_command),
         },
         ToolSpec {
             name: "run_executable",
@@ -72,6 +82,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_run_executable,
             runner: runner_run_executable,
+            summary: ToolSummaryKind::Dynamic(ts::summary_run_executable),
         },
         ToolSpec {
             name: "package_query",
@@ -79,6 +90,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_package_query,
             runner: runner_package_query,
+            summary: ToolSummaryKind::Dynamic(ts::summary_package_query),
         },
         ToolSpec {
             name: "cargo_check",
@@ -86,6 +98,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_common,
             runner: runner_cargo_check,
+            summary: ToolSummaryKind::Static("运行 cargo check"),
         },
         ToolSpec {
             name: "cargo_test",
@@ -93,6 +106,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_test,
             runner: runner_cargo_test,
+            summary: ToolSummaryKind::Static("运行 cargo test"),
         },
         ToolSpec {
             name: "cargo_clippy",
@@ -100,6 +114,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_common,
             runner: runner_cargo_clippy,
+            summary: ToolSummaryKind::Static("运行 cargo clippy"),
         },
         ToolSpec {
             name: "cargo_metadata",
@@ -107,6 +122,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_metadata,
             runner: runner_cargo_metadata,
+            summary: ToolSummaryKind::Static("读取 cargo metadata"),
         },
         ToolSpec {
             name: "cargo_tree",
@@ -114,6 +130,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_tree,
             runner: runner_cargo_tree,
+            summary: ToolSummaryKind::Static("查看 cargo 依赖树"),
         },
         ToolSpec {
             name: "cargo_clean",
@@ -121,6 +138,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_clean,
             runner: runner_cargo_clean,
+            summary: ToolSummaryKind::Static("运行 cargo clean"),
         },
         ToolSpec {
             name: "cargo_doc",
@@ -128,6 +146,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_doc,
             runner: runner_cargo_doc,
+            summary: ToolSummaryKind::Static("生成 cargo 文档"),
         },
         ToolSpec {
             name: "cargo_run",
@@ -135,6 +154,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_run,
             runner: runner_cargo_run,
+            summary: ToolSummaryKind::Static("运行 cargo run"),
         },
         ToolSpec {
             name: "cargo_nextest",
@@ -142,6 +162,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_nextest,
             runner: runner_cargo_nextest,
+            summary: ToolSummaryKind::Static("运行 cargo nextest"),
         },
         ToolSpec {
             name: "cargo_fmt_check",
@@ -149,6 +170,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_fmt_check,
             runner: runner_cargo_fmt_check,
+            summary: ToolSummaryKind::Static("运行 cargo fmt --check"),
         },
         ToolSpec {
             name: "cargo_outdated",
@@ -156,6 +178,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_outdated,
             runner: runner_cargo_outdated,
+            summary: ToolSummaryKind::Static("运行 cargo outdated"),
         },
         ToolSpec {
             name: "cargo_machete",
@@ -163,6 +186,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_machete,
             runner: runner_cargo_machete,
+            summary: ToolSummaryKind::Static("运行 cargo machete"),
         },
         ToolSpec {
             name: "cargo_udeps",
@@ -170,6 +194,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_udeps,
             runner: runner_cargo_udeps,
+            summary: ToolSummaryKind::Static("运行 cargo udeps"),
         },
         ToolSpec {
             name: "cargo_publish_dry_run",
@@ -177,6 +202,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_publish_dry_run,
             runner: runner_cargo_publish_dry_run,
+            summary: ToolSummaryKind::Static("cargo publish --dry-run"),
         },
         ToolSpec {
             name: "rust_compiler_json",
@@ -184,6 +210,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_compiler_json,
             runner: runner_rust_compiler_json,
+            summary: ToolSummaryKind::Static("cargo check JSON 诊断"),
         },
         ToolSpec {
             name: "rust_analyzer_goto_definition",
@@ -191,6 +218,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_position,
             runner: runner_rust_analyzer_goto_definition,
+            summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_goto_definition),
         },
         ToolSpec {
             name: "rust_analyzer_find_references",
@@ -198,6 +226,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_references,
             runner: runner_rust_analyzer_find_references,
+            summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_find_references),
         },
         ToolSpec {
             name: "cargo_fix",
@@ -205,6 +234,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_fix,
             runner: runner_cargo_fix,
+            summary: ToolSummaryKind::Static("运行 cargo fix（受控写入）"),
         },
         ToolSpec {
             name: "rust_test_one",
@@ -212,6 +242,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_test_one,
             runner: runner_rust_test_one,
+            summary: ToolSummaryKind::Static("运行单个 Rust 测试"),
         },
         ToolSpec {
             name: "ruff_check",
@@ -219,6 +250,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_ruff_check,
             runner: runner_ruff_check,
+            summary: ToolSummaryKind::Static("运行 ruff check"),
         },
         ToolSpec {
             name: "pytest_run",
@@ -226,6 +258,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_pytest_run,
             runner: runner_pytest_run,
+            summary: ToolSummaryKind::Static("运行 python3 -m pytest"),
         },
         ToolSpec {
             name: "mypy_check",
@@ -233,6 +266,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_mypy_check,
             runner: runner_mypy_check,
+            summary: ToolSummaryKind::Static("运行 mypy"),
         },
         ToolSpec {
             name: "python_install_editable",
@@ -240,6 +274,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_python_install_editable,
             runner: runner_python_install_editable,
+            summary: ToolSummaryKind::Dynamic(ts::summary_python_install_editable),
         },
         ToolSpec {
             name: "uv_sync",
@@ -247,6 +282,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_uv_sync,
             runner: runner_uv_sync,
+            summary: ToolSummaryKind::Static("运行 uv sync"),
         },
         ToolSpec {
             name: "uv_run",
@@ -254,6 +290,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_uv_run,
             runner: runner_uv_run,
+            summary: ToolSummaryKind::Dynamic(ts::summary_uv_run),
         },
         ToolSpec {
             name: "pre_commit_run",
@@ -261,6 +298,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_pre_commit_run,
             runner: runner_pre_commit_run,
+            summary: ToolSummaryKind::Dynamic(ts::summary_pre_commit_run),
         },
         ToolSpec {
             name: "typos_check",
@@ -268,6 +306,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_typos_check,
             runner: runner_typos_check,
+            summary: ToolSummaryKind::Static("typos 拼写检查"),
         },
         ToolSpec {
             name: "codespell_check",
@@ -275,6 +314,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_codespell_check,
             runner: runner_codespell_check,
+            summary: ToolSummaryKind::Static("codespell 拼写检查"),
         },
         ToolSpec {
             name: "ast_grep_run",
@@ -282,6 +322,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_ast_grep_run,
             runner: runner_ast_grep_run,
+            summary: ToolSummaryKind::Dynamic(ts::summary_ast_grep_run),
         },
         ToolSpec {
             name: "ast_grep_rewrite",
@@ -289,6 +330,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_ast_grep_rewrite,
             runner: runner_ast_grep_rewrite,
+            summary: ToolSummaryKind::Dynamic(ts::summary_ast_grep_rewrite),
         },
         ToolSpec {
             name: "frontend_lint",
@@ -296,6 +338,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
             runner: runner_frontend_lint,
+            summary: ToolSummaryKind::Static("运行前端 lint"),
         },
         ToolSpec {
             name: "frontend_build",
@@ -303,6 +346,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
             runner: runner_frontend_build,
+            summary: ToolSummaryKind::Static("运行前端 build"),
         },
         ToolSpec {
             name: "frontend_test",
@@ -310,6 +354,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
             runner: runner_frontend_test,
+            summary: ToolSummaryKind::Static("运行前端 test"),
         },
         ToolSpec {
             name: "cargo_audit",
@@ -317,6 +362,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_audit,
             runner: runner_cargo_audit,
+            summary: ToolSummaryKind::Static("运行 cargo audit"),
         },
         ToolSpec {
             name: "cargo_deny",
@@ -324,6 +370,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_deny,
             runner: runner_cargo_deny,
+            summary: ToolSummaryKind::Static("运行 cargo deny"),
         },
         ToolSpec {
             name: "ci_pipeline_local",
@@ -331,6 +378,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_ci_pipeline_local,
             runner: runner_ci_pipeline_local,
+            summary: ToolSummaryKind::Static("运行本地 CI 流水线"),
         },
         ToolSpec {
             name: "release_ready_check",
@@ -338,6 +386,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_release_ready_check,
             runner: runner_release_ready_check,
+            summary: ToolSummaryKind::Static("运行发布前一键检查"),
         },
         ToolSpec {
             name: "workflow_execute",
@@ -345,6 +394,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_workflow_execute,
             runner: runner_workflow_execute,
+            summary: ToolSummaryKind::Static("执行 DAG 工作流"),
         },
         ToolSpec {
             name: "rust_backtrace_analyze",
@@ -352,6 +402,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_backtrace_analyze,
             runner: runner_backtrace_analyze,
+            summary: ToolSummaryKind::Static("分析 Rust backtrace"),
         },
         ToolSpec {
             name: "diagnostic_summary",
@@ -359,6 +410,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_diagnostic_summary,
             runner: runner_diagnostic_summary,
+            summary: ToolSummaryKind::Static("环境/工具链诊断摘要（脱敏）"),
         },
         ToolSpec {
             name: "changelog_draft",
@@ -366,6 +418,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_changelog_draft,
             runner: runner_changelog_draft,
+            summary: ToolSummaryKind::Static("生成变更日志 Markdown 草稿"),
         },
         ToolSpec {
             name: "license_notice",
@@ -373,6 +426,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_license_notice,
             runner: runner_license_notice,
+            summary: ToolSummaryKind::Static("依赖许可证摘要表（cargo metadata）"),
         },
         ToolSpec {
             name: "git_status",
@@ -380,6 +434,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_status,
             runner: runner_git_status,
+            summary: ToolSummaryKind::Static("查看 Git 状态"),
         },
         ToolSpec {
             name: "git_diff",
@@ -387,6 +442,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_diff,
             runner: runner_git_diff,
+            summary: ToolSummaryKind::Dynamic(ts::summary_git_diff),
         },
         ToolSpec {
             name: "git_clean_check",
@@ -394,6 +450,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_clean_check,
             runner: runner_git_clean_check,
+            summary: ToolSummaryKind::Static("检查 Git 工作区是否干净"),
         },
         ToolSpec {
             name: "git_diff_stat",
@@ -401,6 +458,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_diff_stat,
             runner: runner_git_diff_stat,
+            summary: ToolSummaryKind::Dynamic(ts::summary_git_diff_stat),
         },
         ToolSpec {
             name: "git_diff_names",
@@ -408,6 +466,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_diff_names,
             runner: runner_git_diff_names,
+            summary: ToolSummaryKind::Dynamic(ts::summary_git_diff_names),
         },
         ToolSpec {
             name: "git_log",
@@ -415,6 +474,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_log,
             runner: runner_git_log,
+            summary: ToolSummaryKind::Static("查看 Git 提交历史"),
         },
         ToolSpec {
             name: "git_show",
@@ -422,6 +482,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_show,
             runner: runner_git_show,
+            summary: ToolSummaryKind::Static("查看 Git 提交详情"),
         },
         ToolSpec {
             name: "git_diff_base",
@@ -429,6 +490,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_diff_base,
             runner: runner_git_diff_base,
+            summary: ToolSummaryKind::Static("查看 base...HEAD 差异"),
         },
         ToolSpec {
             name: "git_blame",
@@ -436,6 +498,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_blame,
             runner: runner_git_blame,
+            summary: ToolSummaryKind::Static("查看 Git blame"),
         },
         ToolSpec {
             name: "git_file_history",
@@ -443,6 +506,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_file_history,
             runner: runner_git_file_history,
+            summary: ToolSummaryKind::Static("查看文件 Git 历史"),
         },
         ToolSpec {
             name: "git_branch_list",
@@ -450,6 +514,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_branch_list,
             runner: runner_git_branch_list,
+            summary: ToolSummaryKind::Static("查看分支列表"),
         },
         ToolSpec {
             name: "git_remote_status",
@@ -457,6 +522,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_status,
             runner: runner_git_remote_status,
+            summary: ToolSummaryKind::Static("查看远程跟踪状态"),
         },
         ToolSpec {
             name: "git_stage_files",
@@ -464,6 +530,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_stage_files,
             runner: runner_git_stage_files,
+            summary: ToolSummaryKind::Static("暂存文件"),
         },
         ToolSpec {
             name: "git_commit",
@@ -471,6 +538,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_commit,
             runner: runner_git_commit,
+            summary: ToolSummaryKind::Static("提交变更"),
         },
         ToolSpec {
             name: "git_fetch",
@@ -478,6 +546,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_fetch,
             runner: runner_git_fetch,
+            summary: ToolSummaryKind::Static("拉取远程更新"),
         },
         ToolSpec {
             name: "git_remote_list",
@@ -485,6 +554,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_empty_object,
             runner: runner_git_remote_list,
+            summary: ToolSummaryKind::Static("查看远程仓库"),
         },
         ToolSpec {
             name: "git_remote_set_url",
@@ -492,6 +562,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_remote_set_url,
             runner: runner_git_remote_set_url,
+            summary: ToolSummaryKind::Static("设置远程 URL"),
         },
         ToolSpec {
             name: "git_apply",
@@ -499,6 +570,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_apply,
             runner: runner_git_apply,
+            summary: ToolSummaryKind::Static("应用 Git 补丁"),
         },
         ToolSpec {
             name: "git_clone",
@@ -506,6 +578,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_clone,
             runner: runner_git_clone,
+            summary: ToolSummaryKind::Static("克隆仓库"),
         },
         ToolSpec {
             name: "create_file",
@@ -513,6 +586,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_file_write,
             runner: runner_create_file,
+            summary: ToolSummaryKind::Dynamic(ts::summary_create_file),
         },
         ToolSpec {
             name: "modify_file",
@@ -520,6 +594,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_modify_file,
             runner: runner_modify_file,
+            summary: ToolSummaryKind::Dynamic(ts::summary_modify_file),
         },
         ToolSpec {
             name: "copy_file",
@@ -527,6 +602,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_file_from_to_overwrite,
             runner: runner_copy_file,
+            summary: ToolSummaryKind::Dynamic(ts::summary_copy_file),
         },
         ToolSpec {
             name: "move_file",
@@ -534,6 +610,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_file_from_to_overwrite,
             runner: runner_move_file,
+            summary: ToolSummaryKind::Dynamic(ts::summary_move_file),
         },
         ToolSpec {
             name: "read_file",
@@ -541,6 +618,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_read_file,
             runner: runner_read_file,
+            summary: ToolSummaryKind::Dynamic(ts::summary_read_file),
         },
         ToolSpec {
             name: "read_dir",
@@ -548,6 +626,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_read_dir,
             runner: runner_read_dir,
+            summary: ToolSummaryKind::Dynamic(ts::summary_read_dir),
         },
         ToolSpec {
             name: "glob_files",
@@ -555,6 +634,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_glob_files,
             runner: runner_glob_files,
+            summary: ToolSummaryKind::Dynamic(ts::summary_glob_files),
         },
         ToolSpec {
             name: "list_tree",
@@ -562,6 +642,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_list_tree,
             runner: runner_list_tree,
+            summary: ToolSummaryKind::Dynamic(ts::summary_list_tree),
         },
         ToolSpec {
             name: "file_exists",
@@ -569,6 +650,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_file_exists,
             runner: runner_file_exists,
+            summary: ToolSummaryKind::Dynamic(ts::summary_file_exists),
         },
         ToolSpec {
             name: "read_binary_meta",
@@ -576,6 +658,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_read_binary_meta,
             runner: runner_read_binary_meta,
+            summary: ToolSummaryKind::Dynamic(ts::summary_read_binary_meta),
         },
         ToolSpec {
             name: "hash_file",
@@ -583,6 +666,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_hash_file,
             runner: runner_hash_file,
+            summary: ToolSummaryKind::Dynamic(ts::summary_hash_file),
         },
         ToolSpec {
             name: "extract_in_file",
@@ -590,6 +674,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_extract_in_file,
             runner: runner_extract_in_file,
+            summary: ToolSummaryKind::Dynamic(ts::summary_extract_in_file),
         },
         ToolSpec {
             name: "apply_patch",
@@ -597,6 +682,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_apply_patch,
             runner: runner_apply_patch,
+            summary: ToolSummaryKind::Dynamic(ts::summary_apply_patch),
         },
         ToolSpec {
             name: "search_in_files",
@@ -604,6 +690,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_search_in_files,
             runner: runner_search_in_files,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "markdown_check_links",
@@ -611,6 +698,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_markdown_check_links,
             runner: runner_markdown_check_links,
+            summary: ToolSummaryKind::Dynamic(ts::summary_markdown_check_links),
         },
         ToolSpec {
             name: "structured_validate",
@@ -618,6 +706,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_structured_validate,
             runner: runner_structured_validate,
+            summary: ToolSummaryKind::Dynamic(ts::summary_structured_validate),
         },
         ToolSpec {
             name: "structured_query",
@@ -625,6 +714,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_structured_query,
             runner: runner_structured_query,
+            summary: ToolSummaryKind::Dynamic(ts::summary_structured_query),
         },
         ToolSpec {
             name: "structured_diff",
@@ -632,6 +722,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_structured_diff,
             runner: runner_structured_diff,
+            summary: ToolSummaryKind::Dynamic(ts::summary_structured_diff),
         },
         ToolSpec {
             name: "structured_patch",
@@ -639,6 +730,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_structured_patch,
             runner: runner_structured_patch,
+            summary: ToolSummaryKind::Dynamic(ts::summary_structured_patch),
         },
         ToolSpec {
             name: "text_diff",
@@ -646,6 +738,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_text_diff,
             runner: runner_text_diff,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "table_text",
@@ -653,6 +746,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_table_text,
             runner: runner_table_text,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "find_symbol",
@@ -660,6 +754,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_find_symbol,
             runner: runner_find_symbol,
+            summary: ToolSummaryKind::Dynamic(ts::summary_find_symbol),
         },
         ToolSpec {
             name: "find_references",
@@ -667,6 +762,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_find_references,
             runner: runner_find_references,
+            summary: ToolSummaryKind::Dynamic(ts::summary_find_references),
         },
         ToolSpec {
             name: "rust_file_outline",
@@ -674,6 +770,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_file_outline,
             runner: runner_rust_file_outline,
+            summary: ToolSummaryKind::Dynamic(ts::summary_rust_file_outline),
         },
         ToolSpec {
             name: "format_file",
@@ -681,6 +778,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_format_file,
             runner: runner_format_file,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "format_check_file",
@@ -688,6 +786,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_format_check_file,
             runner: runner_format_check_file,
+            summary: ToolSummaryKind::Dynamic(ts::summary_format_check_file),
         },
         ToolSpec {
             name: "run_lints",
@@ -695,6 +794,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_run_lints,
             runner: runner_run_lints,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "quality_workspace",
@@ -702,6 +802,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Development,
             parameters: tool_params::params_quality_workspace,
             runner: runner_quality_workspace,
+            summary: ToolSummaryKind::Static("工作区质量检查"),
         },
         ToolSpec {
             name: "add_reminder",
@@ -709,6 +810,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_add_reminder,
             runner: runner_add_reminder,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "list_reminders",
@@ -716,6 +818,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_list_reminders,
             runner: runner_list_reminders,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "complete_reminder",
@@ -723,6 +826,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_id_only,
             runner: runner_complete_reminder,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "delete_reminder",
@@ -730,6 +834,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_id_only,
             runner: runner_delete_reminder,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "update_reminder",
@@ -737,6 +842,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_update_reminder,
             runner: runner_update_reminder,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "add_event",
@@ -744,6 +850,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_add_event,
             runner: runner_add_event,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "list_events",
@@ -751,6 +858,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_list_events,
             runner: runner_list_events,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "delete_event",
@@ -758,6 +866,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_id_only,
             runner: runner_delete_event,
+            summary: ToolSummaryKind::None,
         },
         ToolSpec {
             name: "update_event",
@@ -765,6 +874,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             category: ToolCategory::Basic,
             parameters: tool_params::params_update_event,
             runner: runner_update_event,
+            summary: ToolSummaryKind::None,
         },
     ]
 }
