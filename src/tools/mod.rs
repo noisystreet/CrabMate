@@ -94,12 +94,23 @@ pub fn tool_context_for<'a>(
 type ToolRunner = fn(args_json: &str, ctx: &ToolContext<'_>) -> String;
 type ParamBuilder = fn() -> serde_json::Value;
 
+/// 工具调用摘要类型：用于前端 Chat 面板展示。
+pub(super) enum ToolSummaryKind {
+    /// 无自定义摘要。
+    None,
+    /// 固定摘要字符串（与参数无关）。
+    Static(&'static str),
+    /// 从解析后的 args JSON 动态生成摘要。
+    Dynamic(fn(&serde_json::Value) -> Option<String>),
+}
+
 struct ToolSpec {
     name: &'static str,
     description: &'static str,
     category: ToolCategory,
     parameters: ParamBuilder,
     runner: ToolRunner,
+    summary: ToolSummaryKind,
 }
 
 fn runner_get_current_time(args: &str, _ctx: &ToolContext<'_>) -> String {
@@ -652,7 +663,15 @@ pub(crate) fn is_compile_command_success(args_json: &str, result: &str) -> bool 
 
 /// 为前端生成简短的工具调用摘要，便于在 Chat 面板中展示
 pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String> {
-    tool_summary::summarize_tool_call(name, args_json)
+    let spec = tool_specs().iter().find(|s| s.name == name)?;
+    match &spec.summary {
+        ToolSummaryKind::None => None,
+        ToolSummaryKind::Static(s) => Some((*s).to_string()),
+        ToolSummaryKind::Dynamic(f) => {
+            let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
+            f(&v)
+        }
+    }
 }
 
 #[cfg(test)]
