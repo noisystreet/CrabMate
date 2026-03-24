@@ -48,6 +48,18 @@ enum TuiAgentEvent {
     MessagesSnapshot(Vec<Message>),
 }
 
+const TUI_EVENT_FORWARDER_STREAM_BURST: usize = 64;
+
+fn coalesce_latest_snapshot(
+    snapshot_rx: &mut mpsc::Receiver<Vec<Message>>,
+    mut latest: Vec<Message>,
+) -> Vec<Message> {
+    while let Ok(next) = snapshot_rx.try_recv() {
+        latest = next;
+    }
+    latest
+}
+
 fn spawn_tui_event_forwarder(
     mut stream_rx: mpsc::Receiver<String>,
     mut snapshot_rx: mpsc::Receiver<Vec<Message>>,
@@ -56,7 +68,27 @@ fn spawn_tui_event_forwarder(
     tokio::spawn(async move {
         let mut stream_open = true;
         let mut snapshot_open = true;
+        let mut pending_snapshot: Option<Vec<Message>> = None;
+        let mut stream_since_snapshot = 0usize;
         loop {
+            // 即使流式通道持续就绪，也先尝试把最新快照并入待发送缓存，避免 snapshot 长期饥饿。
+            if snapshot_open && let Ok(msgs) = snapshot_rx.try_recv() {
+                pending_snapshot = Some(coalesce_latest_snapshot(&mut snapshot_rx, msgs));
+            }
+            // 连续流式事件过多时强制插入一次快照，避免快照长期饥饿。
+            if stream_since_snapshot >= TUI_EVENT_FORWARDER_STREAM_BURST
+                && let Some(snapshot) = pending_snapshot.take()
+            {
+                if event_tx
+                    .send(TuiAgentEvent::MessagesSnapshot(snapshot))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+                stream_since_snapshot = 0;
+                continue;
+            }
             tokio::select! {
                 biased;
                 stream_item = stream_rx.recv(), if stream_open => {
@@ -65,6 +97,7 @@ fn spawn_tui_event_forwarder(
                             if event_tx.send(TuiAgentEvent::StreamLine(s)).await.is_err() {
                                 break;
                             }
+                            stream_since_snapshot = stream_since_snapshot.saturating_add(1);
                         }
                         None => {
                             stream_open = false;
@@ -74,8 +107,16 @@ fn spawn_tui_event_forwarder(
                 snapshot_item = snapshot_rx.recv(), if snapshot_open => {
                     match snapshot_item {
                         Some(msgs) => {
-                            if event_tx.send(TuiAgentEvent::MessagesSnapshot(msgs)).await.is_err() {
-                                break;
+                            let snapshot = coalesce_latest_snapshot(&mut snapshot_rx, msgs);
+                            pending_snapshot = Some(snapshot);
+                            // 流已结束时，快照应尽快下发，避免结尾状态丢失。
+                            if !stream_open
+                                && let Some(snapshot) = pending_snapshot.take()
+                            {
+                                if event_tx.send(TuiAgentEvent::MessagesSnapshot(snapshot)).await.is_err() {
+                                    break;
+                                }
+                                stream_since_snapshot = 0;
                             }
                         }
                         None => {
@@ -83,7 +124,35 @@ fn spawn_tui_event_forwarder(
                         }
                     }
                 }
-                else => break,
+                else => {
+                    if let Some(snapshot) = pending_snapshot.take()
+                        && event_tx.send(TuiAgentEvent::MessagesSnapshot(snapshot)).await.is_err()
+                    {
+                                break;
+                            }
+                    break;
+                },
+            }
+            if !stream_open && let Some(snapshot) = pending_snapshot.take() {
+                if event_tx
+                    .send(TuiAgentEvent::MessagesSnapshot(snapshot))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+                stream_since_snapshot = 0;
+            }
+            if !stream_open && !snapshot_open {
+                if let Some(snapshot) = pending_snapshot.take()
+                    && event_tx
+                        .send(TuiAgentEvent::MessagesSnapshot(snapshot))
+                        .await
+                        .is_err()
+                {
+                    break;
+                }
+                break;
             }
         }
     })
@@ -598,7 +667,10 @@ pub async fn run_tui(
 
 #[cfg(test)]
 mod tests {
-    use super::{TuiAgentEvent, spawn_tui_event_forwarder, trailing_streaming_assistant_content};
+    use super::{
+        TUI_EVENT_FORWARDER_STREAM_BURST, TuiAgentEvent, spawn_tui_event_forwarder,
+        trailing_streaming_assistant_content,
+    };
     use crate::types::Message;
     use tokio::sync::mpsc;
 
@@ -691,6 +763,70 @@ mod tests {
 
         let forwarder = spawn_tui_event_forwarder(stream_rx, snapshot_rx, event_tx);
         let ev = event_rx.recv().await.expect("event should arrive");
+        assert!(matches!(ev, TuiAgentEvent::MessagesSnapshot(_)));
+        forwarder.await.expect("forwarder join");
+    }
+
+    #[tokio::test]
+    async fn event_forwarder_coalesces_snapshots_to_latest() {
+        let (stream_tx, stream_rx) = mpsc::channel::<String>(1);
+        let (snapshot_tx, snapshot_rx) = mpsc::channel::<Vec<Message>>(8);
+        let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(8);
+
+        drop(stream_tx);
+        snapshot_tx
+            .send(vec![Message::user_only("old")])
+            .await
+            .expect("snapshot old send should work");
+        snapshot_tx
+            .send(vec![Message::user_only("new")])
+            .await
+            .expect("snapshot new send should work");
+        drop(snapshot_tx);
+
+        let forwarder = spawn_tui_event_forwarder(stream_rx, snapshot_rx, event_tx);
+        let ev = event_rx.recv().await.expect("snapshot event should arrive");
+        match ev {
+            TuiAgentEvent::MessagesSnapshot(v) => {
+                assert_eq!(v.len(), 1);
+                assert_eq!(v[0].content.as_deref(), Some("new"));
+            }
+            TuiAgentEvent::StreamLine(_) => panic!("expected snapshot event"),
+        }
+        forwarder.await.expect("forwarder join");
+    }
+
+    #[tokio::test]
+    async fn event_forwarder_inserts_snapshot_after_stream_burst() {
+        let burst = TUI_EVENT_FORWARDER_STREAM_BURST;
+        let (stream_tx, stream_rx) = mpsc::channel::<String>(burst + 8);
+        let (snapshot_tx, snapshot_rx) = mpsc::channel::<Vec<Message>>(8);
+        let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(burst + 16);
+
+        for i in 0..(burst + 6) {
+            stream_tx
+                .send(format!("s-{i}"))
+                .await
+                .expect("stream send should work");
+        }
+        snapshot_tx
+            .send(vec![Message::user_only("snap")])
+            .await
+            .expect("snapshot send should work");
+        drop(stream_tx);
+        drop(snapshot_tx);
+
+        let forwarder = spawn_tui_event_forwarder(stream_rx, snapshot_rx, event_tx);
+
+        // 先消费 burst 个流式事件，然后应当收到一次快照事件。
+        for i in 0..burst {
+            let ev = event_rx.recv().await.expect("stream event should arrive");
+            assert!(matches!(ev, TuiAgentEvent::StreamLine(ref s) if s == &format!("s-{i}")));
+        }
+        let ev = event_rx
+            .recv()
+            .await
+            .expect("snapshot after burst should arrive");
         assert!(matches!(ev, TuiAgentEvent::MessagesSnapshot(_)));
         forwarder.await.expect("forwarder join");
     }
