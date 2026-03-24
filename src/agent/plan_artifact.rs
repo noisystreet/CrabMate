@@ -30,6 +30,15 @@ pub enum PlanArtifactError {
     },
 }
 
+/// Plan v1 的 schema 规则描述（中文），供提示词引用。
+pub const PLAN_V1_SCHEMA_RULES: &str = "\
+- 顶层 \"type\" 为字符串 \"agent_reply_plan\"
+- \"version\" 为数字 1
+- \"steps\" 为非空数组；每项含非空字符串 \"id\" 与 \"description\"";
+
+/// Plan v1 的 JSON 示例。
+pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …"}]}"#;
+
 /// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json 围栏，或整段即为单个 JSON 对象）。
 pub fn parse_agent_reply_plan_v1(content: &str) -> Result<AgentReplyPlanV1, PlanArtifactError> {
     for slice in collect_json_candidates(content) {
