@@ -1,10 +1,13 @@
 //! 工作区列表、任务/日程、assistant 占位更新。
 
 use crate::types::Message;
+use std::time::{Duration, Instant};
 
 use super::state::{Mode, TuiState};
 
 const FILE_VIEW_PREVIEW_MAX_CHARS: usize = 800_000;
+/// 右侧面板 refresh 冷却时间，避免 Tab 切换时频繁 I/O
+const REFRESH_COOLDOWN: Duration = Duration::from_millis(500);
 
 /// 流式增量写入**当前轮**助手气泡。
 ///
@@ -37,6 +40,14 @@ pub(super) fn upsert_assistant_message(messages: &mut Vec<Message>, content: &st
 }
 
 pub(super) fn refresh_workspace(state: &mut TuiState) {
+    if state
+        .workspace_last_refresh
+        .is_some_and(|t| t.elapsed() < REFRESH_COOLDOWN)
+    {
+        return;
+    }
+    state.workspace_last_refresh = Some(Instant::now());
+
     let mut entries = Vec::new();
     let dir = &state.workspace_dir;
     if let Ok(rd) = std::fs::read_dir(dir) {
@@ -58,6 +69,14 @@ pub(super) fn refresh_workspace(state: &mut TuiState) {
 }
 
 pub(super) fn refresh_tasks(state: &mut TuiState) {
+    if state
+        .tasks_last_refresh
+        .is_some_and(|t| t.elapsed() < REFRESH_COOLDOWN)
+    {
+        return;
+    }
+    state.tasks_last_refresh = Some(Instant::now());
+
     let path = state.workspace_dir.join("tasks.json");
     let s = match std::fs::read_to_string(path) {
         Ok(s) => s,
@@ -95,6 +114,14 @@ pub(super) fn refresh_tasks(state: &mut TuiState) {
 }
 
 pub(super) fn refresh_schedule(state: &mut TuiState) {
+    if state
+        .schedule_last_refresh
+        .is_some_and(|t| t.elapsed() < REFRESH_COOLDOWN)
+    {
+        return;
+    }
+    state.schedule_last_refresh = Some(Instant::now());
+
     let rpath = state.workspace_dir.join(".crabmate").join("reminders.json");
     let mut reminders = Vec::new();
     if let Ok(s) = std::fs::read_to_string(&rpath) {
@@ -177,6 +204,9 @@ pub(super) fn split_title_due(s: &str) -> (String, Option<String>) {
 pub(super) fn workspace_go_up(state: &mut TuiState) {
     if let Some(p) = state.workspace_dir.parent() {
         state.workspace_dir = p.to_path_buf();
+        state.workspace_last_refresh = None;
+        state.tasks_last_refresh = None;
+        state.schedule_last_refresh = None;
         refresh_workspace(state);
         refresh_tasks(state);
         refresh_schedule(state);
@@ -190,6 +220,9 @@ pub(super) fn workspace_open_or_enter(state: &mut TuiState) {
     let path = state.workspace_dir.join(&name);
     if is_dir {
         state.workspace_dir = path;
+        state.workspace_last_refresh = None;
+        state.tasks_last_refresh = None;
+        state.schedule_last_refresh = None;
         refresh_workspace(state);
         refresh_tasks(state);
         refresh_schedule(state);
