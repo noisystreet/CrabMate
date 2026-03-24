@@ -503,4 +503,175 @@ mod tests {
             AfterFinalAssistant::RequestPlanRewrite(_)
         ));
     }
+
+    #[test]
+    fn always_policy_stops_when_plan_present() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Always, 2);
+        let ok = Message {
+            role: "assistant".to_string(),
+            content: Some(
+                r#"Here is my plan:
+```json
+{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"do the thing"}]}
+```"#
+                    .to_string(),
+            ),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&ok, &[]),
+            AfterFinalAssistant::StopTurn
+        ));
+    }
+
+    #[test]
+    fn always_policy_exhausts_rewrites_then_stops() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Always, 1);
+        let empty = Message {
+            role: "assistant".to_string(),
+            content: Some("no plan at all".to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&empty, &[]),
+            AfterFinalAssistant::RequestPlanRewrite(_)
+        ));
+        assert!(matches!(
+            c.after_final_assistant(&empty, &[]),
+            AfterFinalAssistant::StopTurnPlanRewriteExhausted
+        ));
+    }
+
+    #[test]
+    fn workflow_reflection_no_inject_means_no_requirement() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection, 2);
+        let empty = Message {
+            role: "assistant".to_string(),
+            content: Some("no plan".to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&empty, &[]),
+            AfterFinalAssistant::StopTurn
+        ));
+    }
+
+    #[test]
+    fn workflow_reflection_done_true_does_not_set_plan_requirement() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection, 2);
+        let wf_args_round1 =
+            r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
+        let _ = c.prepare_workflow_execute(wf_args_round1);
+        assert!(c.require_plan_in_final_flag_snapshot());
+
+        let wf_args_done =
+            r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":true}}"#;
+        let prep = c.prepare_workflow_execute(wf_args_done);
+        assert!(prep.execute);
+    }
+
+    #[test]
+    fn prepare_workflow_reflection_disabled_passes_through() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection, 2);
+        let args = r#"{"workflow":{"nodes":[{"id":"a","tool":"ls"}]}}"#;
+        let prep = c.prepare_workflow_execute(args);
+        assert!(prep.execute);
+        assert!(prep.reflection_inject.is_none());
+        assert!(!c.require_plan_in_final_flag_snapshot());
+    }
+
+    #[test]
+    fn plan_rewrite_attempts_increments_correctly() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Always, 3);
+        let empty = Message {
+            role: "assistant".to_string(),
+            content: Some("no plan".to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert_eq!(c.plan_rewrite_attempts_snapshot(), 0);
+        let _ = c.after_final_assistant(&empty, &[]);
+        assert_eq!(c.plan_rewrite_attempts_snapshot(), 1);
+        let _ = c.after_final_assistant(&empty, &[]);
+        assert_eq!(c.plan_rewrite_attempts_snapshot(), 2);
+        let _ = c.after_final_assistant(&empty, &[]);
+        assert_eq!(c.plan_rewrite_attempts_snapshot(), 3);
+        assert!(matches!(
+            c.after_final_assistant(&empty, &[]),
+            AfterFinalAssistant::StopTurnPlanRewriteExhausted
+        ));
+    }
+
+    #[test]
+    fn append_tool_result_and_reflection_with_inject() {
+        let mut msgs: Vec<Message> = vec![];
+        let inject = serde_json::json!({
+            "instruction_type": "test_instruction",
+            "body": "do something"
+        });
+        PerCoordinator::append_tool_result_and_reflection(
+            &mut msgs,
+            "tc-99".to_string(),
+            "tool output".to_string(),
+            Some(inject),
+        );
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].role, "tool");
+        assert_eq!(msgs[0].content.as_deref(), Some("tool output"));
+        assert_eq!(msgs[0].tool_call_id.as_deref(), Some("tc-99"));
+        assert_eq!(msgs[1].role, "user");
+        assert!(
+            msgs[1]
+                .content
+                .as_deref()
+                .unwrap()
+                .contains("test_instruction")
+        );
+    }
+
+    #[test]
+    fn append_tool_result_without_reflection() {
+        let mut msgs: Vec<Message> = vec![];
+        PerCoordinator::append_tool_result_and_reflection(
+            &mut msgs,
+            "tc-1".to_string(),
+            "result".to_string(),
+            None,
+        );
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].role, "tool");
+    }
+
+    #[test]
+    fn layer_count_from_empty_history() {
+        assert_eq!(last_workflow_validate_layer_count(&[]), None);
+    }
+
+    #[test]
+    fn layer_count_from_non_workflow_history() {
+        let msgs = vec![
+            Message {
+                role: "user".to_string(),
+                content: Some("hello".to_string()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "assistant".to_string(),
+                content: Some("hi".to_string()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+        ];
+        assert_eq!(last_workflow_validate_layer_count(&msgs), None);
+    }
 }
