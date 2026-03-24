@@ -30,6 +30,7 @@ fn test_validate_dag_cycle_detection() {
             requires_approval: false,
             timeout_secs: None,
             compensate_with: vec![],
+            max_retries: 0,
         },
         WorkflowNodeSpec {
             id: "b".to_string(),
@@ -39,6 +40,7 @@ fn test_validate_dag_cycle_detection() {
             requires_approval: false,
             timeout_secs: None,
             compensate_with: vec![],
+            max_retries: 0,
         },
     ];
     assert!(validate_dag(&nodes).is_err());
@@ -91,4 +93,43 @@ fn test_placeholder_stdout_first_token() {
     let injected = inject_placeholders(&v, &completed, 64);
     let rev = injected.get("rev").and_then(|x| x.as_str()).unwrap_or("");
     assert_eq!(rev, "deadbeef123");
+}
+
+#[test]
+fn test_parse_max_retries_defaults_to_zero() {
+    let json = r#"{
+        "workflow":{
+          "nodes":[
+            {"id":"a","tool_name":"calc","tool_args":{}}
+          ]
+        }
+    }"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert_eq!(spec.nodes[0].max_retries, 0);
+}
+
+#[test]
+fn test_parse_max_retries_capped_at_five() {
+    let json = r#"{
+        "workflow":{
+          "nodes":[
+            {"id":"a","tool_name":"calc","tool_args":{},"max_retries":99}
+          ]
+        }
+    }"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert_eq!(spec.nodes[0].max_retries, 5);
+}
+
+#[test]
+fn test_parse_max_retries_explicit_value() {
+    let json = r#"{
+        "workflow":{
+          "nodes":[
+            {"id":"a","tool_name":"calc","tool_args":{},"max_retries":3}
+          ]
+        }
+    }"#;
+    let spec = parse_workflow_spec(json).unwrap();
+    assert_eq!(spec.nodes[0].max_retries, 3);
 }

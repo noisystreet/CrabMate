@@ -37,17 +37,24 @@ impl FinalPlanRequirementMode {
     }
 }
 
-const PLAN_REWRITE_USER_TEXT: &str = r#"你的最终回答缺少**结构化规划**。请在 content 中加入一段 Markdown 代码围栏（语言标记为 json），其内为合法 JSON，且必须满足：
-- 顶层 "type" 为字符串 "agent_reply_plan"
-- "version" 为数字 1
-- "steps" 为非空数组；每项含非空字符串 "id" 与 "description"
+/// 标识 plan 需求的来源，使工作流反思与终答反思的交互点可审计。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanRequirementSource {
+    /// 无需求
+    None,
+    /// 来自 `FinalPlanRequirementMode::Always` 配置
+    ConfigAlways,
+    /// 来自工作流反思第一轮注入的 `INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT`
+    WorkflowReflection,
+}
 
-示例：
-```json
-{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …"}]}
-```
-
-请直接重写本轮最终回答（可有其它说明文字，但须包含上述 JSON 围栏）。"#;
+fn plan_rewrite_user_text() -> String {
+    format!(
+        "你的最终回答缺少**结构化规划**。请在 content 中加入一段 Markdown 代码围栏（语言标记为 json），其内为合法 JSON，且必须满足：\n{}\n\n示例：\n```json\n{}\n```\n\n请直接重写本轮最终回答（可有其它说明文字，但须包含上述 JSON 围栏）。",
+        plan_artifact::PLAN_V1_SCHEMA_RULES,
+        plan_artifact::PLAN_V1_EXAMPLE_JSON
+    )
+}
 
 /// 模型返回最终文本（非 tool_calls）后，由协调层决定是结束本轮还是要求重写。
 #[derive(Debug)]
@@ -76,7 +83,7 @@ pub struct PerCoordinator {
     final_plan_policy: FinalPlanRequirementMode,
     plan_rewrite_max_attempts: usize,
     /// 在 [`FinalPlanRequirementMode::WorkflowReflection`] 下，由 `prepare_workflow_execute` 根据反思注入置位。
-    require_plan_in_final_content: bool,
+    plan_requirement_source: PlanRequirementSource,
     plan_rewrite_attempts: usize,
 }
 
@@ -92,7 +99,7 @@ impl PerCoordinator {
 
     /// 下一回模型若以非 `tool_calls` 结束，是否必须嵌入可解析的 `agent_reply_plan`（工作流反思路径下由工具结果置位）。
     pub fn require_plan_in_final_flag_snapshot(&self) -> bool {
-        self.require_plan_in_final_content
+        self.plan_requirement_source != PlanRequirementSource::None
     }
 
     pub fn new(
@@ -100,11 +107,15 @@ impl PerCoordinator {
         final_plan_policy: FinalPlanRequirementMode,
         plan_rewrite_max_attempts: usize,
     ) -> Self {
+        let initial_source = match final_plan_policy {
+            FinalPlanRequirementMode::Always => PlanRequirementSource::ConfigAlways,
+            _ => PlanRequirementSource::None,
+        };
         Self {
             reflection: WorkflowReflectionController::new(reflection_default_max_rounds),
             final_plan_policy,
             plan_rewrite_max_attempts: plan_rewrite_max_attempts.max(1),
-            require_plan_in_final_content: false,
+            plan_requirement_source: initial_source,
             plan_rewrite_attempts: 0,
         }
     }
@@ -123,16 +134,18 @@ impl PerCoordinator {
     ) -> AfterFinalAssistant {
         let require_plan = match self.final_plan_policy {
             FinalPlanRequirementMode::Never => false,
-            FinalPlanRequirementMode::WorkflowReflection => self.require_plan_in_final_content,
+            FinalPlanRequirementMode::WorkflowReflection => {
+                self.plan_requirement_source == PlanRequirementSource::WorkflowReflection
+            }
             FinalPlanRequirementMode::Always => true,
         };
 
         log::info!(
             target: "crabmate::per",
-            "after_final_assistant enter policy={:?} require_plan={} require_plan_from_wf={} reflection_stage_round={} plan_rewrite_attempts={} plan_rewrite_max={}",
+            "after_final_assistant enter policy={:?} require_plan={} plan_requirement_source={:?} reflection_stage_round={} plan_rewrite_attempts={} plan_rewrite_max={}",
             self.final_plan_policy,
             require_plan,
-            self.require_plan_in_final_content,
+            self.plan_requirement_source,
             self.reflection.stage_round(),
             self.plan_rewrite_attempts,
             self.plan_rewrite_max_attempts
@@ -148,7 +161,9 @@ impl PerCoordinator {
 
         let apply_layer_semantics = match self.final_plan_policy {
             FinalPlanRequirementMode::Never => false,
-            FinalPlanRequirementMode::WorkflowReflection => self.require_plan_in_final_content,
+            FinalPlanRequirementMode::WorkflowReflection => {
+                self.plan_requirement_source == PlanRequirementSource::WorkflowReflection
+            }
             FinalPlanRequirementMode::Always => true,
         };
         let layer_need = last_workflow_validate_layer_count(messages);
@@ -187,9 +202,10 @@ impl PerCoordinator {
         self.plan_rewrite_attempts += 1;
         let rewrite_text = match layer_need.filter(|&n| n > 0 && apply_layer_semantics) {
             Some(n) => format!(
-                "{PLAN_REWRITE_USER_TEXT}\n\n补充：最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。"
+                "{}\n\n补充：最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。",
+                plan_rewrite_user_text()
             ),
-            None => PLAN_REWRITE_USER_TEXT.to_string(),
+            None => plan_rewrite_user_text(),
         };
         log::info!(
             target: "crabmate::per",
@@ -217,7 +233,7 @@ impl PerCoordinator {
             && v.get("instruction_type").and_then(|x| x.as_str())
                 == Some(workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT)
         {
-            self.require_plan_in_final_content = true;
+            self.plan_requirement_source = PlanRequirementSource::WorkflowReflection;
             log::info!(
                 target: "crabmate::per",
                 "prepare_workflow_execute event=require_final_plan_set reflection_stage_round={}",
