@@ -13,9 +13,19 @@ use crate::types::{ChatRequest, Message, is_chat_ui_separator};
 
 const SUMMARY_SYSTEM: &str = "你只负责压缩对话历史。使用简洁中文要点列表，保留：用户目标、关键路径/命令、错误信息、未决问题。不要编造事实。";
 
+/// 从字节长度近似字符数：ASCII 约 1:1，CJK 约 3:1，混合取中间值 ~2:1。
+fn estimate_chars_from_bytes(s: &str) -> usize {
+    s.len().div_ceil(2)
+}
+
 /// 估算单条消息占用的「约等于字符数」（用于预算；非精确 token）。
+/// 使用字节长度近似，避免对大内容做 O(n) 的 `chars().count()`。
 pub fn estimate_message_chars(m: &Message) -> usize {
-    let mut n = m.content.as_deref().map(|s| s.chars().count()).unwrap_or(0);
+    let mut n = m
+        .content
+        .as_deref()
+        .map(estimate_chars_from_bytes)
+        .unwrap_or(0);
     if let Some(ref tcs) = m.tool_calls {
         for tc in tcs {
             n = n.saturating_add(tc.function.name.len());
@@ -45,6 +55,10 @@ pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize
         let Some(ref c) = m.content else {
             continue;
         };
+        // Fast path: if byte length is within limit, char count must also be
+        if c.len() <= max_chars {
+            continue;
+        }
         let len = c.chars().count();
         if len <= max_chars {
             continue;
@@ -122,25 +136,35 @@ pub fn trim_messages_by_char_budget(
 /// 按条数/字符裁剪历史时，可能截掉带 `tool_calls` 的 `assistant`，却保留其后的 `tool`，
 /// OpenAI 兼容 API 会返回 400：`Messages with role 'tool' must be a response to a preceding message with 'tool_calls'`。
 pub fn drop_orphan_tool_messages(messages: &mut Vec<Message>) {
-    let mut i = 0;
-    while i < messages.len() {
+    let mut keep = vec![true; messages.len()];
+    for i in 0..messages.len() {
         if messages[i].role != "tool" {
-            i += 1;
             continue;
         }
-        let ok = i > 0
-            && (messages[i - 1].role == "tool"
-                || (messages[i - 1].role == "assistant"
-                    && messages[i - 1]
-                        .tool_calls
-                        .as_ref()
-                        .is_some_and(|c| !c.is_empty())));
-        if ok {
-            i += 1;
-        } else {
-            messages.remove(i);
+        let has_valid_predecessor = i > 0 && {
+            // Find the actual predecessor among kept messages
+            let mut prev = i - 1;
+            while prev > 0 && !keep[prev] {
+                prev -= 1;
+            }
+            keep[prev]
+                && (messages[prev].role == "tool"
+                    || (messages[prev].role == "assistant"
+                        && messages[prev]
+                            .tool_calls
+                            .as_ref()
+                            .is_some_and(|c| !c.is_empty())))
+        };
+        if !has_valid_predecessor {
+            keep[i] = false;
         }
     }
+    let mut idx = 0;
+    messages.retain(|_| {
+        let k = keep[idx];
+        idx += 1;
+        k
+    });
 }
 
 /// 每次调用模型前执行：工具压缩 → 条数裁剪 →（可选）字符预算裁剪。
@@ -395,14 +419,14 @@ mod tests {
             },
             Message {
                 role: "user".to_string(),
-                content: Some("aaaa".into()),
+                content: Some("aaaaaaaaaa".into()),
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
             },
             Message {
                 role: "user".to_string(),
-                content: Some("bbbbbbbb".into()),
+                content: Some("bbbbbbbbbbbbbbbb".into()),
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -410,7 +434,7 @@ mod tests {
         ];
         trim_messages_by_char_budget(&mut v, 6, 1);
         assert_eq!(v.len(), 2);
-        assert_eq!(v[1].content.as_deref(), Some("bbbbbbbb"));
+        assert_eq!(v[1].content.as_deref(), Some("bbbbbbbbbbbbbbbb"));
     }
 
     fn assistant_with_tool_calls() -> Message {

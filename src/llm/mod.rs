@@ -60,6 +60,7 @@ pub async fn complete_chat_retrying(
     let t0 = Instant::now();
     let max_attempts = cfg.api_max_retries + 1;
     let mut last_ok = None;
+    let mut req = request.clone();
     for attempt in 0..max_attempts {
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             return Err(crate::types::LLM_CANCELLED_ERROR.into());
@@ -68,7 +69,7 @@ pub async fn complete_chat_retrying(
             http,
             api_key,
             &cfg.api_base,
-            request,
+            &mut req,
             out,
             render_to_terminal,
             no_stream,
