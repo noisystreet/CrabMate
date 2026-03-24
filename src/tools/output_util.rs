@@ -4,7 +4,7 @@
 //! 避免超长输出占满上下文窗口。此模块统一实现，消除各工具文件中的重复 helper。
 
 /// UTF-8 安全的字节截断：在 `max_bytes` 以内找到最近的 char boundary 并截取。
-pub(super) fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
+pub(crate) fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         return s.to_string();
     }
