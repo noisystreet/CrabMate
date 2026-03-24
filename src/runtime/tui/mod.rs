@@ -334,7 +334,7 @@ pub async fn run_tui(
     let mut last_tick = Instant::now();
     // 已离开底部且模型仍在流式输出时，限制重绘频率，减轻 Markdown 每帧重算带来的闪屏。
     let mut last_draw_at = Instant::now();
-    let stream_scroll_min_draw_interval = Duration::from_millis(160);
+    let stream_scroll_min_draw_interval = Duration::from_millis(200);
 
     // 首帧与任意状态变化后为 true；空闲时跳过重绘，避免每 tick 全量重算 Markdown 占满 CPU。
     let mut need_redraw = true;
