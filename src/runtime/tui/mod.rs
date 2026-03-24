@@ -42,6 +42,26 @@ use state::{Focus, Mode, ModelPhase, TuiState, TuiTurnOutcome, strip_sgr_mouse_l
 use status::{build_normal_status_line, set_normal_status_line};
 use workspace_ops::{refresh_schedule, refresh_tasks, refresh_workspace, upsert_assistant_message};
 
+#[derive(Debug)]
+enum TuiAgentEvent {
+    StreamLine(String),
+    MessagesSnapshot(Vec<Message>),
+}
+
+/// 全量快照合并后重建流式缓冲：若末尾仍是助手正文，继续在其后追加增量；否则清空缓冲。
+fn trailing_streaming_assistant_content(messages: &[Message]) -> String {
+    messages
+        .last()
+        .and_then(|m| {
+            if m.role == "assistant" && m.tool_calls.is_none() {
+                m.content.clone()
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default()
+}
+
 /// 退出全屏 TUI：关鼠标、离开备用屏幕、关 raw，并丢弃 stdin 中残留的鼠标 CSI（避免退出后 shell 上出现 `12;34;56M` 等泄漏）。
 fn tui_restore_tty_mouse_and_stdin() -> std::io::Result<()> {
     #[cfg(unix)]
@@ -209,13 +229,41 @@ pub async fn run_tui(
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let (tx, mut rx) = mpsc::channel::<String>(2048);
-    let (sync_tx, mut sync_rx) = mpsc::channel::<Vec<Message>>(1);
+    let (tx, rx) = mpsc::channel::<String>(2048);
+    let (sync_tx, sync_rx) = mpsc::channel::<Vec<Message>>(8);
+    let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(4096);
     let (turn_outcome_tx, mut turn_outcome_rx) = mpsc::channel::<TuiTurnOutcome>(4);
     let mut approval_tx: Option<mpsc::Sender<crate::types::CommandApprovalDecision>> = None;
     let mut agent_running: Option<tokio::task::JoinHandle<()>> = None;
     let agent_cancel = Arc::new(AtomicBool::new(false));
     let mut assistant_buf = String::new();
+
+    {
+        let event_tx = event_tx.clone();
+        tokio::spawn(async move {
+            let mut rx = rx;
+            while let Some(s) = rx.recv().await {
+                if event_tx.send(TuiAgentEvent::StreamLine(s)).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    {
+        let event_tx = event_tx.clone();
+        tokio::spawn(async move {
+            let mut sync_rx = sync_rx;
+            while let Some(msgs) = sync_rx.recv().await {
+                if event_tx
+                    .send(TuiAgentEvent::MessagesSnapshot(msgs))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+    }
 
     let tick_rate = Duration::from_millis(50);
     let mut last_tick = Instant::now();
@@ -228,183 +276,184 @@ pub async fn run_tui(
 
     loop {
         let mut inbox_changed = false;
-        while let Ok(s) = rx.try_recv() {
+        while let Ok(ev) = event_rx.try_recv() {
             inbox_changed = true;
-            match classify_agent_sse_line(&s) {
-                AgentLineKind::ToolRunning(true) => {
-                    state.tool_running = true;
-                    state.tool_running_clear_pending = false;
-                    state.model_phase = ModelPhase::ToolRunning;
-                    set_normal_status_line(&mut state, &cfg.model);
-                }
-                AgentLineKind::ParsingToolCalls(true) => {
-                    state.model_phase = ModelPhase::SelectingTools;
-                    set_normal_status_line(&mut state, &cfg.model);
-                }
-                AgentLineKind::ParsingToolCalls(false) => {
-                    if state.model_phase == ModelPhase::SelectingTools {
-                        state.model_phase = ModelPhase::Thinking;
+            match ev {
+                TuiAgentEvent::StreamLine(s) => match classify_agent_sse_line(&s) {
+                    AgentLineKind::ToolRunning(true) => {
+                        state.tool_running = true;
+                        state.tool_running_clear_pending = false;
+                        state.model_phase = ModelPhase::ToolRunning;
                         set_normal_status_line(&mut state, &cfg.model);
                     }
-                }
-                AgentLineKind::ToolRunning(false) => {
-                    // 不在此处立即清掉：否则与 true 同一次 try_recv 排空时，draw 前状态已被还原，用户看不到提示。
-                    state.tool_running_clear_pending = true;
-                }
-                AgentLineKind::WorkspaceRefresh => {
-                    refresh_workspace(&mut state);
-                    refresh_tasks(&mut state);
-                    refresh_schedule(&mut state);
-                }
-                AgentLineKind::CommandApproval {
-                    command,
-                    args,
-                    allowlist_key,
-                } => {
-                    state.pending_command = command;
-                    state.pending_command_args = args;
-                    state.pending_approval_allowlist_key = allowlist_key;
-                    state.approve_choice = 0;
-                    state.mode = Mode::CommandApprove;
-                    state.model_phase = ModelPhase::AwaitingApproval;
-                    state.status_line = command_approval_message(
-                        &state.pending_command,
-                        &state.pending_command_args,
-                    );
-                }
-                AgentLineKind::ToolCall { name, summary } => {
-                    state.model_phase = ModelPhase::SelectingTools;
-                    let mut msg = String::from("即将执行工具");
-                    if let Some(n) = name.as_deref().filter(|s| !s.is_empty()) {
-                        msg.push_str(&format!(" [{}]", n));
+                    AgentLineKind::ParsingToolCalls(true) => {
+                        state.model_phase = ModelPhase::SelectingTools;
+                        set_normal_status_line(&mut state, &cfg.model);
                     }
-                    if let Some(s) = summary.as_deref().filter(|s| !s.is_empty()) {
-                        msg.push_str(&format!("：{}", s));
-                    }
-                    state.status_line =
-                        format!("{} · {}", msg, build_normal_status_line(&cfg.model));
-                }
-                AgentLineKind::ToolResult {
-                    name,
-                    summary,
-                    ok,
-                    exit_code,
-                    error_code,
-                } => {
-                    let failed = matches!(ok, Some(false))
-                        || exit_code.is_some_and(|c| c != 0)
-                        || error_code.as_deref().is_some_and(|s| !s.is_empty());
-                    let mut msg = if failed {
-                        "工具执行失败".to_string()
-                    } else {
-                        "工具执行完成".to_string()
-                    };
-                    if let Some(n) = name.as_deref().filter(|s| !s.is_empty()) {
-                        msg.push_str(&format!(" [{}]", n));
-                    }
-                    if let Some(s) = summary.as_deref().filter(|s| !s.is_empty()) {
-                        msg.push_str(&format!("：{}", s));
-                    }
-                    if failed {
-                        if let Some(c) = error_code.as_deref().filter(|s| !s.is_empty()) {
-                            msg.push_str(&format!(" (code={})", c));
-                        }
-                        if let Some(code) = exit_code {
-                            msg.push_str(&format!(" (exit={})", code));
+                    AgentLineKind::ParsingToolCalls(false) => {
+                        if state.model_phase == ModelPhase::SelectingTools {
+                            state.model_phase = ModelPhase::Thinking;
+                            set_normal_status_line(&mut state, &cfg.model);
                         }
                     }
-                    state.status_line =
-                        format!("{} · {}", msg, build_normal_status_line(&cfg.model));
-                }
-                AgentLineKind::StreamError {
-                    error_preview,
-                    code,
-                } => {
-                    state.model_phase = ModelPhase::Error;
-                    // 不把错误 JSON 写入对话区；在状态栏保留简要错误信息，便于排障。
-                    let mut msg = String::from("流式响应异常");
-                    if let Some(c) = code.as_deref().filter(|s| !s.is_empty()) {
-                        msg.push_str(&format!("({})", c));
+                    AgentLineKind::ToolRunning(false) => {
+                        // 不在此处立即清掉：否则与 true 同一次 try_recv 排空时，draw 前状态已被还原，用户看不到提示。
+                        state.tool_running_clear_pending = true;
                     }
-                    if let Some(p) = error_preview.as_deref().filter(|s| !s.is_empty()) {
-                        msg.push_str(&format!("：{}", p));
+                    AgentLineKind::WorkspaceRefresh => {
+                        refresh_workspace(&mut state);
+                        refresh_tasks(&mut state);
+                        refresh_schedule(&mut state);
                     }
-                    state.status_line =
-                        format!("{} · {}", msg, build_normal_status_line(&cfg.model));
-                }
-                AgentLineKind::StagedPlanNotice { text, clear_before } => {
-                    debug!(
-                        target: "crabmate::tui_print",
-                        "TUI 分阶段规划通知 clear_before={} text_len={} text={}",
-                        clear_before,
-                        text.len(),
-                        text
-                    );
-                    const MAX_STAGED_PLAN_LOG: usize = 200;
-                    if clear_before {
-                        state.staged_plan_log.clear();
+                    AgentLineKind::CommandApproval {
+                        command,
+                        args,
+                        allowlist_key,
+                    } => {
+                        state.pending_command = command;
+                        state.pending_command_args = args;
+                        state.pending_approval_allowlist_key = allowlist_key;
+                        state.approve_choice = 0;
+                        state.mode = Mode::CommandApprove;
+                        state.model_phase = ModelPhase::AwaitingApproval;
+                        state.status_line = command_approval_message(
+                            &state.pending_command,
+                            &state.pending_command_args,
+                        );
                     }
-                    for line in text.lines() {
-                        let t = line.trim_end();
-                        if !t.is_empty()
-                            && !crate::runtime::message_display::is_staged_plan_placeholder_like_line(
-                                t,
-                            )
-                        {
-                            state.staged_plan_log.push(t.to_string());
-                            while state.staged_plan_log.len() > MAX_STAGED_PLAN_LOG {
-                                state.staged_plan_log.remove(0);
+                    AgentLineKind::ToolCall { name, summary } => {
+                        state.model_phase = ModelPhase::SelectingTools;
+                        let mut msg = String::from("即将执行工具");
+                        if let Some(n) = name.as_deref().filter(|s| !s.is_empty()) {
+                            msg.push_str(&format!(" [{}]", n));
+                        }
+                        if let Some(s) = summary.as_deref().filter(|s| !s.is_empty()) {
+                            msg.push_str(&format!("：{}", s));
+                        }
+                        state.status_line =
+                            format!("{} · {}", msg, build_normal_status_line(&cfg.model));
+                    }
+                    AgentLineKind::ToolResult {
+                        name,
+                        summary,
+                        ok,
+                        exit_code,
+                        error_code,
+                    } => {
+                        let failed = matches!(ok, Some(false))
+                            || exit_code.is_some_and(|c| c != 0)
+                            || error_code.as_deref().is_some_and(|s| !s.is_empty());
+                        let mut msg = if failed {
+                            "工具执行失败".to_string()
+                        } else {
+                            "工具执行完成".to_string()
+                        };
+                        if let Some(n) = name.as_deref().filter(|s| !s.is_empty()) {
+                            msg.push_str(&format!(" [{}]", n));
+                        }
+                        if let Some(s) = summary.as_deref().filter(|s| !s.is_empty()) {
+                            msg.push_str(&format!("：{}", s));
+                        }
+                        if failed {
+                            if let Some(c) = error_code.as_deref().filter(|s| !s.is_empty()) {
+                                msg.push_str(&format!(" (code={})", c));
+                            }
+                            if let Some(code) = exit_code {
+                                msg.push_str(&format!(" (exit={})", code));
                             }
                         }
+                        state.status_line =
+                            format!("{} · {}", msg, build_normal_status_line(&cfg.model));
                     }
-                    let hint =
-                        crate::runtime::message_display::staged_plan_notice_status_hint(&text);
-                    state.status_line = if hint.is_empty() {
-                        build_normal_status_line(&cfg.model)
-                    } else {
-                        format!("{} · {}", hint, build_normal_status_line(&cfg.model))
-                    };
-                }
-                AgentLineKind::Ignore => {}
-                AgentLineKind::Plain => {
-                    state.model_phase = ModelPhase::Answering;
-                    assistant_buf.push_str(&s);
-                    let cleaned = strip_sgr_mouse_leaks(&assistant_buf);
-                    if cleaned != assistant_buf {
-                        assistant_buf = cleaned;
+                    AgentLineKind::StreamError {
+                        error_preview,
+                        code,
+                    } => {
+                        state.model_phase = ModelPhase::Error;
+                        // 不把错误 JSON 写入对话区；在状态栏保留简要错误信息，便于排障。
+                        let mut msg = String::from("流式响应异常");
+                        if let Some(c) = code.as_deref().filter(|s| !s.is_empty()) {
+                            msg.push_str(&format!("({})", c));
+                        }
+                        if let Some(p) = error_preview.as_deref().filter(|s| !s.is_empty()) {
+                            msg.push_str(&format!("：{}", p));
+                        }
+                        state.status_line =
+                            format!("{} · {}", msg, build_normal_status_line(&cfg.model));
                     }
-                    upsert_assistant_message(&mut state.messages, &assistant_buf);
+                    AgentLineKind::StagedPlanNotice { text, clear_before } => {
+                        debug!(
+                            target: "crabmate::tui_print",
+                            "TUI 分阶段规划通知 clear_before={} text_len={} text={}",
+                            clear_before,
+                            text.len(),
+                            text
+                        );
+                        const MAX_STAGED_PLAN_LOG: usize = 200;
+                        if clear_before {
+                            state.staged_plan_log.clear();
+                        }
+                        for line in text.lines() {
+                            let t = line.trim_end();
+                            if !t.is_empty()
+                                && !crate::runtime::message_display::is_staged_plan_placeholder_like_line(
+                                    t,
+                                )
+                            {
+                                state.staged_plan_log.push(t.to_string());
+                                while state.staged_plan_log.len() > MAX_STAGED_PLAN_LOG {
+                                    state.staged_plan_log.remove(0);
+                                }
+                            }
+                        }
+                        let hint =
+                            crate::runtime::message_display::staged_plan_notice_status_hint(&text);
+                        state.status_line = if hint.is_empty() {
+                            build_normal_status_line(&cfg.model)
+                        } else {
+                            format!("{} · {}", hint, build_normal_status_line(&cfg.model))
+                        };
+                    }
+                    AgentLineKind::Ignore => {}
+                    AgentLineKind::Plain => {
+                        state.model_phase = ModelPhase::Answering;
+                        assistant_buf.push_str(&s);
+                        let cleaned = strip_sgr_mouse_leaks(&assistant_buf);
+                        if cleaned != assistant_buf {
+                            assistant_buf = cleaned;
+                        }
+                        upsert_assistant_message(&mut state.messages, &assistant_buf);
+                    }
+                },
+                TuiAgentEvent::MessagesSnapshot(msgs) => {
+                    let n = msgs.len();
+                    let (last_role, last_content) = msgs
+                        .last()
+                        .map(|m| {
+                            (
+                                m.role.as_str(),
+                                m.content
+                                    .as_deref()
+                                    .map(str::to_string)
+                                    .unwrap_or_else(|| "<empty>".to_string()),
+                            )
+                        })
+                        .unwrap_or(("<none>", String::new()));
+                    debug!(
+                        target: "crabmate::tui_print",
+                        "TUI 会话消息全量同步 count={} last_role={} last_content={}",
+                        n,
+                        last_role,
+                        last_content
+                    );
+                    // Agent 侧可能已裁剪上下文：直接替换会丢掉较早分步气泡；合并保留前缀再接上尾部。
+                    state.messages = sync_merge::merge_tui_messages_after_agent_sync(
+                        std::mem::take(&mut state.messages),
+                        msgs,
+                    );
+                    assistant_buf = trailing_streaming_assistant_content(&state.messages);
                 }
             }
-        }
-        while let Ok(msgs) = sync_rx.try_recv() {
-            inbox_changed = true;
-            let n = msgs.len();
-            let (last_role, last_content) = msgs
-                .last()
-                .map(|m| {
-                    (
-                        m.role.as_str(),
-                        m.content
-                            .as_deref()
-                            .map(str::to_string)
-                            .unwrap_or_else(|| "<empty>".to_string()),
-                    )
-                })
-                .unwrap_or(("<none>", String::new()));
-            debug!(
-                target: "crabmate::tui_print",
-                "TUI 会话消息全量同步 count={} last_role={} last_content={}",
-                n,
-                last_role,
-                last_content
-            );
-            // Agent 侧可能已裁剪上下文：直接替换会丢掉较早分步气泡；合并保留前缀再接上尾部。
-            state.messages = sync_merge::merge_tui_messages_after_agent_sync(
-                std::mem::take(&mut state.messages),
-                msgs,
-            );
-            assistant_buf.clear();
         }
         while let Ok(o) = turn_outcome_rx.try_recv() {
             inbox_changed = true;
@@ -528,4 +577,57 @@ pub async fn run_tui(
     let _ = tui_restore_tty_mouse_and_stdin();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trailing_streaming_assistant_content;
+    use crate::types::Message;
+
+    fn assistant(content: &str) -> Message {
+        Message {
+            role: "assistant".to_string(),
+            content: Some(content.to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn trailing_content_returns_last_assistant_plain_content() {
+        let msgs = vec![Message::user_only("q"), assistant("partial answer")];
+        let got = trailing_streaming_assistant_content(&msgs);
+        assert_eq!(got, "partial answer");
+    }
+
+    #[test]
+    fn trailing_content_ignores_tool_or_non_assistant_tail() {
+        let msgs = vec![
+            Message::user_only("q"),
+            assistant("answer"),
+            Message {
+                role: "tool".to_string(),
+                content: Some("{}".to_string()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("c1".to_string()),
+            },
+        ];
+        let got = trailing_streaming_assistant_content(&msgs);
+        assert_eq!(got, "");
+    }
+
+    #[test]
+    fn trailing_content_ignores_assistant_with_tool_calls() {
+        let msgs = vec![Message {
+            role: "assistant".to_string(),
+            content: Some("calling".to_string()),
+            tool_calls: Some(vec![]),
+            name: None,
+            tool_call_id: None,
+        }];
+        let got = trailing_streaming_assistant_content(&msgs);
+        assert_eq!(got, "");
+    }
 }
