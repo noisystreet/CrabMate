@@ -1078,11 +1078,14 @@ fn apply_click_focus_and_tab(
         if state.tab != new_tab {
             state.tab = new_tab;
             changed = true;
-            match state.tab {
-                RightTab::Workspace => refresh_workspace(state),
-                RightTab::Tasks => refresh_tasks(state),
-                RightTab::Schedule => refresh_schedule(state),
-                RightTab::Queue => {}
+            let skip_refresh = state.model_phase == ModelPhase::Answering;
+            if !skip_refresh {
+                match state.tab {
+                    RightTab::Workspace => refresh_workspace(state),
+                    RightTab::Tasks => refresh_tasks(state),
+                    RightTab::Schedule => refresh_schedule(state),
+                    RightTab::Queue => {}
+                }
             }
         }
         if state.focus != new_focus {
@@ -1130,11 +1133,14 @@ fn apply_pending_focus_and_tab(state: &mut TuiState, model: &str) -> bool {
     {
         state.tab = tab;
         changed = true;
-        match state.tab {
-            RightTab::Workspace => refresh_workspace(state),
-            RightTab::Tasks => refresh_tasks(state),
-            RightTab::Schedule => refresh_schedule(state),
-            RightTab::Queue => {}
+        let skip_refresh = state.model_phase == ModelPhase::Answering;
+        if !skip_refresh {
+            match state.tab {
+                RightTab::Workspace => refresh_workspace(state),
+                RightTab::Tasks => refresh_tasks(state),
+                RightTab::Schedule => refresh_schedule(state),
+                RightTab::Queue => {}
+            }
         }
     }
     if let Some(focus) = state.pending_focus.take()

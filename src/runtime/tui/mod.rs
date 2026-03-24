@@ -48,8 +48,6 @@ enum TuiAgentEvent {
     MessagesSnapshot(Vec<Message>),
 }
 
-const TUI_EVENT_FORWARDER_STREAM_BURST: usize = 64;
-
 fn coalesce_latest_snapshot(
     snapshot_rx: &mut mpsc::Receiver<Vec<Message>>,
     mut latest: Vec<Message>,
@@ -60,6 +58,27 @@ fn coalesce_latest_snapshot(
     latest
 }
 
+async fn forward_pending_snapshots(
+    snapshot_open: bool,
+    snapshot_rx: &mut mpsc::Receiver<Vec<Message>>,
+    event_tx: &mpsc::Sender<TuiAgentEvent>,
+) -> bool {
+    if !snapshot_open {
+        return true;
+    }
+    while let Ok(msgs) = snapshot_rx.try_recv() {
+        let snapshot = coalesce_latest_snapshot(snapshot_rx, msgs);
+        if event_tx
+            .send(TuiAgentEvent::MessagesSnapshot(snapshot))
+            .await
+            .is_err()
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn spawn_tui_event_forwarder(
     mut stream_rx: mpsc::Receiver<String>,
     mut snapshot_rx: mpsc::Receiver<Vec<Message>>,
@@ -68,90 +87,51 @@ fn spawn_tui_event_forwarder(
     tokio::spawn(async move {
         let mut stream_open = true;
         let mut snapshot_open = true;
-        let mut pending_snapshot: Option<Vec<Message>> = None;
-        let mut stream_since_snapshot = 0usize;
         loop {
-            // 即使流式通道持续就绪，也先尝试把最新快照并入待发送缓存，避免 snapshot 长期饥饿。
-            if snapshot_open && let Ok(msgs) = snapshot_rx.try_recv() {
-                pending_snapshot = Some(coalesce_latest_snapshot(&mut snapshot_rx, msgs));
-            }
-            // 连续流式事件过多时强制插入一次快照，避免快照长期饥饿。
-            if stream_since_snapshot >= TUI_EVENT_FORWARDER_STREAM_BURST
-                && let Some(snapshot) = pending_snapshot.take()
-            {
-                if event_tx
-                    .send(TuiAgentEvent::MessagesSnapshot(snapshot))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-                stream_since_snapshot = 0;
-                continue;
-            }
             tokio::select! {
                 biased;
                 stream_item = stream_rx.recv(), if stream_open => {
                     match stream_item {
                         Some(s) => {
                             if event_tx.send(TuiAgentEvent::StreamLine(s)).await.is_err() {
-                                break;
+                                return;
                             }
-                            stream_since_snapshot = stream_since_snapshot.saturating_add(1);
+                            // 先把 stream 通道里已到齐的后续行一并发出，再拉快照；避免「只处理一条 SSE 就插入 MessagesSnapshot」打乱时间顺序。
+                            while let Ok(next) = stream_rx.try_recv() {
+                                if event_tx
+                                    .send(TuiAgentEvent::StreamLine(next))
+                                    .await
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                            }
                         }
-                        None => {
-                            stream_open = false;
-                        }
+                        None => stream_open = false,
                     }
                 }
                 snapshot_item = snapshot_rx.recv(), if snapshot_open => {
                     match snapshot_item {
                         Some(msgs) => {
                             let snapshot = coalesce_latest_snapshot(&mut snapshot_rx, msgs);
-                            pending_snapshot = Some(snapshot);
-                            // 流已结束时，快照应尽快下发，避免结尾状态丢失。
-                            if !stream_open
-                                && let Some(snapshot) = pending_snapshot.take()
+                            if event_tx
+                                .send(TuiAgentEvent::MessagesSnapshot(snapshot))
+                                .await
+                                .is_err()
                             {
-                                if event_tx.send(TuiAgentEvent::MessagesSnapshot(snapshot)).await.is_err() {
-                                    break;
-                                }
-                                stream_since_snapshot = 0;
+                                return;
                             }
                         }
-                        None => {
-                            snapshot_open = false;
-                        }
+                        None => snapshot_open = false,
                     }
                 }
-                else => {
-                    if let Some(snapshot) = pending_snapshot.take()
-                        && event_tx.send(TuiAgentEvent::MessagesSnapshot(snapshot)).await.is_err()
-                    {
-                                break;
-                            }
-                    break;
-                },
+                else => break,
             }
-            if !stream_open && let Some(snapshot) = pending_snapshot.take() {
-                if event_tx
-                    .send(TuiAgentEvent::MessagesSnapshot(snapshot))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-                stream_since_snapshot = 0;
+            // stream 积压已 drain 完毕（或刚处理完阻塞 recv 的快照）后，立刻下发同刻积压的快照，使分步工具结果不必等整轮 SSE 结束。
+            if !forward_pending_snapshots(snapshot_open, &mut snapshot_rx, &event_tx).await {
+                return;
             }
             if !stream_open && !snapshot_open {
-                if let Some(snapshot) = pending_snapshot.take()
-                    && event_tx
-                        .send(TuiAgentEvent::MessagesSnapshot(snapshot))
-                        .await
-                        .is_err()
-                {
-                    break;
-                }
                 break;
             }
         }

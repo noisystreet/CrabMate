@@ -951,7 +951,7 @@ where
         send_staged_plan_step_finished(p.out, &plan_id, step.id.trim(), step_index, n, "ok").await;
         completed_steps = step_index;
         p.messages.push(Message::chat_ui_separator(true));
-        // 先发队列摘要 SSE，再 await 全量同步：sync 通道容量为 1，若先 tui_push 可能阻塞，导致队列区迟迟收不到最后一步的更新。
+        // 先发队列摘要 SSE，再 await 全量同步（TUI event forwarder 会在流式间隙立刻下发快照，无需为 sync 通道容量调换顺序）。
         send_staged_plan_notice(
             p.out,
             echo_terminal_staged,
@@ -975,6 +975,9 @@ where
         },
     )
     .await;
+    p.messages.push(Message::chat_ui_separator(true));
+    tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
+    emit_chat_ui_separator_sse(p.out, true).await;
     Ok(())
 }
 
