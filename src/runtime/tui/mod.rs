@@ -48,6 +48,47 @@ enum TuiAgentEvent {
     MessagesSnapshot(Vec<Message>),
 }
 
+fn spawn_tui_event_forwarder(
+    mut stream_rx: mpsc::Receiver<String>,
+    mut snapshot_rx: mpsc::Receiver<Vec<Message>>,
+    event_tx: mpsc::Sender<TuiAgentEvent>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut stream_open = true;
+        let mut snapshot_open = true;
+        loop {
+            tokio::select! {
+                biased;
+                stream_item = stream_rx.recv(), if stream_open => {
+                    match stream_item {
+                        Some(s) => {
+                            if event_tx.send(TuiAgentEvent::StreamLine(s)).await.is_err() {
+                                break;
+                            }
+                        }
+                        None => {
+                            stream_open = false;
+                        }
+                    }
+                }
+                snapshot_item = snapshot_rx.recv(), if snapshot_open => {
+                    match snapshot_item {
+                        Some(msgs) => {
+                            if event_tx.send(TuiAgentEvent::MessagesSnapshot(msgs)).await.is_err() {
+                                break;
+                            }
+                        }
+                        None => {
+                            snapshot_open = false;
+                        }
+                    }
+                }
+                else => break,
+            }
+        }
+    })
+}
+
 /// 全量快照合并后重建流式缓冲：若末尾仍是助手正文，继续在其后追加增量；否则清空缓冲。
 fn trailing_streaming_assistant_content(messages: &[Message]) -> String {
     messages
@@ -238,32 +279,7 @@ pub async fn run_tui(
     let agent_cancel = Arc::new(AtomicBool::new(false));
     let mut assistant_buf = String::new();
 
-    {
-        let event_tx = event_tx.clone();
-        tokio::spawn(async move {
-            let mut rx = rx;
-            while let Some(s) = rx.recv().await {
-                if event_tx.send(TuiAgentEvent::StreamLine(s)).await.is_err() {
-                    break;
-                }
-            }
-        });
-    }
-    {
-        let event_tx = event_tx.clone();
-        tokio::spawn(async move {
-            let mut sync_rx = sync_rx;
-            while let Some(msgs) = sync_rx.recv().await {
-                if event_tx
-                    .send(TuiAgentEvent::MessagesSnapshot(msgs))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
-    }
+    let event_forwarder = spawn_tui_event_forwarder(rx, sync_rx, event_tx);
 
     let tick_rate = Duration::from_millis(50);
     let mut last_tick = Instant::now();
@@ -572,6 +588,7 @@ pub async fn run_tui(
         }
     }
 
+    event_forwarder.abort();
     drop(terminal);
     let _ = save_workspace_session(&state.workspace_dir, &state.messages);
     let _ = tui_restore_tty_mouse_and_stdin();
@@ -581,8 +598,9 @@ pub async fn run_tui(
 
 #[cfg(test)]
 mod tests {
-    use super::trailing_streaming_assistant_content;
+    use super::{TuiAgentEvent, spawn_tui_event_forwarder, trailing_streaming_assistant_content};
     use crate::types::Message;
+    use tokio::sync::mpsc;
 
     fn assistant(content: &str) -> Message {
         Message {
@@ -629,5 +647,51 @@ mod tests {
         }];
         let got = trailing_streaming_assistant_content(&msgs);
         assert_eq!(got, "");
+    }
+
+    #[tokio::test]
+    async fn event_forwarder_prefers_stream_when_both_pending() {
+        let (stream_tx, stream_rx) = mpsc::channel::<String>(4);
+        let (snapshot_tx, snapshot_rx) = mpsc::channel::<Vec<Message>>(4);
+        let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(8);
+
+        stream_tx
+            .send("delta-a".to_string())
+            .await
+            .expect("stream send should work");
+        snapshot_tx
+            .send(vec![Message::user_only("q")])
+            .await
+            .expect("snapshot send should work");
+        drop(stream_tx);
+        drop(snapshot_tx);
+
+        let forwarder = spawn_tui_event_forwarder(stream_rx, snapshot_rx, event_tx);
+        let first = event_rx.recv().await.expect("first event");
+        let second = event_rx.recv().await.expect("second event");
+
+        assert!(matches!(first, TuiAgentEvent::StreamLine(ref s) if s == "delta-a"));
+        assert!(matches!(second, TuiAgentEvent::MessagesSnapshot(_)));
+
+        forwarder.await.expect("forwarder join");
+    }
+
+    #[tokio::test]
+    async fn event_forwarder_continues_after_stream_channel_closed() {
+        let (stream_tx, stream_rx) = mpsc::channel::<String>(4);
+        let (snapshot_tx, snapshot_rx) = mpsc::channel::<Vec<Message>>(4);
+        let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(8);
+
+        drop(stream_tx);
+        snapshot_tx
+            .send(vec![Message::user_only("still works")])
+            .await
+            .expect("snapshot send should work");
+        drop(snapshot_tx);
+
+        let forwarder = spawn_tui_event_forwarder(stream_rx, snapshot_rx, event_tx);
+        let ev = event_rx.recv().await.expect("event should arrive");
+        assert!(matches!(ev, TuiAgentEvent::MessagesSnapshot(_)));
+        forwarder.await.expect("forwarder join");
     }
 }
