@@ -154,7 +154,7 @@ flowchart TB
 - **输入**：构造 `ChatRequest`（`src/types.rs`）并携带 `tools`（Function Calling 定义）。
 - **P（命名上的「规划」步）**：`per_plan_call_model_retrying` —— **一次** `stream_chat`，由模型产出正文或 `tool_calls`，并非独立规划器。
 - **调用模型**：通过 **`src/llm/api.rs`** 的 `stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `run_agent_turn(..., no_stream: true)` 时为 `stream: false`，按 OpenAI 兼容 `ChatResponse` 解析 `choices[0].message`（有正文则经 `out` 整段下发）；其它 API 形态需自行适配。
-- **分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 true 时 `run_agent_turn_common` 先走无 tools 的规划轮（`llm::nl_only_chat_request`），解析 `agent_reply_plan` v1 后按 `steps` 顺序多次进入外层 Agent 循环；规划轮若出现 `tool_calls` 或 JSON 不合格，SSE 分别带 `staged_plan_tool_calls`、`staged_plan_invalid`。
+- **分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 true 时 `run_agent_turn_common` 先走规划轮（`llm::no_tools_chat_request`，显式传 `tools: []` + `tool_choice: "none"` 硬性禁止工具调用），解析 `agent_reply_plan` v1 后按 `steps` 顺序多次进入外层 Agent 循环；规划轮若出现 `tool_calls` 或 JSON 不合格，SSE 分别带 `staged_plan_tool_calls`、`staged_plan_invalid`。
 - **规划器/执行器模式（阶段 1）**（`[agent] planner_executor_mode` / `AGENT_PLANNER_EXECUTOR_MODE`）：
   - `single_agent`（默认）：沿用历史单 agent 逻辑。
   - `logical_dual_agent`：同进程逻辑双 agent。规划轮仅消费去分隔线、去 `tool`、去空 assistant 的自然语言上下文，再追加规划 system 指令产出 `agent_reply_plan`；执行轮仍由既有外层循环负责工具调用与反思校验。该模式可减少工具原始输出对规划拆解的干扰，且不改变 HTTP/SSE 协议形状。

@@ -31,13 +31,14 @@ pub fn tool_chat_request(cfg: &AgentConfig, messages: &[Message], tools: &[Tool]
     }
 }
 
-/// 构造**无 tools** 的请求（`tool_choice` 省略），用于分阶段规划首轮等场景。
-pub fn nl_only_chat_request(cfg: &AgentConfig, messages: &[Message]) -> ChatRequest {
+/// 构造**显式禁止工具调用**的请求（`tools: []` + `tool_choice: "none"`），用于分阶段规划轮。
+/// 按 OpenAI API 语义硬性禁止模型返回 `tool_calls`，比省略 `tools` 字段（`None`）更可靠。
+pub fn no_tools_chat_request(cfg: &AgentConfig, messages: &[Message]) -> ChatRequest {
     ChatRequest {
         model: cfg.model.clone(),
         messages: messages.to_vec(),
-        tools: None,
-        tool_choice: None,
+        tools: Some(vec![]),
+        tool_choice: Some("none".to_string()),
         max_tokens: cfg.max_tokens,
         temperature: cfg.temperature,
         stream: None,
