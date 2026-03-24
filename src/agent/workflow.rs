@@ -694,6 +694,9 @@ async fn execute_workflow_dag(
         main_summary.clone()
     };
 
+    let planned_layer_count = topo_layers(&spec.nodes)
+        .map(|layers| layers.len())
+        .unwrap_or(0);
     let report = WorkflowExecutionReport {
         report_type: "workflow_execute_result".to_string(),
         status,
@@ -703,8 +706,8 @@ async fn execute_workflow_dag(
             "fail_fast": spec.fail_fast,
             "compensate_on_failure": spec.compensate_on_failure,
             "output_inject_max_chars": spec.output_inject_max_chars,
-                "nodes_count": spec.nodes.len(),
-                "planned_layer_count": 0
+            "nodes_count": spec.nodes.len(),
+            "planned_layer_count": planned_layer_count
         }),
         stats: WorkflowExecutionStats {
             passed,
