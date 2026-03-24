@@ -5,6 +5,8 @@
 use std::io;
 use std::process::Command;
 
+use super::output_util;
+
 const MAX_OUTPUT_LINES: usize = 200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +64,7 @@ pub fn run(args_json: &str, max_output_len: usize) -> String {
             });
             let rendered = serde_json::to_string_pretty(&out)
                 .unwrap_or_else(|_| "{\"error\":\"serialize_failed\"}".to_string());
-            truncate_output(&rendered, max_output_len)
+            output_util::truncate_output_lines(&rendered, max_output_len, MAX_OUTPUT_LINES)
         }
         Err(QueryError::ManagerMissing) => {
             "错误：未检测到可用的包管理查询命令（需要 dpkg-query 或 rpm）".to_string()
@@ -246,37 +248,6 @@ fn concise_err(stdout: &str, stderr: &str) -> String {
     } else {
         t.to_string()
     }
-}
-
-fn truncate_output(s: &str, max_bytes: usize) -> String {
-    let lines: Vec<&str> = s.lines().collect();
-    if lines.len() <= MAX_OUTPUT_LINES && s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let kept_lines = lines.len().min(MAX_OUTPUT_LINES);
-    let joined = lines[..kept_lines].join("\n");
-    let truncated = if joined.len() <= max_bytes {
-        joined
-    } else {
-        truncate_to_char_boundary(&joined, max_bytes)
-    };
-    format!(
-        "{}\n\n... (输出已截断，保留前 {} 行，共 {} 行)",
-        truncated,
-        kept_lines,
-        lines.len()
-    )
-}
-
-fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let mut end = max_bytes.min(s.len());
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].to_string()
 }
 
 #[cfg(test)]

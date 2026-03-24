@@ -18,6 +18,7 @@ mod grep;
 pub mod http_fetch;
 mod lint;
 mod markdown_links;
+pub(super) mod output_util;
 mod package_query;
 mod patch;
 mod precommit_tools;
