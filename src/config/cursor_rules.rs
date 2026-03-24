@@ -178,12 +178,8 @@ mod tests {
 
         assert!(merged.starts_with("BASE_PROMPT"));
         let p_agents = merged.find("规则文件: AGENTS.md").expect("agents marker");
-        let p_a = merged
-            .find("规则文件: .cursor/rules/a_rule.mdc")
-            .expect("a marker");
-        let p_b = merged
-            .find("规则文件: .cursor/rules/b_rule.mdc")
-            .expect("b marker");
+        let p_a = merged.find("a_rule.mdc").expect("a marker");
+        let p_b = merged.find("b_rule.mdc").expect("b marker");
         assert!(p_agents < p_a);
         assert!(p_a < p_b);
         assert!(merged.contains("agents_rule: must follow project instruction"));
