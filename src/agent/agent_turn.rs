@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, PlannerExecutorMode};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -920,15 +920,225 @@ async fn run_staged_plan_then_execute_steps(
     Ok(())
 }
 
+fn build_logical_dual_planner_messages(messages: &[Message], plan_system: String) -> Vec<Message> {
+    let mut out: Vec<Message> = messages
+        .iter()
+        .filter(|m| !is_chat_ui_separator(m))
+        // 逻辑双 agent：规划器只看用户/助手自然语言上下文，不看 tool 结果正文，
+        // 避免工具细节污染任务拆解。
+        .filter(|m| m.role != "tool")
+        .filter(|m| {
+            if m.role != "assistant" {
+                return true;
+            }
+            m.content
+                .as_deref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+    out.push(Message::system_only(plan_system));
+    out
+}
+
+async fn run_logical_dual_agent_then_execute_steps(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let render_to_terminal = match p.mode {
+        AgentRunMode::Web {
+            render_to_terminal, ..
+        } => render_to_terminal,
+        AgentRunMode::Tui { .. } => false,
+    };
+    let echo_terminal_staged = render_to_terminal && p.out.is_none();
+
+    super::context_window::prepare_messages_for_model(
+        p.client,
+        p.api_key,
+        p.cfg.as_ref(),
+        p.messages,
+    )
+    .await?;
+
+    let instr = p.cfg.staged_plan_phase_instruction.trim();
+    let plan_system = if instr.is_empty() {
+        STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT.to_string()
+    } else {
+        instr.to_string()
+    };
+    let plan_messages = build_logical_dual_planner_messages(p.messages, plan_system);
+    let req = nl_only_chat_request(p.cfg.as_ref(), &plan_messages);
+    let (msg, finish_reason) = complete_chat_retrying(
+        p.client,
+        p.api_key,
+        p.cfg.as_ref(),
+        &req,
+        p.out,
+        render_to_terminal,
+        p.no_stream,
+        p.cancel,
+    )
+    .await?;
+
+    debug!(
+        target: "crabmate",
+        "逻辑双agent规划轮输出 finish_reason={} assistant_preview={}",
+        finish_reason,
+        crate::redact::assistant_message_preview_for_log(&msg)
+    );
+
+    if finish_reason == USER_CANCELLED_FINISH_REASON {
+        return Ok(());
+    }
+
+    if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
+        if let Some(tx) = p.out {
+            let _ = tx
+                .send(encode_message(SsePayload::Error(SseErrorBody {
+                    error: "规划轮不应调用工具；请检查 planner_executor_mode 配置或重试。"
+                        .to_string(),
+                    code: Some("staged_plan_tool_calls".to_string()),
+                })))
+                .await;
+        }
+        return Ok(());
+    }
+
+    let content = msg.content.as_deref().unwrap_or("");
+    let plan = match super::plan_artifact::parse_agent_reply_plan_v1(content) {
+        Ok(plan_v1) => plan_v1,
+        Err(_) => {
+            if let Some(tx) = p.out {
+                let _ = tx
+                    .send(encode_message(SsePayload::Error(SseErrorBody {
+                        error: "规划轮未解析出合法的 agent_reply_plan v1（需 ```json 围栏或单对象 JSON）。"
+                            .to_string(),
+                        code: Some("staged_plan_invalid".to_string()),
+                    })))
+                    .await;
+            }
+            return Ok(());
+        }
+    };
+
+    let plan_id = next_staged_plan_id();
+    let n = plan.steps.len();
+    send_staged_plan_started(p.out, &plan_id, n).await;
+    send_staged_plan_notice(
+        p.out,
+        echo_terminal_staged,
+        true,
+        staged_plan_queue_summary_text(&plan, 0),
+    )
+    .await;
+
+    let mut staged_loop_cancelled = false;
+    let mut completed_steps = 0usize;
+    for (i, step) in plan.steps.iter().enumerate() {
+        if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            staged_loop_cancelled = true;
+            break;
+        }
+        let step_index = i + 1;
+        send_staged_plan_step_started(
+            p.out,
+            &plan_id,
+            step.id.trim(),
+            step_index,
+            n,
+            step.description.trim(),
+        )
+        .await;
+
+        let body = format!(
+            "【分步执行 {}/{}】{}\n- id: {}\n- 描述: {}",
+            step_index,
+            n,
+            crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE,
+            step.id,
+            step.description
+        );
+        debug!(
+            target: "crabmate",
+            "逻辑双agent注入执行器user step={}/{} body_len={} body_preview={}",
+            i + 1,
+            n,
+            body.len(),
+            crate::redact::preview_chars(&body, crate::redact::MESSAGE_LOG_PREVIEW_CHARS)
+        );
+        if echo_terminal_staged {
+            let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
+        }
+        p.messages.push(Message::user_only(body));
+        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
+        let run_step = run_agent_outer_loop(p, per_coord).await;
+        if let Err(e) = run_step {
+            send_staged_plan_step_finished(
+                p.out,
+                &plan_id,
+                step.id.trim(),
+                step_index,
+                n,
+                "failed",
+            )
+            .await;
+            send_staged_plan_finished(p.out, &plan_id, n, completed_steps, "failed").await;
+            return Err(e);
+        }
+        if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            send_staged_plan_step_finished(
+                p.out,
+                &plan_id,
+                step.id.trim(),
+                step_index,
+                n,
+                "cancelled",
+            )
+            .await;
+            staged_loop_cancelled = true;
+            break;
+        }
+        send_staged_plan_step_finished(p.out, &plan_id, step.id.trim(), step_index, n, "ok").await;
+        completed_steps = step_index;
+        p.messages.push(Message::chat_ui_separator(true));
+        send_staged_plan_notice(
+            p.out,
+            echo_terminal_staged,
+            true,
+            staged_plan_queue_summary_text(&plan, step_index),
+        )
+        .await;
+        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
+        emit_chat_ui_separator_sse(p.out, true).await;
+    }
+
+    send_staged_plan_finished(
+        p.out,
+        &plan_id,
+        n,
+        completed_steps,
+        if staged_loop_cancelled {
+            "cancelled"
+        } else {
+            "ok"
+        },
+    )
+    .await;
+    Ok(())
+}
+
 pub(crate) async fn run_agent_turn_common(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     debug!(
         target: "crabmate",
-        "run_agent_turn 开始 message_count={} last_user_preview={} staged_plan={} work_dir={}",
+        "run_agent_turn 开始 message_count={} last_user_preview={} staged_plan={} planner_executor_mode={} work_dir={}",
         p.messages.len(),
         crate::redact::last_user_message_preview_for_log(p.messages),
         p.cfg.staged_plan_execution,
+        p.cfg.planner_executor_mode.as_str(),
         p.effective_working_dir.display()
     );
     insert_separator_after_last_user_for_turn(p.messages);
@@ -940,7 +1150,9 @@ pub(crate) async fn run_agent_turn_common(
         p.cfg.plan_rewrite_max_attempts,
     );
 
-    if p.cfg.staged_plan_execution {
+    if p.cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent {
+        run_logical_dual_agent_then_execute_steps(p, &mut per_coord).await
+    } else if p.cfg.staged_plan_execution {
         run_staged_plan_then_execute_steps(p, &mut per_coord).await
     } else {
         run_agent_outer_loop(p, &mut per_coord).await
