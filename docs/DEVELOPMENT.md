@@ -99,11 +99,11 @@ flowchart TB
 | `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
 | `tools/` | 全部 Function Calling 定义、`ToolContext`、`run_tool`；`tools/mod.rs` 与 `tools/markdown_links.rs` 的测试已外移到同名子目录 `tests.rs`，并把工具调用摘要逻辑拆到 `tools/tool_summary.rs`，降低主文件长度；子模块见下表。 |
 | `types.rs` | `Message`、`Tool`、流式 chunk 等 OpenAI 兼容类型；`Message::system_only` / `user_only`、`messages_chat_seed` 供 Web 首轮与 CLI 共用。 |
-| `web/` | Web（HTTP）专用 axum handler：`workspace`、`task` 等；与终端 `runtime/tui` 区分命名。 |
+| `web/` | Web（HTTP）专用 axum 模块：`server`（Router 组装）、`workspace`、`task` 等；与终端 `runtime/tui` 区分命名。 |
 
 ### `lib.rs` 额外职责（非独立文件但需知）
 
-- 组装 **完整 axum `Router`**（chat、status、health、workspace、tasks、upload、静态前端 `dist` 等）。
+- `run()` 中创建 `AppState`、监听地址与清理任务，Router 组装下沉到 `web::server::build_app`（chat、status、health、workspace、tasks、upload、静态前端 `dist` 等）。
 - **`AppState`**：`Arc` 持有 `AgentConfig`、共享 `reqwest::Client`、工作区覆盖路径、上传清理句柄、对话队列等。
 
 ### `src/tools/` 子文件（实现域一览）
