@@ -175,7 +175,12 @@ pub(super) fn draw_ui(f: &mut Frame<'_>, state: &mut TuiState) {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             )
-            .title(" 命令审批 ");
+            .title(" 命令审批 ")
+            .style(
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Rgb(220, 220, 220)),
+            );
         let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
         f.render_widget(Clear, popup);
         f.render_widget(para, popup);
