@@ -31,7 +31,10 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `license_notice`：运行 **cargo metadata**，生成 **crate → license** 的 Markdown 表（未声明项有占位说明）；**非法律意见**，发版前需人工核对。
   - `hash_file`：对工作区内文件做只读 **SHA-256 / SHA-512 / BLAKE3**（流式读取）；可选仅哈希前 `max_bytes` 字节，便于大文件或抽样校验。
   - `diagnostic_summary`：只读排障摘要——Rust 工具链（`rustc`/`cargo`/`rustup`/`bc`）、工作区 `target/` 与 `Cargo.toml` / `frontend` 常见路径、关键环境变量**是否设置**（**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。
-  - **Python / uv / pre-commit**（均在**工作区根**执行，需本机已安装对应 CLI；未安装时工具返回说明性错误）：`ruff_check`、`pytest_run`（`python3 -m pytest`）、`mypy_check`、`python_install_editable`（`uv` 或 `pip` 可编辑安装）、`uv_sync`、`uv_run`（`args` 为字符串数组，不经 shell）、`pre_commit_run`（需 `.pre-commit-config.yaml`）。**格式化**：`format_file` / `format_check_file` 按扩展名选用 **ruff format**（`.py`）、**clang-format**（`.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh`）、`rustfmt` / `prettier` 等。**标签裁剪**：集成方可通过库 API `build_tools_with_options` 与 `dev_tag` 子域标签（如 `python`、`cpp`、`quality`）限制发给模型的工具列表，详见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
+  - **Python / uv / pre-commit**（均在**工作区根**执行，需本机已安装对应 CLI；未安装时工具返回说明性错误）：`ruff_check`、`pytest_run`（`python3 -m pytest`）、`mypy_check`、`python_install_editable`（`uv` 或 `pip` 可编辑安装）、`uv_sync`、`uv_run`（`args` 为字符串数组，不经 shell）、`pre_commit_run`（需 `.pre-commit-config.yaml`）。**格式化**：`format_file` / `format_check_file` 按扩展名选用 **ruff format**（`.py`）、**clang-format**（`.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh`）、`rustfmt` / `prettier` 等。**标签裁剪**：集成方可通过库 API `build_tools_with_options` 与 `dev_tag` 子域标签（如 `python`、`cpp`、`go`、`quality`）限制发给模型的工具列表，详见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
+  - **Node.js / npm**（须存在 `package.json`）：`npm_install`（支持 `npm ci`、`--production`）、`npm_run`（运行任意 npm script）、`npx_run`（执行 npx 包命令）、`tsc_check`（TypeScript 类型检查 `tsc --noEmit`）。
+  - **Go 工具链**（须存在 `go.mod`，需本机已安装 Go）：`go_build`、`go_test`（支持 `-run` / `-race` / `-timeout` 等）、`go_vet`、`go_mod_tidy`（受控写入需 `confirm`）、`go_fmt_check`（`gofmt -l` 列出未格式化文件）、`golangci_lint`。
+  - **进程与端口管理**（只读）：`port_check`（检查端口占用，使用 ss/lsof）、`process_list`（按关键词过滤进程列表）。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
@@ -224,6 +227,14 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
 
 **Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`pre_commit_run`；聚合类还有 `run_lints`（可选 ruff）、`quality_workspace`（可选 ruff/pytest/mypy）。
+
+**Node.js / npm**：`npm_install`（含 `npm ci`）、`npm_run`（任意 npm script）、`npx_run`（npx 执行包命令）、`tsc_check`（TypeScript 类型检查）。
+
+**Go 工具链**：`go_build`、`go_test`、`go_vet`、`go_mod_tidy`、`go_fmt_check`、`golangci_lint`。
+
+**进程与端口管理**：`port_check`（端口占用检查）、`process_list`（进程列表查询）。
+
+**Git 写操作**：`git_checkout`（切换/创建分支）、`git_branch_create`/`git_branch_delete`、`git_push`、`git_merge`、`git_rebase`（含 abort/continue）、`git_stash`（push/pop/apply/list/drop/clear）、`git_tag`（list/create/delete）、`git_reset`（soft/mixed/hard）、`git_cherry_pick`、`git_revert`。
 
 ### Python 与 pre-commit 工具示例
 
