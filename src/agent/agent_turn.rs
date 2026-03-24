@@ -736,21 +736,83 @@ async fn run_staged_plan_then_execute_steps(
     )
     .await?;
 
-    let mut plan_messages: Vec<Message> = p
-        .messages
-        .iter()
-        .filter(|m| !is_chat_ui_separator(m))
-        .cloned()
-        .collect();
     let instr = p.cfg.staged_plan_phase_instruction.trim();
     let plan_system = if instr.is_empty() {
         STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT.to_string()
     } else {
         instr.to_string()
     };
-    plan_messages.push(Message::system_only(plan_system));
+    let req = nl_only_chat_request(
+        p.cfg.as_ref(),
+        &build_single_agent_planner_messages(p.messages, plan_system),
+    );
+    run_staged_plan_with_prepared_request(
+        p,
+        per_coord,
+        req,
+        render_to_terminal,
+        echo_terminal_staged,
+        "分阶段规划轮模型输出",
+        "规划轮不应调用工具；请关闭 staged_plan_execution 或重试。",
+        "分步注入 user（完整正文，供排障与日志）",
+        |body| Message {
+            role: "user".to_string(),
+            content: Some(body),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        },
+    )
+    .await
+}
 
-    let req = nl_only_chat_request(p.cfg.as_ref(), &plan_messages);
+fn build_single_agent_planner_messages(messages: &[Message], plan_system: String) -> Vec<Message> {
+    let mut out: Vec<Message> = messages
+        .iter()
+        .filter(|m| !is_chat_ui_separator(m))
+        .cloned()
+        .collect();
+    out.push(Message::system_only(plan_system));
+    out
+}
+
+fn build_logical_dual_planner_messages(messages: &[Message], plan_system: String) -> Vec<Message> {
+    let mut out: Vec<Message> = messages
+        .iter()
+        .filter(|m| !is_chat_ui_separator(m))
+        // 逻辑双 agent：规划器只看用户/助手自然语言上下文，不看 tool 结果正文，
+        // 避免工具细节污染任务拆解。
+        .filter(|m| m.role != "tool")
+        .filter(|m| {
+            if m.role != "assistant" {
+                return true;
+            }
+            m.content
+                .as_deref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+    out.push(Message::system_only(plan_system));
+    out
+}
+
+#[allow(clippy::too_many_arguments)] // 分阶段流程抽象后的共享执行骨架
+async fn run_staged_plan_with_prepared_request<F>(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    req: crate::types::ChatRequest,
+    render_to_terminal: bool,
+    echo_terminal_staged: bool,
+    planning_log_label: &str,
+    tool_calls_error_message: &str,
+    step_injection_log_label: &str,
+    make_step_user_message: F,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    F: Fn(String) -> Message,
+{
     let (msg, finish_reason) = complete_chat_retrying(
         p.client,
         p.api_key,
@@ -765,7 +827,8 @@ async fn run_staged_plan_then_execute_steps(
 
     debug!(
         target: "crabmate",
-        "分阶段规划轮模型输出 finish_reason={} assistant_preview={}",
+        "{} finish_reason={} assistant_preview={}",
+        planning_log_label,
         finish_reason,
         crate::redact::assistant_message_preview_for_log(&msg)
     );
@@ -778,7 +841,7 @@ async fn run_staged_plan_then_execute_steps(
         if let Some(tx) = p.out {
             let _ = tx
                 .send(encode_message(SsePayload::Error(SseErrorBody {
-                    error: "规划轮不应调用工具；请关闭 staged_plan_execution 或重试。".to_string(),
+                    error: tool_calls_error_message.to_string(),
                     code: Some("staged_plan_tool_calls".to_string()),
                 })))
                 .await;
@@ -846,7 +909,8 @@ async fn run_staged_plan_then_execute_steps(
         );
         debug!(
             target: "crabmate",
-            "分步注入 user（完整正文，供排障与日志） step={}/{} body_len={} body_preview={}",
+            "{} step={}/{} body_len={} body_preview={}",
+            step_injection_log_label,
             i + 1,
             n,
             body.len(),
@@ -855,13 +919,7 @@ async fn run_staged_plan_then_execute_steps(
         if echo_terminal_staged {
             let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
         }
-        p.messages.push(Message {
-            role: "user".to_string(),
-            content: Some(body),
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        });
+        p.messages.push(make_step_user_message(body));
         tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         let run_step = run_agent_outer_loop(p, per_coord).await;
         if let Err(e) = run_step {
@@ -920,28 +978,6 @@ async fn run_staged_plan_then_execute_steps(
     Ok(())
 }
 
-fn build_logical_dual_planner_messages(messages: &[Message], plan_system: String) -> Vec<Message> {
-    let mut out: Vec<Message> = messages
-        .iter()
-        .filter(|m| !is_chat_ui_separator(m))
-        // 逻辑双 agent：规划器只看用户/助手自然语言上下文，不看 tool 结果正文，
-        // 避免工具细节污染任务拆解。
-        .filter(|m| m.role != "tool")
-        .filter(|m| {
-            if m.role != "assistant" {
-                return true;
-            }
-            m.content
-                .as_deref()
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false)
-        })
-        .cloned()
-        .collect();
-    out.push(Message::system_only(plan_system));
-    out
-}
-
 async fn run_logical_dual_agent_then_execute_steps(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -968,165 +1004,22 @@ async fn run_logical_dual_agent_then_execute_steps(
     } else {
         instr.to_string()
     };
-    let plan_messages = build_logical_dual_planner_messages(p.messages, plan_system);
-    let req = nl_only_chat_request(p.cfg.as_ref(), &plan_messages);
-    let (msg, finish_reason) = complete_chat_retrying(
-        p.client,
-        p.api_key,
+    let req = nl_only_chat_request(
         p.cfg.as_ref(),
-        &req,
-        p.out,
-        render_to_terminal,
-        p.no_stream,
-        p.cancel,
-    )
-    .await?;
-
-    debug!(
-        target: "crabmate",
-        "逻辑双agent规划轮输出 finish_reason={} assistant_preview={}",
-        finish_reason,
-        crate::redact::assistant_message_preview_for_log(&msg)
+        &build_logical_dual_planner_messages(p.messages, plan_system),
     );
-
-    if finish_reason == USER_CANCELLED_FINISH_REASON {
-        return Ok(());
-    }
-
-    if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
-        if let Some(tx) = p.out {
-            let _ = tx
-                .send(encode_message(SsePayload::Error(SseErrorBody {
-                    error: "规划轮不应调用工具；请检查 planner_executor_mode 配置或重试。"
-                        .to_string(),
-                    code: Some("staged_plan_tool_calls".to_string()),
-                })))
-                .await;
-        }
-        return Ok(());
-    }
-
-    let content = msg.content.as_deref().unwrap_or("");
-    let plan = match super::plan_artifact::parse_agent_reply_plan_v1(content) {
-        Ok(plan_v1) => plan_v1,
-        Err(_) => {
-            if let Some(tx) = p.out {
-                let _ = tx
-                    .send(encode_message(SsePayload::Error(SseErrorBody {
-                        error: "规划轮未解析出合法的 agent_reply_plan v1（需 ```json 围栏或单对象 JSON）。"
-                            .to_string(),
-                        code: Some("staged_plan_invalid".to_string()),
-                    })))
-                    .await;
-            }
-            return Ok(());
-        }
-    };
-
-    let plan_id = next_staged_plan_id();
-    let n = plan.steps.len();
-    send_staged_plan_started(p.out, &plan_id, n).await;
-    send_staged_plan_notice(
-        p.out,
+    run_staged_plan_with_prepared_request(
+        p,
+        per_coord,
+        req,
+        render_to_terminal,
         echo_terminal_staged,
-        true,
-        staged_plan_queue_summary_text(&plan, 0),
+        "逻辑双agent规划轮输出",
+        "规划轮不应调用工具；请检查 planner_executor_mode 配置或重试。",
+        "逻辑双agent注入执行器user",
+        Message::user_only,
     )
-    .await;
-
-    let mut staged_loop_cancelled = false;
-    let mut completed_steps = 0usize;
-    for (i, step) in plan.steps.iter().enumerate() {
-        if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-            staged_loop_cancelled = true;
-            break;
-        }
-        let step_index = i + 1;
-        send_staged_plan_step_started(
-            p.out,
-            &plan_id,
-            step.id.trim(),
-            step_index,
-            n,
-            step.description.trim(),
-        )
-        .await;
-
-        let body = format!(
-            "【分步执行 {}/{}】{}\n- id: {}\n- 描述: {}",
-            step_index,
-            n,
-            crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE,
-            step.id,
-            step.description
-        );
-        debug!(
-            target: "crabmate",
-            "逻辑双agent注入执行器user step={}/{} body_len={} body_preview={}",
-            i + 1,
-            n,
-            body.len(),
-            crate::redact::preview_chars(&body, crate::redact::MESSAGE_LOG_PREVIEW_CHARS)
-        );
-        if echo_terminal_staged {
-            let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
-        }
-        p.messages.push(Message::user_only(body));
-        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
-        let run_step = run_agent_outer_loop(p, per_coord).await;
-        if let Err(e) = run_step {
-            send_staged_plan_step_finished(
-                p.out,
-                &plan_id,
-                step.id.trim(),
-                step_index,
-                n,
-                "failed",
-            )
-            .await;
-            send_staged_plan_finished(p.out, &plan_id, n, completed_steps, "failed").await;
-            return Err(e);
-        }
-        if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-            send_staged_plan_step_finished(
-                p.out,
-                &plan_id,
-                step.id.trim(),
-                step_index,
-                n,
-                "cancelled",
-            )
-            .await;
-            staged_loop_cancelled = true;
-            break;
-        }
-        send_staged_plan_step_finished(p.out, &plan_id, step.id.trim(), step_index, n, "ok").await;
-        completed_steps = step_index;
-        p.messages.push(Message::chat_ui_separator(true));
-        send_staged_plan_notice(
-            p.out,
-            echo_terminal_staged,
-            true,
-            staged_plan_queue_summary_text(&plan, step_index),
-        )
-        .await;
-        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
-        emit_chat_ui_separator_sse(p.out, true).await;
-    }
-
-    send_staged_plan_finished(
-        p.out,
-        &plan_id,
-        n,
-        completed_steps,
-        if staged_loop_cancelled {
-            "cancelled"
-        } else {
-            "ok"
-        },
-    )
-    .await;
-    Ok(())
+    .await
 }
 
 pub(crate) async fn run_agent_turn_common(
@@ -1161,7 +1054,10 @@ pub(crate) async fn run_agent_turn_common(
 
 #[cfg(test)]
 mod push_assistant_merge_tests {
-    use super::push_assistant_merging_trailing_empty_placeholder;
+    use super::{
+        build_logical_dual_planner_messages, build_single_agent_planner_messages,
+        push_assistant_merging_trailing_empty_placeholder,
+    };
     use crate::types::Message;
 
     fn empty_assistant() -> Message {
@@ -1198,5 +1094,51 @@ mod push_assistant_merge_tests {
         push_assistant_merging_trailing_empty_placeholder(&mut m, assistant_body("second"));
         assert_eq!(m.len(), 3);
         assert_eq!(m[2].content.as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn planner_messages_single_agent_keeps_tool_results() {
+        let src = vec![
+            Message::system_only("sys"),
+            Message::user_only("u1"),
+            assistant_body("a1"),
+            Message {
+                role: "tool".to_string(),
+                content: Some("tool out".to_string()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc1".to_string()),
+            },
+        ];
+        let out = build_single_agent_planner_messages(&src, "plan sys".to_string());
+        assert_eq!(out.len(), 5);
+        assert_eq!(out[3].role, "tool");
+        assert_eq!(out[4].role, "system");
+        assert_eq!(out[4].content.as_deref(), Some("plan sys"));
+    }
+
+    #[test]
+    fn planner_messages_logical_dual_drops_tool_and_empty_assistant() {
+        let src = vec![
+            Message::system_only("sys"),
+            Message::user_only("u1"),
+            assistant_body("a1"),
+            empty_assistant(),
+            Message {
+                role: "tool".to_string(),
+                content: Some("tool out".to_string()),
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc1".to_string()),
+            },
+        ];
+        let out = build_logical_dual_planner_messages(&src, "plan sys".to_string());
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[0].role, "system");
+        assert_eq!(out[1].role, "user");
+        assert_eq!(out[2].role, "assistant");
+        assert_eq!(out[3].role, "system");
+        assert_eq!(out[3].content.as_deref(), Some("plan sys"));
+        assert!(!out.iter().any(|m| m.role == "tool"));
     }
 }
