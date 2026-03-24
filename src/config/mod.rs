@@ -68,7 +68,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut web_api_bearer_token: Option<String> = None;
     let mut allow_insecure_no_auth_for_non_loopback: Option<bool> = None;
 
-    if let Some(agent) = parse_agent_section(DEFAULT_CONFIG) {
+    if let Some(agent) = parse_agent_section(DEFAULT_CONFIG)
+        .expect("embedded default_config.toml must be valid TOML")
+    {
         api_base = agent.api_base.unwrap_or_default().trim().to_string();
         model = agent.model.unwrap_or_default().trim().to_string();
         max_message_history = agent.max_message_history.or(max_message_history);
@@ -224,7 +226,9 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         if Path::new(path).exists() {
             let s = std::fs::read_to_string(path)
                 .map_err(|e| format!("无法读取配置文件 \"{}\": {}", path, e))?;
-            if let Some(agent) = parse_agent_section(&s) {
+            let parsed = parse_agent_section(&s)
+                .map_err(|e| format!("配置文件 \"{}\" TOML 解析失败: {}", path, e))?;
+            if let Some(agent) = parsed {
                 if let Some(a) = agent.api_base {
                     let a = a.trim().to_string();
                     if !a.is_empty() {
