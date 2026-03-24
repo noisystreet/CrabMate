@@ -61,9 +61,10 @@ pub(super) struct AgentSection {
     pub(super) allow_insecure_no_auth_for_non_loopback: Option<bool>,
 }
 
-/// 读取 [agent] 段，缺失字段保持为 None
-pub(super) fn parse_agent_section(s: &str) -> Option<AgentSection> {
-    toml::from_str::<ConfigFile>(s).ok()?.agent
+/// 读取 [agent] 段，缺失字段保持为 None。
+/// TOML 解析失败时返回 `Err`，便于调用方区分「合法 TOML 但无 [agent]」与「格式错误」。
+pub(super) fn parse_agent_section(s: &str) -> Result<Option<AgentSection>, toml::de::Error> {
+    Ok(toml::from_str::<ConfigFile>(s)?.agent)
 }
 
 pub(super) fn parse_bool_like(s: &str) -> Option<bool> {
@@ -74,5 +75,75 @@ pub(super) fn parse_bool_like(s: &str) -> Option<bool> {
         Some(false)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_valid_toml_with_agent_section() {
+        let toml = r#"
+[agent]
+api_base = "https://api.example.com"
+model = "deepseek-chat"
+"#;
+        let result = parse_agent_section(toml).expect("should parse valid TOML");
+        let agent = result.expect("should have [agent]");
+        assert_eq!(agent.api_base.as_deref(), Some("https://api.example.com"));
+        assert_eq!(agent.model.as_deref(), Some("deepseek-chat"));
+    }
+
+    #[test]
+    fn parse_valid_toml_without_agent_section() {
+        let toml = r#"
+[other]
+key = "value"
+"#;
+        let result = parse_agent_section(toml).expect("should parse valid TOML");
+        assert!(result.is_none(), "no [agent] section should yield None");
+    }
+
+    #[test]
+    fn parse_empty_toml() {
+        let result = parse_agent_section("").expect("empty TOML is valid");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_malformed_toml_returns_error() {
+        let bad = "[[[ not valid toml !!!";
+        let result = parse_agent_section(bad);
+        assert!(result.is_err(), "malformed TOML should return Err");
+    }
+
+    #[test]
+    fn parse_bool_like_truthy() {
+        for s in [
+            "1", "true", "True", "TRUE", "yes", "YES", "on", "ON", " true ",
+        ] {
+            assert_eq!(parse_bool_like(s), Some(true), "expected true for {:?}", s);
+        }
+    }
+
+    #[test]
+    fn parse_bool_like_falsy() {
+        for s in [
+            "0", "false", "False", "FALSE", "no", "NO", "off", "OFF", " false ",
+        ] {
+            assert_eq!(
+                parse_bool_like(s),
+                Some(false),
+                "expected false for {:?}",
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn parse_bool_like_invalid() {
+        assert_eq!(parse_bool_like("maybe"), None);
+        assert_eq!(parse_bool_like(""), None);
     }
 }
