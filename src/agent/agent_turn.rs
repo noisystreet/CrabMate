@@ -899,11 +899,20 @@ where
         )
         .await;
 
+        let summary_hint = if step_index == n && n > 1 {
+            format!(
+                "\n本步为最后一步，终答中请简要列出本轮全部 {} 个步骤的完成情况（可对每步附简短说明）。",
+                n
+            )
+        } else {
+            String::new()
+        };
         let body = format!(
-            "【分步执行 {}/{}】{}\n- id: {}\n- 描述: {}",
+            "【分步执行 {}/{}】{}{}\n- id: {}\n- 描述: {}",
             step_index,
             n,
             crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE,
+            summary_hint,
             step.id,
             step.description
         );
@@ -975,9 +984,13 @@ where
         },
     )
     .await;
-    p.messages.push(Message::chat_ui_separator(true));
-    tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
-    emit_chat_ui_separator_sse(p.out, true).await;
+    // 仅当循环内未添加过分隔符时再追加：n==0 未进入循环；或取消时 completed_steps==0。
+    // 否则末步成功后已在循环内添加，再加会重复两行。
+    if n == 0 || (staged_loop_cancelled && completed_steps == 0) {
+        p.messages.push(Message::chat_ui_separator(true));
+        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
+        emit_chat_ui_separator_sse(p.out, true).await;
+    }
     Ok(())
 }
 
