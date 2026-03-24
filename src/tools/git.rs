@@ -12,11 +12,114 @@ use super::output_util;
 
 const MAX_OUTPUT_LINES: usize = 800;
 
-pub fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+fn parse_args(args_json: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(args_json).map_err(|e| format!("参数解析错误：{}", e))
+}
+
+fn extract_safe_path(v: &serde_json::Value) -> Result<Option<String>, String> {
+    match v.get("path").and_then(|x| x.as_str()) {
+        Some(p) => {
+            if !is_safe_rel_path(p) {
+                Err("错误：path 必须是相对路径，且不能包含 \"..\" 或绝对路径".to_string())
+            } else {
+                Ok(Some(p.trim().to_string()))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
+fn require_safe_path(v: &serde_json::Value) -> Result<String, String> {
+    match v.get("path").and_then(|x| x.as_str()) {
+        Some(p) if is_safe_rel_path(p) => Ok(p.trim().to_string()),
+        _ => Err("错误：缺少合法 path 参数".to_string()),
+    }
+}
+
+fn require_confirm(v: &serde_json::Value, tool_name: &str) -> Result<(), String> {
+    if v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false) {
+        Ok(())
+    } else {
+        Err(format!("拒绝执行：{} 需要 confirm=true", tool_name))
+    }
+}
+
+fn require_string_field<'a>(v: &'a serde_json::Value, field: &str) -> Result<&'a str, String> {
+    match v.get(field).and_then(|x| x.as_str()).map(str::trim) {
+        Some(s) if !s.is_empty() => Ok(s),
+        _ => Err(format!("错误：缺少 {} 参数", field)),
+    }
+}
+
+/// 统一处理 working/staged/all 三模式的 diff 类命令。
+/// `extra_args` 为模式无关的附加参数（如 `--stat`、`--name-only`），
+/// `context_fmt` 为可选 `-U{n}` 格式化字符串。
+fn run_diff_mode(
+    v: &serde_json::Value,
+    max_output_len: usize,
+    working_dir: &Path,
+    extra_args: &[&str],
+    context_fmt: Option<String>,
+    title_base: &str,
+) -> String {
+    let mode = v
+        .get("mode")
+        .and_then(|x| x.as_str())
+        .unwrap_or("working")
+        .trim()
+        .to_lowercase();
+    let path = match extract_safe_path(v) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
+
+    let build_cmd = |staged: bool| {
+        let mut cmd = Command::new("git");
+        cmd.arg("diff");
+        for a in extra_args {
+            cmd.arg(*a);
+        }
+        if staged {
+            cmd.arg("--staged");
+        }
+        if let Some(ref ctx) = context_fmt {
+            cmd.arg(ctx);
+        }
+        if let Some(ref p) = path {
+            cmd.arg("--").arg(p);
+        }
+        cmd.current_dir(working_dir);
+        cmd
+    };
+
+    let title_suffix = |staged: bool| {
+        if staged {
+            format!("{} --staged", title_base)
+        } else {
+            title_base.to_string()
+        }
+    };
+
+    match mode.as_str() {
+        "working" => run_and_format(build_cmd(false), max_output_len, &title_suffix(false)),
+        "staged" => run_and_format(build_cmd(true), max_output_len, &title_suffix(true)),
+        "all" => {
+            let a = run_and_format(build_cmd(false), max_output_len, &title_suffix(false));
+            let b = run_and_format(build_cmd(true), max_output_len, &title_suffix(true));
+            format!("{}\n\n====================\n\n{}", a, b)
+        }
+        _ => "错误：mode 仅支持 working | staged | all".to_string(),
+    }
+}
+
+pub fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+    let v = match parse_args(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    if let Err(e) = ensure_git_repo(working_dir) {
+        return e;
+    }
     let porcelain = v
         .get("porcelain")
         .and_then(|x| x.as_bool())
@@ -26,10 +129,6 @@ pub fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> Str
         .and_then(|x| x.as_bool())
         .unwrap_or(true);
     let show_branch = v.get("branch").and_then(|x| x.as_bool()).unwrap_or(true);
-
-    if let Err(e) = ensure_git_repo(working_dir) {
-        return e;
-    }
 
     let mut cmd = Command::new("git");
     cmd.arg("status");
@@ -43,81 +142,26 @@ pub fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> Str
         cmd.arg("--untracked-files=no");
     }
     cmd.current_dir(working_dir);
-
     run_and_format(cmd, max_output_len, "git status")
 }
 
 pub fn diff(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
     }
-
-    let mode = v
-        .get("mode")
-        .and_then(|x| x.as_str())
-        .unwrap_or("working")
-        .trim()
-        .to_lowercase();
-    let path = match v.get("path").and_then(|x| x.as_str()) {
-        Some(p) => {
-            if !is_safe_rel_path(p) {
-                return "错误：path 必须是相对路径，且不能包含 \"..\" 或绝对路径".to_string();
-            }
-            Some(p.trim().to_string())
-        }
-        None => None,
-    };
     let context = v.get("context_lines").and_then(|x| x.as_u64()).unwrap_or(3);
-
-    match mode.as_str() {
-        "working" => {
-            let mut cmd = Command::new("git");
-            cmd.arg("diff").arg(format!("-U{}", context));
-            if let Some(p) = path {
-                cmd.arg("--").arg(p);
-            }
-            cmd.current_dir(working_dir);
-            run_and_format(cmd, max_output_len, "git diff")
-        }
-        "staged" => {
-            let mut cmd = Command::new("git");
-            cmd.arg("diff")
-                .arg("--staged")
-                .arg(format!("-U{}", context));
-            if let Some(p) = path {
-                cmd.arg("--").arg(p);
-            }
-            cmd.current_dir(working_dir);
-            run_and_format(cmd, max_output_len, "git diff --staged")
-        }
-        "all" => {
-            let mut unstaged = Command::new("git");
-            unstaged.arg("diff").arg(format!("-U{}", context));
-            if let Some(ref p) = path {
-                unstaged.arg("--").arg(p);
-            }
-            unstaged.current_dir(working_dir);
-            let a = run_and_format(unstaged, max_output_len, "git diff");
-
-            let mut staged = Command::new("git");
-            staged
-                .arg("diff")
-                .arg("--staged")
-                .arg(format!("-U{}", context));
-            if let Some(ref p) = path {
-                staged.arg("--").arg(p);
-            }
-            staged.current_dir(working_dir);
-            let b = run_and_format(staged, max_output_len, "git diff --staged");
-
-            format!("{}\n\n====================\n\n{}", a, b)
-        }
-        _ => "错误：mode 仅支持 working | staged | all".to_string(),
-    }
+    run_diff_mode(
+        &v,
+        max_output_len,
+        working_dir,
+        &[],
+        Some(format!("-U{}", context)),
+        "git diff",
+    )
 }
 
 pub fn clean_check(_args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
@@ -154,146 +198,45 @@ pub fn clean_check(_args_json: &str, max_output_len: usize, working_dir: &Path) 
 }
 
 pub fn diff_stat(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
     }
-
-    let mode = v
-        .get("mode")
-        .and_then(|x| x.as_str())
-        .unwrap_or("working")
-        .trim()
-        .to_lowercase();
-    let path = match v.get("path").and_then(|x| x.as_str()) {
-        Some(p) => {
-            if !is_safe_rel_path(p) {
-                return "错误：path 必须是相对路径，且不能包含 \"..\" 或绝对路径".to_string();
-            }
-            Some(p.trim().to_string())
-        }
-        None => None,
-    };
-
-    match mode.as_str() {
-        "working" => {
-            let mut cmd = Command::new("git");
-            cmd.arg("diff").arg("--stat");
-            if let Some(p) = path {
-                cmd.arg("--").arg(p);
-            }
-            cmd.current_dir(working_dir);
-            run_and_format(cmd, max_output_len, "git diff --stat")
-        }
-        "staged" => {
-            let mut cmd = Command::new("git");
-            cmd.arg("diff").arg("--stat").arg("--staged");
-            if let Some(p) = path {
-                cmd.arg("--").arg(p);
-            }
-            cmd.current_dir(working_dir);
-            run_and_format(cmd, max_output_len, "git diff --stat --staged")
-        }
-        "all" => {
-            let mut unstaged = Command::new("git");
-            unstaged.arg("diff").arg("--stat");
-            if let Some(p) = path {
-                unstaged.arg("--").arg(p);
-            }
-            unstaged.current_dir(working_dir);
-            let a = run_and_format(unstaged, max_output_len, "git diff --stat");
-
-            let mut staged = Command::new("git");
-            staged.arg("diff").arg("--stat").arg("--staged");
-            if let Some(p) = v.get("path").and_then(|x| x.as_str()) {
-                // 上面已经做过 is_safe_rel_path，这里沿用原值即可
-                if is_safe_rel_path(p) {
-                    staged.arg("--").arg(p.trim());
-                }
-            }
-            staged.current_dir(working_dir);
-            let b = run_and_format(staged, max_output_len, "git diff --stat --staged");
-            format!("{}\n\n====================\n\n{}", a, b)
-        }
-        _ => "错误：mode 仅支持 working | staged | all".to_string(),
-    }
+    run_diff_mode(
+        &v,
+        max_output_len,
+        working_dir,
+        &["--stat"],
+        None,
+        "git diff --stat",
+    )
 }
 
 pub fn diff_names(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
     }
-
-    let mode = v
-        .get("mode")
-        .and_then(|x| x.as_str())
-        .unwrap_or("working")
-        .trim()
-        .to_lowercase();
-    let path = match v.get("path").and_then(|x| x.as_str()) {
-        Some(p) => {
-            if !is_safe_rel_path(p) {
-                return "错误：path 必须是相对路径，且不能包含 \"..\" 或绝对路径".to_string();
-            }
-            Some(p.trim().to_string())
-        }
-        None => None,
-    };
-
-    match mode.as_str() {
-        "working" => {
-            let mut cmd = Command::new("git");
-            cmd.arg("diff").arg("--name-only");
-            if let Some(p) = path {
-                cmd.arg("--").arg(p);
-            }
-            cmd.current_dir(working_dir);
-            run_and_format(cmd, max_output_len, "git diff --name-only")
-        }
-        "staged" => {
-            let mut cmd = Command::new("git");
-            cmd.arg("diff").arg("--name-only").arg("--staged");
-            if let Some(p) = path {
-                cmd.arg("--").arg(p);
-            }
-            cmd.current_dir(working_dir);
-            run_and_format(cmd, max_output_len, "git diff --name-only --staged")
-        }
-        "all" => {
-            let mut unstaged = Command::new("git");
-            unstaged.arg("diff").arg("--name-only");
-            if let Some(p) = path {
-                unstaged.arg("--").arg(p);
-            }
-            unstaged.current_dir(working_dir);
-            let a = run_and_format(unstaged, max_output_len, "git diff --name-only");
-
-            let mut staged = Command::new("git");
-            staged.arg("diff").arg("--name-only").arg("--staged");
-            if let Some(p) = v.get("path").and_then(|x| x.as_str())
-                && is_safe_rel_path(p)
-            {
-                staged.arg("--").arg(p.trim());
-            }
-            staged.current_dir(working_dir);
-            let b = run_and_format(staged, max_output_len, "git diff --name-only --staged");
-            format!("{}\n\n====================\n\n{}", a, b)
-        }
-        _ => "错误：mode 仅支持 working | staged | all".to_string(),
-    }
+    run_diff_mode(
+        &v,
+        max_output_len,
+        working_dir,
+        &["--name-only"],
+        None,
+        "git diff --name-only",
+    )
 }
 
 pub fn diff_base(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
@@ -314,9 +257,9 @@ pub fn diff_base(args_json: &str, max_output_len: usize, working_dir: &Path) -> 
 }
 
 pub fn log(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
@@ -333,9 +276,9 @@ pub fn log(args_json: &str, max_output_len: usize, working_dir: &Path) -> String
 }
 
 pub fn show(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
@@ -352,16 +295,16 @@ pub fn show(args_json: &str, max_output_len: usize, working_dir: &Path) -> Strin
 }
 
 pub fn blame(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
     }
-    let path = match v.get("path").and_then(|x| x.as_str()) {
-        Some(p) if is_safe_rel_path(p) => p.trim(),
-        _ => return "错误：缺少合法 path 参数".to_string(),
+    let path = match require_safe_path(&v) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
     let start = v.get("start_line").and_then(|x| x.as_u64());
     let end = v.get("end_line").and_then(|x| x.as_u64());
@@ -370,21 +313,21 @@ pub fn blame(args_json: &str, max_output_len: usize, working_dir: &Path) -> Stri
     if let (Some(s), Some(e)) = (start, end) {
         cmd.arg(format!("-L{},{}", s, e));
     }
-    cmd.arg(path).current_dir(working_dir);
+    cmd.arg(&path).current_dir(working_dir);
     run_and_format(cmd, max_output_len, &format!("git blame {}", path))
 }
 
 pub fn file_history(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
     }
-    let path = match v.get("path").and_then(|x| x.as_str()) {
-        Some(p) if is_safe_rel_path(p) => p.trim().to_string(),
-        _ => return "错误：缺少合法 path 参数".to_string(),
+    let path = match require_safe_path(&v) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
     let max_count = v.get("max_count").and_then(|x| x.as_u64()).unwrap_or(30);
     let mut cmd = Command::new("git");
@@ -400,9 +343,9 @@ pub fn file_history(args_json: &str, max_output_len: usize, working_dir: &Path) 
 }
 
 pub fn branch_list(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
@@ -421,9 +364,9 @@ pub fn branch_list(args_json: &str, max_output_len: usize, working_dir: &Path) -
 }
 
 pub fn remote_status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let _v: serde_json::Value = match serde_json::from_str(args_json) {
+    let _v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
@@ -434,9 +377,9 @@ pub fn remote_status(args_json: &str, max_output_len: usize, working_dir: &Path)
 }
 
 pub fn remote_list(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let _v: serde_json::Value = match serde_json::from_str(args_json) {
+    let _v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
@@ -447,24 +390,23 @@ pub fn remote_list(args_json: &str, max_output_len: usize, working_dir: &Path) -
 }
 
 pub fn remote_set_url(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
     }
-    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
-    if !confirm {
-        return "拒绝执行：git_remote_set_url 需要 confirm=true".to_string();
+    if let Err(e) = require_confirm(&v, "git_remote_set_url") {
+        return e;
     }
-    let name = match v.get("name").and_then(|x| x.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s,
-        _ => return "错误：缺少 name 参数".to_string(),
+    let name = match require_string_field(&v, "name") {
+        Ok(s) => s,
+        Err(e) => return e,
     };
-    let url = match v.get("url").and_then(|x| x.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s,
-        _ => return "错误：缺少 url 参数".to_string(),
+    let url = match require_string_field(&v, "url") {
+        Ok(s) => s,
+        Err(e) => return e,
     };
     let mut cmd = Command::new("git");
     cmd.arg("remote")
@@ -476,9 +418,9 @@ pub fn remote_set_url(args_json: &str, max_output_len: usize, working_dir: &Path
 }
 
 pub fn fetch(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
@@ -502,9 +444,9 @@ pub fn fetch(args_json: &str, max_output_len: usize, working_dir: &Path) -> Stri
 }
 
 pub fn apply(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
@@ -535,17 +477,16 @@ pub fn apply(args_json: &str, max_output_len: usize, working_dir: &Path) -> Stri
 }
 
 pub fn clone_repo(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
-    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
-    if !confirm {
-        return "拒绝执行：git_clone 需要 confirm=true".to_string();
+    if let Err(e) = require_confirm(&v, "git_clone") {
+        return e;
     }
-    let repo_url = match v.get("repo_url").and_then(|x| x.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s,
-        _ => return "错误：缺少 repo_url 参数".to_string(),
+    let repo_url = match require_string_field(&v, "repo_url") {
+        Ok(s) => s,
+        Err(e) => return e,
     };
     let target_dir = match v.get("target_dir").and_then(|x| x.as_str()) {
         Some(p) if is_safe_rel_path(p) => p.trim(),
@@ -570,9 +511,9 @@ pub fn clone_repo(args_json: &str, max_output_len: usize, working_dir: &Path) ->
 }
 
 pub fn stage_files(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
@@ -600,20 +541,19 @@ pub fn stage_files(args_json: &str, max_output_len: usize, working_dir: &Path) -
 }
 
 pub fn commit(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match parse_args(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
     }
-    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
-    if !confirm {
-        return "拒绝执行：git_commit 需要 confirm=true 才会真正提交".to_string();
+    if let Err(e) = require_confirm(&v, "git_commit") {
+        return format!("{}才会真正提交", e);
     }
-    let message = match v.get("message").and_then(|x| x.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => s.to_string(),
-        _ => return "错误：缺少 message 参数".to_string(),
+    let message = match require_string_field(&v, "message") {
+        Ok(s) => s.to_string(),
+        Err(e) => return e,
     };
     let stage_all = v
         .get("stage_all")
