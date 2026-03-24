@@ -35,6 +35,7 @@
 # reflection_default_max_rounds = 5
 # final_plan_requirement = "workflow_reflection"  # never | workflow_reflection | always（实验性，每轮终答均校验）
 # plan_rewrite_max_attempts = 2
+# planner_executor_mode = "single_agent"  # single_agent | logical_dual_agent（阶段1：同进程逻辑双agent）
 # staged_plan_execution = false   # true：先无工具产出 agent_reply_plan，再按步执行
 # staged_plan_phase_instruction = """……"""  # 可选；空则用内置规划轮说明
 # cursor_rules_enabled = false    # true：自动拼接 cursor_rules_dir/*.mdc 到 system_prompt

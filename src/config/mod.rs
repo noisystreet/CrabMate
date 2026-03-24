@@ -34,6 +34,36 @@ impl WebSearchProvider {
     }
 }
 
+/// 规划器与执行器的运行模式（阶段 1：同进程逻辑双 agent）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlannerExecutorMode {
+    /// 单 agent 外层循环（历史行为）。
+    #[default]
+    SingleAgent,
+    /// 同进程逻辑双 agent：规划轮与执行轮使用不同上下文视图。
+    LogicalDualAgent,
+}
+
+impl PlannerExecutorMode {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "single_agent" => Ok(Self::SingleAgent),
+            "logical_dual_agent" => Ok(Self::LogicalDualAgent),
+            _ => Err(format!(
+                "未知的 planner_executor_mode: {:?}（支持 single_agent、logical_dual_agent）",
+                s.trim()
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SingleAgent => "single_agent",
+            Self::LogicalDualAgent => "logical_dual_agent",
+        }
+    }
+}
+
 /// Agent 运行配置
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -87,6 +117,8 @@ pub struct AgentConfig {
     pub final_plan_requirement: FinalPlanRequirementMode,
     /// 终答缺合格规划时，最多追加多少次「请重写」user 消息（达到后结束本轮并发 SSE `plan_rewrite_exhausted`）
     pub plan_rewrite_max_attempts: usize,
+    /// 规划器/执行器运行模式（阶段 1：同进程逻辑双 agent）。
+    pub planner_executor_mode: PlannerExecutorMode,
     /// 系统提示词（可由 system_prompt 或 system_prompt_file 配置）
     pub system_prompt: String,
     /// 启用后：读取 `cursor_rules_dir` 下的 `*.mdc` 并附加到系统提示词
@@ -161,6 +193,8 @@ struct AgentSection {
     /// `never` / `workflow_reflection` / `always`
     final_plan_requirement: Option<String>,
     plan_rewrite_max_attempts: Option<u64>,
+    /// `single_agent` / `logical_dual_agent`
+    planner_executor_mode: Option<String>,
     system_prompt: Option<String>,
     system_prompt_file: Option<String>,
     cursor_rules_enabled: Option<bool>,
@@ -236,6 +270,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut reflection_default_max_rounds: Option<u64> = None;
     let mut final_plan_requirement_str: Option<String> = None;
     let mut plan_rewrite_max_attempts: Option<u64> = None;
+    let mut planner_executor_mode_str: Option<String> = None;
     let mut allowed_commands: Option<Vec<String>> = None;
     let mut allowed_commands_dev: Option<Vec<String>> = None;
     let mut allowed_commands_prod: Option<Vec<String>> = None;
@@ -325,6 +360,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         plan_rewrite_max_attempts = agent
             .plan_rewrite_max_attempts
             .or(plan_rewrite_max_attempts);
+        if let Some(ref s) = agent.planner_executor_mode {
+            let s = s.trim().to_string();
+            if !s.is_empty() {
+                planner_executor_mode_str = Some(s);
+            }
+        }
         if let Some(s) = agent.system_prompt {
             let s = s.trim().to_string();
             if !s.is_empty() {
@@ -510,6 +551,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
                 }
                 if let Some(v) = agent.plan_rewrite_max_attempts {
                     plan_rewrite_max_attempts = Some(v);
+                }
+                if let Some(ref s) = agent.planner_executor_mode {
+                    let s = s.trim().to_string();
+                    if !s.is_empty() {
+                        planner_executor_mode_str = Some(s);
+                    }
                 }
                 if let Some(ss) = agent.system_prompt {
                     let ss = ss.trim().to_string();
@@ -740,6 +787,12 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     {
         plan_rewrite_max_attempts = Some(n);
     }
+    if let Ok(s) = std::env::var("AGENT_PLANNER_EXECUTOR_MODE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            planner_executor_mode_str = Some(s);
+        }
+    }
     if let Ok(s) = std::env::var("AGENT_SYSTEM_PROMPT") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -957,6 +1010,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         None => FinalPlanRequirementMode::default(),
     };
     let plan_rewrite_max_attempts = plan_rewrite_max_attempts.unwrap_or(2).clamp(1, 20) as usize;
+    let planner_executor_mode = match planner_executor_mode_str.as_deref() {
+        Some(s) => PlannerExecutorMode::parse(s)?,
+        None => PlannerExecutorMode::default(),
+    };
     let tool_message_max_chars = tool_message_max_chars
         .unwrap_or(32768)
         .clamp(1024, 1_048_576) as usize;
@@ -1020,6 +1077,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         reflection_default_max_rounds,
         final_plan_requirement,
         plan_rewrite_max_attempts,
+        planner_executor_mode,
         system_prompt,
         cursor_rules_enabled,
         cursor_rules_dir,

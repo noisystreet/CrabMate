@@ -876,6 +876,8 @@ struct StatusResponse {
     reflection_default_max_rounds: usize,
     final_plan_requirement: crate::agent::per_coord::FinalPlanRequirementMode,
     plan_rewrite_max_attempts: usize,
+    /// 规划器/执行器模式：single_agent | logical_dual_agent。
+    planner_executor_mode: &'static str,
     /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`）。
     staged_plan_execution: bool,
     /// TUI / CLI REPL 是否在启动时从 `.crabmate/tui_session.json` 恢复会话（默认 false）。
@@ -919,6 +921,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         reflection_default_max_rounds: state.cfg.reflection_default_max_rounds,
         final_plan_requirement: state.cfg.final_plan_requirement,
         plan_rewrite_max_attempts: state.cfg.plan_rewrite_max_attempts,
+        planner_executor_mode: state.cfg.planner_executor_mode.as_str(),
         staged_plan_execution: state.cfg.staged_plan_execution,
         tui_load_session_on_start: state.cfg.tui_load_session_on_start,
         max_message_history: state.cfg.max_message_history,
