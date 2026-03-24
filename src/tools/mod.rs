@@ -14,14 +14,17 @@ mod file;
 mod format;
 mod frontend_tools;
 mod git;
+mod go_tools;
 mod grep;
 pub mod http_fetch;
 mod lint;
 mod markdown_links;
+mod nodejs_tools;
 pub(crate) mod output_util;
 mod package_query;
 mod patch;
 mod precommit_tools;
+mod process_tools;
 mod python_tools;
 mod quality_tools;
 mod release_docs;
@@ -277,6 +280,26 @@ fn runner_uv_sync(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_uv_run(args: &str, ctx: &ToolContext<'_>) -> String {
     python_tools::uv_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_go_build(args: &str, ctx: &ToolContext<'_>) -> String {
+    go_tools::go_build(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_go_test(args: &str, ctx: &ToolContext<'_>) -> String {
+    go_tools::go_test(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_go_vet(args: &str, ctx: &ToolContext<'_>) -> String {
+    go_tools::go_vet(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_go_mod_tidy(args: &str, ctx: &ToolContext<'_>) -> String {
+    go_tools::go_mod_tidy(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_go_fmt_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    go_tools::go_fmt_check(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn runner_pre_commit_run(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -557,6 +580,72 @@ fn runner_delete_event(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_update_event(args: &str, ctx: &ToolContext<'_>) -> String {
     schedule::update_event(args, ctx.working_dir)
+}
+
+// ── Git 写操作补全 ──────────────────────────────────────────
+
+fn runner_git_checkout(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::checkout(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_branch_create(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::branch_create(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_branch_delete(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::branch_delete(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_push(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::push(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_merge(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::merge(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_rebase(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::rebase(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_stash(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::stash(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_tag(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::tag(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_reset(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::reset(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_cherry_pick(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::cherry_pick(args, ctx.command_max_output_len, ctx.working_dir)
+}
+fn runner_git_revert(args: &str, ctx: &ToolContext<'_>) -> String {
+    git::revert(args, ctx.command_max_output_len, ctx.working_dir)
+}
+
+// ── Node.js / npm / npx ─────────────────────────────────────
+
+fn runner_npm_install(args: &str, ctx: &ToolContext<'_>) -> String {
+    nodejs_tools::npm_install(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_npm_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    nodejs_tools::npm_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_npx_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    nodejs_tools::npx_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_tsc_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    nodejs_tools::tsc_check(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+// ── Go 补充：golangci-lint ──────────────────────────────────
+
+fn runner_golangci_lint(args: &str, ctx: &ToolContext<'_>) -> String {
+    go_tools::golangci_lint(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+// ── 进程与端口管理 ──────────────────────────────────────────
+
+fn runner_port_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    process_tools::port_check(args, ctx.command_max_output_len)
+}
+fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    process_tools::process_list(args, ctx.command_max_output_len)
 }
 
 fn tool_specs() -> &'static [ToolSpec] {

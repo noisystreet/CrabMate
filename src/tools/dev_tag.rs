@@ -14,6 +14,8 @@ pub const CPP: &str = "cpp";
 pub const VCS: &str = "vcs";
 /// 静态检查、审计、CI 聚合等质量类工具（常与 RUST/FRONTEND 重叠）。
 pub const QUALITY: &str = "quality";
+/// Go 语言工具链。
+pub const GO: &str = "go";
 
 /// 返回 `Development` 工具的标签切片；**非 Development 工具名**应返回空（调用方按分类跳过）。
 pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
@@ -49,9 +51,10 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "git_status" | "git_diff" | "git_clean_check" | "git_diff_stat" | "git_diff_names"
         | "git_log" | "git_show" | "git_diff_base" | "git_blame" | "git_file_history"
         | "git_branch_list" | "git_remote_status" | "git_stage_files" | "git_commit"
-        | "git_fetch" | "git_remote_list" | "git_remote_set_url" | "git_apply" | "git_clone" => {
-            &[GENERAL, VCS]
-        }
+        | "git_fetch" | "git_remote_list" | "git_remote_set_url" | "git_apply" | "git_clone"
+        | "git_checkout" | "git_branch_create" | "git_branch_delete" | "git_push" | "git_merge"
+        | "git_rebase" | "git_stash" | "git_tag" | "git_reset" | "git_cherry_pick"
+        | "git_revert" => &[GENERAL, VCS],
 
         // --- Rust / Cargo ---
         "cargo_metadata"
@@ -71,9 +74,15 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         }
         "find_symbol" | "find_references" | "rust_file_outline" => &[GENERAL, RUST],
 
-        // --- 前端 ---
+        // --- 前端 / Node.js ---
         "frontend_build" | "frontend_test" => &[GENERAL, FRONTEND],
         "frontend_lint" => &[GENERAL, FRONTEND, QUALITY],
+        "npm_install" | "npm_run" | "npx_run" => &[GENERAL, FRONTEND],
+        "tsc_check" => &[GENERAL, FRONTEND, QUALITY],
+
+        // --- Go ---
+        "go_build" | "go_test" | "go_mod_tidy" => &[GENERAL, GO],
+        "go_vet" | "go_fmt_check" | "golangci_lint" => &[GENERAL, GO, QUALITY],
 
         // --- Python ---
         "ruff_check" | "mypy_check" => &[GENERAL, PYTHON, QUALITY],
@@ -91,6 +100,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
 
         // --- 格式化（多语言由实现按扩展名分流）---
         "format_file" | "format_check_file" => &[GENERAL, RUST, FRONTEND, PYTHON, CPP],
+
+        // --- 进程与端口 ---
+        "port_check" | "process_list" => &[GENERAL],
 
         _ => &[GENERAL],
     }
@@ -119,6 +131,9 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
         || root.join("configure.in").is_file()
     {
         out.push(CPP);
+    }
+    if root.join("go.mod").is_file() {
+        out.push(GO);
     }
     out.sort_unstable();
     out.dedup();

@@ -544,6 +544,68 @@ pub(super) fn params_uv_run() -> serde_json::Value {
     })
 }
 
+pub(super) fn params_go_build() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "package": { "type": "string", "description": "可选：go build 包路径或模式，默认 ./...；禁止 .. 与绝对路径" },
+            "output": { "type": "string", "description": "可选：-o 输出可执行文件相对路径；禁止 .. 与绝对路径" },
+            "verbose": { "type": "boolean", "description": "可选：是否 -v，默认 false" }
+        },
+        "required": []
+    })
+}
+
+pub(super) fn params_go_test() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "package": { "type": "string", "description": "可选：测试包路径，默认 ./...；禁止 .. 与绝对路径" },
+            "run": { "type": "string", "description": "可选：-run 测试名过滤（保守字符集）" },
+            "verbose": { "type": "boolean", "description": "可选：是否 -v，默认 false" },
+            "short": { "type": "boolean", "description": "可选：是否 -short，默认 false" },
+            "count": { "type": "integer", "description": "可选：-count，须为正整数", "minimum": 1 },
+            "timeout": { "type": "string", "description": "可选：-timeout，如 30s（短字符串、无空白）" }
+        },
+        "required": []
+    })
+}
+
+pub(super) fn params_go_vet() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "package": { "type": "string", "description": "可选：go vet 包路径，默认 ./...；禁止 .. 与绝对路径" }
+        },
+        "required": []
+    })
+}
+
+pub(super) fn params_go_mod_tidy() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "verbose": { "type": "boolean", "description": "可选：是否 -v，默认 false" },
+            "confirm": { "type": "boolean", "description": "须为 true 才会执行（写回 go.mod/go.sum）" }
+        },
+        "required": []
+    })
+}
+
+pub(super) fn params_go_fmt_check() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：传给 gofmt -l 的相对路径列表，默认 [\".\"]；禁止 .. 与绝对路径"
+            }
+        },
+        "required": []
+    })
+}
+
 pub(super) fn params_pre_commit_run() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -1832,5 +1894,237 @@ pub(super) fn params_update_event() -> serde_json::Value {
             "notes": { "type": "string", "description": "可选：更新备注（空字符串表示清空）" }
         },
         "required": ["id"]
+    })
+}
+
+// ── Git 写操作补全 ──────────────────────────────────────────
+
+pub(super) fn params_git_checkout() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "target":{"type":"string","description":"分支名、标签名或 commit SHA（必填）"},
+            "create":{"type":"boolean","description":"是否以 -b 创建新分支，默认 false"}
+        },
+        "required":["target"]
+    })
+}
+
+pub(super) fn params_git_branch_create() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "name":{"type":"string","description":"新分支名（必填）"},
+            "start_point":{"type":"string","description":"可选：起始点（分支/tag/SHA），默认 HEAD"}
+        },
+        "required":["name"]
+    })
+}
+
+pub(super) fn params_git_branch_delete() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "name":{"type":"string","description":"要删除的分支名（必填）"},
+            "force":{"type":"boolean","description":"是否强制删除（-D），默认 false（-d，需已合并）"},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":["name"]
+    })
+}
+
+pub(super) fn params_git_push() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "remote":{"type":"string","description":"远程名，默认 origin"},
+            "branch":{"type":"string","description":"可选：推送的分支/refspec"},
+            "set_upstream":{"type":"boolean","description":"是否 -u 设置上游，默认 false"},
+            "force_with_lease":{"type":"boolean","description":"是否 --force-with-lease，默认 false"},
+            "tags":{"type":"boolean","description":"是否 --tags 推送标签，默认 false"},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":[]
+    })
+}
+
+pub(super) fn params_git_merge() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "branch":{"type":"string","description":"要合并的分支名（必填）"},
+            "no_ff":{"type":"boolean","description":"是否 --no-ff 强制合并提交，默认 false"},
+            "squash":{"type":"boolean","description":"是否 --squash 压缩合并，默认 false"},
+            "message":{"type":"string","description":"可选：合并消息"},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":["branch"]
+    })
+}
+
+pub(super) fn params_git_rebase() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "onto":{"type":"string","description":"变基目标（分支/SHA）"},
+            "abort":{"type":"boolean","description":"是否 --abort 取消变基"},
+            "continue":{"type":"boolean","description":"是否 --continue 继续变基"},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":[]
+    })
+}
+
+pub(super) fn params_git_stash() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "action":{"type":"string","description":"操作：push（默认）/pop/apply/list/drop/clear","enum":["push","pop","apply","list","drop","clear"]},
+            "message":{"type":"string","description":"可选：push 时的描述消息"},
+            "confirm":{"type":"boolean","description":"仅 clear 需要 confirm=true"}
+        },
+        "required":[]
+    })
+}
+
+pub(super) fn params_git_tag() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "action":{"type":"string","description":"操作：list（默认）/create/delete","enum":["list","create","delete"]},
+            "name":{"type":"string","description":"create/delete 时的标签名"},
+            "message":{"type":"string","description":"create 时的注释消息（传入即创建 annotated tag）"},
+            "pattern":{"type":"string","description":"list 时的 glob 过滤（如 v*）"},
+            "confirm":{"type":"boolean","description":"仅 delete 需要 confirm=true"}
+        },
+        "required":[]
+    })
+}
+
+pub(super) fn params_git_reset() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "mode":{"type":"string","description":"重置模式：soft/mixed（默认）/hard","enum":["soft","mixed","hard"]},
+            "target":{"type":"string","description":"目标 commit/ref，默认 HEAD"},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":[]
+    })
+}
+
+pub(super) fn params_git_cherry_pick() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "commit":{"type":"string","description":"要挑选的单个 commit SHA"},
+            "commits":{"type":"array","items":{"type":"string"},"description":"要挑选的多个 commit SHA"},
+            "no_commit":{"type":"boolean","description":"是否 --no-commit 仅暂存不提交，默认 false"},
+            "abort":{"type":"boolean","description":"是否 --abort"},
+            "continue":{"type":"boolean","description":"是否 --continue"},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":[]
+    })
+}
+
+pub(super) fn params_git_revert() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "commit":{"type":"string","description":"要回滚的 commit SHA（必填，除 abort/continue）"},
+            "no_commit":{"type":"boolean","description":"是否 --no-commit 仅暂存不提交，默认 false"},
+            "abort":{"type":"boolean","description":"是否 --abort"},
+            "continue":{"type":"boolean","description":"是否 --continue"},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":[]
+    })
+}
+
+// ── Node.js / npm / npx ─────────────────────────────────────
+
+pub(super) fn params_npm_install() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "subdir":{"type":"string","description":"前端子目录（默认 .），如 frontend"},
+            "ci":{"type":"boolean","description":"使用 npm ci（默认 false）"},
+            "production":{"type":"boolean","description":"仅安装生产依赖，默认 false"}
+        },
+        "required":[]
+    })
+}
+
+pub(super) fn params_npm_run() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "script":{"type":"string","description":"npm script 名（必填）"},
+            "subdir":{"type":"string","description":"前端子目录（默认 .），如 frontend"},
+            "args":{"type":"array","items":{"type":"string"},"description":"传递给 script 的额外参数（-- 之后）"}
+        },
+        "required":["script"]
+    })
+}
+
+pub(super) fn params_npx_run() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "package":{"type":"string","description":"npx 要执行的包名（必填），如 prettier、eslint"},
+            "subdir":{"type":"string","description":"工作子目录（默认 .）"},
+            "args":{"type":"array","items":{"type":"string"},"description":"传递给包命令的参数"}
+        },
+        "required":["package"]
+    })
+}
+
+pub(super) fn params_tsc_check() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "subdir":{"type":"string","description":"前端子目录（默认 .），如 frontend"},
+            "project":{"type":"string","description":"可选：tsconfig 路径（-p），默认使用 -b"},
+            "strict":{"type":"boolean","description":"是否 --strict，默认 false"}
+        },
+        "required":[]
+    })
+}
+
+// ── Go 补充：golangci-lint ──────────────────────────────────
+
+pub(super) fn params_golangci_lint() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "fix":{"type":"boolean","description":"是否 --fix 自动修复，默认 false"},
+            "fast":{"type":"boolean","description":"是否 --fast 快速模式，默认 false"}
+        },
+        "required":[]
+    })
+}
+
+// ── 进程与端口管理 ──────────────────────────────────────────
+
+pub(super) fn params_port_check() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "port":{"type":"integer","description":"要检查的端口号（1-65535，必填）","minimum":1,"maximum":65535}
+        },
+        "required":["port"]
+    })
+}
+
+pub(super) fn params_process_list() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "filter":{"type":"string","description":"可选：按进程名/命令行关键词过滤（不区分大小写）"},
+            "user_only":{"type":"boolean","description":"是否仅当前用户进程，默认 true"},
+            "max_count":{"type":"integer","description":"最多返回条数，默认 100","minimum":1,"maximum":500}
+        },
+        "required":[]
     })
 }

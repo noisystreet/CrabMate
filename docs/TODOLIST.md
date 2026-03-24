@@ -81,7 +81,7 @@
 - [ ] **危险操作分级与确认**：在 `run_command` / 写文件 / `workflow_execute` 等路径上强化策略（与 P1 Web 审批、TUI 审批对齐）。
 - [ ] **并行工具调用**：模型一次返回多 `tool_calls` 时，评估依赖关系后安全并行。
 - [ ] **工具结果「可引用」摘要**：统一长输出结构化摘要进入 `tool_result.summary`，减少上下文膨胀。
-- [ ] **新栈工具按需扩展**：在 `dev_tag` 体系下增加 Go、JVM、容器等标签与最小工具集（保持白名单与路径安全）。
+- [ ] **新栈工具按需扩展**：在 `dev_tag` 体系下增加 JVM、容器等标签与最小工具集（保持白名单与路径安全）。Go 已有 `go_build`/`go_test`/`go_vet`/`go_mod_tidy`/`go_fmt_check`/`golangci_lint`；Node.js 已有 `npm_install`/`npm_run`/`npx_run`/`tsc_check`。
 - [ ] **registry 策略配置化**：超时、spawn_blocking 类别、`http_fetch` 等更多迁入 `AgentConfig`。
 
 ### `sse/`（协议与行分类）

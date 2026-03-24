@@ -366,3 +366,113 @@ pub(super) fn summary_convert_units(v: &serde_json::Value) -> Option<String> {
     let to = v.get("to")?.as_str()?.trim();
     Some(format!("单位换算：{}（{} → {}）", cat, from, to))
 }
+
+// ── Git 写操作补全 ──────────────────────────────────────────
+
+pub(super) fn summary_git_checkout(v: &serde_json::Value) -> Option<String> {
+    let target = v.get("target")?.as_str()?.trim();
+    let create = v.get("create").and_then(|x| x.as_bool()).unwrap_or(false);
+    if create {
+        Some(format!("切换分支（-b 新建）：{}", target))
+    } else {
+        Some(format!("切换分支：{}", target))
+    }
+}
+
+pub(super) fn summary_git_branch_create(v: &serde_json::Value) -> Option<String> {
+    let name = v.get("name")?.as_str()?.trim();
+    Some(format!("创建分支：{}", name))
+}
+
+pub(super) fn summary_git_branch_delete(v: &serde_json::Value) -> Option<String> {
+    let name = v.get("name")?.as_str()?.trim();
+    Some(format!("删除分支：{}", name))
+}
+
+pub(super) fn summary_git_push(v: &serde_json::Value) -> Option<String> {
+    let remote = v.get("remote").and_then(|x| x.as_str()).unwrap_or("origin");
+    let branch = v.get("branch").and_then(|x| x.as_str()).unwrap_or("");
+    if branch.is_empty() {
+        Some(format!("推送到 {}", remote))
+    } else {
+        Some(format!("推送到 {} {}", remote, branch))
+    }
+}
+
+pub(super) fn summary_git_merge(v: &serde_json::Value) -> Option<String> {
+    let branch = v.get("branch")?.as_str()?.trim();
+    Some(format!("合并分支：{}", branch))
+}
+
+pub(super) fn summary_git_rebase(v: &serde_json::Value) -> Option<String> {
+    if v.get("abort").and_then(|x| x.as_bool()).unwrap_or(false) {
+        return Some("git rebase --abort".to_string());
+    }
+    if v.get("continue").and_then(|x| x.as_bool()).unwrap_or(false) {
+        return Some("git rebase --continue".to_string());
+    }
+    let onto = v.get("onto").and_then(|x| x.as_str()).unwrap_or("?");
+    Some(format!("变基到：{}", onto))
+}
+
+pub(super) fn summary_git_stash(v: &serde_json::Value) -> Option<String> {
+    let action = v.get("action").and_then(|x| x.as_str()).unwrap_or("push");
+    Some(format!("git stash {}", action))
+}
+
+pub(super) fn summary_git_tag(v: &serde_json::Value) -> Option<String> {
+    let action = v.get("action").and_then(|x| x.as_str()).unwrap_or("list");
+    match action {
+        "create" => {
+            let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("?");
+            Some(format!("创建标签：{}", name))
+        }
+        "delete" => {
+            let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("?");
+            Some(format!("删除标签：{}", name))
+        }
+        _ => Some("列出标签".to_string()),
+    }
+}
+
+pub(super) fn summary_git_reset(v: &serde_json::Value) -> Option<String> {
+    let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("mixed");
+    let target = v.get("target").and_then(|x| x.as_str()).unwrap_or("HEAD");
+    Some(format!("git reset --{} {}", mode, target))
+}
+
+pub(super) fn summary_git_revert(v: &serde_json::Value) -> Option<String> {
+    if v.get("abort").and_then(|x| x.as_bool()).unwrap_or(false) {
+        return Some("git revert --abort".to_string());
+    }
+    let commit = v.get("commit").and_then(|x| x.as_str()).unwrap_or("?");
+    Some(format!("回滚提交：{}", commit))
+}
+
+// ── Node.js / npm ───────────────────────────────────────────
+
+pub(super) fn summary_npm_run(v: &serde_json::Value) -> Option<String> {
+    let script = v.get("script")?.as_str()?.trim();
+    Some(format!("npm run {}", script))
+}
+
+pub(super) fn summary_npx_run(v: &serde_json::Value) -> Option<String> {
+    let pkg = v.get("package")?.as_str()?.trim();
+    Some(format!("npx {}", pkg))
+}
+
+// ── 进程与端口 ──────────────────────────────────────────────
+
+pub(super) fn summary_port_check(v: &serde_json::Value) -> Option<String> {
+    let port = v.get("port")?.as_u64()?;
+    Some(format!("检查端口 {}", port))
+}
+
+pub(super) fn summary_process_list(v: &serde_json::Value) -> Option<String> {
+    let filter = v.get("filter").and_then(|x| x.as_str()).unwrap_or("");
+    if filter.is_empty() {
+        Some("列出进程".to_string())
+    } else {
+        Some(format!("列出进程（过滤: {}）", filter))
+    }
+}
