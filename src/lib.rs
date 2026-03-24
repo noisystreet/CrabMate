@@ -22,12 +22,11 @@ mod web;
 
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
-    Json, Router,
+    Json,
     extract::{Multipart, Request, State},
     http::{HeaderValue, StatusCode, header},
-    middleware::{self, Next},
+    middleware::Next,
     response::{IntoResponse, Response},
-    routing::{get, post},
 };
 use config::cli::{init_logging, parse_args};
 use futures_util::StreamExt;
@@ -39,9 +38,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tower::ServiceBuilder;
-use tower_http::services::ServeDir;
-use tower_http::set_header::SetResponseHeaderLayer;
 use types::{CommandApprovalDecision, Message, messages_chat_seed};
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
@@ -136,6 +132,10 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
+    pub(crate) fn web_api_auth_enabled(&self) -> bool {
+        !self.cfg.web_api_bearer_token.trim().is_empty()
+    }
+
     /// 当前生效的工作区根路径（前端已设置则用其值，否则用配置）
     async fn effective_workspace_path(&self) -> String {
         let guard = self.workspace_override.read().await;
@@ -1106,66 +1106,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         });
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
-        let uploads_dir_for_static = uploads_dir.clone();
-        let mut protected_api = Router::new()
-            .route("/chat", post(chat_handler))
-            .route("/chat/stream", post(chat_stream_handler))
-            .route("/chat/approval", post(chat_approval_handler))
-            .route("/upload", post(upload_handler))
-            .route("/uploads/delete", post(delete_uploads_handler))
-            .route(
-                "/workspace",
-                get(web::workspace::workspace_handler).post(web::workspace::workspace_set_handler),
-            )
-            .route(
-                "/workspace/pick",
-                get(web::workspace::workspace_pick_handler),
-            )
-            .route(
-                "/workspace/search",
-                post(web::workspace::workspace_search_handler),
-            )
-            .route(
-                "/workspace/file",
-                get(web::workspace::workspace_file_read_handler)
-                    .post(web::workspace::workspace_file_write_handler)
-                    .delete(web::workspace::workspace_file_delete_handler),
-            )
-            .route(
-                "/tasks",
-                get(web::task::tasks_get_handler).post(web::task::tasks_set_handler),
-            );
-        if !state.cfg.web_api_bearer_token.trim().is_empty() {
-            protected_api = protected_api.route_layer(middleware::from_fn_with_state(
-                state.clone(),
-                require_web_api_bearer_auth,
-            ));
-        }
-        let mut app = Router::new()
-            .merge(protected_api)
-            .route("/health", get(health_handler))
-            .route("/status", get(status_handler))
-            .nest_service(
-                "/uploads",
-                ServiceBuilder::new()
-                    .layer(SetResponseHeaderLayer::if_not_present(
-                        header::CACHE_CONTROL,
-                        HeaderValue::from_static("public, max-age=31536000, immutable"),
-                    ))
-                    .layer(SetResponseHeaderLayer::if_not_present(
-                        header::X_CONTENT_TYPE_OPTIONS,
-                        HeaderValue::from_static("nosniff"),
-                    ))
-                    .layer(SetResponseHeaderLayer::if_not_present(
-                        header::HeaderName::from_static("cross-origin-resource-policy"),
-                        HeaderValue::from_static("same-site"),
-                    ))
-                    .service(ServeDir::new(uploads_dir_for_static)),
-            );
-        if !no_web {
-            app = app.nest_service("/", ServeDir::new(static_dir));
-        }
-        let app = app.with_state(state);
+        let app = web::server::build_app(state, no_web, static_dir, uploads_dir.clone());
         let bind_ip: std::net::IpAddr = http_bind_host.parse().map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
