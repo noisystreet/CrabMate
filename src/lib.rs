@@ -99,7 +99,20 @@ const CONVERSATION_STORE_TTL: Duration = Duration::from_secs(24 * 3600);
 #[derive(Clone)]
 struct ConversationEntry {
     messages: Vec<Message>,
+    revision: u64,
     updated_at: std::time::Instant,
+}
+
+#[derive(Clone)]
+struct ConversationTurnSeed {
+    messages: Vec<Message>,
+    expected_revision: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SaveConversationOutcome {
+    Saved,
+    Conflict,
 }
 
 #[derive(Clone)]
@@ -148,7 +161,7 @@ impl AppState {
         format!("conv_{}_{}", ts, n)
     }
 
-    async fn load_conversation_messages(&self, conversation_id: &str) -> Option<Vec<Message>> {
+    async fn load_conversation_seed(&self, conversation_id: &str) -> Option<ConversationTurnSeed> {
         let mut guard = self.conversation_store.write().await;
         let entry = guard.get_mut(conversation_id)?;
         if entry.updated_at.elapsed() > CONVERSATION_STORE_TTL {
@@ -156,35 +169,62 @@ impl AppState {
             return None;
         }
         entry.updated_at = std::time::Instant::now();
-        Some(entry.messages.clone())
+        Some(ConversationTurnSeed {
+            messages: entry.messages.clone(),
+            expected_revision: Some(entry.revision),
+        })
     }
 
-    pub(crate) async fn save_conversation_messages(
+    fn prune_conversation_store_locked(
+        guard: &mut HashMap<String, ConversationEntry>,
+        now: std::time::Instant,
+    ) {
+        guard.retain(|_, v| now.duration_since(v.updated_at) <= CONVERSATION_STORE_TTL);
+        if guard.len() <= CONVERSATION_STORE_MAX_ENTRIES {
+            return;
+        }
+        let mut order: Vec<(String, std::time::Instant)> = guard
+            .iter()
+            .map(|(k, v)| (k.clone(), v.updated_at))
+            .collect();
+        order.sort_by_key(|(_, t)| *t);
+        let to_drop = guard.len() - CONVERSATION_STORE_MAX_ENTRIES;
+        for (k, _) in order.into_iter().take(to_drop) {
+            guard.remove(&k);
+        }
+    }
+
+    pub(crate) async fn save_conversation_messages_if_revision(
         &self,
         conversation_id: String,
         messages: Vec<Message>,
-    ) {
+        expected_revision: Option<u64>,
+    ) -> SaveConversationOutcome {
         let mut guard = self.conversation_store.write().await;
         let now = std::time::Instant::now();
-        guard.insert(
-            conversation_id,
-            ConversationEntry {
-                messages,
-                updated_at: now,
-            },
-        );
-        guard.retain(|_, v| now.duration_since(v.updated_at) <= CONVERSATION_STORE_TTL);
-        if guard.len() > CONVERSATION_STORE_MAX_ENTRIES {
-            let mut order: Vec<(String, std::time::Instant)> = guard
-                .iter()
-                .map(|(k, v)| (k.clone(), v.updated_at))
-                .collect();
-            order.sort_by_key(|(_, t)| *t);
-            let to_drop = guard.len() - CONVERSATION_STORE_MAX_ENTRIES;
-            for (k, _) in order.into_iter().take(to_drop) {
-                guard.remove(&k);
+        if let Some(entry) = guard.get_mut(&conversation_id) {
+            match expected_revision {
+                Some(exp) if entry.revision == exp => {
+                    entry.messages = messages;
+                    entry.revision = entry.revision.saturating_add(1);
+                    entry.updated_at = now;
+                }
+                _ => return SaveConversationOutcome::Conflict,
             }
+        } else if expected_revision.is_some() {
+            return SaveConversationOutcome::Conflict;
+        } else {
+            guard.insert(
+                conversation_id,
+                ConversationEntry {
+                    messages,
+                    revision: 1,
+                    updated_at: now,
+                },
+            );
         }
+        Self::prune_conversation_store_locked(&mut guard, now);
+        SaveConversationOutcome::Saved
     }
 
     async fn conversation_count(&self) -> usize {
@@ -562,12 +602,37 @@ async fn build_messages_for_turn(
     state: &Arc<AppState>,
     conversation_id: &str,
     user_msg: &str,
-) -> Vec<Message> {
-    if let Some(mut messages) = state.load_conversation_messages(conversation_id).await {
-        messages.push(Message::user_only(user_msg.to_string()));
-        return messages;
+) -> ConversationTurnSeed {
+    if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
+        seed.messages.push(Message::user_only(user_msg.to_string()));
+        return seed;
     }
-    messages_chat_seed(&state.cfg.system_prompt, user_msg)
+    ConversationTurnSeed {
+        messages: messages_chat_seed(&state.cfg.system_prompt, user_msg),
+        expected_revision: None,
+    }
+}
+
+fn conversation_conflict_api_error() -> (StatusCode, Json<ApiError>) {
+    (
+        StatusCode::CONFLICT,
+        Json(ApiError {
+            code: "CONVERSATION_CONFLICT",
+            message: "会话已被其他请求更新，请重试本次提问".to_string(),
+        }),
+    )
+}
+
+fn save_outcome_to_stream_error_line(outcome: SaveConversationOutcome) -> Option<String> {
+    match outcome {
+        SaveConversationOutcome::Saved => None,
+        SaveConversationOutcome::Conflict => Some(crate::sse::encode_message(
+            crate::sse::SsePayload::Error(crate::sse::SseErrorBody {
+                error: "会话已被其他请求更新，请重试本次提问".to_string(),
+                code: Some("CONVERSATION_CONFLICT".to_string()),
+            }),
+        )),
+    }
 }
 
 fn is_valid_bearer_header(
@@ -634,7 +699,7 @@ async fn chat_handler(
             )
         })?
         .unwrap_or_else(|| state.next_conversation_id());
-    let messages = build_messages_for_turn(&state, &conversation_id, msg).await;
+    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg).await;
     let work_dir_str = state.effective_workspace_path().await;
     let work_dir = work_dir_str.clone();
     let workspace_is_set = state.workspace_is_set().await;
@@ -654,7 +719,8 @@ async fn chat_handler(
             job_id,
             state.clone(),
             conversation_id.clone(),
-            messages,
+            turn_seed.messages,
+            turn_seed.expected_revision,
             std::path::PathBuf::from(work_dir),
             workspace_is_set,
             reply_tx,
@@ -683,6 +749,9 @@ async fn chat_handler(
             )
         })?
         .map_err(|e| {
+            if e.trim() == "CONVERSATION_CONFLICT" {
+                return conversation_conflict_api_error();
+            }
             error!(
                 target: "crabmate",
                 "chat_handler 队列任务失败 job_id={} error={}",
@@ -783,7 +852,7 @@ async fn chat_stream_handler(
             )
         })?
         .unwrap_or_else(|| state.next_conversation_id());
-    let messages = build_messages_for_turn(&state, &conversation_id, msg).await;
+    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg).await;
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
     let workspace_is_set = state.workspace_is_set().await;
     let approval_session_id = match body.approval_session_id.as_deref() {
@@ -823,7 +892,8 @@ async fn chat_stream_handler(
         job_id,
         state.clone(),
         conversation_id.clone(),
-        messages,
+        turn_seed.messages,
+        turn_seed.expected_revision,
         work_dir,
         workspace_is_set,
         tx,
