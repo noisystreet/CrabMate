@@ -33,6 +33,7 @@ pub struct WorkflowNodeSpec {
     pub requires_approval: bool,
     pub timeout_secs: Option<u64>,
     pub compensate_with: Vec<String>,
+    pub max_retries: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +75,8 @@ struct WorkflowExecutionNodeReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     error_code: Option<String>,
     planned_layer: Option<usize>,
+    max_retries: u32,
+    attempt: u32,
 }
 
 static WORKFLOW_RUN_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -265,6 +268,8 @@ pub async fn run_workflow_execute_tool(
                 exit_code: None,
                 error_code: None,
                 planned_layer: layer_idx_by_id.get(&n.id).copied(),
+                max_retries: n.max_retries,
+                attempt: 1,
             })
             .collect();
 
@@ -610,9 +615,10 @@ async fn execute_workflow_dag(
                 exit_code: r.exit_code,
                 error_code: r.error_code.clone(),
                 planned_layer: None,
+                max_retries: n.max_retries,
+                attempt: 1,
             });
         } else if started.contains(&n.id) {
-            // 理论上不会发生：started 了但没有输出结果
             failed += 1;
             node_reports.push(WorkflowExecutionNodeReport {
                 id: n.id.clone(),
@@ -627,6 +633,8 @@ async fn execute_workflow_dag(
                 exit_code: None,
                 error_code: Some("workflow_node_missing_result".to_string()),
                 planned_layer: None,
+                max_retries: n.max_retries,
+                attempt: 1,
             });
         } else {
             skipped += 1;
@@ -643,6 +651,8 @@ async fn execute_workflow_dag(
                 exit_code: None,
                 error_code: None,
                 planned_layer: None,
+                max_retries: n.max_retries,
+                attempt: 1,
             });
         }
     }
@@ -1411,6 +1421,12 @@ fn parse_node_from_value(
         })
         .unwrap_or_default();
 
+    let max_retries = v
+        .get("max_retries")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(0)
+        .min(5) as u32;
+
     Ok(WorkflowNodeSpec {
         id,
         tool_name,
@@ -1419,6 +1435,7 @@ fn parse_node_from_value(
         requires_approval,
         timeout_secs,
         compensate_with,
+        max_retries,
     })
 }
 

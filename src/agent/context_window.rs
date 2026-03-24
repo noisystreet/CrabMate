@@ -230,8 +230,8 @@ pub async fn maybe_summarize_with_llm(
         Message {
             role: "user".to_string(),
             content: Some(format!(
-                "请将下列对话压缩为要点（不超过约 800 汉字）。保留技术细节与待办：\n\n{}",
-                transcript
+                "请将下列对话压缩为要点（不超过约 {} 字）。保留技术细节与待办：\n\n{}",
+                cfg.context_summary_max_tokens, transcript
             )),
             tool_calls: None,
             name: None,
@@ -261,9 +261,16 @@ pub async fn maybe_summarize_with_llm(
     .await
     {
         Ok((msg, _)) => {
-            let summary = msg.content.unwrap_or_default();
-            if summary.trim().is_empty() {
+            let summary_text = msg.content.unwrap_or_default();
+            if summary_text.trim().is_empty() {
                 warn!(target: "crabmate", "上下文摘要模型返回空正文，跳过替换");
+                return Ok(());
+            }
+            if summary_text.trim().chars().count() < 20 {
+                warn!(
+                    "context_window: LLM summary too short ({} chars), skipping replacement",
+                    summary_text.trim().chars().count()
+                );
                 return Ok(());
             }
             let tail_start = messages.len() - tail;
@@ -273,7 +280,7 @@ pub async fn maybe_summarize_with_llm(
                 role: "user".to_string(),
                 content: Some(format!(
                     "[较早对话已摘要，以下为压缩要点]\n{}",
-                    summary.trim()
+                    summary_text.trim()
                 )),
                 tool_calls: None,
                 name: None,

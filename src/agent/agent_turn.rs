@@ -65,12 +65,15 @@ fn push_assistant_merging_trailing_empty_placeholder(messages: &mut Vec<Message>
 }
 
 /// 规划轮默认 system 追加（可被 `[agent] staged_plan_phase_instruction` 覆盖）。
-const STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT: &str = r#"【分阶段规划模式 · 规划轮】请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。
-在回复正文中必须用 Markdown 代码围栏（语言标记为 json）给出一个合法 JSON 对象，且满足：
-- 顶层 "type" 为字符串 "agent_reply_plan"
-- "version" 为数字 1
-- "steps" 为非空数组，每项含非空字符串 "id" 与 "description"
-可辅以简短自然语言说明；后续系统将按 steps 顺序逐步下发执行指令。"#;
+fn staged_plan_phase_instruction_default() -> String {
+    format!(
+        "【分阶段规划模式 · 规划轮】请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。\n\
+         在回复正文中必须用 Markdown 代码围栏（语言标记为 json）给出一个合法 JSON 对象，且满足：\n\
+         {}\n\
+         可辅以简短自然语言说明；后续系统将按 steps 顺序逐步下发执行指令。",
+        super::plan_artifact::PLAN_V1_SCHEMA_RULES
+    )
+}
 
 fn staged_plan_queue_summary_text(
     plan: &super::plan_artifact::AgentReplyPlanV1,
@@ -738,7 +741,7 @@ async fn run_staged_plan_then_execute_steps(
 
     let instr = p.cfg.staged_plan_phase_instruction.trim();
     let plan_system = if instr.is_empty() {
-        STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT.to_string()
+        staged_plan_phase_instruction_default()
     } else {
         instr.to_string()
     };
@@ -1016,7 +1019,7 @@ async fn run_logical_dual_agent_then_execute_steps(
 
     let instr = p.cfg.staged_plan_phase_instruction.trim();
     let plan_system = if instr.is_empty() {
-        STAGED_PLAN_PHASE_INSTRUCTION_DEFAULT.to_string()
+        staged_plan_phase_instruction_default()
     } else {
         instr.to_string()
     };
