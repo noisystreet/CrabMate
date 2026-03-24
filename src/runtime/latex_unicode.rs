@@ -5,7 +5,17 @@
 //! 在 `unicodeit` 之前做**小规模结构化预处理**：`\frac`、`\\sqrt`、`\text`/`\mathrm` 等拆壳、`\left`/`\right` 剥离、`\quad` 等空白命令。
 
 use regex::Regex;
+use std::sync::LazyLock;
 use unicodeit::replace as unicodeit_replace;
+
+static RE_DISPLAY_BRACKET: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\\\[([\s\S]*?)\\\]").expect("fixed regex"));
+static RE_INLINE_PAREN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\\\(([\s\S]*?)\\\)").expect("fixed regex"));
+static RE_DISPLAY_DOLLAR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$\$([\s\S]*?)\$\$").expect("fixed regex"));
+static RE_INLINE_DOLLAR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$([^$\n]+)\$").expect("fixed regex"));
 
 /// 文本/字体类命令：只剥一层 `{…}`，内层不再含下列前缀时才替换（从最内层往外剥）。
 const TEXT_STYLE_CMDS: &[&str] = &[
@@ -290,26 +300,15 @@ fn preprocess_latex_structure(s: &str) -> String {
 
 /// 将文本中的 LaTeX 数学公式（`$...$`、`$$...$$`、`\(...\)`、`\[...\]`）转为 Unicode，便于终端显示。
 pub fn latex_math_to_unicode(s: &str) -> String {
-    // 顺序：先 display 块再行内，避免 `$` 与 `\(` 边界歧义
-    let patterns = [
-        r"\\\[([\s\S]*?)\\\]", // \[ ... \]
-        r"\\\(([\s\S]*?)\\\)", // \( ... \)
-        r"\$\$([\s\S]*?)\$\$", // $$ ... $$
-        r"\$([^$\n]+)\$",      // $ ... $（单行）
-    ];
-    let mut out = s.to_string();
-    for pat in patterns {
-        if let Ok(re) = Regex::new(pat) {
-            out = re
-                .replace_all(&out, |caps: &regex::Captures<'_>| {
-                    let inner = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-                    let pre = preprocess_latex_structure(inner.trim());
-                    unicodeit_replace(&pre)
-                })
-                .into_owned();
-        }
-    }
-    out
+    let replace = |caps: &regex::Captures<'_>| {
+        let inner = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        let pre = preprocess_latex_structure(inner.trim());
+        unicodeit_replace(&pre)
+    };
+    let out = RE_DISPLAY_BRACKET.replace_all(s, &replace);
+    let out = RE_INLINE_PAREN.replace_all(&out, &replace);
+    let out = RE_DISPLAY_DOLLAR.replace_all(&out, &replace);
+    RE_INLINE_DOLLAR.replace_all(&out, &replace).into_owned()
 }
 
 #[cfg(test)]
