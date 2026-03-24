@@ -1,0 +1,322 @@
+use super::*;
+
+use std::path::Path;
+
+const TEST_COMMAND_MAX_OUTPUT_LEN: usize = 8192;
+const TEST_WEATHER_TIMEOUT_SECS: u64 = 15;
+fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
+    ToolContext {
+        command_max_output_len: TEST_COMMAND_MAX_OUTPUT_LEN,
+        weather_timeout_secs: TEST_WEATHER_TIMEOUT_SECS,
+        allowed_commands,
+        working_dir: test_work_dir(),
+        web_search_timeout_secs: 15,
+        web_search_provider: crate::config::WebSearchProvider::Brave,
+        web_search_api_key: "",
+        web_search_max_results: 5,
+        http_fetch_allowed_prefixes: &[] as &[String],
+        http_fetch_timeout_secs: 30,
+        http_fetch_max_response_bytes: 8192,
+    }
+}
+fn test_allowed_commands() -> Vec<String> {
+    vec![
+        "ls".into(),
+        "pwd".into(),
+        "whoami".into(),
+        "date".into(),
+        "echo".into(),
+        "id".into(),
+        "uname".into(),
+        "env".into(),
+        "file".into(),
+        "df".into(),
+        "du".into(),
+        "head".into(),
+        "tail".into(),
+        "wc".into(),
+        "cat".into(),
+        "cmake".into(),
+        "ninja".into(),
+        "gcc".into(),
+        "g++".into(),
+        "clang".into(),
+        "clang++".into(),
+        "c++filt".into(),
+        "autoreconf".into(),
+        "autoconf".into(),
+        "automake".into(),
+        "aclocal".into(),
+        "make".into(),
+    ]
+}
+fn test_work_dir() -> &'static Path {
+    Path::new(".")
+}
+
+#[test]
+fn test_run_tool_unknown() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("unknown_tool", "{}", &ctx);
+    assert_eq!(out, "未知工具：unknown_tool");
+}
+
+#[test]
+fn test_run_tool_calc_missing_expression() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("calc", "{}", &ctx);
+    assert_eq!(out, "错误：缺少 expression 参数");
+}
+
+#[test]
+fn test_run_tool_calc_expression() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("calc", r#"{"expression":"1+1"}"#, &ctx);
+    assert!(out.contains("2"), "calc 1+1 应得到 2，得到: {}", out);
+}
+
+#[test]
+fn test_run_tool_get_current_time() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("get_current_time", "{}", &ctx);
+    assert!(
+        out.contains("当前时间"),
+        "时间工具应包含「当前时间」，得到: {}",
+        out
+    );
+}
+
+#[test]
+fn test_run_tool_convert_units() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool(
+        "convert_units",
+        r#"{"category":"length","value":1,"from":"km","to":"mile"}"#,
+        &ctx,
+    );
+    assert!(out.contains("换算结果"), "应成功换算，得到: {out}");
+}
+
+#[test]
+fn test_run_tool_typos_check_invokes_cli() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("typos_check", r#"{"paths":["README.md"]}"#, &ctx);
+    assert!(
+        out.starts_with("typos (exit=") || out.contains("无法启动"),
+        "应调用 typos 或报告未安装，得到: {out}"
+    );
+}
+
+#[test]
+fn test_run_tool_run_command_pwd() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("run_command", r#"{"command":"pwd"}"#, &ctx);
+    assert!(out.contains("退出码：0"), "pwd 应成功，得到: {}", out);
+}
+
+#[test]
+fn test_run_tool_run_command_disallowed() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("run_command", r#"{"command":"rm"}"#, &ctx);
+    assert!(out.contains("不允许的命令"), "应拒绝 rm，得到: {}", out);
+}
+
+#[test]
+fn test_run_tool_get_weather_missing_param() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("get_weather", "{}", &ctx);
+    assert!(
+        out.contains("city") || out.contains("location"),
+        "缺少参数应提示，得到: {}",
+        out
+    );
+}
+
+#[test]
+fn test_run_tool_web_search_no_api_key() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("web_search", r#"{"query":"Rust programming"}"#, &ctx);
+    assert!(
+        out.contains("未配置") && out.contains("web_search"),
+        "无 Key 时应提示配置，得到: {}",
+        out
+    );
+}
+
+#[test]
+fn test_run_tool_package_query_smoke() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("package_query", r#"{"package":"bash"}"#, &ctx);
+    if out.trim_start().starts_with('{') {
+        let v: serde_json::Value = serde_json::from_str(&out).expect("package_query 输出应为 JSON");
+        assert_eq!(v.get("package").and_then(|x| x.as_str()), Some("bash"));
+        assert!(v.get("installed").is_some());
+        assert!(v.get("manager").is_some());
+    } else {
+        assert!(
+            out.contains("未检测到可用的包管理查询命令"),
+            "非 JSON 输出应是缺少包管理器的说明，得到: {}",
+            out
+        );
+    }
+}
+
+#[test]
+fn test_build_tools_names() {
+    let tools = build_tools();
+    let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
+    assert!(names.contains(&"get_current_time"));
+    assert!(names.contains(&"calc"));
+    assert!(names.contains(&"convert_units"));
+    assert!(names.contains(&"get_weather"));
+    assert!(names.contains(&"web_search"));
+    assert!(names.contains(&"http_fetch"));
+    assert!(names.contains(&"http_request"));
+    assert!(names.contains(&"run_command"));
+    assert!(names.contains(&"cargo_check"));
+    assert!(names.contains(&"cargo_test"));
+    assert!(names.contains(&"cargo_clippy"));
+    assert!(names.contains(&"cargo_metadata"));
+    assert!(names.contains(&"cargo_tree"));
+    assert!(names.contains(&"cargo_clean"));
+    assert!(names.contains(&"cargo_doc"));
+    assert!(names.contains(&"cargo_run"));
+    assert!(names.contains(&"cargo_nextest"));
+    assert!(names.contains(&"cargo_fmt_check"));
+    assert!(names.contains(&"cargo_outdated"));
+    assert!(names.contains(&"cargo_machete"));
+    assert!(names.contains(&"cargo_udeps"));
+    assert!(names.contains(&"cargo_publish_dry_run"));
+    assert!(names.contains(&"rust_compiler_json"));
+    assert!(names.contains(&"rust_analyzer_goto_definition"));
+    assert!(names.contains(&"rust_analyzer_find_references"));
+    assert!(names.contains(&"cargo_fix"));
+    assert!(names.contains(&"rust_test_one"));
+    assert!(names.contains(&"ruff_check"));
+    assert!(names.contains(&"pytest_run"));
+    assert!(names.contains(&"mypy_check"));
+    assert!(names.contains(&"python_install_editable"));
+    assert!(names.contains(&"uv_sync"));
+    assert!(names.contains(&"uv_run"));
+    assert!(names.contains(&"pre_commit_run"));
+    assert!(names.contains(&"typos_check"));
+    assert!(names.contains(&"codespell_check"));
+    assert!(names.contains(&"ast_grep_run"));
+    assert!(names.contains(&"ast_grep_rewrite"));
+    assert!(names.contains(&"frontend_lint"));
+    assert!(names.contains(&"frontend_build"));
+    assert!(names.contains(&"frontend_test"));
+    assert!(names.contains(&"cargo_audit"));
+    assert!(names.contains(&"cargo_deny"));
+    assert!(names.contains(&"ci_pipeline_local"));
+    assert!(names.contains(&"release_ready_check"));
+    assert!(names.contains(&"workflow_execute"));
+    assert!(names.contains(&"rust_backtrace_analyze"));
+    assert!(names.contains(&"diagnostic_summary"));
+    assert!(names.contains(&"changelog_draft"));
+    assert!(names.contains(&"license_notice"));
+    assert!(names.contains(&"git_status"));
+    assert!(names.contains(&"git_clean_check"));
+    assert!(names.contains(&"git_diff"));
+    assert!(names.contains(&"git_diff_stat"));
+    assert!(names.contains(&"git_diff_names"));
+    assert!(names.contains(&"git_log"));
+    assert!(names.contains(&"git_show"));
+    assert!(names.contains(&"git_diff_base"));
+    assert!(names.contains(&"git_blame"));
+    assert!(names.contains(&"git_file_history"));
+    assert!(names.contains(&"git_branch_list"));
+    assert!(names.contains(&"git_remote_status"));
+    assert!(names.contains(&"git_stage_files"));
+    assert!(names.contains(&"git_commit"));
+    assert!(names.contains(&"git_fetch"));
+    assert!(names.contains(&"git_remote_list"));
+    assert!(names.contains(&"git_remote_set_url"));
+    assert!(names.contains(&"git_apply"));
+    assert!(names.contains(&"git_clone"));
+    assert!(names.contains(&"create_file"));
+    assert!(names.contains(&"modify_file"));
+    assert!(names.contains(&"copy_file"));
+    assert!(names.contains(&"move_file"));
+    assert!(names.contains(&"read_file"));
+    assert!(names.contains(&"read_dir"));
+    assert!(names.contains(&"glob_files"));
+    assert!(names.contains(&"list_tree"));
+    assert!(names.contains(&"file_exists"));
+    assert!(names.contains(&"read_binary_meta"));
+    assert!(names.contains(&"hash_file"));
+    assert!(names.contains(&"extract_in_file"));
+    assert!(names.contains(&"markdown_check_links"));
+    assert!(names.contains(&"structured_validate"));
+    assert!(names.contains(&"structured_query"));
+    assert!(names.contains(&"structured_diff"));
+    assert!(names.contains(&"structured_patch"));
+    assert!(names.contains(&"text_transform"));
+    assert!(names.contains(&"text_diff"));
+    assert!(names.contains(&"table_text"));
+    assert!(names.contains(&"find_symbol"));
+    assert!(names.contains(&"find_references"));
+    assert!(names.contains(&"rust_file_outline"));
+    assert!(names.contains(&"format_file"));
+    assert!(names.contains(&"format_check_file"));
+    assert!(names.contains(&"run_lints"));
+    assert!(names.contains(&"quality_workspace"));
+    assert!(names.contains(&"apply_patch"));
+    assert!(names.contains(&"run_executable"));
+    assert!(names.contains(&"package_query"));
+}
+
+#[test]
+fn test_build_tools_filtered_basic_vs_development() {
+    let basic = build_tools_filtered(Some(&[ToolCategory::Basic]));
+    let dev = build_tools_filtered(Some(&[ToolCategory::Development]));
+    let full = build_tools();
+    assert_eq!(basic.len() + dev.len(), full.len());
+    let bn: Vec<_> = basic.iter().map(|t| t.function.name.as_str()).collect();
+    assert!(bn.contains(&"get_current_time"));
+    assert!(bn.contains(&"convert_units"));
+    assert!(bn.contains(&"text_transform"));
+    assert!(bn.contains(&"add_reminder"));
+    assert!(!bn.contains(&"cargo_check"));
+    let dn: Vec<_> = dev.iter().map(|t| t.function.name.as_str()).collect();
+    assert!(dn.contains(&"cargo_check"));
+    assert!(dn.contains(&"text_diff"));
+    assert!(!dn.contains(&"get_current_time"));
+}
+
+#[test]
+fn test_build_tools_dev_tags_rust_excludes_pure_vcs() {
+    let rust_only = [dev_tag::RUST];
+    let tools = build_tools_with_options(ToolsBuildOptions {
+        categories: Some(&[ToolCategory::Development]),
+        dev_tags: Some(rust_only.as_slice()),
+    });
+    let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
+    assert!(names.contains(&"cargo_check"));
+    assert!(!names.contains(&"git_status"));
+}
+
+#[test]
+fn test_build_tools_dev_tags_basic_plus_rust() {
+    let rust_only = [dev_tag::RUST];
+    let tools = build_tools_with_options(ToolsBuildOptions {
+        categories: Some(&[ToolCategory::Basic, ToolCategory::Development]),
+        dev_tags: Some(rust_only.as_slice()),
+    });
+    let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
+    assert!(names.contains(&"calc"));
+    assert!(names.contains(&"convert_units"));
+    assert!(names.contains(&"cargo_check"));
+    assert!(!names.contains(&"git_status"));
+}
