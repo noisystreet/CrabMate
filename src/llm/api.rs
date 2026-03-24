@@ -168,7 +168,7 @@ pub async fn stream_chat(
     client: &Client,
     api_key: &str,
     api_base: &str,
-    req: &ChatRequest,
+    req: &mut ChatRequest,
     out: Option<&Sender<String>>,
     render_to_terminal: bool,
     no_stream: bool,
@@ -186,12 +186,11 @@ pub async fn stream_chat(
         req.model,
         !no_stream
     );
-    let mut stream_req = req.clone();
-    stream_req.stream = Some(!no_stream);
+    req.stream = Some(!no_stream);
     let res = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
-        .json(&stream_req)
+        .json(&req)
         .send()
         .await?;
     if !res.status().is_success() {

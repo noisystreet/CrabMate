@@ -61,7 +61,7 @@ fn test_inject_placeholders_output_truncation() {
         NodeRunResult {
             id: "a".to_string(),
             status: NodeRunStatus::Passed,
-            output: "hello world".repeat(200),
+            output: "hello world".repeat(200).into(),
             workspace_changed: false,
             exit_code: Some(0),
             error_code: None,
@@ -83,7 +83,7 @@ fn test_placeholder_stdout_first_token() {
         NodeRunResult {
             id: "a".to_string(),
             status: NodeRunStatus::Passed,
-            output: "deadbeef123 some message\nsecond line".to_string(),
+            output: "deadbeef123 some message\nsecond line".into(),
             workspace_changed: false,
             exit_code: Some(0),
             error_code: None,

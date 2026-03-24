@@ -48,7 +48,7 @@ enum NodeRunStatus {
 struct NodeRunResult {
     id: String,
     status: NodeRunStatus,
-    output: String,
+    output: Arc<str>,
     workspace_changed: bool,
     exit_code: Option<i32>,
     error_code: Option<String>,
@@ -525,7 +525,7 @@ async fn execute_workflow_dag(
                                 return NodeRunResult {
                                     id: node_id,
                                     status: NodeRunStatus::Failed,
-                                    output: "workflow 并发控制异常（semaphore closed）".to_string(),
+                                    output: "workflow 并发控制异常（semaphore closed）".into(),
                                     workspace_changed: false,
                                     exit_code: None,
                                     error_code: Some("workflow_semaphore_closed".to_string()),
@@ -796,7 +796,7 @@ async fn run_node(
             status: NodeRunStatus::Failed,
             output:
                 "错误：未设置工作区，禁止在工作流中执行该工具（需要 TUI/CLI 先设置 workspace）。"
-                    .to_string(),
+                    .into(),
             workspace_changed: false,
             exit_code: None,
             error_code: Some("workspace_not_set".to_string()),
@@ -859,7 +859,8 @@ async fn run_node(
                             output: format!(
                                 "workflow 执行失败：run_command 命令不在允许列表且无法人工审批：{}",
                                 cmd_lower
-                            ),
+                            )
+                            .into(),
                             workspace_changed: false,
                             exit_code: None,
                             error_code: Some("command_not_allowed".to_string()),
@@ -875,7 +876,8 @@ async fn run_node(
                             output: format!(
                                 "workflow 执行失败：用户拒绝执行命令（run_command）：{}",
                                 cmd_lower
-                            ),
+                            )
+                            .into(),
                             workspace_changed: false,
                             exit_code: None,
                             error_code: Some("command_denied".to_string()),
@@ -909,7 +911,8 @@ async fn run_node(
                     output: format!(
                         "workflow 执行失败：该节点需要人工审批，但当前不在 TUI 模式：{}",
                         approval_key
-                    ),
+                    )
+                    .into(),
                     workspace_changed: false,
                     exit_code: None,
                     error_code: Some("approval_required".to_string()),
@@ -939,7 +942,8 @@ async fn run_node(
                                 output: format!(
                                     "workflow 执行失败：用户拒绝人工审批节点：{}",
                                     approval_key
-                                ),
+                                )
+                                .into(),
                                 workspace_changed: false,
                                 exit_code: None,
                                 error_code: Some("approval_denied".to_string()),
@@ -1021,7 +1025,8 @@ async fn run_node(
                 return NodeRunResult {
                     id: node.id,
                     status: NodeRunStatus::Failed,
-                    output: format!("workflow 节点超时（{} 秒）：tool={}", ts, node.tool_name),
+                    output: format!("workflow 节点超时（{} 秒）：tool={}", ts, node.tool_name)
+                        .into(),
                     workspace_changed: false,
                     exit_code: None,
                     error_code: Some("timeout".to_string()),
@@ -1043,7 +1048,7 @@ async fn run_node(
     } else {
         NodeRunStatus::Failed
     };
-    let output = tool_result.message.clone();
+    let output: Arc<str> = tool_result.message.clone().into();
     let result = NodeRunResult {
         id: node.id,
         status,
