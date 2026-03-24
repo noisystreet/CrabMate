@@ -549,14 +549,26 @@ fn render_message_chat_lines(
         };
         draw_lines.push(Line::from(Span::styled(role_padded.clone(), header_style)));
         plain_lines.push(role_padded);
-    } else if m.role != "assistant" {
+    } else {
         let h = format!("{}:", role);
         draw_lines.push(Line::from(Span::styled(h.clone(), header_style)));
         plain_lines.push(h);
     }
     if m.role == "assistant" {
         let (d, p) = chat_markdown_to_draw_lines(rendered, state);
-        draw_lines.extend(d);
+        let gray = Color::Indexed(245);
+        let styled: Vec<Line<'_>> = d
+            .into_iter()
+            .map(|l| {
+                let spans: Vec<Span<'_>> = l
+                    .spans
+                    .into_iter()
+                    .map(|s| Span::styled(s.content, s.style.patch(Style::default().fg(gray))))
+                    .collect();
+                Line::from(spans)
+            })
+            .collect();
+        draw_lines.extend(styled);
         plain_lines.extend(p);
     } else {
         for l in rendered.lines() {
@@ -574,7 +586,14 @@ fn render_message_chat_lines(
                 l.to_string()
             };
             plain_lines.push(line_str.clone());
-            draw_lines.push(Line::raw(line_str));
+            if m.role == "tool" {
+                draw_lines.push(Line::styled(
+                    line_str,
+                    Style::default().fg(Color::Indexed(214)),
+                ));
+            } else {
+                draw_lines.push(Line::raw(line_str));
+            }
         }
     }
     (draw_lines, plain_lines)
@@ -969,10 +988,12 @@ fn draw_right(f: &mut Frame<'_>, area: Rect, state: &TuiState) {
     match state.tab {
         RightTab::Workspace => {
             let mut lines = Vec::new();
-            lines.push(Line::raw(format!(
-                "根目录：{}",
-                state.workspace_dir.display()
-            )));
+            let dir_name = state
+                .workspace_dir
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| state.workspace_dir.display().to_string());
+            lines.push(Line::raw(format!("根目录：{}", dir_name)));
             lines.push(Line::raw(
                 "快捷键：F2 聚焦 | Enter 打开/进入 | Backspace 上级 | ↑↓ 选择 | r 刷新",
             ));

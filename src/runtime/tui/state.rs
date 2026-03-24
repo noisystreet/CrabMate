@@ -72,7 +72,7 @@ impl ModelPhase {
         match self {
             ModelPhase::Idle => "就绪",
             ModelPhase::Thinking => "思考中",
-            ModelPhase::SelectingTools => "选用工具",
+            ModelPhase::SelectingTools => "执行工具",
             ModelPhase::Answering => "回答中",
             ModelPhase::ToolRunning => "工具执行中",
             ModelPhase::AwaitingApproval => "等待审批",

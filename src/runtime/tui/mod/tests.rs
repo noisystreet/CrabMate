@@ -125,13 +125,13 @@ async fn event_forwarder_coalesces_snapshots_to_latest() {
 }
 
 #[tokio::test]
-async fn event_forwarder_inserts_snapshot_after_stream_burst() {
-    let burst = TUI_EVENT_FORWARDER_STREAM_BURST;
-    let (stream_tx, stream_rx) = mpsc::channel::<String>(burst + 8);
+async fn event_forwarder_flushes_snapshot_after_all_queued_stream_lines() {
+    let n_stream = 70usize;
+    let (stream_tx, stream_rx) = mpsc::channel::<String>(n_stream + 8);
     let (snapshot_tx, snapshot_rx) = mpsc::channel::<Vec<Message>>(8);
-    let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(burst + 16);
+    let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(n_stream + 16);
 
-    for i in 0..(burst + 6) {
+    for i in 0..n_stream {
         stream_tx
             .send(format!("s-{i}"))
             .await
@@ -146,15 +146,15 @@ async fn event_forwarder_inserts_snapshot_after_stream_burst() {
 
     let forwarder = spawn_tui_event_forwarder(stream_rx, snapshot_rx, event_tx);
 
-    // 先消费 burst 个流式事件，然后应当收到一次快照事件。
-    for i in 0..burst {
+    // 快照排在所有流式行之后入队：应先收齐全部 StreamLine，再收到 MessagesSnapshot（分步工具结果同理）。
+    for i in 0..n_stream {
         let ev = event_rx.recv().await.expect("stream event should arrive");
         assert!(matches!(ev, TuiAgentEvent::StreamLine(ref s) if s == &format!("s-{i}")));
     }
     let ev = event_rx
         .recv()
         .await
-        .expect("snapshot after burst should arrive");
+        .expect("snapshot after stream drain should arrive");
     assert!(matches!(ev, TuiAgentEvent::MessagesSnapshot(_)));
     forwarder.await.expect("forwarder join");
 }
