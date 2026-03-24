@@ -21,6 +21,8 @@ pub struct WorkflowSpec {
     pub fail_fast: bool,
     pub compensate_on_failure: bool,
     pub output_inject_max_chars: usize,
+    pub summary_preview_max_chars: usize,
+    pub compensation_preview_max_chars: usize,
     pub nodes: Vec<WorkflowNodeSpec>,
 }
 
@@ -263,7 +265,10 @@ pub async fn run_workflow_execute_tool(
                 requires_approval: n.requires_approval,
                 timeout_secs: n.timeout_secs,
                 compensate_with: n.compensate_with.clone(),
-                output_preview: truncate_for_summary(&n.tool_args.to_string(), 1200),
+                output_preview: truncate_for_summary(
+                    &n.tool_args.to_string(),
+                    spec.summary_preview_max_chars,
+                ),
                 workspace_changed: false,
                 exit_code: None,
                 error_code: None,
@@ -610,7 +615,7 @@ async fn execute_workflow_dag(
                 requires_approval: n.requires_approval,
                 timeout_secs: n.timeout_secs,
                 compensate_with: n.compensate_with.clone(),
-                output_preview: truncate_for_summary(&r.output, 1200),
+                output_preview: truncate_for_summary(&r.output, spec.summary_preview_max_chars),
                 workspace_changed: r.workspace_changed,
                 exit_code: r.exit_code,
                 error_code: r.error_code.clone(),
@@ -1146,7 +1151,7 @@ fn format_main_summary(
             ));
             out.push_str(&format!(
                 "    output: {}\n",
-                truncate_for_summary(&r.output, 1200)
+                truncate_for_summary(&r.output, spec.summary_preview_max_chars)
             ));
         }
     }
@@ -1166,7 +1171,7 @@ fn format_main_summary(
             ));
             out.push_str(&format!(
                 "    output: {}\n",
-                truncate_for_summary(&r.output, 1200)
+                truncate_for_summary(&r.output, spec.summary_preview_max_chars)
             ));
         } else {
             out.push_str(&format!("  - {}: skipped\n", node.id));
@@ -1183,12 +1188,12 @@ fn format_main_summary(
     out
 }
 
-fn truncate_for_summary(s: &str, max_chars: usize) -> String {
-    if s.len() <= max_chars {
-        s.to_string()
-    } else {
-        format!("{}... (截断)", &s[..max_chars])
+fn truncate_for_summary(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
     }
+    let truncated = crate::tools::output_util::truncate_to_char_boundary(s, max_bytes);
+    format!("{}... (截断)", truncated)
 }
 
 async fn execute_compensations(
@@ -1262,7 +1267,7 @@ async fn execute_compensations(
             out.push_str(&format!(
                 "- {}: failed\n    output: {}\n",
                 comp_id,
-                truncate_for_summary(&res.output, 800)
+                truncate_for_summary(&res.output, spec.compensation_preview_max_chars)
             ));
         }
     }
@@ -1343,6 +1348,16 @@ fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
         .and_then(|x| x.as_u64())
         .unwrap_or(2000) as usize;
 
+    let summary_preview_max_chars = spec_v
+        .get("summary_preview_max_chars")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(1200) as usize;
+
+    let compensation_preview_max_chars = spec_v
+        .get("compensation_preview_max_chars")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(800) as usize;
+
     let nodes_v = spec_v.get("nodes").ok_or("workflow 缺少 nodes 字段")?;
     let mut nodes: Vec<WorkflowNodeSpec> = Vec::new();
 
@@ -1369,6 +1384,8 @@ fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
         fail_fast,
         compensate_on_failure,
         output_inject_max_chars,
+        summary_preview_max_chars,
+        compensation_preview_max_chars,
         nodes,
     })
 }
