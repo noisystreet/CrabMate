@@ -14,6 +14,7 @@ use ratatui::{
 };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use tui_markdown::{Options, from_str_with_options as markdown_to_text};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -521,12 +522,27 @@ fn chat_markdown_to_draw_lines(
     (draw_lines, plain_lines)
 }
 
+/// 流式阶段：助手正文用纯文本折行，不跑 tui-markdown，降低每帧 CPU；流式结束后再跑完整 Markdown 并写回缓存。
+fn render_assistant_plain_lines(rendered: &str) -> (Vec<Line<'static>>, Vec<String>) {
+    let gray = Color::Indexed(245);
+    let mut draw_lines: Vec<Line<'static>> = Vec::new();
+    let mut plain_lines: Vec<String> = Vec::new();
+    for l in rendered.lines() {
+        let line_str = l.to_string();
+        plain_lines.push(line_str.clone());
+        draw_lines.push(Line::styled(line_str, Style::default().fg(gray)));
+    }
+    (draw_lines, plain_lines)
+}
+
 /// 单条消息对应的绘制行与纯文本行（不含尾部消息间空行）。
+/// `streaming_assistant` 为 true 时助手正文用纯文本折行，不跑 tui-markdown。
 fn render_message_chat_lines(
     m: &Message,
     rendered: &str,
     state: &TuiState,
     chat_inner_width: usize,
+    streaming_assistant: bool,
 ) -> (Vec<Line<'static>>, Vec<String>) {
     let mut draw_lines: Vec<Line<'static>> = Vec::new();
     let mut plain_lines: Vec<String> = Vec::new();
@@ -555,20 +571,30 @@ fn render_message_chat_lines(
         plain_lines.push(h);
     }
     if m.role == "assistant" {
-        let (d, p) = chat_markdown_to_draw_lines(rendered, state);
-        let gray = Color::Indexed(245);
-        let styled: Vec<Line<'_>> = d
-            .into_iter()
-            .map(|l| {
-                let spans: Vec<Span<'_>> = l
-                    .spans
-                    .into_iter()
-                    .map(|s| Span::styled(s.content, s.style.patch(Style::default().fg(gray))))
-                    .collect();
-                Line::from(spans)
-            })
-            .collect();
-        draw_lines.extend(styled);
+        let (d, p) = if streaming_assistant {
+            render_assistant_plain_lines(rendered)
+        } else {
+            let (d, p) = chat_markdown_to_draw_lines(rendered, state);
+            let gray = Color::Indexed(245);
+            let styled: Vec<Line<'static>> = d
+                .into_iter()
+                .map(|l| {
+                    let spans: Vec<Span<'static>> = l
+                        .spans
+                        .into_iter()
+                        .map(|s| {
+                            Span::styled(
+                                s.content.into_owned(),
+                                s.style.patch(Style::default().fg(gray)),
+                            )
+                        })
+                        .collect();
+                    Line::from(spans)
+                })
+                .collect();
+            (styled, p)
+        };
+        draw_lines.extend(d);
         plain_lines.extend(p);
     } else {
         for l in rendered.lines() {
@@ -715,11 +741,21 @@ pub(super) fn build_chat_scroll_lines(
             .filter(|e| e.content_fingerprint == fp);
 
         let (mut d, mut p) = if let Some(e) = cached {
-            (e.draw.clone(), e.plain.clone())
+            draw_lines.extend(e.draw.iter().cloned());
+            plain_lines.extend(e.plain.iter().cloned());
+            draw_lines.push(Line::raw(""));
+            plain_lines.push(String::new());
+            if m.role == "assistant" && is_staged_plan_fixed_summary_line(&rendered) {
+                last_visible_staged_plan_summary = Some(rendered.trim().to_string());
+            } else {
+                last_visible_staged_plan_summary = None;
+            }
+            continue;
         } else {
-            let quiet_streaming_assistant =
-                m.role == "assistant" && state.model_phase == ModelPhase::Answering;
-            if !quiet_streaming_assistant {
+            let streaming_assistant = m.role == "assistant"
+                && state.model_phase == ModelPhase::Answering
+                && i + 1 == state.messages.len();
+            if !streaming_assistant {
                 let raw = m.content.as_deref().unwrap_or("");
                 debug!(
                     target: "crabmate::tui_print",
@@ -730,12 +766,21 @@ pub(super) fn build_chat_scroll_lines(
                     raw
                 );
             }
-            let (draw, plain) = render_message_chat_lines(m, &rendered, state, chat_inner_width);
-            state.chat_line_build_cache.per_message[i] = Some(ChatMessageLineCacheEntry {
-                content_fingerprint: fp,
-                draw: draw.clone(),
-                plain: plain.clone(),
-            });
+            let (draw, plain) = render_message_chat_lines(
+                m,
+                &rendered,
+                state,
+                chat_inner_width,
+                streaming_assistant,
+            );
+            // 流式阶段不写缓存，结束后下一帧会命中未变或重算完整 Markdown
+            if !streaming_assistant {
+                state.chat_line_build_cache.per_message[i] = Some(ChatMessageLineCacheEntry {
+                    content_fingerprint: fp,
+                    draw: Arc::new(draw.clone()),
+                    plain: Arc::new(plain.clone()),
+                });
+            }
             (draw, plain)
         };
 
@@ -819,10 +864,10 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         .split(area);
 
     let chat_inner_width = vchunks[0].width.saturating_sub(2) as usize;
-    let (mut lines, _, _) = build_chat_scroll_lines(state, chat_inner_width);
+    let (lines, _, _) = build_chat_scroll_lines(state, chat_inner_width);
     let chat_height = vchunks[0].height.saturating_sub(2) as usize;
     let total_lines = lines.len();
-    if chat_height > 0 && !lines.is_empty() {
+    let visible_lines = if chat_height > 0 && !lines.is_empty() {
         let max_start = total_lines.saturating_sub(chat_height);
         let min_first_line = max_start.saturating_sub(CHAT_SCROLL_UP_MAX_LINES);
         state.chat_scroll_min_first_line = min_first_line;
@@ -839,16 +884,18 @@ fn draw_chat(f: &mut Frame<'_>, area: Rect, state: &mut TuiState) {
         let start = state.chat_first_line.min(max_start).max(min_first_line);
         state.chat_first_line = start;
         let end = (start + chat_height).min(total_lines);
-        lines = lines[start..end].to_vec();
+        // ratatui Text 无 From<&[Line]>，暂需 to_vec；日后若上游支持借用可改为 slice
+        lines[start..end].to_vec()
     } else {
         state.chat_first_line = 0;
         state.chat_scroll_min_first_line = 0;
         state.chat_scroll_max_start = 0;
-    }
+        Vec::new()
+    };
     let chat_block = Block::default()
         .borders(Borders::NONE)
         .padding(Padding::symmetric(1, 1));
-    let chat = Paragraph::new(lines)
+    let chat = Paragraph::new(visible_lines)
         .block(chat_block)
         .wrap(Wrap { trim: false });
     f.render_widget(chat, vchunks[0]);

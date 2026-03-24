@@ -4,6 +4,7 @@ use crate::types::Message;
 use ratatui::text::Line;
 use regex::Regex;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -82,11 +83,12 @@ impl ModelPhase {
 }
 
 /// 单条非 system 消息的聊天行片段（不含消息之间的空行）。
+/// 使用 Arc 共享，命中缓存时仅 Arc::clone，减少 Vec 与内部元素的 clone。
 #[derive(Clone)]
 pub(super) struct ChatMessageLineCacheEntry {
     pub content_fingerprint: u64,
-    pub draw: Vec<Line<'static>>,
-    pub plain: Vec<String>,
+    pub draw: Arc<Vec<Line<'static>>>,
+    pub plain: Arc<Vec<String>>,
 }
 
 /// 按 `messages` 下标缓存 Markdown 展开结果；宽度或主题变化时整表作废。
