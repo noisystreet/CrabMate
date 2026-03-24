@@ -6,6 +6,8 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::output_util;
+
 /// 简单的每秒调用限流器状态
 struct RateLimitState {
     window_sec: u64,
@@ -77,7 +79,8 @@ pub fn run(
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let truncate = |s: &str| truncate_output(s, max_output_len);
+    let truncate =
+        |s: &str| output_util::truncate_output_lines(s, max_output_len, MAX_OUTPUT_LINES);
     let status = output.status;
     let mut out = format!("退出码：{}\n", status.code().unwrap_or(-1));
     if !stdout.is_empty() {
@@ -116,36 +119,6 @@ fn check_rate_limit() -> Result<(), String> {
     }
     state.count += 1;
     Ok(())
-}
-
-fn truncate_output(s: &str, max_bytes: usize) -> String {
-    let lines: Vec<&str> = s.lines().collect();
-    if lines.len() <= MAX_OUTPUT_LINES && s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let kept_lines = lines.len().min(MAX_OUTPUT_LINES);
-    let kept = lines[..kept_lines].join("\n");
-    let kept = if kept.len() <= max_bytes {
-        kept
-    } else {
-        truncate_to_char_boundary(&kept, max_bytes)
-    };
-    let total_lines = lines.len();
-    format!(
-        "{}\n\n... (输出已截断，保留前 {} 行，共 {} 行)",
-        kept, kept_lines, total_lines
-    )
-}
-
-fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let mut end = max_bytes.min(s.len());
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].to_string()
 }
 
 /// 将底层 IO 错误转为对用户更友好的提示

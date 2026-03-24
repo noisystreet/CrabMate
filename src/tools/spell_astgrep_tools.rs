@@ -5,6 +5,8 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use super::output_util;
+
 const MAX_OUTPUT_LINES: usize = 800;
 const MAX_SPELL_PATHS: usize = 24;
 const MAX_SPELL_DICT_PATHS: usize = 8;
@@ -85,26 +87,6 @@ fn filter_existing(base: &Path, paths: &[String]) -> Vec<String> {
     }
 }
 
-fn truncate_output(s: &str, max_bytes: usize) -> String {
-    let lines: Vec<&str> = s.lines().collect();
-    if s.len() <= max_bytes && lines.len() <= MAX_OUTPUT_LINES {
-        return s.to_string();
-    }
-    let kept_lines = lines.len().min(MAX_OUTPUT_LINES);
-    let joined = lines[..kept_lines].join("\n");
-    let truncated = if joined.len() <= max_bytes {
-        joined
-    } else {
-        joined[..max_bytes.min(joined.len())].to_string()
-    };
-    format!(
-        "{}\n\n... (输出已截断，保留前 {} 行，共 {} 行)",
-        truncated,
-        kept_lines,
-        lines.len()
-    )
-}
-
 fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> String {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -126,7 +108,7 @@ fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> Strin
                 "{} (exit={}):\n{}",
                 title,
                 status,
-                truncate_output(&body, max_output_len)
+                output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
             )
         }
         Err(e) => format!(

@@ -7,6 +7,7 @@ use serde_json::Value;
 use similar::TextDiff;
 
 use super::file;
+use super::output_util;
 
 /// 内联模式每侧最大字节
 const MAX_INLINE_BYTES: usize = 256 * 1024;
@@ -16,22 +17,6 @@ const DEFAULT_CONTEXT: usize = 3;
 const MAX_CONTEXT: usize = 20;
 const DEFAULT_MAX_OUTPUT: usize = 50_000;
 const ABS_MAX_OUTPUT: usize = 500_000;
-
-fn truncate_output(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let mut end = max_bytes;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!(
-        "{}\n\n[diff 输出已截断：共 {} 字节，上限 {} 字节]",
-        &s[..end],
-        s.len(),
-        max_bytes
-    )
-}
 
 fn parse_mode(v: &Value) -> Result<&'static str, String> {
     let s = v
@@ -163,7 +148,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
     };
 
     let unified = diff_unified(&left, &right, &ha, &hb, context);
-    truncate_output(&unified, max_out)
+    output_util::truncate_output_bytes(&unified, max_out)
 }
 
 #[cfg(test)]

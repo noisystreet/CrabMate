@@ -3,6 +3,8 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use super::output_util;
+
 const MAX_OUTPUT_LINES: usize = 800;
 
 fn has_precommit_config(root: &Path) -> bool {
@@ -90,7 +92,7 @@ pub fn pre_commit_run(args_json: &str, workspace_root: &Path, max_output_len: us
                 "{} (exit={}):\n{}",
                 title,
                 status,
-                truncate_output(&body, max_output_len)
+                output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
             )
         }
         Err(e) => format!("{}: 无法启动命令（{}）", title, e),
@@ -128,24 +130,4 @@ fn parse_files_array(v: &serde_json::Value) -> Result<Vec<String>, String> {
         out.push(s.to_string());
     }
     Ok(out)
-}
-
-fn truncate_output(s: &str, max_bytes: usize) -> String {
-    let lines: Vec<&str> = s.lines().collect();
-    if s.len() <= max_bytes && lines.len() <= MAX_OUTPUT_LINES {
-        return s.to_string();
-    }
-    let kept_lines = lines.len().min(MAX_OUTPUT_LINES);
-    let joined = lines[..kept_lines].join("\n");
-    let truncated = if joined.len() <= max_bytes {
-        joined
-    } else {
-        joined[..max_bytes.min(joined.len())].to_string()
-    };
-    format!(
-        "{}\n\n... (输出已截断，保留前 {} 行，共 {} 行)",
-        truncated,
-        kept_lines,
-        lines.len()
-    )
 }

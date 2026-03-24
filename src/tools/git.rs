@@ -8,6 +8,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use super::output_util;
+
 const MAX_OUTPUT_LINES: usize = 800;
 
 pub fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
@@ -135,7 +137,7 @@ pub fn clean_check(_args_json: &str, max_output_len: usize, working_dir: &Path) 
                 return format!(
                     "git clean check (exit={}):\n{}",
                     status,
-                    truncate_output(&stdout, max_output_len)
+                    output_util::truncate_output_lines(&stdout, max_output_len, MAX_OUTPUT_LINES)
                 );
             }
             if stdout.trim().is_empty() {
@@ -143,7 +145,7 @@ pub fn clean_check(_args_json: &str, max_output_len: usize, working_dir: &Path) 
             } else {
                 format!(
                     "git clean check (exit=1)：存在未提交改动：\n{}",
-                    truncate_output(&stdout, max_output_len)
+                    output_util::truncate_output_lines(&stdout, max_output_len, MAX_OUTPUT_LINES)
                 )
             }
         }
@@ -694,31 +696,11 @@ fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> Strin
                 "{} (exit={}):\n{}",
                 title,
                 status,
-                truncate_output(&body, max_output_len)
+                output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
             )
         }
         Err(e) => format!("{}: 执行失败（{}）", title, e),
     }
-}
-
-fn truncate_output(s: &str, max_bytes: usize) -> String {
-    let lines: Vec<&str> = s.lines().collect();
-    if s.len() <= max_bytes && lines.len() <= MAX_OUTPUT_LINES {
-        return s.to_string();
-    }
-    let kept_lines = lines.len().min(MAX_OUTPUT_LINES);
-    let joined = lines[..kept_lines].join("\n");
-    let truncated = if joined.len() <= max_bytes {
-        joined
-    } else {
-        joined[..max_bytes].to_string()
-    };
-    format!(
-        "{}\n\n... (输出已截断，保留前 {} 行，共 {} 行)",
-        truncated,
-        kept_lines,
-        lines.len()
-    )
 }
 
 #[cfg(test)]
