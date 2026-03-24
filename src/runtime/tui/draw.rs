@@ -27,7 +27,9 @@ use crate::runtime::message_display::{
 use crate::types::{Message, is_chat_ui_separator};
 use log::debug;
 
-use super::state::{ChatMessageLineCacheEntry, Focus, Mode, ModelPhase, RightTab, TuiState};
+use super::state::{
+    ChatMessageLineCacheEntry, Focus, Mode, ModelPhase, RightTab, StreamingPrefixCache, TuiState,
+};
 use super::styles::{
     DarkStyleSheet, HighContrastDarkStyleSheet, HighContrastLightStyleSheet, LightStyleSheet,
     code_themes,
@@ -683,6 +685,8 @@ pub(super) fn build_chat_scroll_lines(
             || c.code_theme_idx != state.code_theme_idx
         {
             c.per_message.clear();
+            c.per_message_rendered.clear();
+            c.streaming_prefix = None;
             c.chat_inner_width = chat_inner_width;
             c.md_style = state.md_style;
             c.high_contrast = state.high_contrast;
@@ -690,7 +694,33 @@ pub(super) fn build_chat_scroll_lines(
         }
         if c.per_message.len() != state.messages.len() {
             c.per_message.resize_with(state.messages.len(), || None);
+            c.per_message_rendered
+                .resize_with(state.messages.len(), || None);
+            c.streaming_prefix = None;
         }
+    }
+
+    let streaming_assistant = state.model_phase == ModelPhase::Answering
+        && state.messages.last().is_some_and(|m| m.role == "assistant");
+    if !streaming_assistant {
+        state.chat_line_build_cache.streaming_prefix = None;
+    } else if state.messages.len() >= 2
+        && let Some(ref prefix) = state.chat_line_build_cache.streaming_prefix
+        && prefix.cached_msg_count == state.messages.len()
+    {
+        let last_idx = state.messages.len() - 1;
+        let m = &state.messages[last_idx];
+        let rendered = message_body_for_chat_display(m, &state.messages, last_idx, state);
+        let (draw, plain) = render_message_chat_lines(m, &rendered, state, chat_inner_width, true);
+        let mut draw_lines = prefix.draw_lines.clone();
+        let mut plain_lines = prefix.plain_lines.clone();
+        let mut message_start_lines = prefix.message_start_lines.clone();
+        message_start_lines.push(draw_lines.len());
+        draw_lines.extend(draw);
+        plain_lines.extend(plain);
+        draw_lines.push(Line::raw(""));
+        plain_lines.push(String::new());
+        return (draw_lines, plain_lines, message_start_lines);
     }
 
     let mut draw_lines: Vec<Line<'static>> = Vec::new();
@@ -713,7 +743,22 @@ pub(super) fn build_chat_scroll_lines(
             continue;
         }
 
-        let rendered = message_body_for_chat_display(m, &state.messages, i, state);
+        let fp = line_cache_fingerprint(m, &state.messages, i);
+        let streaming_last = m.role == "assistant"
+            && state.model_phase == ModelPhase::Answering
+            && i + 1 == state.messages.len();
+        let rendered = if streaming_last {
+            message_body_for_chat_display(m, &state.messages, i, state)
+        } else {
+            match state.chat_line_build_cache.per_message_rendered.get(i) {
+                Some(Some((cached_fp, s))) if *cached_fp == fp => s.clone(),
+                _ => {
+                    let r = message_body_for_chat_display(m, &state.messages, i, state);
+                    state.chat_line_build_cache.per_message_rendered[i] = Some((fp, r.clone()));
+                    r
+                }
+            }
+        };
         if (m.role == "user" || m.role == "assistant") && rendered.trim().is_empty() {
             state.chat_line_build_cache.per_message[i] = None;
             continue;
@@ -729,9 +774,19 @@ pub(super) fn build_chat_scroll_lines(
             }
         }
 
-        message_start_lines.push(draw_lines.len());
+        let is_streaming_last = m.role == "assistant"
+            && state.model_phase == ModelPhase::Answering
+            && i + 1 == state.messages.len();
+        if is_streaming_last {
+            state.chat_line_build_cache.streaming_prefix = Some(StreamingPrefixCache {
+                draw_lines: draw_lines.clone(),
+                plain_lines: plain_lines.clone(),
+                message_start_lines: message_start_lines.clone(),
+                cached_msg_count: state.messages.len(),
+            });
+        }
 
-        let fp = line_cache_fingerprint(m, &state.messages, i);
+        message_start_lines.push(draw_lines.len());
 
         let cached = state
             .chat_line_build_cache
@@ -752,10 +807,7 @@ pub(super) fn build_chat_scroll_lines(
             }
             continue;
         } else {
-            let streaming_assistant = m.role == "assistant"
-                && state.model_phase == ModelPhase::Answering
-                && i + 1 == state.messages.len();
-            if !streaming_assistant {
+            if !is_streaming_last {
                 let raw = m.content.as_deref().unwrap_or("");
                 debug!(
                     target: "crabmate::tui_print",
@@ -766,15 +818,10 @@ pub(super) fn build_chat_scroll_lines(
                     raw
                 );
             }
-            let (draw, plain) = render_message_chat_lines(
-                m,
-                &rendered,
-                state,
-                chat_inner_width,
-                streaming_assistant,
-            );
+            let (draw, plain) =
+                render_message_chat_lines(m, &rendered, state, chat_inner_width, is_streaming_last);
             // 流式阶段不写缓存，结束后下一帧会命中未变或重算完整 Markdown
-            if !streaming_assistant {
+            if !is_streaming_last {
                 state.chat_line_build_cache.per_message[i] = Some(ChatMessageLineCacheEntry {
                     content_fingerprint: fp,
                     draw: Arc::new(draw.clone()),

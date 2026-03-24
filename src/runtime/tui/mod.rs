@@ -273,6 +273,9 @@ pub async fn run_tui(
         workspace_dir,
         workspace_entries: Vec::new(),
         workspace_sel: 0,
+        workspace_last_refresh: None,
+        tasks_last_refresh: None,
+        schedule_last_refresh: None,
         file_view_title: String::new(),
         file_view_content: String::new(),
         task_items: Vec::new(),
@@ -331,6 +334,7 @@ pub async fn run_tui(
     let event_forwarder = spawn_tui_event_forwarder(rx, sync_rx, event_tx);
 
     let tick_rate = Duration::from_millis(50);
+    let tick_rate_idle = Duration::from_millis(150);
     let mut last_tick = Instant::now();
     // 已离开底部且模型仍在流式输出时，限制重绘频率，减轻 Markdown 每帧重算带来的闪屏。
     let mut last_draw_at = Instant::now();
@@ -366,6 +370,9 @@ pub async fn run_tui(
                         state.tool_running_clear_pending = true;
                     }
                     AgentLineKind::WorkspaceRefresh => {
+                        state.workspace_last_refresh = None;
+                        state.tasks_last_refresh = None;
+                        state.schedule_last_refresh = None;
                         refresh_workspace(&mut state);
                         refresh_tasks(&mut state);
                         refresh_schedule(&mut state);
@@ -559,7 +566,12 @@ pub async fn run_tui(
             inbox_changed = true;
         }
 
-        let timeout = tick_rate
+        let idle = !streaming
+            && !inbox_changed
+            && agent_running.is_none()
+            && state.model_phase == ModelPhase::Idle;
+        let rate = if idle { tick_rate_idle } else { tick_rate };
+        let timeout = rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or(Duration::from_secs(0));
         let screen_size = terminal.size()?;

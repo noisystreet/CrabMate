@@ -91,6 +91,16 @@ pub(super) struct ChatMessageLineCacheEntry {
     pub plain: Arc<Vec<String>>,
 }
 
+/// 流式阶段：前 N-1 条消息的构建结果，仅重算最后一条。
+#[derive(Clone, Default)]
+pub(super) struct StreamingPrefixCache {
+    pub draw_lines: Vec<Line<'static>>,
+    pub plain_lines: Vec<String>,
+    pub message_start_lines: Vec<usize>,
+    /// 缓存时的 messages.len()
+    pub cached_msg_count: usize,
+}
+
 /// 按 `messages` 下标缓存 Markdown 展开结果；宽度或主题变化时整表作废。
 #[derive(Clone, Default)]
 pub(super) struct ChatLineBuildCache {
@@ -99,6 +109,10 @@ pub(super) struct ChatLineBuildCache {
     pub high_contrast: bool,
     pub code_theme_idx: usize,
     pub per_message: Vec<Option<ChatMessageLineCacheEntry>>,
+    /// 流式时前 N-1 条消息的构建结果，避免每帧全量遍历
+    pub streaming_prefix: Option<StreamingPrefixCache>,
+    /// message_body_for_chat_display 结果缓存，(fingerprint, rendered)
+    pub per_message_rendered: Vec<Option<(u64, String)>>,
 }
 
 pub(super) struct TuiState {
@@ -134,6 +148,10 @@ pub(super) struct TuiState {
     pub workspace_dir: std::path::PathBuf,
     pub workspace_entries: Vec<(String, bool)>, // (name, is_dir)
     pub workspace_sel: usize,
+    /// 右侧面板刷新冷却，避免 Tab 切换时频繁 I/O
+    pub workspace_last_refresh: Option<Instant>,
+    pub tasks_last_refresh: Option<Instant>,
+    pub schedule_last_refresh: Option<Instant>,
     // file view
     pub file_view_title: String,
     pub file_view_content: String,
