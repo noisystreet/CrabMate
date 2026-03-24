@@ -98,6 +98,7 @@ enum QueuedChatJob {
         state: Arc<AppState>,
         conversation_id: String,
         messages: Vec<Message>,
+        expected_revision: Option<u64>,
         work_dir: PathBuf,
         workspace_is_set: bool,
         sse_tx: mpsc::Sender<String>,
@@ -108,6 +109,7 @@ enum QueuedChatJob {
         state: Arc<AppState>,
         conversation_id: String,
         messages: Vec<Message>,
+        expected_revision: Option<u64>,
         work_dir: PathBuf,
         workspace_is_set: bool,
         reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
@@ -255,6 +257,7 @@ impl ChatJobQueue {
         state: Arc<AppState>,
         conversation_id: String,
         messages: Vec<Message>,
+        expected_revision: Option<u64>,
         work_dir: PathBuf,
         workspace_is_set: bool,
         sse_tx: mpsc::Sender<String>,
@@ -265,6 +268,7 @@ impl ChatJobQueue {
             state,
             conversation_id,
             messages,
+            expected_revision,
             work_dir,
             workspace_is_set,
             sse_tx,
@@ -285,6 +289,7 @@ impl ChatJobQueue {
         state: Arc<AppState>,
         conversation_id: String,
         messages: Vec<Message>,
+        expected_revision: Option<u64>,
         work_dir: PathBuf,
         workspace_is_set: bool,
         reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
@@ -294,6 +299,7 @@ impl ChatJobQueue {
             state,
             conversation_id,
             messages,
+            expected_revision,
             work_dir,
             workspace_is_set,
             reply_tx,
@@ -418,6 +424,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             state,
             conversation_id,
             mut messages,
+            expected_revision,
             work_dir,
             workspace_is_set,
             sse_tx,
@@ -491,10 +498,31 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     (false, true, None)
                 }
                 Ok(()) => {
-                    state
-                        .save_conversation_messages(conversation_id, messages)
-                        .await;
-                    (true, false, None)
+                    match state
+                        .save_conversation_messages_if_revision(
+                            conversation_id,
+                            messages,
+                            expected_revision,
+                        )
+                        .await
+                    {
+                        crate::SaveConversationOutcome::Saved => (true, false, None),
+                        crate::SaveConversationOutcome::Conflict => {
+                            let err_line = crate::save_outcome_to_stream_error_line(
+                                crate::SaveConversationOutcome::Conflict,
+                            )
+                            .unwrap_or_else(|| {
+                                crate::sse::encode_message(crate::sse::SsePayload::Error(
+                                    crate::sse::SseErrorBody {
+                                        error: "会话已被其他请求更新，请重试本次提问".to_string(),
+                                        code: Some("CONVERSATION_CONFLICT".to_string()),
+                                    },
+                                ))
+                            });
+                            let _ = sse_tx.send(err_line).await;
+                            (false, false, Some("conversation_conflict".to_string()))
+                        }
+                    }
                 }
                 Err(e) => {
                     let e_text = e.to_string();
@@ -532,6 +560,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             state,
             conversation_id,
             mut messages,
+            expected_revision,
             work_dir,
             workspace_is_set,
             reply_tx,
@@ -570,11 +599,23 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             .await;
             let (ok, cancelled, err) = match r {
                 Ok(()) => {
-                    state
-                        .save_conversation_messages(conversation_id, messages.clone())
-                        .await;
-                    let _ = reply_tx.send(Ok(messages));
-                    (true, false, None)
+                    match state
+                        .save_conversation_messages_if_revision(
+                            conversation_id,
+                            messages.clone(),
+                            expected_revision,
+                        )
+                        .await
+                    {
+                        crate::SaveConversationOutcome::Saved => {
+                            let _ = reply_tx.send(Ok(messages));
+                            (true, false, None)
+                        }
+                        crate::SaveConversationOutcome::Conflict => {
+                            let _ = reply_tx.send(Err("CONVERSATION_CONFLICT".to_string()));
+                            (false, false, Some("conversation_conflict".to_string()))
+                        }
+                    }
                 }
                 Err(e) => {
                     let e_text = e.to_string();
