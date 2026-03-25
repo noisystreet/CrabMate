@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use futures_util::future::join_all;
 use log::{debug, info};
 use tokio::sync::mpsc;
 
@@ -376,6 +377,70 @@ enum ExecuteDispatchMode<'a> {
     Tui(&'a tool_registry::TuiToolRuntime),
 }
 
+/// 单工具：SSE / 终端回显 + 追加 `tool` 与可选反思 `user`（与串行路径一致）。
+#[allow(clippy::too_many_arguments)]
+async fn emit_tool_result_sse_and_append(
+    messages: &mut Vec<Message>,
+    out: Option<&mpsc::Sender<String>>,
+    echo_terminal_transcript: bool,
+    terminal_tool_display_max_chars: usize,
+    name: &str,
+    args: &str,
+    id: &str,
+    result: String,
+    reflection_inject: Option<serde_json::Value>,
+) {
+    let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
+    let tool_summary = if let Some(ref parsed) = args_parsed {
+        tools::summarize_tool_call_parsed(name, parsed)
+    } else {
+        tools::summarize_tool_call(name, args)
+    };
+
+    if echo_terminal_transcript {
+        let _ = crate::runtime::terminal_cli_transcript::print_tool_result_terminal(
+            name,
+            &result,
+            terminal_tool_display_max_chars,
+        );
+    }
+
+    if let Some(tx) = out {
+        let parsed = tool_result::parse_legacy_output(name, &result);
+        let stdout = if parsed.stdout.is_empty() {
+            None
+        } else {
+            Some(parsed.stdout)
+        };
+        let stderr = if parsed.stderr.is_empty() {
+            None
+        } else {
+            Some(parsed.stderr)
+        };
+        let _ = tx
+            .send(encode_message(SsePayload::ToolResult {
+                tool_result: ToolResultBody {
+                    name: name.to_string(),
+                    summary: tool_summary,
+                    output: result.clone(),
+                    ok: Some(parsed.ok),
+                    exit_code: parsed.exit_code,
+                    error_code: parsed.error_code,
+                    stdout,
+                    stderr,
+                },
+            }))
+            .await;
+    }
+
+    PerCoordinator::append_tool_result_and_reflection(
+        messages,
+        id.to_string(),
+        result,
+        reflection_inject,
+    );
+}
+
 /// E：执行一批 tool 调用（Web/TUI 共用骨架），写入 tool / 反思 user，并发送 SSE 片段。
 #[allow(clippy::too_many_arguments)] // 工具批处理上下文字段较多，拆结构体收益有限
 async fn per_execute_tools_common(
@@ -400,110 +465,156 @@ async fn per_execute_tools_common(
             .await;
     }
 
-    for tc in tool_calls {
-        if let Some(tx) = out
-            && tx.is_closed()
-        {
-            info!(target: "crabmate", "SSE sender closed during tool execution, aborting remaining tools");
-            return ExecuteToolsBatchOutcome::AbortedSse;
-        }
-
-        let name = tc.function.name.clone();
-        let args = tc.function.arguments.clone();
-        let id = tc.id.clone();
-        // 禁止 println：TUI 下 stdout 与 ratatui 共用终端，会在当前光标（常为输入区）插入乱字。
-        info!(target: "crabmate", "调用工具 tool={}", name);
-        debug!(
-            target: "crabmate",
-            "工具调用参数摘要 tool={} args_preview={}",
-            name,
-            crate::redact::tool_arguments_preview_for_log(&args)
-        );
-
-        let args_parsed: Option<serde_json::Value> = serde_json::from_str(&args).ok();
-        let tool_summary = if let Some(ref parsed) = args_parsed {
-            tools::summarize_tool_call_parsed(&name, parsed)
-        } else {
-            tools::summarize_tool_call(&name, &args)
-        };
-
-        let t_tool = Instant::now();
-        let (result, reflection_inject) = match dispatch_mode {
-            ExecuteDispatchMode::Web(web_tool_ctx) => {
-                tool_registry::dispatch_tool(
-                    ToolRuntime::Web {
-                        workspace_changed: &mut workspace_changed,
-                        ctx: web_tool_ctx,
-                    },
-                    per_coord,
-                    cfg,
-                    effective_working_dir,
-                    workspace_is_set,
-                    &name,
-                    &args,
-                    tc,
-                )
-                .await
-            }
-            ExecuteDispatchMode::Tui(tui_tool_ctx) => {
-                tool_registry::dispatch_tool(
-                    ToolRuntime::Tui { ctx: tui_tool_ctx },
-                    per_coord,
-                    cfg,
-                    effective_working_dir,
-                    workspace_is_set,
-                    &name,
-                    &args,
-                    tc,
-                )
-                .await
-            }
-        };
-
+    if tool_registry::tool_calls_allow_parallel_sync_batch(tool_calls) {
         info!(
             target: "crabmate",
-            "工具调用完成 tool={} elapsed_ms={}",
-            name,
-            t_tool.elapsed().as_millis()
+            "并行执行工具批 count={}（SyncDefault + 只读 + 非构建锁类）",
+            tool_calls.len()
         );
-
-        if echo_terminal_transcript {
-            let _ = crate::runtime::terminal_cli_transcript::print_tool_result_terminal(
-                &name,
-                &result,
+        let parallel_futs: Vec<_> = tool_calls
+            .iter()
+            .map(|tc| {
+                let cfg = Arc::clone(cfg);
+                let wd = effective_working_dir.to_path_buf();
+                let name = tc.function.name.clone();
+                let args = tc.function.arguments.clone();
+                let id = tc.id.clone();
+                async move {
+                    info!(target: "crabmate", "并行工具开始 tool={}", name);
+                    debug!(
+                        target: "crabmate",
+                        "工具调用参数摘要 tool={} args_preview={}",
+                        name,
+                        crate::redact::tool_arguments_preview_for_log(&args)
+                    );
+                    let t_tool = Instant::now();
+                    let tool_name = name.clone();
+                    let tool_args = args.clone();
+                    let result = tokio::task::spawn_blocking(move || {
+                        let ctx = tools::tool_context_for(
+                            cfg.as_ref(),
+                            &cfg.allowed_commands,
+                            wd.as_path(),
+                        );
+                        tools::run_tool(&tool_name, &tool_args, &ctx)
+                    })
+                    .await
+                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e));
+                    info!(
+                        target: "crabmate",
+                        "并行工具完成 tool={} elapsed_ms={}",
+                        name,
+                        t_tool.elapsed().as_millis()
+                    );
+                    (name, args, id, result)
+                }
+            })
+            .collect();
+        let outcomes = join_all(parallel_futs).await;
+        for (name, args, id, result) in outcomes {
+            if out.is_some_and(|tx| tx.is_closed()) {
+                info!(target: "crabmate", "SSE sender closed during parallel tool batch, aborting remainder");
+                if let Some(tx) = out {
+                    let _ = tx
+                        .send(encode_message(SsePayload::ToolRunning {
+                            tool_running: false,
+                        }))
+                        .await;
+                }
+                return ExecuteToolsBatchOutcome::AbortedSse;
+            }
+            emit_tool_result_sse_and_append(
+                messages,
+                out,
+                echo_terminal_transcript,
                 terminal_tool_display_max_chars,
+                &name,
+                &args,
+                &id,
+                result,
+                None,
+            )
+            .await;
+        }
+    } else {
+        for tc in tool_calls {
+            if out.is_some_and(|tx| tx.is_closed()) {
+                info!(target: "crabmate", "SSE sender closed during tool execution, aborting remaining tools");
+                if let Some(tx) = out {
+                    let _ = tx
+                        .send(encode_message(SsePayload::ToolRunning {
+                            tool_running: false,
+                        }))
+                        .await;
+                }
+                return ExecuteToolsBatchOutcome::AbortedSse;
+            }
+
+            let name = tc.function.name.clone();
+            let args = tc.function.arguments.clone();
+            let id = tc.id.clone();
+            // 禁止 println：TUI 下 stdout 与 ratatui 共用终端，会在当前光标（常为输入区）插入乱字。
+            info!(target: "crabmate", "调用工具 tool={}", name);
+            debug!(
+                target: "crabmate",
+                "工具调用参数摘要 tool={} args_preview={}",
+                name,
+                crate::redact::tool_arguments_preview_for_log(&args)
             );
-        }
 
-        if let Some(tx) = out {
-            let parsed = tool_result::parse_legacy_output(&name, &result);
-            let stdout = if parsed.stdout.is_empty() {
-                None
-            } else {
-                Some(parsed.stdout)
+            let t_tool = Instant::now();
+            let (result, reflection_inject) = match dispatch_mode {
+                ExecuteDispatchMode::Web(web_tool_ctx) => {
+                    tool_registry::dispatch_tool(
+                        ToolRuntime::Web {
+                            workspace_changed: &mut workspace_changed,
+                            ctx: web_tool_ctx,
+                        },
+                        per_coord,
+                        cfg,
+                        effective_working_dir,
+                        workspace_is_set,
+                        &name,
+                        &args,
+                        tc,
+                    )
+                    .await
+                }
+                ExecuteDispatchMode::Tui(tui_tool_ctx) => {
+                    tool_registry::dispatch_tool(
+                        ToolRuntime::Tui { ctx: tui_tool_ctx },
+                        per_coord,
+                        cfg,
+                        effective_working_dir,
+                        workspace_is_set,
+                        &name,
+                        &args,
+                        tc,
+                    )
+                    .await
+                }
             };
-            let stderr = if parsed.stderr.is_empty() {
-                None
-            } else {
-                Some(parsed.stderr)
-            };
-            let _ = tx
-                .send(encode_message(SsePayload::ToolResult {
-                    tool_result: ToolResultBody {
-                        name: name.clone(),
-                        summary: tool_summary,
-                        output: result.clone(),
-                        ok: Some(parsed.ok),
-                        exit_code: parsed.exit_code,
-                        error_code: parsed.error_code,
-                        stdout,
-                        stderr,
-                    },
-                }))
-                .await;
-        }
 
-        PerCoordinator::append_tool_result_and_reflection(messages, id, result, reflection_inject);
+            info!(
+                target: "crabmate",
+                "工具调用完成 tool={} elapsed_ms={}",
+                name,
+                t_tool.elapsed().as_millis()
+            );
+
+            emit_tool_result_sse_and_append(
+                messages,
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                &name,
+                &args,
+                &id,
+                result,
+                reflection_inject,
+            )
+            .await;
+        }
     }
 
     if let Some(tx) = out {
