@@ -187,6 +187,7 @@ async fn run_single_task(
         Some(cancel.clone()),
         None,
         None,
+        false,
     );
 
     let (status, agent_error) = if timeout_secs > 0 {

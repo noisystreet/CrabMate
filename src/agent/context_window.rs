@@ -326,6 +326,7 @@ pub async fn maybe_summarize_with_llm(
         false,
         true,
         None,
+        false,
     )
     .await
     {
