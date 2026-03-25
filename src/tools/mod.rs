@@ -8,8 +8,10 @@ mod ci_tools;
 mod code_metrics;
 mod code_nav;
 mod command;
+mod date_calc;
 mod debug_tools;
 mod diagnostics;
+mod env_var_check;
 mod exec;
 mod file;
 mod format;
@@ -18,6 +20,7 @@ mod git;
 mod go_tools;
 mod grep;
 pub mod http_fetch;
+mod json_format;
 mod lint;
 mod markdown_links;
 mod nodejs_tools;
@@ -28,6 +31,7 @@ mod precommit_tools;
 mod process_tools;
 mod python_tools;
 mod quality_tools;
+mod regex_test;
 mod release_docs;
 mod rust_ide;
 mod schedule;
@@ -39,6 +43,7 @@ mod table_text;
 mod text_diff;
 mod text_transform;
 mod time;
+mod todo_scan;
 mod tool_params;
 mod tool_specs_registry;
 mod tool_summary;
@@ -683,6 +688,28 @@ fn runner_dependency_graph(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 fn runner_coverage_report(args: &str, ctx: &ToolContext<'_>) -> String {
     code_metrics::coverage_report(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+// ── 新增纯内存 / 开发辅助工具 ────────────────────────────────
+
+fn runner_regex_test(args: &str, _ctx: &ToolContext<'_>) -> String {
+    regex_test::run(args)
+}
+
+fn runner_date_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
+    date_calc::run(args)
+}
+
+fn runner_json_format(args: &str, _ctx: &ToolContext<'_>) -> String {
+    json_format::run(args)
+}
+
+fn runner_env_var_check(args: &str, _ctx: &ToolContext<'_>) -> String {
+    env_var_check::run(args)
+}
+
+fn runner_todo_scan(args: &str, ctx: &ToolContext<'_>) -> String {
+    todo_scan::run(args, ctx.working_dir)
 }
 
 fn tool_specs() -> &'static [ToolSpec] {
