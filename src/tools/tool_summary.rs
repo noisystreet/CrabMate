@@ -476,3 +476,28 @@ pub(super) fn summary_process_list(v: &serde_json::Value) -> Option<String> {
         Some(format!("列出进程（过滤: {}）", filter))
     }
 }
+
+// ── 代码度量与分析 ──────────────────────────────────────────
+
+pub(super) fn summary_code_stats(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path").and_then(|x| x.as_str()).unwrap_or(".");
+    Some(format!("代码统计：{}", path))
+}
+
+pub(super) fn summary_dependency_graph(v: &serde_json::Value) -> Option<String> {
+    let format = v
+        .get("format")
+        .and_then(|x| x.as_str())
+        .unwrap_or("mermaid");
+    let kind = v.get("kind").and_then(|x| x.as_str()).unwrap_or("auto");
+    Some(format!("依赖图（{}/{}）", kind, format))
+}
+
+pub(super) fn summary_coverage_report(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path").and_then(|x| x.as_str()).unwrap_or("");
+    if path.is_empty() {
+        Some("覆盖率报告（自动检测）".to_string())
+    } else {
+        Some(format!("覆盖率报告：{}", path))
+    }
+}
