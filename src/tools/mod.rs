@@ -5,6 +5,7 @@
 mod calc;
 mod cargo_tools;
 mod ci_tools;
+mod code_metrics;
 mod code_nav;
 mod command;
 mod debug_tools;
@@ -646,6 +647,18 @@ fn runner_port_check(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
     process_tools::process_list(args, ctx.command_max_output_len)
+}
+
+// ── 代码度量与分析 ──────────────────────────────────────────
+
+fn runner_code_stats(args: &str, ctx: &ToolContext<'_>) -> String {
+    code_metrics::code_stats(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_dependency_graph(args: &str, ctx: &ToolContext<'_>) -> String {
+    code_metrics::dependency_graph(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_coverage_report(args: &str, ctx: &ToolContext<'_>) -> String {
+    code_metrics::coverage_report(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn tool_specs() -> &'static [ToolSpec] {

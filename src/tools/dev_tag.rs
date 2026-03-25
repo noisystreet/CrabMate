@@ -104,6 +104,11 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         // --- 进程与端口 ---
         "port_check" | "process_list" => &[GENERAL],
 
+        // --- 代码度量与分析 ---
+        "code_stats" => &[GENERAL],
+        "dependency_graph" => &[GENERAL, RUST, FRONTEND, GO],
+        "coverage_report" => &[GENERAL, RUST, FRONTEND, PYTHON, GO, QUALITY],
+
         _ => &[GENERAL],
     }
 }

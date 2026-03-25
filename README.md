@@ -35,6 +35,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - **Node.js / npm**（须存在 `package.json`）：`npm_install`（支持 `npm ci`、`--production`）、`npm_run`（运行任意 npm script）、`npx_run`（执行 npx 包命令）、`tsc_check`（TypeScript 类型检查 `tsc --noEmit`）。
   - **Go 工具链**（须存在 `go.mod`，需本机已安装 Go）：`go_build`、`go_test`（支持 `-run` / `-race` / `-timeout` 等）、`go_vet`、`go_mod_tidy`（受控写入需 `confirm`）、`go_fmt_check`（`gofmt -l` 列出未格式化文件）、`golangci_lint`。
   - **进程与端口管理**（只读）：`port_check`（检查端口占用，使用 ss/lsof）、`process_list`（按关键词过滤进程列表）。
+  - **代码度量与分析**（只读）：`code_stats`（代码行数统计，优先 tokei/cloc，回退内置统计器）、`dependency_graph`（依赖关系图，支持 Cargo/Go/npm，输出 Mermaid/DOT/tree）、`coverage_report`（覆盖率报告解析，支持 LCOV/.info、Tarpaulin JSON、Cobertura XML）。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
@@ -235,6 +236,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 **进程与端口管理**：`port_check`（端口占用检查）、`process_list`（进程列表查询）。
 
 **Git 写操作**：`git_checkout`（切换/创建分支）、`git_branch_create`/`git_branch_delete`、`git_push`、`git_merge`、`git_rebase`（含 abort/continue）、`git_stash`（push/pop/apply/list/drop/clear）、`git_tag`（list/create/delete）、`git_reset`（soft/mixed/hard）、`git_cherry_pick`、`git_revert`。
+
+**代码度量与分析**：`code_stats`（代码行数统计）、`dependency_graph`（依赖关系图）、`coverage_report`（覆盖率报告解析）。
 
 ### Python 与 pre-commit 工具示例
 
