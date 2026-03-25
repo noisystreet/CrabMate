@@ -1232,18 +1232,6 @@ pub(super) fn params_read_file() -> serde_json::Value {
     })
 }
 
-pub(super) fn params_read_dir() -> serde_json::Value {
-    serde_json::json!({
-        "type":"object",
-        "properties":{
-            "path": { "type":"string", "description":"可选：相对工作目录的目录路径（默认 .）" },
-            "max_entries": { "type":"integer", "description":"可选：最多返回多少条目录项（默认 200）", "minimum":1 },
-            "include_hidden": { "type":"boolean", "description":"可选：是否包含隐藏文件/目录（以 . 开头），默认 false" }
-        },
-        "required":[]
-    })
-}
-
 pub(super) fn params_glob_files() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
@@ -1476,35 +1464,7 @@ pub(super) fn params_apply_patch() -> serde_json::Value {
     })
 }
 
-pub(super) fn params_search_in_files() -> serde_json::Value {
-    serde_json::json!({
-        "type": "object",
-        "properties": {
-            "pattern": {
-                "type": "string",
-                "description": "要搜索的正则或纯文本关键字（使用 Rust 正则语法）"
-            },
-            "path": {
-                "type": "string",
-                "description": "可选的子目录或文件相对路径，仅在该路径下搜索（相对于工作区根目录）"
-            },
-            "max_results": {
-                "type": "integer",
-                "description": "最多返回多少条匹配结果，默认 200 条",
-                "minimum": 1
-            },
-            "case_insensitive": {
-                "type": "boolean",
-                "description": "是否大小写不敏感匹配，默认 true"
-            },
-            "ignore_hidden": {
-                "type": "boolean",
-                "description": "是否忽略隐藏文件和目录（以点开头），默认 true"
-            }
-        },
-        "required": ["pattern"]
-    })
-}
+// params_search_in_files: superseded by params_search_in_files_enhanced
 
 pub(super) fn params_markdown_check_links() -> serde_json::Value {
     serde_json::json!({
@@ -2160,6 +2120,135 @@ pub(super) fn params_coverage_report() -> serde_json::Value {
         "properties":{
             "path":{"type":"string","description":"可选：覆盖率报告文件路径（相对工作区）。省略时自动检测 lcov.info / tarpaulin-report.json / cobertura.xml 等"},
             "format":{"type":"string","description":"报告格式：auto（默认，按文件后缀/内容自动检测）/lcov/tarpaulin/cobertura","enum":["auto","lcov","tarpaulin","tarpaulin_json","cobertura"]}
+        },
+        "required":[]
+    })
+}
+
+// ── 文件工具增强 ────────────────────────────────────────────
+
+pub(super) fn params_delete_file() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "path":{"type":"string","description":"要删除的文件路径（相对工作区，必填）"},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":["path"]
+    })
+}
+
+pub(super) fn params_delete_dir() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "path":{"type":"string","description":"要删除的目录路径（相对工作区，必填）"},
+            "recursive":{"type":"boolean","description":"是否递归删除（含子目录和文件），默认 false（仅删空目录）"},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":["path"]
+    })
+}
+
+pub(super) fn params_append_file() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "path":{"type":"string","description":"文件路径（相对工作区，必填）"},
+            "content":{"type":"string","description":"要追加的内容"},
+            "create_if_missing":{"type":"boolean","description":"文件不存在时是否创建，默认 false"}
+        },
+        "required":["path"]
+    })
+}
+
+pub(super) fn params_create_dir() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "path":{"type":"string","description":"要创建的目录路径（相对工作区，必填）"},
+            "parents":{"type":"boolean","description":"是否递归创建父目录（类似 mkdir -p），默认 true"}
+        },
+        "required":["path"]
+    })
+}
+
+pub(super) fn params_search_replace() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "path":{"type":"string","description":"目标文件路径（相对工作区，必填）"},
+            "search":{"type":"string","description":"要搜索的字符串或正则表达式（必填）"},
+            "replace":{"type":"string","description":"替换为的字符串（默认空字符串，即删除匹配）"},
+            "regex":{"type":"boolean","description":"是否将 search 作为正则表达式，默认 false（字面量匹配）"},
+            "max_replacements":{"type":"integer","description":"最多替换次数（0=全部替换），默认 0","minimum":0},
+            "dry_run":{"type":"boolean","description":"默认 true：仅预览替换结果，不修改文件"},
+            "confirm":{"type":"boolean","description":"dry_run=false 时需要 confirm=true 才会实际写盘"}
+        },
+        "required":["path","search"]
+    })
+}
+
+pub(super) fn params_search_in_files_enhanced() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "要搜索的正则或纯文本关键字（使用 Rust 正则语法）"
+            },
+            "path": {
+                "type": "string",
+                "description": "可选的子目录或文件相对路径，仅在该路径下搜索（相对于工作区根目录）"
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "最多返回多少条匹配结果，默认 200 条",
+                "minimum": 1
+            },
+            "case_insensitive": {
+                "type": "boolean",
+                "description": "是否大小写不敏感匹配，默认 true"
+            },
+            "ignore_hidden": {
+                "type": "boolean",
+                "description": "是否忽略隐藏文件和目录（以点开头），默认 true"
+            },
+            "context_before": {
+                "type": "integer",
+                "description": "可选：每个匹配前显示的上下文行数（0-10），默认 0",
+                "minimum": 0,
+                "maximum": 10
+            },
+            "context_after": {
+                "type": "integer",
+                "description": "可选：每个匹配后显示的上下文行数（0-10），默认 0",
+                "minimum": 0,
+                "maximum": 10
+            },
+            "file_glob": {
+                "type": "string",
+                "description": "可选：仅搜索文件名匹配此 glob 模式的文件（如 *.rs、*.py）"
+            },
+            "exclude_glob": {
+                "type": "string",
+                "description": "可选：排除文件名匹配此 glob 模式的文件（如 *.min.js）"
+            }
+        },
+        "required": ["pattern"]
+    })
+}
+
+pub(super) fn params_read_dir_enhanced() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "path": { "type":"string", "description":"可选：相对工作目录的目录路径（默认 .）" },
+            "max_entries": { "type":"integer", "description":"可选：最多返回多少条目录项（默认 200）", "minimum":1 },
+            "include_hidden": { "type":"boolean", "description":"可选：是否包含隐藏文件/目录（以 . 开头），默认 false" },
+            "include_size": { "type":"boolean", "description":"可选：是否显示文件大小，默认 false" },
+            "include_mtime": { "type":"boolean", "description":"可选：是否显示修改时间，默认 false" },
+            "sort_by": { "type":"string", "description":"排序方式：name（默认）/size/mtime", "enum":["name","size","mtime"] }
         },
         "required":[]
     })
