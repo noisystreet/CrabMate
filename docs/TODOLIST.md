@@ -37,7 +37,7 @@
 
 - [ ] **集成/契约测试**：在 `lib_smoke` 之外，可为 `plan_artifact` 边界、`classify_agent_sse_line` 协议行、`workflow_reflection_controller` 状态迁移增加 fixture 或快照用例。
 - [ ] **`stream_chat` 非流式**：可选 wiremock / 静态 JSON fixture 测 `ChatResponse` 解析。
-- [ ] **Benchmark 测评实战与基线建立**：已实现批量测评框架（`--benchmark` + `--batch`，支持 SWE-bench / GAIA / HumanEval / Generic）；后续在实际 benchmark 数据集上跑通完整评估流程，建立并记录基线分数，持续追踪迭代效果。
+- [ ] **Agent Benchmark 测评与基线**：在主流 agent benchmark（SWE-bench、HumanEval、GAIA 等）上对 CrabMate 做系统性评估，建立能力基线与回归对照，覆盖工具调用、多步推理、代码生成等；批量测评框架已具备（`--benchmark` + `--batch`，支持 SWE-bench / GAIA / HumanEval / Generic），后续在实际数据集上跑通完整流程并记录基线分数、持续追踪迭代。
 
 ---
 
