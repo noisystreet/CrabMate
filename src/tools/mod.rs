@@ -751,14 +751,31 @@ pub fn build_tools_with_options(opts: ToolsBuildOptions<'_>) -> Vec<Tool> {
         .iter()
         .filter(|s| tool_passes_filters(s, opts))
         .map(|s| Tool {
-            typ: "function".to_string(),
+            typ: TOOL_TYPE_FUNCTION.to_string(),
             function: FunctionDef {
                 name: s.name.to_string(),
                 description: s.description.to_string(),
-                parameters: (s.parameters)(),
+                parameters: cached_params(s),
             },
         })
         .collect()
+}
+
+const TOOL_TYPE_FUNCTION: &str = "function";
+
+fn cached_params(spec: &ToolSpec) -> serde_json::Value {
+    use std::sync::LazyLock;
+    static CACHE: LazyLock<std::collections::HashMap<&'static str, serde_json::Value>> =
+        LazyLock::new(|| {
+            tool_specs()
+                .iter()
+                .map(|s| (s.name, (s.parameters)()))
+                .collect()
+        });
+    CACHE
+        .get(spec.name)
+        .cloned()
+        .unwrap_or_else(|| (spec.parameters)())
 }
 
 /// 执行本地工具并返回结果字符串。
@@ -815,6 +832,19 @@ pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String>
             let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
             f(&v)
         }
+    }
+}
+
+/// 使用预解析的 `serde_json::Value` 生成摘要，避免重复 JSON 解析。
+pub(crate) fn summarize_tool_call_parsed(
+    name: &str,
+    args_parsed: &serde_json::Value,
+) -> Option<String> {
+    let spec = find_spec(name)?;
+    match &spec.summary {
+        ToolSummaryKind::None => None,
+        ToolSummaryKind::Static(s) => Some((*s).to_string()),
+        ToolSummaryKind::Dynamic(f) => f(args_parsed),
     }
 }
 
