@@ -16,6 +16,10 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`file`、`head`、`tail`、`wc`、`cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make` 等），带超时与输出截断。**CMake**：已列入白名单，常用 `cmake -S . -B build`、`cmake --build build`；参数不得含 `..` 或以 `/` 开头，建议构建目录用相对路径（勿在 args 里写绝对路径的 `-D`）。未安装时 `/health` 中 `dep_cmake` 可能为 degraded。**c++filt**：可将链接器/栈追踪中的修饰名（mangled）反解为可读 C++ 名（Binutils/LLVM 通常提供）；未安装时 `dep_cxxfilt` 可能为 degraded。**Autotools**：默认白名单含 `autoreconf`/`autoconf`/`automake`/`aclocal`，便于维护仍使用 `configure.ac` / `Makefile.am` 的仓库；会处理项目内 m4/shell，仅应在**信任的工作区**使用，且 `run_command` 参数规则仍生效。
   - `run_executable`：在工作区目录下按**相对路径**运行可执行文件（如 `./main`、编译产物）；与 `run_command`（仅白名单系统命令）分工——**运行当前目录/工作区内的程序请用本工具**，不要用 `run_command`。
   - `package_query`：只读查询 Linux 包信息（apt/rpm 统一抽象）：是否安装、版本、来源。支持 `manager=auto|apt|rpm`（默认 `auto`，优先 `dpkg-query` 后尝试 `rpm`），不执行安装/卸载操作。
+  - `delete_file`（需 `confirm`）/ `delete_dir`（需 `confirm`，可选 `recursive`）：删除文件或目录。
+  - `append_file`：追加内容到已有文件末尾（`create_if_missing` 可选新建）。
+  - `create_dir`：创建目录（默认 `parents=true`，类似 `mkdir -p`）。
+  - `search_replace`：单文件搜索替换（字面量或正则，默认 `dry_run` 预览，写盘需 `confirm`）。
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的 UTF-8 文本，超出会返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。

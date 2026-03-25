@@ -1,24 +1,24 @@
 //! 在工作区内按正则/关键词搜索文件内容。
-//!
-//! 功能：给定 pattern（Rust 正则语法），从工作区根目录（run_command_working_dir）开始递归搜索文件，
-//! 返回匹配文件路径 + 行号 + 行文本片段。支持可选的子路径、大小写控制和结果数量限制。
 
 use regex::RegexBuilder;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-/// 搜索参数：由 JSON 中的字段解析而来
 struct SearchParams {
     pattern: String,
     sub_path: Option<String>,
     max_results: usize,
     case_insensitive: bool,
     ignore_hidden: bool,
+    context_before: usize,
+    context_after: usize,
+    file_glob: Option<String>,
+    exclude_glob: Option<String>,
 }
 
 const DEFAULT_MAX_RESULTS: usize = 200;
-const MAX_FILE_SIZE_BYTES: usize = 2 * 1024 * 1024; // 单个文件最大搜索大小：2MB
+const MAX_FILE_SIZE_BYTES: usize = 2 * 1024 * 1024;
 
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
     let params = match parse_params(args_json) {
@@ -26,7 +26,6 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         Err(e) => return e,
     };
 
-    // 解析 pattern 为正则
     let re = match RegexBuilder::new(&params.pattern)
         .case_insensitive(params.case_insensitive)
         .build()
@@ -35,23 +34,33 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         Err(e) => return format!("错误：无效的正则表达式：{}", e),
     };
 
-    // 解析搜索起点路径（相对 workspace 根）
     let root = match resolve_search_root(workspace_root, params.sub_path.as_deref()) {
         Ok(p) => p,
         Err(e) => return e,
     };
 
+    let file_pat = params
+        .file_glob
+        .as_deref()
+        .and_then(|g| glob::Pattern::new(g).ok());
+    let exclude_pat = params
+        .exclude_glob
+        .as_deref()
+        .and_then(|g| glob::Pattern::new(g).ok());
+
+    let opts = WalkOpts {
+        max_results: params.max_results,
+        ignore_hidden: params.ignore_hidden,
+        ctx_before: params.context_before,
+        ctx_after: params.context_after,
+        file_glob: file_pat.as_ref(),
+        exclude_glob: exclude_pat.as_ref(),
+    };
+
     let mut results = Vec::new();
     let mut visited = 0usize;
 
-    if let Err(e) = walk_and_search(
-        &root,
-        &re,
-        &mut results,
-        &mut visited,
-        params.max_results,
-        params.ignore_hidden,
-    ) {
+    if let Err(e) = walk_and_search(&root, &re, &mut results, &mut visited, &opts) {
         return format!("搜索过程中发生错误：{}", e);
     }
 
@@ -105,12 +114,36 @@ fn parse_params(args_json: &str) -> Result<SearchParams, String> {
         .get("ignore_hidden")
         .and_then(|b| b.as_bool())
         .unwrap_or(true);
+    let context_before = v
+        .get("context_before")
+        .and_then(|n| n.as_u64())
+        .map(|n| n.min(10) as usize)
+        .unwrap_or(0);
+    let context_after = v
+        .get("context_after")
+        .and_then(|n| n.as_u64())
+        .map(|n| n.min(10) as usize)
+        .unwrap_or(0);
+    let file_glob = v
+        .get("file_glob")
+        .and_then(|g| g.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let exclude_glob = v
+        .get("exclude_glob")
+        .and_then(|g| g.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     Ok(SearchParams {
         pattern,
         sub_path,
         max_results,
         case_insensitive,
         ignore_hidden,
+        context_before,
+        context_after,
+        file_glob,
+        exclude_glob,
     })
 }
 
@@ -137,19 +170,29 @@ fn resolve_search_root(base: &Path, sub: Option<&str>) -> Result<PathBuf, String
     }
 }
 
+struct WalkOpts<'a> {
+    max_results: usize,
+    ignore_hidden: bool,
+    ctx_before: usize,
+    ctx_after: usize,
+    file_glob: Option<&'a glob::Pattern>,
+    exclude_glob: Option<&'a glob::Pattern>,
+}
+
 fn walk_and_search(
     root: &Path,
     re: &regex::Regex,
     results: &mut Vec<(PathBuf, usize, String)>,
     visited_files: &mut usize,
-    max_results: usize,
-    ignore_hidden: bool,
+    opts: &WalkOpts<'_>,
 ) -> io::Result<()> {
     if !root.exists() {
         return Ok(());
     }
     if root.is_file() {
-        search_in_file(root, re, results, visited_files, max_results)?;
+        if matches_glob_filters(root, opts.file_glob, opts.exclude_glob) {
+            search_in_file(root, re, results, visited_files, opts)?;
+        }
         return Ok(());
     }
     for entry in fs::read_dir(root)? {
@@ -157,24 +200,17 @@ fn walk_and_search(
         let path = entry.path();
         let file_name = entry.file_name();
         let name = file_name.to_string_lossy();
-        if ignore_hidden && name.starts_with('.') {
+        if opts.ignore_hidden && name.starts_with('.') {
             continue;
         }
         if path.is_dir() {
-            walk_and_search(
-                &path,
-                re,
-                results,
-                visited_files,
-                max_results,
-                ignore_hidden,
-            )?;
-            if results.len() >= max_results {
+            walk_and_search(&path, re, results, visited_files, opts)?;
+            if results.len() >= opts.max_results {
                 break;
             }
-        } else if path.is_file() {
-            search_in_file(&path, re, results, visited_files, max_results)?;
-            if results.len() >= max_results {
+        } else if path.is_file() && matches_glob_filters(&path, opts.file_glob, opts.exclude_glob) {
+            search_in_file(&path, re, results, visited_files, opts)?;
+            if results.len() >= opts.max_results {
                 break;
             }
         }
@@ -182,26 +218,75 @@ fn walk_and_search(
     Ok(())
 }
 
+fn matches_glob_filters(
+    path: &Path,
+    file_glob: Option<&glob::Pattern>,
+    exclude_glob: Option<&glob::Pattern>,
+) -> bool {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if let Some(pat) = file_glob
+        && !pat.matches(&name)
+    {
+        return false;
+    }
+    if let Some(pat) = exclude_glob
+        && pat.matches(&name)
+    {
+        return false;
+    }
+    true
+}
+
 fn search_in_file(
     path: &Path,
     re: &regex::Regex,
     results: &mut Vec<(PathBuf, usize, String)>,
     visited_files: &mut usize,
-    max_results: usize,
+    opts: &WalkOpts<'_>,
 ) -> io::Result<()> {
     *visited_files += 1;
     let mut f = fs::File::open(path)?;
     let mut buf = String::new();
     f.read_to_string(&mut buf)?;
     if buf.len() > MAX_FILE_SIZE_BYTES {
-        // 对超大文件只读取前 MAX_FILE_SIZE_BYTES 字节，以避免占用过多内存
         buf.truncate(MAX_FILE_SIZE_BYTES);
     }
-    for (idx, line) in buf.lines().enumerate() {
-        if re.is_match(line) {
+    let lines: Vec<&str> = buf.lines().collect();
+    let has_context = opts.ctx_before > 0 || opts.ctx_after > 0;
+    let mut last_ctx_end: usize = 0;
+
+    for (idx, line) in lines.iter().enumerate() {
+        if !re.is_match(line) {
+            continue;
+        }
+        if has_context {
+            let ctx_start = idx.saturating_sub(opts.ctx_before);
+            let ctx_end = (idx + opts.ctx_after + 1).min(lines.len());
+            if ctx_start > last_ctx_end && last_ctx_end > 0 {
+                results.push((path.to_path_buf(), 0, "---".to_string()));
+            }
+            for (ci, ctx_line) in lines.iter().enumerate().take(ctx_end).skip(ctx_start) {
+                if ci < last_ctx_end {
+                    continue;
+                }
+                let prefix = if ci == idx { ">" } else { " " };
+                results.push((
+                    path.to_path_buf(),
+                    ci + 1,
+                    format!("{} {}", prefix, ctx_line),
+                ));
+                if results.len() >= opts.max_results {
+                    return Ok(());
+                }
+            }
+            last_ctx_end = ctx_end;
+        } else {
             results.push((path.to_path_buf(), idx + 1, line.to_string()));
-            if results.len() >= max_results {
-                break;
+            if results.len() >= opts.max_results {
+                return Ok(());
             }
         }
     }

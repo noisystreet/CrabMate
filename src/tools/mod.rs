@@ -651,6 +651,24 @@ fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
 
 // ── 代码度量与分析 ──────────────────────────────────────────
 
+// ── 文件增强 ────────────────────────────────────────────────
+
+fn runner_delete_file(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::delete_file(args, ctx.working_dir)
+}
+fn runner_delete_dir(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::delete_dir(args, ctx.working_dir)
+}
+fn runner_append_file(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::append_file(args, ctx.working_dir)
+}
+fn runner_create_dir(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::create_dir(args, ctx.working_dir)
+}
+fn runner_search_replace(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::search_replace(args, ctx.working_dir)
+}
+
 fn runner_code_stats(args: &str, ctx: &ToolContext<'_>) -> String {
     code_metrics::code_stats(args, ctx.working_dir, ctx.command_max_output_len)
 }
