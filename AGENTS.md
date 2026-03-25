@@ -45,6 +45,5 @@ Standard commands from `README.md`:
 - **Lint**：仓库 **pre-commit** 使用 **`cargo clippy --all-targets --all-features -- -D warnings`**（见 **`.pre-commit-config.yaml`** 与 **`.cursor/rules/pre-commit-before-commit.mdc`**）。**提交前**须通过；仅本地快速试探时可运行不带 `-D warnings` 的 **`cargo clippy`**，但不应在 hook 未通过时代为提交。
 - **`cargo fmt --check`**：若与 **`cargo fmt`** 结果不一致，先执行 **`cargo fmt --all`** 再提交；pre-commit 也会格式化 Rust 代码。
 - The `rfd` crate (file dialog) is a dependency but won't work headlessly; this doesn't affect the web server mode.
-- A vendored copy of `tui-markdown` remains under `vendor/tui-markdown/` for a possible future full-screen terminal UI; it is **not** a current `path` dependency in root `Cargo.toml`.
 - **pre-commit install** may fail with `core.hooksPath` set. Run `git config --unset-all core.hooksPath` first, then `pre-commit install && pre-commit install --hook-type commit-msg`.
 - When starting the server with `--host 0.0.0.0` (non-loopback), you must either set `AGENT_WEB_API_BEARER_TOKEN` or `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`; otherwise the server refuses to start.

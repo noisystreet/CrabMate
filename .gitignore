@@ -62,7 +62,7 @@ env/
 # Rust
 ########################
 /target/
-# vendored crate 本地构建（path 依赖）
+# 若使用 cargo vendor 或 path 依赖到 vendor/，忽略其 target
 vendor/**/target/
 
 ########################
