@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F06838"/>
+      <stop offset="100%" stop-color="#D04420"/>
+    </linearGradient>
+    <linearGradient id="clawGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F06838"/>
+      <stop offset="100%" stop-color="#D04420"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Legs (behind body) — 3 pairs -->
+  <g stroke="#E8582A" stroke-width="12" stroke-linecap="round">
+    <line x1="195" y1="330" x2="138" y2="380"/>
+    <line x1="317" y1="330" x2="374" y2="380"/>
+    <line x1="208" y1="345" x2="155" y2="400"/>
+    <line x1="304" y1="345" x2="357" y2="400"/>
+    <line x1="225" y1="355" x2="182" y2="415"/>
+    <line x1="287" y1="355" x2="330" y2="415"/>
+  </g>
+
+  <!-- Left claw -->
+  <path d="
+    M 170,240
+    C 148,210 110,185 80,175
+    C 58,168 38,182 42,208
+    C 45,225 58,232 72,226
+    L 70,240
+    C 52,244 38,258 42,278
+    C 46,295 62,302 82,290
+    C 108,275 140,262 170,265
+    Z
+  " fill="url(#clawGrad)"/>
+
+  <!-- Right claw -->
+  <path d="
+    M 342,240
+    C 364,210 402,185 432,175
+    C 454,168 474,182 470,208
+    C 467,225 454,232 440,226
+    L 442,240
+    C 460,244 474,258 470,278
+    C 466,295 450,302 430,290
+    C 404,275 372,262 342,265
+    Z
+  " fill="url(#clawGrad)"/>
+
+  <!-- Gear body -->
+  <path d="M 238.0,182.1 L 242.1,181.2 L 242.1,161.0 L 269.9,161.0 L 269.9,181.2 L 274.0,182.1 L 279.4,183.5 L 283.4,184.8 L 293.5,167.3 L 317.6,181.2 L 307.4,198.7 L 310.6,201.5 L 314.5,205.4 L 317.3,208.6 L 334.8,198.4 L 348.7,222.5 L 331.2,232.6 L 332.5,236.6 L 333.9,242.0 L 334.8,246.1 L 355.0,246.1 L 355.0,273.9 L 334.8,273.9 L 333.9,278.0 L 332.5,283.4 L 331.2,287.4 L 348.7,297.5 L 334.8,321.6 L 317.3,311.4 L 314.5,314.6 L 310.6,318.5 L 307.4,321.3 L 317.6,338.8 L 293.5,352.7 L 283.4,335.2 L 279.4,336.5 L 274.0,337.9 L 269.9,338.8 L 269.9,359.0 L 242.1,359.0 L 242.1,338.8 L 238.0,337.9 L 232.6,336.5 L 228.6,335.2 L 218.5,352.7 L 194.4,338.8 L 204.6,321.3 L 201.4,318.5 L 197.5,314.6 L 194.7,311.4 L 177.2,321.6 L 163.3,297.5 L 180.8,287.4 L 179.5,283.4 L 178.1,278.0 L 177.2,273.9 L 157.0,273.9 L 157.0,246.1 L 177.2,246.1 L 178.1,242.0 L 179.5,236.6 L 180.8,232.6 L 163.3,222.5 L 177.2,198.4 L 194.7,208.6 L 197.5,205.4 L 201.4,201.5 L 204.6,198.7 L 194.4,181.2 L 218.5,167.3 L 228.6,184.8 L 232.6,183.5 Z" fill="url(#bodyGrad)"/>
+
+  <!-- Gear center hole -->
+  <circle cx="256" cy="260" r="40" fill="#1a1a2e"/>
+
+  <!-- Gear center inner ring -->
+  <circle cx="256" cy="260" r="34" fill="none" stroke="url(#bodyGrad)" stroke-width="3"/>
+
+  <!-- Eye stalks -->
+  <rect x="214" y="145" width="14" height="38" rx="7" fill="url(#bodyGrad)"/>
+  <rect x="284" y="145" width="14" height="38" rx="7" fill="url(#bodyGrad)"/>
+
+  <!-- Eyes (white base) -->
+  <circle cx="221" cy="135" r="22" fill="white"/>
+  <circle cx="291" cy="135" r="22" fill="white"/>
+
+  <!-- Eyes (dark pupil) -->
+  <circle cx="224" cy="133" r="12" fill="#1a1a2e"/>
+  <circle cx="294" cy="133" r="12" fill="#1a1a2e"/>
+
+  <!-- Eye highlights -->
+  <circle cx="228" cy="128" r="4.5" fill="white"/>
+  <circle cx="298" cy="128" r="4.5" fill="white"/>
+
+  <!-- Friendly smile in gear hole -->
+  <path d="M 240,270 Q 256,285 272,270" fill="none" stroke="#F06838" stroke-width="3.5" stroke-linecap="round"/>
+</svg>
