@@ -5,6 +5,7 @@
 //!
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -439,7 +440,22 @@ async fn abort_tool_batch_if_sse_closed(
     true
 }
 
+/// 统计并行只读批次中去重后的唯一 `(name, args)` 数。
+fn dedup_readonly_tool_calls_count(tool_calls: &[ToolCall]) -> usize {
+    let mut seen: Vec<(&str, &str)> = Vec::with_capacity(tool_calls.len());
+    for tc in tool_calls {
+        let key = (tc.function.name.as_str(), tc.function.arguments.as_str());
+        if !seen.contains(&key) {
+            seen.push(key);
+        }
+    }
+    seen.len()
+}
+
 /// E：执行一批 tool 调用（Web/CLI 共用骨架），写入 tool / 反思 user，并发送 SSE 片段。
+///
+/// 同名同参数的只读工具在同一批次内去重：并行路径只执行唯一实例后映射回各 `tool_call_id`；
+/// 串行路径维护本批次只读缓存，遇写操作时清空（写操作可能改变文件系统状态，使先前读取结果失效）。
 #[allow(clippy::too_many_arguments)] // 工具批处理上下文字段较多，拆结构体收益有限
 async fn per_execute_tools_common(
     tool_calls: &[ToolCall],
@@ -464,52 +480,60 @@ async fn per_execute_tools_common(
     }
 
     if tool_registry::tool_calls_allow_parallel_sync_batch(tool_calls) {
+        let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
         info!(
             target: "crabmate",
-            "并行执行工具批 count={}（SyncDefault + 只读 + 非构建锁类）",
-            tool_calls.len()
+            "并行执行工具批 count={} unique={}（SyncDefault + 只读 + 非构建锁类）",
+            tool_calls.len(),
+            dedup_count
         );
-        let parallel_futs: Vec<_> = tool_calls
+
+        let mut unique_keys: Vec<(String, String)> = Vec::with_capacity(tool_calls.len());
+        let mut unique_futs = Vec::new();
+        for tc in tool_calls {
+            let key = (tc.function.name.clone(), tc.function.arguments.clone());
+            if unique_keys.contains(&key) {
+                continue;
+            }
+            unique_keys.push(key);
+            let cfg = Arc::clone(cfg);
+            let wd = effective_working_dir.to_path_buf();
+            let name = tc.function.name.clone();
+            let args = tc.function.arguments.clone();
+            unique_futs.push(async move {
+                info!(target: "crabmate", "并行工具开始 tool={}", name);
+                debug!(
+                    target: "crabmate",
+                    "工具调用参数摘要 tool={} args_preview={}",
+                    name,
+                    crate::redact::tool_arguments_preview_for_log(&args)
+                );
+                let t_tool = Instant::now();
+                let tool_name = name.clone();
+                let tool_args = args.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let ctx =
+                        tools::tool_context_for(cfg.as_ref(), &cfg.allowed_commands, wd.as_path());
+                    tools::run_tool(&tool_name, &tool_args, &ctx)
+                })
+                .await
+                .unwrap_or_else(|e| format!("工具执行 panic：{}", e));
+                info!(
+                    target: "crabmate",
+                    "并行工具完成 tool={} elapsed_ms={}",
+                    name,
+                    t_tool.elapsed().as_millis()
+                );
+                (name, args, result)
+            });
+        }
+        let unique_outcomes = join_all(unique_futs).await;
+        let result_map: HashMap<(&str, &str), &str> = unique_outcomes
             .iter()
-            .map(|tc| {
-                let cfg = Arc::clone(cfg);
-                let wd = effective_working_dir.to_path_buf();
-                let name = tc.function.name.clone();
-                let args = tc.function.arguments.clone();
-                let id = tc.id.clone();
-                async move {
-                    info!(target: "crabmate", "并行工具开始 tool={}", name);
-                    debug!(
-                        target: "crabmate",
-                        "工具调用参数摘要 tool={} args_preview={}",
-                        name,
-                        crate::redact::tool_arguments_preview_for_log(&args)
-                    );
-                    let t_tool = Instant::now();
-                    let tool_name = name.clone();
-                    let tool_args = args.clone();
-                    let result = tokio::task::spawn_blocking(move || {
-                        let ctx = tools::tool_context_for(
-                            cfg.as_ref(),
-                            &cfg.allowed_commands,
-                            wd.as_path(),
-                        );
-                        tools::run_tool(&tool_name, &tool_args, &ctx)
-                    })
-                    .await
-                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e));
-                    info!(
-                        target: "crabmate",
-                        "并行工具完成 tool={} elapsed_ms={}",
-                        name,
-                        t_tool.elapsed().as_millis()
-                    );
-                    (name, args, id, result)
-                }
-            })
+            .map(|(n, a, r)| ((n.as_str(), a.as_str()), r.as_str()))
             .collect();
-        let outcomes = join_all(parallel_futs).await;
-        for (name, args, id, result) in outcomes {
+
+        for tc in tool_calls {
             if abort_tool_batch_if_sse_closed(
                 out,
                 "SSE sender closed during parallel tool batch, aborting remainder",
@@ -518,20 +542,26 @@ async fn per_execute_tools_common(
             {
                 return ExecuteToolsBatchOutcome::AbortedSse;
             }
+            let cached = result_map
+                .get(&(tc.function.name.as_str(), tc.function.arguments.as_str()))
+                .copied()
+                .unwrap_or("")
+                .to_string();
             emit_tool_result_sse_and_append(
                 messages,
                 out,
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
-                &name,
-                &args,
-                &id,
-                result,
+                &tc.function.name,
+                &tc.function.arguments,
+                &tc.id,
+                cached,
                 None,
             )
             .await;
         }
     } else {
+        let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
         for tc in tool_calls {
             if abort_tool_batch_if_sse_closed(
                 out,
@@ -545,7 +575,6 @@ async fn per_execute_tools_common(
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
             let id = tc.id.clone();
-            // 禁止 println：终端 UI 与 stdout 共用时会破坏光标位置。
             info!(target: "crabmate", "调用工具 tool={}", name);
             debug!(
                 target: "crabmate",
@@ -553,6 +582,30 @@ async fn per_execute_tools_common(
                 name,
                 crate::redact::tool_arguments_preview_for_log(&args)
             );
+
+            let is_readonly = tool_registry::is_readonly_tool(&name);
+            let cache_key = (name.clone(), args.clone());
+
+            if is_readonly && let Some(cached) = readonly_cache.get(&cache_key) {
+                info!(
+                    target: "crabmate",
+                    "工具结果命中缓存（只读去重） tool={}",
+                    name
+                );
+                emit_tool_result_sse_and_append(
+                    messages,
+                    out,
+                    echo_terminal_transcript,
+                    terminal_tool_display_max_chars,
+                    &name,
+                    &args,
+                    &id,
+                    cached.clone(),
+                    None,
+                )
+                .await;
+                continue;
+            }
 
             let t_tool = Instant::now();
             let (result, reflection_inject) = tool_registry::dispatch_tool(
@@ -576,6 +629,12 @@ async fn per_execute_tools_common(
                 name,
                 t_tool.elapsed().as_millis()
             );
+
+            if is_readonly {
+                readonly_cache.insert(cache_key, result.clone());
+            } else {
+                readonly_cache.clear();
+            }
 
             emit_tool_result_sse_and_append(
                 messages,
@@ -1183,6 +1242,68 @@ mod push_assistant_merge_tests {
         assert_eq!(out[3].role, "system");
         assert_eq!(out[3].content.as_deref(), Some("plan sys"));
         assert!(!out.iter().any(|m| m.role == "tool"));
+    }
+}
+
+#[cfg(test)]
+mod dedup_tool_calls_tests {
+    use super::dedup_readonly_tool_calls_count;
+    use crate::types::{FunctionCall, ToolCall};
+
+    fn tc(id: &str, name: &str, args: &str) -> ToolCall {
+        ToolCall {
+            id: id.to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: name.to_string(),
+                arguments: args.to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn no_duplicates() {
+        let calls = vec![
+            tc("1", "read_file", r#"{"path":"a.txt"}"#),
+            tc("2", "list_dir", r#"{"path":"."}"#),
+        ];
+        assert_eq!(dedup_readonly_tool_calls_count(&calls), 2);
+    }
+
+    #[test]
+    fn identical_calls_deduped() {
+        let calls = vec![
+            tc("1", "read_file", r#"{"path":"a.txt"}"#),
+            tc("2", "read_file", r#"{"path":"a.txt"}"#),
+            tc("3", "read_file", r#"{"path":"a.txt"}"#),
+        ];
+        assert_eq!(dedup_readonly_tool_calls_count(&calls), 1);
+    }
+
+    #[test]
+    fn same_name_different_args_not_deduped() {
+        let calls = vec![
+            tc("1", "read_file", r#"{"path":"a.txt"}"#),
+            tc("2", "read_file", r#"{"path":"b.txt"}"#),
+        ];
+        assert_eq!(dedup_readonly_tool_calls_count(&calls), 2);
+    }
+
+    #[test]
+    fn mixed_duplicates() {
+        let calls = vec![
+            tc("1", "read_file", r#"{"path":"a.txt"}"#),
+            tc("2", "list_dir", r#"{"path":"."}"#),
+            tc("3", "read_file", r#"{"path":"a.txt"}"#),
+            tc("4", "grep", r#"{"pattern":"foo"}"#),
+            tc("5", "list_dir", r#"{"path":"."}"#),
+        ];
+        assert_eq!(dedup_readonly_tool_calls_count(&calls), 3);
+    }
+
+    #[test]
+    fn empty_batch() {
+        assert_eq!(dedup_readonly_tool_calls_count(&[]), 0);
     }
 }
 
