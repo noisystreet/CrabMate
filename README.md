@@ -126,12 +126,19 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   ```json
   {"all_targets":true,"max_diagnostics":80,"message_format":"json"}
   ```
-- `rust_analyzer_goto_definition` / `rust_analyzer_find_references`（本机需 **`rust-analyzer` 在 PATH**；**line/character 为 0-based**，与 LSP 一致）：
+- `rust_analyzer_goto_definition` / `rust_analyzer_find_references` / `rust_analyzer_hover`（本机需 **`rust-analyzer` 在 PATH**；**line/character 为 0-based**，与 LSP 一致）：
   ```json
   {"path":"src/tools/mod.rs","line":1195,"character":4,"wait_after_open_ms":500}
   ```
   ```json
   {"path":"src/tools/mod.rs","line":1195,"character":4,"include_declaration":true}
+  ```
+  ```json
+  {"path":"src/tools/mod.rs","line":1195,"character":4}
+  ```
+- `rust_analyzer_document_symbol`（整文件符号大纲，可选 `max_symbols` 截断）：
+  ```json
+  {"path":"src/lib.rs","max_symbols":200}
   ```
 - `cargo_fix`（应用编译器建议修复，受控写入）：
   ```json
@@ -230,7 +237,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`structured_patch`、`table_text`、`text_diff`、`ast_grep_rewrite`、`diagnostic_summary`、`package_query`。
+另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`rust_analyzer_hover`、`rust_analyzer_document_symbol`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`structured_patch`、`table_text`、`text_diff`、`ast_grep_rewrite`、`diagnostic_summary`、`package_query`。
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
 
 **Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`pre_commit_run`；聚合类还有 `run_lints`（可选 ruff）、`quality_workspace`（可选 ruff/pytest/mypy）。

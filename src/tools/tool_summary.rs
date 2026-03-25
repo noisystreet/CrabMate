@@ -31,6 +31,17 @@ pub(super) fn summary_rust_analyzer_find_references(v: &serde_json::Value) -> Op
     Some(format!("RA 查找引用：{}:{}", path, line.unwrap_or(0)))
 }
 
+pub(super) fn summary_rust_analyzer_hover(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    let line = v.get("line").and_then(|x| x.as_u64());
+    Some(format!("RA hover：{}:{}", path, line.unwrap_or(0)))
+}
+
+pub(super) fn summary_rust_analyzer_document_symbol(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    Some(format!("RA 文档符号：{}", path))
+}
+
 pub(super) fn summary_python_install_editable(v: &serde_json::Value) -> Option<String> {
     let b = v.get("backend").and_then(|x| x.as_str()).unwrap_or("?");
     Some(format!("Python 可编辑安装（{}）", b))

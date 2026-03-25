@@ -426,6 +426,23 @@ pub(super) fn params_rust_analyzer_references() -> serde_json::Value {
     })
 }
 
+pub(super) fn params_rust_analyzer_hover() -> serde_json::Value {
+    params_rust_analyzer_position()
+}
+
+pub(super) fn params_rust_analyzer_document_symbol() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "path": { "type": "string", "description": "相对工作区的 .rs 源文件路径" },
+            "max_symbols": { "type": "integer", "description": "可选：最多输出多少条符号（树或扁平列表遍历计数），默认 500，范围 1–5000", "minimum": 1, "maximum": 5000 },
+            "server_path": { "type": "string", "description": "可选：rust-analyzer 可执行路径" },
+            "wait_after_open_ms": { "type": "integer", "description": "可选：didOpen 后等待毫秒，默认 500，上限 5000", "minimum": 0 }
+        },
+        "required": ["path"]
+    })
+}
+
 pub(super) fn params_cargo_fix() -> serde_json::Value {
     serde_json::json!({
         "type":"object",
