@@ -2239,6 +2239,28 @@ pub(super) fn params_search_in_files_enhanced() -> serde_json::Value {
     })
 }
 
+pub(super) fn params_chmod_file() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "path":{"type":"string","description":"文件或目录路径（相对工作区，必填）"},
+            "mode":{"type":"string","description":"八进制权限值（必填），如 \"755\"、\"644\"、\"700\""},
+            "confirm":{"type":"boolean","description":"安全确认；仅 true 才执行"}
+        },
+        "required":["path","mode"]
+    })
+}
+
+pub(super) fn params_symlink_info() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "path":{"type":"string","description":"要检查的路径（相对工作区，必填）"}
+        },
+        "required":["path"]
+    })
+}
+
 pub(super) fn params_read_dir_enhanced() -> serde_json::Value {
     serde_json::json!({
         "type":"object",

@@ -44,7 +44,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "delete_dir"
         | "append_file"
         | "create_dir"
-        | "search_replace" => &[GENERAL],
+        | "search_replace"
+        | "chmod_file"
+        | "symlink_info" => &[GENERAL],
         "structured_validate"
         | "structured_query"
         | "structured_diff"
