@@ -652,6 +652,23 @@ fn tool_specs() -> &'static [ToolSpec] {
     tool_specs_registry::tool_specs()
 }
 
+/// name → tool_specs() 数组下标索引，首次访问时构建，O(1) 查找。
+fn tool_spec_index() -> &'static std::collections::HashMap<&'static str, usize> {
+    use std::sync::LazyLock;
+    static INDEX: LazyLock<std::collections::HashMap<&'static str, usize>> = LazyLock::new(|| {
+        tool_specs()
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.name, i))
+            .collect()
+    });
+    &INDEX
+}
+
+fn find_spec(name: &str) -> Option<&'static ToolSpec> {
+    tool_spec_index().get(name).map(|&idx| &tool_specs()[idx])
+}
+
 /// 构建工具列表时的分类与开发子域标签过滤。
 #[derive(Clone, Copy, Default)]
 pub struct ToolsBuildOptions<'a> {
@@ -710,7 +727,7 @@ pub fn build_tools_with_options(opts: ToolsBuildOptions<'_>) -> Vec<Tool> {
 /// 执行本地工具并返回结果字符串。
 /// `ToolContext` 聚合 `run_command`、`get_weather`、`web_search` 等工具所需的配置项。
 pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
-    match tool_specs().iter().find(|s| s.name == name) {
+    match find_spec(name) {
         Some(spec) => (spec.runner)(args_json, ctx),
         None => format!("未知工具：{}", name),
     }
@@ -753,7 +770,7 @@ pub(crate) fn is_compile_command_success(args_json: &str, result: &str) -> bool 
 
 /// 为前端生成简短的工具调用摘要，便于在 Chat 面板中展示
 pub(crate) fn summarize_tool_call(name: &str, args_json: &str) -> Option<String> {
-    let spec = tool_specs().iter().find(|s| s.name == name)?;
+    let spec = find_spec(name)?;
     match &spec.summary {
         ToolSummaryKind::None => None,
         ToolSummaryKind::Static(s) => Some((*s).to_string()),
