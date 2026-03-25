@@ -95,6 +95,60 @@ pub fn execution_class_for_tool(name: &str) -> ToolExecutionClass {
         .unwrap_or(ToolExecutionClass::BlockingSync)
 }
 
+/// 判断工具是否为只读（不修改工作区文件系统），供并行执行决策使用。
+/// 写操作工具（create/modify/delete/move/copy/format/apply_patch 等）及带审批的工具返回 false。
+pub fn is_readonly_tool(name: &str) -> bool {
+    static WRITE_TOOLS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    let writes = WRITE_TOOLS.get_or_init(|| {
+        [
+            "create_file",
+            "modify_file",
+            "copy_file",
+            "move_file",
+            "delete_file",
+            "delete_dir",
+            "append_file",
+            "create_dir",
+            "search_replace",
+            "chmod_file",
+            "apply_patch",
+            "format_file",
+            "ast_grep_rewrite",
+            "structured_patch",
+            "git_stage_files",
+            "git_commit",
+            "git_checkout",
+            "git_branch_create",
+            "git_branch_delete",
+            "git_push",
+            "git_merge",
+            "git_rebase",
+            "git_stash",
+            "git_tag",
+            "git_reset",
+            "git_cherry_pick",
+            "git_revert",
+            "git_clone",
+            "git_remote_set_url",
+            "git_apply",
+            "git_fetch",
+            "cargo_fix",
+            "cargo_clean",
+            "python_install_editable",
+            "npm_install",
+            "go_mod_tidy",
+            "run_command",
+            "run_executable",
+            "workflow_execute",
+            "http_request",
+        ]
+        .into_iter()
+        .collect()
+    });
+    !writes.contains(name)
+}
+
 fn meta_by_name(name: &str) -> Option<&'static ToolDispatchMeta> {
     all_dispatch_metadata().iter().find(|m| m.name == name)
 }
@@ -254,12 +308,21 @@ pub async fn dispatch_tool(
         },
         HandlerId::HttpRequest => execute_http_request(cfg, name, args).await,
         HandlerId::SyncDefault => {
-            let ctx =
-                tools::tool_context_for(cfg.as_ref(), &cfg.allowed_commands, effective_working_dir);
-            (
-                tools::run_tool(&tc.function.name, &tc.function.arguments, &ctx),
-                None,
-            )
+            let cfg2 = Arc::clone(cfg);
+            let tool_name = tc.function.name.clone();
+            let tool_args = tc.function.arguments.clone();
+            let work_dir = effective_working_dir.to_path_buf();
+            let result = tokio::task::spawn_blocking(move || {
+                let ctx = tools::tool_context_for(
+                    cfg2.as_ref(),
+                    &cfg2.allowed_commands,
+                    work_dir.as_path(),
+                );
+                tools::run_tool(&tool_name, &tool_args, &ctx)
+            })
+            .await
+            .unwrap_or_else(|e| format!("工具执行 panic：{}", e));
+            (result, None)
         }
     }
 }
@@ -426,13 +489,9 @@ async fn execute_run_command_web(
     let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
-    let effective_allowed_for_run = effective_allowed.clone();
+    let effective_allowed_arc: Arc<[String]> = effective_allowed.into();
     let handle = tokio::task::spawn_blocking(move || {
-        let ctx = tools::tool_context_for(
-            cfg.as_ref(),
-            effective_allowed_for_run.as_slice(),
-            work_dir.as_path(),
-        );
+        let ctx = tools::tool_context_for(cfg.as_ref(), &effective_allowed_arc, work_dir.as_path());
         tools::run_tool(&name_in, &args_cloned, &ctx)
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {

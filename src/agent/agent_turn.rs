@@ -420,7 +420,12 @@ async fn per_execute_tools_common(
             crate::redact::tool_arguments_preview_for_log(&args)
         );
 
-        let tool_summary = tools::summarize_tool_call(&name, &args);
+        let args_parsed: Option<serde_json::Value> = serde_json::from_str(&args).ok();
+        let tool_summary = if let Some(ref parsed) = args_parsed {
+            tools::summarize_tool_call_parsed(&name, parsed)
+        } else {
+            tools::summarize_tool_call(&name, &args)
+        };
 
         let t_tool = Instant::now();
         let (result, reflection_inject) = match dispatch_mode {
