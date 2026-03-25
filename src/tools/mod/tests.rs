@@ -201,6 +201,8 @@ fn test_build_tools_names() {
     assert!(names.contains(&"rust_compiler_json"));
     assert!(names.contains(&"rust_analyzer_goto_definition"));
     assert!(names.contains(&"rust_analyzer_find_references"));
+    assert!(names.contains(&"rust_analyzer_hover"));
+    assert!(names.contains(&"rust_analyzer_document_symbol"));
     assert!(names.contains(&"cargo_fix"));
     assert!(names.contains(&"rust_test_one"));
     assert!(names.contains(&"ruff_check"));

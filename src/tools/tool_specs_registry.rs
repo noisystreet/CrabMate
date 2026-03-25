@@ -229,6 +229,22 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_find_references),
         },
         ToolSpec {
+            name: "rust_analyzer_hover",
+            description: "启动 **rust-analyzer**（stdio LSP），对 **path + 0-based line/character** 执行 `textDocument/hover`，输出悬停文档/类型等（Markdown 或纯文本）。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_rust_analyzer_hover,
+            runner: runner_rust_analyzer_hover,
+            summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_hover),
+        },
+        ToolSpec {
+            name: "rust_analyzer_document_symbol",
+            description: "同上，对单文件执行 `textDocument/documentSymbol`：层级 `DocumentSymbol` 树或 `SymbolInformation` 列表，条数由 **max_symbols**（默认 500，上限 5000）截断。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_rust_analyzer_document_symbol,
+            runner: runner_rust_analyzer_document_symbol,
+            summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_document_symbol),
+        },
+        ToolSpec {
             name: "cargo_fix",
             description: "执行 cargo fix 应用编译器/诊断建议（受控写入，需 confirm=true）。",
             category: ToolCategory::Development,

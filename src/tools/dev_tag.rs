@@ -74,7 +74,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "cargo_fix"
         | "rust_test_one"
         | "rust_analyzer_goto_definition"
-        | "rust_analyzer_find_references" => &[GENERAL, RUST],
+        | "rust_analyzer_find_references"
+        | "rust_analyzer_hover"
+        | "rust_analyzer_document_symbol" => &[GENERAL, RUST],
         "cargo_check" | "cargo_test" | "cargo_clippy" | "cargo_fmt_check" | "cargo_outdated"
         | "cargo_machete" | "cargo_udeps" | "rust_compiler_json" | "cargo_audit" | "cargo_deny" => {
             &[GENERAL, RUST, QUALITY]

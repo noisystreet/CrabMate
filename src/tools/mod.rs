@@ -252,6 +252,14 @@ fn runner_rust_analyzer_find_references(args: &str, ctx: &ToolContext<'_>) -> St
     rust_ide::rust_analyzer_find_references(args, ctx.working_dir)
 }
 
+fn runner_rust_analyzer_hover(args: &str, ctx: &ToolContext<'_>) -> String {
+    rust_ide::rust_analyzer_hover(args, ctx.working_dir)
+}
+
+fn runner_rust_analyzer_document_symbol(args: &str, ctx: &ToolContext<'_>) -> String {
+    rust_ide::rust_analyzer_document_symbol(args, ctx.working_dir)
+}
+
 fn runner_cargo_fix(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::cargo_fix(args, ctx.working_dir, ctx.command_max_output_len)
 }

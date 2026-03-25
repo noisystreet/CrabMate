@@ -145,7 +145,7 @@ flowchart TB
 | `python_tools.rs` | Python：`ruff check`、`python3 -m pytest`、`mypy`、`uv sync` / `uv run`、可编辑安装（uv / pip）；供 `format`（`.py` 的 ruff format）、`lint`、`quality_workspace`、`ci_pipeline_local` 调用 |
 | `quality_tools.rs` | 工作区质量组合检查 |
 | `release_docs.rs` | `changelog_draft`（git log → Markdown 草稿）、`license_notice`（cargo metadata → 许可证表） |
-| `rust_ide.rs` | 编译器 JSON、rust-analyzer 等 |
+| `rust_ide.rs` | 编译器 JSON、rust-analyzer LSP（goto/references/hover/documentSymbol 等） |
 | `schedule.rs` | 提醒与日程持久化 |
 | `security_tools.rs` | 安全审计类 |
 | `time.rs` / `weather.rs` / `web_search.rs` | 时间、天气（Open-Meteo）、联网搜索（Brave/Tavily） |
