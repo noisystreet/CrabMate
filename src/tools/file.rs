@@ -808,9 +808,8 @@ fn rel_path_posix(rel: &Path) -> String {
 
 /// 在 `abs_dir`（已位于工作区内）下列目录，按 glob 收集文件相对路径（相对**起始目录** `scan_root_display`）。
 #[allow(clippy::too_many_arguments)] // 递归遍历需携带扫描上下文，字段多为路径/限制参数
-fn walk_glob_collect(
-    abs_dir: &Path,
-    rel_from_scan_root: &Path,
+fn walk_glob_collect_walkdir(
+    scan_root: &Path,
     workspace_canonical: &Path,
     pattern: &Pattern,
     max_depth: usize,
@@ -818,64 +817,42 @@ fn walk_glob_collect(
     max_results: usize,
     results: &mut Vec<String>,
 ) -> Result<(), String> {
-    if results.len() >= max_results {
-        return Ok(());
-    }
-    let rd = std::fs::read_dir(abs_dir).map_err(|e| format!("读取目录失败: {}", e))?;
-    let mut entries: Vec<(PathBuf, bool)> = Vec::new();
-    for ent in rd.flatten() {
-        let name = ent.file_name();
-        if !include_hidden && name.to_string_lossy().starts_with('.') {
-            continue;
-        }
-        let path = ent.path();
-        let Ok(canon) = path.canonicalize() else {
-            continue;
-        };
-        if !canon.starts_with(workspace_canonical) {
-            continue;
-        }
-        let is_dir = ent.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        entries.push((path, is_dir));
-    }
-    entries.sort_by(|a, b| {
-        let na = a.0.file_name().unwrap_or_default();
-        let nb = b.0.file_name().unwrap_or_default();
-        na.to_string_lossy()
-            .to_lowercase()
-            .cmp(&nb.to_string_lossy().to_lowercase())
-    });
-    for (path, is_dir) in entries {
+    use walkdir::WalkDir;
+
+    let walker = WalkDir::new(scan_root)
+        .max_depth(max_depth + 1)
+        .follow_links(false);
+
+    for entry in walker {
         if results.len() >= max_results {
             break;
         }
-        let file_name = path.file_name().unwrap_or_default();
-        let child_rel = rel_from_scan_root.join(file_name);
-        if is_dir {
-            let depth = child_rel.components().count();
-            if depth <= max_depth {
-                let Ok(canon_dir) = path.canonicalize() else {
-                    continue;
-                };
-                if !canon_dir.starts_with(workspace_canonical) {
-                    continue;
-                }
-                walk_glob_collect(
-                    &canon_dir,
-                    &child_rel,
-                    workspace_canonical,
-                    pattern,
-                    max_depth,
-                    include_hidden,
-                    max_results,
-                    results,
-                )?;
-            }
-        } else {
-            let rel_s = rel_path_posix(&child_rel);
-            if pattern.matches(&rel_s) {
-                results.push(rel_s);
-            }
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if entry.depth() == 0 {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy();
+        if !include_hidden && name.starts_with('.') {
+            continue;
+        }
+        if entry.file_type().is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        if let Ok(canon) = path.canonicalize()
+            && !canon.starts_with(workspace_canonical)
+        {
+            continue;
+        }
+        let rel = match path.strip_prefix(scan_root) {
+            Ok(r) => rel_path_posix(r),
+            Err(_) => continue,
+        };
+        if pattern.matches(&rel) {
+            results.push(rel);
         }
     }
     Ok(())
@@ -943,9 +920,8 @@ pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
     };
 
     let mut results: Vec<String> = Vec::new();
-    if let Err(e) = walk_glob_collect(
+    if let Err(e) = walk_glob_collect_walkdir(
         &scan_root,
-        Path::new(""),
         &workspace_canonical,
         &pattern,
         max_depth,
@@ -984,70 +960,53 @@ pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
     out
 }
 
-fn walk_list_tree(
-    abs_dir: &Path,
-    rel_from_scan_root: &Path,
+fn walk_list_tree_walkdir(
+    scan_root: &Path,
     workspace_canonical: &Path,
     max_depth: usize,
     include_hidden: bool,
     max_entries: usize,
     lines: &mut Vec<(String, bool)>,
 ) -> Result<(), String> {
-    if lines.len() >= max_entries {
-        return Ok(());
-    }
-    let rd = std::fs::read_dir(abs_dir).map_err(|e| format!("读取目录失败: {}", e))?;
-    let mut entries: Vec<(PathBuf, bool)> = Vec::new();
-    for ent in rd.flatten() {
-        let name = ent.file_name();
-        if !include_hidden && name.to_string_lossy().starts_with('.') {
-            continue;
-        }
-        let path = ent.path();
-        let Ok(canon) = path.canonicalize() else {
-            continue;
-        };
-        if !canon.starts_with(workspace_canonical) {
-            continue;
-        }
-        let is_dir = ent.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        entries.push((path, is_dir));
-    }
-    entries.sort_by(|a, b| {
-        let na = a.0.file_name().unwrap_or_default();
-        let nb = b.0.file_name().unwrap_or_default();
-        na.to_string_lossy()
-            .to_lowercase()
-            .cmp(&nb.to_string_lossy().to_lowercase())
-    });
-    for (path, is_dir) in entries {
+    use walkdir::WalkDir;
+
+    let walker = WalkDir::new(scan_root)
+        .max_depth(max_depth + 1)
+        .sort_by(|a, b| {
+            a.file_name()
+                .to_string_lossy()
+                .to_lowercase()
+                .cmp(&b.file_name().to_string_lossy().to_lowercase())
+        })
+        .follow_links(false);
+
+    for entry in walker {
         if lines.len() >= max_entries {
             break;
         }
-        let file_name = path.file_name().unwrap_or_default();
-        let child_rel = rel_from_scan_root.join(file_name);
-        let rel_s = rel_path_posix(&child_rel);
-        lines.push((rel_s.clone(), is_dir));
-        if is_dir {
-            let depth = child_rel.components().count();
-            if depth <= max_depth {
-                let Ok(canon_dir) = path.canonicalize() else {
-                    continue;
-                };
-                if !canon_dir.starts_with(workspace_canonical) {
-                    continue;
-                }
-                walk_list_tree(
-                    &canon_dir,
-                    &child_rel,
-                    workspace_canonical,
-                    max_depth,
-                    include_hidden,
-                    max_entries,
-                    lines,
-                )?;
-            }
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if entry.depth() == 0 {
+            continue;
         }
+        let name = entry.file_name().to_string_lossy();
+        if !include_hidden && name.starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        if let Ok(canon) = path.canonicalize()
+            && !canon.starts_with(workspace_canonical)
+        {
+            continue;
+        }
+        let is_dir = entry.file_type().is_dir();
+        let rel = match path.strip_prefix(scan_root) {
+            Ok(r) => rel_path_posix(r),
+            Err(_) => continue,
+        };
+        lines.push((rel, is_dir));
     }
     Ok(())
 }
@@ -1102,9 +1061,8 @@ pub fn list_tree(args_json: &str, working_dir: &Path) -> String {
 
     let mut lines: Vec<(String, bool)> = Vec::new();
     lines.push((".".to_string(), true));
-    if let Err(e) = walk_list_tree(
+    if let Err(e) = walk_list_tree_walkdir(
         &scan_root,
-        Path::new(""),
         &workspace_canonical,
         max_depth,
         include_hidden,

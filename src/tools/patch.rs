@@ -1,30 +1,15 @@
 //! 在工作区内应用 **unified diff**（与 `git diff` / `diff -u` 同类）补丁。
 //!
-//! # CrabMate 统一补丁约定（给模型/人类）
-//!
-//! 1. **格式**：标准 unified diff，必须含 `---` / `+++` 文件头与 `@@ ... @@` hunk 头；行前缀 ` `（上下文）、`-`（删）、`+`（增）。
-//! 2. **路径与 strip（二选一，须与 GNU patch 行为一致）**：
-//!    - **写法 A（推荐，strip=0，默认）**：`--- src/foo.rs` / `+++ src/foo.rs`，路径为**相对工作区根**，与磁盘一致，**不要**加 `a/`/`b/`。
-//!    - **写法 B（Git 风格，strip=1）**：`--- a/src/foo.rs` / `+++ b/src/foo.rs`，调用工具时传 **`strip: 1`**（剥掉 `a/` 后得到 `src/foo.rs`）；若误用 `strip=0` 仍带 `a/` 前缀，patch 会去找 `a/src/...` 而失败。
-//! 3. **带上下文**：每个 hunk 在变更行上下保留 **至少 2～3 行** 未改动的上下文（` ` 开头），避免错位；**禁止**零上下文只贴一行。
-//! 4. **小步**：一次补丁优先 **一个主题**（如一个函数、一处配置）；大改动拆成 **多次 `apply_patch`**，便于预检失败时定位。
-//! 5. **可回滚**：成功应用后若需撤销，可用 `patch -R`（同补丁）、`git checkout -- 文件` 或再打一版 **反向 diff**；因此小步补丁更容易安全回退。
-//!
-//! 底层调用 GNU **`patch --batch --forward`**，先 **`--dry-run`** 再正式应用。
+//! 使用 `diffy` crate 纯 Rust 实现，不依赖系统 `patch` 命令。
 //!
 //! # 安全策略
 //!
 //! - 仅允许相对路径（禁止绝对路径）
 //! - 禁止 `..` 路径穿越
 //! - 必须落在工作区根目录下
-//! - 应用前先执行 `patch --dry-run` 预检查
 
 use crate::path_workspace::absolutize_relative_under_root;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-const MAX_OUTPUT_BYTES: usize = 12 * 1024;
+use std::path::Path;
 
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
     let args: serde_json::Value = match serde_json::from_str(args_json) {
@@ -39,7 +24,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
     let strip = args
         .get("strip")
         .and_then(|v| v.as_u64())
-        .unwrap_or_default();
+        .unwrap_or_default() as usize;
 
     let root = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -50,90 +35,168 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         return format!("补丁路径校验失败: {}", e);
     }
 
-    let patch_file = match write_temp_patch_file(&root, patch_text) {
+    apply_unified_patch(patch_text, &root, strip)
+}
+
+fn apply_unified_patch(patch_text: &str, root: &Path, strip: usize) -> String {
+    let patch = match diffy::Patch::from_str(patch_text) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return format!("解析 unified diff 失败: {}", e),
     };
 
-    let dry_run = run_patch_command(&root, &patch_file, strip, true);
-    if !dry_run.success {
-        let _ = std::fs::remove_file(&patch_file);
-        return format!("apply_patch 预检查失败:\n{}", dry_run.output);
-    }
+    let mut applied_files = Vec::new();
+    let mut errors = Vec::new();
 
-    let apply = run_patch_command(&root, &patch_file, strip, false);
-    let _ = std::fs::remove_file(&patch_file);
-    if !apply.success {
-        return format!("apply_patch 执行失败:\n{}", apply.output);
-    }
-
-    if apply.output.trim().is_empty() {
-        "补丁应用成功".to_string()
-    } else {
-        format!("补丁应用成功:\n{}", apply.output)
-    }
-}
-
-struct CmdResult {
-    success: bool,
-    output: String,
-}
-
-fn run_patch_command(root: &Path, patch_file: &Path, strip: u64, dry_run: bool) -> CmdResult {
-    let mut cmd = Command::new("patch");
-    cmd.arg("--batch")
-        .arg("--forward")
-        .arg("--reject-file=-")
-        .arg(format!("--strip={}", strip))
-        .arg(format!("--directory={}", root.display()))
-        .arg(format!("--input={}", patch_file.display()));
-    if dry_run {
-        cmd.arg("--dry-run");
-    }
-
-    match cmd.output() {
-        Ok(output) => {
-            let status_ok = output.status.success();
-            let mut text = String::new();
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if !stdout.trim().is_empty() {
-                text.push_str(stdout.trim_end());
+    for hunk_patch in split_patch_by_file(patch_text) {
+        let (file_path, original_path) = match extract_target_path(&hunk_patch, strip) {
+            Some(p) => p,
+            None => {
+                errors.push("无法提取文件路径".to_string());
+                continue;
             }
-            if !stderr.trim().is_empty() {
-                if !text.is_empty() {
-                    text.push('\n');
+        };
+
+        if file_path == "/dev/null" || original_path == "/dev/null" {
+            if original_path == "/dev/null" {
+                let target = root.join(&file_path);
+                let single = match diffy::Patch::from_str(&hunk_patch) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        errors.push(format!("{}: 解析失败: {}", file_path, e));
+                        continue;
+                    }
+                };
+                let new_content = diffy::apply("", &single);
+                match new_content {
+                    Ok(content) => {
+                        if let Some(parent) = target.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        if let Err(e) = std::fs::write(&target, content.as_bytes()) {
+                            errors.push(format!("{}: 创建文件失败: {}", file_path, e));
+                        } else {
+                            applied_files.push(format!("新建: {}", file_path));
+                        }
+                    }
+                    Err(e) => errors.push(format!("{}: 应用失败: {}", file_path, e)),
                 }
-                text.push_str(stderr.trim_end());
+                continue;
             }
-            if text.is_empty() {
-                text = format!("patch 退出码: {}", output.status.code().unwrap_or(-1));
-            }
-            CmdResult {
-                success: status_ok,
-                output: truncate(&text, MAX_OUTPUT_BYTES),
+            if file_path == "/dev/null" {
+                let source = root.join(&original_path);
+                if source.exists() {
+                    if let Err(e) = std::fs::remove_file(&source) {
+                        errors.push(format!("{}: 删除失败: {}", original_path, e));
+                    } else {
+                        applied_files.push(format!("删除: {}", original_path));
+                    }
+                }
+                continue;
             }
         }
-        Err(e) => CmdResult {
-            success: false,
-            output: format!("无法启动 patch 命令: {}", e),
-        },
+
+        let target = root.join(&file_path);
+        let original = match std::fs::read_to_string(&target) {
+            Ok(s) => s,
+            Err(e) => {
+                errors.push(format!("{}: 读取失败: {}", file_path, e));
+                continue;
+            }
+        };
+
+        let single = match diffy::Patch::from_str(&hunk_patch) {
+            Ok(p) => p,
+            Err(e) => {
+                errors.push(format!("{}: 解析失败: {}", file_path, e));
+                continue;
+            }
+        };
+
+        match diffy::apply(&original, &single) {
+            Ok(patched) => {
+                if let Err(e) = std::fs::write(&target, patched.as_bytes()) {
+                    errors.push(format!("{}: 写入失败: {}", file_path, e));
+                } else {
+                    applied_files.push(file_path);
+                }
+            }
+            Err(e) => errors.push(format!("{}: 应用失败: {}", file_path, e)),
+        }
+    }
+
+    let _ = patch;
+
+    if errors.is_empty() {
+        if applied_files.is_empty() {
+            "补丁应用成功（无文件变更）".to_string()
+        } else {
+            format!("补丁应用成功：\n{}", applied_files.join("\n"))
+        }
+    } else if applied_files.is_empty() {
+        format!("补丁应用失败：\n{}", errors.join("\n"))
+    } else {
+        format!(
+            "补丁部分应用：\n成功：\n{}\n失败：\n{}",
+            applied_files.join("\n"),
+            errors.join("\n")
+        )
     }
 }
 
-fn write_temp_patch_file(root: &Path, patch_text: &str) -> Result<PathBuf, String> {
-    let cache_dir = root.join(".crabmate");
-    if let Err(e) = std::fs::create_dir_all(&cache_dir) {
-        return Err(format!("创建临时目录失败: {}", e));
+fn split_patch_by_file(patch_text: &str) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    let mut in_file = false;
+
+    for line in patch_text.lines() {
+        if line.starts_with("--- ") {
+            if in_file && !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+            }
+            in_file = true;
+        }
+        if in_file {
+            current.push_str(line);
+            current.push('\n');
+        }
     }
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let p = cache_dir.join(format!("tmp_patch_{}_{}.diff", std::process::id(), ts));
-    std::fs::write(&p, patch_text.as_bytes())
-        .map_err(|e| format!("写入临时补丁文件失败: {}", e))?;
-    Ok(p)
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    if chunks.is_empty() {
+        chunks.push(patch_text.to_string());
+    }
+    chunks
+}
+
+fn extract_target_path(patch_chunk: &str, strip: usize) -> Option<(String, String)> {
+    let mut original = None;
+    let mut target = None;
+    for line in patch_chunk.lines() {
+        if let Some(rest) = line.strip_prefix("--- ") {
+            let path = rest.split_whitespace().next()?;
+            original = Some(strip_components(path, strip));
+        } else if let Some(rest) = line.strip_prefix("+++ ") {
+            let path = rest.split_whitespace().next()?;
+            target = Some(strip_components(path, strip));
+        }
+        if original.is_some() && target.is_some() {
+            break;
+        }
+    }
+    Some((target?, original?))
+}
+
+fn strip_components(path: &str, n: usize) -> String {
+    if path == "/dev/null" {
+        return path.to_string();
+    }
+    let parts: Vec<&str> = path.split('/').collect();
+    if n >= parts.len() {
+        parts.last().unwrap_or(&"").to_string()
+    } else {
+        parts[n..].join("/")
+    }
 }
 
 fn validate_patch_paths(patch_text: &str, root: &Path) -> Result<(), String> {
@@ -180,7 +243,6 @@ fn validate_single_path(raw_path: &str, root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-// 对“目标路径或其最近存在祖先”做 canonical 校验，防止借助工作区内 symlink 写到外部。
 fn ensure_existing_ancestor_within_workspace(root: &Path, target: &Path) -> Result<(), String> {
     let mut ancestor = target;
     while !ancestor.exists() {
@@ -195,15 +257,6 @@ fn ensure_existing_ancestor_within_workspace(root: &Path, target: &Path) -> Resu
         return Err(format!("路径超出工作区: {}", target.display()));
     }
     Ok(())
-}
-
-fn truncate(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let mut out = s[..max_bytes].to_string();
-    out.push_str("\n\n... (patch 输出已截断)");
-    out
 }
 
 #[cfg(test)]
@@ -247,10 +300,38 @@ mod tests {
         assert!(validate_patch_paths(patch, &root).is_ok());
     }
 
+    #[test]
+    fn test_strip_components() {
+        assert_eq!(strip_components("a/src/main.rs", 1), "src/main.rs");
+        assert_eq!(strip_components("src/main.rs", 0), "src/main.rs");
+        assert_eq!(strip_components("/dev/null", 1), "/dev/null");
+    }
+
+    #[test]
+    fn test_split_patch_by_file() {
+        let patch = "\
+--- a/foo.rs
++++ b/foo.rs
+@@ -1 +1 @@
+-old
++new
+--- a/bar.rs
++++ b/bar.rs
+@@ -1 +1 @@
+-x
++y
+";
+        let chunks = split_patch_by_file(patch);
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks[0].contains("foo.rs"));
+        assert!(chunks[1].contains("bar.rs"));
+    }
+
     #[cfg(unix)]
     #[test]
     fn test_validate_single_path_rejects_symlink_escape() {
         use std::os::unix::fs::symlink;
+        use std::time::{SystemTime, UNIX_EPOCH};
 
         let root = std::env::temp_dir().join(format!(
             "crabmate_patch_tool_test_{}_{}",
