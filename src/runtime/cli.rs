@@ -9,7 +9,17 @@ use crossterm::{
 };
 use log::debug;
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
+
+fn cli_effective_work_dir(workspace_cli: &Option<String>, default: &str) -> PathBuf {
+    PathBuf::from(
+        workspace_cli
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(default),
+    )
+}
 
 /// 单次提问模式（--query / --stdin），执行一轮对话后退出
 #[allow(clippy::too_many_arguments)]
@@ -25,8 +35,7 @@ pub async fn run_single_shot(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let q = question.trim();
     if q.is_empty() {
-        eprintln!("错误：--query 或 --stdin 内容为空");
-        std::process::exit(1);
+        return Err("错误：--query 或 --stdin 内容为空".into());
     }
     let mut messages = messages_chat_seed(&cfg.system_prompt, q);
     debug!(
@@ -34,32 +43,24 @@ pub async fn run_single_shot(
         "单次提问模式 seed 消息已构造 user_preview={}",
         redact::preview_chars(q, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
-    let work_dir_str = workspace_cli
-        .as_deref()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or(&cfg.run_command_working_dir)
-        .to_string();
-    let work_dir = std::path::Path::new(&work_dir_str);
-    if let Err(e) = run_agent_turn(
+    let work_dir = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    run_agent_turn(
         client,
         api_key,
         cfg,
         tools,
         &mut messages,
         None,
-        work_dir,
+        work_dir.as_path(),
         true,
-        !no_stream,
+        true,
         no_stream,
         None,
         None,
         None,
     )
     .await
-    {
-        eprintln!("{}", e);
-        std::process::exit(1);
-    }
+    .map_err(|e| -> Box<dyn std::error::Error> { e })?;
     if let Some(mode) = output_mode.as_deref()
         && mode == "json"
     {
@@ -87,15 +88,10 @@ pub async fn run_repl(
     workspace_cli: &Option<String>,
     no_stream: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let work_dir_str = workspace_cli
-        .as_deref()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or(&cfg.run_command_working_dir)
-        .to_string();
-    let work_dir = std::path::Path::new(&work_dir_str);
+    let work_dir = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
     let mut messages = crate::runtime::workspace_session::initial_workspace_messages(
         cfg.as_ref(),
-        work_dir,
+        work_dir.as_path(),
         cfg.tui_load_session_on_start,
     );
 
@@ -111,8 +107,14 @@ pub async fn run_repl(
         let _ = stdout.execute(Clear(ClearType::CurrentLine));
         crate::runtime::terminal_labels::write_user_message_prefix(&mut stdout)?;
         stdout.flush()?;
-        let mut input = String::new();
-        let n = io::stdin().read_line(&mut input)?;
+        let (n, input) = tokio::task::spawn_blocking(|| {
+            let mut input = String::new();
+            let n = io::stdin().read_line(&mut input)?;
+            Ok::<_, io::Error>((n, input))
+        })
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
         if n == 0 {
             break; // Ctrl+D (EOF)
         }
@@ -139,9 +141,9 @@ pub async fn run_repl(
             tools,
             &mut messages,
             None,
-            work_dir,
+            work_dir.as_path(),
             true,
-            !no_stream,
+            true,
             no_stream,
             None,
             None,

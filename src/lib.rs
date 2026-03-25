@@ -1029,7 +1029,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     init_logging(
         log_file.as_deref().map(std::path::Path::new),
         serve_port.is_none(),
-    );
+    )?;
 
     let api_key = match env::var("API_KEY") {
         Ok(v) => v,
@@ -1047,7 +1047,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(c) => Arc::new(c),
         Err(e) => {
             eprintln!("{}", e);
-            std::process::exit(1);
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
         }
     };
     info!(
@@ -1059,11 +1059,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if dry_run {
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
         if !static_dir.is_dir() {
-            eprintln!(
+            let msg = format!(
                 "dry-run 失败：前端静态目录不存在：{}（请先在 frontend/ 下构建）",
                 static_dir.display()
             );
-            std::process::exit(1);
+            eprintln!("{msg}");
+            return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg).into());
         }
         println!(
             "配置检查通过：API_KEY 已设置，配置可用，前端静态目录存在：{}",
