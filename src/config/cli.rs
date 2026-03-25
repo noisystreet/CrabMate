@@ -164,9 +164,50 @@ pub struct Cli {
     /// 将日志追加写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别写入。CLI 下可同时输出到 stderr；TUI 下默认不写 stderr，可用本选项后台 `tail -f` 查看
     #[arg(long, value_name = "FILE")]
     pub log: Option<String>,
+
+    // ---- Benchmark 批量测评 ----
+    /// 批量测评模式：指定 benchmark 类型（swe_bench / gaia / human_eval / generic）
+    #[arg(long, value_name = "TYPE")]
+    pub benchmark: Option<String>,
+
+    /// 输入 JSONL 文件路径（每行一条 benchmark 任务）
+    #[arg(long, value_name = "FILE")]
+    pub batch: Option<String>,
+
+    /// 输出 JSONL 文件路径（逐条追加写入结果）
+    #[arg(long, value_name = "FILE")]
+    pub batch_output: Option<String>,
+
+    /// 每条任务的全局超时（秒，0 = 不限制，默认 300）
+    #[arg(long, value_name = "SECS", default_value = "300")]
+    pub task_timeout: u64,
+
+    /// 每条任务最大 agent 工具调用轮次（0 = 不限制）
+    #[arg(long, value_name = "N", default_value = "0")]
+    pub max_tool_rounds: usize,
+
+    /// 续跑模式：跳过输出文件中已有结果的 instance_id
+    #[arg(long)]
+    pub resume: bool,
+
+    /// 批量测评时覆盖 system prompt（文件路径）
+    #[arg(long, value_name = "FILE")]
+    pub bench_system_prompt: Option<String>,
 }
 
-/// `parse_args` 的返回值：配置路径、单次提问、serve 端口、Web 绑定地址、输出模式、工作区 CLI、各类布尔开关、日志文件路径。
+/// Benchmark 批量测评相关的 CLI 参数。
+#[derive(Debug, Clone, Default)]
+pub struct BenchmarkCliArgs {
+    pub benchmark: Option<String>,
+    pub batch: Option<String>,
+    pub batch_output: Option<String>,
+    pub task_timeout: u64,
+    pub max_tool_rounds: usize,
+    pub resume: bool,
+    pub system_prompt_file: Option<String>,
+}
+
+/// `parse_args` 的返回值：配置路径、单次提问、serve 端口、Web 绑定地址、输出模式、工作区 CLI、各类布尔开关、日志文件路径、benchmark 参数。
 pub type ParsedCliArgs = (
     Option<String>,
     Option<String>,
@@ -180,6 +221,7 @@ pub type ParsedCliArgs = (
     bool,           // no_stream
     bool,           // tui
     Option<String>, // log file path
+    BenchmarkCliArgs,
 );
 
 /// 兼容原有调用处的解析函数，基于 clap::Parser 实现
@@ -230,6 +272,16 @@ pub fn parse_args() -> ParsedCliArgs {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
+    let bench_args = BenchmarkCliArgs {
+        benchmark: cli.benchmark,
+        batch: cli.batch,
+        batch_output: cli.batch_output,
+        task_timeout: cli.task_timeout,
+        max_tool_rounds: cli.max_tool_rounds,
+        resume: cli.resume,
+        system_prompt_file: cli.bench_system_prompt,
+    };
+
     (
         cli.config,
         single_shot,
@@ -243,5 +295,6 @@ pub fn parse_args() -> ParsedCliArgs {
         cli.no_stream,
         cli.tui,
         log_path,
+        bench_args,
     )
 }
