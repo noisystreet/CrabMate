@@ -125,7 +125,7 @@ flowchart TB
 | `dev_tag.rs` | Development 子域标签：`tags_for_tool_name`、`suggest_dev_tags_for_workspace`（供 `build_tools_with_options` 过滤） |
 | `exec.rs` | `run_executable` |
 | `file.rs` | 创建/读/改/复制/移动/删除文件与目录、追加写入、搜索替换、`glob_files`、`list_tree`、`hash_file`（流式 SHA-256/512、BLAKE3）等 |
-| `format.rs` / `lint.rs` | 格式化（含 C/C++ `clang-format`）与 lint 聚合 |
+| `format.rs` / `lint.rs` | 格式化（Rust/Python/C++/Go/Shell/JS·TS/Markdown/YAML/XML/SQL + `prettier`）与 lint 聚合 |
 | `frontend_tools.rs` | 前端 npm 脚本类 |
 | `git.rs` | Git 只读查询（status/diff/log/blame 等）与受控写入（stage/commit/checkout/push/merge/rebase/stash/tag/reset/cherry-pick/revert 等） |
 | `go_tools.rs` | Go 工具链：`go build`/`test`/`vet`/`mod tidy`/`gofmt -l`/`golangci-lint` |

@@ -1130,5 +1130,21 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             runner: runner_search_replace,
             summary: ToolSummaryKind::Dynamic(ts::summary_search_replace),
         },
+        ToolSpec {
+            name: "chmod_file",
+            description: "修改文件或目录权限（仅 Unix/Linux，受控写入需 confirm=true）。mode 为八进制数字（如 \"755\"、\"644\"）。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_chmod_file,
+            runner: runner_chmod_file,
+            summary: ToolSummaryKind::Dynamic(ts::summary_chmod_file),
+        },
+        ToolSpec {
+            name: "symlink_info",
+            description: "查看符号链接信息（只读）：目标路径、是否悬空、是否指向工作区外。非符号链接则报告实际类型。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_symlink_info,
+            runner: runner_symlink_info,
+            summary: ToolSummaryKind::Dynamic(ts::summary_symlink_info),
+        },
     ]
 }

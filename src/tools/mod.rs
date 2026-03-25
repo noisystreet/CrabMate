@@ -668,6 +668,12 @@ fn runner_create_dir(args: &str, ctx: &ToolContext<'_>) -> String {
 fn runner_search_replace(args: &str, ctx: &ToolContext<'_>) -> String {
     file::search_replace(args, ctx.working_dir)
 }
+fn runner_chmod_file(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::chmod_file(args, ctx.working_dir)
+}
+fn runner_symlink_info(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::symlink_info(args, ctx.working_dir)
+}
 
 fn runner_code_stats(args: &str, ctx: &ToolContext<'_>) -> String {
     code_metrics::code_stats(args, ctx.working_dir, ctx.command_max_output_len)
