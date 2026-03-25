@@ -24,6 +24,8 @@ pub struct WorkflowSpec {
     pub summary_preview_max_chars: usize,
     pub compensation_preview_max_chars: usize,
     pub nodes: Vec<WorkflowNodeSpec>,
+    /// 解析时预计算的拓扑层数（Kahn 算法），避免 validate/execute 路径重复计算。
+    pub cached_layer_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -294,7 +296,7 @@ pub async fn run_workflow_execute_tool(
                 "output_inject_max_chars": spec.output_inject_max_chars,
                 "nodes_count": spec.nodes.len(),
                 "execution_layers": execution_layers,
-                "layer_count": execution_layers.len(),
+                "layer_count": spec.cached_layer_count,
                 "topological_order": topological_order
             }),
             stats: WorkflowExecutionStats {
@@ -709,9 +711,6 @@ async fn execute_workflow_dag(
         main_summary.clone()
     };
 
-    let planned_layer_count = topo_layers(&spec.nodes)
-        .map(|layers| layers.len())
-        .unwrap_or(0);
     let report = WorkflowExecutionReport {
         report_type: "workflow_execute_result".to_string(),
         status,
@@ -722,7 +721,7 @@ async fn execute_workflow_dag(
             "compensate_on_failure": spec.compensate_on_failure,
             "output_inject_max_chars": spec.output_inject_max_chars,
             "nodes_count": spec.nodes.len(),
-            "planned_layer_count": planned_layer_count
+            "planned_layer_count": spec.cached_layer_count
         }),
         stats: WorkflowExecutionStats {
             passed,
@@ -1384,6 +1383,7 @@ fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
     if nodes.is_empty() {
         return Err("workflow.nodes 不能为空".to_string());
     }
+    let cached_layer_count = topo_layers(&nodes).map(|l| l.len()).unwrap_or(0);
     Ok(WorkflowSpec {
         max_parallelism,
         fail_fast,
@@ -1392,6 +1392,7 @@ fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
         summary_preview_max_chars,
         compensation_preview_max_chars,
         nodes,
+        cached_layer_count,
     })
 }
 

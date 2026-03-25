@@ -317,7 +317,10 @@ pub async fn maybe_summarize_with_llm(
                 tail,
                 messages.len()
             );
-            prepare_messages_before_model_call_sync(messages, cfg);
+            // 摘要替换中间消息后，仅需修复因删除带 tool_calls 的 assistant 而产生的孤立
+            // tool 消息；compress/trim 在外层 prepare_messages_for_model 的首次同步中
+            // 已完成，无需重跑。
+            drop_orphan_tool_messages(messages);
         }
         Err(e) => {
             warn!(

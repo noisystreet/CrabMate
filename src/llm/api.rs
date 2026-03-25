@@ -91,7 +91,7 @@ async fn ingest_sse_data_payload(
     if payload.is_empty() {
         return;
     }
-    let Ok(chunk) = serde_json::from_str::<StreamChunk>(payload) else {
+    let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
         return;
     };
     let Some(choice) = chunk.choices.and_then(|c| c.into_iter().next()) else {
