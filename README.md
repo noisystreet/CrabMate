@@ -1,4 +1,18 @@
-# CrabMate
+<p align="center">
+  <img src="assets/logo.svg" width="120" alt="CrabMate Logo" />
+</p>
+
+<h1 align="center">CrabMate</h1>
+
+<p align="center">
+  <strong>🦀 Rust AI Agent powered by DeepSeek API</strong>
+</p>
+
+<p align="center">
+  <a href="#功能概览">功能</a> · <a href="#快速开始">快速开始</a> · <a href="#配置">配置</a> · <a href="#开发与构建">开发</a>
+</p>
+
+---
 
 CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，支持**工具调用**（Function Calling），能在工作区内执行命令、查看/编辑文件并给出自然语言回复。
 

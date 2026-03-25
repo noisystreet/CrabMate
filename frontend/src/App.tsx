@@ -267,6 +267,7 @@ export default function App() {
     <div className="h-screen flex flex-col overflow-hidden bg-base-100">
       {/* 顶部菜单栏 */}
       <div className="navbar min-h-0 h-12 shrink-0 bg-base-200/60 border-b border-base-300 px-3">
+        <img src="/logo.svg" alt="CrabMate" className="h-7 w-7 mr-1.5" />
         <span className="text-lg font-semibold text-base-content shrink-0">CrabMate</span>
         <div className="flex-1" />
         <div className="flex gap-1">

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 112">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#EA580C"/>
+    </linearGradient>
+    <linearGradient id="ig" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FDBA74"/>
+      <stop offset="100%" stop-color="#FB923C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Legs -->
+  <g stroke="#C2410C" stroke-width="3.5" stroke-linecap="round" fill="none">
+    <path d="M66,84 L50,102"/>
+    <path d="M62,88 L42,100"/>
+    <path d="M64,92 L50,108"/>
+    <path d="M94,84 L110,102"/>
+    <path d="M98,88 L118,100"/>
+    <path d="M96,92 L110,108"/>
+  </g>
+
+  <!-- Left claw -->
+  <path d="M54,60 Q32,46 22,44" stroke="#EA580C" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <path d="M22,44 C16,36 6,32 3,38 C0,44 10,48 17,44" fill="#F97316" stroke="#C2410C" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M22,44 C16,52 6,56 3,50 C0,44 10,40 17,44" fill="#F97316" stroke="#C2410C" stroke-width="1.5" stroke-linejoin="round"/>
+
+  <!-- Right claw -->
+  <path d="M106,60 Q128,46 138,44" stroke="#EA580C" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <path d="M138,44 C144,36 154,32 157,38 C160,44 150,48 143,44" fill="#F97316" stroke="#C2410C" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M138,44 C144,52 154,56 157,50 C160,44 150,40 143,44" fill="#F97316" stroke="#C2410C" stroke-width="1.5" stroke-linejoin="round"/>
+
+  <!-- Eye stalks (behind gear) -->
+  <line x1="73" y1="44" x2="67" y2="20" stroke="#EA580C" stroke-width="5" stroke-linecap="round"/>
+  <line x1="87" y1="44" x2="93" y2="20" stroke="#EA580C" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Gear teeth -->
+  <g fill="url(#bg)">
+    <rect x="73.5" y="32" width="13" height="16" rx="2.5" transform="rotate(0,80,64)"/>
+    <rect x="73.5" y="32" width="13" height="16" rx="2.5" transform="rotate(45,80,64)"/>
+    <rect x="73.5" y="32" width="13" height="16" rx="2.5" transform="rotate(90,80,64)"/>
+    <rect x="73.5" y="32" width="13" height="16" rx="2.5" transform="rotate(135,80,64)"/>
+    <rect x="73.5" y="32" width="13" height="16" rx="2.5" transform="rotate(180,80,64)"/>
+    <rect x="73.5" y="32" width="13" height="16" rx="2.5" transform="rotate(225,80,64)"/>
+    <rect x="73.5" y="32" width="13" height="16" rx="2.5" transform="rotate(270,80,64)"/>
+    <rect x="73.5" y="32" width="13" height="16" rx="2.5" transform="rotate(315,80,64)"/>
+  </g>
+  <!-- Main gear circle -->
+  <circle cx="80" cy="64" r="24" fill="url(#bg)"/>
+  <!-- Inner circle -->
+  <circle cx="80" cy="64" r="13" fill="url(#ig)"/>
+  <!-- Center hub -->
+  <circle cx="80" cy="64" r="5" fill="#EA580C"/>
+
+  <!-- Eyes -->
+  <circle cx="67" cy="18" r="8" fill="white" stroke="#B45309" stroke-width="1.5"/>
+  <circle cx="93" cy="18" r="8" fill="white" stroke="#B45309" stroke-width="1.5"/>
+  <!-- Pupils -->
+  <circle cx="68" cy="19" r="4" fill="#1C1917"/>
+  <circle cx="94" cy="19" r="4" fill="#1C1917"/>
+  <!-- Highlights -->
+  <circle cx="65.5" cy="16" r="2" fill="white" opacity="0.9"/>
+  <circle cx="91.5" cy="16" r="2" fill="white" opacity="0.9"/>
+</svg>
