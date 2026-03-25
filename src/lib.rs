@@ -950,6 +950,8 @@ struct StatusResponse {
     planner_executor_mode: &'static str,
     /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`）。
     staged_plan_execution: bool,
+    /// 启用后同轮次内对只读工具的重复调用跳过重复执行（缓存命中直接返回）。
+    tool_result_dedup: bool,
     /// CLI REPL 是否在启动时从 `.crabmate/tui_session.json` 恢复会话（默认 false；文件名历史兼容）。
     tui_load_session_on_start: bool,
     max_message_history: usize,
@@ -993,6 +995,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
         plan_rewrite_max_attempts: state.cfg.plan_rewrite_max_attempts,
         planner_executor_mode: state.cfg.planner_executor_mode.as_str(),
         staged_plan_execution: state.cfg.staged_plan_execution,
+        tool_result_dedup: state.cfg.tool_result_dedup,
         tui_load_session_on_start: state.cfg.tui_load_session_on_start,
         max_message_history: state.cfg.max_message_history,
         tool_message_max_chars: state.cfg.tool_message_max_chars,

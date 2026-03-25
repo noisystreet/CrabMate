@@ -410,6 +410,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `AGENT_PLANNER_EXECUTOR_MODE`：规划器/执行器模式，`single_agent`（默认，历史行为）或 `logical_dual_agent`（阶段 1：同进程逻辑双 agent，规划轮只看用户/助手自然语言，不看 `tool` 正文）
   - `AGENT_STAGED_PLAN_EXECUTION`：设为 `1`/`true`/`yes`/`on` 启用分阶段规划（仅在 `planner_executor_mode=single_agent` 下生效）；其它或未设置为关闭（与 `[agent] staged_plan_execution` 一致）
    - `AGENT_STAGED_PLAN_PHASE_INSTRUCTION`：规划轮追加的 **system** 文案；空或未设置则用内置默认（与 `[agent] staged_plan_phase_instruction` 一致）
+   - `AGENT_TOOL_RESULT_DEDUP`：设为 `1`/`true`/`yes`/`on` 启用工具结果去重（默认 `true`）；同一 Agent 轮次内对只读工具的重复调用（相同工具名+参数）直接返回缓存结果，跳过重复执行
    - **联网搜索**（`web_search` 工具）：`AGENT_WEB_SEARCH_PROVIDER`（`brave` / `tavily`）、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`（1～20，默认 8）
    - **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`（逗号分隔 URL 前缀）、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`（与 `default_config.toml` / `[agent]` 中同名项对应）
    - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
@@ -442,6 +443,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 **阶段 1：逻辑双 agent**（`[agent] planner_executor_mode` / `AGENT_PLANNER_EXECUTOR_MODE`）：设为 `logical_dual_agent` 时，每条用户消息先进入规划轮（planner，仅无工具），解析 `agent_reply_plan` 后逐步注入执行器（executor）外层循环。与 `single_agent` 差异：planner 上下文会过滤 `role: tool` 正文，仅保留用户/助手自然语言，降低工具噪声对规划的干扰；executor 仍按现有工具与审批策略执行。该模式与 `staged_plan_execution` 目标类似，但优先级更高（启用后直接走逻辑双 agent 路径）。
 
 **分阶段规划（单 agent 模式）**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：在 `planner_executor_mode=single_agent` 且本项为 `true` 时，**每条用户消息**先走一轮**无工具** API 调用，要求模型产出可解析 `agent_reply_plan` v1；解析成功后按 `steps` 顺序逐步执行。规划轮若误返回 `tool_calls` 或 JSON 不合格，流式下会收到 `error` + `code: staged_plan_tool_calls` / `staged_plan_invalid`（助手规划正文仍会写入消息列表以便排错）。**API 调用次数与费用通常明显高于关闭时**。
+
+**工具结果去重**（`[agent] tool_result_dedup` / `AGENT_TOOL_RESULT_DEDUP`，默认 `true`）：启用后，同一 Agent 轮次内对只读确定性工具（如 `read_file`、`list_dir`、`search_in_files` 等）的重复调用（相同工具名 + 完全相同参数 JSON）直接返回缓存结果，跳过重复执行。写操作工具（`create_file`、`run_command` 等）、非确定性工具（`get_current_time`）、以及需特殊运行时的工具（`web_search`、`http_fetch` 等）不受影响，始终实际执行。缓存仅在单轮内有效，用户每条新消息触发的 Agent 回合会使用新的空缓存。
 
 **系统提示词**：在 `default_config.toml` 中通过 `system_prompt`（多行字符串）或 `system_prompt_file`（文件路径）配置；若同时设置，以文件内容为准。未配置则启动报错。
 

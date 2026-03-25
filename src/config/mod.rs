@@ -63,6 +63,7 @@ struct ConfigBuilder {
     chat_queue_max_pending: Option<u64>,
     staged_plan_execution: Option<bool>,
     staged_plan_phase_instruction: Option<String>,
+    tool_result_dedup: Option<bool>,
     workspace_allowed_roots: Option<Vec<String>>,
     web_api_bearer_token: Option<String>,
     allow_insecure_no_auth_for_non_loopback: Option<bool>,
@@ -212,6 +213,7 @@ impl ConfigBuilder {
             .or(self.chat_queue_max_concurrent);
         self.chat_queue_max_pending = agent.chat_queue_max_pending.or(self.chat_queue_max_pending);
         self.staged_plan_execution = agent.staged_plan_execution.or(self.staged_plan_execution);
+        self.tool_result_dedup = agent.tool_result_dedup.or(self.tool_result_dedup);
         self.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
             .or(self.allow_insecure_no_auth_for_non_loopback);
@@ -502,6 +504,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.staged_plan_execution = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_TOOL_RESULT_DEDUP")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.tool_result_dedup = Some(val);
+    }
     if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_PHASE_INSTRUCTION") {
         b.staged_plan_phase_instruction = Some(v);
     }
@@ -670,6 +677,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
     let chat_queue_max_pending = b.chat_queue_max_pending.unwrap_or(32).clamp(1, 8192) as usize;
     let staged_plan_execution = b.staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = b.staged_plan_phase_instruction.unwrap_or_default();
+    let tool_result_dedup = b.tool_result_dedup.unwrap_or(true);
     let web_api_bearer_token = b.web_api_bearer_token.unwrap_or_default();
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
@@ -735,5 +743,6 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         chat_queue_max_pending,
         staged_plan_execution,
         staged_plan_phase_instruction,
+        tool_result_dedup,
     })
 }

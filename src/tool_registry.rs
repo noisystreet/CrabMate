@@ -102,6 +102,20 @@ pub fn execution_class_for_tool(name: &str) -> ToolExecutionClass {
         .unwrap_or(ToolExecutionClass::BlockingSync)
 }
 
+/// 判断工具结果是否可在同一轮次内缓存（相同参数跳过重复执行）。
+/// 仅对只读、SyncDefault、确定性工具返回 true。
+pub fn is_cacheable_tool(name: &str) -> bool {
+    if !is_readonly_tool(name) {
+        return false;
+    }
+    if handler_id_for(name) != HandlerId::SyncDefault {
+        return false;
+    }
+    static NON_DETERMINISTIC: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    let nd = NON_DETERMINISTIC.get_or_init(|| ["get_current_time"].into_iter().collect());
+    !nd.contains(name)
+}
+
 /// 判断工具是否为只读（不修改工作区文件系统），供并行执行决策使用。
 /// 写操作工具（create/modify/delete/move/copy/format/apply_patch 等）及带审批的工具返回 false。
 pub fn is_readonly_tool(name: &str) -> bool {
@@ -733,6 +747,46 @@ async fn execute_web_search_web(
     (s, None)
 }
 
+/// 单轮次内的只读工具结果缓存：`(tool_name, arguments_json)` → `result_text`。
+///
+/// 在 Agent 外层循环（`run_agent_outer_loop`）入口创建，同一轮的多次模型调用共享；
+/// 轮次结束（用户收到终答）后丢弃，不跨轮缓存。仅对 [`is_cacheable_tool`] 返回 `true` 的工具生效。
+#[derive(Default)]
+pub struct ToolResultCache {
+    store: HashMap<(String, String), String>,
+    hits: u64,
+}
+
+impl ToolResultCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get(&mut self, name: &str, args: &str) -> Option<&str> {
+        if !is_cacheable_tool(name) {
+            return None;
+        }
+        let key = (name.to_string(), args.to_string());
+        if self.store.contains_key(&key) {
+            self.hits += 1;
+            self.store.get(&key).map(|s| s.as_str())
+        } else {
+            None
+        }
+    }
+
+    pub fn insert(&mut self, name: &str, args: &str, result: &str) {
+        if is_cacheable_tool(name) {
+            self.store
+                .insert((name.to_string(), args.to_string()), result.to_string());
+        }
+    }
+
+    pub fn hits(&self) -> u64 {
+        self.hits
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -802,5 +856,58 @@ mod tests {
             execution_class_for_tool("calc"),
             ToolExecutionClass::BlockingSync
         );
+    }
+
+    #[test]
+    fn cacheable_readonly_sync_tools() {
+        assert!(is_cacheable_tool("read_file"));
+        assert!(is_cacheable_tool("list_dir"));
+        assert!(is_cacheable_tool("calc"));
+    }
+
+    #[test]
+    fn non_cacheable_write_tools() {
+        assert!(!is_cacheable_tool("create_file"));
+        assert!(!is_cacheable_tool("modify_file"));
+        assert!(!is_cacheable_tool("run_command"));
+    }
+
+    #[test]
+    fn non_cacheable_non_deterministic() {
+        assert!(!is_cacheable_tool("get_current_time"));
+    }
+
+    #[test]
+    fn non_cacheable_special_handler() {
+        assert!(!is_cacheable_tool("web_search"));
+        assert!(!is_cacheable_tool("http_fetch"));
+        assert!(!is_cacheable_tool("get_weather"));
+    }
+
+    #[test]
+    fn cache_insert_and_hit() {
+        let mut c = ToolResultCache::new();
+        assert!(c.get("read_file", r#"{"path":"a.txt"}"#).is_none());
+        c.insert("read_file", r#"{"path":"a.txt"}"#, "hello");
+        assert_eq!(c.get("read_file", r#"{"path":"a.txt"}"#), Some("hello"));
+        assert_eq!(c.hits(), 1);
+    }
+
+    #[test]
+    fn cache_ignores_write_tools() {
+        let mut c = ToolResultCache::new();
+        c.insert("create_file", r#"{"path":"b.txt"}"#, "ok");
+        assert!(c.get("create_file", r#"{"path":"b.txt"}"#).is_none());
+        assert_eq!(c.hits(), 0);
+    }
+
+    #[test]
+    fn cache_distinct_args() {
+        let mut c = ToolResultCache::new();
+        c.insert("read_file", r#"{"path":"a.txt"}"#, "aaa");
+        c.insert("read_file", r#"{"path":"b.txt"}"#, "bbb");
+        assert_eq!(c.get("read_file", r#"{"path":"a.txt"}"#), Some("aaa"));
+        assert_eq!(c.get("read_file", r#"{"path":"b.txt"}"#), Some("bbb"));
+        assert_eq!(c.hits(), 2);
     }
 }

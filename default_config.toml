@@ -79,6 +79,8 @@ plan_rewrite_max_attempts = 2
 planner_executor_mode = "single_agent"
 # 分阶段规划：为 true 时，每条用户消息先经无工具规划轮产出 agent_reply_plan v1，再按 steps 顺序逐步注入 user 并各跑一轮完整 Agent 循环（Web/TUI 均生效；多耗 API 轮次）
 staged_plan_execution = true
+# 工具结果去重：启用后同一 Agent 轮次内对只读工具的重复调用（相同工具名+参数）直接返回缓存结果，跳过重复执行
+tool_result_dedup = true
 # 规划轮追加的 system 全文；留空则使用内置默认（见 agent_turn.rs）
 # staged_plan_phase_instruction = """……"""
 # Cursor-like 规则注入：启用后自动读取 cursor_rules_dir 下的 *.mdc，并附加到 system_prompt 后

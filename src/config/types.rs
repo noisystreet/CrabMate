@@ -147,4 +147,6 @@ pub struct AgentConfig {
     pub staged_plan_execution: bool,
     /// 规划轮追加的 **system** 指令；空字符串则使用内置默认文案。
     pub staged_plan_phase_instruction: String,
+    /// 启用后，同一 Agent 轮次内对只读工具的重复调用（相同工具名+参数）直接返回缓存结果，跳过重复执行。
+    pub tool_result_dedup: bool,
 }

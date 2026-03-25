@@ -5,7 +5,6 @@
 //!
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -468,6 +467,7 @@ async fn per_execute_tools_common(
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     web_tool_ctx: Option<&tool_registry::WebToolRuntime>,
+    dedup_cache: &mut tool_registry::ToolResultCache,
 ) -> ExecuteToolsBatchOutcome {
     let mut workspace_changed = false;
 
@@ -479,6 +479,8 @@ async fn per_execute_tools_common(
             .await;
     }
 
+    let dedup_enabled = cfg.tool_result_dedup;
+
     if tool_registry::tool_calls_allow_parallel_sync_batch(tool_calls) {
         let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
         info!(
@@ -488,52 +490,88 @@ async fn per_execute_tools_common(
             dedup_count
         );
 
-        let mut unique_keys: Vec<(String, String)> = Vec::with_capacity(tool_calls.len());
-        let mut unique_futs = Vec::new();
-        for tc in tool_calls {
-            let key = (tc.function.name.clone(), tc.function.arguments.clone());
-            if unique_keys.contains(&key) {
-                continue;
-            }
-            unique_keys.push(key);
-            let cfg = Arc::clone(cfg);
-            let wd = effective_working_dir.to_path_buf();
-            let name = tc.function.name.clone();
-            let args = tc.function.arguments.clone();
-            unique_futs.push(async move {
-                info!(target: "crabmate", "并行工具开始 tool={}", name);
-                debug!(
-                    target: "crabmate",
-                    "工具调用参数摘要 tool={} args_preview={}",
-                    name,
-                    crate::redact::tool_arguments_preview_for_log(&args)
-                );
-                let t_tool = Instant::now();
-                let tool_name = name.clone();
-                let tool_args = args.clone();
-                let result = tokio::task::spawn_blocking(move || {
-                    let ctx =
-                        tools::tool_context_for(cfg.as_ref(), &cfg.allowed_commands, wd.as_path());
-                    tools::run_tool(&tool_name, &tool_args, &ctx)
-                })
-                .await
-                .unwrap_or_else(|e| format!("工具执行 panic：{}", e));
+        let mut cached_results: Vec<Option<(String, String, String, String)>> =
+            Vec::with_capacity(tool_calls.len());
+        let mut to_execute: Vec<(usize, &ToolCall)> = Vec::new();
+
+        for (idx, tc) in tool_calls.iter().enumerate() {
+            let name = &tc.function.name;
+            let args = &tc.function.arguments;
+            if dedup_enabled && let Some(cached) = dedup_cache.get(name, args) {
                 info!(
                     target: "crabmate",
-                    "并行工具完成 tool={} elapsed_ms={}",
-                    name,
-                    t_tool.elapsed().as_millis()
+                    "并行工具去重命中 tool={} （跳过重复执行）",
+                    name
                 );
-                (name, args, result)
-            });
+                cached_results.push(Some((
+                    name.clone(),
+                    args.clone(),
+                    tc.id.clone(),
+                    cached.to_string(),
+                )));
+                continue;
+            }
+            cached_results.push(None);
+            to_execute.push((idx, tc));
         }
-        let unique_outcomes = join_all(unique_futs).await;
-        let result_map: HashMap<(&str, &str), &str> = unique_outcomes
-            .iter()
-            .map(|(n, a, r)| ((n.as_str(), a.as_str()), r.as_str()))
-            .collect();
 
-        for tc in tool_calls {
+        let parallel_futs: Vec<_> = to_execute
+            .iter()
+            .map(|(_idx, tc)| {
+                let cfg = Arc::clone(cfg);
+                let wd = effective_working_dir.to_path_buf();
+                let name = tc.function.name.clone();
+                let args = tc.function.arguments.clone();
+                let id = tc.id.clone();
+                async move {
+                    info!(target: "crabmate", "并行工具开始 tool={}", name);
+                    debug!(
+                        target: "crabmate",
+                        "工具调用参数摘要 tool={} args_preview={}",
+                        name,
+                        crate::redact::tool_arguments_preview_for_log(&args)
+                    );
+                    let t_tool = Instant::now();
+                    let tool_name = name.clone();
+                    let tool_args = args.clone();
+                    let result = tokio::task::spawn_blocking(move || {
+                        let ctx = tools::tool_context_for(
+                            cfg.as_ref(),
+                            &cfg.allowed_commands,
+                            wd.as_path(),
+                        );
+                        tools::run_tool(&tool_name, &tool_args, &ctx)
+                    })
+                    .await
+                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e));
+                    info!(
+                        target: "crabmate",
+                        "并行工具完成 tool={} elapsed_ms={}",
+                        name,
+                        t_tool.elapsed().as_millis()
+                    );
+                    (name, args, id, result)
+                }
+            })
+            .collect();
+        let exec_outcomes = join_all(parallel_futs).await;
+
+        let mut exec_iter = exec_outcomes.into_iter();
+        let mut final_results: Vec<(String, String, String, String)> =
+            Vec::with_capacity(tool_calls.len());
+        for cached in cached_results {
+            if let Some(r) = cached {
+                final_results.push(r);
+            } else {
+                let (name, args, id, result) = exec_iter.next().unwrap_or_else(|| unreachable!());
+                if dedup_enabled {
+                    dedup_cache.insert(&name, &args, &result);
+                }
+                final_results.push((name, args, id, result));
+            }
+        }
+
+        for (name, args, id, result) in final_results {
             if abort_tool_batch_if_sse_closed(
                 out,
                 "SSE sender closed during parallel tool batch, aborting remainder",
@@ -542,26 +580,20 @@ async fn per_execute_tools_common(
             {
                 return ExecuteToolsBatchOutcome::AbortedSse;
             }
-            let cached = result_map
-                .get(&(tc.function.name.as_str(), tc.function.arguments.as_str()))
-                .copied()
-                .unwrap_or("")
-                .to_string();
             emit_tool_result_sse_and_append(
                 messages,
                 out,
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
-                &tc.function.name,
-                &tc.function.arguments,
-                &tc.id,
-                cached,
+                &name,
+                &args,
+                &id,
+                result,
                 None,
             )
             .await;
         }
     } else {
-        let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
         for tc in tool_calls {
             if abort_tool_batch_if_sse_closed(
                 out,
@@ -575,23 +607,17 @@ async fn per_execute_tools_common(
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
             let id = tc.id.clone();
-            info!(target: "crabmate", "调用工具 tool={}", name);
-            debug!(
-                target: "crabmate",
-                "工具调用参数摘要 tool={} args_preview={}",
-                name,
-                crate::redact::tool_arguments_preview_for_log(&args)
-            );
 
-            let is_readonly = tool_registry::is_readonly_tool(&name);
-            let cache_key = (name.clone(), args.clone());
-
-            if is_readonly && let Some(cached) = readonly_cache.get(&cache_key) {
+            if let Some(cached) = dedup_enabled
+                .then(|| dedup_cache.get(&name, &args))
+                .flatten()
+            {
                 info!(
                     target: "crabmate",
-                    "工具结果命中缓存（只读去重） tool={}",
+                    "工具去重命中 tool={}（跳过重复执行）",
                     name
                 );
+                let result = cached.to_string();
                 emit_tool_result_sse_and_append(
                     messages,
                     out,
@@ -600,12 +626,20 @@ async fn per_execute_tools_common(
                     &name,
                     &args,
                     &id,
-                    cached.clone(),
+                    result,
                     None,
                 )
                 .await;
                 continue;
             }
+
+            info!(target: "crabmate", "调用工具 tool={}", name);
+            debug!(
+                target: "crabmate",
+                "工具调用参数摘要 tool={} args_preview={}",
+                name,
+                crate::redact::tool_arguments_preview_for_log(&args)
+            );
 
             let t_tool = Instant::now();
             let (result, reflection_inject) = tool_registry::dispatch_tool(
@@ -630,10 +664,8 @@ async fn per_execute_tools_common(
                 t_tool.elapsed().as_millis()
             );
 
-            if is_readonly {
-                readonly_cache.insert(cache_key, result.clone());
-            } else {
-                readonly_cache.clear();
+            if dedup_enabled {
+                dedup_cache.insert(&name, &args, &result);
             }
 
             emit_tool_result_sse_and_append(
@@ -675,6 +707,7 @@ pub(crate) async fn per_execute_tools_web(
     per_coord: &mut PerCoordinator,
     messages: &mut Vec<Message>,
     ctx: WebExecuteCtx<'_>,
+    dedup_cache: &mut tool_registry::ToolResultCache,
 ) -> ExecuteToolsBatchOutcome {
     let WebExecuteCtx {
         cfg,
@@ -696,6 +729,7 @@ pub(crate) async fn per_execute_tools_web(
         echo_terminal_transcript,
         cfg.command_max_output_len,
         web_tool_ctx,
+        dedup_cache,
     )
     .await
 }
@@ -703,6 +737,14 @@ pub(crate) async fn per_execute_tools_web(
 async fn run_agent_outer_loop(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_agent_outer_loop_with_cache(p, per_coord, &mut tool_registry::ToolResultCache::new()).await
+}
+
+async fn run_agent_outer_loop_with_cache(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    dedup_cache: &mut tool_registry::ToolResultCache,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     'outer: loop {
         if sse_sender_closed(p.out) {
@@ -799,6 +841,7 @@ async fn run_agent_outer_loop(
                 web_tool_ctx: p.web_tool_ctx,
                 echo_terminal_transcript,
             },
+            dedup_cache,
         )
         .await;
         if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
@@ -807,6 +850,14 @@ async fn run_agent_outer_loop(
         if let Some(f) = p.per_flight.as_ref() {
             f.sync_from_per_coord(per_coord);
         }
+    }
+    let hits = dedup_cache.hits();
+    if hits > 0 {
+        info!(
+            target: "crabmate",
+            "工具结果去重统计 cache_hits={}",
+            hits
+        );
     }
     Ok(())
 }
@@ -974,6 +1025,7 @@ where
 
     let mut staged_loop_cancelled = false;
     let mut completed_steps = 0usize;
+    let mut dedup_cache = tool_registry::ToolResultCache::new();
     for (i, step) in plan.steps.iter().enumerate() {
         if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             staged_loop_cancelled = true;
@@ -1020,7 +1072,7 @@ where
             let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
         }
         p.messages.push(make_step_user_message(body));
-        let run_step = run_agent_outer_loop(p, per_coord).await;
+        let run_step = run_agent_outer_loop_with_cache(p, per_coord, &mut dedup_cache).await;
         if let Err(e) = run_step {
             send_staged_plan_step_finished(
                 p.out,
