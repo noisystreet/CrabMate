@@ -101,6 +101,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
             &[GENERAL, QUALITY]
         }
 
+        // --- TODO/标记扫描 ---
+        "todo_scan" => &[GENERAL, QUALITY],
+
         // --- 质量聚合（跨栈）---
         "ci_pipeline_local" | "release_ready_check" => &[GENERAL, QUALITY],
         "run_lints" | "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],

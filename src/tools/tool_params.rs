@@ -2275,3 +2275,65 @@ pub(super) fn params_read_dir_enhanced() -> serde_json::Value {
         "required":[]
     })
 }
+
+// ── 新增纯内存 / 开发辅助工具参数 ────────────────────────────
+
+pub(super) fn params_regex_test() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "pattern": {"type": "string", "description": "正则表达式"},
+            "test_strings": {"type": "array", "items": {"type": "string"}, "description": "待测试字符串数组（上限100条）"}
+        },
+        "required": ["pattern", "test_strings"]
+    })
+}
+
+pub(super) fn params_date_calc() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "mode": {"type": "string", "enum": ["diff", "offset"], "description": "diff=两日期间隔，offset=基准+偏移（默认offset）"},
+            "from": {"type": "string", "description": "diff模式：起始日期 YYYY-MM-DD"},
+            "to": {"type": "string", "description": "diff模式：结束日期 YYYY-MM-DD"},
+            "base": {"type": "string", "description": "offset模式：基准日期 YYYY-MM-DD（默认今天）"},
+            "offset": {"type": "string", "description": "offset模式：偏移量（如 +30d, -2w, +1m）"}
+        },
+        "required": []
+    })
+}
+
+pub(super) fn params_json_format() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "JSON 或 YAML 文本（上限512KiB）"},
+            "mode": {"type": "string", "enum": ["pretty", "compact", "yaml_to_json", "json_to_yaml"], "description": "模式（默认 pretty）"}
+        },
+        "required": ["text"]
+    })
+}
+
+pub(super) fn params_env_var_check() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "names": {"type": "array", "items": {"type": "string"}, "description": "环境变量名列表（上限50个）"},
+            "show_length": {"type": "boolean", "description": "是否显示值长度（默认false）"},
+            "show_prefix_chars": {"type": "integer", "description": "显示值的前N个字符（0=不显示，上限8）"}
+        },
+        "required": ["names"]
+    })
+}
+
+pub(super) fn params_todo_scan() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "paths": {"type": "array", "items": {"type": "string"}, "description": "扫描路径（相对工作区，默认[\".\"]）"},
+            "markers": {"type": "array", "items": {"type": "string"}, "description": "标记列表（默认 TODO/FIXME/HACK/XXX）"},
+            "exclude": {"type": "array", "items": {"type": "string"}, "description": "排除目录名（默认 target/node_modules/.git/vendor/dist/build）"}
+        },
+        "required": []
+    })
+}
