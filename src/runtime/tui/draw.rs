@@ -1,10 +1,20 @@
 //! 布局与绘制（聊天区、右侧面板、弹窗）。
+//!
+//! 视觉常量集中在 [`super::theme::TuiTheme`]；本文件通过 `theme()` 引用默认主题。
 
 /// 从底部锚点起，聊天区可向上滚动的最大逻辑行数（视口首行下标不小于 `max_start - 本值`）。
 pub(super) const CHAT_SCROLL_UP_MAX_LINES: usize = 10000;
 
 use ratatui::layout::Margin;
 use ratatui::style::{Color, Modifier, Style};
+
+use super::theme::TuiTheme;
+
+fn theme() -> &'static TuiTheme {
+    use std::sync::LazyLock;
+    static THEME: LazyLock<TuiTheme> = LazyLock::new(TuiTheme::default);
+    &THEME
+}
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Padding;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs, Wrap};
@@ -41,7 +51,7 @@ fn draw_pane_separator_vertical(f: &mut Frame<'_>, col: Rect) {
     if col.width == 0 || col.height == 0 {
         return;
     }
-    let style = Style::default().fg(Color::DarkGray);
+    let style = Style::default().fg(theme().separator.pane_rule_color);
     let vbar_lines: Vec<Line<'_>> = (0..col.height).map(|_| Line::raw("│")).collect();
     f.render_widget(Paragraph::new(vbar_lines).style(style), col);
 }
@@ -58,17 +68,18 @@ fn draw_pane_separator_horizontal(f: &mut Frame<'_>, row: Rect) {
     if row.width == 0 || row.height == 0 {
         return;
     }
-    let style = Style::default().fg(Color::DarkGray);
+    let style = Style::default().fg(theme().separator.pane_rule_color);
     let text = "─".repeat(row.width as usize);
     f.render_widget(Paragraph::new(text).style(style), row);
 }
 
 fn right_tab_color(tab: RightTab) -> Color {
+    let rt = &theme().right_tab;
     match tab {
-        RightTab::Workspace => Color::Green,
-        RightTab::Queue => Color::Magenta,
-        RightTab::Tasks => Color::Yellow,
-        RightTab::Schedule => Color::Cyan,
+        RightTab::Workspace => rt.workspace,
+        RightTab::Queue => rt.queue,
+        RightTab::Tasks => rt.tasks,
+        RightTab::Schedule => rt.schedule,
     }
 }
 
@@ -102,14 +113,15 @@ pub(super) fn chat_input_text_inner(term_cols: u16, term_rows: u16, input_rows: 
 
 /// 状态栏左侧阶段词颜色（与 `ModelPhase::label` 对应）。
 fn model_phase_color(phase: ModelPhase) -> Color {
+    let pc = &theme().phase_colors;
     match phase {
-        ModelPhase::Idle => Color::Green,
-        ModelPhase::Thinking => Color::Cyan,
-        ModelPhase::SelectingTools => Color::Yellow,
-        ModelPhase::Answering => Color::Blue,
-        ModelPhase::ToolRunning => Color::Rgb(255, 165, 0), // 橙，与「思考」青蓝区分
-        ModelPhase::AwaitingApproval => Color::Magenta,
-        ModelPhase::Error => Color::Red,
+        ModelPhase::Idle => pc.idle,
+        ModelPhase::Thinking => pc.thinking,
+        ModelPhase::SelectingTools => pc.selecting_tools,
+        ModelPhase::Answering => pc.answering,
+        ModelPhase::ToolRunning => pc.tool_running,
+        ModelPhase::AwaitingApproval => pc.awaiting_approval,
+        ModelPhase::Error => pc.error,
     }
 }
 
@@ -557,11 +569,12 @@ fn render_message_chat_lines(
         return (Vec::new(), Vec::new());
     }
     if m.role == "user" {
+        let mh = &theme().message_header;
         let icon_style = Style::default()
-            .fg(Color::Cyan)
+            .fg(mh.user_color)
             .add_modifier(Modifier::BOLD);
         let text_style = Style::default()
-            .fg(Color::Cyan)
+            .fg(mh.user_color)
             .add_modifier(Modifier::BOLD);
         let role_text = "▸ 我:";
         let role_padded = if role_text.width() >= chat_inner_width {
@@ -577,30 +590,31 @@ fn render_message_chat_lines(
         let display_pad = plain.len() - role_text.len();
         draw_lines.push(Line::from(vec![
             Span::raw(" ".repeat(display_pad.min(plain.len()))),
-            Span::styled("▸ ", icon_style),
+            Span::styled(mh.user_icon.to_string(), icon_style),
             Span::styled("我:", text_style),
         ]));
         plain_lines.push(plain);
     } else {
+        let mh = &theme().message_header;
         let icon_style = Style::default()
-            .fg(Color::Green)
+            .fg(mh.assistant_color)
             .add_modifier(Modifier::BOLD);
         let text_style = Style::default()
-            .fg(Color::Green)
+            .fg(mh.assistant_color)
             .add_modifier(Modifier::BOLD);
-        let h_plain = "◆ 模型:";
+        let h_plain = format!("{}模型:", mh.assistant_icon);
         draw_lines.push(Line::from(vec![
-            Span::styled("◆ ", icon_style),
+            Span::styled(mh.assistant_icon.to_string(), icon_style),
             Span::styled("模型:", text_style),
         ]));
-        plain_lines.push(h_plain.to_string());
+        plain_lines.push(h_plain);
     }
     if m.role == "assistant" {
         let (d, p) = if streaming_assistant {
             render_assistant_plain_lines(rendered)
         } else {
             let (d, p) = chat_markdown_to_draw_lines(rendered, state);
-            let gray = Color::Indexed(245);
+            let gray = theme().chat_content.assistant_gray;
             let styled: Vec<Line<'static>> = d
                 .into_iter()
                 .map(|l| {
@@ -640,7 +654,7 @@ fn render_message_chat_lines(
             if m.role == "tool" {
                 draw_lines.push(Line::styled(
                     line_str,
-                    Style::default().fg(Color::Indexed(214)),
+                    Style::default().fg(theme().chat_content.tool_output),
                 ));
             } else {
                 draw_lines.push(Line::raw(line_str));
@@ -673,8 +687,7 @@ fn render_chat_ui_separator_lines(
 
 /// 淡色渐变分隔线：从两端透明向中央渐暗再渐淡，使用 xterm-256 灰度色阶。
 fn render_gradient_separator(width: usize) -> (Vec<Line<'static>>, Vec<String>) {
-    // xterm-256 灰度：232(最暗)..255(最亮)；取 240..248 区间做柔和渐变
-    const SHADES: &[u8] = &[248, 246, 244, 243, 242, 243, 244, 246, 248];
+    let shades = &theme().separator.gradient_shades;
     let plain: String = std::iter::repeat_n('─', width).collect();
     if width <= 2 {
         let dim = Style::default().fg(Color::Indexed(244));
@@ -691,8 +704,8 @@ fn render_gradient_separator(width: usize) -> (Vec<Line<'static>>, Vec<String>) 
         } else {
             width.saturating_sub(1).saturating_sub(i)
         };
-        let idx = dist.min(SHADES.len() - 1);
-        let shade = SHADES[idx];
+        let idx = dist.min(shades.len().saturating_sub(1));
+        let shade = shades.get(idx).copied().unwrap_or(244);
         spans.push(Span::styled(
             "─".to_string(),
             Style::default().fg(Color::Indexed(shade)),
