@@ -30,14 +30,16 @@ use crate::types::{Message, ToolCall, USER_CANCELLED_FINISH_REASON, is_chat_ui_s
 static STAGED_PLAN_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// TUI 主循环用 `sync_rx` 拉取对话快照；仅在 TUI 路径传入 `Some`。
+/// 使用 `Arc<[Message]>` 共享不可变快照：构建一次，forwarder 合并时仅增引用计数。
 async fn tui_push_messages_snapshot(
-    sync: Option<&mpsc::Sender<Vec<Message>>>,
+    sync: Option<&mpsc::Sender<Arc<[Message]>>>,
     messages: &[Message],
 ) {
     let Some(tx) = sync else {
         return;
     };
-    let _ = tx.send(messages.to_vec()).await;
+    let snapshot: Arc<[Message]> = messages.to_vec().into();
+    let _ = tx.send(snapshot).await;
 }
 
 /// TUI（及与 TUI 同形预置占位的会话）在提交前会追加一条 `content` 为空的 `assistant` 供流式写入。
@@ -358,7 +360,7 @@ pub(crate) struct RunLoopParams<'a> {
     pub cancel: Option<&'a AtomicBool>,
     pub mode: AgentRunMode<'a>,
     pub per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
-    pub tui_messages_sync: Option<&'a mpsc::Sender<Vec<Message>>>,
+    pub tui_messages_sync: Option<&'a mpsc::Sender<Arc<[Message]>>>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {

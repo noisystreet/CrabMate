@@ -105,7 +105,7 @@ pub(super) struct HandleKeyContext<'a> {
     pub assistant_buf: &'a mut String,
     pub approval_tx: &'a mut Option<mpsc::Sender<CommandApprovalDecision>>,
     pub tx: &'a mpsc::Sender<String>,
-    pub sync_tx: mpsc::Sender<Vec<Message>>,
+    pub sync_tx: mpsc::Sender<Arc<[Message]>>,
     pub turn_outcome_tx: mpsc::Sender<TuiTurnOutcome>,
     pub agent_cancel: Arc<AtomicBool>,
     pub cfg: &'a Arc<AgentConfig>,
@@ -754,7 +754,8 @@ pub(super) async fn handle_key(
                         let duration_ms = started.elapsed().as_millis() as u64;
                         let user_cancelled =
                             matches!(&res, Err(e) if format!("{e}") == LLM_CANCELLED_ERROR);
-                        if !user_cancelled && let Err(e) = sync_tx2.send(messages).await {
+                        let final_snapshot: Arc<[Message]> = messages.into();
+                        if !user_cancelled && let Err(e) = sync_tx2.send(final_snapshot).await {
                             warn!(
                                 target: "crabmate::tui_print",
                                 "TUI 回合同步消息发送失败 job_id={} error={}",
