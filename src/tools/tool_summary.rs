@@ -548,3 +548,14 @@ pub(super) fn summary_search_replace(v: &serde_json::Value) -> Option<String> {
         short
     ))
 }
+
+pub(super) fn summary_chmod_file(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    let mode = v.get("mode")?.as_str()?.trim();
+    Some(format!("修改权限：{} → {}", path, mode))
+}
+
+pub(super) fn summary_symlink_info(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    Some(format!("符号链接信息：{}", path))
+}

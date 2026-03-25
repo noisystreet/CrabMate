@@ -38,6 +38,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - **Python / uv / pre-commit**（均在**工作区根**执行，需本机已安装对应 CLI；未安装时工具返回说明性错误）：`ruff_check`、`pytest_run`（`python3 -m pytest`）、`mypy_check`、`python_install_editable`（`uv` 或 `pip` 可编辑安装）、`uv_sync`、`uv_run`（`args` 为字符串数组，不经 shell）、`pre_commit_run`（需 `.pre-commit-config.yaml`）。**格式化**：`format_file` / `format_check_file` 按扩展名选用 **ruff format**（`.py`）、**clang-format**（`.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh`）、`rustfmt` / `prettier` 等。**标签裁剪**：集成方可通过库 API `build_tools_with_options` 与 `dev_tag` 子域标签（如 `python`、`cpp`、`go`、`quality`）限制发给模型的工具列表，详见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。
   - **Node.js / npm**（须存在 `package.json`）：`npm_install`（支持 `npm ci`、`--production`）、`npm_run`（运行任意 npm script）、`npx_run`（执行 npx 包命令）、`tsc_check`（TypeScript 类型检查 `tsc --noEmit`）。
   - **Go 工具链**（须存在 `go.mod`，需本机已安装 Go）：`go_build`、`go_test`（支持 `-run` / `-race` / `-timeout` 等）、`go_vet`、`go_mod_tidy`（受控写入需 `confirm`）、`go_fmt_check`（`gofmt -l` 列出未格式化文件）、`golangci_lint`。
+  - `chmod_file`（需 `confirm`，仅 Unix）：修改文件权限（八进制模式如 `755`）。
+  - `symlink_info`（只读）：查看符号链接目标、是否悬空、是否指向工作区外。
   - **进程与端口管理**（只读）：`port_check`（检查端口占用，使用 ss/lsof）、`process_list`（按关键词过滤进程列表）。
   - **代码度量与分析**（只读）：`code_stats`（代码行数统计，优先 tokei/cloc，回退内置统计器）、`dependency_graph`（依赖关系图，支持 Cargo/Go/npm，输出 Mermaid/DOT/tree）、`coverage_report`（覆盖率报告解析，支持 LCOV/.info、Tarpaulin JSON、Cobertura XML）。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：

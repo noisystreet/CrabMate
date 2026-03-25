@@ -5,6 +5,11 @@
 //! - `.py`   -> `ruff format`
 //! - `.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh` -> `clang-format`
 //! - `.ts` / `.tsx` / `.js` / `.jsx` / `.json` -> `npx prettier --write`
+//! - `.go`   -> `gofmt`
+//! - `.sh` / `.bash` / `.zsh` -> `shfmt`
+//! - `.md` / `.yaml` / `.yml` / `.css` / `.scss` / `.less` / `.html` / `.vue` / `.svelte` / `.graphql` -> `npx prettier`
+//! - `.xml`  -> `xmllint --format`
+//! - `.sql`  -> `sqlfluff fix` / `pg_format`
 //!
 //! 参数：{ "path": "相对工作区根目录的文件路径" }
 //! 会直接对目标文件就地格式化，并返回简要的结果说明。
@@ -42,25 +47,17 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         .unwrap_or("")
         .to_lowercase();
 
-    let formatter = if ext == "rs" {
-        Formatter::Rustfmt
-    } else if ext == "py" {
-        Formatter::Ruff
-    } else if is_c_cpp_extension(&ext) {
-        Formatter::ClangFormat
-    } else if matches!(ext.as_str(), "ts" | "tsx" | "js" | "jsx" | "json") {
-        Formatter::Prettier
-    } else {
-        return format!("错误：暂不支持扩展名为 .{} 的文件格式化", ext);
-    };
-
-    match run_formatter(formatter, &target, workspace_root, false) {
-        Ok(msg) => msg,
-        Err(e) => e,
+    let formatter = select_formatter(&ext);
+    match formatter {
+        Some(f) => match run_formatter(f, &target, workspace_root, false) {
+            Ok(msg) => msg,
+            Err(e) => e,
+        },
+        None => format!("错误：暂不支持扩展名为 .{} 的文件格式化", ext),
     }
 }
 
-/// 对单个文件做格式「检查」（不写入）：`rustfmt --check` / `clang-format --dry-run --Werror` / `prettier --check` / `ruff format --check`。
+/// 对单个文件做格式「检查」（不写入）。
 pub fn run_check(args_json: &str, workspace_root: &Path) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
@@ -89,21 +86,13 @@ pub fn run_check(args_json: &str, workspace_root: &Path) -> String {
         .unwrap_or("")
         .to_lowercase();
 
-    let formatter = if ext == "rs" {
-        Formatter::Rustfmt
-    } else if ext == "py" {
-        Formatter::Ruff
-    } else if is_c_cpp_extension(&ext) {
-        Formatter::ClangFormat
-    } else if matches!(ext.as_str(), "ts" | "tsx" | "js" | "jsx" | "json") {
-        Formatter::Prettier
-    } else {
-        return format!("错误：暂不支持扩展名为 .{} 的格式检查", ext);
-    };
-
-    match run_formatter(formatter, &target, workspace_root, true) {
-        Ok(msg) => msg,
-        Err(e) => e,
+    let formatter = select_formatter(&ext);
+    match formatter {
+        Some(f) => match run_formatter(f, &target, workspace_root, true) {
+            Ok(msg) => msg,
+            Err(e) => e,
+        },
+        None => format!("错误：暂不支持扩展名为 .{} 的格式检查", ext),
     }
 }
 
@@ -113,10 +102,54 @@ enum Formatter {
     Prettier,
     Ruff,
     ClangFormat,
+    Gofmt,
+    Shfmt,
+    XmlLint,
+    SqlFormat,
 }
 
 fn is_c_cpp_extension(ext: &str) -> bool {
     matches!(ext, "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hh")
+}
+
+fn select_formatter(ext: &str) -> Option<Formatter> {
+    if ext == "rs" {
+        Some(Formatter::Rustfmt)
+    } else if ext == "py" {
+        Some(Formatter::Ruff)
+    } else if is_c_cpp_extension(ext) {
+        Some(Formatter::ClangFormat)
+    } else if ext == "go" {
+        Some(Formatter::Gofmt)
+    } else if matches!(ext, "sh" | "bash" | "zsh") {
+        Some(Formatter::Shfmt)
+    } else if ext == "xml" {
+        Some(Formatter::XmlLint)
+    } else if ext == "sql" {
+        Some(Formatter::SqlFormat)
+    } else if matches!(
+        ext,
+        "ts" | "tsx"
+            | "js"
+            | "jsx"
+            | "json"
+            | "md"
+            | "markdown"
+            | "yaml"
+            | "yml"
+            | "css"
+            | "scss"
+            | "less"
+            | "html"
+            | "htm"
+            | "vue"
+            | "svelte"
+            | "graphql"
+    ) {
+        Some(Formatter::Prettier)
+    } else {
+        None
+    }
 }
 
 /// 工具返回说明中的路径：相对工作区根（POSIX），不输出绝对路径。
@@ -162,6 +195,10 @@ fn run_formatter(
         Formatter::Prettier => run_prettier(target, workspace_root, check_only),
         Formatter::Ruff => python_tools::ruff_format_file(target, workspace_root, check_only),
         Formatter::ClangFormat => run_clang_format(target, workspace_root, check_only),
+        Formatter::Gofmt => run_gofmt(target, workspace_root, check_only),
+        Formatter::Shfmt => run_shfmt(target, workspace_root, check_only),
+        Formatter::XmlLint => run_xmllint(target, workspace_root, check_only),
+        Formatter::SqlFormat => run_sql_format(target, workspace_root, check_only),
     }
 }
 
@@ -325,4 +362,183 @@ fn run_clang_format(
         },
         display_in_workspace(workspace_root, target)
     ))
+}
+
+fn run_gofmt(target: &Path, workspace_root: &Path, check_only: bool) -> Result<String, String> {
+    if check_only {
+        let output = Command::new("gofmt")
+            .arg("-l")
+            .arg(target)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("无法执行 gofmt：{}（请确认已安装 Go）", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.trim().is_empty() {
+            Ok(format!(
+                "gofmt 检查通过：{}",
+                display_in_workspace(workspace_root, target)
+            ))
+        } else {
+            Err(format!(
+                "gofmt 检查失败（文件需格式化）：{}",
+                display_in_workspace(workspace_root, target)
+            ))
+        }
+    } else {
+        let output = Command::new("gofmt")
+            .arg("-w")
+            .arg(target)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("无法执行 gofmt：{}（请确认已安装 Go）", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("gofmt 格式化失败：{}", stderr.trim_end()));
+        }
+        Ok(format!(
+            "已使用 gofmt 格式化：{}",
+            display_in_workspace(workspace_root, target)
+        ))
+    }
+}
+
+fn run_shfmt(target: &Path, workspace_root: &Path, check_only: bool) -> Result<String, String> {
+    let output = Command::new("shfmt")
+        .arg(if check_only { "-d" } else { "-w" })
+        .arg(target)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| {
+            format!(
+                "无法执行 shfmt：{}（请安装 shfmt: https://github.com/mvdan/sh）",
+                e
+            )
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if !stdout.trim().is_empty() {
+            stdout.trim_end()
+        } else {
+            stderr.trim_end()
+        };
+        return Err(format!(
+            "shfmt {}失败，退出码：{}\n{}",
+            if check_only { "检查" } else { "格式化" },
+            output.status.code().unwrap_or(-1),
+            detail
+        ));
+    }
+    Ok(format!(
+        "已使用 shfmt {}：{}",
+        if check_only {
+            "检查通过"
+        } else {
+            "格式化"
+        },
+        display_in_workspace(workspace_root, target)
+    ))
+}
+
+fn run_xmllint(target: &Path, workspace_root: &Path, check_only: bool) -> Result<String, String> {
+    if check_only {
+        let output = Command::new("xmllint")
+            .arg("--noout")
+            .arg(target)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("无法执行 xmllint：{}（请安装 libxml2-utils）", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("xmllint 检查失败：{}", stderr.trim_end()));
+        }
+        Ok(format!(
+            "xmllint 检查通过：{}",
+            display_in_workspace(workspace_root, target)
+        ))
+    } else {
+        let output = Command::new("xmllint")
+            .arg("--format")
+            .arg(target)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("无法执行 xmllint：{}（请安装 libxml2-utils）", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("xmllint 格式化失败：{}", stderr.trim_end()));
+        }
+        let formatted = String::from_utf8_lossy(&output.stdout);
+        std::fs::write(target, formatted.as_bytes()).map_err(|e| format!("写回文件失败：{}", e))?;
+        Ok(format!(
+            "已使用 xmllint 格式化：{}",
+            display_in_workspace(workspace_root, target)
+        ))
+    }
+}
+
+fn run_sql_format(
+    target: &Path,
+    workspace_root: &Path,
+    check_only: bool,
+) -> Result<String, String> {
+    if let Ok(output) = Command::new("sqlfluff")
+        .arg(if check_only { "lint" } else { "fix" })
+        .arg("--dialect")
+        .arg("ansi")
+        .arg(target)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = if !stdout.trim().is_empty() {
+            stdout.trim_end().to_string()
+        } else {
+            stderr.trim_end().to_string()
+        };
+        return Ok(format!(
+            "sqlfluff {}：{}\n{}",
+            if check_only {
+                "检查完成"
+            } else {
+                "格式化完成"
+            },
+            display_in_workspace(workspace_root, target),
+            detail
+        ));
+    }
+
+    if let Ok(output) = Command::new("pg_format")
+        .arg(if check_only {
+            "--no-space"
+        } else {
+            "--inplace"
+        })
+        .arg(target)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        && output.status.success()
+    {
+        return Ok(format!(
+            "已使用 pg_format {}：{}",
+            if check_only { "检查" } else { "格式化" },
+            display_in_workspace(workspace_root, target)
+        ));
+    }
+
+    Err("SQL 格式化需要安装 sqlfluff 或 pg_format".to_string())
 }
