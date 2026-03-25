@@ -36,6 +36,7 @@ mod release_docs;
 mod rust_ide;
 mod schedule;
 mod security_tools;
+mod source_analysis_tools;
 mod spell_astgrep_tools;
 mod structured_data;
 mod symbol;
@@ -718,6 +719,27 @@ fn runner_env_var_check(args: &str, _ctx: &ToolContext<'_>) -> String {
 
 fn runner_todo_scan(args: &str, ctx: &ToolContext<'_>) -> String {
     todo_scan::run(args, ctx.working_dir)
+}
+
+// ── 源码分析工具 ──────────────────────────────────────────────
+
+fn runner_shellcheck_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    source_analysis_tools::shellcheck_check(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_cppcheck_analyze(args: &str, ctx: &ToolContext<'_>) -> String {
+    source_analysis_tools::cppcheck_analyze(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_semgrep_scan(args: &str, ctx: &ToolContext<'_>) -> String {
+    source_analysis_tools::semgrep_scan(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_hadolint_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    source_analysis_tools::hadolint_check(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_bandit_scan(args: &str, ctx: &ToolContext<'_>) -> String {
+    source_analysis_tools::bandit_scan(args, ctx.working_dir, ctx.command_max_output_len)
+}
+fn runner_lizard_complexity(args: &str, ctx: &ToolContext<'_>) -> String {
+    source_analysis_tools::lizard_complexity(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn tool_specs() -> &'static [ToolSpec] {
