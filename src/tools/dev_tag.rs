@@ -39,7 +39,12 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "extract_in_file"
         | "apply_patch"
         | "search_in_files"
-        | "markdown_check_links" => &[GENERAL],
+        | "markdown_check_links"
+        | "delete_file"
+        | "delete_dir"
+        | "append_file"
+        | "create_dir"
+        | "search_replace" => &[GENERAL],
         "structured_validate"
         | "structured_query"
         | "structured_diff"

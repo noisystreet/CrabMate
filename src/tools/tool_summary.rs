@@ -501,3 +501,50 @@ pub(super) fn summary_coverage_report(v: &serde_json::Value) -> Option<String> {
         Some(format!("覆盖率报告：{}", path))
     }
 }
+
+// ── 文件工具增强 ────────────────────────────────────────────
+
+pub(super) fn summary_delete_file(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    Some(format!("删除文件：{}", path))
+}
+
+pub(super) fn summary_delete_dir(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    let recursive = v
+        .get("recursive")
+        .and_then(|r| r.as_bool())
+        .unwrap_or(false);
+    if recursive {
+        Some(format!("删除目录（递归）：{}", path))
+    } else {
+        Some(format!("删除目录：{}", path))
+    }
+}
+
+pub(super) fn summary_append_file(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    Some(format!("追加写入：{}", path))
+}
+
+pub(super) fn summary_create_dir(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    Some(format!("创建目录：{}", path))
+}
+
+pub(super) fn summary_search_replace(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    let search = v.get("search")?.as_str()?;
+    let dry = v.get("dry_run").and_then(|d| d.as_bool()).unwrap_or(true);
+    let short = if search.chars().count() > 30 {
+        format!("{}…", search.chars().take(30).collect::<String>())
+    } else {
+        search.to_string()
+    };
+    Some(format!(
+        "搜索替换{}：{} / \"{}\"",
+        if dry { "（预览）" } else { "" },
+        path,
+        short
+    ))
+}
