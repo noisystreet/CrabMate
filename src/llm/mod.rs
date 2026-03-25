@@ -60,6 +60,7 @@ pub async fn complete_chat_retrying(
     render_to_terminal: bool,
     no_stream: bool,
     cancel: Option<&AtomicBool>,
+    plain_terminal_stream: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let t0 = Instant::now();
     let max_attempts = cfg.api_max_retries + 1;
@@ -78,6 +79,7 @@ pub async fn complete_chat_retrying(
             render_to_terminal,
             no_stream,
             cancel,
+            plain_terminal_stream,
         )
         .await
         {

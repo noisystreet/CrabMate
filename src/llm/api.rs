@@ -60,7 +60,22 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .sum()
 }
 
+/// CLI（`render_to_terminal && out.is_none()`）：首个非空 delta 前打 `Agent:` 前缀，随后将原文写入 stdout。
+fn cli_terminal_write_plain_fragment(fragment: &str, prefix_emitted: &mut bool) -> io::Result<()> {
+    if fragment.is_empty() {
+        return Ok(());
+    }
+    let mut stdout = io::stdout().lock();
+    if !*prefix_emitted {
+        crate::runtime::terminal_labels::write_agent_message_prefix(&mut stdout)?;
+        *prefix_emitted = true;
+    }
+    stdout.write_all(fragment.as_bytes())?;
+    stdout.flush()
+}
+
 /// CLI：加粗着色 `Agent: ` + 助手展示管线（剥标签、规划可读化、LaTeX）+ `markdown_to_ansi`。
+/// 仅在「非 CLI 终端」或「流式但无任何正文 delta」（如仅有 tool_calls）时使用。
 fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
     debug!(
         target: "crabmate::print",
@@ -88,6 +103,7 @@ fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
 
 /// 解析 SSE 中一行 `data:` 后的 JSON 负载，累积正文与 tool_calls，并经 `out` 下发流式增量。
 /// `pending_sse_delta`：仅当 `out` 为 `Some` 时使用；与 `content_acc` 同步追加，达阈值或发送控制帧前再 `send`。
+/// `cli_terminal_plain`：CLI 终端纯文本流式（`render_to_terminal && out.is_none()`），将 reasoning/content delta 直接写 stdout。
 #[allow(clippy::too_many_arguments)]
 async fn ingest_sse_data_payload(
     payload: &str,
@@ -98,15 +114,17 @@ async fn ingest_sse_data_payload(
     finish_reason: &mut String,
     tool_calls_acc: &mut Vec<(String, String, String, String)>,
     parsing_tool_calls_notified: &mut bool,
-) {
+    cli_terminal_plain: bool,
+    cli_plain_prefix_emitted: &mut bool,
+) -> io::Result<()> {
     if payload.is_empty() {
-        return;
+        return Ok(());
     }
     let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
-        return;
+        return Ok(());
     };
     let Some(choice) = chunk.choices.and_then(|c| c.into_iter().next()) else {
-        return;
+        return Ok(());
     };
     if let Some(reason) = choice.finish_reason
         && !reason.is_empty()
@@ -118,6 +136,9 @@ async fn ingest_sse_data_payload(
         && !s.is_empty()
     {
         reasoning_acc.push_str(s);
+        if cli_terminal_plain {
+            cli_terminal_write_plain_fragment(s, cli_plain_prefix_emitted)?;
+        }
         if let Some(tx) = out {
             pending_sse_delta.push_str(s);
             if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
@@ -129,6 +150,9 @@ async fn ingest_sse_data_payload(
         && !s.is_empty()
     {
         content_acc.push_str(s);
+        if cli_terminal_plain {
+            cli_terminal_write_plain_fragment(s, cli_plain_prefix_emitted)?;
+        }
         if let Some(tx) = out {
             pending_sse_delta.push_str(s);
             if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
@@ -177,10 +201,11 @@ async fn ingest_sse_data_payload(
             }
         }
     }
+    Ok(())
 }
 
 /// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
-/// `render_to_terminal` 为 true 时：流式**不在**收包过程中写 stdout（避免半段 Markdown）；整段到达后与 **`--no-stream`** 相同，经 `markdown_to_ansi` 做基本 Markdown 渲染。非流式时在完整 `message` 到达后同样渲染。
+/// `plain_terminal_stream` 为 `true` 且 `render_to_terminal && out.is_none()`：流式将 reasoning/content **逐 delta 纯文本**写 stdout，末尾不再 `markdown_to_ansi`；`--no-stream` 时整段纯文本一次写出。否则若 `render_to_terminal` 且仍有正文、且未走上述路径，则在整段到达后走 [`terminal_render_agent_markdown`]。
 /// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 SSE 等）。
 ///
 /// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；
@@ -195,6 +220,7 @@ pub async fn stream_chat(
     render_to_terminal: bool,
     no_stream: bool,
     cancel: Option<&AtomicBool>,
+    plain_terminal_stream: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
         "{}/{}",
@@ -314,9 +340,21 @@ pub async fn stream_chat(
             let _ = tx.send(sse_plain).await;
         }
         if render_to_terminal {
-            let md = crate::runtime::message_display::assistant_raw_markdown_body_for_message(&msg);
-            if !md.is_empty() {
-                terminal_render_agent_markdown(&md)?;
+            if plain_terminal_stream && out.is_none() {
+                let plain = crate::runtime::message_display::assistant_streaming_plain_concat(&msg);
+                if !plain.is_empty() {
+                    let mut prefix_emitted = false;
+                    cli_terminal_write_plain_fragment(&plain, &mut prefix_emitted)?;
+                    if !plain.ends_with('\n') {
+                        writeln!(io::stdout().lock())?;
+                    }
+                }
+            } else {
+                let md =
+                    crate::runtime::message_display::assistant_raw_markdown_body_for_message(&msg);
+                if !md.is_empty() {
+                    terminal_render_agent_markdown(&md)?;
+                }
             }
         }
         if let Some(ref tcs) = msg.tool_calls
@@ -351,6 +389,8 @@ pub async fn stream_chat(
     let mut finish_reason = String::new();
     let mut parsing_tool_calls_notified = false;
 
+    let cli_terminal_plain = render_to_terminal && out.is_none() && plain_terminal_stream;
+    let mut cli_plain_prefix_emitted = false;
     let mut stream_done = false;
     'stream_read: while let Some(chunk) = stream.next().await {
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
@@ -386,8 +426,10 @@ pub async fn stream_chat(
                     &mut finish_reason,
                     &mut tool_calls_acc,
                     &mut parsing_tool_calls_notified,
+                    cli_terminal_plain,
+                    &mut cli_plain_prefix_emitted,
                 )
-                .await;
+                .await?;
             }
         }
         if consumed > 0 {
@@ -413,20 +455,30 @@ pub async fn stream_chat(
                     &mut finish_reason,
                     &mut tool_calls_acc,
                     &mut parsing_tool_calls_notified,
+                    cli_terminal_plain,
+                    &mut cli_plain_prefix_emitted,
                 )
-                .await;
+                .await?;
             }
         }
     }
     flush_sse_delta_buffer(&mut pending_sse_delta, out).await;
-    // 流式阶段不向 stdout 逐 delta 打印（避免半段 Markdown）；整段结束后与 `--no-stream` 相同走 `terminal_render_agent_markdown`。
-    // **不得**用 MoveUp + Clear 重绘：会与工具子进程 stdout 及真实折行错位。
+    // CLI：`cli_terminal_plain` 已在 ingest 中逐 delta 写 stdout；此处仅补换行。非 CLI 或仅有 tool_calls 无正文时仍走 Markdown 终端渲染。
     if render_to_terminal {
         let md = crate::runtime::message_display::assistant_raw_markdown_body_from_parts(
             reasoning_acc.as_str(),
             content_acc.as_str(),
         );
-        if !md.is_empty() {
+        if cli_terminal_plain {
+            let ends_nl = if !content_acc.is_empty() {
+                content_acc.ends_with('\n')
+            } else {
+                reasoning_acc.ends_with('\n')
+            };
+            if cli_plain_prefix_emitted && !ends_nl {
+                writeln!(io::stdout().lock())?;
+            }
+        } else if !md.is_empty() {
             terminal_render_agent_markdown(&md)?;
         }
     }

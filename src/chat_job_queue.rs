@@ -485,6 +485,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 Some(Arc::clone(&cancel)),
                 Some(flight),
                 web_tool_ctx.as_ref(),
+                false,
             )
             .await;
             cancel_watcher.abort();
@@ -595,6 +596,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 None,
                 Some(flight),
                 None,
+                false,
             )
             .await;
             let (ok, cancelled, err) = match r {

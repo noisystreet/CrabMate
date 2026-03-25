@@ -248,6 +248,7 @@ pub(crate) async fn per_plan_call_model_retrying(
     render_to_terminal: bool,
     no_stream: bool,
     cancel: Option<&AtomicBool>,
+    plain_terminal_stream: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let filtered: Vec<Message> = messages
         .iter()
@@ -264,6 +265,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         render_to_terminal,
         no_stream,
         cancel,
+        plain_terminal_stream,
     )
     .await?;
     crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
@@ -336,6 +338,8 @@ pub(crate) struct RunLoopParams<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     pub render_to_terminal: bool,
+    /// 见 [`crate::llm::api::stream_chat`] 的 `plain_terminal_stream`；仅 CLI 入口为 `true`。
+    pub plain_terminal_stream: bool,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     pub per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
 }
@@ -668,6 +672,7 @@ async fn run_agent_outer_loop(
             render_to_terminal,
             p.no_stream,
             p.cancel,
+            p.plain_terminal_stream,
         )
         .await?;
         if let Some(f) = p.per_flight.as_ref() {
@@ -849,6 +854,7 @@ where
         render_to_terminal,
         p.no_stream,
         p.cancel,
+        p.plain_terminal_stream,
     )
     .await?;
 

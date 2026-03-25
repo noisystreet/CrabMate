@@ -33,7 +33,7 @@ async fn run_agent_turn_for_cli(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     run_agent_turn(
         client, api_key, cfg, tools, messages, None, work_dir, true, true, no_stream, None, None,
-        None,
+        None, true,
     )
     .await
 }

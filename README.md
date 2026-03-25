@@ -53,7 +53,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - Web Chat 回复支持流式增量显示。
   - Web `/chat` 与 `/chat/stream` 支持可选 `conversation_id` 以跨请求延续同一会话；未传时服务端自动分配会话 ID（流式接口通过响应头 `x-conversation-id` 返回）。
   - Web Chat 支持流式审批：收到 `command_approval_request` 后前端可通过 `POST /chat/approval` 回传 `deny` / `allow_once` / `allow_always`。
-  - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout，便于对照「写代码—编译—运行」等多步任务。
+  - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包；助手正文以**纯文本**随 delta 流式打印到 stdout（含 `reasoning_content` 与 `content`，与模型下发顺序一致），**不经** `markdown_to_ansi`。`--no-stream` 时在整段到达后一次性写纯文本。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout，便于对照「写代码—编译—运行」等多步任务。
 - **会话导出（Web）**：
   - Web：顶部「**导出 JSON**」生成 `{ "version": 1, "messages": [...] }`，与同形磁盘会话文件 `.crabmate/tui_session.json` 一致（`role` / `content` 等字段与 OpenAI 兼容消息一致；工具气泡在 JSON 中为 `role: "tool"`）。
   - Web：「**导出 MD**」正文（`# CrabMate 聊天记录`、按轮 `## 用户` / `## 助手` / `## 工具`）；可选会话标题与 id、标签等元信息前缀。
@@ -575,7 +575,7 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--no-web`        | 仅提供后端 API，不挂载前端静态页面（适合部署为纯后端服务）。|
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
-| `--no-stream`     | 对 API 使用 `stream: false`（非 SSE）。CLI 终端仍在**整段到达后** Markdown 打印，与默认流式在**终端观感**上一致；差异主要是 API 是否分段返回。|
+| `--no-stream`     | 对 API 使用 `stream: false`（非 SSE）。CLI 终端在整段到达后**一次性纯文本**打印（非 Markdown 着色）；默认流式则为**逐 delta 纯文本**。|
 | `--log <FILE>`    | 将 `log`（`env_logger`）日志**追加**写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别，并**同时**输出到 stderr 与文件。|
 
 **Benchmark 批量测评选项**：

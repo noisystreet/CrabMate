@@ -44,8 +44,9 @@ use types::{CommandApprovalDecision, Message, messages_chat_seed};
 /// `cfg` 建议使用 [`Arc`] 共享（与进程内 Web 服务状态一致），以便工具在 `spawn_blocking` 路径中复用同一份配置而不反复深拷贝。
 /// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）；`no_stream` 为 true 时 API 使用 `stream: false`，
 /// 有正文则通过 `out` 一次性下发整段。
-/// 若 `render_to_terminal` 为 true，则在终端用 `markdown_to_ansi` 渲染助手回复（流式与非流式均在**整段正文到达后**输出，避免半段 Markdown）。
-/// 当 `out` 为 `None` 且 `render_to_terminal` 为 true（典型 CLI）时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文经 `user_message_for_chat_display`（分步长句可压缩）；助手正文经 `assistant_markdown_source_for_display`。
+/// 若 `plain_terminal_stream` 为 `true`（仅 **`runtime::cli`** 应传入）：`render_to_terminal` 且 `out` 为 `None` 时，助手正文以**纯文本**流式（或 `--no-stream` 时整段）写入 stdout，不经 `markdown_to_ansi`。
+/// 若 `plain_terminal_stream` 为 `false` 且 `render_to_terminal` 为 `true`：仍在整段到达后用 `markdown_to_ansi` 渲染（用于服务端 jobs 等 **`out.is_none()`** 场景，避免与 CLI 混淆）。
+/// 当 `out` 为 `None` 且 `render_to_terminal` 为 `true` 时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文经 `user_message_for_chat_display`（分步长句可压缩）；`plain_terminal_stream` 为 `true` 时助手正文为上游原始增量/拼接，为 `false` 时经 `assistant_markdown_source_for_display` 管线再渲染。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
 /// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI 传 `None`。
@@ -64,6 +65,7 @@ pub async fn run_agent_turn(
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
     web_tool_ctx: Option<&tool_registry::WebToolRuntime>,
+    plain_terminal_stream: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut loop_params = agent::agent_turn::RunLoopParams {
         client,
@@ -77,6 +79,7 @@ pub async fn run_agent_turn(
         no_stream,
         cancel: cancel.as_deref(),
         render_to_terminal,
+        plain_terminal_stream,
         web_tool_ctx,
         per_flight,
     };
