@@ -553,16 +553,19 @@ fn render_message_chat_lines(
 ) -> (Vec<Line<'static>>, Vec<String>) {
     let mut draw_lines: Vec<Line<'static>> = Vec::new();
     let mut plain_lines: Vec<String> = Vec::new();
-    let header_style = Style::default().add_modifier(Modifier::BOLD);
-    let role = if m.role == "user" { "我" } else { "模型" };
     if m.role == "user" && rendered.trim().is_empty() {
-        // 与 Web `formatStagedStepUserForChat` 一致：分步注入等展示层置空时不画「我:」占位行
         return (Vec::new(), Vec::new());
     }
     if m.role == "user" {
-        let role_text = format!("{}:", role);
+        let icon_style = Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD);
+        let text_style = Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD);
+        let role_text = "▸ 我:";
         let role_padded = if role_text.width() >= chat_inner_width {
-            role_text
+            role_text.to_string()
         } else {
             format!(
                 "{}{}",
@@ -570,12 +573,27 @@ fn render_message_chat_lines(
                 role_text
             )
         };
-        draw_lines.push(Line::from(Span::styled(role_padded.clone(), header_style)));
-        plain_lines.push(role_padded);
+        let plain = role_padded.clone();
+        let display_pad = plain.len() - role_text.len();
+        draw_lines.push(Line::from(vec![
+            Span::raw(" ".repeat(display_pad.min(plain.len()))),
+            Span::styled("▸ ", icon_style),
+            Span::styled("我:", text_style),
+        ]));
+        plain_lines.push(plain);
     } else {
-        let h = format!("{}:", role);
-        draw_lines.push(Line::from(Span::styled(h.clone(), header_style)));
-        plain_lines.push(h);
+        let icon_style = Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD);
+        let text_style = Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD);
+        let h_plain = "◆ 模型:";
+        draw_lines.push(Line::from(vec![
+            Span::styled("◆ ", icon_style),
+            Span::styled("模型:", text_style),
+        ]));
+        plain_lines.push(h_plain.to_string());
     }
     if m.role == "assistant" {
         let (d, p) = if streaming_assistant {
@@ -632,27 +650,6 @@ fn render_message_chat_lines(
     (draw_lines, plain_lines)
 }
 
-fn center_chat_separator_text(inner: &str, width: usize) -> String {
-    let tw = inner.width();
-    if tw >= width {
-        let mut out = String::new();
-        let mut w = 0;
-        for ch in inner.chars() {
-            let cw = ch.width().unwrap_or(0);
-            if w + cw > width {
-                break;
-            }
-            out.push(ch);
-            w += cw;
-        }
-        return out;
-    }
-    let pad = width - tw;
-    let left = pad / 2;
-    let right = pad - left;
-    format!("{}{}{}", " ".repeat(left), inner, " ".repeat(right))
-}
-
 fn fill_line_with_char(fill_ch: char, width: usize) -> String {
     let cw = fill_ch.width().unwrap_or(1).max(1);
     let n = (width / cw).min(4096);
@@ -664,17 +661,44 @@ fn render_chat_ui_separator_lines(
     chat_inner_width: usize,
 ) -> (Vec<Line<'static>>, Vec<String>) {
     let w = chat_inner_width.max(8);
-    let dim = Style::default().fg(Color::DarkGray);
     if is_short {
-        let inner = " ─── · ─── · ─── · ─── ";
-        let s = center_chat_separator_text(inner, w);
-        let line = Line::from(Span::styled(s.clone(), dim));
-        (vec![line], vec![s])
+        render_gradient_separator(w)
     } else {
+        let dim = Style::default().fg(Color::DarkGray);
         let line_str = fill_line_with_char('─', w);
         let line = Line::from(Span::styled(line_str.clone(), dim));
         (vec![line], vec![line_str])
     }
+}
+
+/// 淡色渐变分隔线：从两端透明向中央渐暗再渐淡，使用 xterm-256 灰度色阶。
+fn render_gradient_separator(width: usize) -> (Vec<Line<'static>>, Vec<String>) {
+    // xterm-256 灰度：232(最暗)..255(最亮)；取 240..248 区间做柔和渐变
+    const SHADES: &[u8] = &[248, 246, 244, 243, 242, 243, 244, 246, 248];
+    let plain: String = std::iter::repeat_n('─', width).collect();
+    if width <= 2 {
+        let dim = Style::default().fg(Color::Indexed(244));
+        return (
+            vec![Line::from(Span::styled(plain.clone(), dim))],
+            vec![plain],
+        );
+    }
+    let half = width / 2;
+    let mut spans: Vec<Span<'static>> = Vec::with_capacity(width);
+    for i in 0..width {
+        let dist = if i < half {
+            i
+        } else {
+            width.saturating_sub(1).saturating_sub(i)
+        };
+        let idx = dist.min(SHADES.len() - 1);
+        let shade = SHADES[idx];
+        spans.push(Span::styled(
+            "─".to_string(),
+            Style::default().fg(Color::Indexed(shade)),
+        ));
+    }
+    (vec![Line::from(spans)], vec![plain])
 }
 
 /// 与 `draw_chat` 相同的逻辑行：第一项为带样式绘制行；第二项为同序纯文本（供 Ctrl+F 匹配）；第三项为每条非 system 消息首行索引。
