@@ -149,6 +149,36 @@ pub fn is_readonly_tool(name: &str) -> bool {
     !writes.contains(name)
 }
 
+/// 即使 [`is_readonly_tool`] 为真，并行 `spawn_blocking` 仍可能争抢 cargo/npm 等构建锁或缓存；勿与同批其它工具并行。
+fn parallel_sync_batch_denied(name: &str) -> bool {
+    matches!(
+        name,
+        "rust_compiler_json" | "quality_workspace" | "ci_pipeline_local"
+    ) || name.starts_with("cargo_")
+        || name.starts_with("npm_")
+        || name.starts_with("frontend_")
+        || name.starts_with("go_")
+        || name.starts_with("ruff_")
+        || name.starts_with("pytest")
+        || name.starts_with("mypy_")
+        || name.starts_with("uv_")
+        || name.starts_with("pre_commit")
+        || name.starts_with("python_")
+        || name.starts_with("typos_")
+        || name.starts_with("codespell_")
+}
+
+/// 本批 **至少 2 个** 工具且全部为 `SyncDefault`、语义只读且非构建/生态锁类时，可在单轮内并行 `spawn_blocking`（见 `agent_turn::per_execute_tools_common`）。
+pub fn tool_calls_allow_parallel_sync_batch(tool_calls: &[ToolCall]) -> bool {
+    tool_calls.len() > 1
+        && tool_calls.iter().all(|tc| {
+            let n = tc.function.name.as_str();
+            handler_id_for(n) == HandlerId::SyncDefault
+                && is_readonly_tool(n)
+                && !parallel_sync_batch_denied(n)
+        })
+}
+
 fn meta_by_name(name: &str) -> Option<&'static ToolDispatchMeta> {
     all_dispatch_metadata().iter().find(|m| m.name == name)
 }
@@ -945,6 +975,41 @@ async fn execute_web_search_web(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::FunctionCall;
+
+    fn tc(name: &str) -> ToolCall {
+        ToolCall {
+            id: "x".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: name.to_string(),
+                arguments: "{}".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn parallel_sync_batch_two_readonly_sync_tools() {
+        let batch = vec![tc("read_file"), tc("list_dir")];
+        assert!(tool_calls_allow_parallel_sync_batch(&batch));
+    }
+
+    #[test]
+    fn parallel_sync_batch_denied_for_cargo_or_workflow() {
+        assert!(!tool_calls_allow_parallel_sync_batch(&[
+            tc("read_file"),
+            tc("cargo_check")
+        ]));
+        assert!(!tool_calls_allow_parallel_sync_batch(&[
+            tc("workflow_execute"),
+            tc("read_file")
+        ]));
+    }
+
+    #[test]
+    fn parallel_sync_batch_single_tool_false() {
+        assert!(!tool_calls_allow_parallel_sync_batch(&[tc("read_file")]));
+    }
 
     #[test]
     fn handler_map_resolves_known_tools() {
