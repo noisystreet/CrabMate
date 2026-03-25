@@ -1026,6 +1026,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         no_stream,
         tui,
         log_file,
+        bench_args,
     ) = parse_args();
 
     // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_logging`）
@@ -1155,6 +1156,49 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
         axum::serve(listener, app).await?;
+        return Ok(());
+    }
+
+    // ---- Benchmark 批量测评模式 ----
+    if bench_args.benchmark.is_some() || bench_args.batch.is_some() {
+        let bench_kind_str = bench_args.benchmark.as_deref().unwrap_or("generic");
+        let bench_kind = runtime::benchmark::types::BenchmarkKind::parse(bench_kind_str)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        let batch_input = bench_args.batch.as_deref().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "使用 --benchmark 时必须同时指定 --batch <INPUT.jsonl>",
+            )
+        })?;
+        let batch_output = bench_args
+            .batch_output
+            .as_deref()
+            .unwrap_or("benchmark_results.jsonl");
+
+        let system_prompt_override = match bench_args.system_prompt_file.as_deref() {
+            Some(path) => {
+                let content = std::fs::read_to_string(path).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("无法读取 bench-system-prompt 文件 {path}: {e}"),
+                    )
+                })?;
+                Some(content)
+            }
+            None => None,
+        };
+
+        let batch_cfg = runtime::benchmark::types::BatchRunConfig {
+            benchmark: bench_kind,
+            input_path: batch_input.to_string(),
+            output_path: batch_output.to_string(),
+            task_timeout_secs: bench_args.task_timeout,
+            max_tool_rounds: bench_args.max_tool_rounds,
+            resume_from_existing: bench_args.resume,
+            system_prompt_override,
+        };
+
+        runtime::benchmark::runner::run_batch(&cfg, &client, &api_key, &tools, &batch_cfg).await?;
         return Ok(());
     }
 
