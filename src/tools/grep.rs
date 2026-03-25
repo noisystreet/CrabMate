@@ -1,8 +1,12 @@
 //! 在工作区内按正则/关键词搜索文件内容。
+//!
+//! 使用 `ignore` crate（ripgrep 同源）做 .gitignore 感知的文件遍历，
+//! `regex` crate 做行级匹配，支持上下文行和 glob 过滤。
 
+use ignore::WalkBuilder;
 use regex::RegexBuilder;
 use std::fs;
-use std::io::{self, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 struct SearchParams {
@@ -39,29 +43,62 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         Err(e) => return e,
     };
 
-    let file_pat = params
+    let file_glob_pat = params
         .file_glob
         .as_deref()
         .and_then(|g| glob::Pattern::new(g).ok());
-    let exclude_pat = params
+    let exclude_glob_pat = params
         .exclude_glob
         .as_deref()
         .and_then(|g| glob::Pattern::new(g).ok());
 
-    let opts = WalkOpts {
-        max_results: params.max_results,
-        ignore_hidden: params.ignore_hidden,
-        ctx_before: params.context_before,
-        ctx_after: params.context_after,
-        file_glob: file_pat.as_ref(),
-        exclude_glob: exclude_pat.as_ref(),
-    };
-
-    let mut results = Vec::new();
+    let mut results: Vec<(PathBuf, usize, String)> = Vec::new();
     let mut visited = 0usize;
 
-    if let Err(e) = walk_and_search(&root, &re, &mut results, &mut visited, &opts) {
-        return format!("搜索过程中发生错误：{}", e);
+    let walker = WalkBuilder::new(&root)
+        .hidden(!params.ignore_hidden)
+        .git_ignore(true)
+        .git_global(false)
+        .git_exclude(true)
+        .build();
+
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+            continue;
+        }
+        let path = entry.path();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        if let Some(ref pat) = file_glob_pat
+            && !pat.matches(&name)
+        {
+            continue;
+        }
+        if let Some(ref pat) = exclude_glob_pat
+            && pat.matches(&name)
+        {
+            continue;
+        }
+
+        search_in_file(
+            path,
+            &re,
+            &mut results,
+            &mut visited,
+            params.max_results,
+            params.context_before,
+            params.context_after,
+        );
+        if results.len() >= params.max_results {
+            break;
+        }
     }
 
     if results.is_empty() {
@@ -170,92 +207,29 @@ fn resolve_search_root(base: &Path, sub: Option<&str>) -> Result<PathBuf, String
     }
 }
 
-struct WalkOpts<'a> {
-    max_results: usize,
-    ignore_hidden: bool,
-    ctx_before: usize,
-    ctx_after: usize,
-    file_glob: Option<&'a glob::Pattern>,
-    exclude_glob: Option<&'a glob::Pattern>,
-}
-
-fn walk_and_search(
-    root: &Path,
-    re: &regex::Regex,
-    results: &mut Vec<(PathBuf, usize, String)>,
-    visited_files: &mut usize,
-    opts: &WalkOpts<'_>,
-) -> io::Result<()> {
-    if !root.exists() {
-        return Ok(());
-    }
-    if root.is_file() {
-        if matches_glob_filters(root, opts.file_glob, opts.exclude_glob) {
-            search_in_file(root, re, results, visited_files, opts)?;
-        }
-        return Ok(());
-    }
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        let path = entry.path();
-        let file_name = entry.file_name();
-        let name = file_name.to_string_lossy();
-        if opts.ignore_hidden && name.starts_with('.') {
-            continue;
-        }
-        if path.is_dir() {
-            walk_and_search(&path, re, results, visited_files, opts)?;
-            if results.len() >= opts.max_results {
-                break;
-            }
-        } else if path.is_file() && matches_glob_filters(&path, opts.file_glob, opts.exclude_glob) {
-            search_in_file(&path, re, results, visited_files, opts)?;
-            if results.len() >= opts.max_results {
-                break;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn matches_glob_filters(
-    path: &Path,
-    file_glob: Option<&glob::Pattern>,
-    exclude_glob: Option<&glob::Pattern>,
-) -> bool {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    if let Some(pat) = file_glob
-        && !pat.matches(&name)
-    {
-        return false;
-    }
-    if let Some(pat) = exclude_glob
-        && pat.matches(&name)
-    {
-        return false;
-    }
-    true
-}
-
 fn search_in_file(
     path: &Path,
     re: &regex::Regex,
     results: &mut Vec<(PathBuf, usize, String)>,
     visited_files: &mut usize,
-    opts: &WalkOpts<'_>,
-) -> io::Result<()> {
+    max_results: usize,
+    ctx_before: usize,
+    ctx_after: usize,
+) {
     *visited_files += 1;
-    let mut f = fs::File::open(path)?;
+    let mut f = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
     let mut buf = String::new();
-    f.read_to_string(&mut buf)?;
+    if f.read_to_string(&mut buf).is_err() {
+        return;
+    }
     if buf.len() > MAX_FILE_SIZE_BYTES {
         buf.truncate(MAX_FILE_SIZE_BYTES);
     }
     let lines: Vec<&str> = buf.lines().collect();
-    let has_context = opts.ctx_before > 0 || opts.ctx_after > 0;
+    let has_context = ctx_before > 0 || ctx_after > 0;
     let mut last_ctx_end: usize = 0;
 
     for (idx, line) in lines.iter().enumerate() {
@@ -263,8 +237,8 @@ fn search_in_file(
             continue;
         }
         if has_context {
-            let ctx_start = idx.saturating_sub(opts.ctx_before);
-            let ctx_end = (idx + opts.ctx_after + 1).min(lines.len());
+            let ctx_start = idx.saturating_sub(ctx_before);
+            let ctx_end = (idx + ctx_after + 1).min(lines.len());
             if ctx_start > last_ctx_end && last_ctx_end > 0 {
                 results.push((path.to_path_buf(), 0, "---".to_string()));
             }
@@ -278,17 +252,16 @@ fn search_in_file(
                     ci + 1,
                     format!("{} {}", prefix, ctx_line),
                 ));
-                if results.len() >= opts.max_results {
-                    return Ok(());
+                if results.len() >= max_results {
+                    return;
                 }
             }
             last_ctx_end = ctx_end;
         } else {
             results.push((path.to_path_buf(), idx + 1, line.to_string()));
-            if results.len() >= opts.max_results {
-                return Ok(());
+            if results.len() >= max_results {
+                return;
             }
         }
     }
-    Ok(())
 }
