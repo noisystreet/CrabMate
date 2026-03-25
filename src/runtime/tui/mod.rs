@@ -12,6 +12,7 @@ mod status;
 mod styles;
 mod sync_merge;
 mod text_input;
+pub(super) mod theme;
 mod workspace_ops;
 
 use crate::config::AgentConfig;
