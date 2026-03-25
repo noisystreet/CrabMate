@@ -1,4 +1,4 @@
-//! 代码度量与分析工具：行数统计、依赖图、覆盖率报告解析
+//! 代码度量与分析工具：行数统计（tokei 库）、依赖图、覆盖率报告解析
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -7,6 +7,7 @@ use std::process::Command;
 use super::output_util;
 
 const MAX_OUTPUT_LINES: usize = 600;
+const EXCLUDED_DIRS: &[&str] = &["target", "node_modules", "vendor", "dist", "build", ".git"];
 
 // ── code_stats：代码行数统计 ────────────────────────────────
 
@@ -35,74 +36,49 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
         .map(str::trim)
         .unwrap_or("table");
 
-    if let Ok(output) = Command::new("tokei").arg(target.as_os_str()).output()
-        && (output.status.success() || !output.stdout.is_empty())
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let mut body = stdout.trim_end().to_string();
-        if !stderr.trim().is_empty() {
-            body.push('\n');
-            body.push_str(stderr.trim_end());
-        }
-        return format!(
-            "tokei（代码统计）：\n{}",
-            output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
-        );
-    }
+    let paths = &[target.to_string_lossy().to_string()];
+    let excluded: Vec<&str> = EXCLUDED_DIRS.to_vec();
+    let config = tokei::Config::default();
+    let mut languages = tokei::Languages::new();
+    languages.get_statistics(paths, &excluded, &config);
 
-    if let Ok(output) = Command::new("cloc").arg(target.as_os_str()).output()
-        && (output.status.success() || !output.stdout.is_empty())
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return format!(
-            "cloc（代码统计）：\n{}",
-            output_util::truncate_output_lines(stdout.trim_end(), max_output_len, MAX_OUTPUT_LINES)
-        );
-    }
+    let mut sorted: Vec<_> = languages
+        .iter()
+        .filter(|(_, lang)| lang.code > 0 || lang.comments > 0 || lang.blanks > 0)
+        .collect();
+    sorted.sort_by(|a, b| b.1.code.cmp(&a.1.code));
 
-    builtin_line_count(workspace_root, path, format, max_output_len)
-}
-
-fn builtin_line_count(
-    workspace_root: &Path,
-    path: &str,
-    format: &str,
-    max_output_len: usize,
-) -> String {
-    let target = workspace_root.join(path);
-    let mut stats: HashMap<String, LangStats> = HashMap::new();
-    let mut total_files: usize = 0;
-    let mut total_lines: usize = 0;
-
-    collect_stats(&target, &mut stats, &mut total_files, &mut total_lines, 0);
-
-    if stats.is_empty() {
+    if sorted.is_empty() {
         return format!("路径 {} 下未找到可识别的源码文件", path);
     }
 
-    let mut sorted: Vec<_> = stats.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.lines.cmp(&a.1.lines));
+    let total_files: usize = sorted.iter().map(|(_, l)| l.reports.len()).sum();
+    let total_code: usize = sorted.iter().map(|(_, l)| l.code).sum();
+    let total_comments: usize = sorted.iter().map(|(_, l)| l.comments).sum();
+    let total_blanks: usize = sorted.iter().map(|(_, l)| l.blanks).sum();
+    let total_lines = total_code + total_comments + total_blanks;
 
     if format == "json" {
         let entries: Vec<serde_json::Value> = sorted
             .iter()
-            .map(|(lang, s)| {
+            .map(|(lang_type, lang)| {
                 serde_json::json!({
-                    "language": lang,
-                    "files": s.files,
-                    "lines": s.lines,
-                    "blank": s.blank,
-                    "comment": s.comment,
-                    "code": s.code
+                    "language": format!("{}", lang_type),
+                    "files": lang.reports.len(),
+                    "lines": lang.code + lang.comments + lang.blanks,
+                    "blank": lang.blanks,
+                    "comment": lang.comments,
+                    "code": lang.code
                 })
             })
             .collect();
         let result = serde_json::json!({
             "total_files": total_files,
             "total_lines": total_lines,
-            "languages": entries,
-            "note": "内置统计（tokei/cloc 未安装）：comment 估算基于行首 // # -- 等模式，精度有限"
+            "total_code": total_code,
+            "total_comments": total_comments,
+            "total_blanks": total_blanks,
+            "languages": entries
         });
         return match serde_json::to_string_pretty(&result) {
             Ok(s) => output_util::truncate_output_lines(&s, max_output_len, MAX_OUTPUT_LINES),
@@ -111,178 +87,33 @@ fn builtin_line_count(
     }
 
     let mut out = String::new();
-    out.push_str(&format!("代码统计（内置，tokei/cloc 未安装）：{}\n", path));
+    out.push_str(&format!("代码统计（tokei 库）：{}\n", path));
     out.push_str(&format!(
-        "{:<16} {:>6} {:>10} {:>8} {:>8} {:>8}\n",
+        "{:<20} {:>6} {:>10} {:>8} {:>8} {:>8}\n",
         "Language", "Files", "Lines", "Blank", "Comment", "Code"
     ));
-    out.push_str(&"-".repeat(60));
+    out.push_str(&"-".repeat(64));
     out.push('\n');
-    for (lang, s) in &sorted {
+    for (lang_type, lang) in &sorted {
+        let lines = lang.code + lang.comments + lang.blanks;
         out.push_str(&format!(
-            "{:<16} {:>6} {:>10} {:>8} {:>8} {:>8}\n",
-            lang, s.files, s.lines, s.blank, s.comment, s.code
+            "{:<20} {:>6} {:>10} {:>8} {:>8} {:>8}\n",
+            format!("{}", lang_type),
+            lang.reports.len(),
+            lines,
+            lang.blanks,
+            lang.comments,
+            lang.code
         ));
     }
-    out.push_str(&"-".repeat(60));
+    out.push_str(&"-".repeat(64));
     out.push('\n');
     out.push_str(&format!(
-        "{:<16} {:>6} {:>10}\n",
-        "Total", total_files, total_lines
+        "{:<20} {:>6} {:>10} {:>8} {:>8} {:>8}\n",
+        "Total", total_files, total_lines, total_blanks, total_comments, total_code
     ));
 
     output_util::truncate_output_lines(&out, max_output_len, MAX_OUTPUT_LINES)
-}
-
-struct LangStats {
-    files: usize,
-    lines: usize,
-    blank: usize,
-    comment: usize,
-    code: usize,
-}
-
-const MAX_DEPTH: usize = 20;
-const MAX_FILES: usize = 10000;
-
-fn collect_stats(
-    dir: &Path,
-    stats: &mut HashMap<String, LangStats>,
-    total_files: &mut usize,
-    total_lines: &mut usize,
-    depth: usize,
-) {
-    if depth > MAX_DEPTH || *total_files > MAX_FILES {
-        return;
-    }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let ft = match entry.file_type() {
-            Ok(ft) => ft,
-            Err(_) => continue,
-        };
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if name_str.starts_with('.') {
-            continue;
-        }
-        if ft.is_dir() {
-            if matches!(
-                name_str.as_ref(),
-                "target" | "node_modules" | "vendor" | "dist" | "build" | ".git" | "__pycache__"
-            ) {
-                continue;
-            }
-            collect_stats(&entry.path(), stats, total_files, total_lines, depth + 1);
-        } else if ft.is_file() {
-            if *total_files > MAX_FILES {
-                return;
-            }
-            let ext = entry
-                .path()
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.to_lowercase());
-            let lang = match ext.as_deref() {
-                Some("rs") => "Rust",
-                Some("go") => "Go",
-                Some("py") => "Python",
-                Some("js") => "JavaScript",
-                Some("jsx") => "JSX",
-                Some("ts") => "TypeScript",
-                Some("tsx") => "TSX",
-                Some("c") => "C",
-                Some("h") => "C Header",
-                Some("cpp" | "cc" | "cxx") => "C++",
-                Some("hpp" | "hh" | "hxx") => "C++ Header",
-                Some("java") => "Java",
-                Some("kt" | "kts") => "Kotlin",
-                Some("swift") => "Swift",
-                Some("rb") => "Ruby",
-                Some("php") => "PHP",
-                Some("sh" | "bash" | "zsh") => "Shell",
-                Some("css") => "CSS",
-                Some("scss" | "sass") => "SCSS",
-                Some("html" | "htm") => "HTML",
-                Some("vue") => "Vue",
-                Some("svelte") => "Svelte",
-                Some("json") => "JSON",
-                Some("yaml" | "yml") => "YAML",
-                Some("toml") => "TOML",
-                Some("xml") => "XML",
-                Some("md" | "markdown") => "Markdown",
-                Some("sql") => "SQL",
-                Some("proto") => "Protobuf",
-                Some("dockerfile") => "Dockerfile",
-                Some("tf" | "hcl") => "HCL",
-                Some("lua") => "Lua",
-                Some("zig") => "Zig",
-                Some("ex" | "exs") => "Elixir",
-                Some("erl") => "Erlang",
-                Some("hs") => "Haskell",
-                Some("ml" | "mli") => "OCaml",
-                Some("dart") => "Dart",
-                Some("r") => "R",
-                Some("scala") => "Scala",
-                Some("cs") => "C#",
-                Some("fs" | "fsx") => "F#",
-                _ => {
-                    if name_str == "Makefile"
-                        || name_str == "Dockerfile"
-                        || name_str == "CMakeLists.txt"
-                    {
-                        match name_str.as_ref() {
-                            "Makefile" => "Makefile",
-                            "Dockerfile" => "Dockerfile",
-                            "CMakeLists.txt" => "CMake",
-                            _ => continue,
-                        }
-                    } else {
-                        continue;
-                    }
-                }
-            };
-            let content = match std::fs::read_to_string(entry.path()) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-            let line_count = content.lines().count();
-            let blank_count = content.lines().filter(|l| l.trim().is_empty()).count();
-            let comment_count = content
-                .lines()
-                .filter(|l| {
-                    let t = l.trim();
-                    t.starts_with("//")
-                        || t.starts_with('#')
-                        || t.starts_with("--")
-                        || t.starts_with("/*")
-                        || t.starts_with('*')
-                        || t.starts_with("'''")
-                        || t.starts_with("\"\"\"")
-                })
-                .count();
-            let code_count = line_count.saturating_sub(blank_count + comment_count);
-
-            let entry = stats.entry(lang.to_string()).or_insert(LangStats {
-                files: 0,
-                lines: 0,
-                blank: 0,
-                comment: 0,
-                code: 0,
-            });
-            entry.files += 1;
-            entry.lines += line_count;
-            entry.blank += blank_count;
-            entry.comment += comment_count;
-            entry.code += code_count;
-
-            *total_files += 1;
-            *total_lines += line_count;
-        }
-    }
 }
 
 // ── dependency_graph：依赖关系可视化 ────────────────────────
