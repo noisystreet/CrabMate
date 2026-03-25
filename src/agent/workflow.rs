@@ -115,7 +115,8 @@ struct WorkflowExecutionReport {
 #[derive(Debug, Clone)]
 pub enum WorkflowApprovalMode {
     NoApproval,
-    Tui {
+    /// SSE 审批通道（Web `/chat/stream` 等）；字段与 `tool_registry::WebToolRuntime` 对齐。
+    Interactive {
         out_tx: mpsc::Sender<String>,
         approval_rx: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
         approval_request_guard: Arc<Mutex<()>>,
@@ -794,7 +795,7 @@ async fn run_node(
             id: node.id,
             status: NodeRunStatus::Failed,
             output:
-                "错误：未设置工作区，禁止在工作流中执行该工具（需要 TUI/CLI 先设置 workspace）。"
+                "错误：未设置工作区，禁止在工作流中执行该工具（需要先在 CLI/Web 设置 workspace）。"
                     .into(),
             workspace_changed: false,
             exit_code: None,
@@ -812,7 +813,7 @@ async fn run_node(
                 .any(|c| c.eq_ignore_ascii_case(&cmd_lower));
 
             let already_allowed = match &approval_mode {
-                WorkflowApprovalMode::Tui {
+                WorkflowApprovalMode::Interactive {
                     persistent_allowlist,
                     ..
                 } => {
@@ -823,9 +824,9 @@ async fn run_node(
             };
 
             if disallowed && !already_allowed && !cmd_lower.is_empty() {
-                // 仅在 TUI 审批模式下才能等待用户决策
+                // 仅在提供审批通道时才能等待用户决策
                 let decision = match &approval_mode {
-                    WorkflowApprovalMode::Tui {
+                    WorkflowApprovalMode::Interactive {
                         out_tx,
                         approval_rx,
                         approval_request_guard,
@@ -887,7 +888,7 @@ async fn run_node(
                     }
                     CommandApprovalDecision::AllowAlways => {
                         effective_allowed.push(cmd_lower.clone());
-                        if let WorkflowApprovalMode::Tui {
+                        if let WorkflowApprovalMode::Interactive {
                             persistent_allowlist,
                             ..
                         } = &approval_mode
@@ -899,7 +900,7 @@ async fn run_node(
             }
         }
     } else if node.requires_approval {
-        // 通用人工审批节点：仅 TUI 模式支持
+        // 通用人工审批节点：需 SSE 审批会话
         let approval_key = format!("workflow_node:{}", node.id).to_lowercase();
 
         match approval_mode {
@@ -908,7 +909,7 @@ async fn run_node(
                     id: node.id,
                     status: NodeRunStatus::Failed,
                     output: format!(
-                        "workflow 执行失败：该节点需要人工审批，但当前不在 TUI 模式：{}",
+                        "workflow 执行失败：该节点需要人工审批，但当前未启用审批通道：{}",
                         approval_key
                     )
                     .into(),
@@ -917,7 +918,7 @@ async fn run_node(
                     error_code: Some("approval_required".to_string()),
                 };
             }
-            WorkflowApprovalMode::Tui {
+            WorkflowApprovalMode::Interactive {
                 out_tx,
                 approval_rx,
                 approval_request_guard,
@@ -1079,7 +1080,7 @@ async fn request_approval(
     command: &str,
     args: &str,
 ) -> CommandApprovalDecision {
-    // 保证同一时间只有一个审批请求处于“发送 -> 等待决策”的进行中，避免并发覆盖 TUI 状态。
+    // 保证同一时间只有一个审批请求处于“发送 -> 等待决策”的进行中，避免并发覆盖审批状态。
     let _guard = approval_request_guard.lock().await;
     let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
         command_approval_request: crate::sse::CommandApprovalBody {

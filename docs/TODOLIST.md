@@ -23,7 +23,7 @@
 
 ## P2 — 可观测性 / 边角
 
-- [ ] **`mpsc::send` 大量 `let _ =`**：通道关闭或满时静默丢弃（TUI/SSE/协议行）。可在 debug 日志或 metrics 中记录，关键路径（如回合结束 `sync_tx`）可考虑显式错误处理。
+- [ ] **`mpsc::send` 大量 `let _ =`**：通道关闭或满时静默丢弃（SSE/协议行等）。可在 debug 日志或 metrics 中记录，关键路径可考虑显式错误处理。
 
 ---
 
@@ -79,7 +79,7 @@
 
 **职责摘要**：表驱动 `ToolSpec`、`run_tool`；`tool_registry` 中 Workflow / 阻塞超时 / 搜索等策略。
 
-- [ ] **危险操作分级与确认**：在 `run_command` / 写文件 / `workflow_execute` 等路径上强化策略（与 P1 Web 审批、TUI 审批对齐）。
+- [ ] **危险操作分级与确认**：在 `run_command` / 写文件 / `workflow_execute` 等路径上强化策略（与 P1 Web 审批对齐）。
 - [ ] **并行工具调用**：模型一次返回多 `tool_calls` 时，评估依赖关系后安全并行。
 - [ ] **工具结果「可引用」摘要**：统一长输出结构化摘要进入 `tool_result.summary`，减少上下文膨胀。
 - [ ] **新栈工具按需扩展**：在 `dev_tag` 体系下增加 JVM、容器等标签与最小工具集（保持白名单与路径安全）。Go 已有 `go_build`/`go_test`/`go_vet`/`go_mod_tidy`/`go_fmt_check`/`golangci_lint`；Node.js 已有 `npm_install`/`npm_run`/`npx_run`/`tsc_check`。
@@ -87,7 +87,7 @@
 
 ### `sse/`（协议与行分类）
 
-**职责摘要**：`protocol` 编码控制面 JSON；`line` 供 TUI 分类；与 `frontend/src/api.ts` 对齐。
+**职责摘要**：`protocol` 编码控制面 JSON；`line` 供 Rust 侧行分类（与 `frontend/src/api.ts` 语义对齐）。
 
 - [ ] **协议版本演进**：`SSE_PROTOCOL_VERSION` bump 时的双端兼容与特性协商（前端分支解析）。
 - [ ] **断线重连（可选）**：`Last-Event-ID` 或自定义游标，配合浏览器端重试。
@@ -114,12 +114,12 @@
 - [ ] **多 profile**：`dev` / `prod` 预设（工具白名单、审批模式、`http_fetch` 前缀等）。
 - [ ] **密钥外置**：与密钥管理（vault、文件权限）集成，文档化兼容路径。
 
-### `runtime/`（CLI、TUI、会话与导出）
+### `runtime/`（CLI、会话与导出）
 
-**职责摘要**：`cli`/`tui`；`workspace_session`、`chat_export`、`message_display`、终端着色与无 SSE 回显。
+**职责摘要**：`cli`；`workspace_session`、`chat_export`、`message_display`、终端着色与无 SSE 回显。
 
-- [ ] **三端能力对齐**：Web 有的会话持久、审批、导出格式，在 CLI/TUI 有等价或明确「不支持」说明。
-- [ ] **TUI 大会话性能**：极长消息列表下的滚动与缓存策略（与现有 `draw` 缓存协同）。
+- [ ] **能力对齐**：Web 有的会话持久、审批、导出格式，在 CLI 有等价或明确「不支持」说明。
+- [ ] **（未来）全屏终端 UI**：若重新引入 TUI，需恢复消息列表滚动/缓存与 SSE 行分类消费路径。
 - [ ] **REPL 历史与脚本**：可选持久化输入历史、从文件批量注入用户消息。
 - [ ] **导出格式版本号**：`chat_export` 与前端导出 JSON 带 schema 版本。
 - [ ] **无障碍与终端兼容**：弱终端、配色盲、宽字符与剪贴板失败时的降级提示。

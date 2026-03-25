@@ -1,5 +1,6 @@
 //! 会话导出：与 `.crabmate/tui_session.json` 同形的 JSON，以及 Markdown 文本生成。
 //! 供 `runtime/workspace_session` 使用；Web 前端 `frontend/src/chatExport.ts` 应对齐 `CHAT_SESSION_FILE_VERSION` 与字段含义。
+#![allow(dead_code)]
 
 use crate::types::Message;
 use serde::{Deserialize, Serialize};
@@ -51,7 +52,12 @@ pub fn messages_to_markdown(messages: &[Message]) -> String {
         };
         md.push_str(heading);
         md.push_str("\n\n");
-        md.push_str(m.content.as_deref().unwrap_or(""));
+        let body = if m.role == "assistant" {
+            crate::runtime::message_display::assistant_raw_markdown_body_for_message(m)
+        } else {
+            m.content.as_deref().unwrap_or("").to_string()
+        };
+        md.push_str(&body);
         md.push_str("\n\n");
     }
     md
@@ -99,6 +105,7 @@ mod tests {
         Message {
             role: role.to_string(),
             content: Some(content.to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,

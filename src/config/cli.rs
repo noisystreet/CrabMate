@@ -51,11 +51,9 @@ fn open_log_append(path: &Path) -> std::fs::File {
 /// - 若已设置环境变量 **`RUST_LOG`**：完全按该变量解析（不强行覆盖默认级别）。
 /// - 若未设置 **`RUST_LOG`**：
 ///   - 指定了 **`log_file`**（`--log <FILE>`）：默认 **`info`**，便于与文件 tail 配套；
-///   - **`quiet_cli_default == true`**（非 `--serve` 的 CLI 模式：单次提问、REPL、TUI 等）：默认 **`warn`**，不输出 `info`；
+///   - **`quiet_cli_default == true`**（非 `--serve` 的 CLI 模式：单次提问、REPL 等）：默认 **`warn`**，不输出 `info`；
 ///   - 否则（**`--serve`**）：默认 **`info`**。
-///
-/// `suppress_stdio_logs`：为 **TUI 全屏** 设为 `true`，避免日志行破坏界面；若同时传入 `log_file`，则只写文件。
-pub fn init_logging(suppress_stdio_logs: bool, log_file: Option<&Path>, quiet_cli_default: bool) {
+pub fn init_logging(log_file: Option<&Path>, quiet_cli_default: bool) {
     use env_logger::{Builder, Env, Target, WriteStyle};
 
     let env = if std::env::var_os("RUST_LOG").is_some() {
@@ -70,22 +68,11 @@ pub fn init_logging(suppress_stdio_logs: bool, log_file: Option<&Path>, quiet_cl
     let mut builder = Builder::from_env(env);
     builder.format_target(true);
     builder.format_timestamp_secs();
-    match (suppress_stdio_logs, log_file) {
-        (true, None) => {
-            builder.target(Target::Pipe(Box::new(MutexWrite(Mutex::new(
-                std::io::sink(),
-            )))));
-            builder.write_style(WriteStyle::Never);
-        }
-        (false, None) => {
+    match log_file {
+        None => {
             builder.target(Target::Stderr);
         }
-        (true, Some(path)) => {
-            let f = open_log_append(path);
-            builder.target(Target::Pipe(Box::new(MutexWrite(Mutex::new(f)))));
-            builder.write_style(WriteStyle::Never);
-        }
-        (false, Some(path)) => {
+        Some(path) => {
             let f = open_log_append(path);
             let w = MutexWrite(Mutex::new(StderrAndFile {
                 stderr: io::stderr(),
@@ -110,7 +97,7 @@ fn read_stdin_to_string() -> String {
 #[command(
     name = "CrabMate",
     version,
-    about = "基于 DeepSeek API 的简易 Agent，支持工具调用、Web 界面与命令行交互"
+    about = "基于 DeepSeek API 的简易 Agent，支持工具调用、Web 界面与 CLI"
 )]
 pub struct Cli {
     /// 显式指定配置文件路径（覆盖默认的 config.toml / .agent_demo.toml 搜索）
@@ -157,11 +144,7 @@ pub struct Cli {
     #[arg(long)]
     pub no_stream: bool,
 
-    /// 启动完整终端 UI（TUI，左侧对话，右侧工作区/任务/日程）
-    #[arg(long)]
-    pub tui: bool,
-
-    /// 将日志追加写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别写入。CLI 下可同时输出到 stderr；TUI 下默认不写 stderr，可用本选项后台 `tail -f` 查看
+    /// 将日志追加写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别写入，并同时输出到 stderr。默认 **info** 不会输出模型请求体 JSON；需要时在 **`RUST_LOG=crabmate=debug`** 或设置 **`AGENT_LOG_CHAT_REQUEST_JSON=1`**
     #[arg(long, value_name = "FILE")]
     pub log: Option<String>,
 
@@ -219,7 +202,6 @@ pub type ParsedCliArgs = (
     bool,           // no_web
     bool,           // dry_run
     bool,           // no_stream
-    bool,           // tui
     Option<String>, // log file path
     BenchmarkCliArgs,
 );
@@ -293,7 +275,6 @@ pub fn parse_args() -> ParsedCliArgs {
         cli.no_web,
         cli.dry_run,
         cli.no_stream,
-        cli.tui,
         log_path,
         bench_args,
     )

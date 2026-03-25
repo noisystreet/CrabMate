@@ -62,7 +62,7 @@ pub struct AgentConfig {
     pub model: String,
     /// 保留的最近对话轮数（user+assistant 算一轮）
     pub max_message_history: usize,
-    /// 为 `true` 时 TUI / CLI REPL 启动从 `.crabmate/tui_session.json` 恢复会话；默认 `false` 仅含当前配置的 `system` 一条
+    /// 为 `true` 时 CLI REPL 启动从 `.crabmate/tui_session.json` 恢复会话；默认 `false` 仅含当前配置的 `system` 一条（文件名历史兼容）
     pub tui_load_session_on_start: bool,
     /// `tui_load_session_on_start` 为 `true` 时：从会话文件加载的消息条数上限（含 `system`）；超出则丢弃最旧非 system 消息
     pub tui_session_max_messages: usize,

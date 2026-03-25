@@ -12,6 +12,9 @@ pub const OPENAI_CHAT_COMPLETIONS_REL_PATH: &str = "chat/completions";
 pub struct Message {
     pub role: String,
     pub content: Option<String>,
+    /// DeepSeek `deepseek-reasoner` 等非流式/流式响应中的思维链；**勿**在下一轮请求中回传供应商（见 [`messages_stripping_reasoning_for_api_request`]）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -32,6 +35,7 @@ impl Message {
         Self {
             role: "system".to_string(),
             content: Some(if short { "short" } else { "long" }.to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: Some("crabmate_ui_sep".to_string()),
             tool_call_id: None,
@@ -43,6 +47,7 @@ impl Message {
         Self {
             role: "system".to_string(),
             content: Some(content.into()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -54,11 +59,157 @@ impl Message {
         Self {
             role: "user".to_string(),
             content: Some(content.into()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
         }
     }
+}
+
+/// 构造发往供应商的 `messages`：去掉助手 `reasoning_content`，避免多轮请求回传思维链。
+pub fn messages_stripping_reasoning_for_api_request(messages: &[Message]) -> Vec<Message> {
+    messages
+        .iter()
+        .map(|m| {
+            if m.reasoning_content.is_none() {
+                m.clone()
+            } else {
+                Message {
+                    reasoning_content: None,
+                    ..m.clone()
+                }
+            }
+        })
+        .collect()
+}
+
+#[inline]
+fn assistant_has_non_empty_tool_calls(m: &Message) -> bool {
+    m.tool_calls.as_ref().is_some_and(|c| !c.is_empty())
+}
+
+/// 与供应商对齐：部分会话/导入里 `role` 可能带空白或大小写不一致，严格 `== "assistant"` 会漏合并。
+#[inline]
+fn is_assistant_role(role: &str) -> bool {
+    role.trim().eq_ignore_ascii_case("assistant")
+}
+
+fn merge_adjacent_assistant_text(into: &mut Message, from: &Message) {
+    let a = into.content.as_deref().map(str::trim).unwrap_or("");
+    let b = from.content.as_deref().map(str::trim).unwrap_or("");
+    into.content = match (a.is_empty(), b.is_empty()) {
+        (true, true) => None,
+        (false, true) => into.content.clone(),
+        (true, false) => from.content.clone(),
+        (false, false) => {
+            if b.starts_with(a) {
+                from.content.clone()
+            } else if a.starts_with(b) {
+                into.content.clone()
+            } else {
+                Some(format!("{a}\n\n{b}"))
+            }
+        }
+    };
+}
+
+/// 将两条相邻的 `assistant` 压成一条（OpenAI 兼容 API 禁止相邻 assistant）。
+///
+/// 覆盖此前漏洞：若**后一条**带 `tool_calls`，旧实现会 `push` 第二条，仍触发 400。
+fn squash_consecutive_assistant_pair(into: &mut Message, from: Message) {
+    let from_has_tc = assistant_has_non_empty_tool_calls(&from);
+    let into_has_tc = assistant_has_non_empty_tool_calls(into);
+    let from_empty = from
+        .content
+        .as_deref()
+        .map(|s| s.trim().is_empty())
+        .unwrap_or(true);
+
+    if into_has_tc && !from_has_tc {
+        if from_empty {
+            into.tool_calls = None;
+            return;
+        }
+        into.tool_calls = None;
+        merge_adjacent_assistant_text(into, &from);
+        return;
+    }
+
+    if into_has_tc && from_has_tc {
+        merge_adjacent_assistant_text(into, &from);
+        let mut a = into.tool_calls.take().unwrap_or_default();
+        a.extend(from.tool_calls.unwrap_or_default());
+        into.tool_calls = if a.is_empty() { None } else { Some(a) };
+        return;
+    }
+
+    if !into_has_tc && from_has_tc {
+        merge_adjacent_assistant_text(into, &from);
+        into.tool_calls = from.tool_calls;
+        return;
+    }
+
+    merge_adjacent_assistant_text(into, &from);
+}
+
+/// 反复合并相邻 `assistant`（不删尾部空占位、不处理孤儿 `tool_calls`），供会话内存与裁剪后修复。
+fn merge_all_consecutive_assistant_messages_in_vec(mut out: Vec<Message>) -> Vec<Message> {
+    loop {
+        let mut merged_any = false;
+        let mut i = 0usize;
+        while i + 1 < out.len() {
+            if !(is_assistant_role(&out[i].role) && is_assistant_role(&out[i + 1].role)) {
+                i += 1;
+                continue;
+            }
+            out[i].role = "assistant".to_string();
+            let next = out.remove(i + 1);
+            squash_consecutive_assistant_pair(&mut out[i], next);
+            merged_any = true;
+            i = i.saturating_sub(1);
+        }
+        if !merged_any {
+            break;
+        }
+    }
+    out
+}
+
+/// 就地合并相邻 `assistant`，**保留**末尾空助手占位（与 `normalize_messages_for_openai_compatible_request` 不同）。
+pub fn merge_consecutive_assistants_in_place(messages: &mut Vec<Message>) {
+    *messages = merge_all_consecutive_assistant_messages_in_vec(std::mem::take(messages));
+}
+
+/// 消除 OpenAI 兼容接口不允许的**相邻** `assistant`（无中间 `user`/`tool`）。
+///
+/// 典型来源：
+/// - TUI 在用户消息后追加空助手占位，而历史中上一条已是助手正文；
+/// - 流式阶段已向占位写入片段，模型回合结束又 `push` 了第二条助手；
+/// - **`max_message_history` 等裁剪**删掉中间的 `role: tool`，却保留带 `tool_calls` 的 `assistant` 与其后的下一条助手；
+/// - **后一条助手带 `tool_calls`**，前一条仅有正文：旧逻辑未合并，仍报 `Invalid consecutive assistant`。
+///
+/// 本函数仅用于拼装 **`ChatRequest.messages`**，**不**写入会话 `Vec<Message>`：会话尾部空占位须保留，
+/// 供 [`crate::agent::agent_turn::push_assistant_merging_trailing_empty_placeholder`] 合并。
+pub fn normalize_messages_for_openai_compatible_request(msgs: Vec<Message>) -> Vec<Message> {
+    let mut out = merge_all_consecutive_assistant_messages_in_vec(msgs);
+    while out.last().is_some_and(|m| {
+        is_assistant_role(&m.role)
+            && !assistant_has_non_empty_tool_calls(m)
+            && m.content
+                .as_deref()
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true)
+    }) {
+        out.pop();
+    }
+    if let Some(last) = out.last_mut()
+        && is_assistant_role(&last.role)
+        && assistant_has_non_empty_tool_calls(last)
+    {
+        last.tool_calls = None;
+    }
+    out
 }
 
 /// Web `/chat`、队列任务与 CLI 单次问答共用的首轮：`[system, user]`。
@@ -133,6 +284,9 @@ pub struct Choice {
 #[derive(Debug, Default, Deserialize)]
 pub struct StreamDelta {
     pub content: Option<String>,
+    /// 推理模型流式思维链（如 DeepSeek reasoner）。
+    #[serde(default)]
+    pub reasoning_content: Option<String>,
     #[allow(dead_code)]
     pub role: Option<String>,
     #[serde(default)]
@@ -156,6 +310,8 @@ pub struct StreamFunctionDelta {
 
 #[derive(Debug, Deserialize)]
 pub struct StreamChoice {
+    /// 部分 OpenAI 兼容流会省略 `index`；缺省按 0 处理，避免整段 SSE 解析失败导致无输出。
+    #[serde(default)]
     #[allow(dead_code)]
     pub index: u32,
     pub delta: StreamDelta,
@@ -180,3 +336,174 @@ pub const USER_CANCELLED_FINISH_REASON: &str = "user_cancelled";
 
 /// `complete_chat_retrying` 在用户取消时返回的错误消息（与 `run_agent_turn_common` 识别一致）。
 pub const LLM_CANCELLED_ERROR: &str = "已取消";
+
+#[cfg(test)]
+mod normalize_messages_tests {
+    use super::*;
+
+    fn asst(content: &str) -> Message {
+        Message {
+            role: "assistant".to_string(),
+            content: Some(content.to_string()),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    fn asst_with_tc(content: &str) -> Message {
+        Message {
+            role: "assistant".to_string(),
+            content: Some(content.to_string()),
+            reasoning_content: None,
+            tool_calls: Some(vec![ToolCall {
+                id: "tc1".to_string(),
+                typ: "function".to_string(),
+                function: FunctionCall {
+                    name: "noop".to_string(),
+                    arguments: "{}".to_string(),
+                },
+            }]),
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn merges_adjacent_assistant_placeholder_after_prior_assistant() {
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            asst("prior"),
+            asst(""),
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 3);
+        assert_eq!(n[2].role, "assistant");
+        assert_eq!(n[2].content.as_deref(), Some("prior"));
+    }
+
+    #[test]
+    fn drops_trailing_empty_assistant() {
+        let v = vec![Message::system_only("s"), Message::user_only("u"), asst("")];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 2);
+        assert_eq!(n[1].role, "user");
+    }
+
+    #[test]
+    fn merges_streaming_partial_then_full_assistant() {
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            asst("hel"),
+            asst("hello"),
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 3);
+        assert_eq!(n[2].content.as_deref(), Some("hello"));
+    }
+
+    /// 裁剪掉 tool 后常见：带 tool_calls 的 assistant 紧挨下一条助手正文。
+    #[test]
+    fn strips_orphan_tool_calls_when_followed_by_assistant_reply() {
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            asst_with_tc("calling tool"),
+            asst("final answer"),
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 3);
+        assert_eq!(n[2].role, "assistant");
+        assert!(n[2].tool_calls.is_none());
+        assert!(n[2].content.as_deref().unwrap().contains("calling tool"));
+        assert!(n[2].content.as_deref().unwrap().contains("final answer"));
+    }
+
+    #[test]
+    fn strips_tool_calls_when_followed_by_empty_assistant_only() {
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            asst_with_tc("x"),
+            asst(""),
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 3);
+        assert_eq!(n[2].content.as_deref(), Some("x"));
+        assert!(n[2].tool_calls.is_none());
+    }
+
+    /// 正文助手 + 带 tool_calls 的助手后仍有 tool 消息：必须保留 tool_calls（不得被末尾孤儿清理误伤）。
+    #[test]
+    fn preserves_merged_tool_calls_when_tool_follows() {
+        let tool = Message {
+            role: "tool".to_string(),
+            content: Some(r#"{"ok":true}"#.to_string()),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: Some("tc1".to_string()),
+        };
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            asst("reasoning"),
+            asst_with_tc(""),
+            tool,
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 4);
+        assert_eq!(n[2].role, "assistant");
+        assert!(n[2].tool_calls.as_ref().is_some_and(|c| !c.is_empty()));
+        assert_eq!(n[3].role, "tool");
+    }
+
+    #[test]
+    fn collapses_three_consecutive_assistants() {
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            asst("a"),
+            asst("b"),
+            asst("c"),
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 3);
+        assert_eq!(n[2].role, "assistant");
+        let c = n[2].content.as_deref().unwrap();
+        assert!(c.contains('a') && c.contains('c'));
+    }
+
+    #[test]
+    fn merges_when_assistant_role_has_whitespace() {
+        let mut odd = asst("x");
+        odd.role = " Assistant ".to_string();
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            odd,
+            asst("y"),
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 3);
+        assert_eq!(n[2].role, "assistant");
+    }
+
+    /// 前一条仅正文、后一条带 tool_calls：合并为一条；末尾无 `tool` 时孤儿 `tool_calls` 再被清掉（否则仍非法）。
+    #[test]
+    fn merges_assistant_then_assistant_with_tool_calls() {
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            asst("partial"),
+            asst_with_tc(""),
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 3);
+        assert!(n[2].tool_calls.is_none());
+        assert!(n[2].content.as_deref().unwrap().contains("partial"));
+    }
+}

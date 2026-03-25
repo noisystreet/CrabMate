@@ -1,9 +1,10 @@
 //! 工作区 `.crabmate/tui_session.json`：加载/保存与导出（实现委托 `runtime::chat_export`）。
-//! CLI REPL 与 TUI 共用 `initial_workspace_messages`；TUI 退出时另调用 `save_workspace_session`。
+//! CLI REPL 使用 `initial_workspace_messages`；保存/导出快捷键随后续终端 UI 再接回。
+#![allow(dead_code)]
 
 use crate::config::AgentConfig;
 use crate::runtime::chat_export::{self, ChatSessionFile, session_to_json_pretty};
-use crate::types::Message;
+use crate::types::{Message, normalize_messages_for_openai_compatible_request};
 use std::path::{Path, PathBuf};
 
 pub fn session_file_path(workspace: &Path) -> PathBuf {
@@ -11,17 +12,40 @@ pub fn session_file_path(workspace: &Path) -> PathBuf {
 }
 
 /// 超过上限时保留首条 `system` 与尾部最近若干条，减轻启动与 TUI 渲染负担。
+///
+/// 若保留的尾部以**两条连续** `assistant` 开头，且丢弃的前缀里仍有 `user`，会把**该前缀中最后一条 user** 插回尾部，
+/// 避免变成 `[system, assistant, assistant, …]`（供应商报 `Invalid consecutive assistant message at message index 2`）。
 fn truncate_loaded_messages(mut msgs: Vec<Message>, max_total: usize) -> Vec<Message> {
     let max_total = max_total.max(2);
     if msgs.len() <= max_total {
-        return msgs;
+        return normalize_messages_for_openai_compatible_request(msgs);
     }
     let system = msgs.remove(0);
+    let after = msgs;
     let tail_keep = max_total.saturating_sub(1);
-    let skip = msgs.len().saturating_sub(tail_keep);
+    let skip = after.len().saturating_sub(tail_keep);
+    let mut tail: Vec<Message> = after.iter().skip(skip).cloned().collect();
+
+    let tail_opens_with_assistant_run = tail.len() >= 2
+        && tail[0].role.trim().eq_ignore_ascii_case("assistant")
+        && tail[1].role.trim().eq_ignore_ascii_case("assistant");
+    if tail_opens_with_assistant_run
+        && let Some(ui) = after[..skip]
+            .iter()
+            .rposition(|m| m.role.trim().eq_ignore_ascii_case("user"))
+    {
+        tail.insert(0, after[ui].clone());
+        while tail.len() > tail_keep {
+            if tail.len() <= 1 {
+                break;
+            }
+            tail.remove(1);
+        }
+    }
+
     let mut out = vec![system];
-    out.extend(msgs.into_iter().skip(skip));
-    out
+    out.extend(tail);
+    normalize_messages_for_openai_compatible_request(out)
 }
 
 /// 若存在会话文件则加载；首条 `system` 会替换为当前配置的 `system_prompt`。
@@ -84,6 +108,7 @@ mod tests {
         Message {
             role: role.to_string(),
             content: Some(content.to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -111,5 +136,21 @@ mod tests {
         let v = vec![msg("system", "s"), msg("user", "u")];
         let t = truncate_loaded_messages(v, 10);
         assert_eq!(t.len(), 2);
+    }
+
+    #[test]
+    fn truncate_inserts_user_when_tail_would_be_two_assistants() {
+        let v = vec![
+            msg("system", "s"),
+            msg("user", "old_u"),
+            msg("assistant", "a1"),
+            msg("assistant", "a2"),
+        ];
+        let t = truncate_loaded_messages(v, 3);
+        assert_eq!(t.len(), 3);
+        assert_eq!(t[0].role, "system");
+        assert_eq!(t[1].role, "user");
+        assert_eq!(t[1].content.as_deref(), Some("old_u"));
+        assert_eq!(t[2].role, "assistant");
     }
 }

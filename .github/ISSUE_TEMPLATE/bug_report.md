@@ -9,7 +9,7 @@ labels: []
 
 - OS / 版本：
 - Rust（`rustc -V`）：
-- 运行方式（如 `cargo run -- --serve` / `--tui`）：
+- 运行方式（如 `cargo run -- --serve` / REPL / `--query`）：
 
 ## 复现步骤
 
@@ -30,4 +30,4 @@ labels: []
 
 ## 可能相关模块（可选）
 
-<!-- 如 TUI / Web / 某工具名 -->
+<!-- 如 Web / CLI / 某工具名 -->

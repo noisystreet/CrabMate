@@ -1,7 +1,7 @@
 //! CrabMate 库：DeepSeek Agent、HTTP 服务、工具与工作流。
 //! 二进制入口见 `src/main.rs` 的 [`run`] 包装。
 //!
-//! 日志由 `log` + `env_logger` 处理；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。`--tui` 时不向终端写日志行，以免打乱全屏界面。
+//! 日志由 `log` + `env_logger` 处理；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
 
 mod agent;
 mod chat_job_queue;
@@ -45,10 +45,10 @@ use types::{CommandApprovalDecision, Message, messages_chat_seed};
 /// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）；`no_stream` 为 true 时 API 使用 `stream: false`，
 /// 有正文则通过 `out` 一次性下发整段。
 /// 若 `render_to_terminal` 为 true，则在终端用 `markdown_to_ansi` 渲染助手回复（流式与非流式均在**整段正文到达后**输出，避免半段 Markdown）。
-/// 当 `out` 为 `None` 且 `render_to_terminal` 为 true（典型 CLI）时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文与 TUI 一致经 `user_message_for_chat_display`（分步长句可压缩）；助手正文与 TUI 共用 `assistant_markdown_source_for_display`。
+/// 当 `out` 为 `None` 且 `render_to_terminal` 为 true（典型 CLI）时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文经 `user_message_for_chat_display`（分步长句可压缩）；助手正文经 `assistant_markdown_source_for_display`。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
-/// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供 TUI 等场景中止生成。
-/// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI/TUI 传 `None`。
+/// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
+/// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI 传 `None`。
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent_turn(
     client: &reqwest::Client,
@@ -76,12 +76,9 @@ pub async fn run_agent_turn(
         workspace_is_set,
         no_stream,
         cancel: cancel.as_deref(),
-        mode: agent::agent_turn::AgentRunMode::Web {
-            render_to_terminal,
-            web_tool_ctx,
-        },
+        render_to_terminal,
+        web_tool_ctx,
         per_flight,
-        tui_messages_sync: None,
     };
     agent::agent_turn::run_agent_turn_common(&mut loop_params).await
 }
@@ -950,7 +947,7 @@ struct StatusResponse {
     planner_executor_mode: &'static str,
     /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`）。
     staged_plan_execution: bool,
-    /// TUI / CLI REPL 是否在启动时从 `.crabmate/tui_session.json` 恢复会话（默认 false）。
+    /// CLI REPL 是否在启动时从 `.crabmate/tui_session.json` 恢复会话（默认 false；文件名历史兼容）。
     tui_load_session_on_start: bool,
     max_message_history: usize,
     tool_message_max_chars: usize,
@@ -1011,7 +1008,7 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
     })
 }
 
-/// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL / TUI。
+/// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL 等。
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (
         config_path,
@@ -1024,14 +1021,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         no_web,
         dry_run,
         no_stream,
-        tui,
         log_file,
         bench_args,
     ) = parse_args();
 
     // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_logging`）
     init_logging(
-        tui,
         log_file.as_deref().map(std::path::Path::new),
         serve_port.is_none(),
     );
@@ -1079,12 +1074,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let client = http_client::build_shared_api_client(cfg.as_ref())?;
     let all_tools = tools::build_tools();
     let tools = if no_tools { Vec::new() } else { all_tools };
-
-    if tui {
-        crate::runtime::tui::run_tui(&cfg, &client, &api_key, &tools, &workspace_cli, no_stream)
-            .await?;
-        return Ok(());
-    }
 
     if let Some(port) = serve_port {
         let initial_workspace = workspace_cli.clone();

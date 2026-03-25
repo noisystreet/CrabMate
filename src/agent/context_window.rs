@@ -26,6 +26,12 @@ pub fn estimate_message_chars(m: &Message) -> usize {
         .as_deref()
         .map(estimate_chars_from_bytes)
         .unwrap_or(0);
+    n = n.saturating_add(
+        m.reasoning_content
+            .as_deref()
+            .map(estimate_chars_from_bytes)
+            .unwrap_or(0),
+    );
     if let Some(ref tcs) = m.tool_calls {
         for tc in tcs {
             n = n.saturating_add(tc.function.name.len());
@@ -72,6 +78,8 @@ pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize
 }
 
 /// 保留首条 `system`，其后最多保留 `max_after_system` 条消息（与历史 `max_message_history` 语义一致）。
+///
+/// 与 `runtime/workspace_session` 加载截断一致：若保留的尾部以**两条连续** `assistant` 开头，且被裁掉的前缀里仍有 `user`，则插回其中最后一条 `user`（并丢掉一条较旧消息以维持条数上限），避免 `[system, assistant, assistant, …]` 触发 400。
 pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usize) {
     if messages.is_empty() || max_after_system == 0 {
         return;
@@ -80,11 +88,30 @@ pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usi
         if messages.len() <= 1 + max_after_system {
             return;
         }
-        let keep = messages.len() - max_after_system;
         let sys = messages[0].clone();
-        *messages = std::iter::once(sys)
-            .chain(messages.iter().skip(keep).cloned())
-            .collect();
+        let after: Vec<Message> = messages[1..].to_vec();
+        let tail_keep = max_after_system;
+        let skip = after.len().saturating_sub(tail_keep);
+        let mut tail: Vec<Message> = after.iter().skip(skip).cloned().collect();
+        let tail_opens_with_assistant_run = tail.len() >= 2
+            && tail[0].role.trim().eq_ignore_ascii_case("assistant")
+            && tail[1].role.trim().eq_ignore_ascii_case("assistant");
+        if tail_opens_with_assistant_run
+            && let Some(ui) = after[..skip]
+                .iter()
+                .rposition(|m| m.role.trim().eq_ignore_ascii_case("user"))
+        {
+            tail.insert(0, after[ui].clone());
+            while tail.len() > tail_keep {
+                if tail.len() <= 1 {
+                    break;
+                }
+                tail.remove(1);
+            }
+        }
+        let mut out = vec![sys];
+        out.extend(tail);
+        *messages = out;
     } else if messages.len() > max_after_system {
         let skip = messages.len() - max_after_system;
         *messages = messages.iter().skip(skip).cloned().collect();
@@ -180,11 +207,27 @@ pub fn prepare_messages_before_model_call_sync(messages: &mut Vec<Message>, cfg:
         compress_tool_message_contents(messages, cfg.tool_message_max_chars);
     }
     drop_orphan_tool_messages(messages);
+    crate::types::merge_consecutive_assistants_in_place(messages);
 }
 
 fn format_message_for_transcript(m: &Message) -> String {
     let role = m.role.as_str();
-    let body = if let Some(c) = m.content.as_deref() {
+    let body = if m.role == "assistant"
+        && m.reasoning_content
+            .as_deref()
+            .is_some_and(|r| !r.trim().is_empty())
+    {
+        let r = m.reasoning_content.as_deref().unwrap_or("").trim();
+        match m
+            .content
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+        {
+            Some(c) => format!("[reasoning]\n{r}\n\n[answer]\n{c}"),
+            None => format!("[reasoning]\n{r}"),
+        }
+    } else if let Some(c) = m.content.as_deref() {
         c.to_string()
     } else if let Some(ref tcs) = m.tool_calls {
         let args: Vec<String> = tcs
@@ -247,6 +290,7 @@ pub async fn maybe_summarize_with_llm(
         Message {
             role: "system".to_string(),
             content: Some(SUMMARY_SYSTEM.to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -257,6 +301,7 @@ pub async fn maybe_summarize_with_llm(
                 "请将下列对话压缩为要点（不超过约 {} 字）。保留技术细节与待办：\n\n{}",
                 cfg.context_summary_max_tokens, transcript
             )),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -306,6 +351,7 @@ pub async fn maybe_summarize_with_llm(
                     "[较早对话已摘要，以下为压缩要点]\n{}",
                     summary_text.trim()
                 )),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -353,6 +399,7 @@ mod tests {
         Message {
             role: "tool".to_string(),
             content: Some(s.to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: Some("1".into()),
@@ -377,6 +424,7 @@ mod tests {
             Message {
                 role: "system".to_string(),
                 content: Some("s".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -384,6 +432,7 @@ mod tests {
             Message {
                 role: "user".to_string(),
                 content: Some("a".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -391,6 +440,7 @@ mod tests {
             Message {
                 role: "assistant".to_string(),
                 content: Some("b".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -398,6 +448,7 @@ mod tests {
             Message {
                 role: "user".to_string(),
                 content: Some("c".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -411,11 +462,41 @@ mod tests {
     }
 
     #[test]
+    fn trim_by_count_inserts_user_when_tail_would_be_two_assistants() {
+        let mut v = vec![
+            Message::system_only("s"),
+            Message::user_only("old_u"),
+            Message {
+                role: "assistant".to_string(),
+                content: Some("a1".into()),
+                reasoning_content: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "assistant".to_string(),
+                content: Some("a2".into()),
+                reasoning_content: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+        ];
+        trim_messages_by_count(&mut v, 2);
+        assert_eq!(v.len(), 3);
+        assert_eq!(v[1].role, "user");
+        assert_eq!(v[1].content.as_deref(), Some("old_u"));
+        assert_eq!(v[2].role, "assistant");
+    }
+
+    #[test]
     fn char_budget_drops_oldest_after_system() {
         let mut v = vec![
             Message {
                 role: "system".to_string(),
                 content: Some("s".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -423,6 +504,7 @@ mod tests {
             Message {
                 role: "user".to_string(),
                 content: Some("aaaaaaaaaa".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -430,6 +512,7 @@ mod tests {
             Message {
                 role: "user".to_string(),
                 content: Some("bbbbbbbbbbbbbbbb".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -445,6 +528,7 @@ mod tests {
         Message {
             role: "assistant".to_string(),
             content: None,
+            reasoning_content: None,
             tool_calls: Some(vec![ToolCall {
                 id: "call_1".to_string(),
                 typ: "function".to_string(),
@@ -464,6 +548,7 @@ mod tests {
             Message {
                 role: "system".to_string(),
                 content: Some("s".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -473,6 +558,7 @@ mod tests {
             Message {
                 role: "user".to_string(),
                 content: Some("last".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -490,6 +576,7 @@ mod tests {
             Message {
                 role: "system".to_string(),
                 content: Some("s".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -500,6 +587,7 @@ mod tests {
             Message {
                 role: "user".to_string(),
                 content: Some("u".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -515,6 +603,7 @@ mod tests {
             Message {
                 role: "system".to_string(),
                 content: Some("s".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -522,6 +611,7 @@ mod tests {
             Message {
                 role: "assistant".to_string(),
                 content: Some("text only".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
