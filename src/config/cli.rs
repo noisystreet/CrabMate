@@ -35,15 +35,11 @@ impl<W: Write + Send> Write for MutexWrite<W> {
     }
 }
 
-fn open_log_append(path: &Path) -> std::fs::File {
+fn open_log_append(path: &Path) -> io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
-        .unwrap_or_else(|e| {
-            eprintln!("无法打开日志文件 {}: {}", path.display(), e);
-            std::process::exit(1);
-        })
 }
 
 /// 初始化 [`log`] + [`env_logger`]。
@@ -53,7 +49,9 @@ fn open_log_append(path: &Path) -> std::fs::File {
 ///   - 指定了 **`log_file`**（`--log <FILE>`）：默认 **`info`**，便于与文件 tail 配套；
 ///   - **`quiet_cli_default == true`**（非 `--serve` 的 CLI 模式：单次提问、REPL 等）：默认 **`warn`**，不输出 `info`；
 ///   - 否则（**`--serve`**）：默认 **`info`**。
-pub fn init_logging(log_file: Option<&Path>, quiet_cli_default: bool) {
+///
+/// 指定了 `--log` 但无法创建/打开日志文件时返回 [`io::Error`]，由调用方决定如何报告退出码。
+pub fn init_logging(log_file: Option<&Path>, quiet_cli_default: bool) -> io::Result<()> {
     use env_logger::{Builder, Env, Target, WriteStyle};
 
     let env = if std::env::var_os("RUST_LOG").is_some() {
@@ -73,7 +71,12 @@ pub fn init_logging(log_file: Option<&Path>, quiet_cli_default: bool) {
             builder.target(Target::Stderr);
         }
         Some(path) => {
-            let f = open_log_append(path);
+            let f = open_log_append(path).map_err(|e| {
+                io::Error::new(
+                    e.kind(),
+                    format!("无法打开日志文件 {}: {e}", path.display()),
+                )
+            })?;
             let w = MutexWrite(Mutex::new(StderrAndFile {
                 stderr: io::stderr(),
                 file: f,
@@ -83,6 +86,7 @@ pub fn init_logging(log_file: Option<&Path>, quiet_cli_default: bool) {
         }
     }
     builder.init();
+    Ok(())
 }
 
 /// 从标准输入读取全部内容（直到 EOF）
