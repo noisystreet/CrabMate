@@ -52,7 +52,7 @@ fn trailing_content_ignores_assistant_with_tool_calls() {
 #[tokio::test]
 async fn event_forwarder_prefers_stream_when_both_pending() {
     let (stream_tx, stream_rx) = mpsc::channel::<String>(4);
-    let (snapshot_tx, snapshot_rx) = mpsc::channel::<Vec<Message>>(4);
+    let (snapshot_tx, snapshot_rx) = mpsc::channel::<Arc<[Message]>>(4);
     let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(8);
 
     stream_tx
@@ -60,7 +60,7 @@ async fn event_forwarder_prefers_stream_when_both_pending() {
         .await
         .expect("stream send should work");
     snapshot_tx
-        .send(vec![Message::user_only("q")])
+        .send(vec![Message::user_only("q")].into())
         .await
         .expect("snapshot send should work");
     drop(stream_tx);
@@ -79,12 +79,12 @@ async fn event_forwarder_prefers_stream_when_both_pending() {
 #[tokio::test]
 async fn event_forwarder_continues_after_stream_channel_closed() {
     let (stream_tx, stream_rx) = mpsc::channel::<String>(4);
-    let (snapshot_tx, snapshot_rx) = mpsc::channel::<Vec<Message>>(4);
+    let (snapshot_tx, snapshot_rx) = mpsc::channel::<Arc<[Message]>>(4);
     let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(8);
 
     drop(stream_tx);
     snapshot_tx
-        .send(vec![Message::user_only("still works")])
+        .send(vec![Message::user_only("still works")].into())
         .await
         .expect("snapshot send should work");
     drop(snapshot_tx);
@@ -98,16 +98,16 @@ async fn event_forwarder_continues_after_stream_channel_closed() {
 #[tokio::test]
 async fn event_forwarder_coalesces_snapshots_to_latest() {
     let (stream_tx, stream_rx) = mpsc::channel::<String>(1);
-    let (snapshot_tx, snapshot_rx) = mpsc::channel::<Vec<Message>>(8);
+    let (snapshot_tx, snapshot_rx) = mpsc::channel::<Arc<[Message]>>(8);
     let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(8);
 
     drop(stream_tx);
     snapshot_tx
-        .send(vec![Message::user_only("old")])
+        .send(vec![Message::user_only("old")].into())
         .await
         .expect("snapshot old send should work");
     snapshot_tx
-        .send(vec![Message::user_only("new")])
+        .send(vec![Message::user_only("new")].into())
         .await
         .expect("snapshot new send should work");
     drop(snapshot_tx);
@@ -128,7 +128,7 @@ async fn event_forwarder_coalesces_snapshots_to_latest() {
 async fn event_forwarder_flushes_snapshot_after_all_queued_stream_lines() {
     let n_stream = 70usize;
     let (stream_tx, stream_rx) = mpsc::channel::<String>(n_stream + 8);
-    let (snapshot_tx, snapshot_rx) = mpsc::channel::<Vec<Message>>(8);
+    let (snapshot_tx, snapshot_rx) = mpsc::channel::<Arc<[Message]>>(8);
     let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(n_stream + 16);
 
     for i in 0..n_stream {
@@ -138,7 +138,7 @@ async fn event_forwarder_flushes_snapshot_after_all_queued_stream_lines() {
             .expect("stream send should work");
     }
     snapshot_tx
-        .send(vec![Message::user_only("snap")])
+        .send(vec![Message::user_only("snap")].into())
         .await
         .expect("snapshot send should work");
     drop(stream_tx);

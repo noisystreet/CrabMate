@@ -45,13 +45,13 @@ use workspace_ops::{refresh_schedule, refresh_tasks, refresh_workspace, upsert_a
 #[derive(Debug)]
 enum TuiAgentEvent {
     StreamLine(String),
-    MessagesSnapshot(Vec<Message>),
+    MessagesSnapshot(Arc<[Message]>),
 }
 
 fn coalesce_latest_snapshot(
-    snapshot_rx: &mut mpsc::Receiver<Vec<Message>>,
-    mut latest: Vec<Message>,
-) -> Vec<Message> {
+    snapshot_rx: &mut mpsc::Receiver<Arc<[Message]>>,
+    mut latest: Arc<[Message]>,
+) -> Arc<[Message]> {
     while let Ok(next) = snapshot_rx.try_recv() {
         latest = next;
     }
@@ -60,7 +60,7 @@ fn coalesce_latest_snapshot(
 
 async fn forward_pending_snapshots(
     snapshot_open: bool,
-    snapshot_rx: &mut mpsc::Receiver<Vec<Message>>,
+    snapshot_rx: &mut mpsc::Receiver<Arc<[Message]>>,
     event_tx: &mpsc::Sender<TuiAgentEvent>,
 ) -> bool {
     if !snapshot_open {
@@ -81,7 +81,7 @@ async fn forward_pending_snapshots(
 
 fn spawn_tui_event_forwarder(
     mut stream_rx: mpsc::Receiver<String>,
-    mut snapshot_rx: mpsc::Receiver<Vec<Message>>,
+    mut snapshot_rx: mpsc::Receiver<Arc<[Message]>>,
     event_tx: mpsc::Sender<TuiAgentEvent>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
@@ -323,7 +323,7 @@ pub async fn run_tui(
     terminal.clear()?;
 
     let (tx, rx) = mpsc::channel::<String>(2048);
-    let (sync_tx, sync_rx) = mpsc::channel::<Vec<Message>>(8);
+    let (sync_tx, sync_rx) = mpsc::channel::<Arc<[Message]>>(8);
     let (event_tx, mut event_rx) = mpsc::channel::<TuiAgentEvent>(4096);
     let (turn_outcome_tx, mut turn_outcome_rx) = mpsc::channel::<TuiTurnOutcome>(4);
     let mut approval_tx: Option<mpsc::Sender<crate::types::CommandApprovalDecision>> = None;
@@ -497,9 +497,9 @@ pub async fn run_tui(
                         upsert_assistant_message(&mut state.messages, &assistant_buf);
                     }
                 },
-                TuiAgentEvent::MessagesSnapshot(msgs) => {
-                    let n = msgs.len();
-                    let (last_role, last_content) = msgs
+                TuiAgentEvent::MessagesSnapshot(msgs_arc) => {
+                    let n = msgs_arc.len();
+                    let (last_role, last_content) = msgs_arc
                         .last()
                         .map(|m| {
                             (
@@ -521,7 +521,7 @@ pub async fn run_tui(
                     // Agent 侧可能已裁剪上下文：直接替换会丢掉较早分步气泡；合并保留前缀再接上尾部。
                     state.messages = sync_merge::merge_tui_messages_after_agent_sync(
                         std::mem::take(&mut state.messages),
-                        msgs,
+                        msgs_arc.to_vec(),
                     );
                     assistant_buf = trailing_streaming_assistant_content(&state.messages);
                 }
