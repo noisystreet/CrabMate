@@ -11,7 +11,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `convert_units`：物理量与数据量**单位换算**（Rust [`uom`](https://crates.io/crates/uom) 库，不调用外部程序）。`category` 含 length / mass / temperature / data / time / area / pressure / speed（或中文别名），`value` + `from` + `to` 指定数值与单位；数据量区分十进制 KB/MB/GB 与二进制 KiB/MiB/GiB。
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
   - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
-  - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时直接执行；不匹配时，TUI 与 Web（`/chat/stream` 携带 `approval_session_id`）均可人工审批 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键）。
+  - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时直接执行；不匹配时，Web（`/chat/stream` 携带 `approval_session_id`）可人工审批 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键）。
   - `http_request`：对给定 URL 发起 **POST / PUT / PATCH / DELETE**（可选 `json_body`）。同样受 `http_fetch_allowed_prefixes` 约束（同源 + 路径前缀边界），返回状态、Content-Type、重定向链与正文预览。适合受控 API 联调（默认建议先 dry-run 规划参数，不在 body 中放真实密钥）。
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`file`、`head`、`tail`、`wc`、`cmake`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make` 等），带超时与输出截断。**CMake**：已列入白名单，常用 `cmake -S . -B build`、`cmake --build build`；参数不得含 `..` 或以 `/` 开头，建议构建目录用相对路径（勿在 args 里写绝对路径的 `-D`）。未安装时 `/health` 中 `dep_cmake` 可能为 degraded。**c++filt**：可将链接器/栈追踪中的修饰名（mangled）反解为可读 C++ 名（Binutils/LLVM 通常提供）；未安装时 `dep_cxxfilt` 可能为 degraded。**Autotools**：默认白名单含 `autoreconf`/`autoconf`/`automake`/`aclocal`，便于维护仍使用 `configure.ac` / `Makefile.am` 的仓库；会处理项目内 m4/shell，仅应在**信任的工作区**使用，且 `run_command` 参数规则仍生效。
   - `run_executable`：在工作区目录下按**相对路径**运行可执行文件（如 `./main`、编译产物）；与 `run_command`（仅白名单系统命令）分工——**运行当前目录/工作区内的程序请用本工具**，不要用 `run_command`。
@@ -53,16 +53,14 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - Web Chat 回复支持流式增量显示。
   - Web `/chat` 与 `/chat/stream` 支持可选 `conversation_id` 以跨请求延续同一会话；未传时服务端自动分配会话 ID（流式接口通过响应头 `x-conversation-id` 返回）。
   - Web Chat 支持流式审批：收到 `command_approval_request` 后前端可通过 `POST /chat/approval` 回传 `deny` / `allow_once` / `allow_always`。
-  - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout（与 TUI 右栏「队列」及状态栏/`human_summary` 展示逻辑一致），便于对照「写代码—编译—运行」等多步任务。
-  - 状态栏区分“模型生成中…”和“工具运行中…”；TUI 收到 `tool_call` 时会提示“即将执行工具 + 摘要”，收到 `tool_result` 后会提示“工具执行完成/失败”，失败时附带 `error_code` / `exit_code`（若有），便于快速定位问题。
-- **会话导出（Web 与 TUI 对齐）**：
-  - Web：顶部「**导出 JSON**」生成 `{ "version": 1, "messages": [...] }`，与 TUI 工作区内 `.crabmate/tui_session.json` 及 F8 导出同形（`role` / `content` 等字段与 OpenAI 兼容消息一致；工具气泡在 JSON 中为 `role: "tool"`）。
-  - Web：「**导出 MD**」正文与 TUI **F9** 一致（`# CrabMate 聊天记录`、按轮 `## 用户` / `## 助手` / `## 工具`）；可选会话标题与 id、标签等元信息前缀。
-  - TUI：**F8** JSON、**F9** Markdown，文件在 `.crabmate/exports/`。
+  - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包，但**每条助手回复在整段到达后**才用 `markdown_to_ansi` 做一次基本 Markdown 着色（标题、列表、代码块等），避免半段原文刷屏。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout，便于对照「写代码—编译—运行」等多步任务。
+- **会话导出（Web）**：
+  - Web：顶部「**导出 JSON**」生成 `{ "version": 1, "messages": [...] }`，与同形磁盘会话文件 `.crabmate/tui_session.json` 一致（`role` / `content` 等字段与 OpenAI 兼容消息一致；工具气泡在 JSON 中为 `role: "tool"`）。
+  - Web：「**导出 MD**」正文（`# CrabMate 聊天记录`、按轮 `## 用户` / `## 助手` / `## 工具`）；可选会话标题与 id、标签等元信息前缀。
 
 ## 文档与维护
 
-- **架构与二次开发**：见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)（模块职责、SSE 协议、TUI 目录结构等）。
+- **架构与二次开发**：见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)（模块职责、SSE 协议等）。
 - **待办清单**：[`docs/TODOLIST.md`](docs/TODOLIST.md) 仅列未完成项；**上半**为全局优先级（P0–P5），**下半**为按模块的中长期方向；**完成某项后应从该文件删除对应条目**（不要只打勾保留），约定详见 `DEVELOPMENT.md`。
 - **新功能**：合并用户可见能力时，请同步更新本 README（功能/命令/配置）与/或 `DEVELOPMENT.md`（架构与协议），便于他人了解与支持。
 
@@ -406,7 +404,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - **联网搜索**（`web_search` 工具）：`AGENT_WEB_SEARCH_PROVIDER`（`brave` / `tavily`）、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`（1～20，默认 8）
    - **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`（逗号分隔 URL 前缀）、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`（与 `default_config.toml` / `[agent]` 中同名项对应）
    - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
-   - **终端会话文件（TUI / CLI REPL）**：`AGENT_TUI_LOAD_SESSION_ON_START` / `[agent] tui_load_session_on_start` 为 `true` 时，TUI 或 REPL 启动才从 `.crabmate/tui_session.json` 恢复历史；默认 `false`（仅空白会话 + 当前 `system_prompt`）。**若启用加载**：`AGENT_TUI_SESSION_MAX_MESSAGES` / `[agent] tui_session_max_messages` 限制总消息条数（含 `system`），超出则丢弃最旧非 system 消息（默认 `400`，有效范围 `2`～`50000`）
+   - **终端会话文件（CLI REPL）**：`AGENT_TUI_LOAD_SESSION_ON_START` / `[agent] tui_load_session_on_start` 为 `true` 时，REPL 启动从 `.crabmate/tui_session.json` 恢复历史；默认 `false`（仅空白会话 + 当前 `system_prompt`）。**若启用加载**：`AGENT_TUI_SESSION_MAX_MESSAGES` / `[agent] tui_session_max_messages` 限制总消息条数（含 `system`），超出则丢弃最旧非 system 消息（默认 `400`，有效范围 `2`～`50000`）
    - **Web 工作区白名单**：`AGENT_WORKSPACE_ALLOWED_ROOTS`（逗号分隔绝对或相对路径，相对路径相对**进程启动时当前目录**）；与 `[agent] workspace_allowed_roots` 数组等价。省略或空列表表示仅允许 `run_command_working_dir` 下路径；`GET /status` 返回 `workspace_allowed_roots_count` 便于确认策略宽度。
    ```bash
    export AGENT_MODEL=deepseek-reasoner
@@ -440,9 +438,9 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 
 **Cursor-like 规则注入**：当 `cursor_rules_enabled=true`（或 `AGENT_CURSOR_RULES_ENABLED=1`）时，服务启动会自动读取 `cursor_rules_dir` 下全部 `*.mdc`（按文件名排序），并按配置可选附加工作区根 `AGENTS.md`，统一拼接到系统提示词末尾；总附加长度受 `cursor_rules_max_chars` 限制，超出会截断并写入提示。该能力可用于复用类似 Cursor Rule 的项目约束。
 
-**上下文窗口**（`[agent]`）：每次向模型发请求前会压缩 `messages`——`tool_message_max_chars` 截断工具输出；`max_message_history` 限制条数；`context_char_budget > 0` 时按近似字符删最旧消息；`context_summary_trigger_chars > 0` 且总长超阈值时再调一次无 tools 的 API 生成「较早对话摘要」（尾部保留 `context_summary_tail_messages` 条）。TUI/REPL 长会话下裁剪会缩短本地消息列表；Web 单请求内工具多轮仍受益。
+**上下文窗口**（`[agent]`）：每次向模型发请求前会压缩 `messages`——`tool_message_max_chars` 截断工具输出；`max_message_history` 限制条数；`context_char_budget > 0` 时按近似字符删最旧消息；`context_summary_trigger_chars > 0` 且总长超阈值时再调一次无 tools 的 API 生成「较早对话摘要」（尾部保留 `context_summary_tail_messages` 条）。REPL 长会话下裁剪会缩短本地消息列表；Web 单请求内工具多轮仍受益。
 
-**终端历史加载（TUI / CLI REPL）**（`[agent] tui_load_session_on_start` / `AGENT_TUI_LOAD_SESSION_ON_START`）：默认 **`false`**，启动不读磁盘；设为 `true` 时从 `.crabmate/tui_session.json` 恢复会话（与 `--workspace` / `run_command_working_dir` 所指工作区一致）。此时 **`tui_session_max_messages`** 才限制加载条数（含 `system`），与上述「每次请求前」的上下文裁剪相互独立。仅 TUI 会在退出时写回 `tui_session.json`；REPL 不自动保存该文件。
+**终端历史加载（CLI REPL）**（`[agent] tui_load_session_on_start` / `AGENT_TUI_LOAD_SESSION_ON_START`）：默认 **`false`**，启动不读磁盘；设为 `true` 时从 `.crabmate/tui_session.json` 恢复会话（与 `--workspace` / `run_command_working_dir` 所指工作区一致）。此时 **`tui_session_max_messages`** 才限制加载条数（含 `system`），与上述「每次请求前」的上下文裁剪相互独立。当前 **REPL 不会**自动写回 `tui_session.json`（导出/保存能力保留在代码中供后续终端 UI 再接）。
 
 **Web 对话任务队列**（`chat_queue_max_concurrent` / `chat_queue_max_pending`）：`POST /chat` 与 `POST /chat/stream` 经进程内有界队列调度，限制**同时执行**的 Agent 回合数与**排队**长度；队列满时返回 **503**，JSON 体含 `code: "QUEUE_FULL"`。`GET /status` 会返回 `chat_queue_running`、`chat_queue_completed_ok`、`chat_queue_completed_cancelled`、`chat_queue_completed_err`、`chat_queue_recent_jobs`（含 `cancelled` 标记），以及运行中任务的 **`per_active_jobs`**（PER 镜像：`awaiting_plan_rewrite_model`、`plan_rewrite_attempts`、`require_plan_in_final_content` 等；按队列 `job_id` 区分，**与浏览器会话无绑定**，完整「本会话是否在规划重写」需日后会话协议扩展）。多副本/跨进程需自行接外部消息队列（见 `docs/TODOLIST.md`）。
 
@@ -571,15 +569,14 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--host <ADDR>`   | 仅 `--serve` 时生效：监听 IP，默认 `127.0.0.1`。局域网访问可传 `0.0.0.0`（会打印安全警告）。|
 | `--query <问题>`  | 单次提问模式：命令行参数中直接给出问题，输出回答后进程退出，适合脚本调用。|
 | `--stdin`         | 管道模式：从标准输入读取问题（多行直到 EOF），输出回答后退出，适合 `echo ... | crabmate --stdin` 这种用法。|
-| `--workspace <path>` | 启动时指定初始工作区路径（覆盖配置中的 `run_command_working_dir`，仅当前进程生效）。**TUI** 下会规范为绝对路径；若目录尚不存在则自动创建（路径不得为已存在的普通文件）。|
+| `--workspace <path>` | 启动时指定初始工作区路径（覆盖配置中的 `run_command_working_dir`，仅当前进程生效）。|
 | `--output <mode>` | 仅对 `--query` / `--stdin` 生效；`plain` 为默认，`json` 会在末尾额外输出一行 JSON 结果。|
 | `--no-tools`      | 禁用所有工具调用，仅作为普通 Chat 使用。|
 | `--no-web`        | 仅提供后端 API，不挂载前端静态页面（适合部署为纯后端服务）。|
 | `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
 | `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
-| `--no-stream`     | 对 API 使用 `stream: false`（非 SSE）。CLI 终端仍在**整段到达后** Markdown 打印，与默认流式在**终端观感**上一致；差异主要是 API 是否分段返回。TUI 侧亦为整块正文刷新。|
-| `--log <FILE>`    | 将 `log`（`env_logger`）日志**追加**写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别。**非 TUI**（含 `--serve`、单次 `--query` 等）时同时写 stderr 与文件；**TUI** 下不向终端写日志行，仅写入该文件，便于后台 `tail -f` 排障。|
-| `--tui`           | 全屏终端 UI。底栏左侧为运行阶段、右侧为状态摘要（默认仅模型名）；完整键位见 **F1**。右栏含工作区 / **队列** / 任务 / 日程（「队列」为分阶段规划摘要：步骤行前 `[ ]` 待办、`[✓]` 已完成，每步结束整段刷新；与 `staged_plan_notice` 同源；按行展示、不经 Markdown 解析以免挤成一行）。退出时会保存 `.crabmate/tui_session.json`；**默认不在启动时加载历史**（见 `[agent] tui_load_session_on_start` 与 `AGENT_TUI_LOAD_SESSION_ON_START`）。可用 F8/F9 导出 JSON/Markdown 到 `.crabmate/exports/`；**F10** 查看与 `GET /health` 同逻辑的本机运行状况（无需启动 Web）。生成中 **Ctrl+G** 协作取消、**Ctrl+Shift+G** 强制中止。助手区 Markdown 标题行首为**自动大纲编号**（如 `1.`、`1.2.`），不再显示 `#`。|
+| `--no-stream`     | 对 API 使用 `stream: false`（非 SSE）。CLI 终端仍在**整段到达后** Markdown 打印，与默认流式在**终端观感**上一致；差异主要是 API 是否分段返回。|
+| `--log <FILE>`    | 将 `log`（`env_logger`）日志**追加**写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别，并**同时**输出到 stderr 与文件。|
 
 **Benchmark 批量测评选项**：
 
@@ -593,7 +590,7 @@ CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 
 | `--resume` | 续跑模式：跳过输出文件中已有结果的 `instance_id`。|
 | `--bench-system-prompt <FILE>` | 覆盖 system prompt（从文件读取）。|
 
-**日志默认级别**：未设置 `RUST_LOG` 时，`--serve` 默认 **info**；其它子命令（默认 REPL、单次 `--query`/`--stdin`、`--tui` 等）默认 **warn**，不输出 `info`。需要 info 时请设置 `RUST_LOG`（如 `RUST_LOG=info`）或使用 `--log <FILE>`（未设置 `RUST_LOG` 时对文件与 stderr 使用默认 info）。
+**日志默认级别**：未设置 `RUST_LOG` 时，`--serve` 默认 **info**；其它子命令（默认 REPL、单次 `--query`/`--stdin` 等）默认 **warn**，不输出 `info`。需要 info 时请设置 `RUST_LOG`（如 `RUST_LOG=info`）或使用 `--log <FILE>`（未设置 `RUST_LOG` 时对文件与 stderr 使用默认 info）。
 
 对应示例：
 
@@ -604,8 +601,8 @@ cargo run
 # 使用指定配置文件（覆盖默认 config.toml / .agent_demo.toml 搜索）
 cargo run -- --config /path/to/my.toml
 
-# TUI 下将 debug 日志写入文件（终端不写日志行，另开终端 tail -f）
-RUST_LOG=debug cargo run -- --tui --log /tmp/crabmate.log
+# 将 debug 日志写入文件并同时打到 stderr
+RUST_LOG=debug cargo run -- --log /tmp/crabmate.log
 
 # Web 服务模式（默认 8080）
 cargo run -- --serve

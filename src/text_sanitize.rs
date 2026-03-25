@@ -2,9 +2,12 @@
 //!
 //! 与 **`redact`** 分工不同：本模块不负责日志脱敏或 HTTP 体截断。
 
+use log::debug;
 use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
+
+use crate::types::{FunctionCall, Message, ToolCall};
 
 const DSML_OPEN_FW: &str = "<｜DSML｜";
 const DSML_CLOSE_FW: &str = "</｜DSML｜";
@@ -128,6 +131,150 @@ pub fn strip_deepseek_dsml_for_display(s: &str) -> String {
     out = ORPHAN_CLOSE_ASCII.replace_all(&out, "").to_string();
 
     collapse_blank_runs(&out)
+}
+
+/// 全角 `｜` 与 ASCII `|` 混用的 DSML 统一成 ASCII 尖括号形式，便于正则解析。
+fn normalize_deepseek_dsml_brackets(s: &str) -> String {
+    s.replace("<｜DSML｜", "<|DSML|")
+        .replace("</｜DSML｜", "</|DSML|")
+}
+
+/// 模型常在 `<`、`|`、`DSML` 之间插空格（如 `< | DSML | invoke`），会导致整段正则匹配失败。
+fn normalize_deepseek_dsml_tag_spacing(s: &str) -> String {
+    static LOOSE_OPEN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"<\s*\|\s*DSML\s*\|").unwrap());
+    static LOOSE_SHUT: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"</\s*\|\s*DSML\s*\|").unwrap());
+    static COMPRESS_AFTER_OPEN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"<\|DSML\|\s+").unwrap());
+    static COMPRESS_AFTER_SHUT: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"</\|DSML\|\s+").unwrap());
+    let t = LOOSE_OPEN.replace_all(s, "<|DSML|");
+    // 仅合并 `</` 与 `|DSML|` 之间的空白，**不要**在替换串末尾加 `>`，否则会把 `</|DSML|invoke>` 破坏成 `</|DSML|>invoke>`。
+    let t = LOOSE_SHUT.replace_all(&t, "</|DSML|");
+    let t = COMPRESS_AFTER_OPEN.replace_all(&t, "<|DSML|");
+    COMPRESS_AFTER_SHUT.replace_all(&t, "</|DSML|>").to_string()
+}
+
+/// 仅从开标签（到第一个 `>` 为止）解析 `name="…"` / `name='…'`。
+static DSML_NAME_ATTR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?is)name\s*=\s*["']([^"']+)["']"#).unwrap());
+
+fn extract_dsml_name_from_open_tag(open_through_gt: &str) -> Option<String> {
+    DSML_NAME_ATTR
+        .captures(open_through_gt)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+const DSML_INVOKE_OPEN: &str = "<|DSML|invoke";
+const DSML_INVOKE_SHUT: &str = "</|DSML|invoke>";
+const DSML_PARAM_OPEN: &str = "<|DSML|parameter";
+const DSML_PARAM_SHUT: &str = "</|DSML|parameter>";
+
+/// 扫描 `invoke` 内多个 `parameter` 块（支持多行正文，不依赖跨块正则）。
+fn parse_dsml_parameter_blocks(invoke_inner: &str) -> serde_json::Map<String, Value> {
+    let mut map = serde_json::Map::new();
+    let mut i = 0usize;
+    while let Some(rel) = invoke_inner[i..].find(DSML_PARAM_OPEN) {
+        let block_start = i + rel;
+        let after_keyword = block_start + DSML_PARAM_OPEN.len();
+        let Some(gt_rel) = invoke_inner[after_keyword..].find('>') else {
+            break;
+        };
+        let value_start = after_keyword + gt_rel + 1;
+        let open_tag = &invoke_inner[block_start..value_start];
+        let Some(param_name) = extract_dsml_name_from_open_tag(open_tag) else {
+            i = value_start;
+            continue;
+        };
+        let Some(shut_rel) = invoke_inner[value_start..].find(DSML_PARAM_SHUT) else {
+            break;
+        };
+        let raw_val = invoke_inner[value_start..value_start + shut_rel].trim();
+        map.insert(param_name, Value::String(raw_val.to_string()));
+        i = value_start + shut_rel + DSML_PARAM_SHUT.len();
+    }
+    map
+}
+
+/// 返回 `(tool_name, arguments_json)`，顺序与正文一致。
+fn extract_dsml_invokes(norm: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while let Some(rel) = norm[i..].find(DSML_INVOKE_OPEN) {
+        let block_start = i + rel;
+        let after_kw = block_start + DSML_INVOKE_OPEN.len();
+        let Some(gt_rel) = norm[after_kw..].find('>') else {
+            break;
+        };
+        let inner_start = after_kw + gt_rel + 1;
+        let open_tag = &norm[block_start..inner_start];
+        let Some(tool_name) = extract_dsml_name_from_open_tag(open_tag) else {
+            i = inner_start;
+            continue;
+        };
+        let Some(shut_rel) = norm[inner_start..].find(DSML_INVOKE_SHUT) else {
+            break;
+        };
+        let inner = &norm[inner_start..inner_start + shut_rel];
+        let pmap = parse_dsml_parameter_blocks(inner);
+        let args = if pmap.is_empty() {
+            "{}".to_string()
+        } else {
+            Value::Object(pmap).to_string()
+        };
+        out.push((tool_name, args));
+        i = inner_start + shut_rel + DSML_INVOKE_SHUT.len();
+    }
+    out
+}
+
+/// 部分 DeepSeek 兼容端在 **`tool_calls` 为空** 时，仍把调用写在正文 **DSML**（`<|DSML|invoke>`）里。
+/// TUI 展示会 [`strip_deepseek_dsml_for_display`] 剥掉这些标记，用户易误以为「只有说明、没调工具」。
+/// 在 Agent 侧若 API 未给 `tool_calls`，则从正文解析并写入 `msg.tool_calls`，并剥除 DSML 以节省后续 token。
+pub fn materialize_deepseek_dsml_tool_calls_in_message(msg: &mut Message) {
+    if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
+        return;
+    }
+    let Some(content) = msg.content.as_deref() else {
+        return;
+    };
+    let looks_dsml =
+        content.contains("DSML") || content.contains("dsml") || content.contains(DSML_OPEN_FW);
+    if !looks_dsml {
+        return;
+    }
+    let norm = normalize_deepseek_dsml_tag_spacing(&normalize_deepseek_dsml_brackets(content));
+    let parsed = extract_dsml_invokes(&norm);
+    if parsed.is_empty() {
+        return;
+    }
+    let mut out_calls: Vec<ToolCall> = Vec::new();
+    for (i, (tool_name, arguments)) in parsed.into_iter().enumerate() {
+        out_calls.push(ToolCall {
+            id: format!("dsml_{i}"),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: tool_name,
+                arguments,
+            },
+        });
+    }
+    debug!(
+        target: "crabmate",
+        "从助手正文 DeepSeek DSML 解析出 {} 个 tool_calls（API 未提供 tool_calls）",
+        out_calls.len()
+    );
+    msg.tool_calls = Some(out_calls);
+    let stripped = strip_deepseek_dsml_for_display(&norm);
+    let t = stripped.trim();
+    msg.content = if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    };
 }
 
 fn strip_markdown_fenced_blocks(s: &str) -> String {
@@ -441,5 +588,81 @@ mod tests {
         let line = "我将帮您编写 Hello World 并规划步骤。";
         let raw = format!("{line} {line}");
         assert_eq!(dedupe_plain_assistant_preamble(&raw), line);
+    }
+
+    #[test]
+    fn materialize_dsml_populates_tool_calls_and_strips_markup() {
+        let dsml = r#"将更新文件。
+<|DSML|function_calls>
+<|DSML|invoke name="modify_file">
+<|DSML|parameter name="path">1.md</|DSML|parameter>
+<|DSML|parameter name="content"># 标题</|DSML|parameter>
+</|DSML|invoke>
+</|DSML|function_calls>"#;
+        let mut msg = Message {
+            role: "assistant".to_string(),
+            content: Some(dsml.to_string()),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+        assert_eq!(tcs.len(), 1);
+        assert_eq!(tcs[0].function.name, "modify_file");
+        let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
+        assert_eq!(v.get("path").and_then(|x| x.as_str()), Some("1.md"));
+        assert_eq!(v.get("content").and_then(|x| x.as_str()), Some("# 标题"));
+        let prose = msg.content.as_deref().unwrap_or("");
+        assert!(prose.contains("将更新"));
+        assert!(!prose.contains("DSML"));
+    }
+
+    #[test]
+    fn materialize_dsml_spaced_tags_and_multiline_parameter() {
+        let dsml = r#"将写入。
+< | DSML | invoke name="modify_file" >
+<|DSML|parameter name="path">note.md</|DSML|parameter>
+<|DSML|parameter name="content"># 标题
+第二行</|DSML|parameter>
+</|DSML|invoke>"#;
+        let mut msg = Message {
+            role: "assistant".to_string(),
+            content: Some(dsml.to_string()),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+        assert_eq!(tcs.len(), 1);
+        assert_eq!(tcs[0].function.name, "modify_file");
+        let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
+        assert_eq!(v.get("path").and_then(|x| x.as_str()), Some("note.md"));
+        assert!(
+            v.get("content")
+                .and_then(|x| x.as_str())
+                .is_some_and(|s| s.contains("第二行"))
+        );
+    }
+
+    #[test]
+    fn materialize_dsml_single_quoted_names() {
+        let dsml = r#"<|DSML|invoke name='read_file'>
+<|DSML|parameter name='path'>x.txt</|DSML|parameter>
+</|DSML|invoke>"#;
+        let mut msg = Message {
+            role: "assistant".to_string(),
+            content: Some(dsml.to_string()),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+        assert_eq!(tcs[0].function.name, "read_file");
     }
 }

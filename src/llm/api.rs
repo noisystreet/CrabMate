@@ -13,11 +13,21 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
 
-use crate::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
+use crate::redact::{self, CHAT_REQUEST_JSON_LOG_MAX_CHARS, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crate::runtime::message_display::assistant_markdown_source_for_display;
 
-/// 流式正文 delta 在发往 `out`（SSE/TUI）前合并，减少 `mpsc` 次与 `String` 小片 clone。
-/// 前端/TUI 仍按 UTF-8 拼接，语义与逐 token 发送一致。
+/// 在未开启 `RUST_LOG=…debug` 时，仍可用 **`AGENT_LOG_CHAT_REQUEST_JSON=1`** 在 **info** 级别打印请求体预览（与 `--log` 默认 `info` 配套）。
+fn should_log_chat_request_json_preview() -> bool {
+    log::log_enabled!(log::Level::Debug)
+        || std::env::var_os("AGENT_LOG_CHAT_REQUEST_JSON").is_some_and(|v| {
+            let s = v.to_string_lossy();
+            let s = s.trim();
+            !s.is_empty() && s != "0" && !s.eq_ignore_ascii_case("false")
+        })
+}
+
+/// 流式正文 delta 在发往 `out`（SSE 等）前合并，减少 `mpsc` 次与 `String` 小片 clone。
+/// 前端仍按 UTF-8 拼接，语义与逐 token 发送一致。
 const SSE_STREAM_DELTA_FLUSH_BYTES: usize = 256;
 
 async fn flush_sse_delta_buffer(pending: &mut String, tx: Option<&Sender<String>>) {
@@ -50,7 +60,7 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .sum()
 }
 
-/// CLI：加粗着色 `Agent: ` + 与 TUI 相同的助手展示管线（剥标签、规划可读化、LaTeX）+ `markdown_to_ansi`。
+/// CLI：加粗着色 `Agent: ` + 助手展示管线（剥标签、规划可读化、LaTeX）+ `markdown_to_ansi`。
 fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
     debug!(
         target: "crabmate::print",
@@ -83,6 +93,7 @@ async fn ingest_sse_data_payload(
     payload: &str,
     out: Option<&Sender<String>>,
     pending_sse_delta: &mut String,
+    reasoning_acc: &mut String,
     content_acc: &mut String,
     finish_reason: &mut String,
     tool_calls_acc: &mut Vec<(String, String, String, String)>,
@@ -103,6 +114,17 @@ async fn ingest_sse_data_payload(
         *finish_reason = reason;
     }
     let delta = choice.delta;
+    if let Some(ref s) = delta.reasoning_content
+        && !s.is_empty()
+    {
+        reasoning_acc.push_str(s);
+        if let Some(tx) = out {
+            pending_sse_delta.push_str(s);
+            if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
+                let _ = tx.send(std::mem::take(pending_sse_delta)).await;
+            }
+        }
+    }
     if let Some(ref s) = delta.content
         && !s.is_empty()
     {
@@ -159,7 +181,7 @@ async fn ingest_sse_data_payload(
 
 /// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
 /// `render_to_terminal` 为 true 时：流式**不在**收包过程中写 stdout（避免半段 Markdown）；整段到达后与 **`--no-stream`** 相同，经 `markdown_to_ansi` 做基本 Markdown 渲染。非流式时在完整 `message` 到达后同样渲染。
-/// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 TUI/SSE 等）。
+/// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 SSE 等）。
 ///
 /// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；
 /// DeepSeek 等兼容实现可用；字段形态不同的网关需在调用侧适配或扩展解析。
@@ -186,6 +208,50 @@ pub async fn stream_chat(
         req.model,
         !no_stream
     );
+    // 与 `tool_chat_request` 重复一次：防止将来绕过构造器直接改 `ChatRequest.messages`，并兜底漏网相邻 assistant。
+    req.messages = crate::types::normalize_messages_for_openai_compatible_request(std::mem::take(
+        &mut req.messages,
+    ));
+    if should_log_chat_request_json_preview() {
+        let as_debug = log::log_enabled!(log::Level::Debug);
+        match serde_json::to_string(&*req) {
+            Ok(body) => {
+                let preview = redact::preview_chars(&body, CHAT_REQUEST_JSON_LOG_MAX_CHARS);
+                if as_debug {
+                    debug!(
+                        target: "crabmate",
+                        "chat 请求体 JSON len={} messages_count={} body_preview={}",
+                        body.len(),
+                        req.messages.len(),
+                        preview
+                    );
+                } else {
+                    info!(
+                        target: "crabmate",
+                        "chat 请求体 JSON len={} messages_count={} body_preview={}",
+                        body.len(),
+                        req.messages.len(),
+                        preview
+                    );
+                }
+            }
+            Err(e) => {
+                if as_debug {
+                    debug!(
+                        target: "crabmate",
+                        "chat 请求体 JSON 序列化失败 err={}",
+                        e
+                    );
+                } else {
+                    info!(
+                        target: "crabmate",
+                        "chat 请求体 JSON 序列化失败 err={}",
+                        e
+                    );
+                }
+            }
+        }
+    }
     req.stream = Some(!no_stream);
     let res = client
         .post(&url)
@@ -204,11 +270,12 @@ pub async fn stream_chat(
             body.len(),
             preview
         );
-        return Err(format!(
-            "模型接口返回错误（HTTP {}），请检查 API 密钥与配额，或稍后重试",
-            status.as_u16()
-        )
-        .into());
+        let code = status.as_u16();
+        let err_text = match redact::chat_api_error_message_for_user(&body) {
+            Some(m) => format!("模型接口返回错误（HTTP {code}）：{m}"),
+            None => format!("模型接口返回错误（HTTP {code}），请检查 API 密钥与配额，或稍后重试"),
+        };
+        return Err(err_text.into());
     }
 
     if no_stream {
@@ -240,16 +307,17 @@ pub async fn stream_chat(
             finish_reason,
         } = choice;
 
-        if let Some(content) = msg.content.as_ref().filter(|c| !c.is_empty())
+        let sse_plain = crate::runtime::message_display::assistant_streaming_plain_concat(&msg);
+        if !sse_plain.is_empty()
             && let Some(tx) = out
         {
-            let _ = tx.send(content.clone()).await;
+            let _ = tx.send(sse_plain).await;
         }
-        if render_to_terminal
-            && let Some(ref content_acc) = msg.content
-            && !content_acc.is_empty()
-        {
-            terminal_render_agent_markdown(content_acc)?;
+        if render_to_terminal {
+            let md = crate::runtime::message_display::assistant_raw_markdown_body_for_message(&msg);
+            if !md.is_empty() {
+                terminal_render_agent_markdown(&md)?;
+            }
         }
         if let Some(ref tcs) = msg.tool_calls
             && !tcs.is_empty()
@@ -276,6 +344,7 @@ pub async fn stream_chat(
 
     let mut stream = res.bytes_stream();
     let mut buf = Vec::new();
+    let mut reasoning_acc = String::new();
     let mut content_acc = String::new();
     let mut pending_sse_delta = String::new();
     let mut tool_calls_acc: Vec<(String, String, String, String)> = Vec::new();
@@ -312,6 +381,7 @@ pub async fn stream_chat(
                     payload,
                     out,
                     &mut pending_sse_delta,
+                    &mut reasoning_acc,
                     &mut content_acc,
                     &mut finish_reason,
                     &mut tool_calls_acc,
@@ -338,6 +408,7 @@ pub async fn stream_chat(
                     payload,
                     out,
                     &mut pending_sse_delta,
+                    &mut reasoning_acc,
                     &mut content_acc,
                     &mut finish_reason,
                     &mut tool_calls_acc,
@@ -350,8 +421,14 @@ pub async fn stream_chat(
     flush_sse_delta_buffer(&mut pending_sse_delta, out).await;
     // 流式阶段不向 stdout 逐 delta 打印（避免半段 Markdown）；整段结束后与 `--no-stream` 相同走 `terminal_render_agent_markdown`。
     // **不得**用 MoveUp + Clear 重绘：会与工具子进程 stdout 及真实折行错位。
-    if render_to_terminal && !content_acc.is_empty() {
-        terminal_render_agent_markdown(&content_acc)?;
+    if render_to_terminal {
+        let md = crate::runtime::message_display::assistant_raw_markdown_body_from_parts(
+            reasoning_acc.as_str(),
+            content_acc.as_str(),
+        );
+        if !md.is_empty() {
+            terminal_render_agent_markdown(&md)?;
+        }
     }
     let tool_calls = if tool_calls_acc.is_empty() {
         None
@@ -373,6 +450,11 @@ pub async fn stream_chat(
             None
         } else {
             Some(content_acc)
+        },
+        reasoning_content: if reasoning_acc.is_empty() {
+            None
+        } else {
+            Some(reasoning_acc)
         },
         tool_calls,
         name: None,

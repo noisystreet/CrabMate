@@ -378,7 +378,7 @@ fn runner_release_ready_check(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 fn runner_workflow_execute(_args: &str, _ctx: &ToolContext<'_>) -> String {
-    // 由 runtime 在 run_agent_turn / run_agent_turn_tui 中拦截实际执行。
+    // 由 runtime 在 run_agent_turn 中拦截实际执行。
     "workflow_execute：由运行时引擎执行（若你看到这条，说明拦截未生效）。".to_string()
 }
 

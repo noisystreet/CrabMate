@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use log::{error, warn};
+use log::error;
 use tokio::sync::{Mutex, mpsc};
 
 use crate::agent::per_coord::PerCoordinator;
@@ -191,20 +191,10 @@ pub enum ToolRuntime<'a> {
         /// 仅 Web 流式会话在启用审批时提供；普通 `/chat` 或旧客户端为 `None`。
         ctx: Option<&'a WebToolRuntime>,
     },
-    Tui {
-        ctx: &'a TuiToolRuntime,
-    },
 }
 
 pub struct WebToolRuntime {
     pub out_tx: mpsc::Sender<String>,
-    pub approval_rx_shared: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
-    pub approval_request_guard: Arc<Mutex<()>>,
-    pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
-}
-
-pub struct TuiToolRuntime {
-    pub out_tx: Option<mpsc::Sender<String>>,
     pub approval_rx_shared: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
     pub approval_request_guard: Arc<Mutex<()>>,
     pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
@@ -242,7 +232,7 @@ fn handler_id_for(name: &str) -> HandlerId {
         .unwrap_or(HandlerId::SyncDefault)
 }
 
-/// Web/TUI 统一入口：`(tool_result_text, workflow 反思注入)`。
+/// Web / CLI 统一入口：`(tool_result_text, workflow 反思注入)`。
 #[allow(clippy::too_many_arguments)]
 pub async fn dispatch_tool(
     runtime: ToolRuntime<'_>,
@@ -254,14 +244,7 @@ pub async fn dispatch_tool(
     args: &str,
     tc: &ToolCall,
 ) -> (String, Option<serde_json::Value>) {
-    let mut hid = handler_id_for(name);
-    if matches!(
-        hid,
-        HandlerId::RunExecutable | HandlerId::GetWeather | HandlerId::WebSearch
-    ) && matches!(runtime, ToolRuntime::Tui { .. })
-    {
-        hid = HandlerId::SyncDefault;
-    }
+    let hid = handler_id_for(name);
 
     match hid {
         HandlerId::Workflow => {
@@ -275,67 +258,37 @@ pub async fn dispatch_tool(
             )
             .await
         }
-        HandlerId::RunCommand => match runtime {
-            ToolRuntime::Web {
+        HandlerId::RunCommand => {
+            let ToolRuntime::Web {
                 workspace_changed,
                 ctx,
-            } => {
-                execute_run_command_web(
-                    cfg,
-                    effective_working_dir,
-                    workspace_is_set,
-                    workspace_changed,
-                    ctx,
-                    name,
-                    args,
-                )
+            } = runtime;
+            execute_run_command_web(
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                workspace_changed,
+                ctx,
+                name,
+                args,
+            )
+            .await
+        }
+        HandlerId::RunExecutable => {
+            let ToolRuntime::Web { .. } = runtime;
+            execute_run_executable_web(cfg, effective_working_dir, workspace_is_set, name, args)
                 .await
-            }
-            ToolRuntime::Tui { ctx } => {
-                execute_run_command_tui(
-                    cfg,
-                    effective_working_dir,
-                    workspace_is_set,
-                    ctx,
-                    name,
-                    args,
-                )
-                .await
-            }
-        },
-        HandlerId::RunExecutable => match runtime {
-            ToolRuntime::Web { .. } => {
-                execute_run_executable_web(cfg, effective_working_dir, workspace_is_set, name, args)
-                    .await
-            }
-            ToolRuntime::Tui { .. } => {
-                // TUI 入口通常将 RunExecutable remap 为 SyncDefault；若未 remap，退回通用 run_tool 以免 panic。
-                warn!(
-                    target: "crabmate",
-                    "RunExecutable on TUI without remap; using sync run_tool tool={}",
-                    name
-                );
-                let ctx = tools::tool_context_for(
-                    cfg.as_ref(),
-                    &cfg.allowed_commands,
-                    effective_working_dir,
-                );
-                (
-                    tools::run_tool(&tc.function.name, &tc.function.arguments, &ctx),
-                    None,
-                )
-            }
-        },
+        }
         HandlerId::GetWeather => {
             execute_get_weather_web(cfg, effective_working_dir, name, args).await
         }
         HandlerId::WebSearch => {
             execute_web_search_web(cfg, effective_working_dir, name, args).await
         }
-        HandlerId::HttpFetch => match runtime {
-            ToolRuntime::Web { ctx, .. } => execute_http_fetch_web(cfg, ctx, name, args).await,
-            ToolRuntime::Tui { ctx } => execute_http_fetch_tui(cfg, ctx, name, args).await,
-        },
+        HandlerId::HttpFetch => {
+            let ToolRuntime::Web { ctx, .. } = runtime;
+            execute_http_fetch_web(cfg, ctx, name, args).await
+        }
         HandlerId::HttpRequest => execute_http_request(cfg, name, args).await,
         HandlerId::SyncDefault => {
             let cfg2 = Arc::clone(cfg);
@@ -376,31 +329,19 @@ async fn execute_workflow(
         {
             contract_err.to_string()
         } else {
-            let approval_mode = match &runtime {
-                ToolRuntime::Web { ctx, .. } => {
-                    if let Some(web_ctx) = ctx {
-                        workflow::WorkflowApprovalMode::Tui {
-                            out_tx: web_ctx.out_tx.clone(),
-                            approval_rx: web_ctx.approval_rx_shared.clone(),
-                            approval_request_guard: web_ctx.approval_request_guard.clone(),
-                            persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
-                        }
-                    } else {
-                        workflow::WorkflowApprovalMode::NoApproval
-                    }
+            let ToolRuntime::Web {
+                workspace_changed,
+                ctx,
+            } = runtime;
+            let approval_mode = if let Some(web_ctx) = ctx {
+                workflow::WorkflowApprovalMode::Interactive {
+                    out_tx: web_ctx.out_tx.clone(),
+                    approval_rx: web_ctx.approval_rx_shared.clone(),
+                    approval_request_guard: web_ctx.approval_request_guard.clone(),
+                    persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
                 }
-                ToolRuntime::Tui { ctx } => {
-                    if let Some(tx) = ctx.out_tx.as_ref() {
-                        workflow::WorkflowApprovalMode::Tui {
-                            out_tx: tx.clone(),
-                            approval_rx: ctx.approval_rx_shared.clone(),
-                            approval_request_guard: ctx.approval_request_guard.clone(),
-                            persistent_allowlist: ctx.persistent_allowlist_shared.clone(),
-                        }
-                    } else {
-                        workflow::WorkflowApprovalMode::NoApproval
-                    }
-                }
+            } else {
+                workflow::WorkflowApprovalMode::NoApproval
             };
             let (wf_out, wf_ws_changed) = workflow::run_workflow_execute_tool(
                 &prep.patched_args,
@@ -411,12 +352,7 @@ async fn execute_workflow(
                 cfg.command_max_output_len,
             )
             .await;
-            if let ToolRuntime::Web {
-                workspace_changed, ..
-            } = runtime
-            {
-                *workspace_changed |= wf_ws_changed;
-            }
+            *workspace_changed |= wf_ws_changed;
             wf_out
         }
     } else {
@@ -546,103 +482,6 @@ async fn execute_run_command_web(
     (s, None)
 }
 
-async fn execute_run_command_tui(
-    cfg: &Arc<AgentConfig>,
-    effective_working_dir: &Path,
-    workspace_is_set: bool,
-    ctx: &TuiToolRuntime,
-    name: &str,
-    args: &str,
-) -> (String, Option<serde_json::Value>) {
-    if !workspace_is_set {
-        return ("错误：未设置工作区，禁止执行命令。".to_string(), None);
-    }
-    let v: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
-    let cmd = v
-        .get("command")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_lowercase();
-    let arg_preview = v
-        .get("args")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str())
-                .collect::<Vec<_>>()
-                .join(" ")
-        })
-        .unwrap_or_default();
-    let mut effective_allowed = cfg.allowed_commands.clone();
-    if !cmd.is_empty()
-        && !effective_allowed
-            .iter()
-            .any(|c| c.eq_ignore_ascii_case(&cmd))
-    {
-        let already_allowed = ctx.persistent_allowlist_shared.lock().await.contains(&cmd);
-        if already_allowed {
-            effective_allowed.push(cmd.clone());
-            let ctx =
-                tools::tool_context_for(cfg.as_ref(), &effective_allowed, effective_working_dir);
-            return (tools::run_tool(name, args, &ctx), None);
-        }
-        let decision = {
-            let _guard = ctx.approval_request_guard.lock().await;
-            if let Some(tx) = ctx.out_tx.as_ref() {
-                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
-                    command_approval_request: crate::sse::CommandApprovalBody {
-                        command: cmd.clone(),
-                        args: arg_preview.clone(),
-                        allowlist_key: None,
-                    },
-                });
-                let _ = tx.send(line).await;
-            }
-            let mut rx_guard = ctx.approval_rx_shared.lock().await;
-            rx_guard
-                .recv()
-                .await
-                .unwrap_or(CommandApprovalDecision::Deny)
-        };
-        match decision {
-            CommandApprovalDecision::Deny => {
-                let cmd_show = if arg_preview.is_empty() {
-                    cmd
-                } else {
-                    format!("{} {}", cmd, arg_preview)
-                };
-                (format!("用户拒绝执行命令：{}", cmd_show.trim()), None)
-            }
-            CommandApprovalDecision::AllowOnce => {
-                effective_allowed.push(cmd.clone());
-                let ctx = tools::tool_context_for(
-                    cfg.as_ref(),
-                    &effective_allowed,
-                    effective_working_dir,
-                );
-                (tools::run_tool(name, args, &ctx), None)
-            }
-            CommandApprovalDecision::AllowAlways => {
-                ctx.persistent_allowlist_shared
-                    .lock()
-                    .await
-                    .insert(cmd.clone());
-                effective_allowed.push(cmd.clone());
-                let ctx = tools::tool_context_for(
-                    cfg.as_ref(),
-                    &effective_allowed,
-                    effective_working_dir,
-                );
-                (tools::run_tool(name, args, &ctx), None)
-            }
-        }
-    } else {
-        let ctx = tools::tool_context_for(cfg.as_ref(), &effective_allowed, effective_working_dir);
-        (tools::run_tool(name, args, &ctx), None)
-    }
-}
-
 async fn execute_http_fetch_web(
     cfg: &Arc<AgentConfig>,
     web_ctx: Option<&WebToolRuntime>,
@@ -721,83 +560,6 @@ async fn execute_http_fetch_web(
                 target: "crabmate",
                 "http_fetch 任务异常 tool={} error={:?}",
                 name_in,
-                e
-            );
-            format!("http_fetch 执行异常：{:?}", e)
-        }
-        Err(_) => format!("http_fetch 超时（{} 秒）", cmd_timeout),
-    };
-    (s, None)
-}
-
-async fn execute_http_fetch_tui(
-    cfg: &Arc<AgentConfig>,
-    ctx: &TuiToolRuntime,
-    name: &str,
-    args: &str,
-) -> (String, Option<serde_json::Value>) {
-    let (url, method) = match tools::http_fetch::parse_http_fetch_args(args) {
-        Ok(x) => x,
-        Err(e) => return (format!("错误：{}", e), None),
-    };
-    let key = tools::http_fetch::storage_key(&url);
-    let approval_args = tools::http_fetch::approval_args_display(method, &url);
-    let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
-    let max_body = cfg.http_fetch_max_response_bytes;
-
-    let allowed_by_cfg =
-        tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes);
-    let allowed_by_list = ctx.persistent_allowlist_shared.lock().await.contains(&key);
-
-    if !(allowed_by_cfg || allowed_by_list) {
-        let decision = {
-            let _guard = ctx.approval_request_guard.lock().await;
-            if let Some(tx) = ctx.out_tx.as_ref() {
-                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
-                    command_approval_request: crate::sse::CommandApprovalBody {
-                        command: "http_fetch".to_string(),
-                        args: approval_args.clone(),
-                        allowlist_key: Some(key.clone()),
-                    },
-                });
-                let _ = tx.send(line).await;
-            }
-            let mut rx_guard = ctx.approval_rx_shared.lock().await;
-            rx_guard
-                .recv()
-                .await
-                .unwrap_or(CommandApprovalDecision::Deny)
-        };
-        match decision {
-            CommandApprovalDecision::Deny => {
-                return (format!("用户拒绝 http_fetch：{}", approval_args), None);
-            }
-            CommandApprovalDecision::AllowOnce => {}
-            CommandApprovalDecision::AllowAlways => {
-                ctx.persistent_allowlist_shared
-                    .lock()
-                    .await
-                    .insert(key.clone());
-            }
-        }
-    }
-
-    let args_owned = args.to_string();
-    let cmd_timeout = cfg.command_timeout_secs.max(timeout_secs);
-    let handle = tokio::task::spawn_blocking(move || {
-        let (u, m) = match tools::http_fetch::parse_http_fetch_args(&args_owned) {
-            Ok(x) => x,
-            Err(e) => return format!("错误：{}", e),
-        };
-        tools::http_fetch::fetch_with_method(&u, m, timeout_secs, max_body)
-    });
-    let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
-        Ok(Ok(s)) => s,
-        Ok(Err(e)) => {
-            error!(
-                target: "crabmate",
-                "http_fetch 任务异常 tool={} error={:?}",
-                name,
                 e
             );
             format!("http_fetch 执行异常：{:?}", e)

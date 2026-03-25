@@ -521,11 +521,14 @@ function tryDispatchSseControlPayload(
 ): 'stop' | 'handled' | 'plain' {
   try {
     const parsed = JSON.parse(data) as SseControlPayload
+    // 与 `src/sse/line.rs` 一致：仅 `error`、无有效 `code` 的 JSON 常为模型流式正文（如思维链里的示例对象），勿当协议错误中断。
     if (parsed.error != null) {
-      callbacks.onError(
-        parsed.code != null ? `${parsed.error} (${parsed.code})` : parsed.error,
-      )
-      return 'stop'
+      const code =
+        typeof parsed.code === 'string' && parsed.code.trim() !== '' ? parsed.code.trim() : null
+      if (code != null) {
+        callbacks.onError(`${parsed.error} (${code})`)
+        return 'stop'
+      }
     }
     if (parsed.plan_required === true) {
       callbacks.onPlanRequired?.()

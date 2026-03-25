@@ -4,7 +4,7 @@
 
 ### Project overview
 
-CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web UI (Axum + React), TUI, and CLI interfaces. See `README.md` for full feature list and `docs/DEVELOPMENT.md` for architecture details (including module index). If you change module layout or layering, update `docs/DEVELOPMENT.md` per `.cursor/rules/architecture-docs-sync.mdc`.
+CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web UI (Axum + React) and CLI (REPL / single-shot / `--serve`). See `README.md` for full feature list and `docs/DEVELOPMENT.md` for architecture details (including module index). If you change module layout or layering, update `docs/DEVELOPMENT.md` per `.cursor/rules/architecture-docs-sync.mdc`.
 
 ### Required environment variable
 
@@ -12,7 +12,7 @@ CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web U
 
 ### Running services
 
-- **Backend + Web UI**: `API_KEY="..." cargo run -- --serve` (default port 8080, binds **127.0.0.1** only). For LAN access use `--host 0.0.0.0` (see README security notes). Optional `--log /path/to.log` appends `log`/`env_logger` output to a file (with `RUST_LOG`); useful for TUI/background debugging. Without `RUST_LOG`, `--serve` defaults to **info** logs; other CLI modes default to **warn** (no `info`) unless you set `RUST_LOG` or `--log`.
+- **Backend + Web UI**: `API_KEY="..." cargo run -- --serve` (default port 8080, binds **127.0.0.1** only). For LAN access use `--host 0.0.0.0` (see README security notes). Optional `--log /path/to.log` appends `log`/`env_logger` output to a file (with `RUST_LOG`) and mirrors to stderr. Without `RUST_LOG`, `--serve` defaults to **info** logs; other CLI modes default to **warn** (no `info`) unless you set `RUST_LOG` or `--log`.
 - **Frontend dev server** (optional, for hot-reload): `cd frontend && npm run dev` (Vite proxies API calls to `:8080`)
 - Frontend must be built (`cd frontend && npm run build`) before running the backend in serve mode, since it serves `frontend/dist` as static assets.
 
@@ -45,6 +45,6 @@ Standard commands from `README.md`:
 - **Lint**：仓库 **pre-commit** 使用 **`cargo clippy --all-targets --all-features -- -D warnings`**（见 **`.pre-commit-config.yaml`** 与 **`.cursor/rules/pre-commit-before-commit.mdc`**）。**提交前**须通过；仅本地快速试探时可运行不带 `-D warnings` 的 **`cargo clippy`**，但不应在 hook 未通过时代为提交。
 - **`cargo fmt --check`**：若与 **`cargo fmt`** 结果不一致，先执行 **`cargo fmt --all`** 再提交；pre-commit 也会格式化 Rust 代码。
 - The `rfd` crate (file dialog) is a dependency but won't work headlessly; this doesn't affect the web server mode.
-- The vendored `tui-markdown` crate is at `vendor/tui-markdown/` and is referenced via `path` in `Cargo.toml`.
+- A vendored copy of `tui-markdown` remains under `vendor/tui-markdown/` for a possible future full-screen terminal UI; it is **not** a current `path` dependency in root `Cargo.toml`.
 - **pre-commit install** may fail with `core.hooksPath` set. Run `git config --unset-all core.hooksPath` first, then `pre-commit install && pre-commit install --hook-type commit-msg`.
 - When starting the server with `--host 0.0.0.0` (non-loopback), you must either set `AGENT_WEB_API_BEARER_TOKEN` or `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`; otherwise the server refuses to start.

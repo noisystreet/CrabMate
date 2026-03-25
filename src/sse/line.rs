@@ -1,6 +1,7 @@
 //! 对经 SSE `data:` 下发的一行字符串做分类（与 `super::protocol` 及历史兼容键名对齐）。
 //!
-//! Web 前端在 `frontend/src/api.ts` 的 `sendChatStream` 中做等价解析；此处为 **Rust 侧** 单一实现，供 TUI 等消费同一字节流时使用。
+//! Web 前端在 `frontend/src/api.ts` 的 `sendChatStream` 中做等价解析；此处为 **Rust 侧** 单一实现，供后续终端 UI 等与 Web 语义对齐复用。
+#![allow(dead_code)]
 
 /// 与 `protocol` 模块对齐的 SSE 控制行；无法识别则视为模型流式正文。
 #[derive(Debug)]
@@ -36,6 +37,26 @@ pub enum AgentLineKind {
     /// 已识别为协议行但无需刷新 UI（如 workspace_changed:false）
     Ignore,
     Plain,
+}
+
+impl AgentLineKind {
+    /// 调试/分类用的短标签（不含可变正文）。
+    pub fn debug_tag(&self) -> &'static str {
+        match self {
+            AgentLineKind::ToolRunning(true) => "tool_running+",
+            AgentLineKind::ToolRunning(false) => "tool_running-",
+            AgentLineKind::ParsingToolCalls(true) => "parsing_tool_calls+",
+            AgentLineKind::ParsingToolCalls(false) => "parsing_tool_calls-",
+            AgentLineKind::WorkspaceRefresh => "workspace_refresh",
+            AgentLineKind::ToolCall { .. } => "tool_call",
+            AgentLineKind::CommandApproval { .. } => "command_approval",
+            AgentLineKind::ToolResult { .. } => "tool_result",
+            AgentLineKind::StreamError { .. } => "stream_error",
+            AgentLineKind::StagedPlanNotice { .. } => "staged_plan_notice",
+            AgentLineKind::Ignore => "ignore",
+            AgentLineKind::Plain => "plain",
+        }
+    }
 }
 
 pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
@@ -82,6 +103,11 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 };
             }
             super::protocol::SsePayload::Error(body) => {
+                // 仅 `error` 键、无 `code` 的 JSON 与模型思维链/示例 JSON 同形，勿误判为协议错误；
+                // CrabMate 经 `encode_message` 下发的错误均带非空 `code`。
+                if body.code.as_deref().is_none_or(str::is_empty) {
+                    return AgentLineKind::Plain;
+                }
                 return AgentLineKind::StreamError {
                     error_preview: summarize_stream_error(&body.error),
                     code: body.code,
@@ -137,23 +163,24 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
     }
     if s.starts_with("{\"error\"") {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+            let code_str = v
+                .get("code")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|c| !c.is_empty());
+            if code_str.is_none() {
+                return AgentLineKind::Plain;
+            }
             let preview = v
                 .get("error")
                 .and_then(|x| x.as_str())
                 .and_then(summarize_stream_error);
-            let code = v
-                .get("code")
-                .and_then(|x| x.as_str())
-                .map(|x| x.to_string());
             return AgentLineKind::StreamError {
                 error_preview: preview,
-                code,
+                code: code_str.map(|x| x.to_string()),
             };
         }
-        return AgentLineKind::StreamError {
-            error_preview: None,
-            code: None,
-        };
+        return AgentLineKind::Plain;
     }
     if s.starts_with("{\"command_approval_request\"")
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(s)
@@ -232,6 +259,16 @@ mod tests {
             }
             other => panic!("unexpected kind: {:?}", other),
         }
+    }
+
+    /// 模型流式正文（如 deepseek-reasoner 思维链）可出现整段 `{"error":"..."}` 示例，勿当 SSE 错误吞掉。
+    #[test]
+    fn error_shaped_json_without_code_is_plain() {
+        let line = r#"{"error":"division by zero in step 2"}"#;
+        assert!(matches!(
+            classify_agent_sse_line(line),
+            AgentLineKind::Plain
+        ));
     }
 
     #[test]

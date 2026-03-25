@@ -22,7 +22,9 @@ use reqwest::Client;
 pub fn tool_chat_request(cfg: &AgentConfig, messages: &[Message], tools: &[Tool]) -> ChatRequest {
     ChatRequest {
         model: cfg.model.clone(),
-        messages: messages.to_vec(),
+        messages: crate::types::normalize_messages_for_openai_compatible_request(
+            crate::types::messages_stripping_reasoning_for_api_request(messages),
+        ),
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
         max_tokens: cfg.max_tokens,
@@ -36,7 +38,9 @@ pub fn tool_chat_request(cfg: &AgentConfig, messages: &[Message], tools: &[Tool]
 pub fn no_tools_chat_request(cfg: &AgentConfig, messages: &[Message]) -> ChatRequest {
     ChatRequest {
         model: cfg.model.clone(),
-        messages: messages.to_vec(),
+        messages: crate::types::normalize_messages_for_openai_compatible_request(
+            crate::types::messages_stripping_reasoning_for_api_request(messages),
+        ),
         tools: Some(vec![]),
         tool_choice: Some("none".to_string()),
         max_tokens: cfg.max_tokens,

@@ -1,4 +1,5 @@
 //! 对话消息在 UI/终端上的展示用正文（与 `Message.content` 存储形态解耦）。
+#![allow(dead_code)]
 
 use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
@@ -14,7 +15,7 @@ use crate::runtime::latex_unicode::latex_math_to_unicode;
 use crate::tool_result::ToolResult;
 use crate::types::Message;
 
-/// 聊天区（TUI / Web 工具卡）是否展示 **【执行结果】** 整块（状态行、stdout/stderr、完整 JSON、纯文本正文等）。
+/// 聊天区（Web 工具卡等）是否展示 **【执行结果】** 整块（状态行、stdout/stderr、完整 JSON、纯文本正文等）。
 /// `false` 时仅展示 `summarize_tool_call` / JSON `human_summary` 等摘要；**不打印**「【执行结果】」及其下任何内容；`Message.content` 与 tracing 仍为全文。
 pub(crate) const SHOW_TOOL_RAW_OUTPUT_IN_CHAT: bool = false;
 
@@ -315,7 +316,10 @@ fn triple_backtick_fence_count(s: &str) -> usize {
     s.match_indices("```").count()
 }
 
-/// 首段代码围栏（`parts[1]`）视为「JSON 规划流」：`json` 语言行后为空或 `{` 开头，或无语言行且以内联 `{` 开头。
+/// 首段代码围栏（`parts[1]`）视为「JSON 规划流」：**仅**当语言行为 `json` 且正文为空或 `{` 开头。
+///
+/// 不再把「无语言标签 + 内联 `{`」的裸围栏算作规划流：`deepseek-reasoner` 等思维链里常见的
+/// ` ``` ` + `{`（讨论 JSON/代码）会触发 [`should_buffer_agent_reply_plan_stream`]，围栏前又无正文时聊天区会整段空白。
 fn first_fence_inner_looks_like_json_object(s: &str) -> bool {
     let mut it = s.split("```");
     let _ = it.next();
@@ -329,7 +333,7 @@ fn first_fence_inner_looks_like_json_object(s: &str) -> bool {
         let b = body.trim();
         return b.is_empty() || b.starts_with('{');
     }
-    rest.trim().starts_with('{')
+    false
 }
 
 fn looks_like_incomplete_agent_reply_plan_whole_json(t: &str) -> bool {
@@ -477,6 +481,47 @@ pub(crate) fn assistant_markdown_source_for_display_streaming_last(raw: &str) ->
     assistant_markdown_from_stripped(&stripped)
 }
 
+/// 与流式 SSE 下发顺序一致：先 `reasoning_content` 再 `content`，中间无插入字符（与 `llm::api` 累加顺序一致）。
+pub(crate) fn assistant_streaming_plain_concat(m: &Message) -> String {
+    let mut s = String::new();
+    if let Some(r) = m.reasoning_content.as_deref() {
+        s.push_str(r);
+    }
+    if let Some(c) = m.content.as_deref() {
+        s.push_str(c);
+    }
+    s
+}
+
+/// `deepseek-reasoner` 等：拼接「思考过程」与正文为 Markdown 源，再走 [`assistant_markdown_source_for_display`]。
+pub(crate) fn assistant_markdown_source_for_message(m: &Message) -> String {
+    let raw = assistant_raw_markdown_body_from_parts(
+        m.reasoning_content.as_deref().unwrap_or(""),
+        m.content.as_deref().unwrap_or(""),
+    );
+    assistant_markdown_source_for_display(&raw)
+}
+
+/// 展示用：有思维链时加小标题与分隔线，再拼接最终回答。
+pub(crate) fn assistant_raw_markdown_body_from_parts(reasoning: &str, content: &str) -> String {
+    let r = reasoning.trim();
+    let c = content.trim();
+    match (r.is_empty(), c.is_empty()) {
+        (false, false) => format!("### 思考过程\n\n{r}\n\n---\n\n{c}"),
+        (false, true) => format!("### 思考过程\n\n{r}"),
+        (true, false) => c.to_string(),
+        (true, true) => String::new(),
+    }
+}
+
+/// 与 [`assistant_raw_markdown_body_from_parts`] 相同，从已组装的 [`Message`] 读取字段。
+pub(crate) fn assistant_raw_markdown_body_for_message(m: &Message) -> String {
+    assistant_raw_markdown_body_from_parts(
+        m.reasoning_content.as_deref().unwrap_or(""),
+        m.content.as_deref().unwrap_or(""),
+    )
+}
+
 /// 在打出首个 \`\`\` 之前，`should_buffer` 为 false，正文不经规划专用清洗；此处对**无围栏、非整段 JSON** 的助手气泡做与围栏前一致的复读折叠。
 fn preprocess_unfenced_assistant_prose_dedup(stripped: &str) -> String {
     if stripped.contains("```") {
@@ -548,6 +593,7 @@ mod tests {
             Message {
                 role: "assistant".into(),
                 content: Some("I'll run ls".into()),
+                reasoning_content: None,
                 tool_calls: Some(vec![ToolCall {
                     id: "c1".into(),
                     typ: "function".into(),
@@ -562,6 +608,7 @@ mod tests {
             Message {
                 role: "tool".into(),
                 content: Some("退出码：0\n(无输出)".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: Some("c1".into()),
@@ -706,6 +753,17 @@ mod tests {
         let out = assistant_markdown_source_for_display_streaming_last(raw);
         assert!(out.contains("先写一句"));
         assert!(!out.contains("正在生成分阶段规划"));
+    }
+
+    /// `deepseek-reasoner` 思维链里常见无语言标签的围栏 + `{`，不得误判为 v1 规划缓冲而整段空白。
+    #[test]
+    fn assistant_streaming_last_bare_fence_json_like_not_buffered_to_empty() {
+        let raw = "```\n{\"note\": \"thinking\"";
+        let out = assistant_markdown_source_for_display_streaming_last(raw);
+        assert!(
+            !out.trim().is_empty(),
+            "裸 ``` 围栏不应触发规划缓冲清空：{out:?}"
+        );
     }
 
     /// 尚未输出 ``` 时 `should_buffer` 为 false；此前不经规划专用 naturalize，需在预处理中折叠围栏前同句复读。

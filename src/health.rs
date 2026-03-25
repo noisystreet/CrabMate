@@ -195,7 +195,8 @@ pub async fn build_health_report(
     }
 }
 
-/// TUI 等终端展示用（多行纯文本）。
+/// 终端多行展示用（多行纯文本）；当前无调用方，保留供后续 CLI/TUI 复用。
+#[allow(dead_code)]
 pub fn format_health_report_terminal(report: &HealthReport) -> String {
     let mut s = String::new();
     s.push_str("与 GET /health 一致的本地检查\n");

@@ -3,7 +3,7 @@
 //! **命名说明**：此处的 **P（Plan）** 指「向模型要本轮输出」——即一次 `llm::complete_chat_retrying`（内部 `llm::api::stream_chat`），由模型产出正文或 `tool_calls`，
 //! **不是**独立的符号规划器。**E** 为执行工具；**R** 为终答阶段是否满足结构化规划等（见 `per_coord::after_final_assistant`）。
 //!
-//! 被 crate 根 [`crate::run_agent_turn`]（Web）与 `runtime::tui`（TUI）共同复用。
+//! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 
 use std::path::Path;
 use std::sync::Arc;
@@ -30,21 +30,8 @@ use crate::types::{Message, ToolCall, USER_CANCELLED_FINISH_REASON, is_chat_ui_s
 
 static STAGED_PLAN_SEQ: AtomicU64 = AtomicU64::new(1);
 
-/// TUI 主循环用 `sync_rx` 拉取对话快照；仅在 TUI 路径传入 `Some`。
-/// 使用 `Arc<[Message]>` 共享不可变快照：构建一次，forwarder 合并时仅增引用计数。
-async fn tui_push_messages_snapshot(
-    sync: Option<&mpsc::Sender<Arc<[Message]>>>,
-    messages: &[Message],
-) {
-    let Some(tx) = sync else {
-        return;
-    };
-    let snapshot: Arc<[Message]> = messages.to_vec().into();
-    let _ = tx.send(snapshot).await;
-}
-
-/// TUI（及与 TUI 同形预置占位的会话）在提交前会追加一条 `content` 为空的 `assistant` 供流式写入。
-/// Agent 侧若再 `push` 一条同轮助手，会得到 `[…, 空助手, 真助手]`，与 UI 仅一条气泡不对齐，`sync_merge` 后表现为首轮/规划轮输出被「挤没」或错乱。
+/// Web/CLI 在提交前会追加一条 `content` 为空的 `assistant` 供流式写入。
+/// Agent 侧若再 `push` 一条同轮助手，会得到 `[…, 空助手, 真助手]`，与单条气泡不对齐。
 /// 对**末尾**且仍为空、无 `tool_calls` 的助手占位则**就地替换**。
 fn push_assistant_merging_trailing_empty_placeholder(messages: &mut Vec<Message>, msg: Message) {
     if msg.role != "assistant" {
@@ -135,7 +122,7 @@ async fn send_staged_plan_notice(
     if text.is_empty() {
         return;
     }
-    // CLI（`out: None` 且 `render_to_terminal`）无 SSE，与 TUI 对齐把规划/步骤打到 stdout
+    // CLI（`out: None` 且 `render_to_terminal`）无 SSE，把规划/步骤打到 stdout
     if echo_terminal {
         let _ =
             crate::runtime::terminal_cli_transcript::print_staged_plan_notice(clear_before, &text);
@@ -250,7 +237,7 @@ async fn send_staged_plan_finished(
 // --- P：向模型要本轮输出（含重试）---
 
 /// P：构造请求并调用模型（`no_stream` 为 true 时走 `stream: false`），**不**修改 `messages`。
-#[allow(clippy::too_many_arguments)] // Web/TUI 共用入口，参数扁平便于各调用点传参
+#[allow(clippy::too_many_arguments)] // Web/CLI 共用入口，参数扁平便于各调用点传参
 pub(crate) async fn per_plan_call_model_retrying(
     client: &reqwest::Client,
     api_key: &str,
@@ -268,7 +255,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         .cloned()
         .collect();
     let req = tool_chat_request(cfg, &filtered, tools_defs);
-    complete_chat_retrying(
+    let (mut msg, finish_reason) = complete_chat_retrying(
         client,
         api_key,
         cfg,
@@ -278,7 +265,9 @@ pub(crate) async fn per_plan_call_model_retrying(
         no_stream,
         cancel,
     )
-    .await
+    .await?;
+    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+    Ok((msg, finish_reason))
 }
 
 // --- R：终答阶段（须含规划等）---
@@ -295,13 +284,19 @@ pub(crate) enum ReflectOnAssistantOutcome {
     PlanRewriteExhausted,
 }
 
+/// 在已将 assistant 推入 `messages` 之后调用，决定是执行工具、终答结束还是规划重写。
+///
+/// **兼容**：部分 OpenAI 兼容实现在返回 `tool_calls` 时仍上报 `finish_reason: "stop"` 或空串。
+/// 若仅判断 `finish_reason == "tool_calls"`，会误判为终答并 `StopTurn`，历史中留下未执行的
+/// `tool_calls`、缺对应 `role: tool`，下一轮易 400，且本轮无任何工具执行。故 **非空 `tool_calls`**
+/// 同样进入执行分支。
 pub(crate) fn per_reflect_after_assistant(
     per_coord: &mut PerCoordinator,
     finish_reason: &str,
     msg: &Message,
     messages: &mut Vec<Message>,
 ) -> ReflectOnAssistantOutcome {
-    if finish_reason == "tool_calls" {
+    if finish_reason == "tool_calls" || msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         return ReflectOnAssistantOutcome::ProceedToExecuteTools;
     }
     match per_coord.after_final_assistant(msg, messages.as_slice()) {
@@ -324,30 +319,11 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub workspace_is_set: bool,
     pub out: Option<&'a mpsc::Sender<String>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
-    /// CLI：`render_to_terminal` 且 `out: None` 时为 true，工具结果打印到 stdout（与 TUI 气泡对齐）。
+    /// CLI：`render_to_terminal` 且 `out: None` 时为 true，工具结果打印到 stdout。
     pub echo_terminal_transcript: bool,
 }
 
-pub(crate) struct TuiExecuteCtx<'a> {
-    pub cfg: &'a Arc<AgentConfig>,
-    pub effective_working_dir: &'a Path,
-    pub workspace_is_set: bool,
-    pub out: Option<&'a mpsc::Sender<String>>,
-    pub tui_tool_ctx: &'a tool_registry::TuiToolRuntime,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum AgentRunMode<'a> {
-    Web {
-        render_to_terminal: bool,
-        web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
-    },
-    Tui {
-        tui_tool_ctx: &'a tool_registry::TuiToolRuntime,
-    },
-}
-
-/// Web/TUI 共用：外层循环与分阶段规划注入共用的一套运行期参数。
+/// Web/CLI 共用：外层循环与分阶段规划注入共用的一套运行期参数。
 pub(crate) struct RunLoopParams<'a> {
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
@@ -359,9 +335,9 @@ pub(crate) struct RunLoopParams<'a> {
     pub workspace_is_set: bool,
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
-    pub mode: AgentRunMode<'a>,
+    pub render_to_terminal: bool,
+    pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     pub per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
-    pub tui_messages_sync: Option<&'a mpsc::Sender<Arc<[Message]>>>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -369,12 +345,6 @@ pub(crate) enum ExecuteToolsBatchOutcome {
     Finished,
     /// SSE 在工具执行中断开
     AbortedSse,
-}
-
-#[derive(Clone, Copy)]
-enum ExecuteDispatchMode<'a> {
-    Web(Option<&'a tool_registry::WebToolRuntime>),
-    Tui(&'a tool_registry::TuiToolRuntime),
 }
 
 /// 单工具：SSE / 终端回显 + 追加 `tool` 与可选反思 `user`（与串行路径一致）。
@@ -441,7 +411,7 @@ async fn emit_tool_result_sse_and_append(
     );
 }
 
-/// E：执行一批 tool 调用（Web/TUI 共用骨架），写入 tool / 反思 user，并发送 SSE 片段。
+/// E：执行一批 tool 调用（Web/CLI 共用骨架），写入 tool / 反思 user，并发送 SSE 片段。
 #[allow(clippy::too_many_arguments)] // 工具批处理上下文字段较多，拆结构体收益有限
 async fn per_execute_tools_common(
     tool_calls: &[ToolCall],
@@ -453,7 +423,7 @@ async fn per_execute_tools_common(
     out: Option<&mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
-    dispatch_mode: ExecuteDispatchMode<'_>,
+    web_tool_ctx: Option<&tool_registry::WebToolRuntime>,
 ) -> ExecuteToolsBatchOutcome {
     let mut workspace_changed = false;
 
@@ -553,7 +523,7 @@ async fn per_execute_tools_common(
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
             let id = tc.id.clone();
-            // 禁止 println：TUI 下 stdout 与 ratatui 共用终端，会在当前光标（常为输入区）插入乱字。
+            // 禁止 println：终端 UI 与 stdout 共用时会破坏光标位置。
             info!(target: "crabmate", "调用工具 tool={}", name);
             debug!(
                 target: "crabmate",
@@ -563,37 +533,20 @@ async fn per_execute_tools_common(
             );
 
             let t_tool = Instant::now();
-            let (result, reflection_inject) = match dispatch_mode {
-                ExecuteDispatchMode::Web(web_tool_ctx) => {
-                    tool_registry::dispatch_tool(
-                        ToolRuntime::Web {
-                            workspace_changed: &mut workspace_changed,
-                            ctx: web_tool_ctx,
-                        },
-                        per_coord,
-                        cfg,
-                        effective_working_dir,
-                        workspace_is_set,
-                        &name,
-                        &args,
-                        tc,
-                    )
-                    .await
-                }
-                ExecuteDispatchMode::Tui(tui_tool_ctx) => {
-                    tool_registry::dispatch_tool(
-                        ToolRuntime::Tui { ctx: tui_tool_ctx },
-                        per_coord,
-                        cfg,
-                        effective_working_dir,
-                        workspace_is_set,
-                        &name,
-                        &args,
-                        tc,
-                    )
-                    .await
-                }
-            };
+            let (result, reflection_inject) = tool_registry::dispatch_tool(
+                ToolRuntime::Web {
+                    workspace_changed: &mut workspace_changed,
+                    ctx: web_tool_ctx,
+                },
+                per_coord,
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                &name,
+                &args,
+                tc,
+            )
+            .await;
 
             info!(
                 target: "crabmate",
@@ -618,7 +571,7 @@ async fn per_execute_tools_common(
     }
 
     if let Some(tx) = out {
-        if matches!(dispatch_mode, ExecuteDispatchMode::Web(_)) && workspace_changed {
+        if workspace_changed {
             let _ = tx
                 .send(encode_message(SsePayload::WorkspaceChanged {
                     workspace_changed: true,
@@ -661,37 +614,7 @@ pub(crate) async fn per_execute_tools_web(
         out,
         echo_terminal_transcript,
         cfg.command_max_output_len,
-        ExecuteDispatchMode::Web(web_tool_ctx),
-    )
-    .await
-}
-
-/// E（TUI）：执行一批 tool 调用，写入 tool / 反思 user，并发送 SSE 片段。
-pub(crate) async fn per_execute_tools_tui(
-    tool_calls: &[ToolCall],
-    per_coord: &mut PerCoordinator,
-    messages: &mut Vec<Message>,
-    ctx: TuiExecuteCtx<'_>,
-) -> ExecuteToolsBatchOutcome {
-    let TuiExecuteCtx {
-        cfg,
-        effective_working_dir,
-        workspace_is_set,
-        out,
-        tui_tool_ctx,
-    } = ctx;
-
-    per_execute_tools_common(
-        tool_calls,
-        per_coord,
-        messages,
-        cfg,
-        effective_working_dir,
-        workspace_is_set,
-        out,
-        false,
-        cfg.command_max_output_len,
-        ExecuteDispatchMode::Tui(tui_tool_ctx),
+        web_tool_ctx,
     )
     .await
 }
@@ -714,12 +637,7 @@ async fn run_agent_outer_loop(
             break;
         }
 
-        let render_to_terminal = match p.mode {
-            AgentRunMode::Web {
-                render_to_terminal, ..
-            } => render_to_terminal,
-            AgentRunMode::Tui { .. } => false,
-        };
+        let render_to_terminal = p.render_to_terminal;
         super::context_window::prepare_messages_for_model(
             p.client,
             p.api_key,
@@ -751,7 +669,6 @@ async fn run_agent_outer_loop(
             crate::redact::assistant_message_preview_for_log(&msg)
         );
         push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
-        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         if finish_reason == USER_CANCELLED_FINISH_REASON {
             break;
         }
@@ -793,43 +710,23 @@ async fn run_agent_outer_loop(
 
         let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
         let echo_terminal_transcript = render_to_terminal && p.out.is_none();
-        let exec_outcome = match p.mode {
-            AgentRunMode::Web { web_tool_ctx, .. } => {
-                per_execute_tools_web(
-                    tool_calls,
-                    per_coord,
-                    p.messages,
-                    WebExecuteCtx {
-                        cfg: p.cfg,
-                        effective_working_dir: p.effective_working_dir,
-                        workspace_is_set: p.workspace_is_set,
-                        out: p.out,
-                        web_tool_ctx,
-                        echo_terminal_transcript,
-                    },
-                )
-                .await
-            }
-            AgentRunMode::Tui { tui_tool_ctx } => {
-                per_execute_tools_tui(
-                    tool_calls,
-                    per_coord,
-                    p.messages,
-                    TuiExecuteCtx {
-                        cfg: p.cfg,
-                        effective_working_dir: p.effective_working_dir,
-                        workspace_is_set: p.workspace_is_set,
-                        out: p.out,
-                        tui_tool_ctx,
-                    },
-                )
-                .await
-            }
-        };
+        let exec_outcome = per_execute_tools_web(
+            tool_calls,
+            per_coord,
+            p.messages,
+            WebExecuteCtx {
+                cfg: p.cfg,
+                effective_working_dir: p.effective_working_dir,
+                workspace_is_set: p.workspace_is_set,
+                out: p.out,
+                web_tool_ctx: p.web_tool_ctx,
+                echo_terminal_transcript,
+            },
+        )
+        .await;
         if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
             break;
         }
-        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         if let Some(f) = p.per_flight.as_ref() {
             f.sync_from_per_coord(per_coord);
         }
@@ -841,12 +738,7 @@ async fn run_staged_plan_then_execute_steps(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let render_to_terminal = match p.mode {
-        AgentRunMode::Web {
-            render_to_terminal, ..
-        } => render_to_terminal,
-        AgentRunMode::Tui { .. } => false,
-    };
+    let render_to_terminal = p.render_to_terminal;
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
     super::context_window::prepare_messages_for_model(
@@ -879,6 +771,7 @@ async fn run_staged_plan_then_execute_steps(
         |body| Message {
             role: "user".to_string(),
             content: Some(body),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -971,7 +864,6 @@ where
     }
 
     push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
-    tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
 
     let content = msg.content.as_deref().unwrap_or("");
     let plan = match super::plan_artifact::parse_agent_reply_plan_v1(content) {
@@ -1050,7 +942,6 @@ where
             let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
         }
         p.messages.push(make_step_user_message(body));
-        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         let run_step = run_agent_outer_loop(p, per_coord).await;
         if let Err(e) = run_step {
             send_staged_plan_step_finished(
@@ -1081,7 +972,7 @@ where
         send_staged_plan_step_finished(p.out, &plan_id, step.id.trim(), step_index, n, "ok").await;
         completed_steps = step_index;
         p.messages.push(Message::chat_ui_separator(true));
-        // 先发队列摘要 SSE，再 await 全量同步（TUI event forwarder 会在流式间隙立刻下发快照，无需为 sync 通道容量调换顺序）。
+        // 先发队列摘要 SSE，再追加 UI 分隔。
         send_staged_plan_notice(
             p.out,
             echo_terminal_staged,
@@ -1089,10 +980,9 @@ where
             staged_plan_queue_summary_text(&plan, step_index),
         )
         .await;
-        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         emit_chat_ui_separator_sse(p.out, true).await;
     }
-    // 末步成功后循环内已发送含「[✓] 全部完成」的摘要，勿再发一次（否则 CLI/TUI 各重复一条）。
+    // 末步成功后循环内已发送含「[✓] 全部完成」的摘要，勿再发一次（否则重复一条）。
     send_staged_plan_finished(
         p.out,
         &plan_id,
@@ -1109,7 +999,6 @@ where
     // 否则末步成功后已在循环内添加，再加会重复两行。
     if n == 0 || (staged_loop_cancelled && completed_steps == 0) {
         p.messages.push(Message::chat_ui_separator(true));
-        tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
         emit_chat_ui_separator_sse(p.out, true).await;
     }
     Ok(())
@@ -1119,12 +1008,7 @@ async fn run_logical_dual_agent_then_execute_steps(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let render_to_terminal = match p.mode {
-        AgentRunMode::Web {
-            render_to_terminal, ..
-        } => render_to_terminal,
-        AgentRunMode::Tui { .. } => false,
-    };
+    let render_to_terminal = p.render_to_terminal;
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
     super::context_window::prepare_messages_for_model(
@@ -1172,7 +1056,6 @@ pub(crate) async fn run_agent_turn_common(
         p.effective_working_dir.display()
     );
     insert_separator_after_last_user_for_turn(p.messages);
-    tui_push_messages_snapshot(p.tui_messages_sync, p.messages).await;
 
     let mut per_coord = PerCoordinator::new(
         p.cfg.reflection_default_max_rounds,
@@ -1201,6 +1084,7 @@ mod push_assistant_merge_tests {
         Message {
             role: "assistant".to_string(),
             content: Some(String::new()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -1211,6 +1095,7 @@ mod push_assistant_merge_tests {
         Message {
             role: "assistant".to_string(),
             content: Some(s.to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -1242,6 +1127,7 @@ mod push_assistant_merge_tests {
             Message {
                 role: "tool".to_string(),
                 content: Some("tool out".to_string()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: Some("tc1".to_string()),
@@ -1264,6 +1150,7 @@ mod push_assistant_merge_tests {
             Message {
                 role: "tool".to_string(),
                 content: Some("tool out".to_string()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: Some("tc1".to_string()),
@@ -1277,5 +1164,38 @@ mod push_assistant_merge_tests {
         assert_eq!(out[3].role, "system");
         assert_eq!(out[3].content.as_deref(), Some("plan sys"));
         assert!(!out.iter().any(|m| m.role == "tool"));
+    }
+}
+
+#[cfg(test)]
+mod per_reflect_tests {
+    use super::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
+    use crate::agent::per_coord::{FinalPlanRequirementMode, PerCoordinator};
+    use crate::types::{FunctionCall, Message, ToolCall};
+
+    #[test]
+    fn proceed_to_tools_when_tool_calls_present_but_finish_reason_stop() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Never, 3);
+        let mut messages = vec![Message::user_only("x")];
+        let msg = Message {
+            role: "assistant".to_string(),
+            content: Some("ok".to_string()),
+            reasoning_content: None,
+            tool_calls: Some(vec![ToolCall {
+                id: "1".into(),
+                typ: "function".into(),
+                function: FunctionCall {
+                    name: "create_file".into(),
+                    arguments: "{}".into(),
+                },
+            }]),
+            name: None,
+            tool_call_id: None,
+        };
+        let out = per_reflect_after_assistant(&mut c, "stop", &msg, &mut messages);
+        assert!(matches!(
+            out,
+            ReflectOnAssistantOutcome::ProceedToExecuteTools
+        ));
     }
 }

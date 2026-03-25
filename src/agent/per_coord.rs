@@ -1,5 +1,5 @@
 //! 规划–执行–反思（PER）协调：workflow 反思状态机 + 最终回答中的「规划」校验。
-//! Web 与 TUI 的 `run_agent_turn*` 共用此层，避免双份维护。
+//! Web 与 CLI 的 `run_agent_turn` 共用此层，避免双份维护。
 
 use crate::types::Message;
 
@@ -77,7 +77,7 @@ pub struct PreparedWorkflowExecute {
     pub reflection_inject: Option<Value>,
 }
 
-/// Web / TUI 共用的 PER 状态。
+/// Web / CLI 共用的 PER 状态。
 pub struct PerCoordinator {
     reflection: WorkflowReflectionController,
     final_plan_policy: FinalPlanRequirementMode,
@@ -216,6 +216,7 @@ impl PerCoordinator {
         AfterFinalAssistant::RequestPlanRewrite(Message {
             role: "user".to_string(),
             content: Some(rewrite_text),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -267,6 +268,7 @@ impl PerCoordinator {
         messages.push(Message {
             role: "tool".to_string(),
             content: Some(result),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: Some(tool_call_id),
@@ -276,6 +278,7 @@ impl PerCoordinator {
             messages.push(Message {
                 role: "user".to_string(),
                 content: Some(instruction_str),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -357,6 +360,7 @@ mod tests {
         let empty = Message {
             role: "assistant".to_string(),
             content: Some("no plan here".to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -389,6 +393,7 @@ mod tests {
 ```"#
                     .to_string(),
             ),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -408,6 +413,7 @@ mod tests {
             Message {
                 role: "assistant".to_string(),
                 content: None,
+                reasoning_content: None,
                 tool_calls: Some(vec![ToolCall {
                     id: "tc1".to_string(),
                     typ: "function".to_string(),
@@ -425,6 +431,7 @@ mod tests {
                     r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3}}"#
                         .to_string(),
                 ),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: Some("tc1".to_string()),
@@ -438,6 +445,7 @@ mod tests {
 ```"#
                     .to_string(),
             ),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -458,6 +466,7 @@ mod tests {
 ```"#
                     .to_string(),
             ),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -494,6 +503,7 @@ mod tests {
         let empty = Message {
             role: "assistant".to_string(),
             content: Some("no plan here".to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -510,6 +520,7 @@ mod tests {
         let empty = Message {
             role: "assistant".to_string(),
             content: Some("no plan".to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -532,6 +543,7 @@ mod tests {
 ```"#
                     .to_string(),
             ),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -548,6 +560,7 @@ mod tests {
         let empty = Message {
             role: "assistant".to_string(),
             content: Some("no plan at all".to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -568,6 +581,7 @@ mod tests {
         let empty = Message {
             role: "assistant".to_string(),
             content: Some("no plan".to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -608,6 +622,7 @@ mod tests {
         let empty = Message {
             role: "assistant".to_string(),
             content: Some("no plan".to_string()),
+            reasoning_content: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -676,6 +691,7 @@ mod tests {
             Message {
                 role: "user".to_string(),
                 content: Some("hello".to_string()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -683,6 +699,7 @@ mod tests {
             Message {
                 role: "assistant".to_string(),
                 content: Some("hi".to_string()),
+                reasoning_content: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,

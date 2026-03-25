@@ -1,4 +1,4 @@
-//! 经 SSE `data:` 行发往浏览器 / TUI 的**控制类** JSON 协议（与 `llm::api::stream_chat` 下发的纯文本 delta 区分）。
+//! 经 SSE `data:` 行发往浏览器等的**控制类** JSON 协议（与 `llm::api::stream_chat` 下发的纯文本 delta 区分）。
 //!
 //! 统一带版本字段 `v`，键名与现有前端 `frontend/src/api.ts` 兼容；新增事件通过新键扩展。
 
@@ -23,7 +23,7 @@ pub struct SseMessage {
 pub enum SsePayload {
     /// 流式对话失败（`chat_stream_handler` 等）
     Error(SseErrorBody),
-    /// 工作流 / TUI 命令审批
+    /// 工作流 / 命令审批（Web 等）
     CommandApproval {
         command_approval_request: CommandApprovalBody,
     },
@@ -49,7 +49,7 @@ pub enum SsePayload {
     PlanRequired {
         plan_required: bool,
     },
-    /// 分阶段规划：TUI 用于状态栏与「队列」页；Web 可忽略（`frontend/src/api.ts` 吞掉不当下文）。
+    /// 分阶段规划：前端可忽略（`frontend/src/api.ts` 吞掉不当下文）。
     StagedPlanNotice {
         /// 可多行 `\n` 分隔。
         #[serde(rename = "staged_plan_notice")]
@@ -58,7 +58,7 @@ pub enum SsePayload {
         #[serde(default, rename = "staged_plan_notice_clear")]
         clear_before: bool,
     },
-    /// 分阶段规划：结构化「计划已生成」事件（供 Web/TUI 精准展示进度，不依赖文本解析）。
+    /// 分阶段规划：结构化「计划已生成」事件（供 Web 精准展示进度，不依赖文本解析）。
     StagedPlanStarted {
         #[serde(rename = "staged_plan_started")]
         started: StagedPlanStartedBody,
@@ -78,7 +78,7 @@ pub enum SsePayload {
         #[serde(rename = "staged_plan_finished")]
         finished: StagedPlanFinishedBody,
     },
-    /// 分阶段规划：每步结束短分隔线。TUI 随 `messages` 同步已有行；Web 用本事件追加。（`false` 保留兼容，客户端可忽略。）
+    /// 分阶段规划：每步结束短分隔线。Web 用本事件追加。（`false` 保留兼容，客户端可忽略。）
     ChatUiSeparator {
         /// `true` 为短分隔线。
         #[serde(rename = "chat_ui_separator")]
@@ -97,7 +97,7 @@ pub struct SseErrorBody {
 pub struct CommandApprovalBody {
     pub command: String,
     pub args: String,
-    /// TUI 永久允许时写入磁盘白名单的键；缺省则使用 `command` 小写（与 `run_command` 行为一致）。
+    /// 永久允许时写入进程内白名单的键；缺省则使用 `command` 小写（与 `run_command` 行为一致）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowlist_key: Option<String>,
 }

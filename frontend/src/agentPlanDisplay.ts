@@ -142,7 +142,7 @@ function tripleBacktickFenceCount(s: string): number {
   return m ? m.length : 0
 }
 
-/** 首段 ``` 围栏内：json 语言行后为空或 `{` 开头，或无语言行且以内联 `{` 开头。 */
+/** 首段 ``` 围栏内：仅 `json` 语言行且正文为空或 `{` 开头（与后端一致，避免误判 reasoner 思维链里的裸 `{` 围栏）。 */
 function firstFenceInnerLooksLikeJsonObject(s: string): boolean {
   const parts = s.split('```')
   if (parts.length < 2) return false
@@ -153,7 +153,7 @@ function firstFenceInnerLooksLikeJsonObject(s: string): boolean {
     const body = rest.split('\n').slice(1).join('\n').trim()
     return body.length === 0 || body.startsWith('{')
   }
-  return rest.trim().startsWith('{')
+  return false
 }
 
 function looksLikeIncompleteAgentReplyPlanWholeJson(t: string): boolean {
