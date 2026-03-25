@@ -1179,7 +1179,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 pub use config::{AgentConfig, load_config};
 pub use tool_registry::{
     ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata, execution_class_for_tool,
-    try_dispatch_meta,
+    is_readonly_tool, try_dispatch_meta,
 };
 pub use tools::dev_tag;
 pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options};
