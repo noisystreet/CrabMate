@@ -16,6 +16,12 @@ pub const VCS: &str = "vcs";
 pub const QUALITY: &str = "quality";
 /// Go 语言工具链。
 pub const GO: &str = "go";
+/// 安全分析工具（SAST、漏洞扫描）。
+pub const SECURITY: &str = "security";
+/// Shell 脚本相关工具。
+pub const SHELL: &str = "shell";
+/// Docker / 容器化相关工具。
+pub const DOCKER: &str = "docker";
 
 /// 返回 `Development` 工具的标签切片；**非 Development 工具名**应返回空（调用方按分类跳过）。
 pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
@@ -106,6 +112,14 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         // --- TODO/标记扫描 ---
         "todo_scan" => &[GENERAL, QUALITY],
 
+        // --- 源码分析工具 ---
+        "shellcheck_check" => &[GENERAL, SHELL, QUALITY],
+        "cppcheck_analyze" => &[GENERAL, CPP, QUALITY],
+        "semgrep_scan" => &[GENERAL, SECURITY, QUALITY],
+        "hadolint_check" => &[GENERAL, DOCKER, QUALITY],
+        "bandit_scan" => &[GENERAL, PYTHON, SECURITY, QUALITY],
+        "lizard_complexity" => &[GENERAL, QUALITY],
+
         // --- 质量聚合（跨栈）---
         "ci_pipeline_local" | "release_ready_check" => &[GENERAL, QUALITY],
         "run_lints" | "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],
@@ -151,6 +165,28 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
     }
     if root.join("go.mod").is_file() {
         out.push(GO);
+    }
+    if root.join("Dockerfile").is_file()
+        || root.join("docker-compose.yml").is_file()
+        || root.join("docker-compose.yaml").is_file()
+        || root.join(".dockerignore").is_file()
+    {
+        out.push(DOCKER);
+    }
+    let has_shell_scripts = root.join("scripts").is_dir()
+        || std::fs::read_dir(root)
+            .ok()
+            .map(|entries| {
+                entries.flatten().any(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .is_some_and(|ext| matches!(ext, "sh" | "bash"))
+                })
+            })
+            .unwrap_or(false);
+    if has_shell_scripts {
+        out.push(SHELL);
     }
     out.sort_unstable();
     out.dedup();

@@ -42,6 +42,13 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - `symlink_info`（只读）：查看符号链接目标、是否悬空、是否指向工作区外。
   - **进程与端口管理**（只读）：`port_check`（检查端口占用，使用 ss/lsof）、`process_list`（按关键词过滤进程列表）。
   - **代码度量与分析**（只读）：`code_stats`（代码行数统计，优先 tokei/cloc，回退内置统计器）、`dependency_graph`（依赖关系图，支持 Cargo/Go/npm，输出 Mermaid/DOT/tree）、`coverage_report`（覆盖率报告解析，支持 LCOV/.info、Tarpaulin JSON、Cobertura XML）。
+  - **源码分析工具**（只读，需本机安装对应 CLI；未安装时工具返回说明性错误）：
+    - `shellcheck_check`：使用 [ShellCheck](https://www.shellcheck.net/) 对 Shell/Bash 脚本做静态分析。可指定 `paths`（默认递归扫描 `.sh`/`.bash` 等脚本）、`severity`（error/warning/info/style）、`shell`（sh/bash/dash/ksh）、`format`。
+    - `cppcheck_analyze`：使用 [cppcheck](https://cppcheck.sourceforge.io/) 对 C/C++ 代码做静态分析。可指定 `paths`、`enable`（all/style/performance 等）、`std`（如 c++17）、`platform`。
+    - `semgrep_scan`：使用 [Semgrep](https://semgrep.dev/) 做多语言 SAST 安全扫描。可指定 `config`（规则集，默认 auto）、`paths`、`severity`、`lang`、`json` 输出。
+    - `hadolint_check`：使用 [Hadolint](https://github.com/hadolint/hadolint) 对 Dockerfile 做 lint。可指定 `path`（默认 Dockerfile）、`format`、`ignore`（规则列表）、`trusted_registries`。
+    - `bandit_scan`：使用 [Bandit](https://bandit.readthedocs.io/) 对 Python 代码做安全分析。可指定 `paths`、`severity`、`confidence`、`skip`（跳过测试 ID）、`format`。
+    - `lizard_complexity`：使用 [lizard](https://github.com/terryyin/lizard) 做多语言代码圈复杂度分析。可指定 `paths`、`threshold`（复杂度阈值）、`language`、`sort`、`warnings_only`、`exclude`。
 - **工作区浏览与文件编辑**（Web UI 右侧面板）：
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
@@ -249,6 +256,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 **Git 写操作**：`git_checkout`（切换/创建分支）、`git_branch_create`/`git_branch_delete`、`git_push`、`git_merge`、`git_rebase`（含 abort/continue）、`git_stash`（push/pop/apply/list/drop/clear）、`git_tag`（list/create/delete）、`git_reset`（soft/mixed/hard）、`git_cherry_pick`、`git_revert`。
 
 **代码度量与分析**：`code_stats`（代码行数统计）、`dependency_graph`（依赖关系图）、`coverage_report`（覆盖率报告解析）。
+
+**源码分析**：`shellcheck_check`（Shell 脚本静态分析）、`cppcheck_analyze`（C/C++ 静态分析）、`semgrep_scan`（多语言 SAST 安全扫描）、`hadolint_check`（Dockerfile lint）、`bandit_scan`（Python 安全分析）、`lizard_complexity`（代码圈复杂度分析）。
 
 ### Python 与 pre-commit 工具示例
 

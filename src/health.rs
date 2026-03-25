@@ -135,6 +135,13 @@ pub async fn build_health_report(
         );
         m.insert("cargo_udeps", check_cmd("cargo", &["udeps", "--version"]));
 
+        m.insert("shellcheck", check_cmd("shellcheck", &["--version"]));
+        m.insert("cppcheck", check_cmd("cppcheck", &["--version"]));
+        m.insert("semgrep", check_cmd("semgrep", &["--version"]));
+        m.insert("hadolint", check_cmd("hadolint", &["--version"]));
+        m.insert("bandit", check_cmd("bandit", &["--version"]));
+        m.insert("lizard", check_cmd("lizard", &["--version"]));
+
         m
     })
     .await
@@ -154,6 +161,12 @@ pub async fn build_health_report(
             "ast_grep" => "dep_ast_grep",
             "cargo_machete" => "dep_cargo_machete",
             "cargo_udeps" => "dep_cargo_udeps",
+            "shellcheck" => "dep_shellcheck",
+            "cppcheck" => "dep_cppcheck",
+            "semgrep" => "dep_semgrep",
+            "hadolint" => "dep_hadolint",
+            "bandit" => "dep_bandit",
+            "lizard" => "dep_lizard",
             _ => continue,
         };
         match v {
