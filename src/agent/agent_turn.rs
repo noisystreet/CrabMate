@@ -411,6 +411,30 @@ async fn emit_tool_result_sse_and_append(
     );
 }
 
+/// SSE 发送端已关闭（与外层 `run_agent_turn` 早退判断一致）。
+pub(crate) fn sse_sender_closed(out: Option<&mpsc::Sender<String>>) -> bool {
+    out.is_some_and(|tx| tx.is_closed())
+}
+
+/// 工具批处理中发现 SSE 已断开：记日志、尽力下发「工具轮结束」，返回 `true` 时应中止批处理。
+async fn abort_tool_batch_if_sse_closed(
+    out: Option<&mpsc::Sender<String>>,
+    reason: &'static str,
+) -> bool {
+    if !sse_sender_closed(out) {
+        return false;
+    }
+    info!(target: "crabmate", "{reason}");
+    if let Some(tx) = out {
+        let _ = tx
+            .send(encode_message(SsePayload::ToolRunning {
+                tool_running: false,
+            }))
+            .await;
+    }
+    true
+}
+
 /// E：执行一批 tool 调用（Web/CLI 共用骨架），写入 tool / 反思 user，并发送 SSE 片段。
 #[allow(clippy::too_many_arguments)] // 工具批处理上下文字段较多，拆结构体收益有限
 async fn per_execute_tools_common(
@@ -482,15 +506,12 @@ async fn per_execute_tools_common(
             .collect();
         let outcomes = join_all(parallel_futs).await;
         for (name, args, id, result) in outcomes {
-            if out.is_some_and(|tx| tx.is_closed()) {
-                info!(target: "crabmate", "SSE sender closed during parallel tool batch, aborting remainder");
-                if let Some(tx) = out {
-                    let _ = tx
-                        .send(encode_message(SsePayload::ToolRunning {
-                            tool_running: false,
-                        }))
-                        .await;
-                }
+            if abort_tool_batch_if_sse_closed(
+                out,
+                "SSE sender closed during parallel tool batch, aborting remainder",
+            )
+            .await
+            {
                 return ExecuteToolsBatchOutcome::AbortedSse;
             }
             emit_tool_result_sse_and_append(
@@ -508,15 +529,12 @@ async fn per_execute_tools_common(
         }
     } else {
         for tc in tool_calls {
-            if out.is_some_and(|tx| tx.is_closed()) {
-                info!(target: "crabmate", "SSE sender closed during tool execution, aborting remaining tools");
-                if let Some(tx) = out {
-                    let _ = tx
-                        .send(encode_message(SsePayload::ToolRunning {
-                            tool_running: false,
-                        }))
-                        .await;
-                }
+            if abort_tool_batch_if_sse_closed(
+                out,
+                "SSE sender closed during tool execution, aborting remaining tools",
+            )
+            .await
+            {
                 return ExecuteToolsBatchOutcome::AbortedSse;
             }
 
@@ -617,11 +635,6 @@ pub(crate) async fn per_execute_tools_web(
         web_tool_ctx,
     )
     .await
-}
-
-/// SSE 发送端已关闭时，应尽快结束外层循环。
-pub(crate) fn sse_sender_closed(out: Option<&mpsc::Sender<String>>) -> bool {
-    out.is_some_and(|tx| tx.is_closed())
 }
 
 async fn run_agent_outer_loop(

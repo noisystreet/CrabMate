@@ -21,6 +21,23 @@ fn cli_effective_work_dir(workspace_cli: &Option<String>, default: &str) -> Path
     )
 }
 
+/// CLI（无 SSE、`workspace_is_set` 恒为真）下调用 [`run_agent_turn`] 的固定参数封装。
+async fn run_agent_turn_for_cli(
+    client: &reqwest::Client,
+    api_key: &str,
+    cfg: &Arc<AgentConfig>,
+    tools: &[crate::types::Tool],
+    messages: &mut Vec<Message>,
+    work_dir: &std::path::Path,
+    no_stream: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_agent_turn(
+        client, api_key, cfg, tools, messages, None, work_dir, true, true, no_stream, None, None,
+        None,
+    )
+    .await
+}
+
 /// 单次提问模式（--query / --stdin），执行一轮对话后退出
 #[allow(clippy::too_many_arguments)]
 pub async fn run_single_shot(
@@ -44,20 +61,14 @@ pub async fn run_single_shot(
         redact::preview_chars(q, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     let work_dir = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
-    run_agent_turn(
+    run_agent_turn_for_cli(
         client,
         api_key,
         cfg,
         tools,
         &mut messages,
-        None,
         work_dir.as_path(),
-        true,
-        true,
         no_stream,
-        None,
-        None,
-        None,
     )
     .await
     .map_err(|e| -> Box<dyn std::error::Error> { e })?;
@@ -134,20 +145,14 @@ pub async fn run_repl(
             redact::preview_chars(input, redact::MESSAGE_LOG_PREVIEW_CHARS)
         );
 
-        if let Err(e) = run_agent_turn(
+        if let Err(e) = run_agent_turn_for_cli(
             client,
             api_key,
             cfg,
             tools,
             &mut messages,
-            None,
             work_dir.as_path(),
-            true,
-            true,
             no_stream,
-            None,
-            None,
-            None,
         )
         .await
         {

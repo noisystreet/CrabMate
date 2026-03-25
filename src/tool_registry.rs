@@ -20,6 +20,13 @@ use crate::config::AgentConfig;
 use crate::tools;
 use crate::types::{CommandApprovalDecision, ToolCall};
 
+/// Web UI：未选择工作区时的统一提示尾句（`run_command` / `run_executable` 共用）。
+const WEB_WORKSPACE_PANEL_HINT: &str = "请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。";
+
+fn web_tool_err_workspace_not_set(action_zh: &str) -> String {
+    format!("错误：未设置工作区，禁止{action_zh}。{WEB_WORKSPACE_PANEL_HINT}")
+}
+
 // --- 元数据（文档 / 将来 OpenAPI 生成）---
 
 /// 工具在运行时的执行类别。
@@ -372,11 +379,7 @@ async fn execute_run_command_web(
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
     if !workspace_is_set {
-        return (
-            "错误：未设置工作区，禁止执行命令。请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。"
-                .to_string(),
-            None,
-        );
+        return (web_tool_err_workspace_not_set("执行命令"), None);
     }
     let v: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
     let cmd = v
@@ -620,11 +623,7 @@ async fn execute_run_executable_web(
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
     if !workspace_is_set {
-        return (
-            "错误：未设置工作区，禁止运行可执行程序。请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。"
-                .to_string(),
-            None,
-        );
+        return (web_tool_err_workspace_not_set("运行可执行程序"), None);
     }
     let name_in = name.to_string();
     let cmd_timeout = cfg.command_timeout_secs;
