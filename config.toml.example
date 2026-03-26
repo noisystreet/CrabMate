@@ -25,6 +25,7 @@
 # allow_insecure_no_auth_for_non_loopback = false
 # max_tokens = 2048
 # temperature = 0.7
+# llm_seed = 42   # 可选；写入 chat/completions 的 seed；省略则不带该字段
 # api_timeout_secs = 60
 # api_max_retries = 3
 # api_retry_delay_secs = 1

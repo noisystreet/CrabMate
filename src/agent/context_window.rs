@@ -315,6 +315,7 @@ pub async fn maybe_summarize_with_llm(
         tool_choice: None,
         max_tokens: cfg.context_summary_max_tokens,
         temperature: 0.2,
+        seed: None,
         stream: None,
     };
 

@@ -78,6 +78,8 @@ pub struct AgentConfig {
     pub max_tokens: u32,
     /// 采样温度，0～2
     pub temperature: f32,
+    /// 可选：写入 `chat/completions` 的 **`seed`**（OpenAI 兼容；`None` 则请求 JSON 省略该字段）。
+    pub llm_seed: Option<i64>,
     /// HTTP 请求超时（秒），用于 chat 等 API
     pub api_timeout_secs: u64,
     /// API 失败时最大重试次数（0 = 仅首次，不再重试）

@@ -51,6 +51,10 @@ pub struct RunAgentTurnParams<'a> {
     pub plain_terminal_stream: bool,
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
     pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
+    /// 覆盖本回合 `chat/completions` 的 **`temperature`**（`None` 则用 [`config::AgentConfig::temperature`]）。
+    pub temperature_override: Option<f32>,
+    /// 覆盖本回合请求 JSON 中的 **`seed`**（默认 [`types::LlmSeedOverride::FromConfig`]）。
+    pub seed_override: types::LlmSeedOverride,
 }
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
@@ -83,6 +87,8 @@ pub async fn run_agent_turn<'a>(
         web_tool_ctx,
         plain_terminal_stream,
         llm_backend,
+        temperature_override,
+        seed_override,
     } = p;
     let llm_backend: &(dyn llm::ChatCompletionsBackend + 'static) = match llm_backend {
         Some(b) => b,
@@ -104,6 +110,8 @@ pub async fn run_agent_turn<'a>(
         plain_terminal_stream,
         web_tool_ctx,
         per_flight,
+        temperature_override,
+        seed_override,
     };
     agent::agent_turn::run_agent_turn_common(&mut loop_params).await
 }
@@ -342,6 +350,7 @@ pub use tool_registry::{
 };
 pub use tools::dev_tag;
 pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options};
+pub use types::LlmSeedOverride;
 
 #[cfg(test)]
 #[path = "lib/tests.rs"]
