@@ -198,6 +198,11 @@ pub enum ToolRuntime<'a> {
         /// 仅 Web 流式会话在启用审批时提供；普通 `/chat` 或旧客户端为 `None`。
         ctx: Option<&'a WebToolRuntime>,
     },
+    /// 终端 CLI：`run_command` 非白名单时走 stdin 确认（与 Web 审批语义一致）。
+    Cli {
+        workspace_changed: &'a mut bool,
+        ctx: &'a CliToolRuntime,
+    },
 }
 
 pub struct WebToolRuntime {
@@ -205,6 +210,33 @@ pub struct WebToolRuntime {
     pub approval_rx_shared: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
     pub approval_request_guard: Arc<Mutex<()>>,
     pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
+}
+
+/// CLI REPL / 单次提问：对**不在** `allowed_commands` 的 `run_command` 在终端 stdin 交互确认；**永久允许**写入本结构（进程内）。
+#[derive(Clone)]
+pub struct CliToolRuntime {
+    pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
+}
+
+fn parse_cli_command_approval_line(line: &str) -> CommandApprovalDecision {
+    let t = line.trim().to_ascii_lowercase();
+    match t.as_str() {
+        "" | "n" | "no" | "deny" | "d" | "q" => CommandApprovalDecision::Deny,
+        "a" | "always" | "all" => CommandApprovalDecision::AllowAlways,
+        _ => CommandApprovalDecision::AllowOnce,
+    }
+}
+
+/// 从 stdin 读一行并解析（`spawn_blocking` 避免阻塞 worker）。
+async fn read_cli_command_approval_line() -> CommandApprovalDecision {
+    tokio::task::spawn_blocking(|| {
+        use std::io;
+        let mut line = String::new();
+        let _ = io::stdin().read_line(&mut line);
+        parse_cli_command_approval_line(&line)
+    })
+    .await
+    .unwrap_or(CommandApprovalDecision::Deny)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -255,8 +287,23 @@ pub async fn dispatch_tool(
 
     match hid {
         HandlerId::Workflow => {
+            let runtime_web = match runtime {
+                ToolRuntime::Web {
+                    workspace_changed,
+                    ctx,
+                } => ToolRuntime::Web {
+                    workspace_changed,
+                    ctx,
+                },
+                ToolRuntime::Cli {
+                    workspace_changed, ..
+                } => ToolRuntime::Web {
+                    workspace_changed,
+                    ctx: None,
+                },
+            };
             execute_workflow(
-                runtime,
+                runtime_web,
                 per_coord,
                 cfg,
                 effective_working_dir,
@@ -265,24 +312,41 @@ pub async fn dispatch_tool(
             )
             .await
         }
-        HandlerId::RunCommand => {
-            let ToolRuntime::Web {
+        HandlerId::RunCommand => match runtime {
+            ToolRuntime::Web {
                 workspace_changed,
                 ctx,
-            } = runtime;
-            execute_run_command_web(
-                cfg,
-                effective_working_dir,
-                workspace_is_set,
+            } => {
+                execute_run_command_impl(
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    workspace_changed,
+                    ctx,
+                    None,
+                    name,
+                    args,
+                )
+                .await
+            }
+            ToolRuntime::Cli {
                 workspace_changed,
                 ctx,
-                name,
-                args,
-            )
-            .await
-        }
+            } => {
+                execute_run_command_impl(
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    workspace_changed,
+                    None,
+                    Some(ctx),
+                    name,
+                    args,
+                )
+                .await
+            }
+        },
         HandlerId::RunExecutable => {
-            let ToolRuntime::Web { .. } = runtime;
             execute_run_executable_web(cfg, effective_working_dir, workspace_is_set, name, args)
                 .await
         }
@@ -293,7 +357,10 @@ pub async fn dispatch_tool(
             execute_web_search_web(cfg, effective_working_dir, name, args).await
         }
         HandlerId::HttpFetch => {
-            let ToolRuntime::Web { ctx, .. } = runtime;
+            let ctx = match runtime {
+                ToolRuntime::Web { ctx, .. } => ctx,
+                ToolRuntime::Cli { .. } => None,
+            };
             execute_http_fetch_web(cfg, ctx, name, args).await
         }
         HandlerId::HttpRequest => execute_http_request(cfg, name, args).await,
@@ -336,19 +403,29 @@ async fn execute_workflow(
         {
             contract_err.to_string()
         } else {
-            let ToolRuntime::Web {
-                workspace_changed,
-                ctx,
-            } = runtime;
-            let approval_mode = if let Some(web_ctx) = ctx {
-                workflow::WorkflowApprovalMode::Interactive {
-                    out_tx: web_ctx.out_tx.clone(),
-                    approval_rx: web_ctx.approval_rx_shared.clone(),
-                    approval_request_guard: web_ctx.approval_request_guard.clone(),
-                    persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
+            let (workspace_changed_ref, approval_mode) = match runtime {
+                ToolRuntime::Web {
+                    workspace_changed,
+                    ctx,
+                } => {
+                    let mode = if let Some(web_ctx) = ctx {
+                        workflow::WorkflowApprovalMode::Interactive {
+                            out_tx: web_ctx.out_tx.clone(),
+                            approval_rx: web_ctx.approval_rx_shared.clone(),
+                            approval_request_guard: web_ctx.approval_request_guard.clone(),
+                            persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
+                        }
+                    } else {
+                        workflow::WorkflowApprovalMode::NoApproval
+                    };
+                    (workspace_changed, mode)
                 }
-            } else {
-                workflow::WorkflowApprovalMode::NoApproval
+                ToolRuntime::Cli {
+                    workspace_changed, ..
+                } => (
+                    workspace_changed,
+                    workflow::WorkflowApprovalMode::NoApproval,
+                ),
             };
             let (wf_out, wf_ws_changed) = workflow::run_workflow_execute_tool(
                 &prep.patched_args,
@@ -359,7 +436,7 @@ async fn execute_workflow(
                 cfg.command_max_output_len,
             )
             .await;
-            *workspace_changed |= wf_ws_changed;
+            *workspace_changed_ref |= wf_ws_changed;
             wf_out
         }
     } else {
@@ -369,12 +446,14 @@ async fn execute_workflow(
     (result, reflection_inject)
 }
 
-async fn execute_run_command_web(
+#[allow(clippy::too_many_arguments)] // Web + CLI 双路径审批共享实现
+async fn execute_run_command_impl(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     workspace_changed: &mut bool,
     web_ctx: Option<&WebToolRuntime>,
+    cli_ctx: Option<&CliToolRuntime>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
@@ -404,10 +483,10 @@ async fn execute_run_command_web(
             .iter()
             .any(|c| c.eq_ignore_ascii_case(&cmd))
     {
-        let already_allowed = if let Some(ctx) = web_ctx {
-            ctx.persistent_allowlist_shared.lock().await.contains(&cmd)
-        } else {
-            false
+        let already_allowed = match (web_ctx, cli_ctx) {
+            (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(&cmd),
+            (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(&cmd),
+            (None, None) => false,
         };
         if already_allowed {
             effective_allowed.push(cmd.clone());
@@ -437,6 +516,32 @@ async fn execute_run_command_web(
                     } else {
                         format!("{} {}", cmd, arg_preview)
                     };
+                    return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
+                }
+                CommandApprovalDecision::AllowOnce => {
+                    effective_allowed.push(cmd.clone());
+                }
+                CommandApprovalDecision::AllowAlways => {
+                    ctx.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(cmd.clone());
+                    effective_allowed.push(cmd.clone());
+                }
+            }
+        } else if let Some(ctx) = cli_ctx {
+            let cmd_show = if arg_preview.is_empty() {
+                cmd.clone()
+            } else {
+                format!("{} {}", cmd, arg_preview)
+            };
+            eprintln!(
+                "\n[run_command 审批] 命令不在白名单: {}\n  输入 y 执行一次 | a 永久允许该命令名（本会话）| 其它或回车拒绝\n",
+                cmd_show.trim()
+            );
+            let decision = read_cli_command_approval_line().await;
+            match decision {
+                CommandApprovalDecision::Deny => {
                     return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
                 }
                 CommandApprovalDecision::AllowOnce => {
@@ -753,6 +858,34 @@ mod tests {
     fn parallel_sync_batch_two_readonly_sync_tools() {
         let batch = vec![tc("read_file"), tc("list_dir")];
         assert!(tool_calls_allow_parallel_sync_batch(&batch));
+    }
+
+    #[test]
+    fn cli_approval_line_parsing() {
+        assert_eq!(
+            parse_cli_command_approval_line(""),
+            CommandApprovalDecision::Deny
+        );
+        assert_eq!(
+            parse_cli_command_approval_line("n"),
+            CommandApprovalDecision::Deny
+        );
+        assert_eq!(
+            parse_cli_command_approval_line("y"),
+            CommandApprovalDecision::AllowOnce
+        );
+        assert_eq!(
+            parse_cli_command_approval_line("YES "),
+            CommandApprovalDecision::AllowOnce
+        );
+        assert_eq!(
+            parse_cli_command_approval_line("a"),
+            CommandApprovalDecision::AllowAlways
+        );
+        assert_eq!(
+            parse_cli_command_approval_line("always"),
+            CommandApprovalDecision::AllowAlways
+        );
     }
 
     #[test]

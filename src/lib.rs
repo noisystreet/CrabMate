@@ -48,6 +48,8 @@ pub struct RunAgentTurnParams<'a> {
     pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    /// 终端 CLI：`run_command` 非白名单时在 stdin 交互确认；Web 传 `None`。
+    pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     pub plain_terminal_stream: bool,
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
     pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
@@ -85,6 +87,7 @@ pub async fn run_agent_turn<'a>(
         cancel,
         per_flight,
         web_tool_ctx,
+        cli_tool_ctx,
         plain_terminal_stream,
         llm_backend,
         temperature_override,
@@ -109,6 +112,7 @@ pub async fn run_agent_turn<'a>(
         render_to_terminal,
         plain_terminal_stream,
         web_tool_ctx,
+        cli_tool_ctx,
         per_flight,
         temperature_override,
         seed_override,

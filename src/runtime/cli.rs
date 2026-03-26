@@ -1,5 +1,6 @@
 use crate::config::AgentConfig;
 use crate::redact;
+use crate::tool_registry::CliToolRuntime;
 use crate::types::{Message, messages_chat_seed};
 use crate::{LlmSeedOverride, RunAgentTurnParams, run_agent_turn};
 use crossterm::{
@@ -8,9 +9,11 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 use log::debug;
+use std::collections::HashSet;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Debug, PartialEq, Eq)]
 enum ReplBuiltIn<'a> {
@@ -126,6 +129,7 @@ fn try_handle_repl_slash_command(
             println!("  /workspace <路径>  切换工作区（须为已存在目录，别名 /cd）");
             println!("  /tools     列出当前加载的工具名");
             println!("  /help      本说明");
+            println!("非白名单 run_command：终端会提示 y（一次）/ a（本会话永久允许该命令名）");
             println!("退出：quit / exit 或 Ctrl+D");
         }
     }
@@ -142,6 +146,7 @@ fn cli_effective_work_dir(workspace_cli: &Option<String>, default: &str) -> Path
 }
 
 /// CLI（无 SSE、`workspace_is_set` 恒为真）下调用 [`run_agent_turn`] 的固定参数封装。
+#[allow(clippy::too_many_arguments)] // CLI 与可选 cli_tool_ctx 并列，聚合为结构体收益有限
 async fn run_agent_turn_for_cli(
     client: &reqwest::Client,
     api_key: &str,
@@ -150,6 +155,7 @@ async fn run_agent_turn_for_cli(
     messages: &mut Vec<Message>,
     work_dir: &std::path::Path,
     no_stream: bool,
+    cli_tool_ctx: Option<&CliToolRuntime>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     run_agent_turn(RunAgentTurnParams {
         client,
@@ -165,6 +171,7 @@ async fn run_agent_turn_for_cli(
         cancel: None,
         per_flight: None,
         web_tool_ctx: None,
+        cli_tool_ctx,
         plain_terminal_stream: true,
         llm_backend: None,
         temperature_override: None,
@@ -196,6 +203,9 @@ pub async fn run_single_shot(
         redact::preview_chars(q, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     let work_dir = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    let cli_rt = CliToolRuntime {
+        persistent_allowlist_shared: Arc::new(Mutex::new(HashSet::new())),
+    };
     run_agent_turn_for_cli(
         client,
         api_key,
@@ -204,6 +214,7 @@ pub async fn run_single_shot(
         &mut messages,
         work_dir.as_path(),
         no_stream,
+        Some(&cli_rt),
     )
     .await
     .map_err(|e| -> Box<dyn std::error::Error> { e })?;
@@ -240,9 +251,12 @@ pub async fn run_repl(
         work_dir.as_path(),
         cfg.tui_load_session_on_start,
     );
+    let cli_rt = CliToolRuntime {
+        persistent_allowlist_shared: Arc::new(Mutex::new(HashSet::new())),
+    };
 
     println!(
-        "当前模型: {}\n输入内容与 Agent 对话；内建命令见 /help。quit/exit 或 Ctrl+D 退出。\n",
+        "当前模型: {}\n输入内容与 Agent 对话；内建命令见 /help。quit/exit 或 Ctrl+D 退出。\n非白名单 run_command 将在终端询问确认（y 一次 / a 本会话永久允许该命令名）。\n",
         cfg.model
     );
 
@@ -292,6 +306,7 @@ pub async fn run_repl(
             &mut messages,
             work_dir.as_path(),
             no_stream,
+            Some(&cli_rt),
         )
         .await
         {
