@@ -58,6 +58,8 @@ run_command_working_dir = "."
 max_tokens = 2048
 # 采样温度，0～2，越高越随机
 temperature = 0.7
+# 可选：OpenAI 兼容 chat/completions 的整数 seed（未设置或注释掉则请求 JSON 不带 seed）
+# llm_seed = 42
 # HTTP 请求超时（秒），用于 chat/completions 等 API
 api_timeout_secs = 60
 # API 失败时最大重试次数（0 = 不重试，仅首次失败后再试一次需设为 1）

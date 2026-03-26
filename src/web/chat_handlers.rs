@@ -31,6 +31,53 @@ pub(crate) struct ChatRequestBody {
     conversation_id: Option<String>,
     #[serde(default)]
     approval_session_id: Option<String>,
+    /// 覆盖本回合 `chat/completions` 的 **`temperature`**（0～2）；省略则用服务端配置。
+    #[serde(default)]
+    temperature: Option<f64>,
+    /// 写入请求 JSON 的整数 **`seed`**（OpenAI 兼容）；与 `seed_policy: "omit"` 互斥。
+    #[serde(default)]
+    seed: Option<i64>,
+    /// `omit` / `none`：本回合请求**不**带 `seed`（即使配置了默认 `llm_seed`）。
+    #[serde(default)]
+    seed_policy: Option<String>,
+}
+
+fn parse_optional_chat_temperature(raw: Option<f64>) -> Result<Option<f32>, String> {
+    let Some(t) = raw else {
+        return Ok(None);
+    };
+    if !t.is_finite() {
+        return Err("temperature 须为有限浮点数".to_string());
+    }
+    let t = t as f32;
+    if !(0.0..=2.0).contains(&t) {
+        return Err("temperature 须在 0～2 之间".to_string());
+    }
+    Ok(Some(t))
+}
+
+fn parse_seed_override_from_body(
+    seed: Option<i64>,
+    seed_policy: Option<String>,
+) -> Result<crate::LlmSeedOverride, String> {
+    let policy = seed_policy
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    match (seed, policy) {
+        (Some(_), Some(p)) if p.eq_ignore_ascii_case("omit") || p.eq_ignore_ascii_case("none") => {
+            Err("seed 与 seed_policy=omit 不能同时使用".to_string())
+        }
+        (Some(n), _) => Ok(crate::LlmSeedOverride::Fixed(n)),
+        (None, Some(p)) if p.eq_ignore_ascii_case("omit") || p.eq_ignore_ascii_case("none") => {
+            Ok(crate::LlmSeedOverride::OmitFromRequest)
+        }
+        (None, Some(p)) => Err(format!(
+            "未知的 seed_policy: {:?}（支持 omit、none 或省略）",
+            p
+        )),
+        (None, None) => Ok(crate::LlmSeedOverride::FromConfig),
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -513,6 +560,25 @@ pub(crate) async fn chat_handler(
             )
         })?
         .unwrap_or_else(|| state.next_conversation_id());
+    let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_TEMPERATURE",
+                message: e,
+            }),
+        )
+    })?;
+    let seed_override =
+        parse_seed_override_from_body(body.seed, body.seed_policy).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_SEED",
+                    message: e,
+                }),
+            )
+        })?;
     let turn_seed = build_messages_for_turn(&state, &conversation_id, msg).await;
     let work_dir_str = state.effective_workspace_path().await;
     let work_dir = work_dir_str.clone();
@@ -537,6 +603,8 @@ pub(crate) async fn chat_handler(
             turn_seed.expected_revision,
             std::path::PathBuf::from(work_dir),
             workspace_is_set,
+            temperature_override,
+            seed_override,
             reply_tx,
         )
         .map_err(|e| {
@@ -666,6 +734,25 @@ pub(crate) async fn chat_stream_handler(
             )
         })?
         .unwrap_or_else(|| state.next_conversation_id());
+    let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_TEMPERATURE",
+                message: e,
+            }),
+        )
+    })?;
+    let seed_override =
+        parse_seed_override_from_body(body.seed, body.seed_policy).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_SEED",
+                    message: e,
+                }),
+            )
+        })?;
     let turn_seed = build_messages_for_turn(&state, &conversation_id, msg).await;
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
     let workspace_is_set = state.workspace_is_set().await;
@@ -712,6 +799,8 @@ pub(crate) async fn chat_stream_handler(
             expected_revision: turn_seed.expected_revision,
             work_dir,
             workspace_is_set,
+            temperature_override,
+            seed_override,
             sse_tx: tx,
             web_approval_session,
         })
@@ -754,6 +843,8 @@ struct StatusResponse {
     api_base: String,
     max_tokens: u32,
     temperature: f32,
+    /// 默认写入 `chat/completions` 的整数 seed（未配置则为 `null`）。
+    llm_seed: Option<i64>,
     /// 当前加载进 API 请求的工具定义数量（`--no-tools` 时为 0）。
     tool_count: usize,
     /// 与模型对话时实际下发的工具名列表。
@@ -802,6 +893,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         api_base: state.cfg.api_base.clone(),
         max_tokens: state.cfg.max_tokens,
         temperature: state.cfg.temperature,
+        llm_seed: state.cfg.llm_seed,
         tool_count: tool_names.len(),
         tool_names,
         tool_dispatch_registry: tool_registry::all_dispatch_metadata(),

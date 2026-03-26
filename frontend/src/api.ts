@@ -275,12 +275,27 @@ export async function saveTasks(data: TasksData): Promise<TasksData> {
   })
 }
 
-export async function sendChat(message: string, conversationId?: string): Promise<ChatResponse> {
+export interface ChatRequestExtras {
+  conversationId?: string
+  /** 0～2，覆盖服务端默认 temperature */
+  temperature?: number
+  /** 写入 chat/completions 的整数 seed（与 seedPolicy 互斥） */
+  seed?: number
+  /** `omit`：本回合请求不带 seed（即使服务端配置了默认 llm_seed） */
+  seedPolicy?: 'omit' | 'none'
+}
+
+export async function sendChat(message: string, extras?: ChatRequestExtras): Promise<ChatResponse> {
+  const body: Record<string, unknown> = { message }
+  if (extras?.conversationId) body.conversation_id = extras.conversationId
+  if (extras?.temperature !== undefined) body.temperature = extras.temperature
+  if (extras?.seed !== undefined) body.seed = extras.seed
+  if (extras?.seedPolicy) body.seed_policy = extras.seedPolicy
   return request<ChatResponse>('/chat', {
     method: 'POST',
     timeoutMs: 60000,
     retries: 0,
-    json: conversationId ? { message, conversation_id: conversationId } : { message },
+    json: body,
   })
 }
 
@@ -626,6 +641,11 @@ function tryDispatchSseControlPayload(
   return 'plain'
 }
 
+export interface SendChatStreamOptions extends ChatRequestExtras {
+  approvalSessionId?: string
+  signal?: AbortSignal
+}
+
 /** 流式 chat：POST /chat/stream，通过 onDelta 逐段接收内容，onDone 结束时调用，失败时 onError；收到 workspace_changed 时调用 onWorkspaceChanged 以刷新工作区 */
 export async function sendChatStream(
   message: string,
@@ -667,24 +687,26 @@ export async function sendChatStream(
     /** 服务端返回会话 ID（首轮未传 conversation_id 时由后端生成） */
     onConversationId?: (id: string) => void
   },
-  approvalSessionId?: string,
-  signal?: AbortSignal,
-  conversationId?: string,
+  options?: SendChatStreamOptions,
 ): Promise<void> {
   const headers = new Headers({ 'Content-Type': 'application/json' })
   const bearerToken = getStoredWebApiBearerToken()
   if (bearerToken && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${bearerToken}`)
   }
+  const body: Record<string, unknown> = {
+    message,
+    conversation_id: options?.conversationId || undefined,
+    approval_session_id: options?.approvalSessionId || undefined,
+  }
+  if (options?.temperature !== undefined) body.temperature = options.temperature
+  if (options?.seed !== undefined) body.seed = options.seed
+  if (options?.seedPolicy) body.seed_policy = options.seedPolicy
   const r = await fetch(`${base}/chat/stream`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      message,
-      conversation_id: conversationId || undefined,
-      approval_session_id: approvalSessionId || undefined,
-    }),
-    signal,
+    body: JSON.stringify(body),
+    signal: options?.signal,
   })
   if (!r.ok) {
     const data = await r.json().catch(() => ({}))

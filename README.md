@@ -407,6 +407,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_FINAL_PLAN_REQUIREMENT`：终答是否必须含结构化 `agent_reply_plan`，取值 `never` / `workflow_reflection` / `always`（与 `[agent] final_plan_requirement` 一致，默认 `workflow_reflection`）  
    - `AGENT_PLAN_REWRITE_MAX_ATTEMPTS`：规划不合格时最多重写轮次（默认 `2`，与 `[agent] plan_rewrite_max_attempts` 一致；用尽后 SSE 带 `code=plan_rewrite_exhausted`）  
    - `AGENT_HTTP_HOST`：Web 监听 IP（如 `0.0.0.0`）；**未**传 `--host` 时生效，默认仍为 `127.0.0.1`  
+   - `AGENT_TEMPERATURE`：采样温度 0～2（与 `[agent] temperature` 一致）  
+   - `AGENT_LLM_SEED`：可选整数，写入每次 `chat/completions` 请求的 **`seed`** 字段（与 `[agent] llm_seed` 一致；未设置则请求体不带 `seed`）  
    - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）
    - `AGENT_CONVERSATION_STORE_SQLITE_PATH`：Web 会话 SQLite 文件路径（非空则持久化；与 `[agent] conversation_store_sqlite_path` 一致）
    - `AGENT_MEMORY_FILE_ENABLED`、`AGENT_MEMORY_FILE`、`AGENT_MEMORY_FILE_MAX_CHARS`：Web 首轮工作区备忘注入（与 `[agent]` 同名项一致）
@@ -663,8 +665,8 @@ cargo run -- --serve
 后端从 `frontend/dist` 提供静态页面，API 与页面同源，无需 CORS。
 
 - **GET /**：前端页面（聊天 + 工作区 + 状态栏），在浏览器打开即可对话。
-- **POST /chat**：请求体 `{"message":"你的问题","conversation_id":"可选"}`，返回 `{"reply":"助手回复","conversation_id":"会话ID"}`（会走完整 Agent 与工具调用；不传 `conversation_id` 时服务端自动分配）。
-- **POST /chat/stream**：流式对话（SSE）；请求体支持可选 `conversation_id` 与 `approval_session_id`；响应头 `x-conversation-id` 回传会话 ID。
+- **POST /chat**：请求体 `message`（必填）、可选 `conversation_id`；可选 **`temperature`**（0～2，覆盖服务端默认）、可选 **`seed`**（整数，写入 `chat/completions` 的 `seed`）、可选 **`seed_policy":"omit"`**（本回合不带 `seed`，与 `seed` 互斥）。返回 `reply` 与 `conversation_id`。
+- **POST /chat/stream**：流式对话（SSE）；除上述字段外还可选 **`approval_session_id`**；响应头 `x-conversation-id` 回传会话 ID。
 - **POST /chat/approval**：Web 审批决策，请求体 `{"approval_session_id":"...","decision":"deny|allow_once|allow_always"}`。
 - **GET /status**：返回当前模型、API 地址等后台状态。
 - **GET /workspace**：返回当前工作目录路径及文件列表。
