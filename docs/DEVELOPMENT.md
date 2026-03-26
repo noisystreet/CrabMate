@@ -25,7 +25,7 @@ CrabMate 在**单个 Rust 进程**内使用 **Tokio** 异步运行时：通过 *
 
 ### 逻辑分层（自外而内）
 
-1. **接入层**：HTTP 路由与 multipart（`lib.rs`）、CLI 参数与交互循环（`runtime/cli` 等）。
+1. **接入层**：HTTP 路由与 chat/upload 等 handler（**`web/`**：`server`、`chat_handlers`）、`--serve` 启动与后台任务（`lib.rs::run`）、CLI 参数与交互循环（`runtime/cli` 等）。
 2. **编排层**：Web 对话排队（`chat_job_queue`）、Agent 主循环与上下文/PER/工作流（**`agent/`**：`agent_turn`、`context_window`、`per_coord` 等）。
 3. **模型层**：共享 HTTP 客户端（`http_client`）、请求拼装与重试（`llm`）、流式响应解析（**`llm::api`**，`stream_chat`）；上游错误体仅经 **`redact`** 截断后写入日志，避免整包进 `log` 输出或 `Err` 链。
 4. **工具与工作流**：工具表驱动执行（`tools/mod.rs`）、按名分发与 Web 侧阻塞超时（`tool_registry`）、DAG 工作流（**`agent::workflow`**）。
@@ -34,7 +34,7 @@ CrabMate 在**单个 Rust 进程**内使用 **Tokio** 异步运行时：通过 *
 ```mermaid
 flowchart TB
   subgraph entry [接入]
-    WEB["Axum HTTP\n(lib.rs)"]
+    WEB["Axum HTTP\n(web/)"]
     CLI["CLI\n(runtime)"]
   end
   subgraph agent [Agent 编排 agent/]
@@ -90,7 +90,7 @@ flowchart TB
 | `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
 | `redact.rs` | 上游 HTTP 响应体等长文本的**日志预览截断**（`preview_chars` / `single_line_preview`），供 `llm::api`、`tools::web_search` 等使用。 |
 | `text_sanitize.rs` | 用户可见正文轻量清洗（DSML 剥离、规划步骤描述自然化等）；**`materialize_deepseek_dsml_tool_calls_in_message`**：API 未返回 `tool_calls` 时从 DeepSeek 风格 DSML 正文解析并写入 `Message.tool_calls`（供 `agent_turn` 在 P 步后执行工具）；供 **`plan_artifact::format_agent_reply_plan_for_display`** 等使用。 |
-| `health.rs` | 与 `GET /health` 一致的运行状况报告（`build_health_report` / `format_health_report_terminal` 预留）；供 `lib.rs` 的 health handler。 |
+| `health.rs` | 与 `GET /health` 一致的运行状况报告（`build_health_report` / `format_health_report_terminal` 预留）；由 **`web::chat_handlers::health_handler`** 调用。 |
 | `llm/` | **`mod`**：`ChatRequest` 构造、指数退避 **`complete_chat_retrying`**；**`api`**：`chat/completions` HTTP + SSE/JSON 解析、终端 Markdown（公式见 `runtime::latex_unicode`）。 |
 | `path_workspace.rs` | 工作区相对路径的语义化规范化（[`path-absolutize`](https://crates.io/crates/path-absolutize) 的 `Absolutize`）与根边界校验；供 `tools/file`、`tools/exec`、`tools/patch`、`web/workspace` 共用，避免手写 `..` 解析分叉。 |
 | `runtime/` | `cli`：单次问答/REPL；`workspace_session`：`.crabmate/tui_session.json` 加载与 **`initial_workspace_messages`**（CLI REPL；保存/导出函数保留供后续终端 UI）；`terminal_labels` / `terminal_cli_transcript`：CLI 前缀着色与无 SSE 时的规划/工具 stdout；`plan_section`：分阶段规划块节标题常量；**`benchmark`**：批量无人值守测评子系统；**`message_display`** / **`chat_export`** / **`latex_unicode`**：与 Web/CLI 展示、导出、`frontend/src/chatExport.ts` 对齐（模块内部分符号当前仅单测消费，见各文件 `allow(dead_code)` 说明）。 |
@@ -99,12 +99,12 @@ flowchart TB
 | `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
 | `tools/` | 全部 Function Calling 定义、`ToolContext`、`run_tool`；`tools/mod.rs` 与 `tools/markdown_links.rs` 的测试已外移到同名子目录 `tests.rs`，并把工具调用摘要逻辑拆到 `tools/tool_summary.rs`，降低主文件长度；子模块见下表。 |
 | `types.rs` | `Message`、`Tool`、流式 chunk 等 OpenAI 兼容类型；`Message::system_only` / `user_only`、`messages_chat_seed` 供 Web 首轮与 CLI 共用。 |
-| `web/` | Web（HTTP）专用 axum 模块：`server`（Router 组装）、`workspace`、`task` 等。 |
+| `web/` | Web（HTTP）专用 axum 模块：`app_state`（`AppState`、进程内会话存储）、`chat_handlers`（`/chat*`、`/upload*`、`/health`、`/status`）、`server`（Router 组装）、`workspace`、`task`。`AppState` / `SaveConversationOutcome` 等在 crate 根再导出供 `chat_job_queue` 等使用。 |
 
 ### `lib.rs` 额外职责（非独立文件但需知）
 
 - `run()` 中创建 `AppState`、监听地址与清理任务，Router 组装下沉到 `web::server::build_app`（chat、status、health、workspace、tasks、upload、静态前端 `dist` 等）。
-- **`AppState`**：`Arc` 持有 `AgentConfig`、共享 `reqwest::Client`、工作区覆盖路径、上传清理句柄、对话队列等。
+- **`AppState`**：定义于 **`web::app_state`**，`Arc` 持有 `AgentConfig`、共享 `reqwest::Client`、工作区覆盖路径、上传目录、对话队列等；crate 根 `pub(crate) use` 保持 `chat_job_queue` / `web/workspace` 等路径不变。
 - **`RunAgentTurnParams`**：库根 `run_agent_turn` 的唯一入参（Web / CLI / benchmark 共用），避免长形参列表。
 
 ### `src/tools/` 子文件（实现域一览）

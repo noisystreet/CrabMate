@@ -17,11 +17,20 @@ pub(crate) fn build_app(
     uploads_dir_for_static: std::path::PathBuf,
 ) -> Router {
     let mut protected_api = Router::new()
-        .route("/chat", post(crate::chat_handler))
-        .route("/chat/stream", post(crate::chat_stream_handler))
-        .route("/chat/approval", post(crate::chat_approval_handler))
-        .route("/upload", post(crate::upload_handler))
-        .route("/uploads/delete", post(crate::delete_uploads_handler))
+        .route("/chat", post(super::chat_handlers::chat_handler))
+        .route(
+            "/chat/stream",
+            post(super::chat_handlers::chat_stream_handler),
+        )
+        .route(
+            "/chat/approval",
+            post(super::chat_handlers::chat_approval_handler),
+        )
+        .route("/upload", post(super::chat_handlers::upload_handler))
+        .route(
+            "/uploads/delete",
+            post(super::chat_handlers::delete_uploads_handler),
+        )
         .route(
             "/workspace",
             get(crate::web::workspace::workspace_handler)
@@ -48,13 +57,13 @@ pub(crate) fn build_app(
     if state.web_api_auth_enabled() {
         protected_api = protected_api.route_layer(middleware::from_fn_with_state(
             state.clone(),
-            crate::require_web_api_bearer_auth,
+            super::chat_handlers::require_web_api_bearer_auth,
         ));
     }
     let mut app = Router::new()
         .merge(protected_api)
-        .route("/health", get(crate::health_handler))
-        .route("/status", get(crate::status_handler))
+        .route("/health", get(super::chat_handlers::health_handler))
+        .route("/status", get(super::chat_handlers::status_handler))
         .nest_service(
             "/uploads",
             ServiceBuilder::new()
