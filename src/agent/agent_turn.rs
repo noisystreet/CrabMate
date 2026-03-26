@@ -352,6 +352,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub workspace_is_set: bool,
     pub out: Option<&'a mpsc::Sender<String>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    /// 终端 CLI：`run_command` 非白名单时 stdin 审批；`None` 时与历史一致（非白名单则无法执行）。
+    pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     /// CLI：`render_to_terminal` 且 `out: None` 时为 true，工具结果打印到 stdout。
     pub echo_terminal_transcript: bool,
 }
@@ -373,6 +375,8 @@ pub(crate) struct RunLoopParams<'a> {
     /// 见 [`crate::llm::api::stream_chat`] 的 `plain_terminal_stream`；仅 CLI 入口为 `true`。
     pub plain_terminal_stream: bool,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    /// 与 [`WebExecuteCtx::cli_tool_ctx`] 相同；Web 队列传 `None`。
+    pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     pub per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
     /// `None` 时使用 `cfg.temperature`。
     pub temperature_override: Option<f32>,
@@ -501,6 +505,7 @@ struct ExecuteToolsCommonCtx<'a> {
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
 }
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
@@ -515,6 +520,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         web_tool_ctx,
+        cli_tool_ctx,
     } = ctx;
     let mut workspace_changed = false;
 
@@ -655,11 +661,19 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
             }
 
             let t_tool = Instant::now();
-            let (result, reflection_inject) = tool_registry::dispatch_tool(
+            let runtime = if let Some(cctx) = cli_tool_ctx {
+                ToolRuntime::Cli {
+                    workspace_changed: &mut workspace_changed,
+                    ctx: cctx,
+                }
+            } else {
                 ToolRuntime::Web {
                     workspace_changed: &mut workspace_changed,
                     ctx: web_tool_ctx,
-                },
+                }
+            };
+            let (result, reflection_inject) = tool_registry::dispatch_tool(
+                runtime,
                 per_coord,
                 cfg,
                 effective_working_dir,
@@ -729,6 +743,7 @@ pub(crate) async fn per_execute_tools_web(
         workspace_is_set,
         out,
         web_tool_ctx,
+        cli_tool_ctx,
         echo_terminal_transcript,
     } = ctx;
 
@@ -743,6 +758,7 @@ pub(crate) async fn per_execute_tools_web(
         echo_terminal_transcript,
         terminal_tool_display_max_chars: cfg.command_max_output_len,
         web_tool_ctx,
+        cli_tool_ctx,
     })
     .await
 }
@@ -848,6 +864,7 @@ async fn run_agent_outer_loop(
                 workspace_is_set: p.workspace_is_set,
                 out: p.out,
                 web_tool_ctx: p.web_tool_ctx,
+                cli_tool_ctx: p.cli_tool_ctx,
                 echo_terminal_transcript,
             },
         )
