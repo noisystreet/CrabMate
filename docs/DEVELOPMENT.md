@@ -141,7 +141,8 @@ flowchart TB
 | `structured_data.rs` | `structured_validate` / `structured_query` / `structured_diff` / `structured_patch`：JSON·YAML·TOML·CSV·TSV 校验、路径查询、结构化 diff；以及 JSON/YAML/TOML 的定点补丁（默认 dry-run） |
 | `table_text.rs` | `table_text`：CSV/TSV 等分隔文本的预览、列数校验、列筛选与聚合（与 `structured_*` 互补） |
 | `tool_summary.rs` | `summarize_tool_call`：将各工具入参映射为前端可展示的简短摘要文案 |
-| `tool_specs_registry.rs` | `tool_specs()` 工具注册表（name/description/category/parameters/runner）的大表定义，供 `tools/mod.rs` 薄封装调用 |
+| `tool_params/` | 各工具 JSON Schema（`params_*`）按领域拆分子文件，`mod.rs` 再导出；`pub(in crate::tools)` 以便与 `tool_specs_registry` 同层引用 |
+| `tool_specs_registry/` | `tool_specs()`：`specs/*.inc.rs` 为数组字面量，`include!` 载入后在 `OnceLock` 中拼接为 `&'static [ToolSpec]`（name/description/category/parameters/runner） |
 | `text_transform.rs` | `text_transform`：纯内存 Base64/URL 编解码、短哈希、按行合并与按分隔符切分（不落盘，有长度上限） |
 | `text_diff.rs` | `text_diff`：两段 UTF-8 文本或工作区内两文件的行级 unified diff（与 Git 无关，输出可截断） |
 | `patch.rs` | unified diff 应用 |

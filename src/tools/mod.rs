@@ -106,6 +106,7 @@ type ToolRunner = fn(args_json: &str, ctx: &ToolContext<'_>) -> String;
 type ParamBuilder = fn() -> serde_json::Value;
 
 /// 工具调用摘要类型：用于前端 Chat 面板展示。
+#[derive(Clone, Copy)]
 pub(super) enum ToolSummaryKind {
     /// 无自定义摘要。
     None,
@@ -115,6 +116,7 @@ pub(super) enum ToolSummaryKind {
     Dynamic(fn(&serde_json::Value) -> Option<String>),
 }
 
+#[derive(Clone, Copy)]
 struct ToolSpec {
     name: &'static str,
     description: &'static str,

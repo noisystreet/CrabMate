@@ -1,0 +1,42 @@
+[
+ToolSpec {
+            name: "go_build",
+            description: "在工作区根运行 `go build`（须存在 go.mod）。可选 package（默认 ./...）、output（-o 相对路径）、verbose。路径禁止 .. 与绝对路径。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_go_build,
+            runner: runner_go_build,
+            summary: ToolSummaryKind::Static("运行 go build"),
+        },
+        ToolSpec {
+            name: "go_test",
+            description: "在工作区根运行 `go test`（须 go.mod）。可选 package、run（-run）、verbose、short、count、timeout。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_go_test,
+            runner: runner_go_test,
+            summary: ToolSummaryKind::Static("运行 go test"),
+        },
+        ToolSpec {
+            name: "go_vet",
+            description: "在工作区根运行 `go vet`（须 go.mod）。可选 package，默认 ./...。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_go_vet,
+            runner: runner_go_vet,
+            summary: ToolSummaryKind::Static("运行 go vet"),
+        },
+        ToolSpec {
+            name: "go_mod_tidy",
+            description: "在工作区根运行 `go mod tidy`（须 go.mod）。**写盘**：仅当 confirm=true 时执行；可选 verbose。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_go_mod_tidy,
+            runner: runner_go_mod_tidy,
+            summary: ToolSummaryKind::Static("运行 go mod tidy"),
+        },
+        ToolSpec {
+            name: "go_fmt_check",
+            description: "在工作区根运行 `gofmt -l`（须 go.mod）：列出格式不一致的 .go 文件，不改写。可选 paths（默认 [\".\"]）。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_go_fmt_check,
+            runner: runner_go_fmt_check,
+            summary: ToolSummaryKind::Static("gofmt 格式检查（-l）"),
+        },
+]

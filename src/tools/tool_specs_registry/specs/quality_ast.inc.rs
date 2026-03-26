@@ -1,0 +1,42 @@
+[
+ToolSpec {
+            name: "pre_commit_run",
+            description: "在工作区根运行 `pre-commit run`。须存在 .pre-commit-config.yaml（或 .yml）。可选 hook、all_files、files（--files 相对路径）、verbose。默认检查暂存文件。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_pre_commit_run,
+            runner: runner_pre_commit_run,
+            summary: ToolSummaryKind::Dynamic(ts::summary_pre_commit_run),
+        },
+        ToolSpec {
+            name: "typos_check",
+            description: "运行 [typos](https://github.com/crate-ci/typos) 拼写检查（**只读**）。默认检查存在的 `README.md` 与 `docs/`；可用 `paths` 指定更多相对路径。需本机已安装 `typos` CLI。适合文档与注释中的常见错别字。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_typos_check,
+            runner: runner_typos_check,
+            summary: ToolSummaryKind::Static("typos 拼写检查"),
+        },
+        ToolSpec {
+            name: "codespell_check",
+            description: "运行 [codespell](https://github.com/codespell-project/codespell)（**只读**，不传入 `-w`）。默认路径策略同 `typos_check`；可选 `skip` 传给 `--skip`。需本机已安装 `codespell`。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_codespell_check,
+            runner: runner_codespell_check,
+            summary: ToolSummaryKind::Static("codespell 拼写检查"),
+        },
+        ToolSpec {
+            name: "ast_grep_run",
+            description: "运行 [ast-grep](https://ast-grep.github.io/) `run` 做**结构化**代码搜索（非纯文本 grep）。必填 `pattern` 与 `lang`；默认仅在存在的 `src` 下搜索，并附加 `--globs` 排除 target、node_modules、.git、vendor、dist、build。可用 `paths` 收窄/改写根路径，`globs` 追加排除规则。需本机已安装 `ast-grep` 命令（`cargo install ast-grep`）。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_ast_grep_run,
+            runner: runner_ast_grep_run,
+            summary: ToolSummaryKind::Dynamic(ts::summary_ast_grep_run),
+        },
+        ToolSpec {
+            name: "ast_grep_rewrite",
+            description: "运行 `ast-grep run --rewrite` 做结构化改写。默认 `dry_run=true` 仅预览；当 `dry_run=false` 时需 `confirm=true` 才会写盘（等价 `--update-all`）。路径与 globs 安全策略同 `ast_grep_run`。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_ast_grep_rewrite,
+            runner: runner_ast_grep_rewrite,
+            summary: ToolSummaryKind::Dynamic(ts::summary_ast_grep_rewrite),
+        },
+]
