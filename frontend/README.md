@@ -13,7 +13,7 @@ npm run dev
 
 ```bash
 # 在项目根目录
-cargo run -- --serve 8080
+cargo run -- serve 8080
 ```
 
 ## 构建与部署
