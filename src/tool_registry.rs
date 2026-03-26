@@ -7,6 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -212,10 +213,59 @@ pub struct WebToolRuntime {
     pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
 }
 
+/// CLI 统计：用于 `chat` 退出码（本进程内 `run_command` 调用次数与用户拒绝次数）。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CliCommandTurnStats {
+    pub run_command_attempts: u32,
+    pub run_command_denials: u32,
+}
+
 /// CLI REPL / 单次提问：对**不在** `allowed_commands` 的 `run_command` 在终端 stdin 交互确认；**永久允许**写入本结构（进程内）。
 #[derive(Clone)]
 pub struct CliToolRuntime {
     pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
+    /// `--yes`：非白名单也自动批准（**仅可信环境**；脚本/CI 无人值守）。
+    pub auto_approve_all_non_whitelist_run_command: bool,
+    /// `--approve-commands` 额外允许的命令名（小写），与配置白名单合并后再决定是否提示。
+    pub extra_allowlist_commands: Arc<[String]>,
+    pub command_stats: Arc<StdMutex<CliCommandTurnStats>>,
+}
+
+impl CliToolRuntime {
+    /// REPL / 默认单次问答：交互审批，不自动批准。
+    pub fn new_interactive_default() -> Self {
+        Self {
+            persistent_allowlist_shared: Arc::new(Mutex::new(HashSet::new())),
+            auto_approve_all_non_whitelist_run_command: false,
+            extra_allowlist_commands: Arc::from([] as [String; 0]),
+            command_stats: Arc::new(StdMutex::new(CliCommandTurnStats::default())),
+        }
+    }
+
+    pub fn reset_command_stats(&self) {
+        if let Ok(mut g) = self.command_stats.lock() {
+            *g = CliCommandTurnStats::default();
+        }
+    }
+
+    fn record_run_command_attempt(&self) {
+        if let Ok(mut g) = self.command_stats.lock() {
+            g.run_command_attempts = g.run_command_attempts.saturating_add(1);
+        }
+    }
+
+    fn record_run_command_denial(&self) {
+        if let Ok(mut g) = self.command_stats.lock() {
+            g.run_command_denials = g.run_command_denials.saturating_add(1);
+        }
+    }
+
+    /// 本回合（自上次 [`Self::reset_command_stats`]）内每次 `run_command` 均被用户拒绝。
+    pub fn all_run_commands_were_denied(&self) -> bool {
+        self.command_stats.lock().is_ok_and(|g| {
+            g.run_command_attempts > 0 && g.run_command_denials == g.run_command_attempts
+        })
+    }
 }
 
 fn parse_cli_command_approval_line(line: &str) -> CommandApprovalDecision {
@@ -473,6 +523,9 @@ async fn execute_run_command_impl(
     if !workspace_is_set {
         return (web_tool_err_workspace_not_set("执行命令"), None);
     }
+    if let Some(ctx) = cli_ctx {
+        ctx.record_run_command_attempt();
+    }
     let v: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
     let cmd = v
         .get("command")
@@ -555,28 +608,40 @@ async fn execute_run_command_impl(
             } else {
                 format!("{} {}", cmd, arg_preview)
             };
-            eprintln!(
-                "\n[run_command 审批] 命令不在白名单: {}\n  输入 y 执行一次 | a 永久允许该命令名（本会话）| 其它或回车拒绝\n",
-                cmd_show.trim()
-            );
-            let decision = read_cli_command_approval_line().await;
-            match decision {
-                CommandApprovalDecision::Deny => {
-                    return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
-                }
-                CommandApprovalDecision::AllowOnce => {
-                    let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
-                    v.push(cmd.clone());
-                    effective_allowed_arc = v.into();
-                }
-                CommandApprovalDecision::AllowAlways => {
-                    ctx.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(cmd.clone());
-                    let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
-                    v.push(cmd.clone());
-                    effective_allowed_arc = v.into();
+            if ctx.auto_approve_all_non_whitelist_run_command
+                || ctx
+                    .extra_allowlist_commands
+                    .iter()
+                    .any(|e| e.eq_ignore_ascii_case(&cmd))
+            {
+                let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
+                v.push(cmd.clone());
+                effective_allowed_arc = v.into();
+            } else {
+                eprintln!(
+                    "\n[run_command 审批] 命令不在白名单: {}\n  输入 y 执行一次 | a 永久允许该命令名（本会话）| 其它或回车拒绝\n",
+                    cmd_show.trim()
+                );
+                let decision = read_cli_command_approval_line().await;
+                match decision {
+                    CommandApprovalDecision::Deny => {
+                        ctx.record_run_command_denial();
+                        return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
+                    }
+                    CommandApprovalDecision::AllowOnce => {
+                        let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
+                        v.push(cmd.clone());
+                        effective_allowed_arc = v.into();
+                    }
+                    CommandApprovalDecision::AllowAlways => {
+                        ctx.persistent_allowlist_shared
+                            .lock()
+                            .await
+                            .insert(cmd.clone());
+                        let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
+                        v.push(cmd.clone());
+                        effective_allowed_arc = v.into();
+                    }
                 }
             }
         }

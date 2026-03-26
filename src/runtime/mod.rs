@@ -3,6 +3,8 @@
 pub mod benchmark;
 pub mod chat_export;
 pub mod cli;
+pub mod cli_doctor;
+pub mod cli_exit;
 pub mod latex_unicode;
 pub(crate) mod message_display;
 pub(crate) mod plan_section;

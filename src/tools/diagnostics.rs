@@ -95,7 +95,8 @@ fn env_presence_line(name: &str, val: Result<String, std::env::VarError>) -> Str
     }
 }
 
-fn capture_trimmed(cmd: &str, args: &[&str]) -> Option<String> {
+/// 供 CLI `doctor` 等复用：执行命令并取 stdout 首段非空文本。
+pub(crate) fn capture_trimmed(cmd: &str, args: &[&str]) -> Option<String> {
     let out = Command::new(cmd).args(args).output().ok()?;
     if !out.status.success() {
         return None;

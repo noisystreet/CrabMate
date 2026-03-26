@@ -583,9 +583,12 @@ cargo run
 |--------|------|
 | `serve [PORT]` | Web UI + HTTP API，默认端口 **8080**；`serve --host <ADDR>` 设置监听 IP（默认 `127.0.0.1`）。`--no-web` / `--cli-only` 仅 API。 |
 | `repl` | 交互式终端对话；**不写任何子命令时默认进入 `repl`**。 |
-| `chat` | 单次提问：`--query <问题>` 或 `--stdin`（二选一）；可选 `--output json`、`--no-stream`。 |
+| `chat` | 脚本化对话：见下文 **「`chat` 脚本与退出码」**；支持 `--query` / `--stdin` / `--user-prompt-file`、`--system-prompt-file`、`--messages-json-file`（整轮 messages）、`--message-file`（JSONL 多轮）、`--yes` / `--approve-commands`、`--output json`、`--no-stream`。 |
 | `bench` | 批量测评：与下表 benchmark 选项相同（`--benchmark`、`--batch` 等）。 |
 | `config` | 自检：`config --dry-run` 检查配置、`API_KEY`、前端 `frontend/dist` 是否存在。 |
+| `doctor` | 一页本地诊断（Rust/npm/前端路径、`allowed_commands` 条数等，**脱敏**）；**不需要** `API_KEY`。 |
+| `models` | `GET …/models` 列出模型 id（需 `API_KEY`；部分网关无此端点）。 |
+| `probe` | 探测 `api_base` 上 models 端点连通性与 HTTP 状态（需 `API_KEY`）。 |
 
 **全局选项**（写在子命令**之前**）：`--config <path>`、`--workspace <path>`、`--no-tools`、`--log <FILE>`。
 
@@ -695,7 +698,7 @@ cargo run -- serve
 - **GET /workspace**：返回当前工作目录路径及文件列表。
 - **GET /health**：健康检查，返回 `{"status": "ok"}`。
 
-**单次提问（脚本/管道）**：使用 **`chat --query`** 或 **`chat --stdin`**（或兼容的 `--query` / `--stdin`）时，程序只执行一次提问并输出回答后退出：
+**单次提问（脚本/管道）**：使用 **`chat --query`**、**`chat --stdin`** 或 **`chat --user-prompt-file`**（与 `--query`/`--stdin` 三选一）时，程序执行一轮 `run_agent_turn` 后退出。可选 **`--system-prompt-file`** 覆盖配置中的 system（不叠加工作区会话注入，与 Web 首轮 seed 语义一致）。**`--messages-json-file`** 提供单轮完整 `messages`（JSON 数组或 `{"messages":[...]}`）。**`--message-file`** 为 JSONL 批跑：每行 `{"user":"…"}` 在已有历史上追加用户消息并跑一轮，或 `{"messages":[...]}` 整表替换后再跑一轮；空行与 `#` 开头行跳过。
 
 ```bash
 # 参数传入问题
@@ -703,7 +706,15 @@ cargo run -- chat --query "北京今天天气怎么样"
 
 # 从标准输入读入问题（多行直到 EOF）
 echo "1+1等于几" | cargo run -- chat --stdin
+
+# CI：自动批准所有非白名单 run_command（仅可信环境）
+cargo run -- chat --yes --query "…"
+
+# 仅自动批准列出的命令名（逗号分隔，与 allowed_commands 合并匹配）
+cargo run -- chat --approve-commands grep,git --query "…"
 ```
+
+**`chat` 退出码**（便于 shell：`$?`）：**0** 成功；**1** 一般错误；**2** 用法/输入非法；**3** 模型接口或响应解析类失败；**4** 本回合内所有 `run_command` 均在审批中被拒绝（且发生过至少一次 `run_command`）；**5** 配额/限流等（典型 **HTTP 429**，以及文案中含 402/余额/503 等启发式归类）。模型错误信息经脱敏后写入 stderr。
 
 运行后（交互模式）下，提示符为加粗着色的 **「我: 」**（青色）与助手行前 **「Agent: 」**（洋红），正文仍为 Markdown 着色；输入问题，例如：
 
@@ -714,7 +725,7 @@ echo "1+1等于几" | cargo run -- chat --stdin
 
 **REPL 内建命令**（以 `/` 开头，**不**发给模型）：`/help` 列出说明；`/clear` 清空历史（保留当前 `system`）；`/model` 查看 model、api_base、temperature、llm_seed；`/workspace` 显示当前工作目录，`/workspace <路径>` 或 `/cd <路径>` 切换到已存在的目录（工具 `run_command` 等随之在新工作区执行）；`/tools` 列出已加载工具名。
 
-**`run_command` 终端审批**（REPL / `chat` 单次）：若模型调用的命令**不在**配置白名单 `allowed_commands` 内，会在 stderr 打印待执行命令并等待 stdin 一行：**`y`**（或任意非 `n`/`a` 的文本，除空行）表示**允许本次**；**`a` / `always`** 表示**本会话内**永久允许该**命令名**（与 Web「永久允许」同语义，仅进程内）；**回车 / `n` / `q`** 等表示拒绝。白名单内命令不询问。
+**`run_command` 终端审批**（REPL / `chat`）：若模型调用的命令**不在**配置白名单 `allowed_commands` 内，会在 stderr 打印待执行命令并等待 stdin 一行：**`y`**（或任意非 `n`/`a` 的文本，除空行）表示**允许本次**；**`a` / `always`** 表示**本会话内**永久允许该**命令名**（与 Web「永久允许」同语义，仅进程内）；**回车 / `n` / `q`** 等表示拒绝。白名单内命令不询问。**`chat --yes`** 跳过确认（**极危险，仅可信环境**）；**`chat --approve-commands a,b`** 将列出的命令名与配置白名单合并后再判断是否提示。
 
 输入 `quit` / `exit` 或按 **Ctrl+D** 退出。
 

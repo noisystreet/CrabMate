@@ -8,11 +8,12 @@ CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web U
 
 ### Required environment variable
 
-- `API_KEY` — DeepSeek API key. Required at runtime; without it, the server **refuses to start** (exits with "未设置环境变量 API_KEY"). With an invalid key the server starts normally but chat requests fail with `INTERNAL_ERROR`. Use `--dry-run` to verify config without making API calls.
+- `API_KEY` — DeepSeek API key. Required for `serve` / `repl` / `chat` / `bench` / `config --dry-run` / `models` / `probe`; **CLI `doctor` runs without it** (local summary only). Without it, other modes exit with "未设置环境变量 API_KEY". With an invalid key the server starts normally but chat requests fail with `INTERNAL_ERROR`. Use `config --dry-run` or `doctor` to verify config without calling chat APIs.
 
 ### Running services
 
 - **Backend + Web UI**: `API_KEY="..." cargo run -- serve` (subcommand `serve`; default port 8080, binds **127.0.0.1** only). For LAN access use `serve --host 0.0.0.0` (see README). Legacy `cargo run -- --serve` still works. Optional global `--log /path/to.log` appends logs and mirrors to stderr. Without `RUST_LOG`, `serve` defaults to **info**; `repl` / `chat` / `bench` / `config` default to **warn** unless you set `RUST_LOG` or `--log`.
+- **CLI diagnostics**: `cargo run -- doctor` — human-readable check (Rust/npm/frontend paths, allowlist size, redacted secrets); **no `API_KEY`**. With `API_KEY`: `cargo run -- models` lists model IDs from OpenAI-compatible `GET …/models` if supported; `cargo run -- probe` prints HTTP status and latency only (no response body in the terminal).
 - **Frontend dev server** (optional, for hot-reload): `cd frontend && npm run dev` (Vite proxies API calls to `:8080`)
 - Frontend must be built (`cd frontend && npm run build`) before running the backend in serve mode, since it serves `frontend/dist` as static assets.
 

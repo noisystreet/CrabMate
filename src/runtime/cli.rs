@@ -1,7 +1,12 @@
 use crate::config::AgentConfig;
+use crate::config::cli::ChatCliArgs;
 use crate::redact;
-use crate::tool_registry::CliToolRuntime;
-use crate::types::{Message, messages_chat_seed};
+use crate::runtime::cli_exit::{
+    CliExitError, EXIT_GENERAL, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE,
+    classify_model_error_message,
+};
+use crate::tool_registry::{CliCommandTurnStats, CliToolRuntime};
+use crate::types::{Message, messages_chat_seed, normalize_messages_for_openai_compatible_request};
 use crate::{LlmSeedOverride, RunAgentTurnParams, run_agent_turn};
 use crossterm::{
     ExecutableCommand,
@@ -10,8 +15,8 @@ use crossterm::{
 };
 use log::debug;
 use std::collections::HashSet;
-use std::io::{self, Write};
-use std::path::PathBuf;
+use std::io::{self, BufRead, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -180,58 +185,337 @@ async fn run_agent_turn_for_cli(
     .await
 }
 
-/// 单次提问模式（--query / --stdin），执行一轮对话后退出
+fn map_turn_err(e: Box<dyn std::error::Error + Send + Sync>) -> Box<dyn std::error::Error> {
+    let s = e.to_string();
+    let code = classify_model_error_message(&s);
+    Box::new(CliExitError::new(code, s))
+}
+
+fn build_cli_runtime(chat: &ChatCliArgs) -> CliToolRuntime {
+    let extra: Vec<String> = chat
+        .approve_commands
+        .as_deref()
+        .map(|raw| {
+            raw.split(',')
+                .map(|t| t.trim().to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    CliToolRuntime {
+        persistent_allowlist_shared: Arc::new(Mutex::new(HashSet::new())),
+        auto_approve_all_non_whitelist_run_command: chat.yes_run_command,
+        extra_allowlist_commands: extra.into(),
+        command_stats: Arc::new(std::sync::Mutex::new(CliCommandTurnStats::default())),
+    }
+}
+
+fn resolve_system_prompt_for_chat(
+    cfg: &Arc<AgentConfig>,
+    chat: &ChatCliArgs,
+) -> Result<String, Box<dyn std::error::Error>> {
+    if let Some(p) = chat.system_prompt_file.as_deref() {
+        let t = std::fs::read_to_string(p).map_err(|e| {
+            CliExitError::new(
+                EXIT_GENERAL,
+                format!("无法读取 --system-prompt-file {p}: {e}"),
+            )
+        })?;
+        return Ok(t);
+    }
+    Ok(cfg.system_prompt.clone())
+}
+
+fn resolve_user_body(chat: &ChatCliArgs) -> Result<String, Box<dyn std::error::Error>> {
+    if let Some(p) = chat.user_prompt_file.as_deref() {
+        let t = std::fs::read_to_string(p).map_err(|e| {
+            CliExitError::new(
+                EXIT_GENERAL,
+                format!("无法读取 --user-prompt-file {p}: {e}"),
+            )
+        })?;
+        let t = t.trim();
+        if t.is_empty() {
+            return Err(CliExitError::new(
+                EXIT_USAGE,
+                "--user-prompt-file 文件内容为空（去空白后）",
+            )
+            .into());
+        }
+        return Ok(t.to_string());
+    }
+    let Some(u) = chat.inline_user_text.as_deref() else {
+        return Err(CliExitError::new(EXIT_USAGE, "缺少用户消息").into());
+    };
+    let u = u.trim();
+    if u.is_empty() {
+        return Err(
+            CliExitError::new(EXIT_USAGE, "--query 或 --stdin 用户内容为空（去空白后）").into(),
+        );
+    }
+    Ok(u.to_string())
+}
+
+fn load_messages_json_file(path: &str) -> Result<Vec<Message>, Box<dyn std::error::Error>> {
+    let raw = std::fs::read_to_string(path).map_err(|e| {
+        CliExitError::new(
+            EXIT_GENERAL,
+            format!("无法读取 --messages-json-file {path}: {e}"),
+        )
+    })?;
+    let v: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| CliExitError::new(EXIT_USAGE, format!("{path}：顶层 JSON 解析失败: {e}")))?;
+    let parsed: Vec<Message> = if let Some(a) = v.as_array() {
+        serde_json::from_value(serde_json::Value::Array(a.clone())).map_err(|e| {
+            CliExitError::new(EXIT_USAGE, format!("{path}：消息数组反序列化失败: {e}"))
+        })?
+    } else if let Some(m) = v.get("messages") {
+        serde_json::from_value(m.clone()).map_err(|e| {
+            CliExitError::new(
+                EXIT_USAGE,
+                format!("{path}：messages 字段反序列化失败: {e}"),
+            )
+        })?
+    } else {
+        return Err(CliExitError::new(
+            EXIT_USAGE,
+            format!("{path}：须为 JSON 数组，或对象 {{\"messages\":[...]}}"),
+        )
+        .into());
+    };
+    if parsed.is_empty() {
+        return Err(CliExitError::new(EXIT_USAGE, format!("{path}：messages 不能为空")).into());
+    }
+    Ok(normalize_messages_for_openai_compatible_request(parsed))
+}
+
+fn print_json_reply_line(cfg: &Arc<AgentConfig>, messages: &[Message], batch_line: Option<usize>) {
+    let reply = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "assistant")
+        .and_then(|m| m.content.clone())
+        .unwrap_or_default();
+    let mut obj = serde_json::json!({
+        "reply": reply,
+        "model": cfg.model,
+    });
+    if let Some(n) = batch_line {
+        obj["batch_line"] = serde_json::json!(n);
+    }
+    println!("{}", obj);
+}
+
+fn ensure_all_run_commands_not_denied(
+    cli_rt: &CliToolRuntime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if cli_rt.all_run_commands_were_denied() {
+        return Err(Box::new(CliExitError::new(
+            EXIT_TOOLS_ALL_RUN_COMMAND_DENIED,
+            "本回合内所有 run_command 均在审批中被拒绝（或未自动批准）",
+        )));
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
-pub async fn run_single_shot(
+async fn run_one_cli_turn(
+    client: &reqwest::Client,
+    api_key: &str,
+    cfg: &Arc<AgentConfig>,
+    tools: &[crate::types::Tool],
+    messages: &mut Vec<Message>,
+    work_dir: &Path,
+    no_stream: bool,
+    cli_rt: &CliToolRuntime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_agent_turn_for_cli(
+        client,
+        api_key,
+        cfg,
+        tools,
+        messages,
+        work_dir,
+        no_stream,
+        Some(cli_rt),
+    )
+    .await
+    .map_err(map_turn_err)?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_chat_batch_jsonl(
+    cfg: &Arc<AgentConfig>,
+    client: &reqwest::Client,
+    api_key: &str,
+    tools: &[crate::types::Tool],
+    work_dir: &Path,
+    no_stream: bool,
+    cli_rt: &CliToolRuntime,
+    json_out: bool,
+    path: &str,
+    chat: &ChatCliArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file = std::fs::File::open(path).map_err(|e| {
+        CliExitError::new(EXIT_GENERAL, format!("无法打开 --message-file {path}: {e}"))
+    })?;
+    let reader = std::io::BufReader::new(file);
+    let system_seed = resolve_system_prompt_for_chat(cfg, chat)?;
+    let mut messages: Vec<Message> = Vec::new();
+    let mut line_no: usize = 0;
+    for line in reader.lines() {
+        line_no += 1;
+        let line = line.map_err(|e| {
+            CliExitError::new(
+                EXIT_GENERAL,
+                format!("读取 {path} 第 {line_no} 行失败: {e}"),
+            )
+        })?;
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let v: serde_json::Value = serde_json::from_str(t).map_err(|e| {
+            CliExitError::new(
+                EXIT_USAGE,
+                format!("{path} 第 {line_no} 行 JSON 解析失败: {e}"),
+            )
+        })?;
+        if let Some(u) = v.get("user").and_then(|x| x.as_str()) {
+            let u = u.trim();
+            if u.is_empty() {
+                return Err(CliExitError::new(
+                    EXIT_USAGE,
+                    format!("{path} 第 {line_no} 行：user 为空"),
+                )
+                .into());
+            }
+            if messages.is_empty() {
+                messages = messages_chat_seed(&system_seed, u);
+            } else {
+                messages.push(Message::user_only(u.to_string()));
+            }
+        } else if let Some(m) = v.get("messages") {
+            let parsed: Vec<Message> = serde_json::from_value(m.clone()).map_err(|e| {
+                CliExitError::new(
+                    EXIT_USAGE,
+                    format!("{path} 第 {line_no} 行：messages 非法: {e}"),
+                )
+            })?;
+            if parsed.is_empty() {
+                return Err(CliExitError::new(
+                    EXIT_USAGE,
+                    format!("{path} 第 {line_no} 行：messages 为空"),
+                )
+                .into());
+            }
+            messages = normalize_messages_for_openai_compatible_request(parsed);
+        } else {
+            return Err(CliExitError::new(
+                EXIT_USAGE,
+                format!("{path} 第 {line_no} 行：需要字段 `user`（字符串）或 `messages`（数组）"),
+            )
+            .into());
+        }
+
+        run_one_cli_turn(
+            client,
+            api_key,
+            cfg,
+            tools,
+            &mut messages,
+            work_dir,
+            no_stream,
+            cli_rt,
+        )
+        .await?;
+        ensure_all_run_commands_not_denied(cli_rt)?;
+        if json_out {
+            print_json_reply_line(cfg, &messages, Some(line_no));
+        }
+    }
+    Ok(())
+}
+
+/// `chat` 子命令：单轮、整表 JSON、或 `--message-file` 多轮批跑。
+pub async fn run_chat_invocation(
     cfg: &Arc<AgentConfig>,
     client: &reqwest::Client,
     api_key: &str,
     tools: &[crate::types::Tool],
     workspace_cli: &Option<String>,
-    output_mode: &Option<String>,
-    no_stream: bool,
-    question: String,
+    chat: &ChatCliArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let q = question.trim();
-    if q.is_empty() {
-        return Err("错误：--query 或 --stdin 内容为空".into());
+    let work_dir = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    let cli_rt = build_cli_runtime(chat);
+    let json_out = chat.output.as_deref().is_some_and(|m| m == "json");
+
+    if let Some(batch_path) = chat.message_file.as_deref() {
+        return run_chat_batch_jsonl(
+            cfg,
+            client,
+            api_key,
+            tools,
+            work_dir.as_path(),
+            chat.no_stream,
+            &cli_rt,
+            json_out,
+            batch_path,
+            chat,
+        )
+        .await;
     }
-    let mut messages = messages_chat_seed(&cfg.system_prompt, q);
+
+    if let Some(path) = chat.messages_json_file.as_deref() {
+        let mut messages = load_messages_json_file(path)?;
+        debug!(
+            target: "crabmate::print",
+            "messages-json-file 已加载 path={} count={}",
+            path,
+            messages.len()
+        );
+        run_one_cli_turn(
+            client,
+            api_key,
+            cfg,
+            tools,
+            &mut messages,
+            work_dir.as_path(),
+            chat.no_stream,
+            &cli_rt,
+        )
+        .await?;
+        ensure_all_run_commands_not_denied(&cli_rt)?;
+        if json_out {
+            print_json_reply_line(cfg, &messages, None);
+        }
+        return Ok(());
+    }
+
+    let system = resolve_system_prompt_for_chat(cfg, chat)?;
+    let user = resolve_user_body(chat)?;
+    let mut messages = messages_chat_seed(&system, &user);
     debug!(
         target: "crabmate::print",
-        "单次提问模式 seed 消息已构造 user_preview={}",
-        redact::preview_chars(q, redact::MESSAGE_LOG_PREVIEW_CHARS)
+        "chat 首轮已构造 system_len={} user_preview={}",
+        system.len(),
+        redact::preview_chars(&user, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
-    let work_dir = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
-    let cli_rt = CliToolRuntime {
-        persistent_allowlist_shared: Arc::new(Mutex::new(HashSet::new())),
-    };
-    run_agent_turn_for_cli(
+    run_one_cli_turn(
         client,
         api_key,
         cfg,
         tools,
         &mut messages,
         work_dir.as_path(),
-        no_stream,
-        Some(&cli_rt),
+        chat.no_stream,
+        &cli_rt,
     )
-    .await
-    .map_err(|e| -> Box<dyn std::error::Error> { e })?;
-    if let Some(mode) = output_mode.as_deref()
-        && mode == "json"
-    {
-        let reply = messages
-            .iter()
-            .rev()
-            .find(|m| m.role == "assistant")
-            .and_then(|m| m.content.clone())
-            .unwrap_or_default();
-        let obj = serde_json::json!({
-            "reply": reply,
-            "model": cfg.model,
-        });
-        println!("{}", obj);
+    .await?;
+    ensure_all_run_commands_not_denied(&cli_rt)?;
+    if json_out {
+        print_json_reply_line(cfg, &messages, None);
     }
     Ok(())
 }
@@ -251,9 +535,7 @@ pub async fn run_repl(
         work_dir.as_path(),
         cfg.tui_load_session_on_start,
     );
-    let cli_rt = CliToolRuntime {
-        persistent_allowlist_shared: Arc::new(Mutex::new(HashSet::new())),
-    };
+    let cli_rt = CliToolRuntime::new_interactive_default();
 
     println!(
         "当前模型: {}\n输入内容与 Agent 对话；内建命令见 /help。quit/exit 或 Ctrl+D 退出。\n非白名单 run_command 将在终端询问确认（y 一次 / a 本会话永久允许该命令名）。\n",
