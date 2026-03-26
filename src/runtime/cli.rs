@@ -1,7 +1,7 @@
 use crate::config::AgentConfig;
 use crate::redact;
-use crate::run_agent_turn;
 use crate::types::{Message, messages_chat_seed};
+use crate::{RunAgentTurnParams, run_agent_turn};
 use crossterm::{
     ExecutableCommand,
     cursor::MoveToColumn,
@@ -31,10 +31,22 @@ async fn run_agent_turn_for_cli(
     work_dir: &std::path::Path,
     no_stream: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    run_agent_turn(
-        client, api_key, cfg, tools, messages, None, work_dir, true, true, no_stream, None, None,
-        None, true,
-    )
+    run_agent_turn(RunAgentTurnParams {
+        client,
+        api_key,
+        cfg,
+        tools,
+        messages,
+        out: None,
+        effective_working_dir: work_dir,
+        workspace_is_set: true,
+        render_to_terminal: true,
+        no_stream,
+        cancel: None,
+        per_flight: None,
+        web_tool_ctx: None,
+        plain_terminal_stream: true,
+    })
     .await
 }
 

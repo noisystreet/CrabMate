@@ -523,12 +523,11 @@ fn issue_sarif(issue: &LinkIssue) -> serde_json::Value {
     serde_json::Value::Object(result)
 }
 
-#[allow(clippy::too_many_arguments)] // 仅用于文本渲染，集中接收统计字段便于保持输出结构稳定
-fn render_text_report(
-    ws_canonical: &Path,
-    roots: &[String],
+struct TextReportSummary<'a> {
+    ws_canonical: &'a Path,
+    roots: &'a [String],
     md_files_len: usize,
-    allowed_prefixes: &[String],
+    allowed_prefixes: &'a [String],
     rel_ok: usize,
     fragment_ok: usize,
     fragment_bad: usize,
@@ -537,9 +536,27 @@ fn render_text_report(
     special_skipped: usize,
     external_probe_requests: usize,
     external_cache_hits: usize,
+}
+
+fn render_text_report(
+    summary: TextReportSummary<'_>,
     local_issues: &[LinkIssue],
     external_issues: &[LinkIssue],
 ) -> String {
+    let TextReportSummary {
+        ws_canonical,
+        roots,
+        md_files_len,
+        allowed_prefixes,
+        rel_ok,
+        fragment_ok,
+        fragment_bad,
+        external_checked_ok,
+        external_ignored,
+        special_skipped,
+        external_probe_requests,
+        external_cache_hits,
+    } = summary;
     let mut out = String::new();
     out.push_str("Markdown 链接检查\n");
     out.push_str(&format!("工作区: {}\n", ws_canonical.display()));
@@ -912,18 +929,20 @@ pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
         }
     }
     let text = render_text_report(
-        &ws_canonical,
-        &roots,
-        md_files.len(),
-        &allowed_prefixes,
-        rel_ok,
-        fragment_ok,
-        fragment_bad,
-        external_checked_ok,
-        external_ignored,
-        special_skipped,
-        external_probe_requests,
-        external_cache_hits,
+        TextReportSummary {
+            ws_canonical: &ws_canonical,
+            roots: &roots,
+            md_files_len: md_files.len(),
+            allowed_prefixes: &allowed_prefixes,
+            rel_ok,
+            fragment_ok,
+            fragment_bad,
+            external_checked_ok,
+            external_ignored,
+            special_skipped,
+            external_probe_requests,
+            external_cache_hits,
+        },
         &local_issues,
         &external_issues,
     );

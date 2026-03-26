@@ -104,22 +104,33 @@ fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
 /// 解析 SSE 中一行 `data:` 后的 JSON 负载，累积正文与 tool_calls，并经 `out` 下发流式增量。
 /// `pending_sse_delta`：仅当 `out` 为 `Some` 时使用；与 `content_acc` 同步追加，达阈值或发送控制帧前再 `send`。
 /// `cli_terminal_plain`：CLI 终端纯文本流式（`render_to_terminal && out.is_none()`），将 reasoning/content delta 直接写 stdout。
-#[allow(clippy::too_many_arguments)]
-async fn ingest_sse_data_payload(
-    payload: &str,
-    out: Option<&Sender<String>>,
-    pending_sse_delta: &mut String,
-    reasoning_acc: &mut String,
-    content_acc: &mut String,
-    finish_reason: &mut String,
-    tool_calls_acc: &mut Vec<(String, String, String, String)>,
-    parsing_tool_calls_notified: &mut bool,
+struct IngestSseState<'a> {
+    out: Option<&'a Sender<String>>,
+    pending_sse_delta: &'a mut String,
+    reasoning_acc: &'a mut String,
+    content_acc: &'a mut String,
+    finish_reason: &'a mut String,
+    tool_calls_acc: &'a mut Vec<(String, String, String, String)>,
+    parsing_tool_calls_notified: &'a mut bool,
     cli_terminal_plain: bool,
-    cli_plain_prefix_emitted: &mut bool,
-) -> io::Result<()> {
+    cli_plain_prefix_emitted: &'a mut bool,
+}
+
+async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io::Result<()> {
     if payload.is_empty() {
         return Ok(());
     }
+    let IngestSseState {
+        out,
+        pending_sse_delta,
+        reasoning_acc,
+        content_acc,
+        finish_reason,
+        tool_calls_acc,
+        parsing_tool_calls_notified,
+        cli_terminal_plain,
+        cli_plain_prefix_emitted,
+    } = state;
     let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
         return Ok(());
     };
@@ -419,15 +430,17 @@ pub async fn stream_chat(
                 }
                 ingest_sse_data_payload(
                     payload,
-                    out,
-                    &mut pending_sse_delta,
-                    &mut reasoning_acc,
-                    &mut content_acc,
-                    &mut finish_reason,
-                    &mut tool_calls_acc,
-                    &mut parsing_tool_calls_notified,
-                    cli_terminal_plain,
-                    &mut cli_plain_prefix_emitted,
+                    IngestSseState {
+                        out,
+                        pending_sse_delta: &mut pending_sse_delta,
+                        reasoning_acc: &mut reasoning_acc,
+                        content_acc: &mut content_acc,
+                        finish_reason: &mut finish_reason,
+                        tool_calls_acc: &mut tool_calls_acc,
+                        parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
+                        cli_terminal_plain,
+                        cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
+                    },
                 )
                 .await?;
             }
@@ -448,15 +461,17 @@ pub async fn stream_chat(
             if payload != "[DONE]" {
                 ingest_sse_data_payload(
                     payload,
-                    out,
-                    &mut pending_sse_delta,
-                    &mut reasoning_acc,
-                    &mut content_acc,
-                    &mut finish_reason,
-                    &mut tool_calls_acc,
-                    &mut parsing_tool_calls_notified,
-                    cli_terminal_plain,
-                    &mut cli_plain_prefix_emitted,
+                    IngestSseState {
+                        out,
+                        pending_sse_delta: &mut pending_sse_delta,
+                        reasoning_acc: &mut reasoning_acc,
+                        content_acc: &mut content_acc,
+                        finish_reason: &mut finish_reason,
+                        tool_calls_acc: &mut tool_calls_acc,
+                        parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
+                        cli_terminal_plain,
+                        cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
+                    },
                 )
                 .await?;
             }

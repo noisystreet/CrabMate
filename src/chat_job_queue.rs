@@ -63,6 +63,19 @@ pub struct ChatQueueFull {
     pub max_pending: usize,
 }
 
+/// [`ChatJobQueue::try_submit_stream`] 的入参（避免长参数列表）。
+pub struct StreamSubmitParams {
+    pub job_id: u64,
+    pub state: Arc<AppState>,
+    pub conversation_id: String,
+    pub messages: Vec<Message>,
+    pub expected_revision: Option<u64>,
+    pub work_dir: PathBuf,
+    pub workspace_is_set: bool,
+    pub sse_tx: mpsc::Sender<String>,
+    pub web_approval_session: Option<WebApprovalSession>,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ChatJobRecord {
     pub job_id: u64,
@@ -250,19 +263,18 @@ impl ChatJobQueue {
         v
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn try_submit_stream(
-        &self,
-        job_id: u64,
-        state: Arc<AppState>,
-        conversation_id: String,
-        messages: Vec<Message>,
-        expected_revision: Option<u64>,
-        work_dir: PathBuf,
-        workspace_is_set: bool,
-        sse_tx: mpsc::Sender<String>,
-        web_approval_session: Option<WebApprovalSession>,
-    ) -> Result<(), ChatQueueFull> {
+    pub fn try_submit_stream(&self, p: StreamSubmitParams) -> Result<(), ChatQueueFull> {
+        let StreamSubmitParams {
+            job_id,
+            state,
+            conversation_id,
+            messages,
+            expected_revision,
+            work_dir,
+            workspace_is_set,
+            sse_tx,
+            web_approval_session,
+        } = p;
         let job = QueuedChatJob::Stream {
             job_id,
             state,
@@ -471,22 +483,22 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     cancel_for_watch.store(true, Ordering::SeqCst);
                 })
             };
-            let r = crate::run_agent_turn(
-                &state.client,
-                &state.api_key,
-                &state.cfg,
-                &state.tools,
-                &mut messages,
+            let r = crate::run_agent_turn(crate::RunAgentTurnParams {
+                client: &state.client,
+                api_key: &state.api_key,
+                cfg: &state.cfg,
+                tools: &state.tools,
+                messages: &mut messages,
                 out,
-                &work_dir,
+                effective_working_dir: &work_dir,
                 workspace_is_set,
-                false,
-                false,
-                Some(Arc::clone(&cancel)),
-                Some(flight),
-                web_tool_ctx.as_ref(),
-                false,
-            )
+                render_to_terminal: false,
+                no_stream: false,
+                cancel: Some(Arc::clone(&cancel)),
+                per_flight: Some(flight),
+                web_tool_ctx: web_tool_ctx.as_ref(),
+                plain_terminal_stream: false,
+            })
             .await;
             cancel_watcher.abort();
             if let Some(session_id) = approval_session_id.as_deref() {
@@ -582,22 +594,22 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             let _per_guard = state
                 .chat_queue
                 .begin_per_flight_job(job_id, flight.clone());
-            let r = crate::run_agent_turn(
-                &state.client,
-                &state.api_key,
-                &state.cfg,
-                &state.tools,
-                &mut messages,
-                None,
-                &work_dir,
+            let r = crate::run_agent_turn(crate::RunAgentTurnParams {
+                client: &state.client,
+                api_key: &state.api_key,
+                cfg: &state.cfg,
+                tools: &state.tools,
+                messages: &mut messages,
+                out: None,
+                effective_working_dir: &work_dir,
                 workspace_is_set,
-                true,
-                false,
-                None,
-                Some(flight),
-                None,
-                false,
-            )
+                render_to_terminal: true,
+                no_stream: false,
+                cancel: None,
+                per_flight: Some(flight),
+                web_tool_ctx: None,
+                plain_terminal_stream: false,
+            })
             .await;
             let (ok, cancelled, err) = match r {
                 Ok(()) => {

@@ -40,6 +40,24 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use types::{CommandApprovalDecision, Message, messages_chat_seed};
 
+/// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
+pub struct RunAgentTurnParams<'a> {
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub cfg: &'a Arc<config::AgentConfig>,
+    pub tools: &'a [crate::types::Tool],
+    pub messages: &'a mut Vec<Message>,
+    pub out: Option<&'a mpsc::Sender<String>>,
+    pub effective_working_dir: &'a std::path::Path,
+    pub workspace_is_set: bool,
+    pub render_to_terminal: bool,
+    pub no_stream: bool,
+    pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
+    pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+    pub plain_terminal_stream: bool,
+}
+
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
 /// `cfg` 建议使用 [`Arc`] 共享（与进程内 Web 服务状态一致），以便工具在 `spawn_blocking` 路径中复用同一份配置而不反复深拷贝。
 /// 若提供 out，则流式 content 会通过 out 发送（供 SSE 等使用）；`no_stream` 为 true 时 API 使用 `stream: false`，
@@ -50,23 +68,25 @@ use types::{CommandApprovalDecision, Message, messages_chat_seed};
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
 /// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI 传 `None`。
-#[allow(clippy::too_many_arguments)]
-pub async fn run_agent_turn(
-    client: &reqwest::Client,
-    api_key: &str,
-    cfg: &Arc<config::AgentConfig>,
-    tools: &[crate::types::Tool],
-    messages: &mut Vec<Message>,
-    out: Option<&tokio::sync::mpsc::Sender<String>>,
-    effective_working_dir: &std::path::Path,
-    workspace_is_set: bool,
-    render_to_terminal: bool,
-    no_stream: bool,
-    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
-    web_tool_ctx: Option<&tool_registry::WebToolRuntime>,
-    plain_terminal_stream: bool,
+pub async fn run_agent_turn<'a>(
+    p: RunAgentTurnParams<'a>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let RunAgentTurnParams {
+        client,
+        api_key,
+        cfg,
+        tools,
+        messages,
+        out,
+        effective_working_dir,
+        workspace_is_set,
+        render_to_terminal,
+        no_stream,
+        cancel,
+        per_flight,
+        web_tool_ctx,
+        plain_terminal_stream,
+    } = p;
     let mut loop_params = agent::agent_turn::RunLoopParams {
         client,
         api_key,
@@ -888,17 +908,20 @@ async fn chat_stream_handler(
         redact::preview_chars(msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     info!(target: "crabmate", "chat stream 任务入队 job_id={}", job_id);
-    if let Err(e) = state.chat_queue.try_submit_stream(
-        job_id,
-        state.clone(),
-        conversation_id.clone(),
-        turn_seed.messages,
-        turn_seed.expected_revision,
-        work_dir,
-        workspace_is_set,
-        tx,
-        web_approval_session,
-    ) {
+    if let Err(e) = state
+        .chat_queue
+        .try_submit_stream(chat_job_queue::StreamSubmitParams {
+            job_id,
+            state: state.clone(),
+            conversation_id: conversation_id.clone(),
+            messages: turn_seed.messages,
+            expected_revision: turn_seed.expected_revision,
+            work_dir,
+            workspace_is_set,
+            sse_tx: tx,
+            web_approval_session,
+        })
+    {
         if let Some(session_id) = approval_session_id {
             state.approval_sessions.write().await.remove(&session_id);
         }
