@@ -2,7 +2,7 @@
 mod app_state;
 mod chat_handlers;
 
-pub(crate) use app_state::{AppState, SaveConversationOutcome};
+pub(crate) use app_state::{AppState, ConversationBacking, open_conversation_sqlite};
 pub(crate) use chat_handlers::{cleanup_uploads_dir, save_outcome_to_stream_error_line};
 
 #[cfg(test)]

@@ -58,7 +58,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - 命令执行完成后，聊天区会以**单独系统气泡**展示工具调用摘要（如 `执行命令：…`）与 JSON **human_summary**（若有），**无**「【描述与总结】」标题行；**不展示**「【执行结果】」整块（成功/失败、退出码、stdout/stderr、完整工具正文）；**完整内容**仍保存在对话消息与服务端日志中，**导出 JSON/MD** 仍为全文。无 SSE 的终端 CLI 回显仍打印完整格式化结果（含【执行结果】）。
 - **流式输出与状态栏**：
   - Web Chat 回复支持流式增量显示。
-  - Web `/chat` 与 `/chat/stream` 支持可选 `conversation_id` 以跨请求延续同一会话；未传时服务端自动分配会话 ID（流式接口通过响应头 `x-conversation-id` 返回）。
+  - Web `/chat` 与 `/chat/stream` 支持可选 `conversation_id` 以跨请求延续同一会话；未传时服务端自动分配会话 ID（流式接口通过响应头 `x-conversation-id` 返回）。配置 **`conversation_store_sqlite_path`**（如 `.crabmate/conversations.db`）后，会话落 **SQLite**，**进程重启**仍可用同一 `conversation_id` 续聊（仍受 24h TTL 与条数上限约束，与内存模式一致）。可选 **`agent_memory_file_enabled`**：从工作区根下 **`agent_memory_file`**（默认 `.crabmate/agent_memory.md`）读取 Markdown，**首轮**在 `system` 与当前用户消息之间注入一条 `user` 备忘（便于用户/项目约定；勿写入密钥）。
   - Web Chat 支持流式审批：收到 `command_approval_request` 后前端可通过 `POST /chat/approval` 回传 `deny` / `allow_once` / `allow_always`。
   - 终端 CLI（`cargo run` 默认交互/`--query`/`--stdin`）：仍走 SSE 收包；助手正文以**纯文本**随 delta 流式打印到 stdout（含 `reasoning_content` 与 `content`，与模型下发顺序一致），**不经** `markdown_to_ansi`。`--no-stream` 时在整段到达后一次性写纯文本。无 SSE 下行时（CLI 不传 `out`），**分阶段规划**（`staged_plan_execution`）与各**工具结果**会额外打印到 stdout，便于对照「写代码—编译—运行」等多步任务。
 - **会话导出（Web）**：
@@ -78,6 +78,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 - **工作区**：Web 端通过 `POST /workspace` 设置的路径**必须已存在且为目录**，且（`canonicalize` 后）须落在配置的**允许根目录**之下，并避开敏感系统目录黑名单（如 `/proc`、`/sys`、`/dev`、`/etc`、`/usr`）。未配置 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS` 时，仅允许 **`run_command_working_dir` 及其子目录**；若配置了多个根路径，则 `run_command_working_dir` 本身也须落在其中某一根之下（否则启动报错）。若你未配置 `web_api_bearer_token`，请勿在不可信网络暴露本服务。
 - **联网搜索 Key**：`web_search_api_key` 与 DeepSeek 的 `API_KEY` 无关；若写入配置文件，请妥善保管文件权限，避免泄露第三方搜索配额。
 - **建议**：公网或不可信网络请配合反向代理、鉴权、TLS、防火墙等自行加固。
+- **会话 SQLite**（`conversation_store_sqlite_path`）：库文件落在服务端本地路径；多用户/共享主机时请限制文件权限，避免将库放在他人可写目录。
 
 ## Rust 开发工具示例
 
@@ -407,6 +408,8 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_PLAN_REWRITE_MAX_ATTEMPTS`：规划不合格时最多重写轮次（默认 `2`，与 `[agent] plan_rewrite_max_attempts` 一致；用尽后 SSE 带 `code=plan_rewrite_exhausted`）  
    - `AGENT_HTTP_HOST`：Web 监听 IP（如 `0.0.0.0`）；**未**传 `--host` 时生效，默认仍为 `127.0.0.1`  
    - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）
+   - `AGENT_CONVERSATION_STORE_SQLITE_PATH`：Web 会话 SQLite 文件路径（非空则持久化；与 `[agent] conversation_store_sqlite_path` 一致）
+   - `AGENT_MEMORY_FILE_ENABLED`、`AGENT_MEMORY_FILE`、`AGENT_MEMORY_FILE_MAX_CHARS`：Web 首轮工作区备忘注入（与 `[agent]` 同名项一致）
   - `AGENT_PLANNER_EXECUTOR_MODE`：规划器/执行器模式，`single_agent`（默认，历史行为）或 `logical_dual_agent`（阶段 1：同进程逻辑双 agent，规划轮只看用户/助手自然语言，不看 `tool` 正文）
   - `AGENT_STAGED_PLAN_EXECUTION`：设为 `1`/`true`/`yes`/`on` 启用分阶段规划（仅在 `planner_executor_mode=single_agent` 下生效）；其它或未设置为关闭（与 `[agent] staged_plan_execution` 一致）
    - `AGENT_STAGED_PLAN_PHASE_INSTRUCTION`：规划轮追加的 **system** 文案；空或未设置则用内置默认（与 `[agent] staged_plan_phase_instruction` 一致）
@@ -752,7 +755,7 @@ crabmate --serve 8080
 
 | 方向 | 说明 |
 |------|------|
-| **会话持久化** | 将对话历史保存到文件，下次启动可加载或续聊 |
+| **会话持久化** | 已支持：配置 `conversation_store_sqlite_path` 将 Web `conversation_id` 存 SQLite；多副本仍须外部存储（见 `TODOLIST`） |
 | **配置外部化** | 通过环境变量或配置文件设置 `max_tokens`、`temperature`、白名单命令等 |
 | **更多工具** | 如：读文件（受限路径）、搜索文件内容、当前目录下的 grep 等 |
 | **安全** | run_command 可加「允许的工作目录」限制；或通过环境变量扩展白名单 |

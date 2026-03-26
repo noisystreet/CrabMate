@@ -37,6 +37,7 @@ Standard commands from `README.md`:
 - The project uses Rust **edition 2024**, which requires **Rust 1.85+**. The VM snapshot installs the latest stable toolchain. If `cargo build` fails with an edition error, run `rustup update stable && rustup default stable`.
 - **Rust nightly** is pre-installed in the environment. You can use `cargo +nightly test` and similar commands directly.
 - System libraries `libssl-dev` and `libssh2-1-dev` are required for the Rust build (installed by the VM snapshot).
+- Web **optional** SQLite session store uses **`rusqlite` with the `bundled` feature** (ships SQLite via `libsqlite3-sys`); no system `libsqlite3` install is required for that path.
 - The `bc` command-line calculator is used by the `calc` tool at runtime. It may not be pre-installed; this causes `/health` to report `dep_bc` as degraded, but does not block the server from starting.
 - `clang-format` is used by `format_file` / `format_check_file` for C/C++ sources. If missing, `/health` may report `dep_clang_format` as degraded; C/C++ formatting tools will return an explanatory error.
 - `cmake` is on the `run_command` allowlist for configuring/building CMake projects. If missing, `/health` may report `dep_cmake` as degraded. Note: `run_command` rejects any arg containing `..` or starting with `/`, so prefer relative `-S`/`-B` and `--build` paths (avoid absolute `-D` values in args).

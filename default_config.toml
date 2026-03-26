@@ -26,6 +26,12 @@ context_summary_tail_messages = 12
 context_summary_max_tokens = 1024
 # 送入摘要模型的中间段转写最大字符数
 context_summary_transcript_max_chars = 120000
+# Web 会话：非空则将会话存 SQLite（重启后续聊，路径可绝对或相对进程 cwd）。留空则仅进程内内存（重启丢失）。
+# conversation_store_sqlite_path = ".crabmate/conversations.db"
+# Web 首轮：从工作区根下相对路径读取备忘 Markdown，注入为 user 条（用户/项目约定）。需 agent_memory_file_enabled = true。
+# agent_memory_file_enabled = false
+# agent_memory_file = ".crabmate/agent_memory.md"
+# agent_memory_file_max_chars = 8000
 # Web 对话任务：同时执行的 Agent 回合上限（单进程）
 chat_queue_max_concurrent = 2
 # Web 对话任务：有界等待队列长度（含正在排队的任务；满则返回 503 QUEUE_FULL）
