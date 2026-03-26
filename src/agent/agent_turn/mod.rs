@@ -45,6 +45,9 @@ mod tests;
 pub(crate) async fn run_agent_turn_common(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if let Some(ctx) = p.cli_tool_ctx {
+        ctx.reset_command_stats();
+    }
     debug!(
         target: "crabmate",
         "run_agent_turn 开始 message_count={} last_user_preview={} staged_plan={} planner_executor_mode={} work_dir={}",

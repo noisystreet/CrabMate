@@ -23,7 +23,7 @@ mod tools;
 mod types;
 mod web;
 
-use config::cli::{init_logging, parse_args};
+use config::cli::{ExtraCliCommand, init_logging, parse_args};
 use log::info;
 use std::collections::HashMap;
 use std::env;
@@ -128,17 +128,18 @@ pub(crate) use web::save_outcome_to_stream_error_line;
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (
         config_path,
-        single_shot,
+        chat_cli,
         serve_port,
         http_bind_host,
         workspace_cli,
-        output_mode,
+        _output_mode,
         no_tools,
         no_web,
         dry_run,
         no_stream,
         log_file,
         bench_args,
+        extra_cli,
     ) = parse_args();
 
     // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_logging`）
@@ -146,6 +147,18 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         log_file.as_deref().map(std::path::Path::new),
         serve_port.is_none(),
     )?;
+
+    if extra_cli == ExtraCliCommand::Doctor {
+        let cfg = match config::load_config(config_path.as_deref()) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("{}", e);
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
+            }
+        };
+        crate::runtime::cli_doctor::print_doctor_report(&cfg, workspace_cli.as_deref());
+        return Ok(());
+    }
 
     let api_key = match env::var("API_KEY") {
         Ok(v) => v,
@@ -160,12 +173,24 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let cfg = match config::load_config(config_path.as_deref()) {
-        Ok(c) => Arc::new(c),
+        Ok(c) => c,
         Err(e) => {
             eprintln!("{}", e);
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
         }
     };
+
+    if matches!(extra_cli, ExtraCliCommand::Models | ExtraCliCommand::Probe) {
+        let client = http_client::build_shared_api_client(&cfg)?;
+        if extra_cli == ExtraCliCommand::Models {
+            crate::runtime::cli_doctor::run_models_cli(&client, &cfg, api_key.trim()).await?;
+        } else {
+            crate::runtime::cli_doctor::run_probe_cli(&client, &cfg, api_key.trim()).await?;
+        }
+        return Ok(());
+    }
+
+    let cfg = Arc::new(cfg);
     info!(
         target: "crabmate",
         "配置已加载 api_base={} model={}",
@@ -325,16 +350,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if let Some(question) = single_shot {
-        crate::runtime::cli::run_single_shot(
+    if chat_cli.wants_chat() {
+        crate::runtime::cli::run_chat_invocation(
             &cfg,
             &client,
             &api_key,
             &tools,
             &workspace_cli,
-            &output_mode,
-            no_stream,
-            question,
+            &chat_cli,
         )
         .await?;
         return Ok(());
@@ -355,6 +378,11 @@ pub use tool_registry::{
 pub use tools::dev_tag;
 pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options};
 pub use types::LlmSeedOverride;
+
+pub use runtime::cli_exit::CliExitError;
+
+// 供集成测试或外部二进制引用 `ChatCliArgs` 形状（与 `parse_args` 第二项一致）。
+pub use config::cli::ChatCliArgs;
 
 #[cfg(test)]
 #[path = "lib/tests.rs"]

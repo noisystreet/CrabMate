@@ -8,6 +8,9 @@
 
 mod api;
 pub mod backend;
+mod openai_models;
+
+pub use openai_models::fetch_models_report;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -157,10 +160,15 @@ pub async fn complete_chat_retrying(
 
 #[cfg(test)]
 mod tests {
-    use crate::types::OPENAI_CHAT_COMPLETIONS_REL_PATH;
+    use crate::types::{OPENAI_CHAT_COMPLETIONS_REL_PATH, OPENAI_MODELS_REL_PATH};
 
     #[test]
     fn completions_path_matches_openai_compat() {
         assert_eq!(OPENAI_CHAT_COMPLETIONS_REL_PATH, "chat/completions");
+    }
+
+    #[test]
+    fn models_path_matches_openai_compat() {
+        assert_eq!(OPENAI_MODELS_REL_PATH, "models");
     }
 }

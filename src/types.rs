@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 /// 拼接在 `api_base` 后的 OpenAI 兼容 chat 路径（无前导斜杠）。
 pub const OPENAI_CHAT_COMPLETIONS_REL_PATH: &str = "chat/completions";
 
+/// 拼接在 `api_base` 后的 OpenAI 兼容模型列表路径（`GET`，无前导斜杠）；部分网关可能未实现。
+pub const OPENAI_MODELS_REL_PATH: &str = "models";
+
 /// 单次 `run_agent_turn` / HTTP 请求对 `chat/completions` 的 **`seed`** 覆盖（OpenAI 兼容字段；供应商不支持时通常会忽略）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum LlmSeedOverride {

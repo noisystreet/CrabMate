@@ -93,11 +93,11 @@ flowchart TB
 | `redact.rs` | 上游 HTTP 响应体等长文本的**日志预览截断**（`preview_chars` / `single_line_preview`），供 `llm::api`、`tools::web_search` 等使用。 |
 | `text_sanitize.rs` | 用户可见正文轻量清洗（DSML 剥离、规划步骤描述自然化等）；**`materialize_deepseek_dsml_tool_calls_in_message`**：当不存在**可用的**原生 `tool_calls`（至少一条 `function.name` 非空）时，从 **`content` + `reasoning_content`** 中的 DeepSeek 风格 DSML 解析并写入 `Message.tool_calls`（流式占位、空名 `tool_calls` 不阻塞物化）；`parameter` 值若为 JSON 字面量则解析为结构化字段；**`llm/api`** 在流式/非流式拼装 `Message` 后也会调用；**`agent_turn` P 步**等处仍保留调用；供 **`plan_artifact::format_agent_reply_plan_for_display`** 等使用。 |
 | `health.rs` | 与 `GET /health` 一致的运行状况报告（`build_health_report` / `format_health_report_terminal` 预留）；由 **`web::chat_handlers::health_handler`** 调用。 |
-| `llm/` | **`mod`**：`ChatRequest` 构造、指数退避 **`complete_chat_retrying`**（入参含 **`ChatCompletionsBackend`**）；**`backend`**：可插拔 **`ChatCompletionsBackend`**，默认 **`OpenAiCompatBackend`**（委托 **`api::stream_chat`**）；**`api`**：`chat/completions` HTTP + SSE/JSON 解析、终端 Markdown（公式见 `runtime::latex_unicode`）。 |
+| `llm/` | **`mod`**：`ChatRequest` 构造、指数退避 **`complete_chat_retrying`**（入参含 **`ChatCompletionsBackend`**）；**`backend`**：可插拔 **`ChatCompletionsBackend`**，默认 **`OpenAiCompatBackend`**（委托 **`api::stream_chat`**）；**`api`**：`chat/completions` HTTP + SSE/JSON 解析、终端 Markdown（公式见 `runtime::latex_unicode`）；**`openai_models`**：CLI `models`/`probe` 用的 **`GET …/models`** 请求与解析（终端不输出响应体原文）。 |
 | `path_workspace.rs` | 工作区相对路径的语义化规范化（[`path-absolutize`](https://crates.io/crates/path-absolutize) 的 `Absolutize`）与根边界校验；供 `tools/file`、`tools/exec`、`tools/patch`、`web/workspace` 共用，避免手写 `..` 解析分叉。 |
-| `runtime/` | `cli`：单次问答/REPL；向 `run_agent_turn` 传入 **`CliToolRuntime`** 以启用 **`run_command`** 非白名单的 stdin 审批；REPL 支持 **`/clear`、`/model`、`/workspace`（含 `/cd`）、`/tools`、`/help`** 等行首内建命令（`classify_repl_slash_command` 单测），不进入 `run_agent_turn`；`workspace_session`：`.crabmate/tui_session.json` 加载与 **`initial_workspace_messages`**（CLI REPL；保存/导出函数保留供后续终端 UI）；`terminal_labels` / `terminal_cli_transcript`：CLI 前缀着色与无 SSE 时的规划/工具 stdout；`plan_section`：分阶段规划块节标题常量；**`benchmark`**：批量无人值守测评子系统；**`message_display`** / **`chat_export`** / **`latex_unicode`**：与 Web/CLI 展示、导出、`frontend/src/chatExport.ts` 对齐（模块内部分符号当前仅单测消费，见各文件 `allow(dead_code)` 说明）。 |
+| `runtime/` | `cli`：`chat`（`run_chat_invocation`，消费 **`config::cli::ChatCliArgs`**：文件 system/user、整表 **`--messages-json-file`**、JSONL **`--message-file`**、**`--yes` / `--approve-commands`**）与 REPL；**`cli_exit`**：**`CliExitError`** 与 `classify_model_error_message`（`main` 映射退出码 1–5）；向 `run_agent_turn` 传入 **`CliToolRuntime`**（**`auto_approve_all_non_whitelist_run_command`**、**`extra_allowlist_commands`**、**`CliCommandTurnStats`** 供 exit 4）以启用 **`run_command`** 非白名单 stdin 审批；REPL 支持 **`/clear`、`/model`、`/workspace`（含 `/cd`）、`/tools`、`/help`** 等行首内建命令（`classify_repl_slash_command` 单测），不进入 `run_agent_turn`；**`cli_doctor`**：子命令 **`doctor` / `models` / `probe`**；`workspace_session`：**`initial_workspace_messages`**（CLI REPL）；`terminal_labels` / `terminal_cli_transcript`；`plan_section`；**`benchmark`**；**`message_display`** / **`chat_export`** / **`latex_unicode`**。 |
 | `sse/` | **`protocol`**：`SsePayload` / `encode_message`（根再导出）；**`line`**：`classify_agent_sse_line` 等（与 `frontend/src/api.ts` 语义对齐；当前无 crate 根再导出）。 |
-| `tool_registry.rs` | 按工具名选择 Workflow / 命令超时 / 天气与联网搜索超时 / 默认同步等策略；**`is_readonly_tool`** / **`tool_calls_allow_parallel_sync_batch`** 供同轮安全并行判定。 |
+| `tool_registry.rs` | 按工具名选择 Workflow / 命令超时 / 天气与联网搜索超时 / 默认同步等策略；**`is_readonly_tool`** / **`tool_calls_allow_parallel_sync_batch`** 供同轮安全并行判定。**`CliToolRuntime`**：`run_command` CLI 路径的审批、**`--yes`/`--approve-commands`** 自动批准与 **`CliCommandTurnStats`**（`agent_turn` 每回合开头 **`reset_command_stats`**）。 |
 | `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
 | `tools/` | 全部 Function Calling 定义、`ToolContext`、`run_tool`；`tools/mod.rs` 与 `tools/markdown_links.rs` 的测试已外移到同名子目录 `tests.rs`，并把工具调用摘要逻辑拆到 `tools/tool_summary.rs`，降低主文件长度；子模块见下表。 |
 | `types.rs` | `Message`、`Tool`、流式 chunk 等 OpenAI 兼容类型；`Message::system_only` / `user_only`、`messages_chat_seed` 供 Web 首轮与 CLI 共用。 |
@@ -109,7 +109,8 @@ flowchart TB
 
 - `run()` 中创建 `AppState`、监听地址与清理任务，Router 组装下沉到 `web::server::build_app`（chat、status、health、workspace、tasks、upload、静态前端 `dist` 等）。
 - **`AppState`**：定义于 **`web::app_state`**，`Arc` 持有 `AgentConfig`、共享 `reqwest::Client`、工作区覆盖路径、上传目录、对话队列、**`ConversationBacking`**（内存或 SQLite）等；crate 根 `pub(crate) use` 保持 `chat_job_queue` / `web/workspace` 等路径不变。
-- **`RunAgentTurnParams`**：库根 `run_agent_turn` 的唯一入参（Web / CLI / benchmark 共用），避免长形参列表。可选 **`llm_backend: Option<&dyn ChatCompletionsBackend>`**（`None` 时与历史一致，使用 **`llm::default_chat_completions_backend()`** / **`OPENAI_COMPAT_BACKEND`**），便于嵌入方接入自建网关而不改 Agent 主循环。另含 **`temperature_override` / `seed_override`**（与 Web `POST /chat*` 对齐；摘要路径仍固定低温且无 seed）。**`cli_tool_ctx: Option<&CliToolRuntime>`**：终端模式下传入时，**`run_command`** 若命令不在 `allowed_commands`，经 stdin 交互确认（与 Web SSE 审批语义：`y`≈AllowOnce，`a`≈AllowAlways，进程内 `persistent_allowlist`）；Web 队列传 `None`。
+- **`RunAgentTurnParams`**：库根 `run_agent_turn` 的唯一入参（Web / CLI / benchmark 共用），避免长形参列表。可选 **`llm_backend: Option<&dyn ChatCompletionsBackend>`**（`None` 时与历史一致，使用 **`llm::default_chat_completions_backend()`** / **`OPENAI_COMPAT_BACKEND`**），便于嵌入方接入自建网关而不改 Agent 主循环。另含 **`temperature_override` / `seed_override`**（与 Web `POST /chat*` 对齐；摘要路径仍固定低温且无 seed）。**`cli_tool_ctx: Option<&CliToolRuntime>`**：终端模式下传入时，**`run_command`** 若命令不在 `allowed_commands`（及 CLI 额外允许列表），经 stdin 交互确认，或 **`chat --yes`** 全放行、**`--approve-commands`** 按名放行（与 Web SSE 审批语义：`y`≈AllowOnce，`a`≈AllowAlways，进程内 `persistent_allowlist`）；Web 队列传 `None`。`agent_turn` 入口对 CLI 上下文调用 **`reset_command_stats`** 以便按回合统计拒绝次数。
+- **`CliExitError`**：crate 根 `pub use`；`main` 对 `run()` 的 `Err` **downcast** 后按 **`code`** 调用 **`process::exit`**（0 成功；1 一般；2 用法；3 模型；4 本回合全部 `run_command` 被拒；5 配额/限流启发式）。详见 **`README.md`**「`chat` 退出码」。
 
 ### `src/tools/` 子文件（实现域一览）
 
@@ -224,7 +225,7 @@ flowchart LR
 
 - **`lib.rs`**：crate 根模块；Agent 主循环（`run_agent_turn`）、Axum Web 路由与 handler、上传清理等。**对外再导出** `run`、`load_config`、`AgentConfig`、`Message`、`Tool`、`build_tools`、`build_tools_filtered`、`build_tools_with_options`、`ToolsBuildOptions`、`dev_tag` 等，供集成测试与其它二进制复用。
 - **`main.rs`**：薄入口，仅 `#[tokio::main] async fn main() { crabmate::run().await }`。
-- **运行模式**：由 `run()` 内解析 CLI。推荐使用 **子命令**：`serve`（Web）、`repl`（交互，**未写子命令时默认进入 repl**）、`chat`（单次 `--query` / `--stdin`）、`bench`（批量测评）、`config --dry-run`（自检）。**`help`**：`crabmate help` → 根级 `--help`；`crabmate help serve` 等 → 子命令 `--help`（避免被误当成 `repl` 的多余参数）。全局选项 `--config` / `--workspace` / `--no-tools` / `--log` 须写在子命令**之前**（如 `crabmate --config x serve`）。**兼容**：未写子命令时，历史平铺 flag（`--serve`、`--query`、`--benchmark`、`--dry-run` 等）会在 `parse_args` 前经 `normalize_legacy_argv` 改写为上述子命令形式，旧脚本无需修改。**日志**：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` 默认 **warn**（未设 `RUST_LOG` 时）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**，并同时写 stderr 与文件。`--serve` 默认绑定 `127.0.0.1`；`0.0.0.0` 需 `serve --host` 或环境变量 `AGENT_HTTP_HOST`。非 loopback 且无 Bearer 时默认拒绝启动（见 README）。
+- **运行模式**：由 `run()` 内解析 CLI。推荐使用 **子命令**：`serve`（Web）、`repl`（交互，**未写子命令时默认进入 repl**）、`chat`（单次 `--query` / `--stdin`）、`bench`（批量测评）、`config --dry-run`（自检）、**`doctor`**（一页本地诊断，**不要**求 `API_KEY`）、**`models`** / **`probe`**（`GET {api_base}/models` 列模型或探测连通性，需 `API_KEY`；输出脱敏，不打印响应体）。**`help`**：`crabmate help` → 根级 `--help`；`crabmate help serve` 等 → 子命令 `--help`。全局选项 `--config` / `--workspace` / `--no-tools` / `--log` 须写在子命令**之前**（如 `crabmate --config x serve`）。**兼容**：未写子命令时，历史平铺 flag（`--serve`、`--query`、`--benchmark`、`--dry-run` 等）会在 `parse_args` 前经 `normalize_legacy_argv` 改写为上述子命令形式，旧脚本无需修改。**日志**：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` 默认 **warn**（未设 `RUST_LOG` 时）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**，并同时写 stderr 与文件。`--serve` 默认绑定 `127.0.0.1`；`0.0.0.0` 需 `serve --host` 或环境变量 `AGENT_HTTP_HOST`。非 loopback 且无 Bearer 时默认拒绝启动（见 README）。
 - **Web 服务**：使用 axum 路由，核心接口包括：
   - `POST /chat`：非流式对话（请求体 `message` + 可选 `conversation_id`；可选 `temperature`（0～2）、`seed`（整数）、`seed_policy`（`omit`/`none` 表示本回合不带 seed，与 `seed` 互斥）；响应含 `conversation_id`）
   - `POST /chat/stream`：SSE 流式对话（同上；响应头 `x-conversation-id` 回传会话 ID；可选 `approval_session_id` 用于 Web 审批会话绑定）
@@ -241,7 +242,11 @@ flowchart LR
 
 - **与大模型交互的封装层**（在 `backend` / `api` 之上）：`tool_chat_request` / `no_tools_chat_request` 从 `AgentConfig` + `messages`（+ `tools`）构造 `ChatRequest`（含 `temperature`、`seed` 可选字段与 `tool_choice`）；`complete_chat_retrying` 对首个参数 **`&dyn ChatCompletionsBackend`** 调用 `stream_chat`，并做 **指数退避重试**（`api_max_retries` / `api_retry_delay_secs`）。
 - **Agent 主循环**（`agent::agent_turn::per_plan_call_model_retrying`）与 **`context_window`** 经同一后端引用调用本模块，避免在 P 步与摘要路径重复拼装重试逻辑。
-- HTTP 路径片段见 `types::OPENAI_CHAT_COMPLETIONS_REL_PATH`（`api` / 文档共用）。
+- HTTP 路径片段见 `types::OPENAI_CHAT_COMPLETIONS_REL_PATH`（`api` / 文档共用）；模型列表见 `types::OPENAI_MODELS_REL_PATH`（**`openai_models`** / CLI `models`、`probe`）。
+
+### `src/llm/openai_models.rs`
+
+- **`fetch_models_report`**：`GET {api_base}/models`（Bearer `API_KEY`），解析 OpenAI 形 `data[].id`；**不**将响应体写入日志或终端全文；展示用 URL 若含 query 则折叠为 `?…`。
 
 ### `src/llm/backend.rs`
 
@@ -325,6 +330,7 @@ flowchart LR
 - **`runtime`**：CLI 运行时逻辑，负责 REPL、单次问答与调用 `run_agent_turn`。
   - **`runtime/workspace_session`**：`.crabmate/tui_session.json` 加载；**`initial_workspace_messages`** 供 CLI REPL；**仅当** `[agent] tui_load_session_on_start` 为 true 时从磁盘恢复，并按 `tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断。`save_workspace_session` / `export_*` 保留在代码中供后续全屏终端 UI 再接。
   - **`runtime/benchmark/`**：批量无人值守测评子系统（SWE-bench / GAIA / HumanEval 等）。由 CLI `--benchmark` + `--batch` 触发，在 `lib.rs::run()` 中分派。
+  - **`runtime/cli_doctor`**：`doctor` / `models` / `probe` 子命令实现；`doctor` 复用 `tools::capture_trimmed` 与 **`canonical_workspace_root`**（`tools/mod` `pub(crate)` 再导出）。
 
 ## 前端模块说明（`frontend/src/`）
 
