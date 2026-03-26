@@ -10,11 +10,29 @@
 //!
 //! 进程内应对 **`api_base` 指向的模型服务** 只使用**一个**共享 `Client`（见 `run()` 中的 `AppState`），勿每请求 `Client::new()`。
 
+use std::error::Error as StdError;
 use std::time::Duration;
 
 use reqwest::Client;
 
 use crate::config::AgentConfig;
+
+/// 将 `reqwest` 传输错误转为可读说明（日志与 CLI），不输出密钥；附带超时/连接类提示便于排障。
+pub fn map_reqwest_transport_err(e: reqwest::Error) -> Box<dyn std::error::Error + Send + Sync> {
+    let mut msg = e.to_string();
+    if e.is_timeout() {
+        msg.push_str(
+            " [提示：连接或整请求超时，可调大配置 [agent] api_timeout_secs，或检查网络/代理]",
+        );
+    } else if e.is_connect() {
+        msg.push_str(" [提示：无法建立 TLS/TCP 连接，常见于 DNS 失败、防火墙、需代理（HTTPS_PROXY）、或对端不可达；可用 curl -v 测同一 URL]");
+    }
+    if let Some(src) = e.source() {
+        msg.push_str(" | ");
+        msg.push_str(&src.to_string());
+    }
+    std::io::Error::other(msg).into()
+}
 
 /// 建立 TLS 等阶段的上限，避免坏网络长时间挂死（与整请求 `timeout` 区分）。
 fn connect_timeout_for(cfg: &AgentConfig) -> Duration {
