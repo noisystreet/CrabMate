@@ -46,6 +46,8 @@ pub struct RunAgentTurnParams<'a> {
     pub per_flight: Option<std::sync::Arc<chat_job_queue::PerTurnFlight>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     pub plain_terminal_stream: bool,
+    /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
+    pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
 }
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
@@ -58,6 +60,7 @@ pub struct RunAgentTurnParams<'a> {
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
 /// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI 传 `None`。
+/// `llm_backend` 见 [`RunAgentTurnParams::llm_backend`]。
 pub async fn run_agent_turn<'a>(
     p: RunAgentTurnParams<'a>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -76,8 +79,14 @@ pub async fn run_agent_turn<'a>(
         per_flight,
         web_tool_ctx,
         plain_terminal_stream,
+        llm_backend,
     } = p;
+    let llm_backend: &(dyn llm::ChatCompletionsBackend + 'static) = match llm_backend {
+        Some(b) => b,
+        None => llm::default_chat_completions_backend(),
+    };
     let mut loop_params = agent::agent_turn::RunLoopParams {
+        llm_backend,
         client,
         api_key,
         cfg,
@@ -303,6 +312,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub use config::{AgentConfig, load_config};
+pub use llm::{
+    ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
+    default_chat_completions_backend,
+};
 pub use tool_registry::{
     ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata, execution_class_for_tool,
     is_readonly_tool, try_dispatch_meta,
