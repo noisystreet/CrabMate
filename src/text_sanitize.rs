@@ -9,6 +9,11 @@ use std::sync::LazyLock;
 
 use crate::types::{FunctionCall, Message, ToolCall};
 
+/// 流式聚合等场景下 API 可能留下 **`function.name` 全空** 的占位 `tool_calls`，与「无 tool_calls」等价，不应阻止从正文 DSML 物化。
+fn has_usable_native_tool_calls(tcs: &[ToolCall]) -> bool {
+    tcs.iter().any(|tc| !tc.function.name.trim().is_empty())
+}
+
 const DSML_OPEN_FW: &str = "<｜DSML｜";
 const DSML_CLOSE_FW: &str = "</｜DSML｜";
 const DSML_OPEN_ASCII: &str = "<|DSML|";
@@ -193,7 +198,7 @@ fn parse_dsml_parameter_blocks(invoke_inner: &str) -> serde_json::Map<String, Va
             break;
         };
         let raw_val = invoke_inner[value_start..value_start + shut_rel].trim();
-        map.insert(param_name, Value::String(raw_val.to_string()));
+        map.insert(param_name, dsml_parameter_value_to_json(raw_val));
         i = value_start + shut_rel + DSML_PARAM_SHUT.len();
     }
     map
@@ -231,22 +236,45 @@ fn extract_dsml_invokes(norm: &str) -> Vec<(String, String)> {
     out
 }
 
+/// 模型在 DSML `parameter` 里常写入 JSON 字面量（如 `["a.md"]`）；若一律当纯字符串，`run_command` 等会收到错误类型。
+fn dsml_parameter_value_to_json(raw_val: &str) -> Value {
+    let trimmed = raw_val.trim();
+    if trimmed.is_empty() {
+        return Value::String(String::new());
+    }
+    serde_json::from_str::<Value>(trimmed).unwrap_or_else(|_| Value::String(trimmed.to_string()))
+}
+
 /// 部分 DeepSeek 兼容端在 **`tool_calls` 为空** 时，仍把调用写在正文 **DSML**（`<|DSML|invoke>`）里。
 /// TUI 展示会 [`strip_deepseek_dsml_for_display`] 剥掉这些标记，用户易误以为「只有说明、没调工具」。
-/// 在 Agent 侧若 API 未给 `tool_calls`，则从正文解析并写入 `msg.tool_calls`，并剥除 DSML 以节省后续 token。
+/// 在 Agent 侧若 API 未给 `tool_calls`，则从 **`content` 与 `reasoning_content` 拼接文本**解析并写入 `msg.tool_calls`，并分别剥除两字段中的 DSML 以节省后续 token。
 pub fn materialize_deepseek_dsml_tool_calls_in_message(msg: &mut Message) {
-    if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
+    if msg
+        .tool_calls
+        .as_ref()
+        .is_some_and(|c| !c.is_empty() && has_usable_native_tool_calls(c))
+    {
         return;
     }
-    let Some(content) = msg.content.as_deref() else {
+    let c = msg.content.as_deref().unwrap_or("");
+    let r = msg.reasoning_content.as_deref().unwrap_or("");
+    if c.is_empty() && r.is_empty() {
         return;
-    };
-    let looks_dsml =
-        content.contains("DSML") || content.contains("dsml") || content.contains(DSML_OPEN_FW);
+    }
+    let looks_dsml = [c, r]
+        .iter()
+        .any(|s| s.contains("DSML") || s.contains("dsml") || s.contains(DSML_OPEN_FW));
     if !looks_dsml {
         return;
     }
-    let norm = normalize_deepseek_dsml_tag_spacing(&normalize_deepseek_dsml_brackets(content));
+    let combined = if c.is_empty() {
+        r.to_string()
+    } else if r.is_empty() {
+        c.to_string()
+    } else {
+        format!("{c}\n{r}")
+    };
+    let norm = normalize_deepseek_dsml_tag_spacing(&normalize_deepseek_dsml_brackets(&combined));
     let parsed = extract_dsml_invokes(&norm);
     if parsed.is_empty() {
         return;
@@ -268,13 +296,20 @@ pub fn materialize_deepseek_dsml_tool_calls_in_message(msg: &mut Message) {
         out_calls.len()
     );
     msg.tool_calls = Some(out_calls);
-    let stripped = strip_deepseek_dsml_for_display(&norm);
-    let t = stripped.trim();
-    msg.content = if t.is_empty() {
-        None
-    } else {
-        Some(t.to_string())
-    };
+    fn trim_stripped_field(s: &mut Option<String>) {
+        let Some(t) = s.as_deref() else {
+            return;
+        };
+        let stripped = strip_deepseek_dsml_for_display(t);
+        let u = stripped.trim();
+        if u.is_empty() {
+            *s = None;
+        } else {
+            *s = Some(u.to_string());
+        }
+    }
+    trim_stripped_field(&mut msg.content);
+    trim_stripped_field(&mut msg.reasoning_content);
 }
 
 fn strip_markdown_fenced_blocks(s: &str) -> String {
@@ -658,6 +693,125 @@ mod tests {
             content: Some(dsml.to_string()),
             reasoning_content: None,
             tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+        assert_eq!(tcs[0].function.name, "read_file");
+    }
+
+    #[test]
+    fn materialize_dsml_json_array_parameter_for_run_command_args() {
+        let dsml = r#"让我用 cat。
+<|DSML|function_calls>
+<|DSML|invoke name="run_command">
+<|DSML|parameter name="command" string="true">cat</|DSML|parameter>
+<|DSML|parameter name="args" string="true">["1.md"]</|DSML|parameter>
+</|DSML|invoke>
+</|DSML|function_calls>"#;
+        let mut msg = Message {
+            role: "assistant".to_string(),
+            content: Some(dsml.to_string()),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+        assert_eq!(tcs[0].function.name, "run_command");
+        let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
+        assert_eq!(v.get("command").and_then(|x| x.as_str()), Some("cat"));
+        let args = v
+            .get("args")
+            .and_then(|x| x.as_array())
+            .expect("args array");
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0].as_str(), Some("1.md"));
+    }
+
+    #[test]
+    fn materialize_dsml_from_reasoning_when_content_empty() {
+        let dsml = r#"<|DSML|invoke name="read_file">
+<|DSML|parameter name="path">z.txt</|DSML|parameter>
+</|DSML|invoke>"#;
+        let mut msg = Message {
+            role: "assistant".to_string(),
+            content: None,
+            reasoning_content: Some(dsml.to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+        assert_eq!(tcs[0].function.name, "read_file");
+        assert!(
+            msg.reasoning_content
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn materialize_dsml_replaces_nameless_native_tool_call_placeholders() {
+        let dsml = r#"说明文字。
+<|DSML|function_calls>
+<|DSML|invoke name="modify_file">
+<|DSML|parameter name="path" string="true">1.md</|DSML|parameter>
+<|DSML|parameter name="content" string="true"># Hi
+
+Line2</|DSML|parameter>
+</|DSML|invoke>
+</|DSML|function_calls>"#;
+        let mut msg = Message {
+            role: "assistant".to_string(),
+            content: Some(dsml.to_string()),
+            reasoning_content: None,
+            tool_calls: Some(vec![ToolCall {
+                id: "stream_slot_0".to_string(),
+                typ: "function".to_string(),
+                function: FunctionCall {
+                    name: String::new(),
+                    arguments: String::new(),
+                },
+            }]),
+            name: None,
+            tool_call_id: None,
+        };
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+        assert_eq!(tcs.len(), 1);
+        assert_eq!(tcs[0].function.name, "modify_file");
+        let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
+        assert_eq!(v.get("path").and_then(|x| x.as_str()), Some("1.md"));
+        assert!(
+            v.get("content")
+                .and_then(|x| x.as_str())
+                .is_some_and(|s| s.contains("Line2"))
+        );
+    }
+
+    #[test]
+    fn materialize_dsml_skipped_when_native_tool_call_has_name() {
+        let dsml = r#"<|DSML|invoke name="modify_file">
+<|DSML|parameter name="path">x.md</|DSML|parameter>
+</|DSML|invoke>"#;
+        let mut msg = Message {
+            role: "assistant".to_string(),
+            content: Some(dsml.to_string()),
+            reasoning_content: None,
+            tool_calls: Some(vec![ToolCall {
+                id: "real".to_string(),
+                typ: "function".to_string(),
+                function: FunctionCall {
+                    name: "read_file".to_string(),
+                    arguments: "{}".to_string(),
+                },
+            }]),
             name: None,
             tool_call_id: None,
         };
