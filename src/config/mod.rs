@@ -62,6 +62,7 @@ struct ConfigBuilder {
     context_summary_transcript_max_chars: Option<u64>,
     chat_queue_max_concurrent: Option<u64>,
     chat_queue_max_pending: Option<u64>,
+    parallel_readonly_tools_max: Option<u64>,
     staged_plan_execution: Option<bool>,
     staged_plan_phase_instruction: Option<String>,
     workspace_allowed_roots: Option<Vec<String>>,
@@ -217,6 +218,9 @@ impl ConfigBuilder {
             .chat_queue_max_concurrent
             .or(self.chat_queue_max_concurrent);
         self.chat_queue_max_pending = agent.chat_queue_max_pending.or(self.chat_queue_max_pending);
+        self.parallel_readonly_tools_max = agent
+            .parallel_readonly_tools_max
+            .or(self.parallel_readonly_tools_max);
         self.staged_plan_execution = agent.staged_plan_execution.or(self.staged_plan_execution);
         self.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
@@ -519,6 +523,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.chat_queue_max_pending = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_PARALLEL_READONLY_TOOLS_MAX")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.parallel_readonly_tools_max = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_EXECUTION")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -583,7 +592,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
     let reflection_default_max_rounds =
         b.reflection_default_max_rounds.unwrap_or(5).max(1) as usize;
 
-    let allowed_commands = if let Some(env) = b.env_tag.as_deref() {
+    let allowed_commands_vec = if let Some(env) = b.env_tag.as_deref() {
         match env {
             "dev" => b
                 .allowed_commands_dev
@@ -632,6 +641,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
             "ar".into(),
         ]
     });
+    let allowed_commands: std::sync::Arc<[String]> = allowed_commands_vec.into();
 
     let run_command_working_dir = b
         .run_command_working_dir
@@ -718,6 +728,11 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .clamp(10_000, 2_000_000) as usize;
     let chat_queue_max_concurrent = b.chat_queue_max_concurrent.unwrap_or(2).clamp(1, 256) as usize;
     let chat_queue_max_pending = b.chat_queue_max_pending.unwrap_or(32).clamp(1, 8192) as usize;
+    let parallel_readonly_tools_max = b
+        .parallel_readonly_tools_max
+        .map(|n| n as usize)
+        .unwrap_or(chat_queue_max_concurrent)
+        .clamp(1, 256);
     let staged_plan_execution = b.staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = b.staged_plan_phase_instruction.unwrap_or_default();
     let web_api_bearer_token = b.web_api_bearer_token.unwrap_or_default();
@@ -794,6 +809,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         allow_insecure_no_auth_for_non_loopback,
         chat_queue_max_concurrent,
         chat_queue_max_pending,
+        parallel_readonly_tools_max,
         staged_plan_execution,
         staged_plan_phase_instruction,
         conversation_store_sqlite_path,
