@@ -617,6 +617,12 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
             "automake".into(),
             "aclocal".into(),
             "make".into(),
+            "objdump".into(),
+            "nm".into(),
+            "readelf".into(),
+            "strings".into(),
+            "size".into(),
+            "ar".into(),
         ]
     });
 

@@ -123,6 +123,13 @@ pub async fn build_health_report(
         m.insert("clang_format", check_cmd("clang-format", &["--version"]));
         m.insert("cmake", check_cmd("cmake", &["--version"]));
         m.insert("cxxfilt", check_cmd("c++filt", &["--version"]));
+        // GNU Binutils（或兼容实现）：供 run_command 白名单内 ELF/目标文件只读分析
+        m.insert("objdump", check_cmd("objdump", &["--version"]));
+        m.insert("nm", check_cmd("nm", &["--version"]));
+        m.insert("readelf", check_cmd("readelf", &["--version"]));
+        m.insert("strings_binutils", check_cmd("strings", &["--version"]));
+        m.insert("size", check_cmd("size", &["--version"]));
+        m.insert("ar", check_cmd("ar", &["--version"]));
         m.insert("npm", check_cmd("npm", &["--version"]));
 
         m.insert("typos", check_cmd("typos", &["--version"]));
@@ -155,6 +162,12 @@ pub async fn build_health_report(
             "clang_format" => "dep_clang_format",
             "cmake" => "dep_cmake",
             "cxxfilt" => "dep_cxxfilt",
+            "objdump" => "dep_objdump",
+            "nm" => "dep_nm",
+            "readelf" => "dep_readelf",
+            "strings_binutils" => "dep_strings_binutils",
+            "size" => "dep_size",
+            "ar" => "dep_ar",
             "npm" => "dep_npm",
             "typos" => "dep_typos",
             "codespell" => "dep_codespell",
