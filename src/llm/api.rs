@@ -342,7 +342,7 @@ pub async fn stream_chat(
             },
         )?;
         let crate::types::Choice {
-            message: msg,
+            message: mut msg,
             finish_reason,
         } = choice;
 
@@ -390,6 +390,7 @@ pub async fn stream_chat(
             msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
             redact::assistant_message_preview_for_log(&msg)
         );
+        crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
         return Ok((msg, finish_reason));
     }
 
@@ -513,7 +514,7 @@ pub async fn stream_chat(
                 .collect(),
         )
     };
-    let msg = Message {
+    let mut msg = Message {
         role: "assistant".to_string(),
         content: if content_acc.is_empty() {
             None
@@ -542,6 +543,7 @@ pub async fn stream_chat(
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
         redact::assistant_message_preview_for_log(&msg)
     );
+    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
     Ok((msg, finish))
 }
 
