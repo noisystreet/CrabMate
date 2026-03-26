@@ -1,5 +1,6 @@
 use super::*;
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
