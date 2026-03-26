@@ -1,0 +1,42 @@
+[
+ToolSpec {
+            name: "text_diff",
+            description: "任意两段 **UTF-8 纯文本**的行级 unified diff（与 Git 无关）。mode=inline 时比较 left/right 字符串（各 256KiB）；mode=paths 时比较工作区内两文件（各 4MiB 内）。可调 context_lines 与 max_output_bytes。与 `structured_diff`（结构化键）互补。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_text_diff,
+            runner: runner_text_diff,
+            summary: ToolSummaryKind::None,
+        },
+        ToolSpec {
+            name: "table_text",
+            description: "工作区内 **CSV / TSV / 简单分隔** 纯文本：`preview` 抽样预览，`validate` 检查列数是否一致，`select_columns` 按列下标导出 TSV，`filter_rows` 按列 equals/contains 筛选，`aggregate` 对列做 sum/mean/min/max/count。单文件 4MiB；内联 `text` 256KiB；扫描/输出行数有上限。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_table_text,
+            runner: runner_table_text,
+            summary: ToolSummaryKind::None,
+        },
+        ToolSpec {
+            name: "find_symbol",
+            description: "在当前工作区递归定位 Rust 符号的潜在定义位置（如 fn/struct/enum/trait/const/static/type/mod）。返回匹配行与上下文。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_find_symbol,
+            runner: runner_find_symbol,
+            summary: ToolSummaryKind::Dynamic(ts::summary_find_symbol),
+        },
+        ToolSpec {
+            name: "find_references",
+            description: "在 .rs 源文件中按词边界搜索某标识符的引用位置；默认排除与 find_symbol 一致的「疑似定义」行。适合在改名、删函数前快速扫一遍使用处。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_find_references,
+            runner: runner_find_references,
+            summary: ToolSummaryKind::Dynamic(ts::summary_find_references),
+        },
+        ToolSpec {
+            name: "rust_file_outline",
+            description: "读取单个 Rust 源文件，列出其中常见的顶层结构行摘要（mod/fn/struct/enum/trait/impl/use 等），便于大文件导航与拆分任务。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_rust_file_outline,
+            runner: runner_rust_file_outline,
+            summary: ToolSummaryKind::Dynamic(ts::summary_rust_file_outline),
+        },
+]

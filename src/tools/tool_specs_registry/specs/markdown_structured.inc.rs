@@ -1,0 +1,42 @@
+[
+ToolSpec {
+            name: "markdown_check_links",
+            description: "扫描工作区内 Markdown（默认 README.md 与 docs/）：校验**相对路径**链接目标是否存在，并可校验 `#fragment` 是否命中目标 Markdown 标题锚点。支持 `output_format=text|json|sarif`。`http(s)://` 与 `//` 外链默认**不联网**；仅当提供 `allowed_external_prefixes` 时对匹配前缀做 HEAD 探测（失败时 GET Range 回退，且同 URL 去重缓存）。`mailto:`/`tel:` 等跳过。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_markdown_check_links,
+            runner: runner_markdown_check_links,
+            summary: ToolSummaryKind::Dynamic(ts::summary_markdown_check_links),
+        },
+        ToolSpec {
+            name: "structured_validate",
+            description: "解析并校验工作区内的 **JSON / YAML / TOML / CSV / TSV**（按扩展名或 `format`）。JSON 系用于 `package.json`、CI、`Cargo.toml` 等；**CSV/TSV** 会解析为 JSON 数组（`has_header=true` 时为对象数组，列名来自首行；`false` 时为字符串数组的数组），再输出顶层摘要。单文件上限 4MiB。与 `table_text`（按行预览/筛选/聚合、不落 JSON 模型）互补。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_structured_validate,
+            runner: runner_structured_validate,
+            summary: ToolSummaryKind::Dynamic(ts::summary_structured_validate),
+        },
+        ToolSpec {
+            name: "structured_query",
+            description: "在解析后的 JSON 模型上按 **JSON Pointer**（`/a/b`）或 **点号路径**（`a.b.0`）取值，返回类型与格式化 JSON。**CSV/TSV** 先整表解析为数组（有表头时 `/0/col` 为第 0 行某列）。比整文件 `read_file` 更省上下文。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_structured_query,
+            runner: runner_structured_query,
+            summary: ToolSummaryKind::Dynamic(ts::summary_structured_query),
+        },
+        ToolSpec {
+            name: "structured_diff",
+            description: "将两份 **JSON / YAML / TOML / CSV / TSV** 解析为同一结构化模型后做**键路径级**差异（缺失键、数组项、标量不等），非文本行 diff；与 `git_diff` 互补（如两份导出表、两份 `openapi.json`）。CSV/TSV 使用相同 `has_header` 语义解析两边。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_structured_diff,
+            runner: runner_structured_diff,
+            summary: ToolSummaryKind::Dynamic(ts::summary_structured_diff),
+        },
+        ToolSpec {
+            name: "structured_patch",
+            description: "对 **JSON / YAML / TOML** 做结构化补丁（`set/remove`），路径支持 JSON Pointer（`/a/b`）或点号（`a.b.0`）。默认 `dry_run=true` 仅预览；写盘需 `confirm=true`。适合精确修改配置而非整段文本替换。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_structured_patch,
+            runner: runner_structured_patch,
+            summary: ToolSummaryKind::Dynamic(ts::summary_structured_patch),
+        },
+]
