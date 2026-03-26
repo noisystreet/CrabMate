@@ -708,6 +708,8 @@ echo "1+1等于几" | cargo run -- chat --stdin
 - 「北京今天天气怎么样？」
 - 「今天几号？再帮我算 100 除以 5」
 
+**REPL 内建命令**（以 `/` 开头，**不**发给模型）：`/help` 列出说明；`/clear` 清空历史（保留当前 `system`）；`/model` 查看 model、api_base、temperature、llm_seed；`/workspace` 显示当前工作目录，`/workspace <路径>` 或 `/cd <路径>` 切换到已存在的目录（工具 `run_command` 等随之在新工作区执行）；`/tools` 列出已加载工具名。
+
 输入 `quit` / `exit` 或按 **Ctrl+D** 退出。
 
 ## 打包为 Debian `.deb` 包
