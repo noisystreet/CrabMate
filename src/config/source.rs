@@ -54,6 +54,8 @@ pub(super) struct AgentSection {
     pub(super) context_summary_transcript_max_chars: Option<u64>,
     pub(super) chat_queue_max_concurrent: Option<u64>,
     pub(super) chat_queue_max_pending: Option<u64>,
+    /// 单轮并行只读 SyncDefault 工具时 `spawn_blocking` 最大并发；默认与 `chat_queue_max_concurrent` 相同。
+    pub(super) parallel_readonly_tools_max: Option<u64>,
     pub(super) staged_plan_execution: Option<bool>,
     pub(super) staged_plan_phase_instruction: Option<String>,
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
