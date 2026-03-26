@@ -5,6 +5,50 @@ use serde::{Deserialize, Serialize};
 /// 拼接在 `api_base` 后的 OpenAI 兼容 chat 路径（无前导斜杠）。
 pub const OPENAI_CHAT_COMPLETIONS_REL_PATH: &str = "chat/completions";
 
+/// 单次 `run_agent_turn` / HTTP 请求对 `chat/completions` 的 **`seed`** 覆盖（OpenAI 兼容字段；供应商不支持时通常会忽略）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LlmSeedOverride {
+    /// 使用 [`AgentConfig::llm_seed`]（未配置则请求体不带 `seed`）。
+    #[default]
+    FromConfig,
+    /// 强制在请求 JSON 中写入该整数 `seed`。
+    Fixed(i64),
+    /// 本回合请求体**不**含 `seed`（即使配置里设置了默认 seed）。
+    OmitFromRequest,
+}
+
+/// 合并配置中的默认 seed 与单次回合覆盖，得到写入 `ChatRequest.seed` 的值。
+#[inline]
+pub fn resolved_llm_seed(base: Option<i64>, override_: LlmSeedOverride) -> Option<i64> {
+    match override_ {
+        LlmSeedOverride::FromConfig => base,
+        LlmSeedOverride::Fixed(n) => Some(n),
+        LlmSeedOverride::OmitFromRequest => None,
+    }
+}
+
+#[cfg(test)]
+mod llm_seed_tests {
+    use super::{LlmSeedOverride, resolved_llm_seed};
+
+    #[test]
+    fn resolved_seed_respects_override() {
+        assert_eq!(
+            resolved_llm_seed(Some(1), LlmSeedOverride::FromConfig),
+            Some(1)
+        );
+        assert_eq!(
+            resolved_llm_seed(Some(1), LlmSeedOverride::Fixed(42)),
+            Some(42)
+        );
+        assert_eq!(
+            resolved_llm_seed(Some(1), LlmSeedOverride::OmitFromRequest),
+            None
+        );
+        assert_eq!(resolved_llm_seed(None, LlmSeedOverride::FromConfig), None);
+    }
+}
+
 // ---------- 消息与请求 ----------
 
 /// 对话消息（OpenAI 兼容格式）
@@ -260,6 +304,9 @@ pub struct ChatRequest {
     pub tool_choice: Option<String>,
     pub max_tokens: u32,
     pub temperature: f32,
+    /// OpenAI 兼容 **`seed`**；`None` 则 JSON 省略该字段（由供应商默认随机性决定）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
 }

@@ -32,6 +32,7 @@ struct ConfigBuilder {
     run_command_working_dir: Option<String>,
     max_tokens: Option<u64>,
     temperature: Option<f64>,
+    llm_seed: Option<i64>,
     api_timeout_secs: Option<u64>,
     api_max_retries: Option<u64>,
     api_retry_delay_secs: Option<u64>,
@@ -169,6 +170,7 @@ impl ConfigBuilder {
         self.command_max_output_len = agent.command_max_output_len.or(self.command_max_output_len);
         self.max_tokens = agent.max_tokens.or(self.max_tokens);
         self.temperature = agent.temperature.or(self.temperature);
+        self.llm_seed = agent.llm_seed.or(self.llm_seed);
         self.api_timeout_secs = agent.api_timeout_secs.or(self.api_timeout_secs);
         self.api_max_retries = agent.api_max_retries.or(self.api_max_retries);
         self.api_retry_delay_secs = agent.api_retry_delay_secs.or(self.api_retry_delay_secs);
@@ -352,6 +354,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<f64>()
     {
         b.temperature = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_LLM_SEED")
+        && let Ok(n) = v.trim().parse::<i64>()
+    {
+        b.llm_seed = Some(n);
     }
     if let Ok(v) = std::env::var("AGENT_API_TIMEOUT_SECS")
         && let Ok(n) = v.trim().parse::<u64>()
@@ -754,6 +761,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         run_command_working_dir: run_command_working_dir.display().to_string(),
         max_tokens,
         temperature,
+        llm_seed: b.llm_seed,
         api_timeout_secs,
         api_max_retries,
         api_retry_delay_secs,

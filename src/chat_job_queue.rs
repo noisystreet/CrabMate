@@ -13,7 +13,7 @@ use log::{debug, error, info};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
 use crate::AppState;
-use crate::types::{CommandApprovalDecision, LLM_CANCELLED_ERROR, Message};
+use crate::types::{CommandApprovalDecision, LLM_CANCELLED_ERROR, LlmSeedOverride, Message};
 
 const RECENT_CAP: usize = 32;
 
@@ -72,6 +72,8 @@ pub struct StreamSubmitParams {
     pub expected_revision: Option<u64>,
     pub work_dir: PathBuf,
     pub workspace_is_set: bool,
+    pub temperature_override: Option<f32>,
+    pub seed_override: LlmSeedOverride,
     pub sse_tx: mpsc::Sender<String>,
     pub web_approval_session: Option<WebApprovalSession>,
 }
@@ -114,6 +116,8 @@ enum QueuedChatJob {
         expected_revision: Option<u64>,
         work_dir: PathBuf,
         workspace_is_set: bool,
+        temperature_override: Option<f32>,
+        seed_override: LlmSeedOverride,
         sse_tx: mpsc::Sender<String>,
         web_approval_session: Option<WebApprovalSession>,
     },
@@ -125,6 +129,8 @@ enum QueuedChatJob {
         expected_revision: Option<u64>,
         work_dir: PathBuf,
         workspace_is_set: bool,
+        temperature_override: Option<f32>,
+        seed_override: LlmSeedOverride,
         reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
     },
 }
@@ -272,6 +278,8 @@ impl ChatJobQueue {
             expected_revision,
             work_dir,
             workspace_is_set,
+            temperature_override,
+            seed_override,
             sse_tx,
             web_approval_session,
         } = p;
@@ -283,6 +291,8 @@ impl ChatJobQueue {
             expected_revision,
             work_dir,
             workspace_is_set,
+            temperature_override,
+            seed_override,
             sse_tx,
             web_approval_session,
         };
@@ -304,6 +314,8 @@ impl ChatJobQueue {
         expected_revision: Option<u64>,
         work_dir: PathBuf,
         workspace_is_set: bool,
+        temperature_override: Option<f32>,
+        seed_override: LlmSeedOverride,
         reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
     ) -> Result<(), ChatQueueFull> {
         let job = QueuedChatJob::Json {
@@ -314,6 +326,8 @@ impl ChatJobQueue {
             expected_revision,
             work_dir,
             workspace_is_set,
+            temperature_override,
+            seed_override,
             reply_tx,
         };
         self.inner
@@ -439,6 +453,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             expected_revision,
             work_dir,
             workspace_is_set,
+            temperature_override,
+            seed_override,
             sse_tx,
             web_approval_session,
         } => {
@@ -499,6 +515,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 web_tool_ctx: web_tool_ctx.as_ref(),
                 plain_terminal_stream: false,
                 llm_backend: None,
+                temperature_override,
+                seed_override,
             })
             .await;
             cancel_watcher.abort();
@@ -577,6 +595,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             expected_revision,
             work_dir,
             workspace_is_set,
+            temperature_override,
+            seed_override,
             reply_tx,
         } => {
             info!(
@@ -611,6 +631,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 web_tool_ctx: None,
                 plain_terminal_stream: false,
                 llm_backend: None,
+                temperature_override,
+                seed_override,
             })
             .await;
             let (ok, cancelled, err) = match r {

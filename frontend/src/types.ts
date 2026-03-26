@@ -5,6 +5,8 @@ export interface StatusData {
   api_base: string
   max_tokens: number
   temperature: number
+  /** 默认写入 chat/completions 的整数 seed；未配置时为 undefined */
+  llm_seed?: number | null
   /** 当前会话实际加载的工具个数 */
   tool_count?: number
   tool_names?: string[]

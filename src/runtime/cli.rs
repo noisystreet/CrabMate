@@ -1,7 +1,7 @@
 use crate::config::AgentConfig;
 use crate::redact;
 use crate::types::{Message, messages_chat_seed};
-use crate::{RunAgentTurnParams, run_agent_turn};
+use crate::{LlmSeedOverride, RunAgentTurnParams, run_agent_turn};
 use crossterm::{
     ExecutableCommand,
     cursor::MoveToColumn,
@@ -47,6 +47,8 @@ async fn run_agent_turn_for_cli(
         web_tool_ctx: None,
         plain_terminal_stream: true,
         llm_backend: None,
+        temperature_override: None,
+        seed_override: LlmSeedOverride::default(),
     })
     .await
 }

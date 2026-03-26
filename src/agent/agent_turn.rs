@@ -27,7 +27,9 @@ use crate::sse::{
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result;
 use crate::tools;
-use crate::types::{Message, ToolCall, USER_CANCELLED_FINISH_REASON, is_chat_ui_separator};
+use crate::types::{
+    LlmSeedOverride, Message, ToolCall, USER_CANCELLED_FINISH_REASON, is_chat_ui_separator,
+};
 
 static STAGED_PLAN_SEQ: AtomicU64 = AtomicU64::new(1);
 
@@ -250,6 +252,8 @@ pub(crate) struct PerPlanCallModelParams<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     pub plain_terminal_stream: bool,
+    pub temperature_override: Option<f32>,
+    pub seed_override: LlmSeedOverride,
 }
 
 pub(crate) async fn per_plan_call_model_retrying(
@@ -267,13 +271,21 @@ pub(crate) async fn per_plan_call_model_retrying(
         no_stream,
         cancel,
         plain_terminal_stream,
+        temperature_override,
+        seed_override,
     } = p;
     let filtered: Vec<Message> = messages
         .iter()
         .filter(|m| !is_chat_ui_separator(m))
         .cloned()
         .collect();
-    let req = tool_chat_request(cfg, &filtered, tools_defs);
+    let req = tool_chat_request(
+        cfg,
+        &filtered,
+        tools_defs,
+        temperature_override,
+        seed_override,
+    );
     let (mut msg, finish_reason) = complete_chat_retrying(
         llm_backend,
         client,
@@ -362,6 +374,9 @@ pub(crate) struct RunLoopParams<'a> {
     pub plain_terminal_stream: bool,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     pub per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
+    /// `None` 时使用 `cfg.temperature`。
+    pub temperature_override: Option<f32>,
+    pub seed_override: LlmSeedOverride,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -766,6 +781,8 @@ async fn run_agent_outer_loop(
             no_stream: p.no_stream,
             cancel: p.cancel,
             plain_terminal_stream: p.plain_terminal_stream,
+            temperature_override: p.temperature_override,
+            seed_override: p.seed_override,
         })
         .await?;
         if let Some(f) = p.per_flight.as_ref() {
@@ -870,6 +887,8 @@ async fn run_staged_plan_then_execute_steps(
     let req = no_tools_chat_request(
         p.cfg.as_ref(),
         &build_single_agent_planner_messages(p.messages, plan_system),
+        p.temperature_override,
+        p.seed_override,
     );
     run_staged_plan_with_prepared_request(
         p,
@@ -1143,6 +1162,8 @@ async fn run_logical_dual_agent_then_execute_steps(
     let req = no_tools_chat_request(
         p.cfg.as_ref(),
         &build_logical_dual_planner_messages(p.messages, plan_system),
+        p.temperature_override,
+        p.seed_override,
     );
     run_staged_plan_with_prepared_request(
         p,

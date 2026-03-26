@@ -18,6 +18,7 @@ pub(super) struct AgentSection {
     pub(super) run_command_working_dir: Option<String>,
     pub(super) max_tokens: Option<u64>,
     pub(super) temperature: Option<f64>,
+    pub(super) llm_seed: Option<i64>,
     pub(super) api_timeout_secs: Option<u64>,
     pub(super) api_max_retries: Option<u64>,
     pub(super) api_retry_delay_secs: Option<u64>,

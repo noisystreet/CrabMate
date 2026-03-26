@@ -986,7 +986,11 @@ export function ChatPanel({
             return rest
           })
         },
-      }, approvalSessionId, controller.signal, conversationIdRef.current ?? sessionId ?? undefined)
+      }, {
+        approvalSessionId,
+        signal: controller.signal,
+        conversationId: conversationIdRef.current ?? sessionId ?? undefined,
+      })
     } catch (e) {
       const msgText = e instanceof Error ? e.message : '请求失败'
       flushPendingDeltas()

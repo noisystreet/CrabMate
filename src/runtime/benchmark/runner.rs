@@ -189,6 +189,8 @@ async fn run_single_task(
         web_tool_ctx: None,
         plain_terminal_stream: false,
         llm_backend: None,
+        temperature_override: None,
+        seed_override: crate::LlmSeedOverride::default(),
     });
 
     let (status, agent_error) = if timeout_secs > 0 {

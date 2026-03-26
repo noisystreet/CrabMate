@@ -16,7 +16,7 @@ use log::{debug, error, info};
 use tokio::sync::mpsc::Sender;
 
 use crate::config::AgentConfig;
-use crate::types::{ChatRequest, Message, Tool};
+use crate::types::{ChatRequest, LlmSeedOverride, Message, Tool, resolved_llm_seed};
 use reqwest::Client;
 
 pub use backend::{
@@ -25,7 +25,13 @@ pub use backend::{
 };
 
 /// 构造带 tools、**`tool_choice: auto`** 及采样参数的请求体（`stream` 由 [`api::stream_chat`] 按 `no_stream` 覆盖）。
-pub fn tool_chat_request(cfg: &AgentConfig, messages: &[Message], tools: &[Tool]) -> ChatRequest {
+pub fn tool_chat_request(
+    cfg: &AgentConfig,
+    messages: &[Message],
+    tools: &[Tool],
+    temperature_override: Option<f32>,
+    seed_override: LlmSeedOverride,
+) -> ChatRequest {
     ChatRequest {
         model: cfg.model.clone(),
         messages: crate::types::normalize_messages_for_openai_compatible_request(
@@ -34,14 +40,20 @@ pub fn tool_chat_request(cfg: &AgentConfig, messages: &[Message], tools: &[Tool]
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
         max_tokens: cfg.max_tokens,
-        temperature: cfg.temperature,
+        temperature: temperature_override.unwrap_or(cfg.temperature),
+        seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
     }
 }
 
 /// 构造**显式禁止工具调用**的请求（`tools: []` + `tool_choice: "none"`），用于分阶段规划轮。
 /// 按 OpenAI API 语义硬性禁止模型返回 `tool_calls`，比省略 `tools` 字段（`None`）更可靠。
-pub fn no_tools_chat_request(cfg: &AgentConfig, messages: &[Message]) -> ChatRequest {
+pub fn no_tools_chat_request(
+    cfg: &AgentConfig,
+    messages: &[Message],
+    temperature_override: Option<f32>,
+    seed_override: LlmSeedOverride,
+) -> ChatRequest {
     ChatRequest {
         model: cfg.model.clone(),
         messages: crate::types::normalize_messages_for_openai_compatible_request(
@@ -50,7 +62,8 @@ pub fn no_tools_chat_request(cfg: &AgentConfig, messages: &[Message]) -> ChatReq
         tools: Some(vec![]),
         tool_choice: Some("none".to_string()),
         max_tokens: cfg.max_tokens,
-        temperature: cfg.temperature,
+        temperature: temperature_override.unwrap_or(cfg.temperature),
+        seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
     }
 }
