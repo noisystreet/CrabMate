@@ -576,7 +576,7 @@ cargo run
 
 ### 命令行：子命令（推荐）
 
-使用 `crabmate --help` 或 `crabmate <子命令> --help` 查看完整说明。
+使用 `crabmate --help`、`crabmate help` 或 `crabmate help <子命令>`（与对应 `--help` 等价）查看完整说明。
 
 | 子命令 | 作用 |
 |--------|------|
