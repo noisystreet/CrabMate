@@ -45,6 +45,7 @@ log = "0.4"
 env_logger = "0.11"
 axum = { version = "0.7", features = ["json", "multipart"] }
 tokio-stream = "0.1"
+async-trait = "0.1"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["fs", "set-header"] }
 rfd = "0.14"

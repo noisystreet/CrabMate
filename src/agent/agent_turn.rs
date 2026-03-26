@@ -239,6 +239,7 @@ async fn send_staged_plan_finished(
 
 /// P：构造请求并调用模型（`no_stream` 为 true 时走 `stream: false`），**不**修改 `messages`。
 pub(crate) struct PerPlanCallModelParams<'a> {
+    pub llm_backend: &'a (dyn crate::llm::ChatCompletionsBackend + 'static),
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
     pub cfg: &'a AgentConfig,
@@ -255,6 +256,7 @@ pub(crate) async fn per_plan_call_model_retrying(
     p: PerPlanCallModelParams<'_>,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let PerPlanCallModelParams {
+        llm_backend,
         client,
         api_key,
         cfg,
@@ -273,6 +275,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         .collect();
     let req = tool_chat_request(cfg, &filtered, tools_defs);
     let (mut msg, finish_reason) = complete_chat_retrying(
+        llm_backend,
         client,
         api_key,
         cfg,
@@ -343,6 +346,7 @@ pub(crate) struct WebExecuteCtx<'a> {
 
 /// Web/CLI 共用：外层循环与分阶段规划注入共用的一套运行期参数。
 pub(crate) struct RunLoopParams<'a> {
+    pub llm_backend: &'a (dyn crate::llm::ChatCompletionsBackend + 'static),
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
     pub cfg: &'a Arc<AgentConfig>,
@@ -743,6 +747,7 @@ async fn run_agent_outer_loop(
 
         let render_to_terminal = p.render_to_terminal;
         super::context_window::prepare_messages_for_model(
+            p.llm_backend,
             p.client,
             p.api_key,
             p.cfg.as_ref(),
@@ -750,6 +755,7 @@ async fn run_agent_outer_loop(
         )
         .await?;
         let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
+            llm_backend: p.llm_backend,
             client: p.client,
             api_key: p.api_key,
             cfg: p.cfg.as_ref(),
@@ -847,6 +853,7 @@ async fn run_staged_plan_then_execute_steps(
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
     super::context_window::prepare_messages_for_model(
+        p.llm_backend,
         p.client,
         p.api_key,
         p.cfg.as_ref(),
@@ -933,6 +940,7 @@ where
     F: Fn(String) -> Message,
 {
     let (msg, finish_reason) = complete_chat_retrying(
+        p.llm_backend,
         p.client,
         p.api_key,
         p.cfg.as_ref(),
@@ -1118,6 +1126,7 @@ async fn run_logical_dual_agent_then_execute_steps(
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
     super::context_window::prepare_messages_for_model(
+        p.llm_backend,
         p.client,
         p.api_key,
         p.cfg.as_ref(),

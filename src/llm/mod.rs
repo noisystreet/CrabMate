@@ -1,11 +1,13 @@
 //! 与大模型（OpenAI 兼容 **`/chat/completions`**）交互的封装层。
 //!
 //! - **`api`**：单次 HTTP + SSE/JSON 解析 + 可选终端 Markdown 渲染（传输与协议细节）。
+//! - **`backend`**：[`ChatCompletionsBackend`] 可插拔抽象，默认 [`OpenAiCompatBackend`]（即 `api::stream_chat`）。
 //! - **本模块**：`ChatRequest` 的惯用构造、带指数退避的**重试策略**、以及后续可扩展的调用入口（例如统一超时、观测字段）。
 //!
 //! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent::agent_turn` 中散落重试与请求拼装逻辑。
 
 mod api;
+pub mod backend;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -15,8 +17,12 @@ use tokio::sync::mpsc::Sender;
 
 use crate::config::AgentConfig;
 use crate::types::{ChatRequest, Message, Tool};
-use api::stream_chat;
 use reqwest::Client;
+
+pub use backend::{
+    ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
+    default_chat_completions_backend,
+};
 
 /// 构造带 tools、**`tool_choice: auto`** 及采样参数的请求体（`stream` 由 [`api::stream_chat`] 按 `no_stream` 覆盖）。
 pub fn tool_chat_request(cfg: &AgentConfig, messages: &[Message], tools: &[Tool]) -> ChatRequest {
@@ -50,8 +56,11 @@ pub fn no_tools_chat_request(cfg: &AgentConfig, messages: &[Message]) -> ChatReq
 }
 
 /// 调用 `chat/completions`：失败时按 `AgentConfig::api_retry_delay_secs` 做指数退避，最多 `api_max_retries + 1` 次。
+///
+/// `llm_backend` 默认使用 [`default_chat_completions_backend`]（OpenAI 兼容 HTTP）；可换为自定义 [`ChatCompletionsBackend`]。
 #[allow(clippy::too_many_arguments)]
 pub async fn complete_chat_retrying(
+    llm_backend: &dyn backend::ChatCompletionsBackend,
     http: &Client,
     api_key: &str,
     cfg: &AgentConfig,
@@ -70,18 +79,19 @@ pub async fn complete_chat_retrying(
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             return Err(crate::types::LLM_CANCELLED_ERROR.into());
         }
-        match stream_chat(
-            http,
-            api_key,
-            &cfg.api_base,
-            &mut req,
-            out,
-            render_to_terminal,
-            no_stream,
-            cancel,
-            plain_terminal_stream,
-        )
-        .await
+        match llm_backend
+            .stream_chat(
+                http,
+                api_key,
+                &cfg.api_base,
+                &mut req,
+                out,
+                render_to_terminal,
+                no_stream,
+                cancel,
+                plain_terminal_stream,
+            )
+            .await
         {
             Ok(r) => {
                 let (ref msg, ref finish_reason) = r;
