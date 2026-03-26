@@ -85,7 +85,7 @@ flowchart TB
 | 路径 | 职责摘要 |
 |------|----------|
 | `agent/` | **`agent_turn`**：主循环（Web + CLI 经 `run_agent_turn`）；**`RunLoopParams`** 聚合 `run_agent_turn_common` 与 `run_agent_outer_loop` / `run_staged_plan_then_execute_steps` 共用字段（`render_to_terminal` + `web_tool_ctx`）；**`context_window`**：上下文裁剪/摘要；**`per_coord` / `plan_artifact` / `workflow_reflection_controller`**：PER 与终答规划；**`workflow`**：DAG 执行（审批模式 `WorkflowApprovalMode::Interactive` 对应 Web SSE 通道）。 |
-| `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限；运行中任务的 `PerTurnFlight` 注册供 `GET /status` 的 `per_active_jobs`。 |
+| `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限；运行中任务的 `PerTurnFlight` 注册供 `GET /status` 的 `per_active_jobs`；流式入队参数为 `StreamSubmitParams`。 |
 | `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数；`system_prompt` 可在加载阶段按 `cursor_rules_*` / `AGENT_CURSOR_RULES_*` 自动拼接工作区规则文件。内部拆分为 `config/types.rs`（配置与枚举类型）、`config/source.rs`（TOML 段解析辅助）、`config/cursor_rules.rs`（规则文件收集与拼接）与 `config/workspace_roots.rs`（工作区根白名单解析），`mod.rs` 保留主装配流程。 |
 | `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
 | `redact.rs` | 上游 HTTP 响应体等长文本的**日志预览截断**（`preview_chars` / `single_line_preview`），供 `llm::api`、`tools::web_search` 等使用。 |
@@ -105,6 +105,7 @@ flowchart TB
 
 - `run()` 中创建 `AppState`、监听地址与清理任务，Router 组装下沉到 `web::server::build_app`（chat、status、health、workspace、tasks、upload、静态前端 `dist` 等）。
 - **`AppState`**：`Arc` 持有 `AgentConfig`、共享 `reqwest::Client`、工作区覆盖路径、上传清理句柄、对话队列等。
+- **`RunAgentTurnParams`**：库根 `run_agent_turn` 的唯一入参（Web / CLI / benchmark 共用），避免长形参列表。
 
 ### `src/tools/` 子文件（实现域一览）
 
@@ -154,11 +155,11 @@ flowchart TB
 
 ## 核心机制：Agent 主循环与工具调用
 
-核心流程在 `src/lib.rs` 的 `run_agent_turn`：组装 **`RunLoopParams`** 后调用 **`run_agent_turn_common`**（实现见 **`src/agent/agent_turn.rs`**）。
+核心流程在 `src/lib.rs` 的 `run_agent_turn(RunAgentTurnParams { … })`：内部组装 **`RunLoopParams`** 后调用 **`run_agent_turn_common`**（实现见 **`src/agent/agent_turn.rs`**）。
 
 - **输入**：构造 `ChatRequest`（`src/types.rs`）并携带 `tools`（Function Calling 定义）。
-- **P（命名上的「规划」步）**：`per_plan_call_model_retrying` —— **一次** `stream_chat`，由模型产出正文或 `tool_calls`，并非独立规划器。
-- **调用模型**：通过 **`src/llm/api.rs`** 的 `stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `run_agent_turn(..., no_stream: true)` 时为 `stream: false`，按 OpenAI 兼容 `ChatResponse` 解析 `choices[0].message`（有正文则经 `out` 整段下发）；其它 API 形态需自行适配。**CLI 终端输出**：`run_agent_turn(..., plain_terminal_stream: true)`（仅 `runtime::cli`）时 `render_to_terminal && out.is_none()` 下助手为纯文本流式/整段；Web 队列等传 `plain_terminal_stream: false`，`out.is_none()` 时仍可用 `markdown_to_ansi`（避免污染服务端 stdout 的误用）。
+- **P（命名上的「规划」步）**：`per_plan_call_model_retrying(PerPlanCallModelParams { … })` —— **一次** `stream_chat`，由模型产出正文或 `tool_calls`，并非独立规划器。
+- **调用模型**：通过 **`src/llm/api.rs`** 的 `stream_chat` 请求 `/chat/completions`；默认 `stream: true`（SSE 增量）。CLI `--no-stream` 或 `RunAgentTurnParams { no_stream: true, … }` 时为 `stream: false`，按 OpenAI 兼容 `ChatResponse` 解析 `choices[0].message`（有正文则经 `out` 整段下发）；其它 API 形态需自行适配。**CLI 终端输出**：`RunAgentTurnParams { plain_terminal_stream: true, … }`（仅 `runtime::cli`）时 `render_to_terminal && out.is_none()` 下助手为纯文本流式/整段；Web 队列等传 `plain_terminal_stream: false`，`out.is_none()` 时仍可用 `markdown_to_ansi`（避免污染服务端 stdout 的误用）。
 - **分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 true 时 `run_agent_turn_common` 先走规划轮（`llm::no_tools_chat_request`，显式传 `tools: []` + `tool_choice: "none"` 硬性禁止工具调用），解析 `agent_reply_plan` v1 后按 `steps` 顺序多次进入外层 Agent 循环；规划轮若出现 `tool_calls` 或 JSON 不合格，SSE 分别带 `staged_plan_tool_calls`、`staged_plan_invalid`。
 - **规划器/执行器模式（阶段 1）**（`[agent] planner_executor_mode` / `AGENT_PLANNER_EXECUTOR_MODE`）：
   - `single_agent`（默认）：沿用历史单 agent 逻辑。
