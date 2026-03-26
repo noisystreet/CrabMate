@@ -86,7 +86,7 @@ flowchart TB
 
 | 路径 | 职责摘要 |
 |------|----------|
-| `agent/` | **`agent_turn`**：主循环（Web + CLI 经 `run_agent_turn`）；**`RunLoopParams`** 聚合 `run_agent_turn_common` 与 `run_agent_outer_loop` / `run_staged_plan_then_execute_steps` 共用字段（`render_to_terminal` + `web_tool_ctx`）；**`context_window`**：上下文裁剪/摘要；**`per_coord` / `plan_artifact` / `workflow_reflection_controller`**：PER 与终答规划；**`workflow`**：DAG 执行（审批模式 `WorkflowApprovalMode::Interactive` 对应 Web SSE 通道）。 |
+| `agent/` | **`agent_turn/`**：主循环（Web + CLI 经 `run_agent_turn`）；子模块 **`messages`**（助手合并/分隔线）、**`staged_sse`**、**`params`**（`RunLoopParams`）、**`plan_call`**（P 步）、**`reflect`**（R）、**`execute_tools`**（E / `per_execute_tools_common`）、**`outer_loop`**、**`staged`**（分阶段与逻辑双 agent）；**`context_window`**：上下文裁剪/摘要；**`per_coord` / `plan_artifact` / `workflow_reflection_controller`**：PER 与终答规划；**`workflow/`**：DAG 工作流；`WorkflowApprovalMode::Interactive` 对应 Web SSE 审批通道。 |
 | `chat_job_queue.rs` | Web `/chat`、`/chat/stream` 有界队列与并发上限；运行中任务的 `PerTurnFlight` 注册供 `GET /status` 的 `per_active_jobs`；流式入队参数为 `StreamSubmitParams`。 |
 | `config/` | `AgentConfig`、嵌入/文件 TOML、环境变量覆盖、`cli` 参数；`system_prompt` 可在加载阶段按 `cursor_rules_*` / `AGENT_CURSOR_RULES_*` 自动拼接工作区规则文件。内部拆分为 `config/types.rs`（配置与枚举类型）、`config/source.rs`（TOML 段解析辅助）、`config/cursor_rules.rs`（规则文件收集与拼接）与 `config/workspace_roots.rs`（工作区根白名单解析），`mod.rs` 保留主装配流程。 |
 | `http_client.rs` | 进程内共享 `reqwest::Client`（连接池、超时、keepalive）。 |
