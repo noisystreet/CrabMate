@@ -9,7 +9,7 @@ labels: []
 
 - OS / 版本：
 - Rust（`rustc -V`）：
-- 运行方式（如 `cargo run -- --serve` / REPL / `--query`）：
+- 运行方式（如 `cargo run -- serve` / `repl` / `chat --query`；或旧式 `--serve` / `--query`）：
 
 ## 复现步骤
 

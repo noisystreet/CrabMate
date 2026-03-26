@@ -571,95 +571,114 @@ cargo run
   {"run_cargo_fmt_check":true,"run_cargo_clippy":true,"run_cargo_test":false,"run_frontend_lint":false,"run_frontend_prettier_check":false,"fail_fast":true,"summary_only":false}
   ```
 
-### 常用命令行选项
+### 命令行：子命令（推荐）
 
-CrabMate 支持几种常见运行模式，对应 `src/lib.rs` 中 `run` 的 CLI 解析：
+使用 `crabmate --help` 或 `crabmate <子命令> --help` 查看完整说明。
+
+| 子命令 | 作用 |
+|--------|------|
+| `serve [PORT]` | Web UI + HTTP API，默认端口 **8080**；`serve --host <ADDR>` 设置监听 IP（默认 `127.0.0.1`）。`--no-web` / `--cli-only` 仅 API。 |
+| `repl` | 交互式终端对话；**不写任何子命令时默认进入 `repl`**。 |
+| `chat` | 单次提问：`--query <问题>` 或 `--stdin`（二选一）；可选 `--output json`、`--no-stream`。 |
+| `bench` | 批量测评：与下表 benchmark 选项相同（`--benchmark`、`--batch` 等）。 |
+| `config` | 自检：`config --dry-run` 检查配置、`API_KEY`、前端 `frontend/dist` 是否存在。 |
+
+**全局选项**（写在子命令**之前**）：`--config <path>`、`--workspace <path>`、`--no-tools`、`--log <FILE>`。
+
+**日志默认级别**：未设置 `RUST_LOG` 时，`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` 默认 **warn**。需要 info 时请设置 `RUST_LOG` 或使用 `--log <FILE>`。
+
+**兼容旧用法**：未写子命令时仍可使用原来的平铺参数（如 `--serve`、`--query`、`--benchmark`、`--dry-run`），程序会在内部映射为上述子命令，现有脚本一般无需修改。
+
+### 常用命令行选项（兼容写法对照）
+
+以下选项在 **推荐写法** 中归属子命令；仅在不写子命令的兼容模式下可直接放在程序名后。
 
 | 选项              | 作用 |
 |-------------------|------|
-| `-h, --help`      | 显示命令行帮助与示例。|
-| `--config <path>` | 显式指定配置文件路径。指定后仅从该文件合并配置，不再查找当前目录下的 `config.toml` / `.agent_demo.toml`。|
-| `--serve [port]`  | 以 Web 服务模式启动，默认端口 `8080`。可传入端口号，如 `--serve 3000`。|
-| `--host <ADDR>`   | 仅 `--serve` 时生效：监听 IP，默认 `127.0.0.1`。局域网访问可传 `0.0.0.0`（会打印安全警告）。|
-| `--query <问题>`  | 单次提问模式：命令行参数中直接给出问题，输出回答后进程退出，适合脚本调用。|
-| `--stdin`         | 管道模式：从标准输入读取问题（多行直到 EOF），输出回答后退出，适合 `echo ... | crabmate --stdin` 这种用法。|
-| `--workspace <path>` | 启动时指定初始工作区路径（覆盖配置中的 `run_command_working_dir`，仅当前进程生效）。|
-| `--output <mode>` | 仅对 `--query` / `--stdin` 生效；`plain` 为默认，`json` 会在末尾额外输出一行 JSON 结果。|
-| `--no-tools`      | 禁用所有工具调用，仅作为普通 Chat 使用。|
-| `--no-web`        | 仅提供后端 API，不挂载前端静态页面（适合部署为纯后端服务）。|
-| `--cli-only`      | 等价于 `--no-web`，便于按习惯书写。|
-| `--dry-run`       | 仅检查配置是否可加载、`API_KEY` 是否存在以及前端静态目录是否存在，然后退出，可用于 CI 自检。|
-| `--no-stream`     | 对 API 使用 `stream: false`（非 SSE）。CLI 终端在整段到达后**一次性纯文本**打印（非 Markdown 着色）；默认流式则为**逐 delta 纯文本**。|
-| `--log <FILE>`    | 将 `log`（`env_logger`）日志**追加**写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别，并**同时**输出到 stderr 与文件。|
+| `-h, --help`      | 显示命令行帮助。|
+| `--config <path>` | 显式指定配置文件（全局，建议写在子命令前）。|
+| `--serve [port]`  | 兼容：等价于 `serve [port]`。|
+| `--host <ADDR>`   | 兼容：写在 `serve` 后为 `serve --host`；旧式 `--serve --host` 仍可用。|
+| `--query <问题>`  | 兼容：等价于 `chat --query`。|
+| `--stdin`         | 兼容：等价于 `chat --stdin`。|
+| `--workspace <path>` | 全局：覆盖本次进程的初始工作区。|
+| `--output <mode>` | 兼容：随 `chat`；`plain` / `json`。|
+| `--no-tools`      | 全局：禁用工具。|
+| `--no-web`        | 随 `serve`：仅 API。|
+| `--cli-only`      | 同 `--no-web`。|
+| `--dry-run`       | 兼容：等价于 `config --dry-run`。|
+| `--no-stream`     | 随 `repl` / `chat`。|
+| `--log <FILE>`    | 全局：日志追加到文件并镜像 stderr。|
 
-**Benchmark 批量测评选项**：
+**Benchmark**（`bench` 子命令或兼容平铺）：
 
 | 选项 | 作用 |
 |------|------|
-| `--benchmark <TYPE>` | 指定 benchmark 类型：`swe_bench`、`gaia`、`human_eval`、`generic`。|
-| `--batch <FILE>` | 输入 JSONL 文件路径（每行一条 benchmark 任务，JSON 格式）。|
-| `--batch-output <FILE>` | 输出 JSONL 文件路径（逐条追加写入结果）；默认 `benchmark_results.jsonl`。|
-| `--task-timeout <SECS>` | 每条任务的全局超时（秒），默认 `300`；`0` 表示不限制。|
-| `--max-tool-rounds <N>` | 每条任务最大 agent 工具调用轮次（`0` = 不限制）。|
-| `--resume` | 续跑模式：跳过输出文件中已有结果的 `instance_id`。|
-| `--bench-system-prompt <FILE>` | 覆盖 system prompt（从文件读取）。|
+| `--benchmark <TYPE>` | `swe_bench`、`gaia`、`human_eval`、`generic`。|
+| `--batch <FILE>` | 输入 JSONL。|
+| `--batch-output <FILE>` | 输出 JSONL；默认 `benchmark_results.jsonl`。|
+| `--task-timeout <SECS>` | 默认 `300`；`0` 不限制。|
+| `--max-tool-rounds <N>` | `0` = 不限制。|
+| `--resume` | 跳过输出中已有 `instance_id`。|
+| `--bench-system-prompt <FILE>` | 从文件覆盖 system prompt。|
 
-**日志默认级别**：未设置 `RUST_LOG` 时，`--serve` 默认 **info**；其它子命令（默认 REPL、单次 `--query`/`--stdin` 等）默认 **warn**，不输出 `info`。需要 info 时请设置 `RUST_LOG`（如 `RUST_LOG=info`）或使用 `--log <FILE>`（未设置 `RUST_LOG` 时对文件与 stderr 使用默认 info）。
-
-对应示例：
+对应示例（**推荐子命令**；`crabmate` 可换为 `cargo run --`）：
 
 ```bash
-# 使用默认配置交互运行
+# 使用默认配置交互运行（默认子命令 repl）
 cargo run
 
-# 使用指定配置文件（覆盖默认 config.toml / .agent_demo.toml 搜索）
-cargo run -- --config /path/to/my.toml
+# 指定配置文件后启动 Web（全局选项在子命令前）
+cargo run -- --config /path/to/my.toml serve
 
 # 将 debug 日志写入文件并同时打到 stderr
-RUST_LOG=debug cargo run -- --log /tmp/crabmate.log
+RUST_LOG=debug cargo run -- --log /tmp/crabmate.log repl
 
-# Web 服务模式（默认 8080）
-cargo run -- --serve
+# Web 服务（默认 8080）
+cargo run -- serve
 
-# Web 服务模式（指定端口）
-cargo run -- --serve 3000
+# Web 服务（指定端口）
+cargo run -- serve 3000
 
-# Web 服务模式并指定初始工作区
-cargo run -- --serve 8080 --workspace /path/to/project
+# Web + 初始工作区
+cargo run -- --workspace /path/to/project serve 8080
 
-# 允许局域网访问（监听所有网卡，注意安全）
-cargo run -- --serve --host 0.0.0.0
+# 局域网监听（注意安全）
+cargo run -- serve --host 0.0.0.0
 
 # 单次提问
-cargo run -- --query "北京今天天气怎么样"
+cargo run -- chat --query "北京今天天气怎么样"
 
-# 单次提问并以 JSON 结果形式返回（便于脚本消费）
-cargo run -- --output json --query "北京今天天气怎么样"
+# 单次提问 JSON 输出
+cargo run -- chat --output json --query "北京今天天气怎么样"
 
-# 从标准输入读入问题（多行直到 EOF）
-echo "1+1等于几" | cargo run -- --stdin
+# 从标准输入读入问题
+echo "1+1等于几" | cargo run -- chat --stdin
 
-# 禁用所有工具，仅使用模型本身
-cargo run -- --no-tools --serve
+# 仅模型、无工具 + Web
+cargo run -- --no-tools serve
 
-# Benchmark 批量测评：SWE-bench
-cargo run -- --benchmark swe_bench --batch swebench_tasks.jsonl --batch-output results.jsonl --task-timeout 600
+# Benchmark：SWE-bench
+cargo run -- bench --benchmark swe_bench --batch swebench_tasks.jsonl --batch-output results.jsonl --task-timeout 600
 
-# Benchmark 批量测评：GAIA
-cargo run -- --benchmark gaia --batch gaia_tasks.jsonl --batch-output gaia_results.jsonl
+# Benchmark：GAIA / HumanEval / 续跑（略，同上将子命令改为 bench）
+cargo run -- bench --benchmark gaia --batch gaia_tasks.jsonl --batch-output gaia_results.jsonl
+cargo run -- bench --benchmark human_eval --batch humaneval_tasks.jsonl --batch-output humaneval_results.jsonl --task-timeout 60
+cargo run -- bench --benchmark swe_bench --batch tasks.jsonl --batch-output results.jsonl --resume
 
-# Benchmark 批量测评：HumanEval
-cargo run -- --benchmark human_eval --batch humaneval_tasks.jsonl --batch-output humaneval_results.jsonl --task-timeout 60
-
-# 续跑模式（跳过已有结果）
-cargo run -- --benchmark swe_bench --batch tasks.jsonl --batch-output results.jsonl --resume
+# 配置自检（CI）
+cargo run -- config --dry-run
 ```
+
+以下 **旧写法** 仍有效（内部会映射为子命令）：
+
+`cargo run -- --serve`、`cargo run -- --query "…"`、`cargo run -- --benchmark …`、`cargo run -- --dry-run` 等。
 
 前端在 **`frontend/`** 目录（Vite + React + TypeScript + Tailwind CSS），需先构建后启动后端：
 
 ```bash
 cd frontend && npm install && npm run build && cd ..
-cargo run -- --serve
+cargo run -- serve
 ```
 
 后端从 `frontend/dist` 提供静态页面，API 与页面同源，无需 CORS。
@@ -672,14 +691,14 @@ cargo run -- --serve
 - **GET /workspace**：返回当前工作目录路径及文件列表。
 - **GET /health**：健康检查，返回 `{"status": "ok"}`。
 
-**单次提问（脚本/管道）**：使用 `--query <问题>` 或 `--stdin` 时，程序只执行一次提问并输出回答后退出，便于在脚本或管道中调用：
+**单次提问（脚本/管道）**：使用 **`chat --query`** 或 **`chat --stdin`**（或兼容的 `--query` / `--stdin`）时，程序只执行一次提问并输出回答后退出：
 
 ```bash
 # 参数传入问题
-cargo run -- --query "北京今天天气怎么样"
+cargo run -- chat --query "北京今天天气怎么样"
 
 # 从标准输入读入问题（多行直到 EOF）
-echo "1+1等于几" | cargo run -- --stdin
+echo "1+1等于几" | cargo run -- chat --stdin
 ```
 
 运行后（交互模式）下，提示符为加粗着色的 **「我: 」**（青色）与助手行前 **「Agent: 」**（洋红），正文仍为 Markdown 着色；输入问题，例如：
@@ -742,7 +761,7 @@ echo "1+1等于几" | cargo run -- --stdin
 
 ```bash
 export API_KEY="your-api-key"
-crabmate --serve 8080
+crabmate serve 8080
 ```
 
 ## 项目结构
