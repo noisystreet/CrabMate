@@ -13,6 +13,7 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
 
+use crate::http_client::map_reqwest_transport_err;
 use crate::redact::{self, CHAT_REQUEST_JSON_LOG_MAX_CHARS, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crate::runtime::message_display::assistant_markdown_source_for_display;
 
@@ -295,7 +296,8 @@ pub async fn stream_chat(
         .header("Authorization", format!("Bearer {}", api_key))
         .json(&req)
         .send()
-        .await?;
+        .await
+        .map_err(map_reqwest_transport_err)?;
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
@@ -319,7 +321,7 @@ pub async fn stream_chat(
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             return Err(crate::types::LLM_CANCELLED_ERROR.into());
         }
-        let body = res.text().await?;
+        let body = res.text().await.map_err(map_reqwest_transport_err)?;
         let parsed: crate::types::ChatResponse =
             serde_json::from_str(&body).map_err(|parse_err| {
                 let preview = redact::single_line_preview(&body, HTTP_BODY_PREVIEW_LOG_CHARS);
@@ -407,7 +409,7 @@ pub async fn stream_chat(
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             break 'stream_read;
         }
-        let chunk = chunk?;
+        let chunk = chunk.map_err(map_reqwest_transport_err)?;
         buf.extend_from_slice(&chunk);
 
         // 以“消费偏移”扫描完整行，避免每行 `split_off` 导致重复分配与拷贝。

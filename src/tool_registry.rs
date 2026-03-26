@@ -565,14 +565,18 @@ async fn execute_run_command_impl(
                     return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
                 }
                 CommandApprovalDecision::AllowOnce => {
-                    effective_allowed.push(cmd.clone());
+                    let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
+                    v.push(cmd.clone());
+                    effective_allowed_arc = v.into();
                 }
                 CommandApprovalDecision::AllowAlways => {
                     ctx.persistent_allowlist_shared
                         .lock()
                         .await
                         .insert(cmd.clone());
-                    effective_allowed.push(cmd.clone());
+                    let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
+                    v.push(cmd.clone());
+                    effective_allowed_arc = v.into();
                 }
             }
         }
