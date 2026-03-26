@@ -19,7 +19,7 @@
 # agent_memory_file_max_chars = 8000
 # command_timeout_secs = 10
 # command_max_output_len = 8192
-# allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "file", "df", "du", "head", "tail", "wc", "cat"]
+# allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "file", "df", "du", "head", "tail", "wc", "cat", "objdump", "nm", "readelf", "strings", "size"]
 # run_command_working_dir = "."
 # web_api_bearer_token = "YOUR_STRONG_RANDOM_TOKEN"
 # allow_insecure_no_auth_for_non_loopback = false
