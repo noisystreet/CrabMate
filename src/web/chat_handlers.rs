@@ -15,14 +15,14 @@ use log::{debug, error, info};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use super::app_state::{
-    AppState, CONVERSATION_ID_MAX_LEN, ConversationTurnSeed, SaveConversationOutcome,
-};
+use super::app_state::{AppState, CONVERSATION_ID_MAX_LEN, ConversationTurnSeed};
+use crate::agent_memory::{load_memory_snippet, messages_chat_seed_with_memory};
 use crate::chat_job_queue;
+use crate::conversation_store::SaveConversationOutcome;
 use crate::health;
 use crate::redact;
 use crate::tool_registry;
-use crate::types::{CommandApprovalDecision, Message, messages_chat_seed};
+use crate::types::{CommandApprovalDecision, Message};
 
 #[derive(serde::Deserialize)]
 pub(crate) struct ChatRequestBody {
@@ -405,8 +405,22 @@ async fn build_messages_for_turn(
         seed.messages.push(Message::user_only(user_msg.to_string()));
         return seed;
     }
+    let memory_snippet = if state.cfg.agent_memory_file_enabled {
+        let root = std::path::PathBuf::from(state.effective_workspace_path().await);
+        load_memory_snippet(
+            &root,
+            state.cfg.agent_memory_file.as_str(),
+            state.cfg.agent_memory_file_max_chars,
+        )
+    } else {
+        None
+    };
     ConversationTurnSeed {
-        messages: messages_chat_seed(&state.cfg.system_prompt, user_msg),
+        messages: messages_chat_seed_with_memory(
+            &state.cfg.system_prompt,
+            user_msg,
+            memory_snippet.as_deref(),
+        ),
         expected_revision: None,
     }
 }

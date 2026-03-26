@@ -59,6 +59,10 @@ pub(super) struct AgentSection {
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     pub(super) web_api_bearer_token: Option<String>,
     pub(super) allow_insecure_no_auth_for_non_loopback: Option<bool>,
+    pub(super) conversation_store_sqlite_path: Option<String>,
+    pub(super) agent_memory_file_enabled: Option<bool>,
+    pub(super) agent_memory_file: Option<String>,
+    pub(super) agent_memory_file_max_chars: Option<u64>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None。

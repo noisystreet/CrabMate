@@ -1,6 +1,7 @@
 //! Web 服务进程内状态：会话存储、上传目录、任务队列句柄等（自 `lib.rs` 下沉）。
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -9,15 +10,17 @@ use tokio::sync::mpsc;
 
 use crate::chat_job_queue::ChatJobQueue;
 use crate::config::AgentConfig;
+use crate::conversation_store::{
+    self, CONVERSATION_STORE_MAX_ENTRIES, CONVERSATION_STORE_TTL_SECS, SaveConversationOutcome,
+};
 use crate::types::{CommandApprovalDecision, Message};
 
 /// 与 `normalize_client_conversation_id`（`chat_handlers`）及存储上限对齐。
 pub(crate) const CONVERSATION_ID_MAX_LEN: usize = 128;
-const CONVERSATION_STORE_MAX_ENTRIES: usize = 512;
-const CONVERSATION_STORE_TTL: Duration = Duration::from_secs(24 * 3600);
+const CONVERSATION_STORE_TTL: Duration = Duration::from_secs(CONVERSATION_STORE_TTL_SECS);
 
 #[derive(Clone)]
-pub(crate) struct ConversationEntry {
+pub(crate) struct MemoryConversationEntry {
     messages: Vec<Message>,
     revision: u64,
     updated_at: std::time::Instant,
@@ -27,12 +30,6 @@ pub(crate) struct ConversationEntry {
 pub(crate) struct ConversationTurnSeed {
     pub messages: Vec<Message>,
     pub expected_revision: Option<u64>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SaveConversationOutcome {
-    Saved,
-    Conflict,
 }
 
 #[derive(Clone)]
@@ -46,13 +43,26 @@ pub(crate) struct AppState {
     pub(crate) uploads_dir: std::path::PathBuf,
     /// `/chat` / `/chat/stream` 进程内任务队列（有界排队 + 并发上限）
     pub(crate) chat_queue: ChatJobQueue,
-    /// 基于 `conversation_id` 的进程内会话存储（PR-1：内存实现；后续可替换 Redis/DB）。
-    pub(crate) conversation_store: Arc<tokio::sync::RwLock<HashMap<String, ConversationEntry>>>,
+    /// `conversation_id` → 消息与 revision：内存或 SQLite（见配置 `conversation_store_sqlite_path`）
+    pub(crate) conversation_backing: ConversationBacking,
     /// 新会话 ID 递增计数器（仅用于生成默认 conversation_id）。
     pub(crate) conversation_id_counter: Arc<AtomicU64>,
     /// Web 流式审批会话 -> 决策通道。
     pub(crate) approval_sessions:
         Arc<tokio::sync::RwLock<HashMap<String, mpsc::Sender<CommandApprovalDecision>>>>,
+}
+
+/// Web 会话存储后端。
+#[derive(Clone)]
+pub(crate) enum ConversationBacking {
+    Memory(Arc<tokio::sync::RwLock<HashMap<String, MemoryConversationEntry>>>),
+    Sqlite(Arc<std::sync::Mutex<rusqlite::Connection>>),
+}
+
+impl ConversationBacking {
+    pub(crate) fn memory_default() -> Self {
+        Self::Memory(Arc::new(tokio::sync::RwLock::new(HashMap::new())))
+    }
 }
 
 impl AppState {
@@ -89,21 +99,61 @@ impl AppState {
         &self,
         conversation_id: &str,
     ) -> Option<ConversationTurnSeed> {
-        let mut guard = self.conversation_store.write().await;
-        let entry = guard.get_mut(conversation_id)?;
-        if entry.updated_at.elapsed() > CONVERSATION_STORE_TTL {
-            guard.remove(conversation_id);
-            return None;
+        match &self.conversation_backing {
+            ConversationBacking::Memory(map) => {
+                let mut guard = map.write().await;
+                let entry = guard.get_mut(conversation_id)?;
+                if entry.updated_at.elapsed() > CONVERSATION_STORE_TTL {
+                    guard.remove(conversation_id);
+                    return None;
+                }
+                entry.updated_at = std::time::Instant::now();
+                Some(ConversationTurnSeed {
+                    messages: entry.messages.clone(),
+                    expected_revision: Some(entry.revision),
+                })
+            }
+            ConversationBacking::Sqlite(conn) => {
+                let id = conversation_id.to_string();
+                let c = Arc::clone(conn);
+                let loaded = tokio::task::spawn_blocking(move || {
+                    let g = match c.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            log::error!(
+                                target: "crabmate",
+                                "会话 SQLite 锁失败: {}",
+                                e
+                            );
+                            return None;
+                        }
+                    };
+                    match conversation_store::load(&g, &id, CONVERSATION_STORE_TTL_SECS) {
+                        Ok(o) => o,
+                        Err(e) => {
+                            log::warn!(
+                                target: "crabmate",
+                                "会话 SQLite 读取失败 id={} error={}",
+                                id,
+                                e
+                            );
+                            None
+                        }
+                    }
+                })
+                .await
+                .ok()
+                .flatten();
+                loaded.map(|(messages, revision)| ConversationTurnSeed {
+                    messages,
+                    expected_revision: Some(revision),
+                })
+            }
         }
-        entry.updated_at = std::time::Instant::now();
-        Some(ConversationTurnSeed {
-            messages: entry.messages.clone(),
-            expected_revision: Some(entry.revision),
-        })
     }
 
-    fn prune_conversation_store_locked(
-        guard: &mut HashMap<String, ConversationEntry>,
+    fn prune_memory_locked(
+        guard: &mut HashMap<String, MemoryConversationEntry>,
         now: std::time::Instant,
     ) {
         guard.retain(|_, v| now.duration_since(v.updated_at) <= CONVERSATION_STORE_TTL);
@@ -127,34 +177,95 @@ impl AppState {
         messages: Vec<Message>,
         expected_revision: Option<u64>,
     ) -> SaveConversationOutcome {
-        let mut guard = self.conversation_store.write().await;
-        let now = std::time::Instant::now();
-        if let Some(entry) = guard.get_mut(&conversation_id) {
-            match expected_revision {
-                Some(exp) if entry.revision == exp => {
-                    entry.messages = messages;
-                    entry.revision = entry.revision.saturating_add(1);
-                    entry.updated_at = now;
+        match &self.conversation_backing {
+            ConversationBacking::Memory(map) => {
+                let mut guard = map.write().await;
+                let now = std::time::Instant::now();
+                if let Some(entry) = guard.get_mut(&conversation_id) {
+                    match expected_revision {
+                        Some(exp) if entry.revision == exp => {
+                            entry.messages = messages;
+                            entry.revision = entry.revision.saturating_add(1);
+                            entry.updated_at = now;
+                        }
+                        _ => return SaveConversationOutcome::Conflict,
+                    }
+                } else if expected_revision.is_some() {
+                    return SaveConversationOutcome::Conflict;
+                } else {
+                    guard.insert(
+                        conversation_id,
+                        MemoryConversationEntry {
+                            messages,
+                            revision: 1,
+                            updated_at: now,
+                        },
+                    );
                 }
-                _ => return SaveConversationOutcome::Conflict,
+                Self::prune_memory_locked(&mut guard, now);
+                SaveConversationOutcome::Saved
             }
-        } else if expected_revision.is_some() {
-            return SaveConversationOutcome::Conflict;
-        } else {
-            guard.insert(
-                conversation_id,
-                ConversationEntry {
-                    messages,
-                    revision: 1,
-                    updated_at: now,
-                },
-            );
+            ConversationBacking::Sqlite(conn) => {
+                let id = conversation_id;
+                let id_log = id.clone();
+                let c = Arc::clone(conn);
+                let exp = expected_revision;
+                match tokio::task::spawn_blocking(move || {
+                    let g = c
+                        .lock()
+                        .map_err(|e: std::sync::PoisonError<_>| e.to_string())?;
+                    conversation_store::save_if_revision(&g, &id, messages, exp)
+                        .map_err(|e: rusqlite::Error| e.to_string())
+                })
+                .await
+                {
+                    Ok(Ok(out)) => out,
+                    Ok(Err(e)) => {
+                        log::error!(
+                            target: "crabmate",
+                            "会话 SQLite 保存失败 conversation_id={} error={}",
+                            id_log,
+                            e
+                        );
+                        SaveConversationOutcome::Conflict
+                    }
+                    Err(e) => {
+                        log::error!(
+                            target: "crabmate",
+                            "会话 SQLite 保存任务失败 conversation_id={} error={}",
+                            id_log,
+                            e
+                        );
+                        SaveConversationOutcome::Conflict
+                    }
+                }
+            }
         }
-        Self::prune_conversation_store_locked(&mut guard, now);
-        SaveConversationOutcome::Saved
     }
 
     pub(crate) async fn conversation_count(&self) -> usize {
-        self.conversation_store.read().await.len()
+        match &self.conversation_backing {
+            ConversationBacking::Memory(map) => map.read().await.len(),
+            ConversationBacking::Sqlite(conn) => {
+                let c = Arc::clone(conn);
+                tokio::task::spawn_blocking(move || {
+                    let g = match c.lock() {
+                        Ok(g) => g,
+                        Err(_) => return 0usize,
+                    };
+                    conversation_store::count(&g).unwrap_or(0)
+                })
+                .await
+                .unwrap_or(0)
+            }
+        }
     }
+}
+
+/// 打开 SQLite 会话库（`run()` 在 `--serve` 时调用）。
+pub(crate) fn open_conversation_sqlite(
+    path: &Path,
+) -> Result<Arc<std::sync::Mutex<rusqlite::Connection>>, Box<dyn std::error::Error + Send + Sync>> {
+    let conn = conversation_store::open_file(path)?;
+    Ok(Arc::new(std::sync::Mutex::new(conn)))
 }

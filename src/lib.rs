@@ -4,8 +4,11 @@
 //! 日志由 `log` + `env_logger` 处理；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
 
 mod agent;
+mod agent_memory;
 mod chat_job_queue;
 mod config;
+/// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
+mod conversation_store;
 mod health;
 mod http_client;
 mod llm;
@@ -105,8 +108,8 @@ pub async fn run_agent_turn<'a>(
     agent::agent_turn::run_agent_turn_common(&mut loop_params).await
 }
 
+pub(crate) use conversation_store::SaveConversationOutcome;
 pub(crate) use web::AppState;
-pub(crate) use web::SaveConversationOutcome;
 pub(crate) use web::save_outcome_to_stream_error_line;
 
 /// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL 等。
@@ -185,6 +188,23 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             cfg.chat_queue_max_concurrent,
             cfg.chat_queue_max_pending,
         );
+        let conversation_backing = if cfg.conversation_store_sqlite_path.trim().is_empty() {
+            web::ConversationBacking::memory_default()
+        } else {
+            let p = std::path::Path::new(cfg.conversation_store_sqlite_path.trim());
+            let conn = web::open_conversation_sqlite(p).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("无法初始化会话 SQLite {}: {}", p.display(), e),
+                )
+            })?;
+            info!(
+                target: "crabmate",
+                "Web 会话持久化已启用 path={}",
+                p.display()
+            );
+            web::ConversationBacking::Sqlite(conn)
+        };
         let state = Arc::new(AppState {
             cfg: Arc::clone(&cfg),
             api_key: api_key.clone(),
@@ -193,7 +213,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
             uploads_dir: uploads_dir.clone(),
             chat_queue,
-            conversation_store: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            conversation_backing,
             conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
             approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         });

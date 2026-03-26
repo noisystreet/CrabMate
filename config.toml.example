@@ -13,6 +13,10 @@
 # context_summary_trigger_chars = 0
 # chat_queue_max_concurrent = 2
 # chat_queue_max_pending = 32
+# conversation_store_sqlite_path = ".crabmate/conversations.db"
+# agent_memory_file_enabled = true
+# agent_memory_file = ".crabmate/agent_memory.md"
+# agent_memory_file_max_chars = 8000
 # command_timeout_secs = 10
 # command_max_output_len = 8192
 # allowed_commands = ["ls", "pwd", "whoami", "date", "echo", "id", "uname", "env", "file", "df", "du", "head", "tail", "wc", "cat"]
