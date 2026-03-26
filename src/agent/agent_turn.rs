@@ -238,19 +238,34 @@ async fn send_staged_plan_finished(
 // --- P：向模型要本轮输出（含重试）---
 
 /// P：构造请求并调用模型（`no_stream` 为 true 时走 `stream: false`），**不**修改 `messages`。
-#[allow(clippy::too_many_arguments)] // Web/CLI 共用入口，参数扁平便于各调用点传参
+pub(crate) struct PerPlanCallModelParams<'a> {
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub cfg: &'a AgentConfig,
+    pub tools_defs: &'a [crate::types::Tool],
+    pub messages: &'a [Message],
+    pub out: Option<&'a mpsc::Sender<String>>,
+    pub render_to_terminal: bool,
+    pub no_stream: bool,
+    pub cancel: Option<&'a AtomicBool>,
+    pub plain_terminal_stream: bool,
+}
+
 pub(crate) async fn per_plan_call_model_retrying(
-    client: &reqwest::Client,
-    api_key: &str,
-    cfg: &AgentConfig,
-    tools_defs: &[crate::types::Tool],
-    messages: &[Message],
-    out: Option<&mpsc::Sender<String>>,
-    render_to_terminal: bool,
-    no_stream: bool,
-    cancel: Option<&AtomicBool>,
-    plain_terminal_stream: bool,
+    p: PerPlanCallModelParams<'_>,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+    let PerPlanCallModelParams {
+        client,
+        api_key,
+        cfg,
+        tools_defs,
+        messages,
+        out,
+        render_to_terminal,
+        no_stream,
+        cancel,
+        plain_terminal_stream,
+    } = p;
     let filtered: Vec<Message> = messages
         .iter()
         .filter(|m| !is_chat_ui_separator(m))
@@ -456,19 +471,32 @@ fn dedup_readonly_tool_calls_count(tool_calls: &[ToolCall]) -> usize {
 ///
 /// 同名同参数的只读工具在同一批次内去重：并行路径只执行唯一实例后映射回各 `tool_call_id`；
 /// 串行路径维护本批次只读缓存，遇写操作时清空（写操作可能改变文件系统状态，使先前读取结果失效）。
-#[allow(clippy::too_many_arguments)] // 工具批处理上下文字段较多，拆结构体收益有限
-async fn per_execute_tools_common(
-    tool_calls: &[ToolCall],
-    per_coord: &mut PerCoordinator,
-    messages: &mut Vec<Message>,
-    cfg: &Arc<AgentConfig>,
-    effective_working_dir: &Path,
+struct ExecuteToolsCommonCtx<'a> {
+    tool_calls: &'a [ToolCall],
+    per_coord: &'a mut PerCoordinator,
+    messages: &'a mut Vec<Message>,
+    cfg: &'a Arc<AgentConfig>,
+    effective_working_dir: &'a Path,
     workspace_is_set: bool,
-    out: Option<&mpsc::Sender<String>>,
+    out: Option<&'a mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
-    web_tool_ctx: Option<&tool_registry::WebToolRuntime>,
-) -> ExecuteToolsBatchOutcome {
+    web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+}
+
+async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
+    let ExecuteToolsCommonCtx {
+        tool_calls,
+        per_coord,
+        messages,
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        out,
+        echo_terminal_transcript,
+        terminal_tool_display_max_chars,
+        web_tool_ctx,
+    } = ctx;
     let mut workspace_changed = false;
 
     if let Some(tx) = out {
@@ -685,7 +713,7 @@ pub(crate) async fn per_execute_tools_web(
         echo_terminal_transcript,
     } = ctx;
 
-    per_execute_tools_common(
+    per_execute_tools_common(ExecuteToolsCommonCtx {
         tool_calls,
         per_coord,
         messages,
@@ -694,9 +722,9 @@ pub(crate) async fn per_execute_tools_web(
         workspace_is_set,
         out,
         echo_terminal_transcript,
-        cfg.command_max_output_len,
+        terminal_tool_display_max_chars: cfg.command_max_output_len,
         web_tool_ctx,
-    )
+    })
     .await
 }
 
@@ -721,18 +749,18 @@ async fn run_agent_outer_loop(
             p.messages,
         )
         .await?;
-        let (msg, finish_reason) = per_plan_call_model_retrying(
-            p.client,
-            p.api_key,
-            p.cfg.as_ref(),
-            p.tools_defs,
-            p.messages,
-            p.out,
+        let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
+            client: p.client,
+            api_key: p.api_key,
+            cfg: p.cfg.as_ref(),
+            tools_defs: p.tools_defs,
+            messages: p.messages,
+            out: p.out,
             render_to_terminal,
-            p.no_stream,
-            p.cancel,
-            p.plain_terminal_stream,
-        )
+            no_stream: p.no_stream,
+            cancel: p.cancel,
+            plain_terminal_stream: p.plain_terminal_stream,
+        })
         .await?;
         if let Some(f) = p.per_flight.as_ref() {
             f.awaiting_plan_rewrite_model

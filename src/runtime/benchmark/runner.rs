@@ -173,22 +173,22 @@ async fn run_single_task(
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let timeout_secs = batch_cfg.task_timeout_secs;
-    let run_fut = crate::run_agent_turn(
+    let run_fut = crate::run_agent_turn(crate::RunAgentTurnParams {
         client,
         api_key,
-        &task_cfg,
+        cfg: &task_cfg,
         tools,
-        &mut messages,
-        None,
-        &work_dir,
-        true,
-        false,
-        true, // no_stream：batch 模式不需要流式输出
-        Some(cancel.clone()),
-        None,
-        None,
-        false,
-    );
+        messages: &mut messages,
+        out: None,
+        effective_working_dir: &work_dir,
+        workspace_is_set: true,
+        render_to_terminal: false,
+        no_stream: true, // batch 模式不需要流式输出
+        cancel: Some(cancel.clone()),
+        per_flight: None,
+        web_tool_ctx: None,
+        plain_terminal_stream: false,
+    });
 
     let (status, agent_error) = if timeout_secs > 0 {
         match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), run_fut).await {
