@@ -6,7 +6,7 @@ pub(in crate::tools) fn params_run_command() -> serde_json::Value {
         "properties": {
             "command": {
                 "type": "string",
-                "description": "命令名（小写），须为配置中 allowed_commands 白名单之一（如 ls、gcc、cmake、make、file 等）。**不要**用本工具运行工作区内的可执行文件（例如 ./main、./a.out、./build/app）；此类请改用 **run_executable**，参数 path 填相对工作目录的路径。"
+                "description": "命令名（小写），须为配置中 allowed_commands 白名单之一（如 ls、grep、stat、git、cargo、gcc、cmake、make、file、jq 等，完整列表见 default_config.toml）。**不要**用本工具运行工作区内的可执行文件（例如 ./main、./a.out、./build/app）；此类请改用 **run_executable**，参数 path 填相对工作目录的路径。"
             },
             "args": {
                 "type": "array",

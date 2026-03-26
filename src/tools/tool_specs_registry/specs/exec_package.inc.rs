@@ -1,7 +1,7 @@
 [
 ToolSpec {
             name: "run_command",
-            description: "在服务器上执行**白名单内**的 Linux 系统命令（见配置 allowed_commands：如 ls、gcc、cmake、make、file、**GNU Binutils 只读分析**（objdump、nm、readelf、strings、size；dev 另含 ar）等）。用于列目录、读文件、**编译/链接**（gcc/clang/make/ninja/cmake）、Autotools、c++filt、**ELF/目标文件反汇编与符号查看**等。**不要**用本工具去「运行当前工作区里已生成的可执行文件」（./main、./a.out、./build/…）；那种情况必须用 **run_executable**。参数 args 为字符串数组；禁止含 \"..\" 或以 \"/\" 开头的实参。不要执行 rm、mv、chmod 等未在白名单中的命令。",
+            description: "在服务器上执行**白名单内**的 Linux 系统命令（见配置 allowed_commands：默认可含 **coreutils 类**（stat、grep、sort、diff、which…）、**系统信息**（ps、free、uptime、lscpu、lsblk…）、**压缩流读出**（zcat/bzcat/xzcat）、**JSON**（jq）、**Git / Rust**（git、cargo、rustc，dev）、**编译与 Binutils**（gcc、clang、make、cmake、objdump…；prod 默认无编译链）等）。**不要**用本工具运行工作区内已生成的可执行文件（./main、./a.out…），须用 **run_executable**。参数 args 为字符串数组；禁止含 \"..\" 或以 \"/\" 开头的实参。rm、mv、chmod、sudo 等未列入白名单则不可执行。",
             category: ToolCategory::Development,
             parameters: tool_params::params_run_command,
             runner: runner_run_command,
