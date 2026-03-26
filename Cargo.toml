@@ -30,6 +30,7 @@ serde_yaml = "0.9"
 tokio = { version = "1", features = ["full"] }
 chrono = "0.4"
 toml = "0.8"
+rusqlite = { version = "0.32", features = ["bundled"] }
 markdown-to-ansi = "0.2"
 unicodeit = "0.2"
 regex = "1"

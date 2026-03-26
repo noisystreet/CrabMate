@@ -66,6 +66,10 @@ struct ConfigBuilder {
     workspace_allowed_roots: Option<Vec<String>>,
     web_api_bearer_token: Option<String>,
     allow_insecure_no_auth_for_non_loopback: Option<bool>,
+    conversation_store_sqlite_path: Option<String>,
+    agent_memory_file_enabled: Option<bool>,
+    agent_memory_file: Option<String>,
+    agent_memory_file_max_chars: Option<u64>,
 }
 
 /// 非空 trim 后覆盖 `String` 字段。
@@ -215,6 +219,17 @@ impl ConfigBuilder {
         self.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
             .or(self.allow_insecure_no_auth_for_non_loopback);
+        override_opt_string_non_empty(
+            &mut self.conversation_store_sqlite_path,
+            agent.conversation_store_sqlite_path,
+        );
+        self.agent_memory_file_enabled = agent
+            .agent_memory_file_enabled
+            .or(self.agent_memory_file_enabled);
+        override_opt_string_non_empty(&mut self.agent_memory_file, agent.agent_memory_file);
+        self.agent_memory_file_max_chars = agent
+            .agent_memory_file_max_chars
+            .or(self.agent_memory_file_max_chars);
     }
 }
 
@@ -513,6 +528,28 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.allow_insecure_no_auth_for_non_loopback = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_CONVERSATION_STORE_SQLITE_PATH") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            b.conversation_store_sqlite_path = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_MEMORY_FILE_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.agent_memory_file_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_MEMORY_FILE") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            b.agent_memory_file = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_MEMORY_FILE_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.agent_memory_file_max_chars = Some(n);
+    }
 }
 
 /// 验证、clamp 并组装最终 `AgentConfig`。
@@ -674,6 +711,16 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
 
+    let conversation_store_sqlite_path = b.conversation_store_sqlite_path.unwrap_or_default();
+    let agent_memory_file_enabled = b.agent_memory_file_enabled.unwrap_or(false);
+    let agent_memory_file = b
+        .agent_memory_file
+        .unwrap_or_else(|| ".crabmate/agent_memory.md".to_string());
+    let agent_memory_file_max_chars = b
+        .agent_memory_file_max_chars
+        .unwrap_or(8000)
+        .clamp(256, 500_000) as usize;
+
     let web_search_provider = match b.web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
         None => WebSearchProvider::default(),
@@ -735,5 +782,9 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         chat_queue_max_pending,
         staged_plan_execution,
         staged_plan_phase_instruction,
+        conversation_store_sqlite_path,
+        agent_memory_file_enabled,
+        agent_memory_file,
+        agent_memory_file_max_chars,
     })
 }

@@ -147,4 +147,12 @@ pub struct AgentConfig {
     pub staged_plan_execution: bool,
     /// 规划轮追加的 **system** 指令；空字符串则使用内置默认文案。
     pub staged_plan_phase_instruction: String,
+    /// Web 会话持久化：非空则使用 SQLite（`conversation_id` 跨重启保留）；空则仅进程内内存。
+    pub conversation_store_sqlite_path: String,
+    /// 为 true 时：首轮在 `system` 与当前用户消息之间注入工作区内备忘文件（见 `agent_memory_file`）。
+    pub agent_memory_file_enabled: bool,
+    /// 相对**当前 Web 工作区根**的备忘文件路径（如 `.crabmate/agent_memory.md`）。
+    pub agent_memory_file: String,
+    /// 注入备忘正文的最大字符数（超出截断）。
+    pub agent_memory_file_max_chars: usize,
 }
