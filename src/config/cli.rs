@@ -104,12 +104,23 @@ fn is_known_subcommand(s: &str) -> bool {
 /// 若 argv 在 **未写子命令名** 时使用历史平铺 flag（`--serve`、`--query` 等），改写为 `serve` / `chat` / … 形式再交给 clap。
 ///
 /// 已写子命令（如 `crabmate repl`）或 `-h` / `--help` / `-V` / `--version` 时不改写。
+///
+/// **`help` 子命令**：`crabmate help` → 根级 `--help`；`crabmate help serve` 等 → 对应子命令 `--help`（否则未写子命令时会被当成 `repl` 的多余参数并报错）。
 fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
     if args.len() <= 1 {
         return args;
     }
     let prog = args[0].clone();
     let rest = &args[1..];
+    if rest.first().is_some_and(|s| s == "help") {
+        return match rest.len() {
+            1 => vec![prog, "--help".into()],
+            _ if is_known_subcommand(rest[1].as_str()) => {
+                vec![prog, rest[1].clone(), "--help".into()]
+            }
+            _ => vec![prog, "--help".into()],
+        };
+    }
     if rest
         .first()
         .is_some_and(|s| is_known_subcommand(s.as_str()))
@@ -372,7 +383,7 @@ fn parse_output_mode(raw: Option<String>) -> Option<String> {
     })
 }
 
-/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config`** 子命令，并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
+/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
 pub fn parse_args() -> ParsedCliArgs {
     let raw: Vec<String> = std::env::args().collect();
     let normalized = normalize_legacy_argv(raw);
@@ -565,6 +576,24 @@ mod legacy_argv_tests {
     #[test]
     fn help_not_wrapped() {
         let v = norm(&["crabmate", "--help"]);
+        assert_eq!(v, vec!["crabmate", "--help"]);
+    }
+
+    #[test]
+    fn help_subcommand_maps_to_root_help() {
+        let v = norm(&["crabmate", "help"]);
+        assert_eq!(v, vec!["crabmate", "--help"]);
+    }
+
+    #[test]
+    fn help_known_subcommand_maps_to_subcommand_help() {
+        let v = norm(&["crabmate", "help", "serve"]);
+        assert_eq!(v, vec!["crabmate", "serve", "--help"]);
+    }
+
+    #[test]
+    fn help_unknown_second_token_falls_back_to_root_help() {
+        let v = norm(&["crabmate", "help", "nope"]);
         assert_eq!(v, vec!["crabmate", "--help"]);
     }
 }
