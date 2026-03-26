@@ -371,7 +371,7 @@ pub struct StreamChunk {
 }
 
 // TUI 中用于“人工审批”的决策结果：拒绝/允许一次/永久允许。
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandApprovalDecision {
     Deny,
     AllowOnce,

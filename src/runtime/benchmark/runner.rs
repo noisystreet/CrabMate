@@ -187,6 +187,7 @@ async fn run_single_task(
         cancel: Some(cancel.clone()),
         per_flight: None,
         web_tool_ctx: None,
+        cli_tool_ctx: None,
         plain_terminal_stream: false,
         llm_backend: None,
         temperature_override: None,

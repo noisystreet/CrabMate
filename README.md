@@ -710,6 +710,8 @@ echo "1+1等于几" | cargo run -- chat --stdin
 
 **REPL 内建命令**（以 `/` 开头，**不**发给模型）：`/help` 列出说明；`/clear` 清空历史（保留当前 `system`）；`/model` 查看 model、api_base、temperature、llm_seed；`/workspace` 显示当前工作目录，`/workspace <路径>` 或 `/cd <路径>` 切换到已存在的目录（工具 `run_command` 等随之在新工作区执行）；`/tools` 列出已加载工具名。
 
+**`run_command` 终端审批**（REPL / `chat` 单次）：若模型调用的命令**不在**配置白名单 `allowed_commands` 内，会在 stderr 打印待执行命令并等待 stdin 一行：**`y`**（或任意非 `n`/`a` 的文本，除空行）表示**允许本次**；**`a` / `always`** 表示**本会话内**永久允许该**命令名**（与 Web「永久允许」同语义，仅进程内）；**回车 / `n` / `q`** 等表示拒绝。白名单内命令不询问。
+
 输入 `quit` / `exit` 或按 **Ctrl+D** 退出。
 
 ## 打包为 Debian `.deb` 包
