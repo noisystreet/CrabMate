@@ -188,6 +188,7 @@ async fn run_single_task(
         per_flight: None,
         web_tool_ctx: None,
         plain_terminal_stream: false,
+        llm_backend: None,
     });
 
     let (status, agent_error) = if timeout_secs > 0 {

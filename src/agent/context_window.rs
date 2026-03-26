@@ -8,7 +8,7 @@ use reqwest::Client;
 use tokio::sync::mpsc::Sender;
 
 use crate::config::AgentConfig;
-use crate::llm::complete_chat_retrying;
+use crate::llm::{ChatCompletionsBackend, complete_chat_retrying};
 use crate::types::{ChatRequest, Message, is_chat_ui_separator};
 
 const SUMMARY_SYSTEM: &str = "你只负责压缩对话历史。使用简洁中文要点列表，保留：用户目标、关键路径/命令、错误信息、未决问题。不要编造事实。";
@@ -261,6 +261,7 @@ fn build_transcript_middle(messages: &[Message], tail: usize, cap: usize) -> Opt
 
 /// 当非 system 文本超过 `context_summary_trigger_chars` 时，调用模型生成摘要并替换「中间」为单条 user。
 pub async fn maybe_summarize_with_llm(
+    llm_backend: &dyn ChatCompletionsBackend,
     client: &Client,
     api_key: &str,
     cfg: &AgentConfig,
@@ -318,6 +319,7 @@ pub async fn maybe_summarize_with_llm(
     };
 
     match complete_chat_retrying(
+        llm_backend,
         client,
         api_key,
         cfg,
@@ -382,13 +384,14 @@ pub async fn maybe_summarize_with_llm(
 
 /// 同步策略 + 可选异步摘要（在摘要前后都会再跑一遍同步压缩）。
 pub async fn prepare_messages_for_model(
+    llm_backend: &dyn ChatCompletionsBackend,
     client: &Client,
     api_key: &str,
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     prepare_messages_before_model_call_sync(messages, cfg);
-    maybe_summarize_with_llm(client, api_key, cfg, messages).await?;
+    maybe_summarize_with_llm(llm_backend, client, api_key, cfg, messages).await?;
     Ok(())
 }
 

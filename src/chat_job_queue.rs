@@ -498,6 +498,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 per_flight: Some(flight),
                 web_tool_ctx: web_tool_ctx.as_ref(),
                 plain_terminal_stream: false,
+                llm_backend: None,
             })
             .await;
             cancel_watcher.abort();
@@ -609,6 +610,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 per_flight: Some(flight),
                 web_tool_ctx: None,
                 plain_terminal_stream: false,
+                llm_backend: None,
             })
             .await;
             let (ok, cancelled, err) = match r {

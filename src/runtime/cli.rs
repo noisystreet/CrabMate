@@ -46,6 +46,7 @@ async fn run_agent_turn_for_cli(
         per_flight: None,
         web_tool_ctx: None,
         plain_terminal_stream: true,
+        llm_backend: None,
     })
     .await
 }
