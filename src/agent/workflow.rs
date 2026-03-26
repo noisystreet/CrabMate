@@ -366,7 +366,7 @@ pub async fn run_workflow_execute_tool(
 
     let approval_mode = approval_mode;
     let workdir = effective_working_dir.to_path_buf();
-    let allowed_commands = cfg.allowed_commands.clone();
+    let allowed_commands = Arc::clone(&cfg.allowed_commands);
     let weather_timeout_secs = cfg.weather_timeout_secs;
     let command_timeout_secs = cfg.command_timeout_secs;
     let web_search_timeout_secs = cfg.web_search_timeout_secs;
@@ -466,7 +466,7 @@ struct WorkflowToolExecCtx {
     cfg_http_fetch_timeout_secs: u64,
     cfg_http_fetch_max_response_bytes: usize,
     cfg_http_fetch_allowed_prefixes: Vec<String>,
-    cfg_allowed_commands: Vec<String>,
+    cfg_allowed_commands: Arc<[String]>,
     effective_working_dir: PathBuf,
     workspace_is_set: bool,
     command_max_output_len: usize,
@@ -784,7 +784,7 @@ async fn run_node(
     } else {
         injected_tool_args.to_string()
     };
-    let mut effective_allowed = tool_exec_ctx.cfg_allowed_commands.clone();
+    let mut effective_allowed_arc: Arc<[String]> = Arc::clone(&tool_exec_ctx.cfg_allowed_commands);
     let mut workspace_changed = false;
 
     // workspace_is_set 校验（主要覆盖 run_command/run_executable）
@@ -809,6 +809,7 @@ async fn run_node(
             let cmd_lower = cmd.trim().to_lowercase();
             let disallowed = !tool_exec_ctx
                 .cfg_allowed_commands
+                .as_ref()
                 .iter()
                 .any(|c| c.eq_ignore_ascii_case(&cmd_lower));
 
@@ -822,6 +823,13 @@ async fn run_node(
                 }
                 WorkflowApprovalMode::NoApproval => false,
             };
+
+            if disallowed && already_allowed && !cmd_lower.is_empty() {
+                let mut v: Vec<String> =
+                    tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
+                v.push(cmd_lower.clone());
+                effective_allowed_arc = v.into();
+            }
 
             if disallowed && !already_allowed && !cmd_lower.is_empty() {
                 // 仅在提供审批通道时才能等待用户决策
@@ -884,10 +892,12 @@ async fn run_node(
                         };
                     }
                     CommandApprovalDecision::AllowOnce => {
-                        effective_allowed.push(cmd_lower.clone());
+                        let mut v: Vec<String> =
+                            tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
+                        v.push(cmd_lower.clone());
+                        effective_allowed_arc = v.into();
                     }
                     CommandApprovalDecision::AllowAlways => {
-                        effective_allowed.push(cmd_lower.clone());
                         if let WorkflowApprovalMode::Interactive {
                             persistent_allowlist,
                             ..
@@ -895,6 +905,10 @@ async fn run_node(
                         {
                             persistent_allowlist.lock().await.insert(cmd_lower.clone());
                         }
+                        let mut v: Vec<String> =
+                            tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
+                        v.push(cmd_lower.clone());
+                        effective_allowed_arc = v.into();
                     }
                 }
             }
@@ -976,7 +990,7 @@ async fn run_node(
     let exec_args = tool_args_json_str.clone();
     let exec_args_for_success = exec_args.clone();
     let run_command_working_dir = tool_exec_ctx.effective_working_dir.clone();
-    let allowed_slice = effective_allowed.clone();
+    let allowed_arc = effective_allowed_arc;
     let command_max_output_len = tool_exec_ctx.command_max_output_len;
     let weather_timeout_secs = tool_exec_ctx.cfg_weather_timeout_secs;
     let ws_timeout = tool_exec_ctx.cfg_web_search_timeout_secs;
@@ -989,12 +1003,12 @@ async fn run_node(
 
     let output_res = async move {
         let work_dir = run_command_working_dir;
-        let allowed = allowed_slice;
+        let allowed = allowed_arc;
         let handle = tokio::task::spawn_blocking(move || {
             let ctx = crate::tools::ToolContext {
                 command_max_output_len,
                 weather_timeout_secs,
-                allowed_commands: &allowed,
+                allowed_commands: allowed.as_ref(),
                 working_dir: &work_dir,
                 web_search_timeout_secs: ws_timeout,
                 web_search_provider: ws_provider,

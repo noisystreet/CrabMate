@@ -5,7 +5,7 @@
 //!
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use futures_util::future::join_all;
+use futures_util::stream::{self, StreamExt};
 use log::{debug, info};
 use tokio::sync::mpsc;
 
@@ -476,12 +476,9 @@ async fn abort_tool_batch_if_sse_closed(
 
 /// 统计并行只读批次中去重后的唯一 `(name, args)` 数。
 fn dedup_readonly_tool_calls_count(tool_calls: &[ToolCall]) -> usize {
-    let mut seen: Vec<(&str, &str)> = Vec::with_capacity(tool_calls.len());
+    let mut seen: HashSet<(&str, &str)> = HashSet::with_capacity(tool_calls.len());
     for tc in tool_calls {
-        let key = (tc.function.name.as_str(), tc.function.arguments.as_str());
-        if !seen.contains(&key) {
-            seen.push(key);
-        }
+        seen.insert((tc.function.name.as_str(), tc.function.arguments.as_str()));
     }
     seen.len()
 }
@@ -528,21 +525,22 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
 
     if tool_registry::tool_calls_allow_parallel_sync_batch(tool_calls) {
         let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
+        let parallel_max = cfg.parallel_readonly_tools_max.max(1);
         info!(
             target: "crabmate",
-            "并行执行工具批 count={} unique={}（SyncDefault + 只读 + 非构建锁类）",
+            "并行执行工具批 count={} unique={} max_parallel={}（SyncDefault + 只读 + 非构建锁类）",
             tool_calls.len(),
-            dedup_count
+            dedup_count,
+            parallel_max
         );
 
-        let mut unique_keys: Vec<(String, String)> = Vec::with_capacity(tool_calls.len());
+        let mut seen_keys: HashSet<(String, String)> = HashSet::with_capacity(tool_calls.len());
         let mut unique_futs = Vec::new();
         for tc in tool_calls {
             let key = (tc.function.name.clone(), tc.function.arguments.clone());
-            if unique_keys.contains(&key) {
+            if !seen_keys.insert(key) {
                 continue;
             }
-            unique_keys.push(key);
             let cfg = Arc::clone(cfg);
             let wd = effective_working_dir.to_path_buf();
             let name = tc.function.name.clone();
@@ -558,13 +556,25 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 let t_tool = Instant::now();
                 let tool_name = name.clone();
                 let tool_args = args.clone();
-                let result = tokio::task::spawn_blocking(move || {
-                    let ctx =
-                        tools::tool_context_for(cfg.as_ref(), &cfg.allowed_commands, wd.as_path());
+                let result = if crate::tool_registry::sync_default_runs_inline(&name) {
+                    let ctx = tools::tool_context_for(
+                        cfg.as_ref(),
+                        cfg.allowed_commands.as_ref(),
+                        wd.as_path(),
+                    );
                     tools::run_tool(&tool_name, &tool_args, &ctx)
-                })
-                .await
-                .unwrap_or_else(|e| format!("工具执行 panic：{}", e));
+                } else {
+                    tokio::task::spawn_blocking(move || {
+                        let ctx = tools::tool_context_for(
+                            cfg.as_ref(),
+                            cfg.allowed_commands.as_ref(),
+                            wd.as_path(),
+                        );
+                        tools::run_tool(&tool_name, &tool_args, &ctx)
+                    })
+                    .await
+                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                };
                 info!(
                     target: "crabmate",
                     "并行工具完成 tool={} elapsed_ms={}",
@@ -574,7 +584,10 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 (name, args, result)
             });
         }
-        let unique_outcomes = join_all(unique_futs).await;
+        let unique_outcomes: Vec<(String, String, String)> = stream::iter(unique_futs)
+            .buffer_unordered(parallel_max)
+            .collect()
+            .await;
         let result_map: HashMap<(&str, &str), &str> = unique_outcomes
             .iter()
             .map(|(n, a, r)| ((n.as_str(), a.as_str()), r.as_str()))

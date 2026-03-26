@@ -70,8 +70,8 @@ pub struct AgentConfig {
     pub command_timeout_secs: u64,
     /// run_command 输出最大长度（字符），超出则截断
     pub command_max_output_len: usize,
-    /// run_command 允许执行的命令白名单
-    pub allowed_commands: Vec<String>,
+    /// run_command 允许执行的命令白名单（`Arc` 共享，避免每轮工具调用整表克隆）
+    pub allowed_commands: std::sync::Arc<[String]>,
     /// run_command 的工作目录（命令在该目录下执行）
     pub run_command_working_dir: String,
     /// 对话 API 单次请求最大 token 数
@@ -145,6 +145,8 @@ pub struct AgentConfig {
     pub chat_queue_max_concurrent: usize,
     /// Web 对话任务有界等待队列长度（`try_send` 满则 503）
     pub chat_queue_max_pending: usize,
+    /// 单轮内并行只读 `SyncDefault` 工具时，`spawn_blocking` 的最大并发（默认等于 `chat_queue_max_concurrent`）
+    pub parallel_readonly_tools_max: usize,
     /// 为 true 时：用户每条消息先经**无工具**规划轮产出 `agent_reply_plan` v1，再按 `steps` 顺序各注入一条 user 并跑完整 Agent 循环直至该步终答。
     pub staged_plan_execution: bool,
     /// 规划轮追加的 **system** 指令；空字符串则使用内置默认文案。

@@ -1,6 +1,6 @@
 //! 工具分发注册表：按工具名解析执行策略（workflow / 阻塞+超时 / 同步），Web 与 TUI 共用实现。
 //!
-//! **`spawn_blocking` 与配置**：进入阻塞池前对 [`AgentConfig`] 使用 [`Arc::clone`]（仅增引用计数），闭包内通过 [`tools::tool_context_for`] 借用同一份配置与白名单，避免每次工具调用深度克隆 `allowed_commands`、`http_fetch_allowed_prefixes`、`web_search_api_key` 等大分配。
+//! **`spawn_blocking` 与配置**：进入阻塞池前对 [`AgentConfig`] 使用 [`Arc::clone`]（仅增引用计数），闭包内通过 [`tools::tool_context_for`] 借用同一份配置与白名单；`allowed_commands` 在 [`AgentConfig`] 内为 [`std::sync::Arc`] 共享切片，避免每轮工具调用整表克隆。纯 CPU、无阻塞 IO 的少数工具可走 [`sync_default_runs_inline`] 在当前 async 任务上直接执行。
 //!
 //! 新增「需特殊运行时」的工具：在 `HANDLER_MAP` 初始化与 `all_dispatch_metadata()` 中各增一项，并在 `dispatch_tool` 的 `match hid` 中补分支。
 
@@ -221,6 +221,11 @@ enum HandlerId {
 
 static HANDLER_MAP: OnceLock<HashMap<&'static str, HandlerId>> = OnceLock::new();
 
+/// 无子进程、无阻塞网络/磁盘的 `SyncDefault` 工具：跳过 `spawn_blocking`，以免线程池调度开销大于工具本身。
+pub(crate) fn sync_default_runs_inline(name: &str) -> bool {
+    matches!(name, "get_current_time" | "convert_units")
+}
+
 fn handler_id_for(name: &str) -> HandlerId {
     HANDLER_MAP
         .get_or_init(|| {
@@ -298,6 +303,14 @@ pub async fn dispatch_tool(
         }
         HandlerId::HttpRequest => execute_http_request(cfg, name, args).await,
         HandlerId::SyncDefault => {
+            if sync_default_runs_inline(name) {
+                let ctx = tools::tool_context_for(
+                    cfg.as_ref(),
+                    cfg.allowed_commands.as_ref(),
+                    effective_working_dir,
+                );
+                return (tools::run_tool(name, args, &ctx), None);
+            }
             let cfg2 = Arc::clone(cfg);
             let tool_name = tc.function.name.clone();
             let tool_args = tc.function.arguments.clone();
@@ -305,7 +318,7 @@ pub async fn dispatch_tool(
             let result = tokio::task::spawn_blocking(move || {
                 let ctx = tools::tool_context_for(
                     cfg2.as_ref(),
-                    &cfg2.allowed_commands,
+                    cfg2.allowed_commands.as_ref(),
                     work_dir.as_path(),
                 );
                 tools::run_tool(&tool_name, &tool_args, &ctx)
@@ -398,9 +411,10 @@ async fn execute_run_command_web(
                 .join(" ")
         })
         .unwrap_or_default();
-    let mut effective_allowed = cfg.allowed_commands.clone();
+    let base_allowed = Arc::clone(&cfg.allowed_commands);
+    let mut effective_allowed_arc: Arc<[String]> = base_allowed;
     if !cmd.is_empty()
-        && !effective_allowed
+        && !effective_allowed_arc
             .iter()
             .any(|c| c.eq_ignore_ascii_case(&cmd))
     {
@@ -410,7 +424,9 @@ async fn execute_run_command_web(
             false
         };
         if already_allowed {
-            effective_allowed.push(cmd.clone());
+            let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
+            v.push(cmd.clone());
+            effective_allowed_arc = v.into();
         } else if let Some(ctx) = web_ctx {
             let decision = {
                 let _guard = ctx.approval_request_guard.lock().await;
@@ -440,14 +456,18 @@ async fn execute_run_command_web(
                     return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
                 }
                 CommandApprovalDecision::AllowOnce => {
-                    effective_allowed.push(cmd.clone());
+                    let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
+                    v.push(cmd.clone());
+                    effective_allowed_arc = v.into();
                 }
                 CommandApprovalDecision::AllowAlways => {
                     ctx.persistent_allowlist_shared
                         .lock()
                         .await
                         .insert(cmd.clone());
-                    effective_allowed.push(cmd.clone());
+                    let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
+                    v.push(cmd.clone());
+                    effective_allowed_arc = v.into();
                 }
             }
         }
@@ -458,9 +478,12 @@ async fn execute_run_command_web(
     let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
-    let effective_allowed_arc: Arc<[String]> = effective_allowed.into();
     let handle = tokio::task::spawn_blocking(move || {
-        let ctx = tools::tool_context_for(cfg.as_ref(), &effective_allowed_arc, work_dir.as_path());
+        let ctx = tools::tool_context_for(
+            cfg.as_ref(),
+            effective_allowed_arc.as_ref(),
+            work_dir.as_path(),
+        );
         tools::run_tool(&name_in, &args_cloned, &ctx)
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
@@ -633,7 +656,7 @@ async fn execute_run_executable_web(
     let handle = tokio::task::spawn_blocking(move || {
         let ctx = tools::tool_context_for(
             cfg.as_ref(),
-            cfg.allowed_commands.as_slice(),
+            cfg.allowed_commands.as_ref(),
             work_dir.as_path(),
         );
         tools::run_tool(&name_in, &args_owned, &ctx)
@@ -671,7 +694,7 @@ async fn execute_get_weather_web(
     let handle = tokio::task::spawn_blocking(move || {
         let ctx = tools::tool_context_for(
             cfg.as_ref(),
-            cfg.allowed_commands.as_slice(),
+            cfg.allowed_commands.as_ref(),
             work_dir.as_path(),
         );
         tools::run_tool(&name_in, &args_owned, &ctx)
@@ -709,7 +732,7 @@ async fn execute_web_search_web(
     let handle = tokio::task::spawn_blocking(move || {
         let ctx = tools::tool_context_for(
             cfg.as_ref(),
-            cfg.allowed_commands.as_slice(),
+            cfg.allowed_commands.as_ref(),
             work_dir.as_path(),
         );
         tools::run_tool(&name_in, &args_owned, &ctx)
@@ -788,6 +811,14 @@ mod tests {
             try_dispatch_meta("workflow_execute").map(|m| m.name),
             Some("workflow_execute")
         );
+    }
+
+    #[test]
+    fn sync_default_inline_tools() {
+        assert!(sync_default_runs_inline("get_current_time"));
+        assert!(sync_default_runs_inline("convert_units"));
+        assert!(!sync_default_runs_inline("read_file"));
+        assert!(!sync_default_runs_inline("calc"));
     }
 
     #[test]

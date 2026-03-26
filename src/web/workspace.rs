@@ -373,7 +373,8 @@ pub async fn workspace_search_handler(
     let cfg = Arc::clone(&state.cfg);
     let work_dir = base_canonical.clone();
     let output = match tokio::task::spawn_blocking(move || {
-        let ctx = crate::tools::tool_context_for(cfg.as_ref(), &cfg.allowed_commands, &work_dir);
+        let ctx =
+            crate::tools::tool_context_for(cfg.as_ref(), cfg.allowed_commands.as_ref(), &work_dir);
         crate::tools::run_tool("search_in_files", &args_json, &ctx)
     })
     .await
