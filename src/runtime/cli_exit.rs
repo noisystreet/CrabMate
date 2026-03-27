@@ -59,6 +59,9 @@ pub fn classify_model_error_message(msg: &str) -> i32 {
         || msg.contains("模型返回内容无法解析")
         || msg.contains("非流式响应 choices 为空")
         || msg.contains("无 tool_calls")
+        || msg.starts_with(
+            crate::agent::plan_artifact::STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX,
+        )
     {
         return EXIT_MODEL_ERROR;
     }
@@ -83,5 +86,14 @@ mod tests {
             classify_model_error_message("模型接口返回错误（HTTP 401）：bad key"),
             EXIT_MODEL_ERROR
         );
+    }
+
+    #[test]
+    fn classify_staged_plan_invalid_run_agent_turn_error() {
+        let msg = format!(
+            "{} not_found",
+            crate::agent::plan_artifact::STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX
+        );
+        assert_eq!(classify_model_error_message(&msg), EXIT_MODEL_ERROR);
     }
 }
