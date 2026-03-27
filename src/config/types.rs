@@ -228,6 +228,10 @@ pub struct AgentConfig {
     pub agent_memory_file: String,
     /// 注入备忘正文的最大字符数（超出截断）。
     pub agent_memory_file_max_chars: usize,
+    /// Web 新会话首轮：在备忘（若有）之外注入**自动生成的项目画像**（只读扫描 + 可选 `cargo metadata --no-deps`）。
+    pub project_profile_inject_enabled: bool,
+    /// 项目画像注入正文的字符上限（与备忘合并后仍受此上限约束的片段各自在生成时截断）。
+    pub project_profile_inject_max_chars: usize,
     /// 是否启用长期记忆管线（显式条目 + 后续向量检索）；默认关闭。
     pub long_term_memory_enabled: bool,
     /// 记忆条目按何种键隔离（当前仅 `conversation`）。

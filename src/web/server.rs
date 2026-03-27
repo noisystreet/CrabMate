@@ -51,6 +51,10 @@ pub(crate) fn build_app(
                 .delete(crate::web::workspace::workspace_file_delete_handler),
         )
         .route(
+            "/workspace/profile",
+            get(crate::web::workspace::workspace_profile_handler),
+        )
+        .route(
             "/tasks",
             get(crate::web::task::tasks_get_handler).post(crate::web::task::tasks_set_handler),
         );

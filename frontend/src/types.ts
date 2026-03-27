@@ -69,6 +69,10 @@ export interface StatusData {
   long_term_memory_vector_backend?: string
   long_term_memory_store_ready?: boolean
   long_term_memory_index_errors?: number
+  /** Web 新会话首轮是否注入自动生成的项目画像 */
+  project_profile_inject_enabled?: boolean
+  /** 项目画像注入正文最大字符数（0 表示不生成正文） */
+  project_profile_inject_max_chars?: number
 }
 
 export interface WorkspaceEntry {

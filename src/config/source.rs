@@ -70,6 +70,8 @@ pub(super) struct AgentSection {
     pub(super) agent_memory_file_enabled: Option<bool>,
     pub(super) agent_memory_file: Option<String>,
     pub(super) agent_memory_file_max_chars: Option<u64>,
+    pub(super) project_profile_inject_enabled: Option<bool>,
+    pub(super) project_profile_inject_max_chars: Option<u64>,
     /// `conversation`（当前唯一值）
     pub(super) long_term_memory_scope_mode: Option<String>,
     /// `disabled` | `fastembed` | `qdrant` | `pgvector`（非 disabled 须在对应里程碑实现后方可启用）

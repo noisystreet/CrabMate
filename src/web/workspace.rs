@@ -68,6 +68,14 @@ pub struct WorkspaceSearchResponse {
     pub error: Option<String>,
 }
 
+/// `GET /workspace/profile`：只读生成的项目画像 Markdown（与首轮注入同源逻辑）。
+#[derive(Serialize)]
+pub struct WorkspaceProfileResponse {
+    pub markdown: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Deserialize)]
 pub struct WorkspaceFileQuery {
     pub path: String,
@@ -497,6 +505,36 @@ pub async fn workspace_file_write_handler(
         Ok(()) => Json(WorkspaceFileWriteResponse { error: None }),
         Err(e) => Json(WorkspaceFileWriteResponse {
             error: Some(format!("写入文件失败: {}", e)),
+        }),
+    }
+}
+
+/// 返回当前工作区的项目画像（Markdown）。与 `project_profile_inject_max_chars` 上限一致；为 0 时返回空正文。
+pub async fn workspace_profile_handler(
+    State(state): State<Arc<AppState>>,
+) -> Json<WorkspaceProfileResponse> {
+    let base_canonical = match effective_workspace_base_canonical(&state).await {
+        Ok(p) => p,
+        Err(msg) => {
+            return Json(WorkspaceProfileResponse {
+                markdown: String::new(),
+                error: Some(msg),
+            });
+        }
+    };
+    let max_chars = state.cfg.project_profile_inject_max_chars;
+    let md_result = tokio::task::spawn_blocking(move || {
+        crate::project_profile::build_project_profile_markdown(&base_canonical, max_chars)
+    })
+    .await;
+    match md_result {
+        Ok(markdown) => Json(WorkspaceProfileResponse {
+            markdown,
+            error: None,
+        }),
+        Err(e) => Json(WorkspaceProfileResponse {
+            markdown: String::new(),
+            error: Some(format!("生成项目画像任务失败: {}", e)),
         }),
     }
 }

@@ -20,6 +20,8 @@
 # agent_memory_file_enabled = true
 # agent_memory_file = ".crabmate/agent_memory.md"
 # agent_memory_file_max_chars = 8000
+# project_profile_inject_enabled = true
+# project_profile_inject_max_chars = 6000
 # 长期记忆（分阶段 PR 落地；启用后仍须向量后端为 disabled，直至向量里程碑合并）
 # long_term_memory_enabled = false
 # long_term_memory_scope_mode = "conversation"
