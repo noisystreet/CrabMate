@@ -77,6 +77,7 @@
 - [ ] **工具结果「可引用」摘要**：统一长输出结构化摘要进入 `tool_result.summary`，减少上下文膨胀。
 - [ ] **新栈工具按需扩展**：在 `dev_tag` 体系下增加 JVM、容器等标签与最小工具集（保持白名单与路径安全）。Go 已有 `go_build`/`go_test`/`go_vet`/`go_mod_tidy`/`go_fmt_check`/`golangci_lint`；Node.js 已有 `npm_install`/`npm_run`/`npx_run`/`tsc_check`。
 - [ ] **registry 策略配置化**：超时、spawn_blocking 类别、`http_fetch` 等更多迁入 `AgentConfig`。
+- [ ] **MCP 协议支持（未来）**：以 MCP client 接入外部工具/资源并与 `tool_registry` 映射，或可选将本 agent 能力以 MCP server 形式暴露；会话与传输（stdio/SSE/HTTP）、配置项、鉴权及与现有白名单/路径安全策略对齐，文档化边界。
 
 ### `sse/`（协议与行分类）
 
@@ -125,6 +126,7 @@
 - [ ] **聊天列表虚拟化**：极长对话下减少 DOM 与重渲染。
 - [ ] **国际化与可访问性**：文案抽取、键盘导航、对比度与焦点管理。
 - [ ] **E2E / 契约测试**：关键路径（发消息、工具卡片、工作区设置）用 Playwright 或轻量 stub。
+- [ ] **语音交互（未来）**：浏览器侧麦克风采集、STT（可对接云端或本地引擎）、TTS 播放；与现有聊天/SSE 流衔接；权限、隐私与错误降级文案；若走后端代理需在 `web/` 增加路由并与鉴权（P0）同盘。
 
 ### 横切（`types`、`tool_result`、`health`、`redact`、`text_sanitize`）
 
