@@ -12,12 +12,12 @@ use serde_json;
 
 use crate::AppState;
 use crate::config::AgentConfig;
-use crate::path_workspace::absolutize_workspace_subpath;
+use crate::path_workspace::{
+    is_sensitive_workspace_path, is_within_allowed_roots, resolve_web_workspace_read_path,
+    resolve_web_workspace_write_path, validate_effective_workspace_base,
+};
 
 const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
-const SENSITIVE_WORKSPACE_PREFIXES: &[&str] = &[
-    "/proc", "/sys", "/dev", "/etc", "/boot", "/root", "/bin", "/sbin", "/usr",
-];
 
 #[derive(Serialize)]
 pub struct WorkspacePickResponse {
@@ -122,11 +122,7 @@ pub(crate) fn validate_workspace_set_path(
     if is_sensitive_workspace_path(&canon) {
         return Err("工作区路径命中敏感目录黑名单，请选择业务目录".to_string());
     }
-    if !cfg
-        .workspace_allowed_roots
-        .iter()
-        .any(|root| canon.starts_with(root))
-    {
+    if !is_within_allowed_roots(&canon, &cfg.workspace_allowed_roots) {
         let roots = cfg
             .workspace_allowed_roots
             .iter()
@@ -141,64 +137,17 @@ pub(crate) fn validate_workspace_set_path(
     Ok(canon)
 }
 
-fn is_sensitive_workspace_path(path: &Path) -> bool {
-    SENSITIVE_WORKSPACE_PREFIXES.iter().any(|prefix| {
-        let p = Path::new(prefix);
-        path == p || path.starts_with(p)
-    })
-}
-
-fn ensure_within_workspace(
-    base_canonical: &Path,
-    candidate: std::path::PathBuf,
+/// 解析当前会话工作区根为 canonical 路径，并校验仍在 `workspace_allowed_roots` 内、非敏感目录。
+async fn effective_workspace_base_canonical(
+    state: &Arc<AppState>,
 ) -> Result<std::path::PathBuf, String> {
-    if candidate.starts_with(base_canonical) {
-        Ok(candidate)
-    } else {
-        Err("路径不能超出工作区根目录".to_string())
-    }
-}
-
-fn resolve_workspace_write_path(base: &Path, sub: &str) -> Result<std::path::PathBuf, String> {
-    let sub = sub.trim();
-    if sub.is_empty() {
-        return Err("path 不能为空".to_string());
-    }
+    let base_str = state.effective_workspace_path().await;
+    let base = Path::new(&base_str);
     let base_canonical = base
         .canonicalize()
         .map_err(|e| format!("工作目录无法解析: {}", e))?;
-    let normalized = absolutize_workspace_subpath(&base_canonical, sub)?;
-
-    // 防止借助工作区内 symlink 写到外部：校验最近存在祖先路径的 canonical 结果仍在工作区内
-    let mut ancestor = normalized.as_path();
-    while !ancestor.exists() {
-        ancestor = ancestor
-            .parent()
-            .ok_or_else(|| "路径无法解析".to_string())?;
-    }
-    let ancestor_canonical = ancestor
-        .canonicalize()
-        .map_err(|e| format!("路径无法解析: {}", e))?;
-    ensure_within_workspace(&base_canonical, ancestor_canonical)?;
-    Ok(normalized)
-}
-
-pub(crate) fn resolve_workspace_path(
-    base: &Path,
-    sub: Option<&str>,
-) -> Result<std::path::PathBuf, String> {
-    let base_canonical = base
-        .canonicalize()
-        .map_err(|e| format!("工作目录无法解析: {}", e))?;
-    let sub = match sub {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => return Ok(base_canonical),
-    };
-    let normalized = absolutize_workspace_subpath(&base_canonical, sub)?;
-    let canonical = normalized
-        .canonicalize()
-        .map_err(|e| format!("路径无法解析: {}", e))?;
-    ensure_within_workspace(&base_canonical, canonical)
+    validate_effective_workspace_base(&state.cfg, &base_canonical)?;
+    Ok(base_canonical)
 }
 
 /// 通过原生文件对话框选择工作区根目录
@@ -242,12 +191,9 @@ pub async fn workspace_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<WorkspaceQuery>,
 ) -> Json<WorkspaceResponse> {
-    let base_str = state.effective_workspace_path().await;
-    let base = Path::new(&base_str);
-    let base_canonical = match base.canonicalize() {
+    let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
-        Err(e) => {
-            let msg = format!("工作目录无法解析: {}", e);
+        Err(msg) => {
             log::warn!("{}", msg);
             return Json(WorkspaceResponse {
                 path: String::new(),
@@ -256,7 +202,7 @@ pub async fn workspace_handler(
             });
         }
     };
-    let canonical = match resolve_workspace_path(&base_canonical, query.path.as_deref()) {
+    let canonical = match resolve_web_workspace_read_path(&base_canonical, query.path.as_deref()) {
         Ok(p) => p,
         Err(msg) => {
             return Json(WorkspaceResponse {
@@ -314,18 +260,15 @@ pub async fn workspace_search_handler(
             error: Some("pattern 不能为空".to_string()),
         });
     }
-    let base_str = state.effective_workspace_path().await;
-    let base = Path::new(&base_str);
-    let base_canonical = match base.canonicalize() {
+    let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
         Err(e) => {
             return Json(WorkspaceSearchResponse {
                 output: String::new(),
-                error: Some(format!("工作目录无法解析: {}", e)),
+                error: Some(e),
             });
         }
     };
-    // 将来自前端的绝对路径（当前目录 data.path）转换为相对于工作区根目录的相对路径，供 grep 工具使用
     let rel_path = match body
         .path
         .as_deref()
@@ -333,28 +276,18 @@ pub async fn workspace_search_handler(
         .filter(|s| !s.is_empty())
     {
         None => None,
-        Some(p) => {
-            let p_path = Path::new(p);
-            let canonical = match p_path.canonicalize() {
-                Ok(c) => c,
-                Err(e) => {
-                    return Json(WorkspaceSearchResponse {
-                        output: String::new(),
-                        error: Some(format!("搜索路径无法解析: {}", e)),
-                    });
-                }
-            };
-            if !canonical.starts_with(&base_canonical) {
-                return Json(WorkspaceSearchResponse {
-                    output: String::new(),
-                    error: Some("搜索路径不能超出工作区根目录".to_string()),
-                });
-            }
-            match canonical.strip_prefix(&base_canonical) {
+        Some(p) => match resolve_web_workspace_read_path(&base_canonical, Some(p)) {
+            Ok(canonical) => match canonical.strip_prefix(&base_canonical) {
                 Ok(r) => Some(r.to_string_lossy().to_string()),
                 Err(_) => None,
+            },
+            Err(e) => {
+                return Json(WorkspaceSearchResponse {
+                    output: String::new(),
+                    error: Some(e),
+                });
             }
-        }
+        },
     };
     let mut args = serde_json::json!({ "pattern": pattern });
     if let Some(p) = rel_path {
@@ -410,14 +343,12 @@ pub async fn workspace_file_read_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<WorkspaceFileQuery>,
 ) -> Json<WorkspaceFileReadResponse> {
-    let base_str = state.effective_workspace_path().await;
-    let base = Path::new(&base_str);
-    let base_canonical = match base.canonicalize() {
+    let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
         Err(e) => {
             return Json(WorkspaceFileReadResponse {
                 content: String::new(),
-                error: Some(format!("工作目录无法解析: {}", e)),
+                error: Some(e),
             });
         }
     };
@@ -428,7 +359,7 @@ pub async fn workspace_file_read_handler(
             error: Some("path 不能为空".to_string()),
         });
     }
-    let canonical = match resolve_workspace_path(&base_canonical, Some(path)) {
+    let canonical = match resolve_web_workspace_read_path(&base_canonical, Some(path)) {
         Ok(p) => p,
         Err(msg) => {
             return Json(WorkspaceFileReadResponse {
@@ -479,14 +410,10 @@ pub async fn workspace_file_delete_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<WorkspaceFileQuery>,
 ) -> Json<WorkspaceFileDeleteResponse> {
-    let base_str = state.effective_workspace_path().await;
-    let base = Path::new(&base_str);
-    let base_canonical = match base.canonicalize() {
+    let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
         Err(e) => {
-            return Json(WorkspaceFileDeleteResponse {
-                error: Some(format!("工作目录无法解析: {}", e)),
-            });
+            return Json(WorkspaceFileDeleteResponse { error: Some(e) });
         }
     };
     let path = query.path.trim();
@@ -495,7 +422,7 @@ pub async fn workspace_file_delete_handler(
             error: Some("path 不能为空".to_string()),
         });
     }
-    let canonical = match resolve_workspace_path(&base_canonical, Some(path)) {
+    let canonical = match resolve_web_workspace_read_path(&base_canonical, Some(path)) {
         Ok(p) => p,
         Err(msg) => {
             return Json(WorkspaceFileDeleteResponse { error: Some(msg) });
@@ -527,14 +454,10 @@ pub async fn workspace_file_write_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<WorkspaceFileWriteBody>,
 ) -> Json<WorkspaceFileWriteResponse> {
-    let base_str = state.effective_workspace_path().await;
-    let base = Path::new(&base_str);
-    let base_canonical = match base.canonicalize() {
+    let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
         Err(e) => {
-            return Json(WorkspaceFileWriteResponse {
-                error: Some(format!("工作目录无法解析: {}", e)),
-            });
+            return Json(WorkspaceFileWriteResponse { error: Some(e) });
         }
     };
     let path = body.path.trim();
@@ -543,7 +466,7 @@ pub async fn workspace_file_write_handler(
             error: Some("path 不能为空".to_string()),
         });
     }
-    let canonical = match resolve_workspace_write_path(&base_canonical, path) {
+    let canonical = match resolve_web_workspace_write_path(&base_canonical, path) {
         Ok(p) => p,
         Err(msg) => {
             return Json(WorkspaceFileWriteResponse { error: Some(msg) });
@@ -575,20 +498,5 @@ pub async fn workspace_file_write_handler(
         Err(e) => Json(WorkspaceFileWriteResponse {
             error: Some(format!("写入文件失败: {}", e)),
         }),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_sensitive_workspace_path;
-    use std::path::Path;
-
-    #[test]
-    fn sensitive_workspace_path_matches_prefixes() {
-        assert!(is_sensitive_workspace_path(Path::new("/proc")));
-        assert!(is_sensitive_workspace_path(Path::new("/proc/1234")));
-        assert!(is_sensitive_workspace_path(Path::new("/etc/nginx")));
-        assert!(!is_sensitive_workspace_path(Path::new("/workspace")));
-        assert!(!is_sensitive_workspace_path(Path::new("/tmp/project")));
     }
 }

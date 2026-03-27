@@ -2,7 +2,9 @@
 //!
 //! 路径为相对于工作目录的相对路径，且不能通过 .. 超出工作目录。
 
-use crate::path_workspace::absolutize_relative_under_root;
+use crate::path_workspace::{
+    absolutize_relative_under_root, canonical_workspace_root, ensure_canonical_within_root,
+};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -26,19 +28,6 @@ static RATE_LIMIT: Mutex<RateLimitState> = Mutex::new(RateLimitState {
     count: 0,
 });
 
-fn canonical_workspace_root(base: &Path) -> Result<PathBuf, String> {
-    base.canonicalize()
-        .map_err(|e| format!("工作目录无法解析: {}", e))
-}
-
-fn ensure_within_workspace(base_canonical: &Path, candidate: &Path) -> Result<(), String> {
-    if candidate.starts_with(base_canonical) {
-        Ok(())
-    } else {
-        Err("路径不能超出工作目录".to_string())
-    }
-}
-
 // 对“目标路径或其最近存在祖先”做 canonical 校验，防止通过 symlink 指向工作区外。
 fn ensure_existing_ancestor_within_workspace(
     base_canonical: &Path,
@@ -53,7 +42,7 @@ fn ensure_existing_ancestor_within_workspace(
     let ancestor_canonical = ancestor
         .canonicalize()
         .map_err(|e| format!("路径无法解析: {}", e))?;
-    ensure_within_workspace(base_canonical, &ancestor_canonical)
+    ensure_canonical_within_root(&ancestor_canonical, base_canonical)
 }
 
 /// 解析相对工作目录的路径，且不允许超出工作目录
