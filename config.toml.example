@@ -18,6 +18,12 @@
 # agent_memory_file_enabled = true
 # agent_memory_file = ".crabmate/agent_memory.md"
 # agent_memory_file_max_chars = 8000
+# 长期记忆（分阶段 PR 落地；启用后仍须向量后端为 disabled，直至向量里程碑合并）
+# long_term_memory_enabled = false
+# long_term_memory_scope_mode = "conversation"
+# long_term_memory_vector_backend = "disabled"
+# long_term_memory_max_entries = 256
+# long_term_memory_inject_max_chars = 8000
 # command_timeout_secs = 10
 # command_max_output_len = 8192
 # allowed_commands：逗号分隔命令名，覆盖默认白名单（见 default_config.toml；含 stat/grep/diff/git/cargo、文本与压缩只读工具等）
