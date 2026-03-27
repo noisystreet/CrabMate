@@ -50,7 +50,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         temperature_override,
         seed_override,
     );
-    let (mut msg, finish_reason) = complete_chat_retrying(
+    let (msg, finish_reason) = complete_chat_retrying(
         llm_backend,
         client,
         api_key,
@@ -63,6 +63,5 @@ pub(crate) async fn per_plan_call_model_retrying(
         plain_terminal_stream,
     )
     .await?;
-    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
     Ok((msg, finish_reason))
 }

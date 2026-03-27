@@ -248,7 +248,13 @@ fn dsml_parameter_value_to_json(raw_val: &str) -> Value {
 /// 部分 DeepSeek 兼容端在 **`tool_calls` 为空** 时，仍把调用写在正文 **DSML**（`<|DSML|invoke>`）里。
 /// TUI 展示会 [`strip_deepseek_dsml_for_display`] 剥掉这些标记，用户易误以为「只有说明、没调工具」。
 /// 在 Agent 侧若 API 未给 `tool_calls`，则从 **`content` 与 `reasoning_content` 拼接文本**解析并写入 `msg.tool_calls`，并分别剥除两字段中的 DSML 以节省后续 token。
-pub fn materialize_deepseek_dsml_tool_calls_in_message(msg: &mut Message) {
+///
+/// `enabled == false` 时本函数立即返回（与配置 **`materialize_deepseek_dsml_tool_calls`** 对齐）：仅使用 API 原生 `tool_calls`。
+/// 更稳的结构化路径是网关始终返回 OpenAI 式 `tool_calls`；或约定正文**仅一段 JSON** 工具调用并由专用解析器处理（当前未实现，与 DSML 二选一由产品定）。
+pub fn materialize_deepseek_dsml_tool_calls_in_message(msg: &mut Message, enabled: bool) {
+    if !enabled {
+        return;
+    }
     if msg
         .tool_calls
         .as_ref()
@@ -642,7 +648,7 @@ mod tests {
             name: None,
             tool_call_id: None,
         };
-        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
         let tcs = msg.tool_calls.as_ref().expect("tool_calls");
         assert_eq!(tcs.len(), 1);
         assert_eq!(tcs[0].function.name, "modify_file");
@@ -652,6 +658,24 @@ mod tests {
         let prose = msg.content.as_deref().unwrap_or("");
         assert!(prose.contains("将更新"));
         assert!(!prose.contains("DSML"));
+    }
+
+    #[test]
+    fn materialize_dsml_skipped_when_disabled() {
+        let dsml = r#"<|DSML|invoke name="read_file">
+<|DSML|parameter name="path">x.txt</|DSML|parameter>
+</|DSML|invoke>"#;
+        let mut msg = Message {
+            role: "assistant".to_string(),
+            content: Some(dsml.to_string()),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg, false);
+        assert!(msg.tool_calls.is_none());
+        assert!(msg.content.as_deref().unwrap_or("").contains("DSML"));
     }
 
     #[test]
@@ -670,7 +694,7 @@ mod tests {
             name: None,
             tool_call_id: None,
         };
-        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
         let tcs = msg.tool_calls.as_ref().expect("tool_calls");
         assert_eq!(tcs.len(), 1);
         assert_eq!(tcs[0].function.name, "modify_file");
@@ -696,7 +720,7 @@ mod tests {
             name: None,
             tool_call_id: None,
         };
-        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
         let tcs = msg.tool_calls.as_ref().expect("tool_calls");
         assert_eq!(tcs[0].function.name, "read_file");
     }
@@ -718,7 +742,7 @@ mod tests {
             name: None,
             tool_call_id: None,
         };
-        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
         let tcs = msg.tool_calls.as_ref().expect("tool_calls");
         assert_eq!(tcs[0].function.name, "run_command");
         let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
@@ -744,7 +768,7 @@ mod tests {
             name: None,
             tool_call_id: None,
         };
-        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
         let tcs = msg.tool_calls.as_ref().expect("tool_calls");
         assert_eq!(tcs[0].function.name, "read_file");
         assert!(
@@ -782,7 +806,7 @@ Line2</|DSML|parameter>
             name: None,
             tool_call_id: None,
         };
-        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
         let tcs = msg.tool_calls.as_ref().expect("tool_calls");
         assert_eq!(tcs.len(), 1);
         assert_eq!(tcs[0].function.name, "modify_file");
@@ -812,7 +836,7 @@ Line2</|DSML|parameter>
             name: None,
             tool_call_id: None,
         };
-        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
         let tcs = msg.tool_calls.as_ref().expect("tool_calls");
         assert_eq!(tcs.len(), 1);
         assert_eq!(tcs[0].function.name, "create_file");
@@ -842,7 +866,7 @@ Line2</|DSML|parameter>
             name: None,
             tool_call_id: None,
         };
-        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg, true);
         let tcs = msg.tool_calls.as_ref().expect("tool_calls");
         assert_eq!(tcs[0].function.name, "read_file");
     }

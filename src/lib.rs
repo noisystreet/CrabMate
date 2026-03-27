@@ -310,6 +310,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
             approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             long_term_memory,
+            web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         });
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
         let app = web::server::build_app(state, no_web, static_dir, uploads_dir.clone());

@@ -16,6 +16,8 @@ use crate::conversation_store::{
 use crate::long_term_memory::LongTermMemoryRuntime;
 use crate::types::{CommandApprovalDecision, Message};
 
+use super::tasks_types::TasksData;
+
 /// 与 `normalize_client_conversation_id`（`chat_handlers`）及存储上限对齐。
 pub(crate) const CONVERSATION_ID_MAX_LEN: usize = 128;
 const CONVERSATION_STORE_TTL: Duration = Duration::from_secs(CONVERSATION_STORE_TTL_SECS);
@@ -53,6 +55,8 @@ pub(crate) struct AppState {
         Arc<tokio::sync::RwLock<HashMap<String, mpsc::Sender<CommandApprovalDecision>>>>,
     /// 长期记忆（可选 SQLite + 可选 fastembed）；未启用或未配置路径时为 `None`。
     pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
+    /// Web 侧栏任务清单：按**当前生效工作区路径**键入，仅存本进程内存（**不**写 `tasks.json`）。
+    pub(crate) web_tasks_by_workspace: Arc<tokio::sync::RwLock<HashMap<String, TasksData>>>,
 }
 
 /// Web 会话存储后端。

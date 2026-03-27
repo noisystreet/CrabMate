@@ -15,7 +15,7 @@ use super::message_display::{tool_content_for_display_full, user_message_for_cha
 
 /// 与 TUI 聊天区展示一致：正文经 **`user_message_for_chat_display`**（含分步注入 user 长句压缩、LaTeX），再按行打印到 stdout。
 ///
-/// `clear_before` 时先空一行，并对**首条非空行**用加粗暗黄（与原先单独一行「【规划】」同级），避免与摘要首行「【规划】共 N 步」重复输出「【规划】」。
+/// `clear_before` 时先空一行，并对**首条非空行**用加粗暗黄（与摘要首行「`**规划** · 共 N 步`」同级视觉层级）。
 pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Result<()> {
     let display = user_message_for_chat_display(text);
     debug!(
@@ -79,7 +79,7 @@ pub(crate) fn print_tool_result_terminal(
         SetAttribute(Attribute::Bold),
         SetForegroundColor(Color::Cyan)
     )?;
-    writeln!(w, "\n【工具】{name}")?;
+    writeln!(w, "\n### 工具 · {name}")?;
     queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
     queue!(w, SetForegroundColor(Color::DarkGrey))?;
     writeln!(w, "{body}")?;

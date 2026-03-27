@@ -13,7 +13,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::sse::{SsePayload, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
-use crate::tool_result;
+use crate::tool_result::{self, parse_legacy_output};
 use crate::tools;
 use crate::types::{Message, ToolCall};
 
@@ -45,6 +45,7 @@ async fn emit_tool_result_sse_and_append(
     out: Option<&mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
+    tool_result_envelope_v1: bool,
     name: &str,
     args: &str,
     id: &str,
@@ -67,7 +68,7 @@ async fn emit_tool_result_sse_and_append(
     }
 
     if let Some(tx) = out {
-        let parsed = tool_result::parse_legacy_output(name, &result);
+        let parsed = parse_legacy_output(name, &result);
         let stdout = if parsed.stdout.is_empty() {
             None
         } else {
@@ -82,7 +83,7 @@ async fn emit_tool_result_sse_and_append(
             .send(encode_message(SsePayload::ToolResult {
                 tool_result: ToolResultBody {
                     name: name.to_string(),
-                    summary: tool_summary,
+                    summary: tool_summary.clone(),
                     output: result.clone(),
                     ok: Some(parsed.ok),
                     exit_code: parsed.exit_code,
@@ -94,11 +95,21 @@ async fn emit_tool_result_sse_and_append(
             .await;
     }
 
+    let content_for_model = if tool_result_envelope_v1 {
+        let parsed = parse_legacy_output(name, &result);
+        let summary_str = tool_summary
+            .clone()
+            .unwrap_or_else(|| format!("工具：{name}"));
+        tool_result::encode_tool_message_envelope_v1(name, summary_str, &parsed, &result)
+    } else {
+        result
+    };
+
     PerCoordinator::append_tool_result_and_reflection(
         per_coord,
         messages,
         id.to_string(),
-        result,
+        content_for_model,
         reflection_inject,
     );
 }
@@ -150,6 +161,7 @@ struct ExecuteToolsCommonCtx<'a> {
     out: Option<&'a mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
+    tool_result_envelope_v1: bool,
     web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     mcp_session: Option<&'a std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
@@ -166,6 +178,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
+        tool_result_envelope_v1,
         web_tool_ctx,
         cli_tool_ctx,
         mcp_session,
@@ -270,6 +283,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 out,
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
                 &tc.function.name,
                 &tc.function.arguments,
                 &tc.id,
@@ -316,6 +330,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     out,
                     echo_terminal_transcript,
                     terminal_tool_display_max_chars,
+                    tool_result_envelope_v1,
                     &name,
                     &args,
                     &id,
@@ -370,6 +385,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 out,
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
                 &name,
                 &args,
                 &id,
@@ -426,6 +442,7 @@ pub(crate) async fn per_execute_tools_web(
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars: cfg.command_max_output_len,
+        tool_result_envelope_v1: cfg.tool_result_envelope_v1,
         web_tool_ctx,
         cli_tool_ctx,
         mcp_session,

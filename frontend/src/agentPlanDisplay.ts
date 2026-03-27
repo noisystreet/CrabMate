@@ -16,7 +16,11 @@ export const SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT = false
 /** 与 `user_message_for_chat_display` / `is_staged_step_injection_user_content` 同形。 */
 function isStagedStepInjectionUserContent(s: string): boolean {
   const t = s.trimStart()
-  return t.startsWith('【分步执行') && t.includes('\n- id:') && t.includes('\n- 描述:')
+  return (
+    (t.startsWith('### 分步 ') || t.startsWith('【分步执行')) &&
+    t.includes('\n- id:') &&
+    t.includes('\n- 描述:')
+  )
 }
 
 /** 聊天区展示用：分步注入 `user` 在 `SHOW_…` 为 `false` 时整段不展示；`messages` 原文与导出不变。 */

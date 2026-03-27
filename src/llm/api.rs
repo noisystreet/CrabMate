@@ -249,6 +249,8 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
 ///
 /// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；
 /// DeepSeek 等兼容实现可用；字段形态不同的网关需在调用侧适配或扩展解析。
+///
+/// **DSML 物化**：正文中的 DeepSeek DSML 工具调用**不在**此处解析；由 [`crate::llm::complete_chat_retrying`] 在成功后按配置 **`materialize_deepseek_dsml_tool_calls`** 统一处理。
 #[allow(clippy::too_many_arguments)] // HTTP + 流式/终端/out/cancel 为固定组合，拆结构体收益有限
 pub async fn stream_chat(
     client: &Client,
@@ -369,7 +371,7 @@ pub async fn stream_chat(
             },
         )?;
         let crate::types::Choice {
-            message: mut msg,
+            message: msg,
             finish_reason,
         } = choice;
 
@@ -447,7 +449,6 @@ pub async fn stream_chat(
             msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
             redact::assistant_message_preview_for_log(&msg)
         );
-        crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
         return Ok((msg, finish_reason));
     }
 
@@ -579,7 +580,7 @@ pub async fn stream_chat(
                 .collect(),
         )
     };
-    let mut msg = Message {
+    let msg = Message {
         role: "assistant".to_string(),
         content: if content_acc.is_empty() {
             None
@@ -608,7 +609,6 @@ pub async fn stream_chat(
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
         redact::assistant_message_preview_for_log(&msg)
     );
-    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
     Ok((msg, finish))
 }
 

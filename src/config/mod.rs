@@ -57,6 +57,8 @@ struct ConfigBuilder {
     cursor_rules_max_chars: Option<u64>,
     env_tag: Option<String>,
     tool_message_max_chars: Option<u64>,
+    tool_result_envelope_v1: Option<bool>,
+    materialize_deepseek_dsml_tool_calls: Option<bool>,
     context_char_budget: Option<u64>,
     context_min_messages_after_system: Option<u64>,
     context_summary_trigger_chars: Option<u64>,
@@ -215,6 +217,12 @@ impl ConfigBuilder {
             .or(self.cursor_rules_include_agents_md);
         self.cursor_rules_max_chars = agent.cursor_rules_max_chars.or(self.cursor_rules_max_chars);
         self.tool_message_max_chars = agent.tool_message_max_chars.or(self.tool_message_max_chars);
+        self.tool_result_envelope_v1 = agent
+            .tool_result_envelope_v1
+            .or(self.tool_result_envelope_v1);
+        self.materialize_deepseek_dsml_tool_calls = agent
+            .materialize_deepseek_dsml_tool_calls
+            .or(self.materialize_deepseek_dsml_tool_calls);
         self.context_char_budget = agent.context_char_budget.or(self.context_char_budget);
         self.context_min_messages_after_system = agent
             .context_min_messages_after_system
@@ -536,6 +544,16 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.tool_message_max_chars = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_TOOL_RESULT_ENVELOPE_V1")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.tool_result_envelope_v1 = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.materialize_deepseek_dsml_tool_calls = Some(val);
     }
     if let Ok(v) = std::env::var("AGENT_CONTEXT_CHAR_BUDGET")
         && let Ok(n) = v.trim().parse::<u64>()
@@ -887,6 +905,9 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .tool_message_max_chars
         .unwrap_or(32768)
         .clamp(1024, 1_048_576) as usize;
+    let tool_result_envelope_v1 = b.tool_result_envelope_v1.unwrap_or(true);
+    let materialize_deepseek_dsml_tool_calls =
+        b.materialize_deepseek_dsml_tool_calls.unwrap_or(true);
     let context_char_budget = b.context_char_budget.unwrap_or(0).min(50_000_000) as usize;
     let context_min_messages_after_system = b
         .context_min_messages_after_system
@@ -1025,6 +1046,8 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         cursor_rules_include_agents_md,
         cursor_rules_max_chars: cursor_rules_max_chars as usize,
         tool_message_max_chars,
+        tool_result_envelope_v1,
+        materialize_deepseek_dsml_tool_calls,
         context_char_budget,
         context_min_messages_after_system,
         context_summary_trigger_chars,
