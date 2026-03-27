@@ -80,6 +80,9 @@ struct ConfigBuilder {
     agent_memory_file_max_chars: Option<u64>,
     project_profile_inject_enabled: Option<bool>,
     project_profile_inject_max_chars: Option<u64>,
+    tool_call_explain_enabled: Option<bool>,
+    tool_call_explain_min_chars: Option<u64>,
+    tool_call_explain_max_chars: Option<u64>,
     long_term_memory_enabled: Option<bool>,
     long_term_memory_scope_mode_str: Option<String>,
     long_term_memory_vector_backend_str: Option<String>,
@@ -272,6 +275,15 @@ impl ConfigBuilder {
         self.project_profile_inject_max_chars = agent
             .project_profile_inject_max_chars
             .or(self.project_profile_inject_max_chars);
+        self.tool_call_explain_enabled = agent
+            .tool_call_explain_enabled
+            .or(self.tool_call_explain_enabled);
+        self.tool_call_explain_min_chars = agent
+            .tool_call_explain_min_chars
+            .or(self.tool_call_explain_min_chars);
+        self.tool_call_explain_max_chars = agent
+            .tool_call_explain_max_chars
+            .or(self.tool_call_explain_max_chars);
         self.long_term_memory_enabled = agent
             .long_term_memory_enabled
             .or(self.long_term_memory_enabled);
@@ -661,6 +673,21 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.project_profile_inject_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_TOOL_CALL_EXPLAIN_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.tool_call_explain_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_TOOL_CALL_EXPLAIN_MIN_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.tool_call_explain_min_chars = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_TOOL_CALL_EXPLAIN_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.tool_call_explain_max_chars = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -972,6 +999,11 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .project_profile_inject_max_chars
         .unwrap_or(6000)
         .clamp(0, 500_000) as usize;
+    let tool_call_explain_enabled = b.tool_call_explain_enabled.unwrap_or(false);
+    let tool_call_explain_min_chars =
+        b.tool_call_explain_min_chars.unwrap_or(8).clamp(1, 256) as usize;
+    let max_chars_raw = b.tool_call_explain_max_chars.unwrap_or(400).clamp(1, 4000) as usize;
+    let tool_call_explain_max_chars = max_chars_raw.max(tool_call_explain_min_chars);
 
     let long_term_memory_enabled = b.long_term_memory_enabled.unwrap_or(false);
     let long_term_memory_scope_mode = match b.long_term_memory_scope_mode_str.as_deref() {
@@ -1093,6 +1125,9 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         agent_memory_file_max_chars,
         project_profile_inject_enabled,
         project_profile_inject_max_chars,
+        tool_call_explain_enabled,
+        tool_call_explain_min_chars,
+        tool_call_explain_max_chars,
         long_term_memory_enabled,
         long_term_memory_scope_mode,
         long_term_memory_vector_backend,
