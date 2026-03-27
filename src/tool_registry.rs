@@ -600,7 +600,13 @@ async fn execute_run_command_impl(
                         allowlist_key: None,
                     },
                 });
-                if ctx.out_tx.send(line).await.is_err() {
+                if !crate::sse::send_string_logged(
+                    &ctx.out_tx,
+                    line,
+                    "tool_registry::run_command approval",
+                )
+                .await
+                {
                     return ("错误：审批通道不可用，请重试。".to_string(), None);
                 }
                 let mut rx_guard = ctx.approval_rx_shared.lock().await;
@@ -743,7 +749,13 @@ async fn execute_http_fetch_web(
                         allowlist_key: Some(key.clone()),
                     },
                 });
-                if ctx.out_tx.send(line).await.is_err() {
+                if !crate::sse::send_string_logged(
+                    &ctx.out_tx,
+                    line,
+                    "tool_registry::http_fetch approval",
+                )
+                .await
+                {
                     return ("错误：审批通道不可用，请重试。".to_string(), None);
                 }
                 let mut rx_guard = ctx.approval_rx_shared.lock().await;
