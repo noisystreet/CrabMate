@@ -30,6 +30,39 @@ pub enum PlanArtifactError {
     },
 }
 
+/// [`staged_plan_invalid_run_agent_turn_error`] 返回串的固定前缀，供 `chat_job_queue` 等与 SSE `code: staged_plan_invalid` 对齐识别（**勿**与用户输入拼接）。
+pub(crate) const STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX: &str = "staged_plan_invalid:";
+
+/// 供日志单行输出：`WrongType` 仅记长度与短预览，不记完整 `type` 字符串。
+pub(crate) fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
+    match e {
+        PlanArtifactError::NotFound => "not_found".to_string(),
+        PlanArtifactError::WrongType(t) => {
+            let n = t.chars().count();
+            let prev = crate::redact::preview_chars(t, 24);
+            format!("wrong_type type_len={n} type_preview={prev}")
+        }
+        PlanArtifactError::WrongVersion(v) => format!("wrong_version version={v}"),
+        PlanArtifactError::EmptySteps => "empty_steps".to_string(),
+        PlanArtifactError::InvalidStep { index, reason } => {
+            format!("invalid_step index={index} reason={reason}")
+        }
+    }
+}
+
+/// 分阶段规划轮解析失败时 `run_agent_turn` 的 `Err` 文案（含结构化摘要，无完整模型正文）。
+pub(crate) fn staged_plan_invalid_run_agent_turn_error(e: PlanArtifactError) -> String {
+    format!(
+        "{} {}",
+        STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX,
+        plan_artifact_error_log_summary(&e)
+    )
+}
+
+pub(crate) fn is_staged_plan_invalid_run_agent_turn_error(msg: &str) -> bool {
+    msg.starts_with(STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX)
+}
+
 /// Plan v1 的 schema 规则描述（中文），供提示词引用。
 pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 顶层 \"type\" 为字符串 \"agent_reply_plan\"
@@ -323,6 +356,21 @@ mod tests {
     fn sample_json() -> String {
         r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"do a"}]}"#
             .to_string()
+    }
+
+    #[test]
+    fn staged_plan_invalid_error_prefix_and_detector() {
+        let e = staged_plan_invalid_run_agent_turn_error(PlanArtifactError::NotFound);
+        assert!(is_staged_plan_invalid_run_agent_turn_error(&e));
+        assert!(e.starts_with(STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX));
+    }
+
+    #[test]
+    fn plan_artifact_error_log_summary_redacts_long_wrong_type() {
+        let long = "x".repeat(80);
+        let s = plan_artifact_error_log_summary(&PlanArtifactError::WrongType(long.clone()));
+        assert!(!s.contains(&long));
+        assert!(s.contains("type_len=80"));
     }
 
     #[test]

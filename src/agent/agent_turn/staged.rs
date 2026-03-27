@@ -2,7 +2,7 @@
 
 use std::sync::atomic::Ordering;
 
-use log::debug;
+use log::{debug, warn};
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::llm::{complete_chat_retrying, no_tools_chat_request};
@@ -174,12 +174,18 @@ where
         return Ok(());
     }
 
-    push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
-
     let content = msg.content.as_deref().unwrap_or("");
     let plan = match crate::agent::plan_artifact::parse_agent_reply_plan_v1(content) {
         Ok(plan_v1) => plan_v1,
-        Err(_) => {
+        Err(parse_err) => {
+            let detail = crate::agent::plan_artifact::plan_artifact_error_log_summary(&parse_err);
+            warn!(
+                target: "crabmate",
+                "staged_plan_invalid parse_err={} content_len={} content_preview={}",
+                detail,
+                content.chars().count(),
+                crate::redact::preview_chars(content, crate::redact::MESSAGE_LOG_PREVIEW_CHARS)
+            );
             if let Some(tx) = p.out {
                 let _ = tx
                     .send(encode_message(SsePayload::Error(SseErrorBody {
@@ -189,9 +195,14 @@ where
                     })))
                     .await;
             }
-            return Ok(());
+            return Err(
+                crate::agent::plan_artifact::staged_plan_invalid_run_agent_turn_error(parse_err)
+                    .into(),
+            );
         }
     };
+
+    push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
 
     let plan_id = next_staged_plan_id();
     let n = plan.steps.len();
