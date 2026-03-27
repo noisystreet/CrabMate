@@ -1,4 +1,5 @@
-//! CLI 对话里「我」「Agent」前缀的着色与加粗（`runtime::cli` 与 `llm::api` 共用）。
+//! CLI 对话里「我」「Agent」前缀的着色与加粗（`runtime::cli` 与 `llm::api` 共用）；
+//! 以及 **`plain_terminal_stream`** 下助手正文里 **`reasoning_content`** 与 **`content`** 的分色（尊重 **`NO_COLOR`**、非 TTY 不着色）。
 
 use log::debug;
 
@@ -6,7 +7,7 @@ use crossterm::{
     QueueableCommand, queue,
     style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
 };
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 /// 用户输入提示：`我: `，加粗 + 青色。
 pub(crate) fn write_user_message_prefix<W: Write + QueueableCommand>(w: &mut W) -> io::Result<()> {
@@ -30,6 +31,32 @@ pub(crate) fn write_agent_message_prefix<W: Write + QueueableCommand>(w: &mut W)
         SetForegroundColor(Color::Magenta)
     )?;
     write!(w, "Agent: ")?;
+    queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
+    Ok(())
+}
+
+/// 与 REPL 等一致：未设 **`NO_COLOR`** 且 stdout 为 TTY 时允许为助手正文写 ANSI。
+#[inline]
+pub(crate) fn stdout_use_cli_ansi_color() -> bool {
+    std::env::var_os("NO_COLOR").is_none() && io::stdout().is_terminal()
+}
+
+/// CLI 流式/纯文本：`reasoning_content` 片段用灰阶 + Dim，与后续 **`content`**（规划、终答等）默认前景色区分。
+#[inline]
+pub(crate) fn queue_cli_reasoning_body_style<W: Write + QueueableCommand>(
+    w: &mut W,
+) -> io::Result<()> {
+    queue!(
+        w,
+        SetForegroundColor(Color::DarkGrey),
+        SetAttribute(Attribute::Dim)
+    )?;
+    Ok(())
+}
+
+/// 结束「思考」样式，回到终端默认前景（供 `content`、换行等）。
+#[inline]
+pub(crate) fn queue_cli_plain_body_reset<W: Write + QueueableCommand>(w: &mut W) -> io::Result<()> {
     queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
     Ok(())
 }

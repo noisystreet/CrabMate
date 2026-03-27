@@ -61,15 +61,30 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .sum()
 }
 
-/// CLI（`render_to_terminal && out.is_none()`）：首个非空 delta 前打 `Agent:` 前缀，随后将原文写入 stdout。
-fn cli_terminal_write_plain_fragment(fragment: &str, prefix_emitted: &mut bool) -> io::Result<()> {
+/// CLI（`render_to_terminal && out.is_none()`）：首个非空 delta 前打 `Agent:` 前缀；**`reasoning_content`** 与 **`content`** 分色（见 [`crate::runtime::terminal_labels`]）。
+fn cli_terminal_write_plain_fragment(
+    fragment: &str,
+    prefix_emitted: &mut bool,
+    is_reasoning: bool,
+    reasoning_style_active: &mut bool,
+) -> io::Result<()> {
     if fragment.is_empty() {
         return Ok(());
     }
+    let use_color = crate::runtime::terminal_labels::stdout_use_cli_ansi_color();
     let mut stdout = io::stdout().lock();
     if !*prefix_emitted {
         crate::runtime::terminal_labels::write_agent_message_prefix(&mut stdout)?;
         *prefix_emitted = true;
+    }
+    if use_color {
+        if is_reasoning && !*reasoning_style_active {
+            crate::runtime::terminal_labels::queue_cli_reasoning_body_style(&mut stdout)?;
+            *reasoning_style_active = true;
+        } else if !is_reasoning && *reasoning_style_active {
+            crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut stdout)?;
+            *reasoning_style_active = false;
+        }
     }
     stdout.write_all(fragment.as_bytes())?;
     stdout.flush()
@@ -104,7 +119,7 @@ fn terminal_render_agent_markdown(content_acc: &str) -> io::Result<()> {
 
 /// 解析 SSE 中一行 `data:` 后的 JSON 负载，累积正文与 tool_calls，并经 `out` 下发流式增量。
 /// `pending_sse_delta`：仅当 `out` 为 `Some` 时使用；与 `content_acc` 同步追加，达阈值或发送控制帧前再 `send`。
-/// `cli_terminal_plain`：CLI 终端纯文本流式（`render_to_terminal && out.is_none()`），将 reasoning/content delta 直接写 stdout。
+/// `cli_terminal_plain`：CLI 终端纯文本流式（`render_to_terminal && out.is_none()`），将 reasoning/content delta 写 stdout；**`reasoning_content`** 与 **`content`** 分色（`terminal_labels`）。
 struct IngestSseState<'a> {
     out: Option<&'a Sender<String>>,
     pending_sse_delta: &'a mut String,
@@ -115,6 +130,7 @@ struct IngestSseState<'a> {
     parsing_tool_calls_notified: &'a mut bool,
     cli_terminal_plain: bool,
     cli_plain_prefix_emitted: &'a mut bool,
+    cli_plain_reasoning_style_active: &'a mut bool,
 }
 
 async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io::Result<()> {
@@ -131,6 +147,7 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
         parsing_tool_calls_notified,
         cli_terminal_plain,
         cli_plain_prefix_emitted,
+        cli_plain_reasoning_style_active,
     } = state;
     let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
         return Ok(());
@@ -149,7 +166,12 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
     {
         reasoning_acc.push_str(s);
         if cli_terminal_plain {
-            cli_terminal_write_plain_fragment(s, cli_plain_prefix_emitted)?;
+            cli_terminal_write_plain_fragment(
+                s,
+                cli_plain_prefix_emitted,
+                true,
+                cli_plain_reasoning_style_active,
+            )?;
         }
         if let Some(tx) = out {
             pending_sse_delta.push_str(s);
@@ -163,7 +185,12 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
     {
         content_acc.push_str(s);
         if cli_terminal_plain {
-            cli_terminal_write_plain_fragment(s, cli_plain_prefix_emitted)?;
+            cli_terminal_write_plain_fragment(
+                s,
+                cli_plain_prefix_emitted,
+                false,
+                cli_plain_reasoning_style_active,
+            )?;
         }
         if let Some(tx) = out {
             pending_sse_delta.push_str(s);
@@ -217,7 +244,7 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
 }
 
 /// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
-/// `plain_terminal_stream` 为 `true` 且 `render_to_terminal && out.is_none()`：流式将 reasoning/content **逐 delta 纯文本**写 stdout，末尾不再 `markdown_to_ansi`；`--no-stream` 时整段纯文本一次写出。否则若 `render_to_terminal` 且仍有正文、且未走上述路径，则在整段到达后走 [`terminal_render_agent_markdown`]。
+/// `plain_terminal_stream` 为 `true` 且 `render_to_terminal && out.is_none()`：流式将 reasoning/content **逐 delta 纯文本**写 stdout（**`reasoning_content`** 灰阶+Dim，**`content`** 默认色；**`NO_COLOR`/非 TTY** 关闭），末尾不再 `markdown_to_ansi`；`--no-stream` 时整段按字段分色一次写出。否则若 `render_to_terminal` 且仍有正文、且未走上述路径，则在整段到达后走 [`terminal_render_agent_markdown`]。
 /// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 SSE 等）。
 ///
 /// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；
@@ -354,13 +381,43 @@ pub async fn stream_chat(
         }
         if render_to_terminal {
             if plain_terminal_stream && out.is_none() {
-                let plain = crate::runtime::message_display::assistant_streaming_plain_concat(&msg);
-                if !plain.is_empty() {
-                    let mut prefix_emitted = false;
-                    cli_terminal_write_plain_fragment(&plain, &mut prefix_emitted)?;
-                    if !plain.ends_with('\n') {
-                        writeln!(io::stdout().lock())?;
+                let mut prefix_emitted = false;
+                let mut reasoning_style_active = false;
+                if let Some(r) = msg.reasoning_content.as_deref().filter(|s| !s.is_empty()) {
+                    cli_terminal_write_plain_fragment(
+                        r,
+                        &mut prefix_emitted,
+                        true,
+                        &mut reasoning_style_active,
+                    )?;
+                }
+                if let Some(c) = msg.content.as_deref().filter(|s| !s.is_empty()) {
+                    cli_terminal_write_plain_fragment(
+                        c,
+                        &mut prefix_emitted,
+                        false,
+                        &mut reasoning_style_active,
+                    )?;
+                }
+                if prefix_emitted {
+                    let mut lock = io::stdout().lock();
+                    if reasoning_style_active {
+                        crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut lock)?;
                     }
+                    let ends_nl = msg
+                        .content
+                        .as_deref()
+                        .map(|s| s.ends_with('\n'))
+                        .unwrap_or(false)
+                        || msg
+                            .reasoning_content
+                            .as_deref()
+                            .map(|s| s.ends_with('\n'))
+                            .unwrap_or(false);
+                    if !ends_nl {
+                        writeln!(lock)?;
+                    }
+                    lock.flush()?;
                 }
             } else {
                 let md =
@@ -405,6 +462,7 @@ pub async fn stream_chat(
 
     let cli_terminal_plain = render_to_terminal && out.is_none() && plain_terminal_stream;
     let mut cli_plain_prefix_emitted = false;
+    let mut cli_plain_reasoning_style_active = false;
     let mut stream_done = false;
     'stream_read: while let Some(chunk) = stream.next().await {
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
@@ -443,6 +501,7 @@ pub async fn stream_chat(
                         parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
                         cli_terminal_plain,
                         cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
+                        cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
                     },
                 )
                 .await?;
@@ -474,6 +533,7 @@ pub async fn stream_chat(
                         parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
                         cli_terminal_plain,
                         cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
+                        cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
                     },
                 )
                 .await?;
@@ -488,14 +548,19 @@ pub async fn stream_chat(
             content_acc.as_str(),
         );
         if cli_terminal_plain {
+            let mut lock = io::stdout().lock();
+            if cli_plain_reasoning_style_active {
+                crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut lock)?;
+            }
             let ends_nl = if !content_acc.is_empty() {
                 content_acc.ends_with('\n')
             } else {
                 reasoning_acc.ends_with('\n')
             };
             if cli_plain_prefix_emitted && !ends_nl {
-                writeln!(io::stdout().lock())?;
+                writeln!(lock)?;
             }
+            lock.flush()?;
         } else if !md.is_empty() {
             terminal_render_agent_markdown(&md)?;
         }
