@@ -131,7 +131,11 @@ pub async fn complete_chat_retrying(
             .await
         {
             Ok(r) => {
-                let (ref msg, ref finish_reason) = r;
+                let (mut msg, finish_reason) = r;
+                crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+                    &mut msg,
+                    cfg.materialize_deepseek_dsml_tool_calls,
+                );
                 info!(
                     target: "crabmate",
                     "llm chat 完成 model={} elapsed_ms={} attempt={}",
@@ -144,9 +148,9 @@ pub async fn complete_chat_retrying(
                     "llm chat 响应摘要（含重试后成功） finish_reason={} message_in_request={} assistant_preview={}",
                     finish_reason,
                     request.messages.len(),
-                    crate::redact::assistant_message_preview_for_log(msg)
+                    crate::redact::assistant_message_preview_for_log(&msg)
                 );
-                last_ok = Some(r);
+                last_ok = Some((msg, finish_reason));
                 break;
             }
             Err(e) => {

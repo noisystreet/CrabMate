@@ -62,19 +62,11 @@ pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize
         let Some(ref c) = m.content else {
             continue;
         };
-        // Fast path: if byte length is within limit, char count must also be
-        if c.len() <= max_chars {
-            continue;
+        if let Some(compressed) =
+            crate::tool_result::maybe_compress_tool_message_content(c, max_chars)
+        {
+            m.content = Some(compressed);
         }
-        let len = c.chars().count();
-        if len <= max_chars {
-            continue;
-        }
-        let truncated: String = c.chars().take(max_chars).collect();
-        m.content = Some(format!(
-            "{}\n\n[... 已截断，原始约 {} 字符，保留前 {} 字符 ...]",
-            truncated, len, max_chars
-        ));
     }
 }
 

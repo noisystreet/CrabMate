@@ -20,7 +20,8 @@ pub(crate) fn staged_plan_phase_instruction_default(allow_no_task: bool) -> Stri
         ""
     };
     format!(
-        "【分阶段规划模式 · 规划轮】请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。\n\
+        "### 分阶段规划 · 规划轮\n\
+         请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。\n\
          在回复正文中必须用 Markdown 代码围栏（语言标记为 json）给出一个合法 JSON 对象，且满足：\n\
          {}{}\n\
          可辅以简短自然语言说明；有具体任务时后续系统将按 steps 顺序逐步下发执行指令。",

@@ -184,6 +184,11 @@ pub struct AgentConfig {
     pub cursor_rules_max_chars: usize,
     /// `role: tool` 的 `content` 超过此字符数时截断（每次调模型前应用）
     pub tool_message_max_chars: usize,
+    /// 为 true（默认）时：写入历史的 `role: tool` 使用 `crabmate_tool` JSON 信封（含 `summary`/`ok`/`output` 等），便于聚合解析；为 false 时保持纯工具原文。
+    pub tool_result_envelope_v1: bool,
+    /// 为 true（默认）时：若 API 未给出**可用的**原生 `tool_calls`，从助手 `content`/`reasoning_content` 中的 DeepSeek DSML 解析并写入 `tool_calls`。
+    /// 为 false 时：**不**做 DSML 物化，仅信任 API `tool_calls`（与「仅一段 JSON 约定工具调用」等结构化网关更一致）。
+    pub materialize_deepseek_dsml_tool_calls: bool,
     /// 非 system 消息总字符预算（近似）；`0` 表示不启用按字符删旧消息
     pub context_char_budget: usize,
     /// 启用 `context_char_budget` 时，system 之后至少保留的消息条数

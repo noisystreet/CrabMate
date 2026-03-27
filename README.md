@@ -58,9 +58,10 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
   - Agent 通过工具创建/修改文件后，前端会自动检测并刷新工作区。
+- **任务清单**（Web UI 侧栏，可选显示）：经 `/tasks` 在 **serve 进程内存**中按当前工作区路径保存；**不**在工作区写入 `tasks.json`；**重启服务后清空**。默认内置 `system_prompt` 已要求模型**不要**用文件工具维护磁盘上的任务 JSON，拆分与进度在对话中说明即可。
 - **命令执行与结果展示**：
   - Agent 下发 `run_command` / `run_executable` 时，前端会显示一条“系统消息”摘要（例如 `执行命令：g++ main.cpp -o main`）。
-  - 命令执行完成后，聊天区会以**单独系统气泡**展示工具调用摘要（如 `执行命令：…`）与 JSON **human_summary**（若有），**无**「【描述与总结】」标题行；**不展示**「【执行结果】」整块（成功/失败、退出码、stdout/stderr、完整工具正文）；**完整内容**仍保存在对话消息与服务端日志中，**导出 JSON/MD** 仍为全文。无 SSE 的终端 CLI 回显仍打印完整格式化结果（含【执行结果】）。
+  - 命令执行完成后，聊天区会以**单独系统气泡**展示工具调用摘要（如 `执行命令：…`）与 JSON **human_summary**（若有），**无**「【描述与总结】」标题行；**不展示**「`### 执行输出`」整块（成功/失败、退出码、stdout/stderr、完整工具正文）；**完整内容**仍保存在对话消息与服务端日志中，**导出 JSON/MD** 仍为全文。无 SSE 的终端 CLI 回显仍打印完整格式化结果（含 `### 执行输出` 小节）。
 - **流式输出与状态栏**：
   - Web Chat 回复支持流式增量显示。
   - Web `/chat` 与 `/chat/stream` 支持可选 `conversation_id` 以跨请求延续同一会话；未传时服务端自动分配会话 ID（流式接口通过响应头 `x-conversation-id` 返回）。配置 **`conversation_store_sqlite_path`**（如 `.crabmate/conversations.db`）后，会话落 **SQLite**，**进程重启**仍可用同一 `conversation_id` 续聊（仍受 24h TTL 与条数上限约束，与内存模式一致）。可选 **`agent_memory_file_enabled`**：从工作区根下 **`agent_memory_file`**（默认 `.crabmate/agent_memory.md`）读取 Markdown，**首轮**在 `system` 与当前用户消息之间注入一条 `user` 备忘（便于用户/项目约定；勿写入密钥）。
@@ -427,7 +428,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_STAGED_PLAN_ALLOW_NO_TASK`：内置规划说明是否包含「无具体任务则 `no_task` + 空 `steps`」；`1`/`true`/`yes`/`on` 为开启（默认与 `[agent] staged_plan_allow_no_task` 一致）
    - **联网搜索**（`web_search` 工具）：`AGENT_WEB_SEARCH_PROVIDER`（`brave` / `tavily`）、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`（1～20，默认 8）
    - **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`（逗号分隔 URL 前缀）、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`（与 `default_config.toml` / `[agent]` 中同名项对应）
-   - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
+   - **上下文窗口**（长会话防爆 token，见 `default_config.toml`）：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、**`AGENT_TOOL_RESULT_ENVELOPE_V1`**（默认 `true`：`role: tool` 写入 `crabmate_tool` JSON 信封，含 `summary`/`ok`/`output` 等，便于聚合；`false` 恢复纯原文）、**`AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS`**（默认 `true`：API 无可用原生 `tool_calls` 时从正文 DSML 物化；`false` 则**仅信任 API `tool_calls`**）、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`（`0` 关闭 LLM 摘要）、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
    - **终端会话文件（CLI REPL）**：`AGENT_TUI_LOAD_SESSION_ON_START` / `[agent] tui_load_session_on_start` 为 `true` 时，REPL 启动从 `.crabmate/tui_session.json` 恢复历史；默认 `false`（仅空白会话 + 当前 `system_prompt`）。**若启用加载**：`AGENT_TUI_SESSION_MAX_MESSAGES` / `[agent] tui_session_max_messages` 限制总消息条数（含 `system`），超出则丢弃最旧非 system 消息（默认 `400`，有效范围 `2`～`50000`）
    - **Web 工作区白名单**：`AGENT_WORKSPACE_ALLOWED_ROOTS`（逗号分隔绝对或相对路径，相对路径相对**进程启动时当前目录**）；与 `[agent] workspace_allowed_roots` 数组等价。省略或空列表表示仅允许 `run_command_working_dir` 下路径；`GET /status` 返回 `workspace_allowed_roots_count` 便于确认策略宽度。
    ```bash

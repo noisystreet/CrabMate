@@ -152,8 +152,8 @@ function stripLegacyExitCodePrefix(raw: string): string {
 
 /**
  * 工具卡片全文：首行作折叠标题，其余为正文。
- * `SHOW_TOOL_RAW_OUTPUT_IN_CHAT === false` 时仅摘要（`summary` / human_summary），**不**含【执行结果】（状态、stdout/stderr、完整 output 均在日志与消息存储中）。
- * 为 true 时顺序：摘要 → 【执行结果】（状态码 + 实际输出）。
+ * `SHOW_TOOL_RAW_OUTPUT_IN_CHAT === false` 时仅摘要（`summary` / human_summary），**不**含 `### 执行输出` 块（状态、stdout/stderr、完整 output 均在日志与消息存储中）。
+ * 为 true 时顺序：摘要 → `### 执行输出`（状态码 + 实际输出）。
  */
 function buildToolOutputCardText(info: ToolResultInfo): string {
   const { name, output, summary, ok, exit_code, error_code, stdout, stderr } = info
@@ -205,7 +205,7 @@ function buildToolOutputCardText(info: ToolResultInfo): string {
     resultBody = normalizeToolOutput(stripLegacyExitCodePrefix(output))
   }
 
-  const resultBlock = ['【执行结果】', statusLine, resultBody].filter(Boolean).join('\n')
+  const resultBlock = ['### 执行输出', statusLine, resultBody].filter(Boolean).join('\n')
   const body = narrativeBlock ? `${narrativeBlock}\n\n${resultBlock}` : resultBlock
 
   return `${titleLine}\n${body}`
