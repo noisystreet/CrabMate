@@ -170,6 +170,27 @@ flowchart TB
 - **规划器/执行器模式（阶段 1）**（`[agent] planner_executor_mode` / `AGENT_PLANNER_EXECUTOR_MODE`）：
   - `single_agent`（默认）：沿用历史单 agent 逻辑。
   - `logical_dual_agent`：同进程逻辑双 agent。规划轮仅消费去分隔线、去 `tool`、去空 assistant 的自然语言上下文，再追加规划 system 指令产出 `agent_reply_plan`；执行轮仍由既有外层循环负责工具调用与反思校验。该模式可减少工具原始输出对规划拆解的干扰，且不改变 HTTP/SSE 协议形状。
+
+#### 配置与 P/R/E 路径对照（`run_agent_turn_common`）
+
+**P/R/E 含义**（与 `agent_turn/mod.rs` 注释一致）：**P** = 一次 `complete_chat_retrying`（向模型要本轮输出）；**R** = `per_reflect_after_assistant` → 终答时 `per_coord::after_final_assistant`；**E** = `per_execute_tools_web`。**`staged_plan_phase_instruction`**（`AGENT_STAGED_PLAN_PHASE_INSTRUCTION`）：仅在有「无工具规划轮」时生效——非空则作为该轮追加的 **system** 规划指令，空则使用 `staged_sse::staged_plan_phase_instruction_default`。**`final_plan_requirement`** / **`plan_rewrite_max_attempts`** 只作用于 **R**（模型以非 `tool_calls` 结束的轮次），**不**作用于分阶段的首轮无工具规划 assistant（该轮走 JSON 解析而非 `after_final_assistant`）。
+
+**顶层分支**（代码顺序：**`planner_executor_mode` 优先**；`logical_dual_agent` 时**无论** `staged_plan_execution` 真假都会走分阶段式「规划轮 + 分步外层循环」）：
+
+| planner_executor_mode | staged_plan_execution | 顶层入口 | 首轮 P | 后续每步 |
+|-----|-----|-----|-----|-----|
+| `logical_dual_agent` | `false` 或 `true` | `run_logical_dual_agent_then_execute_steps` | 无工具 P 一轮；上下文 `build_logical_dual_planner_messages` + 规划 system（见上） | 每步：`run_agent_outer_loop` → 多轮 **P（带 tools）→ R → E** 直至该步终答 |
+| `single_agent` | `true` | `run_staged_plan_then_execute_steps` | 无工具 P 一轮；上下文 `build_single_agent_planner_messages`（**保留** `role: tool`）+ 规划 system | 同上 |
+| `single_agent` | `false` | `run_agent_outer_loop` | 无单独规划轮；每圈 **P（带 tools）→ R → E** | （同一循环直至本轮结束） |
+
+**终答规划策略**（与分阶段是否开启**正交**：只要某路径进入 `run_agent_outer_loop`，每步结束时的 R 均受下表约束）：
+
+| final_plan_requirement | plan_rewrite_max_attempts | R（无 `tool_calls` 的 assistant） |
+|-----|-----|-----|
+| `never` | — | 不强制 `agent_reply_plan` v1；`StopTurn` |
+| `workflow_reflection`（默认） | `N`（配置 `1..=20`，默认 `2`） | 仅在工作流路径置位「需要终答规划」后校验；不合格则追加重写 user，**至多 `N` 次**（用尽 → SSE `plan_rewrite_exhausted`） |
+| `always` | `N` | 每次终答均校验；同上重写上限 |
+
 - **上下文窗口策略**（`src/agent/context_window.rs`）：在 `agent::agent_turn::run_agent_turn_common` 的**每次** P 步（`per_plan_call_model_retrying`）之前调用 `prepare_messages_for_model`（与主对话共用同一 **`ChatCompletionsBackend`**）：**`tool` 消息正文截断**（`tool_message_max_chars`）、**按条数保留**（沿用 `max_message_history`）、可选 **`context_char_budget` 按近似字符删旧消息**；若 `context_summary_trigger_chars > 0` 且非 system 总字符超阈值，则额外发起**无 tools** 的 `chat/completions` 将「中间段」压成一条 user 摘要，尾部保留 `context_summary_tail_messages` 条。Web/CLI 侧 `messages` 会随裁剪/摘要变化（工具截断不改变条数）。配置见 `default_config.toml` 与 `AGENT_CONTEXT_*` / `AGENT_TOOL_MESSAGE_MAX_CHARS`。
 - **系统提示词规则拼接**（`[agent] cursor_rules_enabled` / `AGENT_CURSOR_RULES_ENABLED`）：在 `config::load_config` 阶段，`system_prompt`/`system_prompt_file` 读取后可追加 `cursor_rules_dir`（默认 `.cursor/rules`）下 `*.mdc`，并可选附加工作区根 `AGENTS.md`（`cursor_rules_include_agents_md`）；按文件名排序拼接，附加段受 `cursor_rules_max_chars` 限制，超出截断并加提示。该拼接结果即后续 `messages_chat_seed` 使用的首条 `system`。
 - **长期记忆与向量检索（实施顺序，每阶段独立 PR）**：① 配置与类型占位（`long_term_memory_*`，向量后端非 `disabled` 时拒绝启动直至实现）。② 显式记忆存储 + 在 `context_window` 前注入（无向量）。③ 嵌入 + Top-K + 单一向量后端 MVP。④ 回合结束异步索引与上限策略。⑤ 观测指标、可选 Qdrant/pgvector 与多租户隔离强化。`LongTermMemoryScopeMode` 当前仅 `conversation`；与 P0 Web 鉴权的关系见 `README.md` 环境变量说明。
