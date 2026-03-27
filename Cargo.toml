@@ -19,6 +19,7 @@ assets = [
     ["config.toml.example", "usr/share/doc/crabmate/config.toml.example", "644"],
     # 文档
     ["README.md", "usr/share/doc/crabmate/README.md", "644"],
+    ["docs/TOOL_EXAMPLES.md", "usr/share/doc/crabmate/TOOL_EXAMPLES.md", "644"],
 ]
 
 [dependencies]

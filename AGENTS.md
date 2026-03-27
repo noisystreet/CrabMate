@@ -4,7 +4,7 @@
 
 ### Project overview
 
-CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web UI (Axum + React) and CLI (REPL / single-shot / `--serve`). See `README.md` for full feature list and `docs/DEVELOPMENT.md` for architecture details (including module index). If you change module layout or layering, update `docs/DEVELOPMENT.md` per `.cursor/rules/architecture-docs-sync.mdc`.
+CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web UI (Axum + React) and CLI (REPL / single-shot / `--serve`). See `README.md` for full feature list, `docs/TOOL_EXAMPLES.md` for Function Calling JSON examples, and `docs/DEVELOPMENT.md` for architecture details (including module index). If you change module layout or layering, update `docs/DEVELOPMENT.md` per `.cursor/rules/architecture-docs-sync.mdc`.
 
 ### Required environment variable
 
