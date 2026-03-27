@@ -95,7 +95,6 @@
 **职责摘要**：Axum `Router`、`AppState`；对话队列；`web/workspace`、`web/task` 等。
 
 - [ ] **鉴权与多租户隔离**：API Key / Bearer / 反向代理信任头（与 P0 同向）。
-- [ ] **`workspace_set` 根路径约束**：仅允许配置白名单根目录内，校验存在性与 symlink 风险（与 P0 同向）。
 - [ ] **会话与消息 API**：`messages` 或 `conversation_id` + 存储，与 `run_agent_turn` 对齐（与 P1 同向）。
 - [ ] **上传配额与清理策略**：`/upload` 大小、类型、保留时间、按用户或 IP 限额。
 - [ ] **OpenAPI / 机器可读契约**：为前端与集成方提供可生成的路由与 body 说明（可选 `utoipa` 等）。
