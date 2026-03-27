@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
 use crate::AppState;
@@ -567,6 +567,16 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             e_text
                         );
                         (false, true, None)
+                    } else if crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
+                        &e_text,
+                    ) {
+                        warn!(
+                            target: "crabmate",
+                            "chat stream 任务结束（分阶段规划解析失败，SSE 已发 staged_plan_invalid） job_id={} detail={}",
+                            job_id,
+                            e_text
+                        );
+                        (false, false, Some("staged_plan_invalid".to_string()))
                     } else {
                         error!(
                             target: "crabmate",
@@ -667,6 +677,15 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             job_id,
                             e_text
                         );
+                    } else if crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
+                        &e_text,
+                    ) {
+                        warn!(
+                            target: "crabmate",
+                            "chat json 任务结束（分阶段规划解析失败） job_id={} detail={}",
+                            job_id,
+                            e_text
+                        );
                     } else {
                         error!(
                             target: "crabmate",
@@ -677,6 +696,10 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     }
                     let prev = if cancelled {
                         None
+                    } else if crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
+                        &e_text,
+                    ) {
+                        Some("staged_plan_invalid".to_string())
                     } else {
                         Some(truncate_chars(&e_text, 120))
                     };
