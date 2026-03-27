@@ -267,6 +267,7 @@ flowchart LR
 ### `src/sse/protocol.rs`
 
 - **SSE 控制帧**：`SseMessage { v, payload }` + `SsePayload`（`serde` untagged），`encode_message` 生成单行 JSON；Web **`agent::agent_turn`**、**`agent::workflow`** 审批、流式错误等均经此发出，避免手写 JSON 拼写错误。
+- **对外文档**：版本号、`error`/`code` 与 `tool_result.error_code` 枚举、控制面变体表、与 `api.ts` 的对齐清单见 **`docs/SSE_PROTOCOL.md`**（修改协议时须同步该文件与前端 `SseControlPayload` / `tryDispatchSseControlPayload`）。
 
 ### `src/sse/line.rs`
 
@@ -339,6 +340,7 @@ flowchart LR
 ### `frontend/src/api.ts`
 
 - **统一请求封装**：超时、重试、错误分类（`ApiError`）、GET 去重与轻量缓存（SWR）。
+- **SSE 协议版本**：导出常量 **`SSE_PROTOCOL_VERSION`**，须与 **`sse::protocol::SSE_PROTOCOL_VERSION`** 及 **`docs/SSE_PROTOCOL.md`** 一致。
 - **流式聊天**：`sendChatStream` 消费 `/chat/stream` 的 SSE，把：
   - 请求体中的可选 `conversation_id` 传给后端；若首轮未传，读取响应头 `x-conversation-id` 并缓存到面板状态
   - 纯文本 `data:` 当作 delta
@@ -384,5 +386,5 @@ flowchart LR
   - Web 模式下的工作区设置会影响“工具执行目录”，需要明确这一点避免误操作。
   - **密钥与日志**：勿将真实 API key、token、`.env` 内容写入代码、示例配置、commit message 或日志；日志与错误回显须脱敏。Cursor 规则见 **`.cursor/rules/secrets-and-logging.mdc`**。
   - 已知 HTTP 鉴权、监听地址、`workspace_set` 等安全与协议债见 [`docs/TODOLIST.md`](TODOLIST.md)。
-- **SSE 协议演进**：后端以 **`sse::protocol::SseMessage` / `SsePayload`**（及 `sse/mod.rs` 再导出）为单一事实来源；`v` 递增时前端可按版本分支。Rust 侧行分类见 **`sse/line.rs`**；浏览器侧统一在 `frontend/src/api.ts` 的 `tryDispatchSseControlPayload`（由 `sendChatStream` 调用）。
+- **SSE 协议演进**：后端以 **`sse::protocol::SseMessage` / `SsePayload`**（及 `sse/mod.rs` 再导出）为单一事实来源；`v` 递增时前端可按版本分支。Rust 侧行分类见 **`sse/line.rs`**；浏览器侧统一在 `frontend/src/api.ts` 的 `tryDispatchSseControlPayload`（由 `sendChatStream` 调用）。**人读契约与错误码表**：**`docs/SSE_PROTOCOL.md`**。
 

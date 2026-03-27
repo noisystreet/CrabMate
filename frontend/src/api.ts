@@ -1,5 +1,8 @@
 import type { StatusData, WorkspaceData, ChatResponse, TasksData } from './types'
 
+/** 与后端 `src/sse/protocol.rs` 中 `SSE_PROTOCOL_VERSION` 一致；演进时同步递增并更新 `docs/SSE_PROTOCOL.md`。 */
+export const SSE_PROTOCOL_VERSION = 1
+
 const base = ''
 const WEB_API_BEARER_TOKEN_KEY = 'crabmate-api-bearer-token'
 
@@ -439,8 +442,13 @@ export async function deleteUploads(urls: string[]): Promise<DeleteUploadsRespon
   })
 }
 
-/** 与后端 `src/sse/protocol.rs`（`SsePayload` 等）控制面字段对齐；与 `src/sse/line.rs`（`classify_agent_sse_line`）的 Rust 分类逻辑保持语义一致。 */
+/**
+ * 与后端 `src/sse/protocol.rs`（`SsePayload` / `SseMessage`）控制面字段对齐；
+ * 与 `src/sse/line.rs`（`classify_agent_sse_line`）的 Rust 分类逻辑保持语义一致。
+ * 协议版本、错误码与变体表见仓库 `docs/SSE_PROTOCOL.md`。
+ */
 type SseControlPayload = {
+  /** 缺省按 1 处理，与 Rust `default_sse_v` 一致 */
   v?: number
   error?: string
   code?: string
