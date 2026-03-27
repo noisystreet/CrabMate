@@ -17,6 +17,7 @@ alwaysApply: true
 - 合并 **用户可见** 的能力（CLI 选项、API、配置项、TUI/Web 行为、工具等）时，同步更新文档：
   - **`README.md`**：功能概览、常用命令、配置示例、安全提示等面向使用者的部分。
   - **`docs/DEVELOPMENT.md`**：模块职责、协议、架构扩展点等面向维护者的部分。
+  - **`docs/TOOLS.md`**：内置工具的能力说明与 Function Calling 参数示例（增删改工具时同步）。
 - 若变更仅内部重构且无行为变化，可只更新 `DEVELOPMENT.md` 或代码注释，不必硬改 `README.md`。
 
 ## Rust：默认配置、环境变量与 HTTP 路由
