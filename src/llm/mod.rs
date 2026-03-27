@@ -38,7 +38,7 @@ pub fn tool_chat_request(
     ChatRequest {
         model: cfg.model.clone(),
         messages: crate::types::normalize_messages_for_openai_compatible_request(
-            crate::types::messages_stripping_reasoning_for_api_request(messages),
+            crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(messages),
         ),
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
@@ -49,19 +49,34 @@ pub fn tool_chat_request(
     }
 }
 
-/// 构造**显式禁止工具调用**的请求（`tools: []` + `tool_choice: "none"`），用于分阶段规划轮。
+/// 构造**显式禁止工具调用**的请求（`tools: []` + `tool_choice: "none"`），用于分阶段规划轮等。
 /// 按 OpenAI API 语义硬性禁止模型返回 `tool_calls`，比省略 `tools` 字段（`None`）更可靠。
+/// 对 `messages` 先做 [`crate::types::messages_for_api_stripping_reasoning_skip_ui_separators`] 再 normalize；进程内分阶段路径优先 [`no_tools_chat_request_from_messages`] 以避免二次 strip。
+#[allow(dead_code)] // 公共 API；单测覆盖等价性，主进程分阶段路径用 `no_tools_chat_request_from_messages`
 pub fn no_tools_chat_request(
     cfg: &AgentConfig,
     messages: &[Message],
     temperature_override: Option<f32>,
     seed_override: LlmSeedOverride,
 ) -> ChatRequest {
+    no_tools_chat_request_from_messages(
+        cfg,
+        crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(messages),
+        temperature_override,
+        seed_override,
+    )
+}
+
+/// 与 [`no_tools_chat_request`] 相同，但接受**已**按规划轮规则拼好的 `messages`（通常已不含 UI 分隔线且已剥离 `reasoning_content`），仅再经 [`crate::types::normalize_messages_for_openai_compatible_request`]，避免对同一会话再做一轮全量 `strip`。
+pub fn no_tools_chat_request_from_messages(
+    cfg: &AgentConfig,
+    messages: Vec<Message>,
+    temperature_override: Option<f32>,
+    seed_override: LlmSeedOverride,
+) -> ChatRequest {
     ChatRequest {
         model: cfg.model.clone(),
-        messages: crate::types::normalize_messages_for_openai_compatible_request(
-            crate::types::messages_stripping_reasoning_for_api_request(messages),
-        ),
+        messages: crate::types::normalize_messages_for_openai_compatible_request(messages),
         tools: Some(vec![]),
         tool_choice: Some("none".to_string()),
         max_tokens: cfg.max_tokens,
@@ -160,7 +175,11 @@ pub async fn complete_chat_retrying(
 
 #[cfg(test)]
 mod tests {
-    use crate::types::{OPENAI_CHAT_COMPLETIONS_REL_PATH, OPENAI_MODELS_REL_PATH};
+    use crate::config::load_config;
+    use crate::types::{
+        LlmSeedOverride, Message, OPENAI_CHAT_COMPLETIONS_REL_PATH, OPENAI_MODELS_REL_PATH,
+        messages_for_api_stripping_reasoning_skip_ui_separators,
+    };
 
     #[test]
     fn completions_path_matches_openai_compat() {
@@ -170,5 +189,31 @@ mod tests {
     #[test]
     fn models_path_matches_openai_compat() {
         assert_eq!(OPENAI_MODELS_REL_PATH, "models");
+    }
+
+    #[test]
+    fn no_tools_chat_request_matches_from_messages_after_strip_skip_sep() {
+        let cfg = load_config(None).expect("default embedded config");
+        let sep = Message::chat_ui_separator(true);
+        let assistant = Message {
+            role: "assistant".to_string(),
+            content: Some("c".to_string()),
+            reasoning_content: Some("r".to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        let messages = vec![Message::user_only("u"), sep, assistant];
+        let a = super::no_tools_chat_request(&cfg, &messages, None, LlmSeedOverride::FromConfig);
+        let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(&messages);
+        let b = super::no_tools_chat_request_from_messages(
+            &cfg,
+            stripped,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        assert_eq!(a.messages, b.messages);
+        assert_eq!(a.tool_choice, b.tool_choice);
+        assert_eq!(a.tools.as_ref().map(|t| t.len()), Some(0));
     }
 }
