@@ -780,6 +780,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
             "expand".into(),
             "fgrep".into(),
             "file".into(),
+            "find".into(),
             "fmt".into(),
             "fold".into(),
             "free".into(),
