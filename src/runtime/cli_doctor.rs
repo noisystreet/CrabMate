@@ -57,6 +57,18 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
         "  command_timeout_secs / command_max_output_len: {} / {}",
         cfg.command_timeout_secs, cfg.command_max_output_len
     );
+    println!(
+        "  mcp_enabled: {}  mcp_tool_timeout_secs: {}",
+        cfg.mcp_enabled, cfg.mcp_tool_timeout_secs
+    );
+    println!(
+        "  mcp_command: {}",
+        if cfg.mcp_command.trim().is_empty() {
+            "（未配置）".to_string()
+        } else {
+            format!("已配置（{} 字符，内容已隐藏）", cfg.mcp_command.len())
+        }
+    );
     println!("  api_timeout_secs: {}", cfg.api_timeout_secs);
     println!(
         "  web_api_bearer_token: {}",

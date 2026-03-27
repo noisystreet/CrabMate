@@ -14,6 +14,7 @@ mod http_client;
 mod llm;
 mod long_term_memory;
 mod long_term_memory_store;
+mod mcp;
 mod path_workspace;
 mod redact;
 mod runtime;
@@ -107,12 +108,22 @@ pub async fn run_agent_turn<'a>(
         Some(b) => b,
         None => llm::default_chat_completions_backend(),
     };
+
+    let mut tools_for_turn: Vec<types::Tool> = tools.to_vec();
+    let mcp_session = match mcp::try_open_session_and_tools(cfg.as_ref()).await {
+        Some((sess, extra)) => {
+            tools_for_turn = mcp::merge_tool_lists(tools_for_turn, extra);
+            Some(sess)
+        }
+        None => None,
+    };
+
     let mut loop_params = agent::agent_turn::RunLoopParams {
         llm_backend,
         client,
         api_key,
         cfg,
-        tools_defs: tools,
+        tools_defs: tools_for_turn.as_slice(),
         messages,
         out,
         effective_working_dir,
@@ -128,6 +139,7 @@ pub async fn run_agent_turn<'a>(
         seed_override,
         long_term_memory,
         long_term_memory_scope_id,
+        mcp_session,
     };
     agent::agent_turn::run_agent_turn_common(&mut loop_params).await
 }

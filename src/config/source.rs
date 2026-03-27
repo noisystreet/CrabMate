@@ -80,6 +80,9 @@ pub(super) struct AgentSection {
     pub(super) long_term_memory_max_chars_per_chunk: Option<u64>,
     pub(super) long_term_memory_min_chars_to_index: Option<u64>,
     pub(super) long_term_memory_async_index: Option<bool>,
+    pub(super) mcp_enabled: Option<bool>,
+    pub(super) mcp_command: Option<String>,
+    pub(super) mcp_tool_timeout_secs: Option<u64>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None。

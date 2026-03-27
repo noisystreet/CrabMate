@@ -106,6 +106,10 @@ pub fn execution_class_for_tool(name: &str) -> ToolExecutionClass {
 /// 判断工具是否为只读（不修改工作区文件系统），供并行执行决策使用。
 /// 写操作工具（create/modify/delete/move/copy/format/apply_patch 等）及带审批的工具返回 false。
 pub fn is_readonly_tool(name: &str) -> bool {
+    if crate::mcp::is_mcp_proxy_tool(name) {
+        // 外部 MCP 工具语义未知，禁止与内建只读工具并行同批执行。
+        return false;
+    }
     static WRITE_TOOLS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
         std::sync::OnceLock::new();
     let writes = WRITE_TOOLS.get_or_init(|| {
@@ -181,7 +185,8 @@ pub fn tool_calls_allow_parallel_sync_batch(tool_calls: &[ToolCall]) -> bool {
     tool_calls.len() > 1
         && tool_calls.iter().all(|tc| {
             let n = tc.function.name.as_str();
-            handler_id_for(n) == HandlerId::SyncDefault
+            !crate::mcp::is_mcp_proxy_tool(n)
+                && handler_id_for(n) == HandlerId::SyncDefault
                 && is_readonly_tool(n)
                 && !parallel_sync_batch_denied(n)
         })
@@ -337,7 +342,33 @@ pub async fn dispatch_tool(
     name: &str,
     args: &str,
     tc: &ToolCall,
+    mcp_session: Option<&Arc<Mutex<crate::mcp::McpClientSession>>>,
 ) -> (String, Option<serde_json::Value>) {
+    if crate::mcp::is_mcp_proxy_tool(name) {
+        let Some(remote) = crate::mcp::try_mcp_tool_name(cfg.as_ref(), name) else {
+            return (
+                "错误：无法将工具名解析为 MCP 远端名（请检查 mcp_command 与命名前缀）".to_string(),
+                None,
+            );
+        };
+        let Some(sess) = mcp_session else {
+            return (
+                "错误：MCP 会话未建立（连接或 tools/list 失败）".to_string(),
+                None,
+            );
+        };
+        let guard = sess.lock().await;
+        let out = crate::mcp::call_mcp_tool(
+            &guard,
+            remote.as_str(),
+            args,
+            Duration::from_secs(cfg.mcp_tool_timeout_secs.max(1)),
+            cfg.command_max_output_len,
+        )
+        .await;
+        return (out, None);
+    }
+
     let hid = handler_id_for(name);
 
     match hid {
