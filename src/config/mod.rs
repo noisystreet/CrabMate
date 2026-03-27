@@ -86,6 +86,9 @@ struct ConfigBuilder {
     long_term_memory_max_chars_per_chunk: Option<u64>,
     long_term_memory_min_chars_to_index: Option<u64>,
     long_term_memory_async_index: Option<bool>,
+    mcp_enabled: Option<bool>,
+    mcp_command: Option<String>,
+    mcp_tool_timeout_secs: Option<u64>,
 }
 
 /// 非空 trim 后覆盖 `String` 字段。
@@ -284,6 +287,9 @@ impl ConfigBuilder {
         self.long_term_memory_async_index = agent
             .long_term_memory_async_index
             .or(self.long_term_memory_async_index);
+        self.mcp_enabled = agent.mcp_enabled.or(self.mcp_enabled);
+        override_opt_string_non_empty(&mut self.mcp_command, agent.mcp_command);
+        self.mcp_tool_timeout_secs = agent.mcp_tool_timeout_secs.or(self.mcp_tool_timeout_secs);
     }
 }
 
@@ -672,6 +678,22 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.long_term_memory_async_index = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_MCP_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.mcp_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_MCP_COMMAND") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            b.mcp_command = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_MCP_TOOL_TIMEOUT_SECS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.mcp_tool_timeout_secs = Some(n);
+    }
 }
 
 /// 验证、clamp 并组装最终 `AgentConfig`。
@@ -947,6 +969,13 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .clamp(0, 4096) as usize;
     let long_term_memory_async_index = b.long_term_memory_async_index.unwrap_or(true);
 
+    let mcp_enabled = b.mcp_enabled.unwrap_or(false);
+    let mcp_command = b.mcp_command.unwrap_or_default();
+    let mcp_tool_timeout_secs = b
+        .mcp_tool_timeout_secs
+        .unwrap_or(command_timeout_secs)
+        .max(1);
+
     let web_search_provider = match b.web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
         None => WebSearchProvider::default(),
@@ -1025,5 +1054,8 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         long_term_memory_max_chars_per_chunk,
         long_term_memory_min_chars_to_index,
         long_term_memory_async_index,
+        mcp_enabled,
+        mcp_command,
+        mcp_tool_timeout_secs,
     })
 }

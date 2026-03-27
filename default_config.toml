@@ -32,6 +32,11 @@ context_summary_transcript_max_chars = 120000
 # agent_memory_file_enabled = false
 # agent_memory_file = ".crabmate/agent_memory.md"
 # agent_memory_file_max_chars = 8000
+# MCP（Model Context Protocol）stdio 客户端：默认关闭；启用后每轮对话启动 mcp_command 子进程并合并远端工具（见 README / DEVELOPMENT）
+# mcp_enabled = false
+# mcp_command = ""
+# mcp_tool_timeout_secs = 60
+
 # 长期记忆（路线图分阶段实现；当前仅占位配置，默认关闭）
 # long_term_memory_enabled = false
 # long_term_memory_scope_mode = "conversation"

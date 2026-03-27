@@ -127,6 +127,7 @@ pub(crate) async fn run_agent_outer_loop(
                 web_tool_ctx: p.web_tool_ctx,
                 cli_tool_ctx: p.cli_tool_ctx,
                 echo_terminal_transcript,
+                mcp_session: p.mcp_session.as_ref(),
             },
         )
         .await;

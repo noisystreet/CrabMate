@@ -38,4 +38,6 @@ pub(crate) struct RunLoopParams<'a> {
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     /// `conversation_id` 或 CLI 固定 `cli`；`None` 时不按会话隔离（跳过记忆）。
     pub long_term_memory_scope_id: Option<String>,
+    /// MCP stdio 会话；`None` 时不处理 `mcp__*` 工具名。
+    pub mcp_session: Option<Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
 }

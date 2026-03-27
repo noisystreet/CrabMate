@@ -78,7 +78,7 @@
 - [ ] **工具结果「可引用」摘要**：统一长输出结构化摘要进入 `tool_result.summary`，减少上下文膨胀。
 - [ ] **新栈工具按需扩展**：在 `dev_tag` 体系下增加 JVM、容器等标签与最小工具集（保持白名单与路径安全）。Go 已有 `go_build`/`go_test`/`go_vet`/`go_mod_tidy`/`go_fmt_check`/`golangci_lint`；Node.js 已有 `npm_install`/`npm_run`/`npx_run`/`tsc_check`。
 - [ ] **registry 策略配置化**：超时、spawn_blocking 类别、`http_fetch` 等更多迁入 `AgentConfig`。
-- [ ] **MCP 协议支持（未来）**：以 MCP client 接入外部工具/资源并与 `tool_registry` 映射，或可选将本 agent 能力以 MCP server 形式暴露；会话与传输（stdio/SSE/HTTP）、配置项、鉴权及与现有白名单/路径安全策略对齐，文档化边界。
+- [ ] **MCP 扩展**：可选将本 agent 以 MCP server 暴露；客户端支持 Streamable HTTP / SSE、鉴权与多 server；与 `run_command` / 工作区策略的边界在文档中细化。
 
 ### `sse/`（协议与行分类）
 

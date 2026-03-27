@@ -27,6 +27,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     /// CLI：`render_to_terminal` 且 `out: None` 时为 true，工具结果打印到 stdout。
     pub echo_terminal_transcript: bool,
+    /// MCP stdio 会话；`None` 时 `mcp__*` 工具会报错。
+    pub mcp_session: Option<&'a std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -150,6 +152,7 @@ struct ExecuteToolsCommonCtx<'a> {
     terminal_tool_display_max_chars: usize,
     web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
+    mcp_session: Option<&'a std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
 }
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
@@ -165,6 +168,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         terminal_tool_display_max_chars,
         web_tool_ctx,
         cli_tool_ctx,
+        mcp_session,
     } = ctx;
     let mut workspace_changed = false;
 
@@ -343,6 +347,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 &name,
                 &args,
                 tc,
+                mcp_session,
             )
             .await;
 
@@ -408,6 +413,7 @@ pub(crate) async fn per_execute_tools_web(
         web_tool_ctx,
         cli_tool_ctx,
         echo_terminal_transcript,
+        mcp_session,
     } = ctx;
 
     per_execute_tools_common(ExecuteToolsCommonCtx {
@@ -422,6 +428,7 @@ pub(crate) async fn per_execute_tools_web(
         terminal_tool_display_max_chars: cfg.command_max_output_len,
         web_tool_ctx,
         cli_tool_ctx,
+        mcp_session,
     })
     .await
 }

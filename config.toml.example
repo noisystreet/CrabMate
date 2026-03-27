@@ -46,6 +46,11 @@
 # web_search_api_key = "YOUR_BRAVE_OR_TAVILY_KEY"
 # web_search_timeout_secs = 30
 # web_search_max_results = 8
+# MCP（stdio 子进程客户端）：每轮对话连接一次，合并远端 tools/list；须显式启用并配置命令行（等效允许启动任意子进程，仅用于可信配置）
+# mcp_enabled = true
+# mcp_command = "npx -y @modelcontextprotocol/server-filesystem /path/to/sandbox"
+# mcp_tool_timeout_secs = 60   # 默认与 command_timeout_secs 相同
+
 # http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/"]
 # http_fetch_timeout_secs = 30
 # http_fetch_max_response_bytes = 524288
