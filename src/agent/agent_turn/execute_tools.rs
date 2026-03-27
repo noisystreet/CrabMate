@@ -39,6 +39,7 @@ pub(crate) enum ExecuteToolsBatchOutcome {
 #[allow(clippy::too_many_arguments)]
 async fn emit_tool_result_sse_and_append(
     messages: &mut Vec<Message>,
+    per_coord: &mut PerCoordinator,
     out: Option<&mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
@@ -92,6 +93,7 @@ async fn emit_tool_result_sse_and_append(
     }
 
     PerCoordinator::append_tool_result_and_reflection(
+        per_coord,
         messages,
         id.to_string(),
         result,
@@ -260,6 +262,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 .to_string();
             emit_tool_result_sse_and_append(
                 messages,
+                per_coord,
                 out,
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
@@ -305,6 +308,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 );
                 emit_tool_result_sse_and_append(
                     messages,
+                    per_coord,
                     out,
                     echo_terminal_transcript,
                     terminal_tool_display_max_chars,
@@ -357,6 +361,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
 
             emit_tool_result_sse_and_append(
                 messages,
+                per_coord,
                 out,
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
