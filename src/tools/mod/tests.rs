@@ -242,6 +242,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"workflow_execute"));
     assert!(names.contains(&"rust_backtrace_analyze"));
     assert!(names.contains(&"diagnostic_summary"));
+    assert!(names.contains(&"error_output_playbook"));
     assert!(names.contains(&"changelog_draft"));
     assert!(names.contains(&"license_notice"));
     assert!(names.contains(&"git_status"));
@@ -353,6 +354,27 @@ fn test_summarize_tool_call_none() {
 fn test_summarize_tool_call_unknown_tool() {
     let s = summarize_tool_call("nonexistent_tool_xyz", "{}");
     assert_eq!(s, None);
+}
+
+#[test]
+fn test_error_output_playbook_respects_command_whitelist() {
+    let allowed = vec!["cargo".to_string()];
+    let ctx = test_ctx(&allowed);
+    let out = run_tool(
+        "error_output_playbook",
+        r#"{"error_text":"error[E0599]: no method named `x`","ecosystem":"rust"}"#,
+        &ctx,
+    );
+    assert!(
+        out.contains("cargo check") || out.contains("cargo build"),
+        "应建议 cargo 子命令，得到: {}",
+        out
+    );
+    assert!(
+        !out.contains("python3"),
+        "白名单无 python3 时不应出现 python3 建议: {}",
+        out
+    );
 }
 
 #[test]

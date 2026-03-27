@@ -80,3 +80,27 @@ pub(in crate::tools) fn params_diagnostic_summary() -> serde_json::Value {
         "required": []
     })
 }
+
+pub(in crate::tools) fn params_error_output_playbook() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "error_text": {
+                "type": "string",
+                "description": "已脱敏的构建/测试错误输出全文或片段（勿含 API Key、token、完整 URL 凭证等）"
+            },
+            "ecosystem": {
+                "type": "string",
+                "description": "生态提示：auto（默认，从文本推断）、rust、node、python、generic"
+            },
+            "max_chars": {
+                "type": "integer",
+                "description": "最多处理字符数，默认 24000，上限 100000；超出截断",
+                "minimum": 1,
+                "maximum": 100000
+            }
+        },
+        "required": ["error_text"],
+        "additionalProperties": false
+    })
+}

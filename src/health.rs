@@ -131,6 +131,7 @@ pub async fn build_health_report(
         m.insert("size", check_cmd("size", &["--version"]));
         m.insert("ar", check_cmd("ar", &["--version"]));
         m.insert("npm", check_cmd("npm", &["--version"]));
+        m.insert("python3", check_cmd("python3", &["--version"]));
 
         m.insert("typos", check_cmd("typos", &["--version"]));
         m.insert("codespell", check_cmd("codespell", &["--version"]));
@@ -169,6 +170,7 @@ pub async fn build_health_report(
             "size" => "dep_size",
             "ar" => "dep_ar",
             "npm" => "dep_npm",
+            "python3" => "dep_python3",
             "typos" => "dep_typos",
             "codespell" => "dep_codespell",
             "ast_grep" => "dep_ast_grep",

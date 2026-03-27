@@ -1,11 +1,19 @@
 [
-ToolSpec {
+        ToolSpec {
             name: "diagnostic_summary",
             description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `frontend/package.json` / `frontend/dist` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `AGENT_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。",
             category: ToolCategory::Development,
             parameters: tool_params::params_diagnostic_summary,
             runner: runner_diagnostic_summary,
             summary: ToolSummaryKind::Static("环境/工具链诊断摘要（脱敏）"),
+        },
+        ToolSpec {
+            name: "error_output_playbook",
+            description: "只读：对**已脱敏**的 rustc/cargo/npm/pytest 等错误输出做启发式**归类**（依赖/网络/权限/磁盘/语法与类型/测试等），并给出 **2～3 条**可经 **`run_command`** 执行的排查命令**建议字符串**（**不执行**；仅包含当前 `allowed_commands` 白名单内的命令）。可选 `ecosystem`：`auto`（默认）/ `rust` / `node` / `python` / `generic`；可选 `max_chars` 限制输入长度。内置轻度掩码常见 `API_KEY=` 样式；**粘贴前仍须人工脱敏**。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_error_output_playbook,
+            runner: runner_error_output_playbook,
+            summary: ToolSummaryKind::Dynamic(ts::summary_error_output_playbook),
         },
         ToolSpec {
             name: "changelog_draft",
