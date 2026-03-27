@@ -79,8 +79,9 @@ async fn emit_tool_result_sse_and_append(
         } else {
             Some(parsed.stderr)
         };
-        let _ = tx
-            .send(encode_message(SsePayload::ToolResult {
+        let _ = crate::sse::send_string_logged(
+            tx,
+            encode_message(SsePayload::ToolResult {
                 tool_result: ToolResultBody {
                     name: name.to_string(),
                     summary: tool_summary.clone(),
@@ -91,8 +92,10 @@ async fn emit_tool_result_sse_and_append(
                     stdout,
                     stderr,
                 },
-            }))
-            .await;
+            }),
+            "execute_tools::emit_tool_result_sse",
+        )
+        .await;
     }
 
     let content_for_model = if tool_result_envelope_v1 {
@@ -129,11 +132,14 @@ async fn abort_tool_batch_if_sse_closed(
     }
     info!(target: "crabmate", "{reason}");
     if let Some(tx) = out {
-        let _ = tx
-            .send(encode_message(SsePayload::ToolRunning {
+        let _ = crate::sse::send_string_logged(
+            tx,
+            encode_message(SsePayload::ToolRunning {
                 tool_running: false,
-            }))
-            .await;
+            }),
+            "execute_tools::abort_tool_batch tool_running false",
+        )
+        .await;
     }
     true
 }
@@ -186,11 +192,12 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
     let mut workspace_changed = false;
 
     if let Some(tx) = out {
-        let _ = tx
-            .send(encode_message(SsePayload::ToolRunning {
-                tool_running: true,
-            }))
-            .await;
+        let _ = crate::sse::send_string_logged(
+            tx,
+            encode_message(SsePayload::ToolRunning { tool_running: true }),
+            "execute_tools::batch tool_running true",
+        )
+        .await;
     }
 
     if tool_registry::tool_calls_allow_parallel_sync_batch(tool_calls) {
@@ -398,17 +405,23 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
 
     if let Some(tx) = out {
         if workspace_changed {
-            let _ = tx
-                .send(encode_message(SsePayload::WorkspaceChanged {
+            let _ = crate::sse::send_string_logged(
+                tx,
+                encode_message(SsePayload::WorkspaceChanged {
                     workspace_changed: true,
-                }))
-                .await;
-        }
-        let _ = tx
-            .send(encode_message(SsePayload::ToolRunning {
-                tool_running: false,
-            }))
+                }),
+                "execute_tools::batch workspace_changed",
+            )
             .await;
+        }
+        let _ = crate::sse::send_string_logged(
+            tx,
+            encode_message(SsePayload::ToolRunning {
+                tool_running: false,
+            }),
+            "execute_tools::batch tool_running false",
+        )
+        .await;
     }
 
     ExecuteToolsBatchOutcome::Finished

@@ -5,7 +5,10 @@
 //! 人读契约见仓库 **`docs/SSE_PROTOCOL.md`**。协议版本常量见 **`protocol::SSE_PROTOCOL_VERSION`**（与 `docs/SSE_PROTOCOL.md` 及前端 `api.ts` 的 `SSE_PROTOCOL_VERSION` 对齐）。
 
 pub mod line;
+mod mpsc_send;
 pub mod protocol;
+
+pub(crate) use mpsc_send::send_string_logged;
 
 pub use protocol::{
     CommandApprovalBody, SseErrorBody, SsePayload, StagedPlanFinishedBody, StagedPlanStartedBody,

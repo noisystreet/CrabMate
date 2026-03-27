@@ -696,6 +696,11 @@ pub(crate) async fn chat_approval_handler(
         }),
     ))?;
     if tx.send(decision).await.is_err() {
+        debug!(
+            target: "crabmate::sse_mpsc",
+            "approval decision mpsc send failed: session_id={} receiver dropped",
+            session_id
+        );
         state.approval_sessions.write().await.remove(&session_id);
         return Err((
             StatusCode::GONE,

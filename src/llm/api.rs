@@ -35,7 +35,9 @@ async fn flush_sse_delta_buffer(pending: &mut String, tx: Option<&Sender<String>
     if let Some(t) = tx
         && !pending.is_empty()
     {
-        let _ = t.send(std::mem::take(pending)).await;
+        let line = std::mem::take(pending);
+        let _ = crate::sse::send_string_logged(t, line, "llm::stream_chat flush_sse_delta_buffer")
+            .await;
     }
 }
 
@@ -176,7 +178,13 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
         if let Some(tx) = out {
             pending_sse_delta.push_str(s);
             if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
-                let _ = tx.send(std::mem::take(pending_sse_delta)).await;
+                let line = std::mem::take(pending_sse_delta);
+                let _ = crate::sse::send_string_logged(
+                    tx,
+                    line,
+                    "llm::stream_chat ingest delta (reasoning)",
+                )
+                .await;
             }
         }
     }
@@ -195,7 +203,13 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
         if let Some(tx) = out {
             pending_sse_delta.push_str(s);
             if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
-                let _ = tx.send(std::mem::take(pending_sse_delta)).await;
+                let line = std::mem::take(pending_sse_delta);
+                let _ = crate::sse::send_string_logged(
+                    tx,
+                    line,
+                    "llm::stream_chat ingest delta (content)",
+                )
+                .await;
             }
         }
     }
@@ -204,13 +218,14 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
             *parsing_tool_calls_notified = true;
             if let Some(tx) = out {
                 flush_sse_delta_buffer(pending_sse_delta, Some(tx)).await;
-                let _ = tx
-                    .send(crate::sse::encode_message(
-                        crate::sse::SsePayload::ParsingToolCalls {
-                            parsing_tool_calls: true,
-                        },
-                    ))
-                    .await;
+                let _ = crate::sse::send_string_logged(
+                    tx,
+                    crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
+                        parsing_tool_calls: true,
+                    }),
+                    "llm::stream_chat parsing_tool_calls notify",
+                )
+                .await;
             }
         }
         for tc in tcs {
@@ -379,7 +394,12 @@ pub async fn stream_chat(
         if !sse_plain.is_empty()
             && let Some(tx) = out
         {
-            let _ = tx.send(sse_plain).await;
+            let _ = crate::sse::send_string_logged(
+                tx,
+                sse_plain,
+                "llm::stream_chat non-stream assistant plain",
+            )
+            .await;
         }
         if render_to_terminal {
             if plain_terminal_stream && out.is_none() {
@@ -433,13 +453,14 @@ pub async fn stream_chat(
             && !tcs.is_empty()
             && let Some(tx) = out
         {
-            let _ = tx
-                .send(crate::sse::encode_message(
-                    crate::sse::SsePayload::ParsingToolCalls {
-                        parsing_tool_calls: true,
-                    },
-                ))
-                .await;
+            let _ = crate::sse::send_string_logged(
+                tx,
+                crate::sse::encode_message(crate::sse::SsePayload::ParsingToolCalls {
+                    parsing_tool_calls: true,
+                }),
+                "llm::stream_chat non-stream parsing_tool_calls",
+            )
+            .await;
         }
         debug!(
             target: "crabmate",
