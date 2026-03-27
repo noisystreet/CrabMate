@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { FolderOpen, FileText, Loader2, Settings, FilePlus, Save, Download, Trash2, ChevronRight, Home, Search, Copy, Terminal } from 'lucide-react'
-import { ApiError, fetchWorkspace, fetchWorkspacePick, fetchWorkspaceFile, writeWorkspaceFile, setWorkspacePath, deleteWorkspaceFile, searchWorkspace } from '../api'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { FolderOpen, FileText, Loader2, Settings, FilePlus, Save, Download, Trash2, ChevronRight, Home, Search, Copy, Terminal, Sparkles } from 'lucide-react'
+import { ApiError, fetchWorkspace, fetchWorkspaceProfile, fetchWorkspacePick, fetchWorkspaceFile, writeWorkspaceFile, setWorkspacePath, deleteWorkspaceFile, searchWorkspace } from '../api'
 import type { WorkspaceData } from '../types'
 
 function joinPath(dir: string, name: string): string {
@@ -56,6 +58,26 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [recentFiles, setRecentFiles] = useState<string[]>([])
 
+  const [profileMd, setProfileMd] = useState('')
+  const [profileErr, setProfileErr] = useState<string | null>(null)
+  const [profileLoading, setProfileLoading] = useState(false)
+
+  const loadProjectProfile = useCallback(() => {
+    if (workspaceDir === null) return
+    setProfileLoading(true)
+    setProfileErr(null)
+    fetchWorkspaceProfile()
+      .then((r) => {
+        setProfileErr(r.error ?? null)
+        setProfileMd((r.markdown || '').trim())
+      })
+      .catch((e) => {
+        setProfileErr(e instanceof Error ? e.message : '加载项目画像失败')
+        setProfileMd('')
+      })
+      .finally(() => setProfileLoading(false))
+  }, [workspaceDir])
+
   const loadWorkspace = useCallback(() => {
     if (workspaceDir === null) return
     setLoading(true)
@@ -76,6 +98,15 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
   useEffect(() => {
     if (refreshTrigger > 0) loadWorkspace()
   }, [refreshTrigger, loadWorkspace])
+
+  useEffect(() => {
+    if (workspaceDir === null || !data?.path || data.error) {
+      setProfileMd('')
+      setProfileErr(null)
+      return
+    }
+    loadProjectProfile()
+  }, [workspaceDir, data?.path, data?.error, refreshTrigger, loadProjectProfile])
 
   // 初次加载时不再自动把历史工作区同步到后端，
   // 只在用户明确设置 / 选择目录时才调用 setWorkspacePath。
@@ -256,6 +287,15 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
               <button
                 type="button"
                 className="btn btn-ghost btn-xs btn-square"
+                title="刷新项目画像"
+                onClick={() => loadProjectProfile()}
+                disabled={profileLoading}
+              >
+                {profileLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs btn-square"
                 title="在当前目录搜索"
                 onClick={() => {
                   setSearchPattern('')
@@ -395,6 +435,31 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
         )}
         {workspaceDir !== null && !loading && error && (
           <p className="text-sm text-error py-4 px-2">加载失败：{error}</p>
+        )}
+        {workspaceDir !== null && !loading && !error && data && !data.error && profileErr && (
+          <p className="text-xs text-warning px-2 py-1 mb-1">项目画像：{profileErr}</p>
+        )}
+        {workspaceDir !== null && !loading && !error && data && !data.error && profileMd && (
+          <details className="mb-2 mx-1 border border-base-300 bg-base-100/50 open:pb-2" open>
+            <summary className="cursor-pointer text-xs font-medium px-2 py-1.5 flex items-center gap-1 select-none">
+              <Sparkles size={12} className="opacity-70" />
+              项目画像（自动）
+            </summary>
+            <div className="markdown-body text-[12px] leading-snug px-2 max-h-48 overflow-y-auto border-t border-base-300/60 pt-2">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{profileMd}</ReactMarkdown>
+            </div>
+            {onSendToChat && (
+              <div className="px-2 pt-1 flex gap-1">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs rounded-none"
+                  onClick={() => onSendToChat(`以下为当前工作区自动生成的项目画像，请结合仓库实际使用：\n\n${profileMd}`)}
+                >
+                  发送到聊天
+                </button>
+              </div>
+            )}
+          </details>
         )}
         {workspaceDir !== null && !loading && !error && data && !data.error && (
           <>
