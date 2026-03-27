@@ -12,12 +12,15 @@ use crate::{LlmSeedOverride, RunAgentTurnParams, run_agent_turn};
 use crossterm::{
     ExecutableCommand,
     cursor::MoveToColumn,
-    terminal::{Clear, ClearType},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    queue,
+    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
 };
 use log::debug;
 use std::collections::HashSet;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -31,6 +34,184 @@ enum ReplBuiltIn<'a> {
     Help,
     Unknown(&'a str),
     BareSlash,
+}
+
+/// 行首 `$`：`Some(None)` 表示仅 `$`（应打印用法）；`Some(Some(cmd))` 为待执行的 shell 一行；`None` 表示非 `$` 行。
+fn parse_repl_dollar_shell_line(input: &str) -> Option<Option<&str>> {
+    let t = input.trim_start();
+    if !t.starts_with('$') {
+        return None;
+    }
+    let rest = t[1..].trim();
+    if rest.is_empty() {
+        Some(None)
+    } else {
+        Some(Some(rest))
+    }
+}
+
+const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。交互终端：行首按 `$` 后提示变为 bash#:（`$` 不回显）；管道输入仍可用 `$ <命令>`。示例: ls  pwd  git status";
+
+/// 执行 REPL 本地 shell 一行：`parsed` 为 `parse_repl_dollar_shell_line` 的 `Some(...)` 内层；`None` 表示仅 `$` 或空命令，打印用法。
+fn repl_execute_shell(
+    parsed: Option<&str>,
+    work_dir: &Path,
+    style: &CliReplStyle,
+) -> io::Result<()> {
+    let cmd = match parsed {
+        None => None,
+        Some(c) => {
+            let t = c.trim();
+            if t.is_empty() { None } else { Some(t) }
+        }
+    };
+    let Some(cmd) = cmd else {
+        let _ = style.print_line(REPL_SHELL_USAGE);
+        return Ok(());
+    };
+    if cmd.contains('\0') {
+        let _ = style.eprint_error("命令含空字节，已拒绝执行。");
+        return Ok(());
+    }
+    let code = run_repl_shell_line_sync(cmd, work_dir)?;
+    if code != 0 {
+        let _ = style.print_line(&format!("退出码: {code}"));
+    }
+    Ok(())
+}
+
+/// REPL 单次读取结果（在 `spawn_blocking` 内完成）。
+#[derive(Debug)]
+enum ReplReadLine {
+    /// stdin EOF（如 Ctrl+D）
+    Eof,
+    /// 空行（忽略，继续下一轮）
+    Empty,
+    /// 普通对话文本
+    Chat(String),
+    /// 本地 shell：`None` 为应打印用法；`Some` 为已去掉 `$` 的命令行
+    Shell(Option<String>),
+}
+
+fn read_repl_line_blocking() -> io::Result<ReplReadLine> {
+    let mut stdout = io::stdout();
+    let _ = stdout.execute(MoveToColumn(0));
+    let _ = stdout.execute(Clear(ClearType::CurrentLine));
+    crate::runtime::terminal_labels::write_user_message_prefix(&mut stdout)?;
+    stdout.flush()?;
+
+    if io::stdin().is_terminal() && stdout.is_terminal() {
+        read_repl_line_tty(stdout)
+    } else {
+        read_repl_line_piped()
+    }
+}
+
+fn read_repl_line_piped() -> io::Result<ReplReadLine> {
+    let mut input = String::new();
+    let n = io::stdin().lock().read_line(&mut input)?;
+    if n == 0 {
+        return Ok(ReplReadLine::Eof);
+    }
+    let line = input.trim_end_matches(['\r', '\n']);
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Ok(ReplReadLine::Empty);
+    }
+    if let Some(inner) = parse_repl_dollar_shell_line(trimmed) {
+        Ok(ReplReadLine::Shell(inner.map(str::to_string)))
+    } else {
+        Ok(ReplReadLine::Chat(trimmed.to_string()))
+    }
+}
+
+fn redraw_repl_input_prompt(stdout: &mut io::Stdout, shell_mode: bool) -> io::Result<()> {
+    queue!(stdout, MoveToColumn(0))?;
+    stdout.execute(Clear(ClearType::CurrentLine))?;
+    if shell_mode {
+        crate::runtime::terminal_labels::write_repl_bash_prompt_prefix(stdout)?;
+    } else {
+        crate::runtime::terminal_labels::write_user_message_prefix(stdout)?;
+    }
+    stdout.flush()?;
+    Ok(())
+}
+
+fn read_repl_line_tty(mut stdout: io::Stdout) -> io::Result<ReplReadLine> {
+    enable_raw_mode()?;
+    let raw_result = (|| -> io::Result<ReplReadLine> {
+        let mut buf = String::new();
+        let mut shell_prompt = false;
+        loop {
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Release {
+                    continue;
+                }
+                match key.code {
+                    KeyCode::Enter => {
+                        write!(stdout, "\r\n")?;
+                        stdout.flush()?;
+                        if shell_prompt {
+                            if buf.trim().is_empty() {
+                                return Ok(ReplReadLine::Shell(None));
+                            }
+                            return Ok(ReplReadLine::Shell(Some(buf)));
+                        }
+                        if buf.trim().is_empty() {
+                            return Ok(ReplReadLine::Empty);
+                        }
+                        return Ok(ReplReadLine::Chat(buf));
+                    }
+                    KeyCode::Backspace => {
+                        if buf.pop().is_some() {
+                            write!(stdout, "\x08 \x08")?;
+                            stdout.flush()?;
+                        } else if shell_prompt {
+                            shell_prompt = false;
+                            redraw_repl_input_prompt(&mut stdout, false)?;
+                        }
+                    }
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        write!(stdout, "\r\n")?;
+                        stdout.flush()?;
+                        return Ok(ReplReadLine::Eof);
+                    }
+                    KeyCode::Char(c) => {
+                        if c == '$' && !shell_prompt && buf.is_empty() {
+                            shell_prompt = true;
+                            redraw_repl_input_prompt(&mut stdout, true)?;
+                            continue;
+                        }
+                        buf.push(c);
+                        write!(stdout, "{c}")?;
+                        stdout.flush()?;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    })();
+    let _ = disable_raw_mode();
+    raw_result
+}
+
+fn run_repl_shell_line_sync(cmd: &str, work_dir: &Path) -> io::Result<i32> {
+    let status = if cfg!(windows) {
+        Command::new("cmd")
+            .args(["/C", cmd])
+            .current_dir(work_dir)
+            .stdin(Stdio::null())
+            .status()?
+    } else {
+        Command::new("sh")
+            .args(["-c", cmd])
+            .current_dir(work_dir)
+            .stdin(Stdio::null())
+            .status()?
+    };
+    Ok(status
+        .code()
+        .unwrap_or(if status.success() { 0 } else { -1 }))
 }
 
 /// 解析 REPL 行首 `/` 内建命令；非内建前缀返回 `None`。
@@ -574,64 +755,73 @@ pub async fn run_repl(
     style.print_banner(&cfg.model, work_dir.as_path(), tools.len())?;
 
     loop {
-        // 清理提示符所在行，避免被上一次输出残留影响
-        let mut stdout = io::stdout();
-        let _ = stdout.execute(MoveToColumn(0));
-        let _ = stdout.execute(Clear(ClearType::CurrentLine));
-        crate::runtime::terminal_labels::write_user_message_prefix(&mut stdout)?;
-        stdout.flush()?;
-        let (n, input) = tokio::task::spawn_blocking(|| {
-            let mut input = String::new();
-            let n = io::stdin().read_line(&mut input)?;
-            Ok::<_, io::Error>((n, input))
-        })
-        .await
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-        if n == 0 {
-            break; // Ctrl+D (EOF)
-        }
-        let input = input.trim();
-        if input.eq_ignore_ascii_case("quit") || input.eq_ignore_ascii_case("exit") {
-            break;
-        }
-        if input.is_empty() {
-            continue;
-        }
+        let read_res = tokio::task::spawn_blocking(read_repl_line_blocking)
+            .await
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
-        if try_handle_repl_slash_command(
-            input,
-            cfg.as_ref(),
-            tools,
-            &mut messages,
-            &mut work_dir,
-            &style,
-        ) {
-            continue;
-        }
+        match read_res {
+            ReplReadLine::Eof => break,
+            ReplReadLine::Empty => continue,
+            ReplReadLine::Shell(opt_cmd) => {
+                let wd = work_dir.clone();
+                let sty = style;
+                match tokio::task::spawn_blocking(move || {
+                    repl_execute_shell(opt_cmd.as_deref(), wd.as_path(), &sty)
+                })
+                .await
+                {
+                    Ok(Ok(())) => continue,
+                    Ok(Err(e)) => {
+                        let _ = style.eprint_error(&e.to_string());
+                        continue;
+                    }
+                    Err(e) => {
+                        let _ = style.eprint_error(&e.to_string());
+                        continue;
+                    }
+                }
+            }
+            ReplReadLine::Chat(input) => {
+                if input.eq_ignore_ascii_case("quit") || input.eq_ignore_ascii_case("exit") {
+                    break;
+                }
 
-        messages.push(Message::user_only(input.to_string()));
-        debug!(
-            target: "crabmate::print",
-            "REPL 用户输入已入队 history_len={} input_preview={}",
-            messages.len(),
-            redact::preview_chars(input, redact::MESSAGE_LOG_PREVIEW_CHARS)
-        );
+                if try_handle_repl_slash_command(
+                    input.as_str(),
+                    cfg.as_ref(),
+                    tools,
+                    &mut messages,
+                    &mut work_dir,
+                    &style,
+                ) {
+                    continue;
+                }
 
-        if let Err(e) = run_agent_turn_for_cli(
-            client,
-            api_key,
-            cfg,
-            tools,
-            &mut messages,
-            work_dir.as_path(),
-            no_stream,
-            Some(&cli_rt),
-        )
-        .await
-        {
-            let _ = style.eprint_error(&e.to_string());
-            break;
+                messages.push(Message::user_only(input.to_string()));
+                debug!(
+                    target: "crabmate::print",
+                    "REPL 用户输入已入队 history_len={} input_preview={}",
+                    messages.len(),
+                    redact::preview_chars(input.as_str(), redact::MESSAGE_LOG_PREVIEW_CHARS)
+                );
+
+                if let Err(e) = run_agent_turn_for_cli(
+                    client,
+                    api_key,
+                    cfg,
+                    tools,
+                    &mut messages,
+                    work_dir.as_path(),
+                    no_stream,
+                    Some(&cli_rt),
+                )
+                .await
+                {
+                    let _ = style.eprint_error(&e.to_string());
+                    break;
+                }
+            }
         }
     }
 
@@ -699,5 +889,41 @@ mod repl_slash_tests {
             classify_repl_slash_command("/nope"),
             Some(ReplBuiltIn::Unknown("nope"))
         );
+    }
+}
+
+#[cfg(test)]
+mod repl_dollar_tests {
+    use super::{parse_repl_dollar_shell_line, run_repl_shell_line_sync};
+
+    #[test]
+    fn parse_not_dollar() {
+        assert_eq!(parse_repl_dollar_shell_line("hello"), None);
+    }
+
+    #[test]
+    fn parse_bare_dollar() {
+        assert_eq!(parse_repl_dollar_shell_line("$"), Some(None));
+    }
+
+    #[test]
+    fn parse_dollar_ls() {
+        assert_eq!(parse_repl_dollar_shell_line("$ ls"), Some(Some("ls")));
+    }
+
+    #[test]
+    fn parse_dollar_leading_space() {
+        assert_eq!(
+            parse_repl_dollar_shell_line("  $ echo x"),
+            Some(Some("echo x"))
+        );
+    }
+
+    #[test]
+    fn shell_true_zero_exit() {
+        let dir = std::env::temp_dir();
+        let cmd = if cfg!(windows) { "exit /b 0" } else { "true" };
+        let code = run_repl_shell_line_sync(cmd, &dir).unwrap();
+        assert_eq!(code, 0);
     }
 }

@@ -22,6 +22,21 @@ pub(crate) fn write_user_message_prefix<W: Write + QueueableCommand>(w: &mut W) 
     Ok(())
 }
 
+/// REPL 本地 shell 一行模式下的输入提示：`bash#: `，加粗 + 黄色（与「我:」区分）。
+pub(crate) fn write_repl_bash_prompt_prefix<W: Write + QueueableCommand>(
+    w: &mut W,
+) -> io::Result<()> {
+    debug!(target: "crabmate::print", "CLI 写出 REPL shell 提示前缀（bash#:）");
+    queue!(
+        w,
+        SetAttribute(Attribute::Bold),
+        SetForegroundColor(Color::Yellow)
+    )?;
+    write!(w, "bash#: ")?;
+    queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
+    Ok(())
+}
+
 /// 助手回复前缀：`Agent: `，加粗 + 洋红。
 pub(crate) fn write_agent_message_prefix<W: Write + QueueableCommand>(w: &mut W) -> io::Result<()> {
     // 助手正文打印前的 `Agent:` 前缀；完整正文见 `llm::api::terminal_render_agent_markdown` 的 debug。

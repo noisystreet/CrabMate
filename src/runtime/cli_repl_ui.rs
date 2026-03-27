@@ -110,7 +110,9 @@ impl CliReplStyle {
             format!("  工具 {tool_count} 个可用")
         };
         self.writeln_muted_line(&tools_line)?;
-        self.writeln_muted_line("  输入消息对话；/help 内建命令 · quit / exit / Ctrl+D 退出")?;
+        self.writeln_muted_line(
+            "  输入消息对话；/help 内建命令 · 行首 `$` 进入本地 shell（提示变为 bash#:，`$` 不回显）· quit / exit / Ctrl+D 退出",
+        )?;
         self.writeln_muted_line("  非白名单 run_command 将询问：y 一次 / a 本会话允许该命令名")?;
         writeln!(out)?;
         out.flush()
@@ -175,6 +177,10 @@ impl CliReplStyle {
             ),
             ("/tools", "列出当前加载的工具名"),
             ("/help, /?", "本说明"),
+            (
+                "$ → bash#:",
+                "交互终端行首按 `$` 后提示变为 bash#: 并输入命令；管道输入仍可用 `$ <命令>`",
+            ),
         ];
         for (cmd, desc) in rows {
             if self.use_color_stdout {
