@@ -263,12 +263,12 @@ export async function deleteWorkspaceFile(path: string): Promise<{ error?: strin
   })
 }
 
-/** 获取当前任务清单（位于工作区根目录的 tasks.json） */
+/** 获取当前任务清单（服务端按工作区路径存在进程内存，不落盘） */
 export async function fetchTasks(): Promise<TasksData> {
   return request<TasksData>('/tasks', { timeoutMs: 15000, retries: 1 })
 }
 
-/** 覆盖保存任务清单（写入工作区根目录的 tasks.json） */
+/** 覆盖保存任务清单（仅服务端内存；重启 serve 后丢失） */
 export async function saveTasks(data: TasksData): Promise<TasksData> {
   return request<TasksData>('/tasks', {
     method: 'POST',

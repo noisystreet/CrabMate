@@ -263,14 +263,14 @@ mod tests {
     #[test]
     fn roundtrip_staged_plan_notice() {
         let s = encode_message(SsePayload::StagedPlanNotice {
-            text: "【规划】共 2 步\n  1. [a] x".into(),
+            text: "**规划** · 共 2 步\n  1. [a] x".into(),
             clear_before: true,
         });
         let m: SseMessage = serde_json::from_str(&s).unwrap();
         match m.payload {
             SsePayload::StagedPlanNotice { text, clear_before } => {
                 assert!(clear_before);
-                assert_eq!(text, "【规划】共 2 步\n  1. [a] x");
+                assert_eq!(text, "**规划** · 共 2 步\n  1. [a] x");
             }
             _ => panic!("expected staged_plan_notice payload"),
         }

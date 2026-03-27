@@ -46,6 +46,8 @@ pub(super) struct AgentSection {
     pub(super) allowed_commands_dev: Option<Vec<String>>,
     pub(super) allowed_commands_prod: Option<Vec<String>>,
     pub(super) tool_message_max_chars: Option<u64>,
+    pub(super) tool_result_envelope_v1: Option<bool>,
+    pub(super) materialize_deepseek_dsml_tool_calls: Option<bool>,
     pub(super) context_char_budget: Option<u64>,
     pub(super) context_min_messages_after_system: Option<u64>,
     pub(super) context_summary_trigger_chars: Option<u64>,

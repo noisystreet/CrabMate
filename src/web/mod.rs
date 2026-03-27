@@ -1,6 +1,7 @@
 //! Axum handler：浏览器 Web UI 调用的工作区、任务等 HTTP API（**非**终端 TUI；TUI 在 `runtime/tui`）。
 mod app_state;
 mod chat_handlers;
+mod tasks_types;
 
 pub(crate) use app_state::{AppState, ConversationBacking, open_conversation_sqlite};
 pub(crate) use chat_handlers::{cleanup_uploads_dir, save_outcome_to_stream_error_line};

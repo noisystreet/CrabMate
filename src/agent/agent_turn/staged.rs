@@ -231,7 +231,10 @@ where
         );
     }
     msg.tool_calls = None;
-    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+        &mut msg,
+        p.cfg.materialize_deepseek_dsml_tool_calls,
+    );
 
     // 规划轮若未产出可解析 JSON，但正文里写了 DSML 工具调用：物化后应先执行工具，再进入常规循环（否则历史中只有未执行的 XML）。
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
@@ -368,7 +371,7 @@ where
             String::new()
         };
         let body = format!(
-            "【分步执行 {}/{}】{}{}\n- id: {}\n- 描述: {}",
+            "### 分步 {}/{}\n{}{}\n- id: {}\n- 描述: {}",
             step_index,
             n,
             crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE,

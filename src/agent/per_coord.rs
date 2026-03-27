@@ -365,7 +365,8 @@ fn last_workflow_validate_layer_count(messages: &[Message]) -> Option<usize> {
             continue;
         }
         let body = m.content.as_deref()?;
-        let v: Value = serde_json::from_str(body).ok()?;
+        let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
+        let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
         if v.get("report_type").and_then(|x| x.as_str()) != Some("workflow_validate_result") {
             continue;
         }
@@ -818,5 +819,20 @@ mod tests {
         hist.pop();
         assert_eq!(c.test_workflow_validate_layer_need(&hist), None);
         assert_eq!(c.test_layer_cache_snapshot(), (None, hist.len()));
+    }
+
+    #[test]
+    fn workflow_validate_layer_from_crabmate_tool_envelope() {
+        let inner = r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3}}"#;
+        let parsed = crate::tool_result::parse_legacy_output("workflow_execute", inner);
+        let wrapped = crate::tool_result::encode_tool_message_envelope_v1(
+            "workflow_execute",
+            "wf".into(),
+            &parsed,
+            inner,
+        );
+        let mut hist = hist_with_validate_layer_3();
+        hist[1].content = Some(wrapped);
+        assert_eq!(last_workflow_validate_layer_count(&hist), Some(3));
     }
 }

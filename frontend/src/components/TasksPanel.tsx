@@ -26,7 +26,7 @@ export function TasksPanel({ width = 280, onTaskCompleted }: TasksPanelProps) {
     fetchTasks()
       .then((d) => setData(d ?? EMPTY_TASKS))
       .catch(() =>
-        setError('加载任务清单失败：tasks.json 内容可能不是合法 JSON，或服务端暂不可用。可尝试点击「从描述生成」重新创建任务清单。'),
+        setError('加载任务清单失败：服务端暂不可用或请求失败。可稍后重试，或点击「从描述生成」新建清单。'),
       )
       .finally(() => setLoading(false))
   }

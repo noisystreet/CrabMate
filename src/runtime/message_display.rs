@@ -15,13 +15,16 @@ use crate::runtime::latex_unicode::latex_math_to_unicode;
 use crate::tool_result::ToolResult;
 use crate::types::Message;
 
-/// 聊天区（Web 工具卡等）是否展示 **【执行结果】** 整块（状态行、stdout/stderr、完整 JSON、纯文本正文等）。
-/// `false` 时仅展示 `summarize_tool_call` / JSON `human_summary` 等摘要；**不打印**「【执行结果】」及其下任何内容；`Message.content` 与 tracing 仍为全文。
+/// 工具结果中「原始输出」块的 Markdown 小标题（与 Web `ChatPanel`、CLI 完整回显一致）。
+pub(crate) const TOOL_OUTPUT_SECTION_HEADLINE: &str = "### 执行输出";
+
+/// 聊天区（Web 工具卡等）是否展示 **`### 执行输出`** 整块（状态行、stdout/stderr、完整 JSON、纯文本正文等）。
+/// `false` 时仅展示 `summarize_tool_call` / JSON `human_summary` 等摘要；**不打印**「`### 执行输出`」及其下任何内容；`Message.content` 与 tracing 仍为全文。
 pub(crate) const SHOW_TOOL_RAW_OUTPUT_IN_CHAT: bool = false;
 
 /// `role: tool` 的展示：与 Web `ChatPanel` 的 `buildToolOutputCardText` 对齐。
-/// [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 为 `false` 时仅 JSON `human_summary` 等摘要，**无**「【执行结果】」；
-/// 为 `true` 时：先 `human_summary`，再 **【执行结果】**（状态 + stdout/stderr 等）；纯文本 `run_command` 风格则结构化展示。
+/// [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 为 `false` 时仅 JSON `human_summary` 等摘要，**无**「`### 执行输出`」；
+/// 为 `true` 时：先 `human_summary`，再 **`### 执行输出`**（状态 + stdout/stderr 等）；纯文本 `run_command` 风格则结构化展示。
 ///
 /// 受 [`SHOW_TOOL_RAW_OUTPUT_IN_CHAT`] 控制；CLI 无 SSE 回显请用 [`tool_content_for_display_full`]。
 pub(crate) fn tool_content_for_display(raw: &str) -> String {
@@ -38,10 +41,28 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
     if t.starts_with('{')
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(t)
     {
+        if let Some(ct) = v.get("crabmate_tool").and_then(|x| x.as_object()) {
+            let summary = ct
+                .get("summary")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .trim();
+            if include_raw {
+                let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
+                if summary.is_empty() {
+                    return format!("{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}");
+                }
+                return format!("{summary}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}");
+            }
+            if summary.is_empty() {
+                return String::new();
+            }
+            return summary.to_string();
+        }
         if include_raw {
             if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
                 let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
-                return format!("{h}\n\n【执行结果】\n{pretty}");
+                return format!("{h}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}");
             }
             return serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
         }
@@ -124,7 +145,7 @@ fn format_structured_plain_tool(raw: &str, include_raw: bool) -> String {
         }
     };
 
-    format!("【执行结果】\n{status_line}\n{result_body}")
+    format!("{TOOL_OUTPUT_SECTION_HEADLINE}\n{status_line}\n{result_body}")
 }
 
 /// 根据对条 `assistant.tool_calls` 解析 `summarize_tool_call`（与 Web SSE `tool_result.summary` 同源）。
@@ -195,14 +216,17 @@ pub(crate) fn tool_content_for_display_for_message(
 /// `false` 时：可解析为 v1 规划的助手消息在**展示层**置空（`Message.content` 仍保留 JSON 供后续解析）；右栏「队列」与 `staged_plan_notice` 不受影响。
 pub(crate) const SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT: bool = false;
 
-/// 是否在聊天区展示 **`agent_turn` 分步注入的 `user` 消息**（`【分步执行 i/n】…\n- id: …\n- 描述: …`）。
+/// 是否在聊天区展示 **`agent_turn` 分步注入的 `user` 消息**（`### 分步 i/n`…`\n- id:`…`\n- 描述:`…；历史会话可能仍为 `【分步执行` 前缀）。
 /// `false` 时**整段**在展示层置空（与 `run_staged_plan_then_execute_steps` 注入格式一致）；`Message.content`、导出与 `log`（含 `debug!`）仍为全文。
 pub(crate) const SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT: bool = false;
 
 /// 与 `run_staged_plan_then_execute_steps` 注入的 user 正文同形（宽松匹配，避免误伤普通用户输入）。
 fn is_staged_step_injection_user_content(s: &str) -> bool {
     let t = s.trim_start();
-    t.starts_with("【分步执行") && t.contains("\n- id:") && t.contains("\n- 描述:")
+    if !(t.contains("\n- id:") && t.contains("\n- 描述:")) {
+        return false;
+    }
+    t.starts_with("### 分步 ") || t.starts_with("【分步执行")
 }
 
 /// `user` 气泡 / CLI 用户侧展示。
@@ -544,7 +568,7 @@ mod tests {
         let raw = r#"{"human_summary":"编译成功","ok":true}"#;
         let out = tool_content_for_display_impl(raw, true);
         assert!(out.starts_with("编译成功"));
-        assert!(out.contains("【执行结果】"));
+        assert!(out.contains(TOOL_OUTPUT_SECTION_HEADLINE));
         assert!(out.contains("\"ok\": true"));
     }
 
@@ -553,8 +577,18 @@ mod tests {
         let raw = r#"{"human_summary":"编译成功","ok":true}"#;
         let out = tool_content_for_display_impl(raw, false);
         assert_eq!(out, "编译成功");
-        assert!(!out.contains("【执行结果】"));
+        assert!(!out.contains(TOOL_OUTPUT_SECTION_HEADLINE));
         assert!(!out.contains("\"ok\""));
+    }
+
+    #[test]
+    fn tool_crabmate_envelope_uses_summary_field() {
+        let raw = r#"{"crabmate_tool":{"v":1,"name":"read_file","summary":"读文件：a.rs","ok":true,"output":"content"}}"#;
+        assert_eq!(tool_content_for_display_impl(raw, false), "读文件：a.rs");
+        let full = tool_content_for_display_impl(raw, true);
+        assert!(full.starts_with("读文件：a.rs"));
+        assert!(full.contains(TOOL_OUTPUT_SECTION_HEADLINE));
+        assert!(full.contains("crabmate_tool"));
     }
 
     #[test]
@@ -571,7 +605,7 @@ mod tests {
     fn tool_plain_run_command_structured() {
         let raw = "退出码：0\n标准输出：\nhello\n";
         let out = tool_content_for_display_impl(raw, true);
-        assert!(out.contains("【执行结果】"));
+        assert!(out.contains(TOOL_OUTPUT_SECTION_HEADLINE));
         assert!(out.contains("状态："));
         assert!(out.contains("成功"));
         assert!(out.contains("标准输出："));
@@ -617,7 +651,7 @@ mod tests {
         let raw = messages[2].content.as_deref().unwrap();
         let out = tool_content_for_display_for_message(raw, &messages, 2);
         assert_eq!(out, "执行命令：ls");
-        assert!(!out.contains("【执行结果】"));
+        assert!(!out.contains(TOOL_OUTPUT_SECTION_HEADLINE));
     }
 
     #[test]
@@ -795,9 +829,14 @@ mod tests {
     #[test]
     fn user_hides_staged_step_injection_when_show_flag_false() {
         let raw = format!(
-            "【分步执行 1/2】{}\n- id: s1\n- 描述: 读文件",
+            "### 分步 1/2\n{}\n- id: s1\n- 描述: 读文件",
             crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE
         );
         assert_eq!(user_message_for_chat_display(&raw), "");
+        let legacy = format!(
+            "【分步执行 1/2】{}\n- id: s1\n- 描述: 读文件",
+            crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE
+        );
+        assert_eq!(user_message_for_chat_display(&legacy), "");
     }
 }

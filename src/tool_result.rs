@@ -1,4 +1,13 @@
 //! 统一工具执行结果：用于工作流等编排场景的结构化状态判断。
+//!
+//! ## 写入对话历史的 `role: tool` 信封（可选，见配置项 **`tool_result_envelope_v1`** / **`AGENT_TOOL_RESULT_ENVELOPE_V1`**）
+//!
+//! 顶层键 **`crabmate_tool`**，内含 `v`（当前为 **1**）、`name`、`summary`（与 SSE / `summarize_tool_call` 同源）、
+//! `ok`、`exit_code`、`error_code`、`output`（工具原始返回正文，供模型阅读或再解析）。
+
+use std::borrow::Cow;
+
+use serde_json::{Map, Value};
 
 #[derive(Debug, Clone)]
 pub struct ToolResult {
@@ -132,6 +141,75 @@ fn extract_streams(output: &str) -> (String, String) {
     (stdout, stderr)
 }
 
+/// 将工具结果编码为单行 JSON，写入 `Message.content`（`role: tool`），便于下游按字段聚合/统计。
+/// `summary` 须与 SSE `ToolResultBody.summary` 及 `summarize_tool_call*` 一致。
+pub fn encode_tool_message_envelope_v1(
+    tool_name: &str,
+    summary: String,
+    parsed: &ParsedLegacyOutput,
+    raw_output: &str,
+) -> String {
+    let mut ct = Map::new();
+    ct.insert("v".into(), Value::from(1_u32));
+    ct.insert("name".into(), Value::String(tool_name.to_string()));
+    ct.insert("summary".into(), Value::String(summary));
+    ct.insert("ok".into(), Value::Bool(parsed.ok));
+    ct.insert("output".into(), Value::String(raw_output.to_string()));
+    if let Some(c) = parsed.exit_code {
+        ct.insert("exit_code".into(), Value::from(c));
+    }
+    if let Some(ref e) = parsed.error_code {
+        ct.insert("error_code".into(), Value::String(e.clone()));
+    }
+    let mut root = Map::new();
+    root.insert("crabmate_tool".into(), Value::Object(ct));
+    serde_json::to_string(&Value::Object(root)).unwrap_or_else(|_| raw_output.to_string())
+}
+
+/// 从 `role: tool` 正文中取出用于 **JSON 再解析** 的载荷（如 `workflow_validate_result`）。
+/// 非信封或解析失败时返回 trim 后的 `content` 借用。
+pub fn tool_message_payload_for_inner_parse<'a>(content: &'a str) -> Cow<'a, str> {
+    let t = content.trim();
+    let Ok(v) = serde_json::from_str::<Value>(t) else {
+        return Cow::Borrowed(t);
+    };
+    let Some(ct) = v.get("crabmate_tool") else {
+        return Cow::Borrowed(t);
+    };
+    let Some(Value::String(out)) = ct.get("output") else {
+        return Cow::Borrowed(t);
+    };
+    Cow::Owned(out.clone())
+}
+
+/// 对过长 `role: tool` 正文截断：若为 [`encode_tool_message_envelope_v1`] 形状，只截断 `output` 并保留信封元数据。
+pub fn maybe_compress_tool_message_content(content: &str, max_chars: usize) -> Option<String> {
+    let max_chars = max_chars.max(256);
+    let total_chars = content.chars().count();
+    if total_chars <= max_chars {
+        return None;
+    }
+    if let Ok(mut v) = serde_json::from_str::<Value>(content)
+        && let Some(Value::Object(ct)) = v.get_mut("crabmate_tool")
+        && let Some(Value::String(out)) = ct.get_mut("output")
+    {
+        let out_chars = out.chars().count();
+        if out_chars > max_chars {
+            let truncated: String = out.chars().take(max_chars).collect();
+            *out = format!(
+                "{}\n\n[... 已截断，原始约 {} 字符，保留前 {} 字符 ...]",
+                truncated, out_chars, max_chars
+            );
+            return serde_json::to_string(&v).ok();
+        }
+    }
+    let truncated: String = content.chars().take(max_chars).collect();
+    Some(format!(
+        "{}\n\n[... 已截断，原始约 {} 字符，保留前 {} 字符 ...]",
+        truncated, total_chars, max_chars
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +242,38 @@ mod tests {
         assert!(!r.ok);
         assert_eq!(r.exit_code, None);
         assert_eq!(r.error_code.as_deref(), Some("workspace_not_set"));
+    }
+
+    #[test]
+    fn envelope_roundtrip_and_inner_payload() {
+        let raw = "退出码：0\n标准输出：\nhi\n";
+        let parsed = parse_legacy_output("run_command", raw);
+        let s =
+            encode_tool_message_envelope_v1("run_command", "执行命令：true".into(), &parsed, raw);
+        assert!(s.contains("crabmate_tool"));
+        assert!(s.contains("\"summary\":\"执行命令：true\""));
+        let inner = tool_message_payload_for_inner_parse(&s);
+        assert_eq!(inner.as_ref(), raw);
+    }
+
+    #[test]
+    fn inner_parse_passes_through_plain_and_legacy_json() {
+        let j = r#"{"report_type":"workflow_validate_result","spec":{"layer_count":2}}"#;
+        assert_eq!(tool_message_payload_for_inner_parse(j).as_ref(), j);
+        assert_eq!(
+            tool_message_payload_for_inner_parse(" plain ").as_ref(),
+            "plain"
+        );
+    }
+
+    #[test]
+    fn compress_envelope_truncates_output_only() {
+        let long = "x".repeat(500);
+        let parsed = parse_legacy_output("x", &long);
+        let env = encode_tool_message_envelope_v1("x", "s".into(), &parsed, &long);
+        let out = maybe_compress_tool_message_content(&env, 100).expect("compress");
+        assert!(out.len() < env.len());
+        let inner = tool_message_payload_for_inner_parse(&out);
+        assert!(inner.contains("[... 已截断"));
     }
 }
