@@ -20,13 +20,17 @@ use super::staged_sse::{
     staged_plan_queue_summary_text,
 };
 
-pub(super) async fn run_staged_plan_then_execute_steps(
-    p: &mut RunLoopParams<'_>,
-    per_coord: &mut PerCoordinator,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let render_to_terminal = p.render_to_terminal;
-    let echo_terminal_staged = render_to_terminal && p.out.is_none();
+/// 分阶段规划共享执行路径上的日志文案与 SSE 错误提示（避免 `run_staged_plan_with_prepared_request` 参数过长）。
+pub(crate) struct StagedPlanRunLabels {
+    pub planning_log_label: &'static str,
+    pub tool_calls_error_message: &'static str,
+    pub step_injection_log_label: &'static str,
+}
 
+async fn prepare_staged_planner_no_tools_request(
+    p: &mut RunLoopParams<'_>,
+    build_planner_messages: fn(&[Message], String) -> Vec<Message>,
+) -> Result<crate::types::ChatRequest, Box<dyn std::error::Error + Send + Sync>> {
     crate::agent::context_window::prepare_messages_for_model(
         p.llm_backend,
         p.client,
@@ -42,21 +46,34 @@ pub(super) async fn run_staged_plan_then_execute_steps(
     } else {
         instr.to_string()
     };
-    let req = no_tools_chat_request(
+    Ok(no_tools_chat_request(
         p.cfg.as_ref(),
-        &build_single_agent_planner_messages(p.messages, plan_system),
+        &build_planner_messages(p.messages, plan_system),
         p.temperature_override,
         p.seed_override,
-    );
+    ))
+}
+
+pub(super) async fn run_staged_plan_then_execute_steps(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let render_to_terminal = p.render_to_terminal;
+    let echo_terminal_staged = render_to_terminal && p.out.is_none();
+
+    let req =
+        prepare_staged_planner_no_tools_request(p, build_single_agent_planner_messages).await?;
     run_staged_plan_with_prepared_request(
         p,
         per_coord,
         req,
         render_to_terminal,
         echo_terminal_staged,
-        "分阶段规划轮模型输出",
-        "规划轮不应调用工具；请关闭 staged_plan_execution 或重试。",
-        "分步注入 user（完整正文，供排障与日志）",
+        StagedPlanRunLabels {
+            planning_log_label: "分阶段规划轮模型输出",
+            tool_calls_error_message: "规划轮不应调用工具；请关闭 staged_plan_execution 或重试。",
+            step_injection_log_label: "分步注入 user（完整正文，供排障与日志）",
+        },
         |body| Message {
             role: "user".to_string(),
             content: Some(body),
@@ -107,16 +124,13 @@ pub(crate) fn build_logical_dual_planner_messages(
     out
 }
 
-#[allow(clippy::too_many_arguments)] // 分阶段流程抽象后的共享执行骨架
 pub(crate) async fn run_staged_plan_with_prepared_request<F>(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
     req: crate::types::ChatRequest,
     render_to_terminal: bool,
     echo_terminal_staged: bool,
-    planning_log_label: &str,
-    tool_calls_error_message: &str,
-    step_injection_log_label: &str,
+    labels: StagedPlanRunLabels,
     make_step_user_message: F,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
@@ -139,7 +153,7 @@ where
     debug!(
         target: "crabmate",
         "{} finish_reason={} assistant_preview={}",
-        planning_log_label,
+        labels.planning_log_label,
         finish_reason,
         crate::redact::assistant_message_preview_for_log(&msg)
     );
@@ -152,7 +166,7 @@ where
         if let Some(tx) = p.out {
             let _ = tx
                 .send(encode_message(SsePayload::Error(SseErrorBody {
-                    error: tool_calls_error_message.to_string(),
+                    error: labels.tool_calls_error_message.to_string(),
                     code: Some("staged_plan_tool_calls".to_string()),
                 })))
                 .await;
@@ -229,7 +243,7 @@ where
         debug!(
             target: "crabmate",
             "{} step={}/{} body_len={} body_preview={}",
-            step_injection_log_label,
+            labels.step_injection_log_label,
             i + 1,
             n,
             body.len(),
@@ -308,36 +322,19 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
     let render_to_terminal = p.render_to_terminal;
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
-    crate::agent::context_window::prepare_messages_for_model(
-        p.llm_backend,
-        p.client,
-        p.api_key,
-        p.cfg.as_ref(),
-        p.messages,
-    )
-    .await?;
-
-    let instr = p.cfg.staged_plan_phase_instruction.trim();
-    let plan_system = if instr.is_empty() {
-        staged_plan_phase_instruction_default()
-    } else {
-        instr.to_string()
-    };
-    let req = no_tools_chat_request(
-        p.cfg.as_ref(),
-        &build_logical_dual_planner_messages(p.messages, plan_system),
-        p.temperature_override,
-        p.seed_override,
-    );
+    let req =
+        prepare_staged_planner_no_tools_request(p, build_logical_dual_planner_messages).await?;
     run_staged_plan_with_prepared_request(
         p,
         per_coord,
         req,
         render_to_terminal,
         echo_terminal_staged,
-        "逻辑双agent规划轮输出",
-        "规划轮不应调用工具；请检查 planner_executor_mode 配置或重试。",
-        "逻辑双agent注入执行器user",
+        StagedPlanRunLabels {
+            planning_log_label: "逻辑双agent规划轮输出",
+            tool_calls_error_message: "规划轮不应调用工具；请检查 planner_executor_mode 配置或重试。",
+            step_injection_log_label: "逻辑双agent注入执行器user",
+        },
         Message::user_only,
     )
     .await
