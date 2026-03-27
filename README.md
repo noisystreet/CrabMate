@@ -69,7 +69,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_LLM_SEED`：可选整数，写入每次 `chat/completions` 请求的 **`seed`** 字段（与 `[agent] llm_seed` 一致；未设置则请求体不带 `seed`）  
    - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）
    - `AGENT_PARALLEL_READONLY_TOOLS_MAX`：单轮内**多只读工具并行**时 `spawn_blocking` 的并发上限（默认与 `chat_queue_max_concurrent` 相同；与 `[agent] parallel_readonly_tools_max` 一致）
-   - `AGENT_ALLOWED_COMMANDS`：`run_command` 白名单，**逗号分隔**命令名（覆盖 `[agent] allowed_commands`；默认见 `default_config.toml`，含常用 coreutils、`grep`/`diff`、`git`/`cargo`（dev）、`jq`、`zcat` 等；**prod** 用 `allowed_commands_prod` 更窄）
+   - `AGENT_ALLOWED_COMMANDS`：`run_command` 白名单，**逗号分隔**命令名（覆盖 `[agent] allowed_commands`；默认见 `default_config.toml`，含常用 coreutils、`grep`/`diff`、`git`/`cargo`（dev）、`jq`、`zcat`、**`python3`/`npm`**（dev，便于 `error_output_playbook` 等给出的建议可被 `run_command` 执行）等；**prod** 用 `allowed_commands_prod` 更窄）
    - **MCP（stdio）**：`AGENT_MCP_ENABLED`（`1`/`true`/`yes`/`on`）；`AGENT_MCP_COMMAND`（整行命令，空格分词）；`AGENT_MCP_TOOL_TIMEOUT_SECS`（`tools/call` 超时秒数，默认与 `command_timeout_secs` 一致）
    - `AGENT_CONVERSATION_STORE_SQLITE_PATH`：Web 会话 SQLite 文件路径（非空则持久化；与 `[agent] conversation_store_sqlite_path` 一致）
    - `AGENT_MEMORY_FILE_ENABLED`、`AGENT_MEMORY_FILE`、`AGENT_MEMORY_FILE_MAX_CHARS`：Web 首轮工作区备忘注入（与 `[agent]` 同名项一致）
