@@ -35,6 +35,13 @@ async fn prepare_staged_planner_no_tools_request(
     p: &mut RunLoopParams<'_>,
     build_planner_messages: fn(&[Message], String) -> Vec<Message>,
 ) -> Result<crate::types::ChatRequest, Box<dyn std::error::Error + Send + Sync>> {
+    if let Some(ref ltm) = p.long_term_memory {
+        ltm.prepare_messages(
+            p.cfg.as_ref(),
+            p.long_term_memory_scope_id.as_deref(),
+            p.messages,
+        );
+    }
     crate::agent::context_window::prepare_messages_for_model(
         p.llm_backend,
         p.client,

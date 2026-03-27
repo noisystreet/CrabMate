@@ -518,6 +518,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 llm_backend: None,
                 temperature_override,
                 seed_override,
+                long_term_memory: state.long_term_memory.clone(),
+                long_term_memory_scope_id: Some(conversation_id.clone()),
             })
             .await;
             cancel_watcher.abort();
@@ -531,6 +533,16 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     (false, true, None)
                 }
                 Ok(()) => {
+                    let scope = conversation_id.clone();
+                    let to_index = messages.clone();
+                    if let (Some(ltm), true) = (
+                        state.long_term_memory.as_ref(),
+                        state.cfg.long_term_memory_enabled,
+                    ) {
+                        ltm.clone()
+                            .spawn_index_turn(Arc::clone(&state.cfg), scope, to_index);
+                    }
+                    crate::long_term_memory::strip_long_term_memory_injections(&mut messages);
                     match state
                         .save_conversation_messages_if_revision(
                             conversation_id,
@@ -645,10 +657,22 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 llm_backend: None,
                 temperature_override,
                 seed_override,
+                long_term_memory: state.long_term_memory.clone(),
+                long_term_memory_scope_id: Some(conversation_id.clone()),
             })
             .await;
             let (ok, cancelled, err) = match r {
                 Ok(()) => {
+                    let scope = conversation_id.clone();
+                    let to_index = messages.clone();
+                    if let (Some(ltm), true) = (
+                        state.long_term_memory.as_ref(),
+                        state.cfg.long_term_memory_enabled,
+                    ) {
+                        ltm.clone()
+                            .spawn_index_turn(Arc::clone(&state.cfg), scope, to_index);
+                    }
+                    crate::long_term_memory::strip_long_term_memory_injections(&mut messages);
                     match state
                         .save_conversation_messages_if_revision(
                             conversation_id,

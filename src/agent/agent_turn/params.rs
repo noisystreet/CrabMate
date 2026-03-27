@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
+use crate::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry;
 use crate::types::{LlmSeedOverride, Message};
 
@@ -33,4 +34,8 @@ pub(crate) struct RunLoopParams<'a> {
     /// `None` 时使用 `cfg.temperature`。
     pub temperature_override: Option<f32>,
     pub seed_override: LlmSeedOverride,
+    /// 长期记忆运行时（Web 或 CLI）；`None` 时不注入/不索引。
+    pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
+    /// `conversation_id` 或 CLI 固定 `cli`；`None` 时不按会话隔离（跳过记忆）。
+    pub long_term_memory_scope_id: Option<String>,
 }

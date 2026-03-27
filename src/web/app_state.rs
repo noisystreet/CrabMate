@@ -13,6 +13,7 @@ use crate::config::AgentConfig;
 use crate::conversation_store::{
     self, CONVERSATION_STORE_MAX_ENTRIES, CONVERSATION_STORE_TTL_SECS, SaveConversationOutcome,
 };
+use crate::long_term_memory::LongTermMemoryRuntime;
 use crate::types::{CommandApprovalDecision, Message};
 
 /// 与 `normalize_client_conversation_id`（`chat_handlers`）及存储上限对齐。
@@ -50,6 +51,8 @@ pub(crate) struct AppState {
     /// Web 流式审批会话 -> 决策通道。
     pub(crate) approval_sessions:
         Arc<tokio::sync::RwLock<HashMap<String, mpsc::Sender<CommandApprovalDecision>>>>,
+    /// 长期记忆（可选 SQLite + 可选 fastembed）；未启用或未配置路径时为 `None`。
+    pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
 }
 
 /// Web 会话存储后端。
@@ -267,5 +270,8 @@ pub(crate) fn open_conversation_sqlite(
     path: &Path,
 ) -> Result<Arc<std::sync::Mutex<rusqlite::Connection>>, Box<dyn std::error::Error + Send + Sync>> {
     let conn = conversation_store::open_file(path)?;
+    if let Err(e) = LongTermMemoryRuntime::migrate_on_connection(&conn) {
+        return Err(format!("长期记忆表迁移失败: {e}").into());
+    }
     Ok(Arc::new(std::sync::Mutex::new(conn)))
 }

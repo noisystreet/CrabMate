@@ -80,6 +80,11 @@ struct ConfigBuilder {
     long_term_memory_vector_backend_str: Option<String>,
     long_term_memory_max_entries: Option<u64>,
     long_term_memory_inject_max_chars: Option<u64>,
+    long_term_memory_store_sqlite_path: Option<String>,
+    long_term_memory_top_k: Option<u64>,
+    long_term_memory_max_chars_per_chunk: Option<u64>,
+    long_term_memory_min_chars_to_index: Option<u64>,
+    long_term_memory_async_index: Option<bool>,
 }
 
 /// 非空 trim 后覆盖 `String` 字段。
@@ -261,6 +266,20 @@ impl ConfigBuilder {
         self.long_term_memory_inject_max_chars = agent
             .long_term_memory_inject_max_chars
             .or(self.long_term_memory_inject_max_chars);
+        override_opt_string_non_empty(
+            &mut self.long_term_memory_store_sqlite_path,
+            agent.long_term_memory_store_sqlite_path,
+        );
+        self.long_term_memory_top_k = agent.long_term_memory_top_k.or(self.long_term_memory_top_k);
+        self.long_term_memory_max_chars_per_chunk = agent
+            .long_term_memory_max_chars_per_chunk
+            .or(self.long_term_memory_max_chars_per_chunk);
+        self.long_term_memory_min_chars_to_index = agent
+            .long_term_memory_min_chars_to_index
+            .or(self.long_term_memory_min_chars_to_index);
+        self.long_term_memory_async_index = agent
+            .long_term_memory_async_index
+            .or(self.long_term_memory_async_index);
     }
 }
 
@@ -618,6 +637,32 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.long_term_memory_inject_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_STORE_SQLITE_PATH") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            b.long_term_memory_store_sqlite_path = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_TOP_K")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.long_term_memory_top_k = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.long_term_memory_max_chars_per_chunk = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.long_term_memory_min_chars_to_index = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_ASYNC_INDEX")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.long_term_memory_async_index = Some(val);
+    }
 }
 
 /// 验证、clamp 并组装最终 `AgentConfig`。
@@ -860,13 +905,16 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         Some(s) => LongTermMemoryVectorBackend::parse(s)?,
         None => LongTermMemoryVectorBackend::default(),
     };
-    if long_term_memory_enabled
-        && long_term_memory_vector_backend != LongTermMemoryVectorBackend::Disabled
-    {
-        return Err(
-            "配置错误：长期记忆向量后端尚未在本版本实现；请将 long_term_memory_vector_backend 设为 disabled，或关闭 long_term_memory_enabled"
-                .to_string(),
-        );
+    if long_term_memory_enabled {
+        match long_term_memory_vector_backend {
+            LongTermMemoryVectorBackend::Qdrant | LongTermMemoryVectorBackend::Pgvector => {
+                return Err(
+                    "配置错误：长期记忆向量后端 qdrant / pgvector 尚未接入；请使用 disabled 或 fastembed，或关闭 long_term_memory_enabled"
+                        .to_string(),
+                );
+            }
+            LongTermMemoryVectorBackend::Disabled | LongTermMemoryVectorBackend::Fastembed => {}
+        }
     }
     let long_term_memory_max_entries = b
         .long_term_memory_max_entries
@@ -876,6 +924,18 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .long_term_memory_inject_max_chars
         .unwrap_or(8000)
         .clamp(256, 500_000) as usize;
+    let long_term_memory_store_sqlite_path =
+        b.long_term_memory_store_sqlite_path.unwrap_or_default();
+    let long_term_memory_top_k = b.long_term_memory_top_k.unwrap_or(8).clamp(1, 64) as usize;
+    let long_term_memory_max_chars_per_chunk = b
+        .long_term_memory_max_chars_per_chunk
+        .unwrap_or(1024)
+        .clamp(256, 32_000) as usize;
+    let long_term_memory_min_chars_to_index = b
+        .long_term_memory_min_chars_to_index
+        .unwrap_or(8)
+        .clamp(0, 4096) as usize;
+    let long_term_memory_async_index = b.long_term_memory_async_index.unwrap_or(true);
 
     let web_search_provider = match b.web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
@@ -949,5 +1009,10 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         long_term_memory_vector_backend,
         long_term_memory_max_entries,
         long_term_memory_inject_max_chars,
+        long_term_memory_store_sqlite_path,
+        long_term_memory_top_k,
+        long_term_memory_max_chars_per_chunk,
+        long_term_memory_min_chars_to_index,
+        long_term_memory_async_index,
     })
 }

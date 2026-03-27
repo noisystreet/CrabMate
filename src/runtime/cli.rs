@@ -162,6 +162,7 @@ async fn run_agent_turn_for_cli(
     no_stream: bool,
     cli_tool_ctx: Option<&CliToolRuntime>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (ltm, scope) = cli_long_term_memory_handles(cfg);
     run_agent_turn(RunAgentTurnParams {
         client,
         api_key,
@@ -181,8 +182,40 @@ async fn run_agent_turn_for_cli(
         llm_backend: None,
         temperature_override: None,
         seed_override: LlmSeedOverride::default(),
+        long_term_memory: ltm,
+        long_term_memory_scope_id: scope,
     })
     .await
+}
+
+fn cli_long_term_memory_handles(
+    cfg: &Arc<AgentConfig>,
+) -> (
+    Option<std::sync::Arc<crate::long_term_memory::LongTermMemoryRuntime>>,
+    Option<String>,
+) {
+    if !cfg.long_term_memory_enabled {
+        return (None, None);
+    }
+    let path = cfg.long_term_memory_store_sqlite_path.trim();
+    let p = if path.is_empty() {
+        let base = std::path::Path::new(&cfg.run_command_working_dir).join(".crabmate");
+        base.join("long_term_memory.db")
+    } else {
+        std::path::PathBuf::from(path)
+    };
+    match crate::long_term_memory::cli_runtime_lazy(&p) {
+        Ok(r) => (Some(r), Some("cli".to_string())),
+        Err(e) => {
+            log::warn!(
+                target: "crabmate",
+                "CLI 长期记忆库打开失败 path={} error={}",
+                p.display(),
+                e
+            );
+            (None, None)
+        }
+    }
 }
 
 fn map_turn_err(e: Box<dyn std::error::Error + Send + Sync>) -> Box<dyn std::error::Error> {

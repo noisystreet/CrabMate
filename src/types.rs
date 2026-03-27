@@ -76,6 +76,14 @@ pub fn is_chat_ui_separator(m: &Message) -> bool {
     m.role == "system" && m.name.as_deref() == Some("crabmate_ui_sep")
 }
 
+/// 长期记忆注入条目的 `user.name`；仅供模型上下文使用，**不得**发往供应商 API。
+pub const CRABMATE_LONG_TERM_MEMORY_NAME: &str = "crabmate_long_term_memory";
+
+#[inline]
+pub fn is_long_term_memory_injection(m: &Message) -> bool {
+    m.role == "user" && m.name.as_deref() == Some(CRABMATE_LONG_TERM_MEMORY_NAME)
+}
+
 impl Message {
     /// 分阶段规划：每步完成后的短分隔线。仅用于 UI 与同步，调用模型前须过滤。
     pub fn chat_ui_separator(short: bool) -> Self {
@@ -136,14 +144,14 @@ pub fn messages_stripping_reasoning_for_api_request(messages: &[Message]) -> Vec
         .collect()
 }
 
-/// 会话切片 → API 消息：**跳过** [`is_chat_ui_separator`]，并剥离 `reasoning_content`。
+/// 会话切片 → API 消息：**跳过** [`is_chat_ui_separator`] 与 [`is_long_term_memory_injection`]，并剥离 `reasoning_content`。
 /// 单次遍历，避免先 `filter+clone` 再 [`messages_stripping_reasoning_for_api_request`] 的二次全量拷贝。
 pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
     messages: &[Message],
 ) -> Vec<Message> {
     messages
         .iter()
-        .filter(|m| !is_chat_ui_separator(m))
+        .filter(|m| !is_chat_ui_separator(m) && !is_long_term_memory_injection(m))
         .map(message_clone_stripping_reasoning_for_api)
         .collect()
 }

@@ -19,7 +19,9 @@ use log::{debug, error, info};
 use tokio::sync::mpsc::Sender;
 
 use crate::config::AgentConfig;
-use crate::types::{ChatRequest, LlmSeedOverride, Message, Tool, resolved_llm_seed};
+use crate::types::{
+    ChatRequest, LlmSeedOverride, Message, Tool, is_long_term_memory_injection, resolved_llm_seed,
+};
 use reqwest::Client;
 
 pub use backend::{
@@ -67,13 +69,17 @@ pub fn no_tools_chat_request(
     )
 }
 
-/// 与 [`no_tools_chat_request`] 相同，但接受**已**按规划轮规则拼好的 `messages`（通常已不含 UI 分隔线且已剥离 `reasoning_content`），仅再经 [`crate::types::normalize_messages_for_openai_compatible_request`]，避免对同一会话再做一轮全量 `strip`。
+/// 与 [`no_tools_chat_request`] 相同，但接受**已**按规划轮规则拼好的 `messages`（通常已不含 UI 分隔线且已剥离 `reasoning_content`），再剔除 [`crate::types::is_long_term_memory_injection`]，仅经 [`crate::types::normalize_messages_for_openai_compatible_request`]，避免对同一会话再做一轮全量 `strip`。
 pub fn no_tools_chat_request_from_messages(
     cfg: &AgentConfig,
     messages: Vec<Message>,
     temperature_override: Option<f32>,
     seed_override: LlmSeedOverride,
 ) -> ChatRequest {
+    let messages: Vec<Message> = messages
+        .into_iter()
+        .filter(|m| !is_long_term_memory_injection(m))
+        .collect();
     ChatRequest {
         model: cfg.model.clone(),
         messages: crate::types::normalize_messages_for_openai_compatible_request(messages),
