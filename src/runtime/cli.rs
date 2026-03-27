@@ -5,6 +5,7 @@ use crate::runtime::cli_exit::{
     CliExitError, EXIT_GENERAL, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE,
     classify_model_error_message,
 };
+use crate::runtime::cli_repl_ui::CliReplStyle;
 use crate::tool_registry::{CliCommandTurnStats, CliToolRuntime};
 use crate::types::{Message, messages_chat_seed, normalize_messages_for_openai_compatible_request};
 use crate::{LlmSeedOverride, RunAgentTurnParams, run_agent_turn};
@@ -68,74 +69,73 @@ fn try_handle_repl_slash_command(
     tools: &[crate::types::Tool],
     messages: &mut Vec<Message>,
     work_dir: &mut PathBuf,
+    style: &CliReplStyle,
 ) -> bool {
     let Some(builtin) = classify_repl_slash_command(input) else {
         return false;
     };
     match builtin {
         ReplBuiltIn::BareSlash => {
-            println!("输入 /help 查看内建命令；若以 / 开头的文字要发给模型，请避免仅输入一个 /。");
+            let _ = style.print_line(
+                "输入 /help 查看内建命令；若以 / 开头的文字要发给模型，请避免仅输入一个 /。",
+            );
         }
         ReplBuiltIn::Unknown(head) => {
-            eprintln!("未知命令 /{}。输入 /help 查看列表。", head);
+            let _ = style.eprint_error(&format!("未知命令 /{head}。输入 /help 查看列表。"));
         }
         ReplBuiltIn::Clear => {
             *messages = vec![Message::system_only(cfg.system_prompt.clone())];
-            println!("已清空对话（保留当前 system 提示词），共 1 条消息。");
+            let _ = style.print_success("已清空对话（保留当前 system 提示词），共 1 条消息。");
         }
         ReplBuiltIn::Model => {
-            println!("model: {}", cfg.model);
-            println!("api_base: {}", cfg.api_base);
-            println!(
+            let _ = style.print_line(&format!("model: {}", cfg.model));
+            let _ = style.print_line(&format!("api_base: {}", cfg.api_base));
+            let _ = style.print_line(&format!(
                 "temperature: {}（配置文件；Web chat 可单条覆盖）",
                 cfg.temperature
-            );
+            ));
             if let Some(seed) = cfg.llm_seed {
-                println!("llm_seed: {seed}");
+                let _ = style.print_line(&format!("llm_seed: {seed}"));
             } else {
-                println!("llm_seed: （未设置，请求不带 seed）");
+                let _ = style.print_line("llm_seed: （未设置，请求不带 seed）");
             }
         }
         ReplBuiltIn::WorkspaceShow => match work_dir.canonicalize() {
-            Ok(p) => println!("当前工作区: {}", p.display()),
-            Err(_) => println!("当前工作区: {}", work_dir.display()),
+            Ok(p) => {
+                let _ = style.print_line(&format!("当前工作区: {}", p.display()));
+            }
+            Err(_) => {
+                let _ = style.print_line(&format!("当前工作区: {}", work_dir.display()));
+            }
         },
         ReplBuiltIn::WorkspaceSet(arg) => {
             let candidate = PathBuf::from(arg);
             let resolved = match candidate.canonicalize() {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!("无法解析路径 {:?}: {}", arg, e);
+                    let _ = style.eprint_error(&format!("无法解析路径 {arg:?}: {e}"));
                     return true;
                 }
             };
             if !resolved.is_dir() {
-                eprintln!("不是目录: {}", resolved.display());
+                let _ = style.eprint_error(&format!("不是目录: {}", resolved.display()));
                 return true;
             }
             *work_dir = resolved;
-            println!("工作区已切换为: {}", work_dir.display());
+            let _ = style.print_success(&format!("工作区已切换为: {}", work_dir.display()));
         }
         ReplBuiltIn::Tools => {
             if tools.is_empty() {
-                println!("当前未加载工具（可能使用了 --no-tools）。");
+                let _ = style.print_line("当前未加载工具（可能使用了 --no-tools）。");
             } else {
-                println!("当前 {} 个工具:", tools.len());
+                let _ = style.print_line(&format!("当前 {} 个工具:", tools.len()));
                 for t in tools {
-                    println!("  - {}", t.function.name);
+                    let _ = style.print_line(&format!("  · {}", t.function.name));
                 }
             }
         }
         ReplBuiltIn::Help => {
-            println!("内建命令（不发给模型）：");
-            println!("  /clear     清空对话历史，仅保留当前 system 提示词");
-            println!("  /model     显示 model、api_base、temperature、llm_seed");
-            println!("  /workspace 显示当前工作区路径");
-            println!("  /workspace <路径>  切换工作区（须为已存在目录，别名 /cd）");
-            println!("  /tools     列出当前加载的工具名");
-            println!("  /help      本说明");
-            println!("非白名单 run_command：终端会提示 y（一次）/ a（本会话永久允许该命令名）");
-            println!("退出：quit / exit 或 Ctrl+D");
+            let _ = style.print_help();
         }
     }
     true
@@ -569,11 +569,9 @@ pub async fn run_repl(
         cfg.tui_load_session_on_start,
     );
     let cli_rt = CliToolRuntime::new_interactive_default();
+    let style = CliReplStyle::new();
 
-    println!(
-        "当前模型: {}\n输入内容与 Agent 对话；内建命令见 /help。quit/exit 或 Ctrl+D 退出。\n非白名单 run_command 将在终端询问确认（y 一次 / a 本会话永久允许该命令名）。\n",
-        cfg.model
-    );
+    style.print_banner(&cfg.model, work_dir.as_path(), tools.len())?;
 
     loop {
         // 清理提示符所在行，避免被上一次输出残留影响
@@ -601,7 +599,14 @@ pub async fn run_repl(
             continue;
         }
 
-        if try_handle_repl_slash_command(input, cfg.as_ref(), tools, &mut messages, &mut work_dir) {
+        if try_handle_repl_slash_command(
+            input,
+            cfg.as_ref(),
+            tools,
+            &mut messages,
+            &mut work_dir,
+            &style,
+        ) {
             continue;
         }
 
@@ -625,12 +630,12 @@ pub async fn run_repl(
         )
         .await
         {
-            eprintln!("{}", e);
+            let _ = style.eprint_error(&e.to_string());
             break;
         }
     }
 
-    println!("再见。");
+    style.print_farewell()?;
     Ok(())
 }
 
