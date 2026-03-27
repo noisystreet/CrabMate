@@ -2,6 +2,8 @@
 
 本文档列出各内置工具的能力说明，以及常见 Function Calling JSON 参数示例与发布检查排障指引。Web 工作区、流式与会话导出等行为说明仍在根目录 [`README.md`](../README.md)「功能概览」中；日常使用与入门亦见该文件。
 
+**可选「解释卡」**（配置 `tool_call_explain_enabled`）：启用后，凡**非只读**内置工具（与 `tool_registry::is_readonly_tool` 一致，含 `run_command`、`run_executable`、写文件、`http_request`、git 写操作、`workflow_execute` 等）调用时，须在 JSON **顶层**增加字符串字段 **`crabmate_explain_why`**，用一句自然语言说明本步目的；服务端校验长度后**执行前会剥离**该键，避免与 `additionalProperties: false` 冲突。只读工具与 MCP 代理工具不要求；MCP 调用仍会剥离该键再转发。与命令/HTTP **审批**互补（审批管授权，解释卡管可理解性）。
+
 ## 内置工具（模型可调用）
 
 - **内置多种工具，由模型按需调用**：

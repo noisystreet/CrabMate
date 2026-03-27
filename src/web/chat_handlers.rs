@@ -925,6 +925,10 @@ struct StatusResponse {
     project_profile_inject_enabled: bool,
     /// 项目画像注入正文最大字符数（0 表示关闭生成）。
     project_profile_inject_max_chars: usize,
+    /// 是否要求非只读工具在 JSON 中带 `crabmate_explain_why`。
+    tool_call_explain_enabled: bool,
+    tool_call_explain_min_chars: usize,
+    tool_call_explain_max_chars: usize,
 }
 
 pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -982,5 +986,8 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         long_term_memory_index_errors: ltm_idx_err,
         project_profile_inject_enabled: state.cfg.project_profile_inject_enabled,
         project_profile_inject_max_chars: state.cfg.project_profile_inject_max_chars,
+        tool_call_explain_enabled: state.cfg.tool_call_explain_enabled,
+        tool_call_explain_min_chars: state.cfg.tool_call_explain_min_chars,
+        tool_call_explain_max_chars: state.cfg.tool_call_explain_max_chars,
     })
 }
