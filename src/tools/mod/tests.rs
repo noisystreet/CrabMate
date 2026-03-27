@@ -30,6 +30,7 @@ fn test_allowed_commands() -> Vec<String> {
         "uname".into(),
         "env".into(),
         "file".into(),
+        "find".into(),
         "df".into(),
         "du".into(),
         "head".into(),
@@ -119,6 +120,21 @@ fn test_run_tool_run_command_pwd() {
     let ctx = test_ctx(&allowed);
     let out = run_tool("run_command", r#"{"command":"pwd"}"#, &ctx);
     assert!(out.contains("退出码：0"), "pwd 应成功，得到: {}", out);
+}
+
+#[test]
+fn test_run_tool_run_command_find_maxdepth() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool(
+        "run_command",
+        r#"{"command":"find","args":[".","-maxdepth","1","-type","f"]}"#,
+        &ctx,
+    );
+    assert!(
+        out.contains("退出码：0") || out.contains("无法启动") || out.contains("未找到命令"),
+        "find 应成功或未安装，得到: {out}"
+    );
 }
 
 #[test]
