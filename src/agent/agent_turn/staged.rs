@@ -3,6 +3,7 @@
 use std::sync::atomic::Ordering;
 
 use log::{debug, warn};
+use tokio::sync::mpsc;
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::llm::{complete_chat_retrying, no_tools_chat_request};
@@ -122,6 +123,48 @@ pub(crate) fn build_logical_dual_planner_messages(
         .collect();
     out.push(Message::system_only(plan_system));
     out
+}
+
+/// 发送单步结束 SSE（`failed` / `cancelled` / `ok`）。
+async fn finish_staged_plan_step_sse(
+    out: Option<&mpsc::Sender<String>>,
+    plan_id: &str,
+    step_id_trim: &str,
+    step_index: usize,
+    n: usize,
+    status: &'static str,
+) {
+    send_staged_plan_step_finished(out, plan_id, step_id_trim, step_index, n, status).await;
+}
+
+/// 执行步失败早退：`step_finished(failed)` + `plan_finished(failed)`，避免漏发 `staged_plan_finished`。
+struct StagedPlanStepFailedExit<'a> {
+    out: Option<&'a mpsc::Sender<String>>,
+    plan_id: &'a str,
+    step_id_trim: &'a str,
+    step_index: usize,
+    n: usize,
+    completed_steps_before_this: usize,
+}
+
+async fn finish_staged_plan_step_failed_and_plan_failed_sse(f: StagedPlanStepFailedExit<'_>) {
+    finish_staged_plan_step_sse(
+        f.out,
+        f.plan_id,
+        f.step_id_trim,
+        f.step_index,
+        f.n,
+        "failed",
+    )
+    .await;
+    send_staged_plan_finished(
+        f.out,
+        f.plan_id,
+        f.n,
+        f.completed_steps_before_this,
+        "failed",
+    )
+    .await;
 }
 
 pub(crate) async fn run_staged_plan_with_prepared_request<F>(
@@ -266,20 +309,19 @@ where
         p.messages.push(make_step_user_message(body));
         let run_step = run_agent_outer_loop(p, per_coord).await;
         if let Err(e) = run_step {
-            send_staged_plan_step_finished(
-                p.out,
-                &plan_id,
-                step.id.trim(),
+            finish_staged_plan_step_failed_and_plan_failed_sse(StagedPlanStepFailedExit {
+                out: p.out,
+                plan_id: &plan_id,
+                step_id_trim: step.id.trim(),
                 step_index,
                 n,
-                "failed",
-            )
+                completed_steps_before_this: completed_steps,
+            })
             .await;
-            send_staged_plan_finished(p.out, &plan_id, n, completed_steps, "failed").await;
             return Err(e);
         }
         if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-            send_staged_plan_step_finished(
+            finish_staged_plan_step_sse(
                 p.out,
                 &plan_id,
                 step.id.trim(),
@@ -291,7 +333,7 @@ where
             staged_loop_cancelled = true;
             break;
         }
-        send_staged_plan_step_finished(p.out, &plan_id, step.id.trim(), step_index, n, "ok").await;
+        finish_staged_plan_step_sse(p.out, &plan_id, step.id.trim(), step_index, n, "ok").await;
         completed_steps = step_index;
         p.messages.push(Message::chat_ui_separator(true));
         // 先发队列摘要 SSE，再追加 UI 分隔。
