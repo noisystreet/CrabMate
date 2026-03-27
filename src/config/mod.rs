@@ -9,7 +9,10 @@ mod workspace_roots;
 use crate::agent::per_coord::FinalPlanRequirementMode;
 use source::{AgentSection, parse_agent_section, parse_bool_like};
 use std::path::Path;
-pub use types::{AgentConfig, PlannerExecutorMode, WebSearchProvider};
+pub use types::{
+    AgentConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
+    WebSearchProvider,
+};
 
 /// 编译时嵌入的默认配置（与项目根 default_config.toml 一致）
 const DEFAULT_CONFIG: &str = include_str!("../../default_config.toml");
@@ -72,6 +75,11 @@ struct ConfigBuilder {
     agent_memory_file_enabled: Option<bool>,
     agent_memory_file: Option<String>,
     agent_memory_file_max_chars: Option<u64>,
+    long_term_memory_enabled: Option<bool>,
+    long_term_memory_scope_mode_str: Option<String>,
+    long_term_memory_vector_backend_str: Option<String>,
+    long_term_memory_max_entries: Option<u64>,
+    long_term_memory_inject_max_chars: Option<u64>,
 }
 
 /// 非空 trim 后覆盖 `String` 字段。
@@ -236,6 +244,23 @@ impl ConfigBuilder {
         self.agent_memory_file_max_chars = agent
             .agent_memory_file_max_chars
             .or(self.agent_memory_file_max_chars);
+        self.long_term_memory_enabled = agent
+            .long_term_memory_enabled
+            .or(self.long_term_memory_enabled);
+        override_opt_string_non_empty(
+            &mut self.long_term_memory_scope_mode_str,
+            agent.long_term_memory_scope_mode,
+        );
+        override_opt_string_non_empty(
+            &mut self.long_term_memory_vector_backend_str,
+            agent.long_term_memory_vector_backend,
+        );
+        self.long_term_memory_max_entries = agent
+            .long_term_memory_max_entries
+            .or(self.long_term_memory_max_entries);
+        self.long_term_memory_inject_max_chars = agent
+            .long_term_memory_inject_max_chars
+            .or(self.long_term_memory_inject_max_chars);
     }
 }
 
@@ -566,6 +591,33 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.agent_memory_file_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.long_term_memory_enabled = Some(val);
+    }
+    if let Ok(s) = std::env::var("AGENT_LONG_TERM_MEMORY_SCOPE_MODE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.long_term_memory_scope_mode_str = Some(s);
+        }
+    }
+    if let Ok(s) = std::env::var("AGENT_LONG_TERM_MEMORY_VECTOR_BACKEND") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.long_term_memory_vector_backend_str = Some(s);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_MAX_ENTRIES")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.long_term_memory_max_entries = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.long_term_memory_inject_max_chars = Some(n);
+    }
 }
 
 /// 验证、clamp 并组装最终 `AgentConfig`。
@@ -799,6 +851,32 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .unwrap_or(8000)
         .clamp(256, 500_000) as usize;
 
+    let long_term_memory_enabled = b.long_term_memory_enabled.unwrap_or(false);
+    let long_term_memory_scope_mode = match b.long_term_memory_scope_mode_str.as_deref() {
+        Some(s) => LongTermMemoryScopeMode::parse(s)?,
+        None => LongTermMemoryScopeMode::default(),
+    };
+    let long_term_memory_vector_backend = match b.long_term_memory_vector_backend_str.as_deref() {
+        Some(s) => LongTermMemoryVectorBackend::parse(s)?,
+        None => LongTermMemoryVectorBackend::default(),
+    };
+    if long_term_memory_enabled
+        && long_term_memory_vector_backend != LongTermMemoryVectorBackend::Disabled
+    {
+        return Err(
+            "配置错误：长期记忆向量后端尚未在本版本实现；请将 long_term_memory_vector_backend 设为 disabled，或关闭 long_term_memory_enabled"
+                .to_string(),
+        );
+    }
+    let long_term_memory_max_entries = b
+        .long_term_memory_max_entries
+        .unwrap_or(256)
+        .clamp(1, 100_000) as usize;
+    let long_term_memory_inject_max_chars = b
+        .long_term_memory_inject_max_chars
+        .unwrap_or(8000)
+        .clamp(256, 500_000) as usize;
+
     let web_search_provider = match b.web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
         None => WebSearchProvider::default(),
@@ -866,5 +944,10 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         agent_memory_file_enabled,
         agent_memory_file,
         agent_memory_file_max_chars,
+        long_term_memory_enabled,
+        long_term_memory_scope_mode,
+        long_term_memory_vector_backend,
+        long_term_memory_max_entries,
+        long_term_memory_inject_max_chars,
     })
 }

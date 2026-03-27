@@ -418,6 +418,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_ALLOWED_COMMANDS`：`run_command` 白名单，**逗号分隔**命令名（覆盖 `[agent] allowed_commands`；默认见 `default_config.toml`，含常用 coreutils、`grep`/`diff`、`git`/`cargo`（dev）、`jq`、`zcat` 等；**prod** 用 `allowed_commands_prod` 更窄）
    - `AGENT_CONVERSATION_STORE_SQLITE_PATH`：Web 会话 SQLite 文件路径（非空则持久化；与 `[agent] conversation_store_sqlite_path` 一致）
    - `AGENT_MEMORY_FILE_ENABLED`、`AGENT_MEMORY_FILE`、`AGENT_MEMORY_FILE_MAX_CHARS`：Web 首轮工作区备忘注入（与 `[agent]` 同名项一致）
+   - **长期记忆（路线图分阶段实现；当前为配置占位，默认关闭）**：`AGENT_LONG_TERM_MEMORY_ENABLED`（`1/true/yes/on`）；`AGENT_LONG_TERM_MEMORY_SCOPE_MODE`（当前仅 `conversation`）；`AGENT_LONG_TERM_MEMORY_VECTOR_BACKEND`（`disabled` / `fastembed` / `qdrant` / `pgvector`，**在向量里程碑合并前若启用记忆则必须为 `disabled`**，否则启动报错）；`AGENT_LONG_TERM_MEMORY_MAX_ENTRIES`、`AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS`。多用户、未配置 Web Bearer 鉴权时，`conversation` 级隔离**不能**防止他人猜测 `conversation_id` 后读取同一记忆命名空间——生产环境请先启用鉴权或保持默认关闭。
   - `AGENT_PLANNER_EXECUTOR_MODE`：规划器/执行器模式，`single_agent`（默认，历史行为）或 `logical_dual_agent`（阶段 1：同进程逻辑双 agent，规划轮只看用户/助手自然语言，不看 `tool` 正文）
   - `AGENT_STAGED_PLAN_EXECUTION`：设为 `1`/`true`/`yes`/`on` 启用分阶段规划（仅在 `planner_executor_mode=single_agent` 下生效）；其它或未设置为关闭（与 `[agent] staged_plan_execution` 一致）
    - `AGENT_STAGED_PLAN_PHASE_INSTRUCTION`：规划轮追加的 **system** 文案；空或未设置则用内置默认（与 `[agent] staged_plan_phase_instruction` 一致）
