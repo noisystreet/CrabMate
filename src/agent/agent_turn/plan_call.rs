@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
 use crate::llm::{complete_chat_retrying, tool_chat_request};
-use crate::types::{LlmSeedOverride, Message, is_chat_ui_separator};
+use crate::types::{LlmSeedOverride, Message};
 
 /// P：构造请求并调用模型（`no_stream` 为 true 时走 `stream: false`），**不**修改 `messages`。
 pub(crate) struct PerPlanCallModelParams<'a> {
@@ -43,14 +43,9 @@ pub(crate) async fn per_plan_call_model_retrying(
         temperature_override,
         seed_override,
     } = p;
-    let filtered: Vec<Message> = messages
-        .iter()
-        .filter(|m| !is_chat_ui_separator(m))
-        .cloned()
-        .collect();
     let req = tool_chat_request(
         cfg,
-        &filtered,
+        messages,
         tools_defs,
         temperature_override,
         seed_override,

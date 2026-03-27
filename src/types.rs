@@ -114,20 +114,37 @@ impl Message {
     }
 }
 
+/// 单条消息：供 API 请求使用，不携带 `reasoning_content`（与 [`messages_stripping_reasoning_for_api_request`] 单元素语义一致）。
+#[inline]
+pub(crate) fn message_clone_stripping_reasoning_for_api(m: &Message) -> Message {
+    if m.reasoning_content.is_none() {
+        m.clone()
+    } else {
+        Message {
+            reasoning_content: None,
+            ..m.clone()
+        }
+    }
+}
+
 /// 构造发往供应商的 `messages`：去掉助手 `reasoning_content`，避免多轮请求回传思维链。
+#[allow(dead_code)] // 公共 API；`tool_chat_request` 已用 `messages_for_api_stripping_reasoning_skip_ui_separators` 合并遍历；单测保留等价断言
 pub fn messages_stripping_reasoning_for_api_request(messages: &[Message]) -> Vec<Message> {
     messages
         .iter()
-        .map(|m| {
-            if m.reasoning_content.is_none() {
-                m.clone()
-            } else {
-                Message {
-                    reasoning_content: None,
-                    ..m.clone()
-                }
-            }
-        })
+        .map(message_clone_stripping_reasoning_for_api)
+        .collect()
+}
+
+/// 会话切片 → API 消息：**跳过** [`is_chat_ui_separator`]，并剥离 `reasoning_content`。
+/// 单次遍历，避免先 `filter+clone` 再 [`messages_stripping_reasoning_for_api_request`] 的二次全量拷贝。
+pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
+    messages: &[Message],
+) -> Vec<Message> {
+    messages
+        .iter()
+        .filter(|m| !is_chat_ui_separator(m))
+        .map(message_clone_stripping_reasoning_for_api)
         .collect()
 }
 
@@ -386,6 +403,47 @@ pub const USER_CANCELLED_FINISH_REASON: &str = "user_cancelled";
 
 /// `complete_chat_retrying` 在用户取消时返回的错误消息（与 `run_agent_turn_common` 识别一致）。
 pub const LLM_CANCELLED_ERROR: &str = "已取消";
+
+#[cfg(test)]
+mod api_messages_strip_tests {
+    use super::*;
+
+    #[test]
+    fn skip_ui_separator_and_strip_reasoning_one_pass() {
+        let sep = Message::chat_ui_separator(true);
+        let assistant = Message {
+            role: "assistant".to_string(),
+            content: Some("body".to_string()),
+            reasoning_content: Some("chain".to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        let v = vec![Message::user_only("u"), sep, assistant];
+        let out = messages_for_api_stripping_reasoning_skip_ui_separators(&v);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].role, "user");
+        assert_eq!(out[1].role, "assistant");
+        assert_eq!(out[1].content.as_deref(), Some("body"));
+        assert!(out[1].reasoning_content.is_none());
+    }
+
+    #[test]
+    fn strip_reasoning_only_matches_composing_without_separators() {
+        let assistant = Message {
+            role: "assistant".to_string(),
+            content: Some("x".to_string()),
+            reasoning_content: Some("r".to_string()),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        let v = vec![Message::user_only("u"), assistant];
+        let a = messages_stripping_reasoning_for_api_request(&v);
+        let b = messages_for_api_stripping_reasoning_skip_ui_separators(&v);
+        assert_eq!(a, b);
+    }
+}
 
 #[cfg(test)]
 mod normalize_messages_tests {
