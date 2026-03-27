@@ -13,6 +13,7 @@ mod debug_tools;
 mod diagnostics;
 pub(crate) use diagnostics::capture_trimmed;
 mod env_var_check;
+mod error_playbook;
 mod exec;
 mod file;
 pub(crate) use file::canonical_workspace_root;
@@ -365,6 +366,10 @@ fn runner_backtrace_analyze(args: &str, _ctx: &ToolContext<'_>) -> String {
 
 fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
     diagnostics::diagnostic_summary(args, ctx.working_dir)
+}
+
+fn runner_error_output_playbook(args: &str, ctx: &ToolContext<'_>) -> String {
+    error_playbook::error_output_playbook(args, ctx.allowed_commands)
 }
 
 fn runner_changelog_draft(args: &str, ctx: &ToolContext<'_>) -> String {

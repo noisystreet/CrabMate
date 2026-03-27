@@ -66,6 +66,16 @@ pub(super) fn summary_uv_run(v: &serde_json::Value) -> Option<String> {
     }
 }
 
+pub(super) fn summary_error_output_playbook(v: &serde_json::Value) -> Option<String> {
+    let eco = v
+        .get("ecosystem")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("auto");
+    Some(format!("错误排障建议（{}）", eco))
+}
+
 pub(super) fn summary_pre_commit_run(v: &serde_json::Value) -> Option<String> {
     let hook = v.get("hook").and_then(|x| x.as_str()).unwrap_or("");
     if hook.is_empty() {
