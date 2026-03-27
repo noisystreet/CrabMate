@@ -564,7 +564,12 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                                     },
                                 ))
                             });
-                            let _ = sse_tx.send(err_line).await;
+                            let _ = crate::sse::send_string_logged(
+                                &sse_tx,
+                                err_line,
+                                "chat_job_queue::stream conversation_conflict",
+                            )
+                            .await;
                             (false, false, Some("conversation_conflict".to_string()))
                         }
                     }
@@ -602,7 +607,12 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                                 code: Some("INTERNAL_ERROR".to_string()),
                             },
                         ));
-                        let _ = sse_tx.send(err_line).await;
+                        let _ = crate::sse::send_string_logged(
+                            &sse_tx,
+                            err_line,
+                            "chat_job_queue::stream internal_error",
+                        )
+                        .await;
                         (false, false, Some(truncate_chars(&e_text, 120)))
                     }
                 }
@@ -682,11 +692,26 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                         .await
                     {
                         crate::SaveConversationOutcome::Saved => {
-                            let _ = reply_tx.send(Ok(messages));
+                            if reply_tx.send(Ok(messages)).is_err() {
+                                debug!(
+                                    target: "crabmate::sse_mpsc",
+                                    "chat json oneshot reply failed (Ok): job_id={} receiver dropped",
+                                    job_id
+                                );
+                            }
                             (true, false, None)
                         }
                         crate::SaveConversationOutcome::Conflict => {
-                            let _ = reply_tx.send(Err("CONVERSATION_CONFLICT".to_string()));
+                            if reply_tx
+                                .send(Err("CONVERSATION_CONFLICT".to_string()))
+                                .is_err()
+                            {
+                                debug!(
+                                    target: "crabmate::sse_mpsc",
+                                    "chat json oneshot reply failed (CONVERSATION_CONFLICT): job_id={} receiver dropped",
+                                    job_id
+                                );
+                            }
                             (false, false, Some("conversation_conflict".to_string()))
                         }
                     }
@@ -727,7 +752,13 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     } else {
                         Some(truncate_chars(&e_text, 120))
                     };
-                    let _ = reply_tx.send(Err(e_text));
+                    if reply_tx.send(Err(e_text)).is_err() {
+                        debug!(
+                            target: "crabmate::sse_mpsc",
+                            "chat json oneshot reply failed (Err): job_id={} receiver dropped",
+                            job_id
+                        );
+                    }
                     (false, cancelled, prev)
                 }
             };

@@ -102,12 +102,15 @@ pub(crate) async fn run_agent_outer_loop(
                     f.sync_from_per_coord(per_coord);
                 }
                 if let Some(tx) = p.out {
-                    let _ = tx
-                        .send(encode_message(SsePayload::Error(SseErrorBody {
+                    let _ = crate::sse::send_string_logged(
+                        tx,
+                        encode_message(SsePayload::Error(SseErrorBody {
                             error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
                             code: Some("plan_rewrite_exhausted".to_string()),
-                        })))
-                        .await;
+                        })),
+                        "outer_loop::plan_rewrite_exhausted",
+                    )
+                    .await;
                 }
                 break;
             }

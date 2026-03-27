@@ -54,9 +54,12 @@ pub(crate) fn staged_plan_queue_summary_text(
 
 pub(crate) async fn emit_chat_ui_separator_sse(out: Option<&mpsc::Sender<String>>, short: bool) {
     if let Some(tx) = out {
-        let _ = tx
-            .send(encode_message(SsePayload::ChatUiSeparator { short }))
-            .await;
+        let _ = crate::sse::send_string_logged(
+            tx,
+            encode_message(SsePayload::ChatUiSeparator { short }),
+            "staged_sse::chat_ui_separator",
+        )
+        .await;
     }
 }
 pub(crate) async fn send_staged_plan_notice(
@@ -75,12 +78,12 @@ pub(crate) async fn send_staged_plan_notice(
             crate::runtime::terminal_cli_transcript::print_staged_plan_notice(clear_before, &text);
     }
     if let Some(tx) = out {
-        let _ = tx
-            .send(encode_message(SsePayload::StagedPlanNotice {
-                text,
-                clear_before,
-            }))
-            .await;
+        let _ = crate::sse::send_string_logged(
+            tx,
+            encode_message(SsePayload::StagedPlanNotice { text, clear_before }),
+            "staged_sse::staged_plan_notice",
+        )
+        .await;
     }
 }
 
@@ -101,14 +104,17 @@ pub(crate) async fn send_staged_plan_started(
     let Some(tx) = out else {
         return;
     };
-    let _ = tx
-        .send(encode_message(SsePayload::StagedPlanStarted {
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::StagedPlanStarted {
             started: StagedPlanStartedBody {
                 plan_id: plan_id.to_string(),
                 total_steps,
             },
-        }))
-        .await;
+        }),
+        "staged_sse::staged_plan_started",
+    )
+    .await;
 }
 
 pub(crate) async fn send_staged_plan_step_started(
@@ -122,8 +128,9 @@ pub(crate) async fn send_staged_plan_step_started(
     let Some(tx) = out else {
         return;
     };
-    let _ = tx
-        .send(encode_message(SsePayload::StagedPlanStepStarted {
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::StagedPlanStepStarted {
             started: StagedPlanStepStartedBody {
                 plan_id: plan_id.to_string(),
                 step_id: step_id.to_string(),
@@ -131,8 +138,10 @@ pub(crate) async fn send_staged_plan_step_started(
                 total_steps,
                 description: description.to_string(),
             },
-        }))
-        .await;
+        }),
+        "staged_sse::staged_plan_step_started",
+    )
+    .await;
 }
 
 pub(crate) async fn send_staged_plan_step_finished(
@@ -146,8 +155,9 @@ pub(crate) async fn send_staged_plan_step_finished(
     let Some(tx) = out else {
         return;
     };
-    let _ = tx
-        .send(encode_message(SsePayload::StagedPlanStepFinished {
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::StagedPlanStepFinished {
             finished: StagedPlanStepFinishedBody {
                 plan_id: plan_id.to_string(),
                 step_id: step_id.to_string(),
@@ -155,8 +165,10 @@ pub(crate) async fn send_staged_plan_step_finished(
                 total_steps,
                 status: status.to_string(),
             },
-        }))
-        .await;
+        }),
+        "staged_sse::staged_plan_step_finished",
+    )
+    .await;
 }
 
 pub(crate) async fn send_staged_plan_finished(
@@ -169,14 +181,17 @@ pub(crate) async fn send_staged_plan_finished(
     let Some(tx) = out else {
         return;
     };
-    let _ = tx
-        .send(encode_message(SsePayload::StagedPlanFinished {
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::StagedPlanFinished {
             finished: StagedPlanFinishedBody {
                 plan_id: plan_id.to_string(),
                 total_steps,
                 completed_steps,
                 status: status.to_string(),
             },
-        }))
-        .await;
+        }),
+        "staged_sse::staged_plan_finished",
+    )
+    .await;
 }

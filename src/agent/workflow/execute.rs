@@ -679,7 +679,8 @@ async fn request_approval(
             allowlist_key: None,
         },
     });
-    let _ = out_tx.send(line).await;
+    let _ =
+        crate::sse::send_string_logged(&out_tx, line, "workflow::execute approval request").await;
 
     let mut rx_guard = approval_rx.lock().await;
     rx_guard
