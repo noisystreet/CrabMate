@@ -68,6 +68,7 @@ struct ConfigBuilder {
     parallel_readonly_tools_max: Option<u64>,
     staged_plan_execution: Option<bool>,
     staged_plan_phase_instruction: Option<String>,
+    staged_plan_allow_no_task: Option<bool>,
     workspace_allowed_roots: Option<Vec<String>>,
     web_api_bearer_token: Option<String>,
     allow_insecure_no_auth_for_non_loopback: Option<bool>,
@@ -235,6 +236,9 @@ impl ConfigBuilder {
             .parallel_readonly_tools_max
             .or(self.parallel_readonly_tools_max);
         self.staged_plan_execution = agent.staged_plan_execution.or(self.staged_plan_execution);
+        self.staged_plan_allow_no_task = agent
+            .staged_plan_allow_no_task
+            .or(self.staged_plan_allow_no_task);
         self.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
             .or(self.allow_insecure_no_auth_for_non_loopback);
@@ -577,6 +581,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.staged_plan_execution = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_ALLOW_NO_TASK")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.staged_plan_allow_no_task = Some(val);
+    }
     if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_PHASE_INSTRUCTION") {
         b.staged_plan_phase_instruction = Some(v);
     }
@@ -882,6 +891,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .clamp(1, 256);
     let staged_plan_execution = b.staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = b.staged_plan_phase_instruction.unwrap_or_default();
+    let staged_plan_allow_no_task = b.staged_plan_allow_no_task.unwrap_or(true);
     let web_api_bearer_token = b.web_api_bearer_token.unwrap_or_default();
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
@@ -1000,6 +1010,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         parallel_readonly_tools_max,
         staged_plan_execution,
         staged_plan_phase_instruction,
+        staged_plan_allow_no_task,
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
         agent_memory_file,

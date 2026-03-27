@@ -584,7 +584,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     ) {
                         warn!(
                             target: "crabmate",
-                            "chat stream 任务结束（分阶段规划解析失败，SSE 已发 staged_plan_invalid） job_id={} detail={}",
+                            "chat stream 任务结束（staged_plan_invalid 前缀错误，多为旧服务端或非常规路径） job_id={} detail={}",
                             job_id,
                             e_text
                         );

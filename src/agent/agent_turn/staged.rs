@@ -24,7 +24,7 @@ use super::staged_sse::{
     staged_plan_queue_summary_text,
 };
 
-/// 分阶段规划共享执行路径上的日志文案与 SSE 错误提示（避免 `run_staged_plan_with_prepared_request` 参数过长）。
+/// 分阶段规划共享执行路径上的日志文案与 SSE（规划轮误 `tool_calls` 时）提示（避免 `run_staged_plan_with_prepared_request` 参数过长）。
 pub(crate) struct StagedPlanRunLabels {
     pub planning_log_label: &'static str,
     pub tool_calls_error_message: &'static str,
@@ -55,7 +55,7 @@ async fn prepare_staged_planner_no_tools_request(
 
     let instr = p.cfg.staged_plan_phase_instruction.trim();
     let plan_system = if instr.is_empty() {
-        staged_plan_phase_instruction_default()
+        staged_plan_phase_instruction_default(p.cfg.staged_plan_allow_no_task)
     } else {
         instr.to_string()
     };
@@ -237,28 +237,33 @@ where
             let detail = crate::agent::plan_artifact::plan_artifact_error_log_summary(&parse_err);
             warn!(
                 target: "crabmate",
-                "staged_plan_invalid parse_err={} content_len={} content_preview={}",
+                "staged_plan_invalid parse_err={} content_len={} content_preview={}；降级为常规工具循环",
                 detail,
                 content.chars().count(),
                 crate::redact::preview_chars(content, crate::redact::MESSAGE_LOG_PREVIEW_CHARS)
             );
-            if let Some(tx) = p.out {
-                let _ = tx
-                    .send(encode_message(SsePayload::Error(SseErrorBody {
-                        error: "规划轮未解析出合法的 agent_reply_plan v1（需 ```json 围栏或单对象 JSON）。"
-                            .to_string(),
-                        code: Some("staged_plan_invalid".to_string()),
-                    })))
-                    .await;
-            }
-            return Err(
-                crate::agent::plan_artifact::staged_plan_invalid_run_agent_turn_error(parse_err)
-                    .into(),
-            );
+            // 保留规划轮正文，避免整轮失败退出（REPL/脚本/Web 均与关闭分阶段规划时的行为对齐）。
+            push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
+            return run_agent_outer_loop(p, per_coord).await;
         }
     };
 
     push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
+
+    if plan.no_task {
+        if p.cfg.staged_plan_allow_no_task {
+            debug!(
+                target: "crabmate",
+                "分阶段规划：no_task=true，用户消息无具体可拆任务，跳过分步注入"
+            );
+        } else {
+            warn!(
+                target: "crabmate",
+                "分阶段规划：模型返回 no_task=true（当前 staged_plan_allow_no_task=false，仍尊重该信号并转入常规循环）"
+            );
+        }
+        return run_agent_outer_loop(p, per_coord).await;
+    }
 
     let plan_id = next_staged_plan_id();
     let n = plan.steps.len();

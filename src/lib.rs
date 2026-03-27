@@ -75,7 +75,7 @@ pub struct RunAgentTurnParams<'a> {
 /// 当 `out` 为 `None` 且 `render_to_terminal` 为 `true` 时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文经 `user_message_for_chat_display`（分步长句可压缩）；`plain_terminal_stream` 为 `true` 时助手正文为上游原始增量/拼接，为 `false` 时经 `assistant_markdown_source_for_display` 管线再渲染。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err` 与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
-/// 分阶段规划（`staged_plan_execution` / `logical_dual_agent`）下若规划轮未解析出合法 `agent_reply_plan` v1：仍经 SSE 下发 `code: staged_plan_invalid`（有 `out` 时），并返回 `Err`（`Display` 以 `staged_plan_invalid:` 前缀开头，便于调用方与队列任务与通用 `INTERNAL_ERROR` 区分）；**不会**把该轮无效规划 assistant 写入 `messages`。
+/// 分阶段规划（`staged_plan_execution` / `logical_dual_agent`）下若规划轮未解析出合法 `agent_reply_plan` v1：**不再**整轮失败退出：保留规划轮助手正文并**降级**为与关闭分阶段规划时相同的常规 `run_agent_outer_loop`（含工具）。规划轮若误返回 `tool_calls`，仍经 SSE 下发 `code: staged_plan_tool_calls` 并结束该轮（无降级）。
 /// `per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI 传 `None`。
 /// `llm_backend` 见 [`RunAgentTurnParams::llm_backend`]。
 pub async fn run_agent_turn<'a>(
