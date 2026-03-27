@@ -21,6 +21,7 @@ mod redact;
 mod runtime;
 mod sse;
 mod text_sanitize;
+mod tool_call_explain;
 mod tool_registry;
 mod tool_result;
 mod tools;
@@ -238,7 +239,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let client = http_client::build_shared_api_client(cfg.as_ref())?;
-    let all_tools = tools::build_tools();
+    let mut all_tools = tools::build_tools();
+    tool_call_explain::annotate_tool_defs_for_explain_card(&mut all_tools, cfg.as_ref());
     let tools = if no_tools { Vec::new() } else { all_tools };
 
     if let Some(port) = serve_port {

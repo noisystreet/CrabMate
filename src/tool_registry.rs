@@ -358,16 +358,24 @@ pub async fn dispatch_tool(
             );
         };
         let guard = sess.lock().await;
+        let mcp_args = crate::tool_call_explain::strip_explain_why_if_present(args);
         let out = crate::mcp::call_mcp_tool(
             &guard,
             remote.as_str(),
-            args,
+            mcp_args.as_str(),
             Duration::from_secs(cfg.mcp_tool_timeout_secs.max(1)),
             cfg.command_max_output_len,
         )
         .await;
         return (out, None);
     }
+
+    let args_processed =
+        match crate::tool_call_explain::require_explain_for_mutation(cfg.as_ref(), name, args) {
+            Ok(c) => c,
+            Err(e) => return (e, None),
+        };
+    let args = args_processed.as_ref();
 
     let hid = handler_id_for(name);
 
