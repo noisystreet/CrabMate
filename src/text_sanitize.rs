@@ -796,6 +796,33 @@ Line2</|DSML|parameter>
     }
 
     #[test]
+    fn materialize_dsml_fullwidth_brackets_create_file_like_cli() {
+        // 与部分模型在规划轮输出的全角 `｜` DSML 一致（分阶段路径须先物化再执行工具）。
+        let dsml = "我们只需要创建 1.md。<｜DSML｜function_calls>\n\
+<｜DSML｜invoke name=\"create_file\">\n\
+<｜DSML｜parameter name=\"path\" string=\"true\">1.md</｜DSML｜parameter>\n\
+<｜DSML｜parameter name=\"content\" string=\"true\"></｜DSML｜parameter>\n\
+</｜DSML｜invoke>\n\
+</｜DSML｜function_calls>";
+        let mut msg = Message {
+            role: "assistant".to_string(),
+            content: Some(dsml.to_string()),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+        let tcs = msg.tool_calls.as_ref().expect("tool_calls");
+        assert_eq!(tcs.len(), 1);
+        assert_eq!(tcs[0].function.name, "create_file");
+        let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
+        assert_eq!(v.get("path").and_then(|x| x.as_str()), Some("1.md"));
+        assert_eq!(v.get("content").and_then(|x| x.as_str()), Some(""));
+        assert!(!msg.content.as_deref().unwrap_or("").contains("DSML"));
+    }
+
+    #[test]
     fn materialize_dsml_skipped_when_native_tool_call_has_name() {
         let dsml = r#"<|DSML|invoke name="modify_file">
 <|DSML|parameter name="path">x.md</|DSML|parameter>

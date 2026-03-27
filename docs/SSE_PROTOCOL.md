@@ -80,7 +80,7 @@
 |--------|----------------|------|
 | `CONVERSATION_CONFLICT` | `web/chat_handlers`、`chat_job_queue` | 会话版本冲突 / 保存冲突 |
 | `INTERNAL_ERROR` | `chat_job_queue` | 队列或内部未预期错误 |
-| `staged_plan_tool_calls` | `agent_turn/staged` | 分阶段规划轮不应出现 tool_calls |
+| `staged_plan_tool_calls` | `agent_turn/staged` | （**保留/兼容**）旧版在规划轮因原生 `tool_calls` 报错；**当前**规划轮丢弃原生 `tool_calls` 并从正文 DSML 物化，**通常不再下发** |
 | `staged_plan_invalid` | （保留/兼容） | 旧版在规划 JSON 无效时下发；**当前服务端**对该情况已改为降级为常规循环，**通常不再出现** |
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop` | 终答规划重写次数用尽 |
 | `SSE_ENCODE` | `sse/protocol` | 控制面 JSON 序列化失败（兜底） |

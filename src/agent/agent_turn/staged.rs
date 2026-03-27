@@ -13,10 +13,13 @@ use crate::types::{
     message_clone_stripping_reasoning_for_api,
 };
 
-use super::execute_tools::sse_sender_closed;
+use super::execute_tools::{
+    ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
+};
 use super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
+use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
     send_staged_plan_notice, send_staged_plan_started, send_staged_plan_step_finished,
@@ -24,10 +27,9 @@ use super::staged_sse::{
     staged_plan_queue_summary_text,
 };
 
-/// 分阶段规划共享执行路径上的日志文案与 SSE（规划轮误 `tool_calls` 时）提示（避免 `run_staged_plan_with_prepared_request` 参数过长）。
+/// 分阶段规划共享执行路径上的日志文案（避免 `run_staged_plan_with_prepared_request` 参数过长）。
 pub(crate) struct StagedPlanRunLabels {
     pub planning_log_label: &'static str,
-    pub tool_calls_error_message: &'static str,
     pub step_injection_log_label: &'static str,
 }
 
@@ -85,7 +87,6 @@ pub(super) async fn run_staged_plan_then_execute_steps(
         echo_terminal_staged,
         StagedPlanRunLabels {
             planning_log_label: "分阶段规划轮模型输出",
-            tool_calls_error_message: "规划轮不应调用工具；请关闭 staged_plan_execution 或重试。",
             step_injection_log_label: "分步注入 user（完整正文，供排障与日志）",
         },
         |body| Message {
@@ -192,7 +193,7 @@ pub(crate) async fn run_staged_plan_with_prepared_request<F>(
 where
     F: Fn(String) -> Message,
 {
-    let (msg, finish_reason) = complete_chat_retrying(
+    let (mut msg, finish_reason) = complete_chat_retrying(
         p.llm_backend,
         p.client,
         p.api_key,
@@ -218,16 +219,78 @@ where
         return Ok(());
     }
 
+    // 规划轮请求为 `tools: []` + `tool_choice: none`，但部分网关仍返回**原生** `tool_calls`（含函数名）。
+    // `materialize_deepseek_dsml_tool_calls_in_message` 在「已有可用原生 tool_calls」时会直接 return，
+    // 导致正文里的 DeepSeek DSML **永不物化**；若此前再按原生判错，CLI（`out: None`）会静默 `return Ok`。
+    // 与无工具约束一致：规划轮**忽略**原生 tool_calls，只从正文（及 reasoning）物化 DSML。
+    if let Some(tc) = msg.tool_calls.as_ref().filter(|c| !c.is_empty()) {
+        debug!(
+            target: "crabmate",
+            "分阶段规划轮：丢弃 API 返回的 {} 条原生 tool_calls，改从正文 DSML 物化",
+            tc.len()
+        );
+    }
+    msg.tool_calls = None;
+    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(&mut msg);
+
+    // 规划轮若未产出可解析 JSON，但正文里写了 DSML 工具调用：物化后应先执行工具，再进入常规循环（否则历史中只有未执行的 XML）。
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
-        if let Some(tx) = p.out {
-            let _ = tx
-                .send(encode_message(SsePayload::Error(SseErrorBody {
-                    error: labels.tool_calls_error_message.to_string(),
-                    code: Some("staged_plan_tool_calls".to_string()),
-                })))
+        push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
+        match per_reflect_after_assistant(per_coord, &finish_reason, &msg, p.messages) {
+            ReflectOnAssistantOutcome::ProceedToExecuteTools => {
+                let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+                let echo_terminal_transcript = render_to_terminal && p.out.is_none();
+                let exec_outcome = per_execute_tools_web(
+                    tool_calls,
+                    per_coord,
+                    p.messages,
+                    WebExecuteCtx {
+                        cfg: p.cfg,
+                        effective_working_dir: p.effective_working_dir,
+                        workspace_is_set: p.workspace_is_set,
+                        out: p.out,
+                        web_tool_ctx: p.web_tool_ctx,
+                        cli_tool_ctx: p.cli_tool_ctx,
+                        echo_terminal_transcript,
+                    },
+                )
                 .await;
+                if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+                    return Ok(());
+                }
+                if let Some(f) = p.per_flight.as_ref() {
+                    f.sync_from_per_coord(per_coord);
+                }
+            }
+            ReflectOnAssistantOutcome::StopTurn => {
+                if let Some(f) = p.per_flight.as_ref() {
+                    f.sync_from_per_coord(per_coord);
+                }
+                return Ok(());
+            }
+            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
+                if let Some(f) = p.per_flight.as_ref() {
+                    f.sync_from_per_coord(per_coord);
+                    f.awaiting_plan_rewrite_model.store(true, Ordering::Relaxed);
+                }
+                return run_agent_outer_loop(p, per_coord).await;
+            }
+            ReflectOnAssistantOutcome::PlanRewriteExhausted => {
+                if let Some(f) = p.per_flight.as_ref() {
+                    f.sync_from_per_coord(per_coord);
+                }
+                if let Some(tx) = p.out {
+                    let _ = tx
+                        .send(encode_message(SsePayload::Error(SseErrorBody {
+                            error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
+                            code: Some("plan_rewrite_exhausted".to_string()),
+                        })))
+                        .await;
+                }
+                return Ok(());
+            }
         }
-        return Ok(());
+        return run_agent_outer_loop(p, per_coord).await;
     }
 
     let content = msg.content.as_deref().unwrap_or("");
@@ -404,7 +467,6 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
         echo_terminal_staged,
         StagedPlanRunLabels {
             planning_log_label: "逻辑双agent规划轮输出",
-            tool_calls_error_message: "规划轮不应调用工具；请检查 planner_executor_mode 配置或重试。",
             step_injection_log_label: "逻辑双agent注入执行器user",
         },
         Message::user_only,

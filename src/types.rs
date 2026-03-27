@@ -263,8 +263,24 @@ pub fn merge_consecutive_assistants_in_place(messages: &mut Vec<Message>) {
 ///
 /// 本函数仅用于拼装 **`ChatRequest.messages`**，**不**写入会话 `Vec<Message>`：会话尾部空占位须保留，
 /// 供 [`crate::agent::agent_turn::push_assistant_merging_trailing_empty_placeholder`] 合并。
+///
+/// 末尾「仅有 `tool_calls`、无对应 `tool` 消息」的 assistant 会先清空 `tool_calls`（悬空调用非法）；
+/// 若清空后正文仍为空，须再删掉该条，否则供应商返回 `content or tool_calls must be set`。
 pub fn normalize_messages_for_openai_compatible_request(msgs: Vec<Message>) -> Vec<Message> {
     let mut out = merge_all_consecutive_assistant_messages_in_vec(msgs);
+    pop_trailing_assistants_with_neither_content_nor_tool_calls(&mut out);
+    if let Some(last) = out.last_mut()
+        && is_assistant_role(&last.role)
+        && assistant_has_non_empty_tool_calls(last)
+    {
+        last.tool_calls = None;
+    }
+    pop_trailing_assistants_with_neither_content_nor_tool_calls(&mut out);
+    out
+}
+
+/// 删除尾部「无正文且无 `tool_calls`」的 assistant（OpenAI 兼容 API 不接受该形态）。
+fn pop_trailing_assistants_with_neither_content_nor_tool_calls(out: &mut Vec<Message>) {
     while out.last().is_some_and(|m| {
         is_assistant_role(&m.role)
             && !assistant_has_non_empty_tool_calls(m)
@@ -275,13 +291,6 @@ pub fn normalize_messages_for_openai_compatible_request(msgs: Vec<Message>) -> V
     }) {
         out.pop();
     }
-    if let Some(last) = out.last_mut()
-        && is_assistant_role(&last.role)
-        && assistant_has_non_empty_tool_calls(last)
-    {
-        last.tool_calls = None;
-    }
-    out
 }
 
 /// Web `/chat`、队列任务与 CLI 单次问答共用的首轮：`[system, user]`。
@@ -621,5 +630,18 @@ mod normalize_messages_tests {
         assert_eq!(n.len(), 3);
         assert!(n[2].tool_calls.is_none());
         assert!(n[2].content.as_deref().unwrap().contains("partial"));
+    }
+
+    /// 末尾仅 `tool_calls`、正文为空且无后续 `tool`：清空 `tool_calls` 后须整条删除，避免 API 400。
+    #[test]
+    fn drops_trailing_assistant_when_orphan_tool_calls_cleared_and_content_empty() {
+        let v = vec![
+            Message::system_only("s"),
+            Message::user_only("u"),
+            asst_with_tc(""),
+        ];
+        let n = normalize_messages_for_openai_compatible_request(v);
+        assert_eq!(n.len(), 2);
+        assert_eq!(n[1].role, "user");
     }
 }
