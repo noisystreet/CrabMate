@@ -7,6 +7,7 @@ use log::{info, warn};
 use reqwest::Client;
 use tokio::sync::mpsc::Sender;
 
+use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::llm::{ChatCompletionsBackend, complete_chat_retrying};
 use crate::types::{ChatRequest, Message, is_chat_ui_separator};
@@ -390,9 +391,13 @@ pub async fn prepare_messages_for_model(
     api_key: &str,
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
+    per_coord_layer_cache: Option<&mut PerCoordinator>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     prepare_messages_before_model_call_sync(messages, cfg);
     maybe_summarize_with_llm(llm_backend, client, api_key, cfg, messages).await?;
+    if let Some(p) = per_coord_layer_cache {
+        p.invalidate_workflow_validate_layer_cache_after_context_mutation();
+    }
     Ok(())
 }
 

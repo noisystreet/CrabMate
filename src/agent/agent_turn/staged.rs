@@ -33,6 +33,7 @@ pub(crate) struct StagedPlanRunLabels {
 
 async fn prepare_staged_planner_no_tools_request(
     p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
     build_planner_messages: fn(&[Message], String) -> Vec<Message>,
 ) -> Result<crate::types::ChatRequest, Box<dyn std::error::Error + Send + Sync>> {
     if let Some(ref ltm) = p.long_term_memory {
@@ -48,6 +49,7 @@ async fn prepare_staged_planner_no_tools_request(
         p.api_key,
         p.cfg.as_ref(),
         p.messages,
+        Some(per_coord),
     )
     .await?;
 
@@ -73,7 +75,8 @@ pub(super) async fn run_staged_plan_then_execute_steps(
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
     let req =
-        prepare_staged_planner_no_tools_request(p, build_single_agent_planner_messages).await?;
+        prepare_staged_planner_no_tools_request(p, per_coord, build_single_agent_planner_messages)
+            .await?;
     run_staged_plan_with_prepared_request(
         p,
         per_coord,
@@ -386,7 +389,8 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
     let req =
-        prepare_staged_planner_no_tools_request(p, build_logical_dual_planner_messages).await?;
+        prepare_staged_planner_no_tools_request(p, per_coord, build_logical_dual_planner_messages)
+            .await?;
     run_staged_plan_with_prepared_request(
         p,
         per_coord,

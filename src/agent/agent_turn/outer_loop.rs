@@ -43,6 +43,7 @@ pub(crate) async fn run_agent_outer_loop(
             p.api_key,
             p.cfg.as_ref(),
             p.messages,
+            Some(per_coord),
         )
         .await?;
         let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {

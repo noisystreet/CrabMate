@@ -85,6 +85,10 @@ pub struct PerCoordinator {
     /// 在 [`FinalPlanRequirementMode::WorkflowReflection`] 下，由 `prepare_workflow_execute` 根据反思注入置位。
     plan_requirement_source: PlanRequirementSource,
     plan_rewrite_attempts: usize,
+    /// 缓存 [`last_workflow_validate_layer_count`]：`messages.len()` 未变时复用上一次的扫描结果。
+    /// [`Self::append_tool_result_and_reflection`] 在追加后按新历史重算；[`Self::invalidate_workflow_validate_layer_cache_after_context_mutation`] 在上下文裁剪/摘要后清空，避免误用旧值。
+    cached_workflow_validate_layer_count: Option<usize>,
+    layer_count_cache_at_message_len: usize,
 }
 
 impl PerCoordinator {
@@ -117,7 +121,32 @@ impl PerCoordinator {
             plan_rewrite_max_attempts: plan_rewrite_max_attempts.max(1),
             plan_requirement_source: initial_source,
             plan_rewrite_attempts: 0,
+            cached_workflow_validate_layer_count: None,
+            layer_count_cache_at_message_len: 0,
         }
+    }
+
+    /// `context_window` 在裁剪/摘要等**就地**改写 `messages` 后调用，避免 `layer_count` 缓存指向已删除的 `workflow_validate` 工具结果。
+    pub fn invalidate_workflow_validate_layer_cache_after_context_mutation(&mut self) {
+        self.cached_workflow_validate_layer_count = None;
+        self.layer_count_cache_at_message_len = 0;
+    }
+
+    fn workflow_validate_layer_need(&mut self, messages: &[Message]) -> Option<usize> {
+        let len = messages.len();
+        if len != self.layer_count_cache_at_message_len {
+            let n = last_workflow_validate_layer_count(messages);
+            self.cached_workflow_validate_layer_count = n;
+            self.layer_count_cache_at_message_len = len;
+            return n;
+        }
+        if self.cached_workflow_validate_layer_count.is_some() {
+            return self.cached_workflow_validate_layer_count;
+        }
+        let n = last_workflow_validate_layer_count(messages);
+        self.cached_workflow_validate_layer_count = n;
+        self.layer_count_cache_at_message_len = len;
+        n
     }
 
     /// 是否包含可解析的 `agent_reply_plan` v1 JSON（见 `plan_artifact`）。
@@ -166,7 +195,7 @@ impl PerCoordinator {
             }
             FinalPlanRequirementMode::Always => true,
         };
-        let layer_need = last_workflow_validate_layer_count(messages);
+        let layer_need = self.workflow_validate_layer_need(messages);
 
         let content = msg.content.as_deref().unwrap_or("");
         if let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1(content) {
@@ -260,6 +289,7 @@ impl PerCoordinator {
 
     /// 追加 tool 消息以及可选的反思注入 user 消息（与原先两处 `run_agent_turn*` 行为一致）。
     pub fn append_tool_result_and_reflection(
+        per_coord: &mut PerCoordinator,
         messages: &mut Vec<Message>,
         tool_call_id: String,
         result: String,
@@ -274,7 +304,18 @@ impl PerCoordinator {
             tool_call_id: Some(tool_call_id),
         });
         if let Some(instruction) = reflection_inject {
-            let instruction_str = serde_json::to_string(&instruction).unwrap_or_default();
+            let instruction_str = match serde_json::to_string(&instruction) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!(
+                        target: "crabmate::per",
+                        "workflow_reflection_inject_serialize_failed error={}",
+                        e
+                    );
+                    r#"{"instruction_type":"crabmate_reflection_serialize_failed","detail":"工作流反思指令无法序列化为 JSON，请根据上一轮工具结果继续。"}"#
+                        .to_string()
+                }
+            };
             messages.push(Message {
                 role: "user".to_string(),
                 content: Some(instruction_str),
@@ -284,6 +325,23 @@ impl PerCoordinator {
                 tool_call_id: None,
             });
         }
+        per_coord.layer_count_cache_at_message_len = messages.len();
+        per_coord.cached_workflow_validate_layer_count =
+            last_workflow_validate_layer_count(messages.as_slice());
+    }
+}
+
+#[cfg(test)]
+impl PerCoordinator {
+    fn test_workflow_validate_layer_need(&mut self, messages: &[Message]) -> Option<usize> {
+        self.workflow_validate_layer_need(messages)
+    }
+
+    fn test_layer_cache_snapshot(&self) -> (Option<usize>, usize) {
+        (
+            self.cached_workflow_validate_layer_count,
+            self.layer_count_cache_at_message_len,
+        )
     }
 }
 
@@ -647,7 +705,9 @@ mod tests {
             "instruction_type": "test_instruction",
             "body": "do something"
         });
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Never, 2);
         PerCoordinator::append_tool_result_and_reflection(
+            &mut c,
             &mut msgs,
             "tc-99".to_string(),
             "tool output".to_string(),
@@ -670,7 +730,9 @@ mod tests {
     #[test]
     fn append_tool_result_without_reflection() {
         let mut msgs: Vec<Message> = vec![];
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Never, 2);
         PerCoordinator::append_tool_result_and_reflection(
+            &mut c,
             &mut msgs,
             "tc-1".to_string(),
             "result".to_string(),
@@ -706,5 +768,55 @@ mod tests {
             },
         ];
         assert_eq!(last_workflow_validate_layer_count(&msgs), None);
+    }
+
+    fn hist_with_validate_layer_3() -> Vec<Message> {
+        vec![
+            Message {
+                role: "assistant".to_string(),
+                content: None,
+                reasoning_content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "tc1".to_string(),
+                    typ: "function".to_string(),
+                    function: FunctionCall {
+                        name: "workflow_execute".to_string(),
+                        arguments: "{}".to_string(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "tool".to_string(),
+                content: Some(
+                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3}}"#
+                        .to_string(),
+                ),
+                reasoning_content: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc1".to_string()),
+            },
+        ]
+    }
+
+    #[test]
+    fn workflow_validate_layer_cache_reuses_when_len_unchanged() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Never, 2);
+        let hist = hist_with_validate_layer_3();
+        assert_eq!(c.test_workflow_validate_layer_need(&hist), Some(3));
+        assert_eq!(c.test_layer_cache_snapshot(), (Some(3), hist.len()));
+        assert_eq!(c.test_workflow_validate_layer_need(&hist), Some(3));
+    }
+
+    #[test]
+    fn workflow_validate_layer_cache_invalidates_on_context_mutation() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Never, 2);
+        let mut hist = hist_with_validate_layer_3();
+        assert_eq!(c.test_workflow_validate_layer_need(&hist), Some(3));
+        hist.pop();
+        assert_eq!(c.test_workflow_validate_layer_need(&hist), None);
+        assert_eq!(c.test_layer_cache_snapshot(), (None, hist.len()));
     }
 }
