@@ -15,6 +15,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
   - 浏览当前工作目录的文件/子目录。
   - 在前端新建/编辑文件，保存后自动刷新工作区列表。
   - Agent 通过工具创建/修改文件后，前端会自动检测并刷新工作区。
+  - **项目画像（自动）**：侧栏展示只读扫描生成的 Markdown 摘要（`Cargo.toml` / `package.json`、顶层目录、tokei 语言占比、可选 `cargo metadata --no-deps` 等）；与备忘类似，**新 Web 会话首轮**可将其与 `agent_memory_file` 合并为一条 `user` 上下文注入模型（见 `project_profile_inject_*`）。刷新侧栏或 `GET /workspace/profile` 可重新生成。
 - **任务清单**（Web UI 侧栏，可选显示）：经 `/tasks` 在 **serve 进程内存**中按当前工作区路径保存；**不**在工作区写入 `tasks.json`；**重启服务后清空**。默认内置 `system_prompt` 已要求模型**不要**用文件工具维护磁盘上的任务 JSON，拆分与进度在对话中说明即可。
 - **命令执行与结果展示**：
   - Agent 下发 `run_command` / `run_executable` 时，前端会显示一条“系统消息”摘要（例如 `执行命令：g++ main.cpp -o main`）。
@@ -37,7 +38,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 ## 部署与安全提示
 
 - **默认仅本机监听**（`--serve`）：绑定 **`127.0.0.1`**，局域网其它设备默认无法直连。若需局域网访问，请显式使用 `--host 0.0.0.0` 或设置环境变量 `AGENT_HTTP_HOST=0.0.0.0`（未传 `--host` 时生效）。当监听**非 loopback** 地址时，若未配置 `web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN`，服务默认拒绝启动；如确需无鉴权运行，需显式设置 `allow_insecure_no_auth_for_non_loopback=true`（或 `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`，不安全）。
-- **Web Bearer 鉴权（可选）**：设置 `web_api_bearer_token` 后，`/chat`、`/workspace`、`/tasks`、`/upload` 等接口要求 `Authorization: Bearer <token>`。内置前端会从浏览器 `localStorage["crabmate-api-bearer-token"]` 读取 token 并自动附带该请求头（可在浏览器控制台手动设置）。
+- **Web Bearer 鉴权（可选）**：设置 `web_api_bearer_token` 后，`/chat`、`/workspace`（含 **`/workspace/profile`**）、`/tasks`、`/upload` 等接口要求 `Authorization: Bearer <token>`。内置前端会从浏览器 `localStorage["crabmate-api-bearer-token"]` 读取 token 并自动附带该请求头（可在浏览器控制台手动设置）。
 - **工作区**：Web 端通过 `POST /workspace` 设置的路径**必须已存在且为目录**，且（`canonicalize` 后）须落在配置的**允许根目录**之下，并避开敏感系统目录黑名单（如 `/proc`、`/sys`、`/dev`、`/etc`、`/usr`）。未配置 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS` 时，仅允许 **`run_command_working_dir` 及其子目录**；若配置了多个根路径，则 `run_command_working_dir` 本身也须落在其中某一根之下（否则启动报错）。**每次**访问 `GET/POST /workspace`、`/workspace/file`、`/workspace/search` 等会再次解析当前工作区根并校验其仍在允许根内（防止配置或磁盘变化后会话仍指向越界路径）。子路径与文件工具共用 `path_workspace`：`..` 规范化后不得越界；存在路径再 `canonicalize` 以跟随 symlink；写入路径另校验「最近存在祖先」的 canonical 目标仍在根内。若你未配置 `web_api_bearer_token`，请勿在不可信网络暴露本服务。
 - **联网搜索 Key**：`web_search_api_key` 与 DeepSeek 的 `API_KEY` 无关；若写入配置文件，请妥善保管文件权限，避免泄露第三方搜索配额。
 - **建议**：公网或不可信网络请配合反向代理、鉴权、TLS、防火墙等自行加固。
@@ -72,6 +73,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - **MCP（stdio）**：`AGENT_MCP_ENABLED`（`1`/`true`/`yes`/`on`）；`AGENT_MCP_COMMAND`（整行命令，空格分词）；`AGENT_MCP_TOOL_TIMEOUT_SECS`（`tools/call` 超时秒数，默认与 `command_timeout_secs` 一致）
    - `AGENT_CONVERSATION_STORE_SQLITE_PATH`：Web 会话 SQLite 文件路径（非空则持久化；与 `[agent] conversation_store_sqlite_path` 一致）
    - `AGENT_MEMORY_FILE_ENABLED`、`AGENT_MEMORY_FILE`、`AGENT_MEMORY_FILE_MAX_CHARS`：Web 首轮工作区备忘注入（与 `[agent]` 同名项一致）
+  - `AGENT_PROJECT_PROFILE_INJECT_ENABLED`、`AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS`：Web 新会话首轮是否注入自动生成的项目画像 Markdown 及正文长度上限（`0` 表示不生成；与 `[agent]` 中 `project_profile_inject_*` 一致）
    - **长期记忆（默认关闭）**：`AGENT_LONG_TERM_MEMORY_ENABLED`；`AGENT_LONG_TERM_MEMORY_SCOPE_MODE`（当前仅 `conversation`）；`AGENT_LONG_TERM_MEMORY_VECTOR_BACKEND`：`disabled`（仅按时间取最近片段）或 **`fastembed`**（本地 CPU 嵌入 + 余弦相似度；首次运行可能下载 ONNX 模型）；`qdrant` / `pgvector` 配置项保留但启动会报错（尚未接入）。另有 `AGENT_LONG_TERM_MEMORY_STORE_SQLITE_PATH`、`AGENT_LONG_TERM_MEMORY_TOP_K`、`AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK`、`AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX`、`AGENT_LONG_TERM_MEMORY_ASYNC_INDEX`、`AGENT_LONG_TERM_MEMORY_MAX_ENTRIES`、`AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS`。Web：**已配置 `conversation_store_sqlite_path` 时会话库与长期记忆共用同一 SQLite**；若会话仅内存模式，须显式设置 `long_term_memory_store_sqlite_path` 否则不持久化记忆。CLI：默认 `run_command_working_dir/.crabmate/long_term_memory.db`。`GET /status` 返回 `long_term_memory_*` 便于确认是否就绪。多用户无 Bearer 鉴权时，勿依赖 `conversation_id` 作为安全边界。
   - `AGENT_PLANNER_EXECUTOR_MODE`：规划器/执行器模式，`single_agent`（默认，历史行为）或 `logical_dual_agent`（阶段 1：同进程逻辑双 agent，规划轮只看用户/助手自然语言，不看 `tool` 正文）
   - `AGENT_STAGED_PLAN_EXECUTION`：设为 `1`/`true`/`yes`/`on` 启用分阶段规划（仅在 `planner_executor_mode=single_agent` 下生效）；其它或未设置为关闭（与 `[agent] staged_plan_execution` 一致）

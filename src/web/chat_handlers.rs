@@ -20,9 +20,10 @@ use crate::agent_memory::{load_memory_snippet, messages_chat_seed_with_memory};
 use crate::chat_job_queue;
 use crate::conversation_store::SaveConversationOutcome;
 use crate::health;
+use crate::project_profile::{build_project_profile_markdown, merge_memory_and_profile_snippets};
 use crate::redact;
 use crate::tool_registry;
-use crate::types::{CommandApprovalDecision, Message};
+use crate::types::{CommandApprovalDecision, Message, messages_chat_seed};
 
 #[derive(serde::Deserialize)]
 pub(crate) struct ChatRequestBody {
@@ -452,8 +453,8 @@ async fn build_messages_for_turn(
         seed.messages.push(Message::user_only(user_msg.to_string()));
         return seed;
     }
+    let root = std::path::PathBuf::from(state.effective_workspace_path().await);
     let memory_snippet = if state.cfg.agent_memory_file_enabled {
-        let root = std::path::PathBuf::from(state.effective_workspace_path().await);
         load_memory_snippet(
             &root,
             state.cfg.agent_memory_file.as_str(),
@@ -462,12 +463,40 @@ async fn build_messages_for_turn(
     } else {
         None
     };
-    ConversationTurnSeed {
-        messages: messages_chat_seed_with_memory(
+
+    let messages = if !state.cfg.project_profile_inject_enabled {
+        messages_chat_seed_with_memory(
             &state.cfg.system_prompt,
             user_msg,
             memory_snippet.as_deref(),
-        ),
+        )
+    } else {
+        let max_chars = state.cfg.project_profile_inject_max_chars;
+        let root_for_profile = root.clone();
+        let profile_md = match tokio::task::spawn_blocking(move || {
+            build_project_profile_markdown(&root_for_profile, max_chars)
+        })
+        .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                debug!("project_profile spawn_blocking failed: {}", e);
+                String::new()
+            }
+        };
+        let combined =
+            merge_memory_and_profile_snippets(memory_snippet.as_deref(), profile_md.as_str());
+        match combined {
+            Some(ctx) => vec![
+                Message::system_only(state.cfg.system_prompt.clone()),
+                Message::user_only(ctx),
+                Message::user_only(user_msg.to_string()),
+            ],
+            None => messages_chat_seed(&state.cfg.system_prompt, user_msg),
+        }
+    };
+    ConversationTurnSeed {
+        messages,
         expected_revision: None,
     }
 }
@@ -892,6 +921,10 @@ struct StatusResponse {
     long_term_memory_store_ready: bool,
     /// 异步索引累计失败次数（成功回合不递增；仅排障用）。
     long_term_memory_index_errors: u64,
+    /// Web 新会话首轮是否注入自动生成的项目画像 Markdown。
+    project_profile_inject_enabled: bool,
+    /// 项目画像注入正文最大字符数（0 表示关闭生成）。
+    project_profile_inject_max_chars: usize,
 }
 
 pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -947,5 +980,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
             .to_string(),
         long_term_memory_store_ready: ltm_ready,
         long_term_memory_index_errors: ltm_idx_err,
+        project_profile_inject_enabled: state.cfg.project_profile_inject_enabled,
+        project_profile_inject_max_chars: state.cfg.project_profile_inject_max_chars,
     })
 }

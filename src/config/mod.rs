@@ -78,6 +78,8 @@ struct ConfigBuilder {
     agent_memory_file_enabled: Option<bool>,
     agent_memory_file: Option<String>,
     agent_memory_file_max_chars: Option<u64>,
+    project_profile_inject_enabled: Option<bool>,
+    project_profile_inject_max_chars: Option<u64>,
     long_term_memory_enabled: Option<bool>,
     long_term_memory_scope_mode_str: Option<String>,
     long_term_memory_vector_backend_str: Option<String>,
@@ -264,6 +266,12 @@ impl ConfigBuilder {
         self.agent_memory_file_max_chars = agent
             .agent_memory_file_max_chars
             .or(self.agent_memory_file_max_chars);
+        self.project_profile_inject_enabled = agent
+            .project_profile_inject_enabled
+            .or(self.project_profile_inject_enabled);
+        self.project_profile_inject_max_chars = agent
+            .project_profile_inject_max_chars
+            .or(self.project_profile_inject_max_chars);
         self.long_term_memory_enabled = agent
             .long_term_memory_enabled
             .or(self.long_term_memory_enabled);
@@ -643,6 +651,16 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.agent_memory_file_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_PROJECT_PROFILE_INJECT_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.project_profile_inject_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.project_profile_inject_max_chars = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -949,6 +967,11 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .agent_memory_file_max_chars
         .unwrap_or(8000)
         .clamp(256, 500_000) as usize;
+    let project_profile_inject_enabled = b.project_profile_inject_enabled.unwrap_or(true);
+    let project_profile_inject_max_chars = b
+        .project_profile_inject_max_chars
+        .unwrap_or(6000)
+        .clamp(0, 500_000) as usize;
 
     let long_term_memory_enabled = b.long_term_memory_enabled.unwrap_or(false);
     let long_term_memory_scope_mode = match b.long_term_memory_scope_mode_str.as_deref() {
@@ -1068,6 +1091,8 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         agent_memory_file_enabled,
         agent_memory_file,
         agent_memory_file_max_chars,
+        project_profile_inject_enabled,
+        project_profile_inject_max_chars,
         long_term_memory_enabled,
         long_term_memory_scope_mode,
         long_term_memory_vector_backend,
