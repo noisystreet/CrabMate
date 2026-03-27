@@ -64,6 +64,11 @@ export interface StatusData {
   }>
   /** 当前内存会话存储中的会话数量（conversation_id 维度） */
   conversation_store_entries?: number
+  /** 长期记忆（与会话/CLI 集成） */
+  long_term_memory_enabled?: boolean
+  long_term_memory_vector_backend?: string
+  long_term_memory_store_ready?: boolean
+  long_term_memory_index_errors?: number
 }
 
 export interface WorkspaceEntry {

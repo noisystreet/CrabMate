@@ -61,3 +61,4 @@ ignore = "0.4"
 anyhow = "1"
 thiserror = "2"
 tokei = { version = "12", default-features = false }
+fastembed = "5.13"

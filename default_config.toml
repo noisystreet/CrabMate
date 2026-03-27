@@ -38,6 +38,11 @@ context_summary_transcript_max_chars = 120000
 # long_term_memory_vector_backend = "disabled"
 # long_term_memory_max_entries = 256
 # long_term_memory_inject_max_chars = 8000
+# long_term_memory_store_sqlite_path = ".crabmate/long_term_memory.db"
+# long_term_memory_top_k = 8
+# long_term_memory_max_chars_per_chunk = 1024
+# long_term_memory_min_chars_to_index = 8
+# long_term_memory_async_index = true
 # Web 对话任务：同时执行的 Agent 回合上限（单进程）
 chat_queue_max_concurrent = 2
 # Web 对话任务：有界等待队列长度（含正在排队的任务；满则返回 503 QUEUE_FULL）

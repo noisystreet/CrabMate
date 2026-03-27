@@ -73,6 +73,11 @@ pub(super) struct AgentSection {
     pub(super) long_term_memory_enabled: Option<bool>,
     pub(super) long_term_memory_max_entries: Option<u64>,
     pub(super) long_term_memory_inject_max_chars: Option<u64>,
+    pub(super) long_term_memory_store_sqlite_path: Option<String>,
+    pub(super) long_term_memory_top_k: Option<u64>,
+    pub(super) long_term_memory_max_chars_per_chunk: Option<u64>,
+    pub(super) long_term_memory_min_chars_to_index: Option<u64>,
+    pub(super) long_term_memory_async_index: Option<bool>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None。

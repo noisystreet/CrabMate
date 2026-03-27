@@ -879,10 +879,25 @@ struct StatusResponse {
     workspace_allowed_roots_count: usize,
     /// 当前内存会话存储中的会话数量（按 `conversation_id`）。
     conversation_store_entries: usize,
+    /// 长期记忆是否启用（配置）。
+    long_term_memory_enabled: bool,
+    /// 向量后端：`disabled` / `fastembed` 等。
+    long_term_memory_vector_backend: String,
+    /// 本进程是否已挂载记忆运行时（含与会话库共用 SQLite 或独立库路径）。
+    long_term_memory_store_ready: bool,
+    /// 异步索引累计失败次数（成功回合不递增；仅排障用）。
+    long_term_memory_index_errors: u64,
 }
 
 pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let conversation_store_entries = state.conversation_count().await;
+    let (ltm_ready, ltm_idx_err) = match state.long_term_memory.as_ref() {
+        Some(l) => (
+            true,
+            l.index_errors.load(std::sync::atomic::Ordering::Relaxed),
+        ),
+        None => (false, 0u64),
+    };
     let tool_names: Vec<String> = state
         .tools
         .iter()
@@ -919,5 +934,13 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         per_active_jobs: state.chat_queue.active_per_jobs(),
         workspace_allowed_roots_count: state.cfg.workspace_allowed_roots.len(),
         conversation_store_entries,
+        long_term_memory_enabled: state.cfg.long_term_memory_enabled,
+        long_term_memory_vector_backend: state
+            .cfg
+            .long_term_memory_vector_backend
+            .as_str()
+            .to_string(),
+        long_term_memory_store_ready: ltm_ready,
+        long_term_memory_index_errors: ltm_idx_err,
     })
 }
