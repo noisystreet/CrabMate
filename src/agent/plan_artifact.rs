@@ -2,13 +2,16 @@
 
 use serde::Deserialize;
 
-/// 约定的规划 JSON：`type` + `version` + 非空 `steps`。
+/// 约定的规划 JSON：`type` + `version` + `steps`；若 `no_task` 为 true 则表示无具体可拆任务，`steps` 须为空。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct AgentReplyPlanV1 {
     #[serde(rename = "type")]
     pub plan_type: String,
     pub version: u32,
     pub steps: Vec<PlanStepV1>,
+    /// 为 true：模型判定用户未提出需分步执行的具体任务；此时 `steps` 必须为空。
+    #[serde(default)]
+    pub no_task: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -24,13 +27,15 @@ pub enum PlanArtifactError {
     WrongType(String),
     WrongVersion(u32),
     EmptySteps,
+    /// `no_task` 为 true 时 `steps` 必须为空。
+    NoTaskWithNonEmptySteps,
     InvalidStep {
         index: usize,
         reason: &'static str,
     },
 }
 
-/// [`staged_plan_invalid_run_agent_turn_error`] 返回串的固定前缀，供 `chat_job_queue` 等与 SSE `code: staged_plan_invalid` 对齐识别（**勿**与用户输入拼接）。
+/// [`staged_plan_invalid_run_agent_turn_error`] 返回串的固定前缀；供测试、`chat_job_queue` 历史分支识别（**勿**与用户输入拼接）。当前主路径在规划 JSON 无效时已降级为常规循环，一般不再产生该串。
 pub(crate) const STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX: &str = "staged_plan_invalid:";
 
 /// 供日志单行输出：`WrongType` 仅记长度与短预览，不记完整 `type` 字符串。
@@ -44,13 +49,15 @@ pub(crate) fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
         }
         PlanArtifactError::WrongVersion(v) => format!("wrong_version version={v}"),
         PlanArtifactError::EmptySteps => "empty_steps".to_string(),
+        PlanArtifactError::NoTaskWithNonEmptySteps => "no_task_with_steps".to_string(),
         PlanArtifactError::InvalidStep { index, reason } => {
             format!("invalid_step index={index} reason={reason}")
         }
     }
 }
 
-/// 分阶段规划轮解析失败时 `run_agent_turn` 的 `Err` 文案（含结构化摘要，无完整模型正文）。
+/// 分阶段规划轮解析失败时的错误串（含结构化摘要）；主路径已改为降级，本函数供单测与兼容识别保留。
+#[allow(dead_code)]
 pub(crate) fn staged_plan_invalid_run_agent_turn_error(e: PlanArtifactError) -> String {
     format!(
         "{} {}",
@@ -67,7 +74,8 @@ pub(crate) fn is_staged_plan_invalid_run_agent_turn_error(msg: &str) -> bool {
 pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 顶层 \"type\" 为字符串 \"agent_reply_plan\"
 - \"version\" 为数字 1
-- \"steps\" 为非空数组；每项含非空字符串 \"id\" 与 \"description\"";
+- 可选布尔 \"no_task\"：为 true 时表示用户未提出需分步执行的具体任务，此时 \"steps\" 必须为 []（空数组）
+- 当 \"no_task\" 省略或为 false 时，\"steps\" 为非空数组；每项含非空字符串 \"id\" 与 \"description\"";
 
 /// Plan v1 的 JSON 示例。
 pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …"}]}"#;
@@ -96,6 +104,12 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
     }
     if p.version != 1 {
         return Err(PlanArtifactError::WrongVersion(p.version));
+    }
+    if p.no_task {
+        if !p.steps.is_empty() {
+            return Err(PlanArtifactError::NoTaskWithNonEmptySteps);
+        }
+        return Ok(());
     }
     if p.steps.is_empty() {
         return Err(PlanArtifactError::EmptySteps);
@@ -440,6 +454,20 @@ mod tests {
     #[test]
     fn rejects_empty_steps() {
         let s = r#"{"type":"agent_reply_plan","version":1,"steps":[]}"#;
+        assert!(parse_agent_reply_plan_v1(s).is_err());
+    }
+
+    #[test]
+    fn parses_no_task_empty_steps() {
+        let s = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#;
+        let p = parse_agent_reply_plan_v1(s).unwrap();
+        assert!(p.no_task);
+        assert!(p.steps.is_empty());
+    }
+
+    #[test]
+    fn rejects_no_task_with_non_empty_steps() {
+        let s = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[{"id":"a","description":"x"}]}"#;
         assert!(parse_agent_reply_plan_v1(s).is_err());
     }
 

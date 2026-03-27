@@ -213,6 +213,8 @@ pub struct AgentConfig {
     pub staged_plan_execution: bool,
     /// 规划轮追加的 **system** 指令；空字符串则使用内置默认文案。
     pub staged_plan_phase_instruction: String,
+    /// 为 true 时：内置规划说明包含「无具体任务则 `no_task` + 空 `steps`」；为 false 时省略该段（模型仍可能返回 `no_task`，服务端仍会尊重）。
+    pub staged_plan_allow_no_task: bool,
     /// Web 会话持久化：非空则使用 SQLite（`conversation_id` 跨重启保留）；空则仅进程内内存。
     pub conversation_store_sqlite_path: String,
     /// 为 true 时：首轮在 `system` 与当前用户消息之间注入工作区内备忘文件（见 `agent_memory_file`）。
