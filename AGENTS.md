@@ -8,7 +8,7 @@ CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web U
 
 ### Required environment variable
 
-- `API_KEY` — DeepSeek API key. Required for `serve` / `repl` / `chat` / `bench` / `config --dry-run` / `models` / `probe`; **CLI `doctor` runs without it** (local summary only). Without it, other modes exit with "未设置环境变量 API_KEY". With an invalid key the server starts normally but chat requests fail with `INTERNAL_ERROR`. Use `config --dry-run` or `doctor` to verify config without calling chat APIs.
+- `API_KEY` — DeepSeek API key. Required for `serve` / `repl` / `chat` / `bench` / `config`（自检，与 `config --dry-run` 相同） / `models` / `probe`; **CLI `doctor` runs without it** (local summary only). Without it, other modes exit with "未设置环境变量 API_KEY". With an invalid key the server starts normally but chat requests fail with `INTERNAL_ERROR`. Use `config` or `doctor` to verify config without calling chat APIs.
 
 ### Running services
 

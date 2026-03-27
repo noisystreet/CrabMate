@@ -590,7 +590,7 @@ cargo run
 | `repl` | 交互式终端对话；**不写任何子命令时默认进入 `repl`**。 |
 | `chat` | 脚本化对话：见下文 **「`chat` 脚本与退出码」**；支持 `--query` / `--stdin` / `--user-prompt-file`、`--system-prompt-file`、`--messages-json-file`（整轮 messages）、`--message-file`（JSONL 多轮）、`--yes` / `--approve-commands`、`--output json`、`--no-stream`。 |
 | `bench` | 批量测评：与下表 benchmark 选项相同（`--benchmark`、`--batch` 等）。 |
-| `config` | 自检：`config --dry-run` 检查配置、`API_KEY`、前端 `frontend/dist` 是否存在。 |
+| `config` | 自检：检查配置、`API_KEY`、前端 `frontend/dist` 是否存在；`--dry-run` 可选（与不带该参数行为相同）。 |
 | `doctor` | 一页本地诊断（Rust/npm/前端路径、`allowed_commands` 条数等，**脱敏**）；**不需要** `API_KEY`。 |
 | `models` | `GET …/models` 列出模型 id（需 `API_KEY`；部分网关无此端点）。 |
 | `probe` | 探测 `api_base` 上 models 端点连通性与 HTTP 状态（需 `API_KEY`）。 |
@@ -618,7 +618,7 @@ cargo run
 | `--no-tools`      | 全局：禁用工具。|
 | `--no-web`        | 随 `serve`：仅 API。|
 | `--cli-only`      | 同 `--no-web`。|
-| `--dry-run`       | 兼容：等价于 `config --dry-run`。|
+| `--dry-run`       | 兼容：映射为 `config` 自检（与 `config --dry-run` 相同）。|
 | `--no-stream`     | 随 `repl` / `chat`。|
 | `--log <FILE>`    | 全局：日志追加到文件并镜像 stderr。|
 
@@ -678,7 +678,8 @@ cargo run -- bench --benchmark gaia --batch gaia_tasks.jsonl --batch-output gaia
 cargo run -- bench --benchmark human_eval --batch humaneval_tasks.jsonl --batch-output humaneval_results.jsonl --task-timeout 60
 cargo run -- bench --benchmark swe_bench --batch tasks.jsonl --batch-output results.jsonl --resume
 
-# 配置自检（CI）
+# 配置自检（CI；与 `config --dry-run` 相同）
+cargo run -- config
 cargo run -- config --dry-run
 ```
 
