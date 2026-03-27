@@ -90,10 +90,10 @@ pub fn init_logging(log_file: Option<&Path>, quiet_cli_default: bool) -> io::Res
 }
 
 /// 从标准输入读取全部内容（直到 EOF）
-fn read_stdin_to_string() -> String {
+fn read_stdin_to_string() -> io::Result<String> {
     let mut s = String::new();
-    let _ = io::stdin().read_to_string(&mut s);
-    s
+    io::stdin().read_to_string(&mut s)?;
+    Ok(s)
 }
 
 #[inline]
@@ -384,7 +384,7 @@ pub struct BenchCmd {
 /// 配置检查（不发起对话）
 #[derive(Parser, Debug, Clone, Default)]
 pub struct ConfigCmd {
-    /// 仅检查配置、API_KEY 与前端静态目录是否存在，然后退出
+    /// 可选；与不带本参数相同，均为一次配置检查后退出（供脚本显式标注）
     #[arg(long)]
     pub dry_run: bool,
 }
@@ -446,22 +446,23 @@ pub struct BenchmarkCliArgs {
     pub system_prompt_file: Option<String>,
 }
 
-/// `parse_args` 的返回值：配置路径、[`ChatCliArgs`]、serve 端口、Web 绑定地址、输出模式、工作区 CLI、各类布尔开关、日志文件路径、benchmark 参数、扩展子命令。
-pub type ParsedCliArgs = (
-    Option<String>,
-    ChatCliArgs,
-    Option<u16>,
-    String, // http_bind_host（`serve` 时使用；由 `--host` 或 AGENT_HTTP_HOST 或默认 127.0.0.1）
-    Option<String>,
-    Option<String>,
-    bool,           // no_tools
-    bool,           // no_web
-    bool,           // dry_run
-    bool,           // no_stream
-    Option<String>, // log file path
-    BenchmarkCliArgs,
-    ExtraCliCommand,
-);
+/// [`parse_args`] 的返回值：具名字段替代长元组，便于增删选项与调用方阅读。
+#[derive(Debug, Clone)]
+pub struct ParsedCliArgs {
+    pub config_path: Option<String>,
+    pub chat_cli: ChatCliArgs,
+    pub serve_port: Option<u16>,
+    /// `serve` 时使用；来自 `serve --host`、`AGENT_HTTP_HOST` 或默认 `127.0.0.1`。
+    pub http_bind_host: String,
+    pub workspace_cli: Option<String>,
+    pub no_tools: bool,
+    pub no_web: bool,
+    pub dry_run: bool,
+    pub no_stream: bool,
+    pub log_file: Option<String>,
+    pub bench_args: BenchmarkCliArgs,
+    pub extra_cli: ExtraCliCommand,
+}
 
 fn parse_output_mode(raw: Option<String>) -> Option<String> {
     raw.as_ref().and_then(|m| {
@@ -475,7 +476,9 @@ fn parse_output_mode(raw: Option<String>) -> Option<String> {
 }
 
 /// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
-pub fn parse_args() -> ParsedCliArgs {
+///
+/// `chat --stdin` 时若读取标准输入失败则返回 [`io::Error`]。
+pub fn parse_args() -> io::Result<ParsedCliArgs> {
     let raw: Vec<String> = std::env::args().collect();
     let normalized = normalize_legacy_argv(raw);
     let root = RootCli::parse_from(normalized);
@@ -506,103 +509,98 @@ pub fn parse_args() -> ParsedCliArgs {
             .unwrap_or_else(|| "127.0.0.1".to_string())
     };
 
-    match root.command {
-        None => (
-            config,
-            ChatCliArgs::default(),
-            None,
-            http_bind_host(None),
-            workspace,
-            None,
+    Ok(match root.command {
+        None => ParsedCliArgs {
+            config_path: config,
+            chat_cli: ChatCliArgs::default(),
+            serve_port: None,
+            http_bind_host: http_bind_host(None),
+            workspace_cli: workspace,
             no_tools,
-            false,
-            false,
-            false,
-            log_path,
-            BenchmarkCliArgs::default(),
-            ExtraCliCommand::None,
-        ),
+            no_web: false,
+            dry_run: false,
+            no_stream: false,
+            log_file: log_path,
+            bench_args: BenchmarkCliArgs::default(),
+            extra_cli: ExtraCliCommand::None,
+        },
         Some(Commands::Serve(s)) => {
             let port = s.port.or(Some(8080));
-            (
-                config,
-                ChatCliArgs::default(),
-                port,
-                http_bind_host(s.host),
-                workspace,
-                None,
+            ParsedCliArgs {
+                config_path: config,
+                chat_cli: ChatCliArgs::default(),
+                serve_port: port,
+                http_bind_host: http_bind_host(s.host),
+                workspace_cli: workspace,
                 no_tools,
-                s.no_web,
-                false,
-                false,
-                log_path,
-                BenchmarkCliArgs::default(),
-                ExtraCliCommand::None,
-            )
+                no_web: s.no_web,
+                dry_run: false,
+                no_stream: false,
+                log_file: log_path,
+                bench_args: BenchmarkCliArgs::default(),
+                extra_cli: ExtraCliCommand::None,
+            }
         }
-        Some(Commands::Repl(r)) => (
-            config,
-            ChatCliArgs::default(),
-            None,
-            http_bind_host(None),
-            workspace,
-            None,
+        Some(Commands::Repl(r)) => ParsedCliArgs {
+            config_path: config,
+            chat_cli: ChatCliArgs::default(),
+            serve_port: None,
+            http_bind_host: http_bind_host(None),
+            workspace_cli: workspace,
             no_tools,
-            false,
-            false,
-            r.no_stream,
-            log_path,
-            BenchmarkCliArgs::default(),
-            ExtraCliCommand::None,
-        ),
+            no_web: false,
+            dry_run: false,
+            no_stream: r.no_stream,
+            log_file: log_path,
+            bench_args: BenchmarkCliArgs::default(),
+            extra_cli: ExtraCliCommand::None,
+        },
         Some(Commands::Chat(c)) => {
             let inline_user_text = if c.user_prompt_file.is_some() {
                 None
             } else if c.stdin {
-                Some(read_stdin_to_string())
+                Some(read_stdin_to_string()?)
             } else {
                 c.query.clone()
             };
             let chat_output = parse_output_mode(c.output);
-            (
-                config,
-                ChatCliArgs {
+            ParsedCliArgs {
+                config_path: config,
+                chat_cli: ChatCliArgs {
                     inline_user_text,
                     user_prompt_file: c.user_prompt_file,
                     system_prompt_file: c.system_prompt_file,
                     messages_json_file: c.messages_json_file,
                     message_file: c.message_file,
-                    output: chat_output.clone(),
+                    output: chat_output,
                     no_stream: c.no_stream,
                     yes_run_command: c.yes,
                     approve_commands: c.approve_commands,
                 },
-                None,
-                http_bind_host(None),
-                workspace,
-                chat_output,
+                serve_port: None,
+                http_bind_host: http_bind_host(None),
+                workspace_cli: workspace,
                 no_tools,
-                false,
-                false,
-                c.no_stream,
-                log_path,
-                BenchmarkCliArgs::default(),
-                ExtraCliCommand::None,
-            )
+                no_web: false,
+                dry_run: false,
+                no_stream: c.no_stream,
+                log_file: log_path,
+                bench_args: BenchmarkCliArgs::default(),
+                extra_cli: ExtraCliCommand::None,
+            }
         }
-        Some(Commands::Bench(b)) => (
-            config,
-            ChatCliArgs::default(),
-            None,
-            http_bind_host(None),
-            workspace,
-            None,
+        Some(Commands::Bench(b)) => ParsedCliArgs {
+            config_path: config,
+            chat_cli: ChatCliArgs::default(),
+            serve_port: None,
+            http_bind_host: http_bind_host(None),
+            workspace_cli: workspace,
             no_tools,
-            false,
-            false,
-            false,
-            log_path,
-            BenchmarkCliArgs {
+            no_web: false,
+            dry_run: false,
+            no_stream: false,
+            log_file: log_path,
+            bench_args: BenchmarkCliArgs {
                 benchmark: b.benchmark,
                 batch: b.batch,
                 batch_output: b.batch_output,
@@ -611,69 +609,66 @@ pub fn parse_args() -> ParsedCliArgs {
                 resume: b.resume,
                 system_prompt_file: b.bench_system_prompt,
             },
-            ExtraCliCommand::None,
-        ),
-        Some(Commands::Config(c)) => (
-            config,
-            ChatCliArgs::default(),
-            None,
-            http_bind_host(None),
-            workspace,
-            None,
+            extra_cli: ExtraCliCommand::None,
+        },
+        // `config` 子命令恒走配置检查并退出，与是否写 `--dry-run` 无关（`--dry-run` 保留为显式别名）。
+        Some(Commands::Config(_c)) => ParsedCliArgs {
+            config_path: config,
+            chat_cli: ChatCliArgs::default(),
+            serve_port: None,
+            http_bind_host: http_bind_host(None),
+            workspace_cli: workspace,
             no_tools,
-            false,
-            c.dry_run,
-            false,
-            log_path,
-            BenchmarkCliArgs::default(),
-            ExtraCliCommand::None,
-        ),
-        Some(Commands::Doctor) => (
-            config,
-            ChatCliArgs::default(),
-            None,
-            http_bind_host(None),
-            workspace,
-            None,
+            no_web: false,
+            dry_run: true,
+            no_stream: false,
+            log_file: log_path,
+            bench_args: BenchmarkCliArgs::default(),
+            extra_cli: ExtraCliCommand::None,
+        },
+        Some(Commands::Doctor) => ParsedCliArgs {
+            config_path: config,
+            chat_cli: ChatCliArgs::default(),
+            serve_port: None,
+            http_bind_host: http_bind_host(None),
+            workspace_cli: workspace,
             no_tools,
-            false,
-            false,
-            false,
-            log_path,
-            BenchmarkCliArgs::default(),
-            ExtraCliCommand::Doctor,
-        ),
-        Some(Commands::Models) => (
-            config,
-            ChatCliArgs::default(),
-            None,
-            http_bind_host(None),
-            workspace,
-            None,
+            no_web: false,
+            dry_run: false,
+            no_stream: false,
+            log_file: log_path,
+            bench_args: BenchmarkCliArgs::default(),
+            extra_cli: ExtraCliCommand::Doctor,
+        },
+        Some(Commands::Models) => ParsedCliArgs {
+            config_path: config,
+            chat_cli: ChatCliArgs::default(),
+            serve_port: None,
+            http_bind_host: http_bind_host(None),
+            workspace_cli: workspace,
             no_tools,
-            false,
-            false,
-            false,
-            log_path,
-            BenchmarkCliArgs::default(),
-            ExtraCliCommand::Models,
-        ),
-        Some(Commands::Probe) => (
-            config,
-            ChatCliArgs::default(),
-            None,
-            http_bind_host(None),
-            workspace,
-            None,
+            no_web: false,
+            dry_run: false,
+            no_stream: false,
+            log_file: log_path,
+            bench_args: BenchmarkCliArgs::default(),
+            extra_cli: ExtraCliCommand::Models,
+        },
+        Some(Commands::Probe) => ParsedCliArgs {
+            config_path: config,
+            chat_cli: ChatCliArgs::default(),
+            serve_port: None,
+            http_bind_host: http_bind_host(None),
+            workspace_cli: workspace,
             no_tools,
-            false,
-            false,
-            false,
-            log_path,
-            BenchmarkCliArgs::default(),
-            ExtraCliCommand::Probe,
-        ),
-    }
+            no_web: false,
+            dry_run: false,
+            no_stream: false,
+            log_file: log_path,
+            bench_args: BenchmarkCliArgs::default(),
+            extra_cli: ExtraCliCommand::Probe,
+        },
+    })
 }
 
 #[cfg(test)]

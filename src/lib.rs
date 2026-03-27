@@ -25,6 +25,7 @@ mod tools;
 mod types;
 mod web;
 
+pub use config::cli::{ChatCliArgs, ParsedCliArgs};
 use config::cli::{ExtraCliCommand, init_logging, parse_args};
 use log::info;
 use std::collections::HashMap;
@@ -137,13 +138,12 @@ pub(crate) use web::save_outcome_to_stream_error_line;
 
 /// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL 等。
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let (
+    let ParsedCliArgs {
         config_path,
         chat_cli,
         serve_port,
         http_bind_host,
         workspace_cli,
-        _output_mode,
         no_tools,
         no_web,
         dry_run,
@@ -151,7 +151,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         log_file,
         bench_args,
         extra_cli,
-    ) = parse_args();
+    } = parse_args()?;
 
     // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_logging`）
     init_logging(
@@ -425,9 +425,6 @@ pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tool
 pub use types::LlmSeedOverride;
 
 pub use runtime::cli_exit::CliExitError;
-
-// 供集成测试或外部二进制引用 `ChatCliArgs` 形状（与 `parse_args` 第二项一致）。
-pub use config::cli::ChatCliArgs;
 
 #[cfg(test)]
 #[path = "lib/tests.rs"]
