@@ -243,6 +243,12 @@ pub struct AgentConfig {
     pub long_term_memory_min_chars_to_index: usize,
     /// 回合结束后异步写入索引（不阻塞 SSE）。
     pub long_term_memory_async_index: bool,
+    /// 是否启用 MCP（stdio 子进程）；与 `mcp_command` 配合使用。
+    pub mcp_enabled: bool,
+    /// 启动 MCP server 的命令行（空格分词，无引号转义）；等效于允许执行任意子进程，须来自可信配置。
+    pub mcp_command: String,
+    /// `tools/call` 超时（秒）。
+    pub mcp_tool_timeout_secs: u64,
 }
 
 #[cfg(test)]

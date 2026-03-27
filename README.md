@@ -9,6 +9,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
 ## 功能概览
 
 - **调用 DeepSeek 对话接口**，支持多模型切换（见下方配置）。
+- **可选 [MCP](https://modelcontextprotocol.io/)（stdio）**：配置 `mcp_enabled` + `mcp_command` 后，**每轮用户消息**会启动子进程完成握手并 `tools/list`，将远端工具以 `mcp__{slug}__{tool}` 形式合并进发给模型的工具表；调用时走 `tools/call`。`mcp_command` 为**空格分词**的命令行（无 shell 引号转义），等效于允许启动**任意子进程**，仅应来自可信配置；`mcp_tool_timeout_secs` 控制单次 `tools/call` 超时（默认与 `command_timeout_secs` 相同）。环境变量：`AGENT_MCP_ENABLED`、`AGENT_MCP_COMMAND`、`AGENT_MCP_TOOL_TIMEOUT_SECS`。
 - **内置多种工具，由模型按需调用**：
   - `get_current_time`：获取当前日期时间。
   - `calc`：使用 Linux 的 `bc -l` 执行数学表达式（四则、乘方 ^、sqrt/sin/cos/tan/ln/exp、pi/e 等）。
@@ -416,6 +417,7 @@ CrabMate 是一个基于 **DeepSeek API** 从零实现的简易 Rust AI Agent，
    - `AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`：`/chat` 与 `/chat/stream` 的进程内任务并发与排队上限（超出排队返回 HTTP 503，`code=QUEUE_FULL`）
    - `AGENT_PARALLEL_READONLY_TOOLS_MAX`：单轮内**多只读工具并行**时 `spawn_blocking` 的并发上限（默认与 `chat_queue_max_concurrent` 相同；与 `[agent] parallel_readonly_tools_max` 一致）
    - `AGENT_ALLOWED_COMMANDS`：`run_command` 白名单，**逗号分隔**命令名（覆盖 `[agent] allowed_commands`；默认见 `default_config.toml`，含常用 coreutils、`grep`/`diff`、`git`/`cargo`（dev）、`jq`、`zcat` 等；**prod** 用 `allowed_commands_prod` 更窄）
+   - **MCP（stdio）**：`AGENT_MCP_ENABLED`（`1`/`true`/`yes`/`on`）；`AGENT_MCP_COMMAND`（整行命令，空格分词）；`AGENT_MCP_TOOL_TIMEOUT_SECS`（`tools/call` 超时秒数，默认与 `command_timeout_secs` 一致）
    - `AGENT_CONVERSATION_STORE_SQLITE_PATH`：Web 会话 SQLite 文件路径（非空则持久化；与 `[agent] conversation_store_sqlite_path` 一致）
    - `AGENT_MEMORY_FILE_ENABLED`、`AGENT_MEMORY_FILE`、`AGENT_MEMORY_FILE_MAX_CHARS`：Web 首轮工作区备忘注入（与 `[agent]` 同名项一致）
    - **长期记忆（默认关闭）**：`AGENT_LONG_TERM_MEMORY_ENABLED`；`AGENT_LONG_TERM_MEMORY_SCOPE_MODE`（当前仅 `conversation`）；`AGENT_LONG_TERM_MEMORY_VECTOR_BACKEND`：`disabled`（仅按时间取最近片段）或 **`fastembed`**（本地 CPU 嵌入 + 余弦相似度；首次运行可能下载 ONNX 模型）；`qdrant` / `pgvector` 配置项保留但启动会报错（尚未接入）。另有 `AGENT_LONG_TERM_MEMORY_STORE_SQLITE_PATH`、`AGENT_LONG_TERM_MEMORY_TOP_K`、`AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK`、`AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX`、`AGENT_LONG_TERM_MEMORY_ASYNC_INDEX`、`AGENT_LONG_TERM_MEMORY_MAX_ENTRIES`、`AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS`。Web：**已配置 `conversation_store_sqlite_path` 时会话库与长期记忆共用同一 SQLite**；若会话仅内存模式，须显式设置 `long_term_memory_store_sqlite_path` 否则不持久化记忆。CLI：默认 `run_command_working_dir/.crabmate/long_term_memory.db`。`GET /status` 返回 `long_term_memory_*` 便于确认是否就绪。多用户无 Bearer 鉴权时，勿依赖 `conversation_id` 作为安全边界。
