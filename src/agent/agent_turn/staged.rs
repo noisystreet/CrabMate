@@ -6,9 +6,12 @@ use log::{debug, warn};
 use tokio::sync::mpsc;
 
 use crate::agent::per_coord::PerCoordinator;
-use crate::llm::{complete_chat_retrying, no_tools_chat_request};
+use crate::llm::{complete_chat_retrying, no_tools_chat_request_from_messages};
 use crate::sse::{SseErrorBody, SsePayload, encode_message};
-use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_chat_ui_separator};
+use crate::types::{
+    Message, USER_CANCELLED_FINISH_REASON, is_chat_ui_separator,
+    message_clone_stripping_reasoning_for_api,
+};
 
 use super::execute_tools::sse_sender_closed;
 use super::messages::push_assistant_merging_trailing_empty_placeholder;
@@ -47,9 +50,9 @@ async fn prepare_staged_planner_no_tools_request(
     } else {
         instr.to_string()
     };
-    Ok(no_tools_chat_request(
+    Ok(no_tools_chat_request_from_messages(
         p.cfg.as_ref(),
-        &build_planner_messages(p.messages, plan_system),
+        build_planner_messages(p.messages, plan_system),
         p.temperature_override,
         p.seed_override,
     ))
@@ -94,7 +97,7 @@ pub(crate) fn build_single_agent_planner_messages(
     let mut out: Vec<Message> = messages
         .iter()
         .filter(|m| !is_chat_ui_separator(m))
-        .cloned()
+        .map(message_clone_stripping_reasoning_for_api)
         .collect();
     out.push(Message::system_only(plan_system));
     out
@@ -119,7 +122,7 @@ pub(crate) fn build_logical_dual_planner_messages(
                 .map(|s| !s.trim().is_empty())
                 .unwrap_or(false)
         })
-        .cloned()
+        .map(message_clone_stripping_reasoning_for_api)
         .collect();
     out.push(Message::system_only(plan_system));
     out

@@ -100,7 +100,7 @@ flowchart TB
 | `tool_registry.rs` | 按工具名选择 Workflow / 命令超时 / 天气与联网搜索超时 / 默认同步等策略；**`is_readonly_tool`** / **`tool_calls_allow_parallel_sync_batch`** 供同轮安全并行判定。**`CliToolRuntime`**：`run_command` CLI 路径的审批、**`--yes`/`--approve-commands`** 自动批准与 **`CliCommandTurnStats`**（`agent_turn` 每回合开头 **`reset_command_stats`**）。 |
 | `tool_result.rs` | 工具输出的结构化 `ToolResult` 与旧式字符串兼容。 |
 | `tools/` | 全部 Function Calling 定义、`ToolContext`、`run_tool`；`tools/mod.rs` 与 `tools/markdown_links.rs` 的测试已外移到同名子目录 `tests.rs`，并把工具调用摘要逻辑拆到 `tools/tool_summary.rs`，降低主文件长度；子模块见下表。 |
-| `types.rs` | `Message`、`Tool`、流式 chunk 等 OpenAI 兼容类型；`Message::system_only` / `user_only`、`messages_chat_seed` 供 Web 首轮与 CLI 共用。 |
+| `types.rs` | `Message`、`Tool`、流式 chunk 等 OpenAI 兼容类型；`Message::system_only` / `user_only`、`messages_chat_seed` 供 Web 首轮与 CLI 共用。**`messages_for_api_stripping_reasoning_skip_ui_separators`**：单次遍历跳过 `is_chat_ui_separator` 并剥离 `reasoning_content`，供 `llm::tool_chat_request` 拼装请求，避免对长会话二次全量克隆。 |
 | `conversation_store.rs` | Web 会话可选 **SQLite**：`conversation_id` → `messages` JSON + `revision` + `updated_at_unix`；TTL/条数上限与内存模式一致；`SaveConversationOutcome` 定义于此。 |
 | `agent_memory.rs` | 工作区相对路径备忘文件读取与 `messages_chat_seed_with_memory`（Web 新会话首轮）。 |
 | `web/` | Web（HTTP）专用 axum 模块：`app_state`（`AppState`、`ConversationBacking`：内存或 SQLite）、`chat_handlers`（`/chat*`、`/upload*`、`/health`、`/status`）、`server`（Router 组装）、`workspace`、`task`。`AppState` 与 `open_conversation_sqlite` 由 `lib.rs::run` 装配；`SaveConversationOutcome` 在 **`conversation_store`**，crate 根再导出供 `chat_job_queue` 等使用。 |
@@ -166,7 +166,7 @@ flowchart TB
 - **输入**：构造 `ChatRequest`（`src/types.rs`）并携带 `tools`（Function Calling 定义）。
 - **P（命名上的「规划」步）**：`per_plan_call_model_retrying(PerPlanCallModelParams { … })` —— **一次** `stream_chat`，由模型产出正文或 `tool_calls`，并非独立规划器。
 - **调用模型**：默认经 **`llm::OpenAiCompatBackend`** 调用 **`src/llm/api.rs`** 的 `stream_chat`（`POST {api_base}/chat/completions`）；`stream: true`（SSE 增量）。CLI `--no-stream` 或 `RunAgentTurnParams { no_stream: true, … }` 时为 `stream: false`，按 OpenAI 兼容 `ChatResponse` 解析 `choices[0].message`（有正文则经 `out` 整段下发）。**自定义后端**：实现 **`llm::ChatCompletionsBackend`** 并在 **`RunAgentTurnParams { llm_backend: Some(&your_backend), … }`** 中传入；须保持与现有 `Message` / `tool_calls` / SSE `out` 语义一致。其它协议形态可在该 trait 内适配。**CLI 终端输出**：`RunAgentTurnParams { plain_terminal_stream: true, … }`（仅 `runtime::cli`）时 `render_to_terminal && out.is_none()` 下助手为纯文本流式/整段；Web 队列等传 `plain_terminal_stream: false`，`out.is_none()` 时仍可用 `markdown_to_ansi`（避免污染服务端 stdout 的误用）。
-- **分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 true 时 `run_agent_turn_common` 先走规划轮（`llm::no_tools_chat_request`，显式传 `tools: []` + `tool_choice: "none"` 硬性禁止工具调用），解析 `agent_reply_plan` v1 后按 `steps` 顺序多次进入外层 Agent 循环；规划轮若出现 `tool_calls` 或 JSON 不合格，SSE 分别带 `staged_plan_tool_calls`、`staged_plan_invalid`。解析失败时 `run_agent_turn` 返回 `Err`（`staged_plan_invalid:` 前缀 + 结构化摘要，见 `plan_artifact::staged_plan_invalid_run_agent_turn_error`），**不**将无效规划 assistant 追加进 `messages`；`chat_job_queue` 流式路径识别该前缀后**不再**补发 `INTERNAL_ERROR`（避免与已下发的 `staged_plan_invalid` 重复）。
+- **分阶段规划**（`[agent] staged_plan_execution` / `AGENT_STAGED_PLAN_EXECUTION`）：为 true 时 `run_agent_turn_common` 先走规划轮（`llm::no_tools_chat_request_from_messages`，在 `agent_turn::staged` 内拼好消息并剥离 `reasoning_content` 后构造请求；语义与 `tools: []` + `tool_choice: "none"` 的禁止工具调用一致），解析 `agent_reply_plan` v1 后按 `steps` 顺序多次进入外层 Agent 循环；规划轮若出现 `tool_calls` 或 JSON 不合格，SSE 分别带 `staged_plan_tool_calls`、`staged_plan_invalid`。解析失败时 `run_agent_turn` 返回 `Err`（`staged_plan_invalid:` 前缀 + 结构化摘要，见 `plan_artifact::staged_plan_invalid_run_agent_turn_error`），**不**将无效规划 assistant 追加进 `messages`；`chat_job_queue` 流式路径识别该前缀后**不再**补发 `INTERNAL_ERROR`（避免与已下发的 `staged_plan_invalid` 重复）。
 - **规划器/执行器模式（阶段 1）**（`[agent] planner_executor_mode` / `AGENT_PLANNER_EXECUTOR_MODE`）：
   - `single_agent`（默认）：沿用历史单 agent 逻辑。
   - `logical_dual_agent`：同进程逻辑双 agent。规划轮仅消费去分隔线、去 `tool`、去空 assistant 的自然语言上下文，再追加规划 system 指令产出 `agent_reply_plan`；执行轮仍由既有外层循环负责工具调用与反思校验。该模式可减少工具原始输出对规划拆解的干扰，且不改变 HTTP/SSE 协议形状。
@@ -241,7 +241,7 @@ flowchart LR
 
 ### `src/llm/mod.rs`
 
-- **与大模型交互的封装层**（在 `backend` / `api` 之上）：`tool_chat_request` / `no_tools_chat_request` 从 `AgentConfig` + `messages`（+ `tools`）构造 `ChatRequest`（含 `temperature`、`seed` 可选字段与 `tool_choice`）；`complete_chat_retrying` 对首个参数 **`&dyn ChatCompletionsBackend`** 调用 `stream_chat`，并做 **指数退避重试**（`api_max_retries` / `api_retry_delay_secs`）。
+- **与大模型交互的封装层**（在 `backend` / `api` 之上）：`tool_chat_request` / `no_tools_chat_request` 从 `AgentConfig` + `messages`（+ `tools`）构造 `ChatRequest`（含 `temperature`、`seed` 可选字段与 `tool_choice`）。`tool_chat_request` 经 **`types::messages_for_api_stripping_reasoning_skip_ui_separators`** 再 `normalize_messages_for_openai_compatible_request`，将会话中的 UI 分隔线与 `reasoning_content` 在一次遍历中处理。**`no_tools_chat_request_from_messages`**：接受已拼好的 `Vec<Message>`（如分阶段规划轮在 `agent_turn::staged` 内已剥离 reasoning），仅做 normalize，避免再跑一轮全量 strip。`complete_chat_retrying` 对首个参数 **`&dyn ChatCompletionsBackend`** 调用 `stream_chat`，并做 **指数退避重试**（`api_max_retries` / `api_retry_delay_secs`）。
 - **Agent 主循环**（`agent::agent_turn::per_plan_call_model_retrying`）与 **`context_window`** 经同一后端引用调用本模块，避免在 P 步与摘要路径重复拼装重试逻辑。
 - HTTP 路径片段见 `types::OPENAI_CHAT_COMPLETIONS_REL_PATH`（`api` / 文档共用）；模型列表见 `types::OPENAI_MODELS_REL_PATH`（**`openai_models`** / CLI `models`、`probe`）。
 
@@ -276,6 +276,7 @@ flowchart LR
 
 - **统一数据结构**：请求/响应、message、tool schema、stream chunk 等类型。
 - **关键点**：tool calling 依赖 `Tool`（function 名、描述、JSON schema）与 `Message.tool_calls` / `role: "tool"` 消息回填。
+- **发往供应商前的消息管线**：`messages_stripping_reasoning_for_api_request`（全量 strip）；`messages_for_api_stripping_reasoning_skip_ui_separators`（strip + 跳过 `crabmate_ui_sep`）；`normalize_messages_for_openai_compatible_request`（合并相邻 assistant 等，仅用于 `ChatRequest.messages` 拼装）。
 
 ### `src/tools/file/`（节选）
 
