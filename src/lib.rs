@@ -12,6 +12,8 @@ mod conversation_store;
 mod health;
 mod http_client;
 mod llm;
+mod long_term_memory;
+mod long_term_memory_store;
 mod path_workspace;
 mod redact;
 mod runtime;
@@ -57,6 +59,10 @@ pub struct RunAgentTurnParams<'a> {
     pub temperature_override: Option<f32>,
     /// 覆盖本回合请求 JSON 中的 **`seed`**（默认 [`types::LlmSeedOverride::FromConfig`]）。
     pub seed_override: types::LlmSeedOverride,
+    /// 长期记忆（可选）；与 `long_term_memory_scope_id` 配对使用。
+    pub long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+    /// 记忆作用域（如 Web `conversation_id` 或 CLI `cli`）。
+    pub long_term_memory_scope_id: Option<String>,
 }
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
@@ -93,6 +99,8 @@ pub async fn run_agent_turn<'a>(
         llm_backend,
         temperature_override,
         seed_override,
+        long_term_memory,
+        long_term_memory_scope_id,
     } = p;
     let llm_backend: &(dyn llm::ChatCompletionsBackend + 'static) = match llm_backend {
         Some(b) => b,
@@ -117,6 +125,8 @@ pub async fn run_agent_turn<'a>(
         per_flight,
         temperature_override,
         seed_override,
+        long_term_memory,
+        long_term_memory_scope_id,
     };
     agent::agent_turn::run_agent_turn_common(&mut loop_params).await
 }
@@ -243,6 +253,39 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
             web::ConversationBacking::Sqlite(conn)
         };
+        let long_term_memory = if cfg.long_term_memory_enabled {
+            match &conversation_backing {
+                web::ConversationBacking::Sqlite(conn) => Some(
+                    long_term_memory::LongTermMemoryRuntime::new_shared_sqlite(Arc::clone(conn)),
+                ),
+                web::ConversationBacking::Memory(_) => {
+                    let p = cfg.long_term_memory_store_sqlite_path.trim();
+                    if p.is_empty() {
+                        info!(
+                            target: "crabmate",
+                            "长期记忆已启用：Web 会话为内存模式且未配置 long_term_memory_store_sqlite_path，跳过持久化记忆"
+                        );
+                        None
+                    } else {
+                        match long_term_memory::LongTermMemoryRuntime::open(std::path::Path::new(p))
+                        {
+                            Ok(r) => Some(r),
+                            Err(e) => {
+                                log::warn!(
+                                    target: "crabmate",
+                                    "长期记忆库打开失败 path={} error={}",
+                                    p,
+                                    e
+                                );
+                                None
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            None
+        };
         let state = Arc::new(AppState {
             cfg: Arc::clone(&cfg),
             api_key: api_key.clone(),
@@ -254,6 +297,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             conversation_backing,
             conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
             approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            long_term_memory,
         });
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
         let app = web::server::build_app(state, no_web, static_dir, uploads_dir.clone());

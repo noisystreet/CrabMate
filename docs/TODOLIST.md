@@ -58,7 +58,7 @@
 - [ ] **规划与反思策略可插拔**：在现有 `FinalPlanRequirementMode` 之上，允许按场景关闭 PER、或接入轻量规则/二次模型校验（成本可控、可配置）。
 - [ ] **工作流可调试性**：DAG 执行轨迹导出、失败节点重试策略、与 `workflow_reflection` 日志字段对齐。
 - [ ] **测试与回归基线**：对 `plan_artifact` 解析边界、`run_staged_plan_then_execute_steps` 与 `context_window` 组合增加 fixture/快照测试（与 P4 可合并实现）。
-- [ ] **长期记忆与向量检索（未来）**：让 Agent 跨会话保留可利用的「长时记忆」——每轮对话前按当前意图检索相关历史片段，与近期消息一并注入模型上下文（受 `context_window` 预算约束，写入/索引前走 `redact` 与敏感内容策略）。向量侧可选 **Qdrant**、**pgvector**（PostgreSQL）等外部存储，或评估 **fastembed-rs** 等 Rust 原生嵌入在 CPU 上完成毫秒级相似检索、降低 GPU 依赖；产品场景包括个人偏好、代码风格与项目习惯等。实现时需与持久会话/多租户（P1、`web/`）及鉴权隔离（P0）同盘设计，并在 `AgentConfig` 中暴露可选后端与开关。
+- [ ] **长期记忆：外部向量库与多租户**：当前已支持会话级 SQLite + 可选本地 **fastembed** 检索；后续可接 **Qdrant** / **pgvector**、跨会话租户键、与 P0 鉴权强绑定及更细 `redact` 策略。
 
 ### `llm/` 与 `http_client.rs`（模型请求、重试、流式解析）
 

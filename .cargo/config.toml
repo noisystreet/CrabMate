@@ -1,0 +1,3 @@
+# fastembed/ort 经 rust-lld 链接时可能找不到 libstdc++；用 gcc 作为链接器（Linux x86_64）。
+[target.x86_64-unknown-linux-gnu]
+linker = "gcc"

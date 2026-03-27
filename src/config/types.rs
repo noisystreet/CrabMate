@@ -231,6 +231,16 @@ pub struct AgentConfig {
     pub long_term_memory_max_entries: usize,
     /// 每轮注入模型上下文的长期记忆正文总字符上限（供后续阶段使用）。
     pub long_term_memory_inject_max_chars: usize,
+    /// 长期记忆 SQLite 路径；空则与会话库同文件（`conversation_store_sqlite_path` 非空时），否则独立文件；Web 内存会话且无路径时不持久化。
+    pub long_term_memory_store_sqlite_path: String,
+    /// 向量检索或时间序取用的条数上限。
+    pub long_term_memory_top_k: usize,
+    /// 单条记忆 chunk 最大字符数（索引与分块）。
+    pub long_term_memory_max_chars_per_chunk: usize,
+    /// 用户与助手片段均短于此则跳过索引（减少噪声）。
+    pub long_term_memory_min_chars_to_index: usize,
+    /// 回合结束后异步写入索引（不阻塞 SSE）。
+    pub long_term_memory_async_index: bool,
 }
 
 #[cfg(test)]

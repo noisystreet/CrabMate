@@ -30,6 +30,13 @@ pub(crate) async fn run_agent_outer_loop(
         }
 
         let render_to_terminal = p.render_to_terminal;
+        if let Some(ref ltm) = p.long_term_memory {
+            ltm.prepare_messages(
+                p.cfg.as_ref(),
+                p.long_term_memory_scope_id.as_deref(),
+                p.messages,
+            );
+        }
         crate::agent::context_window::prepare_messages_for_model(
             p.llm_backend,
             p.client,

@@ -30,7 +30,7 @@ long_term_memory_vector_backend = "qdrant"
     let err = crabmate::load_config(Some(path.to_str().expect("utf8 path")))
         .expect_err("expected config error");
     assert!(
-        err.contains("向量后端尚未") || err.contains("long_term_memory"),
+        err.contains("尚未接入") || err.contains("qdrant") || err.contains("long_term_memory"),
         "unexpected message: {err}"
     );
     let _ = std::fs::remove_file(&path);
