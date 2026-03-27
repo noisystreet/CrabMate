@@ -53,6 +53,68 @@ impl PlannerExecutorMode {
     }
 }
 
+/// 长期记忆条目的隔离作用域（向量检索上线后必须与会话/鉴权一致，见 README 安全说明）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LongTermMemoryScopeMode {
+    /// 按 Web `conversation_id`（及等价 CLI 会话键）隔离；无多租户鉴权时不要指望跨用户安全。
+    #[default]
+    Conversation,
+}
+
+impl LongTermMemoryScopeMode {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "conversation" => Ok(Self::Conversation),
+            _ => Err(format!(
+                "未知的 long_term_memory_scope_mode: {:?}（当前仅支持 conversation）",
+                s.trim()
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Conversation => "conversation",
+        }
+    }
+}
+
+/// 长期记忆向量检索后端（分阶段实现：`disabled` 先占位，非 `disabled` 在对应阶段落地前会在 `finalize` 报错）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LongTermMemoryVectorBackend {
+    /// 不使用向量索引（显式记忆 / 后续纯文本检索路径）。
+    #[default]
+    Disabled,
+    /// 本地 CPU 嵌入（如 fastembed-rs），见路线图阶段 B。
+    Fastembed,
+    Qdrant,
+    Pgvector,
+}
+
+impl LongTermMemoryVectorBackend {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "disabled" | "off" | "none" => Ok(Self::Disabled),
+            "fastembed" => Ok(Self::Fastembed),
+            "qdrant" => Ok(Self::Qdrant),
+            "pgvector" => Ok(Self::Pgvector),
+            _ => Err(format!(
+                "未知的 long_term_memory_vector_backend: {:?}（支持 disabled、fastembed、qdrant、pgvector）",
+                s.trim()
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Fastembed => "fastembed",
+            Self::Qdrant => "qdrant",
+            Self::Pgvector => "pgvector",
+        }
+    }
+}
+
 /// Agent 运行配置
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -159,4 +221,53 @@ pub struct AgentConfig {
     pub agent_memory_file: String,
     /// 注入备忘正文的最大字符数（超出截断）。
     pub agent_memory_file_max_chars: usize,
+    /// 是否启用长期记忆管线（显式条目 + 后续向量检索）；默认关闭。
+    pub long_term_memory_enabled: bool,
+    /// 记忆条目按何种键隔离（当前仅 `conversation`）。
+    pub long_term_memory_scope_mode: LongTermMemoryScopeMode,
+    /// 向量索引后端；非 `disabled` 需在对应里程碑实现后方可启动。
+    pub long_term_memory_vector_backend: LongTermMemoryVectorBackend,
+    /// 每个作用域内保留的长期记忆条数上限（供后续阶段写入路径使用）。
+    pub long_term_memory_max_entries: usize,
+    /// 每轮注入模型上下文的长期记忆正文总字符上限（供后续阶段使用）。
+    pub long_term_memory_inject_max_chars: usize,
+}
+
+#[cfg(test)]
+mod long_term_memory_parse_tests {
+    use super::{LongTermMemoryScopeMode, LongTermMemoryVectorBackend};
+
+    #[test]
+    fn scope_mode_parse_conversation() {
+        assert_eq!(
+            LongTermMemoryScopeMode::parse("conversation").expect("parse"),
+            LongTermMemoryScopeMode::Conversation
+        );
+        assert!(LongTermMemoryScopeMode::parse("tenant").is_err());
+    }
+
+    #[test]
+    fn vector_backend_parse_variants() {
+        assert_eq!(
+            LongTermMemoryVectorBackend::parse("disabled").expect("parse"),
+            LongTermMemoryVectorBackend::Disabled
+        );
+        assert_eq!(
+            LongTermMemoryVectorBackend::parse("OFF").expect("parse"),
+            LongTermMemoryVectorBackend::Disabled
+        );
+        assert_eq!(
+            LongTermMemoryVectorBackend::parse("FastEmbed").expect("parse"),
+            LongTermMemoryVectorBackend::Fastembed
+        );
+        assert_eq!(
+            LongTermMemoryVectorBackend::parse("qdrant").expect("parse"),
+            LongTermMemoryVectorBackend::Qdrant
+        );
+        assert_eq!(
+            LongTermMemoryVectorBackend::parse("pgvector").expect("parse"),
+            LongTermMemoryVectorBackend::Pgvector
+        );
+        assert!(LongTermMemoryVectorBackend::parse("unknown").is_err());
+    }
 }
