@@ -32,6 +32,8 @@ export interface StatusData {
   staged_plan_execution?: boolean
   /** CLI 是否在无工具规划轮向 stdout 打印模型原文（默认 true；仅 CLI 语义） */
   staged_plan_cli_show_planner_stream?: boolean
+  /** 首轮 agent_reply_plan 后是否再跑无工具步骤优化轮（默认 true） */
+  staged_plan_optimizer_round?: boolean
   /** TUI 启动是否从 .crabmate/tui_session.json 恢复会话（默认 false） */
   tui_load_session_on_start?: boolean
   /** 上下文：system 后最多保留消息条数 */

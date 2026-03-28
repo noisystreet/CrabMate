@@ -42,4 +42,6 @@ pub(crate) struct RunLoopParams<'a> {
     pub mcp_session: Option<Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
     /// 单轮内 `read_file` 磁盘缓存；`None` 且配置启用时由 `run_agent_turn` 创建。
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+    /// 分阶段规划首轮成功后，是否再跑一轮无工具「步骤优化」（合并无依赖只读探查步等）。默认 true。
+    pub staged_plan_optimizer_round: bool,
 }
