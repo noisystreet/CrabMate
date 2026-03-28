@@ -36,13 +36,18 @@ function proseBeforeFirstFence(content: string): string {
   return content.slice(0, i).trim()
 }
 
-function stripOptionalJsonFenceLabel(raw: string): string {
+function fencedBodyAfterOptionalJsonishLangLabel(raw: string): string | null {
   const lines = raw.split('\n')
-  if (lines.length === 0) return raw.trim()
-  if (lines[0].trim().toLowerCase() === 'json') {
-    return lines.slice(1).join('\n').trim()
-  }
-  return raw.trim()
+  let i = 0
+  while (i < lines.length && lines[i].trim() === '') i += 1
+  if (i >= lines.length) return null
+  const firstT = lines[i].trim().toLowerCase()
+  if (firstT !== 'json' && firstT !== 'markdown' && firstT !== 'md') return null
+  return lines.slice(i + 1).join('\n').trim()
+}
+
+function stripOptionalJsonFenceLabel(raw: string): string {
+  return fencedBodyAfterOptionalJsonishLangLabel(raw) ?? raw.trim()
 }
 
 function collectJsonCandidates(content: string): string[] {
@@ -73,9 +78,10 @@ function isValidPlanV1(o: unknown): o is { steps: { id: string; description: str
   return true
 }
 
-/** 与后端 `plan_artifact::strip_agent_reply_plan_fence_blocks_for_display` 一致：去掉含 agent_reply_plan 的 ``` 块，避免聊天区打印原始 JSON。 */
+/** 与后端 `plan_artifact::strip_agent_reply_plan_fence_blocks_for_display` 一致：去掉含 agent_reply_plan 的 ``` 块。未闭合且 inner 为空时不伪造收尾 ```，避免流式时出现连续六个反引号。 */
 export function stripAgentReplyPlanFenceBlocksForDisplay(content: string): string {
   const parts = content.split('```')
+  const unclosedTrailingFence = parts.length % 2 === 0
   let out = ''
   let i = 0
   while (i < parts.length) {
@@ -86,6 +92,9 @@ export function stripAgentReplyPlanFenceBlocksForDisplay(content: string): strin
     i += 1
     if (fenceInnerShouldHideAgentReplyPlanJson(inner)) {
       continue
+    }
+    if (unclosedTrailingFence && i >= parts.length && inner.trim() === '') {
+      break
     }
     out += '```' + inner + '```'
   }
@@ -146,18 +155,14 @@ function tripleBacktickFenceCount(s: string): number {
   return m ? m.length : 0
 }
 
-/** 首段 ``` 围栏内：仅 `json` 语言行且正文为空或 `{` 开头（与后端一致，避免误判 reasoner 思维链里的裸 `{` 围栏）。 */
+/** 首段 ``` 围栏内：存在 `json` / `markdown` / `md` 语言行且剥标后正文为空或 `{` 开头（与后端 `fenced_body_after_optional_jsonish_lang_label` 一致）。 */
 function firstFenceInnerLooksLikeJsonObject(s: string): boolean {
   const parts = s.split('```')
   if (parts.length < 2) return false
-  const inner = parts[1]
-  const rest = inner.replace(/^\s+/, '')
-  const firstLine = rest.split('\n')[0]?.trim() ?? ''
-  if (firstLine.toLowerCase() === 'json') {
-    const body = rest.split('\n').slice(1).join('\n').trim()
-    return body.length === 0 || body.startsWith('{')
-  }
-  return false
+  const body = fencedBodyAfterOptionalJsonishLangLabel(parts[1] ?? '')
+  if (body === null) return false
+  const b = body.trim()
+  return b.length === 0 || b.startsWith('{')
 }
 
 function looksLikeIncompleteAgentReplyPlanWholeJson(t: string): boolean {

@@ -80,7 +80,7 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 /// Plan v1 的 JSON 示例。
 pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …"}]}"#;
 
-/// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json 围栏，或整段即为单个 JSON 对象）。
+/// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json / \`\`\`markdown / \`\`\`md 等带语言行的围栏，或整段即为单个 JSON 对象）。
 /// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
 /// `failed_step_index` 为**零基**（对应 `plan.steps` 下标）；补丁的 `steps` 替换自该步起的后缀。
 /// 将合法 v1 规划序列化为单行 JSON（供分阶段规划轮/补丁助手消息写入历史）。
@@ -166,7 +166,7 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
     Ok(())
 }
 
-/// 候选 JSON 字符串：每个 fenced \`\`\` 块（奇数段）去掉可选的 `json` 语言行后尝试；再尝试整段 trim 后以 `{` 开头的全文。
+/// 候选 JSON 字符串：每个 fenced \`\`\` 块（奇数段）去掉可选语言行（`json` / `markdown` / `md`，忽略大小写；可含前导空行）后尝试；再尝试整段 trim 后以 `{` 开头的全文。
 fn collect_json_candidates(content: &str) -> Vec<String> {
     let mut out = Vec::new();
     let parts: Vec<&str> = content.split("```").collect();
@@ -342,17 +342,32 @@ pub fn format_agent_reply_plan_for_display(content: &str) -> Option<String> {
     Some(out.trim_end().to_string())
 }
 
-fn strip_optional_json_fence_label(raw: &str) -> String {
-    let mut lines = raw.lines();
-    let Some(first) = lines.next() else {
-        return raw.trim().to_string();
-    };
-    let first_t = first.trim();
-    if first_t.eq_ignore_ascii_case("json") {
-        lines.collect::<Vec<_>>().join("\n").trim().to_string()
-    } else {
-        raw.trim().to_string()
+/// 围栏内首段非空行若为 `json` / `markdown` / `md`（忽略大小写），返回剥去该行及前导空行后的正文（已 trim）；否则 `None`。
+///
+/// 与流式缓冲判定共用：无语言行时**不得**把「正文以 `{` 开头」当作规划 JSON（避免裸 \`\`\` 思维链误判）。
+pub(crate) fn fenced_body_after_optional_jsonish_lang_label(raw: &str) -> Option<String> {
+    let lines: Vec<&str> = raw.lines().collect();
+    let mut i = 0usize;
+    while i < lines.len() && lines[i].trim().is_empty() {
+        i += 1;
     }
+    if i >= lines.len() {
+        return None;
+    }
+    let first_t = lines[i].trim();
+    if first_t.eq_ignore_ascii_case("json")
+        || first_t.eq_ignore_ascii_case("markdown")
+        || first_t.eq_ignore_ascii_case("md")
+    {
+        Some(lines[i + 1..].join("\n").trim().to_string())
+    } else {
+        None
+    }
+}
+
+/// 围栏内首段非空行若为 `json` / `markdown` / `md`（忽略大小写），则剥去该行及之前的前导空行；否则返回 `raw.trim()`。
+pub(crate) fn strip_optional_json_fence_label(raw: &str) -> String {
+    fenced_body_after_optional_jsonish_lang_label(raw).unwrap_or_else(|| raw.trim().to_string())
 }
 
 fn fence_inner_should_hide_agent_reply_plan_json(inner: &str) -> bool {
@@ -376,8 +391,11 @@ fn fence_inner_should_hide_agent_reply_plan_json(inner: &str) -> bool {
 
 /// 从展示用正文中移除含 `agent_reply_plan` 的 Markdown 代码围栏块（``` … ```），
 /// 不修改 `Message.content`；日志仍可用 `debug!` 打印原文。
+///
+/// **未闭合且围栏内尚为空**（流式刚打出起始 ` ``` `、尚未写入语言行或正文）：不伪造收尾围栏。否则 `inner == ""` 时会拼出连续六个反引号（` ``` `` + `` + ``` `）。
 pub fn strip_agent_reply_plan_fence_blocks_for_display(content: &str) -> String {
     let parts: Vec<&str> = content.split("```").collect();
+    let unclosed_trailing_fence = parts.len().is_multiple_of(2);
     let mut out = String::new();
     let mut i = 0usize;
     while i < parts.len() {
@@ -390,6 +408,9 @@ pub fn strip_agent_reply_plan_fence_blocks_for_display(content: &str) -> String 
         i += 1;
         if fence_inner_should_hide_agent_reply_plan_json(inner) {
             continue;
+        }
+        if unclosed_trailing_fence && i >= parts.len() && inner.trim().is_empty() {
+            break;
         }
         out.push_str("```");
         out.push_str(inner);
@@ -478,7 +499,7 @@ mod tests {
         assert!(s.contains("先说明一句"));
         assert!(
             s.contains("agent_reply_plan"),
-            "语法未闭合时不应剥掉围栏内流式正文"
+            "语法未闭合且 inner 非空时仍保留围栏内流式正文（并带伪造收尾 ```，由上层缓冲抑制刷屏）"
         );
     }
 
@@ -488,6 +509,31 @@ mod tests {
         let p = parse_agent_reply_plan_v1(&content).unwrap();
         assert_eq!(p.steps.len(), 1);
         assert_eq!(p.steps[0].id, "a");
+    }
+
+    #[test]
+    fn parses_fenced_markdown_wrapped_plan_json() {
+        let content = format!("说明\n```markdown\n{}\n```\n", sample_json());
+        let p = parse_agent_reply_plan_v1(&content).unwrap();
+        assert_eq!(p.steps.len(), 1);
+        assert_eq!(p.steps[0].id, "a");
+    }
+
+    #[test]
+    fn strip_fence_removes_plan_json_markdown_fence() {
+        let j = sample_json();
+        let content = format!("说明\n```markdown\n{j}\n```\n");
+        let s = strip_agent_reply_plan_fence_blocks_for_display(&content);
+        assert!(s.contains("说明"));
+        assert!(!s.contains("agent_reply_plan"));
+        assert!(!s.contains("```"));
+    }
+
+    #[test]
+    fn strip_fence_unclosed_opening_does_not_emit_six_backticks() {
+        let s = strip_agent_reply_plan_fence_blocks_for_display("说明\n```");
+        assert_eq!(s, "说明\n");
+        assert!(!s.contains("```"));
     }
 
     #[test]

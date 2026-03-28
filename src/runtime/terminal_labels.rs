@@ -1,28 +1,30 @@
 //! CLI 对话里「我」「Agent」前缀的着色与加粗（`runtime::cli` 与 `llm::api` 共用）；
 //! 以及 **`plain_terminal_stream`** 下助手正文里 **`reasoning_content`**（偏亮冷灰）与 **`content`**（默认前景）的分色（尊重 **`NO_COLOR`**、非 TTY 不着色）。
+//! 输入提示 **`我:` / `bash#:`** 与 [`crate::runtime::cli_repl_ui`] 横幅/帮助同色，冒号后为固定分隔 **`▸`**。
 
 use log::debug;
 
+use crate::runtime::cli_repl_ui::{CLI_PROMPT_AFTER_COLON, CLI_PROMPT_BASH_FG, CLI_PROMPT_USER_FG};
 use crossterm::{
     QueueableCommand, queue,
     style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
 };
 use std::io::{self, IsTerminal, Write};
 
-/// 用户输入提示：`我: `，加粗 + 青色。
+/// 用户输入提示：`我: ▸ `，加粗 + 与横幅同系 RGB。
 pub(crate) fn write_user_message_prefix<W: Write + QueueableCommand>(w: &mut W) -> io::Result<()> {
     debug!(target: "crabmate::print", "CLI 写出用户输入提示前缀（我:）");
     queue!(
         w,
         SetAttribute(Attribute::Bold),
-        SetForegroundColor(Color::Cyan)
+        SetForegroundColor(CLI_PROMPT_USER_FG)
     )?;
-    write!(w, "我: ")?;
+    write!(w, "我:{CLI_PROMPT_AFTER_COLON}")?;
     queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
     Ok(())
 }
 
-/// REPL 本地 shell 一行模式下的输入提示：`bash#: `，加粗 + 黄色（与「我:」区分）。
+/// REPL 本地 shell 一行模式下的输入提示：`bash#: ▸ `，加粗 + 琥珀色（与「我:」区分）。
 pub(crate) fn write_repl_bash_prompt_prefix<W: Write + QueueableCommand>(
     w: &mut W,
 ) -> io::Result<()> {
@@ -30,9 +32,9 @@ pub(crate) fn write_repl_bash_prompt_prefix<W: Write + QueueableCommand>(
     queue!(
         w,
         SetAttribute(Attribute::Bold),
-        SetForegroundColor(Color::Yellow)
+        SetForegroundColor(CLI_PROMPT_BASH_FG)
     )?;
-    write!(w, "bash#: ")?;
+    write!(w, "bash#:{CLI_PROMPT_AFTER_COLON}")?;
     queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
     Ok(())
 }
