@@ -4,6 +4,8 @@
 //!
 //! 顶层键 **`crabmate_tool`**，内含 `v`（当前为 **1**）、`name`、`summary`（与 SSE / `summarize_tool_call` 同源）、
 //! `ok`、`exit_code`、`error_code`、`output`（工具原始返回正文，供模型阅读或再解析）。
+//! 经 [`maybe_compress_tool_message_content`] 截断时，会保留 **`output` 的首尾采样**（便于 grep/构建日志等仍见上下文），并写入
+//! **`output_truncated`**、**`output_original_chars`**、**`output_kept_head_chars`**、**`output_kept_tail_chars`** 供模型与 UI 引用。
 
 use std::borrow::Cow;
 
@@ -188,6 +190,33 @@ pub fn tool_message_content_ok_for_model(content: &str, tool_name_fallback: &str
     parse_legacy_output(tool_name_fallback, trimmed).ok
 }
 
+/// 为 `output` 字段生成首尾采样正文（Unicode 标量计数），`max_output_chars` 为**整个**替换后 `output` 字符串的字符上限。
+fn tool_output_head_tail_sample(original: &str, max_output_chars: usize) -> (String, usize, usize) {
+    let total = original.chars().count();
+    debug_assert!(total > max_output_chars);
+    // 分隔说明与尾注占用预算，避免采样后仍超 `tool_message_max_chars` 触发反复压缩
+    const MARKER_OVERHEAD: usize = 160;
+    let inner_budget = max_output_chars.saturating_sub(MARKER_OVERHEAD).max(16);
+    let half = inner_budget / 2;
+    let head_n = half.max(1).min(inner_budget.saturating_sub(1));
+    let tail_n = inner_budget.saturating_sub(head_n).max(1);
+    let head: String = original.chars().take(head_n).collect();
+    let tail: String = original
+        .chars()
+        .rev()
+        .take(tail_n)
+        .collect::<Vec<char>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let omitted = total.saturating_sub(head_n + tail_n);
+    let body = format!(
+        "{head}\n\n---\n…（省略约 {omitted} 字符）…\n---\n\n{tail}\n\n\
+         [输出已采样：原文约 {total} 字符；仅首尾片段进入模型上下文，可按路径缩小范围或分页读取后重试。]",
+    );
+    (body, head_n, tail_n)
+}
+
 pub fn tool_message_payload_for_inner_parse<'a>(content: &'a str) -> Cow<'a, str> {
     let t = content.trim();
     let Ok(v) = serde_json::from_str::<Value>(t) else {
@@ -202,7 +231,8 @@ pub fn tool_message_payload_for_inner_parse<'a>(content: &'a str) -> Cow<'a, str
     Cow::Owned(out.clone())
 }
 
-/// 对过长 `role: tool` 正文截断：若为 [`encode_tool_message_envelope_v1`] 形状，只截断 `output` 并保留信封元数据。
+/// 对过长 `role: tool` 正文截断：若为 [`encode_tool_message_envelope_v1`] 形状，对 **`output`** 做**首尾采样**并写入
+/// `output_truncated` / `output_original_chars` / `output_kept_*`；否则整段按前缀截断。
 pub fn maybe_compress_tool_message_content(content: &str, max_chars: usize) -> Option<String> {
     let max_chars = max_chars.max(256);
     let total_chars = content.chars().count();
@@ -215,11 +245,12 @@ pub fn maybe_compress_tool_message_content(content: &str, max_chars: usize) -> O
     {
         let out_chars = out.chars().count();
         if out_chars > max_chars {
-            let truncated: String = out.chars().take(max_chars).collect();
-            *out = format!(
-                "{}\n\n[... 已截断，原始约 {} 字符，保留前 {} 字符 ...]",
-                truncated, out_chars, max_chars
-            );
+            let (sampled, head_n, tail_n) = tool_output_head_tail_sample(out, max_chars);
+            *out = sampled;
+            ct.insert("output_truncated".into(), Value::Bool(true));
+            ct.insert("output_original_chars".into(), Value::from(out_chars));
+            ct.insert("output_kept_head_chars".into(), Value::from(head_n as u64));
+            ct.insert("output_kept_tail_chars".into(), Value::from(tail_n as u64));
             return serde_json::to_string(&v).ok();
         }
     }
@@ -305,6 +336,23 @@ mod tests {
         let out = maybe_compress_tool_message_content(&env, 100).expect("compress");
         assert!(out.len() < env.len());
         let inner = tool_message_payload_for_inner_parse(&out);
-        assert!(inner.contains("[... 已截断"));
+        assert!(
+            inner.contains("输出已采样") || inner.contains("省略约"),
+            "expected head/tail sample markers in {}",
+            inner
+        );
+        let v: Value = serde_json::from_str(&out).expect("json");
+        let ct = v
+            .get("crabmate_tool")
+            .and_then(|x| x.as_object())
+            .expect("ct");
+        assert_eq!(
+            ct.get("output_truncated").and_then(|x| x.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            ct.get("output_original_chars").and_then(|x| x.as_u64()),
+            Some(500)
+        );
     }
 }

@@ -104,7 +104,7 @@ model = "deepseek-reasoner"
 
 ## 上下文窗口
 
-请求前会压缩 `messages`：工具输出截断、条数上限、`context_char_budget`、可选 LLM 摘要等。详见 `default_config.toml` 与 **`docs/DEVELOPMENT.md`**。
+请求前会压缩 `messages`：条数上限、`context_char_budget`、可选 LLM 摘要等。其中 **`tool_message_max_chars`**（`AGENT_TOOL_MESSAGE_MAX_CHARS`）：单条 `role: tool` 在**发往模型前**若超长则压缩；启用 **`tool_result_envelope_v1`** 时对 `crabmate_tool.output` 采用**首尾采样**并附带 `output_truncated` 等字段（见 **`docs/DEVELOPMENT.md`**）。详见 `default_config.toml`。
 
 ## Web 对话队列（`chat_queue_*`）
 

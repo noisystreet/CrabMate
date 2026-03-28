@@ -47,17 +47,52 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
                 .and_then(|x| x.as_str())
                 .unwrap_or("")
                 .trim();
+            let trunc_note = if ct.get("output_truncated").and_then(|x| x.as_bool()) == Some(true) {
+                let orig = ct
+                    .get("output_original_chars")
+                    .and_then(|x| x.as_u64())
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                let head = ct
+                    .get("output_kept_head_chars")
+                    .and_then(|x| x.as_u64())
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                let tail = ct
+                    .get("output_kept_tail_chars")
+                    .and_then(|x| x.as_u64())
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                Some(format!(
+                    "（输出已压缩入上下文：原文约 {orig} 字符，保留首尾约 {head}+{tail} 字符；见 `output` 内采样与说明。）"
+                ))
+            } else {
+                None
+            };
             if include_raw {
                 let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
                 if summary.is_empty() {
-                    return format!("{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}");
+                    return match trunc_note {
+                        Some(ref note) if !note.is_empty() => {
+                            format!("{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
+                        }
+                        _ => format!("{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}"),
+                    };
                 }
-                return format!("{summary}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}");
+                return match trunc_note {
+                    Some(ref note) if !note.is_empty() => {
+                        format!("{summary}\n{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
+                    }
+                    _ => format!("{summary}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}"),
+                };
             }
             if summary.is_empty() {
-                return String::new();
+                return trunc_note.unwrap_or_default();
             }
-            return summary.to_string();
+            return match trunc_note {
+                Some(note) if !note.is_empty() => format!("{summary}\n{note}"),
+                _ => summary.to_string(),
+            };
         }
         if include_raw {
             if let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) {
@@ -591,6 +626,15 @@ mod tests {
         assert!(full.starts_with("读文件：a.rs"));
         assert!(full.contains(TOOL_OUTPUT_SECTION_HEADLINE));
         assert!(full.contains("crabmate_tool"));
+    }
+
+    #[test]
+    fn tool_crabmate_truncated_shows_note_beside_summary() {
+        let raw = r#"{"crabmate_tool":{"v":1,"name":"run_command","summary":"grep","ok":true,"output":"x","output_truncated":true,"output_original_chars":9999,"output_kept_head_chars":40,"output_kept_tail_chars":40}}"#;
+        let chat = tool_content_for_display_impl(raw, false);
+        assert!(chat.contains("grep"));
+        assert!(chat.contains("输出已压缩入上下文"));
+        assert!(chat.contains("9999"));
     }
 
     #[test]
