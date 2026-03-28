@@ -77,12 +77,14 @@ async fn emit_tool_result_sse_and_append(
     };
 
     if echo_terminal_transcript {
+        let omit_body = matches!(name, "read_file" | "list_tree");
         let _ = crate::runtime::terminal_cli_transcript::print_tool_result_terminal(
             name,
             args,
             tool_summary.as_deref(),
             &result,
             terminal_tool_display_max_chars,
+            omit_body,
         );
     }
 

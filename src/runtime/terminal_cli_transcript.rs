@@ -140,27 +140,24 @@ pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Re
 /// 工具执行结束后打印名称与正文（正文用完整格式化，与聊天区「可省略实际输出」策略独立），过长按 `max_chars` 截断（近似字符数）。
 ///
 /// 标题行为 `### 工具 · {name}`；有详情时统一为 **`### 工具 · {name} : …`**（摘要已以 `:` 开头时不再重复冒号），例：`run_command` + `ls -la` → `### 工具 · run_command : ls -la`，`create_file` + 去重后 `: a.cpp` → `### 工具 · create_file : a.cpp`。
+///
+/// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（用于 `read_file` / `list_tree` 等易刷屏工具；完整结果仍由调用方写入对话历史）。
 pub(crate) fn print_tool_result_terminal(
     name: &str,
     args: &str,
     summary: Option<&str>,
     raw_result: &str,
     max_chars: usize,
+    omit_body: bool,
 ) -> io::Result<()> {
     debug!(
         target: "crabmate::print",
-        "CLI 打印工具结果 tool={} raw_len={} raw_preview={}",
+        "CLI 打印工具结果 tool={} omit_body={} raw_len={} raw_preview={}",
         name,
+        omit_body,
         raw_result.len(),
         redact::preview_chars(raw_result, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
-    let mut body = tool_content_for_display_full(raw_result);
-    body = latex_math_to_unicode(&body);
-    let n = body.chars().count();
-    if n > max_chars {
-        let take: String = body.chars().take(max_chars.saturating_sub(1)).collect();
-        body = format!("{take}…\n[输出已截断，原约 {n} 字；完整内容已写入对话历史]");
-    }
     let mut w = io::stdout();
     let color = cli_repl_stdout_use_color();
     let title_rest = tool_result_header_detail(args, summary).map(|d| {
@@ -186,6 +183,22 @@ pub(crate) fn print_tool_result_terminal(
     if color {
         queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
         queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
+    }
+    if omit_body {
+        writeln!(w, "（已省略输出正文；完整内容在对话上下文）")?;
+        if color {
+            queue!(w, ResetColor)?;
+        }
+        w.flush()?;
+        return Ok(());
+    }
+
+    let mut body = tool_content_for_display_full(raw_result);
+    body = latex_math_to_unicode(&body);
+    let n = body.chars().count();
+    if n > max_chars {
+        let take: String = body.chars().take(max_chars.saturating_sub(1)).collect();
+        body = format!("{take}…\n[输出已截断，原约 {n} 字；完整内容已写入对话历史]");
     }
     writeln!(w, "{body}")?;
     if color {
