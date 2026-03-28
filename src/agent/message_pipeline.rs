@@ -5,10 +5,48 @@
 //! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩、条数/字符裁剪、孤立 `tool` 剔除、合并相邻 `assistant`（保留会话尾部空占位语义，见 [`crate::types::normalize_messages_for_openai_compatible_request`] 文档）。实现原在 [`super::context_window`]，现经本模块编排。
 //! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、去掉 `reasoning_content`、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）。**不**写入会话 `Vec`。
 //!
+//! ## 会话同步顺序契约（勿打乱）
+//!
+//! 对 [`apply_session_sync_pipeline`] / [`apply_session_sync_pipeline_with_config`] 中**固定**为：
+//!
+//! 1. 记录起点快照（`SessionSyncStart`）
+//! 2. **`compress_tool_message_contents`**（`tool_message_max_chars`）
+//! 3. **`trim_messages_by_count`**（`max_message_history`）
+//! 4. 若 **`context_char_budget > 0`**：`trim_messages_by_char_budget` → 再次 **`compress_tool_message_contents`**
+//! 5. **`drop_orphan_tool_messages`**
+//! 6. **`merge_consecutive_assistants_in_place`**
+//!
+//! 新增步骤须同步更新 [`MessagePipelineStage`]、本列表、以及 `docs/DEVELOPMENT.md` 中上下文策略描述。
+//!
+//! ## 可观测性
+//!
+//! - **Debug**：`context_window` 在 `RUST_LOG` 含 debug 时打一行汇总（`message_pipeline session_sync: …`）。
+//! - **Trace**：`target=crabmate::message_pipeline`，每步一行 `session_sync_step stage=… message_count=… non_system_chars_est=…`（便于 grep/采集）；设置 `RUST_LOG=crabmate::message_pipeline=trace`。
+//!
 //! 新增处理步骤时：优先在本文件增加 `MessagePipelineStage` 变体，并在 `apply_session_sync_pipeline` 中按固定顺序调用，避免在 `agent_turn` / `llm` 多处散落。
 
 use crate::config::AgentConfig;
 use crate::types::Message;
+
+/// 会话同步管道所用配置子集（便于测试与不依赖完整 [`AgentConfig`]）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MessagePipelineConfig {
+    pub tool_message_max_chars: usize,
+    pub max_message_history: usize,
+    pub context_char_budget: usize,
+    pub context_min_messages_after_system: usize,
+}
+
+impl From<&AgentConfig> for MessagePipelineConfig {
+    fn from(cfg: &AgentConfig) -> Self {
+        Self {
+            tool_message_max_chars: cfg.tool_message_max_chars,
+            max_message_history: cfg.max_message_history,
+            context_char_budget: cfg.context_char_budget,
+            context_min_messages_after_system: cfg.context_min_messages_after_system,
+        }
+    }
+}
 
 // ── 会话侧：估算与逐步变换（由 `apply_session_sync_pipeline` 编排）────────────
 
@@ -236,7 +274,7 @@ impl MessagePipelineReport {
         });
     }
 
-    /// 单行摘要，便于 `tracing` / `log`。
+    /// 单行摘要，便于 `log` debug 汇总。
     pub fn format_for_log(&self) -> String {
         let parts: Vec<String> = self
             .steps
@@ -254,27 +292,54 @@ impl MessagePipelineReport {
     }
 }
 
-/// 每次调用模型前对会话 `messages` 的**同步**变换（工具压缩 → 条数 → 可选字符预算 → 再压缩 → 孤立 tool → 合并 assistant）。
-///
-/// `report` 为 `Some` 时写入各步快照（建议在 `RUST_LOG` 含 debug 时传入）。
-pub fn apply_session_sync_pipeline(
-    messages: &mut Vec<Message>,
-    cfg: &AgentConfig,
-    mut report: Option<&mut MessagePipelineReport>,
+fn log_session_sync_step(stage: MessagePipelineStage, messages: &[Message]) {
+    log::trace!(
+        target: "crabmate::message_pipeline",
+        "session_sync_step stage={} message_count={} non_system_chars_est={}",
+        stage.as_str(),
+        messages.len(),
+        estimate_non_system_chars(messages),
+    );
+}
+
+fn record_and_trace(
+    report: &mut Option<&mut MessagePipelineReport>,
+    stage: MessagePipelineStage,
+    messages: &[Message],
 ) {
     if let Some(r) = report.as_mut() {
-        r.record(MessagePipelineStage::SessionSyncStart, messages);
+        r.record(stage, messages);
     }
+    log_session_sync_step(stage, messages);
+}
+
+/// 每次调用模型前对会话 `messages` 的**同步**变换；配置为 [`MessagePipelineConfig`]（单测可构造轻量配置）。
+///
+/// `report` 为 `Some` 时写入各步快照（`context_window` 在 debug 时传入）；**任意** `RUST_LOG` 含 **`crabmate::message_pipeline=trace`** 时每步另打结构化 trace。
+pub fn apply_session_sync_pipeline_with_config(
+    messages: &mut Vec<Message>,
+    cfg: MessagePipelineConfig,
+    mut report: Option<&mut MessagePipelineReport>,
+) {
+    record_and_trace(
+        &mut report,
+        MessagePipelineStage::SessionSyncStart,
+        messages,
+    );
 
     compress_tool_message_contents(messages, cfg.tool_message_max_chars);
-    if let Some(r) = report.as_mut() {
-        r.record(MessagePipelineStage::AfterCompressTool, messages);
-    }
+    record_and_trace(
+        &mut report,
+        MessagePipelineStage::AfterCompressTool,
+        messages,
+    );
 
     trim_messages_by_count(messages, cfg.max_message_history);
-    if let Some(r) = report.as_mut() {
-        r.record(MessagePipelineStage::AfterTrimByCount, messages);
-    }
+    record_and_trace(
+        &mut report,
+        MessagePipelineStage::AfterTrimByCount,
+        messages,
+    );
 
     if cfg.context_char_budget > 0 {
         trim_messages_by_char_budget(
@@ -282,24 +347,41 @@ pub fn apply_session_sync_pipeline(
             cfg.context_char_budget,
             cfg.context_min_messages_after_system,
         );
-        if let Some(r) = report.as_mut() {
-            r.record(MessagePipelineStage::AfterTrimByCharBudget, messages);
-        }
+        record_and_trace(
+            &mut report,
+            MessagePipelineStage::AfterTrimByCharBudget,
+            messages,
+        );
         compress_tool_message_contents(messages, cfg.tool_message_max_chars);
-        if let Some(r) = report.as_mut() {
-            r.record(MessagePipelineStage::AfterSecondCompressTool, messages);
-        }
+        record_and_trace(
+            &mut report,
+            MessagePipelineStage::AfterSecondCompressTool,
+            messages,
+        );
     }
 
     drop_orphan_tool_messages(messages);
-    if let Some(r) = report.as_mut() {
-        r.record(MessagePipelineStage::AfterDropOrphanTool, messages);
-    }
+    record_and_trace(
+        &mut report,
+        MessagePipelineStage::AfterDropOrphanTool,
+        messages,
+    );
 
     crate::types::merge_consecutive_assistants_in_place(messages);
-    if let Some(r) = report.as_mut() {
-        r.record(MessagePipelineStage::AfterMergeAssistantsInPlace, messages);
-    }
+    record_and_trace(
+        &mut report,
+        MessagePipelineStage::AfterMergeAssistantsInPlace,
+        messages,
+    );
+}
+
+/// 与 [`apply_session_sync_pipeline_with_config`] 相同，从完整 [`AgentConfig`] 取子集。
+pub fn apply_session_sync_pipeline(
+    messages: &mut Vec<Message>,
+    cfg: &AgentConfig,
+    report: Option<&mut MessagePipelineReport>,
+) {
+    apply_session_sync_pipeline_with_config(messages, MessagePipelineConfig::from(cfg), report);
 }
 
 // ── 供应商出站（ChatRequest.messages）────────────────────────────────────────
@@ -565,5 +647,99 @@ mod tests {
             crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(&slice),
         );
         assert_eq!(via, manual);
+    }
+
+    #[test]
+    fn pipeline_report_skips_char_budget_stages_when_budget_zero() {
+        let mut v = vec![
+            Message::system_only("s"),
+            Message::user_only("a"),
+            Message::user_only("b"),
+        ];
+        let cfg = MessagePipelineConfig {
+            tool_message_max_chars: 512,
+            max_message_history: 10,
+            context_char_budget: 0,
+            context_min_messages_after_system: 1,
+        };
+        let mut report = MessagePipelineReport::default();
+        apply_session_sync_pipeline_with_config(&mut v, cfg, Some(&mut report));
+        let stages: Vec<MessagePipelineStage> = report.steps.iter().map(|s| s.stage).collect();
+        assert!(
+            !stages.contains(&MessagePipelineStage::AfterTrimByCharBudget),
+            "budget=0 不应出现 AfterTrimByCharBudget: {:?}",
+            stages
+        );
+        assert!(
+            !stages.contains(&MessagePipelineStage::AfterSecondCompressTool),
+            "budget=0 不应出现 AfterSecondCompressTool: {:?}",
+            stages
+        );
+        assert_eq!(
+            stages.first(),
+            Some(&MessagePipelineStage::SessionSyncStart)
+        );
+        assert_eq!(
+            stages.last(),
+            Some(&MessagePipelineStage::AfterMergeAssistantsInPlace)
+        );
+    }
+
+    #[test]
+    fn pipeline_report_includes_char_trim_and_second_compress_when_budget_positive() {
+        let mut v = vec![
+            Message::system_only("s"),
+            Message::user_only("x".repeat(100)),
+            Message::user_only("y".repeat(100)),
+        ];
+        let cfg = MessagePipelineConfig {
+            tool_message_max_chars: 512,
+            max_message_history: 10,
+            context_char_budget: 50,
+            context_min_messages_after_system: 1,
+        };
+        let mut report = MessagePipelineReport::default();
+        apply_session_sync_pipeline_with_config(&mut v, cfg, Some(&mut report));
+        let stages: Vec<MessagePipelineStage> = report.steps.iter().map(|s| s.stage).collect();
+        assert!(
+            stages.contains(&MessagePipelineStage::AfterTrimByCharBudget),
+            "budget>0 且超长时应出现 AfterTrimByCharBudget: {:?}",
+            stages
+        );
+        assert!(
+            stages.contains(&MessagePipelineStage::AfterSecondCompressTool),
+            "budget>0 时应出现第二次 compress 阶段: {:?}",
+            stages
+        );
+    }
+
+    #[test]
+    fn drop_orphan_after_trim_count_in_full_pipeline() {
+        // 条数裁剪后尾部以 `tool`+`user` 开头，前面的 `assistant+tool_calls` 被裁掉 → 孤立 tool 须由管道剔除。
+        let mut v = vec![
+            Message::system_only("s"),
+            Message::user_only("old"),
+            assistant_with_tool_calls(),
+            tool_msg("t1"),
+            Message::user_only("last"),
+        ];
+        let cfg = MessagePipelineConfig {
+            tool_message_max_chars: 512,
+            max_message_history: 2,
+            context_char_budget: 0,
+            context_min_messages_after_system: 1,
+        };
+        apply_session_sync_pipeline_with_config(&mut v, cfg, None);
+        assert!(
+            !v.iter().any(|m| m.role == "tool"),
+            "trim 后 tool 无有效前驱时应被 drop_orphan 剔除: {:?}",
+            v.iter().map(|m| m.role.as_str()).collect::<Vec<_>>()
+        );
+        assert!(
+            v.iter()
+                .any(|m| m.role == "user" && m.content.as_deref() == Some("last")),
+            "应保留尾部 user: {:?}",
+            v
+        );
     }
 }
