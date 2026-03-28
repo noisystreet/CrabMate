@@ -8,6 +8,11 @@ export type StoredMessage = {
   state?: 'loading' | 'error'
   collapsed?: boolean
   isToolOutput?: boolean
+  /** Web 时间线节点（不入导出 JSON 的 OpenAI 形） */
+  isTimelineMarker?: boolean
+  timelineKind?: string
+  timelineTitle?: string
+  timelineDetail?: string
   errorKind?: 'network' | 'timeout' | 'server' | 'unknown'
   canRetry?: boolean
 }

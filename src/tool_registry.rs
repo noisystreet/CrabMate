@@ -28,6 +28,16 @@ fn web_tool_err_workspace_not_set(action_zh: &str) -> String {
     format!("错误：未设置工作区，禁止{action_zh}。{WEB_WORKSPACE_PANEL_HINT}")
 }
 
+/// 在配置白名单基础上追加一条命令名（`run_command` 审批通过路径共用）。
+fn extend_allowed_commands_arc(
+    base: &std::sync::Arc<[String]>,
+    cmd: &str,
+) -> std::sync::Arc<[String]> {
+    let mut v: Vec<String> = base.iter().cloned().collect();
+    v.push(cmd.to_string());
+    v.into()
+}
+
 // --- 元数据（文档 / 将来 OpenAPI 生成）---
 
 /// 工具在运行时的执行类别。
@@ -595,9 +605,7 @@ async fn execute_run_command_impl(
             (None, None) => false,
         };
         if already_allowed {
-            let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
-            v.push(cmd.clone());
-            effective_allowed_arc = v.into();
+            effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, &cmd);
         } else if let Some(ctx) = web_ctx {
             let decision = {
                 let _guard = ctx.approval_request_guard.lock().await;
@@ -623,28 +631,34 @@ async fn execute_run_command_impl(
                     .await
                     .unwrap_or(CommandApprovalDecision::Deny)
             };
+            let cmd_show = if arg_preview.is_empty() {
+                cmd.clone()
+            } else {
+                format!("{} {}", cmd, arg_preview)
+            };
+            crate::sse::web_approval::send_timeline_approval_decision(
+                &ctx.out_tx,
+                "命令审批：",
+                Some(cmd_show.trim().to_string()),
+                decision,
+                "tool_registry::run_command approval timeline",
+            )
+            .await;
             match decision {
                 CommandApprovalDecision::Deny => {
-                    let cmd_show = if arg_preview.is_empty() {
-                        cmd
-                    } else {
-                        format!("{} {}", cmd, arg_preview)
-                    };
                     return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
                 }
                 CommandApprovalDecision::AllowOnce => {
-                    let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
-                    v.push(cmd.clone());
-                    effective_allowed_arc = v.into();
+                    effective_allowed_arc =
+                        extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
                 }
                 CommandApprovalDecision::AllowAlways => {
                     ctx.persistent_allowlist_shared
                         .lock()
                         .await
                         .insert(cmd.clone());
-                    let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
-                    v.push(cmd.clone());
-                    effective_allowed_arc = v.into();
+                    effective_allowed_arc =
+                        extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
                 }
             }
         } else if let Some(ctx) = cli_ctx {
@@ -659,9 +673,7 @@ async fn execute_run_command_impl(
                     .iter()
                     .any(|e| e.eq_ignore_ascii_case(&cmd))
             {
-                let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
-                v.push(cmd.clone());
-                effective_allowed_arc = v.into();
+                effective_allowed_arc = extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
             } else {
                 eprintln!(
                     "\n[run_command 审批] 命令不在白名单: {}\n  输入 y 执行一次 | a 永久允许该命令名（本会话）| 其它或回车拒绝\n",
@@ -674,18 +686,16 @@ async fn execute_run_command_impl(
                         return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
                     }
                     CommandApprovalDecision::AllowOnce => {
-                        let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
-                        v.push(cmd.clone());
-                        effective_allowed_arc = v.into();
+                        effective_allowed_arc =
+                            extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
                     }
                     CommandApprovalDecision::AllowAlways => {
                         ctx.persistent_allowlist_shared
                             .lock()
                             .await
                             .insert(cmd.clone());
-                        let mut v: Vec<String> = cfg.allowed_commands.iter().cloned().collect();
-                        v.push(cmd.clone());
-                        effective_allowed_arc = v.into();
+                        effective_allowed_arc =
+                            extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
                     }
                 }
             }
@@ -772,6 +782,14 @@ async fn execute_http_fetch_web(
                     .await
                     .unwrap_or(CommandApprovalDecision::Deny)
             };
+            crate::sse::web_approval::send_timeline_approval_decision(
+                &ctx.out_tx,
+                "http_fetch 审批：",
+                Some(approval_args.clone()),
+                decision,
+                "tool_registry::http_fetch approval timeline",
+            )
+            .await;
             match decision {
                 CommandApprovalDecision::Deny => {
                     return (format!("用户拒绝 http_fetch：{}", approval_args), None);

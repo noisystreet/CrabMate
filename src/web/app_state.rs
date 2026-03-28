@@ -72,6 +72,46 @@ impl ConversationBacking {
     }
 }
 
+async fn sqlite_conversation_store_op(
+    conn: Arc<std::sync::Mutex<rusqlite::Connection>>,
+    id_log: String,
+    op_zh: &'static str,
+    run: impl FnOnce(&rusqlite::Connection) -> Result<SaveConversationOutcome, rusqlite::Error>
+    + Send
+    + 'static,
+) -> SaveConversationOutcome {
+    match tokio::task::spawn_blocking(move || {
+        let g = conn
+            .lock()
+            .map_err(|e: std::sync::PoisonError<_>| e.to_string())?;
+        run(&g).map_err(|e: rusqlite::Error| e.to_string())
+    })
+    .await
+    {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => {
+            log::error!(
+                target: "crabmate",
+                "会话 SQLite {}失败 conversation_id={} error={}",
+                op_zh,
+                id_log,
+                e
+            );
+            SaveConversationOutcome::Conflict
+        }
+        Err(e) => {
+            log::error!(
+                target: "crabmate",
+                "会话 SQLite {}任务失败 conversation_id={} error={}",
+                op_zh,
+                id_log,
+                e
+            );
+            SaveConversationOutcome::Conflict
+        }
+    }
+}
+
 impl AppState {
     pub(crate) fn web_api_auth_enabled(&self) -> bool {
         !self.cfg.web_api_bearer_token.trim().is_empty()
@@ -217,35 +257,68 @@ impl AppState {
                 let id_log = id.clone();
                 let c = Arc::clone(conn);
                 let exp = expected_revision;
-                match tokio::task::spawn_blocking(move || {
-                    let g = c
-                        .lock()
-                        .map_err(|e: std::sync::PoisonError<_>| e.to_string())?;
-                    conversation_store::save_if_revision(&g, &id, messages, exp)
-                        .map_err(|e: rusqlite::Error| e.to_string())
+                sqlite_conversation_store_op(c, id_log, "保存", move |g| {
+                    conversation_store::save_if_revision(g, &id, messages, exp)
                 })
                 .await
-                {
-                    Ok(Ok(out)) => out,
-                    Ok(Err(e)) => {
-                        log::error!(
-                            target: "crabmate",
-                            "会话 SQLite 保存失败 conversation_id={} error={}",
-                            id_log,
-                            e
-                        );
-                        SaveConversationOutcome::Conflict
-                    }
-                    Err(e) => {
-                        log::error!(
-                            target: "crabmate",
-                            "会话 SQLite 保存任务失败 conversation_id={} error={}",
-                            id_log,
-                            e
-                        );
-                        SaveConversationOutcome::Conflict
+            }
+        }
+    }
+
+    /// 截断到第 `user_ordinal` 条**普通**用户消息之前（0-based，不含长期记忆注入），且仅当 `revision` 匹配时成功。
+    pub(crate) async fn truncate_conversation_before_user_ordinal_if_revision(
+        &self,
+        conversation_id: String,
+        user_ordinal: usize,
+        expected_revision: u64,
+    ) -> SaveConversationOutcome {
+        match &self.conversation_backing {
+            ConversationBacking::Memory(map) => {
+                let mut guard = map.write().await;
+                let Some(entry) = guard.get_mut(&conversation_id) else {
+                    return SaveConversationOutcome::Conflict;
+                };
+                if entry.updated_at.elapsed() > CONVERSATION_STORE_TTL {
+                    guard.remove(&conversation_id);
+                    return SaveConversationOutcome::Conflict;
+                }
+                if entry.revision != expected_revision {
+                    return SaveConversationOutcome::Conflict;
+                }
+                let mut u = 0usize;
+                let mut cut = entry.messages.len();
+                for (i, m) in entry.messages.iter().enumerate() {
+                    if m.role == "user" && !crate::types::is_long_term_memory_injection(m) {
+                        if u == user_ordinal {
+                            cut = i;
+                            break;
+                        }
+                        u += 1;
                     }
                 }
+                if cut >= entry.messages.len() {
+                    entry.updated_at = std::time::Instant::now();
+                    return SaveConversationOutcome::Saved;
+                }
+                entry.messages.truncate(cut);
+                entry.revision = entry.revision.saturating_add(1);
+                entry.updated_at = std::time::Instant::now();
+                Self::prune_memory_locked(&mut guard, std::time::Instant::now());
+                SaveConversationOutcome::Saved
+            }
+            ConversationBacking::Sqlite(conn) => {
+                let id = conversation_id;
+                let id_log = id.clone();
+                let c = Arc::clone(conn);
+                sqlite_conversation_store_op(c, id_log, "截断", move |g| {
+                    conversation_store::truncate_before_user_ordinal_if_revision(
+                        g,
+                        &id,
+                        user_ordinal,
+                        expected_revision,
+                    )
+                })
+                .await
             }
         }
     }

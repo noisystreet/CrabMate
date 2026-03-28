@@ -4,7 +4,7 @@ mod chat_handlers;
 mod tasks_types;
 
 pub(crate) use app_state::{AppState, ConversationBacking, open_conversation_sqlite};
-pub(crate) use chat_handlers::{cleanup_uploads_dir, save_outcome_to_stream_error_line};
+pub(crate) use chat_handlers::{cleanup_uploads_dir, conversation_conflict_sse_line};
 
 #[cfg(test)]
 pub(crate) use chat_handlers::normalize_client_conversation_id;
