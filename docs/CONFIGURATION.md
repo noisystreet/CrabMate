@@ -74,6 +74,8 @@ model = "deepseek-reasoner"
 
 `system_prompt` 与 `system_prompt_file` 二选一（文件优先）；均未配置则启动报错。
 
+嵌入的 **`default_config.toml`** 默认 `system_prompt` 中含一条工具使用约定：**同一工作区路径在未被修改前不要重复 `read_file`**，应直接引用对话历史中已有的 `role: tool` 结果（除非需核对行号或内容已变）。若你完全自定义 `system_prompt`，请自行决定是否保留类似表述。
+
 ## Cursor-like 规则注入
 
 `cursor_rules_enabled` 为真时读取 `cursor_rules_dir` 下 `*.mdc`（可附加 `AGENTS.md`），拼到系统提示词末尾，长度受 `cursor_rules_max_chars` 限制。
