@@ -37,21 +37,36 @@ pub(crate) enum ExecuteToolsBatchOutcome {
     /// SSE 在工具执行中断开
     AbortedSse,
 }
-/// 单工具：SSE / 终端回显 + 追加 `tool` 与可选反思 `user`（与串行路径一致）。
-#[allow(clippy::too_many_arguments)]
-async fn emit_tool_result_sse_and_append(
-    messages: &mut Vec<Message>,
-    per_coord: &mut PerCoordinator,
-    out: Option<&mpsc::Sender<String>>,
+
+/// 单工具：SSE / 终端回显 + 追加 `tool` 与可选反思 `user`（与串行路径一致）的入参。
+struct EmitToolResultParams<'a> {
+    out: Option<&'a mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
-    name: &str,
-    args: &str,
-    id: &str,
+    name: &'a str,
+    args: &'a str,
+    id: &'a str,
     result: String,
     reflection_inject: Option<serde_json::Value>,
+}
+
+async fn emit_tool_result_sse_and_append(
+    messages: &mut Vec<Message>,
+    per_coord: &mut PerCoordinator,
+    p: EmitToolResultParams<'_>,
 ) {
+    let EmitToolResultParams {
+        out,
+        echo_terminal_transcript,
+        terminal_tool_display_max_chars,
+        tool_result_envelope_v1,
+        name,
+        args,
+        id,
+        result,
+        reflection_inject,
+    } = p;
     let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
     let tool_summary = if let Some(ref parsed) = args_parsed {
         tools::summarize_tool_call_parsed(name, parsed)
@@ -312,15 +327,17 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
             emit_tool_result_sse_and_append(
                 messages,
                 per_coord,
-                out,
-                echo_terminal_transcript,
-                terminal_tool_display_max_chars,
-                tool_result_envelope_v1,
-                &tc.function.name,
-                &tc.function.arguments,
-                &tc.id,
-                cached,
-                None,
+                EmitToolResultParams {
+                    out,
+                    echo_terminal_transcript,
+                    terminal_tool_display_max_chars,
+                    tool_result_envelope_v1,
+                    name: &tc.function.name,
+                    args: &tc.function.arguments,
+                    id: &tc.id,
+                    result: cached,
+                    reflection_inject: None,
+                },
             )
             .await;
         }
@@ -360,15 +377,17 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 emit_tool_result_sse_and_append(
                     messages,
                     per_coord,
-                    out,
-                    echo_terminal_transcript,
-                    terminal_tool_display_max_chars,
-                    tool_result_envelope_v1,
-                    &name,
-                    &args,
-                    &id,
-                    cached.clone(),
-                    None,
+                    EmitToolResultParams {
+                        out,
+                        echo_terminal_transcript,
+                        terminal_tool_display_max_chars,
+                        tool_result_envelope_v1,
+                        name: name.as_str(),
+                        args: args.as_str(),
+                        id: id.as_str(),
+                        result: cached.clone(),
+                        reflection_inject: None,
+                    },
                 )
                 .await;
                 continue;
@@ -415,15 +434,17 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
             emit_tool_result_sse_and_append(
                 messages,
                 per_coord,
-                out,
-                echo_terminal_transcript,
-                terminal_tool_display_max_chars,
-                tool_result_envelope_v1,
-                &name,
-                &args,
-                &id,
-                result,
-                reflection_inject,
+                EmitToolResultParams {
+                    out,
+                    echo_terminal_transcript,
+                    terminal_tool_display_max_chars,
+                    tool_result_envelope_v1,
+                    name: name.as_str(),
+                    args: args.as_str(),
+                    id: id.as_str(),
+                    result,
+                    reflection_inject,
+                },
             )
             .await;
         }
