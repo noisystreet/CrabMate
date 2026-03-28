@@ -1,4 +1,4 @@
-//! 受控 HTTP GET / HEAD（仅 https/http）；**CLI** 下 URL 未匹配 `http_fetch_allowed_prefixes` 时走 **`runtime::cli_approval`**（与 `run_command` 同套拒绝/一次/永久同意；**`--yes`** 亦跳过提示）。
+//! 受控 HTTP：`http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）。**CLI / Web 流式**下 URL 未匹配 `http_fetch_allowed_prefixes` 时走与 `run_command` 同类的审批（**`runtime::cli_approval`** / SSE）；**`--yes`** 亦跳过 CLI 提示。`workflow_execute` 等 **`run_tool` 同步路径**仍仅白名单前缀。
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -142,12 +142,24 @@ pub fn parse_http_request_args(
     Ok((url, method, json_body))
 }
 
-/// 永久允许列表与审批判定的键（小写、无 query/fragment）；与 GET/HEAD 共用。
+/// 永久允许列表与审批判定的键（小写、无 query/fragment）；**仅** `http_fetch`（GET/HEAD）使用。
 pub fn storage_key(url: &Url) -> String {
     let mut u = url.clone();
     u.set_query(None);
     u.set_fragment(None);
     format!("http_fetch:{}", u.as_str().to_lowercase())
+}
+
+/// `http_request`（POST/PUT/PATCH/DELETE）审批白名单键：含 **HTTP 方法**，避免与同源 URL 的 `http_fetch` 键混用。
+pub fn request_storage_key(method: RequestMethod, url: &Url) -> String {
+    let mut u = url.clone();
+    u.set_query(None);
+    u.set_fragment(None);
+    format!(
+        "http_request:{}:{}",
+        method.as_str(),
+        u.as_str().to_lowercase()
+    )
 }
 
 /// 审批界面与日志用：隐藏 query 内容
@@ -167,6 +179,20 @@ pub fn approval_args_display(method: FetchMethod, url: &Url) -> String {
         FetchMethod::Get => r,
         FetchMethod::Head => format!("HEAD {}", r),
     }
+}
+
+/// `http_request` 审批展示：方法 + 脱敏 URL；不展示 body 内容。
+pub fn approval_args_display_request(
+    method: RequestMethod,
+    url: &Url,
+    has_json_body: bool,
+) -> String {
+    let r = display_redacted(url);
+    let mut s = format!("{} {}", method.as_str(), r);
+    if has_json_body {
+        s.push_str("（含 json_body）");
+    }
+    s
 }
 
 fn url_path_matches_prefix(url_path: &str, prefix_path: &str) -> bool {
@@ -426,7 +452,7 @@ pub fn run_request_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
         Err(e) => return format!("错误：{}", e),
     };
     if !url_matches_allowed_prefixes(&url, ctx.http_fetch_allowed_prefixes) {
-        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）；http_request 仅允许白名单前缀。".to_string();
+        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI（repl/chat）异步路径可对 http_request 人工审批。".to_string();
     }
     request_with_json_body(
         &url,
@@ -463,6 +489,22 @@ mod tests {
         assert!(s.starts_with("HEAD "));
         assert!(s.contains("ex.com/x"));
         assert!(!s.contains("q=1"), "query 应被脱敏: {}", s);
+    }
+
+    #[test]
+    fn request_storage_key_includes_method_and_strips_query() {
+        let u = Url::parse("https://ex.com/a?x=1").unwrap();
+        let k = request_storage_key(RequestMethod::Post, &u);
+        assert_eq!(k, "http_request:POST:https://ex.com/a");
+    }
+
+    #[test]
+    fn approval_display_request_redacts_and_notes_body() {
+        let u = Url::parse("https://ex.com/x?q=1").unwrap();
+        let s = approval_args_display_request(RequestMethod::Put, &u, true);
+        assert!(s.starts_with("PUT "));
+        assert!(s.contains("（含 json_body）"));
+        assert!(!s.contains("q=1"));
     }
 
     #[test]

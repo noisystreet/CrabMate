@@ -1,0 +1,27 @@
+[
+  {
+    "name": "http_429",
+    "message": "模型接口返回错误（HTTP 429）：too many",
+    "code": 5
+  },
+  {
+    "name": "http_401_model_bucket",
+    "message": "模型接口返回错误（HTTP 401）：bad key",
+    "code": 3
+  },
+  {
+    "name": "parse_fail_message",
+    "message": "模型返回内容无法解析：unexpected",
+    "code": 3
+  },
+  {
+    "name": "generic_io",
+    "message": "connection reset",
+    "code": 1
+  },
+  {
+    "name": "quota_keyword",
+    "message": "upstream said quota exceeded",
+    "code": 5
+  }
+]

@@ -358,7 +358,7 @@ impl CliReplStyle {
         self.write_banner_subheading(&mut out, "内建命令")?;
         self.write_banner_note_line(
             &mut out,
-            "    /clear  /model  /workspace（/cd） /tools  /help  /?",
+            "    /clear  /model  /workspace（/cd） /tools  /export  /help  /?",
         )?;
         self.write_banner_note_line(
             &mut out,
@@ -514,6 +514,10 @@ impl CliReplStyle {
                 "切换工作区（须为已存在目录，别名 /cd）",
             ),
             ("/tools", "列出当前加载的工具名"),
+            (
+                "/export [json|markdown|both]",
+                "导出当前对话到 .crabmate/exports/（与 Web 同形 JSON/Markdown）",
+            ),
             ("/help, /?", "本说明"),
             (
                 "$ → bash#:",

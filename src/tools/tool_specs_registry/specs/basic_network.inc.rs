@@ -57,7 +57,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "http_request",
-            description: "对 **http/https** URL 发起 **POST/PUT/PATCH/DELETE**（可选 JSON body）。仅允许匹配 `http_fetch_allowed_prefixes` 的同源 + 路径前缀边界；响应含状态、Content-Type、重定向链与正文（按配置截断）。默认建议 dry-run 先验证，勿在 body 中放真实密钥。",
+            description: "对 **http/https** URL 发起 **POST/PUT/PATCH/DELETE**（可选 JSON body）。URL 匹配 `http_fetch_allowed_prefixes` 的同源 + 路径前缀边界时直接执行；**Web（流式 + 审批会话）**与 **CLI（repl/chat）** 下未匹配时可人工审批（与 `http_fetch` 同套 SSE / 终端菜单；**永久允许**键为 `http_request:<METHOD>:<归一化URL>`，与 GET/HEAD 的 `http_fetch:` 键区分）。响应含状态、Content-Type、重定向链与正文（按配置截断）。**`workflow_execute` 节点内**仍仅白名单 URL。默认建议 dry-run 先验证，勿在 body 中放真实密钥。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_http_request,
             runner: runner_http_request,

@@ -554,7 +554,7 @@ async fn run_node(
         "run_command" | "run_executable" => Some(tool_exec_ctx.cfg_command_timeout_secs),
         "get_weather" => Some(tool_exec_ctx.cfg_weather_timeout_secs),
         "web_search" => Some(tool_exec_ctx.cfg_web_search_timeout_secs),
-        "http_fetch" => Some(
+        "http_fetch" | "http_request" => Some(
             tool_exec_ctx
                 .cfg_http_fetch_timeout_secs
                 .max(tool_exec_ctx.cfg_command_timeout_secs),

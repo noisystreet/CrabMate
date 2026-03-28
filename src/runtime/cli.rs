@@ -1,5 +1,5 @@
 use crate::config::AgentConfig;
-use crate::config::cli::ChatCliArgs;
+use crate::config::cli::{ChatCliArgs, ExportSessionCli, ExportSessionFormat};
 use crate::redact;
 use crate::runtime::cli_exit::{
     CliExitError, EXIT_GENERAL, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE,
@@ -24,6 +24,13 @@ use tokio::sync::Mutex;
 static CLI_LTM_OPEN_FAILURE_NOTIFIED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, PartialEq, Eq)]
+enum ReplExportKind {
+    Json,
+    Markdown,
+    Both,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 enum ReplBuiltIn<'a> {
     Clear,
     Model,
@@ -31,6 +38,7 @@ enum ReplBuiltIn<'a> {
     WorkspaceSet(&'a str),
     Tools,
     Help,
+    Export(&'a str),
     Unknown(&'a str),
     BareSlash,
 }
@@ -109,8 +117,96 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
         }
         "tools" => ReplBuiltIn::Tools,
         "help" | "?" => ReplBuiltIn::Help,
+        "export" => ReplBuiltIn::Export(arg),
         _ => ReplBuiltIn::Unknown(head),
     })
+}
+
+fn repl_export_kind_from_arg(arg: &str) -> Result<ReplExportKind, ()> {
+    let a = arg.trim().to_ascii_lowercase();
+    match a.as_str() {
+        "" | "both" => Ok(ReplExportKind::Both),
+        "json" => Ok(ReplExportKind::Json),
+        "markdown" | "md" => Ok(ReplExportKind::Markdown),
+        _ => Err(()),
+    }
+}
+
+/// 将内存中的消息导出到工作区 `.crabmate/exports/`（与 Web 及 `export-session` 同形）。
+fn repl_export_current_messages(
+    work_dir: &Path,
+    messages: &[Message],
+    kind: ReplExportKind,
+    style: &CliReplStyle,
+) -> io::Result<()> {
+    match kind {
+        ReplExportKind::Json => {
+            let p = crate::runtime::workspace_session::export_json(work_dir, messages)?;
+            style.print_success(&format!("已导出 JSON: {}", p.display()))?;
+        }
+        ReplExportKind::Markdown => {
+            let p = crate::runtime::workspace_session::export_markdown(work_dir, messages)?;
+            style.print_success(&format!("已导出 Markdown: {}", p.display()))?;
+        }
+        ReplExportKind::Both => {
+            let pj = crate::runtime::workspace_session::export_json(work_dir, messages)?;
+            let pm = crate::runtime::workspace_session::export_markdown(work_dir, messages)?;
+            style.print_success(&format!("已导出 JSON: {}", pj.display()))?;
+            style.print_success(&format!("已导出 Markdown: {}", pm.display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// `crabmate export-session`：从磁盘会话文件读取并写入导出目录。
+pub fn run_export_session_command(
+    cfg: &AgentConfig,
+    workspace_cli: &Option<String>,
+    args: ExportSessionCli,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::ErrorKind;
+
+    let workspace = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    let session_path = match args
+        .session_file
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        Some(p) => PathBuf::from(p),
+        None => crate::runtime::workspace_session::session_file_path(&workspace),
+    };
+    if !session_path.is_file() {
+        eprintln!("会话文件不存在: {}", session_path.display());
+        return Err(std::io::Error::new(ErrorKind::NotFound, "会话文件不存在").into());
+    }
+    let data = std::fs::read_to_string(&session_path)?;
+    let parsed: crate::runtime::chat_export::ChatSessionFile = serde_json::from_str(&data)
+        .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, format!("会话 JSON 无效: {e}")))?;
+    let fmt = match args.format {
+        ExportSessionFormat::Json => ReplExportKind::Json,
+        ExportSessionFormat::Markdown => ReplExportKind::Markdown,
+        ExportSessionFormat::Both => ReplExportKind::Both,
+    };
+    match fmt {
+        ReplExportKind::Json => {
+            let p = crate::runtime::workspace_session::export_json(&workspace, &parsed.messages)?;
+            println!("{}", p.display());
+        }
+        ReplExportKind::Markdown => {
+            let p =
+                crate::runtime::workspace_session::export_markdown(&workspace, &parsed.messages)?;
+            println!("{}", p.display());
+        }
+        ReplExportKind::Both => {
+            let pj = crate::runtime::workspace_session::export_json(&workspace, &parsed.messages)?;
+            let pm =
+                crate::runtime::workspace_session::export_markdown(&workspace, &parsed.messages)?;
+            println!("{}", pj.display());
+            println!("{}", pm.display());
+        }
+    }
+    Ok(())
 }
 
 /// REPL 中以 `/` 开头的内建命令；返回 `true` 表示已处理（不调用模型）。
@@ -187,6 +283,18 @@ fn try_handle_repl_slash_command(
         }
         ReplBuiltIn::Help => {
             let _ = style.print_help();
+        }
+        ReplBuiltIn::Export(arg) => {
+            let kind = match repl_export_kind_from_arg(arg) {
+                Ok(k) => k,
+                Err(()) => {
+                    let _ = style.eprint_error("用法: /export 或 /export json | markdown | both");
+                    return true;
+                }
+            };
+            if let Err(e) = repl_export_current_messages(work_dir, messages, kind, style) {
+                let _ = style.eprint_error(&e.to_string());
+            }
         }
     }
     true

@@ -29,8 +29,11 @@ mod tools;
 mod types;
 mod web;
 
-pub use config::cli::{ChatCliArgs, ParsedCliArgs};
-use config::cli::{ExtraCliCommand, init_logging, parse_args};
+use config::cli::init_logging;
+pub use config::cli::{
+    ChatCliArgs, ExportSessionFormat, ExtraCliCommand, ParsedCliArgs, normalize_legacy_argv,
+    parse_args, parse_args_from_argv,
+};
 use log::info;
 pub use read_file_turn_cache::{ReadFileTurnCache, ReadFileTurnCacheHandle, new_turn_cache_handle};
 use std::collections::HashMap;
@@ -191,6 +194,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         log_file,
         bench_args,
         extra_cli,
+        export_session,
     } = parse_args()?;
 
     // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_logging`）
@@ -208,6 +212,18 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         crate::runtime::cli_doctor::print_doctor_report(&cfg, workspace_cli.as_deref());
+        return Ok(());
+    }
+
+    if let Some(es) = export_session {
+        let cfg = match config::load_config(config_path.as_deref()) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("{}", e);
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
+            }
+        };
+        crate::runtime::cli::run_export_session_command(&cfg, &workspace_cli, es)?;
         return Ok(());
     }
 
@@ -481,7 +497,10 @@ pub use tools::dev_tag;
 pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options};
 pub use types::LlmSeedOverride;
 
-pub use runtime::cli_exit::CliExitError;
+pub use runtime::cli_exit::{
+    CliExitError, EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT,
+    EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, classify_model_error_message,
+};
 
 #[cfg(test)]
 #[path = "lib/tests.rs"]

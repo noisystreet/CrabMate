@@ -1,0 +1,97 @@
+[
+  {
+    "name": "doctor",
+    "argv": ["crabmate", "doctor"],
+    "extra_cli": "Doctor",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "export_format": null
+  },
+  {
+    "name": "config_implicit_dry_run",
+    "argv": ["crabmate", "config"],
+    "extra_cli": "None",
+    "dry_run": true,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "export_format": null
+  },
+  {
+    "name": "models",
+    "argv": ["crabmate", "models"],
+    "extra_cli": "Models",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "export_format": null
+  },
+  {
+    "name": "probe",
+    "argv": ["crabmate", "probe"],
+    "extra_cli": "Probe",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "export_format": null
+  },
+  {
+    "name": "serve_port_8080",
+    "argv": ["crabmate", "serve", "8080"],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": 8080,
+    "no_stream": false,
+    "chat_wants": false,
+    "export_format": null
+  },
+  {
+    "name": "chat_query_json_output",
+    "argv": ["crabmate", "chat", "--query", "hello", "--output", "json"],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": true,
+    "export_format": null,
+    "chat_inline": "hello",
+    "chat_output": "json"
+  },
+  {
+    "name": "export_session_json",
+    "argv": ["crabmate", "export-session", "--format", "json"],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "export_format": "Json"
+  },
+  {
+    "name": "chat_stdin_fixture",
+    "argv": ["crabmate", "chat", "--stdin"],
+    "stdin_fixture": "pipe content",
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": true,
+    "export_format": null,
+    "chat_inline": "pipe content"
+  },
+  {
+    "name": "global_workspace_before_subcommand",
+    "argv": ["crabmate", "--workspace", "/tmp/ws", "doctor"],
+    "extra_cli": "Doctor",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "export_format": null,
+    "workspace": "/tmp/ws"
+  }
+]
