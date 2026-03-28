@@ -32,6 +32,7 @@ Standard commands from `README.md`:
 | TypeScript check | `cd frontend && npx tsc -b --noEmit` |
 | Frontend install | `cd frontend && npm install` |
 | Frontend build | `cd frontend && npm run build` |
+| Regenerate `man` page (troff) | `cargo run --bin crabmate-gen-man`（写入 `man/crabmate.1`） |
 
 ### Gotchas
 

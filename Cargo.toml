@@ -3,6 +3,8 @@ name = "crabmate"
 version = "0.1.0"
 edition = "2024"
 description = "Minimal agent demo using DeepSeek API"
+# 存在 `crabmate-gen-man` 时，`cargo run` 须默认主二进制（与 README「cargo run」一致）。
+default-run = "crabmate"
 
 [package.metadata.deb]
 maintainer = "CrabMate <dev@example.com>"
@@ -20,6 +22,8 @@ assets = [
     ["prompts/default_system_prompt.md", "usr/share/doc/crabmate/prompts/default_system_prompt.md", "644"],
     # 文档
     ["README.md", "usr/share/doc/crabmate/README.md", "644"],
+    # man page（troff；由 `cargo run --bin crabmate-gen-man` 再生成）
+    ["man/crabmate.1", "usr/share/man/man1/crabmate.1", "644"],
 ]
 
 [dependencies]
@@ -72,6 +76,11 @@ reedline = { version = "0.46", default-features = false }
 dialoguer = { version = "0.12", default-features = false }
 encoding_rs = "0.8"
 chardetng = "0.1"
+clap_mangen = { version = "0.2", default-features = false }
+
+[[bin]]
+name = "crabmate-gen-man"
+path = "src/bin/crabmate_gen_man.rs"
 
 [dev-dependencies]
 serde_json = "1"

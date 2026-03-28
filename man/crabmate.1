@@ -1,0 +1,60 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH CRABMATE 1  "crabmate 0.1.0" "CrabMate User Commands"
+.SH NAME
+crabmate \- 基于 DeepSeek API 的简易 Agent，支持工具调用、Web 界面与 CLI
+.SH SYNOPSIS
+\fBcrabmate\fR [\fB\-\-config\fR] [\fB\-\-workspace\fR] [\fB\-\-no\-tools\fR] [\fB\-\-log\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIsubcommands\fR]
+.SH DESCRIPTION
+基于 DeepSeek API 的简易 Agent，支持工具调用、Web 界面与 CLI
+.SH OPTIONS
+.TP
+\fB\-\-config\fR \fI<CONFIG>\fR
+显式指定配置文件路径（覆盖默认的 config.toml / .agent_demo.toml 搜索）
+.TP
+\fB\-\-workspace\fR \fI<WORKSPACE>\fR
+启动时指定初始工作区路径（覆盖配置中的 run_command_working_dir，仅当前进程生效）
+.TP
+\fB\-\-no\-tools\fR
+禁用所有工具调用，仅作为普通 Chat 使用
+.TP
+\fB\-\-log\fR \fI<FILE>\fR
+将日志追加写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别写入，并同时输出到 stderr
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.SH SUBCOMMANDS
+.TP
+\fBserve\fR
+启动 Web UI + HTTP API（默认端口 8080）
+.TP
+\fBrepl\fR
+交互式终端对话（默认子命令）
+.TP
+\fBchat\fR
+单次提问后退出（脚本/管道）
+.TP
+\fBbench\fR
+批量 benchmark 测评（JSONL）
+.TP
+\fBconfig\fR
+配置与自检（如 dry\-run）
+.TP
+\fBdoctor\fR
+一页本地诊断（Rust/npm/前端路径、白名单条数等；人读，脱敏；**不要**求 API_KEY）
+.TP
+\fBmodels\fR
+列出兼容网关 `GET …/models` 的模型 id（`llm_http_auth_mode=bearer` 时需 API_KEY；部分网关无此端点）
+.TP
+\fBprobe\fR
+探测 api_base 上 models 端点连通性与 HTTP 状态（`llm_http_auth_mode=bearer` 时需 API_KEY）
+.TP
+\fBexport-session\fR
+从会话文件导出 JSON/Markdown 到工作区 `.crabmate/exports/`（与 Web 导出约定一致；**不要**求 API_KEY）
+.PP
+Use \fBcrabmate \-\-help\fR or \fBcrabmate \fIsubcommand\fR \fB\-\-help\fR.
+.SH VERSION
+v0.1.0
