@@ -74,6 +74,7 @@
 # staged_plan_patch_max_attempts = 2        # patch_planner 下每步最多补丁规划轮次数；AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS
 # staged_plan_cli_show_planner_stream = true   # CLI 是否打印规划轮模型 stdout；false=仅队列/分步转录；AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM
 # staged_plan_optimizer_round = true   # 首轮规划后再跑无工具优化轮；false 关闭；AGENT_STAGED_PLAN_OPTIMIZER_ROUND
+# staged_plan_ensemble_count = 1     # 1–3；>1 时首轮后再跑独立规划并合并；AGENT_STAGED_PLAN_ENSEMBLE_COUNT
 # sync_default_tool_sandbox_mode = "none"   # none | docker；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE
 # sync_default_tool_sandbox_docker_image = ""   # docker 模式必填；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE
 # sync_default_tool_sandbox_docker_network = ""   # 空=无网络；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK

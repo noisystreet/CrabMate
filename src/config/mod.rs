@@ -77,6 +77,7 @@ struct ConfigBuilder {
     staged_plan_patch_max_attempts: Option<u64>,
     staged_plan_cli_show_planner_stream: Option<bool>,
     staged_plan_optimizer_round: Option<bool>,
+    staged_plan_ensemble_count: Option<u64>,
     sync_default_tool_sandbox_mode_str: Option<String>,
     sync_default_tool_sandbox_docker_image: Option<String>,
     sync_default_tool_sandbox_docker_network: Option<String>,
@@ -292,6 +293,9 @@ impl ConfigBuilder {
         self.staged_plan_optimizer_round = agent
             .staged_plan_optimizer_round
             .or(self.staged_plan_optimizer_round);
+        self.staged_plan_ensemble_count = agent
+            .staged_plan_ensemble_count
+            .or(self.staged_plan_ensemble_count);
         override_opt_string_non_empty(
             &mut self.sync_default_tool_sandbox_mode_str,
             agent.sync_default_tool_sandbox_mode,
@@ -782,6 +786,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.staged_plan_optimizer_round = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_ENSEMBLE_COUNT")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.staged_plan_ensemble_count = Some(n);
+    }
     if let Ok(s) = std::env::var("AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE") {
         let s = s.trim().to_string();
         if !s.is_empty() {
@@ -1196,6 +1205,7 @@ fn finalize(
         b.staged_plan_patch_max_attempts.unwrap_or(2).clamp(1, 16) as usize;
     let staged_plan_cli_show_planner_stream = b.staged_plan_cli_show_planner_stream.unwrap_or(true);
     let staged_plan_optimizer_round = b.staged_plan_optimizer_round.unwrap_or(true);
+    let staged_plan_ensemble_count = b.staged_plan_ensemble_count.unwrap_or(1).clamp(1, 3) as u8;
     let sync_default_tool_sandbox_mode = match b.sync_default_tool_sandbox_mode_str.as_deref() {
         Some(s) => types::SyncDefaultToolSandboxMode::parse(s)?,
         None => types::SyncDefaultToolSandboxMode::default(),
@@ -1372,6 +1382,7 @@ fn finalize(
         staged_plan_patch_max_attempts,
         staged_plan_cli_show_planner_stream,
         staged_plan_optimizer_round,
+        staged_plan_ensemble_count,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,

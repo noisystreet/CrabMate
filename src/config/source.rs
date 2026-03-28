@@ -73,6 +73,8 @@ pub(super) struct AgentSection {
     pub(super) staged_plan_cli_show_planner_stream: Option<bool>,
     /// 首轮规划后是否再跑无工具优化轮；默认 true。`AGENT_STAGED_PLAN_OPTIMIZER_ROUND`
     pub(super) staged_plan_optimizer_round: Option<bool>,
+    /// 逻辑多规划员份数上限（1–3）。`AGENT_STAGED_PLAN_ENSEMBLE_COUNT`
+    pub(super) staged_plan_ensemble_count: Option<u64>,
     /// `none` | `docker`；`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`
     pub(super) sync_default_tool_sandbox_mode: Option<String>,
     /// Docker 沙盒镜像。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`
