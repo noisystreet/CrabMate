@@ -285,6 +285,8 @@ staged_plan_execution = true
 staged_plan_cli_show_planner_stream = false
 # 首轮 agent_reply_plan 解析成功后，再跑一轮无工具「步骤优化」（合并无依赖只读探查步等）；false 省一次 API。AGENT_STAGED_PLAN_OPTIMIZER_ROUND
 staged_plan_optimizer_round = true
+# 逻辑多规划员：首轮后的独立规划份数上限（1=关闭；2=首轮+A 再合并；3=首轮+A+B 再合并）。串行同模型，显著增加 API。
+staged_plan_ensemble_count = 1
 # SyncDefault 工具沙盒：none（默认，宿主进程内执行）| docker（每工具 Engine API 容器，需镜像与 Docker 守护进程）
 # sync_default_tool_sandbox_mode = "none"
 # sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:latest"

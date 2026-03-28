@@ -6,6 +6,7 @@ pub mod context_window;
 pub mod message_pipeline;
 pub mod per_coord;
 pub mod plan_artifact;
+mod plan_ensemble;
 mod plan_optimizer;
 pub mod workflow;
 pub mod workflow_reflection_controller;

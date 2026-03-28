@@ -44,4 +44,6 @@ pub(crate) struct RunLoopParams<'a> {
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     /// 分阶段规划首轮成功后，是否再跑一轮无工具「步骤优化」（合并无依赖只读探查步等）。默认 true。
     pub staged_plan_optimizer_round: bool,
+    /// 逻辑多规划员：首轮后的独立规划份数上限（1=关闭）。见 `AgentConfig::staged_plan_ensemble_count`。
+    pub staged_plan_ensemble_count: u8,
 }

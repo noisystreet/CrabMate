@@ -34,6 +34,8 @@ export interface StatusData {
   staged_plan_cli_show_planner_stream?: boolean
   /** 首轮 agent_reply_plan 后是否再跑无工具步骤优化轮（默认 true） */
   staged_plan_optimizer_round?: boolean
+  /** 逻辑多规划员份数上限（1–3，默认 1） */
+  staged_plan_ensemble_count?: number
   /** SyncDefault 工具沙盒：none | docker */
   sync_default_tool_sandbox_mode?: string
   sync_default_tool_sandbox_docker_image?: string

@@ -420,6 +420,8 @@ pub struct AgentConfig {
     pub staged_plan_cli_show_planner_stream: bool,
     /// 分阶段规划首轮 JSON 解析成功后，再跑一轮无工具「步骤优化」（合并无依赖只读探查步、提示单轮内可并行批处理工具）。为 false 时跳过，省一次 API。
     pub staged_plan_optimizer_round: bool,
+    /// 逻辑多规划员：首轮后的**独立**无工具规划份数上限（1=关闭；2=首轮+A 再合并；3=首轮+A+B 再合并）。串行同模型，**显著增加 API 调用**。
+    pub staged_plan_ensemble_count: u8,
     /// `HandlerId::SyncDefault` 工具沙盒模式；`docker` 时依赖宿主 `docker` CLI 与镜像。
     pub sync_default_tool_sandbox_mode: SyncDefaultToolSandboxMode,
     /// `sync_default_tool_sandbox_mode = docker` 时使用的镜像（如 `crabmate-tools:dev`）。
