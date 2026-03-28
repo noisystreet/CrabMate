@@ -978,7 +978,13 @@ pub(crate) async fn chat_stream_handler(
 
 pub(crate) async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
-    let report = health::build_health_report(&work_dir, &state.api_key, true).await;
+    let report = health::build_health_report(
+        &work_dir,
+        &state.api_key,
+        state.cfg.llm_http_auth_mode,
+        true,
+    )
+    .await;
     Json(report)
 }
 
@@ -1046,6 +1052,8 @@ struct StatusResponse {
     message_pipeline_trim_char_budget_hits: u64,
     message_pipeline_tool_compress_hits: u64,
     message_pipeline_orphan_tool_drops: u64,
+    /// 模型 HTTP 鉴权：`bearer` | `none`（如本地 Ollama 可不设 API_KEY）。
+    llm_http_auth_mode: &'static str,
 }
 
 pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -1111,5 +1119,6 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         message_pipeline_trim_char_budget_hits: mp.trim_char_budget_hits,
         message_pipeline_tool_compress_hits: mp.tool_compress_hits,
         message_pipeline_orphan_tool_drops: mp.orphan_tool_drops,
+        llm_http_auth_mode: state.cfg.llm_http_auth_mode.as_str(),
     })
 }

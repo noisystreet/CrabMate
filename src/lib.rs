@@ -39,6 +39,18 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use types::Message;
 
+fn require_api_key_for_llm(cfg: &config::AgentConfig) -> Result<String, std::io::Error> {
+    let v = env::var("API_KEY").unwrap_or_default();
+    if cfg.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer && v.trim().is_empty() {
+        eprintln!("请设置环境变量 API_KEY（当前 llm_http_auth_mode=bearer）");
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "未设置环境变量 API_KEY",
+        ));
+    }
+    Ok(v)
+}
+
 /// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
 pub struct RunAgentTurnParams<'a> {
     pub client: &'a reqwest::Client,
@@ -185,17 +197,45 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let api_key = match env::var("API_KEY") {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("请设置环境变量 API_KEY");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "未设置环境变量 API_KEY",
-            )
-            .into());
+    // `config` 子命令仅做 dry-run 自检，不要求 API_KEY（与 llm_http_auth_mode 一致）
+    if dry_run {
+        let cfg = match config::load_config(config_path.as_deref()) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("{}", e);
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
+            }
+        };
+        let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+        if !static_dir.is_dir() {
+            let msg = format!(
+                "dry-run 失败：前端静态目录不存在：{}（请先在 frontend/ 下构建）",
+                static_dir.display()
+            );
+            eprintln!("{msg}");
+            return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg).into());
         }
-    };
+        let key_note = match cfg.llm_http_auth_mode {
+            config::LlmHttpAuthMode::None => "llm_http_auth_mode=none（API_KEY 可选）".to_string(),
+            config::LlmHttpAuthMode::Bearer => {
+                if env::var("API_KEY")
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false)
+                {
+                    "llm_http_auth_mode=bearer 且 API_KEY 非空".to_string()
+                } else {
+                    "llm_http_auth_mode=bearer：当前未检测到非空 API_KEY（启动 serve/repl/chat 前请设置）"
+                        .to_string()
+                }
+            }
+        };
+        println!(
+            "配置检查通过：{}，前端静态目录存在：{}",
+            key_note,
+            static_dir.display()
+        );
+        return Ok(());
+    }
 
     let cfg = match config::load_config(config_path.as_deref()) {
         Ok(c) => c,
@@ -206,6 +246,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if matches!(extra_cli, ExtraCliCommand::Models | ExtraCliCommand::Probe) {
+        let api_key = require_api_key_for_llm(&cfg)?;
         let client = http_client::build_shared_api_client(&cfg)?;
         if extra_cli == ExtraCliCommand::Models {
             crate::runtime::cli_doctor::run_models_cli(&client, &cfg, api_key.trim()).await?;
@@ -215,6 +256,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    let api_key = require_api_key_for_llm(&cfg)?;
+
     let cfg = Arc::new(cfg);
     info!(
         target: "crabmate",
@@ -222,22 +265,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         cfg.api_base,
         cfg.model
     );
-    if dry_run {
-        let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
-        if !static_dir.is_dir() {
-            let msg = format!(
-                "dry-run 失败：前端静态目录不存在：{}（请先在 frontend/ 下构建）",
-                static_dir.display()
-            );
-            eprintln!("{msg}");
-            return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg).into());
-        }
-        println!(
-            "配置检查通过：API_KEY 已设置，配置可用，前端静态目录存在：{}",
-            static_dir.display()
-        );
-        return Ok(());
-    }
     let client = http_client::build_shared_api_client(cfg.as_ref())?;
     let mut all_tools = tools::build_tools();
     tool_call_explain::annotate_tool_defs_for_explain_card(&mut all_tools, cfg.as_ref());
@@ -427,7 +454,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     crate::runtime::cli::run_repl(&cfg, &client, &api_key, &tools, &workspace_cli, no_stream).await
 }
 
-pub use config::{AgentConfig, load_config};
+pub use config::{AgentConfig, LlmHttpAuthMode, load_config};
 pub use llm::{
     ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
     default_chat_completions_backend,

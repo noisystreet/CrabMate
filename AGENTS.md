@@ -6,14 +6,15 @@
 
 CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web UI (Axum + React) and CLI (REPL / single-shot / `--serve`). See `README.md` for quick start and feature overview; `docs/CONFIGURATION.md` for env vars and TOML; `docs/CLI.md` for subcommands and routes; `docs/TOOLS.md` for built-in tools; `docs/DEVELOPMENT.md` for architecture (module index). If you change module layout or layering, update `docs/DEVELOPMENT.md` per `.cursor/rules/architecture-docs-sync.mdc`.
 
-### Required environment variable
+### Environment variable `API_KEY`
 
-- `API_KEY` — DeepSeek API key. Required for `serve` / `repl` / `chat` / `bench` / `config`（自检，与 `config --dry-run` 相同） / `models` / `probe`; **CLI `doctor` runs without it** (local summary only). Without it, other modes exit with "未设置环境变量 API_KEY". With an invalid key the server starts normally but chat requests fail with `INTERNAL_ERROR`. Use `config` or `doctor` to verify config without calling chat APIs.
+- **Default (`llm_http_auth_mode = bearer` in config)**：`API_KEY` is the cloud vendor Bearer token. Required for `serve` / `repl` / `chat` / `bench` / `models` / `probe`. **`config`（`cargo run -- config` / `--dry-run`）与 `doctor` 不要求 `API_KEY`**。
+- **Local OpenAI-compatible backends（e.g. Ollama）**：set **`llm_http_auth_mode = "none"`**（or **`AGENT_LLM_HTTP_AUTH_MODE=none`**）so CrabMate does **not** send `Authorization` to `chat/completions` / `models`; then `serve` / `repl` / `chat` / `bench` / `models` / `probe` can run **without** `API_KEY`. With `bearer` and a wrong key the server may start but chat fails (`INTERNAL_ERROR`).
 
 ### Running services
 
 - **Backend + Web UI**: `API_KEY="..." cargo run -- serve` (subcommand `serve`; default port 8080, binds **127.0.0.1** only). For LAN access use `serve --host 0.0.0.0` (see README). Legacy `cargo run -- --serve` still works. Optional global `--log /path/to.log` appends logs and mirrors to stderr. Without `RUST_LOG`, `serve` defaults to **info**; `repl` / `chat` / `bench` / `config` default to **warn** unless you set `RUST_LOG` or `--log`.
-- **CLI diagnostics**: `cargo run -- doctor` — human-readable check (Rust/npm/frontend paths, allowlist size, redacted secrets); **no `API_KEY`**. With `API_KEY`: `cargo run -- models` lists model IDs from OpenAI-compatible `GET …/models` if supported; `cargo run -- probe` prints HTTP status and latency only (no response body in the terminal).
+- **CLI diagnostics**: `cargo run -- doctor` — human-readable check (Rust/npm/frontend paths, allowlist size, redacted secrets); **no `API_KEY`**. `cargo run -- models` / `probe` use `GET {api_base}/models` with Bearer only when `llm_http_auth_mode=bearer`; with `none`, no `Authorization` header is sent.
 - **Frontend dev server** (optional, for hot-reload): `cd frontend && npm run dev` (Vite proxies API calls to `:8080`)
 - Frontend must be built (`cd frontend && npm run build`) before running the backend in serve mode, since it serves `frontend/dist` as static assets.
 

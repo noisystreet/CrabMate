@@ -6,7 +6,7 @@
 
 以下为常用项；**完整键名与默认值以 `default_config.toml` 为准**。
 
-- **模型与 API**：`AGENT_API_BASE`、`AGENT_MODEL`、`AGENT_SYSTEM_PROMPT`、`AGENT_SYSTEM_PROMPT_FILE`
+- **模型与 API**：`AGENT_API_BASE`、`AGENT_MODEL`、`AGENT_LLM_HTTP_AUTH_MODE`（`bearer` 默认，需 **`API_KEY`**；`none` 不向 `chat/completions` / `models` 发送 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）、`AGENT_SYSTEM_PROMPT`、`AGENT_SYSTEM_PROMPT_FILE`
 - **温度与 seed**：`AGENT_TEMPERATURE`、`AGENT_LLM_SEED`
 - **Web**：`AGENT_HTTP_HOST`（未传 `--host` 时生效）、`AGENT_WEB_API_BEARER_TOKEN`、`AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK`
 - **工作区白名单**：`AGENT_WORKSPACE_ALLOWED_ROOTS`（逗号分隔；与 `[agent] workspace_allowed_roots` 等价）
@@ -33,6 +33,19 @@
 export AGENT_MODEL=deepseek-reasoner
 cargo run
 ```
+
+## 本地 Ollama（OpenAI 兼容）
+
+Ollama 提供 **`http://127.0.0.1:11434/v1`** 下的 OpenAI 兼容 API。建议配置：
+
+```toml
+[agent]
+api_base = "http://127.0.0.1:11434/v1"
+model = "llama3.2"   # 以 ollama list 为准
+llm_http_auth_mode = "none"
+```
+
+然后可不设环境变量 **`API_KEY`** 即启动 `serve` / `repl` / `chat`。**工具调用（function calling）**依赖模型与 Ollama 版本；若不稳定可先 **`--no-tools`** 验证对话。`crabmate config`（自检）**不要求** **`API_KEY`**。
 
 ## 配置文件示例
 
