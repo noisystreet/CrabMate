@@ -132,6 +132,18 @@ impl Message {
             tool_call_id: None,
         }
     }
+
+    /// 无 `tool_calls` 的 `assistant` 消息（如分阶段规划补丁合并后的 JSON 快照）。
+    pub fn assistant_only(content: impl Into<String>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: Some(content.into()),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
 }
 
 /// 单条消息：供 API 请求使用，不携带 `reasoning_content`（与 [`messages_stripping_reasoning_for_api_request`] 单元素语义一致）。

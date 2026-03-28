@@ -11,7 +11,7 @@ use source::{AgentSection, parse_agent_section, parse_bool_like};
 use std::path::Path;
 pub use types::{
     AgentConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
-    WebSearchProvider,
+    StagedPlanFeedbackMode, WebSearchProvider,
 };
 
 /// 编译时嵌入的默认配置（与项目根 default_config.toml 一致）
@@ -71,6 +71,8 @@ struct ConfigBuilder {
     staged_plan_execution: Option<bool>,
     staged_plan_phase_instruction: Option<String>,
     staged_plan_allow_no_task: Option<bool>,
+    staged_plan_feedback_mode_str: Option<String>,
+    staged_plan_patch_max_attempts: Option<u64>,
     workspace_allowed_roots: Option<Vec<String>>,
     web_api_bearer_token: Option<String>,
     allow_insecure_no_auth_for_non_loopback: Option<bool>,
@@ -255,6 +257,13 @@ impl ConfigBuilder {
         self.staged_plan_allow_no_task = agent
             .staged_plan_allow_no_task
             .or(self.staged_plan_allow_no_task);
+        override_opt_string_non_empty(
+            &mut self.staged_plan_feedback_mode_str,
+            agent.staged_plan_feedback_mode,
+        );
+        self.staged_plan_patch_max_attempts = agent
+            .staged_plan_patch_max_attempts
+            .or(self.staged_plan_patch_max_attempts);
         self.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
             .or(self.allow_insecure_no_auth_for_non_loopback);
@@ -633,6 +642,17 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_PHASE_INSTRUCTION") {
         b.staged_plan_phase_instruction = Some(v);
     }
+    if let Ok(s) = std::env::var("AGENT_STAGED_PLAN_FEEDBACK_MODE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.staged_plan_feedback_mode_str = Some(s);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.staged_plan_patch_max_attempts = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_WEB_API_BEARER_TOKEN") {
         b.web_api_bearer_token = Some(v.trim().to_string());
     }
@@ -1002,6 +1022,12 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
     let staged_plan_execution = b.staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = b.staged_plan_phase_instruction.unwrap_or_default();
     let staged_plan_allow_no_task = b.staged_plan_allow_no_task.unwrap_or(true);
+    let staged_plan_feedback_mode = match b.staged_plan_feedback_mode_str.as_deref() {
+        Some(s) => StagedPlanFeedbackMode::parse(s)?,
+        None => StagedPlanFeedbackMode::default(),
+    };
+    let staged_plan_patch_max_attempts =
+        b.staged_plan_patch_max_attempts.unwrap_or(2).clamp(1, 16) as usize;
     let web_api_bearer_token = b.web_api_bearer_token.unwrap_or_default();
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
@@ -1140,6 +1166,8 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         staged_plan_execution,
         staged_plan_phase_instruction,
         staged_plan_allow_no_task,
+        staged_plan_feedback_mode,
+        staged_plan_patch_max_attempts,
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
         agent_memory_file,

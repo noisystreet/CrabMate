@@ -168,6 +168,26 @@ pub fn encode_tool_message_envelope_v1(
 
 /// 从 `role: tool` 正文中取出用于 **JSON 再解析** 的载荷（如 `workflow_validate_result`）。
 /// 非信封或解析失败时返回 trim 后的 `content` 借用。
+/// 从已写入对话历史的 `role: tool` `content` 判断工具是否**成功**（与信封 `ok` 或 `parse_legacy_output` 一致）。
+/// `tool_name_fallback` 在非信封正文时用于 `parse_legacy_output` 的错误码归类。
+pub fn tool_message_content_ok_for_model(content: &str, tool_name_fallback: &str) -> bool {
+    let trimmed = content.trim();
+    if let Ok(v) = serde_json::from_str::<Value>(trimmed)
+        && let Some(ct) = v.get("crabmate_tool").and_then(|x| x.as_object())
+    {
+        if let Some(ok) = ct.get("ok").and_then(|x| x.as_bool()) {
+            return ok;
+        }
+        let name = ct
+            .get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or(tool_name_fallback);
+        let output = ct.get("output").and_then(|x| x.as_str()).unwrap_or("");
+        return parse_legacy_output(name, output).ok;
+    }
+    parse_legacy_output(tool_name_fallback, trimmed).ok
+}
+
 pub fn tool_message_payload_for_inner_parse<'a>(content: &'a str) -> Cow<'a, str> {
     let t = content.trim();
     let Ok(v) = serde_json::from_str::<Value>(t) else {
@@ -242,6 +262,18 @@ mod tests {
         assert!(!r.ok);
         assert_eq!(r.exit_code, None);
         assert_eq!(r.error_code.as_deref(), Some("workspace_not_set"));
+    }
+
+    #[test]
+    fn tool_message_content_ok_reads_envelope_ok() {
+        let raw = "错误：不允许的命令\n";
+        let parsed = parse_legacy_output("run_command", raw);
+        let env = encode_tool_message_envelope_v1("run_command", "s".into(), &parsed, raw);
+        assert!(!tool_message_content_ok_for_model(&env, "run_command"));
+        let ok_raw = "退出码：0\n标准输出：\nhi\n";
+        let ok_parsed = parse_legacy_output("run_command", ok_raw);
+        let ok_env = encode_tool_message_envelope_v1("run_command", "s".into(), &ok_parsed, ok_raw);
+        assert!(tool_message_content_ok_for_model(&ok_env, "run_command"));
     }
 
     #[test]

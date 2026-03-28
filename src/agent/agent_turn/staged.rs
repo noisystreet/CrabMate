@@ -6,8 +6,11 @@ use log::{debug, warn};
 use tokio::sync::mpsc;
 
 use crate::agent::per_coord::PerCoordinator;
+use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
+use crate::config::StagedPlanFeedbackMode;
 use crate::llm::{complete_chat_retrying, no_tools_chat_request_from_messages};
 use crate::sse::{SseErrorBody, SsePayload, encode_message};
+use crate::tool_result::tool_message_content_ok_for_model;
 use crate::types::{
     Message, USER_CANCELLED_FINISH_REASON, is_message_excluded_from_llm_context_except_memory,
     message_clone_stripping_reasoning_for_api,
@@ -31,6 +34,7 @@ use super::staged_sse::{
 pub(crate) struct StagedPlanRunLabels {
     pub planning_log_label: &'static str,
     pub step_injection_log_label: &'static str,
+    pub build_planner_messages: fn(&[Message], String) -> Vec<Message>,
 }
 
 async fn prepare_staged_planner_no_tools_request(
@@ -76,19 +80,20 @@ pub(super) async fn run_staged_plan_then_execute_steps(
     let render_to_terminal = p.render_to_terminal;
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
-    let req =
-        prepare_staged_planner_no_tools_request(p, per_coord, build_single_agent_planner_messages)
-            .await?;
+    let labels = StagedPlanRunLabels {
+        planning_log_label: "分阶段规划轮模型输出",
+        step_injection_log_label: "分步注入 user（完整正文，供排障与日志）",
+        build_planner_messages: build_single_agent_planner_messages,
+    };
+    let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
+        .await?;
     run_staged_plan_with_prepared_request(
         p,
         per_coord,
         req,
         render_to_terminal,
         echo_terminal_staged,
-        StagedPlanRunLabels {
-            planning_log_label: "分阶段规划轮模型输出",
-            step_injection_log_label: "分步注入 user（完整正文，供排障与日志）",
-        },
+        labels,
         |body| Message {
             role: "user".to_string(),
             content: Some(body),
@@ -179,6 +184,223 @@ async fn finish_staged_plan_step_failed_and_plan_failed_sse(f: StagedPlanStepFai
         "failed",
     )
     .await;
+}
+
+/// 自本步 user 注入起至下一条 user（或历史末尾）之间的 `role: tool` 是否均为成功（与信封 `ok` / 传统解析一致）。
+fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize) -> bool {
+    let mut i = step_user_index.saturating_add(1);
+    while i < messages.len() {
+        let m = &messages[i];
+        if m.role == "user" {
+            break;
+        }
+        if m.role == "tool" {
+            let content = m.content.as_deref().unwrap_or("");
+            if !tool_message_content_ok_for_model(content, "") {
+                return false;
+            }
+        }
+        i += 1;
+    }
+    true
+}
+
+fn staged_plan_step_failure_feedback_user_body(
+    plan_id: &str,
+    step_zero_based: usize,
+    n: usize,
+    step: &PlanStepV1,
+    reason_zh: &str,
+    detail: &str,
+) -> String {
+    format!(
+        "### 分阶段规划 · 步级反馈（plan_id={}）\n\
+         当前执行步 **{}/{}**（零基下标 {}）未顺利完成。\n\
+         - 失败原因：{}\n\
+         - 详情摘要：{}\n\
+         - 当前步 id：`{}`\n\
+         - 当前步描述：{}\n\n\
+         请作为**规划器**仅输出一段可解析的 `agent_reply_plan` v1 JSON（可用 ```json 围栏）。\n\
+         **补丁规则**：`steps` 数组表示从**本步起**的后续计划（可替换原剩余步骤、在末尾增加一步、或合并/拆分步骤）；须 **非空** 且 **不得** 使用 `no_task`。\n\
+         已完成的前缀步（下标 0..{}）已由服务端保留，你**不要**在 `steps` 中重复列出。\n\n\
+         Schema 须满足：{}\n\
+         示例：\n```json\n{}\n```",
+        plan_id,
+        step_zero_based + 1,
+        n,
+        step_zero_based,
+        reason_zh,
+        detail,
+        step.id.trim(),
+        step.description.trim(),
+        step_zero_based,
+        plan_artifact::PLAN_V1_SCHEMA_RULES,
+        plan_artifact::PLAN_V1_EXAMPLE_JSON
+    )
+}
+
+/// 分阶段规划补丁轮入参（控制 clippy `too_many_arguments`）。
+struct StagedPlanPatchPlannerCtx<'p, 'a, F> {
+    p: &'p mut RunLoopParams<'a>,
+    per_coord: &'p mut PerCoordinator,
+    labels: &'p StagedPlanRunLabels,
+    render_to_terminal: bool,
+    make_step_user_message: &'p F,
+}
+
+/// 追加反馈 user 后跑一轮无工具规划；成功则返回合并后的 `steps`，失败返回 `Ok(None)`（调用方按补丁次数用尽处理）。
+async fn run_staged_plan_patch_planner_round<F>(
+    ctx: &mut StagedPlanPatchPlannerCtx<'_, '_, F>,
+    feedback_user_body: String,
+    base_steps: &[PlanStepV1],
+    failed_step_zero_based: usize,
+) -> Result<Option<Vec<PlanStepV1>>, Box<dyn std::error::Error + Send + Sync>>
+where
+    F: Fn(String) -> Message,
+{
+    let StagedPlanPatchPlannerCtx {
+        p,
+        per_coord,
+        labels,
+        render_to_terminal,
+        make_step_user_message,
+    } = ctx;
+    p.messages.push(make_step_user_message(feedback_user_body));
+    let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
+        .await?;
+    let (mut msg, finish_reason) = complete_chat_retrying(
+        p.llm_backend,
+        p.client,
+        p.api_key,
+        p.cfg.as_ref(),
+        &req,
+        p.out,
+        *render_to_terminal,
+        p.no_stream,
+        p.cancel,
+        p.plain_terminal_stream,
+    )
+    .await?;
+
+    debug!(
+        target: "crabmate",
+        "分阶段规划补丁轮 finish_reason={} assistant_preview={}",
+        finish_reason,
+        crate::redact::assistant_message_preview_for_log(&msg)
+    );
+
+    if finish_reason == USER_CANCELLED_FINISH_REASON {
+        return Ok(None);
+    }
+
+    if let Some(tc) = msg.tool_calls.as_ref().filter(|c| !c.is_empty()) {
+        debug!(
+            target: "crabmate",
+            "分阶段规划补丁轮：丢弃 API 返回的 {} 条原生 tool_calls，改从正文 DSML 物化",
+            tc.len()
+        );
+    }
+    msg.tool_calls = None;
+    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+        &mut msg,
+        p.cfg.materialize_deepseek_dsml_tool_calls,
+    );
+
+    push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
+
+    if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
+        match per_reflect_after_assistant(per_coord, &finish_reason, &msg, p.messages) {
+            ReflectOnAssistantOutcome::ProceedToExecuteTools => {
+                let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+                let echo_terminal_transcript = *render_to_terminal && p.out.is_none();
+                let exec_outcome = per_execute_tools_web(
+                    tool_calls,
+                    per_coord,
+                    p.messages,
+                    WebExecuteCtx {
+                        cfg: p.cfg,
+                        effective_working_dir: p.effective_working_dir,
+                        workspace_is_set: p.workspace_is_set,
+                        out: p.out,
+                        web_tool_ctx: p.web_tool_ctx,
+                        cli_tool_ctx: p.cli_tool_ctx,
+                        echo_terminal_transcript,
+                        mcp_session: p.mcp_session.as_ref(),
+                    },
+                )
+                .await;
+                if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+                    return Ok(None);
+                }
+                if let Some(f) = p.per_flight.as_ref() {
+                    f.sync_from_per_coord(per_coord);
+                }
+            }
+            ReflectOnAssistantOutcome::StopTurn => {
+                if let Some(f) = p.per_flight.as_ref() {
+                    f.sync_from_per_coord(per_coord);
+                }
+                return Ok(None);
+            }
+            ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
+                if let Some(f) = p.per_flight.as_ref() {
+                    f.sync_from_per_coord(per_coord);
+                    f.awaiting_plan_rewrite_model.store(true, Ordering::Relaxed);
+                }
+                run_agent_outer_loop(p, per_coord).await?;
+                if let Some(f) = p.per_flight.as_ref() {
+                    f.sync_from_per_coord(per_coord);
+                }
+            }
+            ReflectOnAssistantOutcome::PlanRewriteExhausted => {
+                if let Some(f) = p.per_flight.as_ref() {
+                    f.sync_from_per_coord(per_coord);
+                }
+                if let Some(tx) = p.out {
+                    let _ = crate::sse::send_string_logged(
+                        tx,
+                        encode_message(SsePayload::Error(SseErrorBody {
+                            error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
+                            code: Some("plan_rewrite_exhausted".to_string()),
+                        })),
+                        "staged::patch_plan_rewrite_exhausted",
+                    )
+                    .await;
+                }
+                return Ok(None);
+            }
+        }
+        return Ok(None);
+    }
+
+    let content = msg.content.as_deref().unwrap_or("");
+    let patch_plan = match plan_artifact::parse_agent_reply_plan_v1(content) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!(
+                target: "crabmate",
+                "staged_plan_patch_invalid parse_err={}",
+                plan_artifact::plan_artifact_error_log_summary(&e)
+            );
+            return Ok(None);
+        }
+    };
+
+    match plan_artifact::merge_staged_plan_steps_after_step_failure(
+        base_steps,
+        &patch_plan,
+        failed_step_zero_based,
+    ) {
+        Ok(merged) => Ok(Some(merged)),
+        Err(e) => {
+            warn!(
+                target: "crabmate",
+                "staged_plan_patch_merge_failed err={}",
+                plan_artifact::plan_artifact_error_log_summary(&e)
+            );
+            Ok(None)
+        }
+    }
 }
 
 pub(crate) async fn run_staged_plan_with_prepared_request<F>(
@@ -336,27 +558,46 @@ where
     }
 
     let plan_id = next_staged_plan_id();
-    let n = plan.steps.len();
-    send_staged_plan_started(p.out, &plan_id, n).await;
+    let mut plan_steps = plan.steps;
+    let mut n = plan_steps.len();
+    let mut patch_ctx = StagedPlanPatchPlannerCtx {
+        p,
+        per_coord,
+        labels: &labels,
+        render_to_terminal,
+        make_step_user_message: &make_step_user_message,
+    };
 
+    send_staged_plan_started(patch_ctx.p.out, &plan_id, n).await;
+
+    let plan_for_notice = AgentReplyPlanV1 {
+        plan_type: "agent_reply_plan".to_string(),
+        version: 1,
+        steps: plan_steps.clone(),
+        no_task: false,
+    };
     send_staged_plan_notice(
-        p.out,
+        patch_ctx.p.out,
         echo_terminal_staged,
         true,
-        staged_plan_queue_summary_text(&plan, 0),
+        staged_plan_queue_summary_text(&plan_for_notice, 0),
     )
     .await;
 
     let mut staged_loop_cancelled = false;
     let mut completed_steps = 0usize;
-    for (i, step) in plan.steps.iter().enumerate() {
-        if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+    let mut i = 0usize;
+    while i < plan_steps.len() {
+        if sse_sender_closed(patch_ctx.p.out)
+            || patch_ctx.p.cancel.is_some_and(|c| c.load(Ordering::SeqCst))
+        {
             staged_loop_cancelled = true;
             break;
         }
+        let step = plan_steps[i].clone();
         let step_index = i + 1;
         send_staged_plan_step_started(
-            p.out,
+            patch_ctx.p.out,
             &plan_id,
             step.id.trim(),
             step_index,
@@ -394,11 +635,60 @@ where
         if echo_terminal_staged {
             let _ = crate::runtime::terminal_cli_transcript::print_staged_plan_notice(false, &body);
         }
-        p.messages.push(make_step_user_message(body));
-        let run_step = run_agent_outer_loop(p, per_coord).await;
+        let step_user_idx = patch_ctx.p.messages.len();
+        patch_ctx.p.messages.push(make_step_user_message(body));
+        let run_step = run_agent_outer_loop(patch_ctx.p, patch_ctx.per_coord).await;
         if let Err(e) = run_step {
+            if patch_ctx.p.cfg.staged_plan_feedback_mode == StagedPlanFeedbackMode::PatchPlanner {
+                let mut recovered = false;
+                for _ in 0..patch_ctx.p.cfg.staged_plan_patch_max_attempts {
+                    let feedback = staged_plan_step_failure_feedback_user_body(
+                        &plan_id,
+                        i,
+                        n,
+                        &step,
+                        "执行子循环返回错误",
+                        "请根据对话历史缩短或调整后续步骤；若属环境/权限问题请在补丁中显式增加修复步。",
+                    );
+                    if let Some(merged) = run_staged_plan_patch_planner_round(
+                        &mut patch_ctx,
+                        feedback,
+                        &plan_steps,
+                        i,
+                    )
+                    .await?
+                    {
+                        plan_steps = merged;
+                        n = plan_steps.len();
+                        let replan = AgentReplyPlanV1 {
+                            plan_type: "agent_reply_plan".to_string(),
+                            version: 1,
+                            steps: plan_steps.clone(),
+                            no_task: false,
+                        };
+                        let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan)
+                            .map_err(|e| e.to_string())?;
+                        push_assistant_merging_trailing_empty_placeholder(
+                            patch_ctx.p.messages,
+                            Message::assistant_only(json),
+                        );
+                        send_staged_plan_notice(
+                            patch_ctx.p.out,
+                            echo_terminal_staged,
+                            true,
+                            staged_plan_queue_summary_text(&replan, completed_steps),
+                        )
+                        .await;
+                        recovered = true;
+                        break;
+                    }
+                }
+                if recovered {
+                    continue;
+                }
+            }
             finish_staged_plan_step_failed_and_plan_failed_sse(StagedPlanStepFailedExit {
-                out: p.out,
+                out: patch_ctx.p.out,
                 plan_id: &plan_id,
                 step_id_trim: step.id.trim(),
                 step_index,
@@ -408,9 +698,11 @@ where
             .await;
             return Err(e);
         }
-        if sse_sender_closed(p.out) || p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        if sse_sender_closed(patch_ctx.p.out)
+            || patch_ctx.p.cancel.is_some_and(|c| c.load(Ordering::SeqCst))
+        {
             finish_staged_plan_step_sse(
-                p.out,
+                patch_ctx.p.out,
                 &plan_id,
                 step.id.trim(),
                 step_index,
@@ -421,22 +713,95 @@ where
             staged_loop_cancelled = true;
             break;
         }
-        finish_staged_plan_step_sse(p.out, &plan_id, step.id.trim(), step_index, n, "ok").await;
-        completed_steps = step_index;
-        p.messages.push(Message::chat_ui_separator(true));
-        // 先发队列摘要 SSE，再追加 UI 分隔。
-        send_staged_plan_notice(
-            p.out,
-            echo_terminal_staged,
-            true,
-            staged_plan_queue_summary_text(&plan, step_index),
+
+        let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.messages, step_user_idx);
+        if !tools_ok
+            && patch_ctx.p.cfg.staged_plan_feedback_mode == StagedPlanFeedbackMode::PatchPlanner
+        {
+            let mut recovered = false;
+            for _ in 0..patch_ctx.p.cfg.staged_plan_patch_max_attempts {
+                let feedback = staged_plan_step_failure_feedback_user_body(
+                    &plan_id,
+                    i,
+                    n,
+                    &step,
+                    "本步内工具调用未全部成功",
+                    "请阅读本步对应的 `role: tool` 输出（含失败原因），修订从当前步起的 `steps`（可替换、拆分或追加一步）。",
+                );
+                if let Some(merged) =
+                    run_staged_plan_patch_planner_round(&mut patch_ctx, feedback, &plan_steps, i)
+                        .await?
+                {
+                    plan_steps = merged;
+                    n = plan_steps.len();
+                    let replan = AgentReplyPlanV1 {
+                        plan_type: "agent_reply_plan".to_string(),
+                        version: 1,
+                        steps: plan_steps.clone(),
+                        no_task: false,
+                    };
+                    let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan)
+                        .map_err(|e| e.to_string())?;
+                    push_assistant_merging_trailing_empty_placeholder(
+                        patch_ctx.p.messages,
+                        Message::assistant_only(json),
+                    );
+                    send_staged_plan_notice(
+                        patch_ctx.p.out,
+                        echo_terminal_staged,
+                        true,
+                        staged_plan_queue_summary_text(&replan, completed_steps),
+                    )
+                    .await;
+                    recovered = true;
+                    break;
+                }
+            }
+            if recovered {
+                continue;
+            }
+            finish_staged_plan_step_failed_and_plan_failed_sse(StagedPlanStepFailedExit {
+                out: patch_ctx.p.out,
+                plan_id: &plan_id,
+                step_id_trim: step.id.trim(),
+                step_index,
+                n,
+                completed_steps_before_this: completed_steps,
+            })
+            .await;
+            return Ok(());
+        }
+
+        finish_staged_plan_step_sse(
+            patch_ctx.p.out,
+            &plan_id,
+            step.id.trim(),
+            step_index,
+            n,
+            "ok",
         )
         .await;
-        emit_chat_ui_separator_sse(p.out, true).await;
+        completed_steps = step_index;
+        patch_ctx.p.messages.push(Message::chat_ui_separator(true));
+        let plan_row = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".to_string(),
+            version: 1,
+            steps: plan_steps.clone(),
+            no_task: false,
+        };
+        send_staged_plan_notice(
+            patch_ctx.p.out,
+            echo_terminal_staged,
+            true,
+            staged_plan_queue_summary_text(&plan_row, step_index),
+        )
+        .await;
+        emit_chat_ui_separator_sse(patch_ctx.p.out, true).await;
+        i += 1;
     }
     // 末步成功后循环内已发送含「[✓] 全部完成」的摘要，勿再发一次（否则重复一条）。
     send_staged_plan_finished(
-        p.out,
+        patch_ctx.p.out,
         &plan_id,
         n,
         completed_steps,
@@ -450,8 +815,8 @@ where
     // 仅当循环内未添加过分隔符时再追加：n==0 未进入循环；或取消时 completed_steps==0。
     // 否则末步成功后已在循环内添加，再加会重复两行。
     if n == 0 || (staged_loop_cancelled && completed_steps == 0) {
-        p.messages.push(Message::chat_ui_separator(true));
-        emit_chat_ui_separator_sse(p.out, true).await;
+        patch_ctx.p.messages.push(Message::chat_ui_separator(true));
+        emit_chat_ui_separator_sse(patch_ctx.p.out, true).await;
     }
     Ok(())
 }
@@ -463,19 +828,20 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
     let render_to_terminal = p.render_to_terminal;
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
-    let req =
-        prepare_staged_planner_no_tools_request(p, per_coord, build_logical_dual_planner_messages)
-            .await?;
+    let labels = StagedPlanRunLabels {
+        planning_log_label: "逻辑双agent规划轮输出",
+        step_injection_log_label: "逻辑双agent注入执行器user",
+        build_planner_messages: build_logical_dual_planner_messages,
+    };
+    let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
+        .await?;
     run_staged_plan_with_prepared_request(
         p,
         per_coord,
         req,
         render_to_terminal,
         echo_terminal_staged,
-        StagedPlanRunLabels {
-            planning_log_label: "逻辑双agent规划轮输出",
-            step_injection_log_label: "逻辑双agent注入执行器user",
-        },
+        labels,
         Message::user_only,
     )
     .await

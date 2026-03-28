@@ -62,6 +62,9 @@ pub(super) struct AgentSection {
     pub(super) staged_plan_phase_instruction: Option<String>,
     /// 为 true（默认）时：内置规划说明会要求模型在无具体任务时输出 `no_task` + 空 `steps`。
     pub(super) staged_plan_allow_no_task: Option<bool>,
+    /// `fail_fast`（默认）或 `patch_planner`
+    pub(super) staged_plan_feedback_mode: Option<String>,
+    pub(super) staged_plan_patch_max_attempts: Option<u64>,
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     pub(super) web_api_bearer_token: Option<String>,

@@ -1,9 +1,9 @@
 //! 最终回答中的结构化「规划」产物：从 assistant content 中解析 JSON，替代 `## 规划` 等子串匹配。
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// 约定的规划 JSON：`type` + `version` + `steps`；若 `no_task` 为 true 则表示无具体可拆任务，`steps` 须为空。
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct AgentReplyPlanV1 {
     #[serde(rename = "type")]
     pub plan_type: String,
@@ -14,7 +14,7 @@ pub struct AgentReplyPlanV1 {
     pub no_task: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PlanStepV1 {
     pub id: String,
     pub description: String,
@@ -81,6 +81,41 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …"}]}"#;
 
 /// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json 围栏，或整段即为单个 JSON 对象）。
+/// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
+/// `failed_step_index` 为**零基**（对应 `plan.steps` 下标）；补丁的 `steps` 替换自该步起的后缀。
+/// 将合法 v1 规划序列化为单行 JSON（供分阶段规划轮/补丁助手消息写入历史）。
+pub(crate) fn agent_reply_plan_v1_to_json_string(
+    plan: &AgentReplyPlanV1,
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string(plan)
+}
+
+pub(crate) fn merge_staged_plan_steps_after_step_failure(
+    base: &[PlanStepV1],
+    patch: &AgentReplyPlanV1,
+    failed_step_index: usize,
+) -> Result<Vec<PlanStepV1>, PlanArtifactError> {
+    if patch.no_task {
+        return Err(PlanArtifactError::InvalidStep {
+            index: 0,
+            reason: "staged_patch_no_task",
+        });
+    }
+    if patch.steps.is_empty() {
+        return Err(PlanArtifactError::EmptySteps);
+    }
+    if failed_step_index >= base.len() {
+        return Err(PlanArtifactError::InvalidStep {
+            index: failed_step_index,
+            reason: "failed_step_index out of range",
+        });
+    }
+    let mut out = Vec::with_capacity(failed_step_index + patch.steps.len());
+    out.extend_from_slice(&base[..failed_step_index]);
+    out.extend(patch.steps.iter().cloned());
+    Ok(out)
+}
+
 pub fn parse_agent_reply_plan_v1(content: &str) -> Result<AgentReplyPlanV1, PlanArtifactError> {
     for slice in collect_json_candidates(content) {
         let Ok(plan) = serde_json::from_str::<AgentReplyPlanV1>(&slice) else {
@@ -377,6 +412,44 @@ mod tests {
         let e = staged_plan_invalid_run_agent_turn_error(PlanArtifactError::NotFound);
         assert!(is_staged_plan_invalid_run_agent_turn_error(&e));
         assert!(e.starts_with(STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX));
+    }
+
+    #[test]
+    fn merge_staged_plan_steps_replaces_suffix_from_failed_index() {
+        let base = vec![
+            PlanStepV1 {
+                id: "s0".into(),
+                description: "done".into(),
+            },
+            PlanStepV1 {
+                id: "s1".into(),
+                description: "fail".into(),
+            },
+            PlanStepV1 {
+                id: "s2".into(),
+                description: "old tail".into(),
+            },
+        ];
+        let patch = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![
+                PlanStepV1 {
+                    id: "s1b".into(),
+                    description: "retry".into(),
+                },
+                PlanStepV1 {
+                    id: "s2b".into(),
+                    description: "new tail".into(),
+                },
+            ],
+            no_task: false,
+        };
+        let merged = merge_staged_plan_steps_after_step_failure(&base, &patch, 1).unwrap();
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].id, "s0");
+        assert_eq!(merged[1].id, "s1b");
+        assert_eq!(merged[2].id, "s2b");
     }
 
     #[test]

@@ -13,7 +13,7 @@
 - **Cursor 式规则**：`AGENT_CURSOR_RULES_ENABLED`、`AGENT_CURSOR_RULES_DIR`、`AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD`、`AGENT_CURSOR_RULES_MAX_CHARS`
 - **终答规划**：`AGENT_FINAL_PLAN_REQUIREMENT`（`never` / `workflow_reflection` / `always`）、`AGENT_PLAN_REWRITE_MAX_ATTEMPTS`
 - **规划器模式**：`AGENT_PLANNER_EXECUTOR_MODE`（`single_agent` / `logical_dual_agent`）
-- **分阶段规划**：`AGENT_STAGED_PLAN_EXECUTION`、`AGENT_STAGED_PLAN_PHASE_INSTRUCTION`、`AGENT_STAGED_PLAN_ALLOW_NO_TASK`
+- **分阶段规划**：`AGENT_STAGED_PLAN_EXECUTION`、`AGENT_STAGED_PLAN_PHASE_INSTRUCTION`、`AGENT_STAGED_PLAN_ALLOW_NO_TASK`、`AGENT_STAGED_PLAN_FEEDBACK_MODE`（`fail_fast` / `patch_planner`）、`AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS`
 - **对话队列**：`AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`
 - **只读工具并行**：`AGENT_PARALLEL_READONLY_TOOLS_MAX`
 - **`run_command` 白名单覆盖**：`AGENT_ALLOWED_COMMANDS`（逗号分隔）
@@ -67,6 +67,8 @@ model = "deepseek-reasoner"
 ## 分阶段规划（`staged_plan_execution`）
 
 在 `planner_executor_mode = single_agent` 且开启时，每条用户消息先走无工具规划轮，再按 `steps` 执行。`no_task` + 空 `steps` 可跳过执行。规划 JSON 无法解析时降级为常规工具循环。API 调用通常多于关闭时。
+
+**步级反馈（`staged_plan_feedback_mode`）**：默认 `fail_fast`（某步子循环 `Err` 或步内存在失败工具结果时，整轮计划按失败结束）。设为 `patch_planner` 时，会向规划器注入简短反馈并无工具重跑规划轮，将补丁 `steps` 与「当前步及之后」合并后继续执行（受 `staged_plan_patch_max_attempts` 限制，多耗 API）。
 
 ## 系统提示词
 
