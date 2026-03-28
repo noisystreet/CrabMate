@@ -81,11 +81,29 @@ cargo run -- config
 
 ## REPL 内建命令
 
-以 `/` 开头：**`/help`**、**`/clear`**、**`/model`**、**`/workspace`** / **`/cd`**、**`/tools`**。行首 **`$`**（TTY 下提示变为 `bash#:`）执行本地 shell 一行，**不**经 `run_command` 白名单，**仅可信工作区**使用。`quit` / `exit` / Ctrl+D 退出。
+以 `/` 开头：**`/help`**、**`/clear`**、**`/model`**、**`/workspace`** / **`/cd`**、**`/tools`**。`quit` / `exit` / Ctrl+D 退出。
+
+### 行首 `$`（本地 shell，安全边界）
+
+在**交互式 TTY** 下，行首输入 **`$`**（随后提示变为 `bash#:`）表示执行**本地一行 shell**，由本机 **`sh -c`**（Windows 为 **`cmd /C`**）在当前工作区目录运行，**不经过模型**，也**不受**模型工具 **`run_command` 白名单**限制——语义上等同于你在本机终端里自己敲的一条命令（可执行任意 `sh -c` 能表达的程序，仅 stdin 被置空）。**仅应在可信本机 / 可信工作区使用**；需要受控命令集时请改用对话让模型走 `run_command`。管道/非 TTY 输入仍可用行内 `$ <命令>`。
+
+模型或网络等导致**本轮对话失败**时，REPL 会打印错误并**继续**等待下一行输入；若历史消息状态异常，可用 **`/clear`** 重置（保留当前 `system`）。
 
 ## `run_command` 终端审批
 
 命令不在白名单时 stdin 确认：**y** 本次；**a** / **always** 本会话永久允许该命令名；**n** / 回车 拒绝。**`chat --yes`** 全放行（极危险）。**`chat --approve-commands a,b`** 额外允许列出的命令名。
+
+## CLI 与 Web 能力对照（会话持久 / 审批 / 导出）
+
+以下说明**当前实现**下终端与 Web 的差异，避免误以为「CLI 与 Web 完全等价」。
+
+| 能力 | Web（`serve`） | CLI（`repl` / `chat`） |
+|------|----------------|------------------------|
+| **会话持久** | 可选 SQLite（`conversation_store_sqlite_path`）+ `conversation_id`，多会话、进程重启可续聊（受 TTL/条数上限等约束，见 `docs/DEVELOPMENT.md`）。 | **部分等价**：REPL 可选从工作区 **`.crabmate/tui_session.json`** 启动时加载/退出时保存（`tui_load_session_on_start` / `tui_session_max_messages`），为**单条会话链**文件，**不是** Web 的按 `conversation_id` 多会话库。`chat` 单次或批跑**不**自动跨命令持久化；需自行用 `--messages-json-file` 等传入上下文。 |
+| **人工审批** | `run_command` 非白名单、`http_fetch`/`http_request` 等可走 SSE 控制面 + 浏览器 **`POST /chat/approval`**。 | **`run_command`**：stdin 交互审批（见上一节），语义类似但**无** SSE。 **`http_fetch` / `http_request`**：**无**交互审批通道；URL 须匹配 `http_fetch_allowed_prefixes`，否则工具直接返回错误（与代码中「Web 模式下可审批」文案区分——CLI 下请依赖前缀白名单或改用 Web）。 |
+| **导出聊天记录** | 前端 **导出 JSON / Markdown**（与 `.crabmate/tui_session.json` 等形状对齐说明见 `README.md`）。 | **无**与 Web 同形的「一键导出」子命令。可自行读取 REPL 会话文件、或用 `chat --output json` 输出本轮助手正文、或用 `--messages-json-file` 管理批处理输入输出；**不等价**于 Web UI 导出按钮。 |
+
+若日后在 CLI 增加与 Web 对齐的导出子命令或会话 API，请同步更新本节与 `README.md`。
 
 ## 前端构建与 Web
 

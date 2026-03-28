@@ -22,7 +22,11 @@ use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
+
+/// 长期记忆库打开失败时，仅向 stderr 打印**一次**用户可见说明（避免每轮 REPL/chat 重复刷屏）。
+static CLI_LTM_OPEN_FAILURE_NOTIFIED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, PartialEq, Eq)]
 enum ReplBuiltIn<'a> {
@@ -50,7 +54,7 @@ fn parse_repl_dollar_shell_line(input: &str) -> Option<Option<&str>> {
     }
 }
 
-const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。交互终端：行首按 `$` 后提示变为 bash#:（`$` 不回显）；管道输入仍可用 `$ <命令>`。示例: ls  pwd  git status";
+const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。等同本机 `sh -c` / `cmd /C`，不受模型 `run_command` 白名单约束，仅应在可信环境使用。交互终端：行首按 `$` 后提示变为 bash#:（`$` 不回显）；管道输入仍可用 `$ <命令>`。示例: ls  pwd  git status";
 
 /// 执行 REPL 本地 shell 一行：`parsed` 为 `parse_repl_dollar_shell_line` 的 `Some(...)` 内层；`None` 表示仅 `$` 或空命令，打印用法。
 fn repl_execute_shell(
@@ -137,9 +141,19 @@ fn redraw_repl_input_prompt(stdout: &mut io::Stdout, shell_mode: bool) -> io::Re
     Ok(())
 }
 
+/// 保证离开 `read_repl_line_tty` 时（含 panic 栈展开）尽量恢复 cooked 模式，避免终端卡在 raw。
+struct ReplRawModeGuard;
+
+impl Drop for ReplRawModeGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+    }
+}
+
 fn read_repl_line_tty(mut stdout: io::Stdout) -> io::Result<ReplReadLine> {
     enable_raw_mode()?;
-    let raw_result = (|| -> io::Result<ReplReadLine> {
+    let _raw_guard = ReplRawModeGuard;
+    (|| -> io::Result<ReplReadLine> {
         let mut buf = String::new();
         let mut shell_prompt = false;
         loop {
@@ -190,9 +204,7 @@ fn read_repl_line_tty(mut stdout: io::Stdout) -> io::Result<ReplReadLine> {
                 }
             }
         }
-    })();
-    let _ = disable_raw_mode();
-    raw_result
+    })()
 }
 
 fn run_repl_shell_line_sync(cmd: &str, work_dir: &Path) -> io::Result<i32> {
@@ -395,6 +407,25 @@ fn cli_long_term_memory_handles(
                 p.display(),
                 e
             );
+            if !CLI_LTM_OPEN_FAILURE_NOTIFIED.swap(true, Ordering::SeqCst) {
+                let detail = e.to_string();
+                let max = 240usize;
+                let (head, tail) = if detail.chars().count() > max {
+                    let head: String = detail.chars().take(max).collect();
+                    (head, "…")
+                } else {
+                    (detail, "")
+                };
+                eprintln!(
+                    "crabmate: 警告：配置中已启用长期记忆 (long_term_memory_enabled)，但本进程无法打开 SQLite；长期记忆在本进程中已禁用。\n\
+                     路径: {}\n\
+                     错误: {}{}\n\
+                     请检查目录权限、磁盘空间或向量后端依赖（如 fastembed / ONNX）；若暂不需要可设 long_term_memory_enabled = false。详情见日志 (target=crabmate)。",
+                    p.display(),
+                    head,
+                    tail
+                );
+            }
             (None, None)
         }
     }
@@ -819,8 +850,11 @@ pub async fn run_repl(
                 )
                 .await
                 {
-                    let _ = style.eprint_error(&e.to_string());
-                    break;
+                    let _ = style.eprint_error(&format!(
+                        "本轮对话失败（可继续输入；异常历史可 /clear 清空）：{}",
+                        e
+                    ));
+                    continue;
                 }
             }
         }

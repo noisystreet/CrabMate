@@ -360,7 +360,7 @@ flowchart LR
 
 - **`web`**：承载 Web 侧的“工作区/任务”等 axum handler（与前端面板直接对应）。
 - **`runtime`**：CLI 运行时逻辑，负责 REPL、单次问答与调用 `run_agent_turn`。
-  - **`runtime/workspace_session`**：`.crabmate/tui_session.json` 加载；**`initial_workspace_messages`** 供 CLI REPL；**仅当** `[agent] tui_load_session_on_start` 为 true 时从磁盘恢复，并按 `tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断。`save_workspace_session` / `export_*` 保留在代码中供后续全屏终端 UI 再接。
+  - **`runtime/workspace_session`**：`.crabmate/tui_session.json` 加载；**`initial_workspace_messages`** 供 CLI REPL；**仅当** `[agent] tui_load_session_on_start` 为 true 时从磁盘恢复，并按 `tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断。`save_workspace_session` / `export_*` 保留在代码中供后续全屏终端 UI 再接。Web 与 CLI 在**会话持久、审批、导出**上的产品差异见 **`docs/CLI.md`**「CLI 与 Web 能力对照」。
   - **`runtime/benchmark/`**：批量无人值守测评子系统（SWE-bench / GAIA / HumanEval 等）。由 CLI `--benchmark` + `--batch` 触发，在 `lib.rs::run()` 中分派。
   - **`runtime/cli_doctor`**：`doctor` / `models` / `probe` 子命令实现；`doctor` 复用 `tools::capture_trimmed` 与 **`canonical_workspace_root`**（`tools/mod` `pub(crate)` 再导出）。
 

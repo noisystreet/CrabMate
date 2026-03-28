@@ -13,9 +13,8 @@
 - **可选 MCP（stdio）**：配置 `mcp_enabled` + `mcp_command` 后合并远端工具为 `mcp__{slug}__{tool}`；`mcp_command` 等效允许启动子进程，须可信配置。
 - **Web UI**：聊天、工作区浏览/编辑、任务清单（进程内 `/tasks`，重启清空）、状态栏；Agent 改文件后列表自动刷新。
 - **项目画像**：侧栏只读摘要（`Cargo.toml` / `package.json`、目录与 tokei 等）；可与工作区备忘合并注入新会话首轮（`project_profile_inject_*`）。
-- **流式与审批**：Web SSE；`run_command` 等可走 `POST /chat/approval`。CLI 非白名单命令有终端确认（或 `--yes` / `--approve-commands`，仅可信环境）。
-- **会话**：可选 `conversation_id` + **`conversation_store_sqlite_path`** 持久化（TTL/条数上限见配置）。备忘文件 **`agent_memory_file`**、**长期记忆**（SQLite + 可选 `fastembed`）见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。
-- **导出**：Web 可导出与 TUI 同形 JSON 及 Markdown 聊天记录。
+- **流式与审批**：Web SSE；`run_command` / `http_fetch` 等可走 `POST /chat/approval`。CLI 下 `run_command` 非白名单用终端确认（或 `--yes` / `--approve-commands`）；**`http_fetch` 等在 CLI 无交互审批**，须匹配配置前缀。**Web 与 CLI 对照表**见 [`docs/CLI.md`](docs/CLI.md)「CLI 与 Web 能力对照」。
+- **会话与导出**：Web 可选 `conversation_id` + **`conversation_store_sqlite_path`** 持久化（TTL/条数上限见配置），并可在 UI **导出 JSON/MD**。CLI REPL 可选 **`.crabmate/tui_session.json`**（`tui_load_session_on_start`），**无**与 Web 同形的一键导出子命令。备忘 **`agent_memory_file`**、**长期记忆**见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。会话/审批/导出差异仍以 **`docs/CLI.md`** 对照节为准。
 
 ## 文档索引
 
@@ -49,6 +48,8 @@ export API_KEY="your-api-key"
 cargo run              # 默认进入 repl
 cargo run -- serve     # Web，默认 8080
 ```
+
+**REPL**：默认 `cargo run` 进入交互模式；行首 **`$`** 为**本机 shell 一行**（`sh -c` / `cmd /C`），**不等同**于模型的 `run_command` 白名单，仅适合可信环境——详见 [`docs/CLI.md`](docs/CLI.md)「行首 `$`」。
 
 前端：`cd frontend && npm install && npm run build` 后再 `serve`（静态资源来自 `frontend/dist`）。
 
