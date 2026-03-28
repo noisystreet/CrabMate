@@ -21,6 +21,7 @@ mod read_file_turn_cache;
 mod redact;
 mod runtime;
 mod sse;
+mod text_encoding;
 mod text_sanitize;
 mod tool_call_explain;
 mod tool_registry;

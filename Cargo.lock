@@ -693,6 +693,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "chardetng"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14b8f0b65b7b08ae3c8187e8d77174de20cb6777864c6b832d8ad365999cf1ea"
+dependencies = [
+ "cfg-if",
+ "encoding_rs",
+ "memchr",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -912,12 +923,14 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "blake3",
+ "chardetng",
  "chrono",
  "clap 4.6.0",
  "crossterm",
  "csv",
  "dialoguer",
  "diffy",
+ "encoding_rs",
  "env_logger 0.11.9",
  "fastembed",
  "futures-util",

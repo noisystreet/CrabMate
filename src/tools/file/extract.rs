@@ -4,6 +4,8 @@
 use regex::RegexBuilder;
 use std::path::Path;
 
+use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
+
 use super::path::{path_for_tool_display, resolve_for_read};
 
 /// 在文件中按正则抽取匹配行（只读）。
@@ -26,6 +28,10 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
     if path.is_empty() {
         return "缺少 path 参数".to_string();
     }
+    let enc_name = match parse_text_encoding_name(v.get("encoding").and_then(|x| x.as_str())) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
 
     let pattern = v
         .get("pattern")
@@ -95,9 +101,13 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         return "错误：路径不是文件或不存在，无法读取".to_string();
     }
 
-    let content = match std::fs::read_to_string(&target) {
-        Ok(s) => s,
+    let raw = match std::fs::read(&target) {
+        Ok(b) => b,
         Err(e) => return format!("读取文件失败: {}", e),
+    };
+    let content = match decode_bytes_strict(&raw, enc_name) {
+        Ok((s, _note)) => s,
+        Err(e) => return e,
     };
     let all_lines: Vec<&str> = content.lines().collect();
     let total = all_lines.len();

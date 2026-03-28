@@ -21,7 +21,7 @@
   - `append_file`：追加内容到已有文件末尾（`create_if_missing` 可选新建）。
   - `create_dir`：创建目录（默认 `parents=true`，类似 `mkdir -p`）。
   - `search_replace`：单文件搜索替换（字面量或正则，默认 `dry_run` 预览，写盘需 `confirm`）。
-  - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。**单轮** `run_agent_turn` 内，服务端可对相同文件+相同读取参数缓存 `read_file` 正文（比对磁盘 **mtime+size**；执行写类工具或工作区变更后缓存清空），见配置 **`read_file_turn_cache_max_entries`**。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的 UTF-8 文本，超出会返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
+  - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限及 **`encoding`**（`utf-8` 严格、`utf-8-sig`、`gb18030`/`gbk`/`big5`、`utf-16le`/`be`、`auto` 等；非法序列报错而非静默替换）；`modify_file` 支持按行区间替换（大文件友好）。**单轮** `run_agent_turn` 内，服务端可对相同文件+相同读取参数缓存 `read_file` 正文（比对磁盘 **mtime+size**；执行写类工具或工作区变更后缓存清空），键含 **encoding**，见配置 **`read_file_turn_cache_max_entries`**。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的文件，正文解码规则与 `read_file` 一致，可选查询参数 **`encoding`**；超出大小返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接与 `#fragment` 锚点；支持 `output_format=text|json|sarif`。`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测（同 URL 去重缓存）。
@@ -361,8 +361,6 @@
 
 ## 文件/目录辅助工具示例
 
-## 文件/目录辅助工具示例
-
 - `read_binary_meta`（二进制/大文件：只返回大小、修改时间、**文件头 SHA256**，不把整文件读进上下文）：
   ```json
   {"path":"assets/app.bin","prefix_hash_bytes":8192}
@@ -372,7 +370,7 @@
   ```json
   {"path":"src/main.rs","start_line":1,"max_lines":200}
   ```
-  响应中会提示「下一段可将 start_line 设为 N」。需要精确总行数时可设 `"count_total_lines": true`（大文件会多扫一遍）。也可用 `start_line` + `end_line` 精确区间（仍受 `max_lines` 上限截断）。
+  非 UTF-8 或需去 BOM 时可设 **`encoding`**，例如 `{"path":"legacy.txt","encoding":"gb18030"}`、`{"path":"utf8bom.txt","encoding":"utf-8-sig"}`、`{"path":"unknown.bin","encoding":"auto"}`。默认 **`utf-8` 严格**：非法 UTF-8 字节会返回明确错误，而**不会**用替换字符静默乱码。响应中会提示「下一段可将 start_line 设为 N」。需要精确总行数时可设 `"count_total_lines": true`（大文件会多扫一遍）。也可用 `start_line` + `end_line` 精确区间（仍受 `max_lines` 上限截断）。
 - `modify_file`（大文件局部改：`mode=replace_lines` + 行号区间 + `content`，流式改写不落整文件到内存）：
   ```json
   {"path":"src/huge.rs","mode":"replace_lines","start_line":120,"end_line":135,"content":"// 新片段\n"}
@@ -385,7 +383,7 @@
   ```json
   {"path":"src/main.rs","kind":"file"}
   ```
-- `extract_in_file`（文件内按正则抽取匹配行）：
+- `extract_in_file`（文件内按正则抽取匹配行；可选 **`encoding`**，与 `read_file` 相同）：
   ```json
   {"path":"src/main.rs","pattern":"workflow_execute","max_matches":20,"case_insensitive":true}
   ```

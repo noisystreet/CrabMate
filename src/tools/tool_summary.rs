@@ -194,6 +194,11 @@ pub(super) fn summary_read_file(v: &serde_json::Value) -> Option<String> {
     let start = v.get("start_line").and_then(|x| x.as_u64());
     let end = v.get("end_line").and_then(|x| x.as_u64());
     let ml = v.get("max_lines").and_then(|x| x.as_u64());
+    let enc = v
+        .get("encoding")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let suffix = match (start, end, ml) {
         (Some(s), Some(e), _) => format!(" [{}-{}]", s, e),
         (Some(s), None, Some(m)) => format!(" [{}~ max_lines={}]", s, m),
@@ -202,7 +207,8 @@ pub(super) fn summary_read_file(v: &serde_json::Value) -> Option<String> {
         (None, None, Some(m)) => format!(" [chunk max_lines={}]", m),
         (None, None, None) => String::new(),
     };
-    Some(format!("read file: {}{}", path, suffix))
+    let enc_s = enc.map(|e| format!(" enc={}", e)).unwrap_or_default();
+    Some(format!("read file: {}{}{}", path, suffix, enc_s))
 }
 
 pub(super) fn summary_read_dir(v: &serde_json::Value) -> Option<String> {
@@ -313,7 +319,13 @@ pub(super) fn summary_hash_file(v: &serde_json::Value) -> Option<String> {
 pub(super) fn summary_extract_in_file(v: &serde_json::Value) -> Option<String> {
     let path = v.get("path")?.as_str()?.trim();
     let pattern = v.get("pattern")?.as_str()?.trim();
-    Some(format!("extract in file: {} / {}", path, pattern))
+    let enc = v
+        .get("encoding")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let enc_s = enc.map(|e| format!(" enc={}", e)).unwrap_or_default();
+    Some(format!("extract in file: {} / {}{}", path, pattern, enc_s))
 }
 
 pub(super) fn summary_apply_patch(v: &serde_json::Value) -> Option<String> {

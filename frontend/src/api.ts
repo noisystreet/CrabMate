@@ -244,12 +244,22 @@ export async function fetchWorkspacePick(): Promise<WorkspacePickResponse> {
   return request<WorkspacePickResponse>('/workspace/pick', { timeoutMs: 15000, retries: 0 })
 }
 
-/** 读取工作区内文件内容，path 为文件完整路径（与工作区列表 data.path 同源） */
-export async function fetchWorkspaceFile(path: string): Promise<{ content: string; error?: string }> {
-  return request<{ content: string; error?: string }>(`/workspace/file?path=${encodeURIComponent(path)}`, {
-    timeoutMs: 15000,
-    retries: 0,
-  })
+/** 读取工作区内文件内容，path 为文件完整路径（与工作区列表 data.path 同源）。encoding 与后端 read_file 一致，可选。 */
+export async function fetchWorkspaceFile(
+  path: string,
+  encoding?: string,
+): Promise<{ content: string; error?: string }> {
+  const enc =
+    encoding && encoding.trim().length > 0
+      ? `&encoding=${encodeURIComponent(encoding.trim())}`
+      : ''
+  return request<{ content: string; error?: string }>(
+    `/workspace/file?path=${encodeURIComponent(path)}${enc}`,
+    {
+      timeoutMs: 15000,
+      retries: 0,
+    },
+  )
 }
 
 /** 在工作区内创建或覆盖文件，path 为文件完整路径 */

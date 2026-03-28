@@ -137,6 +137,7 @@ cargo run -- serve
 | GET | `/status` | 后台状态 |
 | GET | `/workspace` | 工作区列表 |
 | GET | `/workspace/profile` | 项目画像 Markdown |
+| GET | `/workspace/file` | 读工作区内文件（`path` 必填；可选 **`encoding`**，与工具 `read_file` 一致，默认 UTF-8 严格；单文件上限 1 MiB） |
 | GET | `/health` | 健康检查 |
 
 SSE 控制面字段见 **`docs/SSE_PROTOCOL.md`**。
