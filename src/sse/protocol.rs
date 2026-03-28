@@ -86,6 +86,16 @@ pub enum SsePayload {
         #[serde(rename = "chat_ui_separator")]
         short: bool,
     },
+    /// 本会话已成功写入存储后的 revision（供 Web 分叉 `POST /chat/branch` 与冲突检测）。
+    ConversationSaved {
+        #[serde(rename = "conversation_saved")]
+        saved: ConversationSavedBody,
+    },
+    /// 时间线旁注（审批结果等）；Web 可展示，**不**进入模型上下文。
+    TimelineLog {
+        #[serde(rename = "timeline_log")]
+        log: TimelineLogBody,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -163,6 +173,20 @@ pub struct StagedPlanFinishedBody {
     pub completed_steps: usize,
     /// `ok` / `cancelled` / `failed`
     pub status: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConversationSavedBody {
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TimelineLogBody {
+    /// 如 `approval_decision`、`approval_request`（与前端展示分类一致即可）。
+    pub kind: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 /// 序列化为单行 JSON，供 `Event::data(...)` 使用。

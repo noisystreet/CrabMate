@@ -683,10 +683,24 @@ async fn request_approval(
         crate::sse::send_string_logged(&out_tx, line, "workflow::execute approval request").await;
 
     let mut rx_guard = approval_rx.lock().await;
-    rx_guard
+    let decision = rx_guard
         .recv()
         .await
-        .unwrap_or(CommandApprovalDecision::Deny)
+        .unwrap_or(CommandApprovalDecision::Deny);
+    let detail = if args.trim().is_empty() {
+        command.to_string()
+    } else {
+        format!("{command} {}", args.trim())
+    };
+    crate::sse::web_approval::send_timeline_approval_decision(
+        &out_tx,
+        "工作流审批：",
+        Some(detail),
+        decision,
+        "workflow::execute approval timeline",
+    )
+    .await;
+    decision
 }
 
 fn format_main_summary(

@@ -148,7 +148,7 @@ pub async fn run_agent_turn<'a>(
 
 pub(crate) use conversation_store::SaveConversationOutcome;
 pub(crate) use web::AppState;
-pub(crate) use web::save_outcome_to_stream_error_line;
+pub(crate) use web::conversation_conflict_sse_line;
 
 /// CLI 入口逻辑（与历史二进制 `main` 等价）：解析参数、加载配置、启动 Web / REPL 等。
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {

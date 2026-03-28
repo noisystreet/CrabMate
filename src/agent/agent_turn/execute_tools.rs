@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
-use crate::sse::{SsePayload, ToolResultBody, encode_message};
+use crate::sse::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result::{self, parse_legacy_output};
 use crate::tools;
@@ -120,6 +120,30 @@ async fn emit_tool_result_sse_and_append(
 /// SSE 发送端已关闭（与外层 `run_agent_turn` 早退判断一致）。
 pub(crate) fn sse_sender_closed(out: Option<&mpsc::Sender<String>>) -> bool {
     out.is_some_and(|tx| tx.is_closed())
+}
+
+async fn emit_tool_call_summary_sse(out: Option<&mpsc::Sender<String>>, name: &str, args: &str) {
+    let Some(tx) = out else {
+        return;
+    };
+    let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
+    let summary = if let Some(ref parsed) = args_parsed {
+        tools::summarize_tool_call_parsed(name, parsed)
+    } else {
+        tools::summarize_tool_call(name, args)
+    }
+    .unwrap_or_else(|| format!("工具：{name}"));
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::ToolCall {
+            tool_call: ToolCallSummary {
+                name: name.to_string(),
+                summary,
+            },
+        }),
+        "execute_tools::tool_call summary",
+    )
+    .await;
 }
 
 /// 工具批处理中发现 SSE 已断开：记日志、尽力下发「工具轮结束」，返回 `true` 时应中止批处理。
@@ -279,6 +303,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
             {
                 return ExecuteToolsBatchOutcome::AbortedSse;
             }
+            emit_tool_call_summary_sse(out, &tc.function.name, &tc.function.arguments).await;
             let cached = result_map
                 .get(&(tc.function.name.as_str(), tc.function.arguments.as_str()))
                 .copied()
@@ -314,6 +339,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
             let id = tc.id.clone();
+            emit_tool_call_summary_sse(out, &name, &args).await;
             info!(target: "crabmate", "调用工具 tool={}", name);
             debug!(
                 target: "crabmate",

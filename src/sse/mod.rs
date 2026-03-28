@@ -7,10 +7,12 @@
 pub mod line;
 mod mpsc_send;
 pub mod protocol;
+pub(crate) mod web_approval;
 
 pub(crate) use mpsc_send::send_string_logged;
 
 pub use protocol::{
-    CommandApprovalBody, SseErrorBody, SsePayload, StagedPlanFinishedBody, StagedPlanStartedBody,
-    StagedPlanStepFinishedBody, StagedPlanStepStartedBody, ToolResultBody, encode_message,
+    CommandApprovalBody, ConversationSavedBody, SseErrorBody, SsePayload, StagedPlanFinishedBody,
+    StagedPlanStartedBody, StagedPlanStepFinishedBody, StagedPlanStepStartedBody, TimelineLogBody,
+    ToolCallSummary, ToolResultBody, encode_message,
 };

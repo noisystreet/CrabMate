@@ -76,6 +76,18 @@ pub fn is_chat_ui_separator(m: &Message) -> bool {
     m.role == "system" && m.name.as_deref() == Some("crabmate_ui_sep")
 }
 
+/// Web UI 时间线占位（审批结果等）；**不**送入模型 API。
+#[inline]
+pub fn is_chat_timeline_marker(m: &Message) -> bool {
+    m.role == "system" && m.name.as_deref() == Some("crabmate_timeline")
+}
+
+/// 仅用于聊天 UI / 摘要等「不进上游 chat/completions」的过滤；**不含**长期记忆注入（调用处另按需过滤）。
+#[inline]
+pub fn is_message_excluded_from_llm_context_except_memory(m: &Message) -> bool {
+    is_chat_ui_separator(m) || is_chat_timeline_marker(m)
+}
+
 /// 长期记忆注入条目的 `user.name`；仅供模型上下文使用，**不得**发往供应商 API。
 pub const CRABMATE_LONG_TERM_MEMORY_NAME: &str = "crabmate_long_term_memory";
 
@@ -151,7 +163,10 @@ pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
 ) -> Vec<Message> {
     messages
         .iter()
-        .filter(|m| !is_chat_ui_separator(m) && !is_long_term_memory_injection(m))
+        .filter(|m| {
+            !is_message_excluded_from_llm_context_except_memory(m)
+                && !is_long_term_memory_injection(m)
+        })
         .map(message_clone_stripping_reasoning_for_api)
         .collect()
 }

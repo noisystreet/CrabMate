@@ -207,6 +207,110 @@ pub fn count(conn: &Connection) -> Result<usize, rusqlite::Error> {
     Ok(n as usize)
 }
 
+fn update_messages_json_if_revision(
+    conn: &Connection,
+    id: &str,
+    expected_revision: u64,
+    corrupt_log: &'static str,
+    serialize_fail_log: &'static str,
+    mut mutate: impl FnMut(&mut Vec<Message>) -> bool,
+) -> Result<SaveConversationOutcome, rusqlite::Error> {
+    let row: Option<(String, i64)> = conn
+        .query_row(
+            &format!("SELECT messages_json, revision FROM {TABLE} WHERE id = ?1"),
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((json, revision)) = row else {
+        return Ok(SaveConversationOutcome::Conflict);
+    };
+    let rev = u64::try_from(revision).unwrap_or(0);
+    if rev != expected_revision {
+        return Ok(SaveConversationOutcome::Conflict);
+    }
+    let mut messages = match messages_from_json(&json) {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!(
+                target: "crabmate",
+                "{} id={} error={}",
+                corrupt_log,
+                id,
+                e
+            );
+            return Ok(SaveConversationOutcome::Conflict);
+        }
+    };
+    if !mutate(&mut messages) {
+        return Ok(SaveConversationOutcome::Saved);
+    }
+    let now = now_unix();
+    let new_json = match messages_to_json(&messages) {
+        Ok(j) => j,
+        Err(e) => {
+            log::error!(
+                target: "crabmate",
+                "{} id={} error={}",
+                serialize_fail_log,
+                id,
+                e
+            );
+            return Ok(SaveConversationOutcome::Conflict);
+        }
+    };
+    let n = conn.execute(
+        &format!(
+            "UPDATE {TABLE} SET messages_json = ?1, revision = revision + 1, updated_at_unix = ?2 WHERE id = ?3 AND revision = ?4"
+        ),
+        params![new_json, now, id, expected_revision as i64],
+    )?;
+    if n == 0 {
+        return Ok(SaveConversationOutcome::Conflict);
+    }
+    prune(
+        conn,
+        CONVERSATION_STORE_TTL_SECS,
+        CONVERSATION_STORE_MAX_ENTRIES,
+    )?;
+    Ok(SaveConversationOutcome::Saved)
+}
+
+/// 截断到「第 `ordinal` 条用户消息」之前（`ordinal` 为 0-based：0 表示删掉从首条用户起的尾部，仅保留 system 等）。
+/// 用户消息不含长期记忆注入条（`is_long_term_memory_injection`）。
+pub fn truncate_before_user_ordinal_if_revision(
+    conn: &Connection,
+    id: &str,
+    user_ordinal: usize,
+    expected_revision: u64,
+) -> Result<SaveConversationOutcome, rusqlite::Error> {
+    update_messages_json_if_revision(
+        conn,
+        id,
+        expected_revision,
+        "truncate_before_user 会话 JSON 损坏",
+        "truncate_before_user 序列化失败",
+        |messages| {
+            let mut u = 0usize;
+            let mut cut = messages.len();
+            for (i, m) in messages.iter().enumerate() {
+                if m.role == "user" && !crate::types::is_long_term_memory_injection(m) {
+                    if u == user_ordinal {
+                        cut = i;
+                        break;
+                    }
+                    u += 1;
+                }
+            }
+            if cut >= messages.len() {
+                return false;
+            }
+            messages.truncate(cut);
+            true
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
