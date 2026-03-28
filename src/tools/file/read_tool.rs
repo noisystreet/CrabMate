@@ -7,6 +7,28 @@ use std::path::Path;
 
 use super::path::{path_for_tool_display, resolve_for_read};
 
+fn read_file_logical_cache_key(canonical: &std::path::Path, v: &serde_json::Value) -> String {
+    let start_line = v.get("start_line").and_then(|n| n.as_u64()).unwrap_or(1);
+    let end_line = v
+        .get("end_line")
+        .and_then(|n| n.as_u64())
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let max_lines = v.get("max_lines").and_then(|n| n.as_u64()).unwrap_or(500);
+    let count_total = v
+        .get("count_total_lines")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    format!(
+        "{}|sl={}|el={}|ml={}|ct={}",
+        canonical.display(),
+        start_line,
+        end_line,
+        max_lines,
+        count_total
+    )
+}
+
 /// 单次 read_file 默认最多返回的行数（防撑爆上下文）
 const READ_FILE_DEFAULT_MAX_LINES: usize = 500;
 /// read_file 允许的单次上限
@@ -16,7 +38,11 @@ const READ_FILE_ABS_MAX_LINES: usize = 8000;
 /// - `max_lines`：单次最多返回行数（默认 500，上限 8000）。若未指定 `end_line`，则读到 `start_line + max_lines - 1` 或 EOF。
 /// - 若同时指定 `end_line` 与 `max_lines`，实际返回行数不超过 `max_lines`；若区间更宽会截断并提示 `has_more`。
 /// - `count_total_lines=true` 时会再扫描一遍文件统计总行数（大文件较慢）。
-pub fn read_file(args_json: &str, working_dir: &Path) -> String {
+pub fn read_file(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &super::super::ToolContext<'_>,
+) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数 JSON 无效: {}", e),
@@ -69,6 +95,14 @@ pub fn read_file(args_json: &str, working_dir: &Path) -> String {
         Ok(m) => m,
         Err(e) => return format!("读取元数据失败: {}", e),
     };
+    let cache_key = read_file_logical_cache_key(&target, &v);
+    if let Some(cache) = ctx.read_file_turn_cache {
+        let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        let len = meta.len();
+        if let Some(hit) = cache.try_get(&cache_key, modified, len) {
+            return hit;
+        }
+    }
     if meta.len() == 0 {
         return format!(
             "文件为空: {}",
@@ -196,7 +230,12 @@ pub fn read_file(args_json: &str, working_dir: &Path) -> String {
     for (idx, line) in collected {
         out.push_str(&format!("{}|{}\n", idx, line.trim_end_matches('\n')));
     }
-    out.trim_end().to_string()
+    let out = out.trim_end().to_string();
+    if let Some(cache) = ctx.read_file_turn_cache {
+        let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        cache.insert(cache_key, modified, meta.len(), out.clone());
+    }
+    out
 }
 
 fn count_lines_in_file(path: &Path) -> Result<usize, String> {

@@ -194,6 +194,7 @@ async fn run_single_task(
         seed_override: crate::LlmSeedOverride::default(),
         long_term_memory: None,
         long_term_memory_scope_id: None,
+        read_file_turn_cache: None,
     });
 
     let (status, agent_error) = if timeout_secs > 0 {

@@ -533,6 +533,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 seed_override,
                 long_term_memory: state.long_term_memory.clone(),
                 long_term_memory_scope_id: Some(conversation_id.clone()),
+                read_file_turn_cache: None,
             })
             .await;
             cancel_watcher.abort();
@@ -693,6 +694,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 seed_override,
                 long_term_memory: state.long_term_memory.clone(),
                 long_term_memory_scope_id: Some(conversation_id.clone()),
+                read_file_turn_cache: None,
             })
             .await;
             let (ok, cancelled, err) = match r {

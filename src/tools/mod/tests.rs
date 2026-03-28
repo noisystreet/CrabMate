@@ -17,6 +17,7 @@ fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
         http_fetch_allowed_prefixes: &[] as &[String],
         http_fetch_timeout_secs: 30,
         http_fetch_max_response_bytes: 8192,
+        read_file_turn_cache: None,
     }
 }
 fn test_allowed_commands() -> Vec<String> {

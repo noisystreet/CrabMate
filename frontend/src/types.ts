@@ -38,6 +38,10 @@ export interface StatusData {
   context_char_budget?: number
   /** 0 表示未启用 LLM 摘要 */
   context_summary_trigger_chars?: number
+  /** 单轮内并行只读工具并发上限 */
+  parallel_readonly_tools_max?: number
+  /** 单轮 read_file 缓存条数；0 关闭 */
+  read_file_turn_cache_max_entries?: number
   /** 进程内对话任务队列（/chat、/chat/stream） */
   chat_queue_max_concurrent?: number
   chat_queue_max_pending?: number

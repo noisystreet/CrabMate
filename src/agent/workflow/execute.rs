@@ -593,6 +593,7 @@ async fn run_node(
                 http_fetch_allowed_prefixes: hf_pfx.as_slice(),
                 http_fetch_timeout_secs: hf_to,
                 http_fetch_max_response_bytes: hf_mb,
+                read_file_turn_cache: None,
             };
             crate::tools::run_tool_result(&tool_name, &exec_args, &ctx)
         });

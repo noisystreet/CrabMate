@@ -60,6 +60,8 @@ pub(super) struct AgentSection {
     pub(super) chat_queue_max_pending: Option<u64>,
     /// 单轮并行只读 SyncDefault 工具时 `spawn_blocking` 最大并发；默认与 `chat_queue_max_concurrent` 相同。
     pub(super) parallel_readonly_tools_max: Option<u64>,
+    /// `read_file` 单轮缓存容量；`0` 关闭。
+    pub(super) read_file_turn_cache_max_entries: Option<u64>,
     pub(super) staged_plan_execution: Option<bool>,
     pub(super) staged_plan_phase_instruction: Option<String>,
     /// 为 true（默认）时：内置规划说明会要求模型在无具体任务时输出 `no_task` + 空 `steps`。
