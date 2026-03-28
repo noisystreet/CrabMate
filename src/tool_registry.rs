@@ -448,7 +448,14 @@ pub async fn dispatch_tool(
                 execute_http_fetch_impl(cfg, None, Some(ctx), name, args).await
             }
         },
-        HandlerId::HttpRequest => execute_http_request(cfg, name, args).await,
+        HandlerId::HttpRequest => match runtime {
+            ToolRuntime::Web { ctx, .. } => {
+                execute_http_request_impl(cfg, ctx, None, name, args).await
+            }
+            ToolRuntime::Cli { ctx, .. } => {
+                execute_http_request_impl(cfg, None, Some(ctx), name, args).await
+            }
+        },
         HandlerId::SyncDefault => {
             if sync_default_runs_inline(name) {
                 let ctx = tools::tool_context_for_with_read_cache(
@@ -850,24 +857,109 @@ async fn execute_http_fetch_impl(
     (s, None)
 }
 
-async fn execute_http_request(
+async fn execute_http_request_impl(
     cfg: &Arc<AgentConfig>,
+    web_ctx: Option<&WebToolRuntime>,
+    cli_ctx: Option<&CliToolRuntime>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
-    let (url, _method, _json_body) = match tools::http_fetch::parse_http_request_args(args) {
+    let (url, method, json_body) = match tools::http_fetch::parse_http_request_args(args) {
         Ok(x) => x,
         Err(e) => return (format!("错误：{}", e), None),
     };
-    if !tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes) {
-        return (
-            "错误：http_request 仅允许匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。"
-                .to_string(),
-            None,
-        );
+    let has_body = json_body.is_some();
+    let key = tools::http_fetch::request_storage_key(method, &url);
+    let approval_args = tools::http_fetch::approval_args_display_request(method, &url, has_body);
+    let allowed_by_cfg =
+        tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes);
+    let allowed_by_list = match (web_ctx, cli_ctx) {
+        (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(&key),
+        (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(&key),
+        (None, None) => false,
+    };
+    if !(allowed_by_cfg || allowed_by_list) {
+        if let Some(ctx) = web_ctx {
+            let decision = {
+                let _guard = ctx.approval_request_guard.lock().await;
+                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
+                    command_approval_request: crate::sse::CommandApprovalBody {
+                        command: "http_request".to_string(),
+                        args: approval_args.clone(),
+                        allowlist_key: Some(key.clone()),
+                    },
+                });
+                if !crate::sse::send_string_logged(
+                    &ctx.out_tx,
+                    line,
+                    "tool_registry::http_request approval",
+                )
+                .await
+                {
+                    return ("错误：审批通道不可用，请重试。".to_string(), None);
+                }
+                let mut rx_guard = ctx.approval_rx_shared.lock().await;
+                rx_guard
+                    .recv()
+                    .await
+                    .unwrap_or(CommandApprovalDecision::Deny)
+            };
+            crate::sse::web_approval::send_timeline_approval_decision(
+                &ctx.out_tx,
+                "http_request 审批：",
+                Some(approval_args.clone()),
+                decision,
+                "tool_registry::http_request approval timeline",
+            )
+            .await;
+            match decision {
+                CommandApprovalDecision::Deny => {
+                    return (format!("用户拒绝 http_request：{}", approval_args), None);
+                }
+                CommandApprovalDecision::AllowOnce => {}
+                CommandApprovalDecision::AllowAlways => {
+                    ctx.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(key.clone());
+                }
+            }
+        } else if let Some(cli_ctx) = cli_ctx {
+            if !cli_ctx.auto_approve_all_non_whitelist_run_command {
+                let detail = format!(
+                    "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
+                    approval_args
+                );
+                let decision = crate::runtime::cli_approval::prompt_tool_approval_cli(
+                    "http_request 审批",
+                    &detail,
+                )
+                .await;
+                match decision {
+                    CommandApprovalDecision::Deny => {
+                        return (format!("用户拒绝 http_request：{}", approval_args), None);
+                    }
+                    CommandApprovalDecision::AllowOnce => {}
+                    CommandApprovalDecision::AllowAlways => {
+                        cli_ctx
+                            .persistent_allowlist_shared
+                            .lock()
+                            .await
+                            .insert(key.clone());
+                    }
+                }
+            }
+        } else {
+            return (
+                "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
+                    .to_string(),
+                None,
+            );
+        }
     }
     let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch_max_response_bytes;
+    let name_in = name.to_string();
     let args_owned = args.to_string();
     let cmd_timeout = cfg.command_timeout_secs.max(timeout_secs);
     let handle = tokio::task::spawn_blocking(move || {
@@ -883,7 +975,7 @@ async fn execute_http_request(
             error!(
                 target: "crabmate",
                 "http_request 任务异常 tool={} error={:?}",
-                name,
+                name_in,
                 e
             );
             format!("http_request 执行异常：{:?}", e)

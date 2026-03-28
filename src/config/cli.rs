@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::sync::Mutex;
@@ -100,16 +100,26 @@ fn read_stdin_to_string() -> io::Result<String> {
 fn is_known_subcommand(s: &str) -> bool {
     matches!(
         s,
-        "serve" | "repl" | "chat" | "bench" | "config" | "doctor" | "models" | "probe"
+        "serve"
+            | "repl"
+            | "chat"
+            | "bench"
+            | "config"
+            | "doctor"
+            | "models"
+            | "probe"
+            | "export-session"
     )
 }
 
 /// 若 argv 在 **未写子命令名** 时使用历史平铺 flag（`--serve`、`--query` 等），改写为 `serve` / `chat` / … 形式再交给 clap。
 ///
-/// 已写子命令（如 `crabmate repl`）或 `-h` / `--help` / `-V` / `--version` 时不改写。
+/// 已写子命令（如 `crabmate repl` / `crabmate doctor`）或 `-h` / `--help` / `-V` / `--version` 时不改写。
 ///
 /// **`help` 子命令**：`crabmate help` → 根级 `--help`；`crabmate help serve` 等 → 对应子命令 `--help`（否则未写子命令时会被当成 `repl` 的多余参数并报错）。
-fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
+///
+/// 将历史平铺 flag 映射为子命令形式（**契约稳定面**）；与 [`parse_args`] / [`parse_args_from_argv`] 共用。
+pub fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
     if args.len() <= 1 {
         return args;
     }
@@ -124,10 +134,8 @@ fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
             _ => vec![prog, "--help".into()],
         };
     }
-    if rest
-        .first()
-        .is_some_and(|s| is_known_subcommand(s.as_str()))
-    {
+    // 任意位置出现显式子命令名（如 `crabmate --workspace /x doctor`）时不再插入默认 `repl`。
+    if rest.iter().any(|a| is_known_subcommand(a.as_str())) {
         return args;
     }
     if rest
@@ -389,6 +397,37 @@ pub struct ConfigCmd {
     pub dry_run: bool,
 }
 
+/// 将会话 JSON 导出为与 Web 一致的 `chat_export_*.json` / `.md`（**不要**求 `API_KEY`）
+#[derive(Parser, Debug, Clone)]
+pub struct ExportSessionCmd {
+    /// 导出格式（默认两者皆写）
+    #[arg(long, value_enum, default_value_t = ExportSessionFormat::Both)]
+    pub format: ExportSessionFormat,
+
+    /// 会话文件（默认：`<workspace>/.crabmate/tui_session.json`）
+    #[arg(long, value_name = "FILE")]
+    pub session_file: Option<String>,
+}
+
+/// `export-session --format` 取值
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum ExportSessionFormat {
+    /// 仅 JSON（`ChatSessionFile` v1，与前端导出同形）
+    Json,
+    /// 仅 Markdown
+    Markdown,
+    /// JSON + Markdown 各一份
+    #[default]
+    Both,
+}
+
+/// 解析后的 `export-session` 参数（供 `runtime::cli` 执行）
+#[derive(Debug, Clone)]
+pub struct ExportSessionCli {
+    pub format: ExportSessionFormat,
+    pub session_file: Option<String>,
+}
+
 /// `parse_args` 扩展槽：非默认 CLI 流程（doctor / models / probe）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExtraCliCommand {
@@ -417,6 +456,8 @@ pub enum Commands {
     Models,
     /// 探测 api_base 上 models 端点连通性与 HTTP 状态（`llm_http_auth_mode=bearer` 时需 API_KEY）
     Probe,
+    /// 从会话文件导出 JSON/Markdown 到工作区 `.crabmate/exports/`（与 Web 导出约定一致；**不要**求 API_KEY）
+    ExportSession(ExportSessionCmd),
 }
 
 #[derive(Parser, Debug)]
@@ -462,6 +503,8 @@ pub struct ParsedCliArgs {
     pub log_file: Option<String>,
     pub bench_args: BenchmarkCliArgs,
     pub extra_cli: ExtraCliCommand,
+    /// `Some` 时执行导出后退出（与 `doctor` 一样不要求 API_KEY）
+    pub export_session: Option<ExportSessionCli>,
 }
 
 fn parse_output_mode(raw: Option<String>) -> Option<String> {
@@ -475,14 +518,36 @@ fn parse_output_mode(raw: Option<String>) -> Option<String> {
     })
 }
 
-/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
+/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `export-session`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
 ///
 /// `chat --stdin` 时若读取标准输入失败则返回 [`io::Error`]。
+///
+/// 非法 CLI：打印 clap 说明后以 **非零** 码退出进程（与历史 `parse_from` 行为一致）；**不会**向调用方返回 `Err`。
 pub fn parse_args() -> io::Result<ParsedCliArgs> {
     let raw: Vec<String> = std::env::args().collect();
     let normalized = normalize_legacy_argv(raw);
-    let root = RootCli::parse_from(normalized);
+    let root = RootCli::try_parse_from(normalized).unwrap_or_else(|e| e.exit());
+    build_parsed_cli_args(root, None)
+}
 
+/// 使用给定 **`argv`**（首元素为程序名）解析 CLI，供契约/集成测试；生产请用 [`parse_args`]。
+///
+/// - **`stdin_fixture`**：当参数含 `chat --stdin` 时，使用该字符串代替读取真实 stdin（避免测试挂起）。
+/// - 非法参数：返回 [`io::Error`]（**不**退出进程），便于断言。
+pub fn parse_args_from_argv(
+    raw: Vec<String>,
+    stdin_fixture: Option<String>,
+) -> io::Result<ParsedCliArgs> {
+    let normalized = normalize_legacy_argv(raw);
+    let root = RootCli::try_parse_from(normalized)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+    build_parsed_cli_args(root, stdin_fixture)
+}
+
+fn build_parsed_cli_args(
+    root: RootCli,
+    stdin_fixture: Option<String>,
+) -> io::Result<ParsedCliArgs> {
     let GlobalOpts {
         config,
         workspace,
@@ -523,6 +588,7 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
+            export_session: None,
         },
         Some(Commands::Serve(s)) => {
             let port = s.port.or(Some(8080));
@@ -539,6 +605,7 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
                 log_file: log_path,
                 bench_args: BenchmarkCliArgs::default(),
                 extra_cli: ExtraCliCommand::None,
+                export_session: None,
             }
         }
         Some(Commands::Repl(r)) => ParsedCliArgs {
@@ -554,12 +621,16 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
+            export_session: None,
         },
         Some(Commands::Chat(c)) => {
             let inline_user_text = if c.user_prompt_file.is_some() {
                 None
             } else if c.stdin {
-                Some(read_stdin_to_string()?)
+                match stdin_fixture.as_ref() {
+                    Some(s) => Some(s.clone()),
+                    None => Some(read_stdin_to_string()?),
+                }
             } else {
                 c.query.clone()
             };
@@ -587,6 +658,7 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
                 log_file: log_path,
                 bench_args: BenchmarkCliArgs::default(),
                 extra_cli: ExtraCliCommand::None,
+                export_session: None,
             }
         }
         Some(Commands::Bench(b)) => ParsedCliArgs {
@@ -610,6 +682,7 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
                 system_prompt_file: b.bench_system_prompt,
             },
             extra_cli: ExtraCliCommand::None,
+            export_session: None,
         },
         // `config` 子命令恒走配置检查并退出，与是否写 `--dry-run` 无关（`--dry-run` 保留为显式别名）。
         Some(Commands::Config(_c)) => ParsedCliArgs {
@@ -625,6 +698,7 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
+            export_session: None,
         },
         Some(Commands::Doctor) => ParsedCliArgs {
             config_path: config,
@@ -639,6 +713,7 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::Doctor,
+            export_session: None,
         },
         Some(Commands::Models) => ParsedCliArgs {
             config_path: config,
@@ -653,6 +728,7 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::Models,
+            export_session: None,
         },
         Some(Commands::Probe) => ParsedCliArgs {
             config_path: config,
@@ -667,13 +743,33 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::Probe,
+            export_session: None,
+        },
+        Some(Commands::ExportSession(e)) => ParsedCliArgs {
+            config_path: config,
+            chat_cli: ChatCliArgs::default(),
+            serve_port: None,
+            http_bind_host: http_bind_host(None),
+            workspace_cli: workspace,
+            no_tools,
+            no_web: false,
+            dry_run: false,
+            no_stream: false,
+            log_file: log_path,
+            bench_args: BenchmarkCliArgs::default(),
+            extra_cli: ExtraCliCommand::None,
+            export_session: Some(ExportSessionCli {
+                format: e.format,
+                session_file: e.session_file,
+            }),
         },
     })
 }
 
 #[cfg(test)]
 mod legacy_argv_tests {
-    use super::normalize_legacy_argv;
+    use super::{RootCli, normalize_legacy_argv};
+    use clap::Parser;
 
     fn norm(args: &[&str]) -> Vec<String> {
         normalize_legacy_argv(args.iter().map(|s| (*s).to_string()).collect())
@@ -683,6 +779,33 @@ mod legacy_argv_tests {
     fn explicit_subcommand_unchanged() {
         let v = norm(&["crabmate", "serve", "3000"]);
         assert_eq!(v, vec!["crabmate", "serve", "3000"]);
+    }
+
+    #[test]
+    fn help_export_session_routes_to_subcommand_help() {
+        let v = norm(&["crabmate", "help", "export-session"]);
+        assert_eq!(v, vec!["crabmate", "export-session", "--help"]);
+    }
+
+    #[test]
+    fn explicit_doctor_subcommand_not_prefixed_with_repl() {
+        let v = norm(&["crabmate", "doctor"]);
+        assert_eq!(v, vec!["crabmate", "doctor"]);
+    }
+
+    #[test]
+    fn try_parse_root_doctor_subcommand() {
+        let r = RootCli::try_parse_from(vec!["crabmate".to_string(), "doctor".to_string()]);
+        assert!(r.is_ok(), "{:?}", r.as_ref().err());
+        assert!(matches!(r.unwrap().command, Some(super::Commands::Doctor)));
+    }
+
+    #[test]
+    fn parse_args_from_argv_doctor_matches_extra_cli() {
+        let p =
+            super::parse_args_from_argv(vec!["crabmate".to_string(), "doctor".to_string()], None)
+                .unwrap();
+        assert_eq!(p.extra_cli, super::ExtraCliCommand::Doctor);
     }
 
     #[test]

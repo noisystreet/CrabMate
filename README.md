@@ -13,8 +13,8 @@
 - **可选 MCP（stdio）**：配置 `mcp_enabled` + `mcp_command` 后合并远端工具为 `mcp__{slug}__{tool}`；`mcp_command` 等效允许启动子进程，须可信配置。
 - **Web UI**：聊天、工作区浏览/编辑、任务清单（进程内 `/tasks`，重启清空）、状态栏；Agent 改文件后列表自动刷新。
 - **项目画像**：侧栏只读摘要（`Cargo.toml` / `package.json`、目录与 tokei 等）；可与工作区备忘合并注入新会话首轮（`project_profile_inject_*`）。
-- **流式与审批**：Web SSE；`run_command` / `http_fetch` 等可走 `POST /chat/approval`。CLI（repl/chat）下非白名单 **`run_command`** 与未匹配前缀的 **`http_fetch`** 走终端审批（TTY 为 **dialoguer** 菜单，管道/无头读一行 **`y`/`a`/`n`**；或 **`--yes`** / **`--approve-commands`**，后者仅命令名）。**Web 与 CLI 对照表**见 [`docs/CLI.md`](docs/CLI.md)「CLI 与 Web 能力对照」。
-- **会话与导出**：Web 可选 `conversation_id` + **`conversation_store_sqlite_path`** 持久化（TTL/条数上限见配置），并可在 UI **导出 JSON/MD**。CLI REPL 可选 **`.crabmate/tui_session.json`**（`tui_load_session_on_start`），**无**与 Web 同形的一键导出子命令。备忘 **`agent_memory_file`**、**长期记忆**见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。会话/审批/导出差异仍以 **`docs/CLI.md`** 对照节为准。
+- **流式与审批**：Web SSE；`run_command` 与未匹配前缀的 **`http_fetch` / `http_request`** 等可走 `POST /chat/approval`。CLI（repl/chat）下非白名单 **`run_command`** 与未匹配前缀的 **`http_fetch` / `http_request`** 走同一套终端审批（TTY 为 **dialoguer** 菜单，管道/无头读一行 **`y`/`a`/`n`**；或 **`--yes`** / **`--approve-commands`**，后者仅命令名）。**Web 与 CLI 对照表**见 [`docs/CLI.md`](docs/CLI.md)「CLI 与 Web 能力对照」。
+- **会话与导出**：Web 可选 `conversation_id` + **`conversation_store_sqlite_path`** 持久化（TTL/条数上限见配置），并可在 UI **导出 JSON/MD**。CLI 可用 **`crabmate export-session`**（默认读工作区 **`.crabmate/tui_session.json`**，写入 **`.crabmate/exports/`**，与前端同形）或 REPL **`/export`**（导出当前内存中的对话）。REPL 可选从 **`tui_session.json`** 恢复（`tui_load_session_on_start`）。备忘 **`agent_memory_file`**、**长期记忆**见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。会话/审批差异仍以 **`docs/CLI.md`** 对照节为准。
 
 ## 文档索引
 
