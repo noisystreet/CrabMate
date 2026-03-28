@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{AgentConfig, WebSearchProvider};
+use crate::tools::http_fetch;
 use crate::tools::{ToolContext, run_tool};
 
 /// 由容器内 `crabmate tool-runner-internal` 读取（`CRABMATE_TOOL_RUNNER_CONFIG_FILE`）。
@@ -38,11 +39,27 @@ impl SandboxToolRunnerConfig {
             http_fetch_max_response_bytes: cfg.http_fetch_max_response_bytes,
         }
     }
+
+    /// `run_command` 经审批扩展白名单后，须把**有效**列表写入沙盒 JSON（容器内 `run_tool` 用）。
+    pub fn from_agent_config_with_allowed_commands(cfg: &AgentConfig, allowed: &[String]) -> Self {
+        let mut s = Self::from_agent_config(cfg);
+        s.allowed_commands = allowed.to_vec();
+        s
+    }
 }
 
+fn default_inv_kind() -> String {
+    "sync_default".to_string()
+}
+
+/// stdin 一行 JSON：`kind` 省略时等价于 `sync_default`（兼容旧载荷）。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ToolInvocationLine {
-    pub tool: String,
+    #[serde(default = "default_inv_kind")]
+    pub kind: String,
+    /// `sync_default` 必填；其它 kind 忽略。
+    #[serde(default)]
+    pub tool: Option<String>,
     pub args_json: String,
 }
 
@@ -60,7 +77,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         .map_err(|e| format!("读取 stdin 失败：{}", e))?;
     let inv: ToolInvocationLine = serde_json::from_str(line.trim()).map_err(|e| {
         format!(
-            "解析工具调用行失败（须为一行 JSON：{{\"tool\":\"…\",\"args_json\":\"…\"}}）：{}",
+            "解析工具调用行失败（须为一行 JSON，含 kind 与 args_json）：{}",
             e
         )
     })?;
@@ -83,13 +100,64 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         http_fetch_max_response_bytes: snap.http_fetch_max_response_bytes,
         read_file_turn_cache: None,
     };
-    let out = run_tool(&inv.tool, &inv.args_json, &ctx);
+    let k = inv.kind.trim();
+    let out = match k {
+        "sync_default" => {
+            let tool = inv
+                .tool
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| "sync_default 须提供非空 tool".to_string())?;
+            run_tool(tool, &inv.args_json, &ctx)
+        }
+        "get_weather" => run_tool("get_weather", &inv.args_json, &ctx),
+        "web_search" => run_tool("web_search", &inv.args_json, &ctx),
+        "run_command" => run_tool("run_command", &inv.args_json, &ctx),
+        "run_executable" => run_tool("run_executable", &inv.args_json, &ctx),
+        "http_fetch" => match http_fetch::parse_http_fetch_args(&inv.args_json) {
+            Ok((u, m)) => http_fetch::fetch_with_method(
+                &u,
+                m,
+                snap.http_fetch_timeout_secs.max(1),
+                snap.http_fetch_max_response_bytes,
+            ),
+            Err(e) => format!("错误：{}", e),
+        },
+        "http_request" => match http_fetch::parse_http_request_args(&inv.args_json) {
+            Ok((u, m, b)) => http_fetch::request_with_json_body(
+                &u,
+                m,
+                b.as_ref(),
+                snap.http_fetch_timeout_secs.max(1),
+                snap.http_fetch_max_response_bytes,
+            ),
+            Err(e) => format!("错误：{}", e),
+        },
+        _ => {
+            return Err(format!(
+                "未知的沙盒调用 kind: {:?}（支持 sync_default、get_weather、web_search、http_fetch、http_request、run_command、run_executable）",
+                inv.kind
+            ));
+        }
+    };
     print!("{out}");
     Ok(())
 }
 
 pub fn write_runner_config_json(cfg: &AgentConfig) -> Result<PathBuf, String> {
-    let snap = SandboxToolRunnerConfig::from_agent_config(cfg);
+    write_runner_config_json_inner(SandboxToolRunnerConfig::from_agent_config(cfg))
+}
+
+pub fn write_runner_config_json_with_allowed_commands(
+    cfg: &AgentConfig,
+    allowed: &[String],
+) -> Result<PathBuf, String> {
+    write_runner_config_json_inner(
+        SandboxToolRunnerConfig::from_agent_config_with_allowed_commands(cfg, allowed),
+    )
+}
+
+fn write_runner_config_json_inner(snap: SandboxToolRunnerConfig) -> Result<PathBuf, String> {
     let json = serde_json::to_string(&snap).map_err(|e| format!("序列化沙盒配置：{}", e))?;
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)

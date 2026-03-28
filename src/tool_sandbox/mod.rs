@@ -1,4 +1,4 @@
-//! **`HandlerId::SyncDefault`** 可选沙盒：通过可插拔后端在隔离环境中执行工具。
+//! Docker 沙盒（`sync_default_tool_sandbox_mode = docker`）：在隔离容器中执行**多类**工具（见 `ToolInvocationLine.kind`）。
 //!
 //! 默认后端为 **[bollard](https://docs.rs/bollard)**（Docker Engine HTTP API，本地套接字或 `DOCKER_HOST`）。
 //!
@@ -13,14 +13,17 @@ mod runner;
 
 pub use backend::{SandboxRunRequest, SyncDefaultSandboxBackend};
 pub use docker_bollard::BollardSandboxBackend;
-pub use runner::{SandboxToolRunnerConfig, tool_runner_internal_main};
+pub use runner::{
+    SandboxToolRunnerConfig, ToolInvocationLine, tool_runner_internal_main,
+    write_runner_config_json, write_runner_config_json_with_allowed_commands,
+};
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::config::{AgentConfig, SyncDefaultToolSandboxMode};
 
-use self::runner::{ToolInvocationLine, write_runner_config_json};
+use self::runner::write_runner_config_json as write_runner_cfg_default;
 
 /// 进程内默认后端（Docker Engine API，[bollard](https://docs.rs/bollard)）。
 ///
@@ -28,14 +31,19 @@ use self::runner::{ToolInvocationLine, write_runner_config_json};
 static SANDBOX_BACKEND: std::sync::LazyLock<std::sync::Arc<dyn SyncDefaultSandboxBackend>> =
     std::sync::LazyLock::new(|| std::sync::Arc::new(BollardSandboxBackend));
 
-/// 在沙盒内执行单个 SyncDefault 工具（经 [`SANDBOX_BACKEND`]）。
-pub async fn run_sync_default_in_docker(
+/// 是否启用 Docker 沙盒（与 `dispatch_tool` 中多 handler 共用）。
+pub fn docker_sandbox_enabled(cfg: &AgentConfig) -> bool {
+    cfg.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker
+}
+
+/// 在沙盒内执行一次工具（经 [`SANDBOX_BACKEND`]）；`cfg_json_path` 由调用方写入后传入，本函数结束时删除。
+pub async fn run_tool_in_docker(
     cfg: &AgentConfig,
     effective_working_dir: &Path,
-    tool_name: &str,
-    args_json: &str,
+    cfg_json_path: PathBuf,
+    inv: ToolInvocationLine,
 ) -> Result<String, String> {
-    if cfg.sync_default_tool_sandbox_mode != SyncDefaultToolSandboxMode::Docker {
+    if !docker_sandbox_enabled(cfg) {
         return Err("内部错误：未启用 Docker 沙盒".to_string());
     }
     let image = cfg.sync_default_tool_sandbox_docker_image.trim();
@@ -49,7 +57,6 @@ pub async fn run_sync_default_in_docker(
     let work_s = work_canon.to_string_lossy();
     let exe_s = exe.to_string_lossy();
 
-    let cfg_path = write_runner_config_json(cfg)?;
     let cfg_in_container = "/run/crabmate-tool-runner.json";
     let crabmate_in_container = "/crabmate";
 
@@ -63,7 +70,11 @@ pub async fn run_sync_default_in_docker(
     let binds = vec![
         format!("{}:/workspace:rw", work_s),
         format!("{}:{}:ro", exe_s, crabmate_in_container),
-        format!("{}:{}:ro", cfg_path.to_string_lossy(), cfg_in_container),
+        format!(
+            "{}:{}:ro",
+            cfg_json_path.to_string_lossy(),
+            cfg_in_container
+        ),
     ];
 
     let env = vec![format!(
@@ -76,10 +87,6 @@ pub async fn run_sync_default_in_docker(
         "tool-runner-internal".to_string(),
     ];
 
-    let inv = ToolInvocationLine {
-        tool: tool_name.to_string(),
-        args_json: args_json.to_string(),
-    };
     let stdin_payload = format!(
         "{}\n",
         serde_json::to_string(&inv).map_err(|e| format!("{}", e))?
@@ -99,7 +106,23 @@ pub async fn run_sync_default_in_docker(
     };
 
     let out = SANDBOX_BACKEND.run_isolated(req).await;
-    let _ = std::fs::remove_file(&cfg_path);
+    let _ = std::fs::remove_file(&cfg_json_path);
     let bytes = out?;
     String::from_utf8(bytes).map_err(|e| format!("工具输出非 UTF-8：{}", e))
+}
+
+/// 在沙盒内执行单个 `SyncDefault` 工具。
+pub async fn run_sync_default_in_docker(
+    cfg: &AgentConfig,
+    effective_working_dir: &Path,
+    tool_name: &str,
+    args_json: &str,
+) -> Result<String, String> {
+    let cfg_path = write_runner_cfg_default(cfg)?;
+    let inv = ToolInvocationLine {
+        kind: "sync_default".to_string(),
+        tool: Some(tool_name.to_string()),
+        args_json: args_json.to_string(),
+    };
+    run_tool_in_docker(cfg, effective_working_dir, cfg_path, inv).await
 }
