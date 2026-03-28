@@ -3,7 +3,7 @@
 
 [agent]
 api_base = "https://api.deepseek.com/v1"
-model = "deepseek-reasoner"
+model = "deepseek-chat"
 # 模型 HTTP 鉴权：bearer（默认，需环境变量 API_KEY）| none（不向 chat/models 发 Authorization，本地 Ollama 等可不设 API_KEY）
 # llm_http_auth_mode = "bearer"
 # 运行环境：dev / prod，用于按环境切换命令白名单等安全策略；默认 dev
