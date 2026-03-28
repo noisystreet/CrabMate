@@ -26,7 +26,13 @@ fn test_read_file_with_line_range() {
     let dir = make_test_dir();
     let file = dir.join("a.txt");
     std::fs::write(&file, "a\nb\nc\nd\n").unwrap();
-    let out = read_file(r#"{"path":"a.txt","start_line":2,"end_line":3}"#, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"a.txt","start_line":2,"end_line":3}"#,
+        &dir,
+        &ctx,
+    );
     assert!(out.contains("2|b"), "应包含第 2 行: {}", out);
     assert!(out.contains("3|c"), "应包含第 3 行: {}", out);
     assert!(!out.contains("1|a"), "不应包含第 1 行: {}", out);
@@ -42,7 +48,9 @@ fn test_read_file_respects_max_lines_without_end_line() {
         s.push_str(&format!("line{i}\n"));
     }
     std::fs::write(&file, &s).unwrap();
-    let out = read_file(r#"{"path":"big.txt","max_lines":100}"#, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = read_file(r#"{"path":"big.txt","max_lines":100}"#, &dir, &ctx);
     assert!(out.contains("仍有后续内容"), "应提示分段: {}", out);
     assert!(out.contains("下一段可将 start_line 设为 101"), "{}", out);
     assert!(out.contains("100|line100"), "{}", out);
@@ -131,7 +139,9 @@ fn test_read_file_reject_invalid_range() {
     let dir = make_test_dir();
     let file = dir.join("a.txt");
     std::fs::write(&file, "x\n").unwrap();
-    let out = read_file(r#"{"path":"a.txt","start_line":3}"#, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = read_file(r#"{"path":"a.txt","start_line":3}"#, &dir, &ctx);
     assert!(out.contains("超出文件行数"), "应报越界错误: {}", out);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -188,7 +198,9 @@ fn test_read_file_reject_outside_workspace() {
     let outside = std::env::temp_dir().join(&outside_name);
     std::fs::write(&outside, "outside\n").unwrap();
     let arg = serde_json::json!({ "path": format!("../{}", outside_name) }).to_string();
-    let out = read_file(&arg, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = read_file(&arg, &dir, &ctx);
     assert!(
         out.contains("路径不能超出工作目录"),
         "应拒绝越界读取: {}",

@@ -365,6 +365,7 @@ async fn run_agent_turn_for_cli(
         seed_override: LlmSeedOverride::default(),
         long_term_memory: ltm,
         long_term_memory_scope_id: scope,
+        read_file_turn_cache: None,
     })
     .await
 }

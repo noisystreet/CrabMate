@@ -17,6 +17,7 @@ mod long_term_memory_store;
 mod mcp;
 mod path_workspace;
 mod project_profile;
+mod read_file_turn_cache;
 mod redact;
 mod runtime;
 mod sse;
@@ -31,6 +32,7 @@ mod web;
 pub use config::cli::{ChatCliArgs, ParsedCliArgs};
 use config::cli::{ExtraCliCommand, init_logging, parse_args};
 use log::info;
+pub use read_file_turn_cache::{ReadFileTurnCache, ReadFileTurnCacheHandle, new_turn_cache_handle};
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
@@ -79,6 +81,8 @@ pub struct RunAgentTurnParams<'a> {
     pub long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
     /// 记忆作用域（如 Web `conversation_id` 或 CLI `cli`）。
     pub long_term_memory_scope_id: Option<String>,
+    /// 单轮 `run_agent_turn` 内 `read_file` 结果缓存；`None` 时由 `run_agent_turn` 按配置创建或关闭。
+    pub read_file_turn_cache: Option<std::sync::Arc<ReadFileTurnCache>>,
 }
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
@@ -117,10 +121,19 @@ pub async fn run_agent_turn<'a>(
         seed_override,
         long_term_memory,
         long_term_memory_scope_id,
+        read_file_turn_cache,
     } = p;
     let llm_backend: &(dyn llm::ChatCompletionsBackend + 'static) = match llm_backend {
         Some(b) => b,
         None => llm::default_chat_completions_backend(),
+    };
+
+    let read_file_turn_cache = match read_file_turn_cache {
+        Some(a) => Some(a),
+        None if cfg.read_file_turn_cache_max_entries > 0 => Some(
+            read_file_turn_cache::new_turn_cache_handle(cfg.read_file_turn_cache_max_entries),
+        ),
+        None => None,
     };
 
     let mut tools_for_turn: Vec<types::Tool> = tools.to_vec();
@@ -154,6 +167,7 @@ pub async fn run_agent_turn<'a>(
         long_term_memory,
         long_term_memory_scope_id,
         mcp_session,
+        read_file_turn_cache,
     };
     agent::agent_turn::run_agent_turn_common(&mut loop_params).await
 }

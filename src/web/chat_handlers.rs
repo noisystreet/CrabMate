@@ -1019,6 +1019,8 @@ struct StatusResponse {
     chat_queue_max_concurrent: usize,
     chat_queue_max_pending: usize,
     parallel_readonly_tools_max: usize,
+    /// 单轮 `read_file` 缓存容量；`0` 表示关闭。
+    read_file_turn_cache_max_entries: usize,
     chat_queue_running: usize,
     chat_queue_completed_ok: u64,
     chat_queue_completed_cancelled: u64,
@@ -1094,6 +1096,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         chat_queue_max_concurrent: state.chat_queue.max_concurrent(),
         chat_queue_max_pending: state.chat_queue.max_pending(),
         parallel_readonly_tools_max: state.cfg.parallel_readonly_tools_max,
+        read_file_turn_cache_max_entries: state.cfg.read_file_turn_cache_max_entries,
         chat_queue_running: state.chat_queue.running_count(),
         chat_queue_completed_ok: state.chat_queue.completed_ok(),
         chat_queue_completed_cancelled: state.chat_queue.completed_cancelled(),

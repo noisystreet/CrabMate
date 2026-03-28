@@ -69,6 +69,7 @@ struct ConfigBuilder {
     chat_queue_max_concurrent: Option<u64>,
     chat_queue_max_pending: Option<u64>,
     parallel_readonly_tools_max: Option<u64>,
+    read_file_turn_cache_max_entries: Option<u64>,
     staged_plan_execution: Option<bool>,
     staged_plan_phase_instruction: Option<String>,
     staged_plan_allow_no_task: Option<bool>,
@@ -255,6 +256,9 @@ impl ConfigBuilder {
         self.parallel_readonly_tools_max = agent
             .parallel_readonly_tools_max
             .or(self.parallel_readonly_tools_max);
+        self.read_file_turn_cache_max_entries = agent
+            .read_file_turn_cache_max_entries
+            .or(self.read_file_turn_cache_max_entries);
         self.staged_plan_execution = agent.staged_plan_execution.or(self.staged_plan_execution);
         self.staged_plan_allow_no_task = agent
             .staged_plan_allow_no_task
@@ -636,6 +640,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.parallel_readonly_tools_max = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.read_file_turn_cache_max_entries = Some(n);
     }
     if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_EXECUTION")
         && let Some(val) = parse_bool_like(&v)
@@ -1025,8 +1034,10 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
     let parallel_readonly_tools_max = b
         .parallel_readonly_tools_max
         .map(|n| n as usize)
-        .unwrap_or(chat_queue_max_concurrent)
+        .unwrap_or_else(|| chat_queue_max_concurrent.max(3))
         .clamp(1, 256);
+    let read_file_turn_cache_max_entries =
+        b.read_file_turn_cache_max_entries.unwrap_or(64).min(4096) as usize;
     let staged_plan_execution = b.staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = b.staged_plan_phase_instruction.unwrap_or_default();
     let staged_plan_allow_no_task = b.staged_plan_allow_no_task.unwrap_or(true);
@@ -1177,6 +1188,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         chat_queue_max_concurrent,
         chat_queue_max_pending,
         parallel_readonly_tools_max,
+        read_file_turn_cache_max_entries,
         staged_plan_execution,
         staged_plan_phase_instruction,
         staged_plan_allow_no_task,

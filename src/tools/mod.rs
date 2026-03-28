@@ -82,6 +82,8 @@ pub struct ToolContext<'a> {
     pub http_fetch_allowed_prefixes: &'a [String],
     pub http_fetch_timeout_secs: u64,
     pub http_fetch_max_response_bytes: usize,
+    /// 单轮 `run_agent_turn` 内 `read_file` 缓存；`None` 表示关闭。
+    pub read_file_turn_cache: Option<&'a crate::read_file_turn_cache::ReadFileTurnCache>,
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
@@ -102,6 +104,20 @@ pub fn tool_context_for<'a>(
         http_fetch_allowed_prefixes: cfg.http_fetch_allowed_prefixes.as_slice(),
         http_fetch_timeout_secs: cfg.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: cfg.http_fetch_max_response_bytes,
+        read_file_turn_cache: None,
+    }
+}
+
+/// 与 [`tool_context_for`] 相同，但可挂载单轮 `read_file` 缓存（供 `dispatch_tool` / `execute_tools`）。
+pub fn tool_context_for_with_read_cache<'a>(
+    cfg: &'a AgentConfig,
+    allowed_commands: &'a [String],
+    working_dir: &'a std::path::Path,
+    read_file_turn_cache: Option<&'a crate::read_file_turn_cache::ReadFileTurnCache>,
+) -> ToolContext<'a> {
+    ToolContext {
+        read_file_turn_cache,
+        ..tool_context_for(cfg, allowed_commands, working_dir)
     }
 }
 
@@ -471,7 +487,7 @@ fn runner_move_file(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 fn runner_read_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::read_file(args, ctx.working_dir)
+    file::read_file(args, ctx.working_dir, ctx)
 }
 
 fn runner_read_dir(args: &str, ctx: &ToolContext<'_>) -> String {

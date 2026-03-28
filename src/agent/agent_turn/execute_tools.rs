@@ -21,6 +21,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub cfg: &'a Arc<AgentConfig>,
     pub effective_working_dir: &'a Path,
     pub workspace_is_set: bool,
+    /// 单轮 `read_file` 缓存；`None` 表示关闭。
+    pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     pub out: Option<&'a mpsc::Sender<String>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 终端 CLI：`run_command` 非白名单时 stdin 审批；`None` 时与历史一致（非白名单则无法执行）。
@@ -203,6 +205,7 @@ struct ExecuteToolsCommonCtx<'a> {
     cfg: &'a Arc<AgentConfig>,
     effective_working_dir: &'a Path,
     workspace_is_set: bool,
+    read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     out: Option<&'a mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
@@ -220,6 +223,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         cfg,
         effective_working_dir,
         workspace_is_set,
+        read_file_turn_cache,
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -259,6 +263,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
             }
             let cfg = Arc::clone(cfg);
             let wd = effective_working_dir.to_path_buf();
+            let rfc = read_file_turn_cache.clone();
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
             unique_futs.push(async move {
@@ -273,18 +278,20 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 let tool_name = name.clone();
                 let tool_args = args.clone();
                 let result = if crate::tool_registry::sync_default_runs_inline(&name) {
-                    let ctx = tools::tool_context_for(
+                    let ctx = tools::tool_context_for_with_read_cache(
                         cfg.as_ref(),
                         cfg.allowed_commands.as_ref(),
                         wd.as_path(),
+                        rfc.as_ref().map(|a| a.as_ref()),
                     );
                     tools::run_tool(&tool_name, &tool_args, &ctx)
                 } else {
                     tokio::task::spawn_blocking(move || {
-                        let ctx = tools::tool_context_for(
+                        let ctx = tools::tool_context_for_with_read_cache(
                             cfg.as_ref(),
                             cfg.allowed_commands.as_ref(),
                             wd.as_path(),
+                            rfc.as_ref().map(|a| a.as_ref()),
                         );
                         tools::run_tool(&tool_name, &tool_args, &ctx)
                     })
@@ -414,6 +421,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 &name,
                 &args,
                 tc,
+                read_file_turn_cache.clone(),
                 mcp_session,
             )
             .await;
@@ -424,6 +432,12 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 name,
                 t_tool.elapsed().as_millis()
             );
+
+            if (!is_readonly || workspace_changed)
+                && let Some(c) = read_file_turn_cache.as_ref()
+            {
+                c.clear();
+            }
 
             if is_readonly {
                 readonly_cache.insert(cache_key, result.clone());
@@ -485,6 +499,7 @@ pub(crate) async fn per_execute_tools_web(
         cfg,
         effective_working_dir,
         workspace_is_set,
+        read_file_turn_cache,
         out,
         web_tool_ctx,
         cli_tool_ctx,
@@ -499,6 +514,7 @@ pub(crate) async fn per_execute_tools_web(
         cfg,
         effective_working_dir,
         workspace_is_set,
+        read_file_turn_cache,
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars: cfg.command_max_output_len,
