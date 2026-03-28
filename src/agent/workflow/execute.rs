@@ -9,6 +9,7 @@ use log::info;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::time::Instant;
 use tokio::sync::{Mutex, Semaphore, mpsc};
 
@@ -17,7 +18,7 @@ use super::placeholders::inject_placeholders;
 use super::types::{
     NodeRunResult, NodeRunStatus, WorkflowExecutionCompensationReport,
     WorkflowExecutionFirstFailureReport, WorkflowExecutionNodeReport, WorkflowExecutionReport,
-    WorkflowExecutionStats,
+    WorkflowExecutionStats, WorkflowTraceEvent,
 };
 
 #[derive(Debug, Clone)]
@@ -47,14 +48,79 @@ pub(crate) struct WorkflowToolExecCtx {
     pub(crate) workspace_is_set: bool,
     pub(crate) command_max_output_len: usize,
     pub(crate) workflow_run_id: u64,
+    /// 与本次 DAG 执行共享的轨迹缓冲（`execute_workflow_dag` 内创建）。
+    pub(crate) trace_events: Option<Arc<StdMutex<Vec<WorkflowTraceEvent>>>>,
+}
+
+struct WorkflowTracePush<'a> {
+    trace: &'a Option<Arc<StdMutex<Vec<WorkflowTraceEvent>>>>,
+    workflow_run_id: u64,
+    event: &'a str,
+    node_id: Option<&'a str>,
+    detail: Option<String>,
+    attempt: Option<u32>,
+    status: Option<&'a str>,
+    elapsed_ms: Option<u64>,
+    error_code: Option<&'a str>,
+}
+
+fn workflow_trace_push(p: WorkflowTracePush<'_>) {
+    let Some(t) = p.trace else {
+        return;
+    };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let ev = WorkflowTraceEvent {
+        timestamp_ms: ts,
+        workflow_run_id: p.workflow_run_id,
+        event: p.event.to_string(),
+        node_id: p.node_id.map(|s| s.to_string()),
+        detail: p.detail,
+        attempt: p.attempt,
+        status: p.status.map(|s| s.to_string()),
+        elapsed_ms: p.elapsed_ms,
+        error_code: p.error_code.map(|s| s.to_string()),
+    };
+    if let Ok(mut g) = t.lock() {
+        g.push(ev);
+    }
+}
+
+/// 是否对节点失败做**自动重试**（保守：避免对业务失败重复执行有副作用工具）。
+pub(crate) fn workflow_node_failure_retryable(error_code: Option<&str>) -> bool {
+    matches!(
+        error_code,
+        Some("timeout") | Some("workflow_tool_join_error") | Some("workflow_semaphore_closed")
+    )
 }
 
 pub(crate) async fn execute_workflow_dag(
     spec: WorkflowSpec,
     approval_mode: WorkflowApprovalMode,
-    tool_exec_ctx: WorkflowToolExecCtx,
+    mut tool_exec_ctx: WorkflowToolExecCtx,
 ) -> (String, bool) {
     let workflow_run_id = tool_exec_ctx.workflow_run_id;
+    let trace = Arc::new(StdMutex::new(Vec::<WorkflowTraceEvent>::new()));
+    tool_exec_ctx.trace_events = Some(trace.clone());
+    workflow_trace_push(WorkflowTracePush {
+        trace: &Some(trace.clone()),
+        workflow_run_id,
+        event: "dag_start",
+        node_id: None,
+        detail: Some(format!(
+            "nodes_count={} max_parallelism={} fail_fast={} compensate_on_failure={}",
+            spec.nodes.len(),
+            spec.max_parallelism,
+            spec.fail_fast,
+            spec.compensate_on_failure
+        )),
+        attempt: None,
+        status: None,
+        elapsed_ms: None,
+        error_code: None,
+    });
     info!(
         target: "crabmate",
         "workflow dag execute start workflow_run_id={} nodes_count={} max_parallelism={} fail_fast={} compensate_on_failure={}",
@@ -108,6 +174,7 @@ pub(crate) async fn execute_workflow_dag(
                                     workspace_changed: false,
                                     exit_code: None,
                                     error_code: Some("workflow_semaphore_closed".to_string()),
+                                    attempt: 1,
                                 };
                             }
                         };
@@ -144,6 +211,7 @@ pub(crate) async fn execute_workflow_dag(
                             workspace_changed: res.workspace_changed,
                             exit_code: res.exit_code,
                             error_code: res.error_code.clone(),
+                            attempt: res.attempt,
                         },
                     );
                 }
@@ -200,7 +268,7 @@ pub(crate) async fn execute_workflow_dag(
                 error_code: r.error_code.clone(),
                 planned_layer: None,
                 max_retries: n.max_retries,
-                attempt: 1,
+                attempt: r.attempt,
             });
         } else if started.contains(&n.id) {
             failed += 1;
@@ -288,8 +356,30 @@ pub(crate) async fn execute_workflow_dag(
         main_summary.clone()
     };
 
+    let completion_order_out = completion_order.clone();
+    workflow_trace_push(WorkflowTracePush {
+        trace: &tool_exec_ctx.trace_events,
+        workflow_run_id,
+        event: "dag_end",
+        node_id: None,
+        detail: Some(format!(
+            "status={} passed={} failed={} skipped={}",
+            status, passed, failed, skipped
+        )),
+        attempt: None,
+        status: Some(status.as_str()),
+        elapsed_ms: None,
+        error_code: None,
+    });
+    let trace_final: Vec<WorkflowTraceEvent> = tool_exec_ctx
+        .trace_events
+        .as_ref()
+        .and_then(|t| t.lock().ok().map(|g| g.clone()))
+        .unwrap_or_default();
+
     let report = WorkflowExecutionReport {
         report_type: "workflow_execute_result".to_string(),
+        workflow_run_id,
         status,
         workspace_changed: workspace_changed_final,
         spec: serde_json::json!({
@@ -311,6 +401,8 @@ pub(crate) async fn execute_workflow_dag(
             executed: compensation_executed,
             summary: compensation_summary,
         },
+        trace: trace_final,
+        completion_order: completion_order_out,
         human_summary,
     };
 
@@ -334,6 +426,103 @@ fn command_max_output_len_from(ctx: &WorkflowToolExecCtx) -> usize {
 
 pub(crate) fn node_ready(deps: &[String], completed: &HashMap<String, NodeRunResult>) -> bool {
     deps.iter().all(|d| completed.contains_key(d))
+}
+
+/// 审批完成后执行单次工具调用（含 SLA 超时与 `spawn_blocking`）。
+async fn execute_node_tool_phase(
+    node_id: &str,
+    tool_name: &str,
+    tool_args_json_str: &str,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+    effective_allowed_arc: Arc<[String]>,
+    timeout_secs: Option<u64>,
+) -> NodeRunResult {
+    let tool_name_owned = tool_name.to_string();
+    let exec_args = tool_args_json_str.to_string();
+    let run_command_working_dir = tool_exec_ctx.effective_working_dir.clone();
+    let command_max_output_len = tool_exec_ctx.command_max_output_len;
+    let weather_timeout_secs = tool_exec_ctx.cfg_weather_timeout_secs;
+    let ws_timeout = tool_exec_ctx.cfg_web_search_timeout_secs;
+    let ws_provider = tool_exec_ctx.cfg_web_search_provider;
+    let ws_max = tool_exec_ctx.cfg_web_search_max_results;
+    let ws_key = tool_exec_ctx.cfg_web_search_api_key.clone();
+    let hf_pfx = tool_exec_ctx.cfg_http_fetch_allowed_prefixes.clone();
+    let hf_to = tool_exec_ctx.cfg_http_fetch_timeout_secs;
+    let hf_mb = tool_exec_ctx.cfg_http_fetch_max_response_bytes;
+
+    let output_res = async move {
+        let work_dir = run_command_working_dir;
+        let allowed = effective_allowed_arc;
+        let handle = tokio::task::spawn_blocking(move || {
+            let ctx = crate::tools::ToolContext {
+                command_max_output_len,
+                weather_timeout_secs,
+                allowed_commands: allowed.as_ref(),
+                working_dir: &work_dir,
+                web_search_timeout_secs: ws_timeout,
+                web_search_provider: ws_provider,
+                web_search_api_key: ws_key.as_str(),
+                web_search_max_results: ws_max,
+                http_fetch_allowed_prefixes: hf_pfx.as_slice(),
+                http_fetch_timeout_secs: hf_to,
+                http_fetch_max_response_bytes: hf_mb,
+                read_file_turn_cache: None,
+            };
+            crate::tools::run_tool_result(&tool_name_owned, &exec_args, &ctx)
+        });
+        handle
+            .await
+            .unwrap_or_else(|e| crate::tool_result::ToolResult {
+                ok: false,
+                exit_code: None,
+                message: format!("工具执行异常：{:?}", e),
+                stdout: String::new(),
+                stderr: String::new(),
+                error_code: Some("workflow_tool_join_error".to_string()),
+            })
+    };
+
+    let tool_result = if let Some(ts) = timeout_secs {
+        match tokio::time::timeout(std::time::Duration::from_secs(ts), output_res).await {
+            Ok(s) => s,
+            Err(_) => {
+                return NodeRunResult {
+                    id: node_id.to_string(),
+                    status: NodeRunStatus::Failed,
+                    output: format!("workflow 节点超时（{} 秒）：tool={}", ts, tool_name).into(),
+                    workspace_changed: false,
+                    exit_code: None,
+                    error_code: Some("timeout".to_string()),
+                    attempt: 0,
+                };
+            }
+        }
+    } else {
+        output_res.await
+    };
+
+    let mut workspace_changed = false;
+    if tool_name == "run_command"
+        && crate::tools::is_compile_command_success(tool_args_json_str, &tool_result.message)
+    {
+        workspace_changed = true;
+    }
+
+    let status = if tool_result.ok {
+        NodeRunStatus::Passed
+    } else {
+        NodeRunStatus::Failed
+    };
+    let output: Arc<str> = tool_result.message.clone().into();
+    NodeRunResult {
+        id: node_id.to_string(),
+        status,
+        output,
+        workspace_changed,
+        exit_code: tool_result.exit_code,
+        error_code: tool_result.error_code.clone(),
+        attempt: 0,
+    }
 }
 
 async fn run_node(
@@ -361,7 +550,6 @@ async fn run_node(
         injected_tool_args.to_string()
     };
     let mut effective_allowed_arc: Arc<[String]> = Arc::clone(&tool_exec_ctx.cfg_allowed_commands);
-    let mut workspace_changed = false;
 
     // workspace_is_set 校验（主要覆盖 run_command/run_executable）
     if !tool_exec_ctx.workspace_is_set
@@ -376,6 +564,7 @@ async fn run_node(
             workspace_changed: false,
             exit_code: None,
             error_code: Some("workspace_not_set".to_string()),
+            attempt: 1,
         };
     }
 
@@ -448,6 +637,7 @@ async fn run_node(
                             workspace_changed: false,
                             exit_code: None,
                             error_code: Some("command_not_allowed".to_string()),
+                            attempt: 1,
                         };
                     }
                 };
@@ -465,6 +655,7 @@ async fn run_node(
                             workspace_changed: false,
                             exit_code: None,
                             error_code: Some("command_denied".to_string()),
+                            attempt: 1,
                         };
                     }
                     CommandApprovalDecision::AllowOnce => {
@@ -506,6 +697,7 @@ async fn run_node(
                     workspace_changed: false,
                     exit_code: None,
                     error_code: Some("approval_required".to_string()),
+                    attempt: 1,
                 };
             }
             WorkflowApprovalMode::Interactive {
@@ -537,6 +729,7 @@ async fn run_node(
                                 workspace_changed: false,
                                 exit_code: None,
                                 error_code: Some("approval_denied".to_string()),
+                                attempt: 1,
                             };
                         }
                         CommandApprovalDecision::AllowOnce => {}
@@ -562,104 +755,112 @@ async fn run_node(
         _ => None,
     });
 
-    let tool_name = node.tool_name.clone();
-    let exec_args = tool_args_json_str.clone();
-    let exec_args_for_success = exec_args.clone();
-    let run_command_working_dir = tool_exec_ctx.effective_working_dir.clone();
-    let allowed_arc = effective_allowed_arc;
-    let command_max_output_len = tool_exec_ctx.command_max_output_len;
-    let weather_timeout_secs = tool_exec_ctx.cfg_weather_timeout_secs;
-    let ws_timeout = tool_exec_ctx.cfg_web_search_timeout_secs;
-    let ws_provider = tool_exec_ctx.cfg_web_search_provider;
-    let ws_max = tool_exec_ctx.cfg_web_search_max_results;
-    let ws_key = tool_exec_ctx.cfg_web_search_api_key.clone();
-    let hf_pfx = tool_exec_ctx.cfg_http_fetch_allowed_prefixes.clone();
-    let hf_to = tool_exec_ctx.cfg_http_fetch_timeout_secs;
-    let hf_mb = tool_exec_ctx.cfg_http_fetch_max_response_bytes;
+    workflow_trace_push(WorkflowTracePush {
+        trace: &tool_exec_ctx.trace_events,
+        workflow_run_id: tool_exec_ctx.workflow_run_id,
+        event: "node_ready_execute",
+        node_id: Some(node.id.as_str()),
+        detail: Some(format!("tool={}", node.tool_name)),
+        attempt: None,
+        status: None,
+        elapsed_ms: None,
+        error_code: None,
+    });
 
-    let output_res = async move {
-        let work_dir = run_command_working_dir;
-        let allowed = allowed_arc;
-        let handle = tokio::task::spawn_blocking(move || {
-            let ctx = crate::tools::ToolContext {
-                command_max_output_len,
-                weather_timeout_secs,
-                allowed_commands: allowed.as_ref(),
-                working_dir: &work_dir,
-                web_search_timeout_secs: ws_timeout,
-                web_search_provider: ws_provider,
-                web_search_api_key: ws_key.as_str(),
-                web_search_max_results: ws_max,
-                http_fetch_allowed_prefixes: hf_pfx.as_slice(),
-                http_fetch_timeout_secs: hf_to,
-                http_fetch_max_response_bytes: hf_mb,
-                read_file_turn_cache: None,
-            };
-            crate::tools::run_tool_result(&tool_name, &exec_args, &ctx)
+    let max_attempts = node.max_retries.saturating_add(1).max(1);
+    let mut last: Option<NodeRunResult> = None;
+    let mut aggregate_workspace_changed = false;
+    for attempt in 1..=max_attempts {
+        let t0 = Instant::now();
+        workflow_trace_push(WorkflowTracePush {
+            trace: &tool_exec_ctx.trace_events,
+            workflow_run_id: tool_exec_ctx.workflow_run_id,
+            event: "node_attempt_start",
+            node_id: Some(node.id.as_str()),
+            detail: Some(format!("tool={}", node.tool_name)),
+            attempt: Some(attempt),
+            status: None,
+            elapsed_ms: None,
+            error_code: None,
         });
-        handle
-            .await
-            .unwrap_or_else(|e| crate::tool_result::ToolResult {
-                ok: false,
-                exit_code: None,
-                message: format!("工具执行异常：{:?}", e),
-                stdout: String::new(),
-                stderr: String::new(),
-                error_code: Some("workflow_tool_join_error".to_string()),
-            })
-    };
 
-    let tool_result = if let Some(ts) = timeout_secs {
-        match tokio::time::timeout(std::time::Duration::from_secs(ts), output_res).await {
-            Ok(s) => s,
-            Err(_) => {
-                return NodeRunResult {
-                    id: node.id,
-                    status: NodeRunStatus::Failed,
-                    output: format!("workflow 节点超时（{} 秒）：tool={}", ts, node.tool_name)
-                        .into(),
-                    workspace_changed: false,
-                    exit_code: None,
-                    error_code: Some("timeout".to_string()),
-                };
-            }
+        let mut res = execute_node_tool_phase(
+            node.id.as_str(),
+            node.tool_name.as_str(),
+            tool_args_json_str.as_str(),
+            &tool_exec_ctx,
+            effective_allowed_arc.clone(),
+            timeout_secs,
+        )
+        .await;
+        res.attempt = attempt;
+        aggregate_workspace_changed |= res.workspace_changed;
+
+        let st = match res.status {
+            NodeRunStatus::Passed => "passed",
+            NodeRunStatus::Failed => "failed",
+        };
+        workflow_trace_push(WorkflowTracePush {
+            trace: &tool_exec_ctx.trace_events,
+            workflow_run_id: tool_exec_ctx.workflow_run_id,
+            event: "node_attempt_end",
+            node_id: Some(node.id.as_str()),
+            detail: None,
+            attempt: Some(attempt),
+            status: Some(st),
+            elapsed_ms: Some(t0.elapsed().as_millis() as u64),
+            error_code: res.error_code.as_deref(),
+        });
+
+        if res.status == NodeRunStatus::Passed {
+            info!(
+                target: "crabmate",
+                "workflow node finished workflow_run_id={} node_id={} tool_name={} status=Passed attempt={} elapsed_ms={} exit_code={:?}",
+                tool_exec_ctx.workflow_run_id,
+                res.id,
+                node.tool_name,
+                attempt,
+                node_start.elapsed().as_millis(),
+                res.exit_code,
+            );
+            return res;
         }
-    } else {
-        output_res.await
-    };
 
-    if node.tool_name == "run_command"
-        && crate::tools::is_compile_command_success(&exec_args_for_success, &tool_result.message)
-    {
-        workspace_changed = true;
+        let retryable = workflow_node_failure_retryable(res.error_code.as_deref());
+        if attempt < max_attempts && retryable && node.max_retries > 0 {
+            let delay = std::cmp::min(2u64.saturating_pow(attempt.saturating_sub(1)), 8);
+            workflow_trace_push(WorkflowTracePush {
+                trace: &tool_exec_ctx.trace_events,
+                workflow_run_id: tool_exec_ctx.workflow_run_id,
+                event: "node_retry_backoff",
+                node_id: Some(node.id.as_str()),
+                detail: Some(format!("sleep_secs={delay} next_attempt={}", attempt + 1)),
+                attempt: Some(attempt),
+                status: None,
+                elapsed_ms: None,
+                error_code: res.error_code.as_deref(),
+            });
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+            last = Some(res);
+            continue;
+        }
+        last = Some(res);
+        break;
     }
 
-    let status = if tool_result.ok {
-        NodeRunStatus::Passed
-    } else {
-        NodeRunStatus::Failed
-    };
-    let output: Arc<str> = tool_result.message.clone().into();
-    let result = NodeRunResult {
-        id: node.id,
-        status,
-        output,
-        workspace_changed,
-        exit_code: tool_result.exit_code,
-        error_code: tool_result.error_code.clone(),
-    };
+    let mut result = last.expect("workflow node must produce at least one attempt result");
+    result.workspace_changed = aggregate_workspace_changed;
     info!(
         target: "crabmate",
-        "workflow node finished workflow_run_id={} node_id={} tool_name={} status={:?} elapsed_ms={} exit_code={:?} error_code={:?} stdout_len={} stderr_len={}",
+        "workflow node finished workflow_run_id={} node_id={} tool_name={} status={:?} attempts={} elapsed_ms={} exit_code={:?} error_code={:?}",
         tool_exec_ctx.workflow_run_id,
         result.id,
         node.tool_name,
         result.status,
+        result.attempt,
         node_start.elapsed().as_millis(),
         result.exit_code,
         result.error_code,
-        tool_result.stdout.len(),
-        tool_result.stderr.len()
     );
     result
 }

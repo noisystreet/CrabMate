@@ -181,6 +181,7 @@ pub async fn run_workflow_execute_tool(
 
         let report = WorkflowExecutionReport {
             report_type: "workflow_validate_result".to_string(),
+            workflow_run_id,
             status: "planned".to_string(),
             workspace_changed: false,
             spec: serde_json::json!({
@@ -204,6 +205,8 @@ pub async fn run_workflow_execute_tool(
                 executed: false,
                 summary: None,
             },
+            trace: vec![],
+            completion_order: topological_order.clone(),
             human_summary: format!(
                 "workflow_validate_only: DAG 校验通过，已生成规划（planned nodes={}，layers={}）",
                 spec.nodes.len(),
@@ -285,6 +288,7 @@ pub async fn run_workflow_execute_tool(
         workspace_is_set,
         command_max_output_len,
         workflow_run_id,
+        trace_events: None,
     };
 
     let (main_result, workspace_changed) =
