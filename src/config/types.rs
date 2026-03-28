@@ -299,6 +299,8 @@ pub struct AgentConfig {
     pub chat_queue_max_pending: usize,
     /// 单轮内并行只读 `SyncDefault` 工具时，`spawn_blocking` 的最大并发（默认等于 `chat_queue_max_concurrent`）
     pub parallel_readonly_tools_max: usize,
+    /// 单轮 `run_agent_turn` 内 `read_file` 磁盘缓存最大条数；`0` 关闭。写类工具或 `workspace_changed` 后整表清空。
+    pub read_file_turn_cache_max_entries: usize,
     /// 为 true 时：用户每条消息先经**无工具**规划轮产出 `agent_reply_plan` v1，再按 `steps` 顺序各注入一条 user 并跑完整 Agent 循环直至该步终答。
     pub staged_plan_execution: bool,
     /// 规划轮追加的 **system** 指令；空字符串则使用内置默认文案。

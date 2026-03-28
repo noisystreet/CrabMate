@@ -126,6 +126,7 @@ pub(crate) async fn run_agent_outer_loop(
                 cfg: p.cfg,
                 effective_working_dir: p.effective_working_dir,
                 workspace_is_set: p.workspace_is_set,
+                read_file_turn_cache: p.read_file_turn_cache.clone(),
                 out: p.out,
                 web_tool_ctx: p.web_tool_ctx,
                 cli_tool_ctx: p.cli_tool_ctx,

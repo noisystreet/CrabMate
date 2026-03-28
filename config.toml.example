@@ -13,11 +13,12 @@
 # tool_message_max_chars = 32768
 # tool_result_envelope_v1 = true
 # materialize_deepseek_dsml_tool_calls = true
-# context_char_budget = 0
+# context_char_budget = 200000
+# parallel_readonly_tools_max = 4
+# read_file_turn_cache_max_entries = 64   # 0 关闭单轮 read_file 缓存；AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES
 # context_summary_trigger_chars = 0
 # chat_queue_max_concurrent = 2
 # chat_queue_max_pending = 32
-# parallel_readonly_tools_max = 2   # 单轮并行只读工具并发上限（默认等于 chat_queue_max_concurrent）
 # conversation_store_sqlite_path = ".crabmate/conversations.db"
 # agent_memory_file_enabled = true
 # agent_memory_file = ".crabmate/agent_memory.md"

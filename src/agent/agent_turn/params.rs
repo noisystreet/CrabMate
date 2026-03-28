@@ -40,4 +40,6 @@ pub(crate) struct RunLoopParams<'a> {
     pub long_term_memory_scope_id: Option<String>,
     /// MCP stdio 会话；`None` 时不处理 `mcp__*` 工具名。
     pub mcp_session: Option<Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
+    /// 单轮内 `read_file` 磁盘缓存；`None` 且配置启用时由 `run_agent_turn` 创建。
+    pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
 }

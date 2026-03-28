@@ -21,7 +21,7 @@
   - `append_file`：追加内容到已有文件末尾（`create_if_missing` 可选新建）。
   - `create_dir`：创建目录（默认 `parents=true`，类似 `mkdir -p`）。
   - `search_replace`：单文件搜索替换（字面量或正则，默认 `dry_run` 预览，写盘需 `confirm`）。
-  - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的 UTF-8 文本，超出会返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
+  - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限；`modify_file` 支持按行区间替换（大文件友好）。**单轮** `run_agent_turn` 内，服务端可对相同文件+相同读取参数缓存 `read_file` 正文（比对磁盘 **mtime+size**；执行写类工具或工作区变更后缓存清空），见配置 **`read_file_turn_cache_max_entries`**。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的 UTF-8 文本，超出会返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接与 `#fragment` 锚点；支持 `output_format=text|json|sarif`。`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测（同 URL 去重缓存）。

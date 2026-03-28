@@ -20,8 +20,8 @@ tool_message_max_chars = 32768
 tool_result_envelope_v1 = true
 # 为 true（默认）时：API 未给可用原生 tool_calls 时从正文 DeepSeek DSML 物化；为 false 时仅信任 API tool_calls（结构化网关可关）
 materialize_deepseek_dsml_tool_calls = true
-# 非 system 消息总字符预算（近似）；0 = 不启用按字符删旧消息
-context_char_budget = 0
+# 非 system 消息总字符预算（近似）；0 = 不启用按字符删旧消息。默认启用可减轻长对话下请求体膨胀与费用（超预算删最旧非 system 消息，仍受 context_min_messages_after_system 约束）
+context_char_budget = 200000
 # 启用 context_char_budget 时，system 之后至少保留的消息条数
 context_min_messages_after_system = 4
 # 非 system 总字符超过此值时触发一次 LLM 摘要；0 = 关闭（需 API_KEY）
@@ -67,8 +67,10 @@ context_summary_transcript_max_chars = 120000
 chat_queue_max_concurrent = 2
 # Web 对话任务：有界等待队列长度（含正在排队的任务；满则返回 503 QUEUE_FULL）
 chat_queue_max_pending = 32
-# 单轮内并行执行多只读 SyncDefault 工具时，tokio blocking 池上的最大并发（默认与 chat_queue_max_concurrent 相同）
-# parallel_readonly_tools_max = 2
+# 单轮内并行执行多只读 SyncDefault 工具时，tokio blocking 池上的最大并发（默认 max(chat_queue_max_concurrent, 3)，至少 3）
+# parallel_readonly_tools_max = 4
+# 单轮 run_agent_turn 内 read_file 结果缓存条数（按 canonical 路径 + 行区间等键；比对 mtime+size）；0 关闭。写类工具或 workspace_changed 后整表清空
+read_file_turn_cache_max_entries = 64
 # run_command 最长执行时间（秒）
 command_timeout_secs = 10
 # run_command 输出最大长度（字符），超出则截断
