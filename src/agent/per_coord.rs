@@ -316,6 +316,21 @@ impl PerCoordinator {
                         .to_string()
                 }
             };
+            // 与 `prepare_workflow_execute` 一致：反思首轮要求终答含 `agent_reply_plan`；后续轮次注入也应保持同一策略，避免模型收到「须带规划」文案却未置位 PER。
+            if matches!(
+                per_coord.final_plan_policy,
+                FinalPlanRequirementMode::WorkflowReflection
+            ) && let Some(t) = instruction.get("instruction_type").and_then(|x| x.as_str())
+                && (t == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT
+                    || t == "workflow_reflection_next")
+            {
+                per_coord.plan_requirement_source = PlanRequirementSource::WorkflowReflection;
+                log::info!(
+                    target: "crabmate::per",
+                    "append_tool_result_and_reflection event=require_final_plan_set instruction_type={t} reflection_stage_round={}",
+                    per_coord.reflection.stage_round()
+                );
+            }
             messages.push(Message {
                 role: "user".to_string(),
                 content: Some(instruction_str),
@@ -726,6 +741,25 @@ mod tests {
                 .unwrap()
                 .contains("test_instruction")
         );
+    }
+
+    #[test]
+    fn workflow_reflection_next_inject_sets_plan_requirement_source() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection, 2);
+        assert!(!c.require_plan_in_final_flag_snapshot());
+        let mut msgs: Vec<Message> = vec![];
+        let inject = serde_json::json!({
+            "instruction_type": "workflow_reflection_next",
+            "round": 2
+        });
+        PerCoordinator::append_tool_result_and_reflection(
+            &mut c,
+            &mut msgs,
+            "tc-wf".to_string(),
+            "ok".to_string(),
+            Some(inject),
+        );
+        assert!(c.require_plan_in_final_flag_snapshot());
     }
 
     #[test]

@@ -53,6 +53,36 @@ impl PlannerExecutorMode {
     }
 }
 
+/// 分阶段规划在单步执行失败或工具报错时的反馈模式（第二模式：短规划补丁）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StagedPlanFeedbackMode {
+    /// 与历史一致：步级 `run_agent_outer_loop` 返回 `Err` 时整轮计划失败并向上传播。
+    #[default]
+    FailFast,
+    /// 将失败信号回灌 planner：追加 user 说明后发起无工具规划轮，产出补丁 `agent_reply_plan` 与未完成步后缀合并再继续。
+    PatchPlanner,
+}
+
+impl StagedPlanFeedbackMode {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "fail_fast" | "failfast" => Ok(Self::FailFast),
+            "patch_planner" | "patchplanner" => Ok(Self::PatchPlanner),
+            _ => Err(format!(
+                "未知的 staged_plan_feedback_mode: {:?}（支持 fail_fast、patch_planner）",
+                s.trim()
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FailFast => "fail_fast",
+            Self::PatchPlanner => "patch_planner",
+        }
+    }
+}
+
 /// 长期记忆条目的隔离作用域（向量检索上线后必须与会话/鉴权一致，见 README 安全说明）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LongTermMemoryScopeMode {
@@ -220,6 +250,10 @@ pub struct AgentConfig {
     pub staged_plan_phase_instruction: String,
     /// 为 true 时：内置规划说明包含「无具体任务则 `no_task` + 空 `steps`」；为 false 时省略该段（模型仍可能返回 `no_task`，服务端仍会尊重）。
     pub staged_plan_allow_no_task: bool,
+    /// 分阶段单步失败或步内工具报错时的处理：`fail_fast`（默认）或 `patch_planner`（短规划补丁）。
+    pub staged_plan_feedback_mode: StagedPlanFeedbackMode,
+    /// `patch_planner` 下对单步连续规划补丁的最大次数（含首次补丁）；达到后仍按 `fail_fast` 结束。
+    pub staged_plan_patch_max_attempts: usize,
     /// Web 会话持久化：非空则使用 SQLite（`conversation_id` 跨重启保留）；空则仅进程内内存。
     pub conversation_store_sqlite_path: String,
     /// 为 true 时：首轮在 `system` 与当前用户消息之间注入工作区内备忘文件（见 `agent_memory_file`）。
