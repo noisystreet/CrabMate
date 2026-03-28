@@ -212,7 +212,9 @@ fn parallel_batch_eligible_tool(name: &str) -> bool {
 ///
 /// 与 [`tool_calls_allow_parallel_sync_batch`] 中每个 `ToolCall` 的判定一致；供分阶段规划**优化轮**提示词列举可批量并行的内建工具名。
 pub fn tool_ok_for_parallel_readonly_batch_piece(name: &str) -> bool {
-    !crate::mcp::is_mcp_proxy_tool(name) && is_readonly_tool(name) && parallel_batch_eligible_tool(name)
+    !crate::mcp::is_mcp_proxy_tool(name)
+        && is_readonly_tool(name)
+        && parallel_batch_eligible_tool(name)
 }
 
 /// 本批 **至少 2 个** 工具且全部为语义只读、且均为 [`parallel_batch_eligible_tool`] 时，可在单轮内并行执行

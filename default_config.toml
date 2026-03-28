@@ -14,7 +14,7 @@ max_message_history = 24
 tui_load_session_on_start = false
 # 当 tui_load_session_on_start 为 true 时：从会话文件加载的消息条数上限（含 system）；超出则丢弃最旧非 system 消息（默认 400，有效范围 2～50000）
 tui_session_max_messages = 400
-# role: tool 的正文超过此字符数时在每次调模型前截断（近似 token 控制）
+# role: tool 的正文超过此字符数时在每次调模型前压缩（近似 token 控制）。tool_result_envelope_v1 时对 crabmate_tool.output 做首尾采样并写 output_truncated 等元数据
 tool_message_max_chars = 32768
 # 为 true（默认）时：写入历史的 role: tool 使用 JSON 信封 crabmate_tool（含 summary、ok、output 等），便于聚合/解析；为 false 时保持工具原始字符串
 tool_result_envelope_v1 = true
