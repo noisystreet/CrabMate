@@ -112,7 +112,7 @@ model = "deepseek-reasoner"
 
 ## 只读工具并行（`parallel_readonly_tools_max`）
 
-限制同轮多只读 `SyncDefault` 工具进入 blocking 池的并发数。
+限制同轮多只读工具进入 blocking 池的并发数： eligible 批含内建只读 **`SyncDefault`**、**`http_fetch`**（GET/HEAD）、**`get_weather`**、**`web_search`**（不含 **`http_request`**、**`run_command`**、MCP 等）。构建锁类（如 **`cargo_*`**、**`npm_*`**）整批降级为串行。
 
 ## HTTP 客户端
 
