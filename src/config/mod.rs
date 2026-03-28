@@ -81,6 +81,7 @@ struct ConfigBuilder {
     sync_default_tool_sandbox_docker_image: Option<String>,
     sync_default_tool_sandbox_docker_network: Option<String>,
     sync_default_tool_sandbox_docker_timeout_secs: Option<u64>,
+    sync_default_tool_sandbox_docker_user: Option<String>,
     workspace_allowed_roots: Option<Vec<String>>,
     web_api_bearer_token: Option<String>,
     allow_insecure_no_auth_for_non_loopback: Option<bool>,
@@ -306,6 +307,10 @@ impl ConfigBuilder {
         self.sync_default_tool_sandbox_docker_timeout_secs = agent
             .sync_default_tool_sandbox_docker_timeout_secs
             .or(self.sync_default_tool_sandbox_docker_timeout_secs);
+        override_opt_string_non_empty(
+            &mut self.sync_default_tool_sandbox_docker_user,
+            agent.sync_default_tool_sandbox_docker_user,
+        );
         self.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
             .or(self.allow_insecure_no_auth_for_non_loopback);
@@ -797,6 +802,12 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.sync_default_tool_sandbox_docker_timeout_secs = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            b.sync_default_tool_sandbox_docker_user = Some(v);
+        }
+    }
     if let Ok(v) = std::env::var("AGENT_WEB_API_BEARER_TOKEN") {
         b.web_api_bearer_token = Some(v.trim().to_string());
     }
@@ -1198,6 +1209,12 @@ fn finalize(
         .sync_default_tool_sandbox_docker_timeout_secs
         .unwrap_or(600)
         .max(1);
+    let sync_default_tool_sandbox_docker_user =
+        types::SandboxDockerContainerUser::resolve_from_config_str(
+            b.sync_default_tool_sandbox_docker_user
+                .as_deref()
+                .unwrap_or(""),
+        );
     if sync_default_tool_sandbox_mode == types::SyncDefaultToolSandboxMode::Docker
         && sync_default_tool_sandbox_docker_image.trim().is_empty()
     {
@@ -1359,6 +1376,7 @@ fn finalize(
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,
         sync_default_tool_sandbox_docker_timeout_secs,
+        sync_default_tool_sandbox_docker_user,
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
         agent_memory_file,

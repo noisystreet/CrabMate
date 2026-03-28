@@ -21,6 +21,8 @@ pub struct SandboxRunRequest {
     pub stdin_payload: Vec<u8>,
     /// 整体超时（创建 → attach → 等待退出）。
     pub timeout: Duration,
+    /// 等价于 `docker run --user`；`None` 表示不设置（镜像默认，常为 root）。
+    pub user: Option<String>,
 }
 
 /// 在隔离环境中执行一次 `SandboxRunRequest`，返回容器**标准输出**字节（工具原文）。

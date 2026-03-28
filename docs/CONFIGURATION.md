@@ -95,10 +95,11 @@ model = "deepseek-reasoner"
 - **`docker`**：**SyncDefault** 以及 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成白名单与审批（若有）后，每次调用经 **[bollard](https://docs.rs/bollard)** 走 **Docker Engine HTTP API** 创建并运行一次性容器（等价于 `docker run --rm -i`）：挂载当前工作区到容器内 `/workspace`（读写），只读挂载宿主 `crabmate` 到 `/crabmate`，在容器内运行 `crabmate tool-runner-internal`。**Linux/macOS** 默认连接本地 Unix 套接字（与 `docker` CLI 相同）；**`DOCKER_HOST`** 在部分环境下亦可由 bollard 解析。**默认网络隔离**（`network_mode: none`）；若设置非空的 **`sync_default_tool_sandbox_docker_network`**（如 `bridge`），则使用该网络以便容器内联网工具（如 `get_weather` / `web_search` / HTTP 工具）可用。
 - **`sync_default_tool_sandbox_docker_image`**：`docker` 模式**必填**（`finalize` 时非空校验）；镜像内需包含工具依赖（`git`、`rg`、`cargo` 等按实际启用工具准备），且**与宿主 `crabmate` 二进制同 CPU 架构**（或改为在镜像内安装 crabmate 而非挂载宿主二进制）。
 - **`sync_default_tool_sandbox_docker_timeout_secs`**：单次容器生命周期等待上限（秒，默认 600），超时后 **force remove** 容器。
+- **`sync_default_tool_sandbox_docker_user`**：写入 Docker **`Config.user`**（等价 `docker run --user`）。**默认**（配置键省略或空、或 `current` / `host`）：在 **Unix** 上使用**当前进程有效** **`uid:gid`**（`geteuid` / `getegid`），减轻 bind mount 工作区产生 root 拥有文件的常见问题；**非 Unix** 上省略 `user`（与 `image` 相同）。`image` 或 `default`：不设置，沿用镜像 **`USER`**（常为 root）。其它值：原样传给 Docker（如 `1000:1000`、`myuser` 等，须与镜像内账户/权限一致）。
 - **密钥**：临时 JSON 会写入宿主 `TMPDIR`（Unix 尝试 `0600`），含 `web_search_api_key` 等；仅在可信主机上使用。
 - **不进入沙盒**：`workflow_execute`、**MCP 代理工具**（`mcp__*`）仍只在宿主执行。
 
-环境变量：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`。
+环境变量：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER`。
 
 ## 系统提示词
 

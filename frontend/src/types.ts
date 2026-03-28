@@ -37,6 +37,8 @@ export interface StatusData {
   /** SyncDefault 工具沙盒：none | docker */
   sync_default_tool_sandbox_mode?: string
   sync_default_tool_sandbox_docker_image?: string
+  /** Docker 沙盒容器 user 解析结果：`uid:gid` 或 `image_default` */
+  sync_default_tool_sandbox_docker_user_effective?: string
   /** TUI 启动是否从 .crabmate/tui_session.json 恢复会话（默认 false） */
   tui_load_session_on_start?: boolean
   /** 上下文：system 后最多保留消息条数 */

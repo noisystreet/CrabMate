@@ -94,6 +94,10 @@ pub async fn run_tool_in_docker(
     .into_bytes();
 
     let timeout_secs = cfg.sync_default_tool_sandbox_docker_timeout_secs.max(1);
+    let user = cfg
+        .sync_default_tool_sandbox_docker_user
+        .as_docker_user_string()
+        .map(str::to_string);
     let req = SandboxRunRequest {
         image: image.to_string(),
         network_mode,
@@ -103,6 +107,7 @@ pub async fn run_tool_in_docker(
         cmd,
         stdin_payload,
         timeout: Duration::from_secs(timeout_secs),
+        user,
     };
 
     let out = SANDBOX_BACKEND.run_isolated(req).await;
