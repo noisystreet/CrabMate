@@ -252,25 +252,41 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         let parallel_max = cfg.parallel_readonly_tools_max.max(1);
         info!(
             target: "crabmate",
-            "并行执行工具批 count={} unique={} max_parallel={}（SyncDefault + 只读 + 非构建锁类）",
+            "并行执行工具批 count={} unique={} max_parallel={}（只读 SyncDefault + http_fetch + get_weather + web_search；构建锁类除外）",
             tool_calls.len(),
             dedup_count,
             parallel_max
         );
 
+        let prefetch_failures = if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
+            tool_registry::prefetch_http_fetch_parallel_approvals(
+                tool_calls,
+                cfg,
+                web_tool_ctx,
+                cli_tool_ctx,
+            )
+            .await
+        } else {
+            HashMap::new()
+        };
+
         let mut seen_keys: HashSet<(String, String)> = HashSet::with_capacity(tool_calls.len());
         let mut unique_futs = Vec::new();
         for tc in tool_calls {
             let key = (tc.function.name.clone(), tc.function.arguments.clone());
-            if !seen_keys.insert(key) {
+            if !seen_keys.insert(key.clone()) {
                 continue;
             }
+            let prefetch_err = prefetch_failures.get(&key).cloned();
             let cfg = Arc::clone(cfg);
             let wd = effective_working_dir.to_path_buf();
             let rfc = read_file_turn_cache.clone();
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
             unique_futs.push(async move {
+                if let Some(err) = prefetch_err {
+                    return (name, args, err);
+                }
                 info!(target: "crabmate", "并行工具开始 tool={}", name);
                 debug!(
                     target: "crabmate",
@@ -281,7 +297,19 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 let t_tool = Instant::now();
                 let tool_name = name.clone();
                 let tool_args = args.clone();
-                let result = if crate::tool_registry::sync_default_runs_inline(&name) {
+                let result = if name == "http_fetch" {
+                    tokio::task::spawn_blocking(move || {
+                        let ctx = tools::tool_context_for_with_read_cache(
+                            cfg.as_ref(),
+                            cfg.allowed_commands.as_ref(),
+                            wd.as_path(),
+                            rfc.as_ref().map(|a| a.as_ref()),
+                        );
+                        tools::http_fetch::run_direct(&tool_args, &ctx)
+                    })
+                    .await
+                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                } else if crate::tool_registry::sync_default_runs_inline(&name) {
                     let ctx = tools::tool_context_for_with_read_cache(
                         cfg.as_ref(),
                         cfg.allowed_commands.as_ref(),
