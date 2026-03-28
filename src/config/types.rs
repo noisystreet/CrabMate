@@ -297,7 +297,7 @@ pub struct AgentConfig {
     pub chat_queue_max_concurrent: usize,
     /// Web 对话任务有界等待队列长度（`try_send` 满则 503）
     pub chat_queue_max_pending: usize,
-    /// 单轮内并行只读 `SyncDefault` 工具时，`spawn_blocking` 的最大并发（默认等于 `chat_queue_max_concurrent`）
+    /// 单轮内并行只读工具（`SyncDefault` + `http_fetch` + `get_weather` + `web_search` 等 eligible 批）时 `spawn_blocking` 的最大并发（默认等于 `chat_queue_max_concurrent`）
     pub parallel_readonly_tools_max: usize,
     /// 单轮 `run_agent_turn` 内 `read_file` 磁盘缓存最大条数；`0` 关闭。写类工具或 `workspace_changed` 后整表清空。
     pub read_file_turn_cache_max_entries: usize,
