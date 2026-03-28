@@ -76,7 +76,7 @@ pub enum SyncDefaultToolSandboxMode {
     /// 与历史一致：在 Agent 进程内执行。
     #[default]
     None,
-    /// 每个工具调用 `docker run` 一次，挂载工作区与宿主 `crabmate` 二进制。
+    /// 每个工具调用经 Docker Engine API 创建一次性容器，挂载工作区与宿主 `crabmate` 二进制。
     Docker,
 }
 
@@ -98,6 +98,51 @@ impl SyncDefaultToolSandboxMode {
             Self::Docker => "docker",
         }
     }
+}
+
+/// Docker 沙盒容器内进程身份（`docker run --user` / API `Config.user`）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SandboxDockerContainerUser {
+    /// 不设置，沿用镜像 `USER`（常为 root）。
+    ImageDefault,
+    /// 使用本字段字符串原样传入 Docker（`uid[:gid]`、`user[:group]` 等）。
+    Spec(String),
+}
+
+impl SandboxDockerContainerUser {
+    /// `current` / 空 → 有效用户 `uid:gid`（Unix）；非 Unix 返回 `ImageDefault`。
+    /// `image` / `default` → `ImageDefault`；否则整段 trim 后作为 `Spec`。
+    pub fn resolve_from_config_str(s: &str) -> Self {
+        let t = s.trim();
+        if t.is_empty() || t.eq_ignore_ascii_case("current") || t.eq_ignore_ascii_case("host") {
+            return effective_current_uid_gid_spec();
+        }
+        if t.eq_ignore_ascii_case("image") || t.eq_ignore_ascii_case("default") {
+            return Self::ImageDefault;
+        }
+        Self::Spec(t.to_string())
+    }
+
+    /// 写入 bollard `Config.user`：`None` 表示不设置。
+    pub fn as_docker_user_string(&self) -> Option<&str> {
+        match self {
+            Self::ImageDefault => None,
+            Self::Spec(s) => Some(s.as_str()),
+        }
+    }
+}
+
+#[cfg(unix)]
+fn effective_current_uid_gid_spec() -> SandboxDockerContainerUser {
+    // SAFETY: `geteuid` / `getegid` 为 POSIX，无指针参数，仅返回当前有效 id。
+    let uid = unsafe { libc::geteuid() };
+    let gid = unsafe { libc::getegid() };
+    SandboxDockerContainerUser::Spec(format!("{uid}:{gid}"))
+}
+
+#[cfg(not(unix))]
+fn effective_current_uid_gid_spec() -> SandboxDockerContainerUser {
+    SandboxDockerContainerUser::ImageDefault
 }
 
 impl StagedPlanFeedbackMode {
@@ -149,6 +194,29 @@ impl LlmHttpAuthMode {
             Self::Bearer => "bearer",
             Self::None => "none",
         }
+    }
+}
+
+#[cfg(test)]
+mod sandbox_docker_user_tests {
+    use super::SandboxDockerContainerUser;
+
+    #[test]
+    fn resolve_image_and_default_alias() {
+        assert_eq!(
+            SandboxDockerContainerUser::resolve_from_config_str("image"),
+            SandboxDockerContainerUser::ImageDefault
+        );
+        assert_eq!(
+            SandboxDockerContainerUser::resolve_from_config_str("DEFAULT"),
+            SandboxDockerContainerUser::ImageDefault
+        );
+    }
+
+    #[test]
+    fn resolve_literal_uid_gid() {
+        let u = SandboxDockerContainerUser::resolve_from_config_str("1001:1002");
+        assert_eq!(u.as_docker_user_string(), Some("1001:1002"));
     }
 }
 
@@ -360,6 +428,8 @@ pub struct AgentConfig {
     pub sync_default_tool_sandbox_docker_network: String,
     /// 单次 `docker run` 等待上限（秒），含镜像拉取与工具执行。
     pub sync_default_tool_sandbox_docker_timeout_secs: u64,
+    /// Docker 沙盒容器 `user`：`current`（默认，Unix 为有效 `uid:gid`）、`image`（镜像默认）、或 Docker 接受的 `uid[:gid]` 等字面量。
+    pub sync_default_tool_sandbox_docker_user: SandboxDockerContainerUser,
     /// Web 会话持久化：非空则使用 SQLite（`conversation_id` 跨重启保留）；空则仅进程内内存。
     pub conversation_store_sqlite_path: String,
     /// 为 true 时：首轮在 `system` 与当前用户消息之间注入工作区内备忘文件（见 `agent_memory_file`）。
