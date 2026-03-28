@@ -33,7 +33,7 @@ mod web;
 use config::cli::init_logging;
 pub use config::cli::{
     ChatCliArgs, ExportSessionFormat, ExtraCliCommand, ParsedCliArgs, normalize_legacy_argv,
-    parse_args, parse_args_from_argv,
+    parse_args, parse_args_from_argv, root_clap_command_for_man_page,
 };
 use log::info;
 pub use read_file_turn_cache::{ReadFileTurnCache, ReadFileTurnCacheHandle, new_turn_cache_handle};

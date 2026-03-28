@@ -2,6 +2,12 @@
 
 查看帮助：`crabmate --help`、`crabmate help`、`crabmate help <子命令>`（与 `--help` 等价）。**全局选项**写在子命令**之前**：`--config`、`--workspace`、`--no-tools`、`--log`。
 
+## 手册页（troff / `man`）
+
+- **源码树**：预生成的 **`man/crabmate.1`**（troff），与当前 `clap` 定义一致；**Debian `.deb`** 会安装到 **`/usr/share/man/man1/crabmate.1`**（见根目录 `Cargo.toml` 的 `[package.metadata.deb] assets`）。
+- **再生成**（增删子命令或全局选项后）：`cargo run --bin crabmate-gen-man`，然后提交更新后的 `man/crabmate.1`。
+- **`cargo install`**：默认**不会**把 man 装到 `MANPATH`；可将 `man/crabmate.1` 拷到本机 `.../share/man/man1/` 后执行 `mandb`（视发行版而定），或优先使用 **`cargo deb`** / 发行版打包。
+
 ## 子命令一览
 
 | 子命令 | 说明 |
@@ -152,4 +158,6 @@ cargo deb
 sudo dpkg -i target/debian/crabmate_*.deb
 ```
 
-安装后：`export API_KEY=… && crabmate serve 8080`。
+安装后：`export API_KEY=… && crabmate serve 8080`。包内包含 **`/usr/share/man/man1/crabmate.1`**，可用 **`man crabmate`** 查看（若 **`MANPATH`** 已含 `/usr/share/man`）。
+
+从源码树直接预览：`man -l man/crabmate.1`（路径相对仓库根）。

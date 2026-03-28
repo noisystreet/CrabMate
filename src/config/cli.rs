@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::sync::Mutex;
@@ -462,7 +462,7 @@ pub enum Commands {
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "CrabMate",
+    name = "crabmate",
     version,
     about = "基于 DeepSeek API 的简易 Agent，支持工具调用、Web 界面与 CLI"
 )]
@@ -473,6 +473,11 @@ pub struct RootCli {
     /// 未指定时进入 `repl`
     #[command(subcommand)]
     pub command: Option<Commands>,
+}
+
+/// 与当前构建一致的根级 `clap::Command`，供 **`crabmate-gen-man`** 生成 `man/crabmate.1`（troff）。
+pub fn root_clap_command_for_man_page() -> clap::Command {
+    RootCli::command()
 }
 
 /// Benchmark 批量测评相关的 CLI 参数。
