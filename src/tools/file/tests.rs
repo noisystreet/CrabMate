@@ -192,6 +192,37 @@ pub fn bar() { println!("hi"); }
 }
 
 #[test]
+fn test_read_file_gb18030_and_utf8_strict_error() {
+    use encoding_rs::GB18030;
+
+    let dir = make_test_dir();
+    let file = dir.join("gb.txt");
+    let (cow, _, err) = GB18030.encode("第一行\n第二行\n");
+    assert!(!err, "encode");
+    std::fs::write(&file, cow.as_ref()).unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"gb.txt","encoding":"gb18030","start_line":1,"end_line":2}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("第一行"), "应解码中文: {}", out);
+    assert!(out.contains("文本编码:"), "应标注编码: {}", out);
+    let bad = read_file(
+        r#"{"path":"gb.txt","start_line":1,"max_lines":5}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(
+        bad.contains("UTF-8") || bad.contains("非法") || bad.contains("解码"),
+        "默认 utf-8 应拒绝非法序列: {}",
+        bad
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_read_file_reject_outside_workspace() {
     let dir = make_test_dir();
     let outside_name = format!("crabmate_outside_read_{}.txt", std::process::id());

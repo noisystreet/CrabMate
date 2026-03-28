@@ -98,6 +98,10 @@ pub(in crate::tools) fn params_read_file() -> serde_json::Value {
             "count_total_lines": {
                 "type": "boolean",
                 "description": "可选：是否额外扫描全文件统计总行数（大文件会多一次 I/O，默认 false）"
+            },
+            "encoding": {
+                "type": "string",
+                "description": "可选：文本编码。默认 utf-8（严格，非法 UTF-8 会报错）；另有 utf-8-sig（去 BOM）、gb18030、gbk、gb2312、big5、utf-16le、utf-16be、auto（BOM 优先，否则嗅探）。非法序列不静默替换。"
             }
         },
         "required": ["path"]
@@ -233,7 +237,11 @@ pub(in crate::tools) fn params_extract_in_file() -> serde_json::Value {
             "max_snippet_chars": { "type":"integer", "description":"可选：每条匹配行最多截断字符数（默认 400）", "minimum":1 },
             "mode": { "type":"string", "description":"可选：提取模式（lines 或 rust_fn_block，默认 lines）", "enum":["lines","rust_fn_block"] },
             "max_block_chars": { "type":"integer", "description":"可选：rust_fn_block 模式下每个块最多截断字符数（默认 8000）", "minimum":1 },
-            "max_block_lines": { "type":"integer", "description":"可选：rust_fn_block 模式下每个块最多扫描/输出的行数（默认 500）", "minimum":1 }
+            "max_block_lines": { "type":"integer", "description":"可选：rust_fn_block 模式下每个块最多扫描/输出的行数（默认 500）", "minimum":1 },
+            "encoding": {
+                "type": "string",
+                "description": "可选：与 read_file 相同（utf-8 / utf-8-sig / gb18030 / gbk / gb2312 / big5 / utf-16le / utf-16be / auto）；默认 utf-8 严格解码"
+            }
         },
         "required":["path","pattern"],
         "additionalProperties":false

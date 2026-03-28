@@ -11,7 +11,7 @@
 - **对话与多模型**：OpenAI 兼容 `chat/completions`；切换模型见配置。
 - **内置工具**：文件、命令、HTTP、联网搜索、多语言开发辅助等；**能力与 JSON 参数示例**见 [`docs/TOOLS.md`](docs/TOOLS.md)。
 - **可选 MCP（stdio）**：配置 `mcp_enabled` + `mcp_command` 后合并远端工具为 `mcp__{slug}__{tool}`；`mcp_command` 等效允许启动子进程，须可信配置。
-- **Web UI**：聊天、工作区浏览/编辑、任务清单（进程内 `/tasks`，重启清空）、状态栏；Agent 改文件后列表自动刷新。
+- **Web UI**：聊天、工作区浏览/编辑（`GET /workspace/file` 可选 **`encoding`** 查询参数，与 `read_file` 一致，用于 GBK/GB18030 等 legacy 文本）、任务清单（进程内 `/tasks`，重启清空）、状态栏；Agent 改文件后列表自动刷新。
 - **项目画像**：侧栏只读摘要（`Cargo.toml` / `package.json`、目录与 tokei 等）；可与工作区备忘合并注入新会话首轮（`project_profile_inject_*`）。
 - **流式与审批**：Web SSE；`run_command` 与未匹配前缀的 **`http_fetch` / `http_request`** 等可走 `POST /chat/approval`。CLI（repl/chat）下非白名单 **`run_command`** 与未匹配前缀的 **`http_fetch` / `http_request`** 走同一套终端审批（TTY 为 **dialoguer** 菜单，管道/无头读一行 **`y`/`a`/`n`**；或 **`--yes`** / **`--approve-commands`**，后者仅命令名）。**Web 与 CLI 对照表**见 [`docs/CLI.md`](docs/CLI.md)「CLI 与 Web 能力对照」。
 - **会话与导出**：Web 可选 `conversation_id` + **`conversation_store_sqlite_path`** 持久化（TTL/条数上限见配置），并可在 UI **导出 JSON/MD**。CLI 可用 **`crabmate export-session`**（默认读工作区 **`.crabmate/tui_session.json`**，写入 **`.crabmate/exports/`**，与前端同形）或 REPL **`/export`**（导出当前内存中的对话）。REPL 可选从 **`tui_session.json`** 恢复（`tui_load_session_on_start`）。备忘 **`agent_memory_file`**、**长期记忆**见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。会话/审批差异仍以 **`docs/CLI.md`** 对照节为准。

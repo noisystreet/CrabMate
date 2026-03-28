@@ -16,6 +16,7 @@ use crate::path_workspace::{
     is_sensitive_workspace_path, is_within_allowed_roots, resolve_web_workspace_read_path,
     resolve_web_workspace_write_path, validate_effective_workspace_base,
 };
+use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
 
 const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
 
@@ -79,6 +80,9 @@ pub struct WorkspaceProfileResponse {
 #[derive(Deserialize)]
 pub struct WorkspaceFileQuery {
     pub path: String,
+    /// 可选：`utf-8`（默认）、`utf-8-sig`、`gb18030`、`gbk`、`big5`、`utf-16le`、`utf-16be`、`auto`（与 `read_file` 一致）。
+    #[serde(default)]
+    pub encoding: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -401,14 +405,32 @@ pub async fn workspace_file_read_handler(
             )),
         });
     }
-    match tokio::fs::read_to_string(&canonical).await {
-        Ok(content) => Json(WorkspaceFileReadResponse {
+    let enc_name = match parse_text_encoding_name(query.encoding.as_deref()) {
+        Ok(n) => n,
+        Err(msg) => {
+            return Json(WorkspaceFileReadResponse {
+                content: String::new(),
+                error: Some(msg),
+            });
+        }
+    };
+    let raw = match tokio::fs::read(&canonical).await {
+        Ok(b) => b,
+        Err(e) => {
+            return Json(WorkspaceFileReadResponse {
+                content: String::new(),
+                error: Some(format!("读取文件失败: {}", e)),
+            });
+        }
+    };
+    match decode_bytes_strict(&raw, enc_name) {
+        Ok((content, _)) => Json(WorkspaceFileReadResponse {
             content,
             error: None,
         }),
-        Err(e) => Json(WorkspaceFileReadResponse {
+        Err(msg) => Json(WorkspaceFileReadResponse {
             content: String::new(),
-            error: Some(format!("读取文件失败: {}", e)),
+            error: Some(msg),
         }),
     }
 }
