@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use tokio::sync::mpsc::Sender;
 
+use crate::config::LlmHttpAuthMode;
 use crate::types::{ChatRequest, Message};
 
 use super::api;
@@ -23,6 +24,7 @@ pub trait ChatCompletionsBackend: Send + Sync {
         http: &Client,
         api_key: &str,
         api_base: &str,
+        auth_mode: LlmHttpAuthMode,
         req: &mut ChatRequest,
         out: Option<&Sender<String>>,
         render_to_terminal: bool,
@@ -43,6 +45,7 @@ impl ChatCompletionsBackend for OpenAiCompatBackend {
         http: &Client,
         api_key: &str,
         api_base: &str,
+        auth_mode: LlmHttpAuthMode,
         req: &mut ChatRequest,
         out: Option<&Sender<String>>,
         render_to_terminal: bool,
@@ -54,6 +57,7 @@ impl ChatCompletionsBackend for OpenAiCompatBackend {
             http,
             api_key,
             api_base,
+            auth_mode,
             req,
             out,
             render_to_terminal,

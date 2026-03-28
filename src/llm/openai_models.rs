@@ -7,6 +7,7 @@ use std::time::Instant;
 use reqwest::Client;
 use serde::Deserialize;
 
+use crate::config::LlmHttpAuthMode;
 use crate::http_client;
 use crate::types::OPENAI_MODELS_REL_PATH;
 
@@ -45,16 +46,19 @@ pub async fn fetch_models_report(
     client: &Client,
     api_base: &str,
     api_key: &str,
+    auth_mode: LlmHttpAuthMode,
 ) -> Result<ModelsEndpointReport, Box<dyn std::error::Error + Send + Sync>> {
     let url = models_url(api_base);
     let url_display = redact_url_for_display(&url);
     let t0 = Instant::now();
-    let resp = client
-        .get(&url)
-        .header(
+    let mut rb = client.get(&url);
+    if auth_mode == LlmHttpAuthMode::Bearer {
+        rb = rb.header(
             reqwest::header::AUTHORIZATION,
             format!("Bearer {}", api_key.trim()),
-        )
+        );
+    }
+    let resp = rb
         .send()
         .await
         .map_err(http_client::map_reqwest_transport_err)?;

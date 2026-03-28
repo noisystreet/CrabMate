@@ -413,9 +413,9 @@ pub enum Commands {
     Config(ConfigCmd),
     /// 一页本地诊断（Rust/npm/前端路径、白名单条数等；人读，脱敏；**不要**求 API_KEY）
     Doctor,
-    /// 列出兼容网关 `GET …/models` 的模型 id（需 API_KEY；部分网关无此端点）
+    /// 列出兼容网关 `GET …/models` 的模型 id（`llm_http_auth_mode=bearer` 时需 API_KEY；部分网关无此端点）
     Models,
-    /// 探测 api_base 上 models 端点连通性与 HTTP 状态（需 API_KEY）
+    /// 探测 api_base 上 models 端点连通性与 HTTP 状态（`llm_http_auth_mode=bearer` 时需 API_KEY）
     Probe,
 }
 

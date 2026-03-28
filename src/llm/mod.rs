@@ -121,6 +121,7 @@ pub async fn complete_chat_retrying(
                 http,
                 api_key,
                 &cfg.api_base,
+                cfg.llm_http_auth_mode,
                 &mut req,
                 out,
                 render_to_terminal,

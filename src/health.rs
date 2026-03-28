@@ -6,6 +6,8 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::config::LlmHttpAuthMode;
+
 /// 单项检查结果（与 HTTP JSON 字段一致）。
 #[derive(Debug, Clone, Serialize)]
 pub struct HealthCheckItem {
@@ -27,17 +29,20 @@ pub struct HealthReport {
 pub async fn build_health_report(
     workspace_dir: &Path,
     api_key: &str,
+    llm_http_auth_mode: LlmHttpAuthMode,
     include_frontend_static: bool,
 ) -> HealthReport {
     let mut checks: BTreeMap<String, HealthCheckItem> = BTreeMap::new();
 
-    let api_key_ok = !api_key.trim().is_empty();
+    let api_key_ok = llm_http_auth_mode == LlmHttpAuthMode::None || !api_key.trim().is_empty();
     checks.insert(
         "api_key".to_string(),
         HealthCheckItem {
             ok: api_key_ok,
             detail: if api_key_ok {
                 None
+            } else if llm_http_auth_mode == LlmHttpAuthMode::Bearer {
+                Some("未设置 API_KEY（llm_http_auth_mode=bearer）".to_string())
             } else {
                 Some("未设置 API_KEY".to_string())
             },

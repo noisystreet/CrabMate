@@ -207,7 +207,7 @@ mod tests {
         .expect("merge ok");
 
         assert!(merged.contains("BASE_PROMPT"));
-        assert!(merged.contains("已按 cursor_rules_max_chars 截断"));
+        assert!(merged.contains("规则内容已按 cursor_rules_max_chars 截断"));
         assert!(merged.len() > "BASE_PROMPT".len());
 
         let _ = std::fs::remove_dir_all(&ws);
