@@ -17,6 +17,7 @@ assets = [
     # 默认配置与示例
     ["default_config.toml", "etc/crabmate/default_config.toml", "644"],
     ["config.toml.example", "usr/share/doc/crabmate/config.toml.example", "644"],
+    ["prompts/default_system_prompt.md", "usr/share/doc/crabmate/prompts/default_system_prompt.md", "644"],
     # 文档
     ["README.md", "usr/share/doc/crabmate/README.md", "644"],
 ]

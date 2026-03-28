@@ -8,7 +8,7 @@ mod workspace_roots;
 
 use crate::agent::per_coord::FinalPlanRequirementMode;
 use source::{AgentSection, parse_agent_section, parse_bool_like};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 pub use types::{
     AgentConfig, LlmHttpAuthMode, LongTermMemoryScopeMode, LongTermMemoryVectorBackend,
     PlannerExecutorMode, StagedPlanFeedbackMode, WebSearchProvider,
@@ -144,8 +144,17 @@ impl ConfigBuilder {
         override_string(&mut self.api_base, agent.api_base);
         override_string(&mut self.model, agent.model);
         override_opt_string_non_empty(&mut self.llm_http_auth_mode_str, agent.llm_http_auth_mode);
-        override_string(&mut self.system_prompt, agent.system_prompt);
+        let no_system_prompt_file_in_section = agent.system_prompt_file.is_none();
+        let inline_system_prompt_nonempty = agent
+            .system_prompt
+            .as_ref()
+            .is_some_and(|s| !s.trim().is_empty());
         override_opt_string_non_empty(&mut self.system_prompt_file, agent.system_prompt_file);
+        override_string(&mut self.system_prompt, agent.system_prompt);
+        // 本段若只给了内联 system_prompt、未再给 system_prompt_file，则不再沿用更早层（如嵌入默认）的文件路径
+        if no_system_prompt_file_in_section && inline_system_prompt_nonempty {
+            self.system_prompt_file = None;
+        }
         override_opt_string_non_empty(
             &mut self.run_command_working_dir,
             agent.run_command_working_dir,
@@ -339,6 +348,7 @@ impl ConfigBuilder {
 /// 加载配置：嵌入的 default 为底，再被配置文件覆盖，最后被环境变量覆盖。
 /// 若指定 `config_path`，则只从该文件读取覆盖；否则依次尝试 config.toml、.agent_demo.toml。
 /// 若最终 api_base、model 或任一运行参数仍未设置则返回错误。
+/// 默认 **`system_prompt_file`** 在 [`finalize`] 中按 cwd、各已加载配置文件目录（逆序）、`run_command_working_dir` 解析相对路径。
 pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut b = ConfigBuilder::default();
 
@@ -357,8 +367,10 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
         }
         None => vec!["config.toml", ".agent_demo.toml"],
     };
-    for path in config_paths {
+    let mut system_prompt_search_bases: Vec<PathBuf> = Vec::new();
+    for path in &config_paths {
         if Path::new(path).exists() {
+            system_prompt_search_bases.push(directory_containing_config_file(path));
             let s = std::fs::read_to_string(path)
                 .map_err(|e| format!("无法读取配置文件 \"{}\": {}", path, e))?;
             let parsed = parse_agent_section(&s)
@@ -378,7 +390,64 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     apply_env_overrides(&mut b);
 
     // ── 4. 验证与最终转换 ──
-    finalize(b)
+    finalize(b, system_prompt_search_bases)
+}
+
+/// `system_prompt_file` 相对路径解析：与 `foo.toml` 同目录下的 `prompts/...` 可被找到。
+fn directory_containing_config_file(config_path: &str) -> PathBuf {
+    let p = Path::new(config_path);
+    match p.parent() {
+        None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        Some(parent) if parent.as_os_str().is_empty() => {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        }
+        Some(parent) => parent.to_path_buf(),
+    }
+}
+
+/// 读取 `system_prompt_file`：绝对路径直接读；否则依次尝试 cwd、各配置目录（后加载的优先）、`run_command_working_dir`。
+fn read_system_prompt_file_resolved(
+    raw: &str,
+    config_bases: &[PathBuf],
+    run_command_working_dir: &Path,
+) -> Result<String, String> {
+    let raw = raw.trim();
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        return std::fs::read_to_string(path)
+            .map_err(|e| format!("无法读取 system_prompt_file \"{}\": {}", path.display(), e));
+    }
+
+    let mut tried: Vec<String> = Vec::new();
+
+    if let Ok(s) = std::fs::read_to_string(path) {
+        return Ok(s);
+    }
+    tried.push(
+        std::env::current_dir()
+            .map(|cwd| cwd.join(path).display().to_string())
+            .unwrap_or_else(|_| path.display().to_string()),
+    );
+
+    for base in config_bases.iter().rev() {
+        let candidate = base.join(path);
+        if let Ok(s) = std::fs::read_to_string(&candidate) {
+            return Ok(s);
+        }
+        tried.push(candidate.display().to_string());
+    }
+
+    let work_candidate = run_command_working_dir.join(path);
+    if let Ok(s) = std::fs::read_to_string(&work_candidate) {
+        return Ok(s);
+    }
+    tried.push(work_candidate.display().to_string());
+
+    Err(format!(
+        "无法读取 system_prompt_file \"{}\"（相对路径）。已尝试: {}",
+        raw,
+        tried.join(" | ")
+    ))
 }
 
 /// 从 `AGENT_*` 环境变量覆盖 `ConfigBuilder` 字段。
@@ -552,6 +621,7 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         let s = s.trim().to_string();
         if !s.is_empty() {
             b.system_prompt = s;
+            b.system_prompt_file = None;
         }
     }
     if let Ok(p) = std::env::var("AGENT_SYSTEM_PROMPT_FILE") {
@@ -806,7 +876,10 @@ fn context_budget_vs_history_suspicious(
 }
 
 /// 验证、clamp 并组装最终 `AgentConfig`。
-fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
+fn finalize(
+    b: ConfigBuilder,
+    system_prompt_search_bases: Vec<PathBuf>,
+) -> Result<AgentConfig, String> {
     if b.api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
     }
@@ -957,15 +1030,21 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         run_command_working_dir.as_path(),
     )?;
 
-    let system_prompt = if let Some(path) = b.system_prompt_file {
-        let path = Path::new(&path);
-        std::fs::read_to_string(path)
-            .map_err(|e| format!("无法读取 system_prompt_file \"{}\": {}", path.display(), e))?
-    } else {
+    let system_prompt = if let Some(ref path) = b.system_prompt_file {
+        read_system_prompt_file_resolved(
+            path,
+            &system_prompt_search_bases,
+            run_command_working_dir.as_path(),
+        )?
+    } else if !b.system_prompt.trim().is_empty() {
         b.system_prompt
+    } else {
+        return Err(
+            "配置错误：未设置 system_prompt_file 或内联 system_prompt（请在 default_config.toml、config.toml、环境变量 AGENT_SYSTEM_PROMPT / AGENT_SYSTEM_PROMPT_FILE 中配置）".to_string(),
+        );
     };
     if system_prompt.trim().is_empty() {
-        return Err("配置错误：未设置 system_prompt 或 system_prompt_file".to_string());
+        return Err("配置错误：system_prompt 从文件或内联加载后为空".to_string());
     }
     let cursor_rules_enabled = b.cursor_rules_enabled.unwrap_or(false);
     let cursor_rules_dir = b

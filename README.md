@@ -53,7 +53,7 @@ cargo run -- serve     # Web，默认 8080
 
 前端：`cd frontend && npm install && npm run build` 后再 `serve`（静态资源来自 `frontend/dist`）。
 
-**配置**：`default_config.toml` + 可选 `config.toml`；**环境变量与高级项**见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。**子命令、Benchmark、deb 包**见 [`docs/CLI.md`](docs/CLI.md)。
+**配置**：`default_config.toml` + 可选 `config.toml`；默认通过 **`system_prompt_file = "prompts/default_system_prompt.md"`** 从仓库文件加载（**改该文件无需重编**；相对路径会按当前目录、配置文件所在目录、`run_command_working_dir` 依次解析，见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)）。**环境变量与高级项**同见该文档。**子命令、Benchmark、deb 包**见 [`docs/CLI.md`](docs/CLI.md)。
 
 **本地模型（如 Ollama）**：`api_base` 指向其 OpenAI 兼容根（如 `http://127.0.0.1:11434/v1`），并设 **`llm_http_auth_mode = "none"`**（或 `AGENT_LLM_HTTP_AUTH_MODE=none`）即可不设 **`API_KEY`**；详见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。
 

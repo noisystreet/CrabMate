@@ -76,6 +76,7 @@
 # cursor_rules_dir = ".cursor/rules"
 # cursor_rules_include_agents_md = true
 # cursor_rules_max_chars = 48000
-# system_prompt = "你是专业的助手，回答简洁。"
-# system_prompt_file = "system_prompt.txt"
+# 默认与 default_config 一致：system_prompt_file = "prompts/default_system_prompt.md"（改该文件无需重编）
+# 仅写内联会取消默认文件路径，例如：# system_prompt = "你是专业的助手，回答简洁。"
+# system_prompt_file = "system_prompt.txt"   # 相对路径解析见 docs/CONFIGURATION.md「系统提示词」
 model = "deepseek-chat"
