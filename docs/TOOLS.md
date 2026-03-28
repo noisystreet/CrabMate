@@ -147,6 +147,8 @@
   {"script":"test"}
   ```
 - `workflow_execute`（DAG 工作流执行：并行/串行、审批、SLA、失败补偿）：
+  - **节点 `max_retries`**（0～5，默认 0）：对 **`timeout`**、**`workflow_tool_join_error`**、**`workflow_semaphore_closed`** 等**可重试**失败自动退避重跑（1s/2s/4s… 上限 8s）；**业务失败**（如测试失败、命令非零退出）**不重试**，避免重复写盘或重复副作用。
+  - **结果 JSON**（`workflow_execute_result` / `workflow_validate_result`）含 **`workflow_run_id`**（与日志 `workflow_run_id=` 对齐）、**`trace`**（`dag_start` / `node_attempt_*` / `node_retry_backoff` / `dag_end` 等事件，带时间戳与 `node_id`）、**`completion_order`**（成功节点完成顺序，供补偿逆序对照）；**`nodes[].attempt`** 为最终计入结果的尝试次数。
   ```json
   {"workflow":{
     "max_parallelism":2,

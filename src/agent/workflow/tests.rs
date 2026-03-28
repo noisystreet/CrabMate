@@ -72,6 +72,7 @@ fn test_inject_placeholders_output_truncation() {
             workspace_changed: false,
             exit_code: Some(0),
             error_code: None,
+            attempt: 1,
         },
     );
     let v = serde_json::json!({"x":"prefix {{a.output}} suffix"});
@@ -94,6 +95,7 @@ fn test_placeholder_stdout_first_token() {
             workspace_changed: false,
             exit_code: Some(0),
             error_code: None,
+            attempt: 1,
         },
     );
     let v = serde_json::json!({"rev":"{{a.stdout_first_token}}"});
@@ -126,6 +128,17 @@ fn test_parse_max_retries_capped_at_five() {
     }"#;
     let spec = parse_workflow_spec(json).unwrap();
     assert_eq!(spec.nodes[0].max_retries, 5);
+}
+
+#[test]
+fn workflow_retryable_error_codes() {
+    use crate::agent::workflow::execute::workflow_node_failure_retryable;
+    assert!(workflow_node_failure_retryable(Some("timeout")));
+    assert!(workflow_node_failure_retryable(Some(
+        "workflow_tool_join_error"
+    )));
+    assert!(!workflow_node_failure_retryable(Some("cargo_test_failed")));
+    assert!(!workflow_node_failure_retryable(None));
 }
 
 #[test]
