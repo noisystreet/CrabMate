@@ -50,10 +50,10 @@ context_summary_transcript_max_chars = 120000
 # mcp_command = ""
 # mcp_tool_timeout_secs = 60
 
-# 长期记忆（路线图分阶段实现；当前仅占位配置，默认关闭）
-# long_term_memory_enabled = false
+# 长期记忆（默认开启；向量检索用 fastembed，无需 ONNX 时可设 vector_backend = "disabled" 或 long_term_memory_enabled = false）
+# long_term_memory_enabled = true
 # long_term_memory_scope_mode = "conversation"
-# long_term_memory_vector_backend = "disabled"
+# long_term_memory_vector_backend = "fastembed"
 # long_term_memory_max_entries = 256
 # long_term_memory_inject_max_chars = 8000
 # long_term_memory_store_sqlite_path = ".crabmate/long_term_memory.db"
