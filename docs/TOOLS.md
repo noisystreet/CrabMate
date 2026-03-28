@@ -4,6 +4,8 @@
 
 **可选「解释卡」**（配置 `tool_call_explain_enabled`）：启用后，凡**非只读**内置工具（与 `tool_registry::is_readonly_tool` 一致，含 `run_command`、`run_executable`、写文件、`http_request`、git 写操作、`workflow_execute` 等）调用时，须在 JSON **顶层**增加字符串字段 **`crabmate_explain_why`**，用一句自然语言说明本步目的；服务端校验长度后**执行前会剥离**该键，避免与 `additionalProperties: false` 冲突。只读工具与 MCP 代理工具不要求；MCP 调用仍会剥离该键再转发。与命令/HTTP **审批**互补（审批管授权，解释卡管可理解性）。
 
+**长输出进模型上下文**（`tool_result_envelope_v1` 默认开启）：写入历史的 `role: tool` 为 **`crabmate_tool`** JSON 信封（`summary`、`output` 等）。每次请求模型前若超过 **`tool_message_max_chars`**，服务端对 **`output`** 做**首尾采样**并设置 **`output_truncated`**、**`output_original_chars`**、**`output_kept_head_chars`**、**`output_kept_tail_chars`**，避免单次 grep/构建日志撑满上下文；完整原文仍可通过 SSE/导出等在会话中查看（视 UI 设置）。详见 **`docs/DEVELOPMENT.md`** 与 **`docs/CONFIGURATION.md`**。
+
 ## 内置工具（模型可调用）
 
 - **内置多种工具，由模型按需调用**：

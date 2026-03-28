@@ -14,7 +14,7 @@ max_message_history = 24
 tui_load_session_on_start = false
 # 当 tui_load_session_on_start 为 true 时：从会话文件加载的消息条数上限（含 system）；超出则丢弃最旧非 system 消息（默认 400，有效范围 2～50000）
 tui_session_max_messages = 400
-# role: tool 的正文超过此字符数时在每次调模型前截断（近似 token 控制）
+# role: tool 的正文超过此字符数时在每次调模型前压缩（近似 token 控制）。tool_result_envelope_v1 时对 crabmate_tool.output 做首尾采样并写 output_truncated 等元数据
 tool_message_max_chars = 32768
 # 为 true（默认）时：写入历史的 role: tool 使用 JSON 信封 crabmate_tool（含 summary、ok、output 等），便于聚合/解析；为 false 时保持工具原始字符串
 tool_result_envelope_v1 = true
@@ -67,7 +67,7 @@ context_summary_transcript_max_chars = 120000
 chat_queue_max_concurrent = 2
 # Web 对话任务：有界等待队列长度（含正在排队的任务；满则返回 503 QUEUE_FULL）
 chat_queue_max_pending = 32
-# 单轮内并行执行多只读 SyncDefault 工具时，tokio blocking 池上的最大并发（默认 max(chat_queue_max_concurrent, 3)，至少 3）
+# 单轮内并行执行多只读工具（SyncDefault + http_fetch + get_weather + web_search 等 eligible 批）时，tokio blocking 池上的最大并发（默认 max(chat_queue_max_concurrent, 3)，至少 3）
 # parallel_readonly_tools_max = 4
 # 单轮 run_agent_turn 内 read_file 结果缓存条数（按 canonical 路径 + 行区间等键；比对 mtime+size）；0 关闭。写类工具或 workspace_changed 后整表清空
 read_file_turn_cache_max_entries = 64

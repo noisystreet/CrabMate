@@ -190,23 +190,40 @@ fn parallel_sync_batch_denied(name: &str) -> bool {
         || name.starts_with("codespell_")
 }
 
+/// 可与其它只读工具同批 **并行** 执行的工具（不含 `http_request`、命令类、MCP）。
+///
+/// - **`SyncDefault`**：内建只读且非 `parallel_sync_batch_denied`。
+/// - **`http_fetch`**：GET/HEAD 只读；审批在并行 `spawn_blocking` 之前**串行**完成（见 `execute_tools`）。
+/// - **`get_weather` / `web_search`**：出站只读 HTTP；无工作区副作用，可与 `read_file` 等同批并行。
+fn parallel_batch_eligible_tool(name: &str) -> bool {
+    if parallel_sync_batch_denied(name) {
+        return false;
+    }
+    matches!(
+        handler_id_for(name),
+        HandlerId::SyncDefault
+            | HandlerId::HttpFetch
+            | HandlerId::GetWeather
+            | HandlerId::WebSearch
+    )
+}
+
 /// 单工具是否满足「可与其它同类工具同批并行」的语义（不含「至少 2 个调用」前提）。
 ///
 /// 与 [`tool_calls_allow_parallel_sync_batch`] 中每个 `ToolCall` 的判定一致；供分阶段规划**优化轮**提示词列举可批量并行的内建工具名。
 pub fn tool_ok_for_parallel_readonly_batch_piece(name: &str) -> bool {
     !crate::mcp::is_mcp_proxy_tool(name)
-        && handler_id_for(name) == HandlerId::SyncDefault
         && is_readonly_tool(name)
-        && !parallel_sync_batch_denied(name)
+        && parallel_batch_eligible_tool(name)
 }
 
-/// 本批 **至少 2 个** 工具且全部为 `SyncDefault`、语义只读且非构建/生态锁类时，可在单轮内并行 `spawn_blocking`（见 `agent_turn::per_execute_tools_common`）。
+/// 本批 **至少 2 个** 工具且全部为语义只读、且均为 [`parallel_batch_eligible_tool`] 时，可在单轮内并行执行
+///（`SyncDefault` / `http_fetch` / `get_weather` / `web_search`；**不含** `http_request`、命令类、MCP；`http_fetch` 的审批先于并行 IO，见 `agent_turn::per_execute_tools_common`）。
 pub fn tool_calls_allow_parallel_sync_batch(tool_calls: &[ToolCall]) -> bool {
     tool_calls.len() > 1
-        && tool_calls.iter().all(|tc| {
-            let n = tc.function.name.as_str();
-            tool_ok_for_parallel_readonly_batch_piece(n)
-        })
+        && tool_calls
+            .iter()
+            .all(|tc| tool_ok_for_parallel_readonly_batch_piece(tc.function.name.as_str()))
 }
 
 fn meta_by_name(name: &str) -> Option<&'static ToolDispatchMeta> {
@@ -736,6 +753,134 @@ async fn execute_run_command_impl(
     (s, None)
 }
 
+/// 并行只读批内 **`http_fetch`**：在 `spawn_blocking` 之前串行完成解析与白名单/审批，避免多请求竞态修改 `persistent_allowlist`。
+/// 返回 `(name, args) -> 错误文案`；未出现的键表示已获准或本就匹配前缀。
+pub(crate) async fn prefetch_http_fetch_parallel_approvals(
+    tool_calls: &[ToolCall],
+    cfg: &Arc<AgentConfig>,
+    web_ctx: Option<&WebToolRuntime>,
+    cli_ctx: Option<&CliToolRuntime>,
+) -> HashMap<(String, String), String> {
+    let mut failures: HashMap<(String, String), String> = HashMap::new();
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    for tc in tool_calls {
+        if tc.function.name != "http_fetch" {
+            continue;
+        }
+        let key = (tc.function.name.clone(), tc.function.arguments.clone());
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let args = tc.function.arguments.as_str();
+        let (url, method) = match tools::http_fetch::parse_http_fetch_args(args) {
+            Ok(x) => x,
+            Err(e) => {
+                failures.insert(key, format!("错误：{}", e));
+                continue;
+            }
+        };
+        let storage_key = tools::http_fetch::storage_key(&url);
+        let approval_args = tools::http_fetch::approval_args_display(method, &url);
+        let allowed_by_cfg =
+            tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes);
+        let allowed_by_list = match (web_ctx, cli_ctx) {
+            (Some(w), _) => w
+                .persistent_allowlist_shared
+                .lock()
+                .await
+                .contains(&storage_key),
+            (None, Some(c)) => c
+                .persistent_allowlist_shared
+                .lock()
+                .await
+                .contains(&storage_key),
+            (None, None) => false,
+        };
+        if allowed_by_cfg || allowed_by_list {
+            continue;
+        }
+        if let Some(ctx) = web_ctx {
+            let decision = {
+                let _guard = ctx.approval_request_guard.lock().await;
+                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
+                    command_approval_request: crate::sse::CommandApprovalBody {
+                        command: "http_fetch".to_string(),
+                        args: approval_args.clone(),
+                        allowlist_key: Some(storage_key.clone()),
+                    },
+                });
+                if !crate::sse::send_string_logged(
+                    &ctx.out_tx,
+                    line,
+                    "tool_registry::http_fetch approval parallel prefetch",
+                )
+                .await
+                {
+                    failures.insert(key, "错误：审批通道不可用，请重试。".to_string());
+                    continue;
+                }
+                let mut rx_guard = ctx.approval_rx_shared.lock().await;
+                rx_guard
+                    .recv()
+                    .await
+                    .unwrap_or(CommandApprovalDecision::Deny)
+            };
+            crate::sse::web_approval::send_timeline_approval_decision(
+                &ctx.out_tx,
+                "http_fetch 审批：",
+                Some(approval_args.clone()),
+                decision,
+                "tool_registry::http_fetch approval timeline parallel prefetch",
+            )
+            .await;
+            match decision {
+                CommandApprovalDecision::Deny => {
+                    failures.insert(key, format!("用户拒绝 http_fetch：{}", approval_args));
+                }
+                CommandApprovalDecision::AllowOnce => {}
+                CommandApprovalDecision::AllowAlways => {
+                    ctx.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(storage_key);
+                }
+            }
+        } else if let Some(cli_ctx) = cli_ctx {
+            if !cli_ctx.auto_approve_all_non_whitelist_run_command {
+                let detail = format!(
+                    "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
+                    approval_args
+                );
+                let decision = crate::runtime::cli_approval::prompt_tool_approval_cli(
+                    "http_fetch 审批",
+                    &detail,
+                )
+                .await;
+                match decision {
+                    CommandApprovalDecision::Deny => {
+                        failures.insert(key, format!("用户拒绝 http_fetch：{}", approval_args));
+                    }
+                    CommandApprovalDecision::AllowOnce => {}
+                    CommandApprovalDecision::AllowAlways => {
+                        cli_ctx
+                            .persistent_allowlist_shared
+                            .lock()
+                            .await
+                            .insert(storage_key);
+                    }
+                }
+            }
+        } else {
+            failures.insert(
+                key,
+                "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
+                    .to_string(),
+            );
+        }
+    }
+    failures
+}
+
 async fn execute_http_fetch_impl(
     cfg: &Arc<AgentConfig>,
     web_ctx: Option<&WebToolRuntime>,
@@ -1133,6 +1278,18 @@ mod tests {
     }
 
     #[test]
+    fn parallel_sync_batch_mixed_readonly_http_and_search() {
+        assert!(tool_calls_allow_parallel_sync_batch(&[
+            tc("read_file"),
+            tc("http_fetch")
+        ]));
+        assert!(tool_calls_allow_parallel_sync_batch(&[
+            tc("get_weather"),
+            tc("web_search")
+        ]));
+    }
+
+    #[test]
     fn parallel_sync_batch_denied_for_cargo_or_workflow() {
         assert!(!tool_calls_allow_parallel_sync_batch(&[
             tc("read_file"),
@@ -1141,6 +1298,14 @@ mod tests {
         assert!(!tool_calls_allow_parallel_sync_batch(&[
             tc("workflow_execute"),
             tc("read_file")
+        ]));
+    }
+
+    #[test]
+    fn parallel_sync_batch_denied_for_http_request() {
+        assert!(!tool_calls_allow_parallel_sync_batch(&[
+            tc("read_file"),
+            tc("http_request")
         ]));
     }
 

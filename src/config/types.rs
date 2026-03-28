@@ -267,7 +267,7 @@ pub struct AgentConfig {
     pub cursor_rules_include_agents_md: bool,
     /// 规则附加段最大字符数，超出时截断并附提示
     pub cursor_rules_max_chars: usize,
-    /// `role: tool` 的 `content` 超过此字符数时截断（每次调模型前应用）
+    /// `role: tool` 的 `content` 超过此字符数时压缩（每次调模型前应用）。信封形态下对 `output` 做首尾采样并写 `output_truncated` 等元数据，见 `tool_result::maybe_compress_tool_message_content`。
     pub tool_message_max_chars: usize,
     /// 为 true（默认）时：写入历史的 `role: tool` 使用 `crabmate_tool` JSON 信封（含 `summary`/`ok`/`output` 等），便于聚合解析；为 false 时保持纯工具原文。
     pub tool_result_envelope_v1: bool,
@@ -297,7 +297,7 @@ pub struct AgentConfig {
     pub chat_queue_max_concurrent: usize,
     /// Web 对话任务有界等待队列长度（`try_send` 满则 503）
     pub chat_queue_max_pending: usize,
-    /// 单轮内并行只读 `SyncDefault` 工具时，`spawn_blocking` 的最大并发（默认等于 `chat_queue_max_concurrent`）
+    /// 单轮内并行只读工具（`SyncDefault` + `http_fetch` + `get_weather` + `web_search` 等 eligible 批）时 `spawn_blocking` 的最大并发（默认等于 `chat_queue_max_concurrent`）
     pub parallel_readonly_tools_max: usize,
     /// 单轮 `run_agent_turn` 内 `read_file` 磁盘缓存最大条数；`0` 关闭。写类工具或 `workspace_changed` 后整表清空。
     pub read_file_turn_cache_max_entries: usize,
