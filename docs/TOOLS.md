@@ -6,7 +6,7 @@
 
 **长输出进模型上下文**（`tool_result_envelope_v1` 默认开启）：写入历史的 `role: tool` 为 **`crabmate_tool`** JSON 信封（`summary`、`output` 等）。每次请求模型前若超过 **`tool_message_max_chars`**，服务端对 **`output`** 做**首尾采样**并设置 **`output_truncated`**、**`output_original_chars`**、**`output_kept_head_chars`**、**`output_kept_tail_chars`**，避免单次 grep/构建日志撑满上下文；完整原文仍可通过 SSE/导出等在会话中查看（视 UI 设置）。详见 **`docs/DEVELOPMENT.md`** 与 **`docs/CONFIGURATION.md`**。
 
-**可选 Docker 沙盒**（`sync_default_tool_sandbox_mode = docker`）：凡在 `tool_registry` 中走 **`SyncDefault`** 路径的内建工具（绝大多数文件/Git/搜索类工具，**不含** `run_command` / `http_fetch` / `workflow_execute` / MCP 等）可在 **Docker 容器**内执行（经 **bollard** 调 Engine API）；需配置镜像名且本机 **Docker 守护进程可访问**（通常与 `docker` CLI 共用 Unix 套接字）。详见 [`docs/CONFIGURATION.md`](CONFIGURATION.md)「SyncDefault 工具 Docker 沙盒」。
+**可选 Docker 沙盒**（`sync_default_tool_sandbox_mode = docker`）：**SyncDefault** 与 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成审批/白名单后可在 **Docker 容器**内执行（经 **bollard** 调 Engine API）；**`workflow_execute`** 与 **MCP** 仍只在宿主。需配置镜像名且本机 **Docker 守护进程可访问**（通常与 `docker` CLI 共用 Unix 套接字）。详见 [`docs/CONFIGURATION.md`](CONFIGURATION.md)「SyncDefault 工具 Docker 沙盒」。
 
 ## 内置工具（模型可调用）
 

@@ -5,7 +5,7 @@
 //! 新增「需特殊运行时」的工具：在 `HANDLER_MAP` 初始化与 `all_dispatch_metadata()` 中各增一项，并在 `dispatch_tool` 的 `match hid` 中补分支。
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
@@ -459,25 +459,61 @@ pub async fn dispatch_tool(
                 .await
         }
         HandlerId::GetWeather => {
-            execute_get_weather_web(cfg, effective_working_dir, name, args).await
+            execute_get_weather_web(cfg, effective_working_dir, workspace_is_set, name, args).await
         }
         HandlerId::WebSearch => {
-            execute_web_search_web(cfg, effective_working_dir, name, args).await
+            execute_web_search_web(cfg, effective_working_dir, workspace_is_set, name, args).await
         }
         HandlerId::HttpFetch => match runtime {
             ToolRuntime::Web { ctx, .. } => {
-                execute_http_fetch_impl(cfg, ctx, None, name, args).await
+                execute_http_fetch_impl(
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    ctx,
+                    None,
+                    name,
+                    args,
+                )
+                .await
             }
             ToolRuntime::Cli { ctx, .. } => {
-                execute_http_fetch_impl(cfg, None, Some(ctx), name, args).await
+                execute_http_fetch_impl(
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    None,
+                    Some(ctx),
+                    name,
+                    args,
+                )
+                .await
             }
         },
         HandlerId::HttpRequest => match runtime {
             ToolRuntime::Web { ctx, .. } => {
-                execute_http_request_impl(cfg, ctx, None, name, args).await
+                execute_http_request_impl(
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    ctx,
+                    None,
+                    name,
+                    args,
+                )
+                .await
             }
             ToolRuntime::Cli { ctx, .. } => {
-                execute_http_request_impl(cfg, None, Some(ctx), name, args).await
+                execute_http_request_impl(
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    None,
+                    Some(ctx),
+                    name,
+                    args,
+                )
+                .await
             }
         },
         HandlerId::SyncDefault => {
@@ -591,6 +627,43 @@ async fn execute_workflow(
     };
 
     (result, reflection_inject)
+}
+
+/// `sync_default_tool_sandbox_mode = docker` 时，在宿主完成审批/白名单后把本类工具交给容器内 `tool-runner-internal`。
+async fn dispatch_non_sync_tool_to_docker(
+    cfg: &Arc<AgentConfig>,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
+    kind: &str,
+    args: &str,
+    runner_cfg_path: Result<PathBuf, String>,
+) -> Option<(String, Option<serde_json::Value>)> {
+    if cfg.sync_default_tool_sandbox_mode != SyncDefaultToolSandboxMode::Docker {
+        return None;
+    }
+    if !workspace_is_set {
+        return Some((
+            "错误：未设置工作区，无法在 Docker 沙盒中执行该工具（请先设置工作区目录）。"
+                .to_string(),
+            None,
+        ));
+    }
+    let path = match runner_cfg_path {
+        Ok(p) => p,
+        Err(e) => return Some((e, None)),
+    };
+    let inv = crate::tool_sandbox::ToolInvocationLine {
+        kind: kind.to_string(),
+        tool: None,
+        args_json: args.to_string(),
+    };
+    let out =
+        crate::tool_sandbox::run_tool_in_docker(cfg.as_ref(), effective_working_dir, path, inv)
+            .await;
+    Some(match out {
+        Ok(s) => (s, None),
+        Err(e) => (e, None),
+    })
 }
 
 #[allow(clippy::too_many_arguments)] // Web + CLI 双路径审批共享实现
@@ -736,6 +809,25 @@ async fn execute_run_command_impl(
                 }
             }
         }
+    }
+
+    if let Some((s, inj)) = dispatch_non_sync_tool_to_docker(
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        "run_command",
+        args,
+        crate::tool_sandbox::write_runner_config_json_with_allowed_commands(
+            cfg.as_ref(),
+            effective_allowed_arc.as_ref(),
+        ),
+    )
+    .await
+    {
+        if tools::is_compile_command_success(args, &s) {
+            *workspace_changed = true;
+        }
+        return (s, inj);
     }
 
     let name_in = name.to_string();
@@ -903,6 +995,8 @@ pub(crate) async fn prefetch_http_fetch_parallel_approvals(
 
 async fn execute_http_fetch_impl(
     cfg: &Arc<AgentConfig>,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
     web_ctx: Option<&WebToolRuntime>,
     cli_ctx: Option<&CliToolRuntime>,
     name: &str,
@@ -1001,6 +1095,18 @@ async fn execute_http_fetch_impl(
             );
         }
     }
+    if let Some(out) = dispatch_non_sync_tool_to_docker(
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        "http_fetch",
+        args,
+        crate::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+    )
+    .await
+    {
+        return out;
+    }
     let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch_max_response_bytes;
     let name_in = name.to_string();
@@ -1031,6 +1137,8 @@ async fn execute_http_fetch_impl(
 
 async fn execute_http_request_impl(
     cfg: &Arc<AgentConfig>,
+    effective_working_dir: &Path,
+    workspace_is_set: bool,
     web_ctx: Option<&WebToolRuntime>,
     cli_ctx: Option<&CliToolRuntime>,
     name: &str,
@@ -1129,6 +1237,18 @@ async fn execute_http_request_impl(
             );
         }
     }
+    if let Some(out) = dispatch_non_sync_tool_to_docker(
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        "http_request",
+        args,
+        crate::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+    )
+    .await
+    {
+        return out;
+    }
     let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch_max_response_bytes;
     let name_in = name.to_string();
@@ -1167,6 +1287,18 @@ async fn execute_run_executable_web(
     if !workspace_is_set {
         return (web_tool_err_workspace_not_set("运行可执行程序"), None);
     }
+    if let Some(out) = dispatch_non_sync_tool_to_docker(
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        "run_executable",
+        args,
+        crate::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+    )
+    .await
+    {
+        return out;
+    }
     let name_in = name.to_string();
     let cmd_timeout = cfg.command_timeout_secs;
     let cfg = Arc::clone(cfg);
@@ -1202,9 +1334,22 @@ async fn execute_run_executable_web(
 async fn execute_get_weather_web(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
+    workspace_is_set: bool,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
+    if let Some(out) = dispatch_non_sync_tool_to_docker(
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        "get_weather",
+        args,
+        crate::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+    )
+    .await
+    {
+        return out;
+    }
     let name_in = name.to_string();
     let weather_timeout = cfg.weather_timeout_secs;
     let cfg = Arc::clone(cfg);
@@ -1240,9 +1385,22 @@ async fn execute_get_weather_web(
 async fn execute_web_search_web(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
+    workspace_is_set: bool,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
+    if let Some(out) = dispatch_non_sync_tool_to_docker(
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        "web_search",
+        args,
+        crate::tool_sandbox::write_runner_config_json(cfg.as_ref()),
+    )
+    .await
+    {
+        return out;
+    }
     let name_in = name.to_string();
     let search_timeout = cfg.web_search_timeout_secs;
     let cfg = Arc::clone(cfg);

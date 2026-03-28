@@ -92,11 +92,11 @@ model = "deepseek-reasoner"
 ## SyncDefault 工具 Docker 沙盒（`sync_default_tool_sandbox_mode`）
 
 - **`none`（默认）**：与历史一致，在 Agent 进程内 `spawn_blocking` 执行 `HandlerId::SyncDefault` 工具。
-- **`docker`**：每个 SyncDefault 工具调用经 **[bollard](https://docs.rs/bollard)** 走 **Docker Engine HTTP API** 创建并运行一次性容器（等价于 `docker run --rm -i`）：挂载当前工作区到容器内 `/workspace`（读写），只读挂载宿主 `crabmate` 到 `/crabmate`，在容器内运行 `crabmate tool-runner-internal`。**Linux/macOS** 默认连接本地 Unix 套接字（与 `docker` CLI 相同）；**`DOCKER_HOST`** 在部分环境下亦可由 bollard 解析。**默认网络隔离**（`network_mode: none`）；若设置非空的 **`sync_default_tool_sandbox_docker_network`**（如 `bridge`），则使用该网络以便容器内联网工具（如沙盒内的 `web_search`）可用。
+- **`docker`**：**SyncDefault** 以及 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成白名单与审批（若有）后，每次调用经 **[bollard](https://docs.rs/bollard)** 走 **Docker Engine HTTP API** 创建并运行一次性容器（等价于 `docker run --rm -i`）：挂载当前工作区到容器内 `/workspace`（读写），只读挂载宿主 `crabmate` 到 `/crabmate`，在容器内运行 `crabmate tool-runner-internal`。**Linux/macOS** 默认连接本地 Unix 套接字（与 `docker` CLI 相同）；**`DOCKER_HOST`** 在部分环境下亦可由 bollard 解析。**默认网络隔离**（`network_mode: none`）；若设置非空的 **`sync_default_tool_sandbox_docker_network`**（如 `bridge`），则使用该网络以便容器内联网工具（如 `get_weather` / `web_search` / HTTP 工具）可用。
 - **`sync_default_tool_sandbox_docker_image`**：`docker` 模式**必填**（`finalize` 时非空校验）；镜像内需包含工具依赖（`git`、`rg`、`cargo` 等按实际启用工具准备），且**与宿主 `crabmate` 二进制同 CPU 架构**（或改为在镜像内安装 crabmate 而非挂载宿主二进制）。
 - **`sync_default_tool_sandbox_docker_timeout_secs`**：单次容器生命周期等待上限（秒，默认 600），超时后 **force remove** 容器。
 - **密钥**：临时 JSON 会写入宿主 `TMPDIR`（Unix 尝试 `0600`），含 `web_search_api_key` 等；仅在可信主机上使用。
-- **不进入沙盒**：`run_command`、`workflow_execute`、`http_fetch`（独立 handler）、MCP 等仍按原路径在宿主执行。
+- **不进入沙盒**：`workflow_execute`、**MCP 代理工具**（`mcp__*`）仍只在宿主执行。
 
 环境变量：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`。
 
