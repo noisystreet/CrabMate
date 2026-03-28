@@ -63,6 +63,20 @@ pub struct ChatQueueFull {
     pub max_pending: usize,
 }
 
+/// [`ChatJobQueue::try_submit_json`] 的入参（与 [`StreamSubmitParams`] 对称，不含 SSE / 审批）。
+pub struct JsonSubmitParams {
+    pub job_id: u64,
+    pub state: Arc<AppState>,
+    pub conversation_id: String,
+    pub messages: Vec<Message>,
+    pub expected_revision: Option<u64>,
+    pub work_dir: PathBuf,
+    pub workspace_is_set: bool,
+    pub temperature_override: Option<f32>,
+    pub seed_override: LlmSeedOverride,
+    pub reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
+}
+
 /// [`ChatJobQueue::try_submit_stream`] 的入参（避免长参数列表）。
 pub struct StreamSubmitParams {
     pub job_id: u64,
@@ -304,20 +318,19 @@ impl ChatJobQueue {
             })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn try_submit_json(
-        &self,
-        job_id: u64,
-        state: Arc<AppState>,
-        conversation_id: String,
-        messages: Vec<Message>,
-        expected_revision: Option<u64>,
-        work_dir: PathBuf,
-        workspace_is_set: bool,
-        temperature_override: Option<f32>,
-        seed_override: LlmSeedOverride,
-        reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
-    ) -> Result<(), ChatQueueFull> {
+    pub fn try_submit_json(&self, p: JsonSubmitParams) -> Result<(), ChatQueueFull> {
+        let JsonSubmitParams {
+            job_id,
+            state,
+            conversation_id,
+            messages,
+            expected_revision,
+            work_dir,
+            workspace_is_set,
+            temperature_override,
+            seed_override,
+            reply_tx,
+        } = p;
         let job = QueuedChatJob::Json {
             job_id,
             state,
