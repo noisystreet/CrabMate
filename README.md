@@ -49,7 +49,7 @@ cargo run              # 默认进入 repl
 cargo run -- serve     # Web，默认 8080
 ```
 
-**REPL**：默认 `cargo run` 进入交互模式；行首 **`$`** 为**本机 shell 一行**（`sh -c` / `cmd /C`），**不等同**于模型的 `run_command` 白名单，仅适合可信环境——详见 [`docs/CLI.md`](docs/CLI.md)「行首 `$`」。
+**REPL**：默认 `cargo run` 进入交互模式；行首 **`$`** 为**本机 shell 一行**（`sh -c` / `cmd /C`），**不等同**于模型的 `run_command` 白名单，仅适合可信环境——详见 [`docs/CLI.md`](docs/CLI.md)「行首 `$`」。可选设置 **`AGENT_CLI_WAIT_SPINNER=1`**：在等待模型首包流式输出期间于 **stderr** 显示 spinner 与耗时（须 TTY、未设 **`NO_COLOR`**），详见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。
 
 前端：`cd frontend && npm install && npm run build` 后再 `serve`（静态资源来自 `frontend/dist`）。
 

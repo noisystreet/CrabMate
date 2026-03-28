@@ -81,6 +81,8 @@ cargo run -- config
 
 ## REPL 内建命令
 
+**可选**：**`AGENT_CLI_WAIT_SPINNER=1`** 时，在等待模型**首包流式输出**（或 **`--no-stream`** 下整段 body）前于 **stderr** 显示 spinner 与已等待时间（默认关闭；须 stderr 为 TTY 且未设 **`NO_COLOR`**）。详见 **`docs/CONFIGURATION.md`**。
+
 以 `/` 开头：**`/help`**、**`/clear`**、**`/model`**、**`/workspace`** / **`/cd`**、**`/tools`**。`quit` / `exit` / Ctrl+D 退出。
 
 ### 行首 `$`（本地 shell，安全边界）

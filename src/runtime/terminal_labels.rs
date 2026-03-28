@@ -1,5 +1,5 @@
 //! CLI 对话里「我」「Agent」前缀的着色与加粗（`runtime::cli` 与 `llm::api` 共用）；
-//! 以及 **`plain_terminal_stream`** 下助手正文里 **`reasoning_content`** 与 **`content`** 的分色（尊重 **`NO_COLOR`**、非 TTY 不着色）。
+//! 以及 **`plain_terminal_stream`** 下助手正文里 **`reasoning_content`**（偏亮冷灰）与 **`content`**（默认前景）的分色（尊重 **`NO_COLOR`**、非 TTY 不着色）。
 
 use log::debug;
 
@@ -56,15 +56,18 @@ pub(crate) fn stdout_use_cli_ansi_color() -> bool {
     std::env::var_os("NO_COLOR").is_none() && io::stdout().is_terminal()
 }
 
-/// CLI 流式/纯文本：`reasoning_content` 片段用灰阶 + Dim，与后续 **`content`**（规划、终答等）默认前景色区分。
+/// CLI 流式/纯文本：`reasoning_content` 片段用偏亮的冷灰（无 Dim），与 **`content`** 默认前景区分且深色终端上可读。
 #[inline]
 pub(crate) fn queue_cli_reasoning_body_style<W: Write + QueueableCommand>(
     w: &mut W,
 ) -> io::Result<()> {
     queue!(
         w,
-        SetForegroundColor(Color::DarkGrey),
-        SetAttribute(Attribute::Dim)
+        SetForegroundColor(Color::Rgb {
+            r: 168,
+            g: 182,
+            b: 198,
+        })
     )?;
     Ok(())
 }
