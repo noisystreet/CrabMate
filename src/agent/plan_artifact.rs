@@ -1,6 +1,21 @@
 //! 最终回答中的结构化「规划」产物：从 assistant content 中解析 JSON，替代 `## 规划` 等子串匹配。
 
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+/// 规划步骤 `id` / 可选 `workflow_node_id` 的语法：稳定、可日志引用，并与工作流节点 `id` 常见字符集对齐。
+static PLAN_STEP_ID_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[A-Za-z0-9][-A-Za-z0-9_./]{0,127}$")
+        .expect("PLAN_STEP_ID_PATTERN: 编译期正则须合法")
+});
+
+fn plan_step_id_syntax_ok(s: &str) -> bool {
+    let t = s.trim();
+    !t.is_empty() && t.len() <= 128 && PLAN_STEP_ID_PATTERN.is_match(t)
+}
 
 /// 约定的规划 JSON：`type` + `version` + `steps`；若 `no_task` 为 true 则表示无具体可拆任务，`steps` 须为空。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -18,6 +33,9 @@ pub struct AgentReplyPlanV1 {
 pub struct PlanStepV1 {
     pub id: String,
     pub description: String,
+    /// 可选：对应最近一次 `workflow_validate_only` 结果中 `nodes[].id`，供机器校验与轨迹对齐。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_node_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,10 +93,12 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 顶层 \"type\" 为字符串 \"agent_reply_plan\"
 - \"version\" 为数字 1
 - 可选布尔 \"no_task\"：为 true 时表示用户未提出需分步执行的具体任务，此时 \"steps\" 必须为 []（空数组）
-- 当 \"no_task\" 省略或为 false 时，\"steps\" 为非空数组；每项含非空字符串 \"id\" 与 \"description\"";
+- 当 \"no_task\" 省略或为 false 时，\"steps\" 为非空数组；每项含非空字符串 \"id\" 与 \"description\"
+- 每项 \"id\" 须唯一；**首尾不得含空白**；语法为 ASCII 字母或数字开头，仅含 - _ . /，总长不超过 128（与 workflow 节点 id 常见字符集一致）
+- 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法，且在**同一条规划**中唯一；值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）";
 
 /// Plan v1 的 JSON 示例。
-pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …"}]}"#;
+pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …","workflow_node_id":"fmt"}]}"#;
 
 /// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json / \`\`\`markdown / \`\`\`md 等带语言行的围栏，或整段即为单个 JSON 对象）。
 /// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
@@ -133,6 +153,27 @@ pub fn content_has_valid_agent_reply_plan_v1(content: &str) -> bool {
     parse_agent_reply_plan_v1(content).is_ok()
 }
 
+/// 校验规划中出现的 `workflow_node_id` 均为 `workflow_node_ids` 的子集（通常来自最近一次 `workflow_execute` 工具结果的 `nodes[].id`）。
+pub(crate) fn validate_plan_workflow_node_ids_subset(
+    plan: &AgentReplyPlanV1,
+    workflow_node_ids: &[String],
+) -> Result<(), PlanArtifactError> {
+    let set: HashSet<&str> = workflow_node_ids.iter().map(|s| s.as_str()).collect();
+    for (i, s) in plan.steps.iter().enumerate() {
+        let Some(ref w) = s.workflow_node_id else {
+            continue;
+        };
+        let w = w.trim();
+        if !set.contains(w) {
+            return Err(PlanArtifactError::InvalidStep {
+                index: i,
+                reason: "workflow_node_id 不在最近一次工作流工具结果的 nodes 列表中",
+            });
+        }
+    }
+    Ok(())
+}
+
 fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifactError> {
     if p.plan_type != "agent_reply_plan" {
         return Err(PlanArtifactError::WrongType(p.plan_type.clone()));
@@ -149,11 +190,33 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
     if p.steps.is_empty() {
         return Err(PlanArtifactError::EmptySteps);
     }
+    let mut seen_step_ids = HashSet::<String>::new();
+    let mut seen_workflow_node_ids = HashSet::<String>::new();
     for (i, s) in p.steps.iter().enumerate() {
-        if s.id.trim().is_empty() {
+        let raw_id = s.id.as_str();
+        if raw_id != raw_id.trim() {
+            return Err(PlanArtifactError::InvalidStep {
+                index: i,
+                reason: "id 首尾不得含空白",
+            });
+        }
+        let id = raw_id.trim();
+        if id.is_empty() {
             return Err(PlanArtifactError::InvalidStep {
                 index: i,
                 reason: "id 为空",
+            });
+        }
+        if !plan_step_id_syntax_ok(id) {
+            return Err(PlanArtifactError::InvalidStep {
+                index: i,
+                reason: "id 语法不合法（须 ASCII 字母数字起头，仅含 - _ . /，总长不超过 128）",
+            });
+        }
+        if !seen_step_ids.insert(id.to_string()) {
+            return Err(PlanArtifactError::InvalidStep {
+                index: i,
+                reason: "id 重复",
             });
         }
         if s.description.trim().is_empty() {
@@ -161,6 +224,34 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
                 index: i,
                 reason: "description 为空",
             });
+        }
+        if let Some(ref w) = s.workflow_node_id {
+            let raw_w = w.as_str();
+            if raw_w != raw_w.trim() {
+                return Err(PlanArtifactError::InvalidStep {
+                    index: i,
+                    reason: "workflow_node_id 首尾不得含空白",
+                });
+            }
+            let w = raw_w.trim();
+            if w.is_empty() {
+                return Err(PlanArtifactError::InvalidStep {
+                    index: i,
+                    reason: "workflow_node_id 若出现须为非空字符串（否则请省略该字段）",
+                });
+            }
+            if !plan_step_id_syntax_ok(w) {
+                return Err(PlanArtifactError::InvalidStep {
+                    index: i,
+                    reason: "workflow_node_id 语法不合法",
+                });
+            }
+            if !seen_workflow_node_ids.insert(w.to_string()) {
+                return Err(PlanArtifactError::InvalidStep {
+                    index: i,
+                    reason: "workflow_node_id 重复",
+                });
+            }
         }
     }
     Ok(())
@@ -441,14 +532,17 @@ mod tests {
             PlanStepV1 {
                 id: "s0".into(),
                 description: "done".into(),
+                workflow_node_id: None,
             },
             PlanStepV1 {
                 id: "s1".into(),
                 description: "fail".into(),
+                workflow_node_id: None,
             },
             PlanStepV1 {
                 id: "s2".into(),
                 description: "old tail".into(),
+                workflow_node_id: None,
             },
         ];
         let patch = AgentReplyPlanV1 {
@@ -458,10 +552,12 @@ mod tests {
                 PlanStepV1 {
                     id: "s1b".into(),
                     description: "retry".into(),
+                    workflow_node_id: None,
                 },
                 PlanStepV1 {
                     id: "s2b".into(),
                     description: "new tail".into(),
+                    workflow_node_id: None,
                 },
             ],
             no_task: false,
@@ -509,6 +605,30 @@ mod tests {
         let p = parse_agent_reply_plan_v1(&content).unwrap();
         assert_eq!(p.steps.len(), 1);
         assert_eq!(p.steps[0].id, "a");
+    }
+
+    #[test]
+    fn rejects_step_id_bad_syntax() {
+        let bad =
+            r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":" bad","description":"x"}]}"#;
+        let content = format!("```json\n{bad}\n```");
+        assert!(parse_agent_reply_plan_v1(&content).is_err());
+    }
+
+    #[test]
+    fn validate_workflow_node_id_subset() {
+        let plan = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![PlanStepV1 {
+                id: "s1".into(),
+                description: "do".into(),
+                workflow_node_id: Some("fmt".into()),
+            }],
+            no_task: false,
+        };
+        assert!(validate_plan_workflow_node_ids_subset(&plan, &["fmt".into()]).is_ok());
+        assert!(validate_plan_workflow_node_ids_subset(&plan, &["other".into()]).is_err());
     }
 
     #[test]

@@ -28,7 +28,7 @@ CrabMate 在**单个 Rust 进程**内使用 **Tokio** 异步运行时：通过 *
 1. **接入层**：HTTP 路由与 chat/upload 等 handler（**`web/`**：`server`、`chat_handlers`）、`serve` 子命令启动 Web 与后台任务（`lib.rs::run`）、CLI 子命令与交互循环（`config::cli`、`runtime/cli` 等）。
 2. **编排层**：Web 对话排队（`chat_job_queue`）、Agent 主循环与上下文/PER/工作流（**`agent/`**：`agent_turn`、`context_window`、`per_coord` 等）。
 3. **模型层**：共享 HTTP 客户端（`http_client`）、请求拼装与重试（`llm`）、流式响应解析（**`llm::api`**，`stream_chat`）；上游错误体仅经 **`redact`** 截断后写入日志，避免整包进 `log` 输出或 `Err` 链。
-4. **工具与工作流**：工具表驱动执行（`tools/mod.rs`）、按名分发与 Web 侧阻塞超时（`tool_registry`）、DAG 工作流（**`agent::workflow`**）。**`workflow_execute`** 执行结果 JSON 含 **`workflow_run_id`**（与 `crabmate` 日志对齐）、**`trace`**（调度/节点尝试/重试退避事件）、**`completion_order`**；节点 **`max_retries`** 仅对超时 / `spawn_blocking` 汇合失败等**可重试**错误自动重跑（见 **`docs/TOOLS.md`**）。
+4. **工具与工作流**：工具表驱动执行（`tools/mod.rs`）、按名分发与 Web 侧阻塞超时（`tool_registry`）、DAG 工作流（**`agent::workflow`**）。**`workflow_execute`** 解析节点时校验 **`tool_name`** 为内置工具名，并对 **`tool_args`** 做基于各工具 JSON Schema 的 **必填键**粗校验（递归进入数组元素中的对象；完整类型校验仍由各 `runner_*` 负责，见 **`tools/schema_check.rs`**）。**`workflow_execute`** 执行结果 JSON 含 **`workflow_run_id`**（与 `crabmate` 日志对齐）、**`trace`**（调度/节点尝试/重试退避事件）、**`completion_order`**；节点 **`max_retries`** 仅对超时 / `spawn_blocking` 汇合失败等**可重试**错误自动重跑（见 **`docs/TOOLS.md`**）。
 5. **横向契约**：OpenAI 兼容类型（`types`）、SSE 控制面（**`sse/`**：`protocol` + `line` + **`mpsc_send`**）、工具结构化结果（`tool_result`）、配置（`config`）、Web 工作区/任务 API（`web/*`）。
 
 ```mermaid
@@ -152,6 +152,7 @@ flowchart TB
 | `table_text.rs` | `table_text`：CSV/TSV 等分隔文本的预览、列数校验、列筛选与聚合（与 `structured_*` 互补） |
 | `tool_summary.rs` | `summarize_tool_call`：将各工具入参映射为 Web/SSE/TUI/CLI 共用的**英文**简短摘要（`ToolSpec.summary` 的 `Static` 字符串亦同） |
 | `tool_params/` | 各工具 JSON Schema（`params_*`）按领域拆分子文件，`mod.rs` 再导出；`pub(in crate::tools)` 以便与 `tool_specs_registry` 同层引用 |
+| `schema_check.rs` | **`workflow_tool_args_satisfy_required`**：对照内置工具 parameters schema 检查 `tool_args` 是否含 **required** 键（工作流解析阶段粗校验） |
 | `tool_specs_registry/` | `tool_specs()`：`specs/*.inc.rs` 为数组字面量，`include!` 载入后在 `OnceLock` 中拼接为 `&'static [ToolSpec]`（name/description/category/parameters/runner） |
 | `text_transform.rs` | `text_transform`：纯内存 Base64/URL 编解码、短哈希、按行合并与按分隔符切分（不落盘，有长度上限） |
 | `text_diff.rs` | `text_diff`：两段 UTF-8 文本或工作区内两文件的行级 unified diff（与 Git 无关，输出可截断） |
@@ -220,13 +221,14 @@ flowchart TB
 ### PER 与终答 `agent_reply_plan` 强制策略
 
 - **`agent::per_coord::PerCoordinator`**（`src/agent/per_coord.rs`）在 Web 与 CLI 共用：串联 **workflow 反思**（`workflow_reflection_controller`）与 **终答正文**是否含 `plan_artifact` 可解析的 v1 规划。终答校验用到的 **`workflow_validate_result` → `spec.layer_count`** 在历史中扫描的结果可**按会话长度缓存**（同长度连续 `after_final_assistant` 时避免重复全表扫描）；**任意 tool 结果写入**（`append_tool_result_and_reflection`）或 **`prepare_messages_for_model` 改写历史**后刷新或清空缓存。反思注入 `Value` 若 **`serde_json::to_string` 失败**（极罕见），会 **`warn`** 并追加固定占位 user JSON（`instruction_type: crabmate_reflection_serialize_failed`），避免静默空串。
+- **`agent_reply_plan` v1 步骤 `id`**：须 **唯一**，且符合稳定语法（ASCII 字母或数字开头，仅含 `-` `_` `.` `/`，总长 ≤128），便于日志与跨产物对齐。**可选 `workflow_node_id`**：若出现则语法同上且在规划内唯一，且须为历史中**最近一次** `workflow_execute` 工具结果（`workflow_validate_result` 或 `workflow_execute_result`）里 **`nodes[].id`** 的子集；否则触发与缺规划同类的重写提示（与 `layer_count` 规则可同时生效）。
 - **`plan_artifact::format_plan_steps_markdown` / `format_agent_reply_plan_for_display`**：对合法 v1 规划生成**简单 Markdown 有序列表**（后者另含围栏前自然语言段落）；**`format_plan_steps_markdown_for_staged_queue`** 为 CLI 终端「队列」风格摘要（步骤前 `[ ]`/`[✓]`，仅展示 `description`），每步完成后 **`send_staged_plan_notice(clear_before: true)`** 整段刷新；前端 `agentPlanDisplay` / `ChatPanel` 展示用，**不**改写 `Message.content`。解析与 **`strip_agent_reply_plan_fence_blocks_for_display`** 将围栏首行 **`json` / `markdown` / `md`**（忽略大小写，可含前导空行）视为等价语言标签；**无**语言行的裸 \`\`\` 围栏内即使以 `{` 开头也不当作规划 JSON 流式缓冲（与 `message_display` / 前端 `agentPlanDisplay` 对齐）。
 - **配置项** `[agent] final_plan_requirement`（环境变量 `AGENT_FINAL_PLAN_REQUIREMENT`）→ `FinalPlanRequirementMode`：
   - **`never`**：不进入「缺规划则追加 user 重写提示」循环；反思注入仍会下发，但不置位强制标记。
   - **`workflow_reflection`（默认）**：仅当工具路径注入了 `instruction_type == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT` 时，对随后的**最终** assistant 校验；避免与反思 JSON 的字符串散落耦合。
   - **`always`**（实验性）：每次 `finish_reason != tool_calls` 的终答均校验。只要终答缺合格 `agent_reply_plan`，就会计入重写次数并可能再调模型，**轮次与费用通常明显高于** `workflow_reflection`；适用于强约束输出形态、联调规划解析、或审计场景。低成本/闲聊场景不建议开启。
 - **`[agent] plan_rewrite_max_attempts`**（`AGENT_PLAN_REWRITE_MAX_ATTEMPTS`，默认 `2`， clamp `1..=20`）：终答规划不合格时，最多追加多少次「请重写」user 消息；用尽后结束外层循环，并在 **有 SSE 通道** 时发送 `{"error":"…","code":"plan_rewrite_exhausted"}`（与 `sse::SsePayload::Error` 一致）。
-- **规则化语义（相对 `workflow_validate_only`）**：当策略要求校验规划，且历史中最近一次 `workflow_execute` 的 tool 结果为 `report_type == workflow_validate_result` 时，读取 `spec.layer_count`（拓扑层数），要求 `agent_reply_plan.steps.len() >= layer_count`；否则仅做 JSON 形态校验。重写提示中会附带 `layer_count` 说明。
+- **规则化语义（相对 `workflow_validate_only`）**：当策略要求校验规划，且历史中最近一次 `workflow_execute` 的 tool 结果为 `report_type == workflow_validate_result` 时，读取 `spec.layer_count`（拓扑层数），要求 `agent_reply_plan.steps.len() >= layer_count`；否则仅做 JSON 形态校验。重写提示中会附带 `layer_count` 说明。若步骤含 **`workflow_node_id`**，另与最近一次 **`nodes[].id`** 列表做子集校验（见上条）；重写提示在可用时附带允许的节点 id 列表。
 - **可观测性**：`log` 目标 `crabmate::per`（`RUST_LOG=crabmate::per=info` 或 `RUST_LOG=info`）记录 `after_final_assistant` 的 outcome、`reflection_stage_round`、`plan_rewrite_attempts` 等；`workflow_reflection_controller::WorkflowReflectionController::stage_round()` 供排错对照反思轮次。
 - **CLI 消息打印路径**：`log` 目标 **`crabmate::print`**（`RUST_LOG=crabmate::print=debug`）在 `terminal_labels::write_user_message_prefix`、`terminal_cli_transcript::{print_staged_plan_notice, print_tool_result_terminal}`（工具标题 **`### 工具 · name : …`**：有详情时 **`name` 与摘要之间统一为 ` : `**；摘要与 SSE 同源的 **`summarize_tool_call`** 或单行截断的 `args`；若摘要以与工具名同义的 **`verb:`** 开头则去掉动词短语、**保留冒号与后续**（如 `create file: x` → `: x`）以免与 `name` 重复；**`read_file` / `read_dir` / `list_tree`** 在终端仅打印标题与省略说明、**不**回显工具正文，避免刷屏；完整结果仍进消息历史）、`llm::api::terminal_render_agent_markdown` 及 `runtime::cli`（REPL/单次提问）等处记录即将打印的正文预览（截断），便于对照终端实际输出。
 

@@ -27,6 +27,22 @@ fn test_parse_workflow_spec_array_nodes() {
 }
 
 #[test]
+fn test_parse_rejects_calc_without_expression() {
+    let json = r#"{
+        "workflow":{
+          "nodes":[
+            {"id":"a","tool_name":"calc","tool_args":{}}
+          ]
+        }
+    }"#;
+    let err = parse_workflow_spec(json).unwrap_err();
+    assert!(
+        err.contains("expression"),
+        "expected missing required key in error: {err}"
+    );
+}
+
+#[test]
 fn test_validate_dag_cycle_detection() {
     let nodes = vec![
         WorkflowNodeSpec {
@@ -109,7 +125,7 @@ fn test_parse_max_retries_defaults_to_zero() {
     let json = r#"{
         "workflow":{
           "nodes":[
-            {"id":"a","tool_name":"calc","tool_args":{}}
+            {"id":"a","tool_name":"calc","tool_args":{"expression":"1"}}
           ]
         }
     }"#;
@@ -122,7 +138,7 @@ fn test_parse_max_retries_capped_at_five() {
     let json = r#"{
         "workflow":{
           "nodes":[
-            {"id":"a","tool_name":"calc","tool_args":{},"max_retries":99}
+            {"id":"a","tool_name":"calc","tool_args":{"expression":"1"},"max_retries":99}
           ]
         }
     }"#;
@@ -146,7 +162,7 @@ fn test_parse_max_retries_explicit_value() {
     let json = r#"{
         "workflow":{
           "nodes":[
-            {"id":"a","tool_name":"calc","tool_args":{},"max_retries":3}
+            {"id":"a","tool_name":"calc","tool_args":{"expression":"1"},"max_retries":3}
           ]
         }
     }"#;
