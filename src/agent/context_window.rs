@@ -62,9 +62,14 @@ fn build_transcript_middle(messages: &[Message], tail: usize, cap: usize) -> Opt
     Some(s)
 }
 
-/// 每次调用模型前执行：经 [`apply_session_sync_pipeline`]（工具压缩 → 条数裁剪 → 可选字符预算 → …）。
+/// 每次调用模型前执行：经 [`apply_session_sync_pipeline`]（顺序见 `message_pipeline` 模块文档）。
+///
+/// - **Debug**（`RUST_LOG` 含 **`crabmate=debug`** 或 **`debug`**）：汇总一行 `message_pipeline session_sync: …`。
+/// - **Trace**（**`crabmate::message_pipeline=trace`**）：每步一行 `session_sync_step stage=…`（可不开启全局 debug）。
 pub fn prepare_messages_before_model_call_sync(messages: &mut Vec<Message>, cfg: &AgentConfig) {
-    if log::log_enabled!(log::Level::Debug) {
+    let need_report = log::log_enabled!(log::Level::Debug)
+        || log::log_enabled!(target: "crabmate::message_pipeline", log::Level::Trace);
+    if need_report {
         let mut report = crate::agent::message_pipeline::MessagePipelineReport::default();
         crate::agent::message_pipeline::apply_session_sync_pipeline(
             messages,

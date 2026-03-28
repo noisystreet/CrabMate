@@ -157,6 +157,8 @@ cargo run
 
 **日志默认级别**：未设置 `RUST_LOG` 时，`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` 默认 **warn**。需要 info 时请设置 `RUST_LOG` 或使用 `--log <FILE>`。
 
+**对话上下文管道（调试用）**：`RUST_LOG=crabmate=debug` 时每次调用模型前会打一行 **`message_pipeline session_sync`** 汇总；更细可按步查看：`RUST_LOG=crabmate::message_pipeline=trace`（`session_sync_step` 含 `stage` / `message_count` / `non_system_chars_est`）。详见 `docs/DEVELOPMENT.md` 与 `src/agent/message_pipeline.rs` 模块注释。
+
 **兼容旧用法**：未写子命令时仍可使用原来的平铺参数（如 `--serve`、`--query`、`--benchmark`、`--dry-run`），程序会在内部映射为上述子命令，现有脚本一般无需修改。
 
 ### 常用命令行选项（兼容写法对照）
