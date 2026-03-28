@@ -64,7 +64,7 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .sum()
 }
 
-/// CLI（`render_to_terminal && out.is_none()`）：首个非空 delta 前打 `Agent:` 前缀；**`reasoning_content`** 与 **`content`** 分色（见 [`crate::runtime::terminal_labels`]）。
+/// CLI（`render_to_terminal && out.is_none()`）：首个非空 delta 前打 `Agent:` 前缀；**`reasoning_content`** 与 **`content`** 分色（见 [`crate::runtime::terminal_labels`]）；从思考切到终答前多写一个换行（含 **`NO_COLOR`** 时仅换行、不着色）。
 fn cli_terminal_write_plain_fragment(
     fragment: &str,
     prefix_emitted: &mut bool,
@@ -77,17 +77,21 @@ fn cli_terminal_write_plain_fragment(
     let use_color = crate::runtime::terminal_labels::stdout_use_cli_ansi_color();
     let mut stdout = io::stdout().lock();
     if !*prefix_emitted {
+        crate::runtime::cli_wait_spinner::finish_cli_wait_spinner();
         crate::runtime::terminal_labels::write_agent_message_prefix(&mut stdout)?;
         *prefix_emitted = true;
     }
-    if use_color {
-        if is_reasoning && !*reasoning_style_active {
+    if is_reasoning && !*reasoning_style_active {
+        if use_color {
             crate::runtime::terminal_labels::queue_cli_reasoning_body_style(&mut stdout)?;
-            *reasoning_style_active = true;
-        } else if !is_reasoning && *reasoning_style_active {
-            crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut stdout)?;
-            *reasoning_style_active = false;
         }
+        *reasoning_style_active = true;
+    } else if !is_reasoning && *reasoning_style_active {
+        if use_color {
+            crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut stdout)?;
+        }
+        stdout.write_all(b"\n")?;
+        *reasoning_style_active = false;
     }
     stdout.write_all(fragment.as_bytes())?;
     stdout.flush()
@@ -260,7 +264,7 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
 }
 
 /// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
-/// `plain_terminal_stream` 为 `true` 且 `render_to_terminal && out.is_none()`：流式将 reasoning/content **逐 delta 纯文本**写 stdout（**`reasoning_content`** 灰阶+Dim，**`content`** 默认色；**`NO_COLOR`/非 TTY** 关闭），末尾不再 `markdown_to_ansi`；`--no-stream` 时整段按字段分色一次写出。否则若 `render_to_terminal` 且仍有正文、且未走上述路径，则在整段到达后走 [`terminal_render_agent_markdown`]。
+/// `plain_terminal_stream` 为 `true` 且 `render_to_terminal && out.is_none()`：流式将 reasoning/content **逐 delta 纯文本**写 stdout（**`reasoning_content`** 偏亮冷灰 RGB，**`content`** 默认色；**`NO_COLOR`/非 TTY** 关闭），末尾不再 `markdown_to_ansi`；`--no-stream` 时整段按字段分色一次写出。否则若 `render_to_terminal` 且仍有正文、且未走上述路径，则在整段到达后走 [`terminal_render_agent_markdown`]。
 /// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 SSE 等）。
 ///
 /// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；
@@ -360,7 +364,13 @@ pub async fn stream_chat(
         return Err(err_text.into());
     }
 
+    let cli_terminal_plain = render_to_terminal && out.is_none() && plain_terminal_stream;
+
     if no_stream {
+        let _cli_wait_spinner =
+            crate::runtime::cli_wait_spinner::CliWaitSpinnerGuard::try_start_for_cli_plain_stream(
+                cli_terminal_plain,
+            );
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             return Err(crate::types::LLM_CANCELLED_ERROR.into());
         }
@@ -472,6 +482,10 @@ pub async fn stream_chat(
         return Ok((msg, finish_reason));
     }
 
+    let _cli_wait_spinner =
+        crate::runtime::cli_wait_spinner::CliWaitSpinnerGuard::try_start_for_cli_plain_stream(
+            cli_terminal_plain,
+        );
     let mut stream = res.bytes_stream();
     let mut buf = Vec::new();
     let mut reasoning_acc = String::new();
@@ -481,7 +495,6 @@ pub async fn stream_chat(
     let mut finish_reason = String::new();
     let mut parsing_tool_calls_notified = false;
 
-    let cli_terminal_plain = render_to_terminal && out.is_none() && plain_terminal_stream;
     let mut cli_plain_prefix_emitted = false;
     let mut cli_plain_reasoning_style_active = false;
     let mut stream_done = false;

@@ -898,6 +898,7 @@ dependencies = [
  "futures-util",
  "glob",
  "ignore",
+ "indicatif",
  "libc",
  "log",
  "markdown-to-ansi",
