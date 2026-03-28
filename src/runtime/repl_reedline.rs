@@ -1,6 +1,8 @@
 //! REPL 行读取与 **reedline** 集成：历史、Emacs 编辑键、多行指示；TTY 专用。
 //!
-//! **TTY**：**缓冲区为空**时按 **`$`** 或全角 **`＄`**（可带 **Shift**，视终端而定）**立即**切换「我:」与 **`bash#:`**，无需先按 Enter；仍兼容**单独一行 `$` 后 Enter**。**stdin** 为 TTY 即使用 **reedline**（勿再要求 **stdout** 为 TTY）。管道读行与编辑器共用 **`shell_mode`**。
+//! **TTY**：**缓冲区无可见内容**（`trim` 后为空）时按 **`$`** 或全角 **`＄`** **立即**切换「我:」与 **`bash#:`**，无需先按 Enter；仍兼容**单独一行 `$` 后 Enter**。
+//! **修饰键**：允许 **Shift**（如美式 **Shift+4**）与 **AltGr**（常见为 **Ctrl+Alt**，欧洲布局输入 `$`）；仍拒绝 **Ctrl+$**、**单 Alt+$** 等。
+//! **stdin** 为 TTY 即使用 **reedline**（勿再要求 **stdout** 为 TTY）。管道读行与编辑器共用 **`shell_mode`**。
 
 use std::borrow::Cow;
 use std::cell::Cell;
@@ -44,13 +46,14 @@ impl Drop for ReedlineReadLineScope {
     }
 }
 
-fn reedline_current_buffer_is_empty() -> bool {
+fn reedline_current_buffer_effectively_empty() -> bool {
     REEDLINE_BUFFER_PROBE.with(|c| {
         c.get()
-            .is_some_and(|p| unsafe { (*p).current_buffer_contents().is_empty() })
+            .is_some_and(|p| unsafe { (*p).current_buffer_contents().trim().is_empty() })
     })
 }
 
+/// `$` / `＄` 用于切换 shell 模式时接受的修饰键组合。
 fn key_is_plain_dollar(code: &KeyCode, modifiers: KeyModifiers) -> bool {
     let ch = match code {
         KeyCode::Char(c) => *c,
@@ -59,9 +62,16 @@ fn key_is_plain_dollar(code: &KeyCode, modifiers: KeyModifiers) -> bool {
     if ch != '$' && ch != '\u{ff04}' {
         return false;
     }
-    let blocked =
-        KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER | KeyModifiers::HYPER;
-    !modifiers.intersects(blocked)
+    if modifiers.intersects(KeyModifiers::SUPER | KeyModifiers::HYPER) {
+        return false;
+    }
+    let ctrl = modifiers.contains(KeyModifiers::CONTROL);
+    let alt = modifiers.contains(KeyModifiers::ALT);
+    // 拒绝仅 Ctrl 或仅 Alt（避免误绑）；保留 Ctrl+Alt（Windows/Linux 上 AltGr 常见）。
+    if ctrl ^ alt {
+        return false;
+    }
+    true
 }
 
 /// 缓冲区为空时按 `$` / `＄` 立即 [`ReedlineEvent::ExecuteHostCommand`]（虚拟行 `"$"`），其余键委托 **Emacs**。
@@ -84,7 +94,7 @@ impl EditMode for DollarToggleEmacs {
             code, modifiers, ..
         }) = &ev
             && key_is_plain_dollar(code, *modifiers)
-            && reedline_current_buffer_is_empty()
+            && reedline_current_buffer_effectively_empty()
         {
             return ReedlineEvent::ExecuteHostCommand("$".to_string());
         }
@@ -323,5 +333,41 @@ pub(crate) fn read_repl_line_with_editor(editor: &mut ReplLineEditor) -> io::Res
         editor.read_line()
     } else {
         read_repl_line_piped(editor.shell_mode_arc())
+    }
+}
+
+#[cfg(test)]
+mod dollar_key_tests {
+    use super::key_is_plain_dollar;
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    #[test]
+    fn dollar_accepts_shift_and_altgr_style_modifiers() {
+        assert!(key_is_plain_dollar(&KeyCode::Char('$'), KeyModifiers::NONE));
+        assert!(key_is_plain_dollar(
+            &KeyCode::Char('$'),
+            KeyModifiers::SHIFT
+        ));
+        assert!(key_is_plain_dollar(
+            &KeyCode::Char('$'),
+            KeyModifiers::CONTROL | KeyModifiers::ALT
+        ));
+    }
+
+    #[test]
+    fn dollar_rejects_ctrl_or_alt_alone() {
+        assert!(!key_is_plain_dollar(
+            &KeyCode::Char('$'),
+            KeyModifiers::CONTROL
+        ));
+        assert!(!key_is_plain_dollar(&KeyCode::Char('$'), KeyModifiers::ALT));
+    }
+
+    #[test]
+    fn dollar_rejects_non_dollar_chars() {
+        assert!(!key_is_plain_dollar(
+            &KeyCode::Char('4'),
+            KeyModifiers::SHIFT
+        ));
     }
 }
