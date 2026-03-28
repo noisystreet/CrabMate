@@ -1,4 +1,5 @@
 //! `crabmate doctor` / `models` / `probe`：面向终端的一页诊断与网关探测（输出脱敏，不打印密钥）。
+//! REPL 内建 **`/doctor`**、**`/probe`**、**`/models`** 分别复用 [`print_doctor_report`]、[`run_probe_cli`]、[`run_models_cli`]（与上述子命令对齐）。
 
 use std::path::{Path, PathBuf};
 

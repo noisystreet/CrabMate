@@ -4,7 +4,7 @@
 
 use crabmate::{
     CliExitError, EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT,
-    EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, ExportSessionFormat, ExtraCliCommand,
+    EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, ExtraCliCommand, SaveSessionFormat,
     classify_model_error_message, normalize_legacy_argv, parse_args_from_argv,
 };
 use std::sync::Mutex;
@@ -49,12 +49,12 @@ fn parse_extra_cli(s: &str) -> ExtraCliCommand {
     }
 }
 
-fn parse_export_format(s: &str) -> ExportSessionFormat {
+fn parse_save_session_format(s: &str) -> SaveSessionFormat {
     match s {
-        "Json" => ExportSessionFormat::Json,
-        "Markdown" => ExportSessionFormat::Markdown,
-        "Both" => ExportSessionFormat::Both,
-        other => panic!("unknown export_format: {other}"),
+        "Json" => SaveSessionFormat::Json,
+        "Markdown" => SaveSessionFormat::Markdown,
+        "Both" => SaveSessionFormat::Both,
+        other => panic!("unknown save_session_format: {other}"),
     }
 }
 
@@ -135,16 +135,20 @@ fn fixture_parse_args_from_argv_contract() {
                 assert_eq!(p.chat_cli.output.as_deref(), Some(om), "{name} chat_output");
             }
 
-            if let Some(ef) = case.get("export_format").and_then(|v| v.as_str()) {
-                let es = p
-                    .export_session
+            if let Some(ef) = case.get("save_session_format").and_then(|v| v.as_str()) {
+                let ss = p
+                    .save_session
                     .as_ref()
-                    .unwrap_or_else(|| panic!("{name}: expected export_session"));
-                assert_eq!(es.format, parse_export_format(ef), "{name} export_format");
+                    .unwrap_or_else(|| panic!("{name}: expected save_session"));
+                assert_eq!(
+                    ss.format,
+                    parse_save_session_format(ef),
+                    "{name} save_session_format"
+                );
             } else {
                 assert!(
-                    p.export_session.is_none(),
-                    "{name}: export_session should be absent"
+                    p.save_session.is_none(),
+                    "{name}: save_session should be absent"
                 );
             }
 

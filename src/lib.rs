@@ -32,7 +32,7 @@ mod web;
 
 use config::cli::init_logging;
 pub use config::cli::{
-    ChatCliArgs, ExportSessionFormat, ExtraCliCommand, ParsedCliArgs, normalize_legacy_argv,
+    ChatCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, normalize_legacy_argv,
     parse_args, parse_args_from_argv, root_clap_command_for_man_page,
 };
 use log::info;
@@ -195,7 +195,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         log_file,
         bench_args,
         extra_cli,
-        export_session,
+        save_session,
     } = parse_args()?;
 
     // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_logging`）
@@ -216,7 +216,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if let Some(es) = export_session {
+    if let Some(ss) = save_session {
         let cfg = match config::load_config(config_path.as_deref()) {
             Ok(c) => c,
             Err(e) => {
@@ -224,7 +224,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
             }
         };
-        crate::runtime::cli::run_export_session_command(&cfg, &workspace_cli, es)?;
+        crate::runtime::cli::run_save_session_command(&cfg, &workspace_cli, ss)?;
         return Ok(());
     }
 

@@ -20,7 +20,7 @@ fn fix_subcommand_crossrefs(troff: &str) -> String {
         ("crabmate\\-doctor(1)", "\\fBdoctor\\fR"),
         ("crabmate\\-models(1)", "\\fBmodels\\fR"),
         ("crabmate\\-probe(1)", "\\fBprobe\\fR"),
-        ("crabmate\\-export\\-session(1)", "\\fBexport-session\\fR"),
+        ("crabmate\\-save\\-session(1)", "\\fBsave-session\\fR"),
     ];
     for (from, to) in pairs {
         out = out.replace(from, to);

@@ -7,7 +7,7 @@
     "serve_port": null,
     "no_stream": false,
     "chat_wants": false,
-    "export_format": null
+    "save_session_format": null
   },
   {
     "name": "config_implicit_dry_run",
@@ -17,7 +17,7 @@
     "serve_port": null,
     "no_stream": false,
     "chat_wants": false,
-    "export_format": null
+    "save_session_format": null
   },
   {
     "name": "models",
@@ -27,7 +27,7 @@
     "serve_port": null,
     "no_stream": false,
     "chat_wants": false,
-    "export_format": null
+    "save_session_format": null
   },
   {
     "name": "probe",
@@ -37,7 +37,7 @@
     "serve_port": null,
     "no_stream": false,
     "chat_wants": false,
-    "export_format": null
+    "save_session_format": null
   },
   {
     "name": "serve_port_8080",
@@ -47,7 +47,7 @@
     "serve_port": 8080,
     "no_stream": false,
     "chat_wants": false,
-    "export_format": null
+    "save_session_format": null
   },
   {
     "name": "chat_query_json_output",
@@ -57,19 +57,29 @@
     "serve_port": null,
     "no_stream": false,
     "chat_wants": true,
-    "export_format": null,
+    "save_session_format": null,
     "chat_inline": "hello",
     "chat_output": "json"
   },
   {
-    "name": "export_session_json",
+    "name": "save_session_json",
+    "argv": ["crabmate", "save-session", "--format", "json"],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": "Json"
+  },
+  {
+    "name": "save_session_json_export_session_alias",
     "argv": ["crabmate", "export-session", "--format", "json"],
     "extra_cli": "None",
     "dry_run": false,
     "serve_port": null,
     "no_stream": false,
     "chat_wants": false,
-    "export_format": "Json"
+    "save_session_format": "Json"
   },
   {
     "name": "chat_stdin_fixture",
@@ -80,7 +90,7 @@
     "serve_port": null,
     "no_stream": false,
     "chat_wants": true,
-    "export_format": null,
+    "save_session_format": null,
     "chat_inline": "pipe content"
   },
   {
@@ -91,7 +101,7 @@
     "serve_port": null,
     "no_stream": false,
     "chat_wants": false,
-    "export_format": null,
+    "save_session_format": null,
     "workspace": "/tmp/ws"
   }
 ]

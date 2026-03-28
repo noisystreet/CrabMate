@@ -33,14 +33,18 @@ const SLASH_COMMANDS: &[&str] = &[
     "cd",
     "clear",
     "config",
+    "doctor",
     "export",
     "help",
     "model",
+    "models",
+    "probe",
+    "save-session",
     "tools",
     "workspace",
 ];
 
-/// `/export` 后的格式参数（与 REPL `repl_export_kind_from_arg` 一致）。
+/// `/export` 与 `/save-session` 后的格式参数（与 REPL `repl_export_kind_from_arg` 一致）。
 const EXPORT_FORMAT_ARGS: &[&str] = &["both", "json", "markdown", "md"];
 
 fn repl_emacs_keybindings() -> Keybindings {
@@ -102,12 +106,12 @@ impl ReplSlashCompleter {
         }
     }
 
-    fn suggestions_export_formats(span: Span) -> Vec<Suggestion> {
+    fn suggestions_session_export_formats(span: Span, prefix: &str) -> Vec<Suggestion> {
         EXPORT_FORMAT_ARGS
             .iter()
             .copied()
             .map(|a| Suggestion {
-                value: format!("/export {a}"),
+                value: format!("{prefix} {a}"),
                 span,
                 append_whitespace: false,
                 ..Default::default()
@@ -132,7 +136,10 @@ impl Completer for ReplSlashCompleter {
         match tail.split_once(char::is_whitespace) {
             None => {
                 if tail.eq_ignore_ascii_case("export") {
-                    return Self::suggestions_export_formats(span);
+                    return Self::suggestions_session_export_formats(span, "/export");
+                }
+                if tail.eq_ignore_ascii_case("save-session") {
+                    return Self::suggestions_session_export_formats(span, "/save-session");
                 }
                 Self::suggestions_first_token(tail)
                     .into_iter()
@@ -141,9 +148,13 @@ impl Completer for ReplSlashCompleter {
             }
             Some((cmd, after_ws)) => {
                 let cmd = cmd.trim();
-                if !cmd.eq_ignore_ascii_case("export") {
+                let prefix = if cmd.eq_ignore_ascii_case("export") {
+                    "/export"
+                } else if cmd.eq_ignore_ascii_case("save-session") {
+                    "/save-session"
+                } else {
                     return vec![];
-                }
+                };
                 let arg_prefix = after_ws.trim_start();
                 let p = arg_prefix.to_ascii_lowercase();
                 EXPORT_FORMAT_ARGS
@@ -151,7 +162,7 @@ impl Completer for ReplSlashCompleter {
                     .copied()
                     .filter(|a| p.is_empty() || a.to_ascii_lowercase().starts_with(&p))
                     .map(|a| Suggestion {
-                        value: format!("/export {a}"),
+                        value: format!("{prefix} {a}"),
                         span,
                         append_whitespace: false,
                         ..Default::default()
@@ -552,5 +563,17 @@ mod slash_completion_tests {
         let s2 = c.complete("/export j", 9);
         assert_eq!(s2.len(), 1);
         assert_eq!(s2[0].value, "/export json");
+    }
+
+    #[test]
+    fn save_session_then_formats() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        let line = "/save-session";
+        let s = c.complete(line, line.len());
+        assert!(s.iter().any(|x| x.value == "/save-session json"));
+        let line2 = "/save-session j";
+        let s2 = c.complete(line2, line2.len());
+        assert_eq!(s2.len(), 1);
+        assert_eq!(s2[0].value, "/save-session json");
     }
 }

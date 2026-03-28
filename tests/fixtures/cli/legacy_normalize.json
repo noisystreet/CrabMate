@@ -25,7 +25,12 @@
     "normalized": ["crabmate", "--help"]
   },
   {
-    "name": "help_export_session",
+    "name": "help_save_session",
+    "argv": ["crabmate", "help", "save-session"],
+    "normalized": ["crabmate", "save-session", "--help"]
+  },
+  {
+    "name": "help_export_session_alias",
     "argv": ["crabmate", "help", "export-session"],
     "normalized": ["crabmate", "export-session", "--help"]
   },

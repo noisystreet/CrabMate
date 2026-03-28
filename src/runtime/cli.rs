@@ -1,5 +1,5 @@
 use crate::config::AgentConfig;
-use crate::config::cli::{ChatCliArgs, ExportSessionCli, ExportSessionFormat};
+use crate::config::cli::{ChatCliArgs, SaveSessionCli, SaveSessionFormat};
 use crate::redact;
 use crate::runtime::cli_exit::{
     CliExitError, EXIT_GENERAL, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE,
@@ -36,13 +36,31 @@ enum ReplBuiltIn<'a> {
     Model,
     /// `arg` 为命令名后的剩余文本；非空表示用户传了多余参数，应提示用法。
     Config(&'a str),
+    /// 与 `crabmate doctor` 一致；`arg` 非空则报错。
+    Doctor(&'a str),
+    /// 与 `crabmate probe` 一致；`arg` 非空则报错；由 REPL 循环异步执行探测。
+    Probe(&'a str),
+    /// 与 `crabmate models` 一致；`arg` 非空则报错；由 REPL 循环异步拉取模型列表。
+    Models(&'a str),
     WorkspaceShow,
     WorkspaceSet(&'a str),
     Tools,
     Help,
     Export(&'a str),
+    /// 与 `crabmate save-session` 一致：从磁盘会话文件导出（非当前内存）。
+    SaveSession(&'a str),
     Unknown(&'a str),
     BareSlash,
+}
+
+/// [`try_handle_repl_slash_command`] 的返回值：`RunProbe` / `RunModels` 需在异步上下文中分别调用
+/// [`crate::runtime::cli_doctor::run_probe_cli`]、[`crate::runtime::cli_doctor::run_models_cli`]。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReplSlashHandled {
+    NotSlash,
+    Handled,
+    RunProbe,
+    RunModels,
 }
 
 const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。等同本机 `sh -c` / `cmd /C`，不受模型 `run_command` 白名单约束，仅应在可信环境使用。交互 TTY：空行按 `$` 即切换「我:」/ bash#:（也可单独一行 `$` 后 Enter）；管道/非 TTY 仍可用行内 `$ <命令>`。历史保存在工作区 `.crabmate/repl_history.txt`。示例: ls  pwd  git status";
@@ -111,6 +129,9 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
         "clear" => ReplBuiltIn::Clear,
         "model" => ReplBuiltIn::Model,
         "config" => ReplBuiltIn::Config(arg),
+        "doctor" => ReplBuiltIn::Doctor(arg),
+        "probe" => ReplBuiltIn::Probe(arg),
+        "models" => ReplBuiltIn::Models(arg),
         "workspace" | "cd" => {
             if arg.is_empty() {
                 ReplBuiltIn::WorkspaceShow
@@ -121,6 +142,7 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
         "tools" => ReplBuiltIn::Tools,
         "help" | "?" => ReplBuiltIn::Help,
         "export" => ReplBuiltIn::Export(arg),
+        "save-session" => ReplBuiltIn::SaveSession(arg),
         _ => ReplBuiltIn::Unknown(head),
     })
 }
@@ -135,7 +157,7 @@ fn repl_export_kind_from_arg(arg: &str) -> Result<ReplExportKind, ()> {
     }
 }
 
-/// 将内存中的消息导出到工作区 `.crabmate/exports/`（与 Web 及 `export-session` 同形）。
+/// 将内存中的消息导出到工作区 `.crabmate/exports/`（与 Web 及 `save-session` 落盘形状同形）。
 fn repl_export_current_messages(
     work_dir: &Path,
     messages: &[Message],
@@ -161,11 +183,11 @@ fn repl_export_current_messages(
     Ok(())
 }
 
-/// `crabmate export-session`：从磁盘会话文件读取并写入导出目录。
-pub fn run_export_session_command(
+/// `crabmate save-session`：从磁盘会话文件读取并写入导出目录（兼容别名 `export-session`）。
+pub fn run_save_session_command(
     cfg: &AgentConfig,
     workspace_cli: &Option<String>,
-    args: ExportSessionCli,
+    args: SaveSessionCli,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::ErrorKind;
 
@@ -187,9 +209,9 @@ pub fn run_export_session_command(
     let parsed: crate::runtime::chat_export::ChatSessionFile = serde_json::from_str(&data)
         .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, format!("会话 JSON 无效: {e}")))?;
     let fmt = match args.format {
-        ExportSessionFormat::Json => ReplExportKind::Json,
-        ExportSessionFormat::Markdown => ReplExportKind::Markdown,
-        ExportSessionFormat::Both => ReplExportKind::Both,
+        SaveSessionFormat::Json => ReplExportKind::Json,
+        SaveSessionFormat::Markdown => ReplExportKind::Markdown,
+        SaveSessionFormat::Both => ReplExportKind::Both,
     };
     match fmt {
         ReplExportKind::Json => {
@@ -212,7 +234,7 @@ pub fn run_export_session_command(
     Ok(())
 }
 
-/// REPL 中以 `/` 开头的内建命令；返回 `true` 表示已处理（不调用模型）。
+/// REPL 中以 `/` 开头的内建命令；[`ReplSlashHandled::NotSlash`] 时应将输入交给模型。
 fn try_handle_repl_slash_command(
     input: &str,
     cfg: &AgentConfig,
@@ -221,9 +243,9 @@ fn try_handle_repl_slash_command(
     work_dir: &mut PathBuf,
     style: &CliReplStyle,
     no_stream: bool,
-) -> bool {
+) -> ReplSlashHandled {
     let Some(builtin) = classify_repl_slash_command(input) else {
-        return false;
+        return ReplSlashHandled::NotSlash;
     };
     match builtin {
         ReplBuiltIn::BareSlash => {
@@ -260,6 +282,28 @@ fn try_handle_repl_slash_command(
                 let _ = style.eprint_error(&e.to_string());
             }
         }
+        ReplBuiltIn::Doctor(extra) => {
+            if !extra.is_empty() {
+                let _ = style.eprint_error("用法: /doctor（无额外参数；同 crabmate doctor）");
+            } else {
+                let ws = work_dir.to_str();
+                crate::runtime::cli_doctor::print_doctor_report(cfg, ws);
+            }
+        }
+        ReplBuiltIn::Probe(extra) => {
+            if !extra.is_empty() {
+                let _ = style.eprint_error("用法: /probe（无额外参数；同 crabmate probe）");
+            } else {
+                return ReplSlashHandled::RunProbe;
+            }
+        }
+        ReplBuiltIn::Models(extra) => {
+            if !extra.is_empty() {
+                let _ = style.eprint_error("用法: /models（无额外参数；同 crabmate models）");
+            } else {
+                return ReplSlashHandled::RunModels;
+            }
+        }
         ReplBuiltIn::WorkspaceShow => match work_dir.canonicalize() {
             Ok(p) => {
                 let _ = style.print_line(&format!("当前工作区: {}", p.display()));
@@ -274,12 +318,12 @@ fn try_handle_repl_slash_command(
                 Ok(p) => p,
                 Err(e) => {
                     let _ = style.eprint_error(&format!("无法解析路径 {arg:?}: {e}"));
-                    return true;
+                    return ReplSlashHandled::Handled;
                 }
             };
             if !resolved.is_dir() {
                 let _ = style.eprint_error(&format!("不是目录: {}", resolved.display()));
-                return true;
+                return ReplSlashHandled::Handled;
             }
             *work_dir = resolved;
             let _ = style.print_success(&format!("工作区已切换为: {}", work_dir.display()));
@@ -302,15 +346,39 @@ fn try_handle_repl_slash_command(
                 Ok(k) => k,
                 Err(()) => {
                     let _ = style.eprint_error("用法: /export 或 /export json | markdown | both");
-                    return true;
+                    return ReplSlashHandled::Handled;
                 }
             };
             if let Err(e) = repl_export_current_messages(work_dir, messages, kind, style) {
                 let _ = style.eprint_error(&e.to_string());
             }
         }
+        ReplBuiltIn::SaveSession(arg) => {
+            let kind = match repl_export_kind_from_arg(arg) {
+                Ok(k) => k,
+                Err(()) => {
+                    let _ = style.eprint_error(
+                        "用法: /save-session 或 /save-session json | markdown | both",
+                    );
+                    return ReplSlashHandled::Handled;
+                }
+            };
+            let format = match kind {
+                ReplExportKind::Json => SaveSessionFormat::Json,
+                ReplExportKind::Markdown => SaveSessionFormat::Markdown,
+                ReplExportKind::Both => SaveSessionFormat::Both,
+            };
+            let cli = SaveSessionCli {
+                format,
+                session_file: None,
+            };
+            let ws = Some(work_dir.to_string_lossy().into_owned());
+            if let Err(e) = run_save_session_command(cfg, &ws, cli) {
+                let _ = style.eprint_error(&e.to_string());
+            }
+        }
     }
-    true
+    ReplSlashHandled::Handled
 }
 
 fn cli_effective_work_dir(workspace_cli: &Option<String>, default: &str) -> PathBuf {
@@ -811,7 +879,7 @@ pub async fn run_repl(
                     break;
                 }
 
-                if try_handle_repl_slash_command(
+                match try_handle_repl_slash_command(
                     input.as_str(),
                     cfg.as_ref(),
                     tools,
@@ -820,7 +888,32 @@ pub async fn run_repl(
                     &style,
                     no_stream,
                 ) {
-                    continue;
+                    ReplSlashHandled::NotSlash => {}
+                    ReplSlashHandled::Handled => continue,
+                    ReplSlashHandled::RunProbe => {
+                        if let Err(e) = crate::runtime::cli_doctor::run_probe_cli(
+                            client,
+                            cfg.as_ref(),
+                            api_key.trim(),
+                        )
+                        .await
+                        {
+                            let _ = style.eprint_error(&e.to_string());
+                        }
+                        continue;
+                    }
+                    ReplSlashHandled::RunModels => {
+                        if let Err(e) = crate::runtime::cli_doctor::run_models_cli(
+                            client,
+                            cfg.as_ref(),
+                            api_key.trim(),
+                        )
+                        .await
+                        {
+                            let _ = style.eprint_error(&e.to_string());
+                        }
+                        continue;
+                    }
                 }
 
                 messages.push(Message::user_only(input.to_string()));
@@ -904,6 +997,18 @@ mod repl_slash_tests {
         assert_eq!(
             classify_repl_slash_command("/config extra"),
             Some(ReplBuiltIn::Config("extra"))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/doctor"),
+            Some(ReplBuiltIn::Doctor(""))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/probe"),
+            Some(ReplBuiltIn::Probe(""))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/models"),
+            Some(ReplBuiltIn::Models(""))
         );
     }
 
