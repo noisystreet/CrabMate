@@ -55,8 +55,8 @@ llm_http_auth_mode = "none"
 [agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-reasoner"
-# system_prompt = "…"
-# system_prompt_file = "system_prompt.txt"
+# system_prompt = "…"   # 仅写此项时会取消默认的 system_prompt_file，改为内联
+# system_prompt_file = "my_prompt.txt"   # 相对路径按「系统提示词」一节解析
 # cursor_rules_enabled = true
 # cursor_rules_dir = ".cursor/rules"
 ```
@@ -87,9 +87,12 @@ model = "deepseek-reasoner"
 
 ## 系统提示词
 
-`system_prompt` 与 `system_prompt_file` 二选一（文件优先）；均未配置则启动报错。
+- **默认**：嵌入的 **`default_config.toml`** 使用 **`system_prompt_file = "prompts/default_system_prompt.md"`**，运行时读盘，**修改该 Markdown 无需重新编译**。
+- **相对路径解析顺序**：进程**当前工作目录** → 各层**覆盖配置文件所在目录**（后加载的优先，如 `.agent_demo.toml` 先于 `config.toml`）→ **`run_command_working_dir`**（已规范化的工作区根）。**绝对路径**仅尝试该路径。
+- **覆盖与优先级**：若某层 TOML **只写**内联 **`system_prompt`**、**不写**该层的 `system_prompt_file`，则会**取消**继承自更早层的 `system_prompt_file`，改为使用内联。环境变量阶段：**`AGENT_SYSTEM_PROMPT`** 会清除已合并的 `system_prompt_file`；随后若存在 **`AGENT_SYSTEM_PROMPT_FILE`** 则再设为文件路径（两者同时设置时以文件为准）。
+- **finalize 阶段**：若仍存在 `system_prompt_file` 则读文件；否则使用非空内联；二者皆无则报错。
 
-嵌入的 **`default_config.toml`** 默认 `system_prompt` 中含一条工具使用约定：**同一工作区路径在未被修改前不要重复 `read_file`**，应直接引用对话历史中已有的 `role: tool` 结果（除非需核对行号或内容已变）。若你完全自定义 `system_prompt`，请自行决定是否保留类似表述。
+仓库内默认正文含工具与任务拆分等约定（例如**同一工作区路径在未被修改前不要重复 `read_file`**）。完全自定义时可改 `prompts/default_system_prompt.md` 或换用自有路径。
 
 ## Cursor-like 规则注入
 

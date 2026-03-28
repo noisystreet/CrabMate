@@ -257,7 +257,7 @@ pub struct AgentConfig {
     pub plan_rewrite_max_attempts: usize,
     /// 规划器/执行器运行模式（阶段 1：同进程逻辑双 agent）。
     pub planner_executor_mode: PlannerExecutorMode,
-    /// 系统提示词（可由 system_prompt 或 system_prompt_file 配置）
+    /// 系统提示词：默认自 `system_prompt_file` 读盘；无文件路径时使用合并后的内联（见 `config::load_config` 与文档）
     pub system_prompt: String,
     /// 启用后：读取 `cursor_rules_dir` 下的 `*.mdc` 并附加到系统提示词
     pub cursor_rules_enabled: bool,
