@@ -311,6 +311,8 @@ pub struct AgentConfig {
     pub staged_plan_feedback_mode: StagedPlanFeedbackMode,
     /// `patch_planner` 下对单步连续规划补丁的最大次数（含首次补丁）；达到后仍按 `fail_fast` 结束。
     pub staged_plan_patch_max_attempts: usize,
+    /// 为 true（默认）时：CLI（无 SSE、`out: None`）在**无工具规划轮**与**补丁规划轮**向 stdout 流式/整段打印模型原文（与常规助手轮一致）。为 false 时关闭该轮终端输出，仍保留 `staged_plan_notice` 队列摘要与分步注入等转录；带 `out` 的 Web 路径不受影响。
+    pub staged_plan_cli_show_planner_stream: bool,
     /// Web 会话持久化：非空则使用 SQLite（`conversation_id` 跨重启保留）；空则仅进程内内存。
     pub conversation_store_sqlite_path: String,
     /// 为 true 时：首轮在 `system` 与当前用户消息之间注入工作区内备忘文件（见 `agent_memory_file`）。

@@ -75,6 +75,7 @@ struct ConfigBuilder {
     staged_plan_allow_no_task: Option<bool>,
     staged_plan_feedback_mode_str: Option<String>,
     staged_plan_patch_max_attempts: Option<u64>,
+    staged_plan_cli_show_planner_stream: Option<bool>,
     workspace_allowed_roots: Option<Vec<String>>,
     web_api_bearer_token: Option<String>,
     allow_insecure_no_auth_for_non_loopback: Option<bool>,
@@ -279,6 +280,9 @@ impl ConfigBuilder {
         self.staged_plan_patch_max_attempts = agent
             .staged_plan_patch_max_attempts
             .or(self.staged_plan_patch_max_attempts);
+        self.staged_plan_cli_show_planner_stream = agent
+            .staged_plan_cli_show_planner_stream
+            .or(self.staged_plan_cli_show_planner_stream);
         self.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
             .or(self.allow_insecure_no_auth_for_non_loopback);
@@ -740,6 +744,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.staged_plan_patch_max_attempts = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.staged_plan_cli_show_planner_stream = Some(val);
+    }
     if let Ok(v) = std::env::var("AGENT_WEB_API_BEARER_TOKEN") {
         b.web_api_bearer_token = Some(v.trim().to_string());
     }
@@ -1126,6 +1135,7 @@ fn finalize(
     };
     let staged_plan_patch_max_attempts =
         b.staged_plan_patch_max_attempts.unwrap_or(2).clamp(1, 16) as usize;
+    let staged_plan_cli_show_planner_stream = b.staged_plan_cli_show_planner_stream.unwrap_or(true);
     let web_api_bearer_token = b.web_api_bearer_token.unwrap_or_default();
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
@@ -1273,6 +1283,7 @@ fn finalize(
         staged_plan_allow_no_task,
         staged_plan_feedback_mode,
         staged_plan_patch_max_attempts,
+        staged_plan_cli_show_planner_stream,
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
         agent_memory_file,

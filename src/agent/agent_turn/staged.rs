@@ -244,7 +244,10 @@ struct StagedPlanPatchPlannerCtx<'p, 'a, F> {
     p: &'p mut RunLoopParams<'a>,
     per_coord: &'p mut PerCoordinator,
     labels: &'p StagedPlanRunLabels,
+    /// 子循环与规划轮内工具执行的 CLI 转录开关（与外层 `render_to_terminal` 一致）。
     render_to_terminal: bool,
+    /// 仅用于补丁轮 `complete_chat_retrying`：CLI 可单独关闭规划模型 stdout。
+    planner_render_to_terminal: bool,
     make_step_user_message: &'p F,
 }
 
@@ -263,6 +266,7 @@ where
         per_coord,
         labels,
         render_to_terminal,
+        planner_render_to_terminal,
         make_step_user_message,
     } = ctx;
     p.messages.push(make_step_user_message(feedback_user_body));
@@ -275,7 +279,7 @@ where
         p.cfg.as_ref(),
         &req,
         p.out,
-        *render_to_terminal,
+        *planner_render_to_terminal,
         p.no_stream,
         p.cancel,
         p.plain_terminal_stream,
@@ -416,6 +420,8 @@ pub(crate) async fn run_staged_plan_with_prepared_request<F>(
 where
     F: Fn(String) -> Message,
 {
+    let planner_render_to_terminal =
+        render_to_terminal && (p.out.is_some() || p.cfg.staged_plan_cli_show_planner_stream);
     let (mut msg, finish_reason) = complete_chat_retrying(
         p.llm_backend,
         p.client,
@@ -423,7 +429,7 @@ where
         p.cfg.as_ref(),
         &req,
         p.out,
-        render_to_terminal,
+        planner_render_to_terminal,
         p.no_stream,
         p.cancel,
         p.plain_terminal_stream,
@@ -567,6 +573,7 @@ where
         per_coord,
         labels: &labels,
         render_to_terminal,
+        planner_render_to_terminal,
         make_step_user_message: &make_step_user_message,
     };
 
