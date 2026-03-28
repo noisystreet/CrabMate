@@ -1,4 +1,4 @@
-//! 受控 HTTP GET / HEAD（仅 https/http）；TUI 下未匹配配置前缀时需人工审批（与 `run_command` 同套 拒绝/一次/永久同意）。
+//! 受控 HTTP GET / HEAD（仅 https/http）；**CLI** 下 URL 未匹配 `http_fetch_allowed_prefixes` 时走 **`runtime::cli_approval`**（与 `run_command` 同套拒绝/一次/永久同意；**`--yes`** 亦跳过提示）。
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -402,14 +402,14 @@ pub fn request_with_json_body(
     }
     out
 }
-/// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（同源 + 路径前缀边界）时才请求；否则提示配置或 TUI。
+/// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（同源 + 路径前缀边界）时才请求；未匹配时返回错误（**不**在此路径弹审批；**repl/chat** 等经 `tool_registry` 异步路径可走 **`runtime::cli_approval`**）。
 pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     let (url, method) = match parse_http_fetch_args(args_json) {
         Ok(x) => x,
         Err(e) => return format!("错误：{}", e),
     };
     if !url_matches_allowed_prefixes(&url, ctx.http_fetch_allowed_prefixes) {
-        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。Web 模式仅允许白名单前缀；TUI 下可对单次请求使用审批（同意/拒绝/永久同意）。".to_string();
+        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI（repl/chat）异步路径可人工审批。".to_string();
     }
     fetch_with_method(
         &url,

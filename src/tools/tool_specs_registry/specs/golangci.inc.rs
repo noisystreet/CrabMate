@@ -5,6 +5,6 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_golangci_lint,
             runner: runner_golangci_lint,
-            summary: ToolSummaryKind::Static("运行 golangci-lint"),
+            summary: ToolSummaryKind::Static("golangci-lint"),
         },
 ]

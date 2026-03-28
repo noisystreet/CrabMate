@@ -29,6 +29,6 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_quality_workspace,
             runner: runner_quality_workspace,
-            summary: ToolSummaryKind::Static("工作区质量检查"),
+            summary: ToolSummaryKind::Static("workspace quality check"),
         },
 ]

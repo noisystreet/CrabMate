@@ -5,7 +5,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_stage_files,
             runner: runner_git_stage_files,
-            summary: ToolSummaryKind::Static("暂存文件"),
+            summary: ToolSummaryKind::Static("git add (stage)"),
         },
         ToolSpec {
             name: "git_commit",
@@ -13,7 +13,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_commit,
             runner: runner_git_commit,
-            summary: ToolSummaryKind::Static("提交变更"),
+            summary: ToolSummaryKind::Static("git commit"),
         },
         ToolSpec {
             name: "git_fetch",
@@ -21,7 +21,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_fetch,
             runner: runner_git_fetch,
-            summary: ToolSummaryKind::Static("拉取远程更新"),
+            summary: ToolSummaryKind::Static("git pull"),
         },
         ToolSpec {
             name: "git_remote_list",
@@ -29,7 +29,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_empty_object,
             runner: runner_git_remote_list,
-            summary: ToolSummaryKind::Static("查看远程仓库"),
+            summary: ToolSummaryKind::Static("git remote -v"),
         },
         ToolSpec {
             name: "git_remote_set_url",
@@ -37,7 +37,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_remote_set_url,
             runner: runner_git_remote_set_url,
-            summary: ToolSummaryKind::Static("设置远程 URL"),
+            summary: ToolSummaryKind::Static("git remote set-url"),
         },
         ToolSpec {
             name: "git_apply",
@@ -45,7 +45,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_apply,
             runner: runner_git_apply,
-            summary: ToolSummaryKind::Static("应用 Git 补丁"),
+            summary: ToolSummaryKind::Static("git am (apply patch)"),
         },
         ToolSpec {
             name: "git_clone",
@@ -53,6 +53,6 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_clone,
             runner: runner_git_clone,
-            summary: ToolSummaryKind::Static("克隆仓库"),
+            summary: ToolSummaryKind::Static("git clone"),
         },
 ]

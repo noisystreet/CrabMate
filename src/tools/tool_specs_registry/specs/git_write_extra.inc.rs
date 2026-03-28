@@ -78,7 +78,7 @@
             category: ToolCategory::Development,
             parameters: tool_params::params_git_cherry_pick,
             runner: runner_git_cherry_pick,
-            summary: ToolSummaryKind::Static("挑选提交"),
+            summary: ToolSummaryKind::Static("git cherry-pick"),
         },
         ToolSpec {
             name: "git_revert",

@@ -330,19 +330,19 @@ fn test_build_tools_dev_tags_rust_excludes_pure_vcs() {
 #[test]
 fn test_summarize_tool_call_static() {
     let s = summarize_tool_call("cargo_check", "{}");
-    assert_eq!(s, Some("运行 cargo check".to_string()));
+    assert_eq!(s, Some("cargo check".to_string()));
 }
 
 #[test]
 fn test_summarize_tool_call_dynamic() {
     let s = summarize_tool_call("create_file", r#"{"path":"src/foo.rs","content":"hello"}"#);
-    assert_eq!(s, Some("新建文件：src/foo.rs".to_string()));
+    assert_eq!(s, Some("create file: src/foo.rs".to_string()));
 }
 
 #[test]
 fn test_summarize_tool_call_dynamic_run_command() {
     let s = summarize_tool_call("run_command", r#"{"command":"ls","args":["-la"]}"#);
-    assert_eq!(s, Some("执行命令：ls -la".to_string()));
+    assert_eq!(s, Some("ls -la".to_string()));
 }
 
 #[test]

@@ -5,7 +5,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
             runner: runner_frontend_lint,
-            summary: ToolSummaryKind::Static("运行前端 lint"),
+            summary: ToolSummaryKind::Static("frontend lint"),
         },
         ToolSpec {
             name: "frontend_build",
@@ -13,7 +13,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
             runner: runner_frontend_build,
-            summary: ToolSummaryKind::Static("运行前端 build"),
+            summary: ToolSummaryKind::Static("frontend build"),
         },
         ToolSpec {
             name: "frontend_test",
@@ -21,7 +21,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
             runner: runner_frontend_test,
-            summary: ToolSummaryKind::Static("运行前端 test"),
+            summary: ToolSummaryKind::Static("frontend test"),
         },
         ToolSpec {
             name: "cargo_audit",
@@ -29,7 +29,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_audit,
             runner: runner_cargo_audit,
-            summary: ToolSummaryKind::Static("运行 cargo audit"),
+            summary: ToolSummaryKind::Static("cargo audit"),
         },
         ToolSpec {
             name: "cargo_deny",
@@ -37,7 +37,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_deny,
             runner: runner_cargo_deny,
-            summary: ToolSummaryKind::Static("运行 cargo deny"),
+            summary: ToolSummaryKind::Static("cargo deny"),
         },
         ToolSpec {
             name: "ci_pipeline_local",
@@ -45,7 +45,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_ci_pipeline_local,
             runner: runner_ci_pipeline_local,
-            summary: ToolSummaryKind::Static("运行本地 CI 流水线"),
+            summary: ToolSummaryKind::Static("local CI pipeline"),
         },
         ToolSpec {
             name: "release_ready_check",
@@ -53,7 +53,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_release_ready_check,
             runner: runner_release_ready_check,
-            summary: ToolSummaryKind::Static("运行发布前一键检查"),
+            summary: ToolSummaryKind::Static("pre-release checks"),
         },
         ToolSpec {
             name: "workflow_execute",
@@ -61,7 +61,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_workflow_execute,
             runner: runner_workflow_execute,
-            summary: ToolSummaryKind::Static("执行 DAG 工作流"),
+            summary: ToolSummaryKind::Static("DAG workflow"),
         },
         ToolSpec {
             name: "rust_backtrace_analyze",
@@ -69,6 +69,6 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_backtrace_analyze,
             runner: runner_backtrace_analyze,
-            summary: ToolSummaryKind::Static("分析 Rust backtrace"),
+            summary: ToolSummaryKind::Static("Rust backtrace analysis"),
         },
 ]

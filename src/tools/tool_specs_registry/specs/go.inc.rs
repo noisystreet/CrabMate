@@ -5,7 +5,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_go_build,
             runner: runner_go_build,
-            summary: ToolSummaryKind::Static("运行 go build"),
+            summary: ToolSummaryKind::Static("go build"),
         },
         ToolSpec {
             name: "go_test",
@@ -13,7 +13,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_go_test,
             runner: runner_go_test,
-            summary: ToolSummaryKind::Static("运行 go test"),
+            summary: ToolSummaryKind::Static("go test"),
         },
         ToolSpec {
             name: "go_vet",
@@ -21,7 +21,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_go_vet,
             runner: runner_go_vet,
-            summary: ToolSummaryKind::Static("运行 go vet"),
+            summary: ToolSummaryKind::Static("go vet"),
         },
         ToolSpec {
             name: "go_mod_tidy",
@@ -29,7 +29,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_go_mod_tidy,
             runner: runner_go_mod_tidy,
-            summary: ToolSummaryKind::Static("运行 go mod tidy"),
+            summary: ToolSummaryKind::Static("go mod tidy"),
         },
         ToolSpec {
             name: "go_fmt_check",
@@ -37,6 +37,6 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_go_fmt_check,
             runner: runner_go_fmt_check,
-            summary: ToolSummaryKind::Static("gofmt 格式检查（-l）"),
+            summary: ToolSummaryKind::Static("gofmt -l (format check)"),
         },
 ]

@@ -13,7 +13,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_typos_check,
             runner: runner_typos_check,
-            summary: ToolSummaryKind::Static("typos 拼写检查"),
+            summary: ToolSummaryKind::Static("typos spell check"),
         },
         ToolSpec {
             name: "codespell_check",
@@ -21,7 +21,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_codespell_check,
             runner: runner_codespell_check,
-            summary: ToolSummaryKind::Static("codespell 拼写检查"),
+            summary: ToolSummaryKind::Static("codespell spell check"),
         },
         ToolSpec {
             name: "ast_grep_run",

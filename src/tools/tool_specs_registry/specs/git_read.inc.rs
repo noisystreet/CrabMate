@@ -5,7 +5,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_status,
             runner: runner_git_status,
-            summary: ToolSummaryKind::Static("查看 Git 状态"),
+            summary: ToolSummaryKind::Static("git status"),
         },
         ToolSpec {
             name: "git_diff",
@@ -45,7 +45,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_log,
             runner: runner_git_log,
-            summary: ToolSummaryKind::Static("查看 Git 提交历史"),
+            summary: ToolSummaryKind::Static("git log"),
         },
         ToolSpec {
             name: "git_show",
@@ -53,7 +53,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_show,
             runner: runner_git_show,
-            summary: ToolSummaryKind::Static("查看 Git 提交详情"),
+            summary: ToolSummaryKind::Static("git show"),
         },
         ToolSpec {
             name: "git_diff_base",
@@ -61,7 +61,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_diff_base,
             runner: runner_git_diff_base,
-            summary: ToolSummaryKind::Static("查看 base...HEAD 差异"),
+            summary: ToolSummaryKind::Static("git diff base...HEAD"),
         },
         ToolSpec {
             name: "git_blame",
@@ -69,7 +69,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_blame,
             runner: runner_git_blame,
-            summary: ToolSummaryKind::Static("查看 Git blame"),
+            summary: ToolSummaryKind::Static("git blame"),
         },
         ToolSpec {
             name: "git_file_history",
@@ -77,7 +77,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_file_history,
             runner: runner_git_file_history,
-            summary: ToolSummaryKind::Static("查看文件 Git 历史"),
+            summary: ToolSummaryKind::Static("git file history"),
         },
         ToolSpec {
             name: "git_branch_list",
@@ -85,7 +85,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_branch_list,
             runner: runner_git_branch_list,
-            summary: ToolSummaryKind::Static("查看分支列表"),
+            summary: ToolSummaryKind::Static("git branch"),
         },
         ToolSpec {
             name: "git_remote_status",
@@ -93,6 +93,6 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_git_status,
             runner: runner_git_remote_status,
-            summary: ToolSummaryKind::Static("查看远程跟踪状态"),
+            summary: ToolSummaryKind::Static("git remote tracking status"),
         },
 ]

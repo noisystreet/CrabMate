@@ -280,10 +280,9 @@ mod tests {
     fn envelope_roundtrip_and_inner_payload() {
         let raw = "退出码：0\n标准输出：\nhi\n";
         let parsed = parse_legacy_output("run_command", raw);
-        let s =
-            encode_tool_message_envelope_v1("run_command", "执行命令：true".into(), &parsed, raw);
+        let s = encode_tool_message_envelope_v1("run_command", "true".into(), &parsed, raw);
         assert!(s.contains("crabmate_tool"));
-        assert!(s.contains("\"summary\":\"执行命令：true\""));
+        assert!(s.contains("\"summary\":\"true\""));
         let inner = tool_message_payload_for_inner_parse(&s);
         assert_eq!(inner.as_ref(), raw);
     }
