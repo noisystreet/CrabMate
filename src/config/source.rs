@@ -71,6 +71,8 @@ pub(super) struct AgentSection {
     pub(super) staged_plan_patch_max_attempts: Option<u64>,
     /// CLI 是否在无工具规划轮向 stdout 打印模型原文；默认 true。`AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`
     pub(super) staged_plan_cli_show_planner_stream: Option<bool>,
+    /// 首轮规划后是否再跑无工具优化轮；默认 true。`AGENT_STAGED_PLAN_OPTIMIZER_ROUND`
+    pub(super) staged_plan_optimizer_round: Option<bool>,
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     pub(super) web_api_bearer_token: Option<String>,

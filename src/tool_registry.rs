@@ -190,15 +190,22 @@ fn parallel_sync_batch_denied(name: &str) -> bool {
         || name.starts_with("codespell_")
 }
 
+/// 单工具是否满足「可与其它同类工具同批并行」的语义（不含「至少 2 个调用」前提）。
+///
+/// 与 [`tool_calls_allow_parallel_sync_batch`] 中每个 `ToolCall` 的判定一致；供分阶段规划**优化轮**提示词列举可批量并行的内建工具名。
+pub fn tool_ok_for_parallel_readonly_batch_piece(name: &str) -> bool {
+    !crate::mcp::is_mcp_proxy_tool(name)
+        && handler_id_for(name) == HandlerId::SyncDefault
+        && is_readonly_tool(name)
+        && !parallel_sync_batch_denied(name)
+}
+
 /// 本批 **至少 2 个** 工具且全部为 `SyncDefault`、语义只读且非构建/生态锁类时，可在单轮内并行 `spawn_blocking`（见 `agent_turn::per_execute_tools_common`）。
 pub fn tool_calls_allow_parallel_sync_batch(tool_calls: &[ToolCall]) -> bool {
     tool_calls.len() > 1
         && tool_calls.iter().all(|tc| {
             let n = tc.function.name.as_str();
-            !crate::mcp::is_mcp_proxy_tool(n)
-                && handler_id_for(n) == HandlerId::SyncDefault
-                && is_readonly_tool(n)
-                && !parallel_sync_batch_denied(n)
+            tool_ok_for_parallel_readonly_batch_piece(n)
         })
 }
 

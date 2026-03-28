@@ -87,6 +87,8 @@ model = "deepseek-reasoner"
 
 **CLI 规划轮终端输出（`staged_plan_cli_show_planner_stream`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`）**：仅影响 **REPL / `chat` 等 `out: None` 路径** 下，**无工具规划轮**与 **`patch_planner` 补丁规划轮**是否向 stdout 流式或整段打印模型原文（`Agent:` 前缀及正文）。设为 `false` 时这些轮次不在终端打印模型输出，仍保留 `staged_plan_notice` 队列摘要、分步注入 user 转录与后续执行步的助手输出；Web SSE 路径不受影响。
 
+**规划步骤优化轮（`staged_plan_optimizer_round`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_OPTIMIZER_ROUND`）**：在首轮 `agent_reply_plan` v1 解析成功且 `steps` 不少于 2 时，再追加一轮无工具请求，请模型合并**无数据依赖**的只读探查步，并提示在同一执行步内对「可同轮并行批处理」的内建工具（与执行层 `parallel_readonly_tools` 判定一致，不限于 `read_file`）发起多次调用。解析失败或用户取消优化轮时沿用首轮规划；成功则追加优化轮 assistant 并采用新 `steps`（多一次 API）。
+
 ## 系统提示词
 
 - **默认**：嵌入的 **`default_config.toml`** 使用 **`system_prompt_file = "prompts/default_system_prompt.md"`**，运行时读盘，**修改该 Markdown 无需重新编译**。

@@ -172,6 +172,7 @@ pub async fn run_agent_turn<'a>(
         long_term_memory_scope_id,
         mcp_session,
         read_file_turn_cache,
+        staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
     };
     agent::agent_turn::run_agent_turn_common(&mut loop_params).await
 }
