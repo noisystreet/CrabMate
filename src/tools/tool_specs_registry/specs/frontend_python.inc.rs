@@ -5,7 +5,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_ruff_check,
             runner: runner_ruff_check,
-            summary: ToolSummaryKind::Static("运行 ruff check"),
+            summary: ToolSummaryKind::Static("ruff check"),
         },
         ToolSpec {
             name: "pytest_run",
@@ -13,7 +13,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_pytest_run,
             runner: runner_pytest_run,
-            summary: ToolSummaryKind::Static("运行 python3 -m pytest"),
+            summary: ToolSummaryKind::Static("python3 -m pytest"),
         },
         ToolSpec {
             name: "mypy_check",
@@ -21,7 +21,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_mypy_check,
             runner: runner_mypy_check,
-            summary: ToolSummaryKind::Static("运行 mypy"),
+            summary: ToolSummaryKind::Static("mypy"),
         },
         ToolSpec {
             name: "python_install_editable",
@@ -37,7 +37,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_uv_sync,
             runner: runner_uv_sync,
-            summary: ToolSummaryKind::Static("运行 uv sync"),
+            summary: ToolSummaryKind::Static("uv sync"),
         },
         ToolSpec {
             name: "uv_run",

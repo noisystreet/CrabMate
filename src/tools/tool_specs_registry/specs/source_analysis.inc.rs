@@ -5,7 +5,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_shellcheck_check,
             runner: runner_shellcheck_check,
-            summary: ToolSummaryKind::Static("运行 shellcheck"),
+            summary: ToolSummaryKind::Static("shellcheck"),
         },
         ToolSpec {
             name: "cppcheck_analyze",
@@ -13,7 +13,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cppcheck_analyze,
             runner: runner_cppcheck_analyze,
-            summary: ToolSummaryKind::Static("运行 cppcheck"),
+            summary: ToolSummaryKind::Static("cppcheck"),
         },
         ToolSpec {
             name: "semgrep_scan",
@@ -21,7 +21,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_semgrep_scan,
             runner: runner_semgrep_scan,
-            summary: ToolSummaryKind::Static("运行 semgrep scan"),
+            summary: ToolSummaryKind::Static("semgrep scan"),
         },
         ToolSpec {
             name: "hadolint_check",
@@ -29,7 +29,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_hadolint_check,
             runner: runner_hadolint_check,
-            summary: ToolSummaryKind::Static("运行 hadolint"),
+            summary: ToolSummaryKind::Static("hadolint"),
         },
         ToolSpec {
             name: "bandit_scan",
@@ -37,7 +37,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_bandit_scan,
             runner: runner_bandit_scan,
-            summary: ToolSummaryKind::Static("运行 bandit"),
+            summary: ToolSummaryKind::Static("bandit"),
         },
         ToolSpec {
             name: "lizard_complexity",
@@ -45,6 +45,6 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_lizard_complexity,
             runner: runner_lizard_complexity,
-            summary: ToolSummaryKind::Static("运行 lizard 复杂度分析"),
+            summary: ToolSummaryKind::Static("lizard complexity"),
         },
 ]

@@ -6,22 +6,17 @@ use crate::runtime::cli_exit::{
     classify_model_error_message,
 };
 use crate::runtime::cli_repl_ui::CliReplStyle;
+use crate::runtime::repl_reedline::{ReplLineEditor, ReplReadLine, read_repl_line_with_editor};
 use crate::tool_registry::{CliCommandTurnStats, CliToolRuntime};
 use crate::types::{Message, messages_chat_seed, normalize_messages_for_openai_compatible_request};
 use crate::{LlmSeedOverride, RunAgentTurnParams, run_agent_turn};
-use crossterm::{
-    ExecutableCommand,
-    cursor::MoveToColumn,
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    queue,
-    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
-};
 use log::debug;
 use std::collections::HashSet;
-use std::io::{self, BufRead, IsTerminal, Write};
+use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 
@@ -40,23 +35,9 @@ enum ReplBuiltIn<'a> {
     BareSlash,
 }
 
-/// 行首 `$`：`Some(None)` 表示仅 `$`（应打印用法）；`Some(Some(cmd))` 为待执行的 shell 一行；`None` 表示非 `$` 行。
-fn parse_repl_dollar_shell_line(input: &str) -> Option<Option<&str>> {
-    let t = input.trim_start();
-    if !t.starts_with('$') {
-        return None;
-    }
-    let rest = t[1..].trim();
-    if rest.is_empty() {
-        Some(None)
-    } else {
-        Some(Some(rest))
-    }
-}
+const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。等同本机 `sh -c` / `cmd /C`，不受模型 `run_command` 白名单约束，仅应在可信环境使用。交互 TTY：空行按 `$` 即切换「我:」/ bash#:（也可单独一行 `$` 后 Enter）；管道/非 TTY 仍可用行内 `$ <命令>`。历史保存在工作区 `.crabmate/repl_history.txt`。示例: ls  pwd  git status";
 
-const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。等同本机 `sh -c` / `cmd /C`，不受模型 `run_command` 白名单约束，仅应在可信环境使用。交互终端：行首按 `$` 后提示变为 bash#:（`$` 不回显）；管道输入仍可用 `$ <命令>`。示例: ls  pwd  git status";
-
-/// 执行 REPL 本地 shell 一行：`parsed` 为 `parse_repl_dollar_shell_line` 的 `Some(...)` 内层；`None` 表示仅 `$` 或空命令，打印用法。
+/// 执行 REPL 本地 shell 一行：`parsed` 为 `repl_reedline::parse_repl_dollar_shell_line` 的 `Some(...)` 内层；`None` 表示仅 `$` 或空命令，打印用法。
 fn repl_execute_shell(
     parsed: Option<&str>,
     work_dir: &Path,
@@ -82,129 +63,6 @@ fn repl_execute_shell(
         let _ = style.print_line(&format!("退出码: {code}"));
     }
     Ok(())
-}
-
-/// REPL 单次读取结果（在 `spawn_blocking` 内完成）。
-#[derive(Debug)]
-enum ReplReadLine {
-    /// stdin EOF（如 Ctrl+D）
-    Eof,
-    /// 空行（忽略，继续下一轮）
-    Empty,
-    /// 普通对话文本
-    Chat(String),
-    /// 本地 shell：`None` 为应打印用法；`Some` 为已去掉 `$` 的命令行
-    Shell(Option<String>),
-}
-
-fn read_repl_line_blocking() -> io::Result<ReplReadLine> {
-    let mut stdout = io::stdout();
-    let _ = stdout.execute(MoveToColumn(0));
-    let _ = stdout.execute(Clear(ClearType::CurrentLine));
-    crate::runtime::terminal_labels::write_user_message_prefix(&mut stdout)?;
-    stdout.flush()?;
-
-    if io::stdin().is_terminal() && stdout.is_terminal() {
-        read_repl_line_tty(stdout)
-    } else {
-        read_repl_line_piped()
-    }
-}
-
-fn read_repl_line_piped() -> io::Result<ReplReadLine> {
-    let mut input = String::new();
-    let n = io::stdin().lock().read_line(&mut input)?;
-    if n == 0 {
-        return Ok(ReplReadLine::Eof);
-    }
-    let line = input.trim_end_matches(['\r', '\n']);
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return Ok(ReplReadLine::Empty);
-    }
-    if let Some(inner) = parse_repl_dollar_shell_line(trimmed) {
-        Ok(ReplReadLine::Shell(inner.map(str::to_string)))
-    } else {
-        Ok(ReplReadLine::Chat(trimmed.to_string()))
-    }
-}
-
-fn redraw_repl_input_prompt(stdout: &mut io::Stdout, shell_mode: bool) -> io::Result<()> {
-    queue!(stdout, MoveToColumn(0))?;
-    stdout.execute(Clear(ClearType::CurrentLine))?;
-    if shell_mode {
-        crate::runtime::terminal_labels::write_repl_bash_prompt_prefix(stdout)?;
-    } else {
-        crate::runtime::terminal_labels::write_user_message_prefix(stdout)?;
-    }
-    stdout.flush()?;
-    Ok(())
-}
-
-/// 保证离开 `read_repl_line_tty` 时（含 panic 栈展开）尽量恢复 cooked 模式，避免终端卡在 raw。
-struct ReplRawModeGuard;
-
-impl Drop for ReplRawModeGuard {
-    fn drop(&mut self) {
-        let _ = disable_raw_mode();
-    }
-}
-
-fn read_repl_line_tty(mut stdout: io::Stdout) -> io::Result<ReplReadLine> {
-    enable_raw_mode()?;
-    let _raw_guard = ReplRawModeGuard;
-    (|| -> io::Result<ReplReadLine> {
-        let mut buf = String::new();
-        let mut shell_prompt = false;
-        loop {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Release {
-                    continue;
-                }
-                match key.code {
-                    KeyCode::Enter => {
-                        write!(stdout, "\r\n")?;
-                        stdout.flush()?;
-                        if shell_prompt {
-                            if buf.trim().is_empty() {
-                                return Ok(ReplReadLine::Shell(None));
-                            }
-                            return Ok(ReplReadLine::Shell(Some(buf)));
-                        }
-                        if buf.trim().is_empty() {
-                            return Ok(ReplReadLine::Empty);
-                        }
-                        return Ok(ReplReadLine::Chat(buf));
-                    }
-                    KeyCode::Backspace => {
-                        if buf.pop().is_some() {
-                            write!(stdout, "\x08 \x08")?;
-                            stdout.flush()?;
-                        } else if shell_prompt {
-                            shell_prompt = false;
-                            redraw_repl_input_prompt(&mut stdout, false)?;
-                        }
-                    }
-                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        write!(stdout, "\r\n")?;
-                        stdout.flush()?;
-                        return Ok(ReplReadLine::Eof);
-                    }
-                    KeyCode::Char(c) => {
-                        if c == '$' && !shell_prompt && buf.is_empty() {
-                            shell_prompt = true;
-                            redraw_repl_input_prompt(&mut stdout, true)?;
-                            continue;
-                        }
-                        buf.push(c);
-                        write!(stdout, "{c}")?;
-                        stdout.flush()?;
-                    }
-                    _ => {}
-                }
-            }
-        }
-    })()
 }
 
 fn run_repl_shell_line_sync(cmd: &str, work_dir: &Path) -> io::Result<i32> {
@@ -786,11 +644,24 @@ pub async fn run_repl(
 
     style.print_banner(cfg.as_ref(), work_dir.as_path(), tools.len(), no_stream)?;
 
+    let history_dir = PathBuf::from(&cfg.run_command_working_dir).join(".crabmate");
+    std::fs::create_dir_all(&history_dir)
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let history_file = history_dir.join("repl_history.txt");
+    let repl_editor = Arc::new(StdMutex::new(
+        ReplLineEditor::new(history_file.as_path())
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?,
+    ));
+
     loop {
-        let read_res = tokio::task::spawn_blocking(read_repl_line_blocking)
-            .await
-            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?
-            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+        let ed = repl_editor.clone();
+        let read_res = tokio::task::spawn_blocking(move || {
+            let mut guard = ed.lock().unwrap_or_else(|e| e.into_inner());
+            read_repl_line_with_editor(&mut guard)
+        })
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
         match read_res {
             ReplReadLine::Eof => break,
@@ -929,7 +800,8 @@ mod repl_slash_tests {
 
 #[cfg(test)]
 mod repl_dollar_tests {
-    use super::{parse_repl_dollar_shell_line, run_repl_shell_line_sync};
+    use super::run_repl_shell_line_sync;
+    use crate::runtime::repl_reedline::parse_repl_dollar_shell_line;
 
     #[test]
     fn parse_not_dollar() {
@@ -939,6 +811,19 @@ mod repl_dollar_tests {
     #[test]
     fn parse_bare_dollar() {
         assert_eq!(parse_repl_dollar_shell_line("$"), Some(None));
+    }
+
+    #[test]
+    fn parse_bare_fullwidth_dollar() {
+        assert_eq!(parse_repl_dollar_shell_line("\u{ff04}"), Some(None));
+    }
+
+    #[test]
+    fn parse_fullwidth_dollar_ls() {
+        assert_eq!(
+            parse_repl_dollar_shell_line("\u{ff04} ls"),
+            Some(Some("ls"))
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_common,
             runner: runner_cargo_check,
-            summary: ToolSummaryKind::Static("运行 cargo check"),
+            summary: ToolSummaryKind::Static("cargo check"),
         },
         ToolSpec {
             name: "cargo_test",
@@ -13,7 +13,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_test,
             runner: runner_cargo_test,
-            summary: ToolSummaryKind::Static("运行 cargo test"),
+            summary: ToolSummaryKind::Static("cargo test"),
         },
         ToolSpec {
             name: "cargo_clippy",
@@ -21,7 +21,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_common,
             runner: runner_cargo_clippy,
-            summary: ToolSummaryKind::Static("运行 cargo clippy"),
+            summary: ToolSummaryKind::Static("cargo clippy"),
         },
         ToolSpec {
             name: "cargo_metadata",
@@ -29,7 +29,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_metadata,
             runner: runner_cargo_metadata,
-            summary: ToolSummaryKind::Static("读取 cargo metadata"),
+            summary: ToolSummaryKind::Static("cargo metadata"),
         },
         ToolSpec {
             name: "cargo_tree",
@@ -37,7 +37,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_tree,
             runner: runner_cargo_tree,
-            summary: ToolSummaryKind::Static("查看 cargo 依赖树"),
+            summary: ToolSummaryKind::Static("cargo tree"),
         },
         ToolSpec {
             name: "cargo_clean",
@@ -45,7 +45,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_clean,
             runner: runner_cargo_clean,
-            summary: ToolSummaryKind::Static("运行 cargo clean"),
+            summary: ToolSummaryKind::Static("cargo clean"),
         },
         ToolSpec {
             name: "cargo_doc",
@@ -53,7 +53,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_doc,
             runner: runner_cargo_doc,
-            summary: ToolSummaryKind::Static("生成 cargo 文档"),
+            summary: ToolSummaryKind::Static("cargo doc"),
         },
         ToolSpec {
             name: "cargo_run",
@@ -61,7 +61,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_run,
             runner: runner_cargo_run,
-            summary: ToolSummaryKind::Static("运行 cargo run"),
+            summary: ToolSummaryKind::Static("cargo run"),
         },
         ToolSpec {
             name: "cargo_nextest",
@@ -69,7 +69,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_nextest,
             runner: runner_cargo_nextest,
-            summary: ToolSummaryKind::Static("运行 cargo nextest"),
+            summary: ToolSummaryKind::Static("cargo nextest"),
         },
         ToolSpec {
             name: "cargo_fmt_check",
@@ -77,7 +77,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_fmt_check,
             runner: runner_cargo_fmt_check,
-            summary: ToolSummaryKind::Static("运行 cargo fmt --check"),
+            summary: ToolSummaryKind::Static("cargo fmt --check"),
         },
         ToolSpec {
             name: "cargo_outdated",
@@ -85,7 +85,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_outdated,
             runner: runner_cargo_outdated,
-            summary: ToolSummaryKind::Static("运行 cargo outdated"),
+            summary: ToolSummaryKind::Static("cargo outdated"),
         },
         ToolSpec {
             name: "cargo_machete",
@@ -93,7 +93,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_machete,
             runner: runner_cargo_machete,
-            summary: ToolSummaryKind::Static("运行 cargo machete"),
+            summary: ToolSummaryKind::Static("cargo machete"),
         },
         ToolSpec {
             name: "cargo_udeps",
@@ -101,7 +101,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_udeps,
             runner: runner_cargo_udeps,
-            summary: ToolSummaryKind::Static("运行 cargo udeps"),
+            summary: ToolSummaryKind::Static("cargo udeps"),
         },
         ToolSpec {
             name: "cargo_publish_dry_run",
@@ -117,7 +117,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_compiler_json,
             runner: runner_rust_compiler_json,
-            summary: ToolSummaryKind::Static("cargo check JSON 诊断"),
+            summary: ToolSummaryKind::Static("cargo check JSON diagnostics"),
         },
         ToolSpec {
             name: "rust_analyzer_goto_definition",
@@ -157,7 +157,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_fix,
             runner: runner_cargo_fix,
-            summary: ToolSummaryKind::Static("运行 cargo fix（受控写入）"),
+            summary: ToolSummaryKind::Static("cargo fix (controlled write)"),
         },
         ToolSpec {
             name: "rust_test_one",
@@ -165,6 +165,6 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_test_one,
             runner: runner_rust_test_one,
-            summary: ToolSummaryKind::Static("运行单个 Rust 测试"),
+            summary: ToolSummaryKind::Static("single Rust test"),
         },
 ]

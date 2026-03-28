@@ -13,7 +13,7 @@
 - **可选 MCP（stdio）**：配置 `mcp_enabled` + `mcp_command` 后合并远端工具为 `mcp__{slug}__{tool}`；`mcp_command` 等效允许启动子进程，须可信配置。
 - **Web UI**：聊天、工作区浏览/编辑、任务清单（进程内 `/tasks`，重启清空）、状态栏；Agent 改文件后列表自动刷新。
 - **项目画像**：侧栏只读摘要（`Cargo.toml` / `package.json`、目录与 tokei 等）；可与工作区备忘合并注入新会话首轮（`project_profile_inject_*`）。
-- **流式与审批**：Web SSE；`run_command` / `http_fetch` 等可走 `POST /chat/approval`。CLI 下 `run_command` 非白名单用终端确认（或 `--yes` / `--approve-commands`）；**`http_fetch` 等在 CLI 无交互审批**，须匹配配置前缀。**Web 与 CLI 对照表**见 [`docs/CLI.md`](docs/CLI.md)「CLI 与 Web 能力对照」。
+- **流式与审批**：Web SSE；`run_command` / `http_fetch` 等可走 `POST /chat/approval`。CLI（repl/chat）下非白名单 **`run_command`** 与未匹配前缀的 **`http_fetch`** 走终端审批（TTY 为 **dialoguer** 菜单，管道/无头读一行 **`y`/`a`/`n`**；或 **`--yes`** / **`--approve-commands`**，后者仅命令名）。**Web 与 CLI 对照表**见 [`docs/CLI.md`](docs/CLI.md)「CLI 与 Web 能力对照」。
 - **会话与导出**：Web 可选 `conversation_id` + **`conversation_store_sqlite_path`** 持久化（TTL/条数上限见配置），并可在 UI **导出 JSON/MD**。CLI REPL 可选 **`.crabmate/tui_session.json`**（`tui_load_session_on_start`），**无**与 Web 同形的一键导出子命令。备忘 **`agent_memory_file`**、**长期记忆**见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。会话/审批/导出差异仍以 **`docs/CLI.md`** 对照节为准。
 
 ## 文档索引
@@ -49,7 +49,7 @@ cargo run              # 默认进入 repl
 cargo run -- serve     # Web，默认 8080
 ```
 
-**REPL**：默认 `cargo run` 进入交互模式；启动时打印**分节摘要**（模型与鉴权、`api_base`、流式开关、工作区/工具、内建命令列表、要点配置如 `max_tokens` / 分阶段规划等）。行首 **`$`** 为**本机 shell 一行**（`sh -c` / `cmd /C`），**不等同**于模型的 `run_command` 白名单，仅适合可信环境——详见 [`docs/CLI.md`](docs/CLI.md)「行首 `$`」。可选设置 **`AGENT_CLI_WAIT_SPINNER=1`**：在等待模型首包流式输出期间于 **stderr** 显示 spinner 与耗时（须 TTY、未设 **`NO_COLOR`**），详见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。内建命令的成功/错误反馈行首为 **✓**/**✗**；**NO_COLOR** 或非 TTY 下为 **`[ok]`/`[err]`**（纯 ASCII，避免缺字终端乱码）。
+**REPL**：默认 `cargo run` 进入交互模式；启动时打印**分节摘要**（模型与鉴权、`api_base`、流式开关、工作区/工具、内建命令列表、要点配置如 `max_tokens` / 分阶段规划等）。交互 TTY 下 **空行按 `$`（或 `$` + Enter）** 进入 **`bash#:`** 本机 shell 一行（`sh -c` / `cmd /C`），**不等同**于模型的 `run_command` 白名单，仅适合可信环境；管道输入仍可用 **`$ <命令>`**；行编辑与历史见 [`docs/CLI.md`](docs/CLI.md)「行首 `$`」。可选设置 **`AGENT_CLI_WAIT_SPINNER=1`**：在等待模型首包流式输出期间于 **stderr** 显示 spinner 与耗时（须 TTY、未设 **`NO_COLOR`**），详见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。内建命令的成功/错误反馈行首为 **✓**/**✗**；**NO_COLOR** 或非 TTY 下为 **`[ok]`/`[err]`**（纯 ASCII，避免缺字终端乱码）。
 
 前端：`cd frontend && npm install && npm run build` 后再 `serve`（静态资源来自 `frontend/dist`）。
 

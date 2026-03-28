@@ -79,6 +79,8 @@ async fn emit_tool_result_sse_and_append(
     if echo_terminal_transcript {
         let _ = crate::runtime::terminal_cli_transcript::print_tool_result_terminal(
             name,
+            args,
+            tool_summary.as_deref(),
             &result,
             terminal_tool_display_max_chars,
         );
@@ -119,7 +121,7 @@ async fn emit_tool_result_sse_and_append(
         let parsed = parse_legacy_output(name, &result);
         let summary_str = tool_summary
             .clone()
-            .unwrap_or_else(|| format!("工具：{name}"));
+            .unwrap_or_else(|| format!("tool: {name}"));
         tool_result::encode_tool_message_envelope_v1(name, summary_str, &parsed, &result)
     } else {
         result
@@ -149,7 +151,7 @@ async fn emit_tool_call_summary_sse(out: Option<&mpsc::Sender<String>>, name: &s
     } else {
         tools::summarize_tool_call(name, args)
     }
-    .unwrap_or_else(|| format!("工具：{name}"));
+    .unwrap_or_else(|| format!("tool: {name}"));
     let _ = crate::sse::send_string_logged(
         tx,
         encode_message(SsePayload::ToolCall {

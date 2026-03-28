@@ -283,27 +283,6 @@ impl CliToolRuntime {
     }
 }
 
-fn parse_cli_command_approval_line(line: &str) -> CommandApprovalDecision {
-    let t = line.trim().to_ascii_lowercase();
-    match t.as_str() {
-        "" | "n" | "no" | "deny" | "d" | "q" => CommandApprovalDecision::Deny,
-        "a" | "always" | "all" => CommandApprovalDecision::AllowAlways,
-        _ => CommandApprovalDecision::AllowOnce,
-    }
-}
-
-/// 从 stdin 读一行并解析（`spawn_blocking` 避免阻塞 worker）。
-async fn read_cli_command_approval_line() -> CommandApprovalDecision {
-    tokio::task::spawn_blocking(|| {
-        use std::io;
-        let mut line = String::new();
-        let _ = io::stdin().read_line(&mut line);
-        parse_cli_command_approval_line(&line)
-    })
-    .await
-    .unwrap_or(CommandApprovalDecision::Deny)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum HandlerId {
     Workflow,
@@ -461,13 +440,14 @@ pub async fn dispatch_tool(
         HandlerId::WebSearch => {
             execute_web_search_web(cfg, effective_working_dir, name, args).await
         }
-        HandlerId::HttpFetch => {
-            let ctx = match runtime {
-                ToolRuntime::Web { ctx, .. } => ctx,
-                ToolRuntime::Cli { .. } => None,
-            };
-            execute_http_fetch_web(cfg, ctx, name, args).await
-        }
+        HandlerId::HttpFetch => match runtime {
+            ToolRuntime::Web { ctx, .. } => {
+                execute_http_fetch_impl(cfg, ctx, None, name, args).await
+            }
+            ToolRuntime::Cli { ctx, .. } => {
+                execute_http_fetch_impl(cfg, None, Some(ctx), name, args).await
+            }
+        },
         HandlerId::HttpRequest => execute_http_request(cfg, name, args).await,
         HandlerId::SyncDefault => {
             if sync_default_runs_inline(name) {
@@ -679,11 +659,12 @@ async fn execute_run_command_impl(
             {
                 effective_allowed_arc = extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
             } else {
-                eprintln!(
-                    "\n[run_command 审批] 命令不在白名单: {}\n  输入 y 执行一次 | a 永久允许该命令名（本会话）| 其它或回车拒绝\n",
-                    cmd_show.trim()
-                );
-                let decision = read_cli_command_approval_line().await;
+                let detail = format!("命令不在白名单:\n{}", cmd_show.trim());
+                let decision = crate::runtime::cli_approval::prompt_tool_approval_cli(
+                    "run_command 审批",
+                    &detail,
+                )
+                .await;
                 match decision {
                     CommandApprovalDecision::Deny => {
                         ctx.record_run_command_denial();
@@ -741,9 +722,10 @@ async fn execute_run_command_impl(
     (s, None)
 }
 
-async fn execute_http_fetch_web(
+async fn execute_http_fetch_impl(
     cfg: &Arc<AgentConfig>,
     web_ctx: Option<&WebToolRuntime>,
+    cli_ctx: Option<&CliToolRuntime>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
@@ -755,10 +737,10 @@ async fn execute_http_fetch_web(
     let approval_args = tools::http_fetch::approval_args_display(method, &url);
     let allowed_by_cfg =
         tools::http_fetch::url_matches_allowed_prefixes(&url, &cfg.http_fetch_allowed_prefixes);
-    let allowed_by_list = if let Some(ctx) = web_ctx {
-        ctx.persistent_allowlist_shared.lock().await.contains(&key)
-    } else {
-        false
+    let allowed_by_list = match (web_ctx, cli_ctx) {
+        (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(&key),
+        (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(&key),
+        (None, None) => false,
     };
     if !(allowed_by_cfg || allowed_by_list) {
         if let Some(ctx) = web_ctx {
@@ -806,9 +788,35 @@ async fn execute_http_fetch_web(
                         .insert(key.clone());
                 }
             }
+        } else if let Some(cli_ctx) = cli_ctx {
+            // `--yes`：与 `run_command` 对齐，非白名单 URL 亦直接放行（仅可信环境）
+            if !cli_ctx.auto_approve_all_non_whitelist_run_command {
+                let detail = format!(
+                    "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
+                    approval_args
+                );
+                let decision = crate::runtime::cli_approval::prompt_tool_approval_cli(
+                    "http_fetch 审批",
+                    &detail,
+                )
+                .await;
+                match decision {
+                    CommandApprovalDecision::Deny => {
+                        return (format!("用户拒绝 http_fetch：{}", approval_args), None);
+                    }
+                    CommandApprovalDecision::AllowOnce => {}
+                    CommandApprovalDecision::AllowAlways => {
+                        cli_ctx
+                            .persistent_allowlist_shared
+                            .lock()
+                            .await
+                            .insert(key.clone());
+                    }
+                }
+            }
         } else {
             return (
-                "错误：Web 模式下 http_fetch 仅允许匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。若需人工审批，请升级前端并在 /chat/stream 传 approval_session_id。"
+                "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
                     .to_string(),
                 None,
             );
@@ -1023,34 +1031,6 @@ mod tests {
     fn parallel_sync_batch_two_readonly_sync_tools() {
         let batch = vec![tc("read_file"), tc("list_dir")];
         assert!(tool_calls_allow_parallel_sync_batch(&batch));
-    }
-
-    #[test]
-    fn cli_approval_line_parsing() {
-        assert_eq!(
-            parse_cli_command_approval_line(""),
-            CommandApprovalDecision::Deny
-        );
-        assert_eq!(
-            parse_cli_command_approval_line("n"),
-            CommandApprovalDecision::Deny
-        );
-        assert_eq!(
-            parse_cli_command_approval_line("y"),
-            CommandApprovalDecision::AllowOnce
-        );
-        assert_eq!(
-            parse_cli_command_approval_line("YES "),
-            CommandApprovalDecision::AllowOnce
-        );
-        assert_eq!(
-            parse_cli_command_approval_line("a"),
-            CommandApprovalDecision::AllowAlways
-        );
-        assert_eq!(
-            parse_cli_command_approval_line("always"),
-            CommandApprovalDecision::AllowAlways
-        );
     }
 
     #[test]

@@ -3,6 +3,7 @@
 pub mod benchmark;
 pub mod chat_export;
 pub mod cli;
+pub(crate) mod cli_approval;
 pub mod cli_doctor;
 pub mod cli_exit;
 pub(crate) mod cli_repl_ui;
@@ -10,6 +11,7 @@ pub(crate) mod cli_wait_spinner;
 pub mod latex_unicode;
 pub(crate) mod message_display;
 pub(crate) mod plan_section;
+pub(crate) mod repl_reedline;
 pub(crate) mod terminal_cli_transcript;
 pub(crate) mod terminal_labels;
 pub mod workspace_session;

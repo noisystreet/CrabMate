@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn parse_tool_result_failure_with_fields() {
-        let line = r#"{"v":1,"tool_result":{"name":"run_command","summary":"执行命令 git status","output":"退出码：1","ok":false,"exit_code":1,"error_code":"command_failed","stderr":"permission denied"}}"#;
+        let line = r#"{"v":1,"tool_result":{"name":"run_command","summary":"git status","output":"退出码：1","ok":false,"exit_code":1,"error_code":"command_failed","stderr":"permission denied"}}"#;
         match classify_agent_sse_line(line) {
             AgentLineKind::ToolResult {
                 name,
@@ -287,7 +287,7 @@ mod tests {
                 error_code,
             } => {
                 assert_eq!(name.as_deref(), Some("run_command"));
-                assert_eq!(summary.as_deref(), Some("执行命令 git status"));
+                assert_eq!(summary.as_deref(), Some("git status"));
                 assert_eq!(ok, Some(false));
                 assert_eq!(exit_code, Some(1));
                 assert_eq!(error_code.as_deref(), Some("command_failed"));
@@ -298,11 +298,11 @@ mod tests {
 
     #[test]
     fn parse_tool_call_summary() {
-        let line = r#"{"v":1,"tool_call":{"name":"run_command","summary":"执行命令 git status"}}"#;
+        let line = r#"{"v":1,"tool_call":{"name":"run_command","summary":"git status"}}"#;
         match classify_agent_sse_line(line) {
             AgentLineKind::ToolCall { name, summary } => {
                 assert_eq!(name.as_deref(), Some("run_command"));
-                assert_eq!(summary.as_deref(), Some("执行命令 git status"));
+                assert_eq!(summary.as_deref(), Some("git status"));
             }
             other => panic!("unexpected kind: {:?}", other),
         }

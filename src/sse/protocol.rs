@@ -261,7 +261,7 @@ mod tests {
         let s = encode_message(SsePayload::ToolResult {
             tool_result: ToolResultBody {
                 name: "run_command".into(),
-                summary: Some("执行命令 ls".into()),
+                summary: Some("ls".into()),
                 output: "退出码：1".into(),
                 ok: Some(false),
                 exit_code: Some(1),
@@ -274,7 +274,7 @@ mod tests {
         match m.payload {
             SsePayload::ToolResult { tool_result } => {
                 assert_eq!(tool_result.name, "run_command");
-                assert_eq!(tool_result.summary.as_deref(), Some("执行命令 ls"));
+                assert_eq!(tool_result.summary.as_deref(), Some("ls"));
                 assert_eq!(tool_result.ok, Some(false));
                 assert_eq!(tool_result.exit_code, Some(1));
                 assert_eq!(tool_result.error_code.as_deref(), Some("command_failed"));

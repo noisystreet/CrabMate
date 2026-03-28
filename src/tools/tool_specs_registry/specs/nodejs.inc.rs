@@ -5,7 +5,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_npm_install,
             runner: runner_npm_install,
-            summary: ToolSummaryKind::Static("运行 npm install"),
+            summary: ToolSummaryKind::Static("npm install"),
         },
         ToolSpec {
             name: "npm_run",
@@ -29,7 +29,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_tsc_check,
             runner: runner_tsc_check,
-            summary: ToolSummaryKind::Static("运行 tsc --noEmit"),
+            summary: ToolSummaryKind::Static("tsc --noEmit"),
         },
         // ── Go 补充：golangci-lint ────────────────────────────
 ]

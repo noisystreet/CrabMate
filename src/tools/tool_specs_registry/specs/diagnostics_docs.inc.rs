@@ -5,7 +5,7 @@
             category: ToolCategory::Development,
             parameters: tool_params::params_diagnostic_summary,
             runner: runner_diagnostic_summary,
-            summary: ToolSummaryKind::Static("环境/工具链诊断摘要（脱敏）"),
+            summary: ToolSummaryKind::Static("Environment/toolchain diagnostic summary (redacted)"),
         },
         ToolSpec {
             name: "error_output_playbook",
@@ -21,7 +21,7 @@
             category: ToolCategory::Development,
             parameters: tool_params::params_changelog_draft,
             runner: runner_changelog_draft,
-            summary: ToolSummaryKind::Static("生成变更日志 Markdown 草稿"),
+            summary: ToolSummaryKind::Static("Generate changelog Markdown draft"),
         },
         ToolSpec {
             name: "license_notice",
@@ -29,6 +29,6 @@
             category: ToolCategory::Development,
             parameters: tool_params::params_license_notice,
             runner: runner_license_notice,
-            summary: ToolSummaryKind::Static("依赖许可证摘要表（cargo metadata）"),
+            summary: ToolSummaryKind::Static("Dependency license summary (cargo metadata)"),
         },
 ]

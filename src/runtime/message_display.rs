@@ -652,7 +652,7 @@ mod tests {
         ];
         let raw = messages[2].content.as_deref().unwrap();
         let out = tool_content_for_display_for_message(raw, &messages, 2);
-        assert_eq!(out, "执行命令：ls");
+        assert_eq!(out, "ls");
         assert!(!out.contains(TOOL_OUTPUT_SECTION_HEADLINE));
     }
 
