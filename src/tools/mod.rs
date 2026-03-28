@@ -38,6 +38,7 @@ mod regex_test;
 mod release_docs;
 mod rust_ide;
 mod schedule;
+mod schema_check;
 mod security_tools;
 mod source_analysis_tools;
 mod spell_astgrep_tools;
@@ -859,6 +860,13 @@ fn cached_params(spec: &ToolSpec) -> serde_json::Value {
         .cloned()
         .unwrap_or_else(|| (spec.parameters)())
 }
+
+/// 内置工具 `name` 的 parameters JSON Schema（供工作流等静态校验复用）。
+pub(crate) fn cached_params_for_tool_name(name: &str) -> Option<serde_json::Value> {
+    find_spec(name).map(cached_params)
+}
+
+pub(crate) use schema_check::workflow_tool_args_satisfy_required;
 
 /// 执行本地工具并返回结果字符串。
 /// `ToolContext` 聚合 `run_command`、`get_weather`、`web_search` 等工具所需的配置项。

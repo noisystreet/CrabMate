@@ -1,5 +1,7 @@
 //! 从 `workflow_execute` 参数 JSON 解析 `WorkflowSpec`。
 
+use crate::tools::workflow_tool_args_satisfy_required;
+
 use super::dag::topo_layers;
 use super::model::{WorkflowNodeSpec, WorkflowSpec};
 
@@ -122,6 +124,9 @@ pub(crate) fn parse_node_from_value(
         .and_then(|x| x.as_u64())
         .unwrap_or(0)
         .min(5) as u32;
+
+    workflow_tool_args_satisfy_required(&tool_name, &tool_args)
+        .map_err(|e| format!("node {id} 工具参数校验失败（tool_name={tool_name}）：{e}"))?;
 
     Ok(WorkflowNodeSpec {
         id,

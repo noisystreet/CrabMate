@@ -203,7 +203,13 @@ impl PerCoordinator {
                 Some(n) if n > 0 && apply_layer_semantics => plan.steps.len() >= n,
                 _ => true,
             };
-            if layers_ok {
+            let workflow_ids_ok = match last_workflow_tool_node_ids(messages) {
+                Some(ids) => {
+                    plan_artifact::validate_plan_workflow_node_ids_subset(&plan, &ids).is_ok()
+                }
+                None => true,
+            };
+            if layers_ok && workflow_ids_ok {
                 log::info!(
                     target: "crabmate::per",
                     "after_final_assistant outcome=stop_plan_ok plan_steps={} layer_need={:?}",
@@ -214,9 +220,10 @@ impl PerCoordinator {
             }
             log::info!(
                 target: "crabmate::per",
-                "after_final_assistant outcome=plan_schema_ok_semantics_fail plan_steps={} layer_need={:?}",
+                "after_final_assistant outcome=plan_schema_ok_semantics_fail plan_steps={} layer_need={:?} workflow_node_ids_ok={}",
                 plan.steps.len(),
-                layer_need
+                layer_need,
+                workflow_ids_ok
             );
         }
 
@@ -229,12 +236,25 @@ impl PerCoordinator {
             return AfterFinalAssistant::StopTurnPlanRewriteExhausted;
         }
         self.plan_rewrite_attempts += 1;
-        let rewrite_text = match layer_need.filter(|&n| n > 0 && apply_layer_semantics) {
-            Some(n) => format!(
+        let rewrite_text = match (
+            layer_need.filter(|&n| n > 0 && apply_layer_semantics),
+            last_workflow_tool_node_ids(messages),
+        ) {
+            (Some(n), Some(ids)) if !ids.is_empty() => format!(
+                "{}\n\n补充：\n- 最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。\n- 若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与 `nodes[].id` 对齐）：{}。",
+                plan_rewrite_user_text(),
+                ids.join(", ")
+            ),
+            (Some(n), _) => format!(
                 "{}\n\n补充：最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。",
                 plan_rewrite_user_text()
             ),
-            None => plan_rewrite_user_text(),
+            (None, Some(ids)) if !ids.is_empty() => format!(
+                "{}\n\n补充：若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与最近一次 `workflow_execute` 工具结果中 `nodes[].id` 对齐）：{}。",
+                plan_rewrite_user_text(),
+                ids.join(", ")
+            ),
+            (None, _) => plan_rewrite_user_text(),
         };
         log::info!(
             target: "crabmate::per",
@@ -358,6 +378,49 @@ impl PerCoordinator {
             self.layer_count_cache_at_message_len,
         )
     }
+}
+
+/// 从对话历史中取**最近一次** `workflow_execute` 工具结果中的 `nodes[].id`（`workflow_validate_result` / `workflow_execute_result`）。
+fn last_workflow_tool_node_ids(messages: &[Message]) -> Option<Vec<String>> {
+    for i in (0..messages.len()).rev() {
+        let m = &messages[i];
+        if m.role != "tool" {
+            continue;
+        }
+        let tid = m.tool_call_id.as_deref()?;
+        let aidx = assistant_index_for_tool_call(messages, i, tid)?;
+        let assistant = &messages[aidx];
+        let name = assistant
+            .tool_calls
+            .as_ref()?
+            .iter()
+            .find(|c| c.id == tid)
+            .map(|c| c.function.name.as_str())?;
+        if name != "workflow_execute" {
+            continue;
+        }
+        let body = m.content.as_deref()?;
+        let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
+        let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
+        let rt = v.get("report_type").and_then(|x| x.as_str());
+        if !matches!(
+            rt,
+            Some("workflow_validate_result") | Some("workflow_execute_result")
+        ) {
+            continue;
+        }
+        let nodes = v.get("nodes").and_then(|x| x.as_array())?;
+        let mut ids = Vec::new();
+        for n in nodes {
+            let id = n.get("id").and_then(|x| x.as_str())?;
+            ids.push(id.to_string());
+        }
+        if ids.is_empty() {
+            continue;
+        }
+        return Some(ids);
+    }
+    None
 }
 
 /// 从对话历史中取**最近一次** `workflow_execute` 的 `workflow_validate_only` 工具结果里的 `spec.layer_count`。
@@ -547,6 +610,75 @@ mod tests {
         };
         assert!(matches!(
             c.after_final_assistant(&three_steps, &hist),
+            AfterFinalAssistant::StopTurn
+        ));
+    }
+
+    #[test]
+    fn plan_workflow_node_id_must_match_last_workflow_nodes() {
+        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::WorkflowReflection, 3);
+        let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
+        let _ = c.prepare_workflow_execute(wf_args);
+        let hist = vec![
+            Message {
+                role: "assistant".to_string(),
+                content: None,
+                reasoning_content: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "tc1".to_string(),
+                    typ: "function".to_string(),
+                    function: FunctionCall {
+                        name: "workflow_execute".to_string(),
+                        arguments: "{}".to_string(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "tool".to_string(),
+                content: Some(
+                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":1},"nodes":[{"id":"fmt"},{"id":"test"}]}"#
+                        .to_string(),
+                ),
+                reasoning_content: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc1".to_string()),
+            },
+        ];
+        let bad_link = Message {
+            role: "assistant".to_string(),
+            content: Some(
+                r#"```json
+{"type":"agent_reply_plan","version":1,"steps":[{"id":"step1","description":"run fmt","workflow_node_id":"no-such-node"}]}
+```"#
+                    .to_string(),
+            ),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&bad_link, &hist),
+            AfterFinalAssistant::RequestPlanRewrite(_)
+        ));
+        let ok_link = Message {
+            role: "assistant".to_string(),
+            content: Some(
+                r#"```json
+{"type":"agent_reply_plan","version":1,"steps":[{"id":"step1","description":"run fmt","workflow_node_id":"fmt"}]}
+```"#
+                    .to_string(),
+            ),
+            reasoning_content: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&ok_link, &hist),
             AfterFinalAssistant::StopTurn
         ));
     }
