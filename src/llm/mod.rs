@@ -39,9 +39,7 @@ pub fn tool_chat_request(
 ) -> ChatRequest {
     ChatRequest {
         model: cfg.model.clone(),
-        messages: crate::types::normalize_messages_for_openai_compatible_request(
-            crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(messages),
-        ),
+        messages: crate::agent::message_pipeline::conversation_messages_to_vendor_body(messages),
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
         max_tokens: cfg.max_tokens,
@@ -82,7 +80,9 @@ pub fn no_tools_chat_request_from_messages(
         .collect();
     ChatRequest {
         model: cfg.model.clone(),
-        messages: crate::types::normalize_messages_for_openai_compatible_request(messages),
+        messages: crate::agent::message_pipeline::normalize_stripped_messages_for_vendor_body(
+            messages,
+        ),
         tools: Some(vec![]),
         tool_choice: Some("none".to_string()),
         max_tokens: cfg.max_tokens,

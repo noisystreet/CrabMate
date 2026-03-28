@@ -2,6 +2,8 @@
 
 pub mod agent_turn;
 pub mod context_window;
+/// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
+pub mod message_pipeline;
 pub mod per_coord;
 pub mod plan_artifact;
 pub mod workflow;
