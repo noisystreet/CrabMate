@@ -79,13 +79,13 @@ impl LongTermMemoryScopeMode {
     }
 }
 
-/// 长期记忆向量检索后端（分阶段实现：`disabled` 先占位，非 `disabled` 在对应阶段落地前会在 `finalize` 报错）。
+/// 长期记忆向量检索后端（`qdrant` / `pgvector` 在 `finalize` 仍会报错直至接入外部服务）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LongTermMemoryVectorBackend {
-    /// 不使用向量索引（显式记忆 / 后续纯文本检索路径）。
-    #[default]
+    /// 不使用向量索引（按时间取最近片段；检索侧与 `fastembed` 失败时的降级路径一致）。
     Disabled,
-    /// 本地 CPU 嵌入（如 fastembed-rs），见路线图阶段 B。
+    /// 本地 CPU 嵌入（fastembed-rs / ONNX）；**配置缺省向量后端时**与长期记忆默认启用一致。
+    #[default]
     Fastembed,
     Qdrant,
     Pgvector,
@@ -277,6 +277,14 @@ mod long_term_memory_parse_tests {
             LongTermMemoryScopeMode::Conversation
         );
         assert!(LongTermMemoryScopeMode::parse("tenant").is_err());
+    }
+
+    #[test]
+    fn vector_backend_default_is_fastembed() {
+        assert_eq!(
+            LongTermMemoryVectorBackend::default(),
+            LongTermMemoryVectorBackend::Fastembed
+        );
     }
 
     #[test]

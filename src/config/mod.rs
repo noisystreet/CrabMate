@@ -1005,7 +1005,7 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
     let max_chars_raw = b.tool_call_explain_max_chars.unwrap_or(400).clamp(1, 4000) as usize;
     let tool_call_explain_max_chars = max_chars_raw.max(tool_call_explain_min_chars);
 
-    let long_term_memory_enabled = b.long_term_memory_enabled.unwrap_or(false);
+    let long_term_memory_enabled = b.long_term_memory_enabled.unwrap_or(true);
     let long_term_memory_scope_mode = match b.long_term_memory_scope_mode_str.as_deref() {
         Some(s) => LongTermMemoryScopeMode::parse(s)?,
         None => LongTermMemoryScopeMode::default(),

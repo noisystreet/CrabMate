@@ -77,7 +77,7 @@ pub(super) struct AgentSection {
     pub(super) tool_call_explain_max_chars: Option<u64>,
     /// `conversation`（当前唯一值）
     pub(super) long_term_memory_scope_mode: Option<String>,
-    /// `disabled` | `fastembed` | `qdrant` | `pgvector`（非 disabled 须在对应里程碑实现后方可启用）
+    /// `disabled` | `fastembed`（缺省与长期记忆默认一致）| `qdrant` | `pgvector`（后两者未接入时 `finalize` 报错）
     pub(super) long_term_memory_vector_backend: Option<String>,
     pub(super) long_term_memory_enabled: Option<bool>,
     pub(super) long_term_memory_max_entries: Option<u64>,
