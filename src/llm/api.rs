@@ -291,9 +291,8 @@ pub async fn stream_chat(
         !no_stream
     );
     // 与 `tool_chat_request` 重复一次：防止将来绕过构造器直接改 `ChatRequest.messages`，并兜底漏网相邻 assistant。
-    req.messages = crate::types::normalize_messages_for_openai_compatible_request(std::mem::take(
-        &mut req.messages,
-    ));
+    let taken = std::mem::take(&mut req.messages);
+    req.messages = crate::agent::message_pipeline::conversation_messages_to_vendor_body(&taken);
     if should_log_chat_request_json_preview() {
         let as_debug = log::log_enabled!(log::Level::Debug);
         match serde_json::to_string(&*req) {
