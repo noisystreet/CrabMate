@@ -89,6 +89,17 @@ model = "deepseek-reasoner"
 
 **规划步骤优化轮（`staged_plan_optimizer_round`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_OPTIMIZER_ROUND`）**：在首轮 `agent_reply_plan` v1 解析成功且 `steps` 不少于 2 时，再追加一轮无工具请求，请模型合并**无数据依赖**的只读探查步，并提示在同一执行步内对「可同轮并行批处理」的内建工具（与执行层 `parallel_readonly_tools` 判定一致，不限于 `read_file`）发起多次调用。解析失败或用户取消优化轮时沿用首轮规划；成功则追加优化轮 assistant 并采用新 `steps`（多一次 API）。
 
+## SyncDefault 工具 Docker 沙盒（`sync_default_tool_sandbox_mode`）
+
+- **`none`（默认）**：与历史一致，在 Agent 进程内 `spawn_blocking` 执行 `HandlerId::SyncDefault` 工具。
+- **`docker`**：每个 SyncDefault 工具调用执行一次 `docker run --rm -i`；挂载当前工作区到容器内 `/workspace`（读写），只读挂载宿主 `crabmate` 到 `/crabmate`，在容器内运行 `crabmate tool-runner-internal`。默认 **`--network none`**；若设置非空的 **`sync_default_tool_sandbox_docker_network`**（如 `bridge`），则使用该网络以便 `web_search` / `http_fetch` 等联网工具在容器内可用。
+- **`sync_default_tool_sandbox_docker_image`**：`docker` 模式**必填**（`finalize` 时非空校验）；镜像内需包含工具依赖（`git`、`rg`、`cargo` 等按实际启用工具准备），且**与宿主 `crabmate` 二进制同 CPU 架构**（或改为在镜像内安装 crabmate 而非挂载宿主二进制）。
+- **`sync_default_tool_sandbox_docker_timeout_secs`**：单次 `docker run` 等待上限（秒，默认 600），超时后尝试 `docker kill` 容器名。
+- **密钥**：临时 JSON 会写入宿主 `TMPDIR`（Unix 尝试 `0600`），含 `web_search_api_key` 等；仅在可信主机上使用。
+- **不进入沙盒**：`run_command`、`workflow_execute`、`http_fetch`（独立 handler）、MCP 等仍按原路径在宿主执行。
+
+环境变量：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`。
+
 ## 系统提示词
 
 - **默认**：嵌入的 **`default_config.toml`** 使用 **`system_prompt_file = "prompts/default_system_prompt.md"`**，运行时读盘，**修改该 Markdown 无需重新编译**。

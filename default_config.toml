@@ -285,6 +285,11 @@ staged_plan_execution = true
 staged_plan_cli_show_planner_stream = false
 # 首轮 agent_reply_plan 解析成功后，再跑一轮无工具「步骤优化」（合并无依赖只读探查步等）；false 省一次 API。AGENT_STAGED_PLAN_OPTIMIZER_ROUND
 staged_plan_optimizer_round = true
+# SyncDefault 工具沙盒：none（默认，宿主进程内执行）| docker（每工具 docker run，需镜像与 docker CLI）
+# sync_default_tool_sandbox_mode = "none"
+# sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:latest"
+# sync_default_tool_sandbox_docker_network = ""   # 空=--network none；否则如 bridge
+# sync_default_tool_sandbox_docker_timeout_secs = 600
 # Cursor-like 规则注入：启用后自动读取 cursor_rules_dir 下的 *.mdc，并附加到 system_prompt 后
 cursor_rules_enabled = false
 # 规则目录（相对路径相对进程当前目录）
