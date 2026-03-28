@@ -647,18 +647,18 @@ pub(crate) async fn chat_handler(
     info!(target: "crabmate", "chat json 任务入队 job_id={}", job_id);
     state
         .chat_queue
-        .try_submit_json(
+        .try_submit_json(chat_job_queue::JsonSubmitParams {
             job_id,
-            state.clone(),
-            conversation_id.clone(),
-            turn_seed.messages,
-            turn_seed.expected_revision,
-            std::path::PathBuf::from(work_dir),
+            state: state.clone(),
+            conversation_id: conversation_id.clone(),
+            messages: turn_seed.messages,
+            expected_revision: turn_seed.expected_revision,
+            work_dir: std::path::PathBuf::from(work_dir),
             workspace_is_set,
             temperature_override,
             seed_override,
             reply_tx,
-        )
+        })
         .map_err(|e| {
             (
                 StatusCode::SERVICE_UNAVAILABLE,
