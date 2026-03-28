@@ -21,6 +21,13 @@ impl WebSearchProvider {
             )),
         }
     }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Brave => "brave",
+            Self::Tavily => "tavily",
+        }
+    }
 }
 
 /// 规划器与执行器的运行模式（阶段 1：同进程逻辑双 agent）。
@@ -61,6 +68,36 @@ pub enum StagedPlanFeedbackMode {
     FailFast,
     /// 将失败信号回灌 planner：追加 user 说明后发起无工具规划轮，产出补丁 `agent_reply_plan` 与未完成步后缀合并再继续。
     PatchPlanner,
+}
+
+/// `HandlerId::SyncDefault` 工具是否在隔离环境中执行（默认宿主进程内 `spawn_blocking`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SyncDefaultToolSandboxMode {
+    /// 与历史一致：在 Agent 进程内执行。
+    #[default]
+    None,
+    /// 每个工具调用 `docker run` 一次，挂载工作区与宿主 `crabmate` 二进制。
+    Docker,
+}
+
+impl SyncDefaultToolSandboxMode {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "none" | "off" | "false" | "0" => Ok(Self::None),
+            "docker" => Ok(Self::Docker),
+            _ => Err(format!(
+                "未知的 sync_default_tool_sandbox_mode: {:?}（支持 none、docker）",
+                s.trim()
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Docker => "docker",
+        }
+    }
 }
 
 impl StagedPlanFeedbackMode {
@@ -315,6 +352,14 @@ pub struct AgentConfig {
     pub staged_plan_cli_show_planner_stream: bool,
     /// 分阶段规划首轮 JSON 解析成功后，再跑一轮无工具「步骤优化」（合并无依赖只读探查步、提示单轮内可并行批处理工具）。为 false 时跳过，省一次 API。
     pub staged_plan_optimizer_round: bool,
+    /// `HandlerId::SyncDefault` 工具沙盒模式；`docker` 时依赖宿主 `docker` CLI 与镜像。
+    pub sync_default_tool_sandbox_mode: SyncDefaultToolSandboxMode,
+    /// `sync_default_tool_sandbox_mode = docker` 时使用的镜像（如 `crabmate-tools:dev`）。
+    pub sync_default_tool_sandbox_docker_image: String,
+    /// 为空则 `docker run --network none`；否则为网络名（如 `bridge`）以允许容器内联网。
+    pub sync_default_tool_sandbox_docker_network: String,
+    /// 单次 `docker run` 等待上限（秒），含镜像拉取与工具执行。
+    pub sync_default_tool_sandbox_docker_timeout_secs: u64,
     /// Web 会话持久化：非空则使用 SQLite（`conversation_id` 跨重启保留）；空则仅进程内内存。
     pub conversation_store_sqlite_path: String,
     /// 为 true 时：首轮在 `system` 与当前用户消息之间注入工作区内备忘文件（见 `agent_memory_file`）。

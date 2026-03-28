@@ -26,6 +26,7 @@ mod text_sanitize;
 mod tool_call_explain;
 mod tool_registry;
 mod tool_result;
+pub mod tool_sandbox;
 mod tools;
 mod types;
 mod web;
