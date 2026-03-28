@@ -6,6 +6,8 @@
 
 **长输出进模型上下文**（`tool_result_envelope_v1` 默认开启）：写入历史的 `role: tool` 为 **`crabmate_tool`** JSON 信封（`summary`、`output` 等）。每次请求模型前若超过 **`tool_message_max_chars`**，服务端对 **`output`** 做**首尾采样**并设置 **`output_truncated`**、**`output_original_chars`**、**`output_kept_head_chars`**、**`output_kept_tail_chars`**，避免单次 grep/构建日志撑满上下文；完整原文仍可通过 SSE/导出等在会话中查看（视 UI 设置）。详见 **`docs/DEVELOPMENT.md`** 与 **`docs/CONFIGURATION.md`**。
 
+**终答 `agent_reply_plan` v1**（在工作流反思等路径下由服务端校验）：`steps[].id` 须唯一且符合稳定字符规则（见 **`docs/DEVELOPMENT.md`**）；可选 **`workflow_node_id`** 用于与最近一次 **`workflow_execute`** 工具结果里的 **`nodes[].id`** 对齐（子集校验），便于规划与 DAG 节点一一对应。
+
 **可选 Docker 沙盒**（`sync_default_tool_sandbox_mode = docker`）：**SyncDefault** 与 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成审批/白名单后可在 **Docker 容器**内执行（经 **bollard** 调 Engine API）；**`workflow_execute`** 与 **MCP** 仍只在宿主。需配置镜像名且本机 **Docker 守护进程可访问**（通常与 `docker` CLI 共用 Unix 套接字）。详见 [`docs/CONFIGURATION.md`](CONFIGURATION.md)「SyncDefault 工具 Docker 沙盒」。
 
 ## 内置工具（模型可调用）
@@ -148,6 +150,7 @@
   ```
 - `workflow_execute`（DAG 工作流执行：并行/串行、审批、SLA、失败补偿）：
   - **节点 `max_retries`**（0～5，默认 0）：对 **`timeout`**、**`workflow_tool_join_error`**、**`workflow_semaphore_closed`** 等**可重试**失败自动退避重跑（1s/2s/4s… 上限 8s）；**业务失败**（如测试失败、命令非零退出）**不重试**，避免重复写盘或重复副作用。
+  - **静态校验**：每个节点的 **`tool_name`** 须为当前进程内置工具名；**`tool_args`** 须至少包含该工具 JSON Schema 中声明的 **`required`** 键（嵌套对象/数组内对象会递归检查；类型与 `additionalProperties` 等仍以运行时 `runner` 为准）。
   - **结果 JSON**（`workflow_execute_result` / `workflow_validate_result`）含 **`workflow_run_id`**（与日志 `workflow_run_id=` 对齐）、**`trace`**（`dag_start` / `node_attempt_*` / `node_retry_backoff` / `dag_end` 等事件，带时间戳与 `node_id`）、**`completion_order`**（成功节点完成顺序，供补偿逆序对照）；**`nodes[].attempt`** 为最终计入结果的尝试次数。
   ```json
   {"workflow":{

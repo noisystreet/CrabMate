@@ -69,7 +69,7 @@ model = "deepseek-reasoner"
 - **`never`**：关闭该校验。
 - **`always`**（实验性）：每次终答都校验，**调用次数与费用明显更高**；适合强合规或调试。
 
-若存在 `workflow_validate_only` 结果，服务端还会按 `spec.layer_count` 约束规划步骤条数。
+若存在 `workflow_validate_only` 结果，服务端还会按 `spec.layer_count` 约束规划步骤条数。若规划步骤填写了可选字段 `workflow_node_id`，其值须属于该次（或最近一次）`workflow_execute` 工具结果中 `nodes[].id`。
 
 ## 规划重写（`plan_rewrite_max_attempts`）
 
