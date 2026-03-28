@@ -73,6 +73,7 @@
 # staged_plan_feedback_mode = "fail_fast"   # fail_fast | patch_planner；AGENT_STAGED_PLAN_FEEDBACK_MODE
 # staged_plan_patch_max_attempts = 2        # patch_planner 下每步最多补丁规划轮次数；AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS
 # staged_plan_cli_show_planner_stream = true   # CLI 是否打印规划轮模型 stdout；false=仅队列/分步转录；AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM
+# staged_plan_optimizer_round = true   # 首轮规划后再跑无工具优化轮；false 关闭；AGENT_STAGED_PLAN_OPTIMIZER_ROUND
 # cursor_rules_enabled = false    # true：自动拼接 cursor_rules_dir/*.mdc 到 system_prompt
 # cursor_rules_dir = ".cursor/rules"
 # cursor_rules_include_agents_md = true

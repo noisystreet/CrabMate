@@ -1012,6 +1012,8 @@ struct StatusResponse {
     staged_plan_execution: bool,
     /// CLI 是否在分阶段/逻辑双 agent 的**无工具规划轮**向 stdout 打印模型原文（默认 true）。
     staged_plan_cli_show_planner_stream: bool,
+    /// 首轮规划后是否再跑无工具「步骤优化」轮（默认 true）。
+    staged_plan_optimizer_round: bool,
     /// CLI REPL 是否在启动时从 `.crabmate/tui_session.json` 恢复会话（默认 false；文件名历史兼容）。
     tui_load_session_on_start: bool,
     max_message_history: usize,
@@ -1091,6 +1093,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         planner_executor_mode: state.cfg.planner_executor_mode.as_str(),
         staged_plan_execution: state.cfg.staged_plan_execution,
         staged_plan_cli_show_planner_stream: state.cfg.staged_plan_cli_show_planner_stream,
+        staged_plan_optimizer_round: state.cfg.staged_plan_optimizer_round,
         tui_load_session_on_start: state.cfg.tui_load_session_on_start,
         max_message_history: state.cfg.max_message_history,
         tool_message_max_chars: state.cfg.tool_message_max_chars,

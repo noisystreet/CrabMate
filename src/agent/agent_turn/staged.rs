@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
+use crate::agent::plan_optimizer;
 use crate::config::StagedPlanFeedbackMode;
 use crate::llm::{complete_chat_retrying, no_tools_chat_request_from_messages};
 use crate::sse::{SseErrorBody, SsePayload, encode_message};
@@ -563,6 +564,87 @@ where
             );
         }
         return run_agent_outer_loop(p, per_coord).await;
+    }
+
+    let mut plan = plan;
+    if plan.steps.len() >= 2 && p.staged_plan_optimizer_round {
+        let csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(p.tools_defs);
+        let opt_body = plan_optimizer::staged_plan_optimizer_user_body(&plan, csv.as_str());
+        p.messages.push(make_step_user_message(opt_body));
+        let opt_req =
+            prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
+                .await?;
+        let (mut opt_msg, opt_finish) = complete_chat_retrying(
+            p.llm_backend,
+            p.client,
+            p.api_key,
+            p.cfg.as_ref(),
+            &opt_req,
+            p.out,
+            planner_render_to_terminal,
+            p.no_stream,
+            p.cancel,
+            p.plain_terminal_stream,
+        )
+        .await?;
+        if opt_finish == USER_CANCELLED_FINISH_REASON {
+            if let Some(last) = p.messages.last()
+                && last.role == "user"
+                && last
+                    .content
+                    .as_deref()
+                    .is_some_and(|c| c.contains("### 分阶段规划 · 步骤优化（服务端注入）"))
+            {
+                p.messages.pop();
+            }
+            return Ok(());
+        }
+        if let Some(tc) = opt_msg.tool_calls.as_ref().filter(|c| !c.is_empty()) {
+            debug!(
+                target: "crabmate",
+                "分阶段规划优化轮：丢弃 API 返回的 {} 条原生 tool_calls，改从正文解析",
+                tc.len()
+            );
+        }
+        opt_msg.tool_calls = None;
+        crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+            &mut opt_msg,
+            p.cfg.materialize_deepseek_dsml_tool_calls,
+        );
+        if opt_msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
+            warn!(
+                target: "crabmate",
+                "分阶段规划优化轮：正文物化出 tool_calls，已忽略，仅尝试从正文解析规划 JSON"
+            );
+            opt_msg.tool_calls = None;
+        }
+        let opt_content = opt_msg.content.as_deref().unwrap_or("");
+        if let Some(merged_steps) = plan_optimizer::try_parse_optimizer_reply(opt_content) {
+            if merged_steps.len() < plan.steps.len() {
+                debug!(
+                    target: "crabmate",
+                    "分阶段规划优化轮：步数 {} -> {}",
+                    plan.steps.len(),
+                    merged_steps.len()
+                );
+            }
+            push_assistant_merging_trailing_empty_placeholder(p.messages, opt_msg);
+            plan.steps = merged_steps;
+        } else {
+            warn!(
+                target: "crabmate",
+                "分阶段规划优化轮：未解析出合法 agent_reply_plan v1 或非空 steps，沿用首轮规划"
+            );
+            if let Some(last) = p.messages.last()
+                && last.role == "user"
+                && last
+                    .content
+                    .as_deref()
+                    .is_some_and(|c| c.contains("### 分阶段规划 · 步骤优化（服务端注入）"))
+            {
+                p.messages.pop();
+            }
+        }
     }
 
     let plan_id = next_staged_plan_id();
