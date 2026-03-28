@@ -3,11 +3,57 @@
 use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
+use crate::config::{AgentConfig, PlannerExecutorMode};
+
 use crossterm::{
     QueueableCommand, queue,
     style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+// --- 与横幅 / `/help` 节标题共用的 RGB（单一真源）；`terminal_labels` 输入提示与此对齐 ---
+const RGB_BANNER_TITLE: Color = Color::Rgb {
+    r: 78,
+    g: 201,
+    b: 214,
+};
+const RGB_HELP_TITLE: Color = Color::Rgb {
+    r: 250,
+    g: 195,
+    b: 92,
+};
+
+/// `/help` 节标题、分阶段 CLI 转录首行等**节级**前缀色（琥珀）；与 `bash#:` 提示同色。
+pub(crate) const CLI_REPL_HELP_TITLE_FG: Color = RGB_HELP_TITLE;
+/// `/help` 命令列与 **`### 工具 · …`** 等**强调前缀**色（青绿）。
+pub(crate) const CLI_REPL_HELP_CMD_FG: Color = Color::Rgb {
+    r: 130,
+    g: 214,
+    b: 165,
+};
+/// `/help` 说明列与 CLI 转录**次要正文**色（冷灰）。
+pub(crate) const CLI_REPL_HELP_DESC_FG: Color = Color::Rgb {
+    r: 118,
+    g: 124,
+    b: 138,
+};
+
+/// 与 REPL 横幅、`terminal_cli_transcript` 一致：**未**设 **`NO_COLOR`** 且 **stdout** 为 TTY 时写入 ANSI。
+pub(crate) fn cli_repl_stdout_use_color() -> bool {
+    std::env::var_os("NO_COLOR").is_none() && io::stdout().is_terminal()
+}
+
+/// **`NO_COLOR`** 未设置且 **stderr** 为 TTY 时写入 ANSI（与 [`CliReplStyle::eprint_error`] 等一致）。
+pub(crate) fn cli_repl_stderr_use_color() -> bool {
+    std::env::var_os("NO_COLOR").is_none() && io::stderr().is_terminal()
+}
+
+/// 「我:」「bash#:」与可编辑输入之间的分隔（单字宽 `▸`，两侧空格便于扫读）。
+pub(crate) const CLI_PROMPT_AFTER_COLON: &str = " ▸ ";
+/// 用户输入行提示前景色（同 [`CliReplStyle`] 横幅标题色）。
+pub(crate) const CLI_PROMPT_USER_FG: Color = RGB_BANNER_TITLE;
+/// `bash#:` 提示前景色（同 [`CLI_REPL_HELP_TITLE_FG`]）。
+pub(crate) const CLI_PROMPT_BASH_FG: Color = CLI_REPL_HELP_TITLE_FG;
 
 /// 左缘空白列数（`"  "`）。
 const HELP_LEFT: usize = 2;
@@ -31,6 +77,27 @@ fn spaces_to_display_width(target: usize) -> String {
     }
     s
 }
+
+/// 启动横幅里 `api_base` 等过长单行：按 Unicode 标量截断并加 `…`。
+fn ellipsize_terminal_line(s: &str, max_chars: usize) -> String {
+    let max_chars = max_chars.max(12);
+    let n = s.chars().count();
+    if n <= max_chars {
+        return s.to_string();
+    }
+    let keep = max_chars.saturating_sub(1);
+    format!("{}…", s.chars().take(keep).collect::<String>())
+}
+
+/// REPL 顶栏 FIGlet 风格 **CrabMate**（固定 6 行 ASCII；`r"..."` 保留 `\`）。
+const BANNER_CRABMATE_ART: &[&str] = &[
+    r"  ______ .______          ___      .______   .___  ___.      ___   .___________. _______ ",
+    r" /      ||   _  \        /   \     |   _  \  |   \/   |     /   \  |           ||   ____|",
+    r"|  ,----'|  |_)  |      /  ^  \    |  |_)  | |  \  /  |    /  ^  \ `---|  |----`|  |__   ",
+    r"|  |     |      /      /  /_\  \   |   _  <  |  |\/|  |   /  /_\  \    |  |     |   __|  ",
+    r"|  `----.|  |\  \----./  _____  \  |  |_)  | |  |  |  |  /  _____  \   |  |     |  |____ ",
+    r" \______|| _| `._____/__/     \__\ |______/  |__|  |__| /__/     \__\  |__|     |_______|",
+];
 
 /// 无空格且超过 `max_w` 显示宽度的片段，按字符边界硬拆行。
 fn break_long_word(word: &str, max_w: usize) -> Vec<String> {
@@ -123,16 +190,7 @@ impl CliReplStyle {
         g: 108,
         b: 118,
     };
-    const C_BANNER_FRAME: Color = Color::Rgb {
-        r: 72,
-        g: 82,
-        b: 96,
-    };
-    const C_BANNER_TITLE: Color = Color::Rgb {
-        r: 78,
-        g: 201,
-        b: 214,
-    };
+    const C_BANNER_TITLE: Color = RGB_BANNER_TITLE;
     const C_SUCCESS: Color = Color::Rgb {
         r: 102,
         g: 217,
@@ -143,27 +201,14 @@ impl CliReplStyle {
         g: 118,
         b: 118,
     };
-    const C_HELP_TITLE: Color = Color::Rgb {
-        r: 250,
-        g: 195,
-        b: 92,
-    };
-    const C_HELP_CMD: Color = Color::Rgb {
-        r: 130,
-        g: 214,
-        b: 165,
-    };
-    const C_HELP_DESC: Color = Color::Rgb {
-        r: 118,
-        g: 124,
-        b: 138,
-    };
+    const C_HELP_TITLE: Color = CLI_REPL_HELP_TITLE_FG;
+    const C_HELP_CMD: Color = CLI_REPL_HELP_CMD_FG;
+    const C_HELP_DESC: Color = CLI_REPL_HELP_DESC_FG;
 
     pub(crate) fn new() -> Self {
-        let no_color = std::env::var_os("NO_COLOR").is_some();
         Self {
-            use_color_stdout: !no_color && io::stdout().is_terminal(),
-            use_color_stderr: !no_color && io::stderr().is_terminal(),
+            use_color_stdout: cli_repl_stdout_use_color(),
+            use_color_stderr: cli_repl_stderr_use_color(),
         }
     }
 
@@ -192,65 +237,197 @@ impl CliReplStyle {
         out.flush()
     }
 
-    /// 启动横幅：模型、工作区、工具数与简要说明。
-    pub(crate) fn print_banner(
+    fn write_banner_subheading<W: Write + QueueableCommand>(
         &self,
-        model: &str,
-        work_dir: &Path,
-        tool_count: usize,
+        w: &mut W,
+        title: &str,
     ) -> io::Result<()> {
-        let mut out = io::stdout();
-        let (tw, _) = crossterm::terminal::size().unwrap_or((72, 24));
-        let inner = (tw as usize).saturating_sub(6).clamp(28, 72);
-        let bar = "─".repeat(inner);
-
-        writeln!(out)?;
+        writeln!(w)?;
         if self.use_color_stdout {
             queue!(
-                out,
-                SetForegroundColor(Self::C_BANNER_FRAME),
-                SetAttribute(Attribute::Dim)
-            )?;
-        }
-        writeln!(out, "  ╭{bar}╮")?;
-        self.queue_reset(&mut out, true)?;
-
-        let mid_w = inner.saturating_sub(2).max(12);
-        if self.use_color_stdout {
-            queue!(
-                out,
-                SetForegroundColor(Self::C_BANNER_TITLE),
+                w,
+                SetForegroundColor(Self::C_HELP_TITLE),
                 SetAttribute(Attribute::Bold)
             )?;
         }
-        writeln!(out, "  │ {:^width$} │", "CrabMate · REPL", width = mid_w)?;
-        self.queue_reset(&mut out, true)?;
+        writeln!(w, "  {title}")?;
+        self.queue_reset(w, true)?;
+        Ok(())
+    }
 
+    fn write_banner_item<W: Write + QueueableCommand>(
+        &self,
+        w: &mut W,
+        label: &str,
+        detail: &str,
+    ) -> io::Result<()> {
+        if !self.use_color_stdout {
+            writeln!(w, "    · {label}  {detail}")?;
+            return Ok(());
+        }
+        write!(w, "    · ")?;
+        queue!(w, SetForegroundColor(Self::C_HELP_CMD))?;
+        write!(w, "{label}")?;
+        self.queue_reset(w, true)?;
+        queue!(
+            w,
+            SetForegroundColor(Self::C_MUTED),
+            SetAttribute(Attribute::Dim)
+        )?;
+        writeln!(w, "  {detail}")?;
+        self.queue_reset(w, true)?;
+        Ok(())
+    }
+
+    fn write_banner_note_line<W: Write + QueueableCommand>(
+        &self,
+        w: &mut W,
+        line: &str,
+    ) -> io::Result<()> {
         if self.use_color_stdout {
             queue!(
-                out,
-                SetForegroundColor(Self::C_BANNER_FRAME),
+                w,
+                SetForegroundColor(Self::C_MUTED),
                 SetAttribute(Attribute::Dim)
             )?;
         }
-        writeln!(out, "  ╰{bar}╯")?;
-        self.queue_reset(&mut out, true)?;
+        writeln!(w, "{line}")?;
+        self.queue_reset(w, true)?;
+        Ok(())
+    }
 
-        self.writeln_muted_line(&format!(
-            "  模型 {}  ·  工作区 {}",
-            model,
-            work_dir.display()
-        ))?;
-        let tools_line = if tool_count == 0 {
-            "  工具 已关闭（--no-tools）".to_string()
+    /// 顶栏：**FIGlet 风格 CrabMate**（6 行 ASCII；行内已含缩进，**`NO_COLOR`** 不乱码）。
+    fn write_banner_art_header<W: Write + QueueableCommand>(&self, w: &mut W) -> io::Result<()> {
+        for line in BANNER_CRABMATE_ART {
+            if self.use_color_stdout {
+                queue!(
+                    w,
+                    SetForegroundColor(Self::C_BANNER_TITLE),
+                    SetAttribute(Attribute::Bold)
+                )?;
+            }
+            writeln!(w, "{line}")?;
+            self.queue_reset(w, true)?;
+        }
+        Ok(())
+    }
+
+    /// 启动横幅：**FIGlet CrabMate** 顶栏 + **模型状态**、**内建命令**、**要点配置**分节（与 `/help` 同色阶；**`NO_COLOR`** 下纯文本）。
+    pub(crate) fn print_banner(
+        &self,
+        cfg: &AgentConfig,
+        work_dir: &Path,
+        tool_count: usize,
+        no_stream: bool,
+    ) -> io::Result<()> {
+        let mut out = io::stdout();
+        let (tw, _) = crossterm::terminal::size().unwrap_or((72, 24));
+        let inner = (tw as usize).saturating_sub(4).clamp(28, 72);
+        let api_base_short =
+            ellipsize_terminal_line(&cfg.api_base, inner.saturating_sub(4).max(24));
+
+        writeln!(out)?;
+        self.write_banner_art_header(&mut out)?;
+
+        self.write_banner_subheading(&mut out, "模型")?;
+        self.write_banner_item(&mut out, "model", &cfg.model)?;
+        self.write_banner_item(&mut out, "api_base", &api_base_short)?;
+        self.write_banner_item(&mut out, "llm_http_auth", cfg.llm_http_auth_mode.as_str())?;
+        self.write_banner_item(&mut out, "temperature", &format!("{}", cfg.temperature))?;
+        let seed_line = cfg
+            .llm_seed
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "（未设置，请求不带 seed）".to_string());
+        self.write_banner_item(&mut out, "llm_seed", &seed_line)?;
+        let stream_line = if no_stream {
+            "关闭（本进程 --no-stream）"
         } else {
-            format!("  工具 {tool_count} 个可用")
+            "开启（流式）"
         };
-        self.writeln_muted_line(&tools_line)?;
-        self.writeln_muted_line(
-            "  输入消息对话；/help 内建命令 · 行首 `$` 进入本地 shell（提示变为 bash#:，`$` 不回显）· quit / exit / Ctrl+D 退出",
+        self.write_banner_item(&mut out, "stream", stream_line)?;
+
+        self.write_banner_subheading(&mut out, "工作区与工具")?;
+        self.write_banner_item(&mut out, "工作区", &work_dir.display().to_string())?;
+        let tools_detail = if tool_count == 0 {
+            "已关闭（--no-tools）".to_string()
+        } else {
+            format!("{tool_count} 个可用")
+        };
+        self.write_banner_item(&mut out, "工具", &tools_detail)?;
+
+        self.write_banner_subheading(&mut out, "内建命令")?;
+        self.write_banner_note_line(
+            &mut out,
+            "    /clear  /model  /workspace（/cd） /tools  /help  /?",
         )?;
-        self.writeln_muted_line("  非白名单 run_command 将询问：y 一次 / a 本会话允许该命令名")?;
+        self.write_banner_note_line(
+            &mut out,
+            "    行首 $ → 本地 shell（bash#:）；quit / exit / Ctrl+D 退出",
+        )?;
+        self.write_banner_note_line(
+            &mut out,
+            "    非白名单 run_command：y 一次 / a 本会话允许该命令名",
+        )?;
+
+        self.write_banner_subheading(&mut out, "要点配置")?;
+        self.write_banner_item(&mut out, "max_tokens", &cfg.max_tokens.to_string())?;
+        self.write_banner_item(
+            &mut out,
+            "max_message_history",
+            &format!(
+                "保留最近 {} 轮（user+assistant 计一轮）",
+                cfg.max_message_history
+            ),
+        )?;
+
+        self.write_banner_item(
+            &mut out,
+            "API",
+            &format!(
+                "超时 {}s · 失败重试 {} 次",
+                cfg.api_timeout_secs, cfg.api_max_retries
+            ),
+        )?;
+        self.write_banner_item(
+            &mut out,
+            "run_command",
+            &format!(
+                "超时 {}s · 输出上限 {} 字",
+                cfg.command_timeout_secs, cfg.command_max_output_len
+            ),
+        )?;
+
+        let staged = if cfg.staged_plan_execution {
+            format!("开启（{}）", cfg.staged_plan_feedback_mode.as_str())
+        } else {
+            "关闭".to_string()
+        };
+        self.write_banner_item(&mut out, "staged_plan_execution", &staged)?;
+
+        if cfg.planner_executor_mode != PlannerExecutorMode::SingleAgent {
+            self.write_banner_item(
+                &mut out,
+                "planner_executor_mode",
+                cfg.planner_executor_mode.as_str(),
+            )?;
+        }
+
+        if cfg.tui_load_session_on_start {
+            self.write_banner_item(
+                &mut out,
+                "会话恢复",
+                "启动时加载 .crabmate/tui_session.json（若存在）",
+            )?;
+        }
+
+        if cfg.mcp_enabled && !cfg.mcp_command.trim().is_empty() {
+            self.write_banner_item(&mut out, "MCP", "已启用（stdio）")?;
+        }
+
+        if cfg.long_term_memory_enabled {
+            self.write_banner_item(&mut out, "long_term_memory", "已启用")?;
+        }
+
         writeln!(out)?;
         out.flush()
     }
@@ -275,8 +452,14 @@ impl CliReplStyle {
         out.flush()
     }
 
+    /// 成功反馈行：着色 TTY 下前缀 **`✓`**；**`NO_COLOR`** 或非 TTY 下为 **`[ok]`**，避免缺字字体显示为乱码。
     pub(crate) fn print_success(&self, msg: &str) -> io::Result<()> {
         let mut out = io::stdout();
+        let prefix = if self.use_color_stdout {
+            "✓ "
+        } else {
+            "[ok] "
+        };
         if self.use_color_stdout {
             queue!(
                 out,
@@ -284,13 +467,19 @@ impl CliReplStyle {
                 SetAttribute(Attribute::Bold)
             )?;
         }
-        writeln!(out, "{msg}")?;
+        writeln!(out, "{prefix}{msg}")?;
         self.queue_reset(&mut out, true)?;
         out.flush()
     }
 
+    /// 错误行：着色 TTY 下前缀 **`✗`**；**`NO_COLOR`** 或非 TTY 下为 **`[err]`**。
     pub(crate) fn eprint_error(&self, msg: &str) -> io::Result<()> {
         let mut err = io::stderr();
+        let prefix = if self.use_color_stderr {
+            "✗ "
+        } else {
+            "[err] "
+        };
         if self.use_color_stderr {
             queue!(
                 err,
@@ -298,7 +487,7 @@ impl CliReplStyle {
                 SetAttribute(Attribute::Bold)
             )?;
         }
-        writeln!(err, "{msg}")?;
+        writeln!(err, "{prefix}{msg}")?;
         self.queue_reset(&mut err, false)?;
         err.flush()
     }
@@ -313,7 +502,7 @@ impl CliReplStyle {
                 SetAttribute(Attribute::Bold)
             )?;
         }
-        writeln!(out, "内建命令（不会发给模型）")?;
+        writeln!(out, "内建命令")?;
         self.queue_reset(&mut out, true)?;
 
         let rows: &[(&str, &str)] = &[

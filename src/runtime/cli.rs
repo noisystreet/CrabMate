@@ -784,7 +784,7 @@ pub async fn run_repl(
     let cli_rt = CliToolRuntime::new_interactive_default();
     let style = CliReplStyle::new();
 
-    style.print_banner(&cfg.model, work_dir.as_path(), tools.len())?;
+    style.print_banner(cfg.as_ref(), work_dir.as_path(), tools.len(), no_stream)?;
 
     loop {
         let read_res = tokio::task::spawn_blocking(read_repl_line_blocking)

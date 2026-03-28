@@ -264,7 +264,7 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
 }
 
 /// 请求 chat/completions：`no_stream == false` 时为 SSE 流式；`true` 时为单次 JSON（`stream: false`）。
-/// `plain_terminal_stream` 为 `true` 且 `render_to_terminal && out.is_none()`：流式将 reasoning/content **逐 delta 纯文本**写 stdout（**`reasoning_content`** 偏亮冷灰 RGB，**`content`** 默认色；**`NO_COLOR`/非 TTY** 关闭），末尾不再 `markdown_to_ansi`；`--no-stream` 时整段按字段分色一次写出。否则若 `render_to_terminal` 且仍有正文、且未走上述路径，则在整段到达后走 [`terminal_render_agent_markdown`]。
+/// `plain_terminal_stream` 为 `true` 且 `render_to_terminal && out.is_none()`：流式将 reasoning/content **逐 delta 纯文本**写 stdout（**`reasoning_content`** 与 **`content`** 分色；**`NO_COLOR`/非 TTY** 关闭着色），末尾不再 `markdown_to_ansi`；`--no-stream` 时整段按字段分色一次写出。否则若 `render_to_terminal` 且仍有正文、且未走上述路径，则在整段到达后走 [`terminal_render_agent_markdown`]。
 /// 若提供 `out`，流式为每个 content delta；非流式则在有正文时整段发送一次（供 SSE 等）。
 ///
 /// **非流式响应**：按 OpenAI 兼容形 `ChatResponse`（`choices[0].message` + `finish_reason`）反序列化；

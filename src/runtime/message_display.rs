@@ -7,8 +7,8 @@ use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
 use crate::agent::plan_artifact::{
-    augment_agent_reply_plan_goal_for_display, format_agent_reply_plan_for_display,
-    parse_agent_reply_plan_v1, prose_before_first_fence,
+    augment_agent_reply_plan_goal_for_display, fenced_body_after_optional_jsonish_lang_label,
+    format_agent_reply_plan_for_display, parse_agent_reply_plan_v1, prose_before_first_fence,
     strip_agent_reply_plan_fence_blocks_for_display,
 };
 use crate::runtime::latex_unicode::latex_math_to_unicode;
@@ -340,7 +340,7 @@ fn triple_backtick_fence_count(s: &str) -> usize {
     s.match_indices("```").count()
 }
 
-/// 首段代码围栏（`parts[1]`）视为「JSON 规划流」：**仅**当语言行为 `json` 且正文为空或 `{` 开头。
+/// 首段代码围栏（`parts[1]`）视为「JSON 规划流」：语言行为 `json` / `markdown` / `md`（与 [`strip_optional_json_fence_label`] 一致）且剥标后正文为空或 `{` 开头。
 ///
 /// 不再把「无语言标签 + 内联 `{`」的裸围栏算作规划流：`deepseek-reasoner` 等思维链里常见的
 /// ` ``` ` + `{`（讨论 JSON/代码）会触发 [`should_buffer_agent_reply_plan_stream`]，围栏前又无正文时聊天区会整段空白。
@@ -350,14 +350,11 @@ fn first_fence_inner_looks_like_json_object(s: &str) -> bool {
     let Some(inner) = it.next() else {
         return false;
     };
-    let rest = inner.trim_start();
-    let first_line = rest.lines().next().unwrap_or("").trim();
-    if first_line.eq_ignore_ascii_case("json") {
-        let body: String = rest.lines().skip(1).collect::<Vec<_>>().join("\n");
-        let b = body.trim();
-        return b.is_empty() || b.starts_with('{');
-    }
-    false
+    let Some(body) = fenced_body_after_optional_jsonish_lang_label(inner) else {
+        return false;
+    };
+    let b = body.trim();
+    b.is_empty() || b.starts_with('{')
 }
 
 fn looks_like_incomplete_agent_reply_plan_whole_json(t: &str) -> bool {
@@ -415,6 +412,8 @@ fn drop_leading_placeholder_like_prose_line(prose: &str) -> String {
 
 fn staged_plan_streaming_chat_body(stripped: &str) -> String {
     let raw = prose_before_first_fence(stripped);
+    // 与 `preprocess_unfenced_assistant_prose_dedup` 在「围栏前段落」上的 dedupe 对齐，避免流式与收齐后开场白不一致。
+    let raw = crate::text_sanitize::dedupe_plain_assistant_preamble(&raw);
     // 与收齐后 `staged_plan_hidden_chat_prose_only` 一致：DSML、相邻重复行、列表并句，避免流式阶段出现双行复读而收齐后变单段等不一致。
     let prose_t = crate::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
     let prose_t = prose_t.trim();
@@ -546,16 +545,19 @@ pub(crate) fn assistant_raw_markdown_body_for_message(m: &Message) -> String {
     )
 }
 
-/// 在打出首个 \`\`\` 之前，`should_buffer` 为 false，正文不经规划专用清洗；此处对**无围栏、非整段 JSON** 的助手气泡做与围栏前一致的复读折叠。
+/// 对助手正文做围栏前复读折叠：无围栏时整段处理；**有围栏时仍只处理首个 ` ``` ` 之前**，与流式阶段（`should_buffer` 前）一致。
 fn preprocess_unfenced_assistant_prose_dedup(stripped: &str) -> String {
-    if stripped.contains("```") {
-        return stripped.to_string();
-    }
     let t = stripped.trim_start();
     if t.starts_with('{') {
         return stripped.to_string();
     }
-    crate::text_sanitize::dedupe_plain_assistant_preamble(stripped)
+    if let Some(idx) = stripped.find("```") {
+        let (pre, from_fence) = stripped.split_at(idx);
+        let pre_deduped = crate::text_sanitize::dedupe_plain_assistant_preamble(pre);
+        format!("{pre_deduped}{from_fence}")
+    } else {
+        crate::text_sanitize::dedupe_plain_assistant_preamble(stripped)
+    }
 }
 
 #[cfg(test)]

@@ -81,6 +81,8 @@ cargo run -- config
 
 ## REPL 内建命令
 
+**启动摘要**：进入 REPL 时于 stdout 打印分节说明——**模型**（含 `api_base` 截断、`llm_http_auth`、`temperature`、`llm_seed`、当前是否 **`--no-stream`**）、**工作区与工具**、**内建命令**列表、**要点配置**（如 `max_tokens`、`max_message_history`、API 超时/重试、`run_command` 超时与输出上限、分阶段规划、可选会话恢复/MCP/长期记忆等）。样式与 **`cli_repl_ui`** 的 `/help` 色阶一致；**`NO_COLOR`** 或非 TTY 下无 ANSI。
+
 **可选**：**`AGENT_CLI_WAIT_SPINNER=1`** 时，在等待模型**首包流式输出**（或 **`--no-stream`** 下整段 body）前于 **stderr** 显示 spinner 与已等待时间（默认关闭；须 stderr 为 TTY 且未设 **`NO_COLOR`**）。详见 **`docs/CONFIGURATION.md`**。
 
 以 `/` 开头：**`/help`**、**`/clear`**、**`/model`**、**`/workspace`** / **`/cd`**、**`/tools`**。`quit` / `exit` / Ctrl+D 退出。
