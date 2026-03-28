@@ -83,6 +83,59 @@ impl StagedPlanFeedbackMode {
     }
 }
 
+/// 对 OpenAI 兼容 **`POST …/chat/completions`**（及同基址 **`GET …/models`**）的 HTTP 鉴权方式。
+///
+/// 本地 **Ollama** 等默认无需密钥时可设为 [`Self::None`]，进程可不设 **`API_KEY`** 且不发送 `Authorization`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LlmHttpAuthMode {
+    /// `Authorization: Bearer {API_KEY}`（云端 OpenAI 兼容服务默认）。
+    #[default]
+    Bearer,
+    /// 不附加 `Authorization`；**`API_KEY` 环境变量可省略**。
+    None,
+}
+
+impl LlmHttpAuthMode {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "bearer" => Ok(Self::Bearer),
+            "none" | "off" | "false" | "no" | "no_auth" => Ok(Self::None),
+            _ => Err(format!(
+                "未知的 llm_http_auth_mode: {:?}（支持 bearer、none）",
+                s.trim()
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bearer => "bearer",
+            Self::None => "none",
+        }
+    }
+}
+
+#[cfg(test)]
+mod llm_http_auth_mode_tests {
+    use super::LlmHttpAuthMode;
+
+    #[test]
+    fn parse_bearer_and_none_aliases() {
+        assert_eq!(
+            LlmHttpAuthMode::parse("bearer").unwrap(),
+            LlmHttpAuthMode::Bearer
+        );
+        assert_eq!(
+            LlmHttpAuthMode::parse("NONE").unwrap(),
+            LlmHttpAuthMode::None
+        );
+        assert_eq!(
+            LlmHttpAuthMode::parse("no_auth").unwrap(),
+            LlmHttpAuthMode::None
+        );
+    }
+}
+
 /// 长期记忆条目的隔离作用域（向量检索上线后必须与会话/鉴权一致，见 README 安全说明）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LongTermMemoryScopeMode {
@@ -152,6 +205,8 @@ pub struct AgentConfig {
     pub api_base: String,
     /// 模型 ID，如 deepseek-chat、deepseek-reasoner
     pub model: String,
+    /// 模型 HTTP 是否带 `Authorization: Bearer`（本地 Ollama 等可 `none`）。
+    pub llm_http_auth_mode: LlmHttpAuthMode,
     /// 保留的最近对话轮数（user+assistant 算一轮）
     pub max_message_history: usize,
     /// 为 `true` 时 CLI REPL 启动从 `.crabmate/tui_session.json` 恢复会话；默认 `false` 仅含当前配置的 `system` 一条（文件名历史兼容）

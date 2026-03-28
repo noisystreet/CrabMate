@@ -10,8 +10,8 @@ use crate::agent::per_coord::FinalPlanRequirementMode;
 use source::{AgentSection, parse_agent_section, parse_bool_like};
 use std::path::Path;
 pub use types::{
-    AgentConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
-    StagedPlanFeedbackMode, WebSearchProvider,
+    AgentConfig, LlmHttpAuthMode, LongTermMemoryScopeMode, LongTermMemoryVectorBackend,
+    PlannerExecutorMode, StagedPlanFeedbackMode, WebSearchProvider,
 };
 
 /// 编译时嵌入的默认配置（与项目根 default_config.toml 一致）
@@ -22,6 +22,7 @@ const DEFAULT_CONFIG: &str = include_str!("../../default_config.toml");
 struct ConfigBuilder {
     api_base: String,
     model: String,
+    llm_http_auth_mode_str: Option<String>,
     system_prompt: String,
     system_prompt_file: Option<String>,
     max_message_history: Option<u64>,
@@ -141,6 +142,7 @@ impl ConfigBuilder {
     fn apply_section(&mut self, agent: AgentSection) {
         override_string(&mut self.api_base, agent.api_base);
         override_string(&mut self.model, agent.model);
+        override_opt_string_non_empty(&mut self.llm_http_auth_mode_str, agent.llm_http_auth_mode);
         override_string(&mut self.system_prompt, agent.system_prompt);
         override_opt_string_non_empty(&mut self.system_prompt_file, agent.system_prompt_file);
         override_opt_string_non_empty(
@@ -387,6 +389,12 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         let m = m.trim().to_string();
         if !m.is_empty() {
             b.model = m;
+        }
+    }
+    if let Ok(s) = std::env::var("AGENT_LLM_HTTP_AUTH_MODE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.llm_http_auth_mode_str = Some(s);
         }
     }
     if let Ok(v) = std::env::var("AGENT_MAX_MESSAGE_HISTORY")
@@ -1115,9 +1123,15 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .unwrap_or(524_288)
         .clamp(1024, 4_194_304) as usize;
 
+    let llm_http_auth_mode = match b.llm_http_auth_mode_str.as_deref() {
+        Some(s) => types::LlmHttpAuthMode::parse(s)?,
+        None => types::LlmHttpAuthMode::default(),
+    };
+
     Ok(AgentConfig {
         api_base: b.api_base,
         model: b.model,
+        llm_http_auth_mode,
         max_message_history,
         tui_load_session_on_start,
         tui_session_max_messages,

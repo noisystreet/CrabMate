@@ -5,6 +5,8 @@
 [agent]
 # api_base = "https://api.deepseek.com/v1"
 # model = "deepseek-chat"
+# 本地 Ollama（OpenAI 兼容）：api_base = "http://127.0.0.1:11434/v1" 且 llm_http_auth_mode = "none" 时可不设 API_KEY
+# llm_http_auth_mode = "none"
 # max_message_history = 24
 # tui_load_session_on_start = false
 # tui_session_max_messages = 400

@@ -13,6 +13,7 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
 
+use crate::config::LlmHttpAuthMode;
 use crate::http_client::map_reqwest_transport_err;
 use crate::redact::{self, CHAT_REQUEST_JSON_LOG_MAX_CHARS, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crate::runtime::message_display::assistant_markdown_source_for_display;
@@ -271,6 +272,7 @@ pub async fn stream_chat(
     client: &Client,
     api_key: &str,
     api_base: &str,
+    auth_mode: LlmHttpAuthMode,
     req: &mut ChatRequest,
     out: Option<&Sender<String>>,
     render_to_terminal: bool,
@@ -334,13 +336,11 @@ pub async fn stream_chat(
         }
     }
     req.stream = Some(!no_stream);
-    let res = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&req)
-        .send()
-        .await
-        .map_err(map_reqwest_transport_err)?;
+    let mut rb = client.post(&url).json(&req);
+    if auth_mode == LlmHttpAuthMode::Bearer {
+        rb = rb.header("Authorization", format!("Bearer {}", api_key));
+    }
+    let res = rb.send().await.map_err(map_reqwest_transport_err)?;
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();

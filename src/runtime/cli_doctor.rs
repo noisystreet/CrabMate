@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use reqwest::Client;
 
 use crate::AgentConfig;
+use crate::config::LlmHttpAuthMode;
 use crate::llm::fetch_models_report;
 use crate::tools::{canonical_workspace_root, capture_trimmed};
 
@@ -17,12 +18,26 @@ fn resolve_workspace_dir(cfg: &AgentConfig, workspace_cli: Option<&str>) -> Path
     raw.canonicalize().unwrap_or(raw)
 }
 
-fn api_key_line() -> &'static str {
+fn api_key_line(cfg: &AgentConfig) -> String {
     match std::env::var("API_KEY") {
-        Err(std::env::VarError::NotPresent) => "API_KEY: 未设置（chat / models / probe 不可用）",
-        Err(std::env::VarError::NotUnicode(_)) => "API_KEY: 已设置(非 Unicode，不展示)",
-        Ok(s) if s.trim().is_empty() => "API_KEY: 已设置但为空",
-        Ok(_) => "API_KEY: 已设置(非空，值已隐藏)",
+        Err(std::env::VarError::NotPresent) => {
+            if cfg.llm_http_auth_mode == LlmHttpAuthMode::None {
+                "API_KEY: 未设置（llm_http_auth_mode=none 时 chat / models / probe 可不依赖密钥）"
+                    .to_string()
+            } else {
+                "API_KEY: 未设置（llm_http_auth_mode=bearer 时 chat / models / probe 不可用）"
+                    .to_string()
+            }
+        }
+        Err(std::env::VarError::NotUnicode(_)) => "API_KEY: 已设置(非 Unicode，不展示)".to_string(),
+        Ok(s) if s.trim().is_empty() => {
+            if cfg.llm_http_auth_mode == LlmHttpAuthMode::None {
+                "API_KEY: 已设置但为空（llm_http_auth_mode=none 时可继续）".to_string()
+            } else {
+                "API_KEY: 已设置但为空".to_string()
+            }
+        }
+        Ok(_) => "API_KEY: 已设置(非空，值已隐藏)".to_string(),
     }
 }
 
@@ -45,6 +60,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     println!("【配置摘要】");
     println!("  api_base: {}", cfg.api_base.trim());
     println!("  model: {}", cfg.model.trim());
+    println!("  llm_http_auth_mode: {}", cfg.llm_http_auth_mode.as_str());
     println!(
         "  allowed_commands: {} 条（dev/prod 由配置 [agent] env 在加载时选定）",
         cfg.allowed_commands.len()
@@ -80,7 +96,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     );
     println!();
     println!("【密钥状态】");
-    println!("  {}", api_key_line());
+    println!("  {}", api_key_line(cfg));
     println!();
 
     let ws = resolve_workspace_dir(cfg, workspace_cli);
@@ -132,7 +148,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
 
     println!(
         "【说明】模型侧自动排障请用工具 **diagnostic_summary**（与本命令互补）。\
-         **models** / **probe** 依赖 API_KEY，且部分网关不提供 OpenAI 兼容 GET /models。"
+         **models** / **probe**：`llm_http_auth_mode=bearer` 时需有效 **API_KEY**；`none` 时可不设。部分网关不提供 OpenAI 兼容 GET /models。"
     );
 }
 
@@ -142,9 +158,14 @@ pub async fn run_models_cli(
     cfg: &AgentConfig,
     api_key: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let r = fetch_models_report(client, cfg.api_base.trim(), api_key.trim())
-        .await
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    let r = fetch_models_report(
+        client,
+        cfg.api_base.trim(),
+        api_key.trim(),
+        cfg.llm_http_auth_mode,
+    )
+    .await
+    .map_err(|e| std::io::Error::other(e.to_string()))?;
     println!("请求: {}", r.url_display);
     println!("HTTP {}  耗时 {} ms", r.http_status, r.elapsed_ms);
     if let Some(ref n) = r.note {
@@ -169,9 +190,14 @@ pub async fn run_probe_cli(
     cfg: &AgentConfig,
     api_key: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let r = fetch_models_report(client, cfg.api_base.trim(), api_key.trim())
-        .await
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    let r = fetch_models_report(
+        client,
+        cfg.api_base.trim(),
+        api_key.trim(),
+        cfg.llm_http_auth_mode,
+    )
+    .await
+    .map_err(|e| std::io::Error::other(e.to_string()))?;
     println!("探测 URL: {}", r.url_display);
     println!("HTTP {}  耗时 {} ms", r.http_status, r.elapsed_ms);
     match r.http_status {
