@@ -16,6 +16,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use super::app_state::{AppState, CONVERSATION_ID_MAX_LEN, ConversationTurnSeed};
+use crate::agent::message_pipeline::MESSAGE_PIPELINE_COUNTERS;
 use crate::agent_memory::{load_memory_snippet, messages_chat_seed_with_memory};
 use crate::chat_job_queue;
 use crate::conversation_store::SaveConversationOutcome;
@@ -1040,9 +1041,15 @@ struct StatusResponse {
     tool_call_explain_enabled: bool,
     tool_call_explain_min_chars: usize,
     tool_call_explain_max_chars: usize,
+    /// 自进程启动以来，同步上下文管道实际触发次数（累计，供排障；非「当前会话」）。
+    message_pipeline_trim_count_hits: u64,
+    message_pipeline_trim_char_budget_hits: u64,
+    message_pipeline_tool_compress_hits: u64,
+    message_pipeline_orphan_tool_drops: u64,
 }
 
 pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let mp = MESSAGE_PIPELINE_COUNTERS.snapshot();
     let conversation_store_entries = state.conversation_count().await;
     let (ltm_ready, ltm_idx_err) = match state.long_term_memory.as_ref() {
         Some(l) => (
@@ -1100,5 +1107,9 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         tool_call_explain_enabled: state.cfg.tool_call_explain_enabled,
         tool_call_explain_min_chars: state.cfg.tool_call_explain_min_chars,
         tool_call_explain_max_chars: state.cfg.tool_call_explain_max_chars,
+        message_pipeline_trim_count_hits: mp.trim_count_hits,
+        message_pipeline_trim_char_budget_hits: mp.trim_char_budget_hits,
+        message_pipeline_tool_compress_hits: mp.tool_compress_hits,
+        message_pipeline_orphan_tool_drops: mp.orphan_tool_drops,
     })
 }

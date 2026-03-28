@@ -759,6 +759,15 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     }
 }
 
+/// `context_char_budget > 0` 且 `context_min_messages_after_system >= max_message_history` 时，按字符删旧消息往往难以生效（条数裁剪已收紧窗口）。
+fn context_budget_vs_history_suspicious(
+    max_message_history: usize,
+    context_char_budget: usize,
+    context_min_messages_after_system: usize,
+) -> bool {
+    context_char_budget > 0 && context_min_messages_after_system >= max_message_history
+}
+
 /// 验证、clamp 并组装最终 `AgentConfig`。
 fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
     if b.api_base.is_empty() {
@@ -959,6 +968,18 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         .context_min_messages_after_system
         .unwrap_or(4)
         .clamp(1, 128) as usize;
+    if context_budget_vs_history_suspicious(
+        max_message_history,
+        context_char_budget,
+        context_min_messages_after_system,
+    ) {
+        log::warn!(
+            target: "crabmate",
+            "配置提示：已启用 context_char_budget，但 context_min_messages_after_system({}) >= max_message_history({})：条数裁剪后消息条数通常不超过 1+max_message_history，按字符删旧消息往往无法生效或空间极小。建议调小 context_min_messages_after_system 或增大 max_message_history。",
+            context_min_messages_after_system,
+            max_message_history
+        );
+    }
     let context_summary_trigger_chars =
         b.context_summary_trigger_chars.unwrap_or(0).min(50_000_000) as usize;
     let context_summary_tail_messages =
@@ -1142,4 +1163,25 @@ fn finalize(b: ConfigBuilder) -> Result<AgentConfig, String> {
         mcp_command,
         mcp_tool_timeout_secs,
     })
+}
+
+#[cfg(test)]
+mod context_budget_warning_tests {
+    use super::context_budget_vs_history_suspicious;
+
+    #[test]
+    fn suspicious_when_budget_on_and_min_ge_max_history() {
+        assert!(context_budget_vs_history_suspicious(8, 100_000, 8));
+        assert!(context_budget_vs_history_suspicious(8, 1, 10));
+    }
+
+    #[test]
+    fn not_suspicious_when_budget_off() {
+        assert!(!context_budget_vs_history_suspicious(8, 0, 100));
+    }
+
+    #[test]
+    fn not_suspicious_when_min_below_max_history() {
+        assert!(!context_budget_vs_history_suspicious(32, 50_000, 4));
+    }
 }
