@@ -58,6 +58,10 @@ cargo run -- serve     # Web，默认 8080
 
 源码模块与调用关系见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)（含 Mermaid 与 `src/` 索引）。
 
+## 上下文管道（观测）
+
+Web **`GET /status`** 会返回 **`message_pipeline_trim_count_hits`**、**`message_pipeline_trim_char_budget_hits`**、**`message_pipeline_tool_compress_hits`**、**`message_pipeline_orphan_tool_drops`**（自进程启动以来的累计命中次数，非单会话）。排障时可设 **`RUST_LOG=crabmate::message_pipeline=trace`** 查看逐步 `session_sync_step`（详见 `docs/DEVELOPMENT.md`）。若启用 **`context_char_budget`** 且 **`context_min_messages_after_system` ≥ `max_message_history`**，加载配置时会 **`warn`**，提示按字符删旧消息往往难以生效。
+
 ## 参考
 
 - [DeepSeek API - Create Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion)

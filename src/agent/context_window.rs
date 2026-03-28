@@ -194,7 +194,7 @@ pub async fn maybe_summarize_with_llm(
                 tail,
                 messages.len()
             );
-            crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
+            let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
         }
         Err(e) => {
             warn!(

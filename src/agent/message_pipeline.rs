@@ -25,8 +25,44 @@
 //!
 //! 新增处理步骤时：优先在本文件增加 `MessagePipelineStage` 变体，并在 `apply_session_sync_pipeline` 中按固定顺序调用，避免在 `agent_turn` / `llm` 多处散落。
 
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use crate::config::AgentConfig;
 use crate::types::Message;
+
+/// 进程内累计：每次 `prepare_messages_for_model` 内同步管道实际发生裁剪/剔除时递增（供 `GET /status` 排障）。
+#[derive(Debug, Default)]
+pub struct MessagePipelineCounters {
+    pub trim_count_hits: AtomicU64,
+    pub trim_char_budget_hits: AtomicU64,
+    pub tool_compress_hits: AtomicU64,
+    pub orphan_tool_drops: AtomicU64,
+}
+
+impl MessagePipelineCounters {
+    pub fn snapshot(&self) -> MessagePipelineCountersSnapshot {
+        MessagePipelineCountersSnapshot {
+            trim_count_hits: self.trim_count_hits.load(Ordering::Relaxed),
+            trim_char_budget_hits: self.trim_char_budget_hits.load(Ordering::Relaxed),
+            tool_compress_hits: self.tool_compress_hits.load(Ordering::Relaxed),
+            orphan_tool_drops: self.orphan_tool_drops.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// `MessagePipelineCounters::snapshot()` 的纯数据副本（可序列化到 `/status`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct MessagePipelineCountersSnapshot {
+    pub trim_count_hits: u64,
+    pub trim_char_budget_hits: u64,
+    pub tool_compress_hits: u64,
+    pub orphan_tool_drops: u64,
+}
+
+/// 全局计数器（Web 与 CLI 共用同一进程内实例）。
+pub static MESSAGE_PIPELINE_COUNTERS: LazyLock<MessagePipelineCounters> =
+    LazyLock::new(MessagePipelineCounters::default);
 
 /// 会话同步管道所用配置子集（便于测试与不依赖完整 [`AgentConfig`]）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,9 +124,10 @@ pub fn estimate_non_system_chars(messages: &[Message]) -> usize {
         .sum()
 }
 
-/// 截断 `tool` 消息正文（过长时追加说明尾注）。
-pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize) {
+/// 截断 `tool` 消息正文（过长时追加说明尾注）；返回本轮压缩的 `tool` 条数。
+pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize) -> usize {
     let max_chars = max_chars.max(256);
+    let mut n = 0usize;
     for m in messages.iter_mut() {
         if m.role != "tool" {
             continue;
@@ -102,20 +139,24 @@ pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize
             crate::tool_result::maybe_compress_tool_message_content(c, max_chars)
         {
             m.content = Some(compressed);
+            n += 1;
         }
     }
+    n
 }
 
 /// 保留首条 `system`，其后最多保留 `max_after_system` 条消息（与历史 `max_message_history` 语义一致）。
 ///
 /// 与 `runtime/workspace_session` 加载截断一致：若保留的尾部以**两条连续** `assistant` 开头，且被裁掉的前缀里仍有 `user`，则插回其中最后一条 `user`（并丢掉一条较旧消息以维持条数上限），避免 `[system, assistant, assistant, …]` 触发 400。
-pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usize) {
+/// 返回是否**删除了**至少一条消息（条数裁剪生效）。
+pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usize) -> bool {
     if messages.is_empty() || max_after_system == 0 {
-        return;
+        return false;
     }
+    let before = messages.len();
     if messages[0].role == "system" {
         if messages.len() <= 1 + max_after_system {
-            return;
+            return false;
         }
         let sys = messages[0].clone();
         let after: Vec<Message> = messages[1..].to_vec();
@@ -145,31 +186,33 @@ pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usi
         let skip = messages.len() - max_after_system;
         *messages = messages.iter().skip(skip).cloned().collect();
     }
+    messages.len() < before
 }
 
 /// 在已压缩 tool 的前提下，从索引 1 起删除最旧消息，直到非 system 字符 ≤ `budget` 或条数触底。
+/// 返回是否**删除了**至少一条消息（字符预算裁剪生效）。
 pub fn trim_messages_by_char_budget(
     messages: &mut Vec<Message>,
     budget: usize,
     min_messages_after_system: usize,
-) {
+) -> bool {
     if budget == 0 || messages.len() <= 1 {
-        return;
+        return false;
     }
     let min_total = 1 + min_messages_after_system;
     if messages.len() <= min_total {
-        return;
+        return false;
     }
     let current_chars = estimate_non_system_chars(messages);
     if current_chars <= budget {
-        return;
+        return false;
     }
 
     let has_system_head = messages[0].role == "system";
     let start_idx = if has_system_head { 1 } else { 0 };
     let removable = messages.len().saturating_sub(min_total);
     if removable == 0 {
-        return;
+        return false;
     }
 
     let mut remaining_chars = current_chars;
@@ -182,16 +225,19 @@ pub fn trim_messages_by_char_budget(
         remove_count += 1;
     }
     if remove_count == 0 {
-        return;
+        return false;
     }
     messages.drain(start_idx..start_idx + remove_count);
+    true
 }
 
 /// 删除「无前驱 `assistant` + `tool_calls`」的 `role: tool` 消息。
 ///
 /// 按条数/字符裁剪历史时，可能截掉带 `tool_calls` 的 `assistant`，却保留其后的 `tool`，
 /// OpenAI 兼容 API 会返回 400：`Messages with role 'tool' must be a response to a preceding message with 'tool_calls'`。
-pub fn drop_orphan_tool_messages(messages: &mut Vec<Message>) {
+/// 返回被删除的 `role: tool` 条数。
+pub fn drop_orphan_tool_messages(messages: &mut Vec<Message>) -> usize {
+    let before_len = messages.len();
     let mut keep = vec![true; messages.len()];
     for i in 0..messages.len() {
         if messages[i].role != "tool" {
@@ -220,6 +266,7 @@ pub fn drop_orphan_tool_messages(messages: &mut Vec<Message>) {
         idx += 1;
         k
     });
+    before_len.saturating_sub(messages.len())
 }
 
 // ── 管道编排与可观测性 ───────────────────────────────────────────────────────
@@ -321,20 +368,28 @@ pub fn apply_session_sync_pipeline_with_config(
     cfg: MessagePipelineConfig,
     mut report: Option<&mut MessagePipelineReport>,
 ) {
+    let ctr = &*MESSAGE_PIPELINE_COUNTERS;
+
     record_and_trace(
         &mut report,
         MessagePipelineStage::SessionSyncStart,
         messages,
     );
 
-    compress_tool_message_contents(messages, cfg.tool_message_max_chars);
+    let c1 = compress_tool_message_contents(messages, cfg.tool_message_max_chars);
+    if c1 > 0 {
+        ctr.tool_compress_hits
+            .fetch_add(c1 as u64, Ordering::Relaxed);
+    }
     record_and_trace(
         &mut report,
         MessagePipelineStage::AfterCompressTool,
         messages,
     );
 
-    trim_messages_by_count(messages, cfg.max_message_history);
+    if trim_messages_by_count(messages, cfg.max_message_history) {
+        ctr.trim_count_hits.fetch_add(1, Ordering::Relaxed);
+    }
     record_and_trace(
         &mut report,
         MessagePipelineStage::AfterTrimByCount,
@@ -342,17 +397,23 @@ pub fn apply_session_sync_pipeline_with_config(
     );
 
     if cfg.context_char_budget > 0 {
-        trim_messages_by_char_budget(
+        if trim_messages_by_char_budget(
             messages,
             cfg.context_char_budget,
             cfg.context_min_messages_after_system,
-        );
+        ) {
+            ctr.trim_char_budget_hits.fetch_add(1, Ordering::Relaxed);
+        }
         record_and_trace(
             &mut report,
             MessagePipelineStage::AfterTrimByCharBudget,
             messages,
         );
-        compress_tool_message_contents(messages, cfg.tool_message_max_chars);
+        let c2 = compress_tool_message_contents(messages, cfg.tool_message_max_chars);
+        if c2 > 0 {
+            ctr.tool_compress_hits
+                .fetch_add(c2 as u64, Ordering::Relaxed);
+        }
         record_and_trace(
             &mut report,
             MessagePipelineStage::AfterSecondCompressTool,
@@ -360,7 +421,11 @@ pub fn apply_session_sync_pipeline_with_config(
         );
     }
 
-    drop_orphan_tool_messages(messages);
+    let dropped = drop_orphan_tool_messages(messages);
+    if dropped > 0 {
+        ctr.orphan_tool_drops
+            .fetch_add(dropped as u64, Ordering::Relaxed);
+    }
     record_and_trace(
         &mut report,
         MessagePipelineStage::AfterDropOrphanTool,
