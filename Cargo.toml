@@ -77,6 +77,8 @@ dialoguer = { version = "0.12", default-features = false }
 encoding_rs = "0.8"
 chardetng = "0.1"
 clap_mangen = { version = "0.2", default-features = false }
+# `pipe`：Unix 套接字 `connect_with_local_defaults`；`ssl`：`DOCKER_HOST` https/tcp TLS。
+bollard = { version = "0.18", default-features = false, features = ["ssl", "pipe"] }
 
 [[bin]]
 name = "crabmate-gen-man"
