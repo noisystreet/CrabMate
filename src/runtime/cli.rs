@@ -34,6 +34,8 @@ enum ReplExportKind {
 enum ReplBuiltIn<'a> {
     Clear,
     Model,
+    /// `arg` 为命令名后的剩余文本；非空表示用户传了多余参数，应提示用法。
+    Config(&'a str),
     WorkspaceShow,
     WorkspaceSet(&'a str),
     Tools,
@@ -108,6 +110,7 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
     Some(match cmd.as_str() {
         "clear" => ReplBuiltIn::Clear,
         "model" => ReplBuiltIn::Model,
+        "config" => ReplBuiltIn::Config(arg),
         "workspace" | "cd" => {
             if arg.is_empty() {
                 ReplBuiltIn::WorkspaceShow
@@ -217,6 +220,7 @@ fn try_handle_repl_slash_command(
     messages: &mut Vec<Message>,
     work_dir: &mut PathBuf,
     style: &CliReplStyle,
+    no_stream: bool,
 ) -> bool {
     let Some(builtin) = classify_repl_slash_command(input) else {
         return false;
@@ -245,6 +249,15 @@ fn try_handle_repl_slash_command(
                 let _ = style.print_line(&format!("llm_seed: {seed}"));
             } else {
                 let _ = style.print_line("llm_seed: （未设置，请求不带 seed）");
+            }
+        }
+        ReplBuiltIn::Config(extra) => {
+            if !extra.is_empty() {
+                let _ = style.eprint_error("用法: /config（无额外参数）");
+            } else if let Err(e) =
+                style.print_repl_config_summary(cfg, work_dir.as_path(), tools.len(), no_stream)
+            {
+                let _ = style.eprint_error(&e.to_string());
             }
         }
         ReplBuiltIn::WorkspaceShow => match work_dir.canonicalize() {
@@ -805,6 +818,7 @@ pub async fn run_repl(
                     &mut messages,
                     &mut work_dir,
                     &style,
+                    no_stream,
                 ) {
                     continue;
                 }
@@ -879,6 +893,18 @@ mod repl_slash_tests {
             Some(ReplBuiltIn::Help)
         );
         assert_eq!(classify_repl_slash_command("/?"), Some(ReplBuiltIn::Help));
+        assert_eq!(
+            classify_repl_slash_command("/config"),
+            Some(ReplBuiltIn::Config(""))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/CONFIG"),
+            Some(ReplBuiltIn::Config(""))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/config extra"),
+            Some(ReplBuiltIn::Config("extra"))
+        );
     }
 
     #[test]

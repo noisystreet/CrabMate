@@ -3,6 +3,7 @@
 use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
+use crate::agent::per_coord::FinalPlanRequirementMode;
 use crate::config::{AgentConfig, PlannerExecutorMode};
 
 use crossterm::{
@@ -358,7 +359,7 @@ impl CliReplStyle {
         self.write_banner_subheading(&mut out, "内建命令")?;
         self.write_banner_note_line(
             &mut out,
-            "    /clear  /model  /workspace（/cd） /tools  /export  /help  /?",
+            "    /clear  /model  /config  /workspace（/cd） /tools  /export  /help  /?  · 行首 /… 可按 Tab 补全",
         )?;
         self.write_banner_note_line(
             &mut out,
@@ -428,6 +429,173 @@ impl CliReplStyle {
             self.write_banner_item(&mut out, "long_term_memory", "已启用")?;
         }
 
+        writeln!(out)?;
+        out.flush()
+    }
+
+    /// REPL **`/config`**：打印关键运行配置（与启动横幅同源字段 + 若干排障项；**不**含任何密钥）。
+    pub(crate) fn print_repl_config_summary(
+        &self,
+        cfg: &AgentConfig,
+        work_dir: &Path,
+        tool_count: usize,
+        no_stream: bool,
+    ) -> io::Result<()> {
+        let mut out = io::stdout();
+        let (tw, _) = crossterm::terminal::size().unwrap_or((72, 24));
+        let inner = (tw as usize).saturating_sub(4).clamp(28, 72);
+        let api_base_short =
+            ellipsize_terminal_line(&cfg.api_base, inner.saturating_sub(4).max(24));
+
+        writeln!(out)?;
+        self.write_banner_subheading(&mut out, "运行配置摘要")?;
+
+        self.write_banner_subheading(&mut out, "模型")?;
+        self.write_banner_item(&mut out, "model", &cfg.model)?;
+        self.write_banner_item(&mut out, "api_base", &api_base_short)?;
+        self.write_banner_item(&mut out, "llm_http_auth", cfg.llm_http_auth_mode.as_str())?;
+        self.write_banner_item(&mut out, "temperature", &format!("{}", cfg.temperature))?;
+        let seed_line = cfg
+            .llm_seed
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "（未设置）".to_string());
+        self.write_banner_item(&mut out, "llm_seed", &seed_line)?;
+        let stream_line = if no_stream {
+            "关闭（本进程 --no-stream）"
+        } else {
+            "开启（流式）"
+        };
+        self.write_banner_item(&mut out, "stream", stream_line)?;
+
+        self.write_banner_subheading(&mut out, "工作区与工具")?;
+        self.write_banner_item(&mut out, "工作区", &work_dir.display().to_string())?;
+        let tools_detail = if tool_count == 0 {
+            "已关闭（--no-tools）".to_string()
+        } else {
+            format!("{tool_count} 个可用")
+        };
+        self.write_banner_item(&mut out, "工具", &tools_detail)?;
+
+        self.write_banner_subheading(&mut out, "要点配置")?;
+        self.write_banner_item(&mut out, "max_tokens", &cfg.max_tokens.to_string())?;
+        self.write_banner_item(
+            &mut out,
+            "max_message_history",
+            &format!(
+                "保留最近 {} 轮（user+assistant 计一轮）",
+                cfg.max_message_history
+            ),
+        )?;
+        if cfg.context_char_budget > 0 {
+            self.write_banner_item(
+                &mut out,
+                "context_char_budget",
+                &format!("{}（启用按字符删旧）", cfg.context_char_budget),
+            )?;
+        }
+        self.write_banner_item(
+            &mut out,
+            "API",
+            &format!(
+                "超时 {}s · 失败重试 {} 次",
+                cfg.api_timeout_secs, cfg.api_max_retries
+            ),
+        )?;
+        self.write_banner_item(
+            &mut out,
+            "run_command",
+            &format!(
+                "超时 {}s · 输出上限 {} 字",
+                cfg.command_timeout_secs, cfg.command_max_output_len
+            ),
+        )?;
+        self.write_banner_item(
+            &mut out,
+            "tool_message_max_chars",
+            &cfg.tool_message_max_chars.to_string(),
+        )?;
+
+        let final_plan = match cfg.final_plan_requirement {
+            FinalPlanRequirementMode::Never => "never",
+            FinalPlanRequirementMode::WorkflowReflection => "workflow_reflection",
+            FinalPlanRequirementMode::Always => "always",
+        };
+        self.write_banner_item(&mut out, "final_plan_requirement", final_plan)?;
+        self.write_banner_item(
+            &mut out,
+            "plan_rewrite_max_attempts",
+            &cfg.plan_rewrite_max_attempts.to_string(),
+        )?;
+        self.write_banner_item(
+            &mut out,
+            "planner_executor_mode",
+            cfg.planner_executor_mode.as_str(),
+        )?;
+
+        let staged = if cfg.staged_plan_execution {
+            format!("开启（{}）", cfg.staged_plan_feedback_mode.as_str())
+        } else {
+            "关闭".to_string()
+        };
+        self.write_banner_item(&mut out, "staged_plan_execution", &staged)?;
+        let staged_cli = if cfg.staged_plan_cli_show_planner_stream {
+            "开启（CLI 规划轮打印模型 stdout）"
+        } else {
+            "关闭（CLI 规划轮不打印模型 stdout）"
+        };
+        self.write_banner_item(&mut out, "staged_plan_cli_show_planner_stream", staged_cli)?;
+
+        let cursor = if cfg.cursor_rules_enabled {
+            let d = cfg.cursor_rules_dir.trim();
+            let short = if d.is_empty() {
+                "（目录为空）".to_string()
+            } else {
+                ellipsize_terminal_line(d, inner.min(48))
+            };
+            format!("开启 · {}", short)
+        } else {
+            "关闭".to_string()
+        };
+        self.write_banner_item(&mut out, "cursor_rules", &cursor)?;
+
+        self.write_banner_item(
+            &mut out,
+            "materialize_deepseek_dsml_tool_calls",
+            if cfg.materialize_deepseek_dsml_tool_calls {
+                "开启"
+            } else {
+                "关闭"
+            },
+        )?;
+
+        let explain = if cfg.tool_call_explain_enabled {
+            format!(
+                "开启（{}～{} 字）",
+                cfg.tool_call_explain_min_chars, cfg.tool_call_explain_max_chars
+            )
+        } else {
+            "关闭".to_string()
+        };
+        self.write_banner_item(&mut out, "tool_call_explain", &explain)?;
+
+        if cfg.tui_load_session_on_start {
+            self.write_banner_item(
+                &mut out,
+                "会话恢复",
+                "启动时加载 .crabmate/tui_session.json（若存在）",
+            )?;
+        }
+        if cfg.mcp_enabled && !cfg.mcp_command.trim().is_empty() {
+            self.write_banner_item(&mut out, "MCP", "已启用（stdio）")?;
+        }
+        if cfg.long_term_memory_enabled {
+            self.write_banner_item(&mut out, "long_term_memory", "已启用")?;
+        }
+
+        self.write_banner_note_line(
+            &mut out,
+            "    不含 API_KEY / web_api_bearer_token 等密钥；逐项说明见 docs/CONFIGURATION.md",
+        )?;
         writeln!(out)?;
         out.flush()
     }
@@ -508,6 +676,10 @@ impl CliReplStyle {
         let rows: &[(&str, &str)] = &[
             ("/clear", "清空对话，仅保留当前 system 提示词"),
             ("/model", "显示 model、api_base、temperature、llm_seed"),
+            (
+                "/config",
+                "打印关键运行配置摘要（与启动横幅同源字段；不含密钥）",
+            ),
             ("/workspace", "显示当前工作区"),
             (
                 "/workspace <路径>",
@@ -594,6 +766,9 @@ impl CliReplStyle {
             }
         }
         writeln!(out)?;
+        self.writeln_muted_line(
+            "「我:」下光标前为 /… 时按 Tab 可补全内建命令与 /export 格式；bash#: 下不补全",
+        )?;
         self.writeln_muted_line("退出：quit · exit · Ctrl+D")?;
         Ok(())
     }
