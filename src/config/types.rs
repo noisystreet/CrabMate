@@ -267,7 +267,7 @@ pub struct AgentConfig {
     pub cursor_rules_include_agents_md: bool,
     /// 规则附加段最大字符数，超出时截断并附提示
     pub cursor_rules_max_chars: usize,
-    /// `role: tool` 的 `content` 超过此字符数时截断（每次调模型前应用）
+    /// `role: tool` 的 `content` 超过此字符数时压缩（每次调模型前应用）。信封形态下对 `output` 做首尾采样并写 `output_truncated` 等元数据，见 `tool_result::maybe_compress_tool_message_content`。
     pub tool_message_max_chars: usize,
     /// 为 true（默认）时：写入历史的 `role: tool` 使用 `crabmate_tool` JSON 信封（含 `summary`/`ok`/`output` 等），便于聚合解析；为 false 时保持纯工具原文。
     pub tool_result_envelope_v1: bool,

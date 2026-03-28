@@ -2,7 +2,7 @@
 //!
 //! ## 两阶段
 //!
-//! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩、条数/字符裁剪、孤立 `tool` 剔除、合并相邻 `assistant`（保留会话尾部空占位语义，见 [`crate::types::normalize_messages_for_openai_compatible_request`] 文档）。实现原在 [`super::context_window`]，现经本模块编排。
+//! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩（`crabmate_tool` 信封内 **`output`** 超长时首尾采样 + 元数据，见 [`crate::tool_result::maybe_compress_tool_message_content`]）、条数/字符裁剪、孤立 `tool` 剔除、合并相邻 `assistant`（保留会话尾部空占位语义，见 [`crate::types::normalize_messages_for_openai_compatible_request`] 文档）。实现原在 [`super::context_window`]，现经本模块编排。
 //! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、去掉 `reasoning_content`、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）。**不**写入会话 `Vec`。
 //!
 //! ## 会话同步顺序契约（勿打乱）
