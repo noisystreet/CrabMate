@@ -1,4 +1,4 @@
-//! REPL 行读取与 **reedline** 集成：历史、Emacs 编辑键、多行指示；TTY 专用。
+//! REPL 行读取与 **reedline** 集成：历史、Emacs 编辑键、多行指示、**Tab** 补全内建 **`/`** 命令；TTY 专用。
 //!
 //! **TTY**：**缓冲区无可见内容**（`trim` 后为空）时按 **`$`** 或全角 **`＄`** **立即**切换「我:」与 **`bash#:`**，无需先按 Enter；仍兼容**单独一行 `$` 后 Enter**。
 //! **修饰键**：允许 **Shift**（如美式 **Shift+4**）与 **AltGr**（常见为 **Ctrl+Alt**，欧洲布局输入 `$`）；仍拒绝 **Ctrl+$**、**单 Alt+$** 等。
@@ -13,15 +13,154 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use reedline::{
-    Color as ReedlineColor, EditMode, Emacs, FileBackedHistory, Prompt, PromptEditMode,
-    PromptHistorySearch, PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineRawEvent,
-    Signal, default_emacs_keybindings,
+    Color as ReedlineColor, ColumnarMenu, Completer, EditMode, Emacs, FileBackedHistory,
+    Keybindings, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch,
+    PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, ReedlineRawEvent, Signal,
+    Span, Suggestion, default_emacs_keybindings,
 };
 
 use super::cli_repl_ui::{CLI_PROMPT_AFTER_COLON, cli_repl_stdout_use_color};
 
 const REPL_HISTORY_MAX: usize = 4096;
 const MULTILINE_INDICATOR: &str = "::: ";
+
+/// reedline 补全菜单名，须与 [`repl_emacs_keybindings`] 内 `ReedlineEvent::Menu` 一致。
+const REPL_COMPLETION_MENU: &str = "completion_menu";
+
+/// 内建 `/` 命令名（不含斜杠；`?` 单独成项）。
+const SLASH_COMMANDS: &[&str] = &[
+    "?",
+    "cd",
+    "clear",
+    "config",
+    "export",
+    "help",
+    "model",
+    "tools",
+    "workspace",
+];
+
+/// `/export` 后的格式参数（与 REPL `repl_export_kind_from_arg` 一致）。
+const EXPORT_FORMAT_ARGS: &[&str] = &["both", "json", "markdown", "md"];
+
+fn repl_emacs_keybindings() -> Keybindings {
+    let mut kb = default_emacs_keybindings();
+    kb.add_binding(
+        KeyModifiers::NONE,
+        KeyCode::Tab,
+        ReedlineEvent::UntilFound(vec![
+            ReedlineEvent::Menu(REPL_COMPLETION_MENU.to_string()),
+            ReedlineEvent::MenuNext,
+        ]),
+    );
+    kb
+}
+
+/// 行首（允许前导空白）的 `/` 内建命令补全；**bash#:** 模式下关闭。
+struct ReplSlashCompleter {
+    shell_mode: Arc<AtomicBool>,
+}
+
+impl ReplSlashCompleter {
+    fn new(shell_mode: Arc<AtomicBool>) -> Self {
+        Self { shell_mode }
+    }
+
+    /// `before_cursor` = `line[..pos]`。仅当「去掉前导空白后以 `/` 开头」时返回该 `/` 的字节下标。
+    fn slash_command_start_byte(before_cursor: &str) -> Option<usize> {
+        let trimmed = before_cursor.trim_start();
+        if !trimmed.starts_with('/') {
+            return None;
+        }
+        let leading = before_cursor.len() - trimmed.len();
+        Some(leading)
+    }
+
+    fn suggestions_first_token(partial: &str) -> Vec<&'static str> {
+        let p = partial.to_ascii_lowercase();
+        let mut hits: Vec<&str> = SLASH_COMMANDS
+            .iter()
+            .copied()
+            .filter(|c| p.is_empty() || c.to_ascii_lowercase().starts_with(&p))
+            .collect();
+        hits.sort_unstable();
+        hits.dedup();
+        hits
+    }
+
+    fn suggestion_slash_command(span: Span, cmd: &str) -> Suggestion {
+        let value = if cmd == "?" {
+            "/?".to_string()
+        } else {
+            format!("/{cmd}")
+        };
+        Suggestion {
+            value,
+            span,
+            append_whitespace: false,
+            ..Default::default()
+        }
+    }
+
+    fn suggestions_export_formats(span: Span) -> Vec<Suggestion> {
+        EXPORT_FORMAT_ARGS
+            .iter()
+            .copied()
+            .map(|a| Suggestion {
+                value: format!("/export {a}"),
+                span,
+                append_whitespace: false,
+                ..Default::default()
+            })
+            .collect()
+    }
+}
+
+impl Completer for ReplSlashCompleter {
+    fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
+        if self.shell_mode.load(Ordering::Relaxed) {
+            return vec![];
+        }
+        let pos = pos.min(line.len());
+        let before = &line[..pos];
+        let Some(slash_idx) = Self::slash_command_start_byte(before) else {
+            return vec![];
+        };
+        let tail = &line[slash_idx + 1..pos];
+        let span = Span::new(slash_idx, pos);
+
+        match tail.split_once(char::is_whitespace) {
+            None => {
+                if tail.eq_ignore_ascii_case("export") {
+                    return Self::suggestions_export_formats(span);
+                }
+                Self::suggestions_first_token(tail)
+                    .into_iter()
+                    .map(|cmd| Self::suggestion_slash_command(span, cmd))
+                    .collect()
+            }
+            Some((cmd, after_ws)) => {
+                let cmd = cmd.trim();
+                if !cmd.eq_ignore_ascii_case("export") {
+                    return vec![];
+                }
+                let arg_prefix = after_ws.trim_start();
+                let p = arg_prefix.to_ascii_lowercase();
+                EXPORT_FORMAT_ARGS
+                    .iter()
+                    .copied()
+                    .filter(|a| p.is_empty() || a.to_ascii_lowercase().starts_with(&p))
+                    .map(|a| Suggestion {
+                        value: format!("/export {a}"),
+                        span,
+                        append_whitespace: false,
+                        ..Default::default()
+                    })
+                    .collect()
+            }
+        }
+    }
+}
 
 thread_local! {
     static REEDLINE_BUFFER_PROBE: Cell<Option<*const Reedline>> = const { Cell::new(None) };
@@ -82,7 +221,7 @@ struct DollarToggleEmacs {
 impl DollarToggleEmacs {
     fn new() -> Self {
         Self {
-            emacs: Emacs::new(default_emacs_keybindings()),
+            emacs: Emacs::new(repl_emacs_keybindings()),
         }
     }
 }
@@ -267,9 +406,15 @@ impl ReplLineEditor {
         let history = FileBackedHistory::with_file(REPL_HISTORY_MAX, history_file.to_path_buf())
             .map_err(|e| io::Error::other(e.to_string()))?;
 
+        let completion_menu = Box::new(ColumnarMenu::default().with_name(REPL_COMPLETION_MENU));
+        let completer = Box::new(ReplSlashCompleter::new(shell_mode.clone()));
+
         let reedline = Reedline::create()
             .with_history(Box::new(history))
             .with_ansi_colors(ansi_prompt)
+            .with_completer(completer)
+            .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
+            .with_quick_completions(true)
             .with_edit_mode(Box::new(DollarToggleEmacs::new()));
 
         Ok(Self {
@@ -369,5 +514,43 @@ mod dollar_key_tests {
             &KeyCode::Char('4'),
             KeyModifiers::SHIFT
         ));
+    }
+}
+
+#[cfg(test)]
+mod slash_completion_tests {
+    use super::ReplSlashCompleter;
+    use reedline::Completer;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn shell_mode_disables_completion() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(true)));
+        assert!(c.complete("/cle", 4).is_empty());
+    }
+
+    #[test]
+    fn no_completion_when_slash_not_at_line_start() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        assert!(c.complete("say /clear", 10).is_empty());
+    }
+
+    #[test]
+    fn completes_clear_from_partial() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        let s = c.complete("/cle", 4);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].value, "/clear");
+    }
+
+    #[test]
+    fn export_then_formats() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        let s = c.complete("/export", 7);
+        assert!(s.iter().any(|x| x.value == "/export json"));
+        let s2 = c.complete("/export j", 9);
+        assert_eq!(s2.len(), 1);
+        assert_eq!(s2[0].value, "/export json");
     }
 }

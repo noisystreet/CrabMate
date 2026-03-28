@@ -94,11 +94,13 @@ cargo run -- export-session --format json --workspace /path/to/proj
 
 ## REPL 内建命令
 
-**启动摘要**：进入 REPL 时于 stdout 打印分节说明——**模型**（含 `api_base` 截断、`llm_http_auth`、`temperature`、`llm_seed`、当前是否 **`--no-stream`**）、**工作区与工具**、**内建命令**列表、**要点配置**（如 `max_tokens`、`max_message_history`、API 超时/重试、`run_command` 超时与输出上限、分阶段规划、可选会话恢复/MCP/长期记忆等）。样式与 **`cli_repl_ui`** 的 `/help` 色阶一致；**`NO_COLOR`** 或非 TTY 下无 ANSI。
+**启动摘要**：进入 REPL 时于 stdout 打印分节说明——**模型**（含 `api_base` 截断、`llm_http_auth`、`temperature`、`llm_seed`、当前是否 **`--no-stream`**）、**工作区与工具**、**内建命令**列表、**要点配置**（如 `max_tokens`、`max_message_history`、API 超时/重试、`run_command` 超时与输出上限、分阶段规划、可选会话恢复/MCP/长期记忆等）。样式与 **`cli_repl_ui`** 的 `/help` 色阶一致；**`NO_COLOR`** 或非 TTY 下无 ANSI。运行中可随时输入 **`/config`** 再次打印**关键配置摘要**（字段与横幅要点同源并略扩展，**不**含密钥）。
 
 **可选**：**`AGENT_CLI_WAIT_SPINNER=1`** 时，在等待模型**首包流式输出**（或 **`--no-stream`** 下整段 body）前于 **stderr** 显示 spinner 与已等待时间（默认关闭；须 stderr 为 TTY 且未设 **`NO_COLOR`**）。详见 **`docs/CONFIGURATION.md`**。
 
-以 `/` 开头：**`/help`**、**`/clear`**、**`/model`**、**`/workspace`** / **`/cd`**、**`/tools`**、**`/export`**（可选参数 `json` / `markdown` / `both`，默认 `both`）。`quit` / `exit` / Ctrl+D 退出。
+以 `/` 开头：**`/help`**、**`/clear`**、**`/model`**、**`/config`**（无参数）、**`/workspace`** / **`/cd`**、**`/tools`**、**`/export`**（可选参数 `json` / `markdown` / `both`，默认 `both`）。`quit` / `exit` / Ctrl+D 退出。
+
+**Tab 补全**（交互 TTY、**reedline** 路径）：在「我:」提示下，若当前行（光标之前）去掉前导空白后以 **`/`** 开头，按 **Tab** 可弹出内建命令补全菜单（方向键或再按 **Tab** 选择；仅一项匹配时会直接填入）。**`/export`** 在已输入完整 `export` 后再 **Tab** 可补 **`json` / `markdown` / `md` / `both`**。在 **`bash#:`** 本地 shell 模式下关闭补全，避免干扰普通命令输入。
 
 ### 行首 `$`（本地 shell，安全边界）
 
