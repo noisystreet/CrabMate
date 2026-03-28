@@ -59,6 +59,7 @@ async fn run_isolated_bollard(req: SandboxRunRequest) -> Result<Vec<u8>, String>
         cmd: Some(req.cmd),
         env: Some(req.env),
         working_dir: Some(req.working_dir),
+        user: req.user.clone(),
         host_config: Some(host_config),
         attach_stdin: Some(true),
         attach_stdout: Some(true),

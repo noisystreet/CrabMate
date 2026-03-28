@@ -81,6 +81,8 @@ pub(super) struct AgentSection {
     pub(super) sync_default_tool_sandbox_docker_network: Option<String>,
     /// `docker run` 超时秒。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`
     pub(super) sync_default_tool_sandbox_docker_timeout_secs: Option<u64>,
+    /// 容器 `user`：`current`（默认）、`image`、或 `uid[:gid]`。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER`
+    pub(super) sync_default_tool_sandbox_docker_user: Option<String>,
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     pub(super) web_api_bearer_token: Option<String>,

@@ -78,6 +78,7 @@
 # sync_default_tool_sandbox_docker_image = ""   # docker 模式必填；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE
 # sync_default_tool_sandbox_docker_network = ""   # 空=无网络；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK
 # sync_default_tool_sandbox_docker_timeout_secs = 600   # AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS
+# sync_default_tool_sandbox_docker_user = "current"   # current | image | uid[:gid]；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER
 # cursor_rules_enabled = false    # true：自动拼接 cursor_rules_dir/*.mdc 到 system_prompt
 # cursor_rules_dir = ".cursor/rules"
 # cursor_rules_include_agents_md = true

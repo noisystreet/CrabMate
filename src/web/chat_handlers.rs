@@ -1018,6 +1018,8 @@ struct StatusResponse {
     sync_default_tool_sandbox_mode: String,
     /// `docker` 模式下的镜像名（可能为空表示未启用或未配置）。
     sync_default_tool_sandbox_docker_image: String,
+    /// Docker 沙盒容器进程身份摘要：`effective_uid:gid` | `image_default`（与配置 `current` / `image` 等对应）。
+    sync_default_tool_sandbox_docker_user_effective: String,
     /// CLI REPL 是否在启动时从 `.crabmate/tui_session.json` 恢复会话（默认 false；文件名历史兼容）。
     tui_load_session_on_start: bool,
     max_message_history: usize,
@@ -1107,6 +1109,14 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
             .cfg
             .sync_default_tool_sandbox_docker_image
             .clone(),
+        sync_default_tool_sandbox_docker_user_effective: match state
+            .cfg
+            .sync_default_tool_sandbox_docker_user
+            .as_docker_user_string()
+        {
+            Some(s) => s.to_string(),
+            None => "image_default".to_string(),
+        },
         tui_load_session_on_start: state.cfg.tui_load_session_on_start,
         max_message_history: state.cfg.max_message_history,
         tool_message_max_chars: state.cfg.tool_message_max_chars,
