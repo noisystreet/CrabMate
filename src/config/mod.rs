@@ -11,7 +11,7 @@ use source::{AgentSection, parse_agent_section, parse_bool_like};
 use std::path::{Path, PathBuf};
 pub use types::{
     AgentConfig, LlmHttpAuthMode, LongTermMemoryScopeMode, LongTermMemoryVectorBackend,
-    PlannerExecutorMode, StagedPlanFeedbackMode, WebSearchProvider,
+    PlannerExecutorMode, StagedPlanFeedbackMode, SyncDefaultToolSandboxMode, WebSearchProvider,
 };
 
 /// 编译时嵌入的默认配置（与项目根 default_config.toml 一致）
@@ -77,6 +77,10 @@ struct ConfigBuilder {
     staged_plan_patch_max_attempts: Option<u64>,
     staged_plan_cli_show_planner_stream: Option<bool>,
     staged_plan_optimizer_round: Option<bool>,
+    sync_default_tool_sandbox_mode_str: Option<String>,
+    sync_default_tool_sandbox_docker_image: Option<String>,
+    sync_default_tool_sandbox_docker_network: Option<String>,
+    sync_default_tool_sandbox_docker_timeout_secs: Option<u64>,
     workspace_allowed_roots: Option<Vec<String>>,
     web_api_bearer_token: Option<String>,
     allow_insecure_no_auth_for_non_loopback: Option<bool>,
@@ -287,6 +291,21 @@ impl ConfigBuilder {
         self.staged_plan_optimizer_round = agent
             .staged_plan_optimizer_round
             .or(self.staged_plan_optimizer_round);
+        override_opt_string_non_empty(
+            &mut self.sync_default_tool_sandbox_mode_str,
+            agent.sync_default_tool_sandbox_mode,
+        );
+        override_opt_string_non_empty(
+            &mut self.sync_default_tool_sandbox_docker_image,
+            agent.sync_default_tool_sandbox_docker_image,
+        );
+        override_opt_string_non_empty(
+            &mut self.sync_default_tool_sandbox_docker_network,
+            agent.sync_default_tool_sandbox_docker_network,
+        );
+        self.sync_default_tool_sandbox_docker_timeout_secs = agent
+            .sync_default_tool_sandbox_docker_timeout_secs
+            .or(self.sync_default_tool_sandbox_docker_timeout_secs);
         self.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
             .or(self.allow_insecure_no_auth_for_non_loopback);
@@ -758,6 +777,26 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.staged_plan_optimizer_round = Some(val);
     }
+    if let Ok(s) = std::env::var("AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.sync_default_tool_sandbox_mode_str = Some(s);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            b.sync_default_tool_sandbox_docker_image = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK") {
+        b.sync_default_tool_sandbox_docker_network = Some(v);
+    }
+    if let Ok(v) = std::env::var("AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.sync_default_tool_sandbox_docker_timeout_secs = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_WEB_API_BEARER_TOKEN") {
         b.web_api_bearer_token = Some(v.trim().to_string());
     }
@@ -1146,6 +1185,27 @@ fn finalize(
         b.staged_plan_patch_max_attempts.unwrap_or(2).clamp(1, 16) as usize;
     let staged_plan_cli_show_planner_stream = b.staged_plan_cli_show_planner_stream.unwrap_or(true);
     let staged_plan_optimizer_round = b.staged_plan_optimizer_round.unwrap_or(true);
+    let sync_default_tool_sandbox_mode = match b.sync_default_tool_sandbox_mode_str.as_deref() {
+        Some(s) => types::SyncDefaultToolSandboxMode::parse(s)?,
+        None => types::SyncDefaultToolSandboxMode::default(),
+    };
+    let sync_default_tool_sandbox_docker_image =
+        b.sync_default_tool_sandbox_docker_image.unwrap_or_default();
+    let sync_default_tool_sandbox_docker_network = b
+        .sync_default_tool_sandbox_docker_network
+        .unwrap_or_default();
+    let sync_default_tool_sandbox_docker_timeout_secs = b
+        .sync_default_tool_sandbox_docker_timeout_secs
+        .unwrap_or(600)
+        .max(1);
+    if sync_default_tool_sandbox_mode == types::SyncDefaultToolSandboxMode::Docker
+        && sync_default_tool_sandbox_docker_image.trim().is_empty()
+    {
+        return Err(
+            "配置错误：sync_default_tool_sandbox_mode=docker 时必须设置非空的 sync_default_tool_sandbox_docker_image"
+                .to_string(),
+        );
+    }
     let web_api_bearer_token = b.web_api_bearer_token.unwrap_or_default();
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
@@ -1295,6 +1355,10 @@ fn finalize(
         staged_plan_patch_max_attempts,
         staged_plan_cli_show_planner_stream,
         staged_plan_optimizer_round,
+        sync_default_tool_sandbox_mode,
+        sync_default_tool_sandbox_docker_image,
+        sync_default_tool_sandbox_docker_network,
+        sync_default_tool_sandbox_docker_timeout_secs,
         conversation_store_sqlite_path,
         agent_memory_file_enabled,
         agent_memory_file,

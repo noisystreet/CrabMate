@@ -73,6 +73,14 @@ pub(super) struct AgentSection {
     pub(super) staged_plan_cli_show_planner_stream: Option<bool>,
     /// 首轮规划后是否再跑无工具优化轮；默认 true。`AGENT_STAGED_PLAN_OPTIMIZER_ROUND`
     pub(super) staged_plan_optimizer_round: Option<bool>,
+    /// `none` | `docker`；`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`
+    pub(super) sync_default_tool_sandbox_mode: Option<String>,
+    /// Docker 沙盒镜像。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`
+    pub(super) sync_default_tool_sandbox_docker_image: Option<String>,
+    /// Docker 网络；空=none。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`
+    pub(super) sync_default_tool_sandbox_docker_network: Option<String>,
+    /// `docker run` 超时秒。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`
+    pub(super) sync_default_tool_sandbox_docker_timeout_secs: Option<u64>,
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     pub(super) web_api_bearer_token: Option<String>,
