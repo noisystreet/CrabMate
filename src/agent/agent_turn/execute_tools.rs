@@ -77,7 +77,7 @@ async fn emit_tool_result_sse_and_append(
     };
 
     if echo_terminal_transcript {
-        let omit_body = matches!(name, "read_file" | "list_tree");
+        let omit_body = matches!(name, "read_file" | "read_dir" | "list_tree");
         let _ = crate::runtime::terminal_cli_transcript::print_tool_result_terminal(
             name,
             args,

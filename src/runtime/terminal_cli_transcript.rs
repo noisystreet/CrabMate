@@ -141,7 +141,7 @@ pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Re
 ///
 /// 标题行为 `### 工具 · {name}`；有详情时统一为 **`### 工具 · {name} : …`**（摘要已以 `:` 开头时不再重复冒号），例：`run_command` + `ls -la` → `### 工具 · run_command : ls -la`，`create_file` + 去重后 `: a.cpp` → `### 工具 · create_file : a.cpp`。
 ///
-/// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（用于 `read_file` / `list_tree` 等易刷屏工具；完整结果仍由调用方写入对话历史）。
+/// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（用于 `read_file` / `read_dir` / `list_tree` 等易刷屏工具；完整结果仍由调用方写入对话历史）。
 pub(crate) fn print_tool_result_terminal(
     name: &str,
     args: &str,
