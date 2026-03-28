@@ -17,7 +17,7 @@ use tokio::sync::{Mutex, mpsc};
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::workflow;
 use crate::agent::workflow_reflection_controller;
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, SyncDefaultToolSandboxMode};
 use crate::tools;
 use crate::types::{CommandApprovalDecision, ToolCall};
 
@@ -464,6 +464,26 @@ pub async fn dispatch_tool(
             }
         },
         HandlerId::SyncDefault => {
+            if cfg.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
+                if !workspace_is_set {
+                    return (
+                        "错误：未设置工作区，无法在 Docker 沙盒中执行 SyncDefault 工具（请先设置工作区目录）。"
+                            .to_string(),
+                        None,
+                    );
+                }
+                let out = crate::tool_sandbox::run_sync_default_in_docker(
+                    cfg.as_ref(),
+                    effective_working_dir,
+                    name,
+                    args,
+                )
+                .await;
+                return match out {
+                    Ok(s) => (s, None),
+                    Err(e) => (e, None),
+                };
+            }
             if sync_default_runs_inline(name) {
                 let ctx = tools::tool_context_for_with_read_cache(
                     cfg.as_ref(),

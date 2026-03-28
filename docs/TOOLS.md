@@ -4,6 +4,8 @@
 
 **可选「解释卡」**（配置 `tool_call_explain_enabled`）：启用后，凡**非只读**内置工具（与 `tool_registry::is_readonly_tool` 一致，含 `run_command`、`run_executable`、写文件、`http_request`、git 写操作、`workflow_execute` 等）调用时，须在 JSON **顶层**增加字符串字段 **`crabmate_explain_why`**，用一句自然语言说明本步目的；服务端校验长度后**执行前会剥离**该键，避免与 `additionalProperties: false` 冲突。只读工具与 MCP 代理工具不要求；MCP 调用仍会剥离该键再转发。与命令/HTTP **审批**互补（审批管授权，解释卡管可理解性）。
 
+**可选 Docker 沙盒**（`sync_default_tool_sandbox_mode = docker`）：凡在 `tool_registry` 中走 **`SyncDefault`** 路径的内建工具（绝大多数文件/Git/搜索类工具，**不含** `run_command` / `http_fetch` / `workflow_execute` / MCP 等）可在 **`docker run`** 内执行；需配置镜像名并安装 **`docker` CLI**。详见 [`docs/CONFIGURATION.md`](CONFIGURATION.md)「SyncDefault 工具 Docker 沙盒」。
+
 ## 内置工具（模型可调用）
 
 - **内置多种工具，由模型按需调用**：
