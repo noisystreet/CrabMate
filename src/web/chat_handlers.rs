@@ -92,6 +92,23 @@ pub(crate) struct ChatApprovalResponseBody {
     ok: bool,
 }
 
+/// Web：将会话在服务端截断到第 `before_user_ordinal` 条**普通**用户消息之前（0-based，与前端用户气泡序号一致）。
+#[derive(serde::Deserialize)]
+pub(crate) struct ChatBranchRequestBody {
+    conversation_id: String,
+    /// 从此序号对应的用户消息起（含）全部丢弃；例如 `1` 表示保留第 0 条用户及之前上下文。
+    before_user_ordinal: u64,
+    /// 截断前客户端所知的 `revision`（与冲突检测一致；可从最近一次成功回合推断）。
+    expected_revision: u64,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ChatBranchResponseBody {
+    ok: bool,
+    /// 截断成功后的 revision（与 `keep_message_count == 当前长度` 时也会递增一次的行为一致：仅当 SQLite/内存实际执行了 UPDATE）。
+    revision: u64,
+}
+
 fn normalize_approval_session_id(raw: &str) -> Option<String> {
     let s = raw.trim();
     if s.is_empty() || s.len() > 128 {
@@ -412,6 +429,9 @@ pub(crate) async fn upload_handler(
 pub(crate) struct ChatResponseBody {
     reply: String,
     conversation_id: String,
+    /// 写入存储后的 revision（供 `POST /chat/branch`）；无持久化会话时可能为 null。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conversation_revision: Option<u64>,
 }
 
 /// 统一的 API 错误结构：包含错误码与面向用户的友好提示
@@ -501,28 +521,31 @@ async fn build_messages_for_turn(
     }
 }
 
-fn conversation_conflict_api_error() -> (StatusCode, Json<ApiError>) {
+/// 与 SSE `code`、JSON `ApiError.code` 一致。
+pub(crate) const CONVERSATION_CONFLICT_CODE: &str = "CONVERSATION_CONFLICT";
+
+/// 面向用户的冲突说明（HTTP body 与 SSE `error` 一致）。
+pub(crate) const CONVERSATION_CONFLICT_MESSAGE: &str = "会话已被其他请求更新，请重试本次提问";
+
+pub(crate) fn conversation_conflict_http_response() -> (StatusCode, Json<ApiError>) {
     (
         StatusCode::CONFLICT,
         Json(ApiError {
-            code: "CONVERSATION_CONFLICT",
-            message: "会话已被其他请求更新，请重试本次提问".to_string(),
+            code: CONVERSATION_CONFLICT_CODE,
+            message: CONVERSATION_CONFLICT_MESSAGE.to_string(),
         }),
     )
 }
 
-pub(crate) fn save_outcome_to_stream_error_line(
-    outcome: SaveConversationOutcome,
-) -> Option<String> {
-    match outcome {
-        SaveConversationOutcome::Saved => None,
-        SaveConversationOutcome::Conflict => Some(crate::sse::encode_message(
-            crate::sse::SsePayload::Error(crate::sse::SseErrorBody {
-                error: "会话已被其他请求更新，请重试本次提问".to_string(),
-                code: Some("CONVERSATION_CONFLICT".to_string()),
-            }),
-        )),
-    }
+pub(crate) fn conversation_conflict_sse_line() -> String {
+    crate::sse::encode_message(crate::sse::SsePayload::Error(crate::sse::SseErrorBody {
+        error: CONVERSATION_CONFLICT_MESSAGE.to_string(),
+        code: Some(CONVERSATION_CONFLICT_CODE.to_string()),
+    }))
+}
+
+fn conversation_conflict_api_error() -> (StatusCode, Json<ApiError>) {
+    conversation_conflict_http_response()
 }
 
 fn is_valid_bearer_header(
@@ -682,9 +705,14 @@ pub(crate) async fn chat_handler(
         .and_then(|m| m.content.as_deref())
         .unwrap_or("")
         .to_string();
+    let conversation_revision = state
+        .load_conversation_seed(&conversation_id)
+        .await
+        .and_then(|s| s.expected_revision);
     Ok(Json(ChatResponseBody {
         reply,
         conversation_id,
+        conversation_revision,
     }))
 }
 
@@ -740,6 +768,89 @@ pub(crate) async fn chat_approval_handler(
         ));
     }
     Ok(Json(ChatApprovalResponseBody { ok: true }))
+}
+
+/// 将会话历史截断到前 N 条消息（`keep_message_count`），**同一** `conversation_id` 下继续对话。
+pub(crate) async fn chat_branch_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatBranchRequestBody>,
+) -> Result<Json<ChatBranchResponseBody>, (StatusCode, Json<ApiError>)> {
+    let conversation_id =
+        normalize_client_conversation_id(Some(&body.conversation_id)).map_err(|msg| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CONVERSATION_ID",
+                    message: msg,
+                }),
+            )
+        })?;
+    let Some(cid) = conversation_id else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_CONVERSATION_ID",
+                message: "conversation_id 不能为空".to_string(),
+            }),
+        ));
+    };
+    let ord = usize::try_from(body.before_user_ordinal).unwrap_or(usize::MAX);
+    let seed = state.load_conversation_seed(&cid).await;
+    let Some(seed) = seed else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ApiError {
+                code: "CONVERSATION_NOT_FOUND",
+                message: "会话不存在或已过期".to_string(),
+            }),
+        ));
+    };
+    let Some(exp) = seed.expected_revision else {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ApiError {
+                code: "CONVERSATION_REVISION_UNKNOWN",
+                message: "无法分支：缺少 revision 信息".to_string(),
+            }),
+        ));
+    };
+    if exp != body.expected_revision {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ApiError {
+                code: "CONVERSATION_CONFLICT",
+                message: "revision 不匹配，请刷新后重试".to_string(),
+            }),
+        ));
+    }
+    match state
+        .truncate_conversation_before_user_ordinal_if_revision(
+            cid.clone(),
+            ord,
+            body.expected_revision,
+        )
+        .await
+    {
+        SaveConversationOutcome::Saved => {}
+        SaveConversationOutcome::Conflict => {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ApiError {
+                    code: "CONVERSATION_CONFLICT",
+                    message: "会话已被其他请求更新或 revision 不匹配".to_string(),
+                }),
+            ));
+        }
+    }
+    let new_rev = state
+        .load_conversation_seed(&cid)
+        .await
+        .and_then(|s| s.expected_revision)
+        .unwrap_or(body.expected_revision);
+    Ok(Json(ChatBranchResponseBody {
+        ok: true,
+        revision: new_rev,
+    }))
 }
 
 /// 流式 chat：返回 SSE，每个 event 的 data 为一段 content delta（或结束时一条 error JSON）

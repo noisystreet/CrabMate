@@ -26,6 +26,10 @@ pub(crate) fn build_app(
             "/chat/approval",
             post(super::chat_handlers::chat_approval_handler),
         )
+        .route(
+            "/chat/branch",
+            post(super::chat_handlers::chat_branch_handler),
+        )
         .route("/upload", post(super::chat_handlers::upload_handler))
         .route(
             "/uploads/delete",

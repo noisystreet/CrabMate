@@ -545,25 +545,36 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     crate::long_term_memory::strip_long_term_memory_injections(&mut messages);
                     match state
                         .save_conversation_messages_if_revision(
-                            conversation_id,
+                            conversation_id.clone(),
                             messages,
                             expected_revision,
                         )
                         .await
                     {
-                        crate::SaveConversationOutcome::Saved => (true, false, None),
-                        crate::SaveConversationOutcome::Conflict => {
-                            let err_line = crate::save_outcome_to_stream_error_line(
-                                crate::SaveConversationOutcome::Conflict,
-                            )
-                            .unwrap_or_else(|| {
-                                crate::sse::encode_message(crate::sse::SsePayload::Error(
-                                    crate::sse::SseErrorBody {
-                                        error: "会话已被其他请求更新，请重试本次提问".to_string(),
-                                        code: Some("CONVERSATION_CONFLICT".to_string()),
+                        crate::SaveConversationOutcome::Saved => {
+                            if let Some(new_rev) = state
+                                .load_conversation_seed(&conversation_id)
+                                .await
+                                .and_then(|s| s.expected_revision)
+                            {
+                                let line = crate::sse::encode_message(
+                                    crate::sse::SsePayload::ConversationSaved {
+                                        saved: crate::sse::ConversationSavedBody {
+                                            revision: new_rev,
+                                        },
                                     },
-                                ))
-                            });
+                                );
+                                let _ = crate::sse::send_string_logged(
+                                    &sse_tx,
+                                    line,
+                                    "chat_job_queue::stream conversation_saved",
+                                )
+                                .await;
+                            }
+                            (true, false, None)
+                        }
+                        crate::SaveConversationOutcome::Conflict => {
+                            let err_line = crate::conversation_conflict_sse_line();
                             let _ = crate::sse::send_string_logged(
                                 &sse_tx,
                                 err_line,

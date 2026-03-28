@@ -130,6 +130,10 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
             super::protocol::SsePayload::PlanRequired { .. } => {
                 return AgentLineKind::Ignore;
             }
+            super::protocol::SsePayload::ConversationSaved { .. }
+            | super::protocol::SsePayload::TimelineLog { .. } => {
+                return AgentLineKind::Ignore;
+            }
         }
     }
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(s)

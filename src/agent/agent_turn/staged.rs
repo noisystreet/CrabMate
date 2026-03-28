@@ -9,7 +9,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::llm::{complete_chat_retrying, no_tools_chat_request_from_messages};
 use crate::sse::{SseErrorBody, SsePayload, encode_message};
 use crate::types::{
-    Message, USER_CANCELLED_FINISH_REASON, is_chat_ui_separator,
+    Message, USER_CANCELLED_FINISH_REASON, is_message_excluded_from_llm_context_except_memory,
     message_clone_stripping_reasoning_for_api,
 };
 
@@ -107,7 +107,7 @@ pub(crate) fn build_single_agent_planner_messages(
 ) -> Vec<Message> {
     let mut out: Vec<Message> = messages
         .iter()
-        .filter(|m| !is_chat_ui_separator(m))
+        .filter(|m| !is_message_excluded_from_llm_context_except_memory(m))
         .map(message_clone_stripping_reasoning_for_api)
         .collect();
     out.push(Message::system_only(plan_system));
@@ -120,7 +120,7 @@ pub(crate) fn build_logical_dual_planner_messages(
 ) -> Vec<Message> {
     let mut out: Vec<Message> = messages
         .iter()
-        .filter(|m| !is_chat_ui_separator(m))
+        .filter(|m| !is_message_excluded_from_llm_context_except_memory(m))
         // 逻辑双 agent：规划器只看用户/助手自然语言上下文，不看 tool 结果正文，
         // 避免工具细节污染任务拆解。
         .filter(|m| m.role != "tool")

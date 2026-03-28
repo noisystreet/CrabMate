@@ -93,6 +93,8 @@ export interface WorkspaceData {
 export interface ChatResponse {
   reply: string
   conversation_id?: string
+  /** 非流式 `/chat` 成功落库后的 revision；流式以 SSE `conversation_saved` 为准 */
+  conversation_revision?: number | null
 }
 
 export interface TaskItem {
