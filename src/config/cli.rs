@@ -108,6 +108,7 @@ fn is_known_subcommand(s: &str) -> bool {
             | "doctor"
             | "models"
             | "probe"
+            | "save-session"
             | "export-session"
     )
 }
@@ -399,19 +400,19 @@ pub struct ConfigCmd {
 
 /// 将会话 JSON 导出为与 Web 一致的 `chat_export_*.json` / `.md`（**不要**求 `API_KEY`）
 #[derive(Parser, Debug, Clone)]
-pub struct ExportSessionCmd {
+pub struct SaveSessionCmd {
     /// 导出格式（默认两者皆写）
-    #[arg(long, value_enum, default_value_t = ExportSessionFormat::Both)]
-    pub format: ExportSessionFormat,
+    #[arg(long, value_enum, default_value_t = SaveSessionFormat::Both)]
+    pub format: SaveSessionFormat,
 
     /// 会话文件（默认：`<workspace>/.crabmate/tui_session.json`）
     #[arg(long, value_name = "FILE")]
     pub session_file: Option<String>,
 }
 
-/// `export-session --format` 取值
+/// `save-session --format` 取值
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
-pub enum ExportSessionFormat {
+pub enum SaveSessionFormat {
     /// 仅 JSON（`ChatSessionFile` v1，与前端导出同形）
     Json,
     /// 仅 Markdown
@@ -421,10 +422,10 @@ pub enum ExportSessionFormat {
     Both,
 }
 
-/// 解析后的 `export-session` 参数（供 `runtime::cli` 执行）
+/// 解析后的 `save-session` 参数（供 `runtime::cli` 执行）
 #[derive(Debug, Clone)]
-pub struct ExportSessionCli {
-    pub format: ExportSessionFormat,
+pub struct SaveSessionCli {
+    pub format: SaveSessionFormat,
     pub session_file: Option<String>,
 }
 
@@ -457,7 +458,8 @@ pub enum Commands {
     /// 探测 api_base 上 models 端点连通性与 HTTP 状态（`llm_http_auth_mode=bearer` 时需 API_KEY）
     Probe,
     /// 从会话文件导出 JSON/Markdown 到工作区 `.crabmate/exports/`（与 Web 导出约定一致；**不要**求 API_KEY）
-    ExportSession(ExportSessionCmd),
+    #[command(name = "save-session", visible_alias = "export-session")]
+    SaveSession(SaveSessionCmd),
 }
 
 #[derive(Parser, Debug)]
@@ -509,7 +511,7 @@ pub struct ParsedCliArgs {
     pub bench_args: BenchmarkCliArgs,
     pub extra_cli: ExtraCliCommand,
     /// `Some` 时执行导出后退出（与 `doctor` 一样不要求 API_KEY）
-    pub export_session: Option<ExportSessionCli>,
+    pub save_session: Option<SaveSessionCli>,
 }
 
 fn parse_output_mode(raw: Option<String>) -> Option<String> {
@@ -523,7 +525,7 @@ fn parse_output_mode(raw: Option<String>) -> Option<String> {
     })
 }
 
-/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `export-session`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
+/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `save-session`**（兼容别名 **`export-session`**）子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
 ///
 /// `chat --stdin` 时若读取标准输入失败则返回 [`io::Error`]。
 ///
@@ -593,7 +595,7 @@ fn build_parsed_cli_args(
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
-            export_session: None,
+            save_session: None,
         },
         Some(Commands::Serve(s)) => {
             let port = s.port.or(Some(8080));
@@ -610,7 +612,7 @@ fn build_parsed_cli_args(
                 log_file: log_path,
                 bench_args: BenchmarkCliArgs::default(),
                 extra_cli: ExtraCliCommand::None,
-                export_session: None,
+                save_session: None,
             }
         }
         Some(Commands::Repl(r)) => ParsedCliArgs {
@@ -626,7 +628,7 @@ fn build_parsed_cli_args(
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
-            export_session: None,
+            save_session: None,
         },
         Some(Commands::Chat(c)) => {
             let inline_user_text = if c.user_prompt_file.is_some() {
@@ -663,7 +665,7 @@ fn build_parsed_cli_args(
                 log_file: log_path,
                 bench_args: BenchmarkCliArgs::default(),
                 extra_cli: ExtraCliCommand::None,
-                export_session: None,
+                save_session: None,
             }
         }
         Some(Commands::Bench(b)) => ParsedCliArgs {
@@ -687,7 +689,7 @@ fn build_parsed_cli_args(
                 system_prompt_file: b.bench_system_prompt,
             },
             extra_cli: ExtraCliCommand::None,
-            export_session: None,
+            save_session: None,
         },
         // `config` 子命令恒走配置检查并退出，与是否写 `--dry-run` 无关（`--dry-run` 保留为显式别名）。
         Some(Commands::Config(_c)) => ParsedCliArgs {
@@ -703,7 +705,7 @@ fn build_parsed_cli_args(
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
-            export_session: None,
+            save_session: None,
         },
         Some(Commands::Doctor) => ParsedCliArgs {
             config_path: config,
@@ -718,7 +720,7 @@ fn build_parsed_cli_args(
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::Doctor,
-            export_session: None,
+            save_session: None,
         },
         Some(Commands::Models) => ParsedCliArgs {
             config_path: config,
@@ -733,7 +735,7 @@ fn build_parsed_cli_args(
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::Models,
-            export_session: None,
+            save_session: None,
         },
         Some(Commands::Probe) => ParsedCliArgs {
             config_path: config,
@@ -748,9 +750,9 @@ fn build_parsed_cli_args(
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::Probe,
-            export_session: None,
+            save_session: None,
         },
-        Some(Commands::ExportSession(e)) => ParsedCliArgs {
+        Some(Commands::SaveSession(e)) => ParsedCliArgs {
             config_path: config,
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
@@ -763,7 +765,7 @@ fn build_parsed_cli_args(
             log_file: log_path,
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
-            export_session: Some(ExportSessionCli {
+            save_session: Some(SaveSessionCli {
                 format: e.format,
                 session_file: e.session_file,
             }),
@@ -787,7 +789,13 @@ mod legacy_argv_tests {
     }
 
     #[test]
-    fn help_export_session_routes_to_subcommand_help() {
+    fn help_save_session_routes_to_subcommand_help() {
+        let v = norm(&["crabmate", "help", "save-session"]);
+        assert_eq!(v, vec!["crabmate", "save-session", "--help"]);
+    }
+
+    #[test]
+    fn help_export_session_alias_routes_to_subcommand_help() {
         let v = norm(&["crabmate", "help", "export-session"]);
         assert_eq!(v, vec!["crabmate", "export-session", "--help"]);
     }

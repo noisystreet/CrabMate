@@ -359,7 +359,7 @@ impl CliReplStyle {
         self.write_banner_subheading(&mut out, "内建命令")?;
         self.write_banner_note_line(
             &mut out,
-            "    /clear  /model  /config  /workspace（/cd） /tools  /export  /help  /?  · 行首 /… 可按 Tab 补全",
+            "    /clear  /model  /models  /config  /doctor  /probe  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
         )?;
         self.write_banner_note_line(
             &mut out,
@@ -680,6 +680,18 @@ impl CliReplStyle {
                 "/config",
                 "打印关键运行配置摘要（与启动横幅同源字段；不含密钥）",
             ),
+            (
+                "/doctor",
+                "一页环境诊断（同 crabmate doctor；不要求 API_KEY）",
+            ),
+            (
+                "/probe",
+                "探测 api_base 的 GET …/models 连通性（同 crabmate probe；需 bearer 时依赖 API_KEY）",
+            ),
+            (
+                "/models",
+                "列出 GET …/models 返回的模型 id（同 crabmate models；需 bearer 时依赖 API_KEY）",
+            ),
             ("/workspace", "显示当前工作区"),
             (
                 "/workspace <路径>",
@@ -688,7 +700,11 @@ impl CliReplStyle {
             ("/tools", "列出当前加载的工具名"),
             (
                 "/export [json|markdown|both]",
-                "导出当前对话到 .crabmate/exports/（与 Web 同形 JSON/Markdown）",
+                "导出当前内存对话到 .crabmate/exports/（与 Web 同形 JSON/Markdown）",
+            ),
+            (
+                "/save-session [json|markdown|both]",
+                "从磁盘会话文件导出到 .crabmate/exports/（同 crabmate save-session；默认 tui_session.json）",
             ),
             ("/help, /?", "本说明"),
             (
@@ -767,7 +783,7 @@ impl CliReplStyle {
         }
         writeln!(out)?;
         self.writeln_muted_line(
-            "「我:」下光标前为 /… 时按 Tab 可补全内建命令与 /export 格式；bash#: 下不补全",
+            "「我:」下光标前为 /… 时按 Tab 可补全内建命令与 /export、/save-session 格式；bash#: 下不补全",
         )?;
         self.writeln_muted_line("退出：quit · exit · Ctrl+D")?;
         Ok(())

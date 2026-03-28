@@ -8,13 +8,13 @@ CrabMate is a Rust-based AI Agent powered by the DeepSeek API. It provides Web U
 
 ### Environment variable `API_KEY`
 
-- **Default (`llm_http_auth_mode = bearer` in config)**：`API_KEY` is the cloud vendor Bearer token. Required for `serve` / `repl` / `chat` / `bench` / `models` / `probe`. **`config`（`cargo run -- config` / `--dry-run`）、`doctor` 与 `export-session` 不要求 `API_KEY`**。
+- **Default (`llm_http_auth_mode = bearer` in config)**：`API_KEY` is the cloud vendor Bearer token. Required for `serve` / `repl` / `chat` / `bench` / `models` / `probe`. **`config`（`cargo run -- config` / `--dry-run`）、`doctor` 与 `save-session`（别名 `export-session`）不要求 `API_KEY`**。
 - **Local OpenAI-compatible backends（e.g. Ollama）**：set **`llm_http_auth_mode = "none"`**（or **`AGENT_LLM_HTTP_AUTH_MODE=none`**）so CrabMate does **not** send `Authorization` to `chat/completions` / `models`; then `serve` / `repl` / `chat` / `bench` / `models` / `probe` can run **without** `API_KEY`. With `bearer` and a wrong key the server may start but chat fails (`INTERNAL_ERROR`).
 
 ### Running services
 
-- **Backend + Web UI**: `API_KEY="..." cargo run -- serve` (subcommand `serve`; default port 8080, binds **127.0.0.1** only). For LAN access use `serve --host 0.0.0.0` (see README). Legacy `cargo run -- --serve` still works. Optional global `--log /path/to.log` appends logs and mirrors to stderr. Without `RUST_LOG`, `serve` defaults to **info**; `repl` / `chat` / `bench` / `config` / `export-session` default to **warn** unless you set `RUST_LOG` or `--log`.
-- **CLI diagnostics**: `cargo run -- doctor` — human-readable check (Rust/npm/frontend paths, allowlist size, redacted secrets); **no `API_KEY`**. **`export-session`** exports chat JSON/Markdown to `<workspace>/.crabmate/exports/` (same shape as Web); **no `API_KEY`**. `cargo run -- models` / `probe` use `GET {api_base}/models` with Bearer only when `llm_http_auth_mode=bearer`; with `none`, no `Authorization` header is sent.
+- **Backend + Web UI**: `API_KEY="..." cargo run -- serve` (subcommand `serve`; default port 8080, binds **127.0.0.1** only). For LAN access use `serve --host 0.0.0.0` (see README). Legacy `cargo run -- --serve` still works. Optional global `--log /path/to.log` appends logs and mirrors to stderr. Without `RUST_LOG`, `serve` defaults to **info**; `repl` / `chat` / `bench` / `config` / `save-session` (alias `export-session`) default to **warn** unless you set `RUST_LOG` or `--log`.
+- **CLI diagnostics**: `cargo run -- doctor` — human-readable check (Rust/npm/frontend paths, allowlist size, redacted secrets); **no `API_KEY`**. **`save-session`** exports chat JSON/Markdown to `<workspace>/.crabmate/exports/` (same shape as Web; alias `export-session`); **no `API_KEY`**. `cargo run -- models` / `probe` use `GET {api_base}/models` with Bearer only when `llm_http_auth_mode=bearer`; with `none`, no `Authorization` header is sent.
 - **Frontend dev server** (optional, for hot-reload): `cd frontend && npm run dev` (Vite proxies API calls to `:8080`)
 - Frontend must be built (`cd frontend && npm run build`) before running the backend in serve mode, since it serves `frontend/dist` as static assets.
 

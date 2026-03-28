@@ -20,11 +20,11 @@
 | `doctor` | 本地诊断（**不需要** `API_KEY`）。 |
 | `models` | `GET …/models`（需 `API_KEY`）。 |
 | `probe` | 探测 models 端点（需 `API_KEY`）。 |
-| `export-session` | 从会话文件导出 JSON/Markdown 到工作区 **`.crabmate/exports/`**（与 Web 导出同形；**不要**求 `API_KEY`）。`--format json|markdown|both`（默认 `both`），`--session-file` 可选。 |
+| `save-session` | 从会话文件导出 JSON/Markdown 到工作区 **`.crabmate/exports/`**（与 Web 导出同形；**不要**求 `API_KEY`）。`--format json|markdown|both`（默认 `both`），`--session-file` 可选。兼容别名 **`export-session`**。 |
 
 ## 日志级别
 
-未设置 `RUST_LOG` 时：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` / `export-session` 默认 **warn**。可用 `RUST_LOG` 或 `--log <FILE>`。
+未设置 `RUST_LOG` 时：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` / `save-session`（及别名 `export-session`）默认 **warn**。可用 `RUST_LOG` 或 `--log <FILE>`。
 
 ## 消息管道调试日志
 
@@ -32,7 +32,7 @@
 
 ## 兼容旧用法
 
-未写子命令时仍可用 `--serve`、`--query`、`--benchmark`、`--dry-run` 等，内部映射为对应子命令。若参数中**任意位置**出现显式子命令名（如 `serve` / `doctor` / `export-session`），则整段 argv 不再插入默认 `repl`（与 `tests/fixtures/cli/legacy_normalize.json` 契约一致）。
+未写子命令时仍可用 `--serve`、`--query`、`--benchmark`、`--dry-run` 等，内部映射为对应子命令。若参数中**任意位置**出现显式子命令名（如 `serve` / `doctor` / `save-session` / `export-session`），则整段 argv 不再插入默认 `repl`（与 `tests/fixtures/cli/legacy_normalize.json` 契约一致）。
 
 ## 常用选项（兼容写法）
 
@@ -78,11 +78,11 @@ echo "1+1?" | cargo run -- chat --stdin
 cargo run -- --no-tools serve
 cargo run -- bench --benchmark swe_bench --batch tasks.jsonl --batch-output results.jsonl --task-timeout 600
 cargo run -- config
-cargo run -- export-session
-cargo run -- export-session --format json --workspace /path/to/proj
+cargo run -- save-session
+cargo run -- save-session --format json --workspace /path/to/proj
 ```
 
-## `export-session`
+## `save-session`
 
 默认读取 **`<workspace>/.crabmate/tui_session.json`**（`--workspace` 与全局 `--config` 写在子命令前），在 **`<workspace>/.crabmate/exports/`** 下生成带时间戳的 **`chat_export_*.json`** / **`chat_export_*.md`**（与 Web 前端导出约定一致，见 `runtime/chat_export.rs` 与 `frontend/src/chatExport.ts`）。每行 stdout 为写出文件的绝对路径，便于脚本捕获。
 
@@ -98,9 +98,9 @@ cargo run -- export-session --format json --workspace /path/to/proj
 
 **可选**：**`AGENT_CLI_WAIT_SPINNER=1`** 时，在等待模型**首包流式输出**（或 **`--no-stream`** 下整段 body）前于 **stderr** 显示 spinner 与已等待时间（默认关闭；须 stderr 为 TTY 且未设 **`NO_COLOR`**）。详见 **`docs/CONFIGURATION.md`**。
 
-以 `/` 开头：**`/help`**、**`/clear`**、**`/model`**、**`/config`**（无参数）、**`/workspace`** / **`/cd`**、**`/tools`**、**`/export`**（可选参数 `json` / `markdown` / `both`，默认 `both`）。`quit` / `exit` / Ctrl+D 退出。
+以 `/` 开头：**`/help`**、**`/clear`**、**`/model`**、**`/config`**（无参数）、**`/doctor`**（同 **`crabmate doctor`**，无参数）、**`/probe`**（同 **`crabmate probe`**，无参数）、**`/models`**（同 **`crabmate models`**，无参数）、**`/workspace`** / **`/cd`**、**`/tools`**、**`/export`**（可选参数 `json` / `markdown` / `both`，默认 `both`；导出**当前内存**）、**`/save-session`**（同上格式参数；从磁盘 **`tui_session.json`** 导出，同 **`crabmate save-session`**）。`quit` / `exit` / Ctrl+D 退出。
 
-**Tab 补全**（交互 TTY、**reedline** 路径）：在「我:」提示下，若当前行（光标之前）去掉前导空白后以 **`/`** 开头，按 **Tab** 可弹出内建命令补全菜单（方向键或再按 **Tab** 选择；仅一项匹配时会直接填入）。**`/export`** 在已输入完整 `export` 后再 **Tab** 可补 **`json` / `markdown` / `md` / `both`**。在 **`bash#:`** 本地 shell 模式下关闭补全，避免干扰普通命令输入。
+**Tab 补全**（交互 TTY、**reedline** 路径）：在「我:」提示下，若当前行（光标之前）去掉前导空白后以 **`/`** 开头，按 **Tab** 可弹出内建命令补全菜单（方向键或再按 **Tab** 选择；仅一项匹配时会直接填入）。**`/export`** 与 **`/save-session`** 在已输入完整命令名后再 **Tab** 可补 **`json` / `markdown` / `md` / `both`**。在 **`bash#:`** 本地 shell 模式下关闭补全，避免干扰普通命令输入。
 
 ### 行首 `$`（本地 shell，安全边界）
 
@@ -120,7 +120,7 @@ cargo run -- export-session --format json --workspace /path/to/proj
 |------|----------------|------------------------|
 | **会话持久** | 可选 SQLite（`conversation_store_sqlite_path`）+ `conversation_id`，多会话、进程重启可续聊（受 TTL/条数上限等约束，见 `docs/DEVELOPMENT.md`）。 | **部分等价**：REPL 可选从工作区 **`.crabmate/tui_session.json`** 启动时加载/退出时保存（`tui_load_session_on_start` / `tui_session_max_messages`），为**单条会话链**文件，**不是** Web 的按 `conversation_id` 多会话库。`chat` 单次或批跑**不**自动跨命令持久化；需自行用 `--messages-json-file` 等传入上下文。 |
 | **人工审批** | `run_command` 非白名单、**`http_fetch` / `http_request`**（未匹配 `http_fetch_allowed_prefixes`）等可走 SSE 控制面 + 浏览器 **`POST /chat/approval`**（非流式 `/chat` 无审批会话时仍拒绝）。 | **`run_command`**：见上一节（TTY 菜单 / 管道读行）。**`http_fetch` / `http_request`**：未匹配前缀时同样走该套审批；**`http_request`** 永久允许键为 **`http_request:<METHOD>:<URL>`**，与 **`http_fetch:`** 区分。 |
-| **导出聊天记录** | 前端 **导出 JSON / Markdown**（与 `.crabmate/tui_session.json` 等形状对齐说明见 `README.md`）。 | **`export-session`** 从磁盘会话文件写入 **`.crabmate/exports/`**（与 Web 同形）；REPL **`/export`** 导出**当前内存**中的消息（未落盘的多轮也会写入）。`chat --output json` 仍仅辅助脚本输出本轮结构，**不等价**于完整会话导出文件。 |
+| **导出聊天记录** | 前端 **导出 JSON / Markdown**（与 `.crabmate/tui_session.json` 等形状对齐说明见 `README.md`）。 | **`save-session`**（兼容别名 **`export-session`**）从磁盘会话文件写入 **`.crabmate/exports/`**（与 Web 同形）；REPL **`/save-session`** 与之同逻辑；REPL **`/export`** 导出**当前内存**中的消息（未落盘的多轮也会写入）。`chat --output json` 仍仅辅助脚本输出本轮结构，**不等价**于完整会话导出文件。 |
 
 本节与 `README.md` 随 CLI 导出能力变更时同步更新。
 
