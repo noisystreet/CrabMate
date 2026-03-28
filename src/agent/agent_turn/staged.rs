@@ -7,7 +7,8 @@ use tokio::sync::mpsc;
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
-use crate::agent::plan_optimizer;
+use crate::agent::plan_ensemble;
+use crate::agent::plan_optimizer::{self, STAGED_PLAN_OPTIMIZER_COACH_MARK};
 use crate::config::StagedPlanFeedbackMode;
 use crate::llm::{complete_chat_retrying, no_tools_chat_request_from_messages};
 use crate::sse::{SseErrorBody, SsePayload, encode_message};
@@ -30,6 +31,172 @@ use super::staged_sse::{
     send_staged_plan_step_started, staged_plan_phase_instruction_default,
     staged_plan_queue_summary_text,
 };
+
+/// 若最后一条为带「规划教练」标记的临时 user，则弹出（取消或解析失败时避免孤立上下文）。
+fn pop_last_staged_planner_coach_user_if_present(messages: &mut Vec<Message>) {
+    if let Some(last) = messages.last()
+        && last.role == "user"
+        && last.content.as_deref().is_some_and(|c| {
+            c.contains(STAGED_PLAN_OPTIMIZER_COACH_MARK)
+                || plan_ensemble::is_ensemble_injected_user_content(c)
+        })
+    {
+        messages.pop();
+    }
+}
+
+/// 无工具规划补全：假定 `p.messages` 已含本轮所需的 user（若有）；与 `prepare_staged_planner_no_tools_request` + `complete_chat_retrying` 一致。
+async fn complete_one_staged_planner_assistant_round(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    build_planner_messages: fn(&[Message], String) -> Vec<Message>,
+    planner_render_to_terminal: bool,
+    log_label: &'static str,
+) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+    let req = prepare_staged_planner_no_tools_request(p, per_coord, build_planner_messages).await?;
+    let (msg, finish_reason) = complete_chat_retrying(
+        p.llm_backend,
+        p.client,
+        p.api_key,
+        p.cfg.as_ref(),
+        &req,
+        p.out,
+        planner_render_to_terminal,
+        p.no_stream,
+        p.cancel,
+        p.plain_terminal_stream,
+    )
+    .await?;
+    debug!(
+        target: "crabmate",
+        "{} finish_reason={} assistant_preview={}",
+        log_label,
+        finish_reason,
+        crate::redact::assistant_message_preview_for_log(&msg)
+    );
+    Ok((msg, finish_reason))
+}
+
+/// 与首轮/优化轮一致：忽略原生 tool_calls，物化 DSML 后再清空，仅解析正文规划 JSON。
+fn strip_staged_planner_message_tool_calls(
+    msg: &mut Message,
+    round_hint: &'static str,
+    dsml: bool,
+) {
+    if let Some(tc) = msg.tool_calls.as_ref().filter(|c| !c.is_empty()) {
+        debug!(
+            target: "crabmate",
+            "分阶段规划{round_hint}：丢弃 API 返回的 {} 条原生 tool_calls，改从正文解析",
+            tc.len()
+        );
+    }
+    msg.tool_calls = None;
+    crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(msg, dsml);
+    if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
+        warn!(
+            target: "crabmate",
+            "分阶段规划{round_hint}：正文物化出 tool_calls，已忽略，仅尝试从正文解析规划 JSON"
+        );
+        msg.tool_calls = None;
+    }
+}
+
+/// 逻辑多规划员（串行）+ 合并：首轮规划已在历史中；辅助规划员轮**不**写入 assistant，以免上下文膨胀。
+async fn maybe_run_staged_plan_ensemble_then_merge<F>(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    labels: &StagedPlanRunLabels,
+    make_step_user_message: &F,
+    planner_render_to_terminal: bool,
+    plan: &mut AgentReplyPlanV1,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    F: Fn(String) -> Message,
+{
+    let extra = p.staged_plan_ensemble_count.saturating_sub(1);
+    if extra == 0 {
+        return Ok(());
+    }
+
+    let dsml = p.cfg.materialize_deepseek_dsml_tool_calls;
+    let mut accepted: Vec<AgentReplyPlanV1> = vec![plan.clone()];
+
+    for i in 0..extra {
+        let planner_idx = i.saturating_add(2);
+        let body = plan_ensemble::ensemble_secondary_planner_user_body(planner_idx, &accepted);
+        p.messages.push(make_step_user_message(body));
+        let (mut sec_msg, fin) = complete_one_staged_planner_assistant_round(
+            p,
+            per_coord,
+            labels.build_planner_messages,
+            planner_render_to_terminal,
+            "分阶段规划·逻辑多规划员轮",
+        )
+        .await?;
+        if fin == USER_CANCELLED_FINISH_REASON {
+            pop_last_staged_planner_coach_user_if_present(p.messages);
+            return Ok(());
+        }
+        strip_staged_planner_message_tool_calls(&mut sec_msg, "·逻辑多规划员", dsml);
+        let content = sec_msg.content.as_deref().unwrap_or("");
+        match plan_artifact::parse_agent_reply_plan_v1(content) {
+            Ok(p2) if !p2.no_task && !p2.steps.is_empty() => {
+                pop_last_staged_planner_coach_user_if_present(p.messages);
+                accepted.push(p2);
+            }
+            Ok(_) | Err(_) => {
+                warn!(
+                    target: "crabmate",
+                    "分阶段规划·逻辑多规划员：第 {} 份规划解析失败或无效，停止追加规划员（保留已收集的 {} 份）",
+                    planner_idx,
+                    accepted.len()
+                );
+                pop_last_staged_planner_coach_user_if_present(p.messages);
+                break;
+            }
+        }
+    }
+
+    if accepted.len() < 2 {
+        return Ok(());
+    }
+
+    let merge_body = plan_ensemble::ensemble_merge_planner_user_body(&accepted);
+    p.messages.push(make_step_user_message(merge_body));
+    let (mut merge_msg, merge_fin) = complete_one_staged_planner_assistant_round(
+        p,
+        per_coord,
+        labels.build_planner_messages,
+        planner_render_to_terminal,
+        "分阶段规划·多规划合并轮",
+    )
+    .await?;
+    if merge_fin == USER_CANCELLED_FINISH_REASON {
+        pop_last_staged_planner_coach_user_if_present(p.messages);
+        return Ok(());
+    }
+    strip_staged_planner_message_tool_calls(&mut merge_msg, "·多规划合并", dsml);
+    let merge_content = merge_msg.content.as_deref().unwrap_or("");
+    if let Some(steps) = plan_ensemble::try_parse_ensemble_planner_reply(merge_content) {
+        debug!(
+            target: "crabmate",
+            "分阶段规划·多规划合并：步数 {} -> {}（来自 {} 份草案）",
+            plan.steps.len(),
+            steps.len(),
+            accepted.len()
+        );
+        push_assistant_merging_trailing_empty_placeholder(p.messages, merge_msg);
+        plan.steps = steps;
+    } else {
+        warn!(
+            target: "crabmate",
+            "分阶段规划·多规划合并：未解析出合法 agent_reply_plan，沿用合并前规划（{} 步）",
+            plan.steps.len()
+        );
+        pop_last_staged_planner_coach_user_if_present(p.messages);
+    }
+    Ok(())
+}
 
 /// 分阶段规划共享执行路径上的日志文案（避免 `run_staged_plan_with_prepared_request` 参数过长）。
 pub(crate) struct StagedPlanRunLabels {
@@ -567,57 +734,37 @@ where
     }
 
     let mut plan = plan;
+    maybe_run_staged_plan_ensemble_then_merge(
+        p,
+        per_coord,
+        &labels,
+        &make_step_user_message,
+        planner_render_to_terminal,
+        &mut plan,
+    )
+    .await?;
+
     if plan.steps.len() >= 2 && p.staged_plan_optimizer_round {
         let csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(p.tools_defs);
         let opt_body = plan_optimizer::staged_plan_optimizer_user_body(&plan, csv.as_str());
         p.messages.push(make_step_user_message(opt_body));
-        let opt_req =
-            prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
-                .await?;
-        let (mut opt_msg, opt_finish) = complete_chat_retrying(
-            p.llm_backend,
-            p.client,
-            p.api_key,
-            p.cfg.as_ref(),
-            &opt_req,
-            p.out,
+        let (mut opt_msg, opt_finish) = complete_one_staged_planner_assistant_round(
+            p,
+            per_coord,
+            labels.build_planner_messages,
             planner_render_to_terminal,
-            p.no_stream,
-            p.cancel,
-            p.plain_terminal_stream,
+            "分阶段规划优化轮模型输出",
         )
         .await?;
         if opt_finish == USER_CANCELLED_FINISH_REASON {
-            if let Some(last) = p.messages.last()
-                && last.role == "user"
-                && last
-                    .content
-                    .as_deref()
-                    .is_some_and(|c| c.contains("### 分阶段规划 · 步骤优化（服务端注入）"))
-            {
-                p.messages.pop();
-            }
+            pop_last_staged_planner_coach_user_if_present(p.messages);
             return Ok(());
         }
-        if let Some(tc) = opt_msg.tool_calls.as_ref().filter(|c| !c.is_empty()) {
-            debug!(
-                target: "crabmate",
-                "分阶段规划优化轮：丢弃 API 返回的 {} 条原生 tool_calls，改从正文解析",
-                tc.len()
-            );
-        }
-        opt_msg.tool_calls = None;
-        crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+        strip_staged_planner_message_tool_calls(
             &mut opt_msg,
+            "优化轮",
             p.cfg.materialize_deepseek_dsml_tool_calls,
         );
-        if opt_msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
-            warn!(
-                target: "crabmate",
-                "分阶段规划优化轮：正文物化出 tool_calls，已忽略，仅尝试从正文解析规划 JSON"
-            );
-            opt_msg.tool_calls = None;
-        }
         let opt_content = opt_msg.content.as_deref().unwrap_or("");
         if let Some(merged_steps) = plan_optimizer::try_parse_optimizer_reply(opt_content) {
             if merged_steps.len() < plan.steps.len() {
@@ -635,15 +782,7 @@ where
                 target: "crabmate",
                 "分阶段规划优化轮：未解析出合法 agent_reply_plan v1 或非空 steps，沿用首轮规划"
             );
-            if let Some(last) = p.messages.last()
-                && last.role == "user"
-                && last
-                    .content
-                    .as_deref()
-                    .is_some_and(|c| c.contains("### 分阶段规划 · 步骤优化（服务端注入）"))
-            {
-                p.messages.pop();
-            }
+            pop_last_staged_planner_coach_user_if_present(p.messages);
         }
     }
 

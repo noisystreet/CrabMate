@@ -5,6 +5,9 @@ use std::collections::BTreeSet;
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::types::Tool;
 
+/// 步骤优化轮注入的 user 正文标记（取消/失败时弹出临时 user）。
+pub(crate) const STAGED_PLAN_OPTIMIZER_COACH_MARK: &str = "### 分阶段规划 · 步骤优化（服务端注入）";
+
 /// 本会话 `tools_defs` 中，满足「同轮可多调用并行 `spawn_blocking`」的工具名（逗号分隔，已排序去重）。
 pub(crate) fn parallel_batchable_tool_names_csv_from_defs(tools: &[Tool]) -> String {
     let mut names = BTreeSet::new();
@@ -33,7 +36,7 @@ pub(crate) fn staged_plan_optimizer_user_body(
         )
     };
     format!(
-        "### 分阶段规划 · 步骤优化（服务端注入）\n\
+        "{}\n\
          下面是你刚输出的可执行规划（Markdown 列表，**勿**改动其中 `id`，除非合并/拆分时为新步分配新 id）。\n\
          请在**不削弱任务覆盖面**的前提下优化 `steps`：\n\
          - 将**连续、彼此无数据依赖**且主要为**只读探查**的子目标合并为更少的大步（一步内可安排**多次**工具调用）。\n\
@@ -46,6 +49,7 @@ pub(crate) fn staged_plan_optimizer_user_body(
          ---\n\
          当前规划步骤：\n\
          {}",
+        STAGED_PLAN_OPTIMIZER_COACH_MARK,
         plan_artifact::PLAN_V1_SCHEMA_RULES,
         plan_artifact::PLAN_V1_EXAMPLE_JSON,
         steps_md,

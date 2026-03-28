@@ -13,7 +13,7 @@
 - **Cursor 式规则**：`AGENT_CURSOR_RULES_ENABLED`、`AGENT_CURSOR_RULES_DIR`、`AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD`、`AGENT_CURSOR_RULES_MAX_CHARS`
 - **终答规划**：`AGENT_FINAL_PLAN_REQUIREMENT`（`never` / `workflow_reflection` / `always`）、`AGENT_PLAN_REWRITE_MAX_ATTEMPTS`
 - **规划器模式**：`AGENT_PLANNER_EXECUTOR_MODE`（`single_agent` / `logical_dual_agent`）
-- **分阶段规划**：`AGENT_STAGED_PLAN_EXECUTION`、`AGENT_STAGED_PLAN_PHASE_INSTRUCTION`、`AGENT_STAGED_PLAN_ALLOW_NO_TASK`、`AGENT_STAGED_PLAN_FEEDBACK_MODE`（`fail_fast` / `patch_planner`）、`AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS`
+- **分阶段规划**：`AGENT_STAGED_PLAN_EXECUTION`、`AGENT_STAGED_PLAN_PHASE_INSTRUCTION`、`AGENT_STAGED_PLAN_ALLOW_NO_TASK`、`AGENT_STAGED_PLAN_FEEDBACK_MODE`（`fail_fast` / `patch_planner`）、`AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS`、`AGENT_STAGED_PLAN_ENSEMBLE_COUNT`（逻辑多规划员份数上限 1–3，默认 1）
 - **对话队列**：`AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`
 - **只读工具并行**：`AGENT_PARALLEL_READONLY_TOOLS_MAX`
 - **单轮 `read_file` 缓存**：`AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES`（`0` 关闭；写类工具或工作区变更后会话内缓存整表清空）
@@ -88,6 +88,8 @@ model = "deepseek-reasoner"
 **CLI 规划轮终端输出（`staged_plan_cli_show_planner_stream`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`）**：仅影响 **REPL / `chat` 等 `out: None` 路径** 下，**无工具规划轮**与 **`patch_planner` 补丁规划轮**是否向 stdout 流式或整段打印模型原文（`Agent:` 前缀及正文）。设为 `false` 时这些轮次不在终端打印模型输出，仍保留 `staged_plan_notice` 队列摘要、分步注入 user 转录与后续执行步的助手输出；Web SSE 路径不受影响。
 
 **规划步骤优化轮（`staged_plan_optimizer_round`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_OPTIMIZER_ROUND`）**：在首轮 `agent_reply_plan` v1 解析成功且 `steps` 不少于 2 时，再追加一轮无工具请求，请模型合并**无数据依赖**的只读探查步，并提示在同一执行步内对「可同轮并行批处理」的内建工具（与执行层 `parallel_readonly_tools` 判定一致，不限于 `read_file`）发起多次调用。解析失败或用户取消优化轮时沿用首轮规划；成功则追加优化轮 assistant 并采用新 `steps`（多一次 API）。
+
+**逻辑多规划员与合并（`staged_plan_ensemble_count`，默认 `1`，环境变量 `AGENT_STAGED_PLAN_ENSEMBLE_COUNT`，合法值钳制为 1–3）**：`1` 表示关闭。为 `2` 或 `3` 时，在首轮规划写入历史后，再**串行**发起 1 或 2 次无工具「独立规划员」请求（通过服务端注入的 user 正文区分角色；**辅助规划员的 assistant 不写入会话历史**，仅合并轮的 user+assistant 会保留），最后追加一轮「合并多份草案」的无工具请求，产出单一 `steps` 后再进入上述步骤优化轮（若启用）。仍为**同一进程、同一模型与密钥**；不保证质量更优，且 **API 次数与费用明显增加**（例如 `3` + 优化轮 ≈ 首轮外再多 3 次规划类调用）。某辅助轮解析失败时停止追加规划员；若最终有效草案不足 2 份则不跑合并轮。
 
 ## SyncDefault 工具 Docker 沙盒（`sync_default_tool_sandbox_mode`）
 
