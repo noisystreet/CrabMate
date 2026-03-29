@@ -65,7 +65,7 @@ llm_http_auth_mode = "none"
 
 ## MiniMax（OpenAI 兼容）
 
-MiniMax 提供 **`https://api.minimaxi.com/v1`**（与官方文档一致；亦可能见 **`https://api.minimax.io/v1`** 等别名，以控制台为准）下的 OpenAI 兼容 **`POST …/chat/completions`**。官方文档示例含 **`role: "system"`**（见 [OpenAI API 兼容](https://platform.minimaxi.com/docs/api-reference/text-openai-api)），但**线上接口仍常返回** HTTP 400 **`invalid message role: system`**；CrabMate **嵌入默认**将 **`llm_fold_system_into_user = true`**，出站请求把系统提示**并入**第一条相关 **`user`**，语义与「首条 system + user」等价，一般可消除该错误。若你确认所用网关**接受**独立 **`system`** 条且希望保留该形态，可设 **`llm_fold_system_into_user = false`**。
+MiniMax 提供 **`https://api.minimaxi.com/v1`**（与官方文档一致；亦可能见 **`https://api.minimax.io/v1`** 等别名，以控制台为准）下的 OpenAI 兼容 **`POST …/chat/completions`**。官方文档示例含 **`role: "system"`**（见 [OpenAI API 兼容](https://platform.minimaxi.com/docs/api-reference/text-openai-api)），但**线上接口仍常返回** HTTP 400 **`invalid message role: system`**。CrabMate **嵌入默认 `config/default_config.toml`** 以 **DeepSeek** 等常规调用为主，将 **`llm_fold_system_into_user`** 默认设为 **`false`**（保留独立 **`system`** 条）。接 **MiniMax** 时**建议**显式设 **`llm_fold_system_into_user = true`**：出站请求把系统提示**并入**第一条相关 **`user`**，语义与「首条 system + user」等价，一般可消除该错误。若你确认所用网关**接受**独立 **`system`** 条，可保持 **`false`**。
 
 **本仓库已实测的 `model` 示例**（与 CrabMate OpenAI 兼容调用链联调）：**`MiniMax-M2.7`**、**`MiniMax-M2.7-highspeed`**、**`MiniMax-M2.5`**。更多模型名与能力以 MiniMax 控制台及官方 API 文档为准。
 

@@ -354,7 +354,7 @@ fn role_is_system_for_vendor(role: &str) -> bool {
     role.trim().eq_ignore_ascii_case("system")
 }
 
-/// 将独立 **`role: "system"`** 折叠进后续 **`user`**，避免上游返回 HTTP 400（如 **`invalid message role: system`**）。MiniMax OpenAI 兼容域名上**实测常见**该错误，与文档示例不完全一致；由配置 **`llm_fold_system_into_user`** 控制（嵌入默认对 MiniMax 为 **`true`**）。
+/// 将独立 **`role: "system"`** 折叠进后续 **`user`**，避免上游返回 HTTP 400（如 **`invalid message role: system`**）。MiniMax OpenAI 兼容域名上**实测常见**该错误，与文档示例不完全一致；由配置 **`llm_fold_system_into_user`** 控制（嵌入 TOML 默认 **`false`**；接 MiniMax 等时通常需 **`true`**）。
 ///
 /// 将连续 **`system`** 的正文按顺序拼接后，合并进**下一条** **`user`** 的 `content` 之前（中间空一行）；若下一条非 `user`，则先插入一条仅含该拼接正文的 **`user`**。**不**写入会话，仅用于拼装出站 `ChatRequest.messages`。
 pub fn fold_system_messages_into_following_user(msgs: Vec<Message>) -> Vec<Message> {
