@@ -6,7 +6,7 @@
 
 - **REPL**：输入 **`/config reload`**（或 Tab 补全 **`/config reload`**）。从与启动时相同的配置文件路径（**`--config`** 或默认探测 **`config.toml`** / **`.agent_demo.toml`**）再读 TOML，并与**当前进程环境变量**合并后，将可热更字段写入内存中的 [`AgentConfig`](DEVELOPMENT.md)；随后清空 MCP 进程内 stdio 缓存，下一轮对话使用新 MCP 指纹。
 - **Web**：**`POST /config/reload`**（JSON body 可为 `{}`；鉴权与 **`/chat`** 等受保护 API 一致——若启动时启用了 Bearer 中间件则须带 token）。成功时返回 **`{ "ok": true, "message": "…" }`**。
-- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。
+- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_fold_system_into_user`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。
 - **刻意不热更**：**`conversation_store_sqlite_path`**（会话库连接在启动时打开，改路径须重启 **`serve`**）。**`reqwest::Client`** 不重建，**`api_timeout_secs` 等**对**新连接**的生效可能受连接池保留的空闲连接影响。
 - **`API_KEY`**：仍只从**环境变量**读取；热重载**不**解析密钥文件。改 **`API_KEY`** 后通常需**重新 export** 并再执行 **`/config reload`**（或重启进程）以便与 **`llm_http_auth_mode=bearer`** 行为一致。
 - **Bearer 中间件层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权层；热重载**不会**拆除或新增该层——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的 token 字符串，用于已挂层时的校验。
@@ -15,7 +15,7 @@
 
 以下为常用项；**完整键名与默认值以 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为准**。
 
-- **模型与 API**：`AGENT_API_BASE`、`AGENT_MODEL`、`AGENT_LLM_HTTP_AUTH_MODE`（`bearer` 默认，需 **`API_KEY`**；`none` 不向 `chat/completions` / `models` 发送 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）、`AGENT_SYSTEM_PROMPT`、`AGENT_SYSTEM_PROMPT_FILE`
+- **模型与 API**：`AGENT_API_BASE`、`AGENT_MODEL`、`AGENT_LLM_HTTP_AUTH_MODE`（`bearer` 默认，需 **`API_KEY`**；`none` 不向 `chat/completions` / `models` 发送 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）、`AGENT_LLM_REASONING_SPLIT`（为真时在 `chat/completions` 请求体中带 **`reasoning_split: true`**，供 MiniMax 等将思维链与正文分离；见下文「MiniMax」）、`AGENT_LLM_FOLD_SYSTEM_INTO_USER`（为真时将 **`system`** 并入 **`user`**，仅在不接受 `system` 的网关/代理下使用）、`AGENT_SYSTEM_PROMPT`、`AGENT_SYSTEM_PROMPT_FILE`
 - **温度与 seed**：`AGENT_TEMPERATURE`、`AGENT_LLM_SEED`
 - **Web**：`AGENT_HTTP_HOST`（未传 `--host` 时生效）、`AGENT_WEB_API_BEARER_TOKEN`、`AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK`
 - **工作区白名单**：`AGENT_WORKSPACE_ALLOWED_ROOTS`（逗号分隔；与 `[agent] workspace_allowed_roots` 等价）
@@ -62,6 +62,25 @@ llm_http_auth_mode = "none"
 ```
 
 然后可不设环境变量 **`API_KEY`** 即启动 `serve` / `repl` / `chat`。**工具调用（function calling）**依赖模型与 Ollama 版本；若不稳定可先 **`--no-tools`** 验证对话。`crabmate config`（自检）**不要求** **`API_KEY`**。
+
+## MiniMax（OpenAI 兼容）
+
+MiniMax 提供 **`https://api.minimaxi.com/v1`**（与官方文档一致；亦可能见 **`https://api.minimax.io/v1`** 等别名，以控制台为准）下的 OpenAI 兼容 **`POST …/chat/completions`**。官方文档示例含 **`role: "system"`**（见 [OpenAI API 兼容](https://platform.minimaxi.com/docs/api-reference/text-openai-api)），但**线上接口仍常返回** HTTP 400 **`invalid message role: system`**；CrabMate **嵌入默认**将 **`llm_fold_system_into_user = true`**，出站请求把系统提示**并入**第一条相关 **`user`**，语义与「首条 system + user」等价，一般可消除该错误。若你确认所用网关**接受**独立 **`system`** 条且希望保留该形态，可设 **`llm_fold_system_into_user = false`**。
+
+**本仓库已实测的 `model` 示例**（与 CrabMate OpenAI 兼容调用链联调）：**`MiniMax-M2.7`**、**`MiniMax-M2.7-highspeed`**、**`MiniMax-M2.5`**。更多模型名与能力以 MiniMax 控制台及官方 API 文档为准。
+
+建议配置：
+
+```toml
+[agent]
+api_base = "https://api.minimaxi.com/v1"
+model = "MiniMax-M2.7"   # 或 M2.7-highspeed / M2.5 等；以控制台为准
+llm_http_auth_mode = "bearer"
+llm_fold_system_into_user = true
+llm_reasoning_split = true
+```
+
+环境变量 **`API_KEY`** 填平台发放的密钥（与 DeepSeek 等一致，走 **`Authorization: Bearer`**）。**`llm_reasoning_split = true`** 时请求体会包含 **`reasoning_split: true`**（与文档中 `extra_body={"reasoning_split": True}` 一致）；供应商若在流式 **`delta`** 中返回 **`reasoning_details`**（常见为带 **`text`** 的 JSON 数组），CrabMate 会将其**增量合并**进内部的 **`reasoning_content`** 流与终态消息，终端/Web 仍按现有「思考 / 正文」路径展示。不需要分离思维链时保持默认 **`llm_reasoning_split = false`** 即可。
 
 ## 配置文件示例
 

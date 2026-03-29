@@ -3,7 +3,7 @@
 //! ## 两阶段
 //!
 //! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩（`crabmate_tool` 信封内 **`output`** 超长时首尾采样 + 元数据，见 [`crate::tool_result::maybe_compress_tool_message_content`]）、条数/字符裁剪、孤立 `tool` 剔除、合并相邻 `assistant`（保留会话尾部空占位语义，见 [`crate::types::normalize_messages_for_openai_compatible_request`] 文档）。实现原在 [`super::context_window`]，现经本模块编排。
-//! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、去掉 `reasoning_content`、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）。**不**写入会话 `Vec`。
+//! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、去掉 `reasoning_content`、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）；若 **`llm_fold_system_into_user`**（MiniMax 等默认开），再将 **`system`** 折叠进后续 **`user`**。**不**写入会话 `Vec`。
 //!
 //! ## 会话同步顺序契约（勿打乱）
 //!
@@ -451,18 +451,32 @@ pub fn apply_session_sync_pipeline(
 
 // ── 供应商出站（ChatRequest.messages）────────────────────────────────────────
 
-/// 从会话切片构造发往 OpenAI 兼容 API 的 `messages`：**跳过** UI 分隔线与长期记忆注入、剥离 `reasoning_content`、再 normalize（合并相邻 assistant 等）。
+/// 从会话切片构造发往 OpenAI 兼容 API 的 `messages`：**跳过** UI 分隔线与长期记忆注入、剥离 `reasoning_content`、再 normalize（合并相邻 assistant 等）；`fold_system_into_user` 为真时再 [`crate::types::fold_system_messages_into_following_user`]。
 #[inline]
-pub fn conversation_messages_to_vendor_body(messages: &[Message]) -> Vec<Message> {
-    crate::types::normalize_messages_for_openai_compatible_request(
+pub fn conversation_messages_to_vendor_body(
+    messages: &[Message],
+    fold_system_into_user: bool,
+) -> Vec<Message> {
+    let mut v = crate::types::normalize_messages_for_openai_compatible_request(
         crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(messages),
-    )
+    );
+    if fold_system_into_user {
+        v = crate::types::fold_system_messages_into_following_user(v);
+    }
+    v
 }
 
-/// 与 [`conversation_messages_to_vendor_body`] 相同，但输入已是「已 strip」的 `Vec`（避免重复遍历），仅做 normalize。
+/// 与 [`conversation_messages_to_vendor_body`] 相同，但输入已是「已 strip」的 `Vec`（避免重复遍历），仅做 normalize（及可选 system 折叠）。
 #[inline]
-pub fn normalize_stripped_messages_for_vendor_body(messages: Vec<Message>) -> Vec<Message> {
-    crate::types::normalize_messages_for_openai_compatible_request(messages)
+pub fn normalize_stripped_messages_for_vendor_body(
+    messages: Vec<Message>,
+    fold_system_into_user: bool,
+) -> Vec<Message> {
+    let mut v = crate::types::normalize_messages_for_openai_compatible_request(messages);
+    if fold_system_into_user {
+        v = crate::types::fold_system_messages_into_following_user(v);
+    }
+    v
 }
 
 #[cfg(test)]
@@ -475,6 +489,7 @@ mod tests {
             role: "tool".to_string(),
             content: Some(s.to_string()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: Some("1".into()),
@@ -499,6 +514,7 @@ mod tests {
                 role: "system".to_string(),
                 content: Some("s".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -507,6 +523,7 @@ mod tests {
                 role: "user".to_string(),
                 content: Some("a".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -515,6 +532,7 @@ mod tests {
                 role: "assistant".to_string(),
                 content: Some("b".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -523,6 +541,7 @@ mod tests {
                 role: "user".to_string(),
                 content: Some("c".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -544,6 +563,7 @@ mod tests {
                 role: "assistant".to_string(),
                 content: Some("a1".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -552,6 +572,7 @@ mod tests {
                 role: "assistant".to_string(),
                 content: Some("a2".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -571,6 +592,7 @@ mod tests {
                 role: "system".to_string(),
                 content: Some("s".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -579,6 +601,7 @@ mod tests {
                 role: "user".to_string(),
                 content: Some("aaaaaaaaaa".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -587,6 +610,7 @@ mod tests {
                 role: "user".to_string(),
                 content: Some("bbbbbbbbbbbbbbbb".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -602,6 +626,7 @@ mod tests {
             role: "assistant".to_string(),
             content: None,
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: Some(vec![ToolCall {
                 id: "call_1".to_string(),
                 typ: "function".to_string(),
@@ -622,6 +647,7 @@ mod tests {
                 role: "system".to_string(),
                 content: Some("s".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -632,6 +658,7 @@ mod tests {
                 role: "user".to_string(),
                 content: Some("last".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -650,6 +677,7 @@ mod tests {
                 role: "system".to_string(),
                 content: Some("s".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -661,6 +689,7 @@ mod tests {
                 role: "user".to_string(),
                 content: Some("u".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -677,6 +706,7 @@ mod tests {
                 role: "system".to_string(),
                 content: Some("s".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -685,6 +715,7 @@ mod tests {
                 role: "assistant".to_string(),
                 content: Some("text only".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,
@@ -702,12 +733,13 @@ mod tests {
             role: "assistant".to_string(),
             content: Some("c".to_string()),
             reasoning_content: Some("r".to_string()),
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
         };
         let slice = [Message::user_only("u"), sep, a.clone()];
-        let via = conversation_messages_to_vendor_body(&slice);
+        let via = conversation_messages_to_vendor_body(&slice, false);
         let manual = crate::types::normalize_messages_for_openai_compatible_request(
             crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(&slice),
         );

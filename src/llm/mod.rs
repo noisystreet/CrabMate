@@ -39,13 +39,17 @@ pub fn tool_chat_request(
 ) -> ChatRequest {
     ChatRequest {
         model: cfg.model.clone(),
-        messages: crate::agent::message_pipeline::conversation_messages_to_vendor_body(messages),
+        messages: crate::agent::message_pipeline::conversation_messages_to_vendor_body(
+            messages,
+            cfg.llm_fold_system_into_user,
+        ),
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
         max_tokens: cfg.max_tokens,
         temperature: temperature_override.unwrap_or(cfg.temperature),
         seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
+        reasoning_split: cfg.llm_reasoning_split.then_some(true),
     }
 }
 
@@ -82,6 +86,7 @@ pub fn no_tools_chat_request_from_messages(
         model: cfg.model.clone(),
         messages: crate::agent::message_pipeline::normalize_stripped_messages_for_vendor_body(
             messages,
+            cfg.llm_fold_system_into_user,
         ),
         tools: Some(vec![]),
         tool_choice: Some("none".to_string()),
@@ -89,6 +94,7 @@ pub fn no_tools_chat_request_from_messages(
         temperature: temperature_override.unwrap_or(cfg.temperature),
         seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
+        reasoning_split: cfg.llm_reasoning_split.then_some(true),
     }
 }
 
@@ -128,6 +134,7 @@ pub async fn complete_chat_retrying(
                 no_stream,
                 cancel,
                 plain_terminal_stream,
+                cfg.llm_fold_system_into_user,
             )
             .await
         {
@@ -210,6 +217,7 @@ mod tests {
             role: "assistant".to_string(),
             content: Some("c".to_string()),
             reasoning_content: Some("r".to_string()),
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,

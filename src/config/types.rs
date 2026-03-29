@@ -334,6 +334,10 @@ pub struct AgentConfig {
     pub temperature: f32,
     /// 可选：写入 `chat/completions` 的 **`seed`**（OpenAI 兼容；`None` 则请求 JSON 省略该字段）。
     pub llm_seed: Option<i64>,
+    /// MiniMax OpenAI 兼容：为 `true` 时请求体带 **`reasoning_split`**，流式思维链可走 **`delta.reasoning_details`**（并入 [`crate::types::Message::reasoning_content`]）。
+    pub llm_reasoning_split: bool,
+    /// 为 `true` 时出站 **`chat/completions`** 请求**不**再含 **`role: "system"`**，将系统提示等并入后续 **`user`** 正文。MiniMax **`api.minimaxi.com`** 等线上接口仍常报 **`invalid message role: system`**，嵌入默认 **`true`**；换 DeepSeek 等且需保留独立 **`system`** 条时可 **`false`**。
+    pub llm_fold_system_into_user: bool,
     /// HTTP 请求超时（秒），用于 chat 等 API
     pub api_timeout_secs: u64,
     /// API 失败时最大重试次数（0 = 仅首次，不再重试）

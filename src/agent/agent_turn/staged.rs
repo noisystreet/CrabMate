@@ -267,6 +267,7 @@ pub(super) async fn run_staged_plan_then_execute_steps(
             role: "user".to_string(),
             content: Some(body),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,

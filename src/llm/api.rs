@@ -32,6 +32,98 @@ fn should_log_chat_request_json_preview() -> bool {
 /// 前端仍按 UTF-8 拼接，语义与逐 token 发送一致。
 const SSE_STREAM_DELTA_FLUSH_BYTES: usize = 256;
 
+async fn accumulate_reasoning_stream_delta(
+    fragment: &str,
+    reasoning_acc: &mut String,
+    out: Option<&Sender<String>>,
+    pending_sse_delta: &mut String,
+    cli_terminal_plain: bool,
+    cli_plain_prefix_emitted: &mut bool,
+    cli_plain_reasoning_style_active: &mut bool,
+) -> io::Result<()> {
+    if fragment.is_empty() {
+        return Ok(());
+    }
+    reasoning_acc.push_str(fragment);
+    if cli_terminal_plain {
+        cli_terminal_write_plain_fragment(
+            fragment,
+            cli_plain_prefix_emitted,
+            true,
+            cli_plain_reasoning_style_active,
+        )?;
+    }
+    if let Some(tx) = out {
+        pending_sse_delta.push_str(fragment);
+        if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
+            let line = std::mem::take(pending_sse_delta);
+            let _ = crate::sse::send_string_logged(
+                tx,
+                line,
+                "llm::stream_chat ingest delta (reasoning)",
+            )
+            .await;
+        }
+    }
+    Ok(())
+}
+
+/// MiniMax `reasoning_split` 流式：`reasoning_details[].text` 多为相对上一块的**累积**全文。
+struct MinimaxReasoningDetailsCtx<'a> {
+    snaps: &'a mut Vec<String>,
+    reasoning_acc: &'a mut String,
+    out: Option<&'a Sender<String>>,
+    pending_sse_delta: &'a mut String,
+    cli_terminal_plain: bool,
+    cli_plain_prefix_emitted: &'a mut bool,
+    cli_plain_reasoning_style_active: &'a mut bool,
+}
+
+async fn accumulate_minimax_reasoning_details_deltas(
+    details: &[serde_json::Value],
+    ctx: MinimaxReasoningDetailsCtx<'_>,
+) -> io::Result<()> {
+    let MinimaxReasoningDetailsCtx {
+        snaps,
+        reasoning_acc,
+        out,
+        pending_sse_delta,
+        cli_terminal_plain,
+        cli_plain_prefix_emitted,
+        cli_plain_reasoning_style_active,
+    } = ctx;
+    while snaps.len() < details.len() {
+        snaps.push(String::new());
+    }
+    for (i, d) in details.iter().enumerate() {
+        let Some(obj) = d.as_object() else {
+            continue;
+        };
+        let Some(serde_json::Value::String(t)) = obj.get("text") else {
+            continue;
+        };
+        let snap = &mut snaps[i];
+        let fragment = if t.starts_with(snap.as_str()) && t.len() >= snap.len() {
+            &t[snap.len()..]
+        } else {
+            t.as_str()
+        };
+        accumulate_reasoning_stream_delta(
+            fragment,
+            reasoning_acc,
+            out,
+            pending_sse_delta,
+            cli_terminal_plain,
+            cli_plain_prefix_emitted,
+            cli_plain_reasoning_style_active,
+        )
+        .await?;
+        snap.clear();
+        snap.push_str(t);
+    }
+    Ok(())
+}
+
 async fn flush_sse_delta_buffer(pending: &mut String, tx: Option<&Sender<String>>) {
     if let Some(t) = tx
         && !pending.is_empty()
@@ -138,6 +230,7 @@ struct IngestSseState<'a> {
     cli_terminal_plain: bool,
     cli_plain_prefix_emitted: &'a mut bool,
     cli_plain_reasoning_style_active: &'a mut bool,
+    minimax_reasoning_snaps: &'a mut Vec<String>,
 }
 
 async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io::Result<()> {
@@ -155,6 +248,7 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
         cli_terminal_plain,
         cli_plain_prefix_emitted,
         cli_plain_reasoning_style_active,
+        minimax_reasoning_snaps,
     } = state;
     let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
         return Ok(());
@@ -171,27 +265,33 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
     if let Some(ref s) = delta.reasoning_content
         && !s.is_empty()
     {
-        reasoning_acc.push_str(s);
-        if cli_terminal_plain {
-            cli_terminal_write_plain_fragment(
-                s,
+        accumulate_reasoning_stream_delta(
+            s,
+            reasoning_acc,
+            out,
+            pending_sse_delta,
+            cli_terminal_plain,
+            cli_plain_prefix_emitted,
+            cli_plain_reasoning_style_active,
+        )
+        .await?;
+    }
+    if let Some(ref details) = delta.reasoning_details
+        && !details.is_empty()
+    {
+        accumulate_minimax_reasoning_details_deltas(
+            details,
+            MinimaxReasoningDetailsCtx {
+                snaps: minimax_reasoning_snaps,
+                reasoning_acc,
+                out,
+                pending_sse_delta,
+                cli_terminal_plain,
                 cli_plain_prefix_emitted,
-                true,
                 cli_plain_reasoning_style_active,
-            )?;
-        }
-        if let Some(tx) = out {
-            pending_sse_delta.push_str(s);
-            if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
-                let line = std::mem::take(pending_sse_delta);
-                let _ = crate::sse::send_string_logged(
-                    tx,
-                    line,
-                    "llm::stream_chat ingest delta (reasoning)",
-                )
-                .await;
-            }
-        }
+            },
+        )
+        .await?;
     }
     if let Some(ref s) = delta.content
         && !s.is_empty()
@@ -283,6 +383,7 @@ pub async fn stream_chat(
     no_stream: bool,
     cancel: Option<&AtomicBool>,
     plain_terminal_stream: bool,
+    fold_system_into_user: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
         "{}/{}",
@@ -298,7 +399,10 @@ pub async fn stream_chat(
     );
     // 与 `tool_chat_request` 重复一次：防止将来绕过构造器直接改 `ChatRequest.messages`，并兜底漏网相邻 assistant。
     let taken = std::mem::take(&mut req.messages);
-    req.messages = crate::agent::message_pipeline::conversation_messages_to_vendor_body(&taken);
+    req.messages = crate::agent::message_pipeline::conversation_messages_to_vendor_body(
+        &taken,
+        fold_system_into_user,
+    );
     if should_log_chat_request_json_preview() {
         let as_debug = log::log_enabled!(log::Level::Debug);
         match serde_json::to_string(&*req) {
@@ -395,9 +499,11 @@ pub async fn stream_chat(
             },
         )?;
         let crate::types::Choice {
-            message: msg,
+            message: mut msg,
             finish_reason,
         } = choice;
+
+        crate::types::merge_reasoning_details_into_reasoning_content(&mut msg);
 
         let sse_plain = crate::runtime::message_display::assistant_streaming_plain_concat(&msg);
         if !sse_plain.is_empty()
@@ -497,6 +603,7 @@ pub async fn stream_chat(
 
     let mut cli_plain_prefix_emitted = false;
     let mut cli_plain_reasoning_style_active = false;
+    let mut minimax_reasoning_snaps: Vec<String> = Vec::new();
     let mut stream_done = false;
     'stream_read: while let Some(chunk) = stream.next().await {
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
@@ -536,6 +643,7 @@ pub async fn stream_chat(
                         cli_terminal_plain,
                         cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
                         cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
+                        minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
                     },
                 )
                 .await?;
@@ -568,6 +676,7 @@ pub async fn stream_chat(
                         cli_terminal_plain,
                         cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
                         cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
+                        minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
                     },
                 )
                 .await?;
@@ -625,6 +734,7 @@ pub async fn stream_chat(
         } else {
             Some(reasoning_acc)
         },
+        reasoning_details: None,
         tool_calls,
         name: None,
         tool_call_id: None,

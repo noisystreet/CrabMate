@@ -558,7 +558,7 @@ pub enum Commands {
 #[command(
     name = "crabmate",
     version,
-    about = "基于 DeepSeek API 的简易 Agent，支持工具调用、Web 界面与 CLI",
+    about = "基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek / MiniMax / Ollama 等），支持工具调用、Web 界面与 CLI",
     after_long_help = "CLI 退出码、`chat --output json` 行协议与 SSE 错误码交叉引用：**docs/CLI_CONTRACT.md**、**docs/SSE_PROTOCOL.md**。子命令详情：**docs/CLI.md**。"
 )]
 pub struct RootCli {

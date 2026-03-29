@@ -1,4 +1,4 @@
-//! CrabMate 库：DeepSeek Agent、HTTP 服务、工具与工作流。
+//! CrabMate 库：OpenAI 兼容多供应商 LLM、Agent 主循环、HTTP 服务、工具与工作流。
 //! 二进制入口见 `src/main.rs` 的 [`run`] 包装。
 //!
 //! 日志由 `log` + `env_logger` 处理；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。

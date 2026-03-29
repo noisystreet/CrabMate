@@ -106,6 +106,7 @@ mod tests {
             role: role.to_string(),
             content: Some(content.to_string()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,

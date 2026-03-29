@@ -286,6 +286,7 @@ impl LongTermMemoryRuntime {
                 role: "user".to_string(),
                 content: Some(body),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: Some(CRABMATE_LONG_TERM_MEMORY_NAME.to_string()),
                 tool_call_id: None,

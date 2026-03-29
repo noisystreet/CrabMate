@@ -23,6 +23,10 @@ pub(super) struct AgentSection {
     pub(super) max_tokens: Option<u64>,
     pub(super) temperature: Option<f64>,
     pub(super) llm_seed: Option<i64>,
+    /// MiniMax 等：`reasoning_split` 与 OpenAI 兼容扩展。
+    pub(super) llm_reasoning_split: Option<bool>,
+    /// 将 `system` 折叠进 `user`（MiniMax 线上常见拒收独立 `system`）。
+    pub(super) llm_fold_system_into_user: Option<bool>,
     pub(super) api_timeout_secs: Option<u64>,
     pub(super) api_max_retries: Option<u64>,
     pub(super) api_retry_delay_secs: Option<u64>,

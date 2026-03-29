@@ -57,6 +57,8 @@ struct ConfigBuilder {
     max_tokens: Option<u64>,
     temperature: Option<f64>,
     llm_seed: Option<i64>,
+    llm_reasoning_split: Option<bool>,
+    llm_fold_system_into_user: Option<bool>,
     api_timeout_secs: Option<u64>,
     api_max_retries: Option<u64>,
     api_retry_delay_secs: Option<u64>,
@@ -240,6 +242,10 @@ impl ConfigBuilder {
         self.max_tokens = agent.max_tokens.or(self.max_tokens);
         self.temperature = agent.temperature.or(self.temperature);
         self.llm_seed = agent.llm_seed.or(self.llm_seed);
+        self.llm_reasoning_split = agent.llm_reasoning_split.or(self.llm_reasoning_split);
+        self.llm_fold_system_into_user = agent
+            .llm_fold_system_into_user
+            .or(self.llm_fold_system_into_user);
         self.api_timeout_secs = agent.api_timeout_secs.or(self.api_timeout_secs);
         self.api_max_retries = agent.api_max_retries.or(self.api_max_retries);
         self.api_retry_delay_secs = agent.api_retry_delay_secs.or(self.api_retry_delay_secs);
@@ -451,6 +457,8 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.max_tokens = src.max_tokens;
     dst.temperature = src.temperature;
     dst.llm_seed = src.llm_seed;
+    dst.llm_reasoning_split = src.llm_reasoning_split;
+    dst.llm_fold_system_into_user = src.llm_fold_system_into_user;
     dst.api_timeout_secs = src.api_timeout_secs;
     dst.api_max_retries = src.api_max_retries;
     dst.api_retry_delay_secs = src.api_retry_delay_secs;
@@ -770,6 +778,16 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<i64>()
     {
         b.llm_seed = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_LLM_REASONING_SPLIT")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.llm_reasoning_split = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_LLM_FOLD_SYSTEM_INTO_USER")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.llm_fold_system_into_user = Some(val);
     }
     if let Ok(v) = std::env::var("AGENT_API_TIMEOUT_SECS")
         && let Ok(n) = v.trim().parse::<u64>()
@@ -1577,6 +1595,8 @@ fn finalize(
         max_tokens,
         temperature,
         llm_seed: b.llm_seed,
+        llm_reasoning_split: b.llm_reasoning_split.unwrap_or(false),
+        llm_fold_system_into_user: b.llm_fold_system_into_user.unwrap_or(false),
         api_timeout_secs,
         api_max_retries,
         api_retry_delay_secs,

@@ -31,6 +31,7 @@ pub trait ChatCompletionsBackend: Send + Sync {
         no_stream: bool,
         cancel: Option<&AtomicBool>,
         plain_terminal_stream: bool,
+        fold_system_into_user: bool,
     ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>>;
 }
 
@@ -52,6 +53,7 @@ impl ChatCompletionsBackend for OpenAiCompatBackend {
         no_stream: bool,
         cancel: Option<&AtomicBool>,
         plain_terminal_stream: bool,
+        fold_system_into_user: bool,
     ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
         api::stream_chat(
             http,
@@ -64,6 +66,7 @@ impl ChatCompletionsBackend for OpenAiCompatBackend {
             no_stream,
             cancel,
             plain_terminal_stream,
+            fold_system_into_user,
         )
         .await
     }
