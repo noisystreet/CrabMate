@@ -7,6 +7,10 @@ fn default_semantic_invalidate_on_change() -> bool {
     true
 }
 
+fn default_semantic_query_max_chunks() -> usize {
+    50_000
+}
+
 /// 供 [`crate::tools::ToolContext`] 注入的语义检索参数（避免在工具层持有整份 [`AgentConfig`]）。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CodebaseSemanticToolParams {
@@ -18,6 +22,9 @@ pub struct CodebaseSemanticToolParams {
     pub max_file_bytes: usize,
     pub chunk_max_chars: usize,
     pub top_k: usize,
+    /// 单次 `query` 最多扫描多少个向量块（防超大索引拖慢 CPU）；`0` 表示不限制。
+    #[serde(default = "default_semantic_query_max_chunks")]
+    pub query_max_chunks: usize,
     pub rebuild_max_files: usize,
 }
 
@@ -30,25 +37,27 @@ impl CodebaseSemanticToolParams {
             max_file_bytes: cfg.codebase_semantic_max_file_bytes,
             chunk_max_chars: cfg.codebase_semantic_chunk_max_chars,
             top_k: cfg.codebase_semantic_top_k,
+            query_max_chunks: cfg.codebase_semantic_query_max_chunks,
             rebuild_max_files: cfg.codebase_semantic_rebuild_max_files,
         }
     }
 }
 
-use std::collections::HashSet;
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 use ignore::WalkBuilder;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
 use crate::tools::canonical_workspace_root;
 
 const TABLE: &str = "crabmate_codebase_chunks";
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(&format!(
@@ -68,8 +77,32 @@ fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
             embedding BLOB NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_{TABLE}_workspace ON {TABLE}(workspace_root);
+        CREATE INDEX IF NOT EXISTS idx_{TABLE}_ws_rel ON {TABLE}(workspace_root, rel_path);
         "#
     ))?;
+
+    let ver: Option<i64> = conn
+        .query_row(
+            "SELECT value FROM crabmate_codebase_index_meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|s| s.parse().ok());
+
+    if ver.unwrap_or(0) < SCHEMA_VERSION {
+        let _ = conn.execute(
+            &format!(
+                "CREATE INDEX IF NOT EXISTS idx_{TABLE}_ws_rel ON {TABLE}(workspace_root, rel_path)"
+            ),
+            [],
+        );
+        conn.execute(
+            "INSERT OR REPLACE INTO crabmate_codebase_index_meta (key, value) VALUES ('schema_version', ?1)",
+            params![SCHEMA_VERSION.to_string()],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -234,6 +267,28 @@ fn rel_path_for_workspace(workspace_root: &Path, file: &Path) -> Option<String> 
     }
 }
 
+/// `rebuild_index` 的 `path`：用于 DELETE 的 POSIX 前缀（无首尾 `/`，`.` 或空视为整库）。
+fn posix_subdir_prefix_for_delete(sub: &str) -> Option<String> {
+    let s = sub.replace('\\', "/");
+    let s = s.trim().trim_matches('/');
+    if s.is_empty() || s == "." {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}
+
+fn sqlite_like_escape(s: &str) -> String {
+    let mut o = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            o.push('\\');
+        }
+        o.push(ch);
+    }
+    o
+}
+
 /// `rebuild_index=true` 时扫描工作区并写入向量；否则仅查询（需已有索引）。
 pub fn run_tool(
     args_json: &str,
@@ -309,6 +364,14 @@ pub fn run_tool(
             .collect()
     });
 
+    let mut query_max_chunks = v
+        .get("query_max_chunks")
+        .and_then(|n| n.as_u64())
+        .unwrap_or(p.query_max_chunks as u64) as usize;
+    if query_max_chunks > 0 {
+        query_max_chunks = query_max_chunks.clamp(1, 2_000_000);
+    }
+
     if rebuild {
         return rebuild_index(
             &ws_root,
@@ -328,6 +391,7 @@ pub fn run_tool(
         &index_path,
         query,
         top_k_req,
+        query_max_chunks,
         max_output_chars.max(4096),
     )
 }
@@ -371,11 +435,27 @@ fn rebuild_index(
         Ok(t) => t,
         Err(e) => return format!("索引事务开始失败: {}", e),
     };
-    if let Err(e) = tx.execute(
-        &format!("DELETE FROM {TABLE} WHERE workspace_root = ?1"),
-        params![ws_key],
-    ) {
-        return format!("清空旧索引失败: {}", e);
+    let delete_scope = sub_path.and_then(posix_subdir_prefix_for_delete);
+    match delete_scope.as_deref() {
+        None | Some("") | Some(".") => {
+            if let Err(e) = tx.execute(
+                &format!("DELETE FROM {TABLE} WHERE workspace_root = ?1"),
+                params![ws_key],
+            ) {
+                return format!("清空旧索引失败: {}", e);
+            }
+        }
+        Some(prefix) => {
+            let like_pat = sqlite_like_escape(&format!("{prefix}/%"));
+            if let Err(e) = tx.execute(
+                &format!(
+                    "DELETE FROM {TABLE} WHERE workspace_root = ?1 AND (rel_path = ?2 OR rel_path LIKE ?3 ESCAPE '\\')"
+                ),
+                params![ws_key, prefix, like_pat],
+            ) {
+                return format!("清空子树旧索引失败: {}", e);
+            }
+        }
     }
 
     let mut embedder = match ensure_embedder() {
@@ -507,10 +587,15 @@ fn rebuild_index(
         return format!("索引提交失败: {}", e);
     }
 
+    let scope_note = match sub_path.and_then(posix_subdir_prefix_for_delete) {
+        None => "范围：整库（未指定 path 或 path 为 .）".to_string(),
+        Some(p) => format!("范围：子树 `{}`（其余路径索引保留）", p),
+    };
     format!(
-        "代码语义索引已重建。\n索引文件：{}\n工作区键：{}\n已索引文件数（上限 {}）：{}\n文本块数：{}\n跳过/超限文件数：{}\n提示：之后用 query 检索；大仓可适当提高 codebase_semantic_rebuild_max_files 或缩小 path/extensions。",
+        "代码语义索引已重建。\n索引文件：{}\n工作区键：{}\n{}\n已索引文件数（上限 {}）：{}\n文本块数：{}\n跳过/超限文件数：{}\n提示：之后用 query 检索；大仓可适当提高 codebase_semantic_rebuild_max_files 或缩小 path/extensions；子目录增量重建请传 path。",
         index_path.display(),
         ws_key,
+        scope_note,
         rebuild_max_files,
         files_indexed,
         chunks_total,
@@ -518,11 +603,44 @@ fn rebuild_index(
     )
 }
 
+#[derive(Clone)]
+struct ScoredChunk {
+    score: f32,
+    rel: String,
+    sl: i64,
+    el: i64,
+    text: String,
+}
+
+impl Eq for ScoredChunk {}
+
+impl PartialEq for ScoredChunk {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Ord for ScoredChunk {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.score
+            .total_cmp(&other.score)
+            .then_with(|| self.rel.cmp(&other.rel))
+            .then_with(|| self.sl.cmp(&other.sl))
+    }
+}
+
+impl PartialOrd for ScoredChunk {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 fn search_index(
     ws_key: &str,
     index_path: &Path,
     query: &str,
     top_k: usize,
+    query_max_chunks: usize,
     max_out_chars: usize,
 ) -> String {
     let conn = match open_codebase_semantic_db(index_path) {
@@ -563,42 +681,73 @@ fn search_index(
         Err(e) => return format!("遍历索引失败: {}", e),
     };
 
-    let mut scored: Vec<(f32, String, i64, i64, String)> = Vec::new();
+    let mut heap: BinaryHeap<Reverse<ScoredChunk>> = BinaryHeap::new();
+    let mut scanned = 0usize;
+    let limit_active = query_max_chunks > 0;
     for row in rows {
+        if limit_active && scanned >= query_max_chunks {
+            break;
+        }
         let (rel, sl, el, text, blob) = match row {
             Ok(x) => x,
             Err(_) => continue,
         };
+        scanned = scanned.saturating_add(1);
         let score = bytes_to_f32_slice(&blob)
             .map(|ev| cosine_sim(&qv, &ev))
             .unwrap_or(0.0);
-        scored.push((score, rel, sl, el, text));
+        let item = ScoredChunk {
+            score,
+            rel,
+            sl,
+            el,
+            text,
+        };
+        if heap.len() < top_k {
+            heap.push(Reverse(item));
+        } else if let Some(Reverse(worst)) = heap.peek()
+            && item.score > worst.score
+        {
+            heap.pop();
+            heap.push(Reverse(item));
+        }
     }
 
-    if scored.is_empty() {
+    if heap.is_empty() {
         return format!(
             "索引中无条目（workspace_root={}）。请先使用 rebuild_index=true 构建索引。",
             ws_key
         );
     }
 
-    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    scored.truncate(top_k);
+    let mut scored: Vec<ScoredChunk> = heap.into_iter().map(|r| r.0).collect();
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+
+    let limit_note = if limit_active {
+        format!("，上限 {}", query_max_chunks)
+    } else {
+        String::new()
+    };
+    let approx_note = if limit_active && scanned >= query_max_chunks {
+        "（已达扫描上限，结果为近似 Top-K）"
+    } else {
+        ""
+    };
 
     let mut out = String::new();
     out.push_str(&format!(
-        "语义检索（top_k={}，余弦相似度越高越相关）：\n\n",
-        top_k
+        "语义检索（top_k={}，已扫描 {} 个向量块{}{}，余弦相似度越高越相关）：\n\n",
+        top_k, scanned, limit_note, approx_note,
     ));
     let mut used = 0usize;
-    for (rank, (score, rel, sl, el, body)) in scored.iter().enumerate() {
+    for (rank, chunk) in scored.iter().enumerate() {
         let header = format!(
             "## {}. {} (行 {}–{})  score={:.4}\n",
             rank + 1,
-            rel,
-            sl,
-            el,
-            score
+            chunk.rel,
+            chunk.sl,
+            chunk.el,
+            chunk.score
         );
         let fence = "```\n";
         let footer = "```\n\n";
@@ -608,8 +757,9 @@ fn search_index(
             break;
         }
         let remain = budget - header.len() - fence.len() - footer.len();
+        let body = chunk.text.as_str();
         let snippet = if body.len() <= remain {
-            body.as_str()
+            body
         } else {
             let take = remain.saturating_sub(20);
             if take > 0 {
@@ -650,5 +800,24 @@ mod tests {
         let a = vec![1.0f32, 0.0];
         let b = vec![0.0f32, 1.0];
         assert!(cosine_sim(&a, &b).abs() < 0.001);
+    }
+
+    #[test]
+    fn posix_subdir_prefix_dot_means_full_rebuild() {
+        assert_eq!(posix_subdir_prefix_for_delete("."), None);
+        assert_eq!(posix_subdir_prefix_for_delete("  ./  "), None);
+    }
+
+    #[test]
+    fn posix_subdir_prefix_trims_slashes() {
+        assert_eq!(
+            posix_subdir_prefix_for_delete("src/"),
+            Some("src".to_string())
+        );
+    }
+
+    #[test]
+    fn sqlite_like_escape_escapes_wildcards() {
+        assert_eq!(sqlite_like_escape("a%b_c\\"), "a\\%b\\_c\\\\");
     }
 }

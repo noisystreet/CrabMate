@@ -290,6 +290,12 @@ pub(in crate::tools) fn params_codebase_semantic_search() -> serde_json::Value {
                 "minimum": 1,
                 "maximum": 64
             },
+            "query_max_chunks": {
+                "type": "integer",
+                "description": "本次 query 最多扫描多少个向量块，默认取配置 codebase_semantic_query_max_chunks；1～2000000，0 表示不限制（大索引慎用，结果为近似 Top-K）",
+                "minimum": 0,
+                "maximum": 2000000
+            },
             "file_glob": {
                 "type": "string",
                 "description": "可选：仅处理文件名匹配此 glob 的文件（如 *.rs）"

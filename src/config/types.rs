@@ -513,6 +513,8 @@ pub struct AgentConfig {
     pub codebase_semantic_chunk_max_chars: usize,
     /// 默认检索 Top-K（工具参数可覆盖）。
     pub codebase_semantic_top_k: usize,
+    /// 单次 `query` 最多扫描多少个向量块；`0` 表示不限制（大索引慎用）。
+    pub codebase_semantic_query_max_chunks: usize,
     /// `rebuild_index` 时最多索引多少个文件（防超大仓拖死进程）。
     pub codebase_semantic_rebuild_max_files: usize,
 }
