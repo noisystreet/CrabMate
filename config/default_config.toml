@@ -36,7 +36,7 @@ context_summary_transcript_max_chars = 120000
 # 3. 内置工具（run_command、工具入模、缓存、联网工具、MCP、解释卡等）
 # 默认见 **`config/tools.toml`**
 
-# 4. CLI / REPL 会话（tui_session.json）
+# 4. CLI 会话（tui_session.json 等）
 # 默认见 **`config/session.toml`**
 
 # 5. Web 对话队列（并发上限；单轮只读工具并行与 read_file 缓存见 **`config/tools.toml`**）

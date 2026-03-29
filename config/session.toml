@@ -1,9 +1,9 @@
-# CLI / REPL 会话相关嵌入默认（`tui_session.json` 恢复、消息条数上限、`repl_initial_workspace_messages_enabled` 等）。
+# CLI 会话相关嵌入默认（`tui_session.json` 恢复、消息条数上限、`repl_initial_workspace_messages_enabled` 等）。
 # 与 `config/default_config.toml` 在 `load_config` 中顺序合并（本文件在主默认之后、**`config/context_inject.toml`** 之前），再被 config.toml / .agent_demo.toml 与 AGENT_TUI_* / AGENT_REPL_* 覆盖。
 
 [agent]
 
 tui_load_session_on_start = false
 tui_session_max_messages = 400
-# 为 true 时 REPL 后台构建 initial_workspace_messages（画像、依赖摘要、可选磁盘恢复）；默认 false，启动仅一条 system
+# 为 true 时 CLI 在后台构建 initial_workspace_messages（画像、依赖摘要、可选磁盘恢复）；默认 false，启动仅一条 system
 repl_initial_workspace_messages_enabled = false

@@ -109,7 +109,7 @@ pub(in crate::tools) fn params_http_fetch() -> serde_json::Value {
         "properties": {
             "url": {
                 "type": "string",
-                "description": "完整 http(s) URL。Web 仅允许匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）；CLI（repl/chat）未匹配时可终端审批（与 run_command 相同）。"
+                "description": "完整 http(s) URL。Web 仅允许匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）；CLI 未匹配时可终端审批（与 run_command 相同）。"
             },
             "method": {
                 "type": "string",
