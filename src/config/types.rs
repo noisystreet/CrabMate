@@ -448,6 +448,10 @@ pub struct AgentConfig {
     pub project_profile_inject_enabled: bool,
     /// 项目画像注入正文的字符上限（与备忘合并后仍受此上限约束的片段各自在生成时截断）。
     pub project_profile_inject_max_chars: usize,
+    /// 首轮在「项目画像 / 备忘」合并条目中追加 **`cargo metadata` + package.json** 的结构化 JSON 与 Mermaid workspace 图（独立预算）。
+    pub project_dependency_brief_inject_enabled: bool,
+    /// 依赖摘要注入正文最大字符数；`0` 关闭生成。
+    pub project_dependency_brief_inject_max_chars: usize,
     /// 为 true 时：对**非只读**内置工具（含 `run_command` / `run_executable`、写文件、`http_request`、git 写操作等）要求 JSON 中带 `crabmate_explain_why` 一句目的说明；执行前剥离该字段。与审批互补。
     pub tool_call_explain_enabled: bool,
     /// `crabmate_explain_why` 最少字符数（按 Unicode 标量计数）。

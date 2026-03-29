@@ -42,6 +42,9 @@ context_summary_transcript_max_chars = 120000
 # project_profile_inject_enabled = true
 # 项目画像正文最大字符数；0 表示不生成画像正文（侧栏与首轮均为空）。默认 6000。
 # project_profile_inject_max_chars = 6000
+# 首轮在「项目画像 / 备忘」合并条目中追加 cargo metadata（workspace 内 crate 边）+ package.json 的结构化 JSON 与 Mermaid 图；独立字符预算。默认 true / 4000；0 关闭。
+# project_dependency_brief_inject_enabled = true
+# project_dependency_brief_inject_max_chars = 4000
 # 工具调用「解释卡」：为 true 时，非只读内置工具（run_command、写文件、http_request、git 写等）须在 JSON 顶层带字符串 crabmate_explain_why（一句目的）；执行前剥离。默认 false。
 # tool_call_explain_enabled = false
 # crabmate_explain_why 最短/最长字符数（Unicode 标量计数）。

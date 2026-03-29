@@ -8,6 +8,8 @@ use std::process::Command;
 
 use tokei::LanguageType;
 
+use crate::config::AgentConfig;
+
 /// 与 `tools/code_metrics.rs` 中 `code_stats` 排除目录一致，避免统计噪声。
 const EXCLUDED_DIRS: &[&str] = &["target", "node_modules", "vendor", "dist", "build", ".git"];
 
@@ -373,22 +375,77 @@ fn section_python_hints(root: &Path) -> Option<String> {
     Some(out)
 }
 
-/// 合并备忘与项目画像为一条 user 注入正文（首轮）；二者可各自为空。
-pub fn merge_memory_and_profile_snippets(
+/// Web / CLI 首轮：合并备忘（可选预载）、项目画像、`cargo metadata`+npm 依赖摘要；全无则 `None`。
+pub fn build_first_turn_user_context_markdown(
+    workspace_root: &Path,
+    cfg: &AgentConfig,
+    memory_preloaded: Option<String>,
+) -> Option<String> {
+    let memory_snippet = memory_preloaded.or_else(|| {
+        if cfg.agent_memory_file_enabled {
+            crate::agent_memory::load_memory_snippet(
+                workspace_root,
+                cfg.agent_memory_file.as_str(),
+                cfg.agent_memory_file_max_chars,
+            )
+        } else {
+            None
+        }
+    });
+    let want_profile =
+        cfg.project_profile_inject_enabled && cfg.project_profile_inject_max_chars > 0;
+    let want_dep = cfg.project_dependency_brief_inject_enabled
+        && cfg.project_dependency_brief_inject_max_chars > 0;
+    if !want_profile && !want_dep && memory_snippet.is_none() {
+        return None;
+    }
+    let profile_md = if want_profile {
+        build_project_profile_markdown(workspace_root, cfg.project_profile_inject_max_chars)
+    } else {
+        String::new()
+    };
+    let dep_md = if want_dep {
+        crate::project_dependency_brief::build_project_dependency_brief_markdown(
+            workspace_root,
+            cfg.project_dependency_brief_inject_max_chars,
+        )
+    } else {
+        String::new()
+    };
+    merge_first_turn_injections(
+        memory_snippet.as_deref(),
+        profile_md.as_str(),
+        dep_md.as_str(),
+    )
+}
+
+/// 合并备忘、项目画像、依赖结构摘要为一条首轮 `user` 正文；任一段为空则跳过。
+pub fn merge_first_turn_injections(
     memory_snippet: Option<&str>,
     profile_markdown: &str,
+    dependency_brief_markdown: &str,
 ) -> Option<String> {
     let mem = memory_snippet.map(str::trim).filter(|s| !s.is_empty());
     let prof = profile_markdown.trim();
-    match (mem, prof.is_empty()) {
-        (Some(m), true) => Some(m.to_string()),
-        (None, false) => Some(format!(
+    let dep = dependency_brief_markdown.trim();
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(m) = mem {
+        parts.push(m.to_string());
+    }
+    if !prof.is_empty() {
+        parts.push(format!(
             "[项目画像（工作区内自动生成，仅只读扫描）]\n{prof}"
-        )),
-        (Some(m), false) => Some(format!(
-            "{m}\n\n---\n\n[项目画像（工作区内自动生成，仅只读扫描）]\n{prof}"
-        )),
-        (None, true) => None,
+        ));
+    }
+    if !dep.is_empty() {
+        parts.push(format!(
+            "[项目依赖与结构摘要（cargo metadata + package.json，仅只读）]\n{dep}"
+        ));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n\n---\n\n"))
     }
 }
 
@@ -428,11 +485,13 @@ edition = "2021"
     }
 
     #[test]
-    fn merge_profile_and_memory() {
-        let got =
-            merge_memory_and_profile_snippets(Some("memo line"), "# Title\nbody").expect("some");
+    fn merge_first_turn_three_parts() {
+        let got = merge_first_turn_injections(Some("memo line"), "# Title\nbody", "## Dep\nx")
+            .expect("some");
         assert!(got.contains("memo line"));
         assert!(got.contains("项目画像"));
+        assert!(got.contains("依赖与结构摘要"));
         assert!(got.contains("# Title"));
+        assert!(got.contains("## Dep"));
     }
 }

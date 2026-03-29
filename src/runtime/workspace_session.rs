@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 use crate::config::AgentConfig;
+use crate::project_profile::build_first_turn_user_context_markdown;
 use crate::runtime::chat_export::{self, ChatSessionFile, session_to_json_pretty};
 use crate::types::{Message, normalize_messages_for_openai_compatible_request};
 use std::path::{Path, PathBuf};
@@ -77,10 +78,25 @@ pub fn initial_workspace_messages(
     load_from_disk: bool,
 ) -> Vec<Message> {
     if !load_from_disk {
+        if let Some(ctx) = build_first_turn_user_context_markdown(workspace, cfg, None) {
+            return vec![
+                Message::system_only(cfg.system_prompt.clone()),
+                Message::user_only(ctx),
+            ];
+        }
         return vec![Message::system_only(cfg.system_prompt.clone())];
     }
     load_workspace_session(workspace, &cfg.system_prompt, cfg.tui_session_max_messages)
-        .unwrap_or_else(|| vec![Message::system_only(cfg.system_prompt.clone())])
+        .unwrap_or_else(|| {
+            if let Some(ctx) = build_first_turn_user_context_markdown(workspace, cfg, None) {
+                vec![
+                    Message::system_only(cfg.system_prompt.clone()),
+                    Message::user_only(ctx),
+                ]
+            } else {
+                vec![Message::system_only(cfg.system_prompt.clone())]
+            }
+        })
 }
 
 pub fn save_workspace_session(workspace: &Path, messages: &[Message]) -> std::io::Result<()> {

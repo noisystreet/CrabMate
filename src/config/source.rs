@@ -97,6 +97,8 @@ pub(super) struct AgentSection {
     pub(super) agent_memory_file_max_chars: Option<u64>,
     pub(super) project_profile_inject_enabled: Option<bool>,
     pub(super) project_profile_inject_max_chars: Option<u64>,
+    pub(super) project_dependency_brief_inject_enabled: Option<bool>,
+    pub(super) project_dependency_brief_inject_max_chars: Option<u64>,
     pub(super) tool_call_explain_enabled: Option<bool>,
     pub(super) tool_call_explain_min_chars: Option<u64>,
     pub(super) tool_call_explain_max_chars: Option<u64>,

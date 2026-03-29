@@ -97,6 +97,8 @@ struct ConfigBuilder {
     agent_memory_file_max_chars: Option<u64>,
     project_profile_inject_enabled: Option<bool>,
     project_profile_inject_max_chars: Option<u64>,
+    project_dependency_brief_inject_enabled: Option<bool>,
+    project_dependency_brief_inject_max_chars: Option<u64>,
     tool_call_explain_enabled: Option<bool>,
     tool_call_explain_min_chars: Option<u64>,
     tool_call_explain_max_chars: Option<u64>,
@@ -346,6 +348,12 @@ impl ConfigBuilder {
         self.project_profile_inject_max_chars = agent
             .project_profile_inject_max_chars
             .or(self.project_profile_inject_max_chars);
+        self.project_dependency_brief_inject_enabled = agent
+            .project_dependency_brief_inject_enabled
+            .or(self.project_dependency_brief_inject_enabled);
+        self.project_dependency_brief_inject_max_chars = agent
+            .project_dependency_brief_inject_max_chars
+            .or(self.project_dependency_brief_inject_max_chars);
         self.tool_call_explain_enabled = agent
             .tool_call_explain_enabled
             .or(self.tool_call_explain_enabled);
@@ -484,6 +492,8 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.agent_memory_file_max_chars = src.agent_memory_file_max_chars;
     dst.project_profile_inject_enabled = src.project_profile_inject_enabled;
     dst.project_profile_inject_max_chars = src.project_profile_inject_max_chars;
+    dst.project_dependency_brief_inject_enabled = src.project_dependency_brief_inject_enabled;
+    dst.project_dependency_brief_inject_max_chars = src.project_dependency_brief_inject_max_chars;
     dst.tool_call_explain_enabled = src.tool_call_explain_enabled;
     dst.tool_call_explain_min_chars = src.tool_call_explain_min_chars;
     dst.tool_call_explain_max_chars = src.tool_call_explain_max_chars;
@@ -985,6 +995,16 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.project_profile_inject_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.project_dependency_brief_inject_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.project_dependency_brief_inject_max_chars = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_TOOL_CALL_EXPLAIN_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -1389,6 +1409,12 @@ fn finalize(
         .project_profile_inject_max_chars
         .unwrap_or(6000)
         .clamp(0, 500_000) as usize;
+    let project_dependency_brief_inject_enabled =
+        b.project_dependency_brief_inject_enabled.unwrap_or(true);
+    let project_dependency_brief_inject_max_chars = b
+        .project_dependency_brief_inject_max_chars
+        .unwrap_or(4000)
+        .clamp(0, 500_000) as usize;
     let tool_call_explain_enabled = b.tool_call_explain_enabled.unwrap_or(false);
     let tool_call_explain_min_chars =
         b.tool_call_explain_min_chars.unwrap_or(8).clamp(1, 256) as usize;
@@ -1534,6 +1560,8 @@ fn finalize(
         agent_memory_file_max_chars,
         project_profile_inject_enabled,
         project_profile_inject_max_chars,
+        project_dependency_brief_inject_enabled,
+        project_dependency_brief_inject_max_chars,
         tool_call_explain_enabled,
         tool_call_explain_min_chars,
         tool_call_explain_max_chars,
