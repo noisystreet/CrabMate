@@ -154,6 +154,7 @@ fn parallel_sync_batch_denied(name: &str) -> bool {
             | "quality_workspace"
             | "ci_pipeline_local"
             | "repo_overview_sweep"
+            | "codebase_semantic_search"
             | "docs_health_sweep"
             | "playbook_run_commands"
     ) || name.starts_with("cargo_")

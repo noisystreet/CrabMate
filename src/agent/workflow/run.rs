@@ -289,6 +289,8 @@ pub async fn run_workflow_execute_tool(
         command_max_output_len,
         test_result_cache_enabled: cfg.test_result_cache_enabled,
         test_result_cache_max_entries: cfg.test_result_cache_max_entries,
+        codebase_semantic:
+            crate::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(cfg),
         workflow_run_id,
         trace_events: None,
     };

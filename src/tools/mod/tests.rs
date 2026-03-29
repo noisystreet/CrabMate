@@ -6,6 +6,7 @@ const TEST_COMMAND_MAX_OUTPUT_LEN: usize = 8192;
 const TEST_WEATHER_TIMEOUT_SECS: u64 = 15;
 fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
     ToolContext {
+        codebase_semantic: None,
         command_max_output_len: TEST_COMMAND_MAX_OUTPUT_LEN,
         weather_timeout_secs: TEST_WEATHER_TIMEOUT_SECS,
         allowed_commands,
@@ -280,6 +281,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"read_file"));
     assert!(names.contains(&"read_dir"));
     assert!(names.contains(&"glob_files"));
+    assert!(names.contains(&"codebase_semantic_search"));
     assert!(names.contains(&"list_tree"));
     assert!(names.contains(&"file_exists"));
     assert!(names.contains(&"read_binary_meta"));

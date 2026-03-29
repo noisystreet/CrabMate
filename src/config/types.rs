@@ -501,6 +501,18 @@ pub struct AgentConfig {
     pub mcp_command: String,
     /// `tools/call` 超时（秒）。
     pub mcp_tool_timeout_secs: u64,
+    /// 是否注册并允许 `codebase_semantic_search`（本地 fastembed + SQLite；`rebuild_index` 会写 `.crabmate/`）。
+    pub codebase_semantic_search_enabled: bool,
+    /// 相对工作区的语义索引 SQLite 路径；空则使用 `.crabmate/codebase_semantic.sqlite`。
+    pub codebase_semantic_index_sqlite_path: String,
+    /// 参与索引的单文件最大字节数（超出则跳过）。
+    pub codebase_semantic_max_file_bytes: usize,
+    /// 单块最大字符数（分块嵌入）。
+    pub codebase_semantic_chunk_max_chars: usize,
+    /// 默认检索 Top-K（工具参数可覆盖）。
+    pub codebase_semantic_top_k: usize,
+    /// `rebuild_index` 时最多索引多少个文件（防超大仓拖死进程）。
+    pub codebase_semantic_rebuild_max_files: usize,
 }
 
 #[cfg(test)]

@@ -138,6 +138,12 @@ struct ConfigBuilder {
     mcp_enabled: Option<bool>,
     mcp_command: Option<String>,
     mcp_tool_timeout_secs: Option<u64>,
+    codebase_semantic_search_enabled: Option<bool>,
+    codebase_semantic_index_sqlite_path: Option<String>,
+    codebase_semantic_max_file_bytes: Option<u64>,
+    codebase_semantic_chunk_max_chars: Option<u64>,
+    codebase_semantic_top_k: Option<u64>,
+    codebase_semantic_rebuild_max_files: Option<u64>,
 }
 
 /// 非空 trim 后覆盖 `String` 字段。
@@ -431,6 +437,25 @@ impl ConfigBuilder {
         self.mcp_enabled = agent.mcp_enabled.or(self.mcp_enabled);
         override_opt_string_non_empty(&mut self.mcp_command, agent.mcp_command);
         self.mcp_tool_timeout_secs = agent.mcp_tool_timeout_secs.or(self.mcp_tool_timeout_secs);
+        self.codebase_semantic_search_enabled = agent
+            .codebase_semantic_search_enabled
+            .or(self.codebase_semantic_search_enabled);
+        override_opt_string_non_empty(
+            &mut self.codebase_semantic_index_sqlite_path,
+            agent.codebase_semantic_index_sqlite_path,
+        );
+        self.codebase_semantic_max_file_bytes = agent
+            .codebase_semantic_max_file_bytes
+            .or(self.codebase_semantic_max_file_bytes);
+        self.codebase_semantic_chunk_max_chars = agent
+            .codebase_semantic_chunk_max_chars
+            .or(self.codebase_semantic_chunk_max_chars);
+        self.codebase_semantic_top_k = agent
+            .codebase_semantic_top_k
+            .or(self.codebase_semantic_top_k);
+        self.codebase_semantic_rebuild_max_files = agent
+            .codebase_semantic_rebuild_max_files
+            .or(self.codebase_semantic_rebuild_max_files);
     }
 }
 
@@ -552,6 +577,13 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.mcp_enabled = src.mcp_enabled;
     dst.mcp_command.clone_from(&src.mcp_command);
     dst.mcp_tool_timeout_secs = src.mcp_tool_timeout_secs;
+    dst.codebase_semantic_search_enabled = src.codebase_semantic_search_enabled;
+    dst.codebase_semantic_index_sqlite_path
+        .clone_from(&src.codebase_semantic_index_sqlite_path);
+    dst.codebase_semantic_max_file_bytes = src.codebase_semantic_max_file_bytes;
+    dst.codebase_semantic_chunk_max_chars = src.codebase_semantic_chunk_max_chars;
+    dst.codebase_semantic_top_k = src.codebase_semantic_top_k;
+    dst.codebase_semantic_rebuild_max_files = src.codebase_semantic_rebuild_max_files;
 }
 
 pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
@@ -1207,6 +1239,37 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.mcp_tool_timeout_secs = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_SEARCH_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.codebase_semantic_search_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_INDEX_SQLITE_PATH") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            b.codebase_semantic_index_sqlite_path = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_MAX_FILE_BYTES")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.codebase_semantic_max_file_bytes = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_CHUNK_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.codebase_semantic_chunk_max_chars = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_TOP_K")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.codebase_semantic_top_k = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_REBUILD_MAX_FILES")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.codebase_semantic_rebuild_max_files = Some(n);
+    }
 }
 
 /// `context_char_budget > 0` 且 `context_min_messages_after_system >= max_message_history` 时，按字符删旧消息往往难以生效（条数裁剪已收紧窗口）。
@@ -1580,6 +1643,23 @@ fn finalize(
         .unwrap_or(command_timeout_secs)
         .max(1);
 
+    let codebase_semantic_search_enabled = b.codebase_semantic_search_enabled.unwrap_or(true);
+    let codebase_semantic_index_sqlite_path =
+        b.codebase_semantic_index_sqlite_path.unwrap_or_default();
+    let codebase_semantic_max_file_bytes = b
+        .codebase_semantic_max_file_bytes
+        .unwrap_or(512 * 1024)
+        .clamp(4096, 4 * 1024 * 1024) as usize;
+    let codebase_semantic_chunk_max_chars = b
+        .codebase_semantic_chunk_max_chars
+        .unwrap_or(1200)
+        .clamp(256, 16_000) as usize;
+    let codebase_semantic_top_k = b.codebase_semantic_top_k.unwrap_or(8).clamp(1, 64) as usize;
+    let codebase_semantic_rebuild_max_files = b
+        .codebase_semantic_rebuild_max_files
+        .unwrap_or(2000)
+        .clamp(1, 100_000) as usize;
+
     let web_search_provider = match b.web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
         None => WebSearchProvider::default(),
@@ -1697,6 +1777,12 @@ fn finalize(
         mcp_enabled,
         mcp_command,
         mcp_tool_timeout_secs,
+        codebase_semantic_search_enabled,
+        codebase_semantic_index_sqlite_path,
+        codebase_semantic_max_file_bytes,
+        codebase_semantic_chunk_max_chars,
+        codebase_semantic_top_k,
+        codebase_semantic_rebuild_max_files,
     })
 }
 
