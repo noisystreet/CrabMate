@@ -68,6 +68,75 @@ struct EmitToolResultParams<'a> {
     envelope_ctx: Option<ToolEnvelopeContext<'a>>,
 }
 
+/// SSE：`SsePayload::ToolResult`（含 stdout/stderr、retryable、信封元数据）。
+async fn emit_sse_tool_result(
+    tx: &mpsc::Sender<String>,
+    name: &str,
+    result: &str,
+    tool_summary: Option<String>,
+    envelope_ctx: Option<ToolEnvelopeContext<'_>>,
+) {
+    let parsed = parse_legacy_output(name, result);
+    let stdout = if parsed.stdout.is_empty() {
+        None
+    } else {
+        Some(parsed.stdout)
+    };
+    let stderr = if parsed.stderr.is_empty() {
+        None
+    } else {
+        Some(parsed.stderr)
+    };
+    let retryable = if parsed.ok {
+        None
+    } else {
+        Some(tool_error_retryable_heuristic(parsed.error_code.as_deref()))
+    };
+    let tool_call_id = envelope_ctx.map(|c| c.tool_call_id.to_string());
+    let execution_mode = envelope_ctx.map(|c| c.execution_mode.to_string());
+    let parallel_batch_id = envelope_ctx
+        .and_then(|c| c.parallel_batch_id)
+        .map(|s| s.to_string());
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::ToolResult {
+            tool_result: ToolResultBody {
+                name: name.to_string(),
+                summary: tool_summary,
+                output: result.to_string(),
+                ok: Some(parsed.ok),
+                exit_code: parsed.exit_code,
+                error_code: parsed.error_code.clone(),
+                retryable,
+                tool_call_id,
+                execution_mode,
+                parallel_batch_id,
+                stdout,
+                stderr,
+            },
+        }),
+        "execute_tools::emit_tool_result_sse",
+    )
+    .await;
+}
+
+/// SSE：`SsePayload::ToolRunning`（`out` 为 `None` 时 no-op）。
+async fn emit_sse_tool_running(
+    out: Option<&mpsc::Sender<String>>,
+    tool_running: bool,
+    log_label: &'static str,
+) {
+    let Some(tx) = out else {
+        return;
+    };
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::ToolRunning { tool_running }),
+        log_label,
+    )
+    .await;
+}
+
 async fn emit_tool_result_sse_and_append(
     messages: &mut Vec<Message>,
     per_coord: &mut PerCoordinator,
@@ -116,46 +185,12 @@ async fn emit_tool_result_sse_and_append(
     }
 
     if let Some(tx) = out {
-        let parsed = parse_legacy_output(name, &result);
-        let stdout = if parsed.stdout.is_empty() {
-            None
-        } else {
-            Some(parsed.stdout)
-        };
-        let stderr = if parsed.stderr.is_empty() {
-            None
-        } else {
-            Some(parsed.stderr)
-        };
-        let retryable = if parsed.ok {
-            None
-        } else {
-            Some(tool_error_retryable_heuristic(parsed.error_code.as_deref()))
-        };
-        let tool_call_id = envelope_ctx.map(|c| c.tool_call_id.to_string());
-        let execution_mode = envelope_ctx.map(|c| c.execution_mode.to_string());
-        let parallel_batch_id = envelope_ctx
-            .and_then(|c| c.parallel_batch_id)
-            .map(|s| s.to_string());
-        let _ = crate::sse::send_string_logged(
+        emit_sse_tool_result(
             tx,
-            encode_message(SsePayload::ToolResult {
-                tool_result: ToolResultBody {
-                    name: name.to_string(),
-                    summary: tool_summary.clone(),
-                    output: result.clone(),
-                    ok: Some(parsed.ok),
-                    exit_code: parsed.exit_code,
-                    error_code: parsed.error_code.clone(),
-                    retryable,
-                    tool_call_id,
-                    execution_mode,
-                    parallel_batch_id,
-                    stdout,
-                    stderr,
-                },
-            }),
-            "execute_tools::emit_tool_result_sse",
+            name,
+            result.as_str(),
+            tool_summary.clone(),
+            envelope_ctx,
         )
         .await;
     }
@@ -223,16 +258,12 @@ async fn abort_tool_batch_if_sse_closed(
         return false;
     }
     info!(target: "crabmate", "{reason}");
-    if let Some(tx) = out {
-        let _ = crate::sse::send_string_logged(
-            tx,
-            encode_message(SsePayload::ToolRunning {
-                tool_running: false,
-            }),
-            "execute_tools::abort_tool_batch tool_running false",
-        )
-        .await;
-    }
+    emit_sse_tool_running(
+        out,
+        false,
+        "execute_tools::abort_tool_batch tool_running false",
+    )
+    .await;
     true
 }
 
@@ -615,14 +646,7 @@ async fn execute_tools_serial(
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
     let out = ctx.out;
 
-    if let Some(tx) = out {
-        let _ = crate::sse::send_string_logged(
-            tx,
-            encode_message(SsePayload::ToolRunning { tool_running: true }),
-            "execute_tools::batch tool_running true",
-        )
-        .await;
-    }
+    emit_sse_tool_running(out, true, "execute_tools::batch tool_running true").await;
 
     let workspace_changed = if tool_registry::tool_calls_allow_parallel_sync_batch(ctx.tool_calls) {
         let outcome = execute_tools_parallel(ctx).await;
@@ -639,26 +663,19 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         workspace_changed
     };
 
-    if let Some(tx) = out {
-        if workspace_changed {
-            let _ = crate::sse::send_string_logged(
-                tx,
-                encode_message(SsePayload::WorkspaceChanged {
-                    workspace_changed: true,
-                }),
-                "execute_tools::batch workspace_changed",
-            )
-            .await;
-        }
+    if let Some(tx) = out
+        && workspace_changed
+    {
         let _ = crate::sse::send_string_logged(
             tx,
-            encode_message(SsePayload::ToolRunning {
-                tool_running: false,
+            encode_message(SsePayload::WorkspaceChanged {
+                workspace_changed: true,
             }),
-            "execute_tools::batch tool_running false",
+            "execute_tools::batch workspace_changed",
         )
         .await;
     }
+    emit_sse_tool_running(out, false, "execute_tools::batch tool_running false").await;
 
     ExecuteToolsBatchOutcome::Finished
 }
