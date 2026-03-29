@@ -703,7 +703,7 @@ impl CliReplStyle {
             ("/workspace", "显示当前工作区"),
             (
                 "/workspace <路径>",
-                "切换工作区（须为已存在目录，别名 /cd）",
+                "切换工作区（须为已存在目录，别名 /cd）：相对路径同 read_file（相对当前根、禁止 / 开头）；绝对路径须落在 workspace_allowed_roots",
             ),
             ("/tools", "列出当前加载的工具名"),
             (

@@ -401,3 +401,38 @@ fn test_build_tools_dev_tags_basic_plus_rust() {
     assert!(names.contains(&"cargo_check"));
     assert!(!names.contains(&"git_status"));
 }
+
+#[test]
+fn repl_workspace_switch_rejects_slash_prefixed_as_tool_relative() {
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let wd = cfg
+        .workspace_allowed_roots
+        .first()
+        .cloned()
+        .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
+    let err = resolve_repl_workspace_switch_path(&cfg, &wd, "/tmp").expect_err("must reject");
+    assert!(
+        err.contains("允许范围")
+            || err.contains("敏感")
+            || err.contains("绝对路径")
+            || err.contains("相对路径"),
+        "{err}"
+    );
+}
+
+#[test]
+fn repl_workspace_switch_relative_subdir_resolves_like_read_file() {
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let wd = cfg
+        .workspace_allowed_roots
+        .first()
+        .cloned()
+        .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
+    let sub = "src";
+    if !wd.join(sub).is_dir() {
+        return;
+    }
+    let got =
+        resolve_repl_workspace_switch_path(&cfg, &wd, sub).expect("expected src under workspace");
+    assert!(got.is_dir());
+}
