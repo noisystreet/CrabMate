@@ -51,7 +51,7 @@ fn pop_last_staged_planner_coach_user_if_present(messages: &mut Vec<Message>) {
 async fn complete_one_staged_planner_assistant_round(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-    build_planner_messages: fn(&[Message], String) -> Vec<Message>,
+    build_planner_messages: fn(&[Message], String, bool) -> Vec<Message>,
     planner_render_to_terminal: bool,
     log_label: &'static str,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
@@ -203,13 +203,13 @@ where
 pub(crate) struct StagedPlanRunLabels {
     pub planning_log_label: &'static str,
     pub step_injection_log_label: &'static str,
-    pub build_planner_messages: fn(&[Message], String) -> Vec<Message>,
+    pub build_planner_messages: fn(&[Message], String, bool) -> Vec<Message>,
 }
 
 async fn prepare_staged_planner_no_tools_request(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-    build_planner_messages: fn(&[Message], String) -> Vec<Message>,
+    build_planner_messages: fn(&[Message], String, bool) -> Vec<Message>,
 ) -> Result<crate::types::ChatRequest, Box<dyn std::error::Error + Send + Sync>> {
     if let Some(ref ltm) = p.long_term_memory {
         ltm.prepare_messages(
@@ -235,9 +235,10 @@ async fn prepare_staged_planner_no_tools_request(
     } else {
         instr.to_string()
     };
+    let preserve = crate::llm::kimi_k2_5_vendor_requires_tool_call_reasoning(p.cfg.as_ref());
     Ok(no_tools_chat_request_from_messages(
         p.cfg.as_ref(),
-        build_planner_messages(p.messages, plan_system),
+        build_planner_messages(p.messages, plan_system, preserve),
         p.temperature_override,
         p.seed_override,
     ))
@@ -280,11 +281,14 @@ pub(super) async fn run_staged_plan_then_execute_steps(
 pub(crate) fn build_single_agent_planner_messages(
     messages: &[Message],
     plan_system: String,
+    preserve_reasoning_on_assistant_tool_calls: bool,
 ) -> Vec<Message> {
     let mut out: Vec<Message> = messages
         .iter()
         .filter(|m| !is_message_excluded_from_llm_context_except_memory(m))
-        .map(message_clone_stripping_reasoning_for_api)
+        .map(|m| {
+            message_clone_stripping_reasoning_for_api(m, preserve_reasoning_on_assistant_tool_calls)
+        })
         .collect();
     out.push(Message::system_only(plan_system));
     out
@@ -293,6 +297,7 @@ pub(crate) fn build_single_agent_planner_messages(
 pub(crate) fn build_logical_dual_planner_messages(
     messages: &[Message],
     plan_system: String,
+    preserve_reasoning_on_assistant_tool_calls: bool,
 ) -> Vec<Message> {
     let mut out: Vec<Message> = messages
         .iter()
@@ -309,7 +314,9 @@ pub(crate) fn build_logical_dual_planner_messages(
                 .map(|s| !s.trim().is_empty())
                 .unwrap_or(false)
         })
-        .map(message_clone_stripping_reasoning_for_api)
+        .map(|m| {
+            message_clone_stripping_reasoning_for_api(m, preserve_reasoning_on_assistant_tool_calls)
+        })
         .collect();
     out.push(Message::system_only(plan_system));
     out

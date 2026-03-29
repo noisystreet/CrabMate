@@ -6,7 +6,7 @@
 
 - **CLI**：输入 **`/config reload`**（或 Tab 补全 **`/config reload`**）。从与启动时相同的配置文件路径（**`--config`** 或默认探测 **`config.toml`** / **`.agent_demo.toml`**）再读 TOML，并与**当前进程环境变量**合并后，将可热更字段写入内存中的 [`AgentConfig`](DEVELOPMENT.md)；随后清空 MCP 进程内 stdio 缓存，下一轮对话使用新 MCP 指纹。
 - **Web**：**`POST /config/reload`**（JSON body 可为 `{}`；鉴权与 **`/chat`** 等受保护 API 一致——若启动时启用了 Bearer 中间件则须带 token）。成功时返回 **`{ "ok": true, "message": "…" }`**。
-- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_bigmodel_thinking`**、**`llm_fold_system_into_user`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。
+- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_bigmodel_thinking`**、**`llm_kimi_thinking_disabled`**、**`llm_fold_system_into_user`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。
 - **刻意不热更**：**`conversation_store_sqlite_path`**（会话库连接在启动时打开，改路径须重启 **`serve`**）。**`reqwest::Client`** 不重建，**`api_timeout_secs` 等**对**新连接**的生效可能受连接池保留的空闲连接影响。
 - **`API_KEY`**：仍只从**环境变量**读取；热重载**不**解析密钥文件。改 **`API_KEY`** 后通常需**重新 export** 并再执行 **`/config reload`**（或重启进程）以便与 **`llm_http_auth_mode=bearer`** 行为一致。
 - **Bearer 中间件层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权层；热重载**不会**拆除或新增该层——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的 token 字符串，用于已挂层时的校验。
@@ -25,6 +25,7 @@
 | `AGENT_LLM_HTTP_AUTH_MODE` | `bearer`（默认，需 **`API_KEY`**）或 `none`（不向 `chat/completions` / `models` 发 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）。 |
 | `AGENT_LLM_REASONING_SPLIT` | 为真时在请求体中带 `reasoning_split: true`（MiniMax 等思维链分离；见下文「MiniMax」）。 |
 | `AGENT_LLM_BIGMODEL_THINKING` | 为真时在请求体中带智谱 **`thinking: { "type": "enabled" }`**（GLM-5 深度思考；见下文「智谱 GLM」）。 |
+| `AGENT_LLM_KIMI_THINKING_DISABLED` | 为真时在请求体中带 **`thinking: { "type": "disabled" }`**（关闭 Moonshot **kimi-k2.5** 默认思考；见下文「Moonshot（Kimi）」）。 |
 | `AGENT_LLM_FOLD_SYSTEM_INTO_USER` | 为真时将 `system` 并入 `user`（不接受独立 `system` 的网关/代理）。 |
 | `AGENT_SYSTEM_PROMPT` | 内联系统提示；会清除继承的 `system_prompt_file`（若再设 `AGENT_SYSTEM_PROMPT_FILE` 则以文件为准，见「系统提示词」）。 |
 | `AGENT_SYSTEM_PROMPT_FILE` | 系统提示词文件路径。 |
@@ -266,6 +267,31 @@ model = "glm-5"
 llm_http_auth_mode = "bearer"
 llm_bigmodel_thinking = true
 # max_tokens、temperature 等按控制台与用量自行调整
+```
+
+## Moonshot（Kimi，OpenAI 兼容）
+
+Moonshot 在 **`https://api.moonshot.cn`** 提供与 OpenAI SDK 兼容的 HTTP API；单轮对话示例见 [Kimi Chat API / 单轮对话](https://platform.moonshot.cn/docs/api/chat#%E5%8D%95%E8%BD%AE%E5%AF%B9%E8%AF%9D)。
+
+- **请求地址**：**`POST https://api.moonshot.cn/v1/chat/completions`**（与文档一致）。
+- **CrabMate**：将 **`api_base`** 设为 **`https://api.moonshot.cn/v1`**（程序会再追加 **`chat/completions`**）。**`model`** 填文档中的模型 ID（如 **`kimi-k2.5`**、**`kimi-k2-thinking`**、**`moonshot-v1-8k`** 等，以 [List Models](https://platform.moonshot.cn/docs/api/chat#list-models) 与控制台为准）。环境变量 **`API_KEY`** 填平台密钥（**`llm_http_auth_mode = bearer`**）。
+
+**`max_tokens` 与 `max_completion_tokens`**：Kimi 文档将 **`max_tokens`** 标为可选且**已废弃**，推荐使用 **`max_completion_tokens`** 表示**完成段**上限。CrabMate 当前仍序列化 OpenAI 常见字段 **`max_tokens`**（来自 **`[agent] max_tokens`**），多数兼容网关会接受；若遇 **`invalid_request_error`** 与长度相关，请核对文档中的 **`max_completion_tokens`** 语义并适当调低 **`max_tokens`** 或关注后续版本是否增加该字段。
+
+**`thinking`（仅 kimi-k2.5）**：文档说明可选 **`thinking`**，取值 **`{"type": "enabled"}`** 或 **`{"type": "disabled"}`**，**服务端默认接近 enabled**。不写入请求体时由 Kimi 默认行为决定。若需**显式关闭** k2.5 思考模式，在 CrabMate 中设 **`llm_kimi_thinking_disabled = true`**（或 **`AGENT_LLM_KIMI_THINKING_DISABLED=1`**）；实现上**仅当**当前 **`model`** 为 **`kimi-k2.5` / `kimi-k2.5-…`** 时才会在 JSON 中带 **`thinking: { "type": "disabled" }`**，避免误发给其它网关。若同时开启 **`llm_bigmodel_thinking`** 且 **`model`** 为 k2.5 系列，**以 Kimi `disabled` 优先**（先写 Kimi 关闭）。
+
+**多轮与工具调用**：在 **kimi-k2.5** 且**未**关闭思考（默认）时，接口会校验历史里带 **`tool_calls`** 的 assistant 消息必须带 **`reasoning_content`**，否则会报类似 **`thinking is enabled but reasoning_content is missing in assistant tool call message`**。CrabMate 对此类消息在出站时**保留**会话中的 **`reasoning_content`**（若上游当时未返回则补空串），其它 assistant 条仍按惯例剥离思维链以省 token。关闭思考后按 Kimi 行为一般不再强制该字段。
+
+**`temperature` / `top_p`**：文档对各系列默认值不同，且部分模型**不可修改**。CrabMate 按 **`model`** ID 自动钳制出站 **`temperature`**（含 Web 单条覆盖、上下文摘要轮等），避免 **`invalid temperature`**：**`kimi-k2.5` / `kimi-k2.5-…`** 与 **`kimi-k2-thinking` / `kimi-k2-thinking-…`** → **`1.0`**；其它 **`kimi-k2` / `kimi-k2-…`**（如 **`kimi-k2-0905-preview`**）→ **`0.6`**。**`moonshot-v1-*`** 等其它 Kimi 模型仍使用配置中的 **`temperature`**；若遇类似报错请查阅当前模型说明。
+
+配置示例：
+
+```toml
+[agent]
+api_base = "https://api.moonshot.cn/v1"
+model = "kimi-k2.5"
+llm_http_auth_mode = "bearer"
+# llm_kimi_thinking_disabled = true   # 可选：关闭 k2.5 默认思考
 ```
 
 ## 配置文件示例

@@ -3,7 +3,7 @@
 //! ## 两阶段
 //!
 //! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩（`crabmate_tool` 信封内 **`output`** 超长时首尾采样 + 元数据，见 [`crate::tool_result::maybe_compress_tool_message_content`]）、条数/字符裁剪、孤立 `tool` 剔除、合并相邻 `assistant`（保留会话尾部空占位语义，见 [`crate::types::normalize_messages_for_openai_compatible_request`] 文档）。实现原在 [`super::context_window`]，现经本模块编排。
-//! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、去掉 `reasoning_content`、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）；若 **`llm_fold_system_into_user`** 为真（见配置；接 MiniMax 等时常需开启），再将 **`system`** 折叠进后续 **`user`**。**不**写入会话 `Vec`。
+//! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、按网关策略去掉 `reasoning_content`（Moonshot **kimi-k2.5** 在 thinking 启用时对含 **`tool_calls`** 的 assistant **保留**思维链，见 [`crate::llm::kimi_k2_5_vendor_requires_tool_call_reasoning`]）、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）；若 **`llm_fold_system_into_user`** 为真（见配置；接 MiniMax 等时常需开启），再将 **`system`** 折叠进后续 **`user`**。**不**写入会话 `Vec`。
 //!
 //! ## 会话同步顺序契约（勿打乱）
 //!
@@ -493,14 +493,18 @@ fn sanitize_assistant_tool_call_arguments_for_vendor_in_place(msgs: &mut [Messag
     }
 }
 
-/// 从会话切片构造发往 OpenAI 兼容 API 的 `messages`：**跳过** UI 分隔线与长期记忆注入、剥离 `reasoning_content`、再 normalize（合并相邻 assistant 等）；`fold_system_into_user` 为真时再 [`crate::types::fold_system_messages_into_following_user`]。
+/// 从会话切片构造发往 OpenAI 兼容 API 的 `messages`：**跳过** UI 分隔线与长期记忆注入、按 `preserve_reasoning_on_assistant_tool_calls` 剥离或保留 `reasoning_content`、再 normalize（合并相邻 assistant 等）；`fold_system_into_user` 为真时再 [`crate::types::fold_system_messages_into_following_user`]。
 #[inline]
 pub fn conversation_messages_to_vendor_body(
     messages: &[Message],
     fold_system_into_user: bool,
+    preserve_reasoning_on_assistant_tool_calls: bool,
 ) -> Vec<Message> {
     let mut v = crate::types::normalize_messages_for_openai_compatible_request(
-        crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(messages),
+        crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(
+            messages,
+            preserve_reasoning_on_assistant_tool_calls,
+        ),
     );
     if fold_system_into_user {
         v = crate::types::fold_system_messages_into_following_user(v);
@@ -783,9 +787,9 @@ mod tests {
             tool_call_id: None,
         };
         let slice = [Message::user_only("u"), sep, a.clone()];
-        let via = conversation_messages_to_vendor_body(&slice, false);
+        let via = conversation_messages_to_vendor_body(&slice, false, false);
         let manual = crate::types::normalize_messages_for_openai_compatible_request(
-            crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(&slice),
+            crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(&slice, false),
         );
         assert_eq!(via, manual);
     }

@@ -62,7 +62,7 @@ mod push_assistant_merge_tests {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-        let out = build_single_agent_planner_messages(&src, "plan sys".to_string());
+        let out = build_single_agent_planner_messages(&src, "plan sys".to_string(), false);
         assert_eq!(out.len(), 5);
         assert_eq!(out[3].role, "tool");
         assert_eq!(out[4].role, "system");
@@ -86,7 +86,7 @@ mod push_assistant_merge_tests {
                 tool_call_id: Some("tc1".to_string()),
             },
         ];
-        let out = build_logical_dual_planner_messages(&src, "plan sys".to_string());
+        let out = build_logical_dual_planner_messages(&src, "plan sys".to_string(), false);
         assert_eq!(out.len(), 4);
         assert_eq!(out[0].role, "system");
         assert_eq!(out[1].role, "user");

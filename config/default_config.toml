@@ -10,15 +10,21 @@ model = "deepseek-chat"
 # 模型 HTTP 鉴权：bearer（默认，需环境变量 API_KEY）| none（不向 chat/models 发 Authorization；本地 Ollama 等可不设 API_KEY）
 # llm_http_auth_mode = "bearer"
 max_tokens = 2048
+# 注意：一些模型只支持设置固定的温度，如kimi-k2.5系列模型。
 temperature = 0.7
 
 # 对于MiniMax系列模型: 已测 model 含 MiniMax-M2.7、MiniMax-M2.7-highspeed、MiniMax-M2.5；
 # 可选 llm_reasoning_split = true（见 docs/CONFIGURATION.md 与 platform.minimaxi.com OpenAI 兼容文档）。
 # llm_reasoning_split = false
-# 智谱 GLM（OpenAI 兼容）：api_base = "https://open.bigmodel.cn/api/paas/v4" ，model = "glm-5" ，API_KEY；与官方最小 cURL（仅 model/messages/stream）一致时保持 llm_bigmodel_thinking = false（默认）；深度思考见 GLM-5 文档 thinking 字段时用 llm_bigmodel_thinking = true ；AGENT_LLM_BIGMODEL_THINKING
-# llm_bigmodel_thinking = false
-# 文档示例含 role: system，但直连 api.minimaxi.com 等仍常见 HTTP 400「invalid message role: system」；默认 true 将系统提示并入 user。换 DeepSeek / 标准 OpenAI 兼容且需保留独立 system 条时可设 false（AGENT_LLM_FOLD_SYSTEM_INTO_USER=0）。
+
+# MiniMax系列模型文档示例含 role: system，但直连 api.minimaxi.com 等仍常见 HTTP 400「invalid message role: system」；默认 true 将系统提示并入 user。换 DeepSeek / 标准 OpenAI 兼容且需保留独立 system 条时可设 false（AGENT_LLM_FOLD_SYSTEM_INTO_USER=0）。
 llm_fold_system_into_user = false
+
+# 智谱 GLM（OpenAI 兼容）：api_base = "https://open.bigmodel.cn/api/paas/v4" ，model = "glm-5" ；与官方最小 cURL（仅 model/messages/stream）一致时保持 llm_bigmodel_thinking = false（默认）；深度思考见 GLM-5 文档 thinking 字段时用 llm_bigmodel_thinking = true ；AGENT_LLM_BIGMODEL_THINKING
+# llm_bigmodel_thinking = false
+
+# Moonshot Kimi：api_base = "https://api.moonshot.cn/v1" ，model 如 kimi-k2.5；文档见 platform.moonshot.cn Chat API；仅在 model 为 kimi-k2.5 系列时生效：关闭默认思考 llm_kimi_thinking_disabled = true ；AGENT_LLM_KIMI_THINKING_DISABLED
+# llm_kimi_thinking_disabled = false
 
 # 可选：写入 chat/completions 的整数 seed；省略则请求 JSON 不带该字段
 # llm_seed = 42

@@ -22,6 +22,8 @@ pub struct StreamChatParams<'a> {
     pub cancel: Option<&'a AtomicBool>,
     pub plain_terminal_stream: bool,
     pub fold_system_into_user: bool,
+    /// Moonshot **kimi-k2.5** + 默认 thinking：含 **`tool_calls`** 的 assistant 须保留 **`reasoning_content`**（见 [`super::kimi_k2_5_vendor_requires_tool_call_reasoning`]）。
+    pub preserve_reasoning_on_assistant_tool_calls: bool,
 }
 
 /// [`super::complete_chat_retrying`] 入参（不含每次克隆前的 `ChatRequest`）。
@@ -50,6 +52,8 @@ impl CompleteChatRetryingParams<'_> {
             cancel: self.cancel,
             plain_terminal_stream: self.plain_terminal_stream,
             fold_system_into_user: self.cfg.llm_fold_system_into_user,
+            preserve_reasoning_on_assistant_tool_calls:
+                super::kimi_k2_5_vendor_requires_tool_call_reasoning(self.cfg),
         }
     }
 }

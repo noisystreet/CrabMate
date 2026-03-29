@@ -422,6 +422,7 @@ pub async fn stream_chat(
         cancel,
         plain_terminal_stream,
         fold_system_into_user,
+        preserve_reasoning_on_assistant_tool_calls,
     } = *params;
     let url = format!(
         "{}/{}",
@@ -440,6 +441,7 @@ pub async fn stream_chat(
     req.messages = crate::agent::message_pipeline::conversation_messages_to_vendor_body(
         &taken,
         fold_system_into_user,
+        preserve_reasoning_on_assistant_tool_calls,
     );
     if should_log_chat_request_json_preview() {
         let as_debug = log::log_enabled!(log::Level::Debug);
