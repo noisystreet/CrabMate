@@ -12,8 +12,9 @@
 | 3 | 模型 / 解析错误 | 网关错误体、响应无法解析、部分规划无效前缀（启发式归类见 `classify_model_error_message`） |
 | 4 | 本回合内全部 `run_command` 均被审批拒绝 | 管道下未输入 `y`/`a`、或交互全选拒绝 |
 | 5 | 配额 / 限流 | HTTP 429、402、部分 503 等（启发式） |
+| 6 | 工具重放与录制不一致 | `tool-replay run --compare-recorded` 下至少一步输出与 `recorded_output` 字符串不等 |
 
-实现常量：`EXIT_GENERAL`、`EXIT_USAGE`、`EXIT_MODEL_ERROR`、`EXIT_TOOLS_ALL_RUN_COMMAND_DENIED`、`EXIT_QUOTA_OR_RATE_LIMIT`（`src/runtime/cli_exit.rs`）。契约测试：`tests/cli_contract.rs`。
+实现常量：`EXIT_GENERAL`、`EXIT_USAGE`、`EXIT_MODEL_ERROR`、`EXIT_TOOLS_ALL_RUN_COMMAND_DENIED`、`EXIT_QUOTA_OR_RATE_LIMIT`、`EXIT_TOOL_REPLAY_MISMATCH`（`src/runtime/cli_exit.rs`）。契约测试：`tests/cli_contract.rs`。
 
 ## SSE / 流式错误码（Web `POST /chat/stream`）
 

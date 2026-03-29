@@ -4,8 +4,9 @@
 
 use crabmate::{
     CliExitError, EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT,
-    EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, ExtraCliCommand, SaveSessionFormat,
-    classify_model_error_message, normalize_legacy_argv, parse_args_from_argv,
+    EXIT_TOOL_REPLAY_MISMATCH, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, ExtraCliCommand,
+    SaveSessionFormat, ToolReplayCli, classify_model_error_message, normalize_legacy_argv,
+    parse_args_from_argv,
 };
 use std::sync::Mutex;
 
@@ -157,6 +158,75 @@ fn fixture_parse_args_from_argv_contract() {
                 );
             }
 
+            if let Some(tr) = case.get("tool_replay") {
+                let tr = tr.as_object().expect("tool_replay object");
+                let kind = tr["kind"].as_str().expect("tool_replay.kind");
+                let got = p
+                    .tool_replay
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("{name}: expected tool_replay"));
+                match kind {
+                    "Export" => {
+                        let ToolReplayCli::Export {
+                            session_file,
+                            output,
+                            note,
+                        } = got
+                        else {
+                            panic!("{name}: expected ToolReplayCli::Export");
+                        };
+                        let want_session = tr
+                            .get("session_file")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        assert_eq!(
+                            session_file.as_ref(),
+                            want_session.as_ref(),
+                            "{name} tool_replay.session_file"
+                        );
+                        let want_output = tr
+                            .get("output")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        assert_eq!(
+                            output.as_ref(),
+                            want_output.as_ref(),
+                            "{name} tool_replay.output"
+                        );
+                        let want_note = tr
+                            .get("note")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        assert_eq!(note.as_ref(), want_note.as_ref(), "{name} tool_replay.note");
+                    }
+                    "Run" => {
+                        let ToolReplayCli::Run {
+                            fixture,
+                            compare_recorded,
+                        } = got
+                        else {
+                            panic!("{name}: expected ToolReplayCli::Run");
+                        };
+                        assert_eq!(
+                            fixture.as_str(),
+                            tr["fixture"].as_str().expect("tool_replay.fixture"),
+                            "{name} tool_replay.fixture"
+                        );
+                        assert_eq!(
+                            *compare_recorded,
+                            tr["compare_recorded"].as_bool().unwrap_or(false),
+                            "{name} tool_replay.compare_recorded"
+                        );
+                    }
+                    other => panic!("unknown tool_replay.kind: {other}"),
+                }
+            } else {
+                assert!(
+                    p.tool_replay.is_none(),
+                    "{name}: tool_replay should be absent"
+                );
+            }
+
             assert_eq!(
                 p.http_bind_host, "127.0.0.1",
                 "{name} http_bind_host default"
@@ -185,16 +255,18 @@ fn cli_exit_code_numeric_contract_for_main_mapping() {
     assert_eq!(EXIT_MODEL_ERROR, 3);
     assert_eq!(EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, 4);
     assert_eq!(EXIT_QUOTA_OR_RATE_LIMIT, 5);
+    assert_eq!(EXIT_TOOL_REPLAY_MISMATCH, 6);
     let mut v = vec![
         EXIT_GENERAL,
         EXIT_USAGE,
         EXIT_MODEL_ERROR,
         EXIT_TOOLS_ALL_RUN_COMMAND_DENIED,
         EXIT_QUOTA_OR_RATE_LIMIT,
+        EXIT_TOOL_REPLAY_MISMATCH,
     ];
     v.sort();
     v.dedup();
-    assert_eq!(v.len(), 5);
+    assert_eq!(v.len(), 6);
 }
 
 #[test]

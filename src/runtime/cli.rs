@@ -1,9 +1,9 @@
-use crate::config::cli::{ChatCliArgs, SaveSessionCli, SaveSessionFormat};
+use crate::config::cli::{ChatCliArgs, SaveSessionCli, SaveSessionFormat, ToolReplayCli};
 use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::redact;
 use crate::runtime::cli_exit::{
-    CliExitError, EXIT_GENERAL, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE,
-    classify_model_error_message,
+    CliExitError, EXIT_GENERAL, EXIT_TOOL_REPLAY_MISMATCH, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED,
+    EXIT_USAGE, classify_model_error_message,
 };
 use crate::runtime::cli_repl_ui::CliReplStyle;
 use crate::runtime::repl_reedline::{ReplLineEditor, ReplReadLine, read_repl_line_with_editor};
@@ -233,6 +233,88 @@ fn repl_export_current_messages(
 }
 
 /// `crabmate save-session`：从磁盘会话文件读取并写入导出目录（兼容别名 `export-session`）。
+/// `crabmate tool-replay export|run`（不要求 API_KEY；重放路径与对话相同执行真实工具，须在可信工作区）。
+pub fn run_tool_replay_command(
+    cfg: &AgentConfig,
+    workspace_cli: &Option<String>,
+    cmd: ToolReplayCli,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::ErrorKind;
+
+    let workspace = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    match cmd {
+        ToolReplayCli::Export {
+            session_file,
+            output,
+            note,
+        } => {
+            let session_path = match session_file
+                .as_ref()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+            {
+                Some(p) => PathBuf::from(p),
+                None => crate::runtime::workspace_session::session_file_path(&workspace),
+            };
+            if !session_path.is_file() {
+                eprintln!("会话文件不存在: {}", session_path.display());
+                return Err(std::io::Error::new(ErrorKind::NotFound, "会话文件不存在").into());
+            }
+            let out_path = output
+                .as_ref()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from);
+            let note_ref = note.as_deref().map(str::trim).filter(|s| !s.is_empty());
+            let written = crate::runtime::tool_replay::export_tool_replay_fixture(
+                &session_path,
+                &workspace,
+                out_path.as_deref(),
+                note_ref,
+            )?;
+            println!("{}", written.display());
+        }
+        ToolReplayCli::Run {
+            fixture,
+            compare_recorded,
+        } => {
+            let f = fixture.trim();
+            if f.is_empty() {
+                return Err(
+                    CliExitError::new(EXIT_USAGE, "tool-replay run：--fixture 不能为空").into(),
+                );
+            }
+            let fixture_path = PathBuf::from(f);
+            if !fixture_path.is_file() {
+                eprintln!("fixture 不存在: {}", fixture_path.display());
+                return Err(std::io::Error::new(ErrorKind::NotFound, "fixture 不存在").into());
+            }
+            let mut buf = Vec::new();
+            let (n_steps, mismatches) = crate::runtime::tool_replay::run_tool_replay_fixture(
+                &fixture_path,
+                cfg,
+                &workspace,
+                compare_recorded,
+                &mut buf,
+            )?;
+            let text = String::from_utf8_lossy(&buf);
+            print!("{text}");
+            if compare_recorded && mismatches > 0 {
+                return Err(
+                    CliExitError::new(
+                        EXIT_TOOL_REPLAY_MISMATCH,
+                        format!(
+                            "tool-replay：{mismatches} 条步骤与 recorded_output 不一致（共 {n_steps} 步）"
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn run_save_session_command(
     cfg: &AgentConfig,
     workspace_cli: &Option<String>,
