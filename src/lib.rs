@@ -304,30 +304,46 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let api_key = require_api_key_for_llm(&cfg)?;
 
-    let cfg = Arc::new(cfg);
-    info!(
-        target: "crabmate",
-        "配置已加载 api_base={} model={}",
-        cfg.api_base,
-        cfg.model
-    );
-    let client = http_client::build_shared_api_client(cfg.as_ref())?;
+    let cfg_holder: config::SharedAgentConfig = std::sync::Arc::new(tokio::sync::RwLock::new(cfg));
+    {
+        let g = cfg_holder.read().await;
+        info!(
+            target: "crabmate",
+            "配置已加载 api_base={} model={}",
+            g.api_base,
+            g.model
+        );
+    }
+    let client = {
+        let g = cfg_holder.read().await;
+        http_client::build_shared_api_client(&g)?
+    };
     let mut all_tools = tools::build_tools();
-    tool_call_explain::annotate_tool_defs_for_explain_card(&mut all_tools, cfg.as_ref());
+    {
+        let g = cfg_holder.read().await;
+        tool_call_explain::annotate_tool_defs_for_explain_card(&mut all_tools, &g);
+    }
     let tools = if no_tools { Vec::new() } else { all_tools };
 
     if let Some(port) = serve_port {
         let initial_workspace = workspace_cli.clone();
         let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
         std::fs::create_dir_all(&uploads_dir).ok();
-        let chat_queue = chat_job_queue::ChatJobQueue::new(
-            cfg.chat_queue_max_concurrent,
-            cfg.chat_queue_max_pending,
-        );
-        let conversation_backing = if cfg.conversation_store_sqlite_path.trim().is_empty() {
+        let (cq_conc, cq_pending, conv_sqlite, ltm_enabled, ltm_store_path) = {
+            let g = cfg_holder.read().await;
+            (
+                g.chat_queue_max_concurrent,
+                g.chat_queue_max_pending,
+                g.conversation_store_sqlite_path.clone(),
+                g.long_term_memory_enabled,
+                g.long_term_memory_store_sqlite_path.clone(),
+            )
+        };
+        let chat_queue = chat_job_queue::ChatJobQueue::new(cq_conc, cq_pending);
+        let conversation_backing = if conv_sqlite.trim().is_empty() {
             web::ConversationBacking::memory_default()
         } else {
-            let p = std::path::Path::new(cfg.conversation_store_sqlite_path.trim());
+            let p = std::path::Path::new(conv_sqlite.trim());
             let conn = web::open_conversation_sqlite(p).map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -341,13 +357,13 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
             web::ConversationBacking::Sqlite(conn)
         };
-        let long_term_memory = if cfg.long_term_memory_enabled {
+        let long_term_memory = if ltm_enabled {
             match &conversation_backing {
                 web::ConversationBacking::Sqlite(conn) => Some(
                     long_term_memory::LongTermMemoryRuntime::new_shared_sqlite(Arc::clone(conn)),
                 ),
                 web::ConversationBacking::Memory(_) => {
-                    let p = cfg.long_term_memory_store_sqlite_path.trim();
+                    let p = ltm_store_path.trim();
                     if p.is_empty() {
                         info!(
                             target: "crabmate",
@@ -375,7 +391,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             None
         };
         let state = Arc::new(AppState {
-            cfg: Arc::clone(&cfg),
+            cfg: Arc::clone(&cfg_holder),
+            config_path_for_reload: config_path.clone(),
             api_key: api_key.clone(),
             client,
             tools,
@@ -389,7 +406,17 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         });
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
-        let app = web::server::build_app(state, no_web, static_dir, uploads_dir.clone());
+        let web_api_bearer_layer_enabled = {
+            let g = cfg_holder.read().await;
+            !g.web_api_bearer_token.trim().is_empty()
+        };
+        let app = web::server::build_app(
+            state,
+            no_web,
+            static_dir,
+            uploads_dir.clone(),
+            web_api_bearer_layer_enabled,
+        );
         let bind_ip: std::net::IpAddr = http_bind_host.parse().map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -399,8 +426,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ),
             )
         })?;
-        let auth_enabled = !cfg.web_api_bearer_token.trim().is_empty();
-        if !bind_ip.is_loopback() && !auth_enabled && !cfg.allow_insecure_no_auth_for_non_loopback {
+        let (auth_enabled, allow_insec) = {
+            let g = cfg_holder.read().await;
+            (
+                !g.web_api_bearer_token.trim().is_empty(),
+                g.allow_insecure_no_auth_for_non_loopback,
+            )
+        };
+        if !bind_ip.is_loopback() && !auth_enabled && !allow_insec {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "当前监听地址为非 loopback（如 0.0.0.0），但未配置 web_api_bearer_token；请设置 [agent].web_api_bearer_token / AGENT_WEB_API_BEARER_TOKEN，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
@@ -480,13 +513,15 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             system_prompt_override,
         };
 
-        runtime::benchmark::runner::run_batch(&cfg, &client, &api_key, &tools, &batch_cfg).await?;
+        runtime::benchmark::runner::run_batch(&cfg_holder, &client, &api_key, &tools, &batch_cfg)
+            .await?;
         return Ok(());
     }
 
     if chat_cli.wants_chat() {
         crate::runtime::cli::run_chat_invocation(
-            &cfg,
+            &cfg_holder,
+            config_path.as_deref(),
             &client,
             &api_key,
             &tools,
@@ -497,10 +532,19 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    crate::runtime::cli::run_repl(&cfg, &client, &api_key, &tools, &workspace_cli, no_stream).await
+    crate::runtime::cli::run_repl(
+        &cfg_holder,
+        config_path.as_deref(),
+        &client,
+        &api_key,
+        &tools,
+        &workspace_cli,
+        no_stream,
+    )
+    .await
 }
 
-pub use config::{AgentConfig, LlmHttpAuthMode, load_config};
+pub use config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig, load_config};
 pub use llm::{
     ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
     default_chat_completions_backend,

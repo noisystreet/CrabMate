@@ -474,25 +474,24 @@ async fn build_messages_for_turn(
         seed.messages.push(Message::user_only(user_msg.to_string()));
         return seed;
     }
-    let root = std::path::PathBuf::from(state.effective_workspace_path().await);
-    let memory_snippet = if state.cfg.agent_memory_file_enabled {
+    // 先取工作区路径，再读 `cfg`，避免在持有 `cfg` 读锁时调用 `effective_workspace_path`（其内部再次 `cfg.read` 会死锁）。
+    let root_str = state.effective_workspace_path().await;
+    let cfg = state.cfg.read().await;
+    let root = std::path::PathBuf::from(root_str);
+    let memory_snippet = if cfg.agent_memory_file_enabled {
         load_memory_snippet(
             &root,
-            state.cfg.agent_memory_file.as_str(),
-            state.cfg.agent_memory_file_max_chars,
+            cfg.agent_memory_file.as_str(),
+            cfg.agent_memory_file_max_chars,
         )
     } else {
         None
     };
 
-    let messages = if !state.cfg.project_profile_inject_enabled {
-        messages_chat_seed_with_memory(
-            &state.cfg.system_prompt,
-            user_msg,
-            memory_snippet.as_deref(),
-        )
+    let messages = if !cfg.project_profile_inject_enabled {
+        messages_chat_seed_with_memory(&cfg.system_prompt, user_msg, memory_snippet.as_deref())
     } else {
-        let max_chars = state.cfg.project_profile_inject_max_chars;
+        let max_chars = cfg.project_profile_inject_max_chars;
         let root_for_profile = root.clone();
         let profile_md = match tokio::task::spawn_blocking(move || {
             build_project_profile_markdown(&root_for_profile, max_chars)
@@ -509,11 +508,11 @@ async fn build_messages_for_turn(
             merge_memory_and_profile_snippets(memory_snippet.as_deref(), profile_md.as_str());
         match combined {
             Some(ctx) => vec![
-                Message::system_only(state.cfg.system_prompt.clone()),
+                Message::system_only(cfg.system_prompt.clone()),
                 Message::user_only(ctx),
                 Message::user_only(user_msg.to_string()),
             ],
-            None => messages_chat_seed(&state.cfg.system_prompt, user_msg),
+            None => messages_chat_seed(&cfg.system_prompt, user_msg),
         }
     };
     ConversationTurnSeed {
@@ -571,11 +570,14 @@ pub(crate) async fn require_web_api_bearer_auth(
     req: Request,
     next: Next,
 ) -> Response {
-    let token = state.cfg.web_api_bearer_token.trim();
+    let token = {
+        let g = state.cfg.read().await;
+        g.web_api_bearer_token.trim().to_string()
+    };
     if token.is_empty() {
         return next.run(req).await;
     }
-    if is_valid_bearer_header(req.headers().get(header::AUTHORIZATION), token) {
+    if is_valid_bearer_header(req.headers().get(header::AUTHORIZATION), token.as_str()) {
         return next.run(req).await;
     }
     (
@@ -978,13 +980,8 @@ pub(crate) async fn chat_stream_handler(
 
 pub(crate) async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
-    let report = health::build_health_report(
-        &work_dir,
-        &state.api_key,
-        state.cfg.llm_http_auth_mode,
-        true,
-    )
-    .await;
+    let auth_mode = { state.cfg.read().await.llm_http_auth_mode };
+    let report = health::build_health_report(&work_dir, &state.api_key, auth_mode, true).await;
     Json(report)
 }
 
@@ -1071,6 +1068,7 @@ struct StatusResponse {
 }
 
 pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let cfg = state.cfg.read().await;
     let mp = MESSAGE_PIPELINE_COUNTERS.snapshot();
     let conversation_store_entries = state.conversation_count().await;
     let (ltm_ready, ltm_idx_err) = match state.long_term_memory.as_ref() {
@@ -1087,73 +1085,87 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         .collect();
     Json(StatusResponse {
         status: "ok",
-        model: state.cfg.model.clone(),
-        api_base: state.cfg.api_base.clone(),
-        max_tokens: state.cfg.max_tokens,
-        temperature: state.cfg.temperature,
-        llm_seed: state.cfg.llm_seed,
+        model: cfg.model.clone(),
+        api_base: cfg.api_base.clone(),
+        max_tokens: cfg.max_tokens,
+        temperature: cfg.temperature,
+        llm_seed: cfg.llm_seed,
         tool_count: tool_names.len(),
         tool_names,
         tool_dispatch_registry: tool_registry::all_dispatch_metadata(),
-        reflection_default_max_rounds: state.cfg.reflection_default_max_rounds,
-        final_plan_requirement: state.cfg.final_plan_requirement,
-        plan_rewrite_max_attempts: state.cfg.plan_rewrite_max_attempts,
-        planner_executor_mode: state.cfg.planner_executor_mode.as_str(),
-        staged_plan_execution: state.cfg.staged_plan_execution,
-        staged_plan_cli_show_planner_stream: state.cfg.staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round: state.cfg.staged_plan_optimizer_round,
-        staged_plan_ensemble_count: state.cfg.staged_plan_ensemble_count,
-        sync_default_tool_sandbox_mode: state
-            .cfg
-            .sync_default_tool_sandbox_mode
-            .as_str()
-            .to_string(),
-        sync_default_tool_sandbox_docker_image: state
-            .cfg
-            .sync_default_tool_sandbox_docker_image
-            .clone(),
-        sync_default_tool_sandbox_docker_user_effective: match state
-            .cfg
+        reflection_default_max_rounds: cfg.reflection_default_max_rounds,
+        final_plan_requirement: cfg.final_plan_requirement,
+        plan_rewrite_max_attempts: cfg.plan_rewrite_max_attempts,
+        planner_executor_mode: cfg.planner_executor_mode.as_str(),
+        staged_plan_execution: cfg.staged_plan_execution,
+        staged_plan_cli_show_planner_stream: cfg.staged_plan_cli_show_planner_stream,
+        staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
+        staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
+        sync_default_tool_sandbox_mode: cfg.sync_default_tool_sandbox_mode.as_str().to_string(),
+        sync_default_tool_sandbox_docker_image: cfg.sync_default_tool_sandbox_docker_image.clone(),
+        sync_default_tool_sandbox_docker_user_effective: match cfg
             .sync_default_tool_sandbox_docker_user
             .as_docker_user_string()
         {
             Some(s) => s.to_string(),
             None => "image_default".to_string(),
         },
-        tui_load_session_on_start: state.cfg.tui_load_session_on_start,
-        max_message_history: state.cfg.max_message_history,
-        tool_message_max_chars: state.cfg.tool_message_max_chars,
-        context_char_budget: state.cfg.context_char_budget,
-        context_summary_trigger_chars: state.cfg.context_summary_trigger_chars,
+        tui_load_session_on_start: cfg.tui_load_session_on_start,
+        max_message_history: cfg.max_message_history,
+        tool_message_max_chars: cfg.tool_message_max_chars,
+        context_char_budget: cfg.context_char_budget,
+        context_summary_trigger_chars: cfg.context_summary_trigger_chars,
         chat_queue_max_concurrent: state.chat_queue.max_concurrent(),
         chat_queue_max_pending: state.chat_queue.max_pending(),
-        parallel_readonly_tools_max: state.cfg.parallel_readonly_tools_max,
-        read_file_turn_cache_max_entries: state.cfg.read_file_turn_cache_max_entries,
+        parallel_readonly_tools_max: cfg.parallel_readonly_tools_max,
+        read_file_turn_cache_max_entries: cfg.read_file_turn_cache_max_entries,
         chat_queue_running: state.chat_queue.running_count(),
         chat_queue_completed_ok: state.chat_queue.completed_ok(),
         chat_queue_completed_cancelled: state.chat_queue.completed_cancelled(),
         chat_queue_completed_err: state.chat_queue.completed_err(),
         chat_queue_recent_jobs: state.chat_queue.recent_jobs(),
         per_active_jobs: state.chat_queue.active_per_jobs(),
-        workspace_allowed_roots_count: state.cfg.workspace_allowed_roots.len(),
+        workspace_allowed_roots_count: cfg.workspace_allowed_roots.len(),
         conversation_store_entries,
-        long_term_memory_enabled: state.cfg.long_term_memory_enabled,
-        long_term_memory_vector_backend: state
-            .cfg
-            .long_term_memory_vector_backend
-            .as_str()
-            .to_string(),
+        long_term_memory_enabled: cfg.long_term_memory_enabled,
+        long_term_memory_vector_backend: cfg.long_term_memory_vector_backend.as_str().to_string(),
         long_term_memory_store_ready: ltm_ready,
         long_term_memory_index_errors: ltm_idx_err,
-        project_profile_inject_enabled: state.cfg.project_profile_inject_enabled,
-        project_profile_inject_max_chars: state.cfg.project_profile_inject_max_chars,
-        tool_call_explain_enabled: state.cfg.tool_call_explain_enabled,
-        tool_call_explain_min_chars: state.cfg.tool_call_explain_min_chars,
-        tool_call_explain_max_chars: state.cfg.tool_call_explain_max_chars,
+        project_profile_inject_enabled: cfg.project_profile_inject_enabled,
+        project_profile_inject_max_chars: cfg.project_profile_inject_max_chars,
+        tool_call_explain_enabled: cfg.tool_call_explain_enabled,
+        tool_call_explain_min_chars: cfg.tool_call_explain_min_chars,
+        tool_call_explain_max_chars: cfg.tool_call_explain_max_chars,
         message_pipeline_trim_count_hits: mp.trim_count_hits,
         message_pipeline_trim_char_budget_hits: mp.trim_char_budget_hits,
         message_pipeline_tool_compress_hits: mp.tool_compress_hits,
         message_pipeline_orphan_tool_drops: mp.orphan_tool_drops,
-        llm_http_auth_mode: state.cfg.llm_http_auth_mode.as_str(),
+        llm_http_auth_mode: cfg.llm_http_auth_mode.as_str(),
     })
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ConfigReloadResponseBody {
+    pub(crate) ok: bool,
+    pub(crate) message: String,
+}
+
+/// 热重载 [`AgentConfig`] 可更字段（不含会话 SQLite 路径）；清空 MCP 进程缓存。
+pub(crate) async fn config_reload_handler(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ConfigReloadResponseBody>, (StatusCode, Json<ApiError>)> {
+    let path = state.config_path_for_reload.as_deref();
+    match crate::runtime::config_reload::reload_shared_agent_config(&state.cfg, path).await {
+        Ok(()) => Ok(Json(ConfigReloadResponseBody {
+            ok: true,
+            message: "配置已热重载。conversation_store_sqlite_path 与 reqwest Client 未重建；若变更 web_api_bearer_token 是否启用中间件，须重启 serve。".to_string(),
+        })),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "CONFIG_RELOAD_FAILED",
+                message: e,
+            }),
+        )),
+    }
 }

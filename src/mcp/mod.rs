@@ -289,6 +289,12 @@ fn mcp_connection_fingerprint(cfg: &AgentConfig) -> Option<String> {
 
 static MCP_PROCESS_CACHE: TokioMutex<Option<McpProcessCache>> = TokioMutex::const_new(None);
 
+/// 丢弃进程内 MCP stdio 缓存（配置热重载或 `mcp_command` 变更后调用，避免沿用旧子进程）。
+pub async fn clear_mcp_process_cache() {
+    let mut guard = MCP_PROCESS_CACHE.lock().await;
+    *guard = None;
+}
+
 /// 新建 stdio 会话并 `tools/list`（不经进程内缓存；供缓存未命中时调用）。
 async fn open_mcp_session_fresh(
     cfg: &AgentConfig,
