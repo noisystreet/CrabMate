@@ -1,6 +1,6 @@
 //! 工作流执行期节点状态与 JSON 报告结构体。
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
@@ -22,7 +22,7 @@ pub(crate) struct NodeRunResult {
     pub(crate) attempt: u32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct WorkflowTraceEvent {
     /// Unix 毫秒时间戳（调试导出用）。
     pub(crate) timestamp_ms: u64,
