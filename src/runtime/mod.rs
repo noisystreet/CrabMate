@@ -3,7 +3,6 @@
 pub mod benchmark;
 pub mod chat_export;
 pub mod cli;
-pub(crate) mod cli_approval;
 pub mod cli_doctor;
 pub mod cli_exit;
 pub(crate) mod cli_mcp;

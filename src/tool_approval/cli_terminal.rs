@@ -9,7 +9,7 @@ use dialoguer::theme::{ColorfulTheme, SimpleTheme};
 use crate::types::CommandApprovalDecision;
 
 /// 与 `tool_registry` 单测及管道回退共用。
-pub(crate) fn parse_cli_command_approval_line(line: &str) -> CommandApprovalDecision {
+pub(super) fn parse_cli_command_approval_line(line: &str) -> CommandApprovalDecision {
     let t = line.trim().to_ascii_lowercase();
     match t.as_str() {
         "" | "n" | "no" | "deny" | "d" | "q" => CommandApprovalDecision::Deny,
@@ -25,7 +25,7 @@ fn read_cli_command_approval_line_blocking() -> CommandApprovalDecision {
 }
 
 /// **stdin** 与 **stderr** 均为 TTY 时可用箭头键菜单；否则走 [`read_cli_command_approval_line_blocking`]。
-pub(crate) fn cli_tool_approval_use_dialoguer() -> bool {
+fn cli_tool_approval_use_dialoguer() -> bool {
     io::stdin().is_terminal() && io::stderr().is_terminal()
 }
 
@@ -73,10 +73,7 @@ fn print_fallback_instruction(title: &str, detail: &str) {
 }
 
 /// `spawn_blocking` 内调用同步版本；异步上下文请用 [`prompt_tool_approval_cli`].
-pub(crate) fn prompt_tool_approval_cli_blocking(
-    title: &str,
-    detail: &str,
-) -> CommandApprovalDecision {
+fn prompt_tool_approval_cli_blocking(title: &str, detail: &str) -> CommandApprovalDecision {
     if cli_tool_approval_use_dialoguer() {
         prompt_tool_approval_dialoguer(title, detail)
     } else {
@@ -86,7 +83,7 @@ pub(crate) fn prompt_tool_approval_cli_blocking(
 }
 
 /// 终端工具审批：**TTY** 菜单；否则打印说明并读一行。
-pub(crate) async fn prompt_tool_approval_cli(title: &str, detail: &str) -> CommandApprovalDecision {
+pub(super) async fn prompt_tool_approval_cli(title: &str, detail: &str) -> CommandApprovalDecision {
     let title = title.to_string();
     let detail = detail.to_string();
     tokio::task::spawn_blocking(move || prompt_tool_approval_cli_blocking(&title, &detail))

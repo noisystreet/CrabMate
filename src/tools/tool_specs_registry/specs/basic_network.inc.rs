@@ -49,7 +49,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "http_fetch",
-            description: "对 **http/https** URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（按配置截断）；HEAD 不下载 body，仅元数据与重定向链，省流量。**Web**：仅当 URL 匹配 `http_fetch_allowed_prefixes` 的同源 + 路径前缀边界时执行。**CLI**：未匹配前缀时与 `run_command` 相同终端审批（见 `runtime::cli_approval`）；GET/HEAD 共用白名单键 `http_fetch:<归一化URL>`。勿在 URL 中放真实密钥。`workflow_execute` 节点内仅白名单 URL 可成功。",
+            description: "对 **http/https** URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（按配置截断）；HEAD 不下载 body，仅元数据与重定向链，省流量。**Web**：仅当 URL 匹配 `http_fetch_allowed_prefixes` 的同源 + 路径前缀边界时执行。**CLI**：未匹配前缀时与 `run_command` 相同终端审批（见 `tool_approval::cli_terminal`）；GET/HEAD 共用白名单键 `http_fetch:<归一化URL>`。勿在 URL 中放真实密钥。`workflow_execute` 节点内仅白名单 URL 可成功。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_http_fetch,
             runner: runner_http_fetch,
