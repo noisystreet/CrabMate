@@ -134,7 +134,8 @@ flowchart TB
 | `ci_tools.rs` | 本地 CI / 流水线类工具 |
 | `code_metrics.rs` | 代码度量与分析：`code_stats`（tokei/cloc/内置行数统计）、`dependency_graph`（Cargo/Go/npm 依赖图，Mermaid/DOT）、`coverage_report`（LCOV/Tarpaulin/Cobertura 覆盖率解析） |
 | `code_nav.rs` | 代码导航、文件大纲等 |
-| `command.rs` | `run_command` 白名单与进程执行 |
+| `command.rs` | `run_command` 白名单与进程执行；可选 `cargo test …` 路径经 **`test_result_cache`** |
+| `test_result_cache.rs` | 进程内 LRU：**`cargo_test` / `rust_test_one`**、**`npm_run` `script=test`**、**`run_command` `cargo`+`test`**（无 `--nocapture`/`--test-threads`）；指纹为工作区内 `.rs`/`.toml`/`Cargo.lock`（Rust）或 `package.json`/lock（npm）的 mtime+size |
 | `package_query.rs` | `package_query`：apt/rpm 只读包查询（安装状态/版本/来源统一抽象） |
 | `debug_tools.rs` | 调试辅助类工具 |
 | `diagnostics.rs` | `diagnostic_summary`：脱敏环境/工具链/工作区路径摘要 |

@@ -406,6 +406,10 @@ pub struct AgentConfig {
     pub parallel_readonly_tools_max: usize,
     /// 单轮 `run_agent_turn` 内 `read_file` 磁盘缓存最大条数；`0` 关闭。写类工具或 `workspace_changed` 后整表清空。
     pub read_file_turn_cache_max_entries: usize,
+    /// 进程内缓存 **`cargo_test` / `rust_test_one` / `npm run test`** 及部分 **`run_command cargo test …`** 的截断后输出；指纹基于工作区内 `.rs`/`.toml`/`Cargo.lock`（Rust）或 `package.json`/lock（npm）。
+    pub test_result_cache_enabled: bool,
+    /// LRU 条数上限（仅进程内；重启清空）。
+    pub test_result_cache_max_entries: usize,
     /// 为 true（默认）时：按 `long_term_memory_scope_id`（Web 为 `conversation_id`）累积本会话工具写入路径，并在每次调模型前注入 unified diff 摘要（`user.name=crabmate_workspace_changelist`）。
     pub session_workspace_changelist_enabled: bool,
     /// 上述注入正文近似字符上限（防撑爆上下文）；`0` 表示用默认 12000。

@@ -19,6 +19,8 @@ fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
         http_fetch_max_response_bytes: 8192,
         read_file_turn_cache: None,
         workspace_changelist: None,
+        test_result_cache_enabled: false,
+        test_result_cache_max_entries: 8,
     }
 }
 fn test_allowed_commands() -> Vec<String> {

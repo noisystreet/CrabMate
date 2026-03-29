@@ -3,27 +3,51 @@
 use std::path::Path;
 use std::process::Command;
 
+use super::ToolContext;
 use super::output_util;
+use super::test_result_cache::{
+    TestCacheKey, TestCacheKind, cargo_test_args_fingerprint, fingerprint_rust_workspace_sources,
+    store_cached, try_get_cached, wrap_cache_hit,
+};
 
 const MAX_OUTPUT_LINES: usize = 800;
 
 pub fn cargo_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    run_cargo_subcommand("check", args_json, workspace_root, max_output_len)
+    run_cargo_subcommand_str("check", args_json, workspace_root, max_output_len)
 }
 
-pub fn cargo_test(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    run_cargo_subcommand("test", args_json, workspace_root, max_output_len)
+pub fn cargo_test(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+    ctx: Option<&ToolContext<'_>>,
+) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{}", e),
+    };
+    let Some(c) = ctx else {
+        return run_cargo_subcommand_value("test", &v, workspace_root, max_output_len);
+    };
+    maybe_cache_cargo_test(&v, workspace_root, c, || {
+        run_cargo_subcommand_value("test", &v, workspace_root, max_output_len)
+    })
 }
 
 pub fn cargo_clippy(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    run_cargo_subcommand("clippy", args_json, workspace_root, max_output_len)
+    run_cargo_subcommand_str("clippy", args_json, workspace_root, max_output_len)
 }
 
 pub fn cargo_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    run_cargo_subcommand("run", args_json, workspace_root, max_output_len)
+    run_cargo_subcommand_str("run", args_json, workspace_root, max_output_len)
 }
 
-pub fn rust_test_one(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+pub fn rust_test_one(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+    ctx: Option<&ToolContext<'_>>,
+) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数解析错误：{}", e),
@@ -36,12 +60,48 @@ pub fn rust_test_one(args_json: &str, workspace_root: &Path, max_output_len: usi
     if let Some(obj) = merged.as_object_mut() {
         obj.insert("test_filter".to_string(), serde_json::Value::String(filter));
     }
-    run_cargo_subcommand(
-        "test",
-        &serde_json::to_string(&merged).unwrap_or_else(|_| "{}".to_string()),
-        workspace_root,
-        max_output_len,
-    )
+    let Some(c) = ctx else {
+        return run_cargo_subcommand_value("test", &merged, workspace_root, max_output_len);
+    };
+    maybe_cache_cargo_test(&merged, workspace_root, c, || {
+        run_cargo_subcommand_value("test", &merged, workspace_root, max_output_len)
+    })
+}
+
+fn maybe_cache_cargo_test(
+    v: &serde_json::Value,
+    workspace_root: &Path,
+    ctx: &ToolContext<'_>,
+    run: impl FnOnce() -> String,
+) -> String {
+    if ctx.test_result_cache_enabled
+        && let Some(inputs_fp) = fingerprint_rust_workspace_sources(workspace_root)
+    {
+        let args_fp = cargo_test_args_fingerprint(v);
+        let root = workspace_root.to_path_buf();
+        let key = TestCacheKey {
+            workspace_root: root,
+            kind: TestCacheKind::CargoTest,
+            args_fingerprint: args_fp,
+            inputs_fingerprint: inputs_fp.clone(),
+        };
+        if let Some(hit) = try_get_cached(
+            ctx.test_result_cache_enabled,
+            ctx.test_result_cache_max_entries,
+            &key,
+        ) {
+            return wrap_cache_hit(&inputs_fp, &hit);
+        }
+        let out = run();
+        store_cached(
+            ctx.test_result_cache_enabled,
+            ctx.test_result_cache_max_entries,
+            key,
+            out.clone(),
+        );
+        return out;
+    }
+    run()
 }
 
 pub fn cargo_metadata(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
@@ -467,7 +527,7 @@ pub fn cargo_fix(args_json: &str, workspace_root: &Path, max_output_len: usize) 
     run_and_format(cmd, max_output_len, "cargo fix")
 }
 
-fn run_cargo_subcommand(
+fn run_cargo_subcommand_str(
     subcmd: &str,
     args_json: &str,
     workspace_root: &Path,
@@ -477,6 +537,15 @@ fn run_cargo_subcommand(
         Ok(v) => v,
         Err(e) => return format!("参数解析错误：{}", e),
     };
+    run_cargo_subcommand_value(subcmd, &v, workspace_root, max_output_len)
+}
+
+fn run_cargo_subcommand_value(
+    subcmd: &str,
+    v: &serde_json::Value,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> String {
     if !workspace_root.join("Cargo.toml").is_file() {
         return "错误：当前工作目录未找到 Cargo.toml".to_string();
     }

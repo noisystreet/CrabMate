@@ -9,11 +9,23 @@ use crate::config::{AgentConfig, WebSearchProvider};
 use crate::tools::http_fetch;
 use crate::tools::{ToolContext, run_tool};
 
+fn default_test_result_cache_enabled() -> bool {
+    true
+}
+
+fn default_test_result_cache_max_entries() -> usize {
+    32
+}
+
 /// 由容器内 `crabmate tool-runner-internal` 读取（`CRABMATE_TOOL_RUNNER_CONFIG_FILE`）。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SandboxToolRunnerConfig {
     pub command_max_output_len: usize,
     pub weather_timeout_secs: u64,
+    #[serde(default = "default_test_result_cache_enabled")]
+    pub test_result_cache_enabled: bool,
+    #[serde(default = "default_test_result_cache_max_entries")]
+    pub test_result_cache_max_entries: usize,
     pub allowed_commands: Vec<String>,
     pub web_search_provider: String,
     pub web_search_api_key: String,
@@ -29,6 +41,8 @@ impl SandboxToolRunnerConfig {
         Self {
             command_max_output_len: cfg.command_max_output_len,
             weather_timeout_secs: cfg.weather_timeout_secs,
+            test_result_cache_enabled: cfg.test_result_cache_enabled,
+            test_result_cache_max_entries: cfg.test_result_cache_max_entries,
             allowed_commands: cfg.allowed_commands.iter().cloned().collect(),
             web_search_provider: cfg.web_search_provider.as_str().to_string(),
             web_search_api_key: cfg.web_search_api_key.clone(),
@@ -100,6 +114,8 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         http_fetch_max_response_bytes: snap.http_fetch_max_response_bytes,
         read_file_turn_cache: None,
         workspace_changelist: None,
+        test_result_cache_enabled: snap.test_result_cache_enabled,
+        test_result_cache_max_entries: snap.test_result_cache_max_entries,
     };
     let k = inv.kind.trim();
     let out = match k {

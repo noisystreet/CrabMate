@@ -110,7 +110,7 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
 
     if run_cargo_test {
         let r = if workspace_root.join("Cargo.toml").is_file() {
-            cargo_tools::cargo_test("{}", workspace_root, max_output_len)
+            cargo_tools::cargo_test("{}", workspace_root, max_output_len, None)
         } else {
             "cargo test: 跳过（未找到 Cargo.toml）".to_string()
         };

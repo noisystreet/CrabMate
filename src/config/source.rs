@@ -62,6 +62,8 @@ pub(super) struct AgentSection {
     pub(super) parallel_readonly_tools_max: Option<u64>,
     /// `read_file` 单轮缓存容量；`0` 关闭。
     pub(super) read_file_turn_cache_max_entries: Option<u64>,
+    pub(super) test_result_cache_enabled: Option<bool>,
+    pub(super) test_result_cache_max_entries: Option<u64>,
     pub(super) session_workspace_changelist_enabled: Option<bool>,
     pub(super) session_workspace_changelist_max_chars: Option<u64>,
     pub(super) staged_plan_execution: Option<bool>,
