@@ -1,5 +1,23 @@
 /// Dynamic summary helpers referenced by `ToolSpec::summary` `Dynamic` variants.
 /// Each extracts key arguments from parsed `serde_json::Value` into a short English one-liner.
+pub(super) fn summary_codebase_semantic_search(v: &serde_json::Value) -> Option<String> {
+    if v.get("rebuild_index").and_then(|b| b.as_bool()) == Some(true) {
+        let p = v.get("path").and_then(|x| x.as_str()).unwrap_or(".");
+        return Some(format!("semantic index rebuild ({})", p));
+    }
+    let q = v.get("query").and_then(|x| x.as_str()).unwrap_or("");
+    let t = q.trim();
+    if t.is_empty() {
+        Some("semantic code search".to_string())
+    } else {
+        let mut s = t.chars().take(48).collect::<String>();
+        if t.chars().count() > 48 {
+            s.push('…');
+        }
+        Some(format!("semantic search: {}", s))
+    }
+}
+
 pub(super) fn summary_run_command(v: &serde_json::Value) -> Option<String> {
     let cmd = v.get("command")?.as_str()?.trim();
     let args = v

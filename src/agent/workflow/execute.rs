@@ -49,6 +49,8 @@ pub(crate) struct WorkflowToolExecCtx {
     pub(crate) command_max_output_len: usize,
     pub(crate) test_result_cache_enabled: bool,
     pub(crate) test_result_cache_max_entries: usize,
+    /// 与主 Agent 同源，供 `codebase_semantic_search` 等工具在节点内使用。
+    pub(crate) codebase_semantic: crate::codebase_semantic_index::CodebaseSemanticToolParams,
     pub(crate) workflow_run_id: u64,
     /// 与本次 DAG 执行共享的轨迹缓冲（`execute_workflow_dag` 内创建）。
     pub(crate) trace_events: Option<Arc<StdMutex<Vec<WorkflowTraceEvent>>>>,
@@ -453,12 +455,14 @@ async fn execute_node_tool_phase(
     let hf_mb = tool_exec_ctx.cfg_http_fetch_max_response_bytes;
     let test_result_cache_enabled = tool_exec_ctx.test_result_cache_enabled;
     let test_result_cache_max_entries = tool_exec_ctx.test_result_cache_max_entries;
+    let codebase_semantic = tool_exec_ctx.codebase_semantic.clone();
 
     let output_res = async move {
         let work_dir = run_command_working_dir;
         let allowed = effective_allowed_arc;
         let handle = tokio::task::spawn_blocking(move || {
             let ctx = crate::tools::ToolContext {
+                codebase_semantic: Some(codebase_semantic),
                 command_max_output_len,
                 weather_timeout_secs,
                 allowed_commands: allowed.as_ref(),

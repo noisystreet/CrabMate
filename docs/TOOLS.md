@@ -19,7 +19,7 @@
   - `calc`：使用 Linux 的 `bc -l` 执行数学表达式（四则、乘方 ^、sqrt/sin/cos/tan/ln/exp、pi/e 等）。
   - `convert_units`：物理量与数据量**单位换算**（Rust [`uom`](https://crates.io/crates/uom) 库，不调用外部程序）。`category` 含 length / mass / temperature / data / time / area / pressure / speed（或中文别名），`value` + `from` + `to` 指定数值与单位；数据量区分十进制 KB/MB/GB 与二进制 KiB/MiB/GiB。
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
-  - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内搜代码请仍优先用 `search_in_files`。
+  - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内**精确**字符串/正则匹配优先用 `search_in_files`；**语义**相近片段用 `codebase_semantic_search`（须先 `rebuild_index`，见下文与 **`docs/CONFIGURATION.md`**）。
   - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时直接执行；不匹配时，Web（`/chat/stream` 携带 `approval_session_id`）或 **CLI** 可人工审批 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键；CLI 见 `tool_approval::cli_terminal`）。
   - `http_request`：对给定 URL 发起 **POST / PUT / PATCH / DELETE**（可选 `json_body`）。受 `http_fetch_allowed_prefixes` 约束（同源 + 路径前缀边界）；匹配则直接执行，**未匹配**时 Web（`/chat/stream` + `approval_session_id`）与 **CLI** 可与 `http_fetch` 一样走 **拒绝 / 本次允许 / 永久允许**（永久键为 `http_request:<METHOD>:<URL>`，与 `http_fetch:` 键区分）。**`workflow_execute` 节点**内仍仅白名单前缀（同步路径无审批）。返回状态、Content-Type、重定向链与正文预览（默认建议先 dry-run，不在 body 中放真实密钥）。
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`file`、`head`、`tail`、`wc`、`cmake`、`ctest`、`mkdir`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make`，以及 **GNU Binutils 常用只读分析**：`objdump`、`nm`、`readelf`、`strings`、`size`；开发环境默认另含 `ar` 等），带超时与输出截断。**CMake / ctest**：已列入白名单，常用 `cmake -S . -B build`、`cmake --build build`、`ctest --test-dir build` 等；参数不得含 `..` 或以 `/` 开头，建议构建目录用相对路径（勿在 args 里写绝对路径的 `-D`）。未安装时 `/health` 中 `dep_cmake` / `dep_ctest` 可能为 degraded。**mkdir**：创建目录（与内置 **`create_dir`** 互补）；同样须遵守上述参数规则。**c++filt**：可将链接器/栈追踪中的修饰名（mangled）反解为可读 C++ 名（Binutils/LLVM 通常提供）；未安装时 `dep_cxxfilt` 可能为 degraded。**Binutils**：`objdump`/`nm`/`readelf`/`strings`/`size`（及 `ar`）未安装时 `/health` 对应 `dep_objdump` / `dep_nm` / `dep_readelf` / `dep_strings_binutils` / `dep_size` / `dep_ar` 可能为 degraded。**Autotools**：默认白名单含 `autoreconf`/`autoconf`/`automake`/`aclocal`，便于维护仍使用 `configure.ac` / `Makefile.am` 的仓库；会处理项目内 m4/shell，仅应在**信任的工作区**使用，且 `run_command` 参数规则仍生效。**测试输出缓存**（配置 `test_result_cache_enabled`）：当 **`command` 为 `cargo` 且 `args` 以 `test` 开头**且**不含** `--nocapture` / `--test-threads` 时，与 `cargo_test` 工具共用进程内 LRU；命中时在输出首段标注 **`[CrabMate 测试输出缓存命中]`**。
@@ -32,6 +32,7 @@
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限及 **`encoding`**（`utf-8` 严格、`utf-8-sig`、`gb18030`/`gbk`/`big5`、`utf-16le`/`be`、`auto` 等；非法序列报错而非静默替换）；`modify_file` 支持按行区间替换（大文件友好）。**单轮** `run_agent_turn` 内，服务端可对相同文件+相同读取参数缓存 `read_file` 正文（比对磁盘 **mtime+size**；执行写类工具或工作区变更后缓存清空），键含 **encoding**，见配置 **`read_file_turn_cache_max_entries`**。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的文件，正文解码规则与 `read_file` 一致，可选查询参数 **`encoding`**；超出大小返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
+  - `codebase_semantic_search`：工作区**语义**代码检索（本地 **fastembed** + SQLite，与**会话长期记忆**分库）。**`rebuild_index: true`** 扫描 `.gitignore` 感知的源码树，将分块文本嵌入并写入默认 **`.crabmate/codebase_semantic.sqlite`**（可用配置改相对路径）；再用 **`query`** 做余弦相似度 Top-K。单文件大小、默认 Top-K、重建文件数上限见 **`codebase_semantic_*`** / **`AGENT_CODEBASE_SEMANTIC_*`**。不设为只读：`rebuild_index` 会**覆盖**当前工作区键下的索引表。大仓请先设 **`path`** 或缩小扩展名。关闭工具：`codebase_semantic_search_enabled = false`。
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接与 `#fragment` 锚点；支持 `output_format=text|json|sarif`。`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测（同 URL 去重缓存）。
   - `typos_check` / `codespell_check`：文档拼写检查（**只读**，需本机安装 [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)）；默认优先检查存在的 `README.md` 与 `docs/`，可用 `paths` 收窄；`typos_check` 支持 `config_path`（项目词典通常在 `.typos.toml`），`codespell_check` 支持 `dictionary_paths`（`-I` 词典文件）与 `ignore_words_list`（`-L`）。
   - `ast_grep_run`：用 [ast-grep](https://ast-grep.github.io/) 做**语法树级**搜索（需本机安装 `ast-grep`，如 `cargo install ast-grep`）；必填 `pattern` 与 `lang`，默认在存在的 `src` 下搜索，并内置排除 `target`、`node_modules`、`.git` 等；可用 `paths` / `globs` 进一步限制范围。
@@ -428,6 +429,15 @@
 - `diagnostic_summary`（脱敏排障：工具链、`target/`、关键 env 是否设置，**不输出任何 env 取值**）：
   ```json
   {"include_toolchain":true,"include_workspace_paths":true,"include_env":true,"extra_env_vars":["CI"]}
+  ```
+- `codebase_semantic_search`（先建索引再查；依赖本机 **fastembed/ONNX**，与长期记忆相同栈）：
+  - 重建（可省略 `query`）：
+  ```json
+  {"rebuild_index": true, "path": "src"}
+  ```
+  - 查询：
+  ```json
+  {"query": "Where is chat job queue concurrency configured?", "top_k": 6}
   ```
 - `apply_patch`（**统一 unified diff**，先 dry-run 再应用；强调 **小步、可回滚、带上下文**）：
   - **格式**：与 `git diff` 相同：`---` / `+++` 文件头、`@@ -旧起始,行数 +新起始,行数 @@`，变更行 `-`/`+`，**上下文行必须以单个空格开头**。

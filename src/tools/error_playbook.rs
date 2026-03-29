@@ -479,6 +479,7 @@ mod tests {
 
     fn ctx_with_allow<'a>(allowed: &'a [String]) -> super::super::ToolContext<'a> {
         super::super::ToolContext {
+            codebase_semantic: None,
             command_max_output_len: 4096,
             weather_timeout_secs: 15,
             allowed_commands: allowed,

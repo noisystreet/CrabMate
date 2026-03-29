@@ -6,6 +6,8 @@
 mod agent;
 mod agent_memory;
 mod chat_job_queue;
+/// 工作区代码语义索引与 `codebase_semantic_search` 工具（SQLite + fastembed）。
+mod codebase_semantic_index;
 mod config;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
 mod conversation_store;
@@ -163,6 +165,9 @@ pub async fn run_agent_turn<'a>(
         }
         None => None,
     };
+    if !cfg.codebase_semantic_search_enabled {
+        tools_for_turn.retain(|t| t.function.name != "codebase_semantic_search");
+    }
 
     let mut loop_params = agent::agent_turn::RunLoopParams {
         llm_backend,

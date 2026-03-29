@@ -82,6 +82,7 @@ pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len:
         .unwrap_or_else(default_doc_preview_paths);
 
     let ctx = ToolContext {
+        codebase_semantic: None,
         command_max_output_len: max_output_len,
         weather_timeout_secs: 0,
         allowed_commands: &[],

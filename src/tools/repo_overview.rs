@@ -157,6 +157,7 @@ pub fn repo_overview_sweep(
         .clamp(0, 50_000);
 
     let ctx = ToolContext {
+        codebase_semantic: None,
         command_max_output_len: max_output_len,
         weather_timeout_secs: 0,
         allowed_commands: &[],

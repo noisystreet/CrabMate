@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::codebase_semantic_index::CodebaseSemanticToolParams;
 use crate::config::{AgentConfig, ExposeSecret, WebSearchProvider};
 use crate::tools::http_fetch;
 use crate::tools::{ToolContext, run_tool};
@@ -34,6 +35,7 @@ pub struct SandboxToolRunnerConfig {
     pub http_fetch_allowed_prefixes: Vec<String>,
     pub http_fetch_timeout_secs: u64,
     pub http_fetch_max_response_bytes: usize,
+    pub codebase_semantic: CodebaseSemanticToolParams,
 }
 
 impl SandboxToolRunnerConfig {
@@ -51,6 +53,7 @@ impl SandboxToolRunnerConfig {
             http_fetch_allowed_prefixes: cfg.http_fetch_allowed_prefixes.clone(),
             http_fetch_timeout_secs: cfg.http_fetch_timeout_secs,
             http_fetch_max_response_bytes: cfg.http_fetch_max_response_bytes,
+            codebase_semantic: CodebaseSemanticToolParams::from_agent_config(cfg),
         }
     }
 
@@ -101,6 +104,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
     let provider =
         WebSearchProvider::parse(&snap.web_search_provider).map_err(|e| e.to_string())?;
     let ctx = ToolContext {
+        codebase_semantic: Some(snap.codebase_semantic),
         command_max_output_len: snap.command_max_output_len,
         weather_timeout_secs: snap.weather_timeout_secs,
         allowed_commands: allowed,

@@ -78,6 +78,8 @@ pub enum ToolCategory {
 }
 
 pub struct ToolContext<'a> {
+    /// 代码语义检索参数；主 Agent 路径由 `tool_context_for*` 从 [`AgentConfig`] 填充，其它路径为 `None` 时该工具不可用。
+    pub codebase_semantic: Option<crate::codebase_semantic_index::CodebaseSemanticToolParams>,
     pub command_max_output_len: usize,
     pub weather_timeout_secs: u64,
     pub allowed_commands: &'a [String],
@@ -113,6 +115,9 @@ pub fn tool_context_for<'a>(
     working_dir: &'a std::path::Path,
 ) -> ToolContext<'a> {
     ToolContext {
+        codebase_semantic: Some(
+            crate::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(cfg),
+        ),
         command_max_output_len: cfg.command_max_output_len,
         weather_timeout_secs: cfg.weather_timeout_secs,
         allowed_commands,
@@ -555,6 +560,14 @@ fn runner_apply_patch(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_search_in_files(args: &str, ctx: &ToolContext<'_>) -> String {
     grep::run(args, ctx.working_dir)
+}
+
+fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> String {
+    let Some(p) = ctx.codebase_semantic.as_ref() else {
+        return "错误：当前执行环境未注入代码语义检索配置，无法使用 codebase_semantic_search（如部分工作流节点路径）"
+            .to_string();
+    };
+    crate::codebase_semantic_index::run_tool(args, ctx.working_dir, p, ctx.command_max_output_len)
 }
 
 fn runner_markdown_check_links(args: &str, ctx: &ToolContext<'_>) -> String {
