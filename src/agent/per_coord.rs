@@ -996,6 +996,7 @@ mod tests {
             "wf".into(),
             &parsed,
             inner,
+            None,
         );
         let mut hist = hist_with_validate_layer_3();
         hist[1].content = Some(wrapped);

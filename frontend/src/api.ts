@@ -340,6 +340,12 @@ export interface ToolResultInfo {
   ok?: boolean
   exit_code?: number
   error_code?: string
+  /** 与 `crabmate_tool.retryable` 一致：启发式，非保证 */
+  retryable?: boolean
+  tool_call_id?: string
+  /** `serial` 或 `parallel_readonly_batch` */
+  execution_mode?: string
+  parallel_batch_id?: string
   stdout?: string
   stderr?: string
 }
@@ -482,6 +488,10 @@ type SseControlPayload = {
     ok?: boolean
     exit_code?: number
     error_code?: string
+    retryable?: boolean
+    tool_call_id?: string
+    execution_mode?: string
+    parallel_batch_id?: string
     stdout?: string
     stderr?: string
   }
@@ -638,6 +648,10 @@ function tryDispatchSseControlPayload(
         ok: parsed.tool_result.ok,
         exit_code: parsed.tool_result.exit_code,
         error_code: parsed.tool_result.error_code,
+        retryable: parsed.tool_result.retryable,
+        tool_call_id: parsed.tool_result.tool_call_id,
+        execution_mode: parsed.tool_result.execution_mode,
+        parallel_batch_id: parsed.tool_result.parallel_batch_id,
         stdout: parsed.tool_result.stdout,
         stderr: parsed.tool_result.stderr,
       })

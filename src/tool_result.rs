@@ -4,6 +4,8 @@
 //!
 //! 顶层键 **`crabmate_tool`**，内含 `v`（当前为 **1**）、`name`、`summary`（与 SSE / `summarize_tool_call` 同源）、
 //! `ok`、`exit_code`、`error_code`、`output`（工具原始返回正文，供模型阅读或再解析）。
+//! 可选扩展（见 [`ToolEnvelopeContext`]）：**`tool_call_id`**、**`execution_mode`**（`serial` / `parallel_readonly_batch`）、
+//! **`parallel_batch_id`**（同批并行只读工具共享）、失败时的 **`retryable`**（与 `error_code` 配套的启发式，非保证）。
 //! 经 [`maybe_compress_tool_message_content`] 截断时，会保留 **`output` 的首尾采样**（便于 grep/构建日志等仍见上下文），并写入
 //! **`output_truncated`**、**`output_original_chars`**、**`output_kept_head_chars`**、**`output_kept_tail_chars`** 供模型与 UI 引用。
 
@@ -101,6 +103,20 @@ fn looks_like_failure(first_line: &str) -> bool {
         || first_line.contains("超时")
 }
 
+/// 与 `error_code` 配套的**启发式**：是否值得由编排层自动重试（超时、工作流汇合类）；多数业务失败为 `false`。
+/// 前端/模型仅作提示，**不**替代各工具的真实语义。
+pub fn tool_error_retryable_heuristic(error_code: Option<&str>) -> bool {
+    matches!(
+        error_code,
+        Some(
+            "timeout"
+                | "workflow_tool_join_error"
+                | "workflow_semaphore_closed"
+                | "workflow_node_missing_result"
+        )
+    )
+}
+
 fn classify_error_code(first_line: &str, tool_name: &str) -> String {
     if first_line.contains("参数解析错误") {
         return "invalid_args".to_string();
@@ -143,13 +159,25 @@ fn extract_streams(output: &str) -> (String, String) {
     (stdout, stderr)
 }
 
+/// 写入 `crabmate_tool` 时的可选关联字段（与 SSE `tool_result` 对齐）。
+#[derive(Debug, Clone, Copy)]
+pub struct ToolEnvelopeContext<'a> {
+    pub tool_call_id: &'a str,
+    /// `serial` 或 `parallel_readonly_batch`
+    pub execution_mode: &'a str,
+    /// 仅 `parallel_readonly_batch` 时有值；同批内多工具共享同一 id。
+    pub parallel_batch_id: Option<&'a str>,
+}
+
 /// 将工具结果编码为单行 JSON，写入 `Message.content`（`role: tool`），便于下游按字段聚合/统计。
 /// `summary` 须与 SSE `ToolResultBody.summary` 及 `summarize_tool_call*` 一致。
+/// `envelope_ctx` 为 `None` 时不写入关联字段（兼容旧测试与外部回放数据）。
 pub fn encode_tool_message_envelope_v1(
     tool_name: &str,
     summary: String,
     parsed: &ParsedLegacyOutput,
     raw_output: &str,
+    envelope_ctx: Option<&ToolEnvelopeContext<'_>>,
 ) -> String {
     let mut ct = Map::new();
     ct.insert("v".into(), Value::from(1_u32));
@@ -162,6 +190,25 @@ pub fn encode_tool_message_envelope_v1(
     }
     if let Some(ref e) = parsed.error_code {
         ct.insert("error_code".into(), Value::String(e.clone()));
+    }
+    if !parsed.ok {
+        ct.insert(
+            "retryable".into(),
+            Value::Bool(tool_error_retryable_heuristic(parsed.error_code.as_deref())),
+        );
+    }
+    if let Some(ctx) = envelope_ctx {
+        ct.insert(
+            "tool_call_id".into(),
+            Value::String(ctx.tool_call_id.to_string()),
+        );
+        ct.insert(
+            "execution_mode".into(),
+            Value::String(ctx.execution_mode.to_string()),
+        );
+        if let Some(bid) = ctx.parallel_batch_id {
+            ct.insert("parallel_batch_id".into(), Value::String(bid.to_string()));
+        }
     }
     let mut root = Map::new();
     root.insert("crabmate_tool".into(), Value::Object(ct));
@@ -299,11 +346,12 @@ mod tests {
     fn tool_message_content_ok_reads_envelope_ok() {
         let raw = "错误：不允许的命令\n";
         let parsed = parse_legacy_output("run_command", raw);
-        let env = encode_tool_message_envelope_v1("run_command", "s".into(), &parsed, raw);
+        let env = encode_tool_message_envelope_v1("run_command", "s".into(), &parsed, raw, None);
         assert!(!tool_message_content_ok_for_model(&env, "run_command"));
         let ok_raw = "退出码：0\n标准输出：\nhi\n";
         let ok_parsed = parse_legacy_output("run_command", ok_raw);
-        let ok_env = encode_tool_message_envelope_v1("run_command", "s".into(), &ok_parsed, ok_raw);
+        let ok_env =
+            encode_tool_message_envelope_v1("run_command", "s".into(), &ok_parsed, ok_raw, None);
         assert!(tool_message_content_ok_for_model(&ok_env, "run_command"));
     }
 
@@ -311,7 +359,7 @@ mod tests {
     fn envelope_roundtrip_and_inner_payload() {
         let raw = "退出码：0\n标准输出：\nhi\n";
         let parsed = parse_legacy_output("run_command", raw);
-        let s = encode_tool_message_envelope_v1("run_command", "true".into(), &parsed, raw);
+        let s = encode_tool_message_envelope_v1("run_command", "true".into(), &parsed, raw, None);
         assert!(s.contains("crabmate_tool"));
         assert!(s.contains("\"summary\":\"true\""));
         let inner = tool_message_payload_for_inner_parse(&s);
@@ -332,7 +380,7 @@ mod tests {
     fn compress_envelope_truncates_output_only() {
         let long = "x".repeat(500);
         let parsed = parse_legacy_output("x", &long);
-        let env = encode_tool_message_envelope_v1("x", "s".into(), &parsed, &long);
+        let env = encode_tool_message_envelope_v1("x", "s".into(), &parsed, &long, None);
         let out = maybe_compress_tool_message_content(&env, 100).expect("compress");
         assert!(out.len() < env.len());
         let inner = tool_message_payload_for_inner_parse(&out);
@@ -353,6 +401,42 @@ mod tests {
         assert_eq!(
             ct.get("output_original_chars").and_then(|x| x.as_u64()),
             Some(500)
+        );
+    }
+
+    #[test]
+    fn envelope_includes_retryable_on_failure() {
+        let raw = "错误：超时\n";
+        let parsed = parse_legacy_output("run_command", raw);
+        let s = encode_tool_message_envelope_v1("run_command", "s".into(), &parsed, raw, None);
+        let v: Value = serde_json::from_str(&s).unwrap();
+        let ct = v.get("crabmate_tool").unwrap();
+        assert_eq!(ct.get("retryable").and_then(|x| x.as_bool()), Some(true));
+    }
+
+    #[test]
+    fn envelope_includes_tool_call_id_and_batch() {
+        let raw = "退出码：0\n";
+        let parsed = parse_legacy_output("read_file", raw);
+        let ctx = ToolEnvelopeContext {
+            tool_call_id: "call_abc",
+            execution_mode: "parallel_readonly_batch",
+            parallel_batch_id: Some("pb-1"),
+        };
+        let s = encode_tool_message_envelope_v1("read_file", "s".into(), &parsed, raw, Some(&ctx));
+        let v: Value = serde_json::from_str(&s).unwrap();
+        let ct = v.get("crabmate_tool").unwrap();
+        assert_eq!(
+            ct.get("tool_call_id").and_then(|x| x.as_str()),
+            Some("call_abc")
+        );
+        assert_eq!(
+            ct.get("execution_mode").and_then(|x| x.as_str()),
+            Some("parallel_readonly_batch")
+        );
+        assert_eq!(
+            ct.get("parallel_batch_id").and_then(|x| x.as_str()),
+            Some("pb-1")
         );
     }
 }

@@ -69,17 +69,51 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
             } else {
                 None
             };
+            let struct_note = {
+                let mut parts: Vec<String> = Vec::new();
+                if ct.get("execution_mode").and_then(|x| x.as_str())
+                    == Some("parallel_readonly_batch")
+                    && let Some(bid) = ct.get("parallel_batch_id").and_then(|x| x.as_str())
+                    && !bid.is_empty()
+                {
+                    parts.push(format!("并行只读批次 `{bid}`"));
+                }
+                if ct.get("retryable").and_then(|x| x.as_bool()) == Some(true) {
+                    parts.push("失败可能可重试（启发式 `retryable`）".to_string());
+                }
+                if parts.is_empty() {
+                    None
+                } else {
+                    Some(format!("（{}）", parts.join("；")))
+                }
+            };
+            let mut note_lines: Vec<String> = Vec::new();
+            if let Some(ref n) = trunc_note
+                && !n.is_empty()
+            {
+                note_lines.push(n.clone());
+            }
+            if let Some(ref n) = struct_note
+                && !n.is_empty()
+            {
+                note_lines.push(n.clone());
+            }
+            let combined_note = if note_lines.is_empty() {
+                None
+            } else {
+                Some(note_lines.join("\n"))
+            };
             if include_raw {
                 let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| t.to_string());
                 if summary.is_empty() {
-                    return match trunc_note {
+                    return match combined_note {
                         Some(ref note) if !note.is_empty() => {
                             format!("{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
                         }
                         _ => format!("{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}"),
                     };
                 }
-                return match trunc_note {
+                return match combined_note {
                     Some(ref note) if !note.is_empty() => {
                         format!("{summary}\n{note}\n\n{TOOL_OUTPUT_SECTION_HEADLINE}\n{pretty}")
                     }
@@ -87,9 +121,9 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
                 };
             }
             if summary.is_empty() {
-                return trunc_note.unwrap_or_default();
+                return combined_note.unwrap_or_default();
             }
-            return match trunc_note {
+            return match combined_note {
                 Some(note) if !note.is_empty() => format!("{summary}\n{note}"),
                 _ => summary.to_string(),
             };

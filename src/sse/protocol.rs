@@ -133,6 +133,16 @@ pub struct ToolResultBody {
     pub exit_code: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
+    /// 与 `crabmate_tool.retryable` 一致：启发式，非保证。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retryable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    /// `serial` 或 `parallel_readonly_batch`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parallel_batch_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdout: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -266,6 +276,10 @@ mod tests {
                 ok: Some(false),
                 exit_code: Some(1),
                 error_code: Some("command_failed".into()),
+                retryable: Some(false),
+                tool_call_id: Some("tc1".into()),
+                execution_mode: Some("serial".into()),
+                parallel_batch_id: None,
                 stdout: Some(String::new()),
                 stderr: Some("permission denied".into()),
             },
@@ -278,6 +292,9 @@ mod tests {
                 assert_eq!(tool_result.ok, Some(false));
                 assert_eq!(tool_result.exit_code, Some(1));
                 assert_eq!(tool_result.error_code.as_deref(), Some("command_failed"));
+                assert_eq!(tool_result.retryable, Some(false));
+                assert_eq!(tool_result.tool_call_id.as_deref(), Some("tc1"));
+                assert_eq!(tool_result.execution_mode.as_deref(), Some("serial"));
                 assert_eq!(tool_result.stderr.as_deref(), Some("permission denied"));
             }
             _ => panic!("expected tool_result payload"),

@@ -3,17 +3,22 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use futures_util::stream::{self, StreamExt};
 use log::{debug, info};
 use tokio::sync::mpsc;
 
+static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
+
 use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::sse::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
-use crate::tool_result::{self, parse_legacy_output};
+use crate::tool_result::{
+    self, ToolEnvelopeContext, parse_legacy_output, tool_error_retryable_heuristic,
+};
 use crate::tools;
 use crate::types::{Message, ToolCall};
 
@@ -51,6 +56,7 @@ struct EmitToolResultParams<'a> {
     id: &'a str,
     result: String,
     reflection_inject: Option<serde_json::Value>,
+    envelope_ctx: Option<ToolEnvelopeContext<'a>>,
 }
 
 async fn emit_tool_result_sse_and_append(
@@ -68,6 +74,7 @@ async fn emit_tool_result_sse_and_append(
         id,
         result,
         reflection_inject,
+        envelope_ctx,
     } = p;
     let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
     let tool_summary = if let Some(ref parsed) = args_parsed {
@@ -100,6 +107,16 @@ async fn emit_tool_result_sse_and_append(
         } else {
             Some(parsed.stderr)
         };
+        let retryable = if parsed.ok {
+            None
+        } else {
+            Some(tool_error_retryable_heuristic(parsed.error_code.as_deref()))
+        };
+        let tool_call_id = envelope_ctx.map(|c| c.tool_call_id.to_string());
+        let execution_mode = envelope_ctx.map(|c| c.execution_mode.to_string());
+        let parallel_batch_id = envelope_ctx
+            .and_then(|c| c.parallel_batch_id)
+            .map(|s| s.to_string());
         let _ = crate::sse::send_string_logged(
             tx,
             encode_message(SsePayload::ToolResult {
@@ -109,7 +126,11 @@ async fn emit_tool_result_sse_and_append(
                     output: result.clone(),
                     ok: Some(parsed.ok),
                     exit_code: parsed.exit_code,
-                    error_code: parsed.error_code,
+                    error_code: parsed.error_code.clone(),
+                    retryable,
+                    tool_call_id,
+                    execution_mode,
+                    parallel_batch_id,
                     stdout,
                     stderr,
                 },
@@ -124,7 +145,13 @@ async fn emit_tool_result_sse_and_append(
         let summary_str = tool_summary
             .clone()
             .unwrap_or_else(|| format!("tool: {name}"));
-        tool_result::encode_tool_message_envelope_v1(name, summary_str, &parsed, &result)
+        tool_result::encode_tool_message_envelope_v1(
+            name,
+            summary_str,
+            &parsed,
+            &result,
+            envelope_ctx.as_ref(),
+        )
     } else {
         result
     };
@@ -258,6 +285,12 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
             parallel_max
         );
 
+        let parallel_batch_id = format!(
+            "prb-{}",
+            PARALLEL_READONLY_TOOL_BATCH_SEQ.fetch_add(1, Ordering::Relaxed)
+        );
+        let parallel_batch_id_ref = parallel_batch_id.as_str();
+
         let prefetch_failures = if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
             tool_registry::prefetch_http_fetch_parallel_approvals(
                 tool_calls,
@@ -363,6 +396,11 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 .copied()
                 .unwrap_or("")
                 .to_string();
+            let env = ToolEnvelopeContext {
+                tool_call_id: tc.id.as_str(),
+                execution_mode: "parallel_readonly_batch",
+                parallel_batch_id: Some(parallel_batch_id_ref),
+            };
             emit_tool_result_sse_and_append(
                 messages,
                 per_coord,
@@ -376,6 +414,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     id: &tc.id,
                     result: cached,
                     reflection_inject: None,
+                    envelope_ctx: Some(env),
                 },
             )
             .await;
@@ -413,6 +452,11 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     "工具结果命中缓存（只读去重） tool={}",
                     name
                 );
+                let env = ToolEnvelopeContext {
+                    tool_call_id: id.as_str(),
+                    execution_mode: "serial",
+                    parallel_batch_id: None,
+                };
                 emit_tool_result_sse_and_append(
                     messages,
                     per_coord,
@@ -426,6 +470,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                         id: id.as_str(),
                         result: cached.clone(),
                         reflection_inject: None,
+                        envelope_ctx: Some(env),
                     },
                 )
                 .await;
@@ -477,6 +522,11 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 readonly_cache.clear();
             }
 
+            let env = ToolEnvelopeContext {
+                tool_call_id: id.as_str(),
+                execution_mode: "serial",
+                parallel_batch_id: None,
+            };
             emit_tool_result_sse_and_append(
                 messages,
                 per_coord,
@@ -490,6 +540,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     id: id.as_str(),
                     result,
                     reflection_inject,
+                    envelope_ctx: Some(env),
                 },
             )
             .await;
