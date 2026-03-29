@@ -8,6 +8,7 @@ mod ci_tools;
 mod code_metrics;
 mod code_nav;
 mod command;
+mod container_tools;
 mod date_calc;
 mod debug_tools;
 mod diagnostics;
@@ -25,6 +26,7 @@ mod go_tools;
 mod grep;
 pub mod http_fetch;
 mod json_format;
+mod jvm_tools;
 mod lint;
 mod markdown_links;
 mod nodejs_tools;
@@ -374,6 +376,34 @@ fn runner_go_mod_tidy(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_go_fmt_check(args: &str, ctx: &ToolContext<'_>) -> String {
     go_tools::go_fmt_check(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_maven_compile(args: &str, ctx: &ToolContext<'_>) -> String {
+    jvm_tools::maven_compile(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_maven_test(args: &str, ctx: &ToolContext<'_>) -> String {
+    jvm_tools::maven_test(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_gradle_compile(args: &str, ctx: &ToolContext<'_>) -> String {
+    jvm_tools::gradle_compile(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_gradle_test(args: &str, ctx: &ToolContext<'_>) -> String {
+    jvm_tools::gradle_test(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_docker_build(args: &str, ctx: &ToolContext<'_>) -> String {
+    container_tools::docker_build(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_docker_compose_ps(args: &str, ctx: &ToolContext<'_>) -> String {
+    container_tools::docker_compose_ps(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_podman_images(args: &str, ctx: &ToolContext<'_>) -> String {
+    container_tools::podman_images(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn runner_pre_commit_run(args: &str, ctx: &ToolContext<'_>) -> String {

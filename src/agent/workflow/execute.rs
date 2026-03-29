@@ -756,6 +756,8 @@ async fn run_node(
     // 节点 SLA：timeout_secs 优先；否则按工具类型使用 cfg 默认值（run_command/run_executable 为 command_timeout_secs）
     let timeout_secs = node.timeout_secs.or(match node.tool_name.as_str() {
         "run_command" | "run_executable" => Some(tool_exec_ctx.cfg_command_timeout_secs),
+        "maven_compile" | "maven_test" | "gradle_compile" | "gradle_test" | "docker_build"
+        | "docker_compose_ps" | "podman_images" => Some(tool_exec_ctx.cfg_command_timeout_secs),
         "get_weather" => Some(tool_exec_ctx.cfg_weather_timeout_secs),
         "web_search" => Some(tool_exec_ctx.cfg_web_search_timeout_secs),
         "http_fetch" | "http_request" => Some(

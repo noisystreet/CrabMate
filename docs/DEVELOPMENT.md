@@ -157,6 +157,8 @@ flowchart TB
 | `frontend_tools.rs` | 前端 npm 脚本类 |
 | `git.rs` | Git 只读查询（status/diff/log/blame 等）与受控写入（stage/commit/checkout/push/merge/rebase/stash/tag/reset/cherry-pick/revert 等） |
 | `go_tools.rs` | Go 工具链：`go build`/`test`/`vet`/`mod tidy`/`gofmt -l`/`golangci-lint` |
+| `jvm_tools.rs` | JVM：`maven_compile`/`maven_test`/`gradle_compile`/`gradle_test`（工作区根、构建描述文件探测、参数校验） |
+| `container_tools.rs` | 容器：`docker_build`/`docker_compose_ps`/`podman_images`（相对路径与镜像引用校验） |
 | `grep.rs` / `symbol.rs` | 工作区内文本搜索（`search_in_files`）、Rust 符号 |
 | `nodejs_tools.rs` | Node.js 生态：`npm install`/`npm run`/`npx`/`tsc --noEmit` |
 | `spell_astgrep_tools.rs` | `typos_check`、`codespell_check`（拼写，只读；支持项目词典参数）、`ast_grep_run`（结构化搜索）、`ast_grep_rewrite`（结构化改写，默认 dry-run，写盘需 confirm） |
@@ -373,7 +375,7 @@ flowchart LR
 - **`schedule.rs`**：提醒/日程；以 JSON 持久化到 `<working_dir>/.crabmate/reminders.json` 与 `events.json`。
 - **`spell_astgrep_tools.rs`**：`typos_check` / `codespell_check` 仅传相对路径、不写回；`typos_check` 支持 `config_path`（项目词典通常通过 typos 配置维护），`codespell_check` 支持 `dictionary_paths`（`-I`）与 `ignore_words_list`（`-L`）；`ast_grep_run` 调用 `ast-grep run` 做结构化搜索；`ast_grep_rewrite` 在此基础上增加 `--rewrite`，默认 dry-run，`dry_run=false` 时需 `confirm=true` 才执行 `--update-all` 写盘。
 - **`grep.rs` / `format.rs` / `lint.rs`**：面向开发工作流的辅助能力（搜索/格式化/静态检查聚合）；`format` 对 `.py` 使用 `ruff format`，对 `.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh` 使用 `clang-format`（检查模式为 `--dry-run --Werror`）；`run_lints` 可选聚合 `ruff check`（`run_python_ruff`）。`run_command` 默认 **`allowed_commands`**（见 `config/tools.toml`）另含常用 **coreutils 类**（如 `stat`、`readlink`、`find`、`mkdir`、`grep`/`egrep`/`fgrep`、`sort`/`uniq`/`cut`/`tr`、`diff`/`cmp`、`which`/`whereis`…）、**系统与进程信息**（`ps`、`free`、`uptime`、`hostname`、`lscpu`、`nproc`、`lsblk`…）、**二进制查看**（`xxd`、`hexdump`、`od`、`ldd`）、**压缩流读出**（`zcat`、`bzcat`、`xzcat`）、**jq**，以及 **`git` / `cargo` / `rustc`** 与 **编译链**（`cmake`、`ctest`、`ninja`、`gcc`、`clang`、`make`、Autotools…）及 **GNU Binutils**（`objdump`、`nm`、`readelf`、`strings`、`size`、`ar`）。嵌入默认**仅**提供 **`allowed_commands`**（见 **`config/tools.toml`**）；生产环境若需收窄，请直接修改覆盖配置中的 **`allowed_commands`** 或使用 **`AGENT_ALLOWED_COMMANDS`**。`cmake`、`ctest`、`c++filt` 与 `clang-format` 等可选依赖会在 **`GET /health`** 中体现为 `dep_cmake` / `dep_ctest` / `dep_cxxfilt` / `dep_clang_format`；**Binutils** 对应 `dep_objdump` / `dep_nm` / `dep_readelf` / `dep_strings_binutils` / `dep_size` / `dep_ar`；可选 CLI **typos** / **codespell** / **ast-grep** 对应 `dep_typos` / `dep_codespell` / `dep_ast_grep`（缺失为 degraded，不阻止启动）。**`run_command` 参数**仍禁止 `..` 与以 `/` 开头的实参，CMake 场景宜使用相对 `-S`/`-B` 与 `--build`。Autotools 与 `git`/`cargo` 会执行项目内逻辑，仅宜在**可信工作区**使用。
-- **`python_tools.rs` / `precommit_tools.rs`**：见上表；`quality_workspace` / `ci_pipeline_local` 可选步骤含 ruff/pytest/mypy；`pre_commit_run` 依赖仓库根 `.pre-commit-config.yaml`（或 `.yml`）。
+- **`python_tools.rs` / `precommit_tools.rs`**：见上表；`quality_workspace` / `ci_pipeline_local` 可选步骤含 ruff/pytest/mypy，以及可选 **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**；`pre_commit_run` 依赖仓库根 `.pre-commit-config.yaml`（或 `.yml`）。
 - **`source_analysis_tools.rs`**：源码分析工具（均为只读）；`shellcheck_check` 递归查找 `.sh`/`.bash` 文件并运行 ShellCheck；`cppcheck_analyze` 对 C/C++ 代码运行 cppcheck；`semgrep_scan` 运行 Semgrep SAST 安全扫描；`hadolint_check` 对 Dockerfile 运行 Hadolint lint；`bandit_scan` 对 Python 代码运行 Bandit 安全分析；`lizard_complexity` 运行 lizard 圈复杂度分析。均需本机安装对应 CLI，缺失时返回说明性错误。对应 health 检查项：`dep_shellcheck` / `dep_cppcheck` / `dep_semgrep` / `dep_hadolint` / `dep_bandit` / `dep_lizard`。
 
 ### `src/web/*` 与 `src/runtime/*`

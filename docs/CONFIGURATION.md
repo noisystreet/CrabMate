@@ -94,7 +94,7 @@
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `AGENT_ALLOWED_COMMANDS` | `run_command` 白名单，逗号分隔。 |
+| `AGENT_ALLOWED_COMMANDS` | `run_command` 白名单，逗号分隔。嵌入默认另含 **`docker`**、**`podman`**、**`mvn`**、**`gradle`**（供内置 JVM/容器工具与手动 `run_command`）；完整列表见 **`config/tools.toml`**。 |
 | `AGENT_MCP_ENABLED` | 是否启用 MCP。 |
 | `AGENT_MCP_COMMAND` | MCP stdio 启动命令。 |
 | `AGENT_MCP_TOOL_TIMEOUT_SECS` | MCP 工具超时（秒）。同一进程按指纹复用 stdio；**`crabmate mcp list`** 不要求 `API_KEY`；**`mcp list --probe`** 会启动子进程。 |

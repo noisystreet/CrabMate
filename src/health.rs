@@ -138,6 +138,10 @@ pub async fn build_health_report(
         m.insert("ar", check_cmd("ar", &["--version"]));
         m.insert("npm", check_cmd("npm", &["--version"]));
         m.insert("python3", check_cmd("python3", &["--version"]));
+        m.insert("mvn", check_cmd("mvn", &["--version"]));
+        m.insert("gradle", check_cmd("gradle", &["--version"]));
+        m.insert("docker", check_cmd("docker", &["--version"]));
+        m.insert("podman", check_cmd("podman", &["--version"]));
 
         m.insert("typos", check_cmd("typos", &["--version"]));
         m.insert("codespell", check_cmd("codespell", &["--version"]));
@@ -178,6 +182,10 @@ pub async fn build_health_report(
             "ar" => "dep_ar",
             "npm" => "dep_npm",
             "python3" => "dep_python3",
+            "mvn" => "dep_mvn",
+            "gradle" => "dep_gradle",
+            "docker" => "dep_docker_cli",
+            "podman" => "dep_podman",
             "typos" => "dep_typos",
             "codespell" => "dep_codespell",
             "ast_grep" => "dep_ast_grep",

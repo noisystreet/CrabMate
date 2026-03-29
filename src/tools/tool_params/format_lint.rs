@@ -25,6 +25,12 @@ pub(in crate::tools) fn params_quality_workspace() -> serde_json::Value {
             "run_ruff_check": { "type":"boolean", "description":"可选：ruff check，默认 false（无 Python 项目时跳过）" },
             "run_pytest": { "type":"boolean", "description":"可选：python3 -m pytest，默认 false" },
             "run_mypy": { "type":"boolean", "description":"可选：mypy，默认 false" },
+            "run_maven_compile": { "type":"boolean", "description":"可选：mvn -q compile（须 pom.xml），默认 false" },
+            "run_maven_test": { "type":"boolean", "description":"可选：mvn -q test，默认 false" },
+            "run_gradle_compile": { "type":"boolean", "description":"可选：gradle -q classes（或 tasks），默认 false" },
+            "run_gradle_test": { "type":"boolean", "description":"可选：gradle -q test，默认 false" },
+            "run_docker_compose_ps": { "type":"boolean", "description":"可选：docker compose ps，默认 false" },
+            "run_podman_images": { "type":"boolean", "description":"可选：podman images，默认 false" },
             "fail_fast": { "type":"boolean", "description":"可选：遇首个失败即停止后续步骤，默认 true" },
             "summary_only": { "type":"boolean", "description":"可选：仅输出各步骤 passed/failed 汇总，默认 false" }
         },
