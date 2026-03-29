@@ -11,10 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 
 use crate::AppState;
-use crate::config::AgentConfig;
 use crate::path_workspace::{
-    is_sensitive_workspace_path, is_within_allowed_roots, resolve_web_workspace_read_path,
-    resolve_web_workspace_write_path, validate_effective_workspace_base,
+    resolve_web_workspace_read_path, resolve_web_workspace_write_path,
+    validate_effective_workspace_base, validate_workspace_set_path,
 };
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
 
@@ -107,46 +106,6 @@ pub struct WorkspaceFileWriteResponse {
 pub struct WorkspaceFileDeleteResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-}
-
-/// 校验 Web `POST /workspace` 非空 `path`：须为已存在目录，`canonicalize` 后落在 `workspace_allowed_roots` 某一根之下（见配置项 `workspace_allowed_roots` / `AGENT_WORKSPACE_ALLOWED_ROOTS`）。
-pub(crate) fn validate_workspace_set_path(
-    cfg: &AgentConfig,
-    raw: &str,
-) -> Result<std::path::PathBuf, String> {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return Err("路径不能为空".to_string());
-    }
-    let cwd = std::env::current_dir().map_err(|e| format!("无法获取当前目录: {}", e))?;
-    let p = Path::new(raw);
-    let joined = if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        cwd.join(p)
-    };
-    let canon = joined
-        .canonicalize()
-        .map_err(|e| format!("工作区路径无效或不存在: {}", e))?;
-    if !canon.is_dir() {
-        return Err("工作区路径必须是已存在的目录".to_string());
-    }
-    if is_sensitive_workspace_path(&canon) {
-        return Err("工作区路径命中敏感目录黑名单，请选择业务目录".to_string());
-    }
-    if !is_within_allowed_roots(&canon, &cfg.workspace_allowed_roots) {
-        let roots = cfg
-            .workspace_allowed_roots
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(format!(
-            "工作区路径不在允许范围内（须位于以下根目录之一下: {}）",
-            roots
-        ));
-    }
-    Ok(canon)
 }
 
 /// 解析当前会话工作区根为 canonical 路径，并校验仍在 `workspace_allowed_roots` 内、非敏感目录。
