@@ -219,6 +219,18 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    if let ExtraCliCommand::McpList { probe } = extra_cli {
+        let cfg = match config::load_config(config_path.as_deref()) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("{}", e);
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
+            }
+        };
+        crate::runtime::cli_mcp::run_mcp_list(&cfg, probe).await;
+        return Ok(());
+    }
+
     if let Some(ss) = save_session {
         let cfg = match config::load_config(config_path.as_deref()) {
             Ok(c) => c,

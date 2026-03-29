@@ -108,6 +108,7 @@ fn is_known_subcommand(s: &str) -> bool {
             | "doctor"
             | "models"
             | "probe"
+            | "mcp"
             | "save-session"
             | "export-session"
     )
@@ -393,6 +394,26 @@ pub struct BenchCmd {
     pub bench_system_prompt: Option<String>,
 }
 
+/// MCP 运维子命令（只读列出本进程内 stdio 会话缓存）
+#[derive(Parser, Debug, Clone)]
+pub struct McpCmd {
+    #[command(subcommand)]
+    pub sub: McpSubCmd,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum McpSubCmd {
+    /// 列出与当前配置指纹一致的已缓存 MCP 会话及合并后的 OpenAI 工具名
+    List(McpListCmd),
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct McpListCmd {
+    /// 按配置尝试建立一次 stdio 连接并刷新进程内缓存（排障用；会启动 mcp_command 子进程）
+    #[arg(long)]
+    pub probe: bool,
+}
+
 /// 配置检查（不发起对话）
 #[derive(Parser, Debug, Clone, Default)]
 pub struct ConfigCmd {
@@ -440,6 +461,10 @@ pub enum ExtraCliCommand {
     Doctor,
     Models,
     Probe,
+    /// `mcp list`（`probe` 见子命令 `--probe`）
+    McpList {
+        probe: bool,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -463,6 +488,8 @@ pub enum Commands {
     /// 从会话文件导出 JSON/Markdown 到工作区 `.crabmate/exports/`（与 Web 导出约定一致；**不要**求 API_KEY）
     #[command(name = "save-session", visible_alias = "export-session")]
     SaveSession(SaveSessionCmd),
+    /// MCP stdio 客户端运维：列出本进程内已缓存会话（**不要**求 API_KEY）
+    Mcp(McpCmd),
 }
 
 #[derive(Parser, Debug)]
@@ -529,7 +556,7 @@ fn parse_output_mode(raw: Option<String>) -> Option<String> {
     })
 }
 
-/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `save-session`**（兼容别名 **`export-session`**）子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
+/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `mcp` / `save-session`**（兼容别名 **`export-session`**）子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
 ///
 /// `chat --stdin` 时若读取标准输入失败则返回 [`io::Error`]。
 ///
@@ -774,6 +801,26 @@ fn build_parsed_cli_args(
                 session_file: e.session_file,
             }),
         },
+        Some(Commands::Mcp(m)) => {
+            let probe = match m.sub {
+                McpSubCmd::List(l) => l.probe,
+            };
+            ParsedCliArgs {
+                config_path: config,
+                chat_cli: ChatCliArgs::default(),
+                serve_port: None,
+                http_bind_host: http_bind_host(None),
+                workspace_cli: workspace,
+                no_tools,
+                no_web: false,
+                dry_run: false,
+                no_stream: false,
+                log_file: log_path,
+                bench_args: BenchmarkCliArgs::default(),
+                extra_cli: ExtraCliCommand::McpList { probe },
+                save_session: None,
+            }
+        }
     })
 }
 

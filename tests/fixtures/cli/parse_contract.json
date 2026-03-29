@@ -40,6 +40,28 @@
     "save_session_format": null
   },
   {
+    "name": "mcp_list",
+    "argv": ["crabmate", "mcp", "list"],
+    "extra_cli": "McpList",
+    "mcp_probe": false,
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": null
+  },
+  {
+    "name": "mcp_list_probe",
+    "argv": ["crabmate", "mcp", "list", "--probe"],
+    "extra_cli": "McpList",
+    "mcp_probe": true,
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": null
+  },
+  {
     "name": "serve_port_8080",
     "argv": ["crabmate", "serve", "8080"],
     "extra_cli": "None",

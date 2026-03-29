@@ -18,7 +18,7 @@
 - **只读工具并行**：`AGENT_PARALLEL_READONLY_TOOLS_MAX`
 - **单轮 `read_file` 缓存**：`AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES`（`0` 关闭；写类工具或工作区变更后会话内缓存整表清空）
 - **`run_command` 白名单覆盖**：`AGENT_ALLOWED_COMMANDS`（逗号分隔）
-- **MCP**：`AGENT_MCP_ENABLED`、`AGENT_MCP_COMMAND`、`AGENT_MCP_TOOL_TIMEOUT_SECS`
+- **MCP**：`AGENT_MCP_ENABLED`、`AGENT_MCP_COMMAND`、`AGENT_MCP_TOOL_TIMEOUT_SECS`。同一 **`serve` / `repl` / `chat` / Web** 进程内按配置指纹**复用**一条 stdio 连接。运维可执行 **`crabmate mcp list`**（**不要**求 `API_KEY`）查看本进程已缓存会话及合并后的 OpenAI 工具名；**`mcp list --probe`** 会按配置尝试连接一次（排障用，会启动 `mcp_command` 子进程）。
 - **会话 SQLite**：`AGENT_CONVERSATION_STORE_SQLITE_PATH`
 - **工作区备忘（首轮注入）**：`AGENT_MEMORY_FILE_ENABLED`、`AGENT_MEMORY_FILE`、`AGENT_MEMORY_FILE_MAX_CHARS`
 - **项目画像（首轮注入）**：`AGENT_PROJECT_PROFILE_INJECT_ENABLED`、`AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS`
