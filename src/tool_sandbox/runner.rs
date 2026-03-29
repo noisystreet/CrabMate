@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{AgentConfig, WebSearchProvider};
+use crate::config::{AgentConfig, ExposeSecret, WebSearchProvider};
 use crate::tools::http_fetch;
 use crate::tools::{ToolContext, run_tool};
 
@@ -45,7 +45,7 @@ impl SandboxToolRunnerConfig {
             test_result_cache_max_entries: cfg.test_result_cache_max_entries,
             allowed_commands: cfg.allowed_commands.iter().cloned().collect(),
             web_search_provider: cfg.web_search_provider.as_str().to_string(),
-            web_search_api_key: cfg.web_search_api_key.clone(),
+            web_search_api_key: cfg.web_search_api_key.expose_secret().to_string(),
             web_search_timeout_secs: cfg.web_search_timeout_secs,
             web_search_max_results: cfg.web_search_max_results,
             http_fetch_allowed_prefixes: cfg.http_fetch_allowed_prefixes.clone(),

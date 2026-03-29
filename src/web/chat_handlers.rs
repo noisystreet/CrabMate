@@ -19,6 +19,7 @@ use super::app_state::{AppState, CONVERSATION_ID_MAX_LEN, ConversationTurnSeed};
 use crate::agent::message_pipeline::MESSAGE_PIPELINE_COUNTERS;
 use crate::agent_memory::load_memory_snippet;
 use crate::chat_job_queue;
+use crate::config::ExposeSecret;
 use crate::conversation_store::SaveConversationOutcome;
 use crate::health;
 use crate::project_profile::build_first_turn_user_context_markdown;
@@ -575,7 +576,7 @@ pub(crate) async fn require_web_api_bearer_auth(
 ) -> Response {
     let token = {
         let g = state.cfg.read().await;
-        g.web_api_bearer_token.trim().to_string()
+        g.web_api_bearer_token.expose_secret().trim().to_string()
     };
     if token.is_empty() {
         return next.run(req).await;
