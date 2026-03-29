@@ -15,7 +15,7 @@ alwaysApply: false
 
 ## 与后端一致
 
-- 变更 **`POST /chat`**、**`/chat/stream`**、SSE `data:` JSON 形状、错误码时：同步 **`frontend/src/api.ts`**（及消费 SSE 的组件，如聊天面板）。
+- 变更 **`POST /chat`**、**`/chat/stream`**、SSE `data:` JSON 形状、错误码时：同步 **`frontend/src/sse_control_dispatch.ts`** / **`api.ts`**（及消费 SSE 的组件）。若改动 **`tryDispatchSseControlPayload` 分支顺序**：同步 **`fixtures/sse_control_golden.jsonl`**、**`src/sse/control_dispatch_mirror.rs`**，并跑 **`npm run verify-sse-contract`** 与 **`cargo test golden_sse_control`**。
 - 新增/改名用户可见文案或行为时，按 **`.cursor/rules/todolist-and-documentation.mdc`** 评估是否更新 **`README.md`**。
 
 ## 其它

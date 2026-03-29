@@ -121,10 +121,20 @@
 变更以下任一时，须同步另一方及本文档：
 
 1. `src/sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`、`SSE_PROTOCOL_VERSION`
-2. `frontend/src/api.ts`：`SseControlPayload`、`tryDispatchSseControlPayload`、`SSE_PROTOCOL_VERSION`
+2. `frontend/src/sse_control_dispatch.ts`（及 `api.ts` 再导出）：`SseControlPayload`、`classifySseControlPayloadParsed`、`tryDispatchSseControlPayload`、`SSE_PROTOCOL_VERSION`
 3. `src/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致）
 4. 新增 `encode_message(SsePayload::…)` 的调用点
 
+## 契约测试（控制面分类）
+
+Web 将一条合并后的 `data:` 字符串解析为 JSON 后，按**固定顺序**判定 `stop` / `handled` / `plain`（见 `frontend/src/sse_control_dispatch.ts`）。Rust 侧镜像实现为 **`src/sse/control_dispatch_mirror.rs`**（仅 `cfg(test)`），与 **同一份金样**对齐：
+
+- **`fixtures/sse_control_golden.jsonl`**：每行 `描述<TAB>JSON<TAB>期望分类`（`#` 开头行为注释）。
+- **Rust**：`cargo test golden_sse_control`（或 `cargo test control_dispatch_mirror`）。
+- **Node**：`cd frontend && npm run verify-sse-contract`（依赖 `tsx`）。
+
+若新增控制面顶层键且 Web 应消费：在 **`tryDispatchSseControlPayload`** 增加分支后，同步 **`classifySseControlPayloadParsed`**、**`control_dispatch_mirror::classify_sse_control_outcome`** 与金样行。
+
 ---
 
-维护者备注：表格与枚举力求与代码一致；若发现漂移，以 **`protocol.rs` + `api.ts`** 为准并修正本文档。
+维护者备注：表格与枚举力求与代码一致；若发现漂移，以 **`protocol.rs` + `sse_control_dispatch.ts`** 为准并修正本文档。

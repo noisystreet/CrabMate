@@ -8,12 +8,13 @@ alwaysApply: true
 以下路径或概念变更时，**必须**同时核对 **Rust 路由/handler**、**前端解析** 与（若对外）**文档**：
 
 - **路由与请求体**：`src/lib.rs` 中 **`/chat`**、**`/chat/stream`** 等；请求/响应 JSON 字段。
-- **SSE 行协议**：`src/sse/protocol.rs`（及 `sse/mod.rs` 再导出）；流式 payload 类型、错误码、`data:` 行格式。**权威说明与错误码表**：`docs/SSE_PROTOCOL.md`（与 `frontend/src/api.ts` 对齐）。
+- **SSE 行协议**：`src/sse/protocol.rs`（及 `sse/mod.rs` 再导出）；流式 payload 类型、错误码、`data:` 行格式。**权威说明与错误码表**：`docs/SSE_PROTOCOL.md`（与 `frontend/src/sse_control_dispatch.ts` / `api.ts` 对齐）。
 - **Rust 侧行分类（可选/未来 TUI）**：`src/sse/line.rs`（`classify_agent_sse_line` 等；**不再**经 `sse/mod.rs` 再导出）是否与 Web 消费语义一致或刻意分叉（若分叉须在注释与 DEVELOPMENT 中说明）。
 - **前端**：**`frontend/src/api.ts`** 及订阅流式结果的组件（错误分支、`tool_*` 等事件）。
 
 ## 清单
 
-- [ ] 字段增删改名 → **serde 类型**、**前端 TypeScript**、**可选 README / DEVELOPMENT** 协议说明一致。（例：`staged_plan_notice` / `staged_plan_notice_clear` 须在 `api.ts` 的 `tryDispatchSseControlPayload` 中返回 `handled`，避免进入 `onDelta`。）
+- [ ] 字段增删改名 → **serde 类型**、**前端 TypeScript**、**可选 README / DEVELOPMENT** 协议说明一致。（例：`staged_plan_notice` / `staged_plan_notice_clear` 须在 `frontend/src/sse_control_dispatch.ts` 的 `tryDispatchSseControlPayload` 中返回 `handled`，避免进入 `onDelta`。）
+- [ ] 若改动 **Web 控制面分发分支顺序或新顶层键**：同步 **`src/sse/control_dispatch_mirror.rs`**（`#[cfg(test)]`）与 **`fixtures/sse_control_golden.jsonl`**；本地跑 **`cargo test golden_sse_control`** 与 **`cd frontend && npm run verify-sse-contract`**。
 - [ ] 新错误码或 `code:` → 前端是否展示/重试；**勿**在响应体中泄露密钥或完整鉴权头（见 **`.cursor/rules/secrets-and-logging.mdc`**）。
-- [ ] 准备提交 → **`cd frontend && npx tsc -b --noEmit`**；大改时 **`npm run build`**（见 **`frontend-typescript-react.mdc`**）。
+- [ ] 准备提交 → **`cd frontend && npx tsc -b --noEmit`**；若动到上述分发逻辑另跑 **`npm run verify-sse-contract`**；大改时 **`npm run build`**（见 **`frontend-typescript-react.mdc`**）。
