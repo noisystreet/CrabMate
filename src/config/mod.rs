@@ -144,6 +144,7 @@ struct ConfigBuilder {
     codebase_semantic_max_file_bytes: Option<u64>,
     codebase_semantic_chunk_max_chars: Option<u64>,
     codebase_semantic_top_k: Option<u64>,
+    codebase_semantic_query_max_chunks: Option<u64>,
     codebase_semantic_rebuild_max_files: Option<u64>,
 }
 
@@ -457,6 +458,9 @@ impl ConfigBuilder {
         self.codebase_semantic_top_k = agent
             .codebase_semantic_top_k
             .or(self.codebase_semantic_top_k);
+        self.codebase_semantic_query_max_chunks = agent
+            .codebase_semantic_query_max_chunks
+            .or(self.codebase_semantic_query_max_chunks);
         self.codebase_semantic_rebuild_max_files = agent
             .codebase_semantic_rebuild_max_files
             .or(self.codebase_semantic_rebuild_max_files);
@@ -589,6 +593,7 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.codebase_semantic_max_file_bytes = src.codebase_semantic_max_file_bytes;
     dst.codebase_semantic_chunk_max_chars = src.codebase_semantic_chunk_max_chars;
     dst.codebase_semantic_top_k = src.codebase_semantic_top_k;
+    dst.codebase_semantic_query_max_chunks = src.codebase_semantic_query_max_chunks;
     dst.codebase_semantic_rebuild_max_files = src.codebase_semantic_rebuild_max_files;
 }
 
@@ -1276,6 +1281,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.codebase_semantic_top_k = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_QUERY_MAX_CHUNKS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.codebase_semantic_query_max_chunks = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_REBUILD_MAX_FILES")
         && let Ok(n) = v.trim().parse::<u64>()
     {
@@ -1669,6 +1679,10 @@ fn finalize(
         .unwrap_or(1200)
         .clamp(256, 16_000) as usize;
     let codebase_semantic_top_k = b.codebase_semantic_top_k.unwrap_or(8).clamp(1, 64) as usize;
+    let codebase_semantic_query_max_chunks = b
+        .codebase_semantic_query_max_chunks
+        .unwrap_or(50_000)
+        .clamp(0, 2_000_000) as usize;
     let codebase_semantic_rebuild_max_files = b
         .codebase_semantic_rebuild_max_files
         .unwrap_or(2000)
@@ -1797,6 +1811,7 @@ fn finalize(
         codebase_semantic_max_file_bytes,
         codebase_semantic_chunk_max_chars,
         codebase_semantic_top_k,
+        codebase_semantic_query_max_chunks,
         codebase_semantic_rebuild_max_files,
     })
 }

@@ -132,6 +132,7 @@ pub(super) struct AgentSection {
     pub(super) codebase_semantic_max_file_bytes: Option<u64>,
     pub(super) codebase_semantic_chunk_max_chars: Option<u64>,
     pub(super) codebase_semantic_top_k: Option<u64>,
+    pub(super) codebase_semantic_query_max_chunks: Option<u64>,
     pub(super) codebase_semantic_rebuild_max_files: Option<u64>,
 }
 
