@@ -600,20 +600,16 @@ async fn try_handle_repl_slash_command(
             }
         },
         ReplBuiltIn::WorkspaceSet(arg) => {
-            let candidate = PathBuf::from(arg);
-            let resolved = match candidate.canonicalize() {
-                Ok(p) => p,
-                Err(e) => {
-                    let _ = style.eprint_error(&format!("无法解析路径 {arg:?}: {e}"));
-                    return ReplSlashHandled::Handled;
+            let cfg = cfg_holder.read().await;
+            match crate::tools::resolve_repl_workspace_switch_path(&cfg, work_dir.as_path(), arg) {
+                Ok(resolved) => {
+                    *work_dir = resolved;
+                    let _ = style.print_success(&format!("工作区已切换为: {}", work_dir.display()));
                 }
-            };
-            if !resolved.is_dir() {
-                let _ = style.eprint_error(&format!("不是目录: {}", resolved.display()));
-                return ReplSlashHandled::Handled;
+                Err(e) => {
+                    let _ = style.eprint_error(&e);
+                }
             }
-            *work_dir = resolved;
-            let _ = style.print_success(&format!("工作区已切换为: {}", work_dir.display()));
         }
         ReplBuiltIn::Tools => {
             if tools.is_empty() {

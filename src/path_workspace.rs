@@ -11,6 +11,46 @@ use std::path::{Path, PathBuf};
 
 use crate::config::AgentConfig;
 
+/// 校验用于切换工作区根的 `path`（Web **`POST /workspace`** 与 REPL **`/workspace`** 共用）。
+///
+/// 须为已存在目录，`canonicalize` 后落在 **`workspace_allowed_roots`** 内且不得命中敏感路径黑名单。
+/// 相对路径相对于**进程当前工作目录**解析（与历史 Web 行为一致）。
+pub(crate) fn validate_workspace_set_path(cfg: &AgentConfig, raw: &str) -> Result<PathBuf, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err("路径不能为空".to_string());
+    }
+    let cwd = std::env::current_dir().map_err(|e| format!("无法获取当前目录: {}", e))?;
+    let p = Path::new(raw);
+    let joined = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        cwd.join(p)
+    };
+    let canon = joined
+        .canonicalize()
+        .map_err(|e| format!("工作区路径无效或不存在: {}", e))?;
+    if !canon.is_dir() {
+        return Err("工作区路径必须是已存在的目录".to_string());
+    }
+    if is_sensitive_workspace_path(&canon) {
+        return Err("工作区路径命中敏感目录黑名单，请选择业务目录".to_string());
+    }
+    if !is_within_allowed_roots(&canon, &cfg.workspace_allowed_roots) {
+        let roots = cfg
+            .workspace_allowed_roots
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "工作区路径不在允许范围内（须位于以下根目录之一下: {}）",
+            roots
+        ));
+    }
+    Ok(canon)
+}
+
 /// Web `POST /workspace` 与「当前会话工作区根」校验共用的敏感路径前缀（canonical 后命中即拒绝）。
 const SENSITIVE_WORKSPACE_PREFIXES: &[&str] = &[
     "/proc", "/sys", "/dev", "/etc", "/boot", "/root", "/bin", "/sbin", "/usr",
@@ -180,5 +220,12 @@ mod tests {
         let sibling = Path::new("/tmp/workspace2");
         assert!(ensure_canonical_within_root(inside, root).is_ok());
         assert!(ensure_canonical_within_root(sibling, root).is_err());
+    }
+
+    #[test]
+    fn validate_workspace_set_path_rejects_empty() {
+        let cfg = crate::config::load_config(None).expect("embedded default config");
+        let e = validate_workspace_set_path(&cfg, "  ").expect_err("empty");
+        assert!(e.contains("空"), "{e}");
     }
 }

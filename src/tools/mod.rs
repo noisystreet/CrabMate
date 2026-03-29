@@ -61,9 +61,11 @@ mod web_search;
 
 pub mod dev_tag;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::config::{AgentConfig, ExposeSecret};
+use crate::path_workspace::{validate_effective_workspace_base, validate_workspace_set_path};
 use crate::tool_result::ToolResult;
 use crate::types::{FunctionDef, Tool};
 use crate::workspace_changelist::WorkspaceChangelist;
@@ -107,6 +109,28 @@ pub fn resolve_workspace_path_for_read(
     rel: &str,
 ) -> Result<std::path::PathBuf, String> {
     file::resolve_for_read(working_dir, rel)
+}
+
+/// REPL **`/workspace`** / **`/cd`**：相对路径走 [`resolve_workspace_path_for_read`]（与 `read_file` 等一致：**禁止**以 `/` 开头的绝对路径）；绝对路径走 [`crate::path_workspace::validate_workspace_set_path`]（与 Web **`POST /workspace`** 一致：`workspace_allowed_roots` + 敏感目录黑名单）。
+pub fn resolve_repl_workspace_switch_path(
+    cfg: &AgentConfig,
+    current_work_dir: &Path,
+    raw: &str,
+) -> Result<std::path::PathBuf, String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err("用法: /workspace <路径>（须为已存在目录）".to_string());
+    }
+    if Path::new(raw).is_absolute() {
+        validate_workspace_set_path(cfg, raw)
+    } else {
+        let p = resolve_workspace_path_for_read(current_work_dir, raw)?;
+        if !p.is_dir() {
+            return Err(format!("不是目录: {}", p.display()));
+        }
+        validate_effective_workspace_base(cfg, &p)?;
+        Ok(p)
+    }
 }
 
 pub fn tool_context_for<'a>(
