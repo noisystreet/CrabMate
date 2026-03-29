@@ -436,7 +436,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
         let web_api_bearer_layer_enabled = {
             let g = cfg_holder.read().await;
-            !g.web_api_bearer_token.trim().is_empty()
+            !crate::config::ExposeSecret::expose_secret(&g.web_api_bearer_token)
+                .trim()
+                .is_empty()
         };
         let app = web::server::build_app(
             state,
@@ -457,7 +459,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let (auth_enabled, allow_insec) = {
             let g = cfg_holder.read().await;
             (
-                !g.web_api_bearer_token.trim().is_empty(),
+                !crate::config::ExposeSecret::expose_secret(&g.web_api_bearer_token)
+                    .trim()
+                    .is_empty(),
                 g.allow_insecure_no_auth_for_non_loopback,
             )
         };
@@ -572,7 +576,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     .await
 }
 
-pub use config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig, load_config};
+pub use config::{AgentConfig, ExposeSecret, LlmHttpAuthMode, SharedAgentConfig, load_config};
 pub use llm::{
     ChatCompletionsBackend, CompleteChatRetryingParams, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
     StreamChatParams, default_chat_completions_backend,

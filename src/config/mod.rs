@@ -10,8 +10,9 @@ use crate::agent::per_coord::FinalPlanRequirementMode;
 use source::{AgentSection, parse_agent_section, parse_bool_like};
 use std::path::{Path, PathBuf};
 pub use types::{
-    AgentConfig, LlmHttpAuthMode, LongTermMemoryScopeMode, LongTermMemoryVectorBackend,
-    PlannerExecutorMode, StagedPlanFeedbackMode, SyncDefaultToolSandboxMode, WebSearchProvider,
+    AgentConfig, ExposeSecret, LlmHttpAuthMode, LongTermMemoryScopeMode,
+    LongTermMemoryVectorBackend, PlannerExecutorMode, StagedPlanFeedbackMode,
+    SyncDefaultToolSandboxMode, WebSearchProvider,
 };
 
 /// 进程内共享的 [`AgentConfig`]（`serve` / `repl` / `chat` / `bench`）；热重载时 `write` 更新，回合开始时 `read`+`clone` 得快照传入 `run_agent_turn`。
@@ -1500,7 +1501,8 @@ fn finalize(
                 .to_string(),
         );
     }
-    let web_api_bearer_token = b.web_api_bearer_token.unwrap_or_default();
+    let web_api_bearer_token =
+        types::SecretString::new(b.web_api_bearer_token.unwrap_or_default().into());
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
 
@@ -1582,7 +1584,8 @@ fn finalize(
         Some(s) => WebSearchProvider::parse(s)?,
         None => WebSearchProvider::default(),
     };
-    let web_search_api_key = b.web_search_api_key.unwrap_or_default();
+    let web_search_api_key =
+        types::SecretString::new(b.web_search_api_key.unwrap_or_default().into());
     let web_search_timeout_secs = b.web_search_timeout_secs.unwrap_or(30).max(1);
     let web_search_max_results = b.web_search_max_results.unwrap_or(8).clamp(1, 20) as u32;
 

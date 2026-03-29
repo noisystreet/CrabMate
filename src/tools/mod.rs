@@ -63,7 +63,7 @@ pub mod dev_tag;
 
 use std::sync::Arc;
 
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, ExposeSecret};
 use crate::tool_result::ToolResult;
 use crate::types::{FunctionDef, Tool};
 use crate::workspace_changelist::WorkspaceChangelist;
@@ -119,7 +119,7 @@ pub fn tool_context_for<'a>(
         working_dir,
         web_search_timeout_secs: cfg.web_search_timeout_secs,
         web_search_provider: cfg.web_search_provider,
-        web_search_api_key: cfg.web_search_api_key.as_str(),
+        web_search_api_key: cfg.web_search_api_key.expose_secret(),
         web_search_max_results: cfg.web_search_max_results,
         http_fetch_allowed_prefixes: cfg.http_fetch_allowed_prefixes.as_slice(),
         http_fetch_timeout_secs: cfg.http_fetch_timeout_secs,

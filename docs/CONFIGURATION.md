@@ -10,6 +10,7 @@
 - **刻意不热更**：**`conversation_store_sqlite_path`**（会话库连接在启动时打开，改路径须重启 **`serve`**）。**`reqwest::Client`** 不重建，**`api_timeout_secs` 等**对**新连接**的生效可能受连接池保留的空闲连接影响。
 - **`API_KEY`**：仍只从**环境变量**读取；热重载**不**解析密钥文件。改 **`API_KEY`** 后通常需**重新 export** 并再执行 **`/config reload`**（或重启进程）以便与 **`llm_http_auth_mode=bearer`** 行为一致。
 - **Bearer 中间件层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权层；热重载**不会**拆除或新增该层——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的 token 字符串，用于已挂层时的校验。
+- **敏感字段内存表示**：**`web_api_bearer_token`** 与 **`web_search_api_key`** 在 [`AgentConfig`](DEVELOPMENT.md) 内为 **secrecy `SecretString`**，**`Debug` / 结构化日志默认不打印明文**；源码中通过 **`ExposeSecret::expose_secret()`** 取用（`config` crate 再导出 **`ExposeSecret`**）。**`API_KEY`** 仍为仅环境变量，未并入 `AgentConfig`。
 
 ## 环境变量（`AGENT_*`）
 

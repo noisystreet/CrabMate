@@ -1,6 +1,6 @@
 //! `workflow_execute` 工具入口：解析参数、validate_only 规划、DAG 执行。
 
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, ExposeSecret};
 use log::{info, warn};
 use std::collections::HashMap;
 use std::path::Path;
@@ -267,7 +267,7 @@ pub async fn run_workflow_execute_tool(
     let command_timeout_secs = cfg.command_timeout_secs;
     let web_search_timeout_secs = cfg.web_search_timeout_secs;
     let web_search_provider = cfg.web_search_provider;
-    let web_search_api_key = cfg.web_search_api_key.clone();
+    let web_search_api_key = cfg.web_search_api_key.expose_secret().to_string();
     let web_search_max_results = cfg.web_search_max_results;
     let http_fetch_timeout_secs = cfg.http_fetch_timeout_secs;
     let http_fetch_max_response_bytes = cfg.http_fetch_max_response_bytes;

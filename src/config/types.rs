@@ -1,5 +1,8 @@
 use crate::agent::per_coord::FinalPlanRequirementMode;
 
+/// 敏感字符串（`Debug` / 结构化日志默认脱敏）；取值请用 [`ExposeSecret::expose_secret`]。
+pub use secrecy::{ExposeSecret, SecretString};
+
 /// `web_search` 工具使用的第三方搜索 API 提供商
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WebSearchProvider {
@@ -352,8 +355,8 @@ pub struct AgentConfig {
     pub weather_timeout_secs: u64,
     /// web_search 工具使用的搜索 API 提供商
     pub web_search_provider: WebSearchProvider,
-    /// web_search 的 API Key（空字符串表示未启用联网搜索）
-    pub web_search_api_key: String,
+    /// web_search 的 API Key（空表示未启用联网搜索）；勿 `Debug` 打印裸值。
+    pub web_search_api_key: SecretString,
     /// web_search HTTP 超时（秒）
     pub web_search_timeout_secs: u64,
     /// web_search 默认返回条数上限（工具参数 max_results 可覆盖，整体限制在 1～20）
@@ -404,8 +407,8 @@ pub struct AgentConfig {
     /// Web `POST /workspace` 允许设置的工作区根路径：规范化为绝对路径后的白名单。
     /// 未在配置中指定 `workspace_allowed_roots` 时，仅含 `run_command_working_dir` 的 canonical 路径。
     pub workspace_allowed_roots: Vec<std::path::PathBuf>,
-    /// Web API 的 Bearer 鉴权令牌（为空表示不启用鉴权）。
-    pub web_api_bearer_token: String,
+    /// Web API 的 Bearer 鉴权令牌（为空表示不启用鉴权）；勿 `Debug` 打印裸值。
+    pub web_api_bearer_token: SecretString,
     /// 当监听非 loopback 地址且 `web_api_bearer_token` 为空时，是否允许继续启动（不安全，默认 false）。
     pub allow_insecure_no_auth_for_non_loopback: bool,
     /// Web `/chat` 任务最大并发执行数（单进程）
@@ -544,5 +547,26 @@ mod long_term_memory_parse_tests {
             LongTermMemoryVectorBackend::Pgvector
         );
         assert!(LongTermMemoryVectorBackend::parse("unknown").is_err());
+    }
+}
+
+#[cfg(test)]
+mod secret_string_tests {
+    use super::{ExposeSecret, SecretString};
+
+    #[test]
+    fn debug_does_not_echo_plaintext() {
+        let s = SecretString::new("not-for-debug-logs-xyzzy".into());
+        let d = format!("{s:?}");
+        assert!(
+            !d.contains("not-for-debug-logs-xyzzy"),
+            "Debug leaked secret: {d}"
+        );
+    }
+
+    #[test]
+    fn expose_secret_roundtrip() {
+        let s = SecretString::new("k".into());
+        assert_eq!(s.expose_secret(), "k");
     }
 }

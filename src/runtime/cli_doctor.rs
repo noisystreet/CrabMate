@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use reqwest::Client;
 
 use crate::AgentConfig;
-use crate::config::LlmHttpAuthMode;
+use crate::config::{ExposeSecret, LlmHttpAuthMode};
 use crate::llm::fetch_models_report;
 use crate::tools::{canonical_workspace_root, capture_trimmed};
 
@@ -90,7 +90,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     println!("  api_timeout_secs: {}", cfg.api_timeout_secs);
     println!(
         "  web_api_bearer_token: {}",
-        if cfg.web_api_bearer_token.trim().is_empty() {
+        if cfg.web_api_bearer_token.expose_secret().trim().is_empty() {
             "未配置"
         } else {
             "已配置（值已隐藏）"
