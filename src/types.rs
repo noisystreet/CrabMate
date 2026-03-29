@@ -446,6 +446,21 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
+/// 将 `tool_calls[].function.arguments` 规范为上游可解析的 JSON 字符串。
+///
+/// 部分 OpenAI 兼容网关（如 DeepSeek）在错误响应中报告 **`invalid function arguments json string`**
+///（常见内部码 2013）：**空串**、仅空白或非 JSON 片段（流式拼接未完成等）会在**下一轮**把整段历史发回时触发 HTTP 400。
+#[must_use]
+pub fn sanitize_tool_call_arguments_for_openai_compat(arguments: &str) -> String {
+    let t = arguments.trim();
+    if t.is_empty() {
+        return "{}".to_string();
+    }
+    serde_json::from_str::<serde_json::Value>(t)
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| "{}".to_string())
+}
+
 /// 工具定义（传给 API）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tool {
@@ -852,5 +867,33 @@ mod fold_system_messages_tests {
         let o = fold_system_messages_into_following_user(v);
         assert_eq!(o.len(), 1);
         assert!(o[0].content.as_deref().unwrap().starts_with("x"));
+    }
+}
+
+#[cfg(test)]
+mod sanitize_tool_call_arguments_tests {
+    use super::sanitize_tool_call_arguments_for_openai_compat;
+
+    #[test]
+    fn empty_and_whitespace_become_empty_object() {
+        assert_eq!(sanitize_tool_call_arguments_for_openai_compat(""), "{}");
+        assert_eq!(sanitize_tool_call_arguments_for_openai_compat("   "), "{}");
+    }
+
+    #[test]
+    fn valid_json_round_trips_compact() {
+        assert_eq!(
+            sanitize_tool_call_arguments_for_openai_compat(r#"{"path":"a"}"#),
+            r#"{"path":"a"}"#
+        );
+    }
+
+    #[test]
+    fn invalid_json_becomes_empty_object() {
+        assert_eq!(sanitize_tool_call_arguments_for_openai_compat("{"), "{}");
+        assert_eq!(
+            sanitize_tool_call_arguments_for_openai_compat("not json"),
+            "{}"
+        );
     }
 }
