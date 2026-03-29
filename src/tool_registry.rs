@@ -380,6 +380,16 @@ pub struct DispatchToolParams<'a> {
     pub mcp_session: Option<&'a Arc<Mutex<crate::mcp::McpClientSession>>>,
 }
 
+/// `http_fetch` / `http_request` 共用：`Web` 带可选审批会话，`Cli` 带终端审批上下文（本路径不使用 `workspace_changed`）。
+fn http_tool_approval_context<'a>(
+    runtime: ToolRuntime<'a>,
+) -> (Option<&'a WebToolRuntime>, Option<&'a CliToolRuntime>) {
+    match runtime {
+        ToolRuntime::Web { ctx, .. } => (ctx, None),
+        ToolRuntime::Cli { ctx, .. } => (None, Some(ctx)),
+    }
+}
+
 /// Web / CLI 统一入口：`(tool_result_text, workflow 反思注入)`。
 pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
     let DispatchToolParams {
@@ -501,58 +511,32 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         HandlerId::WebSearch => {
             execute_web_search_web(cfg, effective_working_dir, workspace_is_set, name, args).await
         }
-        HandlerId::HttpFetch => match runtime {
-            ToolRuntime::Web { ctx, .. } => {
-                execute_http_fetch_impl(
-                    cfg,
-                    effective_working_dir,
-                    workspace_is_set,
-                    ctx,
-                    None,
-                    name,
-                    args,
-                )
-                .await
-            }
-            ToolRuntime::Cli { ctx, .. } => {
-                execute_http_fetch_impl(
-                    cfg,
-                    effective_working_dir,
-                    workspace_is_set,
-                    None,
-                    Some(ctx),
-                    name,
-                    args,
-                )
-                .await
-            }
-        },
-        HandlerId::HttpRequest => match runtime {
-            ToolRuntime::Web { ctx, .. } => {
-                execute_http_request_impl(
-                    cfg,
-                    effective_working_dir,
-                    workspace_is_set,
-                    ctx,
-                    None,
-                    name,
-                    args,
-                )
-                .await
-            }
-            ToolRuntime::Cli { ctx, .. } => {
-                execute_http_request_impl(
-                    cfg,
-                    effective_working_dir,
-                    workspace_is_set,
-                    None,
-                    Some(ctx),
-                    name,
-                    args,
-                )
-                .await
-            }
-        },
+        HandlerId::HttpFetch => {
+            let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
+            execute_http_fetch_impl(
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                web_ctx,
+                cli_ctx,
+                name,
+                args,
+            )
+            .await
+        }
+        HandlerId::HttpRequest => {
+            let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
+            execute_http_request_impl(
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                web_ctx,
+                cli_ctx,
+                name,
+                args,
+            )
+            .await
+        }
         HandlerId::SyncDefault => {
             if cfg.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
                 if !workspace_is_set {
