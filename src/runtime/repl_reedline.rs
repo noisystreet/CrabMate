@@ -165,6 +165,17 @@ impl Completer for ReplSlashCompleter {
                         })
                         .collect();
                 }
+                if tail.eq_ignore_ascii_case("models") {
+                    return ["list", "choose"]
+                        .iter()
+                        .map(|a| Suggestion {
+                            value: format!("/models {a} "),
+                            span,
+                            append_whitespace: false,
+                            ..Default::default()
+                        })
+                        .collect();
+                }
                 Self::suggestions_first_token(tail)
                     .into_iter()
                     .map(|cmd| Self::suggestion_slash_command(span, cmd))
@@ -219,6 +230,35 @@ impl Completer for ReplSlashCompleter {
                             span,
                             append_whitespace: false,
                             ..Default::default()
+                        })
+                        .collect();
+                }
+                if cmd.eq_ignore_ascii_case("models") {
+                    let ap = after_ws.trim_start();
+                    let ap_l = ap.to_ascii_lowercase();
+                    let hits: Vec<&str> = if ap_l.is_empty() {
+                        vec!["list", "choose"]
+                    } else {
+                        ["list", "choose"]
+                            .iter()
+                            .copied()
+                            .filter(|s| s.starts_with(ap_l.as_str()))
+                            .collect()
+                    };
+                    return hits
+                        .into_iter()
+                        .map(|a| {
+                            let value = if a == "choose" {
+                                format!("/models {a} ")
+                            } else {
+                                format!("/models {a}")
+                            };
+                            Suggestion {
+                                value,
+                                span,
+                                append_whitespace: false,
+                                ..Default::default()
+                            }
                         })
                         .collect();
                 }
@@ -682,5 +722,17 @@ mod slash_completion_tests {
         let s3 = c.complete(line3, line3.len());
         assert_eq!(s3.len(), 1);
         assert_eq!(s3[0].value, "/mcp list probe");
+    }
+
+    #[test]
+    fn models_subcommands() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        let s = c.complete("/models", 7);
+        assert!(s.iter().any(|x| x.value == "/models list"));
+        assert!(s.iter().any(|x| x.value == "/models choose "));
+        let line = "/models ";
+        let s2 = c.complete(line, line.len());
+        assert!(s2.iter().any(|x| x.value == "/models list"));
+        assert!(s2.iter().any(|x| x.value == "/models choose "));
     }
 }

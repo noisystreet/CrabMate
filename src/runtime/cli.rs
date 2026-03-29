@@ -76,8 +76,12 @@ enum ReplBuiltIn<'a> {
     Doctor(&'a str),
     /// 与 `crabmate probe` 一致；`arg` 非空则报错；由 REPL 循环异步执行探测。
     Probe(&'a str),
-    /// 与 `crabmate models` 一致；`arg` 非空则报错；由 REPL 循环异步拉取模型列表。
-    Models(&'a str),
+    /// `/models` · `/models list`：同 `crabmate models`。
+    ModelsList,
+    /// `/models choose <id>`：从当前 `GET …/models` 列表设内存中的 `model`（支持唯一不区分大小写前缀）。
+    ModelsChoose(String),
+    /// `/models` 子命令用法错误（多余参数、未知子命令、`choose` 缺 id）。
+    ModelsUsage,
     WorkspaceShow,
     WorkspaceSet(&'a str),
     Tools,
@@ -97,14 +101,18 @@ enum ReplBuiltIn<'a> {
     BareSlash,
 }
 
-/// [`try_handle_repl_slash_command`] 的返回值：`RunProbe` / `RunModels` 需在异步上下文中分别调用
-/// [`crate::runtime::cli_doctor::run_probe_cli`]、[`crate::runtime::cli_doctor::run_models_cli`]。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// [`try_handle_repl_slash_command`] 的返回值：`RunProbe` / `RunModels` / `RunModelsChoose` 需在异步上下文中分别调用
+/// [`crate::runtime::cli_doctor::run_probe_cli`]、[`crate::runtime::cli_doctor::run_models_cli`]、
+/// [`crate::runtime::cli_doctor::run_models_choose_repl`]。
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum ReplSlashHandled {
     NotSlash,
     Handled,
     RunProbe,
     RunModels,
+    RunModelsChoose {
+        model_id: String,
+    },
     /// 同 `crabmate mcp list`（`probe` 会启动 MCP 子进程）
     RunMcpList {
         probe: bool,
@@ -181,7 +189,34 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
         "config" => ReplBuiltIn::Config(arg),
         "doctor" => ReplBuiltIn::Doctor(arg),
         "probe" => ReplBuiltIn::Probe(arg),
-        "models" => ReplBuiltIn::Models(arg),
+        "models" => {
+            let t = arg.trim();
+            if t.is_empty() {
+                ReplBuiltIn::ModelsList
+            } else {
+                let mut parts = t.split_whitespace();
+                let sub = parts.next().unwrap_or("");
+                match sub.to_ascii_lowercase().as_str() {
+                    "list" => {
+                        if parts.next().is_some() {
+                            ReplBuiltIn::ModelsUsage
+                        } else {
+                            ReplBuiltIn::ModelsList
+                        }
+                    }
+                    "choose" => {
+                        let rest: String = parts.collect::<Vec<_>>().join(" ");
+                        let rest = rest.trim().to_string();
+                        if rest.is_empty() {
+                            ReplBuiltIn::ModelsUsage
+                        } else {
+                            ReplBuiltIn::ModelsChoose(rest)
+                        }
+                    }
+                    _ => ReplBuiltIn::ModelsUsage,
+                }
+            }
+        }
         "workspace" | "cd" => {
             if arg.is_empty() {
                 ReplBuiltIn::WorkspaceShow
@@ -510,12 +545,16 @@ async fn try_handle_repl_slash_command(
                 return ReplSlashHandled::RunProbe;
             }
         }
-        ReplBuiltIn::Models(extra) => {
-            if !extra.is_empty() {
-                let _ = style.eprint_error("用法: /models（无额外参数；同 crabmate models）");
-            } else {
-                return ReplSlashHandled::RunModels;
-            }
+        ReplBuiltIn::ModelsList => {
+            return ReplSlashHandled::RunModels;
+        }
+        ReplBuiltIn::ModelsChoose(model_id) => {
+            return ReplSlashHandled::RunModelsChoose { model_id };
+        }
+        ReplBuiltIn::ModelsUsage => {
+            let _ = style.eprint_error(
+                "用法: /models · /models list（列模型）· /models choose <id>（从列表设当前 model；id 可唯一前缀）",
+            );
         }
         ReplBuiltIn::WorkspaceShow => match work_dir.canonicalize() {
             Ok(p) => {
@@ -1229,6 +1268,26 @@ pub async fn run_repl(
                         }
                         continue;
                     }
+                    ReplSlashHandled::RunModelsChoose { model_id } => {
+                        match crate::runtime::cli_doctor::run_models_choose_repl(
+                            client,
+                            cfg_holder,
+                            api_key.trim(),
+                            &model_id,
+                        )
+                        .await
+                        {
+                            Ok(resolved) => {
+                                let _ = style.print_success(&format!(
+                                    "已设 model = {resolved}（仅本进程有效；持久化请改配置文件；/config reload 会从磁盘覆盖）"
+                                ));
+                            }
+                            Err(e) => {
+                                let _ = style.eprint_error(&e.to_string());
+                            }
+                        }
+                        continue;
+                    }
                     ReplSlashHandled::RunMcpList { probe } => {
                         let g = cfg_holder.read().await;
                         crate::runtime::cli_mcp::run_mcp_list(&g, probe, true).await;
@@ -1356,9 +1415,37 @@ mod repl_slash_tests {
             classify_repl_slash_command("/probe"),
             Some(ReplBuiltIn::Probe(""))
         );
+    }
+
+    #[test]
+    fn models_slash_variants() {
         assert_eq!(
             classify_repl_slash_command("/models"),
-            Some(ReplBuiltIn::Models(""))
+            Some(ReplBuiltIn::ModelsList)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/models list"),
+            Some(ReplBuiltIn::ModelsList)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/models choose gpt-4o"),
+            Some(ReplBuiltIn::ModelsChoose("gpt-4o".to_string()))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/models choose  a b c "),
+            Some(ReplBuiltIn::ModelsChoose("a b c".to_string()))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/models choose"),
+            Some(ReplBuiltIn::ModelsUsage)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/models list extra"),
+            Some(ReplBuiltIn::ModelsUsage)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/models bogus"),
+            Some(ReplBuiltIn::ModelsUsage)
         );
     }
 
