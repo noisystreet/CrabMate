@@ -161,28 +161,15 @@ async fn emit_tool_result_sse_and_append(
         tools::summarize_tool_call(name, args)
     };
 
-    if echo_terminal_transcript {
-        let omit_body = matches!(name, "read_file" | "read_dir" | "list_tree");
-        let _ = crate::runtime::terminal_cli_transcript::print_tool_result_terminal(
-            name,
-            args,
-            tool_summary.as_deref(),
-            &result,
-            terminal_tool_display_max_chars,
-            omit_body,
-        );
-    }
-
-    if echo_terminal_transcript && out.is_none() {
-        let parsed_preview = parse_legacy_output(name, &result);
-        if !parsed_preview.ok {
-            let _ = crate::runtime::terminal_cli_transcript::print_cli_playbook_healing_hint(
-                name,
-                &result,
-                &parsed_preview,
-            );
-        }
-    }
+    crate::runtime::terminal_cli_transcript::echo_tool_result_transcript(
+        echo_terminal_transcript,
+        out.is_some(),
+        name,
+        args,
+        tool_summary.as_deref(),
+        result.as_str(),
+        terminal_tool_display_max_chars,
+    );
 
     if let Some(tx) = out {
         emit_sse_tool_result(

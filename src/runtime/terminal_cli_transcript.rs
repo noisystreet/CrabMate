@@ -7,7 +7,7 @@ use crate::redact;
 use crate::runtime::cli_repl_ui::{
     CLI_REPL_HELP_CMD_FG, CLI_REPL_HELP_DESC_FG, CLI_REPL_HELP_TITLE_FG, cli_repl_stdout_use_color,
 };
-use crate::tool_result::ParsedLegacyOutput;
+use crate::tool_result::{ParsedLegacyOutput, parse_legacy_output};
 
 use crossterm::{
     queue,
@@ -138,11 +138,6 @@ pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Re
     w.flush()
 }
 
-/// 工具执行结束后打印名称与正文（正文用完整格式化，与聊天区「可省略实际输出」策略独立），过长按 `max_chars` 截断（近似字符数）。
-///
-/// 标题行为 `### 工具 · {name}`；有详情时统一为 **`### 工具 · {name} : …`**（摘要已以 `:` 开头时不再重复冒号），例：`run_command` + `ls -la` → `### 工具 · run_command : ls -la`，`create_file` + 去重后 `: a.cpp` → `### 工具 · create_file : a.cpp`。
-///
-/// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（用于 `read_file` / `read_dir` / `list_tree` 等易刷屏工具；完整结果仍由调用方写入对话历史）。
 const PLAYBOOK_HINT_SNIPPET_MAX: usize = 12_000;
 
 /// 工具失败时于 CLI stdout 提示可一键诊断（`playbook_run_commands`）；**不**自动执行。
@@ -202,6 +197,11 @@ pub(crate) fn print_cli_playbook_healing_hint(
     w.flush()
 }
 
+/// 工具执行结束后打印名称与正文（正文用完整格式化，与聊天区「可省略实际输出」策略独立），过长按 `max_chars` 截断（近似字符数）。
+///
+/// 标题行为 `### 工具 · {name}`；有详情时统一为 **`### 工具 · {name} : …`**（摘要已以 `:` 开头时不再重复冒号），例：`run_command` + `ls -la` → `### 工具 · run_command : ls -la`，`create_file` + 去重后 `: a.cpp` → `### 工具 · create_file : a.cpp`。
+///
+/// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（用于 `read_file` / `read_dir` / `list_tree` 等易刷屏工具；完整结果仍由调用方写入对话历史）。
 pub(crate) fn print_tool_result_terminal(
     name: &str,
     args: &str,
@@ -271,6 +271,36 @@ pub(crate) fn print_tool_result_terminal(
         redact::preview_chars(&body, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     w.flush()
+}
+
+/// `agent_turn::execute_tools` 在 `echo_terminal_transcript` 为真时的 CLI 回显入口：打印工具标题/正文，并在**未**挂 SSE（`sse_attached == false`）且结果为失败时附加 [`print_cli_playbook_healing_hint`]。
+pub(crate) fn echo_tool_result_transcript(
+    echo: bool,
+    sse_attached: bool,
+    name: &str,
+    args: &str,
+    tool_summary: Option<&str>,
+    result: &str,
+    terminal_tool_display_max_chars: usize,
+) {
+    if !echo {
+        return;
+    }
+    let omit_body = matches!(name, "read_file" | "read_dir" | "list_tree");
+    let _ = print_tool_result_terminal(
+        name,
+        args,
+        tool_summary,
+        result,
+        terminal_tool_display_max_chars,
+        omit_body,
+    );
+    if !sse_attached {
+        let parsed_preview = parse_legacy_output(name, result);
+        if !parsed_preview.ok {
+            let _ = print_cli_playbook_healing_hint(name, result, &parsed_preview);
+        }
+    }
 }
 
 #[cfg(test)]
