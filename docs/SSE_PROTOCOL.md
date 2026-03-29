@@ -86,6 +86,7 @@
 |--------|----------------|------|
 | `CONVERSATION_CONFLICT` | `web/chat_handlers`、`chat_job_queue` | 会话版本冲突 / 保存冲突 |
 | `INTERNAL_ERROR` | `chat_job_queue` | 队列或内部未预期错误 |
+| `STREAM_CANCELLED` | `chat_job_queue` | 流式任务被取消（如客户端断开导致协作取消，且 SSE 仍可投递时补发）；与 `llm::api::stream_chat` 在 **`out` 发送失败** 时置位的取消标志配合，减少静默空转 |
 | `staged_plan_tool_calls` | `agent_turn/staged` | （**保留/兼容**）旧版在规划轮因原生 `tool_calls` 报错；**当前**规划轮丢弃原生 `tool_calls` 并从正文 DSML 物化，**通常不再下发** |
 | `staged_plan_invalid` | （保留/兼容） | 旧版在规划 JSON 无效时下发；**当前服务端**对该情况已改为降级为常规循环，**通常不再出现** |
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop` | 终答规划重写次数用尽 |
