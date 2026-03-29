@@ -151,6 +151,8 @@ codebase_semantic_invalidate_on_workspace_change = true
 codebase_semantic_max_file_bytes = 524288
 codebase_semantic_chunk_max_chars = 1200
 codebase_semantic_top_k = 8
+# 单次 query 最多扫描的向量块数；0=不限制（大索引慎用）
+codebase_semantic_query_max_chunks = 50000
 codebase_semantic_rebuild_max_files = 2000
 
 # --- MCP（stdio 客户端，可选）---

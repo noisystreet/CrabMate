@@ -104,6 +104,7 @@
 | `AGENT_CODEBASE_SEMANTIC_MAX_FILE_BYTES` | 参与索引的单文件最大字节数。 |
 | `AGENT_CODEBASE_SEMANTIC_CHUNK_MAX_CHARS` | 嵌入分块最大字符数。 |
 | `AGENT_CODEBASE_SEMANTIC_TOP_K` | 检索默认 Top-K（工具参数可覆盖）。 |
+| `AGENT_CODEBASE_SEMANTIC_QUERY_MAX_CHUNKS` | 单次 **`query`** 最多扫描多少个向量块（默认 **50000**；**0** 表示不限制，大索引慎用）；工具参数 **`query_max_chunks`** 可覆盖。 |
 | `AGENT_CODEBASE_SEMANTIC_REBUILD_MAX_FILES` | **`rebuild_index`** 时最多索引文件数（防超大仓）。 |
 | `AGENT_CONVERSATION_STORE_SQLITE_PATH` | 会话 SQLite 路径。 |
 

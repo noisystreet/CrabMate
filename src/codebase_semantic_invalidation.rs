@@ -10,12 +10,19 @@ use crate::tools::canonical_workspace_root;
 
 const CHUNKS_TABLE: &str = "crabmate_codebase_chunks";
 
+/// 相对工作区路径（POSIX，`/`）；`is_dir` 为 true 时删除该路径及其子路径下所有块。
+#[derive(Debug, Clone)]
+pub(crate) struct RelScope {
+    pub(crate) path: String,
+    pub(crate) is_dir: bool,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum CodebaseSemanticInvalidation {
     /// 删除当前 `workspace_root` 键下全部块。
     FullWorkspace,
-    /// 删除这些相对路径（POSIX）下的所有块。
-    RelPaths(Vec<String>),
+    /// 按路径或目录前缀删除块。
+    RelScopes(Vec<RelScope>),
 }
 
 /// 根据工具名与参数推断应失效的范围；**只读工具**返回 `None`。
@@ -47,52 +54,60 @@ pub(crate) fn invalidation_for_tool_call(
 
     let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
 
-    let mut paths: Vec<String> = Vec::new();
-    let mut push = |s: Option<&str>| {
+    let mut scopes: Vec<RelScope> = Vec::new();
+    fn push_scope(scopes: &mut Vec<RelScope>, s: Option<&str>, is_dir: bool) {
         if let Some(t) = s.map(str::trim).filter(|x| !x.is_empty()) {
-            paths.push(t.replace('\\', "/"));
+            scopes.push(RelScope {
+                path: t.replace('\\', "/"),
+                is_dir,
+            });
         }
-    };
+    }
 
     match name {
-        "create_file" | "modify_file" | "delete_file" | "delete_dir" | "append_file"
-        | "create_dir" | "search_replace" | "chmod_file" | "format_file" | "format_check_file"
-        | "extract_in_file" | "read_binary_meta" | "hash_file" => {
-            push(v.get("path").and_then(|p| p.as_str()));
+        "delete_dir" | "create_dir" => {
+            push_scope(&mut scopes, v.get("path").and_then(|p| p.as_str()), true);
+        }
+        "create_file" | "modify_file" | "delete_file" | "append_file" | "search_replace"
+        | "chmod_file" | "format_file" | "format_check_file" | "extract_in_file"
+        | "read_binary_meta" | "hash_file" => {
+            push_scope(&mut scopes, v.get("path").and_then(|p| p.as_str()), false);
         }
         "copy_file" | "move_file" => {
-            push(v.get("from").and_then(|p| p.as_str()));
-            push(v.get("to").and_then(|p| p.as_str()));
+            push_scope(&mut scopes, v.get("from").and_then(|p| p.as_str()), false);
+            push_scope(&mut scopes, v.get("to").and_then(|p| p.as_str()), false);
         }
         "apply_patch" => {
             if let Some(patch) = v.get("patch").and_then(|p| p.as_str()) {
-                paths.extend(patch_paths_from_unified_diff(patch));
+                for rel in patch_paths_from_unified_diff(patch) {
+                    push_scope(&mut scopes, Some(rel.as_str()), false);
+                }
             }
-            if paths.is_empty() {
+            if scopes.is_empty() {
                 return Some(CodebaseSemanticInvalidation::FullWorkspace);
             }
         }
         "structured_patch" | "markdown_check_links" | "typos_check" | "codespell_check" => {
-            push(v.get("path").and_then(|p| p.as_str()));
+            push_scope(&mut scopes, v.get("path").and_then(|p| p.as_str()), false);
             if name == "markdown_check_links"
                 && let Some(roots) = v.get("roots").and_then(|r| r.as_array())
             {
                 for x in roots {
-                    push(x.as_str());
+                    push_scope(&mut scopes, x.as_str(), false);
                 }
             }
             if matches!(name, "typos_check" | "codespell_check")
                 && let Some(ps) = v.get("paths").and_then(|p| p.as_array())
             {
                 for x in ps {
-                    push(x.as_str());
+                    push_scope(&mut scopes, x.as_str(), false);
                 }
             }
         }
         "ast_grep_rewrite" => {
             if let Some(ps) = v.get("paths").and_then(|p| p.as_array()) {
                 for x in ps {
-                    push(x.as_str());
+                    push_scope(&mut scopes, x.as_str(), false);
                 }
             } else {
                 return Some(CodebaseSemanticInvalidation::FullWorkspace);
@@ -103,12 +118,18 @@ pub(crate) fn invalidation_for_tool_call(
         }
     }
 
-    paths.sort();
-    paths.dedup();
-    if paths.is_empty() {
+    scopes.sort_by(|a, b| a.path.cmp(&b.path));
+    scopes.dedup_by(|a, b| {
+        if a.path != b.path {
+            return false;
+        }
+        a.is_dir |= b.is_dir;
+        true
+    });
+    if scopes.is_empty() {
         Some(CodebaseSemanticInvalidation::FullWorkspace)
     } else {
-        Some(CodebaseSemanticInvalidation::RelPaths(paths))
+        Some(CodebaseSemanticInvalidation::RelScopes(scopes))
     }
 }
 
@@ -159,8 +180,8 @@ pub(crate) fn apply_after_successful_tool(
                 params![ws_key],
             );
         }
-        CodebaseSemanticInvalidation::RelPaths(paths) => {
-            if paths.is_empty() {
+        CodebaseSemanticInvalidation::RelScopes(scopes) => {
+            if scopes.is_empty() {
                 return;
             }
             let tx = match conn.transaction() {
@@ -168,16 +189,25 @@ pub(crate) fn apply_after_successful_tool(
                 Err(_) => return,
             };
             let mut ok = true;
-            for rel in &paths {
-                if tx
-                    .execute(
+            for sc in &scopes {
+                let res = if sc.is_dir {
+                    let like_pat =
+                        sqlite_like_escape(&format!("{}/%", sc.path.trim_end_matches('/')));
+                    tx.execute(
+                        &format!(
+                            "DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1 AND (rel_path = ?2 OR rel_path LIKE ?3 ESCAPE '\\')"
+                        ),
+                        params![ws_key, sc.path.trim_end_matches('/'), like_pat],
+                    )
+                } else {
+                    tx.execute(
                         &format!(
                             "DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"
                         ),
-                        params![ws_key, rel],
+                        params![ws_key, sc.path.as_str()],
                     )
-                    .is_err()
-                {
+                };
+                if res.is_err() {
                     ok = false;
                     break;
                 }
@@ -187,6 +217,17 @@ pub(crate) fn apply_after_successful_tool(
             }
         }
     }
+}
+
+fn sqlite_like_escape(s: &str) -> String {
+    let mut o = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            o.push('\\');
+        }
+        o.push(ch);
+    }
+    o
 }
 
 /// `run_tool` 成功语义：`crabmate_tool` 信封的 `ok`，或旧式解析的 `ok`。
@@ -225,5 +266,27 @@ mod tests {
     #[test]
     fn read_file_no_invalidation() {
         assert!(invalidation_for_tool_call("read_file", r#"{"path":"a.rs"}"#).is_none());
+    }
+
+    #[test]
+    fn delete_dir_uses_prefix_scope() {
+        let inv = invalidation_for_tool_call("delete_dir", r#"{"path":"src/lib"}"#);
+        let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
+            panic!("expected RelScopes");
+        };
+        assert_eq!(sc.len(), 1);
+        assert!(sc[0].is_dir);
+        assert_eq!(sc[0].path, "src/lib");
+    }
+
+    #[test]
+    fn create_file_is_file_scope() {
+        let inv = invalidation_for_tool_call("create_file", r#"{"path":"a/b.rs"}"#);
+        let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
+            panic!("expected RelScopes");
+        };
+        assert_eq!(sc.len(), 1);
+        assert!(!sc[0].is_dir);
+        assert_eq!(sc[0].path, "a/b.rs");
     }
 }
