@@ -16,6 +16,7 @@ mod long_term_memory;
 mod long_term_memory_store;
 mod mcp;
 mod path_workspace;
+mod project_dependency_brief;
 mod project_profile;
 mod read_file_turn_cache;
 mod redact;

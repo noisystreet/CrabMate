@@ -32,6 +32,7 @@
 - **会话 SQLite**：`AGENT_CONVERSATION_STORE_SQLITE_PATH`
 - **工作区备忘（首轮注入）**：`AGENT_MEMORY_FILE_ENABLED`、`AGENT_MEMORY_FILE`、`AGENT_MEMORY_FILE_MAX_CHARS`
 - **项目画像（首轮注入）**：`AGENT_PROJECT_PROFILE_INJECT_ENABLED`、`AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS`
+- **依赖结构摘要（首轮注入，与画像/备忘合并为一条 `user`）**：`AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED`、`AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS`。由 **`cargo metadata`**（解析 **workspace 成员**之间的 resolve 边，生成 Mermaid `flowchart LR`）与 **`package.json`**（根目录与 `frontend/package.json` 若存在，列出依赖**名**节选）组成；**不**含版本号与 lockfile 全文。`0` 关闭该段生成。
 - **工具解释卡**：`AGENT_TOOL_CALL_EXPLAIN_ENABLED`、`AGENT_TOOL_CALL_EXPLAIN_MIN_CHARS`、`AGENT_TOOL_CALL_EXPLAIN_MAX_CHARS`
 - **长期记忆**：`AGENT_LONG_TERM_MEMORY_ENABLED`、`AGENT_LONG_TERM_MEMORY_SCOPE_MODE`、`AGENT_LONG_TERM_MEMORY_VECTOR_BACKEND`（默认 `fastembed`，可 `disabled`）、`AGENT_LONG_TERM_MEMORY_STORE_SQLITE_PATH`、`AGENT_LONG_TERM_MEMORY_TOP_K`、`AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK`、`AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX`、`AGENT_LONG_TERM_MEMORY_ASYNC_INDEX`、`AGENT_LONG_TERM_MEMORY_MAX_ENTRIES`、`AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS`  
   Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共用同一 SQLite；纯内存会话须单独配置 `long_term_memory_store_sqlite_path` 才能持久化记忆。CLI 默认路径为 `run_command_working_dir/.crabmate/long_term_memory.db`。若在 **repl / chat** 下启用长期记忆但打开库失败，进程会向 **stderr 打印一次性警告**（并继续运行，本进程内不注入记忆）；仍伴有 `crabmate` 目标下的 `warn` 日志。

@@ -1,5 +1,6 @@
 use crate::config::cli::{ChatCliArgs, SaveSessionCli, SaveSessionFormat, ToolReplayCli};
 use crate::config::{AgentConfig, SharedAgentConfig};
+use crate::project_profile::build_first_turn_user_context_markdown;
 use crate::redact;
 use crate::runtime::cli_exit::{
     CliExitError, EXIT_GENERAL, EXIT_TOOL_REPLAY_MISMATCH, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED,
@@ -22,6 +23,41 @@ use tokio::sync::Mutex;
 
 /// 长期记忆库打开失败时，仅向 stderr 打印**一次**用户可见说明（避免每轮 REPL/chat 重复刷屏）。
 static CLI_LTM_OPEN_FAILURE_NOTIFIED: AtomicBool = AtomicBool::new(false);
+
+/// `chat` / REPL 首轮在 `[system, user]` 之间插入项目画像 + 依赖摘要（与 Web 同源）；`--messages-json-file` 等已带完整 transcript 时不调用。
+async fn prepend_cli_first_turn_injection(
+    cfg_holder: &SharedAgentConfig,
+    work_dir: &Path,
+    messages: &mut Vec<Message>,
+) {
+    if messages.len() < 2 {
+        return;
+    }
+    if !messages[0].role.trim().eq_ignore_ascii_case("system")
+        || !messages[1].role.trim().eq_ignore_ascii_case("user")
+    {
+        return;
+    }
+    let cfg = cfg_holder.read().await.clone();
+    let want_heavy = (cfg.project_profile_inject_enabled
+        && cfg.project_profile_inject_max_chars > 0)
+        || (cfg.project_dependency_brief_inject_enabled
+            && cfg.project_dependency_brief_inject_max_chars > 0);
+    let ctx: Option<String> = if want_heavy {
+        let wd = work_dir.to_path_buf();
+        let cfg_c = cfg.clone();
+        tokio::task::spawn_blocking(move || {
+            build_first_turn_user_context_markdown(&wd, &cfg_c, None)
+        })
+        .await
+        .unwrap_or_default()
+    } else {
+        build_first_turn_user_context_markdown(work_dir, &cfg, None)
+    };
+    if let Some(body) = ctx {
+        messages.insert(1, Message::user_only(body));
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum ReplExportKind {
@@ -388,9 +424,42 @@ async fn try_handle_repl_slash_command(
             let _ = style.eprint_error(&format!("未知命令 /{head}。输入 /help 查看列表。"));
         }
         ReplBuiltIn::Clear => {
-            let cfg = cfg_holder.read().await;
-            *messages = vec![Message::system_only(cfg.system_prompt.clone())];
-            let _ = style.print_success("已清空对话（保留当前 system 提示词），共 1 条消息。");
+            let cfg = cfg_holder.read().await.clone();
+            let system_prompt = cfg.system_prompt.clone();
+            let system_prompt_fb = system_prompt.clone();
+            let wd = work_dir.clone();
+            let want_heavy = (cfg.project_profile_inject_enabled
+                && cfg.project_profile_inject_max_chars > 0)
+                || (cfg.project_dependency_brief_inject_enabled
+                    && cfg.project_dependency_brief_inject_max_chars > 0);
+            *messages = if want_heavy {
+                match tokio::task::spawn_blocking(move || {
+                    if let Some(ctx) = build_first_turn_user_context_markdown(&wd, &cfg, None) {
+                        vec![
+                            Message::system_only(system_prompt.clone()),
+                            Message::user_only(ctx),
+                        ]
+                    } else {
+                        vec![Message::system_only(system_prompt)]
+                    }
+                })
+                .await
+                {
+                    Ok(v) => v,
+                    Err(_) => vec![Message::system_only(system_prompt_fb)],
+                }
+            } else if let Some(ctx) = build_first_turn_user_context_markdown(work_dir, &cfg, None) {
+                vec![
+                    Message::system_only(cfg.system_prompt.clone()),
+                    Message::user_only(ctx),
+                ]
+            } else {
+                vec![Message::system_only(cfg.system_prompt.clone())]
+            };
+            let _ = style.print_success(&format!(
+                "已清空对话（保留当前 system 提示词），共 {} 条消息。",
+                messages.len()
+            ));
         }
         ReplBuiltIn::Model => {
             let cfg = cfg_holder.read().await;
@@ -848,6 +917,7 @@ async fn run_chat_batch_jsonl(
             }
             if messages.is_empty() {
                 messages = messages_chat_seed(&system_seed, u);
+                prepend_cli_first_turn_injection(cfg_holder, work_dir, &mut messages).await;
             } else {
                 messages.push(Message::user_only(u.to_string()));
             }
@@ -967,6 +1037,7 @@ pub async fn run_chat_invocation(
     };
     let user = resolve_user_body(chat)?;
     let mut messages = messages_chat_seed(&system, &user);
+    prepend_cli_first_turn_injection(cfg_holder, work_dir.as_path(), &mut messages).await;
     debug!(
         target: "crabmate::print",
         "chat 首轮已构造 system_len={} user_preview={}",

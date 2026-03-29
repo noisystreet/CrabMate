@@ -17,11 +17,11 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use super::app_state::{AppState, CONVERSATION_ID_MAX_LEN, ConversationTurnSeed};
 use crate::agent::message_pipeline::MESSAGE_PIPELINE_COUNTERS;
-use crate::agent_memory::{load_memory_snippet, messages_chat_seed_with_memory};
+use crate::agent_memory::load_memory_snippet;
 use crate::chat_job_queue;
 use crate::conversation_store::SaveConversationOutcome;
 use crate::health;
-use crate::project_profile::{build_project_profile_markdown, merge_memory_and_profile_snippets};
+use crate::project_profile::build_first_turn_user_context_markdown;
 use crate::redact;
 use crate::tool_registry;
 use crate::types::{CommandApprovalDecision, Message, messages_chat_seed};
@@ -488,32 +488,35 @@ async fn build_messages_for_turn(
         None
     };
 
-    let messages = if !cfg.project_profile_inject_enabled {
-        messages_chat_seed_with_memory(&cfg.system_prompt, user_msg, memory_snippet.as_deref())
-    } else {
-        let max_chars = cfg.project_profile_inject_max_chars;
-        let root_for_profile = root.clone();
-        let profile_md = match tokio::task::spawn_blocking(move || {
-            build_project_profile_markdown(&root_for_profile, max_chars)
+    let want_heavy_scan = (cfg.project_profile_inject_enabled
+        && cfg.project_profile_inject_max_chars > 0)
+        || (cfg.project_dependency_brief_inject_enabled
+            && cfg.project_dependency_brief_inject_max_chars > 0);
+    let combined = if want_heavy_scan {
+        let cfg_owned = cfg.clone();
+        let root_scan = root.clone();
+        match tokio::task::spawn_blocking(move || {
+            build_first_turn_user_context_markdown(&root_scan, &cfg_owned, memory_snippet)
         })
         .await
         {
-            Ok(s) => s,
+            Ok(v) => v,
             Err(e) => {
-                debug!("project_profile spawn_blocking failed: {}", e);
-                String::new()
+                debug!("first_turn_user_context spawn_blocking failed: {}", e);
+                None
             }
-        };
-        let combined =
-            merge_memory_and_profile_snippets(memory_snippet.as_deref(), profile_md.as_str());
-        match combined {
-            Some(ctx) => vec![
-                Message::system_only(cfg.system_prompt.clone()),
-                Message::user_only(ctx),
-                Message::user_only(user_msg.to_string()),
-            ],
-            None => messages_chat_seed(&cfg.system_prompt, user_msg),
         }
+    } else {
+        build_first_turn_user_context_markdown(&root, &cfg, memory_snippet)
+    };
+
+    let messages = match combined {
+        Some(ctx) => vec![
+            Message::system_only(cfg.system_prompt.clone()),
+            Message::user_only(ctx),
+            Message::user_only(user_msg.to_string()),
+        ],
+        None => messages_chat_seed(&cfg.system_prompt, user_msg),
     };
     ConversationTurnSeed {
         messages,
@@ -1054,6 +1057,9 @@ struct StatusResponse {
     project_profile_inject_enabled: bool,
     /// 项目画像注入正文最大字符数（0 表示关闭生成）。
     project_profile_inject_max_chars: usize,
+    /// 首轮是否追加 `cargo metadata` + package.json 的结构化摘要与 Mermaid workspace 图。
+    project_dependency_brief_inject_enabled: bool,
+    project_dependency_brief_inject_max_chars: usize,
     /// 是否要求非只读工具在 JSON 中带 `crabmate_explain_why`。
     tool_call_explain_enabled: bool,
     tool_call_explain_min_chars: usize,
@@ -1133,6 +1139,8 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         long_term_memory_index_errors: ltm_idx_err,
         project_profile_inject_enabled: cfg.project_profile_inject_enabled,
         project_profile_inject_max_chars: cfg.project_profile_inject_max_chars,
+        project_dependency_brief_inject_enabled: cfg.project_dependency_brief_inject_enabled,
+        project_dependency_brief_inject_max_chars: cfg.project_dependency_brief_inject_max_chars,
         tool_call_explain_enabled: cfg.tool_call_explain_enabled,
         tool_call_explain_min_chars: cfg.tool_call_explain_min_chars,
         tool_call_explain_max_chars: cfg.tool_call_explain_max_chars,
