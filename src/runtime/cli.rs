@@ -170,6 +170,92 @@ fn run_repl_shell_line_sync(cmd: &str, work_dir: &Path) -> io::Result<i32> {
         .unwrap_or(if status.success() { 0 } else { -1 }))
 }
 
+// --- `/models` · `/mcp` 子命令：静态表 + 小处理器，避免 `classify_repl_slash_command` 内重复分叉 ---
+// 子分支仅产生不借用输入的变体，故返回 `ReplBuiltIn<'static>`，可安全并入外层 `ReplBuiltIn<'input>`。
+
+type ModelsSubHandler = fn(&mut std::str::SplitWhitespace<'_>) -> ReplBuiltIn<'static>;
+
+const MODELS_SUBCOMMAND_HANDLERS: &[(&str, ModelsSubHandler)] = &[
+    ("choose", models_subcommand_choose),
+    ("list", models_subcommand_list),
+];
+
+fn models_subcommand_list(parts: &mut std::str::SplitWhitespace<'_>) -> ReplBuiltIn<'static> {
+    if parts.next().is_some() {
+        ReplBuiltIn::ModelsUsage
+    } else {
+        ReplBuiltIn::ModelsList
+    }
+}
+
+fn models_subcommand_choose(parts: &mut std::str::SplitWhitespace<'_>) -> ReplBuiltIn<'static> {
+    let rest: String = parts.collect::<Vec<_>>().join(" ");
+    let rest = rest.trim().to_string();
+    if rest.is_empty() {
+        ReplBuiltIn::ModelsUsage
+    } else {
+        ReplBuiltIn::ModelsChoose(rest)
+    }
+}
+
+/// `/models`、**`/models list`**、**`/models choose …`**：首 token 在 [`MODELS_SUBCOMMAND_HANDLERS`] 中查找。
+fn classify_models_slash_command(arg_tail: &str) -> ReplBuiltIn<'static> {
+    let t = arg_tail.trim();
+    if t.is_empty() {
+        return ReplBuiltIn::ModelsList;
+    }
+    let mut parts = t.split_whitespace();
+    let first = parts.next().unwrap_or("");
+    let first_l = first.to_ascii_lowercase();
+    for (name, handler) in MODELS_SUBCOMMAND_HANDLERS {
+        if first_l == *name {
+            return handler(&mut parts);
+        }
+    }
+    ReplBuiltIn::ModelsUsage
+}
+
+type McpPrimaryHandler = fn(Option<&str>, &str) -> ReplBuiltIn<'static>;
+
+const MCP_PRIMARY_HANDLERS: &[(&str, McpPrimaryHandler)] =
+    &[("list", mcp_primary_list), ("probe", mcp_primary_probe)];
+
+fn mcp_primary_list(second: Option<&str>, tail: &str) -> ReplBuiltIn<'static> {
+    match second {
+        None => ReplBuiltIn::McpList { probe: false },
+        Some(x) if x.eq_ignore_ascii_case("probe") => ReplBuiltIn::McpList { probe: true },
+        Some(_) => ReplBuiltIn::McpUnknown(tail.to_string()),
+    }
+}
+
+fn mcp_primary_probe(second: Option<&str>, tail: &str) -> ReplBuiltIn<'static> {
+    if second.is_none() {
+        ReplBuiltIn::McpList { probe: true }
+    } else {
+        ReplBuiltIn::McpUnknown(tail.to_string())
+    }
+}
+
+/// `/mcp` 及其子形式：至多两个 token（否则 [`ReplBuiltIn::McpUnknown`]），首 token 在 [`MCP_PRIMARY_HANDLERS`] 中查找。
+fn classify_mcp_slash_command(arg_tail: &str) -> ReplBuiltIn<'static> {
+    let tail = arg_tail.trim();
+    if tail.is_empty() {
+        return ReplBuiltIn::McpList { probe: false };
+    }
+    let mut parts = tail.split_whitespace();
+    let a = parts.next().unwrap_or("").to_ascii_lowercase();
+    let b = parts.next();
+    if parts.next().is_some() {
+        return ReplBuiltIn::McpUnknown(tail.to_string());
+    }
+    for (name, handler) in MCP_PRIMARY_HANDLERS {
+        if a == *name {
+            return handler(b, tail);
+        }
+    }
+    ReplBuiltIn::McpUnknown(tail.to_string())
+}
+
 /// 解析 REPL 行首 `/` 内建命令；非内建前缀返回 `None`。
 fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
     let s = input.trim();
@@ -189,34 +275,7 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
         "config" => ReplBuiltIn::Config(arg),
         "doctor" => ReplBuiltIn::Doctor(arg),
         "probe" => ReplBuiltIn::Probe(arg),
-        "models" => {
-            let t = arg.trim();
-            if t.is_empty() {
-                ReplBuiltIn::ModelsList
-            } else {
-                let mut parts = t.split_whitespace();
-                let sub = parts.next().unwrap_or("");
-                match sub.to_ascii_lowercase().as_str() {
-                    "list" => {
-                        if parts.next().is_some() {
-                            ReplBuiltIn::ModelsUsage
-                        } else {
-                            ReplBuiltIn::ModelsList
-                        }
-                    }
-                    "choose" => {
-                        let rest: String = parts.collect::<Vec<_>>().join(" ");
-                        let rest = rest.trim().to_string();
-                        if rest.is_empty() {
-                            ReplBuiltIn::ModelsUsage
-                        } else {
-                            ReplBuiltIn::ModelsChoose(rest)
-                        }
-                    }
-                    _ => ReplBuiltIn::ModelsUsage,
-                }
-            }
-        }
+        "models" => classify_models_slash_command(arg),
         "workspace" | "cd" => {
             if arg.is_empty() {
                 ReplBuiltIn::WorkspaceShow
@@ -228,31 +287,7 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
         "help" | "?" => ReplBuiltIn::Help,
         "export" => ReplBuiltIn::Export(arg),
         "save-session" => ReplBuiltIn::SaveSession(arg),
-        "mcp" => {
-            let tail = arg.trim();
-            if tail.is_empty() {
-                ReplBuiltIn::McpList { probe: false }
-            } else {
-                let mut parts = tail.split_whitespace();
-                let a = parts.next().unwrap_or("").to_ascii_lowercase();
-                let b = parts.next();
-                if parts.next().is_some() {
-                    ReplBuiltIn::McpUnknown(tail.to_string())
-                } else if a == "list" {
-                    match b {
-                        None => ReplBuiltIn::McpList { probe: false },
-                        Some(x) if x.eq_ignore_ascii_case("probe") => {
-                            ReplBuiltIn::McpList { probe: true }
-                        }
-                        Some(_) => ReplBuiltIn::McpUnknown(tail.to_string()),
-                    }
-                } else if a == "probe" && b.is_none() {
-                    ReplBuiltIn::McpList { probe: true }
-                } else {
-                    ReplBuiltIn::McpUnknown(tail.to_string())
-                }
-            }
-        }
+        "mcp" => classify_mcp_slash_command(arg),
         "version" => ReplBuiltIn::Version,
         _ => ReplBuiltIn::Unknown(head),
     })
@@ -1498,6 +1533,37 @@ mod repl_slash_tests {
         assert_eq!(
             classify_repl_slash_command("/version"),
             Some(ReplBuiltIn::Version)
+        );
+    }
+}
+
+#[cfg(test)]
+mod repl_slash_subcommand_table_tests {
+    use super::*;
+
+    #[test]
+    fn models_subcommand_table_sorted_unique() {
+        let names: Vec<&str> = MODELS_SUBCOMMAND_HANDLERS.iter().map(|(n, _)| *n).collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted, "MODELS_SUBCOMMAND_HANDLERS 应按名字典序排列");
+        assert_eq!(
+            names.len(),
+            names.iter().collect::<std::collections::HashSet<_>>().len(),
+            "MODELS_SUBCOMMAND_HANDLERS 名字须唯一"
+        );
+    }
+
+    #[test]
+    fn mcp_primary_table_sorted_unique() {
+        let names: Vec<&str> = MCP_PRIMARY_HANDLERS.iter().map(|(n, _)| *n).collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted, "MCP_PRIMARY_HANDLERS 应按名字典序排列");
+        assert_eq!(
+            names.len(),
+            names.iter().collect::<std::collections::HashSet<_>>().len(),
+            "MCP_PRIMARY_HANDLERS 名字须唯一"
         );
     }
 }
