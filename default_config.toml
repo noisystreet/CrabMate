@@ -287,7 +287,7 @@ staged_plan_cli_show_planner_stream = false
 staged_plan_optimizer_round = true
 # 逻辑多规划员：首轮后的独立规划份数上限（1=关闭；2=首轮+A 再合并；3=首轮+A+B 再合并）。串行同模型，显著增加 API。
 staged_plan_ensemble_count = 1
-# SyncDefault 工具沙盒：none（默认，宿主进程内执行）| docker（每工具 Engine API 容器，需镜像与 Docker 守护进程）
+# SyncDefault 工具沙盒：none（默认，宿主进程内执行）| docker（每工具 Engine API 容器，需镜像与 Docker 守护进程）。用法见 docs/CONFIGURATION.md「SyncDefault 工具 Docker 沙盒」
 # sync_default_tool_sandbox_mode = "none"
 # sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:latest"
 # sync_default_tool_sandbox_docker_network = ""   # 空=--network none；否则如 bridge
