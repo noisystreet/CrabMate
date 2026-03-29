@@ -22,6 +22,11 @@ fn rel_path_safe(workspace_root: &Path, rel: &str) -> Option<PathBuf> {
 }
 
 fn default_doc_paths() -> Vec<String> {
+    default_health_sweep_doc_paths()
+}
+
+/// 与 `docs_health_sweep` 默认文档预览列表相同（供文档健康聚合复用）。
+pub(crate) fn default_health_sweep_doc_paths() -> Vec<String> {
     vec![
         "README.md".to_string(),
         "AGENTS.md".to_string(),
