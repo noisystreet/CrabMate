@@ -29,9 +29,11 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         // --- 语言无关 / 工作区 ---
         "run_command" | "run_executable" | "workflow_execute" => &[GENERAL, CPP],
         "package_query" => &[GENERAL],
-        "diagnostic_summary" | "error_output_playbook" | "changelog_draft" | "license_notice" => {
-            &[GENERAL]
-        }
+        "diagnostic_summary"
+        | "error_output_playbook"
+        | "playbook_run_commands"
+        | "changelog_draft"
+        | "license_notice" => &[GENERAL],
         "rust_backtrace_analyze" => &[GENERAL, RUST],
         "create_file"
         | "modify_file"

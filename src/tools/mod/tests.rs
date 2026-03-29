@@ -244,6 +244,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"rust_backtrace_analyze"));
     assert!(names.contains(&"diagnostic_summary"));
     assert!(names.contains(&"error_output_playbook"));
+    assert!(names.contains(&"playbook_run_commands"));
     assert!(names.contains(&"changelog_draft"));
     assert!(names.contains(&"license_notice"));
     assert!(names.contains(&"repo_overview_sweep"));

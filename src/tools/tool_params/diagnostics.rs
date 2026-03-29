@@ -173,3 +173,33 @@ pub(in crate::tools) fn params_error_output_playbook() -> serde_json::Value {
         "additionalProperties": false
     })
 }
+
+pub(in crate::tools) fn params_playbook_run_commands() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "error_text": {
+                "type": "string",
+                "description": "与 error_output_playbook 相同：已脱敏的错误输出（勿含密钥）"
+            },
+            "ecosystem": {
+                "type": "string",
+                "description": "auto（默认）/ rust / node / python / generic"
+            },
+            "max_chars": {
+                "type": "integer",
+                "description": "分析用最大字符数，默认 24000，上限 100000",
+                "minimum": 1,
+                "maximum": 100000
+            },
+            "max_commands": {
+                "type": "integer",
+                "description": "实际执行的 run_command 条数上限，默认 3，范围 1～3",
+                "minimum": 1,
+                "maximum": 3
+            }
+        },
+        "required": ["error_text"],
+        "additionalProperties": false
+    })
+}
