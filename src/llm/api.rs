@@ -12,8 +12,8 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
 
+use super::call_error::LlmCallError;
 use crate::config::LlmHttpAuthMode;
-use crate::http_client::map_reqwest_transport_err;
 use crate::redact::{self, CHAT_REQUEST_JSON_LOG_MAX_CHARS, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crate::runtime::message_display::assistant_markdown_source_for_display;
 
@@ -488,7 +488,7 @@ pub async fn stream_chat(
     if auth_mode == LlmHttpAuthMode::Bearer {
         rb = rb.header("Authorization", format!("Bearer {}", api_key));
     }
-    let res = rb.send().await.map_err(map_reqwest_transport_err)?;
+    let res = rb.send().await.map_err(LlmCallError::boxed_from_reqwest)?;
     if !res.status().is_success() {
         let status = res.status();
         let body = res.text().await.unwrap_or_default();
@@ -505,7 +505,7 @@ pub async fn stream_chat(
             Some(m) => format!("模型接口返回错误（HTTP {code}）：{m}"),
             None => format!("模型接口返回错误（HTTP {code}），请检查 API 密钥与配额，或稍后重试"),
         };
-        return Err(err_text.into());
+        return Err(LlmCallError::from_http_api(code, err_text).into());
     }
 
     let cli_terminal_plain = render_to_terminal && out.is_none() && plain_terminal_stream;
@@ -518,7 +518,7 @@ pub async fn stream_chat(
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             return Err(crate::types::LLM_CANCELLED_ERROR.into());
         }
-        let body = res.text().await.map_err(map_reqwest_transport_err)?;
+        let body = res.text().await.map_err(LlmCallError::boxed_from_reqwest)?;
         let parsed: crate::types::ChatResponse =
             serde_json::from_str(&body).map_err(|parse_err| {
                 let preview = redact::single_line_preview(&body, HTTP_BODY_PREVIEW_LOG_CHARS);
@@ -651,7 +651,7 @@ pub async fn stream_chat(
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             break 'stream_read;
         }
-        let chunk = chunk.map_err(map_reqwest_transport_err)?;
+        let chunk = chunk.map_err(LlmCallError::boxed_from_reqwest)?;
         buf.extend_from_slice(&chunk);
 
         // 以“消费偏移”扫描完整行，避免每行 `split_off` 导致重复分配与拷贝。

@@ -273,6 +273,16 @@ pub struct WebToolRuntime {
     pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
 }
 
+impl WebToolRuntime {
+    pub(crate) fn approval_sink(&self) -> crate::tool_approval::WebApprovalSink<'_> {
+        crate::tool_approval::WebApprovalSink {
+            out_tx: &self.out_tx,
+            approval_rx_shared: &self.approval_rx_shared,
+            approval_request_guard: &self.approval_request_guard,
+        }
+    }
+}
+
 /// CLI 统计：用于 `chat` 退出码（本进程内 `run_command` 调用次数与用户拒绝次数）。
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CliCommandTurnStats {
@@ -284,7 +294,7 @@ pub struct CliCommandTurnStats {
 #[derive(Clone)]
 pub struct CliToolRuntime {
     pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
-    /// `--yes`：非白名单也自动批准（**仅可信环境**；脚本/CI 无人值守）。
+    /// `--yes`：对 [`crate::tool_approval::SensitiveCapability`] 所覆盖的敏感工具（`run_command`、未匹配前缀的 `http_fetch` / `http_request` 等）在非白名单时也自动「本次允许」（**仅可信环境**；与 [`crate::tool_approval::CliApprovalInput`] 同源语义）。
     pub auto_approve_all_non_whitelist_run_command: bool,
     /// `--approve-commands` 额外允许的命令名（小写），与配置白名单合并后再决定是否提示。
     pub extra_allowlist_commands: Arc<[String]>,
@@ -771,84 +781,64 @@ async fn execute_run_command_impl(
         };
         if already_allowed {
             effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, &cmd);
-        } else if let Some(ctx) = web_ctx {
-            let decision = {
-                let _guard = ctx.approval_request_guard.lock().await;
-                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
-                    command_approval_request: crate::sse::CommandApprovalBody {
-                        command: cmd.clone(),
-                        args: arg_preview.clone(),
-                        allowlist_key: None,
-                    },
-                });
-                if !crate::sse::send_string_logged(
-                    &ctx.out_tx,
-                    line,
+        } else {
+            let cmd_show = if arg_preview.is_empty() {
+                cmd.clone()
+            } else {
+                format!("{} {}", cmd, arg_preview)
+            };
+            let spec = crate::tool_approval::ApprovalRequestSpec {
+                capability: crate::tool_approval::SensitiveCapability::HostShell,
+                sse_command: cmd.clone(),
+                sse_args: arg_preview.clone(),
+                allowlist_key: None,
+                cli_title: "run_command 审批",
+                cli_detail: format!("命令不在白名单:\n{}", cmd_show.trim()),
+                web_timeline_prefix_zh: "命令审批：",
+            };
+            let decision_opt = if let Some(ctx) = cli_ctx {
+                if ctx.auto_approve_all_non_whitelist_run_command
+                    || ctx
+                        .extra_allowlist_commands
+                        .iter()
+                        .any(|e| e.eq_ignore_ascii_case(&cmd))
+                {
+                    Some(CommandApprovalDecision::AllowOnce)
+                } else {
+                    crate::tool_approval::request_tool_interactive_approval(
+                        None,
+                        Some(crate::tool_approval::CliApprovalInput {
+                            auto_approve_all_sensitive: false,
+                        }),
+                        &spec,
+                        "tool_registry::run_command approval",
+                    )
+                    .await
+                    .ok()
+                }
+            } else if web_ctx.is_some() {
+                match crate::tool_approval::request_tool_interactive_approval(
+                    web_ctx.map(|w| w.approval_sink()),
+                    None,
+                    &spec,
                     "tool_registry::run_command approval",
                 )
                 .await
                 {
-                    return ("错误：审批通道不可用，请重试。".to_string(), None);
+                    Ok(d) => Some(d),
+                    Err(crate::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
+                        return ("错误：审批通道不可用，请重试。".to_string(), None);
+                    }
                 }
-                let mut rx_guard = ctx.approval_rx_shared.lock().await;
-                rx_guard
-                    .recv()
-                    .await
-                    .unwrap_or(CommandApprovalDecision::Deny)
-            };
-            let cmd_show = if arg_preview.is_empty() {
-                cmd.clone()
             } else {
-                format!("{} {}", cmd, arg_preview)
+                None
             };
-            crate::sse::web_approval::send_timeline_approval_decision(
-                &ctx.out_tx,
-                "命令审批：",
-                Some(cmd_show.trim().to_string()),
-                decision,
-                "tool_registry::run_command approval timeline",
-            )
-            .await;
-            match decision {
-                CommandApprovalDecision::Deny => {
-                    return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
-                }
-                CommandApprovalDecision::AllowOnce => {
-                    effective_allowed_arc =
-                        extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
-                }
-                CommandApprovalDecision::AllowAlways => {
-                    ctx.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(cmd.clone());
-                    effective_allowed_arc =
-                        extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
-                }
-            }
-        } else if let Some(ctx) = cli_ctx {
-            let cmd_show = if arg_preview.is_empty() {
-                cmd.clone()
-            } else {
-                format!("{} {}", cmd, arg_preview)
-            };
-            if ctx.auto_approve_all_non_whitelist_run_command
-                || ctx
-                    .extra_allowlist_commands
-                    .iter()
-                    .any(|e| e.eq_ignore_ascii_case(&cmd))
-            {
-                effective_allowed_arc = extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
-            } else {
-                let detail = format!("命令不在白名单:\n{}", cmd_show.trim());
-                let decision = crate::runtime::cli_approval::prompt_tool_approval_cli(
-                    "run_command 审批",
-                    &detail,
-                )
-                .await;
+            if let Some(decision) = decision_opt {
                 match decision {
                     CommandApprovalDecision::Deny => {
-                        ctx.record_run_command_denial();
+                        if let Some(c) = cli_ctx {
+                            c.record_run_command_denial();
+                        }
                         return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
                     }
                     CommandApprovalDecision::AllowOnce => {
@@ -856,10 +846,17 @@ async fn execute_run_command_impl(
                             extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
                     }
                     CommandApprovalDecision::AllowAlways => {
-                        ctx.persistent_allowlist_shared
-                            .lock()
-                            .await
-                            .insert(cmd.clone());
+                        if let Some(ctx) = web_ctx {
+                            ctx.persistent_allowlist_shared
+                                .lock()
+                                .await
+                                .insert(cmd.clone());
+                        } else if let Some(ctx) = cli_ctx {
+                            ctx.persistent_allowlist_shared
+                                .lock()
+                                .await
+                                .insert(cmd.clone());
+                        }
                         effective_allowed_arc =
                             extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
                     }
@@ -968,83 +965,56 @@ pub(crate) async fn prefetch_http_fetch_parallel_approvals(
         if allowed_by_cfg || allowed_by_list {
             continue;
         }
-        if let Some(ctx) = web_ctx {
-            let decision = {
-                let _guard = ctx.approval_request_guard.lock().await;
-                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
-                    command_approval_request: crate::sse::CommandApprovalBody {
-                        command: "http_fetch".to_string(),
-                        args: approval_args.clone(),
-                        allowlist_key: Some(storage_key.clone()),
-                    },
-                });
-                if !crate::sse::send_string_logged(
-                    &ctx.out_tx,
-                    line,
-                    "tool_registry::http_fetch approval parallel prefetch",
-                )
-                .await
-                {
-                    failures.insert(key, "错误：审批通道不可用，请重试。".to_string());
-                    continue;
-                }
-                let mut rx_guard = ctx.approval_rx_shared.lock().await;
-                rx_guard
-                    .recv()
-                    .await
-                    .unwrap_or(CommandApprovalDecision::Deny)
-            };
-            crate::sse::web_approval::send_timeline_approval_decision(
-                &ctx.out_tx,
-                "http_fetch 审批：",
-                Some(approval_args.clone()),
-                decision,
-                "tool_registry::http_fetch approval timeline parallel prefetch",
-            )
-            .await;
-            match decision {
-                CommandApprovalDecision::Deny => {
-                    failures.insert(key, format!("用户拒绝 http_fetch：{}", approval_args));
-                }
-                CommandApprovalDecision::AllowOnce => {}
-                CommandApprovalDecision::AllowAlways => {
-                    ctx.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(storage_key);
-                }
-            }
-        } else if let Some(cli_ctx) = cli_ctx {
-            if !cli_ctx.auto_approve_all_non_whitelist_run_command {
-                let detail = format!(
-                    "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
-                    approval_args
-                );
-                let decision = crate::runtime::cli_approval::prompt_tool_approval_cli(
-                    "http_fetch 审批",
-                    &detail,
-                )
-                .await;
-                match decision {
-                    CommandApprovalDecision::Deny => {
-                        failures.insert(key, format!("用户拒绝 http_fetch：{}", approval_args));
-                    }
-                    CommandApprovalDecision::AllowOnce => {}
-                    CommandApprovalDecision::AllowAlways => {
-                        cli_ctx
-                            .persistent_allowlist_shared
-                            .lock()
-                            .await
-                            .insert(storage_key);
-                    }
-                }
-            }
-        } else {
+        if web_ctx.is_none() && cli_ctx.is_none() {
             failures.insert(
                 key,
                 "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
                     .to_string(),
             );
+            continue;
+        }
+        let spec = crate::tool_approval::ApprovalRequestSpec {
+            capability: crate::tool_approval::SensitiveCapability::OutboundHttpRead,
+            sse_command: "http_fetch".to_string(),
+            sse_args: approval_args.clone(),
+            allowlist_key: Some(storage_key.clone()),
+            cli_title: "http_fetch 审批",
+            cli_detail: format!(
+                "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
+                approval_args
+            ),
+            web_timeline_prefix_zh: "http_fetch 审批：",
+        };
+        match crate::tool_approval::request_tool_interactive_approval(
+            web_ctx.map(|w| w.approval_sink()),
+            cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
+                auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+            }),
+            &spec,
+            "tool_registry::http_fetch approval parallel prefetch",
+        )
+        .await
+        {
+            Ok(CommandApprovalDecision::Deny) => {
+                failures.insert(key, format!("用户拒绝 http_fetch：{}", approval_args));
+            }
+            Ok(CommandApprovalDecision::AllowOnce) => {}
+            Ok(CommandApprovalDecision::AllowAlways) => {
+                if let Some(w) = web_ctx {
+                    w.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(storage_key);
+                } else if let Some(c) = cli_ctx {
+                    c.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(storage_key);
+                }
+            }
+            Err(crate::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
+                failures.insert(key, "错误：审批通道不可用，请重试。".to_string());
+            }
         }
     }
     failures
@@ -1073,83 +1043,58 @@ async fn execute_http_fetch_impl(
         (None, None) => false,
     };
     if !(allowed_by_cfg || allowed_by_list) {
-        if let Some(ctx) = web_ctx {
-            let decision = {
-                let _guard = ctx.approval_request_guard.lock().await;
-                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
-                    command_approval_request: crate::sse::CommandApprovalBody {
-                        command: "http_fetch".to_string(),
-                        args: approval_args.clone(),
-                        allowlist_key: Some(key.clone()),
-                    },
-                });
-                if !crate::sse::send_string_logged(
-                    &ctx.out_tx,
-                    line,
-                    "tool_registry::http_fetch approval",
-                )
-                .await
-                {
-                    return ("错误：审批通道不可用，请重试。".to_string(), None);
-                }
-                let mut rx_guard = ctx.approval_rx_shared.lock().await;
-                rx_guard
-                    .recv()
-                    .await
-                    .unwrap_or(CommandApprovalDecision::Deny)
-            };
-            crate::sse::web_approval::send_timeline_approval_decision(
-                &ctx.out_tx,
-                "http_fetch 审批：",
-                Some(approval_args.clone()),
-                decision,
-                "tool_registry::http_fetch approval timeline",
-            )
-            .await;
-            match decision {
-                CommandApprovalDecision::Deny => {
-                    return (format!("用户拒绝 http_fetch：{}", approval_args), None);
-                }
-                CommandApprovalDecision::AllowOnce => {}
-                CommandApprovalDecision::AllowAlways => {
-                    ctx.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(key.clone());
-                }
-            }
-        } else if let Some(cli_ctx) = cli_ctx {
-            // `--yes`：与 `run_command` 对齐，非白名单 URL 亦直接放行（仅可信环境）
-            if !cli_ctx.auto_approve_all_non_whitelist_run_command {
-                let detail = format!(
-                    "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
-                    approval_args
-                );
-                let decision = crate::runtime::cli_approval::prompt_tool_approval_cli(
-                    "http_fetch 审批",
-                    &detail,
-                )
-                .await;
-                match decision {
-                    CommandApprovalDecision::Deny => {
-                        return (format!("用户拒绝 http_fetch：{}", approval_args), None);
-                    }
-                    CommandApprovalDecision::AllowOnce => {}
-                    CommandApprovalDecision::AllowAlways => {
-                        cli_ctx
-                            .persistent_allowlist_shared
-                            .lock()
-                            .await
-                            .insert(key.clone());
-                    }
-                }
-            }
-        } else {
+        if web_ctx.is_none() && cli_ctx.is_none() {
             return (
                 "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
                     .to_string(),
                 None,
             );
+        }
+        let spec = crate::tool_approval::ApprovalRequestSpec {
+            capability: crate::tool_approval::SensitiveCapability::OutboundHttpRead,
+            sse_command: "http_fetch".to_string(),
+            sse_args: approval_args.clone(),
+            allowlist_key: Some(key.clone()),
+            cli_title: "http_fetch 审批",
+            cli_detail: format!(
+                "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
+                approval_args
+            ),
+            web_timeline_prefix_zh: "http_fetch 审批：",
+        };
+        let decision = match crate::tool_approval::request_tool_interactive_approval(
+            web_ctx.map(|w| w.approval_sink()),
+            cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
+                auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+            }),
+            &spec,
+            "tool_registry::http_fetch approval",
+        )
+        .await
+        {
+            Ok(d) => d,
+            Err(crate::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
+                return ("错误：审批通道不可用，请重试。".to_string(), None);
+            }
+        };
+        match decision {
+            CommandApprovalDecision::Deny => {
+                return (format!("用户拒绝 http_fetch：{}", approval_args), None);
+            }
+            CommandApprovalDecision::AllowOnce => {}
+            CommandApprovalDecision::AllowAlways => {
+                if let Some(w) = web_ctx {
+                    w.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(key.clone());
+                } else if let Some(c) = cli_ctx {
+                    c.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(key.clone());
+                }
+            }
         }
     }
     if let Some(out) = dispatch_non_sync_tool_to_docker(
@@ -1216,82 +1161,58 @@ async fn execute_http_request_impl(
         (None, None) => false,
     };
     if !(allowed_by_cfg || allowed_by_list) {
-        if let Some(ctx) = web_ctx {
-            let decision = {
-                let _guard = ctx.approval_request_guard.lock().await;
-                let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
-                    command_approval_request: crate::sse::CommandApprovalBody {
-                        command: "http_request".to_string(),
-                        args: approval_args.clone(),
-                        allowlist_key: Some(key.clone()),
-                    },
-                });
-                if !crate::sse::send_string_logged(
-                    &ctx.out_tx,
-                    line,
-                    "tool_registry::http_request approval",
-                )
-                .await
-                {
-                    return ("错误：审批通道不可用，请重试。".to_string(), None);
-                }
-                let mut rx_guard = ctx.approval_rx_shared.lock().await;
-                rx_guard
-                    .recv()
-                    .await
-                    .unwrap_or(CommandApprovalDecision::Deny)
-            };
-            crate::sse::web_approval::send_timeline_approval_decision(
-                &ctx.out_tx,
-                "http_request 审批：",
-                Some(approval_args.clone()),
-                decision,
-                "tool_registry::http_request approval timeline",
-            )
-            .await;
-            match decision {
-                CommandApprovalDecision::Deny => {
-                    return (format!("用户拒绝 http_request：{}", approval_args), None);
-                }
-                CommandApprovalDecision::AllowOnce => {}
-                CommandApprovalDecision::AllowAlways => {
-                    ctx.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(key.clone());
-                }
-            }
-        } else if let Some(cli_ctx) = cli_ctx {
-            if !cli_ctx.auto_approve_all_non_whitelist_run_command {
-                let detail = format!(
-                    "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
-                    approval_args
-                );
-                let decision = crate::runtime::cli_approval::prompt_tool_approval_cli(
-                    "http_request 审批",
-                    &detail,
-                )
-                .await;
-                match decision {
-                    CommandApprovalDecision::Deny => {
-                        return (format!("用户拒绝 http_request：{}", approval_args), None);
-                    }
-                    CommandApprovalDecision::AllowOnce => {}
-                    CommandApprovalDecision::AllowAlways => {
-                        cli_ctx
-                            .persistent_allowlist_shared
-                            .lock()
-                            .await
-                            .insert(key.clone());
-                    }
-                }
-            }
-        } else {
+        if web_ctx.is_none() && cli_ctx.is_none() {
             return (
                 "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
                     .to_string(),
                 None,
             );
+        }
+        let spec = crate::tool_approval::ApprovalRequestSpec {
+            capability: crate::tool_approval::SensitiveCapability::OutboundHttpWrite,
+            sse_command: "http_request".to_string(),
+            sse_args: approval_args.clone(),
+            allowlist_key: Some(key.clone()),
+            cli_title: "http_request 审批",
+            cli_detail: format!(
+                "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
+                approval_args
+            ),
+            web_timeline_prefix_zh: "http_request 审批：",
+        };
+        let decision = match crate::tool_approval::request_tool_interactive_approval(
+            web_ctx.map(|w| w.approval_sink()),
+            cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
+                auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+            }),
+            &spec,
+            "tool_registry::http_request approval",
+        )
+        .await
+        {
+            Ok(d) => d,
+            Err(crate::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
+                return ("错误：审批通道不可用，请重试。".to_string(), None);
+            }
+        };
+        match decision {
+            CommandApprovalDecision::Deny => {
+                return (format!("用户拒绝 http_request：{}", approval_args), None);
+            }
+            CommandApprovalDecision::AllowOnce => {}
+            CommandApprovalDecision::AllowAlways => {
+                if let Some(w) = web_ctx {
+                    w.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(key.clone());
+                } else if let Some(c) = cli_ctx {
+                    c.persistent_allowlist_shared
+                        .lock()
+                        .await
+                        .insert(key.clone());
+                }
+            }
         }
     }
     if let Some(out) = dispatch_non_sync_tool_to_docker(

@@ -2,6 +2,7 @@
 //!
 //! 均在**工作区根**执行外部 CLI，路径参数须为相对路径且不含 `..`；全部为只读分析，不修改文件。
 
+use std::io::ErrorKind;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -54,33 +55,35 @@ fn filter_existing(base: &Path, paths: &[String]) -> Vec<String> {
     }
 }
 
+fn format_cmd_output(output: &std::process::Output, max_output_len: usize, title: &str) -> String {
+    let status = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let mut body = String::new();
+    if !stdout.trim().is_empty() {
+        body.push_str(stdout.trim_end());
+    }
+    if !stderr.trim().is_empty() {
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        body.push_str(stderr.trim_end());
+    }
+    if body.is_empty() {
+        body.push_str("(无输出)");
+    }
+    format!(
+        "{title} (exit={status}):\n{}",
+        output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
+    )
+}
+
 fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> String {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     match cmd.output() {
-        Ok(output) => {
-            let status = output.status.code().unwrap_or(-1);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let mut body = String::new();
-            if !stdout.trim().is_empty() {
-                body.push_str(stdout.trim_end());
-            }
-            if !stderr.trim().is_empty() {
-                if !body.is_empty() {
-                    body.push('\n');
-                }
-                body.push_str(stderr.trim_end());
-            }
-            if body.is_empty() {
-                body.push_str("(无输出)");
-            }
-            format!(
-                "{title} (exit={status}):\n{}",
-                output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
-            )
-        }
+        Ok(output) => format_cmd_output(&output, max_output_len, title),
         Err(e) => format!("{title}: 无法启动（{e}）。请确认已安装对应 CLI 且在 PATH 中。"),
     }
 }
@@ -494,24 +497,11 @@ pub fn bandit_scan(args_json: &str, workspace_root: &Path, max_output_len: usize
 
 // ── Lizard ──────────────────────────────────────────────────
 
-pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{e}"),
-    };
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {e}"),
-    };
-    let paths = match parse_rel_paths(&v, "paths", &["."], MAX_PATHS) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-    let paths = filter_existing(&base, &paths);
-
-    let mut cmd = Command::new("lizard");
-    cmd.current_dir(&base);
-
+fn push_lizard_cli_args(
+    cmd: &mut Command,
+    v: &serde_json::Value,
+    paths: &[String],
+) -> Result<(), String> {
     if let Some(threshold) = v.get("threshold").and_then(|x| x.as_u64())
         && threshold > 0
         && threshold <= 200
@@ -519,22 +509,22 @@ pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len:
         cmd.arg("-C").arg(threshold.to_string());
     }
 
-    if let Some(lang) = opt_str(&v, "language") {
+    if let Some(lang) = opt_str(v, "language") {
         if lang.len() > 40 || lang.chars().any(|c| !c.is_alphanumeric() && c != ',') {
-            return format!("错误：language 值非法：{lang}");
+            return Err(format!("错误：language 值非法：{lang}"));
         }
         cmd.arg("-l").arg(lang);
     }
 
-    if let Some(sort) = opt_str(&v, "sort") {
+    if let Some(sort) = opt_str(v, "sort") {
         match sort {
             "cyclomatic_complexity" | "length" | "token_count" | "parameter_count" | "nloc" => {
                 cmd.arg("--sort").arg(sort);
             }
             _ => {
-                return format!(
+                return Err(format!(
                     "错误：sort 须为 cyclomatic_complexity/length/token_count/parameter_count/nloc，收到 {sort}"
-                );
+                ));
             }
         }
     }
@@ -561,10 +551,66 @@ pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len:
         cmd.arg("-x").arg(format!("*/{ex}/*"));
     }
 
-    for p in &paths {
+    for p in paths {
         cmd.arg(p);
     }
-    run_and_format(cmd, max_output_len, "lizard")
+    Ok(())
+}
+
+pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数解析错误：{e}"),
+    };
+    let base = match workspace_root.canonicalize() {
+        Ok(p) => p,
+        Err(e) => return format!("工作区根目录无法解析: {e}"),
+    };
+    let paths = match parse_rel_paths(&v, "paths", &["."], MAX_PATHS) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let paths = filter_existing(&base, &paths);
+
+    let mut cmd = Command::new("lizard");
+    cmd.current_dir(&base)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Err(msg) = push_lizard_cli_args(&mut cmd, &v, &paths) {
+        return msg;
+    }
+
+    let output = match cmd.output() {
+        Ok(o) => o,
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            let mut cmd_py = Command::new("python3");
+            cmd_py
+                .arg("-m")
+                .arg("lizard")
+                .current_dir(&base)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            if let Err(msg) = push_lizard_cli_args(&mut cmd_py, &v, &paths) {
+                return msg;
+            }
+            match cmd_py.output() {
+                Ok(o) => o,
+                Err(e2) => {
+                    return format!(
+                        "lizard: 未找到命令 `lizard`（{e}），且 `python3 -m lizard` 亦失败（{e2}）。\
+请安装：`pip install lizard` 或 `pip install --user lizard`，将 `lizard` 所在目录加入 PATH（`pip install --user` 时常见为 ~/.local/bin）；\
+验证：`lizard --version` 或 `python3 -m lizard --version`。"
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            return format!("lizard: 无法启动（{e}）。请确认已安装对应 CLI 且在 PATH 中。");
+        }
+    };
+    format_cmd_output(&output, max_output_len, "lizard")
 }
 
 #[cfg(test)]

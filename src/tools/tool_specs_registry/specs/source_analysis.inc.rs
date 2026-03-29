@@ -41,7 +41,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "lizard_complexity",
-            description: "使用 lizard 分析代码圈复杂度（只读，多语言支持）。可指定 paths、threshold（复杂度阈值）、language（如 python,java,cpp）、sort、warnings_only、exclude。需本机安装 lizard（pip install lizard）。",
+            description: "使用 lizard 分析代码圈复杂度（只读，多语言支持）。可指定 paths、threshold（复杂度阈值）、language（如 python,java,cpp）、sort、warnings_only、exclude。需本机安装 lizard（pip install lizard）；若 PATH 中无 `lizard` 可执行文件，会回退尝试 `python3 -m lizard`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_lizard_complexity,
             runner: runner_lizard_complexity,

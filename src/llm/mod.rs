@@ -2,12 +2,13 @@
 //!
 //! - **`api`**：单次 HTTP + SSE/JSON 解析 + 可选终端 Markdown 渲染（传输与协议细节）。
 //! - **`backend`**：[`ChatCompletionsBackend`] 可插拔抽象，默认 [`OpenAiCompatBackend`]（即 `api::stream_chat`）。
-//! - **本模块**：`ChatRequest` 的惯用构造、带指数退避的**重试策略**、以及后续可扩展的调用入口（例如统一超时、观测字段）。
+//! - **本模块**：`ChatRequest` 的惯用构造、带指数退避的**重试策略**（仅对 [`call_error::LlmCallError`] 标记为 `retryable` 的失败：如 **408/429/5xx** 与部分传输错误；**401/400** 等客户端错误不重试）、以及后续可扩展的调用入口（例如统一超时、观测字段）。
 //!
 //! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent::agent_turn` 中散落重试与请求拼装逻辑。
 
 mod api;
 pub mod backend;
+mod call_error;
 mod chat_params;
 mod openai_models;
 
@@ -185,7 +186,7 @@ pub fn no_tools_chat_request_from_messages(
     }
 }
 
-/// 调用 `chat/completions`：失败时按 `AgentConfig::api_retry_delay_secs` 做指数退避，最多 `api_max_retries + 1` 次。
+/// 调用 `chat/completions`：失败时若错误为 **可重试**（见 [`call_error::LlmCallError`]），按 `AgentConfig::api_retry_delay_secs` 做指数退避，最多 `api_max_retries + 1` 次；**401/400** 等不可重试错误立即返回。
 ///
 /// `llm_backend` 默认使用 [`default_chat_completions_backend`]（OpenAI 兼容 HTTP）；可换为自定义 [`ChatCompletionsBackend`]。
 pub async fn complete_chat_retrying(
@@ -226,14 +227,19 @@ pub async fn complete_chat_retrying(
                 break;
             }
             Err(e) => {
+                let http_status = call_error::llm_call_error_http_status(e.as_ref());
+                let retryable = call_error::llm_call_error_retryable(e.as_ref());
                 error!(
                     target: "crabmate",
-                    "llm chat 请求失败 error={} attempt={} max_attempts={}",
+                    "llm chat 请求失败 http_status={:?} retryable={} error={} attempt={} max_attempts={}",
+                    http_status,
+                    retryable,
                     e,
                     attempt + 1,
                     max_attempts
                 );
-                if attempt < max_attempts - 1 {
+                let can_backoff = attempt < max_attempts - 1 && retryable;
+                if can_backoff {
                     let delay_secs = p
                         .cfg
                         .api_retry_delay_secs
