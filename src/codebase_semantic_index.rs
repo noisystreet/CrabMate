@@ -3,10 +3,17 @@
 
 use crate::config::AgentConfig;
 
+fn default_semantic_invalidate_on_change() -> bool {
+    true
+}
+
 /// 供 [`crate::tools::ToolContext`] 注入的语义检索参数（避免在工具层持有整份 [`AgentConfig`]）。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CodebaseSemanticToolParams {
     pub enabled: bool,
+    /// 写工具成功后按路径删块或整表失效（与 `read_file` 缓存策略对齐）。
+    #[serde(default = "default_semantic_invalidate_on_change")]
+    pub invalidate_on_workspace_change: bool,
     pub index_sqlite_path: String,
     pub max_file_bytes: usize,
     pub chunk_max_chars: usize,
@@ -18,6 +25,7 @@ impl CodebaseSemanticToolParams {
     pub fn from_agent_config(cfg: &AgentConfig) -> Self {
         Self {
             enabled: cfg.codebase_semantic_search_enabled,
+            invalidate_on_workspace_change: cfg.codebase_semantic_invalidate_on_workspace_change,
             index_sqlite_path: cfg.codebase_semantic_index_sqlite_path.clone(),
             max_file_bytes: cfg.codebase_semantic_max_file_bytes,
             chunk_max_chars: cfg.codebase_semantic_chunk_max_chars,
@@ -65,7 +73,8 @@ fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
-fn open_index_db(path: &Path) -> Result<Connection, String> {
+/// 打开或创建索引库并迁移 schema（不写日志全文）。
+pub(crate) fn open_codebase_semantic_db(path: &Path) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("无法创建索引目录 {}: {}", parent.display(), e))?;
@@ -76,7 +85,10 @@ fn open_index_db(path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
-fn index_path_for_workspace(workspace_root: &Path, configured: &str) -> Result<PathBuf, String> {
+pub(crate) fn index_path_for_workspace(
+    workspace_root: &Path,
+    configured: &str,
+) -> Result<PathBuf, String> {
     let base = canonical_workspace_root(workspace_root)?;
     if configured.trim().is_empty() {
         return Ok(base.join(".crabmate/codebase_semantic.sqlite"));
@@ -332,7 +344,7 @@ fn rebuild_index(
     ext_set: &HashSet<String>,
     file_glob_pat: Option<&glob::Pattern>,
 ) -> String {
-    let mut conn = match open_index_db(index_path) {
+    let mut conn = match open_codebase_semantic_db(index_path) {
         Ok(c) => c,
         Err(e) => return e,
     };
@@ -513,7 +525,7 @@ fn search_index(
     top_k: usize,
     max_out_chars: usize,
 ) -> String {
-    let conn = match open_index_db(index_path) {
+    let conn = match open_codebase_semantic_db(index_path) {
         Ok(c) => c,
         Err(e) => return e,
     };

@@ -127,6 +127,7 @@ pub(super) struct AgentSection {
     pub(super) mcp_command: Option<String>,
     pub(super) mcp_tool_timeout_secs: Option<u64>,
     pub(super) codebase_semantic_search_enabled: Option<bool>,
+    pub(super) codebase_semantic_invalidate_on_workspace_change: Option<bool>,
     pub(super) codebase_semantic_index_sqlite_path: Option<String>,
     pub(super) codebase_semantic_max_file_bytes: Option<u64>,
     pub(super) codebase_semantic_chunk_max_chars: Option<u64>,
