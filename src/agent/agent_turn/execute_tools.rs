@@ -23,6 +23,13 @@ use crate::tools;
 use crate::types::{Message, ToolCall};
 use crate::workspace_changelist::WorkspaceChangelist;
 
+/// 并行执行时工具的分类，用于在构建 fut 前预分类，消除 if/else if/else 字符串比较。
+#[derive(Clone, Copy)]
+enum ParallelToolKind {
+    HttpFetch,
+    SyncDefault,
+}
+
 pub(crate) struct WebExecuteCtx<'a> {
     pub cfg: &'a Arc<AgentConfig>,
     pub effective_working_dir: &'a Path,
@@ -332,6 +339,11 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
             let wcl = workspace_changelist.cloned();
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
+            let kind = if name == "http_fetch" {
+                ParallelToolKind::HttpFetch
+            } else {
+                ParallelToolKind::SyncDefault
+            };
             unique_futs.push(async move {
                 if let Some(err) = prefetch_err {
                     return (name, args, err);
@@ -342,19 +354,21 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 );
                 let name_timeout = name.clone();
                 let args_timeout = args.clone();
+                let name_for_log = name.clone();
+                let args_for_log = args.clone();
+                let name_for_return = name.clone();
+                let args_for_return = args.clone();
                 let work = async move {
-                    info!(target: "crabmate", "并行工具开始 tool={}", name);
+                    info!(target: "crabmate", "并行工具开始 tool={}", name_for_log);
                     debug!(
                         target: "crabmate",
                         "工具调用参数摘要 tool={} args_preview={}",
-                        name,
-                        crate::redact::tool_arguments_preview_for_log(&args)
+                        name_for_log,
+                        crate::redact::tool_arguments_preview_for_log(&args_for_log)
                     );
                     let t_tool = Instant::now();
-                    let tool_name = name.clone();
-                    let tool_args = args.clone();
-                    let result = if name == "http_fetch" {
-                        tokio::task::spawn_blocking(move || {
+                    let result = match kind {
+                        ParallelToolKind::HttpFetch => tokio::task::spawn_blocking(move || {
                             let ctx = tools::tool_context_for_with_read_cache(
                                 cfg.as_ref(),
                                 cfg.allowed_commands.as_ref(),
@@ -362,12 +376,11 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                                 rfc.as_ref().map(|a| a.as_ref()),
                                 wcl.as_ref(),
                             );
-                            tools::http_fetch::run_direct(&tool_args, &ctx)
+                            tools::http_fetch::run_direct(&args, &ctx)
                         })
                         .await
-                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
-                    } else if crate::tool_registry::sync_default_runs_inline(&name) {
-                        tokio::task::spawn_blocking(move || {
+                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
+                        ParallelToolKind::SyncDefault => tokio::task::spawn_blocking(move || {
                             let ctx = tools::tool_context_for_with_read_cache(
                                 cfg.as_ref(),
                                 cfg.allowed_commands.as_ref(),
@@ -375,31 +388,18 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                                 rfc.as_ref().map(|a| a.as_ref()),
                                 wcl.as_ref(),
                             );
-                            tools::run_tool(&tool_name, &tool_args, &ctx)
+                            tools::run_tool(&name, &args, &ctx)
                         })
                         .await
-                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
-                    } else {
-                        tokio::task::spawn_blocking(move || {
-                            let ctx = tools::tool_context_for_with_read_cache(
-                                cfg.as_ref(),
-                                cfg.allowed_commands.as_ref(),
-                                wd.as_path(),
-                                rfc.as_ref().map(|a| a.as_ref()),
-                                wcl.as_ref(),
-                            );
-                            tools::run_tool(&tool_name, &tool_args, &ctx)
-                        })
-                        .await
-                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
                     };
                     info!(
                         target: "crabmate",
                         "并行工具完成 tool={} elapsed_ms={}",
-                        name,
+                        name_for_log,
                         t_tool.elapsed().as_millis()
                     );
-                    (name, args, result)
+                    (name_for_return, args_for_return, result)
                 };
                 match tokio::time::timeout(Duration::from_secs(wall_secs), work).await {
                     Ok(triple) => triple,
