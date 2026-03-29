@@ -27,6 +27,8 @@ pub(super) struct AgentSection {
     pub(super) llm_reasoning_split: Option<bool>,
     /// 智谱 **bigmodel.cn** GLM-5 等：为真时请求体带 **`thinking: { "type": "enabled" }`**（深度思考，见官方文档）。
     pub(super) llm_bigmodel_thinking: Option<bool>,
+    /// Moonshot **kimi-k2.5**：为真时请求体带 **`thinking: { "type": "disabled" }`**（文档默认服务端为 enabled，见 Kimi Chat API）。
+    pub(super) llm_kimi_thinking_disabled: Option<bool>,
     /// 将 `system` 折叠进 `user`（MiniMax 线上常见拒收独立 `system`）。
     pub(super) llm_fold_system_into_user: Option<bool>,
     pub(super) api_timeout_secs: Option<u64>,

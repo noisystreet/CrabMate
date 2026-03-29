@@ -29,11 +29,79 @@ pub use backend::{
     default_chat_completions_backend,
 };
 
-/// 智谱 **GLM-5** 等：按配置生成请求体 **`thinking`** 字段（文档示例为 `{ "type": "enabled" }`）。
+/// 是否为 Moonshot **kimi-k2.5** 系列模型 ID（**`kimi-k2.5`** 或 **`kimi-k2.5-…`**，大小写不敏感）。
+#[inline]
+pub(crate) fn is_kimi_k2_5_model(model: &str) -> bool {
+    const PREFIX: &[u8] = b"kimi-k2.5";
+    let b = model.as_bytes();
+    b.len() >= PREFIX.len()
+        && b[..PREFIX.len()].eq_ignore_ascii_case(PREFIX)
+        && (b.len() == PREFIX.len() || b[PREFIX.len()] == b'-')
+}
+
+/// **kimi-k2.5** 在**未**显式关闭思考时，服务端 **`thinking` 默认启用**；此时含 **`tool_calls`** 的 assistant 历史消息必须带 **`reasoning_content`**，否则返回 `invalid_request_error`（见 Moonshot [Chat API](https://platform.moonshot.cn/docs/api/chat) 与实测报错）。
+#[inline]
+pub(crate) fn kimi_k2_5_vendor_requires_tool_call_reasoning(cfg: &AgentConfig) -> bool {
+    is_kimi_k2_5_model(&cfg.model) && !cfg.llm_kimi_thinking_disabled
+}
+
+/// **`kimi-k2-thinking`** / **`kimi-k2-thinking-…`**（大小写不敏感）。文档默认 **`temperature` 为 1.0** 且不可随意改；接口常仅接受 **`1`**。
+#[inline]
+pub(crate) fn is_kimi_k2_thinking_model(model: &str) -> bool {
+    const PREFIX: &[u8] = b"kimi-k2-thinking";
+    let b = model.as_bytes();
+    b.len() >= PREFIX.len()
+        && b[..PREFIX.len()].eq_ignore_ascii_case(PREFIX)
+        && (b.len() == PREFIX.len() || b[PREFIX.len()] == b'-')
+}
+
+/// **`kimi-k2`** 或 **`kimi-k2-…`**，但**不是** **`kimi-k2.5`** / **`kimi-k2-thinking`** 分支。文档中 **kimi-k2** 系列默认 **`temperature` 为 0.6**；接口可能仅接受 **`0.6`**（否则会报 `invalid temperature: only 0.6 is allowed`）。
+#[inline]
+fn is_kimi_k2_fixed_temperature_zero_six_family(model: &str) -> bool {
+    const PREFIX: &[u8] = b"kimi-k2";
+    let b = model.as_bytes();
+    if !(b.len() >= PREFIX.len() && b[..PREFIX.len()].eq_ignore_ascii_case(PREFIX)) {
+        return false;
+    }
+    if b.len() == PREFIX.len() {
+        return true;
+    }
+    // 仅匹配 `kimi-k2-…`，排除 `kimi-k2.5`（`.`）等异常 ID
+    if b[PREFIX.len()] != b'-' {
+        return false;
+    }
+    !is_kimi_k2_5_model(model) && !is_kimi_k2_thinking_model(model)
+}
+
+/// Moonshot Kimi：按模型 ID 将出站 **`temperature`** 钳到供应商允许值（见 [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) 各系列说明）。
+///
+/// **`kimi-k2.5`** 与 **`kimi-k2-thinking`** 系列接口常仅接受 **`1`**；其余 **`kimi-k2-*`**（非上两类）为 **`0.6`**。
+#[inline]
+pub(crate) fn vendor_temperature_for_model(model: &str, temperature: f32) -> f32 {
+    if is_kimi_k2_thinking_model(model) {
+        return 1.0;
+    }
+    if is_kimi_k2_5_model(model) {
+        return 1.0;
+    }
+    if is_kimi_k2_fixed_temperature_zero_six_family(model) {
+        return 0.6;
+    }
+    temperature
+}
+
+/// 按配置生成请求体可选字段 **`thinking`**（智谱 **`enabled`**、Kimi **kimi-k2.5** **`disabled`** 等与各厂商文档对齐）。
+///
+/// **`llm_kimi_thinking_disabled`** 仅在 **`model`** 为 **kimi-k2.5** 系列时写入 **`disabled`**，避免对 DeepSeek 等非 Kimi 网关误带未知字段。
 #[inline]
 pub(crate) fn chat_request_thinking_from_cfg(cfg: &AgentConfig) -> Option<serde_json::Value> {
-    cfg.llm_bigmodel_thinking
-        .then(|| serde_json::json!({ "type": "enabled" }))
+    if cfg.llm_kimi_thinking_disabled && is_kimi_k2_5_model(&cfg.model) {
+        return Some(serde_json::json!({ "type": "disabled" }));
+    }
+    if cfg.llm_bigmodel_thinking {
+        return Some(serde_json::json!({ "type": "enabled" }));
+    }
+    None
 }
 
 /// 构造带 tools、**`tool_choice: auto`** 及采样参数的请求体（`stream` 由 [`api::stream_chat`] 按 `no_stream` 覆盖）。
@@ -49,11 +117,15 @@ pub fn tool_chat_request(
         messages: crate::agent::message_pipeline::conversation_messages_to_vendor_body(
             messages,
             cfg.llm_fold_system_into_user,
+            kimi_k2_5_vendor_requires_tool_call_reasoning(cfg),
         ),
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
         max_tokens: cfg.max_tokens,
-        temperature: temperature_override.unwrap_or(cfg.temperature),
+        temperature: vendor_temperature_for_model(
+            &cfg.model,
+            temperature_override.unwrap_or(cfg.temperature),
+        ),
         seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
@@ -73,7 +145,10 @@ pub fn no_tools_chat_request(
 ) -> ChatRequest {
     no_tools_chat_request_from_messages(
         cfg,
-        crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(messages),
+        crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(
+            messages,
+            kimi_k2_5_vendor_requires_tool_call_reasoning(cfg),
+        ),
         temperature_override,
         seed_override,
     )
@@ -99,7 +174,10 @@ pub fn no_tools_chat_request_from_messages(
         tools: Some(vec![]),
         tool_choice: Some("none".to_string()),
         max_tokens: cfg.max_tokens,
-        temperature: temperature_override.unwrap_or(cfg.temperature),
+        temperature: vendor_temperature_for_model(
+            &cfg.model,
+            temperature_override.unwrap_or(cfg.temperature),
+        ),
         seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
@@ -211,7 +289,7 @@ mod tests {
         };
         let messages = vec![Message::user_only("u"), sep, assistant];
         let a = super::no_tools_chat_request(&cfg, &messages, None, LlmSeedOverride::FromConfig);
-        let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(&messages);
+        let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(&messages, false);
         let b = super::no_tools_chat_request_from_messages(
             &cfg,
             stripped,
@@ -246,5 +324,90 @@ mod tests {
         );
         let t = req.thinking.expect("thinking");
         assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("enabled"));
+    }
+
+    #[test]
+    fn kimi_thinking_disabled_inserts_json_when_enabled() {
+        let mut cfg = load_config(None).expect("default embedded config");
+        cfg.model = "kimi-k2.5".to_string();
+        cfg.llm_bigmodel_thinking = false;
+        cfg.llm_kimi_thinking_disabled = true;
+        let req = super::tool_chat_request(
+            &cfg,
+            &[Message::user_only("hi")],
+            &[],
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        let t = req.thinking.expect("thinking");
+        assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("disabled"));
+    }
+
+    #[test]
+    fn tool_chat_request_coerces_temperature_for_kimi_k2_5_model() {
+        let mut cfg = load_config(None).expect("default embedded config");
+        cfg.model = "kimi-k2.5".to_string();
+        cfg.temperature = 0.3;
+        let req = super::tool_chat_request(
+            &cfg,
+            &[Message::user_only("hi")],
+            &[],
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        assert_eq!(req.temperature, 1.0);
+        let req = super::tool_chat_request(
+            &cfg,
+            &[Message::user_only("hi")],
+            &[],
+            Some(0.7),
+            LlmSeedOverride::FromConfig,
+        );
+        assert_eq!(req.temperature, 1.0);
+    }
+
+    #[test]
+    fn kimi_k2_5_temperature_coerced_to_one() {
+        assert_eq!(super::vendor_temperature_for_model("kimi-k2.5", 0.3), 1.0);
+        assert_eq!(
+            super::vendor_temperature_for_model("kimi-k2.5-preview", 0.3),
+            1.0
+        );
+        assert_eq!(super::vendor_temperature_for_model("Kimi-K2.5", 0.0), 1.0);
+        assert_eq!(super::vendor_temperature_for_model("glm-5", 0.3), 0.3);
+        assert_eq!(
+            super::vendor_temperature_for_model("kimi-k2-thinking", 0.3),
+            1.0
+        );
+        assert_eq!(
+            super::vendor_temperature_for_model("kimi-k2-thinking-turbo", 0.2),
+            1.0
+        );
+        assert_eq!(
+            super::vendor_temperature_for_model("kimi-k2-0905-preview", 0.3),
+            0.6
+        );
+        assert_eq!(super::vendor_temperature_for_model("kimi-k2", 0.9), 0.6);
+        assert_eq!(
+            super::vendor_temperature_for_model("kimi-k2.51-hypothetical", 0.3),
+            0.3
+        );
+    }
+
+    #[test]
+    fn kimi_thinking_disabled_wins_over_bigmodel_thinking() {
+        let mut cfg = load_config(None).expect("default embedded config");
+        cfg.model = "kimi-k2.5".to_string();
+        cfg.llm_bigmodel_thinking = true;
+        cfg.llm_kimi_thinking_disabled = true;
+        let req = super::tool_chat_request(
+            &cfg,
+            &[Message::user_only("hi")],
+            &[],
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        let t = req.thinking.expect("thinking");
+        assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("disabled"));
     }
 }

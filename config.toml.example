@@ -12,6 +12,8 @@
 # llm_fold_system_into_user = true
 # 智谱 GLM：api_base = "https://open.bigmodel.cn/api/paas/v4" ，model = "glm-5" ，API_KEY（Bearer）；与官方最小 cURL（model + messages + stream）一致时可不写 llm_bigmodel_thinking（默认 false）；深度思考见 docs/CONFIGURATION.md「智谱 GLM」
 # llm_bigmodel_thinking = false
+# Moonshot Kimi：api_base = "https://api.moonshot.cn/v1" ，model 如 kimi-k2.5 ；可选 llm_kimi_thinking_disabled（仅 k2.5）；AGENT_LLM_KIMI_THINKING_DISABLED
+# llm_kimi_thinking_disabled = false
 # max_message_history = 24
 # tui_load_session_on_start = false
 # tui_session_max_messages = 400

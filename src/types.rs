@@ -59,7 +59,7 @@ mod llm_seed_tests {
 pub struct Message {
     pub role: String,
     pub content: Option<String>,
-    /// DeepSeek `deepseek-reasoner` 等非流式/流式响应中的思维链；**勿**在下一轮请求中回传供应商（见 [`messages_stripping_reasoning_for_api_request`]）。
+    /// DeepSeek `deepseek-reasoner` 等非流式/流式响应中的思维链；出站默认**不**回传供应商（见 [`message_clone_stripping_reasoning_for_api`]）；Moonshot **kimi-k2.5** 在 **thinking** 启用时对含 **`tool_calls`** 的 assistant **须**回传（由同一函数在 `preserve_reasoning_on_assistant_tool_calls` 为真时处理）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
     /// MiniMax OpenAI 兼容在 **`reasoning_split: true`** 时，非流式响应可能在 `message` 上返回；解析后合并入 [`Self::reasoning_content`] 并清空本字段，**不**回传上游。
@@ -161,9 +161,26 @@ impl Message {
     }
 }
 
-/// 单条消息：供 API 请求使用，不携带 `reasoning_content`（与 [`messages_stripping_reasoning_for_api_request`] 单元素语义一致）。
+/// 单条消息：发往供应商时默认去掉 `reasoning_content` / `reasoning_details`（与 [`messages_stripping_reasoning_for_api_request`] 单元素语义一致）。
+///
+/// **`preserve_reasoning_on_assistant_tool_calls`**：Moonshot **kimi-k2.5** 在 **thinking 启用** 时要求含 **`tool_calls`** 的 assistant 必须带 **`reasoning_content`**；为真时对该类消息在合并 **`reasoning_details`** 后保留思维链，若仍为空则写入空串以便 JSON 带出该字段。
 #[inline]
-pub(crate) fn message_clone_stripping_reasoning_for_api(m: &Message) -> Message {
+pub(crate) fn message_clone_stripping_reasoning_for_api(
+    m: &Message,
+    preserve_reasoning_on_assistant_tool_calls: bool,
+) -> Message {
+    let keep = preserve_reasoning_on_assistant_tool_calls
+        && is_assistant_role(m.role.as_str())
+        && assistant_has_non_empty_tool_calls(m);
+    if keep {
+        let mut x = m.clone();
+        merge_reasoning_details_into_reasoning_content(&mut x);
+        x.reasoning_details = None;
+        if x.reasoning_content.is_none() {
+            x.reasoning_content = Some(String::new());
+        }
+        return x;
+    }
     if m.reasoning_content.is_none() && m.reasoning_details.is_none() {
         m.clone()
     } else {
@@ -203,17 +220,23 @@ pub fn merge_reasoning_details_into_reasoning_content(msg: &mut Message) {
 
 /// 构造发往供应商的 `messages`：去掉助手 `reasoning_content`，避免多轮请求回传思维链。
 #[allow(dead_code)] // 公共 API；`tool_chat_request` 已用 `messages_for_api_stripping_reasoning_skip_ui_separators` 合并遍历；单测保留等价断言
-pub fn messages_stripping_reasoning_for_api_request(messages: &[Message]) -> Vec<Message> {
+pub fn messages_stripping_reasoning_for_api_request(
+    messages: &[Message],
+    preserve_reasoning_on_assistant_tool_calls: bool,
+) -> Vec<Message> {
     messages
         .iter()
-        .map(message_clone_stripping_reasoning_for_api)
+        .map(|m| {
+            message_clone_stripping_reasoning_for_api(m, preserve_reasoning_on_assistant_tool_calls)
+        })
         .collect()
 }
 
-/// 会话切片 → API 消息：**跳过** [`is_chat_ui_separator`] 与 [`is_long_term_memory_injection`]，并剥离 `reasoning_content`。
+/// 会话切片 → API 消息：**跳过** [`is_chat_ui_separator`] 与 [`is_long_term_memory_injection`]，并按策略剥离 `reasoning_content`（见 [`message_clone_stripping_reasoning_for_api`]）。
 /// 单次遍历，避免先 `filter+clone` 再 [`messages_stripping_reasoning_for_api_request`] 的二次全量拷贝。
 pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
     messages: &[Message],
+    preserve_reasoning_on_assistant_tool_calls: bool,
 ) -> Vec<Message> {
     messages
         .iter()
@@ -222,7 +245,9 @@ pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
                 && !is_long_term_memory_injection(m)
                 && !is_workspace_changelist_injection(m)
         })
-        .map(message_clone_stripping_reasoning_for_api)
+        .map(|m| {
+            message_clone_stripping_reasoning_for_api(m, preserve_reasoning_on_assistant_tool_calls)
+        })
         .collect()
 }
 
@@ -495,7 +520,7 @@ pub struct ChatRequest {
     /// MiniMax OpenAI 兼容扩展：为 `true` 时流式/非流式可将思维链与正文分离（`delta.reasoning_details` / `message.reasoning_details`）。
     #[serde(skip_serializing_if = "Option::is_none", rename = "reasoning_split")]
     pub reasoning_split: Option<bool>,
-    /// 智谱开放平台 **GLM-5** 等：文档中 **`thinking: { "type": "enabled" }`** 用于深度思考模式；由配置 **`llm_bigmodel_thinking`** 控制是否附带（见 `docs/CONFIGURATION.md`「智谱 GLM」）。
+    /// 供应商扩展：**`thinking`**（如智谱 GLM-5 深度思考、Moonshot **kimi-k2.5** 开关）；由 **`llm_bigmodel_thinking`** / **`llm_kimi_thinking_disabled`** 等配置拼装（见 `docs/CONFIGURATION.md`）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<serde_json::Value>,
 }
@@ -596,7 +621,7 @@ mod api_messages_strip_tests {
             tool_call_id: None,
         };
         let v = vec![Message::user_only("u"), sep, assistant];
-        let out = messages_for_api_stripping_reasoning_skip_ui_separators(&v);
+        let out = messages_for_api_stripping_reasoning_skip_ui_separators(&v, false);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].role, "user");
         assert_eq!(out[1].role, "assistant");
@@ -616,9 +641,58 @@ mod api_messages_strip_tests {
             tool_call_id: None,
         };
         let v = vec![Message::user_only("u"), assistant];
-        let a = messages_stripping_reasoning_for_api_request(&v);
-        let b = messages_for_api_stripping_reasoning_skip_ui_separators(&v);
+        let a = messages_stripping_reasoning_for_api_request(&v, false);
+        let b = messages_for_api_stripping_reasoning_skip_ui_separators(&v, false);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn preserve_reasoning_for_assistant_tool_calls_when_requested() {
+        let tc = ToolCall {
+            id: "x".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "f".to_string(),
+                arguments: "{}".to_string(),
+            },
+        };
+        let asst = Message {
+            role: "assistant".to_string(),
+            content: None,
+            reasoning_content: Some("think".to_string()),
+            reasoning_details: None,
+            tool_calls: Some(vec![tc.clone()]),
+            name: None,
+            tool_call_id: None,
+        };
+        let kept = message_clone_stripping_reasoning_for_api(&asst, true);
+        assert_eq!(kept.reasoning_content.as_deref(), Some("think"));
+        assert!(kept.reasoning_details.is_none());
+        let gone = message_clone_stripping_reasoning_for_api(&asst, false);
+        assert!(gone.reasoning_content.is_none());
+    }
+
+    #[test]
+    fn preserve_inserts_empty_reasoning_when_tool_calls_but_missing() {
+        let tc = ToolCall {
+            id: "x".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "f".to_string(),
+                arguments: "{}".to_string(),
+            },
+        };
+        let asst = Message {
+            role: "assistant".to_string(),
+            content: None,
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: Some(vec![tc]),
+            name: None,
+            tool_call_id: None,
+        };
+        let out = message_clone_stripping_reasoning_for_api(&asst, true);
+        assert_eq!(out.reasoning_content.as_deref(), Some(""));
     }
 }
 
