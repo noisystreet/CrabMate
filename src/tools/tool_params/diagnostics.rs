@@ -81,6 +81,65 @@ pub(in crate::tools) fn params_diagnostic_summary() -> serde_json::Value {
     })
 }
 
+pub(in crate::tools) fn params_repo_overview_sweep() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "doc_paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：要预览的文档相对路径列表；默认 README.md、AGENTS.md、docs/DEVELOPMENT.md、docs/CONFIGURATION.md、docs/CLI.md（存在则读，不存在则跳过）"
+            },
+            "source_roots": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：list_tree 的起始相对目录；默认 [\"src\"]"
+            },
+            "build_globs": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：glob 模式列表，用于收集 Cargo.toml、package.json、CI 等工作流文件；内置一组常见模式"
+            },
+            "doc_preview_max_lines": {
+                "type": "integer",
+                "description": "每个文档文件最多预览行数，默认 80，范围 10～500",
+                "minimum": 10,
+                "maximum": 500
+            },
+            "list_tree_max_depth": {
+                "type": "integer",
+                "description": "list_tree 最大深度，默认 4，范围 1～20",
+                "minimum": 1,
+                "maximum": 20
+            },
+            "list_tree_max_entries": {
+                "type": "integer",
+                "description": "list_tree 最多条目，默认 400，范围 50～5000",
+                "minimum": 50,
+                "maximum": 5000
+            },
+            "list_tree_include_hidden": {
+                "type": "boolean",
+                "description": "list_tree 是否包含隐藏文件/目录，默认 false"
+            },
+            "build_glob_max_results": {
+                "type": "integer",
+                "description": "每个 glob 模式最多匹配路径数，默认 120，范围 10～2000",
+                "minimum": 10,
+                "maximum": 2000
+            },
+            "build_glob_max_depth": {
+                "type": "integer",
+                "description": "glob 扫描最大深度，默认 25，范围 1～100",
+                "minimum": 1,
+                "maximum": 100
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
 pub(in crate::tools) fn params_error_output_playbook() -> serde_json::Value {
     serde_json::json!({
         "type": "object",

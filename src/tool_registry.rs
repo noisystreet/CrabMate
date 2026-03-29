@@ -175,7 +175,7 @@ pub fn is_readonly_tool(name: &str) -> bool {
 fn parallel_sync_batch_denied(name: &str) -> bool {
     matches!(
         name,
-        "rust_compiler_json" | "quality_workspace" | "ci_pipeline_local"
+        "rust_compiler_json" | "quality_workspace" | "ci_pipeline_local" | "repo_overview_sweep"
     ) || name.starts_with("cargo_")
         || name.starts_with("npm_")
         || name.starts_with("frontend_")
