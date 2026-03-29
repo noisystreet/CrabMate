@@ -10,6 +10,8 @@ pub const EXIT_MODEL_ERROR: i32 = 3;
 pub const EXIT_TOOLS_ALL_RUN_COMMAND_DENIED: i32 = 4;
 /// 配额 / 限流（典型 HTTP 429；部分网关亦可能用 503）
 pub const EXIT_QUOTA_OR_RATE_LIMIT: i32 = 5;
+/// `tool-replay run --compare-recorded` 下存在与录制不一致的工具输出
+pub const EXIT_TOOL_REPLAY_MISMATCH: i32 = 6;
 
 #[derive(Debug, Clone)]
 pub struct CliExitError {

@@ -58,5 +58,10 @@
     "name": "global_flags_then_known_subcommand_not_wrapped_in_repl",
     "argv": ["crabmate", "--workspace", "/tmp/ws", "doctor"],
     "normalized": ["crabmate", "--workspace", "/tmp/ws", "doctor"]
+  },
+  {
+    "name": "explicit_tool_replay_unchanged",
+    "argv": ["crabmate", "tool-replay", "export", "--output", "/tmp/x.json"],
+    "normalized": ["crabmate", "tool-replay", "export", "--output", "/tmp/x.json"]
   }
 ]

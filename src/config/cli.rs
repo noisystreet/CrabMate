@@ -111,6 +111,7 @@ fn is_known_subcommand(s: &str) -> bool {
             | "mcp"
             | "save-session"
             | "export-session"
+            | "tool-replay"
     )
 }
 
@@ -453,6 +454,63 @@ pub struct SaveSessionCli {
     pub session_file: Option<String>,
 }
 
+/// `tool-replay` 子命令解析结果（供 `runtime::cli` 执行）
+#[derive(Debug, Clone)]
+pub enum ToolReplayCli {
+    /// 从会话 JSON 提取工具调用序列为 fixture
+    Export {
+        session_file: Option<String>,
+        output: Option<String>,
+        note: Option<String>,
+    },
+    /// 按 fixture 重放工具（不调用大模型）
+    Run {
+        fixture: String,
+        compare_recorded: bool,
+    },
+}
+
+/// 从 `chat_export` / `tui_session.json` 提取工具步骤为可重放 fixture，或重放 fixture（**不要**求 `API_KEY`）
+#[derive(Parser, Debug, Clone)]
+pub struct ToolReplayCmd {
+    #[command(subcommand)]
+    pub sub: ToolReplaySubCmd,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ToolReplaySubCmd {
+    /// 写入 `<workspace>/.crabmate/exports/tool_replay_*.json`（或 `--output`）
+    Export(ToolReplayExportCmd),
+    /// 在当前工作区按配置执行 fixture 中每条工具（与对话路径相同 `run_tool`）
+    Run(ToolReplayRunCmd),
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct ToolReplayExportCmd {
+    /// 会话 JSON（默认：`<workspace>/.crabmate/tui_session.json`；可与 `save-session` 导出文件相同）
+    #[arg(long, value_name = "FILE")]
+    pub session_file: Option<String>,
+
+    /// 输出路径（默认：exports 目录下带时间戳文件名）
+    #[arg(long, value_name = "FILE")]
+    pub output: Option<String>,
+
+    /// 写入 fixture 顶层的可选说明（供人读）
+    #[arg(long, value_name = "TEXT")]
+    pub note: Option<String>,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct ToolReplayRunCmd {
+    /// `tool-replay export` 生成的 JSON
+    #[arg(long, value_name = "FILE")]
+    pub fixture: String,
+
+    /// 若步骤含 `recorded_output`，与本次执行结果做字符串全等比较；有不一致则退出码 6
+    #[arg(long)]
+    pub compare_recorded: bool,
+}
+
 /// `parse_args` 扩展槽：非默认 CLI 流程（doctor / models / probe）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExtraCliCommand {
@@ -488,6 +546,9 @@ pub enum Commands {
     /// 从会话文件导出 JSON/Markdown 到工作区 `.crabmate/exports/`（与 Web 导出约定一致；**不要**求 API_KEY）
     #[command(name = "save-session", visible_alias = "export-session")]
     SaveSession(SaveSessionCmd),
+    /// 工具调用时间线导出与重放（fixture / 回归；**不要**求 `API_KEY`）
+    #[command(name = "tool-replay")]
+    ToolReplay(ToolReplayCmd),
     /// MCP stdio 客户端运维：列出本进程内已缓存会话（**不要**求 API_KEY）
     Mcp(McpCmd),
 }
@@ -543,6 +604,8 @@ pub struct ParsedCliArgs {
     pub extra_cli: ExtraCliCommand,
     /// `Some` 时执行导出后退出（与 `doctor` 一样不要求 API_KEY）
     pub save_session: Option<SaveSessionCli>,
+    /// `Some` 时执行工具重放子命令后退出（不要求 API_KEY）
+    pub tool_replay: Option<ToolReplayCli>,
 }
 
 fn parse_output_mode(raw: Option<String>) -> Option<String> {
@@ -556,7 +619,7 @@ fn parse_output_mode(raw: Option<String>) -> Option<String> {
     })
 }
 
-/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `mcp` / `save-session`**（兼容别名 **`export-session`**）子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
+/// 解析命令行：支持 **`serve` / `repl` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `mcp` / `save-session`**（兼容别名 **`export-session`**）、**`tool-replay`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
 ///
 /// `chat --stdin` 时若读取标准输入失败则返回 [`io::Error`]。
 ///
@@ -627,6 +690,7 @@ fn build_parsed_cli_args(
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
             save_session: None,
+            tool_replay: None,
         },
         Some(Commands::Serve(s)) => {
             let port = s.port.or(Some(8080));
@@ -644,6 +708,7 @@ fn build_parsed_cli_args(
                 bench_args: BenchmarkCliArgs::default(),
                 extra_cli: ExtraCliCommand::None,
                 save_session: None,
+                tool_replay: None,
             }
         }
         Some(Commands::Repl(r)) => ParsedCliArgs {
@@ -660,6 +725,7 @@ fn build_parsed_cli_args(
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
             save_session: None,
+            tool_replay: None,
         },
         Some(Commands::Chat(c)) => {
             let inline_user_text = if c.user_prompt_file.is_some() {
@@ -697,6 +763,7 @@ fn build_parsed_cli_args(
                 bench_args: BenchmarkCliArgs::default(),
                 extra_cli: ExtraCliCommand::None,
                 save_session: None,
+                tool_replay: None,
             }
         }
         Some(Commands::Bench(b)) => ParsedCliArgs {
@@ -721,6 +788,7 @@ fn build_parsed_cli_args(
             },
             extra_cli: ExtraCliCommand::None,
             save_session: None,
+            tool_replay: None,
         },
         // `config` 子命令恒走配置检查并退出，与是否写 `--dry-run` 无关（`--dry-run` 保留为显式别名）。
         Some(Commands::Config(_c)) => ParsedCliArgs {
@@ -737,6 +805,7 @@ fn build_parsed_cli_args(
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
             save_session: None,
+            tool_replay: None,
         },
         Some(Commands::Doctor) => ParsedCliArgs {
             config_path: config,
@@ -752,6 +821,7 @@ fn build_parsed_cli_args(
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::Doctor,
             save_session: None,
+            tool_replay: None,
         },
         Some(Commands::Models) => ParsedCliArgs {
             config_path: config,
@@ -767,6 +837,7 @@ fn build_parsed_cli_args(
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::Models,
             save_session: None,
+            tool_replay: None,
         },
         Some(Commands::Probe) => ParsedCliArgs {
             config_path: config,
@@ -782,6 +853,7 @@ fn build_parsed_cli_args(
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::Probe,
             save_session: None,
+            tool_replay: None,
         },
         Some(Commands::SaveSession(e)) => ParsedCliArgs {
             config_path: config,
@@ -800,7 +872,37 @@ fn build_parsed_cli_args(
                 format: e.format,
                 session_file: e.session_file,
             }),
+            tool_replay: None,
         },
+        Some(Commands::ToolReplay(tr)) => {
+            let tr_cli = match tr.sub {
+                ToolReplaySubCmd::Export(e) => ToolReplayCli::Export {
+                    session_file: e.session_file,
+                    output: e.output,
+                    note: e.note,
+                },
+                ToolReplaySubCmd::Run(r) => ToolReplayCli::Run {
+                    fixture: r.fixture,
+                    compare_recorded: r.compare_recorded,
+                },
+            };
+            ParsedCliArgs {
+                config_path: config,
+                chat_cli: ChatCliArgs::default(),
+                serve_port: None,
+                http_bind_host: http_bind_host(None),
+                workspace_cli: workspace,
+                no_tools,
+                no_web: false,
+                dry_run: false,
+                no_stream: false,
+                log_file: log_path,
+                bench_args: BenchmarkCliArgs::default(),
+                extra_cli: ExtraCliCommand::None,
+                save_session: None,
+                tool_replay: Some(tr_cli),
+            }
+        }
         Some(Commands::Mcp(m)) => {
             let probe = match m.sub {
                 McpSubCmd::List(l) => l.probe,
@@ -819,6 +921,7 @@ fn build_parsed_cli_args(
                 bench_args: BenchmarkCliArgs::default(),
                 extra_cli: ExtraCliCommand::McpList { probe },
                 save_session: None,
+                tool_replay: None,
             }
         }
     })

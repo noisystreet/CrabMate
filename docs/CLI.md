@@ -23,11 +23,12 @@
 | `models` | `GET …/models`（需 `API_KEY`）。 |
 | `probe` | 探测 models 端点（需 `API_KEY`）。 |
 | `save-session` | 从会话文件导出 JSON/Markdown 到工作区 **`.crabmate/exports/`**（与 Web 导出同形；**不要**求 `API_KEY`）。`--format json|markdown|both`（默认 `both`），`--session-file` 可选。兼容别名 **`export-session`**。 |
+| `tool-replay` | 从会话 JSON 提取**工具调用时间线**为 fixture，或按 fixture **重放工具**（与对话相同走 `run_tool`，**不调用大模型**；**不要**求 `API_KEY`）。见下文「工具重放 fixture」。 |
 | `mcp list` | 只读列出**本进程**内与当前 `mcp_enabled` + `mcp_command` 指纹一致的已缓存 MCP stdio 会话及合并后的 OpenAI 工具名（**不要**求 `API_KEY`）。若尚未在本进程跑过对话，可先 **`mcp list --probe`** 尝试连接一次（会启动配置中的 MCP 子进程，与正常对话路径相同）。 |
 
 ## 日志级别
 
-未设置 `RUST_LOG` 时：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` / `mcp` / `save-session`（及别名 `export-session`）默认 **warn**。可用 `RUST_LOG` 或 `--log <FILE>`。
+未设置 `RUST_LOG` 时：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` / `mcp` / `save-session`（及别名 `export-session`）/ `tool-replay` 默认 **warn**。可用 `RUST_LOG` 或 `--log <FILE>`。
 
 ## 消息管道调试日志
 
@@ -35,7 +36,7 @@
 
 ## 兼容旧用法
 
-未写子命令时仍可用 `--serve`、`--query`、`--benchmark`、`--dry-run` 等，内部映射为对应子命令。若参数中**任意位置**出现显式子命令名（如 `serve` / `doctor` / `save-session` / `export-session`），则整段 argv 不再插入默认 `repl`（与 `tests/fixtures/cli/legacy_normalize.json` 契约一致）。
+未写子命令时仍可用 `--serve`、`--query`、`--benchmark`、`--dry-run` 等，内部映射为对应子命令。若参数中**任意位置**出现显式子命令名（如 `serve` / `doctor` / `save-session` / `export-session` / `tool-replay`），则整段 argv 不再插入默认 `repl`（与 `tests/fixtures/cli/legacy_normalize.json` 契约一致）。
 
 ## 常用选项（兼容写法）
 
@@ -88,6 +89,24 @@ cargo run -- save-session --format json --workspace /path/to/proj
 ## `save-session`
 
 默认读取 **`<workspace>/.crabmate/tui_session.json`**（`--workspace` 与全局 `--config` 写在子命令前），在 **`<workspace>/.crabmate/exports/`** 下生成带时间戳的 **`chat_export_*.json`** / **`chat_export_*.md`**（与 Web 前端导出约定一致，见 `runtime/chat_export.rs` 与 `frontend/src/chatExport.ts`）。每行 stdout 为写出文件的绝对路径，便于脚本捕获。
+
+## `tool-replay`（工具时间线 fixture）
+
+用于复现某次对话中的**工具调用顺序与参数**，或做**回归对比**（与录制时的 `tool` 消息输出是否一致）。
+
+- **`export`**：从 **`ChatSessionFile`**（与 `save-session` / Web 导出同形）扫描 `assistant.tool_calls` 及紧随其后的 `role=tool` 消息，写出 **`tool_replay_YYYYMMDD_HHMMSS.json`** 到 **`.crabmate/exports/`**（或 `--output`）。fixture 顶层含 `version`、`source: "crabmate-tool-replay"`、可选 `note`、**`steps`**（`name`、`arguments`、`tool_call_id`、可选 **`recorded_output`**）。
+- **`run`**：按 `steps` 顺序对当前工作区调用 **`tools::run_tool`**（**真实执行**：`run_command` / `http_fetch` 等仍受配置与白名单约束；**无**终端审批交互，非白名单 `run_command` 会直接失败）。`--compare-recorded` 时对含 `recorded_output` 的步骤做**字符串全等**比较，有不一致则进程退出码 **6**。
+
+示例：
+
+```bash
+crabmate save-session --format json --workspace /path/to/proj   # 先得到 chat_export_*.json
+crabmate tool-replay export --session-file /path/to/chat_export_20260101_120000.json --note "bug repro"
+crabmate tool-replay run --fixture /path/to/proj/.crabmate/exports/tool_replay_20260101_120500.json
+crabmate tool-replay run --fixture ./fixture.json --compare-recorded   # CI 回归
+```
+
+**安全**：重放与正常 Agent 回合相同，仅在**可信工作区**使用；勿对不可信会话 fixture 在敏感目录执行。
 
 ## `chat` 与管道
 
