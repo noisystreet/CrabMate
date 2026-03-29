@@ -451,6 +451,48 @@ pub fn apply_session_sync_pipeline(
 
 // ── 供应商出站（ChatRequest.messages）────────────────────────────────────────
 
+fn sanitize_assistant_tool_call_arguments_for_vendor_in_place(msgs: &mut [Message]) {
+    use crate::types::sanitize_tool_call_arguments_for_openai_compat;
+
+    for m in msgs.iter_mut() {
+        if !m.role.trim().eq_ignore_ascii_case("assistant") {
+            continue;
+        }
+        let Some(tcs) = m.tool_calls.as_mut() else {
+            continue;
+        };
+        for tc in tcs.iter_mut() {
+            let orig = tc.function.arguments.as_str();
+            let s = sanitize_tool_call_arguments_for_openai_compat(orig);
+            if s == tc.function.arguments {
+                continue;
+            }
+            let trimmed_empty = orig.trim().is_empty();
+            if trimmed_empty {
+                log::debug!(
+                    target: "crabmate",
+                    "tool_calls.function.arguments 空串已规范为 {{}} tool_call_id={}",
+                    tc.id
+                );
+            } else if s == "{}" && serde_json::from_str::<serde_json::Value>(orig.trim()).is_err() {
+                log::warn!(
+                    target: "crabmate",
+                    "tool_calls.function.arguments 非合法 JSON，已替换为 {{}} 以满足上游校验 tool_call_id={} preview={}",
+                    tc.id,
+                    crate::redact::preview_chars(orig, 80)
+                );
+            } else {
+                log::debug!(
+                    target: "crabmate",
+                    "tool_calls.function.arguments 已规整为合法 JSON 形态 tool_call_id={}",
+                    tc.id
+                );
+            }
+            tc.function.arguments = s;
+        }
+    }
+}
+
 /// 从会话切片构造发往 OpenAI 兼容 API 的 `messages`：**跳过** UI 分隔线与长期记忆注入、剥离 `reasoning_content`、再 normalize（合并相邻 assistant 等）；`fold_system_into_user` 为真时再 [`crate::types::fold_system_messages_into_following_user`]。
 #[inline]
 pub fn conversation_messages_to_vendor_body(
@@ -463,6 +505,7 @@ pub fn conversation_messages_to_vendor_body(
     if fold_system_into_user {
         v = crate::types::fold_system_messages_into_following_user(v);
     }
+    sanitize_assistant_tool_call_arguments_for_vendor_in_place(&mut v);
     v
 }
 
@@ -476,6 +519,7 @@ pub fn normalize_stripped_messages_for_vendor_body(
     if fold_system_into_user {
         v = crate::types::fold_system_messages_into_following_user(v);
     }
+    sanitize_assistant_tool_call_arguments_for_vendor_in_place(&mut v);
     v
 }
 

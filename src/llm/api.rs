@@ -759,7 +759,12 @@ pub async fn stream_chat(
                 .map(|(id, typ, name, arguments)| ToolCall {
                     id,
                     typ,
-                    function: FunctionCall { name, arguments },
+                    function: FunctionCall {
+                        name,
+                        arguments: crate::types::sanitize_tool_call_arguments_for_openai_compat(
+                            &arguments,
+                        ),
+                    },
                 })
                 .collect(),
         )
