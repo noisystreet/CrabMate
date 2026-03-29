@@ -88,6 +88,9 @@ export interface StatusData {
   project_profile_inject_enabled?: boolean
   /** 项目画像注入正文最大字符数（0 表示不生成正文） */
   project_profile_inject_max_chars?: number
+  /** 首轮是否追加 cargo metadata + package.json 的结构化摘要与 Mermaid workspace 图 */
+  project_dependency_brief_inject_enabled?: boolean
+  project_dependency_brief_inject_max_chars?: number
   /** 是否启用工具调用解释卡（crabmate_explain_why） */
   tool_call_explain_enabled?: boolean
   tool_call_explain_min_chars?: number

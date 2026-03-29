@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use crate::path_workspace::absolutize_relative_under_root;
-use crate::types::{Message, messages_chat_seed};
 
 /// 读取 `rel_path`（相对工作区根）的 UTF-8 文本；不存在或越界返回 `None`。超长按 `max_chars` 截断（字符边界安全）。
 pub fn load_memory_snippet(
@@ -30,39 +29,13 @@ pub fn load_memory_snippet(
     ))
 }
 
-/// 与 [`messages_chat_seed`] 相同，但若 `memory_snippet` 为 `Some` 则在 `system` 与最后一条用户消息之间插入一条 `user`（备忘）。
-pub fn messages_chat_seed_with_memory(
-    system_prompt: &str,
-    user_text: &str,
-    memory_snippet: Option<&str>,
-) -> Vec<Message> {
-    let Some(mem) = memory_snippet.filter(|s| !s.trim().is_empty()) else {
-        return messages_chat_seed(system_prompt, user_text);
-    };
-    vec![
-        Message::system_only(system_prompt.to_string()),
-        Message::user_only(mem.to_string()),
-        Message::user_only(user_text.to_string()),
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
 
     #[test]
-    fn memory_inserted_between_system_and_user() {
-        let v = messages_chat_seed_with_memory("sys", "hello", Some("prefer rust"));
-        assert_eq!(v.len(), 3);
-        assert_eq!(v[0].role, "system");
-        assert_eq!(v[1].role, "user");
-        assert!(v[1].content.as_deref().unwrap().contains("prefer rust"));
-        assert_eq!(v[2].content.as_deref(), Some("hello"));
-    }
-
-    #[test]
-    fn load_from_temp_workspace() {
+    fn memory_snippet_wraps_path_hint() {
         let dir =
             std::env::temp_dir().join(format!("crabmate_agent_memory_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -71,6 +44,7 @@ mod tests {
         let mut f = std::fs::File::create(&sub).unwrap();
         writeln!(f, "  use edition 2024  ").unwrap();
         let got = load_memory_snippet(&dir, "memo.md", 1000).unwrap();
+        assert!(got.contains("工作区内 memo.md"));
         assert!(got.contains("edition 2024"));
         let _ = std::fs::remove_dir_all(&dir);
     }
