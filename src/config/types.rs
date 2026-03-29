@@ -503,6 +503,8 @@ pub struct AgentConfig {
     pub mcp_tool_timeout_secs: u64,
     /// 是否注册并允许 `codebase_semantic_search`（本地 fastembed + SQLite；`rebuild_index` 会写 `.crabmate/`）。
     pub codebase_semantic_search_enabled: bool,
+    /// 写工具成功或 `workspace_changed` 后是否删除语义索引中相关块（与 `read_file` 缓存清空对齐）。
+    pub codebase_semantic_invalidate_on_workspace_change: bool,
     /// 相对工作区的语义索引 SQLite 路径；空则使用 `.crabmate/codebase_semantic.sqlite`。
     pub codebase_semantic_index_sqlite_path: String,
     /// 参与索引的单文件最大字节数（超出则跳过）。

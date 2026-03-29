@@ -8,6 +8,7 @@ mod agent_memory;
 mod chat_job_queue;
 /// 工作区代码语义索引与 `codebase_semantic_search` 工具（SQLite + fastembed）。
 mod codebase_semantic_index;
+mod codebase_semantic_invalidation;
 mod config;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
 mod conversation_store;

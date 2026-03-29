@@ -139,6 +139,7 @@ struct ConfigBuilder {
     mcp_command: Option<String>,
     mcp_tool_timeout_secs: Option<u64>,
     codebase_semantic_search_enabled: Option<bool>,
+    codebase_semantic_invalidate_on_workspace_change: Option<bool>,
     codebase_semantic_index_sqlite_path: Option<String>,
     codebase_semantic_max_file_bytes: Option<u64>,
     codebase_semantic_chunk_max_chars: Option<u64>,
@@ -440,6 +441,9 @@ impl ConfigBuilder {
         self.codebase_semantic_search_enabled = agent
             .codebase_semantic_search_enabled
             .or(self.codebase_semantic_search_enabled);
+        self.codebase_semantic_invalidate_on_workspace_change = agent
+            .codebase_semantic_invalidate_on_workspace_change
+            .or(self.codebase_semantic_invalidate_on_workspace_change);
         override_opt_string_non_empty(
             &mut self.codebase_semantic_index_sqlite_path,
             agent.codebase_semantic_index_sqlite_path,
@@ -578,6 +582,8 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.mcp_command.clone_from(&src.mcp_command);
     dst.mcp_tool_timeout_secs = src.mcp_tool_timeout_secs;
     dst.codebase_semantic_search_enabled = src.codebase_semantic_search_enabled;
+    dst.codebase_semantic_invalidate_on_workspace_change =
+        src.codebase_semantic_invalidate_on_workspace_change;
     dst.codebase_semantic_index_sqlite_path
         .clone_from(&src.codebase_semantic_index_sqlite_path);
     dst.codebase_semantic_max_file_bytes = src.codebase_semantic_max_file_bytes;
@@ -1244,6 +1250,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.codebase_semantic_search_enabled = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_INVALIDATE_ON_WORKSPACE_CHANGE")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.codebase_semantic_invalidate_on_workspace_change = Some(val);
+    }
     if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_INDEX_SQLITE_PATH") {
         let v = v.trim().to_string();
         if !v.is_empty() {
@@ -1644,6 +1655,9 @@ fn finalize(
         .max(1);
 
     let codebase_semantic_search_enabled = b.codebase_semantic_search_enabled.unwrap_or(true);
+    let codebase_semantic_invalidate_on_workspace_change = b
+        .codebase_semantic_invalidate_on_workspace_change
+        .unwrap_or(true);
     let codebase_semantic_index_sqlite_path =
         b.codebase_semantic_index_sqlite_path.unwrap_or_default();
     let codebase_semantic_max_file_bytes = b
@@ -1778,6 +1792,7 @@ fn finalize(
         mcp_command,
         mcp_tool_timeout_secs,
         codebase_semantic_search_enabled,
+        codebase_semantic_invalidate_on_workspace_change,
         codebase_semantic_index_sqlite_path,
         codebase_semantic_max_file_bytes,
         codebase_semantic_chunk_max_chars,

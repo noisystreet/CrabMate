@@ -145,6 +145,8 @@ weather_timeout_secs = 15
 
 # --- 代码语义检索（codebase_semantic_search 工具；本地 fastembed + SQLite，索引默认 .crabmate/codebase_semantic.sqlite）---
 codebase_semantic_search_enabled = true
+# 写工具成功或本轮已标记 workspace_changed 后删除索引中相关块（run_command 等无法解析路径时整表清空）
+codebase_semantic_invalidate_on_workspace_change = true
 # codebase_semantic_index_sqlite_path = ".crabmate/codebase_semantic.sqlite"
 codebase_semantic_max_file_bytes = 524288
 codebase_semantic_chunk_max_chars = 1200

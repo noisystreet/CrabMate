@@ -594,6 +594,42 @@ async fn execute_tools_serial(
             t_tool.elapsed().as_millis()
         );
 
+        if cfg.codebase_semantic_search_enabled
+            && cfg.codebase_semantic_invalidate_on_workspace_change
+        {
+            let cs = crate::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(
+                cfg.as_ref(),
+            );
+            if cs.enabled && cs.invalidate_on_workspace_change {
+                let should_apply = if is_readonly {
+                    *workspace_changed
+                } else {
+                    crate::codebase_semantic_invalidation::tool_output_semantic_success(
+                        name.as_str(),
+                        result.as_str(),
+                    )
+                };
+                if should_apply {
+                    let inv = crate::codebase_semantic_invalidation::invalidation_for_tool_call(
+                        name.as_str(),
+                        args.as_str(),
+                    )
+                    .or_else(|| {
+                        (*workspace_changed).then_some(
+                            crate::codebase_semantic_invalidation::CodebaseSemanticInvalidation::FullWorkspace,
+                        )
+                    });
+                    if let Some(inv) = inv {
+                        crate::codebase_semantic_invalidation::apply_after_successful_tool(
+                            effective_working_dir,
+                            cs.index_sqlite_path.as_str(),
+                            inv,
+                        );
+                    }
+                }
+            }
+        }
+
         if (!is_readonly || *workspace_changed)
             && let Some(c) = read_file_turn_cache.as_ref()
         {
