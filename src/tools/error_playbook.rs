@@ -1,6 +1,10 @@
-//! 根据**已脱敏**的构建/测试错误输出，做启发式归类并给出 2～3 条可经 `run_command` 执行的排查命令建议（仅输出文本，**不执行**）。
+//! 根据**已脱敏**的构建/测试错误输出，做启发式归类并给出 2～3 条可经 `run_command` 执行的排查命令建议。
+//! [`error_output_playbook`] 仅输出文本；[`playbook_run_commands`] 按序真实执行这些命令（仍受白名单与 `run_command` 规则约束）。
 
 use std::collections::HashSet;
+
+use super::ToolContext;
+use super::command;
 
 use regex::Regex;
 
@@ -298,15 +302,18 @@ fn snippet_lines(text: &str, max_lines: usize) -> String {
         .join("\n")
 }
 
-/// 参数：`error_text`（必填）、`ecosystem`（可选，默认 auto）、`max_chars`（可选，默认 24000，上限 100000）
-pub fn error_output_playbook(args_json: &str, allowed_commands: &[String]) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
-    };
+/// 从参数 JSON 解析并截断错误文本，返回（截断后正文、有效生态、请求生态、归类）。
+fn playbook_prepare(
+    v: &serde_json::Value,
+) -> Result<(String, Ecosystem, Ecosystem, Category), String> {
     let raw = match v.get("error_text").and_then(|x| x.as_str()) {
         Some(s) if !s.trim().is_empty() => s,
-        _ => return "错误：缺少非空 error_text（请先脱敏，勿粘贴 API Key、token、完整 Authorization 等）".to_string(),
+        _ => {
+            return Err(
+                "错误：缺少非空 error_text（请先脱敏，勿粘贴 API Key、token、完整 Authorization 等）"
+                    .to_string(),
+            );
+        }
     };
     let max_chars = v
         .get("max_chars")
@@ -314,10 +321,7 @@ pub fn error_output_playbook(args_json: &str, allowed_commands: &[String]) -> St
         .map(clamp_max_chars)
         .unwrap_or(DEFAULT_MAX_CHARS);
     let eco_req = match v.get("ecosystem").and_then(|x| x.as_str()) {
-        Some(s) => match parse_ecosystem(s) {
-            Ok(e) => e,
-            Err(msg) => return msg,
-        },
+        Some(s) => parse_ecosystem(s)?,
         None => Ecosystem::Auto,
     };
 
@@ -334,6 +338,19 @@ pub fn error_output_playbook(args_json: &str, allowed_commands: &[String]) -> St
 
     let eco = effective_ecosystem(eco_req, &truncated);
     let cat = detect_category(&truncated, eco);
+    Ok((truncated, eco, eco_req, cat))
+}
+
+/// 参数：`error_text`（必填）、`ecosystem`（可选，默认 auto）、`max_chars`（可选，默认 24000，上限 100000）
+pub fn error_output_playbook(args_json: &str, allowed_commands: &[String]) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数 JSON 无效: {}", e),
+    };
+    let (truncated, eco, eco_req, cat) = match playbook_prepare(&v) {
+        Ok(x) => x,
+        Err(msg) => return msg,
+    };
 
     let allowed_set: HashSet<String> = allowed_commands
         .iter()
@@ -370,6 +387,78 @@ pub fn error_output_playbook(args_json: &str, allowed_commands: &[String]) -> St
     out
 }
 
+fn clamp_playbook_max_commands(n: u64) -> usize {
+    let n = n as usize;
+    if n == 0 { 3 } else { n.min(3) }
+}
+
+/// 按 [`error_output_playbook`] 的同一启发式得到建议命令，并**依次**经 `run_command` 执行（白名单、无 `..`/绝对路径参数等规则与 `run_command` 一致）。
+///
+/// 参数：与 `error_output_playbook` 相同的 `error_text` / `ecosystem` / `max_chars`，另可选 `max_commands`（默认 3，范围 1～3）。
+pub fn playbook_run_commands(args_json: &str, ctx: &ToolContext<'_>) -> String {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(e) => return format!("参数 JSON 无效: {}", e),
+    };
+    let max_run = v
+        .get("max_commands")
+        .and_then(|x| x.as_u64())
+        .map(clamp_playbook_max_commands)
+        .unwrap_or(3);
+
+    let (truncated, eco, _, cat) = match playbook_prepare(&v) {
+        Ok(x) => x,
+        Err(msg) => return msg,
+    };
+    let allowed_set: HashSet<String> = ctx
+        .allowed_commands
+        .iter()
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
+    let suggestions = collect_suggestions(eco, cat, &truncated, &allowed_set);
+    if suggestions.is_empty() {
+        return "（当前白名单下无可用诊断命令；可扩大 allowed_commands 或先使用 error_output_playbook 查看归类）".to_string();
+    }
+    let to_run: Vec<&String> = suggestions.iter().take(max_run).collect();
+
+    let mut out = String::new();
+    out.push_str("playbook_run_commands：已按 error_output_playbook 启发式顺序执行下列命令（每条均为独立 run_command）。\n\n");
+
+    for (i, line) in to_run.iter().enumerate() {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        let mut parts = t.split_whitespace();
+        let Some(bin) = parts.next() else {
+            continue;
+        };
+        let args: Vec<String> = parts.map(String::from).collect();
+        let payload = serde_json::json!({
+            "command": bin,
+            "args": args,
+        });
+        let args_s = match serde_json::to_string(&payload) {
+            Ok(s) => s,
+            Err(e) => {
+                out.push_str(&format!("—— 步骤 {} ——\n序列化失败: {}\n\n", i + 1, e));
+                continue;
+            }
+        };
+        out.push_str(&format!("—— 步骤 {}: `{}` ——\n", i + 1, t));
+        let r = command::run(
+            &args_s,
+            ctx.command_max_output_len,
+            ctx.allowed_commands,
+            ctx.working_dir,
+        );
+        out.push_str(&r);
+        out.push_str("\n\n");
+    }
+    out.push_str("提示：以上为真实命令输出；若需仅看建议不执行，请用 error_output_playbook。\n");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,7 +472,25 @@ mod tests {
             "df".into(),
             "python3".into(),
             "npm".into(),
+            "echo".into(),
         ]
+    }
+
+    fn ctx_with_allow<'a>(allowed: &'a [String]) -> super::super::ToolContext<'a> {
+        super::super::ToolContext {
+            command_max_output_len: 4096,
+            weather_timeout_secs: 15,
+            allowed_commands: allowed,
+            working_dir: std::path::Path::new("."),
+            web_search_timeout_secs: 15,
+            web_search_provider: crate::config::WebSearchProvider::Brave,
+            web_search_api_key: "",
+            web_search_max_results: 5,
+            http_fetch_allowed_prefixes: &[] as &[String],
+            http_fetch_timeout_secs: 30,
+            http_fetch_max_response_bytes: 8192,
+            read_file_turn_cache: None,
+        }
     }
 
     #[test]
@@ -414,5 +521,17 @@ mod tests {
         let r = light_redact(text);
         assert!(!r.contains("sk-fake"));
         assert!(r.contains("[已省略]"));
+    }
+
+    #[test]
+    fn playbook_run_commands_runs_first_suggested_command() {
+        let allowed = vec!["ls".into(), "df".into()];
+        let ctx = ctx_with_allow(&allowed);
+        let out = super::playbook_run_commands(
+            r#"{"error_text":"permission denied opening ./foo","max_commands":1}"#,
+            &ctx,
+        );
+        assert!(out.contains("步骤 1"));
+        assert!(out.contains("ls"));
     }
 }

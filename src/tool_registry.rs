@@ -161,6 +161,7 @@ pub fn is_readonly_tool(name: &str) -> bool {
             "npm_install",
             "go_mod_tidy",
             "run_command",
+            "playbook_run_commands",
             "run_executable",
             "workflow_execute",
             "http_request",
@@ -180,6 +181,7 @@ fn parallel_sync_batch_denied(name: &str) -> bool {
             | "ci_pipeline_local"
             | "repo_overview_sweep"
             | "docs_health_sweep"
+            | "playbook_run_commands"
     ) || name.starts_with("cargo_")
         || name.starts_with("npm_")
         || name.starts_with("frontend_")

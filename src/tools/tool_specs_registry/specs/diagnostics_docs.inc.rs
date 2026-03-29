@@ -16,6 +16,14 @@
             summary: ToolSummaryKind::Dynamic(ts::summary_error_output_playbook),
         },
         ToolSpec {
+            name: "playbook_run_commands",
+            description: "与 **`error_output_playbook`** 相同的启发式归类后，**依次**将 **1～3 条**建议命令经 **`run_command`** 在工作区**真实执行**（白名单、参数安全规则与 `run_command` 一致；可能触发 cargo/npm 等构建锁）。参数同 `error_output_playbook`，另可选 **`max_commands`**（默认 3）。**须可信工作区**；错误文本请先脱敏。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_playbook_run_commands,
+            runner: runner_playbook_run_commands,
+            summary: ToolSummaryKind::Static("Run error playbook suggestions via run_command"),
+        },
+        ToolSpec {
             name: "changelog_draft",
             description: "根据 **git log** 生成 **Markdown 变更说明草稿**（**不写仓库**）。支持按提交日聚合 subject、`flat` 平铺、或 `tag_ranges` 按 semver 降序相邻 tag 分段（`--no-merges`）。可选 since/until 与 max_commits。",
             category: ToolCategory::Development,

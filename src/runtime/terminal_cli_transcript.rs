@@ -7,6 +7,7 @@ use crate::redact;
 use crate::runtime::cli_repl_ui::{
     CLI_REPL_HELP_CMD_FG, CLI_REPL_HELP_DESC_FG, CLI_REPL_HELP_TITLE_FG, cli_repl_stdout_use_color,
 };
+use crate::tool_result::ParsedLegacyOutput;
 
 use crossterm::{
     queue,
@@ -142,6 +143,65 @@ pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Re
 /// 标题行为 `### 工具 · {name}`；有详情时统一为 **`### 工具 · {name} : …`**（摘要已以 `:` 开头时不再重复冒号），例：`run_command` + `ls -la` → `### 工具 · run_command : ls -la`，`create_file` + 去重后 `: a.cpp` → `### 工具 · create_file : a.cpp`。
 ///
 /// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（用于 `read_file` / `read_dir` / `list_tree` 等易刷屏工具；完整结果仍由调用方写入对话历史）。
+const PLAYBOOK_HINT_SNIPPET_MAX: usize = 12_000;
+
+/// 工具失败时于 CLI stdout 提示可一键诊断（`playbook_run_commands`）；**不**自动执行。
+pub(crate) fn print_cli_playbook_healing_hint(
+    tool_name: &str,
+    raw_result: &str,
+    parsed: &ParsedLegacyOutput,
+) -> io::Result<()> {
+    if matches!(
+        tool_name,
+        "playbook_run_commands" | "error_output_playbook" | "diagnostic_summary"
+    ) || tool_name.starts_with("mcp__")
+    {
+        return Ok(());
+    }
+    let body = if !parsed.stderr.trim().is_empty() {
+        parsed.stderr.as_str()
+    } else if !parsed.stdout.trim().is_empty() {
+        parsed.stdout.as_str()
+    } else {
+        raw_result
+    };
+    let body = body.trim();
+    if body.is_empty() {
+        return Ok(());
+    }
+    let take = body.len().min(PLAYBOOK_HINT_SNIPPET_MAX);
+    let snippet = &body[..take];
+    let json_snippet = serde_json::to_string(snippet).unwrap_or_else(|_| "\"\"".to_string());
+
+    let mut w = io::stdout();
+    let color = cli_repl_stdout_use_color();
+    if color {
+        queue!(
+            w,
+            SetAttribute(Attribute::Bold),
+            SetForegroundColor(CLI_REPL_HELP_TITLE_FG)
+        )?;
+    }
+    writeln!(w, "\n── 自愈提示 · 诊断命令包 ──")?;
+    if color {
+        queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
+        queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
+    }
+    writeln!(
+        w,
+        "可将下方整行交给模型调用工具 **playbook_run_commands**（参数 JSON 内 `error_text` 已转义）；或自行拆分 `run_command`。\n\
+         请先**脱敏**（勿含 API Key、token、完整 Authorization 等）。"
+    )?;
+    writeln!(
+        w,
+        "{{\"error_text\":{json_snippet},\"ecosystem\":\"auto\"}}"
+    )?;
+    if color {
+        queue!(w, ResetColor)?;
+    }
+    w.flush()
+}
+
 pub(crate) fn print_tool_result_terminal(
     name: &str,
     args: &str,
