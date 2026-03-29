@@ -42,6 +42,8 @@ fn test_allowed_commands() -> Vec<String> {
         "wc".into(),
         "cat".into(),
         "cmake".into(),
+        "ctest".into(),
+        "mkdir".into(),
         "ninja".into(),
         "gcc".into(),
         "g++".into(),

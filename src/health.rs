@@ -127,6 +127,7 @@ pub async fn build_health_report(
         m.insert("rustfmt", check_cmd("rustfmt", &["--version"]));
         m.insert("clang_format", check_cmd("clang-format", &["--version"]));
         m.insert("cmake", check_cmd("cmake", &["--version"]));
+        m.insert("ctest", check_cmd("ctest", &["--version"]));
         m.insert("cxxfilt", check_cmd("c++filt", &["--version"]));
         // GNU Binutils（或兼容实现）：供 run_command 白名单内 ELF/目标文件只读分析
         m.insert("objdump", check_cmd("objdump", &["--version"]));
@@ -167,6 +168,7 @@ pub async fn build_health_report(
             "rustfmt" => "dep_rustfmt",
             "clang_format" => "dep_clang_format",
             "cmake" => "dep_cmake",
+            "ctest" => "dep_ctest",
             "cxxfilt" => "dep_cxxfilt",
             "objdump" => "dep_objdump",
             "nm" => "dep_nm",

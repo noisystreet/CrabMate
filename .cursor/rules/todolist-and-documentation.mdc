@@ -22,5 +22,5 @@ alwaysApply: true
 
 ## Rust：默认配置、环境变量与 HTTP 路由
 
-- 修改 **`default_config.toml`**、**`config.toml.example`**，或在 **`src/`** 中变更 **axum 路由/handler**（路径、方法、请求/响应体、新接口）、或 **新增/改名/废弃** 通过 `std::env::var` 等读取的 **`AGENT_*` 等环境变量** 时：必须同步 **README.md**（使用者：如何配置、默认值、变量名）与 **docs/DEVELOPMENT.md**（维护者：键含义、模块边界、扩展点）。
+- 修改 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`**、**`config.toml.example`**，或在 **`src/`** 中变更 **axum 路由/handler**（路径、方法、请求/响应体、新接口）、或 **新增/改名/废弃** 通过 `std::env::var` 等读取的 **`AGENT_*` 等环境变量** 时：必须同步 **README.md**（使用者：如何配置、默认值、变量名）与 **docs/DEVELOPMENT.md**（维护者：键含义、模块边界、扩展点）。
 - 仅内部实现重构且对外配置形状与 HTTP 契约不变时，可只改注释或 `DEVELOPMENT.md`。

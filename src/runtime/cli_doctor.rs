@@ -64,7 +64,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     println!("  model: {}", cfg.model.trim());
     println!("  llm_http_auth_mode: {}", cfg.llm_http_auth_mode.as_str());
     println!(
-        "  allowed_commands: {} 条（dev/prod 由配置 [agent] env 在加载时选定）",
+        "  allowed_commands: {} 条（默认见 config/tools.toml；可被覆盖配置或 AGENT_ALLOWED_COMMANDS 替换）",
         cfg.allowed_commands.len()
     );
     println!(

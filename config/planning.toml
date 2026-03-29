@@ -1,0 +1,17 @@
+# 规划 / 反思 / 编排模式嵌入默认（reflection、终答规划、planner/executor、分阶段规划等）。
+# 与 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml` 在 `load_config` 中顺序合并（本文件在其后，再后为 **`config/memory.toml`**），再被 config.toml / .agent_demo.toml 与 AGENT_* 覆盖。
+
+[agent]
+
+reflection_default_max_rounds = 5
+final_plan_requirement = "workflow_reflection"
+plan_rewrite_max_attempts = 2
+planner_executor_mode = "single_agent"
+staged_plan_execution = true
+# staged_plan_allow_no_task = true
+# staged_plan_phase_instruction = """……"""
+# staged_plan_feedback_mode = "fail_fast"
+# staged_plan_patch_max_attempts = 2
+staged_plan_cli_show_planner_stream = false
+staged_plan_optimizer_round = true
+staged_plan_ensemble_count = 1

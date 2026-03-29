@@ -1,0 +1,63 @@
+# CrabMate 嵌入默认配置（可被 config.toml / .agent_demo.toml 及 AGENT_* 环境变量覆盖）
+# 以下为 [agent] 扁平键；按功能分节编排，便于检索（解析器不依赖注释顺序）。
+
+[agent]
+
+# 1. LLM 网关（OpenAI 兼容 chat/completions）
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+# 模型 HTTP 鉴权：bearer（默认，需环境变量 API_KEY）| none（不向 chat/models 发 Authorization；本地 Ollama 等可不设 API_KEY）
+# llm_http_auth_mode = "bearer"
+max_tokens = 2048
+temperature = 0.7
+# 可选：写入 chat/completions 的整数 seed；省略则请求 JSON 不带该字段
+# llm_seed = 42
+api_timeout_secs = 60
+api_max_retries = 3
+api_retry_delay_secs = 1
+
+# 2. 对话历史、上下文预算与摘要
+max_message_history = 24
+context_char_budget = 200000
+context_min_messages_after_system = 4
+context_summary_trigger_chars = 0
+context_summary_tail_messages = 12
+context_summary_max_tokens = 1024
+context_summary_transcript_max_chars = 120000
+
+# 3. 内置工具（run_command、工具入模、缓存、联网工具、MCP、解释卡等）
+# 默认见 **`config/tools.toml`**
+
+# 4. CLI / REPL 会话（tui_session.json）
+# 默认见 **`config/session.toml`**
+
+# 5. Web 对话队列（并发上限；单轮只读工具并行与 read_file 缓存见 **`config/tools.toml`**）
+chat_queue_max_concurrent = 2
+chat_queue_max_pending = 32
+
+# 6. 规划 / 反思 / 编排模式
+# 默认见 **`config/planning.toml`**
+
+# 7. 系统提示词与 Cursor 式规则注入
+cursor_rules_enabled = false
+cursor_rules_dir = ".cursor/rules"
+cursor_rules_include_agents_md = true
+cursor_rules_max_chars = 48000
+# 系统提示词：默认正文在 **`config/prompts/default_system_prompt.md`**（改文件无需重编二进制）。相对路径依次尝试：进程当前目录、各覆盖配置文件所在目录（后加载的优先）、run_command_working_dir。
+# 覆盖：内联 system_prompt（低于文件）或改 system_prompt_file；环境变量 AGENT_SYSTEM_PROMPT、AGENT_SYSTEM_PROMPT_FILE（后者可为绝对路径）。
+system_prompt_file = "config/prompts/default_system_prompt.md"
+
+# 8. Web 服务安全与会话持久（可选，默认注释）
+# conversation_store_sqlite_path = ".crabmate/conversations.db"
+# web_api_bearer_token = ""
+# allow_insecure_no_auth_for_non_loopback = false
+# workspace_allowed_roots = []
+
+# 9. 首轮上下文注入：备忘、项目画像、依赖摘要
+# 默认见 **`config/context_inject.toml`**
+
+# 10. 长期记忆（可选）
+# 默认见 **`config/memory.toml`**
+
+# 覆盖 system_prompt：内联优先级低于 system_prompt_file；可用环境变量 AGENT_SYSTEM_PROMPT / AGENT_SYSTEM_PROMPT_FILE
+# system_prompt = """……"""

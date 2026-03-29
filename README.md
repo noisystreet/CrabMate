@@ -55,7 +55,7 @@ cargo run -- serve     # Web，默认 8080
 
 前端：`cd frontend && npm install && npm run build` 后再 `serve`（静态资源来自 `frontend/dist`）。
 
-**配置**：`default_config.toml` + 可选 `config.toml`；默认通过 **`system_prompt_file = "prompts/default_system_prompt.md"`** 从仓库文件加载（**改该文件无需重编**；相对路径会按当前目录、配置文件所在目录、`run_command_working_dir` 依次解析，见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)）。**环境变量与高级项**同见该文档。**子命令、Benchmark、deb 包、`man` 手册页**见 [`docs/CLI.md`](docs/CLI.md)（troff 源为 **`man/crabmate.1`**，与 `clap` 不同步时执行 **`cargo run --bin crabmate-gen-man`**；**`cargo install`** 默认不安装 man，**`cargo deb`** 会装入 **`/usr/share/man/man1`**）。
+**配置**：`config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml`（编译嵌入）+ 可选 `config.toml`；默认通过 **`system_prompt_file = "config/prompts/default_system_prompt.md"`** 从仓库文件加载（**改该文件无需重编**；相对路径会按当前目录、配置文件所在目录、`run_command_working_dir` 依次解析，见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)）。**环境变量与高级项**同见该文档。**子命令、Benchmark、deb 包、`man` 手册页**见 [`docs/CLI.md`](docs/CLI.md)（troff 源为 **`man/crabmate.1`**，与 `clap` 不同步时执行 **`cargo run --bin crabmate-gen-man`**；**`cargo install`** 默认不安装 man，**`cargo deb`** 会装入 **`/usr/share/man/man1`**）。
 
 **本地模型（如 Ollama）**：`api_base` 指向其 OpenAI 兼容根（如 `http://127.0.0.1:11434/v1`），并设 **`llm_http_auth_mode = "none"`**（或 `AGENT_LLM_HTTP_AUTH_MODE=none`）即可不设 **`API_KEY`**；详见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)。
 

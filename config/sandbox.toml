@@ -1,0 +1,11 @@
+# SyncDefault 内置工具 Docker 沙盒嵌入默认（`sync_default_tool_sandbox_*`）。
+# 与 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml` 在 `load_config` 中顺序合并（本文件在 tools 之后、planning 之前），再被 config.toml / .agent_demo.toml 与 AGENT_SYNC_DEFAULT_TOOL_SANDBOX_* 覆盖。
+# 默认均为注释：未设置键时行为由 `config::finalize` 与源码默认值决定。
+
+[agent]
+
+# sync_default_tool_sandbox_mode = "none"
+# sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:latest"
+# sync_default_tool_sandbox_docker_network = ""
+# sync_default_tool_sandbox_docker_timeout_secs = 600
+# sync_default_tool_sandbox_docker_user = "current"
