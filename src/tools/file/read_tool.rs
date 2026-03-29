@@ -102,6 +102,30 @@ fn format_encoding_header(note: &DecodedFileNote) -> String {
     }
 }
 
+/// 行区间与截断语义（`read_file_utf8_lines` / `read_file_decoded_lines` 共用）。
+struct ReadFileLinesSpec<'a> {
+    start_line: usize,
+    end_line: usize,
+    max_lines: usize,
+    total_lines: Option<&'a usize>,
+    truncated_by_max: bool,
+}
+
+/// [`assemble_read_output`] 入参。
+struct AssembleReadOutputParams<'a> {
+    working_dir: &'a Path,
+    target: &'a Path,
+    path: &'a str,
+    collected: &'a [(usize, String)],
+    start_line: usize,
+    end_line: usize,
+    max_lines: usize,
+    total_lines: Option<&'a usize>,
+    truncated_by_max: bool,
+    has_more: bool,
+    enc_header: &'a str,
+}
+
 /// 单次 read_file 默认最多返回的行数（防撑爆上下文）
 const READ_FILE_DEFAULT_MAX_LINES: usize = 500;
 /// read_file 允许的单次上限
@@ -219,28 +243,22 @@ pub fn read_file(
 
     let enc_header = format_encoding_header(&decode_note);
 
+    let line_spec = ReadFileLinesSpec {
+        start_line,
+        end_line,
+        max_lines,
+        total_lines: total_lines.as_ref(),
+        truncated_by_max,
+    };
     let body = match resolved {
-        ResolvedTextEncoding::Utf8Strict => read_file_utf8_lines(
-            working_dir,
-            &target,
-            &path,
-            start_line,
-            end_line,
-            max_lines,
-            total_lines.as_ref(),
-            truncated_by_max,
-            0,
-            &enc_header,
-        ),
+        ResolvedTextEncoding::Utf8Strict => {
+            read_file_utf8_lines(working_dir, &target, &path, &line_spec, 0, &enc_header)
+        }
         ResolvedTextEncoding::Utf8Sig { skip_bom } => read_file_utf8_lines(
             working_dir,
             &target,
             &path,
-            start_line,
-            end_line,
-            max_lines,
-            total_lines.as_ref(),
-            truncated_by_max,
+            &line_spec,
             skip_bom,
             &enc_header,
         ),
@@ -249,11 +267,7 @@ pub fn read_file(
             &target,
             &path,
             enc_name,
-            start_line,
-            end_line,
-            max_lines,
-            total_lines.as_ref(),
-            truncated_by_max,
+            &line_spec,
             &enc_header,
         ),
     };
@@ -270,19 +284,21 @@ pub fn read_file(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn read_file_utf8_lines(
     working_dir: &Path,
     target: &Path,
     path: &str,
-    start_line: usize,
-    end_line: usize,
-    max_lines: usize,
-    total_lines: Option<&usize>,
-    truncated_by_max: bool,
+    spec: &ReadFileLinesSpec<'_>,
     skip_bom: usize,
     enc_header: &str,
 ) -> Result<String, String> {
+    let ReadFileLinesSpec {
+        start_line,
+        end_line,
+        max_lines,
+        total_lines,
+        truncated_by_max,
+    } = *spec;
     let mut f = File::open(target).map_err(|e| format!("打开文件失败: {}", e))?;
     if skip_bom > 0 {
         f.seek(SeekFrom::Start(skip_bom as u64))
@@ -360,11 +376,11 @@ fn read_file_utf8_lines(
         ));
     }
 
-    Ok(assemble_read_output(
+    Ok(assemble_read_output(AssembleReadOutputParams {
         working_dir,
         target,
         path,
-        &collected,
+        collected: &collected,
         start_line,
         end_line,
         max_lines,
@@ -372,22 +388,24 @@ fn read_file_utf8_lines(
         truncated_by_max,
         has_more,
         enc_header,
-    ))
+    }))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn read_file_decoded_lines(
     working_dir: &Path,
     target: &Path,
     path: &str,
     enc_name: TextEncodingName,
-    start_line: usize,
-    end_line: usize,
-    max_lines: usize,
-    total_lines: Option<&usize>,
-    truncated_by_max: bool,
+    spec: &ReadFileLinesSpec<'_>,
     enc_header: &str,
 ) -> Result<String, String> {
+    let ReadFileLinesSpec {
+        start_line,
+        end_line,
+        max_lines,
+        total_lines,
+        truncated_by_max,
+    } = *spec;
     let mut collected: Vec<(usize, String)> = Vec::new();
     let mut last_line_no = 0usize;
     let mut eof_before_start = false;
@@ -434,11 +452,11 @@ fn read_file_decoded_lines(
         ));
     }
 
-    Ok(assemble_read_output(
+    Ok(assemble_read_output(AssembleReadOutputParams {
         working_dir,
         target,
         path,
-        &collected,
+        collected: &collected,
         start_line,
         end_line,
         max_lines,
@@ -446,23 +464,23 @@ fn read_file_decoded_lines(
         truncated_by_max,
         has_more,
         enc_header,
-    ))
+    }))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn assemble_read_output(
-    working_dir: &Path,
-    target: &Path,
-    path: &str,
-    collected: &[(usize, String)],
-    start_line: usize,
-    _end_line: usize,
-    max_lines: usize,
-    total_lines: Option<&usize>,
-    truncated_by_max: bool,
-    has_more: bool,
-    enc_header: &str,
-) -> String {
+fn assemble_read_output(p: AssembleReadOutputParams<'_>) -> String {
+    let AssembleReadOutputParams {
+        working_dir,
+        target,
+        path,
+        collected,
+        start_line,
+        end_line: _end_line,
+        max_lines,
+        total_lines,
+        truncated_by_max,
+        has_more,
+        enc_header,
+    } = p;
     let last_shown = collected.last().map(|(l, _)| *l).unwrap_or(start_line);
     let mut out = String::new();
     out.push_str(enc_header);

@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
-use crate::llm::{complete_chat_retrying, tool_chat_request};
+use crate::llm::{CompleteChatRetryingParams, complete_chat_retrying, tool_chat_request};
 use crate::types::{LlmSeedOverride, Message};
 
 /// P：构造请求并调用模型（`no_stream` 为 true 时走 `stream: false`），**不**修改 `messages`。
@@ -50,18 +50,17 @@ pub(crate) async fn per_plan_call_model_retrying(
         temperature_override,
         seed_override,
     );
-    let (msg, finish_reason) = complete_chat_retrying(
+    let cc = CompleteChatRetryingParams {
         llm_backend,
-        client,
+        http: client,
         api_key,
         cfg,
-        &req,
         out,
         render_to_terminal,
         no_stream,
         cancel,
         plain_terminal_stream,
-    )
-    .await?;
+    };
+    let (msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
     Ok((msg, finish_reason))
 }
