@@ -94,6 +94,7 @@ pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len:
         http_fetch_timeout_secs: 0,
         http_fetch_max_response_bytes: 0,
         read_file_turn_cache: None,
+        workspace_changelist: None,
     };
 
     let mut sections: Vec<String> = Vec::new();

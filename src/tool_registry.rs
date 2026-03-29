@@ -362,6 +362,7 @@ pub async fn dispatch_tool(
     args: &str,
     tc: &ToolCall,
     read_file_turn_cache: Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+    workspace_changelist: Option<std::sync::Arc<crate::workspace_changelist::WorkspaceChangelist>>,
     mcp_session: Option<&Arc<Mutex<crate::mcp::McpClientSession>>>,
 ) -> (String, Option<serde_json::Value>) {
     if crate::mcp::is_mcp_proxy_tool(name) {
@@ -549,6 +550,7 @@ pub async fn dispatch_tool(
                     cfg.allowed_commands.as_ref(),
                     effective_working_dir,
                     read_file_turn_cache.as_ref().map(|a| a.as_ref()),
+                    workspace_changelist.as_ref(),
                 );
                 return (tools::run_tool(name, args, &ctx), None);
             }
@@ -557,12 +559,14 @@ pub async fn dispatch_tool(
             let tool_args = tc.function.arguments.clone();
             let work_dir = effective_working_dir.to_path_buf();
             let rfc = read_file_turn_cache.clone();
+            let wcl = workspace_changelist.clone();
             let result = tokio::task::spawn_blocking(move || {
                 let ctx = tools::tool_context_for_with_read_cache(
                     cfg2.as_ref(),
                     cfg2.allowed_commands.as_ref(),
                     work_dir.as_path(),
                     rfc.as_ref().map(|a| a.as_ref()),
+                    wcl.as_ref(),
                 );
                 tools::run_tool(&tool_name, &tool_args, &ctx)
             })

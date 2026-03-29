@@ -4,6 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use crate::workspace_changelist::WorkspaceChangelist;
+
 use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
@@ -42,6 +44,8 @@ pub(crate) struct RunLoopParams<'a> {
     pub mcp_session: Option<Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
     /// 单轮内 `read_file` 磁盘缓存；`None` 且配置启用时由 `run_agent_turn` 创建。
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+    /// 本会话工作区变更集；`None` 时不记录/不注入（见 `session_workspace_changelist_*` 配置）。
+    pub workspace_changelist: Option<Arc<WorkspaceChangelist>>,
     /// 分阶段规划首轮成功后，是否再跑一轮无工具「步骤优化」（合并无依赖只读探查步等）。默认 true。
     pub staged_plan_optimizer_round: bool,
     /// 逻辑多规划员：首轮后的独立规划份数上限（1=关闭）。见 `AgentConfig::staged_plan_ensemble_count`。

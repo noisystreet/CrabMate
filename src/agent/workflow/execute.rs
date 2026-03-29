@@ -467,6 +467,7 @@ async fn execute_node_tool_phase(
                 http_fetch_timeout_secs: hf_to,
                 http_fetch_max_response_bytes: hf_mb,
                 read_file_turn_cache: None,
+                workspace_changelist: None,
             };
             crate::tools::run_tool_result(&tool_name_owned, &exec_args, &ctx)
         });

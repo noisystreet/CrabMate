@@ -30,6 +30,7 @@ pub mod tool_sandbox;
 mod tools;
 mod types;
 mod web;
+mod workspace_changelist;
 
 use config::cli::init_logging;
 pub use config::cli::{
@@ -141,6 +142,17 @@ pub async fn run_agent_turn<'a>(
         None => None,
     };
 
+    let workspace_changelist = if cfg.session_workspace_changelist_enabled {
+        let scope = long_term_memory_scope_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("__default__");
+        Some(crate::workspace_changelist::changelist_for_scope(scope))
+    } else {
+        None
+    };
+
     let mut tools_for_turn: Vec<types::Tool> = tools.to_vec();
     let mcp_session = match mcp::try_open_session_and_tools(cfg.as_ref()).await {
         Some((sess, extra)) => {
@@ -173,6 +185,7 @@ pub async fn run_agent_turn<'a>(
         long_term_memory_scope_id,
         mcp_session,
         read_file_turn_cache,
+        workspace_changelist,
         staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
         staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
     };

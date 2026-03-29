@@ -73,6 +73,8 @@ struct ConfigBuilder {
     chat_queue_max_pending: Option<u64>,
     parallel_readonly_tools_max: Option<u64>,
     read_file_turn_cache_max_entries: Option<u64>,
+    session_workspace_changelist_enabled: Option<bool>,
+    session_workspace_changelist_max_chars: Option<u64>,
     staged_plan_execution: Option<bool>,
     staged_plan_phase_instruction: Option<String>,
     staged_plan_allow_no_task: Option<bool>,
@@ -279,6 +281,12 @@ impl ConfigBuilder {
         self.read_file_turn_cache_max_entries = agent
             .read_file_turn_cache_max_entries
             .or(self.read_file_turn_cache_max_entries);
+        self.session_workspace_changelist_enabled = agent
+            .session_workspace_changelist_enabled
+            .or(self.session_workspace_changelist_enabled);
+        self.session_workspace_changelist_max_chars = agent
+            .session_workspace_changelist_max_chars
+            .or(self.session_workspace_changelist_max_chars);
         self.staged_plan_execution = agent.staged_plan_execution.or(self.staged_plan_execution);
         self.staged_plan_allow_no_task = agent
             .staged_plan_allow_no_task
@@ -452,6 +460,8 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.chat_queue_max_pending = src.chat_queue_max_pending;
     dst.parallel_readonly_tools_max = src.parallel_readonly_tools_max;
     dst.read_file_turn_cache_max_entries = src.read_file_turn_cache_max_entries;
+    dst.session_workspace_changelist_enabled = src.session_workspace_changelist_enabled;
+    dst.session_workspace_changelist_max_chars = src.session_workspace_changelist_max_chars;
     dst.staged_plan_execution = src.staged_plan_execution;
     dst.staged_plan_phase_instruction
         .clone_from(&src.staged_plan_phase_instruction);
@@ -859,6 +869,16 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.read_file_turn_cache_max_entries = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.session_workspace_changelist_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.session_workspace_changelist_max_chars = Some(n);
     }
     if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_EXECUTION")
         && let Some(val) = parse_bool_like(&v)
@@ -1302,6 +1322,16 @@ fn finalize(
         .clamp(1, 256);
     let read_file_turn_cache_max_entries =
         b.read_file_turn_cache_max_entries.unwrap_or(64).min(4096) as usize;
+    let session_workspace_changelist_enabled =
+        b.session_workspace_changelist_enabled.unwrap_or(true);
+    let session_workspace_changelist_max_chars_raw =
+        b.session_workspace_changelist_max_chars.unwrap_or(12_000);
+    let session_workspace_changelist_max_chars = if session_workspace_changelist_max_chars_raw == 0
+    {
+        12_000usize
+    } else {
+        session_workspace_changelist_max_chars_raw.clamp(2_048, 500_000) as usize
+    };
     let staged_plan_execution = b.staged_plan_execution.unwrap_or(true);
     let staged_plan_phase_instruction = b.staged_plan_phase_instruction.unwrap_or_default();
     let staged_plan_allow_no_task = b.staged_plan_allow_no_task.unwrap_or(true);
@@ -1483,6 +1513,8 @@ fn finalize(
         chat_queue_max_pending,
         parallel_readonly_tools_max,
         read_file_turn_cache_max_entries,
+        session_workspace_changelist_enabled,
+        session_workspace_changelist_max_chars,
         staged_plan_execution,
         staged_plan_phase_instruction,
         staged_plan_allow_no_task,

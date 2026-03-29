@@ -16,6 +16,7 @@ use crate::long_term_memory_store;
 use crate::redact::preview_chars;
 use crate::types::{
     CRABMATE_LONG_TERM_MEMORY_NAME, Message, is_chat_ui_separator, is_long_term_memory_injection,
+    is_workspace_changelist_injection,
 };
 
 fn clamp_text(s: &str, max: usize) -> String {
@@ -412,7 +413,7 @@ fn last_user_query_for_memory(messages: &[Message]) -> Option<&str> {
         if m.role != "user" {
             continue;
         }
-        if is_long_term_memory_injection(m) {
+        if is_long_term_memory_injection(m) || is_workspace_changelist_injection(m) {
             continue;
         }
         let c = m.content.as_deref()?.trim();

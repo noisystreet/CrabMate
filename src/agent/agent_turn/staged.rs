@@ -224,6 +224,7 @@ async fn prepare_staged_planner_no_tools_request(
         p.cfg.as_ref(),
         p.messages,
         Some(per_coord),
+        p.workspace_changelist.as_ref().map(|a| a.as_ref()),
     )
     .await?;
 
@@ -499,6 +500,7 @@ where
                         cli_tool_ctx: p.cli_tool_ctx,
                         echo_terminal_transcript,
                         mcp_session: p.mcp_session.as_ref(),
+                        workspace_changelist: p.workspace_changelist.as_ref(),
                     },
                 )
                 .await;
@@ -654,6 +656,7 @@ where
                         cli_tool_ctx: p.cli_tool_ctx,
                         echo_terminal_transcript,
                         mcp_session: p.mcp_session.as_ref(),
+                        workspace_changelist: p.workspace_changelist.as_ref(),
                     },
                 )
                 .await;

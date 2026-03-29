@@ -44,6 +44,7 @@ pub(crate) async fn run_agent_outer_loop(
             p.cfg.as_ref(),
             p.messages,
             Some(per_coord),
+            p.workspace_changelist.as_ref().map(|a| a.as_ref()),
         )
         .await?;
         let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
@@ -132,6 +133,7 @@ pub(crate) async fn run_agent_outer_loop(
                 cli_tool_ctx: p.cli_tool_ctx,
                 echo_terminal_transcript,
                 mcp_session: p.mcp_session.as_ref(),
+                workspace_changelist: p.workspace_changelist.as_ref(),
             },
         )
         .await;
