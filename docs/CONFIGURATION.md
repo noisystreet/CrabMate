@@ -78,7 +78,7 @@
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `CRABMATE_WORKFLOW_CHROME_TRACE_DIR` | 设为非空目录时，每次 **`workflow_execute` DAG 实际执行结束**后，将本次 **`trace`** 写成 Chrome **Trace Event Format** JSON（`workflow-{run_id}-{unix_ms}.json`），可用 `chrome://tracing` 或 [Perfetto UI](https://ui.perfetto.dev/) 打开。写入失败仅打日志，不影响工具返回。 |
+| `CRABMATE_WORKFLOW_CHROME_TRACE_DIR` | 设为非空目录时，每次 **`workflow_execute` DAG 实际执行结束**后，将本次 **`trace`** 写成 Chrome **Trace Event Format** JSON（`workflow-{run_id}-{unix_ms}.json`），可用 `chrome://tracing` 或 [Perfetto UI](https://ui.perfetto.dev/) 打开。文件内含 **`displayTimeUnit: us`**（`ts`/`dur` 为微秒，时间轴相对首条 trace 事件）。**`trace`** 含 **`node_run_start` / `node_run_end`**（整节点墙钟，含审批与重试）、**`node_attempt_*`**、失败补偿时的 **`compensation_phase_*`**；节点事件带 **`tool_name`**、**`phase`**（`main` / `compensation`）。成功写入时结果 JSON 另含 **`chrome_trace_path`**（生成文件路径）。写入失败仅打日志，不影响工具返回。 |
 | `AGENT_WORKFLOW_CHROME_TRACE_DIR` | 与上一项同义（`AGENT_*` 别名）。 |
 
 ### 队列、并行与缓存
