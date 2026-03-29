@@ -1024,6 +1024,8 @@ struct StatusResponse {
     sync_default_tool_sandbox_docker_user_effective: String,
     /// CLI REPL 是否在启动时从 `.crabmate/tui_session.json` 恢复会话（默认 false；文件名历史兼容）。
     tui_load_session_on_start: bool,
+    /// CLI REPL 是否在后台构建 `initial_workspace_messages`（默认 false；仅 REPL）。
+    repl_initial_workspace_messages_enabled: bool,
     max_message_history: usize,
     tool_message_max_chars: usize,
     context_char_budget: usize,
@@ -1117,6 +1119,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
             None => "image_default".to_string(),
         },
         tui_load_session_on_start: cfg.tui_load_session_on_start,
+        repl_initial_workspace_messages_enabled: cfg.repl_initial_workspace_messages_enabled,
         max_message_history: cfg.max_message_history,
         tool_message_max_chars: cfg.tool_message_max_chars,
         context_char_budget: cfg.context_char_budget,

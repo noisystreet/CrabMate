@@ -366,6 +366,14 @@ pub(crate) enum ReplReadLine {
 
 /// 非 **reedline** 读行：与 [`ReplLineEditor`] 共用 **`shell_mode`**，裸 **`$`/`＄`** 行为与 TTY 一致（切换而非打印 shell 用法）。
 pub(crate) fn read_repl_line_piped(shell_mode: &Arc<AtomicBool>) -> io::Result<ReplReadLine> {
+    // IDE / 管道模式下 stdin 非 TTY：reedline 不会绘制提示符，否则看起来像「无输入界面」。
+    if shell_mode.load(Ordering::Relaxed) {
+        print!("bash#:{}", CLI_PROMPT_AFTER_COLON);
+    } else {
+        print!("我:{}", CLI_PROMPT_AFTER_COLON);
+    }
+    io::stdout().flush()?;
+
     let mut input = String::new();
     let n = io::stdin().lock().read_line(&mut input)?;
     if n == 0 {

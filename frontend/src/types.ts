@@ -43,6 +43,8 @@ export interface StatusData {
   sync_default_tool_sandbox_docker_user_effective?: string
   /** TUI 启动是否从 .crabmate/tui_session.json 恢复会话（默认 false） */
   tui_load_session_on_start?: boolean
+  /** REPL 是否在后台构建 initial_workspace_messages（画像/会话恢复等；默认 false，仅 CLI） */
+  repl_initial_workspace_messages_enabled?: boolean
   /** 上下文：system 后最多保留消息条数 */
   max_message_history?: number
   tool_message_max_chars?: number

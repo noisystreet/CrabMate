@@ -13,7 +13,7 @@ use crate::types::{Message, messages_chat_seed, normalize_messages_for_openai_co
 use crate::{LlmSeedOverride, RunAgentTurnParams, run_agent_turn};
 use log::debug;
 use std::collections::HashSet;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -1084,14 +1084,6 @@ pub async fn run_repl(
         )
     };
     let mut work_dir = cli_effective_work_dir(workspace_cli, &run_root);
-    let mut messages = {
-        let g = cfg_holder.read().await;
-        crate::runtime::workspace_session::initial_workspace_messages(
-            &g,
-            work_dir.as_path(),
-            tui_load,
-        )
-    };
     let cli_rt = CliToolRuntime::new_interactive_default();
     let style = CliReplStyle::new();
 
@@ -1099,6 +1091,43 @@ pub async fn run_repl(
         let g = cfg_holder.read().await;
         style.print_banner(&g, work_dir.as_path(), tools.len(), no_stream)?;
     }
+
+    // `repl_initial_workspace_messages_enabled` 为 true 时：`initial_workspace_messages` 在独立线程中构建，不阻塞 REPL。
+    let (mut messages, initial_pending) = {
+        let g = cfg_holder.read().await;
+        let fast = crate::runtime::workspace_session::repl_bootstrap_messages_fast(&g);
+        if !g.repl_initial_workspace_messages_enabled {
+            (fast, None)
+        } else {
+            let may_scan_workspace = (g.project_profile_inject_enabled
+                && g.project_profile_inject_max_chars > 0)
+                || (g.project_dependency_brief_inject_enabled
+                    && g.project_dependency_brief_inject_max_chars > 0)
+                || (g.agent_memory_file_enabled && !g.agent_memory_file.trim().is_empty());
+            if may_scan_workspace || tui_load {
+                let _ = writeln!(
+                    io::stderr(),
+                    "（后台正在准备工作区首轮上下文或会话恢复，可立即输入；就绪后将并入对话。）"
+                );
+                let _ = io::stderr().flush();
+            }
+            let cfg_bg = g.clone();
+            let slot: Arc<StdMutex<Option<Vec<crate::types::Message>>>> =
+                Arc::new(StdMutex::new(None));
+            let slot_bg = Arc::clone(&slot);
+            let wd_bg = work_dir.clone();
+            std::thread::spawn(move || {
+                let built = crate::runtime::workspace_session::initial_workspace_messages(
+                    &cfg_bg,
+                    wd_bg.as_path(),
+                    tui_load,
+                );
+                let mut guard = slot_bg.lock().unwrap_or_else(|e| e.into_inner());
+                *guard = Some(built);
+            });
+            (fast, Some(slot))
+        }
+    };
 
     let history_dir = PathBuf::from(&run_root).join(".crabmate");
     std::fs::create_dir_all(&history_dir)
@@ -1110,6 +1139,11 @@ pub async fn run_repl(
     ));
 
     loop {
+        crate::runtime::workspace_session::try_merge_background_initial_workspace(
+            &mut messages,
+            initial_pending.as_ref(),
+        );
+
         let ed = repl_editor.clone();
         let read_res = tokio::task::spawn_blocking(move || {
             let mut guard = ed.lock().unwrap_or_else(|e| e.into_inner());
@@ -1204,6 +1238,10 @@ pub async fn run_repl(
                     }
                 }
 
+                crate::runtime::workspace_session::try_merge_background_initial_workspace(
+                    &mut messages,
+                    initial_pending.as_ref(),
+                );
                 messages.push(Message::user_only(input.to_string()));
                 debug!(
                     target: "crabmate::print",

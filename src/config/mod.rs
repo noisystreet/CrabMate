@@ -31,6 +31,7 @@ struct ConfigBuilder {
     max_message_history: Option<u64>,
     tui_load_session_on_start: Option<bool>,
     tui_session_max_messages: Option<u64>,
+    repl_initial_workspace_messages_enabled: Option<bool>,
     command_timeout_secs: Option<u64>,
     command_max_output_len: Option<u64>,
     allowed_commands: Option<Vec<String>>,
@@ -222,6 +223,9 @@ impl ConfigBuilder {
         self.tui_session_max_messages = agent
             .tui_session_max_messages
             .or(self.tui_session_max_messages);
+        self.repl_initial_workspace_messages_enabled = agent
+            .repl_initial_workspace_messages_enabled
+            .or(self.repl_initial_workspace_messages_enabled);
         self.command_timeout_secs = agent.command_timeout_secs.or(self.command_timeout_secs);
         self.command_max_output_len = agent.command_max_output_len.or(self.command_max_output_len);
         self.max_tokens = agent.max_tokens.or(self.max_tokens);
@@ -429,6 +433,7 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.max_message_history = src.max_message_history;
     dst.tui_load_session_on_start = src.tui_load_session_on_start;
     dst.tui_session_max_messages = src.tui_session_max_messages;
+    dst.repl_initial_workspace_messages_enabled = src.repl_initial_workspace_messages_enabled;
     dst.command_timeout_secs = src.command_timeout_secs;
     dst.command_max_output_len = src.command_max_output_len;
     dst.allowed_commands = std::sync::Arc::clone(&src.allowed_commands);
@@ -658,6 +663,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Some(val) = parse_bool_like(&v)
     {
         b.tui_load_session_on_start = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.repl_initial_workspace_messages_enabled = Some(val);
     }
     if let Ok(v) = std::env::var("AGENT_COMMAND_TIMEOUT_SECS")
         && let Ok(n) = v.trim().parse::<u64>()
@@ -1135,6 +1145,8 @@ fn finalize(
     let tui_load_session_on_start = b.tui_load_session_on_start.unwrap_or(false);
     let tui_session_max_messages =
         b.tui_session_max_messages.unwrap_or(400).clamp(2, 50_000) as usize;
+    let repl_initial_workspace_messages_enabled =
+        b.repl_initial_workspace_messages_enabled.unwrap_or(false);
     let command_timeout_secs = b.command_timeout_secs.unwrap_or(30).max(1);
     let command_max_output_len =
         b.command_max_output_len.unwrap_or(8192).clamp(1024, 131072) as usize;
@@ -1519,6 +1531,7 @@ fn finalize(
         max_message_history,
         tui_load_session_on_start,
         tui_session_max_messages,
+        repl_initial_workspace_messages_enabled,
         command_timeout_secs,
         command_max_output_len,
         allowed_commands,

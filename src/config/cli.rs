@@ -49,6 +49,7 @@ fn open_log_append(path: &Path) -> io::Result<std::fs::File> {
 ///   - 指定了 **`log_file`**（`--log <FILE>`）：默认 **`info`**，便于与文件 tail 配套；
 ///   - **`quiet_cli_default == true`**（非 `--serve` 的 CLI 模式：单次提问、REPL 等）：默认 **`warn`**，不输出 `info`；
 ///   - 否则（**`serve`**）：默认 **`info`**。
+/// - 上述默认过滤器均带 **`tokei=error`**，避免依赖 **`tokei`** 在扫描未知扩展名时以 **`warn`** 刷屏（项目画像 / `code_stats` 等路径）。
 ///
 /// 指定了 `--log` 但无法创建/打开日志文件时返回 [`io::Error`]，由调用方决定如何报告退出码。
 pub fn init_logging(log_file: Option<&Path>, quiet_cli_default: bool) -> io::Result<()> {
@@ -57,11 +58,11 @@ pub fn init_logging(log_file: Option<&Path>, quiet_cli_default: bool) -> io::Res
     let env = if std::env::var_os("RUST_LOG").is_some() {
         Env::default()
     } else if log_file.is_some() {
-        Env::default().default_filter_or("info")
+        Env::default().default_filter_or("info,tokei=error")
     } else if quiet_cli_default {
-        Env::default().default_filter_or("warn")
+        Env::default().default_filter_or("warn,tokei=error")
     } else {
-        Env::default().default_filter_or("info")
+        Env::default().default_filter_or("info,tokei=error")
     };
     let mut builder = Builder::from_env(env);
     builder.format_target(true);
