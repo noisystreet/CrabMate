@@ -1,7 +1,9 @@
-//! 仓库概览聚合：主文档预览 + 源码树 + 构建脚本/清单路径汇总（只读）。
+//! 仓库概览聚合：可选项目画像（与 Web 侧 `project_profile` / 首轮注入同源）+ 主文档预览 + 源码树 + 构建脚本/清单路径汇总（只读）。
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+
+use crate::project_profile;
 
 use super::ToolContext;
 use super::file::{canonical_workspace_root, glob_files, list_tree, read_file};
@@ -142,6 +144,18 @@ pub fn repo_overview_sweep(
         .unwrap_or(25)
         .clamp(1, 100);
 
+    let include_project_profile = v
+        .get("include_project_profile")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(true);
+
+    let project_profile_max_chars = v
+        .get("project_profile_max_chars")
+        .and_then(|n| n.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(6_000)
+        .clamp(0, 50_000);
+
     let ctx = ToolContext {
         command_max_output_len: max_output_len,
         weather_timeout_secs: 0,
@@ -161,8 +175,22 @@ pub fn repo_overview_sweep(
     out.push_str("=== repo_overview_sweep（只读聚合）===\n");
     out.push_str("说明：下列为自动收集的仓库骨架材料；**分析结论须由模型根据本节内容在对话中撰写**，本工具不代替推理。\n\n");
 
+    let mut section = 1usize;
+
+    // --- 项目画像（与 `crate::project_profile` / GET /workspace/profile 同源逻辑）---
+    if include_project_profile && project_profile_max_chars > 0 {
+        out.push_str(&format!("## {section}) 项目画像（自动生成，只读扫描）\n\n"));
+        out.push_str(&project_profile::build_project_profile_markdown(
+            workspace_root,
+            project_profile_max_chars,
+        ));
+        out.push_str("\n---\n\n");
+        section += 1;
+    }
+
     // --- 主文档 ---
-    out.push_str("## 1) 主文档预览（每文件前若干行）\n\n");
+    out.push_str(&format!("## {section}) 主文档预览（每文件前若干行）\n\n"));
+    section += 1;
     for rel in &doc_paths {
         let Some(canon) = rel_path_safe(workspace_root, rel) else {
             out.push_str(&format!("- `{}`：跳过（路径非法或越界）\n", rel));
@@ -192,7 +220,8 @@ pub fn repo_overview_sweep(
     }
 
     // --- 源码树 ---
-    out.push_str("## 2) 源码/结构目录树（list_tree）\n\n");
+    out.push_str(&format!("## {section}) 源码/结构目录树（list_tree）\n\n"));
+    section += 1;
     for root in &source_roots {
         let Some(canon) = rel_path_safe(workspace_root, root) else {
             out.push_str(&format!("### `{}`\n路径非法或越界，跳过\n\n", root));
@@ -221,7 +250,10 @@ pub fn repo_overview_sweep(
     }
 
     // --- 构建脚本 / 清单 ---
-    out.push_str("## 3) 构建与清单文件（glob 汇总，去重排序）\n\n");
+    out.push_str(&format!(
+        "## {section}) 构建与清单文件（glob 汇总，去重排序）\n\n"
+    ));
+    section += 1;
     let mut found: BTreeSet<String> = BTreeSet::new();
     for pattern in &build_globs {
         let gargs = serde_json::json!({
@@ -272,7 +304,9 @@ pub fn repo_overview_sweep(
     }
 
     // --- 结论引导 ---
-    out.push_str("## 4) 请模型据此撰写的分析结论（提纲）\n\n");
+    out.push_str(&format!(
+        "## {section}) 请模型据此撰写的分析结论（提纲）\n\n"
+    ));
     out.push_str(
         "请用自然语言输出结构化结论，建议包含：\n\
          - **项目定位**：本仓库解决什么问题、主要用户/运行形态（依据 README/AGENTS 等）。\n\
@@ -312,5 +346,23 @@ mod tests {
         assert!(out.contains("Cargo.toml"));
         assert!(out.contains("repo_overview_sweep"));
         assert!(out.contains("请模型据此撰写"));
+        // 默认包含与 Web 项目画像同源的 Markdown 节
+        assert!(out.contains("项目画像"));
+        assert!(out.contains("工程类型") || out.contains("Rust"));
+
+        let root2 =
+            std::env::temp_dir().join(format!("crabmate_repo_overview2_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root2);
+        fs::create_dir_all(root2.join("src")).expect("mkdir");
+        fs::write(root2.join("README.md"), "# T\n").expect("write");
+        fs::write(root2.join("src/lib.rs"), "// x\n").expect("write");
+        fs::write(
+            root2.join("Cargo.toml"),
+            "[package]\nname = \"y\"\nversion = \"0.1.0\"\n",
+        )
+        .expect("write");
+        let out2 = repo_overview_sweep(r#"{"include_project_profile":false}"#, &root2, 50_000);
+        let _ = fs::remove_dir_all(&root2);
+        assert!(!out2.contains("CrabMate 项目画像"));
     }
 }

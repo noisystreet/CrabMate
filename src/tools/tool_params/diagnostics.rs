@@ -133,6 +133,16 @@ pub(in crate::tools) fn params_repo_overview_sweep() -> serde_json::Value {
                 "description": "glob 扫描最大深度，默认 25，范围 1～100",
                 "minimum": 1,
                 "maximum": 100
+            },
+            "include_project_profile": {
+                "type": "boolean",
+                "description": "是否附加「项目画像」Markdown（与 Web `GET /workspace/profile` 及首轮注入同源：`Cargo.toml`/workspace、`package.json`、顶层目录、tokei 语言占比、可选 `cargo metadata --no-deps` 等）。默认 true"
+            },
+            "project_profile_max_chars": {
+                "type": "integer",
+                "description": "项目画像正文最大 Unicode 标量字符数；0 表示不生成画像节（等同关闭）。默认 6000，上限 50000",
+                "minimum": 0,
+                "maximum": 50000
             }
         },
         "required": [],
