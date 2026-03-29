@@ -1,7 +1,7 @@
 # 开发文档（架构与模块说明）
 
 本文面向**二次开发/维护**，重点解释各模块职责、关键机制与扩展点。  
-若你只关心功能与使用方式，请看 **`README.md`**；**环境变量与配置细节**见 **`docs/CONFIGURATION.md`**，**子命令与 HTTP 路由**见 **`docs/CLI.md`**。
+若你只关心功能与使用方式，请看 **`README.md`**；**环境变量与配置细节**见 **`docs/CONFIGURATION.md`**，**子命令与 HTTP 路由**见 **`docs/CLI.md`**；**`chat` 退出码与 `--output json` 稳定行**见 **`docs/CLI_CONTRACT.md`**（与 **`docs/SSE_PROTOCOL.md`** 流错误码交叉引用）。
 
 ## TODOLIST 与功能文档约定
 

@@ -1,6 +1,8 @@
 # 命令行与子命令
 
-查看帮助：`crabmate --help`、`crabmate help`、`crabmate help <子命令>`（与 `--help` 等价）。**全局选项**写在子命令**之前**：`--config`、`--workspace`、`--no-tools`、`--log`。
+查看帮助：`crabmate --help`、`crabmate help`、`crabmate help <子命令>`（与 `--help` 等价）。根级与 **`chat --help`** 文末含 **`docs/CLI_CONTRACT.md`**、**`docs/SSE_PROTOCOL.md`** 交叉引用。**全局选项**写在子命令**之前**：`--config`、`--workspace`、`--no-tools`、`--log`。
+
+**脚本契约**（退出码、`chat --output json` 行内 JSON 的 `type`/`v` 等）：[`CLI_CONTRACT.md`](CLI_CONTRACT.md)。
 
 ## 手册页（troff / `man`）
 

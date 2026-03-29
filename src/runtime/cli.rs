@@ -590,6 +590,8 @@ fn print_json_reply_line(cfg: &Arc<AgentConfig>, messages: &[Message], batch_lin
         .and_then(|m| m.content.clone())
         .unwrap_or_default();
     let mut obj = serde_json::json!({
+        "type": "crabmate_chat_cli_result",
+        "v": 1u32,
         "reply": reply,
         "model": cfg.model,
     });
