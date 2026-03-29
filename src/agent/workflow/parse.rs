@@ -102,10 +102,14 @@ pub(crate) fn parse_node_from_value(
         })
         .unwrap_or_default();
 
-    let requires_approval = v
+    let mut requires_approval = v
         .get("requires_approval")
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
+    // 写本地镜像缓存：工作流中默认强制人工审批（忽略 JSON false）。
+    if tool_name == "docker_build" {
+        requires_approval = true;
+    }
 
     let timeout_secs = v.get("timeout_secs").and_then(|x| x.as_u64());
 

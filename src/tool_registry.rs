@@ -134,6 +134,7 @@ pub fn is_readonly_tool(name: &str) -> bool {
             "python_install_editable",
             "npm_install",
             "go_mod_tidy",
+            "docker_build",
             "run_command",
             "playbook_run_commands",
             "run_executable",
@@ -161,6 +162,10 @@ fn parallel_sync_batch_denied(name: &str) -> bool {
         || name.starts_with("npm_")
         || name.starts_with("frontend_")
         || name.starts_with("go_")
+        || name.starts_with("maven_")
+        || name.starts_with("gradle_")
+        || name.starts_with("docker_")
+        || name.starts_with("podman_")
         || name.starts_with("ruff_")
         || name.starts_with("pytest")
         || name.starts_with("mypy_")

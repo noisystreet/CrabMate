@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{cargo_tools, ci_tools, frontend_tools, python_tools};
+use super::{cargo_tools, ci_tools, container_tools, frontend_tools, jvm_tools, python_tools};
 
 /// 按开关组合运行多项质量检查；默认仅 Rust 侧 fmt + clippy（轻量）。
 pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
@@ -40,6 +40,30 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
     let run_mypy = v.get("run_mypy").and_then(|x| x.as_bool()).unwrap_or(false);
+    let run_maven_compile = v
+        .get("run_maven_compile")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let run_maven_test = v
+        .get("run_maven_test")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let run_gradle_compile = v
+        .get("run_gradle_compile")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let run_gradle_test = v
+        .get("run_gradle_test")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let run_docker_compose_ps = v
+        .get("run_docker_compose_ps")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let run_podman_images = v
+        .get("run_podman_images")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let fail_fast = v.get("fail_fast").and_then(|x| x.as_bool()).unwrap_or(true);
     let summary_only = v
         .get("summary_only")
@@ -54,8 +78,14 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         && !run_ruff_check
         && !run_pytest
         && !run_mypy
+        && !run_maven_compile
+        && !run_maven_test
+        && !run_gradle_compile
+        && !run_gradle_test
+        && !run_docker_compose_ps
+        && !run_podman_images
     {
-        return "错误：至少启用一项检查（含 run_cargo_* / run_frontend_* / run_ruff_check / run_pytest / run_mypy）".to_string();
+        return "错误：至少启用一项检查（含 run_cargo_* / run_frontend_* / run_python_* / run_maven_* / run_gradle_* / run_docker_compose_ps / run_podman_images）".to_string();
     }
 
     let mut sections: Vec<String> = Vec::new();
@@ -78,6 +108,15 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 run_frontend_prettier_check,
             );
             skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -102,6 +141,15 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 run_frontend_prettier_check,
             );
             skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -126,6 +174,15 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 run_frontend_prettier_check,
             );
             skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -150,6 +207,15 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 run_frontend_prettier_check,
             );
             skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -170,6 +236,15 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         sections.push(r);
         if fail_fast && failed {
             skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -188,6 +263,15 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
             if run_mypy {
                 summary.push(("mypy", "skipped"));
             }
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -203,6 +287,15 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
             if run_mypy {
                 summary.push(("mypy", "skipped"));
             }
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
             return build_output(&summary, &sections, summary_only);
         }
     } else {
@@ -214,11 +307,192 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         let failed = section_failed(&r) && !r.contains("跳过（");
         summary.push(("mypy", if failed { "failed" } else { "passed" }));
         sections.push(r);
+        if fail_fast && failed {
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
+            return build_output(&summary, &sections, summary_only);
+        }
     } else {
         summary.push(("mypy", "skipped"));
     }
 
+    if run_maven_compile {
+        let r = jvm_tools::maven_compile("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("maven compile", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+        if fail_fast && failed {
+            skip_jvm_container_tail(
+                &mut summary,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
+            return build_output(&summary, &sections, summary_only);
+        }
+    } else {
+        summary.push(("maven compile", "skipped"));
+    }
+
+    if run_maven_test {
+        let r = jvm_tools::maven_test("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("maven test", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+        if fail_fast && failed {
+            skip_jvm_container_tail(
+                &mut summary,
+                false,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
+            return build_output(&summary, &sections, summary_only);
+        }
+    } else {
+        summary.push(("maven test", "skipped"));
+    }
+
+    if run_gradle_compile {
+        let r = jvm_tools::gradle_compile("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("gradle compile", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+        if fail_fast && failed {
+            skip_gradle_test_docker(
+                &mut summary,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
+            return build_output(&summary, &sections, summary_only);
+        }
+    } else {
+        summary.push(("gradle compile", "skipped"));
+    }
+
+    if run_gradle_test {
+        let r = jvm_tools::gradle_test("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("gradle test", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+        if fail_fast && failed {
+            skip_docker_podman_only(&mut summary, run_docker_compose_ps, run_podman_images);
+            return build_output(&summary, &sections, summary_only);
+        }
+    } else {
+        summary.push(("gradle test", "skipped"));
+    }
+
+    if run_docker_compose_ps {
+        let r = container_tools::docker_compose_ps("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push((
+            "docker compose ps",
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if fail_fast && failed && run_podman_images {
+            summary.push(("podman images", "skipped"));
+            return build_output(&summary, &sections, summary_only);
+        }
+    } else {
+        summary.push(("docker compose ps", "skipped"));
+    }
+
+    if run_podman_images {
+        let r = container_tools::podman_images("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("podman images", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+    } else {
+        summary.push(("podman images", "skipped"));
+    }
+
     build_output(&summary, &sections, summary_only)
+}
+
+fn skip_jvm_container_steps(
+    summary: &mut Vec<(&'static str, &'static str)>,
+    maven_compile: bool,
+    maven_test: bool,
+    gradle_compile: bool,
+    gradle_test: bool,
+    docker_ps: bool,
+    podman_img: bool,
+) {
+    if maven_compile {
+        summary.push(("maven compile", "skipped"));
+    }
+    if maven_test {
+        summary.push(("maven test", "skipped"));
+    }
+    if gradle_compile {
+        summary.push(("gradle compile", "skipped"));
+    }
+    if gradle_test {
+        summary.push(("gradle test", "skipped"));
+    }
+    if docker_ps {
+        summary.push(("docker compose ps", "skipped"));
+    }
+    if podman_img {
+        summary.push(("podman images", "skipped"));
+    }
+}
+
+fn skip_jvm_container_tail(
+    summary: &mut Vec<(&'static str, &'static str)>,
+    maven_test: bool,
+    gradle_compile: bool,
+    gradle_test: bool,
+    docker_ps: bool,
+    podman_img: bool,
+) {
+    skip_jvm_container_steps(
+        summary,
+        false,
+        maven_test,
+        gradle_compile,
+        gradle_test,
+        docker_ps,
+        podman_img,
+    );
+}
+
+fn skip_gradle_test_docker(
+    summary: &mut Vec<(&'static str, &'static str)>,
+    gradle_test: bool,
+    docker_ps: bool,
+    podman_img: bool,
+) {
+    skip_jvm_container_steps(
+        summary,
+        false,
+        false,
+        false,
+        gradle_test,
+        docker_ps,
+        podman_img,
+    );
+}
+
+fn skip_docker_podman_only(
+    summary: &mut Vec<(&'static str, &'static str)>,
+    docker_ps: bool,
+    podman_img: bool,
+) {
+    skip_jvm_container_steps(summary, false, false, false, false, docker_ps, podman_img);
 }
 
 fn section_failed(text: &str) -> bool {
@@ -250,6 +524,15 @@ fn section_failed(text: &str) -> bool {
         if (line.starts_with("ruff check")
             || line.starts_with("python3 -m pytest")
             || line.starts_with("mypy"))
+            && line.contains("(exit=")
+            && let Some(idx) = line.find("(exit=")
+        {
+            return parse_exit_nonzero(&line[idx..]);
+        }
+        if (line.starts_with("mvn ")
+            || line.starts_with("gradle ")
+            || line.contains("docker compose ps")
+            || line.starts_with("podman images"))
             && line.contains("(exit=")
             && let Some(idx) = line.find("(exit=")
         {
