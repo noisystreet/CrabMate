@@ -1,0 +1,15 @@
+# 长期记忆嵌入默认（启用开关、作用域、向量后端、SQLite 路径、注入与分块参数等）。
+# 与 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml` 在 `load_config` 中顺序合并（本文件在 planning 之后），再被 config.toml / .agent_demo.toml 与 AGENT_LONG_TERM_MEMORY_* 覆盖。
+
+[agent]
+
+long_term_memory_enabled = true
+long_term_memory_scope_mode = "conversation"
+long_term_memory_vector_backend = "fastembed"
+long_term_memory_max_entries = 256
+long_term_memory_inject_max_chars = 8000
+long_term_memory_store_sqlite_path = ".crabmate/long_term_memory.db"
+long_term_memory_top_k = 8
+long_term_memory_max_chars_per_chunk = 1024
+long_term_memory_min_chars_to_index = 8
+long_term_memory_async_index = true

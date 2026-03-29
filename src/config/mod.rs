@@ -1,4 +1,4 @@
-//! 运行配置：API 地址、模型等，从 default_config.toml + 可选覆盖
+//! 运行配置：API 地址、模型等，从 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 嵌入默认 + 可选覆盖
 
 pub mod cli;
 mod cursor_rules;
@@ -17,10 +17,28 @@ pub use types::{
 /// 进程内共享的 [`AgentConfig`]（`serve` / `repl` / `chat` / `bench`）；热重载时 `write` 更新，回合开始时 `read`+`clone` 得快照传入 `run_agent_turn`。
 pub type SharedAgentConfig = std::sync::Arc<tokio::sync::RwLock<AgentConfig>>;
 
-/// 编译时嵌入的默认配置（与项目根 default_config.toml 一致）
-const DEFAULT_CONFIG: &str = include_str!("../../default_config.toml");
+/// 编译时嵌入的默认配置（与仓库 `config/default_config.toml` 一致）
+const DEFAULT_CONFIG: &str = include_str!("../../config/default_config.toml");
 
-/// 配置累加器：依次接受 default_config → 用户配置文件 → 环境变量的覆盖，最终 `finalize` 为 `AgentConfig`。
+/// CLI / REPL 会话相关嵌入默认（与仓库 `config/session.toml` 一致）
+const SESSION_DEFAULT_CONFIG: &str = include_str!("../../config/session.toml");
+
+/// 首轮上下文注入相关嵌入默认（与仓库 `config/context_inject.toml` 一致）
+const CONTEXT_INJECT_DEFAULT_CONFIG: &str = include_str!("../../config/context_inject.toml");
+
+/// 内置工具相关嵌入默认（`run_command`、工具入模、缓存、联网工具超时、MCP 等；与仓库 `config/tools.toml` 一致）
+const TOOLS_DEFAULT_CONFIG: &str = include_str!("../../config/tools.toml");
+
+/// SyncDefault Docker 沙盒相关嵌入默认（与仓库 `config/sandbox.toml` 一致）
+const SANDBOX_DEFAULT_CONFIG: &str = include_str!("../../config/sandbox.toml");
+
+/// 规划 / 反思 / 编排相关嵌入默认（与仓库 `config/planning.toml` 一致）
+const PLANNING_DEFAULT_CONFIG: &str = include_str!("../../config/planning.toml");
+
+/// 长期记忆相关嵌入默认（与仓库 `config/memory.toml` 一致）
+const MEMORY_DEFAULT_CONFIG: &str = include_str!("../../config/memory.toml");
+
+/// 配置累加器：依次接受嵌入默认 TOML → 用户配置文件 → 环境变量的覆盖，最终 `finalize` 为 `AgentConfig`。
 #[derive(Default)]
 struct ConfigBuilder {
     api_base: String,
@@ -35,8 +53,6 @@ struct ConfigBuilder {
     command_timeout_secs: Option<u64>,
     command_max_output_len: Option<u64>,
     allowed_commands: Option<Vec<String>>,
-    allowed_commands_dev: Option<Vec<String>>,
-    allowed_commands_prod: Option<Vec<String>>,
     run_command_working_dir: Option<String>,
     max_tokens: Option<u64>,
     temperature: Option<f64>,
@@ -60,7 +76,6 @@ struct ConfigBuilder {
     cursor_rules_dir: Option<String>,
     cursor_rules_include_agents_md: Option<bool>,
     cursor_rules_max_chars: Option<u64>,
-    env_tag: Option<String>,
     tool_message_max_chars: Option<u64>,
     tool_result_envelope_v1: Option<bool>,
     materialize_deepseek_dsml_tool_calls: Option<bool>,
@@ -187,7 +202,6 @@ impl ConfigBuilder {
             agent.planner_executor_mode,
         );
         override_opt_string_non_empty(&mut self.cursor_rules_dir, agent.cursor_rules_dir);
-        override_opt_string_non_empty(&mut self.env_tag, agent.env);
 
         override_opt_string_trimmed(
             &mut self.web_api_bearer_token,
@@ -202,11 +216,6 @@ impl ConfigBuilder {
         }
 
         override_opt_vec(&mut self.allowed_commands, &agent.allowed_commands);
-        override_opt_vec(&mut self.allowed_commands_dev, &agent.allowed_commands_dev);
-        override_opt_vec(
-            &mut self.allowed_commands_prod,
-            &agent.allowed_commands_prod,
-        );
         override_opt_vec(
             &mut self.http_fetch_allowed_prefixes,
             &agent.http_fetch_allowed_prefixes,
@@ -412,7 +421,7 @@ impl ConfigBuilder {
     }
 }
 
-/// 加载配置：嵌入的 default 为底，再被配置文件覆盖，最后被环境变量覆盖。
+/// 加载配置：嵌入的 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为底，再被配置文件覆盖，最后被环境变量覆盖。
 /// 若指定 `config_path`，则只从该文件读取覆盖；否则依次尝试 config.toml、.agent_demo.toml。
 /// 若最终 api_base、model 或任一运行参数仍未设置则返回错误。
 /// 默认 **`system_prompt_file`** 在 [`finalize`] 中按 cwd、各已加载配置文件目录（逆序）、`run_command_working_dir` 解析相对路径。
@@ -533,7 +542,49 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
 
     // ── 1. 嵌入的默认配置 ──
     if let Some(agent) = parse_agent_section(DEFAULT_CONFIG)
-        .expect("embedded default_config.toml must be valid TOML")
+        .expect("embedded config/default_config.toml must be valid TOML")
+    {
+        b.apply_section(agent);
+    }
+
+    // ── 1b. CLI / REPL 会话嵌入默认
+    if let Some(agent) = parse_agent_section(SESSION_DEFAULT_CONFIG)
+        .expect("embedded config/session.toml must be valid TOML")
+    {
+        b.apply_section(agent);
+    }
+
+    // ── 1c. 首轮上下文注入嵌入默认
+    if let Some(agent) = parse_agent_section(CONTEXT_INJECT_DEFAULT_CONFIG)
+        .expect("embedded config/context_inject.toml must be valid TOML")
+    {
+        b.apply_section(agent);
+    }
+
+    // ── 1d. 内置工具嵌入默认（在主默认之后合并，用户文件与环境变量仍可覆盖）
+    if let Some(agent) = parse_agent_section(TOOLS_DEFAULT_CONFIG)
+        .expect("embedded config/tools.toml must be valid TOML")
+    {
+        b.apply_section(agent);
+    }
+
+    // ── 1e. SyncDefault Docker 沙盒嵌入默认
+    if let Some(agent) = parse_agent_section(SANDBOX_DEFAULT_CONFIG)
+        .expect("embedded config/sandbox.toml must be valid TOML")
+    {
+        b.apply_section(agent);
+    }
+
+    // ── 1f. 规划 / 反思 / 编排嵌入默认
+    if let Some(agent) = parse_agent_section(PLANNING_DEFAULT_CONFIG)
+        .expect("embedded config/planning.toml must be valid TOML")
+    {
+        b.apply_section(agent);
+    }
+
+    // ── 1g. 长期记忆嵌入默认
+    if let Some(agent) = parse_agent_section(MEMORY_DEFAULT_CONFIG)
+        .expect("embedded config/memory.toml must be valid TOML")
     {
         b.apply_section(agent);
     }
@@ -572,7 +623,7 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     finalize(b, system_prompt_search_bases)
 }
 
-/// `system_prompt_file` 相对路径解析：与 `foo.toml` 同目录下的 `prompts/...` 可被找到。
+/// `system_prompt_file` 相对路径解析：与 `foo.toml` 同目录下的 `config/prompts/...` 等可被找到。
 fn directory_containing_config_file(config_path: &str) -> PathBuf {
     let p = Path::new(config_path);
     match p.parent() {
@@ -1136,10 +1187,10 @@ fn finalize(
     system_prompt_search_bases: Vec<PathBuf>,
 ) -> Result<AgentConfig, String> {
     if b.api_base.is_empty() {
-        return Err("配置错误：未设置 api_base（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
+        return Err("配置错误：未设置 api_base（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
     }
     if b.model.is_empty() {
-        return Err("配置错误：未设置 model（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_MODEL 中设置）".to_string());
+        return Err("配置错误：未设置 model（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_MODEL 中设置）".to_string());
     }
     let max_message_history = b.max_message_history.unwrap_or(32).clamp(1, 1024) as usize;
     let tui_load_session_on_start = b.tui_load_session_on_start.unwrap_or(false);
@@ -1159,20 +1210,7 @@ fn finalize(
     let reflection_default_max_rounds =
         b.reflection_default_max_rounds.unwrap_or(5).max(1) as usize;
 
-    let allowed_commands_vec = if let Some(env) = b.env_tag.as_deref() {
-        match env {
-            "dev" => b
-                .allowed_commands_dev
-                .or_else(|| b.allowed_commands.clone()),
-            "prod" => b
-                .allowed_commands_prod
-                .or_else(|| b.allowed_commands.clone()),
-            _ => b.allowed_commands,
-        }
-    } else {
-        b.allowed_commands
-    }
-    .unwrap_or_else(|| {
+    let allowed_commands_vec = b.allowed_commands.unwrap_or_else(|| {
         vec![
             "aclocal".into(),
             "ar".into(),
@@ -1263,7 +1301,7 @@ fn finalize(
 
     let run_command_working_dir = b
         .run_command_working_dir
-        .ok_or("配置错误：未设置 run_command_working_dir（请在 default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_RUN_COMMAND_WORKING_DIR 中设置）")?;
+        .ok_or("配置错误：未设置 run_command_working_dir（请在 config/tools.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_RUN_COMMAND_WORKING_DIR 中设置）")?;
     let run_command_working_dir = std::path::Path::new(&run_command_working_dir);
     let run_command_working_dir = match run_command_working_dir.canonicalize() {
         Ok(p) => p,
@@ -1297,7 +1335,7 @@ fn finalize(
         b.system_prompt
     } else {
         return Err(
-            "配置错误：未设置 system_prompt_file 或内联 system_prompt（请在 default_config.toml、config.toml、环境变量 AGENT_SYSTEM_PROMPT / AGENT_SYSTEM_PROMPT_FILE 中配置）".to_string(),
+            "配置错误：未设置 system_prompt_file 或内联 system_prompt（请在 config/default_config.toml、config.toml、环境变量 AGENT_SYSTEM_PROMPT / AGENT_SYSTEM_PROMPT_FILE 中配置）".to_string(),
         );
     };
     if system_prompt.trim().is_empty() {

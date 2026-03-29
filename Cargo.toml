@@ -17,9 +17,15 @@ assets = [
     # 二进制：安装到 /usr/bin
     ["target/release/crabmate", "usr/bin/crabmate", "755"],
     # 默认配置与示例
-    ["default_config.toml", "etc/crabmate/default_config.toml", "644"],
+    ["config/default_config.toml", "etc/crabmate/default_config.toml", "644"],
+    ["config/session.toml", "etc/crabmate/session.toml", "644"],
+    ["config/context_inject.toml", "etc/crabmate/context_inject.toml", "644"],
+    ["config/tools.toml", "etc/crabmate/tools.toml", "644"],
+    ["config/sandbox.toml", "etc/crabmate/sandbox.toml", "644"],
+    ["config/planning.toml", "etc/crabmate/planning.toml", "644"],
+    ["config/memory.toml", "etc/crabmate/memory.toml", "644"],
     ["config.toml.example", "usr/share/doc/crabmate/config.toml.example", "644"],
-    ["prompts/default_system_prompt.md", "usr/share/doc/crabmate/prompts/default_system_prompt.md", "644"],
+    ["config/prompts/default_system_prompt.md", "usr/share/doc/crabmate/config/prompts/default_system_prompt.md", "644"],
     # 文档
     ["README.md", "usr/share/doc/crabmate/README.md", "644"],
     # man page（troff；由 `cargo run --bin crabmate-gen-man` 再生成）

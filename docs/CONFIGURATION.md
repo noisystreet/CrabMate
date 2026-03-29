@@ -1,6 +1,6 @@
 # 配置说明
 
-默认配置见仓库根目录 **`default_config.toml`**。可用 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，再被环境变量覆盖。示例片段见 **`config.toml.example`**。
+默认配置由仓库 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`** 七段嵌入（均为 **`[agent]`** 扁平键；**`session`** 为 CLI / REPL **`tui_*`** 与 **`repl_initial_workspace_messages_enabled`**；**`context_inject`** 为首轮 **`agent_memory_file_*`**、**`project_profile_inject_*`**、**`project_dependency_brief_inject_*`**；**`tools`** 含 **`run_command`** 白名单/超时/工作目录、**`tool_message_*`** / **`tool_result_envelope_v1`**、**`read_file_turn_cache_*`**、**`test_result_cache_*`**、**`session_workspace_changelist_*`**、天气/搜索/**`http_fetch_*`**、**`tool_call_explain_*`**、**`mcp_*`** 等；**`sandbox`** 为 **SyncDefault Docker 沙盒** **`sync_default_tool_sandbox_*`**；**`planning`** 为规划 / 反思 / 编排；**`memory`** 为 **`long_term_memory_*`**）。`load_config` 按 **主默认 → session → context_inject → tools → sandbox → planning → memory** 顺序合并，再被 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，最后由环境变量覆盖。示例片段见 **`config.toml.example`**。
 
 ## 配置热重载（无需重启 `repl` / `serve` 主进程）
 
@@ -13,7 +13,7 @@
 
 ## 环境变量（`AGENT_*`）
 
-以下为常用项；**完整键名与默认值以 `default_config.toml` 为准**。
+以下为常用项；**完整键名与默认值以 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为准**。
 
 - **模型与 API**：`AGENT_API_BASE`、`AGENT_MODEL`、`AGENT_LLM_HTTP_AUTH_MODE`（`bearer` 默认，需 **`API_KEY`**；`none` 不向 `chat/completions` / `models` 发送 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）、`AGENT_SYSTEM_PROMPT`、`AGENT_SYSTEM_PROMPT_FILE`
 - **温度与 seed**：`AGENT_TEMPERATURE`、`AGENT_LLM_SEED`
@@ -117,7 +117,7 @@ model = "deepseek-reasoner"
 
 1. **Docker 守护进程可用**：本机能 `docker ps` 或等价 API 访问（与 CLI 同源套接字或 `DOCKER_HOST`）。
 2. **架构一致**：宿主 **`crabmate` 二进制**与容器 **CPU 架构**须一致（例如宿主为 `linux/amd64` 则镜像也应为 `amd64`）。实现上**不会**在镜像内自带 crabmate，而是**挂载宿主二进制**；若你改为在镜像内安装 crabmate，则须自行保证版本与调用方式一致（非默认路径，需改镜像/入口，本仓库不维护该方案）。
-3. **镜像职责**：镜像提供 **OS + 工具依赖**（`git`、`rg`、`cargo`、`python3`、`npm`、`bc`、`clang-format` 等——按你在工作区里**实际会调用的内置工具**安装；仓库**不提供**固定发布的「官方工具镜像」，`default_config.toml` 中的 `your-registry/crabmate-tools:latest` 仅为占位。
+3. **镜像职责**：镜像提供 **OS + 工具依赖**（`git`、`rg`、`cargo`、`python3`、`npm`、`bc`、`clang-format` 等——按你在工作区里**实际会调用的内置工具**安装；仓库**不提供**固定发布的「官方工具镜像」，`config/sandbox.toml` 中的 `your-registry/crabmate-tools:latest` 仅为占位。
 
 ### 镜像与最小示例
 
@@ -170,12 +170,12 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 
 ## 系统提示词
 
-- **默认**：嵌入的 **`default_config.toml`** 使用 **`system_prompt_file = "prompts/default_system_prompt.md"`**，运行时读盘，**修改该 Markdown 无需重新编译**。
+- **默认**：嵌入的 **`config/default_config.toml`** 使用 **`system_prompt_file = "config/prompts/default_system_prompt.md"`**，运行时读盘，**修改该 Markdown 无需重新编译**。
 - **相对路径解析顺序**：进程**当前工作目录** → 各层**覆盖配置文件所在目录**（后加载的优先，如 `.agent_demo.toml` 先于 `config.toml`）→ **`run_command_working_dir`**（已规范化的工作区根）。**绝对路径**仅尝试该路径。
 - **覆盖与优先级**：若某层 TOML **只写**内联 **`system_prompt`**、**不写**该层的 `system_prompt_file`，则会**取消**继承自更早层的 `system_prompt_file`，改为使用内联。环境变量阶段：**`AGENT_SYSTEM_PROMPT`** 会清除已合并的 `system_prompt_file`；随后若存在 **`AGENT_SYSTEM_PROMPT_FILE`** 则再设为文件路径（两者同时设置时以文件为准）。
 - **finalize 阶段**：若仍存在 `system_prompt_file` 则读文件；否则使用非空内联；二者皆无则报错。
 
-仓库内默认正文含工具与任务拆分等约定（例如**同一工作区路径在未被修改前不要重复 `read_file`**）。完全自定义时可改 `prompts/default_system_prompt.md` 或换用自有路径。
+仓库内默认正文含工具与任务拆分等约定（例如**同一工作区路径在未被修改前不要重复 `read_file`**）。完全自定义时可改 `config/prompts/default_system_prompt.md` 或换用自有路径。
 
 ## Cursor-like 规则注入
 
@@ -183,7 +183,7 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 
 ## 上下文窗口
 
-请求前会压缩 `messages`：条数上限、`context_char_budget`、可选 LLM 摘要等。其中 **`tool_message_max_chars`**（`AGENT_TOOL_MESSAGE_MAX_CHARS`）：单条 `role: tool` 在**发往模型前**若超长则压缩；启用 **`tool_result_envelope_v1`** 时对 `crabmate_tool.output` 采用**首尾采样**并附带 `output_truncated` 等字段（见 **`docs/DEVELOPMENT.md`**）。详见 `default_config.toml`。
+请求前会压缩 `messages`：条数上限、`context_char_budget`、可选 LLM 摘要等。其中 **`tool_message_max_chars`**（`AGENT_TOOL_MESSAGE_MAX_CHARS`）：单条 `role: tool` 在**发往模型前**若超长则压缩；启用 **`tool_result_envelope_v1`** 时对 `crabmate_tool.output` 采用**首尾采样**并附带 `output_truncated` 等字段（见 **`docs/DEVELOPMENT.md`**）。详见 `config/tools.toml`。
 
 ## Web 对话队列（`chat_queue_*`）
 

@@ -1,0 +1,12 @@
+# 首轮上下文注入嵌入默认：工作区备忘文件、项目画像、依赖摘要（各入口共用，与 `repl_initial_workspace_messages_enabled` 等配合）。
+# 与 `config/default_config.toml`、`config/session.toml` 在 `load_config` 中顺序合并（本文件在 session 之后、**`config/tools.toml`** 之前），再被 config.toml / .agent_demo.toml 与 AGENT_MEMORY_FILE_*、AGENT_PROJECT_PROFILE_*、AGENT_PROJECT_DEPENDENCY_BRIEF_* 等覆盖。
+
+[agent]
+
+agent_memory_file_enabled = false
+agent_memory_file = ".crabmate/agent_memory.md"
+agent_memory_file_max_chars = 8000
+project_profile_inject_enabled = true
+project_profile_inject_max_chars = 6000
+project_dependency_brief_inject_enabled = true
+project_dependency_brief_inject_max_chars = 4000

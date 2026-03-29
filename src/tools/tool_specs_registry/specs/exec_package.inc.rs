@@ -1,7 +1,7 @@
 [
 ToolSpec {
             name: "run_command",
-            description: "在服务器上执行**白名单内**的 Linux 系统命令（见配置 allowed_commands：默认可含 **coreutils 类**（stat、grep、sort、diff、find、which…）、**系统信息**（ps、free、uptime、lscpu、lsblk…）、**压缩流读出**（zcat/bzcat/xzcat）、**JSON**（jq）、**Git / Rust**（git、cargo、rustc，dev）、**编译与 Binutils**（gcc、clang、make、cmake、objdump…；prod 默认无编译链）等）。**find** 可递归列文件；`-exec`/`-delete` 等可改系统或执行任意程序，请在**信任工作区**使用。**不要**用本工具运行工作区内已生成的可执行文件（./main、./a.out…），须用 **run_executable**。参数 args 为字符串数组；禁止含 \"..\" 或以 \"/\" 开头的实参。rm、mv、chmod、sudo 等未列入白名单则不可执行。",
+            description: "在服务器上执行**白名单内**的 Linux 系统命令（见配置 allowed_commands：默认可含 **coreutils 类**（stat、grep、sort、diff、find、which…）、**系统信息**（ps、free、uptime、lscpu、lsblk…）、**压缩流读出**（zcat/bzcat/xzcat）、**JSON**（jq）、**Git / Rust**（git、cargo、rustc，dev）、**编译与 Binutils**（gcc、clang、make、cmake、ctest、mkdir、objdump…；prod 默认无编译链）等）。**find** 可递归列文件；`-exec`/`-delete` 等可改系统或执行任意程序，请在**信任工作区**使用。**不要**用本工具运行工作区内已生成的可执行文件（./main、./a.out…），须用 **run_executable**。参数 args 为字符串数组；禁止含 \"..\" 或以 \"/\" 开头的实参。rm、mv、chmod、sudo 等未列入白名单则不可执行。",
             category: ToolCategory::Development,
             parameters: tool_params::params_run_command,
             runner: runner_run_command,

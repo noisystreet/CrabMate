@@ -1,0 +1,149 @@
+# 内置工具嵌入默认：run_command 白名单/超时/工作目录、工具结果入模与 DSML、只读并行与单轮 read_file 缓存、
+# 测试输出缓存、会话变更集注入、天气/联网搜索/http_fetch、工具解释卡、MCP 等。（**SyncDefault Docker 沙盒**见 **`config/sandbox.toml`**。）
+# 与 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml` 在 `load_config` 中顺序合并（本文件在 context_inject 之后），再被 config.toml / .agent_demo.toml 与 AGENT_* 覆盖。
+# 有效命令白名单仅为 **`allowed_commands`**（无环境分表）。
+
+[agent]
+
+# --- run_command（子进程）---
+command_timeout_secs = 10
+command_max_output_len = 8192
+# 命令白名单（小写）；可被覆盖配置或 AGENT_ALLOWED_COMMANDS 整体替换。
+# 下列按类别用注释分段，仅为可读性；解析结果仍是单一数组（顺序不影响白名单语义）。
+allowed_commands = [
+    # Autotools
+    "aclocal",
+    "autoconf",
+    "automake",
+    "autoreconf",
+    # GNU Binutils / 链接与符号
+    "ar",
+    "c++filt",
+    "ld",
+    "nm",
+    "objdump",
+    "readelf",
+    "size",
+    "strings",
+    # 编译与构建
+    "cargo",
+    "clang",
+    "clang++",
+    "cmake",
+    "ctest",
+    "g++",
+    "gcc",
+    "make",
+    "ninja",
+    "pkg-config",
+    "rustc",
+    # 版本控制与语言运行时
+    "git",
+    "npm",
+    "python3",
+    # 搜索与路径解析
+    "egrep",
+    "fgrep",
+    "file",
+    "find",
+    "grep",
+    "which",
+    "whereis",
+    # 结构化文本（JSON 等）
+    "jq",
+    # 文本与表格（coreutils 类）
+    "basename",
+    "cat",
+    "cmp",
+    "column",
+    "cut",
+    "diff",
+    "dirname",
+    "echo",
+    "expand",
+    "fmt",
+    "fold",
+    "head",
+    "join",
+    "mkdir",
+    "nl",
+    "paste",
+    "rev",
+    "seq",
+    "sort",
+    "tac",
+    "tail",
+    "tr",
+    "tree",
+    "unexpand",
+    "uniq",
+    "wc",
+    # 环境变量与路径元数据
+    "date",
+    "df",
+    "du",
+    "env",
+    "printenv",
+    "pwd",
+    "readlink",
+    "realpath",
+    "stat",
+    # 系统与进程信息
+    "free",
+    "hostname",
+    "id",
+    "ls",
+    "lsblk",
+    "lscpu",
+    "nproc",
+    "ps",
+    "uptime",
+    "whoami",
+    "uname",
+    # 压缩流读出
+    "bzcat",
+    "xzcat",
+    "zcat",
+    # 十六进制与动态链接查看
+    "hexdump",
+    "ldd",
+    "od",
+    "xxd",
+]
+run_command_working_dir = "."
+
+# --- 工具消息形态与 DeepSeek DSML ---
+tool_message_max_chars = 32768
+tool_result_envelope_v1 = true
+materialize_deepseek_dsml_tool_calls = true
+
+# --- 单轮并行只读工具与 read_file 缓存（与 Web 队列协同；chat_queue 仍在 default_config）---
+# 单轮并行只读工具批 spawn_blocking 最大并发；默认 max(chat_queue_max_concurrent, 3)
+# parallel_readonly_tools_max = 4
+read_file_turn_cache_max_entries = 64
+
+# --- 测试输出缓存与会话变更集（工具写盘追踪注入）---
+test_result_cache_enabled = true
+test_result_cache_max_entries = 32
+session_workspace_changelist_enabled = true
+session_workspace_changelist_max_chars = 12000
+
+# --- 内置工具超时与联网（可选）---
+weather_timeout_secs = 15
+# web_search_provider = "brave"
+# web_search_api_key = ""
+# web_search_timeout_secs = 30
+# web_search_max_results = 8
+# http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/", "https://example.com/api/"]
+# http_fetch_timeout_secs = 30
+# http_fetch_max_response_bytes = 524288
+
+# --- 工具解释卡（可选）---
+# tool_call_explain_enabled = false
+# tool_call_explain_min_chars = 8
+# tool_call_explain_max_chars = 400
+
+# --- MCP（stdio 客户端，可选）---
+# mcp_enabled = false
+# mcp_command = ""
+# mcp_tool_timeout_secs = 60
