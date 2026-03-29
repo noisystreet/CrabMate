@@ -391,6 +391,10 @@ fn runner_error_output_playbook(args: &str, ctx: &ToolContext<'_>) -> String {
     error_playbook::error_output_playbook(args, ctx.allowed_commands)
 }
 
+fn runner_playbook_run_commands(args: &str, ctx: &ToolContext<'_>) -> String {
+    error_playbook::playbook_run_commands(args, ctx)
+}
+
 fn runner_changelog_draft(args: &str, ctx: &ToolContext<'_>) -> String {
     release_docs::changelog_draft(args, ctx.working_dir, ctx.command_max_output_len)
 }

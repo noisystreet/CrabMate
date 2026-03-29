@@ -95,6 +95,17 @@ async fn emit_tool_result_sse_and_append(
         );
     }
 
+    if echo_terminal_transcript && out.is_none() {
+        let parsed_preview = parse_legacy_output(name, &result);
+        if !parsed_preview.ok {
+            let _ = crate::runtime::terminal_cli_transcript::print_cli_playbook_healing_hint(
+                name,
+                &result,
+                &parsed_preview,
+            );
+        }
+    }
+
     if let Some(tx) = out {
         let parsed = parse_legacy_output(name, &result);
         let stdout = if parsed.stdout.is_empty() {
