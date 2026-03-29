@@ -21,6 +21,8 @@
 
 ### P4 — 测试与质量
 
+- [ ] **错误类型统一（渐进）**：生产路径减少纯 `String` / `format!` 导致无法区分「不允许 / 未找到 / 非零退出」等；优先为 `run_command`（如 `tools/command.rs`）与路径解析等热点引入可判别错误类型；`path_workspace` 等逐步由 `Result<_, String>` 迁向结构化枚举（与安全边界、日志分类同向）。
+- [ ] **生产路径 unwrap/expect 审计**：梳理非测试代码中的 `unwrap` / `expect`（如 `per_coord`、`conversation_store`、命令退出码处理），改为显式传播或带业务上下文的 `expect`，降低低概率 panic 与排障成本。
 - [ ] **集成/契约测试**：在 `lib_smoke` 与 **`tests/cli_contract.rs`**（`parse_args_from_argv`、`normalize_legacy_argv` fixture、`classify_model_error_message` / `EXIT_*`）之外，可为 `plan_artifact` 边界、`classify_agent_sse_line` 协议行、`workflow_reflection_controller` 状态迁移增加 fixture 或快照用例。
 - [ ] **`stream_chat` 非流式**：可选 wiremock / 静态 JSON fixture 测 `ChatResponse` 解析。
 - [ ] **Agent Benchmark 测评与基线**：在主流 agent benchmark（SWE-bench、HumanEval、GAIA 等）上对 CrabMate 做系统性评估，建立能力基线与回归对照，覆盖工具调用、多步推理、代码生成等；批量测评框架已具备（`--benchmark` + `--batch`，支持 SWE-bench / GAIA / HumanEval / Generic），后续在实际数据集上跑通完整流程并记录基线分数、持续追踪迭代。
@@ -38,6 +40,7 @@
 
 **职责摘要**：`agent_turn` 主循环；`context_window` 裁剪/摘要；`per_coord` / `plan_artifact` / `workflow_reflection_controller`；`workflow` DAG 执行。
 
+- [ ] **agent_turn 与 llm 职责边界**：明确 `llm` 偏协议与单次调用、`agent_turn` 偏编排与回合状态，减少「重试/流式」等感知分散；`per_coord` 若同时承载工作流反思与规划重写，可评估抽出 `reflection` 子模块或在文档中固化状态机边界。
 - [ ] **规划器/执行器阶段 2（模型与预算解耦）**：在阶段 1 逻辑双 agent 基础上，为 planner / executor 提供独立模型、温度、max_tokens 与上下文预算，建立成本/时延对照基线。
 - [ ] **规划器/执行器阶段 3（物理拆分可选）**：评估是否拆分为独立进程/服务（队列、会话与重试语义一致），目标是故障隔离与独立扩缩容；若收益不足则保留同进程架构。
 - [ ] **规划与反思策略可插拔**：在现有 `FinalPlanRequirementMode` 之上，允许按场景关闭 PER、或接入轻量规则/二次模型校验（成本可控、可配置）。
@@ -101,6 +104,7 @@
 
 **职责摘要**：嵌入/文件 TOML、环境变量、`cli` 参数合并为 `AgentConfig`。
 
+- [ ] **按域子配置与装配收口**：评估将 `ConfigBuilder` / `AgentConfig` 装配按 LLM、工具、Web 等域拆子结构，集中「嵌入默认 → 文件 → 环境变量」覆盖顺序与校验入口，缓解字段膨胀导致的遗漏与依赖不透明（模型专有开关仅对部分 `model` 生效等须在文档与校验中可发现）。
 - [ ] **配置校验与友好错误**：启动时报告未知键、类型错误、越界数值，减少静默回退默认值。
 - [ ] **热重载（可选）**：仅对安全子集（工具开关、日志级别等）支持 SIGHUP 或文件 watch。
 - [ ] **多 profile**：`dev` / `prod` 预设（工具白名单、审批模式、`http_fetch` 前缀等）。
