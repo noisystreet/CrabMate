@@ -9,9 +9,15 @@
 //! - 必须落在工作区根目录下
 
 use crate::path_workspace::absolutize_relative_under_root;
+use crate::workspace_changelist::WorkspaceChangelist;
 use std::path::Path;
+use std::sync::Arc;
 
-pub fn run(args_json: &str, workspace_root: &Path) -> String {
+pub(crate) fn run_with_changelist(
+    args_json: &str,
+    workspace_root: &Path,
+    changelist: Option<&Arc<WorkspaceChangelist>>,
+) -> String {
     let args: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数 JSON 无效: {}", e),
@@ -35,10 +41,15 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         return format!("补丁路径校验失败: {}", e);
     }
 
-    apply_unified_patch(patch_text, &root, strip)
+    apply_unified_patch(patch_text, &root, strip, changelist)
 }
 
-fn apply_unified_patch(patch_text: &str, root: &Path, strip: usize) -> String {
+fn apply_unified_patch(
+    patch_text: &str,
+    root: &Path,
+    strip: usize,
+    changelist: Option<&Arc<WorkspaceChangelist>>,
+) -> String {
     let patch = match diffy::Patch::from_str(patch_text) {
         Ok(p) => p,
         Err(e) => return format!("解析 unified diff 失败: {}", e),
@@ -75,6 +86,9 @@ fn apply_unified_patch(patch_text: &str, root: &Path, strip: usize) -> String {
                         if let Err(e) = std::fs::write(&target, content.as_bytes()) {
                             errors.push(format!("{}: 创建文件失败: {}", file_path, e));
                         } else {
+                            if let Some(cl) = changelist {
+                                cl.record_mutation(&file_path, None, Some(content));
+                            }
                             applied_files.push(format!("新建: {}", file_path));
                         }
                     }
@@ -85,9 +99,13 @@ fn apply_unified_patch(patch_text: &str, root: &Path, strip: usize) -> String {
             if file_path == "/dev/null" {
                 let source = root.join(&original_path);
                 if source.exists() {
+                    let before = std::fs::read_to_string(&source).ok();
                     if let Err(e) = std::fs::remove_file(&source) {
                         errors.push(format!("{}: 删除失败: {}", original_path, e));
                     } else {
+                        if let Some(cl) = changelist {
+                            cl.record_mutation(&original_path, before, None);
+                        }
                         applied_files.push(format!("删除: {}", original_path));
                     }
                 }
@@ -117,6 +135,9 @@ fn apply_unified_patch(patch_text: &str, root: &Path, strip: usize) -> String {
                 if let Err(e) = std::fs::write(&target, patched.as_bytes()) {
                     errors.push(format!("{}: 写入失败: {}", file_path, e));
                 } else {
+                    if let Some(cl) = changelist {
+                        cl.record_mutation(&file_path, Some(original.clone()), Some(patched));
+                    }
                     applied_files.push(file_path);
                 }
             }

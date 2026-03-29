@@ -406,6 +406,10 @@ pub struct AgentConfig {
     pub parallel_readonly_tools_max: usize,
     /// 单轮 `run_agent_turn` 内 `read_file` 磁盘缓存最大条数；`0` 关闭。写类工具或 `workspace_changed` 后整表清空。
     pub read_file_turn_cache_max_entries: usize,
+    /// 为 true（默认）时：按 `long_term_memory_scope_id`（Web 为 `conversation_id`）累积本会话工具写入路径，并在每次调模型前注入 unified diff 摘要（`user.name=crabmate_workspace_changelist`）。
+    pub session_workspace_changelist_enabled: bool,
+    /// 上述注入正文近似字符上限（防撑爆上下文）；`0` 表示用默认 12000。
+    pub session_workspace_changelist_max_chars: usize,
     /// 为 true 时：用户每条消息先经**无工具**规划轮产出 `agent_reply_plan` v1，再按 `steps` 顺序各注入一条 user 并跑完整 Agent 循环直至该步终答。
     pub staged_plan_execution: bool,
     /// 规划轮追加的 **system** 指令；空字符串则使用内置默认文案。

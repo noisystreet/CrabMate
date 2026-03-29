@@ -21,6 +21,7 @@ use crate::tool_result::{
 };
 use crate::tools;
 use crate::types::{Message, ToolCall};
+use crate::workspace_changelist::WorkspaceChangelist;
 
 pub(crate) struct WebExecuteCtx<'a> {
     pub cfg: &'a Arc<AgentConfig>,
@@ -36,6 +37,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub echo_terminal_transcript: bool,
     /// MCP stdio 会话；`None` 时 `mcp__*` 工具会报错。
     pub mcp_session: Option<&'a std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
+    pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -248,6 +250,7 @@ struct ExecuteToolsCommonCtx<'a> {
     effective_working_dir: &'a Path,
     workspace_is_set: bool,
     read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+    workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
     out: Option<&'a mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
@@ -266,6 +269,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         effective_working_dir,
         workspace_is_set,
         read_file_turn_cache,
+        workspace_changelist,
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -325,6 +329,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
             let cfg = Arc::clone(cfg);
             let wd = effective_working_dir.to_path_buf();
             let rfc = read_file_turn_cache.clone();
+            let wcl = workspace_changelist.cloned();
             let name = tc.function.name.clone();
             let args = tc.function.arguments.clone();
             unique_futs.push(async move {
@@ -348,6 +353,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                             cfg.allowed_commands.as_ref(),
                             wd.as_path(),
                             rfc.as_ref().map(|a| a.as_ref()),
+                            wcl.as_ref(),
                         );
                         tools::http_fetch::run_direct(&tool_args, &ctx)
                     })
@@ -359,6 +365,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                         cfg.allowed_commands.as_ref(),
                         wd.as_path(),
                         rfc.as_ref().map(|a| a.as_ref()),
+                        wcl.as_ref(),
                     );
                     tools::run_tool(&tool_name, &tool_args, &ctx)
                 } else {
@@ -368,6 +375,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                             cfg.allowed_commands.as_ref(),
                             wd.as_path(),
                             rfc.as_ref().map(|a| a.as_ref()),
+                            wcl.as_ref(),
                         );
                         tools::run_tool(&tool_name, &tool_args, &ctx)
                     })
@@ -510,6 +518,7 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 &args,
                 tc,
                 read_file_turn_cache.clone(),
+                workspace_changelist.cloned(),
                 mcp_session,
             )
             .await;
@@ -599,6 +608,7 @@ pub(crate) async fn per_execute_tools_web(
         cli_tool_ctx,
         echo_terminal_transcript,
         mcp_session,
+        workspace_changelist,
     } = ctx;
 
     per_execute_tools_common(ExecuteToolsCommonCtx {
@@ -609,6 +619,7 @@ pub(crate) async fn per_execute_tools_web(
         effective_working_dir,
         workspace_is_set,
         read_file_turn_cache,
+        workspace_changelist,
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars: cfg.command_max_output_len,

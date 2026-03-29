@@ -7,7 +7,9 @@ use std::path::Path;
 
 use serde_json::Value as JsonValue;
 
+use super::ToolContext;
 use super::file;
+use crate::workspace_changelist::record_file_state_after_write;
 
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const DEFAULT_DIFF_MAX_LINES: usize = 200;
@@ -685,7 +687,7 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
 }
 
 /// 结构化补丁：对 JSON/YAML/TOML 进行 set/remove（默认 dry-run，写入需 confirm=true）。
-pub fn structured_patch(args_json: &str, working_dir: &Path) -> String {
+pub fn structured_patch(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v: JsonValue = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数 JSON 无效: {}", e),
@@ -771,9 +773,11 @@ pub fn structured_patch(args_json: &str, working_dir: &Path) -> String {
             serialized.len()
         );
     }
+    let before = text.clone();
     if let Err(e) = fs::write(&abs, serialized.as_bytes()) {
         return format!("写入失败: {}", e);
     }
+    record_file_state_after_write(ctx.workspace_changelist, working_dir, path, Some(before));
     format!(
         "structured_patch 已写入: path={} action={} query={}",
         path,

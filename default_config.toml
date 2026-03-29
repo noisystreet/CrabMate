@@ -71,6 +71,10 @@ chat_queue_max_pending = 32
 # parallel_readonly_tools_max = 4
 # 单轮 run_agent_turn 内 read_file 结果缓存条数（按 canonical 路径 + 行区间等键；比对 mtime+size）；0 关闭。写类工具或 workspace_changed 后整表清空
 read_file_turn_cache_max_entries = 64
+# 按会话（Web conversation_id / CLI long_term_memory_scope_id）累积工具写入路径，每次调模型前注入 unified diff 摘要（user.name=crabmate_workspace_changelist）；持久化前会剥离
+session_workspace_changelist_enabled = true
+# 注入正文近似字符上限；0 表示使用默认 12000。AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS
+session_workspace_changelist_max_chars = 12000
 # run_command 最长执行时间（秒）
 command_timeout_secs = 10
 # run_command 输出最大长度（字符），超出则截断

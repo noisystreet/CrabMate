@@ -169,6 +169,7 @@ pub fn repo_overview_sweep(
         http_fetch_timeout_secs: 0,
         http_fetch_max_response_bytes: 0,
         read_file_turn_cache: None,
+        workspace_changelist: None,
     };
 
     let mut out = String::new();

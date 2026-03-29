@@ -91,9 +91,17 @@ pub fn is_message_excluded_from_llm_context_except_memory(m: &Message) -> bool {
 /// 长期记忆注入条目的 `user.name`；仅供模型上下文使用，**不得**发往供应商 API。
 pub const CRABMATE_LONG_TERM_MEMORY_NAME: &str = "crabmate_long_term_memory";
 
+/// 会话工作区变更集注入（`user.name`）；每次调模型前由运行时刷新，**不应**持久化到会话存储。
+pub const CRABMATE_WORKSPACE_CHANGELIST_NAME: &str = "crabmate_workspace_changelist";
+
 #[inline]
 pub fn is_long_term_memory_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_LONG_TERM_MEMORY_NAME)
+}
+
+#[inline]
+pub fn is_workspace_changelist_injection(m: &Message) -> bool {
+    m.role == "user" && m.name.as_deref() == Some(CRABMATE_WORKSPACE_CHANGELIST_NAME)
 }
 
 impl Message {
@@ -178,6 +186,7 @@ pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
         .filter(|m| {
             !is_message_excluded_from_llm_context_except_memory(m)
                 && !is_long_term_memory_injection(m)
+                && !is_workspace_changelist_injection(m)
         })
         .map(message_clone_stripping_reasoning_for_api)
         .collect()
