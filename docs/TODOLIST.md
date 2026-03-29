@@ -4,32 +4,28 @@
 
 **结构**：
 
-- **§ P0–P5**：按全局优先级排列的共识项（安全、产品协议、可观测性、测试、运维等）。
-- **§ 按模块的优先选项**：按功能域（`agent/`、`llm/`、`tools/` 等）拆分的**中长期**方向，每域若干条；与上文可能交叉（如「多轮会话」在 P1 与多域同时出现），实现后删除已覆盖条目即可。
+- **全局优先级（跨模块）**：按 **P0–P5** 共识项（安全、架构、测试、运维等）；与模块章可能交叉，实现后删除即可。
+- **按模块分章**：每个功能域单独一章（`agent/`、`llm/`、`tools/` 等），章首**职责摘要**便于定位；条目前可含与全局段的交叉引用。
 
 ---
 
-## P0 — 安全（非本机部署前建议处理）
+## 全局优先级（跨模块）
+
+### P0 — 安全（非本机部署前建议处理）
 
 - [ ] **HTTP 无鉴权**：`/chat`、`/chat/stream`、工作区、文件、上传、任务等均未校验调用方身份；`API_KEY` 仅用于调模型，不能防止他人滥用接口与配额。
 
----
-
-## P3 — 架构（PER）与文档澄清
+### P3 — 架构（PER）与文档澄清
 
 - [ ] **终答「反思」深化（可选）**：在已有「`layer_count` ↔ `steps` 条数」规则之外，若要对描述文本与节点/工具结果做更强语义一致校验，可考虑二次 LLM 或更细规则（成本与产品边界需定案）。
 
----
-
-## P4 — 测试与质量
+### P4 — 测试与质量
 
 - [ ] **集成/契约测试**：在 `lib_smoke` 与 **`tests/cli_contract.rs`**（`parse_args_from_argv`、`normalize_legacy_argv` fixture、`classify_model_error_message` / `EXIT_*`）之外，可为 `plan_artifact` 边界、`classify_agent_sse_line` 协议行、`workflow_reflection_controller` 状态迁移增加 fixture 或快照用例。
 - [ ] **`stream_chat` 非流式**：可选 wiremock / 静态 JSON fixture 测 `ChatResponse` 解析。
 - [ ] **Agent Benchmark 测评与基线**：在主流 agent benchmark（SWE-bench、HumanEval、GAIA 等）上对 CrabMate 做系统性评估，建立能力基线与回归对照，覆盖工具调用、多步推理、代码生成等；批量测评框架已具备（`--benchmark` + `--batch`，支持 SWE-bench / GAIA / HumanEval / Generic），后续在实际数据集上跑通完整流程并记录基线分数、持续追踪迭代。
 
----
-
-## P5 — 运维与体验
+### P5 — 运维与体验
 
 - [ ] **跨进程 / 多副本队列**：当前为**单进程**内 `mpsc` + `Semaphore`；水平扩展需 Redis/SQS 等外部代理与持久化，本仓库未实现。
 - [ ] **限流 / 配额**：对 `/chat`、`/chat/stream` 按 IP 或 token 限流（常与 P0 鉴权一起做）。
@@ -38,11 +34,7 @@
 
 ---
 
-## 按模块的优先选项（中长期）
-
-以下为按代码域梳理的 **4～5 条/域**方向，供排期参考；**职责摘要**便于新人定位模块。
-
-### `agent/`（回合编排、上下文、PER、工作流）
+## `agent/`（回合编排、上下文、PER、工作流）
 
 **职责摘要**：`agent_turn` 主循环；`context_window` 裁剪/摘要；`per_coord` / `plan_artifact` / `workflow_reflection_controller`；`workflow` DAG 执行。
 
@@ -58,7 +50,9 @@
 - [ ] **长期记忆：运营与合规 API**：在 **P0 鉴权**落地前提下，提供只读列表/按 scope 删除等管理接口（排障与「被遗忘权」类需求）；`/status` 可暴露条目规模、embed 降级次数等（不脱敏全文）。
 - [ ] **长期记忆：Web 与文档体验**：侧栏或面板展示「本轮注入摘要」、单条忽略/置顶；在 UI/README 中区分**长期记忆**、**工作区备忘文件**与**项目画像**的职责边界。
 
-### `llm/` 与 `http_client.rs`（模型请求、重试、流式解析）
+---
+
+## `llm/` 与 `http_client.rs`（模型请求、重试、流式解析）
 
 **职责摘要**：`ChatRequest` 构造、`complete_chat_retrying`；`api` 中 SSE/JSON 解析；共享 `reqwest::Client` 连接池与超时。
 
@@ -67,7 +61,9 @@
 - [ ] **非流式与流式一致性测试**：为 `stream: false` 路径补充契约测试（与 P4 同向）。
 - [ ] **连接与 TLS 可观测**：可选 debug 级别记录连接复用、首字节延迟（不含敏感 URL 全量）。
 
-### `tools/` 与 `tool_registry.rs`（工具实现与分发策略）
+---
+
+## `tools/` 与 `tool_registry.rs`（工具实现与分发策略）
 
 **职责摘要**：表驱动 `ToolSpec`、`run_tool`；`tool_registry` 中 Workflow / 阻塞超时 / 搜索等策略。
 
@@ -76,7 +72,9 @@
 - [ ] **registry 策略配置化**：超时、spawn_blocking 类别、`http_fetch` 等更多迁入 `AgentConfig`。
 - [ ] **MCP 扩展**：可选将本 agent 以 MCP server 暴露；客户端支持 Streamable HTTP / SSE、鉴权与多 server；与 `run_command` / 工作区策略的边界在文档中细化。
 
-### `sse/`（协议与行分类）
+---
+
+## `sse/`（协议与行分类）
 
 **职责摘要**：`protocol` 编码控制面 JSON；`line` 供 Rust 侧行分类（与 `frontend/src/api.ts` 语义对齐）。
 
@@ -86,7 +84,9 @@
 - [ ] **与 TypeScript 类型同源**：减少手写 `api.ts` 与 Rust 结构体漂移（生成或共享契约测试）。
 - [ ] **错误码全集文档化**：`error.code` 与 HTTP 状态在 `DEVELOPMENT`/`README` 可查。
 
-### `lib.rs` 路由、`chat_job_queue.rs`、`web/`（HTTP 接入与工作区 API）
+---
+
+## `lib.rs` 路由、`chat_job_queue.rs`、`web/`（HTTP 接入与工作区 API）
 
 **职责摘要**：Axum `Router`、`AppState`；对话队列；`web/workspace`、`web/task` 等。
 
@@ -95,7 +95,9 @@
 - [ ] **上传配额与清理策略**：`/upload` 大小、类型、保留时间、按用户或 IP 限额。
 - [ ] **OpenAPI / 机器可读契约**：为前端与集成方提供可生成的路由与 body 说明（可选 `utoipa` 等）。
 
-### `config/`（配置加载与 CLI）
+---
+
+## `config/`（配置加载与 CLI）
 
 **职责摘要**：嵌入/文件 TOML、环境变量、`cli` 参数合并为 `AgentConfig`。
 
@@ -104,7 +106,9 @@
 - [ ] **多 profile**：`dev` / `prod` 预设（工具白名单、审批模式、`http_fetch` 前缀等）。
 - [ ] **密钥外置**：与密钥管理（vault、文件权限）集成，文档化兼容路径。
 
-### `runtime/`（CLI、会话与导出）
+---
+
+## `runtime/`（CLI、会话与导出）
 
 **职责摘要**：`cli`；`workspace_session`、`chat_export`、`message_display`、终端着色与无 SSE 回显。
 
@@ -113,7 +117,9 @@
 - [ ] **导出格式版本号**：`chat_export` 与前端导出 JSON 带 schema 版本。
 - [ ] **无障碍与终端兼容**：弱终端、配色盲、宽字符与剪贴板失败时的降级提示。
 
-### `frontend/`（Web UI）
+---
+
+## `frontend/`（Web UI）
 
 **职责摘要**：`api.ts`、各 Panel 组件、`sessionStore`、`chatExport` 等。
 
@@ -123,7 +129,9 @@
 - [ ] **E2E / 契约测试**：关键路径（发消息、工具卡片、工作区设置）用 Playwright 或轻量 stub。
 - [ ] **语音交互（未来）**：浏览器侧麦克风采集、STT（可对接云端或本地引擎）、TTS 播放；与现有聊天/SSE 流衔接；权限、隐私与错误降级文案；若走后端代理需在 `web/` 增加路由并与鉴权（P0）同盘。
 
-### 横切（`types`、`tool_result`、`health`、`redact`、`text_sanitize`）
+---
+
+## 横切（`types`、`tool_result`、`health`、`redact`、`text_sanitize`）
 
 **职责摘要**：OpenAI 兼容类型；工具结构化结果；`/health`；日志脱敏；展示层清洗。
 
