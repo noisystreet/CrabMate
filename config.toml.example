@@ -10,6 +10,7 @@
 # max_message_history = 24
 # tui_load_session_on_start = false
 # tui_session_max_messages = 400
+# repl_initial_workspace_messages_enabled = false
 # tool_message_max_chars = 32768
 # tool_result_envelope_v1 = true
 # materialize_deepseek_dsml_tool_calls = true

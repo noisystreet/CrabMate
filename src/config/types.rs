@@ -318,6 +318,8 @@ pub struct AgentConfig {
     pub tui_load_session_on_start: bool,
     /// `tui_load_session_on_start` 为 `true` 时：从会话文件加载的消息条数上限（含 `system`）；超出则丢弃最旧非 system 消息
     pub tui_session_max_messages: usize,
+    /// 为 `true` 时 REPL 在后台运行 [`crate::runtime::workspace_session::initial_workspace_messages`]（项目画像、依赖摘要、`tui_load_session_on_start` 时的会话恢复等）；默认 `false` 不调用，启动仅一条 `system`。
+    pub repl_initial_workspace_messages_enabled: bool,
     /// run_command 最长执行时间（秒）
     pub command_timeout_secs: u64,
     /// run_command 输出最大长度（字符），超出则截断

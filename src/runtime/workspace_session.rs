@@ -1,12 +1,14 @@
 //! 工作区 `.crabmate/tui_session.json`：加载/保存与导出（实现委托 `runtime::chat_export`）。
-//! CLI REPL 使用 `initial_workspace_messages`；保存/导出快捷键随后续终端 UI 再接回。
+//! CLI REPL：`initial_workspace_messages` 可在独立线程中构建，经 [`try_merge_background_initial_workspace`] 并入对话；[`repl_bootstrap_messages_fast`] 为不阻塞的占位首条 `system`。
 #![allow(dead_code)]
 
 use crate::config::AgentConfig;
 use crate::project_profile::build_first_turn_user_context_markdown;
 use crate::runtime::chat_export::{self, ChatSessionFile, session_to_json_pretty};
 use crate::types::{Message, normalize_messages_for_openai_compatible_request};
+use log::warn;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 pub fn session_file_path(workspace: &Path) -> PathBuf {
     workspace.join(".crabmate").join("tui_session.json")
@@ -69,6 +71,60 @@ pub fn load_workspace_session(
         msgs.insert(0, Message::system_only(system_prompt.to_string()));
     }
     Some(truncate_loaded_messages(msgs, max_messages))
+}
+
+/// REPL 启动后**立刻**可用的消息列表（仅 `system`），不阻塞项目画像 / 会话恢复等耗时逻辑。
+pub fn repl_bootstrap_messages_fast(cfg: &AgentConfig) -> Vec<Message> {
+    vec![Message::system_only(cfg.system_prompt.clone())]
+}
+
+/// 从后台线程槽位取出至多一次的 [`initial_workspace_messages`] 结果，合并进当前 REPL `messages`。
+///
+/// - 若当前仍为「仅一条 system」引导状态：用 `full` **整体替换**（含磁盘恢复的完整 transcript）。
+/// - 若用户已追加输入（至少两条消息）且 `full` 为 `[system, user_ctx]`：将 `user_ctx` **插入**在索引 1（首轮上下文仍在首条用户消息之前）。
+/// - 若 `full` 为长会话且当前已有不止一条消息：**不合并**（避免覆盖用户已输入内容），并打一条 `warn` 日志。
+pub fn try_merge_background_initial_workspace(
+    messages: &mut Vec<Message>,
+    pending_slot: Option<&Arc<Mutex<Option<Vec<Message>>>>>,
+) {
+    let Some(pending_slot) = pending_slot else {
+        return;
+    };
+    let full = {
+        let mut g = pending_slot.lock().unwrap_or_else(|e| e.into_inner());
+        g.take()
+    };
+    let Some(full) = full else {
+        return;
+    };
+    merge_initial_workspace_into(messages, full);
+}
+
+fn merge_initial_workspace_into(messages: &mut Vec<Message>, full: Vec<Message>) {
+    if full.is_empty() {
+        return;
+    }
+
+    if messages.len() == 1 {
+        *messages = full;
+        return;
+    }
+
+    if full.len() == 2 {
+        let inj = full[1].clone();
+        if inj.role.trim().eq_ignore_ascii_case("user") {
+            messages.insert(1, inj);
+        }
+        return;
+    }
+
+    if full.len() > 2 {
+        warn!(
+            target: "crabmate",
+            "后台会话恢复已完成，但当前 REPL 已有 {} 条消息，跳过合并磁盘会话（可 /clear 后重启 REPL）",
+            messages.len()
+        );
+    }
 }
 
 /// TUI / CLI REPL 启动时：按配置决定是否从磁盘恢复会话，否则仅一条 `system`（与当前 `system_prompt` 对齐）。
@@ -168,5 +224,54 @@ mod tests {
         assert_eq!(t[1].role, "user");
         assert_eq!(t[1].content.as_deref(), Some("old_u"));
         assert_eq!(t[2].role, "assistant");
+    }
+
+    #[test]
+    fn merge_initial_replaces_when_only_system() {
+        let mut m = vec![msg("system", "a")];
+        let full = vec![msg("system", "b"), msg("user", "ctx")];
+        super::merge_initial_workspace_into(&mut m, full);
+        assert_eq!(m.len(), 2);
+        assert_eq!(m[1].content.as_deref(), Some("ctx"));
+    }
+
+    #[test]
+    fn merge_initial_inserts_ctx_before_first_user_line() {
+        let mut m = vec![msg("system", "s"), msg("user", "hi")];
+        let full = vec![msg("system", "s2"), msg("user", "ctx")];
+        super::merge_initial_workspace_into(&mut m, full);
+        assert_eq!(m.len(), 3);
+        assert_eq!(m[1].content.as_deref(), Some("ctx"));
+        assert_eq!(m[2].content.as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn merge_initial_skips_long_session_when_already_branched() {
+        let mut m = vec![msg("system", "s"), msg("user", "hi")];
+        let full = vec![
+            msg("system", "s"),
+            msg("user", "old"),
+            msg("assistant", "a"),
+        ];
+        super::merge_initial_workspace_into(&mut m, full);
+        assert_eq!(m.len(), 2);
+        assert_eq!(m[1].content.as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn try_merge_noops_when_pending_none() {
+        let mut m = vec![msg("system", "s")];
+        try_merge_background_initial_workspace(&mut m, None);
+        assert_eq!(m.len(), 1);
+    }
+
+    #[test]
+    fn try_merge_takes_once_from_slot() {
+        let slot = Arc::new(Mutex::new(Some(vec![msg("system", "s"), msg("user", "x")])));
+        let mut m = vec![msg("system", "s")];
+        try_merge_background_initial_workspace(&mut m, Some(&slot));
+        assert_eq!(m.len(), 2);
+        try_merge_background_initial_workspace(&mut m, Some(&slot));
+        assert_eq!(m.len(), 2);
     }
 }

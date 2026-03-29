@@ -14,6 +14,8 @@ pub(super) struct AgentSection {
     pub(super) max_message_history: Option<u64>,
     pub(super) tui_load_session_on_start: Option<bool>,
     pub(super) tui_session_max_messages: Option<u64>,
+    /// 为 `true` 时 CLI REPL 在后台构建 [`crate::runtime::workspace_session::initial_workspace_messages`]（画像 / 依赖摘要 / 可选磁盘会话）；默认 `false` 仅首条 `system`。
+    pub(super) repl_initial_workspace_messages_enabled: Option<bool>,
     pub(super) command_timeout_secs: Option<u64>,
     pub(super) command_max_output_len: Option<u64>,
     pub(super) allowed_commands: Option<Vec<String>>,
