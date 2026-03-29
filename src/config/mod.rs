@@ -58,6 +58,7 @@ struct ConfigBuilder {
     temperature: Option<f64>,
     llm_seed: Option<i64>,
     llm_reasoning_split: Option<bool>,
+    llm_bigmodel_thinking: Option<bool>,
     llm_fold_system_into_user: Option<bool>,
     api_timeout_secs: Option<u64>,
     api_max_retries: Option<u64>,
@@ -243,6 +244,7 @@ impl ConfigBuilder {
         self.temperature = agent.temperature.or(self.temperature);
         self.llm_seed = agent.llm_seed.or(self.llm_seed);
         self.llm_reasoning_split = agent.llm_reasoning_split.or(self.llm_reasoning_split);
+        self.llm_bigmodel_thinking = agent.llm_bigmodel_thinking.or(self.llm_bigmodel_thinking);
         self.llm_fold_system_into_user = agent
             .llm_fold_system_into_user
             .or(self.llm_fold_system_into_user);
@@ -458,6 +460,7 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.temperature = src.temperature;
     dst.llm_seed = src.llm_seed;
     dst.llm_reasoning_split = src.llm_reasoning_split;
+    dst.llm_bigmodel_thinking = src.llm_bigmodel_thinking;
     dst.llm_fold_system_into_user = src.llm_fold_system_into_user;
     dst.api_timeout_secs = src.api_timeout_secs;
     dst.api_max_retries = src.api_max_retries;
@@ -783,6 +786,11 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Some(val) = parse_bool_like(&v)
     {
         b.llm_reasoning_split = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_LLM_BIGMODEL_THINKING")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.llm_bigmodel_thinking = Some(val);
     }
     if let Ok(v) = std::env::var("AGENT_LLM_FOLD_SYSTEM_INTO_USER")
         && let Some(val) = parse_bool_like(&v)
@@ -1596,6 +1604,7 @@ fn finalize(
         temperature,
         llm_seed: b.llm_seed,
         llm_reasoning_split: b.llm_reasoning_split.unwrap_or(false),
+        llm_bigmodel_thinking: b.llm_bigmodel_thinking.unwrap_or(false),
         llm_fold_system_into_user: b.llm_fold_system_into_user.unwrap_or(false),
         api_timeout_secs,
         api_max_retries,

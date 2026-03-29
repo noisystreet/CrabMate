@@ -8,7 +8,10 @@ use tokio::sync::mpsc::Sender;
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
-use crate::llm::{ChatCompletionsBackend, CompleteChatRetryingParams, complete_chat_retrying};
+use crate::llm::{
+    ChatCompletionsBackend, CompleteChatRetryingParams, chat_request_thinking_from_cfg,
+    complete_chat_retrying,
+};
 use crate::types::{ChatRequest, Message, is_message_excluded_from_llm_context_except_memory};
 
 const SUMMARY_SYSTEM: &str = "你只负责压缩对话历史。使用简洁中文要点列表，保留：用户目标、关键路径/命令、错误信息、未决问题。不要编造事实。";
@@ -147,6 +150,7 @@ pub async fn maybe_summarize_with_llm(
         seed: None,
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
+        thinking: chat_request_thinking_from_cfg(cfg),
     };
 
     let cc = CompleteChatRetryingParams {

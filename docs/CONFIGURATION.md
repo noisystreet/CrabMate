@@ -6,7 +6,7 @@
 
 - **CLI**：输入 **`/config reload`**（或 Tab 补全 **`/config reload`**）。从与启动时相同的配置文件路径（**`--config`** 或默认探测 **`config.toml`** / **`.agent_demo.toml`**）再读 TOML，并与**当前进程环境变量**合并后，将可热更字段写入内存中的 [`AgentConfig`](DEVELOPMENT.md)；随后清空 MCP 进程内 stdio 缓存，下一轮对话使用新 MCP 指纹。
 - **Web**：**`POST /config/reload`**（JSON body 可为 `{}`；鉴权与 **`/chat`** 等受保护 API 一致——若启动时启用了 Bearer 中间件则须带 token）。成功时返回 **`{ "ok": true, "message": "…" }`**。
-- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_fold_system_into_user`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。
+- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_bigmodel_thinking`**、**`llm_fold_system_into_user`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。
 - **刻意不热更**：**`conversation_store_sqlite_path`**（会话库连接在启动时打开，改路径须重启 **`serve`**）。**`reqwest::Client`** 不重建，**`api_timeout_secs` 等**对**新连接**的生效可能受连接池保留的空闲连接影响。
 - **`API_KEY`**：仍只从**环境变量**读取；热重载**不**解析密钥文件。改 **`API_KEY`** 后通常需**重新 export** 并再执行 **`/config reload`**（或重启进程）以便与 **`llm_http_auth_mode=bearer`** 行为一致。
 - **Bearer 中间件层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权层；热重载**不会**拆除或新增该层——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的 token 字符串，用于已挂层时的校验。
@@ -24,6 +24,7 @@
 | `AGENT_MODEL` | 覆盖 `model`。 |
 | `AGENT_LLM_HTTP_AUTH_MODE` | `bearer`（默认，需 **`API_KEY`**）或 `none`（不向 `chat/completions` / `models` 发 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）。 |
 | `AGENT_LLM_REASONING_SPLIT` | 为真时在请求体中带 `reasoning_split: true`（MiniMax 等思维链分离；见下文「MiniMax」）。 |
+| `AGENT_LLM_BIGMODEL_THINKING` | 为真时在请求体中带智谱 **`thinking: { "type": "enabled" }`**（GLM-5 深度思考；见下文「智谱 GLM」）。 |
 | `AGENT_LLM_FOLD_SYSTEM_INTO_USER` | 为真时将 `system` 并入 `user`（不接受独立 `system` 的网关/代理）。 |
 | `AGENT_SYSTEM_PROMPT` | 内联系统提示；会清除继承的 `system_prompt_file`（若再设 `AGENT_SYSTEM_PROMPT_FILE` 则以文件为准，见「系统提示词」）。 |
 | `AGENT_SYSTEM_PROMPT_FILE` | 系统提示词文件路径。 |
@@ -218,6 +219,54 @@ llm_reasoning_split = true
 ```
 
 环境变量 **`API_KEY`** 填平台发放的密钥（与 DeepSeek 等一致，走 **`Authorization: Bearer`**）。**`llm_reasoning_split = true`** 时请求体会包含 **`reasoning_split: true`**（与文档中 `extra_body={"reasoning_split": True}` 一致）；供应商若在流式 **`delta`** 中返回 **`reasoning_details`**（常见为带 **`text`** 的 JSON 数组），CrabMate 会将其**增量合并**进内部的 **`reasoning_content`** 流与终态消息，终端/Web 仍按现有「思考 / 正文」路径展示。不需要分离思维链时保持默认 **`llm_reasoning_split = false`** 即可。
+
+## 智谱 GLM（OpenAI 兼容）
+
+智谱在 **`https://open.bigmodel.cn/api/paas/v4`** 下提供 OpenAI 兼容 **`POST …/chat/completions`**。请将 **`api_base`** 设为 **`https://open.bigmodel.cn/api/paas/v4`**（**不要**再拼 `/chat/completions`，程序会追加），**`model`** 如 **`glm-5`**；环境变量 **`API_KEY`** 填控制台密钥（**`llm_http_auth_mode = bearer`**），请求头 **`Authorization: Bearer …`** 与官方 cURL 一致。
+
+### 与最小 cURL 对齐（默认流式、无深度思考）
+
+下列官方风格的请求只需 **`model`**、**`messages`**、**`stream: true`**（无 **`thinking`**）即可工作：
+
+```bash
+curl --location 'https://open.bigmodel.cn/api/paas/v4/chat/completions' \
+  --header 'Authorization: Bearer YOUR_API_KEY' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "model": "glm-5",
+    "messages": [{ "role": "user", "content": "写一首关于春天的诗" }],
+    "stream": true
+}'
+```
+
+在 CrabMate 中：**默认 `llm_bigmodel_thinking = false`** 时出站 JSON **不**含 **`thinking`**，与上例同形（另会带 OpenAI 兼容常用字段 **`max_tokens`**、**`temperature`** 等，来自 **`[agent]`** 配置；智谱兼容端一般接受）。Web / 默认 CLI 对话为 **SSE 流式**，对应 **`stream: true`**；若使用 **`--no-stream`** / **`no_stream`**，则对应 **`stream: false`**。
+
+### 可选：GLM-5 深度思考（`thinking`）
+
+文档中的 **深度思考** 为 **`thinking: { "type": "enabled" }`**（见 [GLM-5 调用示例](https://docs.bigmodel.cn/cn/guide/models/text/glm-5)）。需要时设 **`llm_bigmodel_thinking = true`**（或 **`AGENT_LLM_BIGMODEL_THINKING=1`**）。流式下思维链可走 **`delta.reasoning_content`**，与现有解析路径一致。
+
+### 配置示例
+
+**最小对接（与上节 cURL 一致，不含 `thinking`）：**
+
+```toml
+[agent]
+api_base = "https://open.bigmodel.cn/api/paas/v4"
+model = "glm-5"
+llm_http_auth_mode = "bearer"
+# llm_bigmodel_thinking 默认 false，可不写
+```
+
+**启用文档中的深度思考时：**
+
+```toml
+[agent]
+api_base = "https://open.bigmodel.cn/api/paas/v4"
+model = "glm-5"
+llm_http_auth_mode = "bearer"
+llm_bigmodel_thinking = true
+# max_tokens、temperature 等按控制台与用量自行调整
+```
 
 ## 配置文件示例
 
