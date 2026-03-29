@@ -11,6 +11,7 @@ mod command;
 mod date_calc;
 mod debug_tools;
 mod diagnostics;
+mod docs_health_sweep;
 pub(crate) use diagnostics::capture_trimmed;
 mod env_var_check;
 mod error_playbook;
@@ -400,6 +401,10 @@ fn runner_license_notice(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_repo_overview_sweep(args: &str, ctx: &ToolContext<'_>) -> String {
     repo_overview::repo_overview_sweep(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_docs_health_sweep(args: &str, ctx: &ToolContext<'_>) -> String {
+    docs_health_sweep::docs_health_sweep(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn runner_ci_pipeline_local(args: &str, ctx: &ToolContext<'_>) -> String {
