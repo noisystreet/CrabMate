@@ -33,8 +33,8 @@ mod web;
 
 use config::cli::init_logging;
 pub use config::cli::{
-    ChatCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, normalize_legacy_argv,
-    parse_args, parse_args_from_argv, root_clap_command_for_man_page,
+    ChatCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli,
+    normalize_legacy_argv, parse_args, parse_args_from_argv, root_clap_command_for_man_page,
 };
 use log::info;
 pub use read_file_turn_cache::{ReadFileTurnCache, ReadFileTurnCacheHandle, new_turn_cache_handle};
@@ -199,6 +199,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         bench_args,
         extra_cli,
         save_session,
+        tool_replay,
     } = parse_args()?;
 
     // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_logging`）
@@ -240,6 +241,18 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         crate::runtime::cli::run_save_session_command(&cfg, &workspace_cli, ss)?;
+        return Ok(());
+    }
+
+    if let Some(tr) = tool_replay {
+        let cfg = match config::load_config(config_path.as_deref()) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("{}", e);
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
+            }
+        };
+        crate::runtime::cli::run_tool_replay_command(&cfg, &workspace_cli, tr)?;
         return Ok(());
     }
 
@@ -559,7 +572,8 @@ pub use types::LlmSeedOverride;
 
 pub use runtime::cli_exit::{
     CliExitError, EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT,
-    EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, classify_model_error_message,
+    EXIT_TOOL_REPLAY_MISMATCH, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE,
+    classify_model_error_message,
 };
 
 #[cfg(test)]

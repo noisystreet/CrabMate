@@ -125,5 +125,46 @@
     "chat_wants": false,
     "save_session_format": null,
     "workspace": "/tmp/ws"
+  },
+  {
+    "name": "tool_replay_export",
+    "argv": [
+      "crabmate",
+      "tool-replay",
+      "export",
+      "--session-file",
+      "/tmp/s.json",
+      "--output",
+      "/tmp/out.json",
+      "--note",
+      "demo"
+    ],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": null,
+    "tool_replay": {
+      "kind": "Export",
+      "session_file": "/tmp/s.json",
+      "output": "/tmp/out.json",
+      "note": "demo"
+    }
+  },
+  {
+    "name": "tool_replay_run_compare",
+    "argv": ["crabmate", "tool-replay", "run", "--fixture", "f.json", "--compare-recorded"],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": null,
+    "tool_replay": {
+      "kind": "Run",
+      "fixture": "f.json",
+      "compare_recorded": true
+    }
   }
 ]

@@ -16,4 +16,5 @@ pub(crate) mod plan_section;
 pub(crate) mod repl_reedline;
 pub(crate) mod terminal_cli_transcript;
 pub(crate) mod terminal_labels;
+pub mod tool_replay;
 pub mod workspace_session;
