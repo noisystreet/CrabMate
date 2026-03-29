@@ -162,7 +162,7 @@ flowchart TB
 | `python_tools.rs` | Python：`ruff check`、`python3 -m pytest`、`mypy`、`uv sync` / `uv run`、可编辑安装（uv / pip）；供 `format`（`.py` 的 ruff format）、`lint`、`quality_workspace`、`ci_pipeline_local` 调用 |
 | `quality_tools.rs` | 工作区质量组合检查 |
 | `release_docs.rs` | `changelog_draft`（git log → Markdown 草稿）、`license_notice`（cargo metadata → 许可证表） |
-| `repo_overview.rs` | `repo_overview_sweep`：文档预览 + 源码树 + 构建/清单路径 glob 汇总（只读聚合；结论由模型撰写） |
+| `repo_overview.rs` | `repo_overview_sweep`：可选 **项目画像**（`project_profile::build_project_profile_markdown`，与 Web 首轮注入同源）+ 文档预览 + 源码树 + 构建/清单路径 glob 汇总（只读聚合；结论由模型撰写） |
 | `docs_health_sweep.rs` | `docs_health_sweep`：文档预览 + typos + codespell + `markdown_check_links`（外链 HEAD 不经 http_fetch 审批） |
 | `rust_ide.rs` | 编译器 JSON、rust-analyzer LSP（goto/references/hover/documentSymbol 等） |
 | `schedule.rs` | 提醒与日程持久化 |

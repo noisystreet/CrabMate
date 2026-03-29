@@ -33,7 +33,7 @@
         },
         ToolSpec {
             name: "repo_overview_sweep",
-            description: "只读聚合：依次预览主要文档（默认 README/AGENTS/docs 等）、对源码根目录做 list_tree、用 glob 汇总 Cargo.toml/package.json/CI 等构建清单路径；末尾附**结论撰写提纲**。**分析结论由模型根据输出撰写**，本工具不调用 LLM。",
+            description: "只读聚合：可选**项目画像**（与 Web `GET /workspace/profile` 及首轮注入同源：清单与 tokei 等，默认开启，见 `include_project_profile` / `project_profile_max_chars`）；依次预览主要文档（默认 README/AGENTS/docs 等）、对源码根目录做 list_tree、用 glob 汇总 Cargo.toml/package.json/CI 等构建清单路径；末尾附**结论撰写提纲**。**分析结论由模型根据输出撰写**，本工具不调用 LLM。",
             category: ToolCategory::Development,
             parameters: tool_params::params_repo_overview_sweep,
             runner: runner_repo_overview_sweep,
