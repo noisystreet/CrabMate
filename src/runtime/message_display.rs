@@ -708,6 +708,7 @@ mod tests {
                 role: "assistant".into(),
                 content: Some("I'll run ls".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: Some(vec![ToolCall {
                     id: "c1".into(),
                     typ: "function".into(),
@@ -723,6 +724,7 @@ mod tests {
                 role: "tool".into(),
                 content: Some("退出码：0\n(无输出)".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: Some("c1".into()),

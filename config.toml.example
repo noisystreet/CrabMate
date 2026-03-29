@@ -7,6 +7,9 @@
 # model = "deepseek-chat"
 # 本地 Ollama（OpenAI 兼容）：api_base = "http://127.0.0.1:11434/v1" 且 llm_http_auth_mode = "none" 时可不设 API_KEY
 # llm_http_auth_mode = "none"
+# MiniMax（OpenAI 兼容）：api_base = "https://api.minimaxi.com/v1" ，API_KEY 环境变量；已测 model：MiniMax-M2.7、MiniMax-M2.7-highspeed、MiniMax-M2.5；建议 llm_fold_system_into_user = true；AGENT_LLM_FOLD_SYSTEM_INTO_USER
+# llm_reasoning_split = false
+# llm_fold_system_into_user = true
 # max_message_history = 24
 # tui_load_session_on_start = false
 # tui_session_max_messages = 400

@@ -2,14 +2,18 @@
 name = "crabmate"
 version = "0.1.0"
 edition = "2024"
-description = "Minimal agent demo using DeepSeek API"
+description = "Rust AI agent: OpenAI-compatible chat/completions, function calling, Web UI, CLI"
 # 存在 `crabmate-gen-man` 时，`cargo run` 须默认主二进制（与 README「cargo run」一致）。
 default-run = "crabmate"
 
 [package.metadata.deb]
 maintainer = "CrabMate <dev@example.com>"
 license-file = "README.md"
-extended-description = "CrabMate: a minimal Rust AI agent with HTTP server and web UI."
+extended-description = """\
+CrabMate is a Rust AI agent that uses OpenAI-compatible chat/completions to reach LLM backends \
+(e.g. DeepSeek, MiniMax, local Ollama). It supports function calling, workspace-oriented command \
+and file tools, a Web UI (Axum + React), and a CLI (REPL, one-shot chat, and serve). Configuration \
+is TOML plus environment variables; see /usr/share/doc/crabmate/ after install."""
 depends = "libc6 (>= 2.31)"
 section = "utils"
 priority = "optional"

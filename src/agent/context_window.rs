@@ -119,6 +119,7 @@ pub async fn maybe_summarize_with_llm(
             role: "system".to_string(),
             content: Some(SUMMARY_SYSTEM.to_string()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -130,6 +131,7 @@ pub async fn maybe_summarize_with_llm(
                 cfg.context_summary_max_tokens, transcript
             )),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -144,6 +146,7 @@ pub async fn maybe_summarize_with_llm(
         temperature: 0.2,
         seed: None,
         stream: None,
+        reasoning_split: cfg.llm_reasoning_split.then_some(true),
     };
 
     match complete_chat_retrying(
@@ -183,6 +186,7 @@ pub async fn maybe_summarize_with_llm(
                     summary_text.trim()
                 )),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: None,

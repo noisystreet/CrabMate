@@ -171,6 +171,7 @@ pub fn sync_changelist_user_message(
         role: "user".to_string(),
         content: Some(body),
         reasoning_content: None,
+        reasoning_details: None,
         tool_calls: None,
         name: Some(CRABMATE_WORKSPACE_CHANGELIST_NAME.to_string()),
         tool_call_id: None,

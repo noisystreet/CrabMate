@@ -6,10 +6,17 @@
 # 1. LLM 网关（OpenAI 兼容 chat/completions）
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
+# 鉴权密钥：仅认环境变量 API_KEY（或进程继承）；勿将真实密钥写入本文件。本程序不读取 TOML 中的 api_key 键。
 # 模型 HTTP 鉴权：bearer（默认，需环境变量 API_KEY）| none（不向 chat/models 发 Authorization；本地 Ollama 等可不设 API_KEY）
 # llm_http_auth_mode = "bearer"
 max_tokens = 2048
 temperature = 0.7
+
+# MiniMax系列: 已测 model 含 MiniMax-M2.7、MiniMax-M2.7-highspeed、MiniMax-M2.5；API_KEY 用环境变量。可选 llm_reasoning_split = true（见 docs/CONFIGURATION.md 与 platform.minimaxi.com OpenAI 兼容文档）。
+# llm_reasoning_split = false
+# 文档示例含 role: system，但直连 api.minimaxi.com 等仍常见 HTTP 400「invalid message role: system」；默认 true 将系统提示并入 user。换 DeepSeek / 标准 OpenAI 兼容且需保留独立 system 条时可设 false（AGENT_LLM_FOLD_SYSTEM_INTO_USER=0）。
+llm_fold_system_into_user = true
+
 # 可选：写入 chat/completions 的整数 seed；省略则请求 JSON 不带该字段
 # llm_seed = 42
 api_timeout_secs = 60

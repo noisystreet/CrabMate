@@ -237,6 +237,7 @@ mod tests {
                 role: "assistant".into(),
                 content: Some("call calc".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: Some(vec![ToolCall {
                     id: "c1".into(),
                     typ: "function".into(),
@@ -252,6 +253,7 @@ mod tests {
                 role: "tool".into(),
                 content: Some("4".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: Some("c1".into()),
@@ -275,6 +277,7 @@ mod tests {
                 role: "assistant".into(),
                 content: None,
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: Some(vec![
                     ToolCall {
                         id: "a".into(),
@@ -300,6 +303,7 @@ mod tests {
                 role: "tool".into(),
                 content: Some("one".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: Some("a".into()),
@@ -308,6 +312,7 @@ mod tests {
                 role: "tool".into(),
                 content: Some("two".into()),
                 reasoning_content: None,
+                reasoning_details: None,
                 tool_calls: None,
                 name: None,
                 tool_call_id: Some("b".into()),

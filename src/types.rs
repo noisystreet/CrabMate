@@ -62,6 +62,9 @@ pub struct Message {
     /// DeepSeek `deepseek-reasoner` 等非流式/流式响应中的思维链；**勿**在下一轮请求中回传供应商（见 [`messages_stripping_reasoning_for_api_request`]）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
+    /// MiniMax OpenAI 兼容在 **`reasoning_split: true`** 时，非流式响应可能在 `message` 上返回；解析后合并入 [`Self::reasoning_content`] 并清空本字段，**不**回传上游。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_details: Option<Vec<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -111,6 +114,7 @@ impl Message {
             role: "system".to_string(),
             content: Some(if short { "short" } else { "long" }.to_string()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: Some("crabmate_ui_sep".to_string()),
             tool_call_id: None,
@@ -123,6 +127,7 @@ impl Message {
             role: "system".to_string(),
             content: Some(content.into()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -135,6 +140,7 @@ impl Message {
             role: "user".to_string(),
             content: Some(content.into()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -147,6 +153,7 @@ impl Message {
             role: "assistant".to_string(),
             content: Some(content.into()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -157,13 +164,40 @@ impl Message {
 /// 单条消息：供 API 请求使用，不携带 `reasoning_content`（与 [`messages_stripping_reasoning_for_api_request`] 单元素语义一致）。
 #[inline]
 pub(crate) fn message_clone_stripping_reasoning_for_api(m: &Message) -> Message {
-    if m.reasoning_content.is_none() {
+    if m.reasoning_content.is_none() && m.reasoning_details.is_none() {
         m.clone()
     } else {
         Message {
             reasoning_content: None,
+            reasoning_details: None,
             ..m.clone()
         }
+    }
+}
+
+/// MiniMax OpenAI 兼容：非流式 `message` 上 **`reasoning_details`**（`[{"text":"…"}]`）合并进 **`reasoning_content`** 并清空 **`reasoning_details`**，避免写入会话后再回传上游。
+pub fn merge_reasoning_details_into_reasoning_content(msg: &mut Message) {
+    let Some(details) = msg.reasoning_details.take() else {
+        return;
+    };
+    let mut from_details = String::new();
+    for d in details {
+        let Some(obj) = d.as_object() else {
+            continue;
+        };
+        if let Some(serde_json::Value::String(t)) = obj.get("text") {
+            from_details.push_str(t);
+        }
+    }
+    if from_details.is_empty() {
+        return;
+    }
+    let replace = match msg.reasoning_content.as_deref() {
+        None | Some("") => true,
+        Some(rc) => from_details.starts_with(rc) && from_details.len() >= rc.len(),
+    };
+    if replace {
+        msg.reasoning_content = Some(from_details);
     }
 }
 
@@ -315,6 +349,67 @@ pub fn normalize_messages_for_openai_compatible_request(msgs: Vec<Message>) -> V
     out
 }
 
+#[inline]
+fn role_is_system_for_vendor(role: &str) -> bool {
+    role.trim().eq_ignore_ascii_case("system")
+}
+
+/// 将独立 **`role: "system"`** 折叠进后续 **`user`**，避免上游返回 HTTP 400（如 **`invalid message role: system`**）。MiniMax OpenAI 兼容域名上**实测常见**该错误，与文档示例不完全一致；由配置 **`llm_fold_system_into_user`** 控制（嵌入默认对 MiniMax 为 **`true`**）。
+///
+/// 将连续 **`system`** 的正文按顺序拼接后，合并进**下一条** **`user`** 的 `content` 之前（中间空一行）；若下一条非 `user`，则先插入一条仅含该拼接正文的 **`user`**。**不**写入会话，仅用于拼装出站 `ChatRequest.messages`。
+pub fn fold_system_messages_into_following_user(msgs: Vec<Message>) -> Vec<Message> {
+    let mut out: Vec<Message> = Vec::with_capacity(msgs.len());
+    let mut pending: Vec<String> = Vec::new();
+
+    let push_merged_user = |pending: &mut Vec<String>, out: &mut Vec<Message>, mut msg: Message| {
+        if pending.is_empty() {
+            out.push(msg);
+            return;
+        }
+        let prefix = pending.join("\n\n");
+        pending.clear();
+        let merged = match msg.content.as_deref().map(str::trim) {
+            Some(u) if !u.is_empty() => format!("{prefix}\n\n{u}"),
+            _ => prefix,
+        };
+        msg.content = if merged.is_empty() {
+            None
+        } else {
+            Some(merged)
+        };
+        out.push(msg);
+    };
+
+    for m in msgs {
+        if role_is_system_for_vendor(&m.role) {
+            if let Some(c) = m
+                .content
+                .as_ref()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+            {
+                pending.push(c.to_string());
+            }
+            continue;
+        }
+        let is_user = m.role.trim().eq_ignore_ascii_case("user");
+        if is_user {
+            push_merged_user(&mut pending, &mut out, m);
+        } else {
+            if !pending.is_empty() {
+                let prefix = pending.join("\n\n");
+                pending.clear();
+                out.push(Message::user_only(prefix));
+            }
+            out.push(m);
+        }
+    }
+    if !pending.is_empty() {
+        out.push(Message::user_only(pending.join("\n\n")));
+    }
+    out
+}
+
 /// 删除尾部「无正文且无 `tool_calls`」的 assistant（OpenAI 兼容 API 不接受该形态）。
 fn pop_trailing_assistants_with_neither_content_nor_tool_calls(out: &mut Vec<Message>) {
     while out.last().is_some_and(|m| {
@@ -382,6 +477,9 @@ pub struct ChatRequest {
     pub seed: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+    /// MiniMax OpenAI 兼容扩展：为 `true` 时流式/非流式可将思维链与正文分离（`delta.reasoning_details` / `message.reasoning_details`）。
+    #[serde(skip_serializing_if = "Option::is_none", rename = "reasoning_split")]
+    pub reasoning_split: Option<bool>,
 }
 
 // ---------- 非流式响应（`stream: false` 时 chat/completions 返回体） ----------
@@ -407,6 +505,9 @@ pub struct StreamDelta {
     /// 推理模型流式思维链（如 DeepSeek reasoner）。
     #[serde(default)]
     pub reasoning_content: Option<String>,
+    /// MiniMax 在 **`reasoning_split: true`** 时流式返回；元素常为 `{"text": "…"}`，`text` 多为**累积**全文。
+    #[serde(default)]
+    pub reasoning_details: Option<Vec<serde_json::Value>>,
     #[allow(dead_code)]
     pub role: Option<String>,
     #[serde(default)]
@@ -468,6 +569,7 @@ mod api_messages_strip_tests {
             role: "assistant".to_string(),
             content: Some("body".to_string()),
             reasoning_content: Some("chain".to_string()),
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -487,6 +589,7 @@ mod api_messages_strip_tests {
             role: "assistant".to_string(),
             content: Some("x".to_string()),
             reasoning_content: Some("r".to_string()),
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -507,6 +610,7 @@ mod normalize_messages_tests {
             role: "assistant".to_string(),
             content: Some(content.to_string()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: None,
@@ -518,6 +622,7 @@ mod normalize_messages_tests {
             role: "assistant".to_string(),
             content: Some(content.to_string()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: Some(vec![ToolCall {
                 id: "tc1".to_string(),
                 typ: "function".to_string(),
@@ -604,6 +709,7 @@ mod normalize_messages_tests {
             role: "tool".to_string(),
             content: Some(r#"{"ok":true}"#.to_string()),
             reasoning_content: None,
+            reasoning_details: None,
             tool_calls: None,
             name: None,
             tool_call_id: Some("tc1".to_string()),
@@ -679,5 +785,69 @@ mod normalize_messages_tests {
         let n = normalize_messages_for_openai_compatible_request(v);
         assert_eq!(n.len(), 2);
         assert_eq!(n[1].role, "user");
+    }
+}
+
+#[cfg(test)]
+mod fold_system_messages_tests {
+    use super::*;
+
+    #[test]
+    fn merges_system_into_following_user() {
+        let v = vec![Message::system_only("sys"), Message::user_only("hi")];
+        let o = fold_system_messages_into_following_user(v);
+        assert_eq!(o.len(), 1);
+        assert_eq!(o[0].role, "user");
+        assert_eq!(o[0].content.as_deref(), Some("sys\n\nhi"));
+    }
+
+    #[test]
+    fn joins_multiple_system_blocks() {
+        let v = vec![
+            Message::system_only("a"),
+            Message::system_only("b"),
+            Message::user_only("u"),
+        ];
+        let o = fold_system_messages_into_following_user(v);
+        assert_eq!(o.len(), 1);
+        assert_eq!(o[0].content.as_deref(), Some("a\n\nb\n\nu"));
+    }
+
+    #[test]
+    fn system_before_assistant_inserts_user_carrier() {
+        let a = Message {
+            role: "assistant".to_string(),
+            content: Some("reply".to_string()),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        let v = vec![Message::system_only("instr"), a];
+        let o = fold_system_messages_into_following_user(v);
+        assert_eq!(o.len(), 2);
+        assert_eq!(o[0].role, "user");
+        assert_eq!(o[0].content.as_deref(), Some("instr"));
+        assert_eq!(o[1].role, "assistant");
+    }
+
+    #[test]
+    fn trailing_system_only_becomes_user() {
+        let v = vec![Message::system_only("orphan")];
+        let o = fold_system_messages_into_following_user(v);
+        assert_eq!(o.len(), 1);
+        assert_eq!(o[0].role, "user");
+        assert_eq!(o[0].content.as_deref(), Some("orphan"));
+    }
+
+    #[test]
+    fn trims_system_role_case_and_whitespace() {
+        let mut s = Message::system_only("x");
+        s.role = " SYSTEM ".to_string();
+        let v = vec![s, Message::user_only("y")];
+        let o = fold_system_messages_into_following_user(v);
+        assert_eq!(o.len(), 1);
+        assert!(o[0].content.as_deref().unwrap().starts_with("x"));
     }
 }
