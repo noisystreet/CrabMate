@@ -1,10 +1,10 @@
 # 配置说明
 
-默认配置由仓库 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`** 七段嵌入（均为 **`[agent]`** 扁平键；**`session`** 为 CLI / REPL **`tui_*`** 与 **`repl_initial_workspace_messages_enabled`**；**`context_inject`** 为首轮 **`agent_memory_file_*`**、**`project_profile_inject_*`**、**`project_dependency_brief_inject_*`**；**`tools`** 含 **`run_command`** 白名单/超时/工作目录、**`tool_message_*`** / **`tool_result_envelope_v1`**、**`read_file_turn_cache_*`**、**`test_result_cache_*`**、**`session_workspace_changelist_*`**、天气/搜索/**`http_fetch_*`**、**`tool_call_explain_*`**、**`mcp_*`** 等；**`sandbox`** 为 **SyncDefault Docker 沙盒** **`sync_default_tool_sandbox_*`**；**`planning`** 为规划 / 反思 / 编排；**`memory`** 为 **`long_term_memory_*`**）。`load_config` 按 **主默认 → session → context_inject → tools → sandbox → planning → memory** 顺序合并，再被 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，最后由环境变量覆盖。示例片段见 **`config.toml.example`**。
+默认配置由仓库 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`** 七段嵌入（均为 **`[agent]`** 扁平键；**`session`** 为 CLI 会话相关 **`tui_*`** 与 **`repl_initial_workspace_messages_enabled`**；**`context_inject`** 为首轮 **`agent_memory_file_*`**、**`project_profile_inject_*`**、**`project_dependency_brief_inject_*`**；**`tools`** 含 **`run_command`** 白名单/超时/工作目录、**`tool_message_*`** / **`tool_result_envelope_v1`**、**`read_file_turn_cache_*`**、**`test_result_cache_*`**、**`session_workspace_changelist_*`**、天气/搜索/**`http_fetch_*`**、**`tool_call_explain_*`**、**`mcp_*`** 等；**`sandbox`** 为 **SyncDefault Docker 沙盒** **`sync_default_tool_sandbox_*`**；**`planning`** 为规划 / 反思 / 编排；**`memory`** 为 **`long_term_memory_*`**）。`load_config` 按 **主默认 → session → context_inject → tools → sandbox → planning → memory** 顺序合并，再被 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，最后由环境变量覆盖。示例片段见 **`config.toml.example`**。
 
 ## 配置热重载（无需重启 `repl` / `serve` 主进程）
 
-- **REPL**：输入 **`/config reload`**（或 Tab 补全 **`/config reload`**）。从与启动时相同的配置文件路径（**`--config`** 或默认探测 **`config.toml`** / **`.agent_demo.toml`**）再读 TOML，并与**当前进程环境变量**合并后，将可热更字段写入内存中的 [`AgentConfig`](DEVELOPMENT.md)；随后清空 MCP 进程内 stdio 缓存，下一轮对话使用新 MCP 指纹。
+- **CLI**：输入 **`/config reload`**（或 Tab 补全 **`/config reload`**）。从与启动时相同的配置文件路径（**`--config`** 或默认探测 **`config.toml`** / **`.agent_demo.toml`**）再读 TOML，并与**当前进程环境变量**合并后，将可热更字段写入内存中的 [`AgentConfig`](DEVELOPMENT.md)；随后清空 MCP 进程内 stdio 缓存，下一轮对话使用新 MCP 指纹。
 - **Web**：**`POST /config/reload`**（JSON body 可为 `{}`；鉴权与 **`/chat`** 等受保护 API 一致——若启动时启用了 Bearer 中间件则须带 token）。成功时返回 **`{ "ok": true, "message": "…" }`**。
 - **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_fold_system_into_user`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。
 - **刻意不热更**：**`conversation_store_sqlite_path`**（会话库连接在启动时打开，改路径须重启 **`serve`**）。**`reqwest::Client`** 不重建，**`api_timeout_secs` 等**对**新连接**的生效可能受连接池保留的空闲连接影响。
@@ -13,37 +13,174 @@
 
 ## 环境变量（`AGENT_*`）
 
-以下为常用项；**完整键名与默认值以 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为准**。
+以下为常用项；**完整键名与默认值以 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为准**。**`API_KEY`** 仅环境变量，见下节「模型与 API」表格；热重载与密钥行为见上文「配置热重载」。
 
-- **模型与 API**：`AGENT_API_BASE`、`AGENT_MODEL`、`AGENT_LLM_HTTP_AUTH_MODE`（`bearer` 默认，需 **`API_KEY`**；`none` 不向 `chat/completions` / `models` 发送 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）、`AGENT_LLM_REASONING_SPLIT`（为真时在 `chat/completions` 请求体中带 **`reasoning_split: true`**，供 MiniMax 等将思维链与正文分离；见下文「MiniMax」）、`AGENT_LLM_FOLD_SYSTEM_INTO_USER`（为真时将 **`system`** 并入 **`user`**，仅在不接受 `system` 的网关/代理下使用）、`AGENT_SYSTEM_PROMPT`、`AGENT_SYSTEM_PROMPT_FILE`
-- **温度与 seed**：`AGENT_TEMPERATURE`、`AGENT_LLM_SEED`
-- **Web**：`AGENT_HTTP_HOST`（未传 `--host` 时生效）、`AGENT_WEB_API_BEARER_TOKEN`、`AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK`
-- **工作区白名单**：`AGENT_WORKSPACE_ALLOWED_ROOTS`（逗号分隔；与 `[agent] workspace_allowed_roots` 等价）
-- **Cursor 式规则**：`AGENT_CURSOR_RULES_ENABLED`、`AGENT_CURSOR_RULES_DIR`、`AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD`、`AGENT_CURSOR_RULES_MAX_CHARS`
-- **终答规划**：`AGENT_FINAL_PLAN_REQUIREMENT`（`never` / `workflow_reflection` / `always`）、`AGENT_PLAN_REWRITE_MAX_ATTEMPTS`
-- **规划器模式**：`AGENT_PLANNER_EXECUTOR_MODE`（`single_agent` / `logical_dual_agent`）
-- **分阶段规划**：`AGENT_STAGED_PLAN_EXECUTION`、`AGENT_STAGED_PLAN_PHASE_INSTRUCTION`、`AGENT_STAGED_PLAN_ALLOW_NO_TASK`、`AGENT_STAGED_PLAN_FEEDBACK_MODE`（`fail_fast` / `patch_planner`）、`AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS`、`AGENT_STAGED_PLAN_ENSEMBLE_COUNT`（逻辑多规划员份数上限 1–3，默认 1）
-- **对话队列**：`AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`
-- **只读工具并行**：`AGENT_PARALLEL_READONLY_TOOLS_MAX`
-- **单轮 `read_file` 缓存**：`AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES`（`0` 关闭；写类工具或工作区变更后会话内缓存整表清空）
-- **测试输出进程内 LRU**（`test_result_cache_enabled` / `test_result_cache_max_entries`）：`AGENT_TEST_RESULT_CACHE_ENABLED`、`AGENT_TEST_RESULT_CACHE_MAX_ENTRIES`。对 **`cargo_test`**、**`rust_test_one`**、**`npm_run` 且 `script` 为 `test`**、以及 **`run_command`** 的 **`cargo` + `test`**（参数中**不得**含 `--nocapture` 或 `--test-threads`，否则不缓存）在**同一进程**内按「工作区源码/清单指纹 + 调用参数」复用**上次截断后的输出**，并在正文首行标注 **`[CrabMate 测试输出缓存命中]`**。**不**跨重启持久化；指纹为 mtime+size 近似，**不**含 `RUST_TEST_THREADS` 等环境变量——若依赖环境一致性请关闭该项。
-- **会话工作区变更集**（`session_workspace_changelist_enabled` / `session_workspace_changelist_max_chars`）：`AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED`、`AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS`。默认开启：按 **`long_term_memory_scope_id`**（Web 为 **`conversation_id`**；CLI 未配记忆时为 `__default__`）累积 **`create_file` / `modify_file` / `apply_patch` / `structured_patch`** 等写路径，在每次 P 步 **`prepare_messages_for_model`** 末尾注入一条 **`user`**（**`name=crabmate_workspace_changelist`**），含相对路径列表与相对「本会话首次触碰」基线的 **unified diff**；**不写入**会话 SQLite（保存前剥离）。**`workflow_execute` 节点内工具**当前**不**汇入此表（与主对话变更集隔离）。
-- **`run_command` 白名单覆盖**：`AGENT_ALLOWED_COMMANDS`（逗号分隔）
-- **MCP**：`AGENT_MCP_ENABLED`、`AGENT_MCP_COMMAND`、`AGENT_MCP_TOOL_TIMEOUT_SECS`。同一 **`serve` / `repl` / `chat` / Web** 进程内按配置指纹**复用**一条 stdio 连接。运维可执行 **`crabmate mcp list`**（**不要**求 `API_KEY`）查看本进程已缓存会话及合并后的 OpenAI 工具名；**`mcp list --probe`** 会按配置尝试连接一次（排障用，会启动 `mcp_command` 子进程）。
-- **会话 SQLite**：`AGENT_CONVERSATION_STORE_SQLITE_PATH`
-- **工作区备忘（首轮注入）**：`AGENT_MEMORY_FILE_ENABLED`、`AGENT_MEMORY_FILE`、`AGENT_MEMORY_FILE_MAX_CHARS`
-- **项目画像（首轮注入）**：`AGENT_PROJECT_PROFILE_INJECT_ENABLED`、`AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS`
-- **依赖结构摘要（首轮注入，与画像/备忘合并为一条 `user`）**：`AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED`、`AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS`。由 **`cargo metadata`**（解析 **workspace 成员**之间的 resolve 边，生成 Mermaid `flowchart LR`）与 **`package.json`**（根目录与 `frontend/package.json` 若存在，列出依赖**名**节选）组成；**不**含版本号与 lockfile 全文。`0` 关闭该段生成。
-- **工具解释卡**：`AGENT_TOOL_CALL_EXPLAIN_ENABLED`、`AGENT_TOOL_CALL_EXPLAIN_MIN_CHARS`、`AGENT_TOOL_CALL_EXPLAIN_MAX_CHARS`
-- **长期记忆**：`AGENT_LONG_TERM_MEMORY_ENABLED`、`AGENT_LONG_TERM_MEMORY_SCOPE_MODE`、`AGENT_LONG_TERM_MEMORY_VECTOR_BACKEND`（默认 `fastembed`，可 `disabled`）、`AGENT_LONG_TERM_MEMORY_STORE_SQLITE_PATH`、`AGENT_LONG_TERM_MEMORY_TOP_K`、`AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK`、`AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX`、`AGENT_LONG_TERM_MEMORY_ASYNC_INDEX`、`AGENT_LONG_TERM_MEMORY_MAX_ENTRIES`、`AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS`  
-  Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共用同一 SQLite；纯内存会话须单独配置 `long_term_memory_store_sqlite_path` 才能持久化记忆。CLI 默认路径为 `run_command_working_dir/.crabmate/long_term_memory.db`。若在 **repl / chat** 下启用长期记忆但打开库失败，进程会向 **stderr 打印一次性警告**（并继续运行，本进程内不注入记忆）；仍伴有 `crabmate` 目标下的 `warn` 日志。
-- **联网搜索**：`AGENT_WEB_SEARCH_PROVIDER`、`AGENT_WEB_SEARCH_API_KEY`、`AGENT_WEB_SEARCH_TIMEOUT_SECS`、`AGENT_WEB_SEARCH_MAX_RESULTS`
-- **`http_fetch`**：`AGENT_HTTP_FETCH_ALLOWED_PREFIXES`、`AGENT_HTTP_FETCH_TIMEOUT_SECS`、`AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES`
-- **上下文与工具消息**：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_TOOL_RESULT_ENVELOPE_V1`、`AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
-- **CLI REPL 会话文件**：`AGENT_TUI_LOAD_SESSION_ON_START`、`AGENT_TUI_SESSION_MAX_MESSAGES`
-- **CLI REPL 首轮工作区消息**：`AGENT_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED`（`true` 时在后台构建 `initial_workspace_messages`：项目画像、依赖摘要，并尊重 `tui_load_session_on_start` 的磁盘恢复；默认 `false`，REPL 启动仅一条 `system`）。TOML：`[agent] repl_initial_workspace_messages_enabled`。
-- **CLI 等待模型首包动效**（可选）：`AGENT_CLI_WAIT_SPINNER`（非空且非 `0`/`false` 即开启）。在 **`repl` / `chat`** 且为 **CLI 纯文本流式**（默认流式、非 `--no-stream`）时，于首段 reasoning/content 到达前在 **stderr** 显示 **indicatif** spinner 与已等待时间；**`NO_COLOR`** 或 **stderr 非 TTY** 时不启用。与 stdout 上的 **`Agent:`** 正文分离。
-- **Docker 工具沙盒**（可选）：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`（`none` | `docker`）、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER`。详见下文「SyncDefault 工具 Docker 沙盒」。
+### 模型与 API
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `API_KEY` | 云厂商 / OpenAI 兼容后端的 Bearer token；`llm_http_auth_mode=bearer`（默认）时发往 `chat/completions` / `models` 的 `Authorization`。**不写 TOML**；热重载不解析密钥文件，改值后通常须重新 export 并 **`/config reload`** 或重启进程。`llm_http_auth_mode=none`（如本地 Ollama）时可不设。 |
+| `AGENT_API_BASE` | 覆盖 `api_base`。 |
+| `AGENT_MODEL` | 覆盖 `model`。 |
+| `AGENT_LLM_HTTP_AUTH_MODE` | `bearer`（默认，需 **`API_KEY`**）或 `none`（不向 `chat/completions` / `models` 发 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）。 |
+| `AGENT_LLM_REASONING_SPLIT` | 为真时在请求体中带 `reasoning_split: true`（MiniMax 等思维链分离；见下文「MiniMax」）。 |
+| `AGENT_LLM_FOLD_SYSTEM_INTO_USER` | 为真时将 `system` 并入 `user`（不接受独立 `system` 的网关/代理）。 |
+| `AGENT_SYSTEM_PROMPT` | 内联系统提示；会清除继承的 `system_prompt_file`（若再设 `AGENT_SYSTEM_PROMPT_FILE` 则以文件为准，见「系统提示词」）。 |
+| `AGENT_SYSTEM_PROMPT_FILE` | 系统提示词文件路径。 |
+
+### 采样与随机性
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_TEMPERATURE` | 覆盖 `temperature`。 |
+| `AGENT_LLM_SEED` | 覆盖 `llm_seed`。 |
+
+### Web 服务
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_HTTP_HOST` | 未传 `--host` 时作为绑定地址。 |
+| `AGENT_WEB_API_BEARER_TOKEN` | 受保护 API 的 Bearer token。 |
+| `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | 非回环监听时是否允许无鉴权启动（高风险，仅可信环境）。 |
+
+### 工作区与 Cursor 式规则
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_WORKSPACE_ALLOWED_ROOTS` | 逗号分隔，等价 `[agent] workspace_allowed_roots`。 |
+| `AGENT_CURSOR_RULES_ENABLED` | 是否启用规则注入。 |
+| `AGENT_CURSOR_RULES_DIR` | 规则目录（`*.mdc`）。 |
+| `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | 是否并入 `AGENTS.md`。 |
+| `AGENT_CURSOR_RULES_MAX_CHARS` | 注入长度上限。 |
+
+### 规划与分阶段规划
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`。 |
+| `AGENT_PLAN_REWRITE_MAX_ATTEMPTS` | 规划重写上限。 |
+| `AGENT_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`。 |
+| `AGENT_STAGED_PLAN_EXECUTION` | 是否启用分阶段规划。 |
+| `AGENT_STAGED_PLAN_PHASE_INSTRUCTION` | 规划相说明/指令。 |
+| `AGENT_STAGED_PLAN_ALLOW_NO_TASK` | 是否允许无任务跳过执行。 |
+| `AGENT_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner`。 |
+| `AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS` | `patch_planner` 补丁轮上限。 |
+| `AGENT_STAGED_PLAN_ENSEMBLE_COUNT` | 逻辑多规划员份数（1–3，默认 1）。 |
+| `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | CLI / `chat` 无工具规划轮是否向 stdout 打印模型流（默认 `true`；见下文「分阶段规划」）。 |
+| `AGENT_STAGED_PLAN_OPTIMIZER_ROUND` | 是否启用规划步骤优化轮（默认 `true`）。 |
+
+### 队列、并行与缓存
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_CHAT_QUEUE_MAX_CONCURRENT` | 对话队列最大并发。 |
+| `AGENT_CHAT_QUEUE_MAX_PENDING` | 对话队列最大排队。 |
+| `AGENT_PARALLEL_READONLY_TOOLS_MAX` | 同轮只读工具并行上限。 |
+| `AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES` | 单轮 `read_file` 缓存条目；`0` 关闭；写类工具或工作区变更后整表清空。 |
+| `AGENT_TEST_RESULT_CACHE_ENABLED` | 测试输出进程内 LRU 是否启用。 |
+| `AGENT_TEST_RESULT_CACHE_MAX_ENTRIES` | LRU 容量。对 `cargo_test`、`rust_test_one`、`npm_run`（`script` 为 `test`）、以及 `run_command` 的 `cargo`+`test`（参数**不得**含 `--nocapture` / `--test-threads`）按指纹复用上次截断输出，首行标注 **`[CrabMate 测试输出缓存命中]`**；不跨重启；指纹不含 `RUST_TEST_THREADS` 等——依赖环境一致性时请关闭。 |
+
+### 会话工作区变更集
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED` | 是否注入 `crabmate_workspace_changelist` user 条。 |
+| `AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS` | 注入正文上限。默认按 `long_term_memory_scope_id`（Web 为 `conversation_id`；CLI 无记忆时为 `__default__`）累积写路径与 unified diff；不写入会话 SQLite（保存前剥离）。**`workflow_execute` 节点内工具**不汇入此表。 |
+
+### 命令白名单、MCP、会话存储
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_ALLOWED_COMMANDS` | `run_command` 白名单，逗号分隔。 |
+| `AGENT_MCP_ENABLED` | 是否启用 MCP。 |
+| `AGENT_MCP_COMMAND` | MCP stdio 启动命令。 |
+| `AGENT_MCP_TOOL_TIMEOUT_SECS` | MCP 工具超时（秒）。同一进程按指纹复用 stdio；**`crabmate mcp list`** 不要求 `API_KEY`；**`mcp list --probe`** 会启动子进程。 |
+| `AGENT_CONVERSATION_STORE_SQLITE_PATH` | 会话 SQLite 路径。 |
+
+### 首轮注入（备忘、画像、依赖摘要）
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_MEMORY_FILE_ENABLED` | 工作区备忘文件注入。 |
+| `AGENT_MEMORY_FILE` | 备忘文件路径。 |
+| `AGENT_MEMORY_FILE_MAX_CHARS` | 备忘最大字符。 |
+| `AGENT_PROJECT_PROFILE_INJECT_ENABLED` | 项目画像注入。 |
+| `AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS` | 画像最大字符。 |
+| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | 依赖结构摘要（与画像/备忘合并为一条 `user`）。 |
+| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | 由 `cargo metadata`（workspace resolve 边 + Mermaid）与根/`frontend` 的 `package.json` 依赖名节选组成；不含版本与 lockfile 全文；`0` 关闭该段。 |
+
+### 工具解释卡
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_TOOL_CALL_EXPLAIN_ENABLED` | 非只读工具是否要求 `crabmate_explain_why`。 |
+| `AGENT_TOOL_CALL_EXPLAIN_MIN_CHARS` | 解释最短长度。 |
+| `AGENT_TOOL_CALL_EXPLAIN_MAX_CHARS` | 解释最长长度。 |
+
+### 长期记忆
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_LONG_TERM_MEMORY_ENABLED` | 是否启用长期记忆。 |
+| `AGENT_LONG_TERM_MEMORY_SCOPE_MODE` | 作用域模式。 |
+| `AGENT_LONG_TERM_MEMORY_VECTOR_BACKEND` | 默认 `fastembed`，可 `disabled`。 |
+| `AGENT_LONG_TERM_MEMORY_STORE_SQLITE_PATH` | 记忆向量/元数据 SQLite。 |
+| `AGENT_LONG_TERM_MEMORY_TOP_K` | 检索 Top-K。 |
+| `AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK` | 分块最大字符。 |
+| `AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX` | 索引最小字符阈值。 |
+| `AGENT_LONG_TERM_MEMORY_ASYNC_INDEX` | 是否异步索引。 |
+| `AGENT_LONG_TERM_MEMORY_MAX_ENTRIES` | 条目上限。 |
+| `AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS` | 注入模型上下文的最大字符。 |
+
+Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共用同一 SQLite；纯内存会话须单独配置 `long_term_memory_store_sqlite_path` 才能持久化。CLI 默认路径为 `run_command_working_dir/.crabmate/long_term_memory.db`。若在 **repl / chat** 下启用但打开库失败，进程会向 **stderr** 打印一次性警告并继续运行（本进程内不注入记忆）；另有 `crabmate` 目标下的 `warn` 日志。
+
+### 联网搜索与 `http_fetch`
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_WEB_SEARCH_PROVIDER` | 搜索供应商。 |
+| `AGENT_WEB_SEARCH_API_KEY` | 搜索 API 密钥。 |
+| `AGENT_WEB_SEARCH_TIMEOUT_SECS` | 超时（秒）。 |
+| `AGENT_WEB_SEARCH_MAX_RESULTS` | 最大结果数。 |
+| `AGENT_HTTP_FETCH_ALLOWED_PREFIXES` | 允许 URL 前缀。 |
+| `AGENT_HTTP_FETCH_TIMEOUT_SECS` | 抓取超时（秒）。 |
+| `AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES` | 响应体截断上限。 |
+
+### 上下文与工具消息
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_MAX_MESSAGE_HISTORY` | 保留消息条数上限。 |
+| `AGENT_TOOL_MESSAGE_MAX_CHARS` | 单条 `role: tool` 发往模型前压缩阈值。 |
+| `AGENT_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` 信封 v1。 |
+| `AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | DeepSeek DSML 工具调用物化。 |
+| `AGENT_CONTEXT_CHAR_BUDGET` | 上下文字符预算。 |
+| `AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | 摘要后至少保留条数。 |
+| `AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS` | 触发摘要的字符阈值。 |
+| `AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES` | 摘要保留尾部消息数。 |
+| `AGENT_CONTEXT_SUMMARY_MAX_TOKENS` | 摘要请求 max_tokens。 |
+| `AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | 摘要转写最大字符。 |
+
+### CLI
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_TUI_LOAD_SESSION_ON_START` | 启动时是否从磁盘恢复会话。 |
+| `AGENT_TUI_SESSION_MAX_MESSAGES` | 会话文件最大消息数。 |
+| `AGENT_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED` | `true` 时后台构建 `initial_workspace_messages`（画像、依赖摘要，并尊重 `tui_load_session_on_start`）；默认 `false`。TOML：`[agent] repl_initial_workspace_messages_enabled`。 |
+| `AGENT_CLI_WAIT_SPINNER` | 非空且非 `0`/`false` 时，交互式 CLI 与 **`chat`** 纯文本流式在首包前于 stderr 显示 indicatif spinner；**`NO_COLOR`** 或 stderr 非 TTY 时不启用。 |
+
+### Docker 工具沙盒
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE` | `none` \| `docker`。 |
+| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE` | `docker` 模式镜像（必填）。 |
+| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK` | 空为 `none` 网络；如 `bridge` 以使出网工具可用。 |
+| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS` | 单次容器等待上限（秒）。 |
+| `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER` | Docker `Config.user`；`current`/`host` 等语义见下文「SyncDefault 工具 Docker 沙盒」。 |
+
+连接 Docker 守护进程时亦可使用非 `AGENT_` 的 **`DOCKER_HOST`**（与 `docker` CLI / bollard 一致）。
 
 ```bash
 export AGENT_MODEL=deepseek-reasoner
@@ -118,7 +255,7 @@ model = "deepseek-reasoner"
 
 **步级反馈（`staged_plan_feedback_mode`）**：默认 `fail_fast`（某步子循环 `Err` 或步内存在失败工具结果时，整轮计划按失败结束）。设为 `patch_planner` 时，会向规划器注入简短反馈并无工具重跑规划轮，将补丁 `steps` 与「当前步及之后」合并后继续执行（受 `staged_plan_patch_max_attempts` 限制，多耗 API）。
 
-**CLI 规划轮终端输出（`staged_plan_cli_show_planner_stream`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`）**：仅影响 **REPL / `chat` 等 `out: None` 路径** 下，**无工具规划轮**与 **`patch_planner` 补丁规划轮**是否向 stdout 流式或整段打印模型原文（`Agent:` 前缀及正文）。设为 `false` 时这些轮次不在终端打印模型输出，仍保留 `staged_plan_notice` 队列摘要、分步注入 user 转录与后续执行步的助手输出；Web SSE 路径不受影响。
+**CLI 规划轮终端输出（`staged_plan_cli_show_planner_stream`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`）**：仅影响 **CLI / `chat` 等 `out: None` 路径** 下，**无工具规划轮**与 **`patch_planner` 补丁规划轮**是否向 stdout 流式或整段打印模型原文（`Agent:` 前缀及正文）。设为 `false` 时这些轮次不在终端打印模型输出，仍保留 `staged_plan_notice` 队列摘要、分步注入 user 转录与后续执行步的助手输出；Web SSE 路径不受影响。
 
 **规划步骤优化轮（`staged_plan_optimizer_round`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_OPTIMIZER_ROUND`）**：在首轮 `agent_reply_plan` v1 解析成功且 `steps` 不少于 2 时，再追加一轮无工具请求，请模型合并**无数据依赖**的只读探查步，并提示在同一执行步内对「可同轮并行批处理」的内建工具（与执行层 `parallel_readonly_tools` 判定一致，不限于 `read_file`）发起多次调用。解析失败或用户取消优化轮时沿用首轮规划；成功则追加优化轮 assistant 并采用新 `steps`（多一次 API）。
 
