@@ -30,6 +30,7 @@
 - **上下文与工具消息**：`AGENT_MAX_MESSAGE_HISTORY`、`AGENT_TOOL_MESSAGE_MAX_CHARS`、`AGENT_TOOL_RESULT_ENVELOPE_V1`、`AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS`、`AGENT_CONTEXT_CHAR_BUDGET`、`AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM`、`AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS`、`AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES`、`AGENT_CONTEXT_SUMMARY_MAX_TOKENS`、`AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS`
 - **CLI REPL 会话文件**：`AGENT_TUI_LOAD_SESSION_ON_START`、`AGENT_TUI_SESSION_MAX_MESSAGES`
 - **CLI 等待模型首包动效**（可选）：`AGENT_CLI_WAIT_SPINNER`（非空且非 `0`/`false` 即开启）。在 **`repl` / `chat`** 且为 **CLI 纯文本流式**（默认流式、非 `--no-stream`）时，于首段 reasoning/content 到达前在 **stderr** 显示 **indicatif** spinner 与已等待时间；**`NO_COLOR`** 或 **stderr 非 TTY** 时不启用。与 stdout 上的 **`Agent:`** 正文分离。
+- **Docker 工具沙盒**（可选）：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`（`none` | `docker`）、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER`。详见下文「SyncDefault 工具 Docker 沙盒」。
 
 ```bash
 export AGENT_MODEL=deepseek-reasoner
@@ -93,13 +94,64 @@ model = "deepseek-reasoner"
 
 ## SyncDefault 工具 Docker 沙盒（`sync_default_tool_sandbox_mode`）
 
-- **`none`（默认）**：与历史一致，在 Agent 进程内 `spawn_blocking` 执行 `HandlerId::SyncDefault` 工具。
-- **`docker`**：**SyncDefault** 以及 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成白名单与审批（若有）后，每次调用经 **[bollard](https://docs.rs/bollard)** 走 **Docker Engine HTTP API** 创建并运行一次性容器（等价于 `docker run --rm -i`）：挂载当前工作区到容器内 `/workspace`（读写），只读挂载宿主 `crabmate` 到 `/crabmate`，在容器内运行 `crabmate tool-runner-internal`。**Linux/macOS** 默认连接本地 Unix 套接字（与 `docker` CLI 相同）；**`DOCKER_HOST`** 在部分环境下亦可由 bollard 解析。**默认网络隔离**（`network_mode: none`）；若设置非空的 **`sync_default_tool_sandbox_docker_network`**（如 `bridge`），则使用该网络以便容器内联网工具（如 `get_weather` / `web_search` / HTTP 工具）可用。
-- **`sync_default_tool_sandbox_docker_image`**：`docker` 模式**必填**（`finalize` 时非空校验）；镜像内需包含工具依赖（`git`、`rg`、`cargo` 等按实际启用工具准备），且**与宿主 `crabmate` 二进制同 CPU 架构**（或改为在镜像内安装 crabmate 而非挂载宿主二进制）。
+### 模式与覆盖范围
+
+- **`none`（默认）**：与历史一致，在 Agent 进程内 `spawn_blocking` 执行 `HandlerId::SyncDefault` 工具；**`run_command` 等**也在宿主执行。
+- **`docker`**：**SyncDefault** 以及 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成白名单与审批（若有）后，每次调用经 **[bollard](https://docs.rs/bollard)** 走 **Docker Engine HTTP API** 创建并运行一次性容器（等价于 `docker run --rm -i`）：挂载当前工作区到容器内 **`/workspace`**（读写），只读挂载**当前正在运行的宿主 `crabmate` 可执行文件**到 **`/crabmate`**，在容器内执行 **`crabmate tool-runner-internal`**（由服务端生成临时 JSON 配置并只读挂入容器）。**Linux/macOS** 默认连接本地 Unix 套接字（与 `docker` CLI 相同）；**`DOCKER_HOST`** 在部分环境下亦可由 bollard 解析。
+- **不进入沙盒**：**`workflow_execute`**、**MCP 代理工具**（`mcp__*`）仍只在宿主执行。
+
+### 使用前准备
+
+1. **Docker 守护进程可用**：本机能 `docker ps` 或等价 API 访问（与 CLI 同源套接字或 `DOCKER_HOST`）。
+2. **架构一致**：宿主 **`crabmate` 二进制**与容器 **CPU 架构**须一致（例如宿主为 `linux/amd64` 则镜像也应为 `amd64`）。实现上**不会**在镜像内自带 crabmate，而是**挂载宿主二进制**；若你改为在镜像内安装 crabmate，则须自行保证版本与调用方式一致（非默认路径，需改镜像/入口，本仓库不维护该方案）。
+3. **镜像职责**：镜像提供 **OS + 工具依赖**（`git`、`rg`、`cargo`、`python3`、`npm`、`bc`、`clang-format` 等——按你在工作区里**实际会调用的内置工具**安装；仓库**不提供**固定发布的「官方工具镜像」，`default_config.toml` 中的 `your-registry/crabmate-tools:latest` 仅为占位。
+
+### 镜像与最小示例
+
+- **`sync_default_tool_sandbox_docker_image`**：`docker` 模式**必填**（`finalize` 时非空校验）。任选满足依赖的镜像名（自建或私有 registry 均可）。
+- 最小思路：以 **`debian:bookworm-slim`**（或 **`ubuntu:22.04`** 等）为基础，`apt-get install` 你需要的 CLI；Rust 项目可再装 **`build-essential`**、**`pkg-config`**、**`libssl-dev`** 等。示例 Dockerfile（按需增删包）：
+
+```dockerfile
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git ripgrep curl \
+  && rm -rf /var/lib/apt/lists/*
+# 若需 cargo / node / bc 等，继续 apt 或复制多阶段构建产物
+```
+
+构建并推送后，在配置中填写例如 `sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"`。
+
+### 启用步骤（配置）
+
+在 **`config.toml`** 的 **`[agent]`** 段（或环境变量）中设置，例如：
+
+```toml
+[agent]
+sync_default_tool_sandbox_mode = "docker"
+sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
+# 需要天气 / 联网搜索 / HTTP 工具出网时改为 bridge（或你环境可用的网络名）
+# sync_default_tool_sandbox_docker_network = "bridge"
+# sync_default_tool_sandbox_docker_timeout_secs = 600
+# sync_default_tool_sandbox_docker_user = "current"   # Unix 默认等效：当前 euid:egid
+```
+
+或使用环境变量（覆盖 TOML）：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE=docker`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE=...` 等。
+
+### 网络
+
+- **`sync_default_tool_sandbox_docker_network` 为空**：容器使用 **`network_mode: none`**，**无出网**；适合仅本地读写、`read_file`、`run_command` 白名单内离线命令等。
+- **非空**（如 **`bridge`**）：容器加入该 Docker 网络，**`get_weather` / `web_search` / `http_fetch` / `http_request`** 等才可访问外网；请按环境选择，避免在不可信工作区与宽松网络组合下放大风险。
+
+### 超时与用户
+
 - **`sync_default_tool_sandbox_docker_timeout_secs`**：单次容器生命周期等待上限（秒，默认 600），超时后 **force remove** 容器。
-- **`sync_default_tool_sandbox_docker_user`**：写入 Docker **`Config.user`**（等价 `docker run --user`）。**默认**（配置键省略或空、或 `current` / `host`）：在 **Unix** 上使用**当前进程有效** **`uid:gid`**（`geteuid` / `getegid`），减轻 bind mount 工作区产生 root 拥有文件的常见问题；**非 Unix** 上省略 `user`（与 `image` 相同）。`image` 或 `default`：不设置，沿用镜像 **`USER`**（常为 root）。其它值：原样传给 Docker（如 `1000:1000`、`myuser` 等，须与镜像内账户/权限一致）。
-- **密钥**：临时 JSON 会写入宿主 `TMPDIR`（Unix 尝试 `0600`），含 `web_search_api_key` 等；仅在可信主机上使用。
-- **不进入沙盒**：`workflow_execute`、**MCP 代理工具**（`mcp__*`）仍只在宿主执行。
+- **`sync_default_tool_sandbox_docker_user`**：写入 Docker **`Config.user`**（等价 `docker run --user`）。**默认**（配置键省略或空、或 **`current` / `host`**）：在 **Unix** 上使用**当前进程有效** **`uid:gid`**（`geteuid` / `getegid`），减轻 bind mount 工作区产生 root 拥有文件的常见问题；**非 Unix** 上省略 `user`（与 `image` 相同）。**`image` 或 `default`**：不设置，沿用镜像 **`USER`**（常为 root）。其它值：原样传给 Docker（如 `1000:1000`、`myuser` 等，须与镜像内账户/权限一致）。
+
+### 安全与运维提示
+
+- **临时配置 JSON**：每次工具调用会在宿主 **`TMPDIR`** 写入 runner 配置（Unix 尝试 **`0600`**），其中可能含 **`web_search_api_key`** 等；仅在**可信主机**上使用，并注意磁盘与备份策略。
+- **沙盒边界**：宿主仍负责 **命令白名单、HTTP 前缀、Web/CLI 审批**；Docker 隔离的是**执行环境**，不替代策略配置。
+- **性能**：每次工具调用起停容器，延迟与 Docker 开销高于 `none` 模式。
 
 环境变量：`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS`、`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER`。
 

@@ -75,9 +75,10 @@
 # staged_plan_cli_show_planner_stream = true   # CLI 是否打印规划轮模型 stdout；false=仅队列/分步转录；AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM
 # staged_plan_optimizer_round = true   # 首轮规划后再跑无工具优化轮；false 关闭；AGENT_STAGED_PLAN_OPTIMIZER_ROUND
 # staged_plan_ensemble_count = 1     # 1–3；>1 时首轮后再跑独立规划并合并；AGENT_STAGED_PLAN_ENSEMBLE_COUNT
+# Docker 工具沙盒：完整说明（镜像自建、网络、user、安全）见 docs/CONFIGURATION.md「SyncDefault 工具 Docker 沙盒」
 # sync_default_tool_sandbox_mode = "none"   # none | docker；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE
-# sync_default_tool_sandbox_docker_image = ""   # docker 模式必填；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE
-# sync_default_tool_sandbox_docker_network = ""   # 空=无网络；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK
+# sync_default_tool_sandbox_docker_image = ""   # docker 模式必填：自建镜像名；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE
+# sync_default_tool_sandbox_docker_network = ""   # 空=无出网；需 web_search/http 等设 bridge；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_NETWORK
 # sync_default_tool_sandbox_docker_timeout_secs = 600   # AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_TIMEOUT_SECS
 # sync_default_tool_sandbox_docker_user = "current"   # current | image | uid[:gid]；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_USER
 # cursor_rules_enabled = false    # true：自动拼接 cursor_rules_dir/*.mdc 到 system_prompt

@@ -8,7 +8,7 @@
 
 **终答 `agent_reply_plan` v1**（在工作流反思等路径下由服务端校验）：`steps[].id` 须唯一且符合稳定字符规则（见 **`docs/DEVELOPMENT.md`**）；可选 **`workflow_node_id`** 用于与最近一次 **`workflow_execute`** 工具结果里的 **`nodes[].id`** 对齐（子集校验），便于规划与 DAG 节点一一对应。
 
-**可选 Docker 沙盒**（`sync_default_tool_sandbox_mode = docker`）：**SyncDefault** 与 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成审批/白名单后可在 **Docker 容器**内执行（经 **bollard** 调 Engine API）；**`workflow_execute`** 与 **MCP** 仍只在宿主。需配置镜像名且本机 **Docker 守护进程可访问**（通常与 `docker` CLI 共用 Unix 套接字）。详见 [`docs/CONFIGURATION.md`](CONFIGURATION.md)「SyncDefault 工具 Docker 沙盒」。
+**可选 Docker 沙盒**（`sync_default_tool_sandbox_mode = docker`）：**SyncDefault** 与 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成审批/白名单后，在 **一次性 Docker 容器**内执行（经 **bollard** 调 Engine API）；**`workflow_execute`** 与 **MCP** 仍只在宿主。须本机 **Docker 守护进程可访问**，并设置非空的 **`sync_default_tool_sandbox_docker_image`**：镜像需含你实际会用到的 CLI（`git`、`rg`、`cargo` 等），且与**宿主 `crabmate` 二进制同 CPU 架构**（二进制由服务端只读挂入容器，仓库不附带固定镜像）。默认容器 **无网络**（`docker_network` 为空）；需天气/搜索/HTTP 出网时配置 **`sync_default_tool_sandbox_docker_network`**（如 `bridge`）。**启用步骤、示例 Dockerfile、环境变量与安全提示**见 [`docs/CONFIGURATION.md`](CONFIGURATION.md)「SyncDefault 工具 Docker 沙盒」。
 
 ## 内置工具（模型可调用）
 
