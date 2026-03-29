@@ -24,6 +24,10 @@ pub enum AgentLineKind {
         ok: Option<bool>,
         exit_code: Option<i32>,
         error_code: Option<String>,
+        retryable: Option<bool>,
+        tool_call_id: Option<String>,
+        execution_mode: Option<String>,
+        parallel_batch_id: Option<String>,
     },
     StreamError {
         error_preview: Option<String>,
@@ -100,6 +104,10 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                     ok: tool_result.ok,
                     exit_code: tool_result.exit_code,
                     error_code: tool_result.error_code,
+                    retryable: tool_result.retryable,
+                    tool_call_id: tool_result.tool_call_id,
+                    execution_mode: tool_result.execution_mode,
+                    parallel_batch_id: tool_result.parallel_batch_id,
                 };
             }
             super::protocol::SsePayload::Error(body) => {
@@ -285,12 +293,20 @@ mod tests {
                 ok,
                 exit_code,
                 error_code,
+                retryable,
+                tool_call_id,
+                execution_mode,
+                parallel_batch_id,
             } => {
                 assert_eq!(name.as_deref(), Some("run_command"));
                 assert_eq!(summary.as_deref(), Some("git status"));
                 assert_eq!(ok, Some(false));
                 assert_eq!(exit_code, Some(1));
                 assert_eq!(error_code.as_deref(), Some("command_failed"));
+                assert_eq!(retryable, None);
+                assert_eq!(tool_call_id, None);
+                assert_eq!(execution_mode, None);
+                assert_eq!(parallel_batch_id, None);
             }
             other => panic!("unexpected kind: {:?}", other),
         }

@@ -65,6 +65,10 @@
 | `exit_code` | number? | 如命令工具 |
 | `error_code` | string? | 机器可读，见下表 |
 | `stdout` / `stderr` | string? | 分流输出（若有） |
+| `retryable` | bool? | 失败时可选；与 `crabmate_tool.retryable` 一致，**启发式**（如超时、工作流汇合类），**非**执行保证 |
+| `tool_call_id` | string? | 与 OpenAI 兼容的本次 `tool_calls[].id`，便于与助手消息对齐 |
+| `execution_mode` | string? | `serial`（串行或含写/审批路径）或 `parallel_readonly_batch`（同轮只读并行批） |
+| `parallel_batch_id` | string? | 仅 `parallel_readonly_batch`；同批内多工具共享（形如 `prb-<n>`） |
 
 ### `command_approval_request`
 
