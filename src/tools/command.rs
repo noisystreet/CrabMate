@@ -7,6 +7,10 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::output_util;
+use super::test_result_cache::{
+    TestCacheKey, TestCacheKind, cargo_test_run_command_args_fingerprint,
+    fingerprint_rust_workspace_sources, store_cached, try_get_cached, wrap_cache_hit,
+};
 
 /// 简单的每秒调用限流器状态
 struct RateLimitState {
@@ -29,6 +33,25 @@ fn is_arg_safe(arg: &str) -> bool {
     !a.contains("..") && !a.starts_with('/')
 }
 
+/// 可选：`cargo test …` 的进程内结果缓存（与内置 `cargo_test` 工具共用指纹逻辑）。
+pub(crate) struct RunCommandTestCacheOpts<'a> {
+    pub enabled: bool,
+    pub max_entries: usize,
+    pub workspace_root: &'a Path,
+}
+
+fn cargo_test_argv_cache_eligible(cmd_args: &[String]) -> bool {
+    if cmd_args.first().map(|s| s.as_str()) != Some("test") {
+        return false;
+    }
+    for a in cmd_args {
+        if a == "--nocapture" || a == "--test-threads" {
+            return false;
+        }
+    }
+    true
+}
+
 /// 在指定工作目录下执行白名单内的 Linux 命令，不经过 shell，输出截断。
 /// `allowed_commands` 为可执行命令名列表（小写）；`working_dir` 为命令的工作目录（已校验为存在目录）。
 pub fn run(
@@ -36,6 +59,7 @@ pub fn run(
     max_output_len: usize,
     allowed_commands: &[String],
     working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
 ) -> String {
     let args: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
@@ -69,6 +93,36 @@ pub fn run(
     if let Err(e) = check_rate_limit() {
         return e;
     }
+
+    if cmd_name == "cargo"
+        && let Some(opts) = test_cache.as_ref()
+        && opts.enabled
+        && cargo_test_argv_cache_eligible(&cmd_args)
+        && let Some(inputs_fp) = fingerprint_rust_workspace_sources(opts.workspace_root)
+    {
+        let args_fp = cargo_test_run_command_args_fingerprint(&cmd_args);
+        let key = TestCacheKey {
+            workspace_root: opts.workspace_root.to_path_buf(),
+            kind: TestCacheKind::CargoTestViaRunCommand,
+            args_fingerprint: args_fp,
+            inputs_fingerprint: inputs_fp.clone(),
+        };
+        if let Some(hit) = try_get_cached(opts.enabled, opts.max_entries, &key) {
+            return wrap_cache_hit(&inputs_fp, &hit);
+        }
+        let output = match Command::new(&cmd_name)
+            .args(&cmd_args)
+            .current_dir(working_dir)
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => return format_spawn_error(&cmd_name, working_dir, &e),
+        };
+        let formatted = format_command_output(&cmd_name, output, max_output_len);
+        store_cached(opts.enabled, opts.max_entries, key, formatted.clone());
+        return formatted;
+    }
+
     let output = match Command::new(&cmd_name)
         .args(&cmd_args)
         .current_dir(working_dir)
@@ -77,6 +131,14 @@ pub fn run(
         Ok(o) => o,
         Err(e) => return format_spawn_error(&cmd_name, working_dir, &e),
     };
+    format_command_output(&cmd_name, output, max_output_len)
+}
+
+fn format_command_output(
+    _cmd_name: &str,
+    output: std::process::Output,
+    max_output_len: usize,
+) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let truncate =
@@ -188,6 +250,7 @@ mod tests {
             TEST_MAX_OUTPUT_LEN,
             &test_allowed(),
             test_work_dir(),
+            None,
         );
         assert!(out.starts_with("参数解析错误"));
     }
@@ -199,6 +262,7 @@ mod tests {
             TEST_MAX_OUTPUT_LEN,
             &test_allowed(),
             test_work_dir(),
+            None,
         );
         assert_eq!(out, "错误：缺少 command 参数");
     }
@@ -210,6 +274,7 @@ mod tests {
             TEST_MAX_OUTPUT_LEN,
             &test_allowed(),
             test_work_dir(),
+            None,
         );
         assert!(out.contains("不允许的命令"));
         assert!(out.contains("rm"));
@@ -222,6 +287,7 @@ mod tests {
             TEST_MAX_OUTPUT_LEN,
             &test_allowed(),
             test_work_dir(),
+            None,
         );
         assert!(out.contains("args 必须是字符串数组"));
     }
@@ -233,6 +299,7 @@ mod tests {
             TEST_MAX_OUTPUT_LEN,
             &test_allowed(),
             test_work_dir(),
+            None,
         );
         assert!(out.contains("参数不允许"));
     }
@@ -244,6 +311,7 @@ mod tests {
             TEST_MAX_OUTPUT_LEN,
             &test_allowed(),
             test_work_dir(),
+            None,
         );
         assert!(out.contains("参数不允许"));
     }

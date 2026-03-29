@@ -287,6 +287,8 @@ pub async fn run_workflow_execute_tool(
         effective_working_dir: workdir,
         workspace_is_set,
         command_max_output_len,
+        test_result_cache_enabled: cfg.test_result_cache_enabled,
+        test_result_cache_max_entries: cfg.test_result_cache_max_entries,
         workflow_run_id,
         trace_events: None,
     };

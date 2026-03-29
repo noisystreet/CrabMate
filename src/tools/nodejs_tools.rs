@@ -3,7 +3,12 @@
 use std::path::Path;
 use std::process::Command;
 
+use super::ToolContext;
 use super::output_util;
+use super::test_result_cache::{
+    TestCacheKey, TestCacheKind, fingerprint_npm_package_dir, npm_test_args_fingerprint,
+    store_cached, try_get_cached, wrap_cache_hit,
+};
 
 const MAX_OUTPUT_LINES: usize = 800;
 
@@ -41,7 +46,12 @@ pub fn npm_install(args_json: &str, workspace_root: &Path, max_output_len: usize
     run_and_format(cmd, max_output_len, title)
 }
 
-pub fn npm_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+pub fn npm_run(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+    ctx: &ToolContext<'_>,
+) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数解析错误：{}", e),
@@ -63,22 +73,60 @@ pub fn npm_run(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
         return format!("npm run {}: 跳过（{}/package.json 不存在）", script, subdir);
     }
 
-    let extra_args: Vec<&str> = v
+    let extra_args: Vec<String> = v
         .get("args")
         .and_then(|a| a.as_array())
-        .map(|arr| arr.iter().filter_map(|x| x.as_str()).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
-    let mut cmd = Command::new("npm");
-    cmd.arg("run").arg(script);
-    if !extra_args.is_empty() {
-        cmd.arg("--");
-        for a in &extra_args {
-            cmd.arg(a);
+    let run = || {
+        let mut cmd = Command::new("npm");
+        cmd.arg("run").arg(script);
+        if !extra_args.is_empty() {
+            cmd.arg("--");
+            for a in &extra_args {
+                cmd.arg(a);
+            }
         }
+        cmd.current_dir(&dir);
+        run_and_format(cmd, max_output_len, &format!("npm run {}", script))
+    };
+
+    if ctx.test_result_cache_enabled
+        && script == "test"
+        && let Some(inputs_fp) = fingerprint_npm_package_dir(workspace_root, subdir)
+    {
+        let args_fp = npm_test_args_fingerprint(subdir, script, &extra_args);
+        let key = TestCacheKey {
+            workspace_root: workspace_root.to_path_buf(),
+            kind: TestCacheKind::NpmTest {
+                package_subdir: subdir.to_string(),
+            },
+            args_fingerprint: args_fp,
+            inputs_fingerprint: inputs_fp.clone(),
+        };
+        if let Some(hit) = try_get_cached(
+            ctx.test_result_cache_enabled,
+            ctx.test_result_cache_max_entries,
+            &key,
+        ) {
+            return wrap_cache_hit(&inputs_fp, &hit);
+        }
+        let out = run();
+        store_cached(
+            ctx.test_result_cache_enabled,
+            ctx.test_result_cache_max_entries,
+            key,
+            out.clone(),
+        );
+        return out;
     }
-    cmd.current_dir(&dir);
-    run_and_format(cmd, max_output_len, &format!("npm run {}", script))
+
+    run()
 }
 
 pub fn npx_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {

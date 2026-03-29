@@ -47,6 +47,7 @@ mod spell_astgrep_tools;
 mod structured_data;
 mod symbol;
 mod table_text;
+mod test_result_cache;
 mod text_diff;
 mod text_transform;
 mod time;
@@ -92,6 +93,9 @@ pub struct ToolContext<'a> {
     pub read_file_turn_cache: Option<&'a crate::read_file_turn_cache::ReadFileTurnCache>,
     /// 本会话工作区变更集（按 `long_term_memory_scope_id`）；`None` 时不记录。
     pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
+    /// `cargo_test` / `npm run test` / 部分 `run_command cargo test` 的进程内输出缓存。
+    pub test_result_cache_enabled: bool,
+    pub test_result_cache_max_entries: usize,
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
@@ -122,6 +126,8 @@ pub fn tool_context_for<'a>(
         http_fetch_max_response_bytes: cfg.http_fetch_max_response_bytes,
         read_file_turn_cache: None,
         workspace_changelist: None,
+        test_result_cache_enabled: cfg.test_result_cache_enabled,
+        test_result_cache_max_entries: cfg.test_result_cache_max_entries,
     }
 }
 
@@ -217,11 +223,19 @@ fn runner_http_request(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
+    let test_cache = ctx
+        .test_result_cache_enabled
+        .then_some(command::RunCommandTestCacheOpts {
+            enabled: true,
+            max_entries: ctx.test_result_cache_max_entries,
+            workspace_root: ctx.working_dir,
+        });
     command::run(
         args,
         ctx.command_max_output_len,
         ctx.allowed_commands,
         ctx.working_dir,
+        test_cache,
     )
 }
 
@@ -238,7 +252,7 @@ fn runner_cargo_check(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 fn runner_cargo_test(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_test(args, ctx.working_dir, ctx.command_max_output_len)
+    cargo_tools::cargo_test(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
 }
 
 fn runner_cargo_clippy(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -310,7 +324,7 @@ fn runner_cargo_run(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 fn runner_rust_test_one(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::rust_test_one(args, ctx.working_dir, ctx.command_max_output_len)
+    cargo_tools::rust_test_one(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
 }
 
 fn runner_ruff_check(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -695,7 +709,7 @@ fn runner_npm_install(args: &str, ctx: &ToolContext<'_>) -> String {
     nodejs_tools::npm_install(args, ctx.working_dir, ctx.command_max_output_len)
 }
 fn runner_npm_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    nodejs_tools::npm_run(args, ctx.working_dir, ctx.command_max_output_len)
+    nodejs_tools::npm_run(args, ctx.working_dir, ctx.command_max_output_len, ctx)
 }
 fn runner_npx_run(args: &str, ctx: &ToolContext<'_>) -> String {
     nodejs_tools::npx_run(args, ctx.working_dir, ctx.command_max_output_len)

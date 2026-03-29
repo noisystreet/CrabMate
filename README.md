@@ -9,7 +9,7 @@
 ## 功能概览
 
 - **对话与多模型**：OpenAI 兼容 `chat/completions`；切换模型见配置。
-- **内置工具**：文件、命令、HTTP、联网搜索、多语言开发辅助等；**能力与 JSON 参数示例**见 [`docs/TOOLS.md`](docs/TOOLS.md)。
+- **内置工具**：文件、命令、HTTP、联网搜索、多语言开发辅助等；**能力与 JSON 参数示例**见 [`docs/TOOLS.md`](docs/TOOLS.md)。**`cargo_test` / `npm run test`** 及部分 **`run_command cargo test`** 在进程内可按「源码指纹 + 参数」复用上次截断输出并标注 **缓存命中**（`test_result_cache_*`，见 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md)）。
 - **可选 MCP（stdio）**：配置 `mcp_enabled` + `mcp_command` 后合并远端工具为 `mcp__{slug}__{tool}`；同一进程内复用一条 stdio 连接（`serve` / `repl` / `chat` 多轮共用）。运维可 **`crabmate mcp list`** 查看本进程已缓存会话与合并后的工具名（**不要**求 `API_KEY`）；**`mcp list --probe`** 会按配置尝试连接一次（排障用，会启动 `mcp_command` 子进程）。`mcp_command` 等效允许启动子进程，须可信配置。
 - **Web UI**：聊天、工作区浏览/编辑（`GET /workspace/file` 可选 **`encoding`** 查询参数，与 `read_file` 一致，用于 GBK/GB18030 等 legacy 文本）、任务清单（进程内 `/tasks`，重启清空）、状态栏；Agent 改文件后列表自动刷新。
 - **项目画像**：侧栏只读摘要（`Cargo.toml` / `package.json`、目录与 tokei 等）；可与工作区备忘合并注入新会话首轮（`project_profile_inject_*`）。另可选注入 **`cargo metadata` 解析的 workspace 内 crate 依赖图**（Mermaid + 结构化 JSON）与根目录 / `frontend/package.json` 的依赖名节选（`project_dependency_brief_inject_*`，与 Web / `repl` / `chat` 首轮同源）。模型也可用内置工具 **`repo_overview_sweep`** 拉取同源画像（见 `include_project_profile` / `project_profile_max_chars`，[`docs/TOOLS.md`](docs/TOOLS.md)）。
