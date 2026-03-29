@@ -1,10 +1,12 @@
-//! [Model Context Protocol](https://modelcontextprotocol.io/) 客户端（stdio 子进程）：每轮 Agent 连接一次，将远端 `tools/list` 合并进 OpenAI 兼容工具表，经 `tools/call` 执行。
+//! [Model Context Protocol](https://modelcontextprotocol.io/) 客户端（stdio 子进程）：同一进程内按配置指纹**复用**一条连接，将远端 `tools/list` 合并进 OpenAI 兼容工具表，经 `tools/call` 执行。
 //!
 //! **安全**：`mcp_command` 由配置显式指定，等效于允许启动任意子进程；仅应在信任的配置源下启用。输出与错误信息经截断，避免过大响应撑爆上下文。
 
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
+
+use tokio::sync::Mutex as TokioMutex;
 
 use rmcp::model::{
     CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientInfo, RawContent,
@@ -267,8 +269,28 @@ pub async fn call_mcp_tool(
     }
 }
 
-/// 打开会话并拉取工具列表；失败返回 `None`（调用方继续使用仅内建工具）。
-pub async fn try_open_session_and_tools(
+struct McpProcessCache {
+    fingerprint: String,
+    session: Arc<Mutex<McpClientSession>>,
+    mcp_tools: Vec<Tool>,
+}
+
+/// 与配置对应的 MCP 连接指纹；变更 `mcp_command` / 开关后应视为新会话。
+fn mcp_connection_fingerprint(cfg: &AgentConfig) -> Option<String> {
+    if !cfg.mcp_enabled {
+        return None;
+    }
+    let cmd = cfg.mcp_command.trim();
+    if cmd.is_empty() {
+        return None;
+    }
+    Some(format!("v1\0{cmd}"))
+}
+
+static MCP_PROCESS_CACHE: TokioMutex<Option<McpProcessCache>> = TokioMutex::const_new(None);
+
+/// 新建 stdio 会话并 `tools/list`（不经进程内缓存；供缓存未命中时调用）。
+async fn open_mcp_session_fresh(
     cfg: &AgentConfig,
 ) -> Option<(Arc<Mutex<McpClientSession>>, Vec<Tool>)> {
     if !cfg.mcp_enabled {
@@ -314,6 +336,85 @@ pub async fn try_open_session_and_tools(
             log::warn!(target: "crabmate", "MCP 连接失败，本回合不使用 MCP: {}", e);
             None
         }
+    }
+}
+
+/// 打开会话并拉取工具列表；失败返回 `None`（调用方继续使用仅内建工具）。
+///
+/// 同一进程内按 **`mcp_enabled` + `mcp_command` 指纹** 复用一条 stdio 连接（REPL / serve 多轮共用），避免每轮重启 MCP 子进程。
+pub async fn try_open_session_and_tools(
+    cfg: &AgentConfig,
+) -> Option<(Arc<Mutex<McpClientSession>>, Vec<Tool>)> {
+    let fp = mcp_connection_fingerprint(cfg)?;
+    {
+        let guard = MCP_PROCESS_CACHE.lock().await;
+        if let Some(cached) = guard.as_ref()
+            && cached.fingerprint == fp
+        {
+            return Some((Arc::clone(&cached.session), cached.mcp_tools.clone()));
+        }
+    }
+    let opened = open_mcp_session_fresh(cfg).await;
+    let mut guard = MCP_PROCESS_CACHE.lock().await;
+    match opened {
+        Some((sess, tools)) => {
+            *guard = Some(McpProcessCache {
+                fingerprint: fp,
+                session: Arc::clone(&sess),
+                mcp_tools: tools.clone(),
+            });
+            Some((sess, tools))
+        }
+        None => {
+            // 新连接失败时丢弃缓存，避免配置已改仍保留旧 stdio 会话或误导 `mcp list`。
+            *guard = None;
+            None
+        }
+    }
+}
+
+/// 运维用：当前进程内 MCP 缓存状态（不发起连接）。
+#[derive(Debug, Clone)]
+pub struct McpCachedStatus {
+    pub fingerprint_matches_config: bool,
+    pub slug: Option<String>,
+    pub openai_tool_names: Vec<String>,
+}
+
+/// 若缓存与当前配置的连接指纹一致，返回已缓存的工具 OpenAI 名列表（`mcp__…`）。
+pub async fn cached_mcp_status(cfg: &AgentConfig) -> McpCachedStatus {
+    let fp = mcp_connection_fingerprint(cfg);
+    let guard = MCP_PROCESS_CACHE.lock().await;
+    let Some(fp) = fp.as_ref() else {
+        return McpCachedStatus {
+            fingerprint_matches_config: false,
+            slug: None,
+            openai_tool_names: Vec::new(),
+        };
+    };
+    let Some(cached) = guard.as_ref() else {
+        return McpCachedStatus {
+            fingerprint_matches_config: false,
+            slug: None,
+            openai_tool_names: Vec::new(),
+        };
+    };
+    if &cached.fingerprint != fp {
+        return McpCachedStatus {
+            fingerprint_matches_config: false,
+            slug: None,
+            openai_tool_names: Vec::new(),
+        };
+    }
+    let slug = Some(slug_from_command(cfg.mcp_command.trim()));
+    McpCachedStatus {
+        fingerprint_matches_config: true,
+        slug,
+        openai_tool_names: cached
+            .mcp_tools
+            .iter()
+            .map(|t| t.function.name.clone())
+            .collect(),
     }
 }
 

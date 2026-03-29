@@ -39,12 +39,17 @@ fn fixture_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cli")
 }
 
-fn parse_extra_cli(s: &str) -> ExtraCliCommand {
+fn parse_extra_cli(case: &serde_json::Value) -> ExtraCliCommand {
+    let s = case["extra_cli"].as_str().expect("extra_cli");
     match s {
         "None" => ExtraCliCommand::None,
         "Doctor" => ExtraCliCommand::Doctor,
         "Models" => ExtraCliCommand::Models,
         "Probe" => ExtraCliCommand::Probe,
+        "McpList" => {
+            let probe = case["mcp_probe"].as_bool().unwrap_or(false);
+            ExtraCliCommand::McpList { probe }
+        }
         other => panic!("unknown extra_cli in fixture: {other}"),
     }
 }
@@ -99,7 +104,7 @@ fn fixture_parse_args_from_argv_contract() {
             let stdin_fixture = case["stdin_fixture"].as_str().map(|s| s.to_string());
             let p = parse_args_from_argv(argv, stdin_fixture).unwrap();
 
-            let want_extra = parse_extra_cli(case["extra_cli"].as_str().unwrap());
+            let want_extra = parse_extra_cli(case);
             assert_eq!(p.extra_cli, want_extra, "{name} extra_cli");
             assert_eq!(
                 p.dry_run,

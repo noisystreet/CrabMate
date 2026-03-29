@@ -107,7 +107,7 @@ flowchart TB
 | `conversation_store.rs` | Web 会话可选 **SQLite**：`conversation_id` → `messages` JSON + `revision` + `updated_at_unix`；TTL/条数上限与内存模式一致；`SaveConversationOutcome` 定义于此；按 revision 条件更新 JSON 的共性在 **`update_messages_json_if_revision`**。 |
 | `long_term_memory_store.rs` | 长期记忆表 **`crabmate_long_term_memory`**（`scope_id`、正文、`embedding` BLOB）；与会话库可同文件。 |
 | `long_term_memory.rs` | 每轮在 `prepare_messages_for_model` 前注入 `user` 条（`name=crabmate_long_term_memory`，**不**发往上游：`llm` 构造请求时过滤）；Web 成功后异步索引 user/assistant 终答；CLI 用 `run_command_working_dir/.crabmate/long_term_memory.db` 或 `long_term_memory_store_sqlite_path`。 |
-| `mcp/mod.rs` | **MCP 客户端（stdio）**：`run_agent_turn` 开头可选 `try_open_session_and_tools`（`rmcp` + `TokioChildProcess`），将远端 `tools/list` 映射为 OpenAI `Tool`（`mcp__{slug}__{name}`）并与内建列表合并；执行经 `tool_registry::dispatch_tool` → `tools/call`（超时 `mcp_tool_timeout_secs`，输出按 `command_max_output_len` 截断）。**安全**：`mcp_command` 显式允许启动子进程，须可信配置源；**未**复用 `run_command` 白名单。当前仅 stdio；HTTP/SSE 传输、资源/采样、将本进程暴露为 MCP server 等仍为后续方向。 |
+| `mcp/mod.rs` | **MCP 客户端（stdio）**：`run_agent_turn` 开头可选 `try_open_session_and_tools`（`rmcp` + `TokioChildProcess`），按 **`mcp_enabled` + `mcp_command` 指纹** 在**进程内复用**同一条 stdio 连接（避免每轮重启子进程）；将远端 `tools/list` 映射为 OpenAI `Tool`（`mcp__{slug}__{name}`）并与内建列表合并；执行经 `tool_registry::dispatch_tool` → `tools/call`（超时 `mcp_tool_timeout_secs`，输出按 `command_max_output_len` 截断）。**安全**：`mcp_command` 显式允许启动子进程，须可信配置源；**未**复用 `run_command` 白名单。当前仅 stdio；HTTP/SSE 传输、资源/采样、将本进程暴露为 MCP server 等仍为后续方向。 |
 | `agent_memory.rs` | 工作区相对路径备忘文件读取（`load_memory_snippet`）；与 **项目画像** 合并后首轮消息组装在 **`web::chat_handlers::build_messages_for_turn`**。 |
 | `project_profile.rs` | **项目画像**：只读扫描 `Cargo.toml` / `package.json` / 顶层目录 / **tokei** 语言占比 / 可选 **`cargo metadata --no-deps`**，生成 Markdown；Web **`GET /workspace/profile`** 与 **`build_messages_for_turn`** 首轮注入（与备忘合并为单条 `user`，见 **`project_profile_inject_*`**）。 |
 | `read_file_turn_cache.rs` | 单轮 **`run_agent_turn`** 内 **`read_file`** 结果缓存（键：canonical 路径 + 行区间等；校验 **mtime + size**）。**`execute_tools`** 在任意非只读工具执行后或 **`workspace_changed`** 时 **`clear`**，避免脏读。容量 **`read_file_turn_cache_max_entries`**（`0` 关闭）；嵌入方可选传入 **`RunAgentTurnParams::read_file_turn_cache`** 覆盖默认句柄。 |
@@ -369,6 +369,7 @@ flowchart LR
   - **`runtime/workspace_session`**：`.crabmate/tui_session.json` 加载；**`initial_workspace_messages`** 供 CLI REPL；**仅当** `[agent] tui_load_session_on_start` 为 true 时从磁盘恢复，并按 `tui_session_max_messages` / `AGENT_TUI_SESSION_MAX_MESSAGES` 截断。`save_workspace_session` / `export_*` 保留在代码中供后续全屏终端 UI 再接。Web 与 CLI 在**会话持久、审批、导出**上的产品差异见 **`docs/CLI.md`**「CLI 与 Web 能力对照」。
   - **`runtime/benchmark/`**：批量无人值守测评子系统（SWE-bench / GAIA / HumanEval 等）。由 CLI `--benchmark` + `--batch` 触发，在 `lib.rs::run()` 中分派。
   - **`runtime/cli_doctor`**：`doctor` / `models` / `probe` 子命令实现；`doctor` 复用 `tools::capture_trimmed` 与 **`canonical_workspace_root`**（`tools/mod` `pub(crate)` 再导出）。
+  - **`runtime/cli_mcp`**：**`mcp list`** 只读输出进程内 MCP 缓存（`mcp::cached_mcp_status`）；可选 **`--probe`** 调用 `try_open_session_and_tools` 刷新缓存。
 
 ## 前端模块说明（`frontend/src/`）
 

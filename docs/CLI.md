@@ -23,10 +23,11 @@
 | `models` | `GET …/models`（需 `API_KEY`）。 |
 | `probe` | 探测 models 端点（需 `API_KEY`）。 |
 | `save-session` | 从会话文件导出 JSON/Markdown 到工作区 **`.crabmate/exports/`**（与 Web 导出同形；**不要**求 `API_KEY`）。`--format json|markdown|both`（默认 `both`），`--session-file` 可选。兼容别名 **`export-session`**。 |
+| `mcp list` | 只读列出**本进程**内与当前 `mcp_enabled` + `mcp_command` 指纹一致的已缓存 MCP stdio 会话及合并后的 OpenAI 工具名（**不要**求 `API_KEY`）。若尚未在本进程跑过对话，可先 **`mcp list --probe`** 尝试连接一次（会启动配置中的 MCP 子进程，与正常对话路径相同）。 |
 
 ## 日志级别
 
-未设置 `RUST_LOG` 时：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` / `save-session`（及别名 `export-session`）默认 **warn**。可用 `RUST_LOG` 或 `--log <FILE>`。
+未设置 `RUST_LOG` 时：`serve` 默认 **info**；`repl` / `chat` / `bench` / `config` / `mcp` / `save-session`（及别名 `export-session`）默认 **warn**。可用 `RUST_LOG` 或 `--log <FILE>`。
 
 ## 消息管道调试日志
 
