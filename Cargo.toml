@@ -64,7 +64,7 @@ tokio-stream = "0.1"
 async-trait = "0.1"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["fs", "set-header"] }
-rfd = "0.14"
+rfd = "0.17"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 libc = "0.2"
