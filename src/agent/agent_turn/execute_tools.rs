@@ -23,6 +23,9 @@ use crate::tools;
 use crate::types::{Message, ToolCall};
 use crate::workspace_changelist::WorkspaceChangelist;
 
+/// 本模块 `tracing` / `log` 的 `target`，便于 `RUST_LOG=crabmate::execute_tools` 过滤。
+const LOG_TARGET: &str = "crabmate::execute_tools";
+
 /// 并行执行时工具的分类，用于在构建 fut 前预分类，消除 if/else if/else 字符串比较。
 #[derive(Clone, Copy)]
 enum ParallelToolKind {
@@ -244,7 +247,7 @@ async fn abort_tool_batch_if_sse_closed(
     if !sse_sender_closed(out) {
         return false;
     }
-    info!(target: "crabmate", "{reason}");
+    info!(target: LOG_TARGET, "{reason}");
     emit_sse_tool_running(
         out,
         false,
@@ -308,7 +311,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
     let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
     let parallel_max = cfg.parallel_readonly_tools_max.max(1);
     info!(
-        target: "crabmate",
+        target: LOG_TARGET,
         "并行执行工具批 count={} unique={} max_parallel={}（只读 SyncDefault + http_fetch + get_weather + web_search；构建锁类除外）",
         tool_calls.len(),
         dedup_count,
@@ -365,9 +368,9 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
             let name_for_return = name.clone();
             let args_for_return = args.clone();
             let work = async move {
-                info!(target: "crabmate", "并行工具开始 tool={}", name_for_log);
+                info!(target: LOG_TARGET, "并行工具开始 tool={}", name_for_log);
                 debug!(
-                    target: "crabmate",
+                    target: LOG_TARGET,
                     "工具调用参数摘要 tool={} args_preview={}",
                     name_for_log,
                     crate::redact::tool_arguments_preview_for_log(&args_for_log)
@@ -400,7 +403,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
                     .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
                 };
                 info!(
-                    target: "crabmate",
+                    target: LOG_TARGET,
                     "并行工具完成 tool={} elapsed_ms={}",
                     name_for_log,
                     t_tool.elapsed().as_millis()
@@ -411,7 +414,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
                 Ok(triple) => triple,
                 Err(_) => {
                     warn!(
-                        target: "crabmate",
+                        target: LOG_TARGET,
                         "并行工具墙上时钟超时 tool={} wall_secs={}",
                         name_timeout,
                         wall_secs
@@ -514,9 +517,9 @@ async fn execute_tools_serial(
         let args = tc.function.arguments.clone();
         let id = tc.id.clone();
         emit_tool_call_summary_sse(out, &name, &args).await;
-        info!(target: "crabmate", "调用工具 tool={}", name);
+        info!(target: LOG_TARGET, "调用工具 tool={}", name);
         debug!(
-            target: "crabmate",
+            target: LOG_TARGET,
             "工具调用参数摘要 tool={} args_preview={}",
             name,
             crate::redact::tool_arguments_preview_for_log(&args)
@@ -527,7 +530,7 @@ async fn execute_tools_serial(
 
         if is_readonly && let Some(cached) = readonly_cache.get(&cache_key) {
             info!(
-                target: "crabmate",
+                target: LOG_TARGET,
                 "工具结果命中缓存（只读去重） tool={}",
                 name
             );
@@ -585,7 +588,7 @@ async fn execute_tools_serial(
             .await;
 
         info!(
-            target: "crabmate",
+            target: LOG_TARGET,
             "工具调用完成 tool={} elapsed_ms={}",
             name,
             t_tool.elapsed().as_millis()
