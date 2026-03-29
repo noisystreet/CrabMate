@@ -754,6 +754,10 @@ async fn execute_run_command_impl(
         if already_allowed {
             effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, &cmd);
         } else {
+            let allow_handles = crate::tool_approval::SharedAllowlistHandles {
+                web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+                cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
+            };
             let cmd_show = if arg_preview.is_empty() {
                 cmd.clone()
             } else {
@@ -818,17 +822,7 @@ async fn execute_run_command_impl(
                             extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
                     }
                     CommandApprovalDecision::AllowAlways => {
-                        if let Some(ctx) = web_ctx {
-                            ctx.persistent_allowlist_shared
-                                .lock()
-                                .await
-                                .insert(cmd.clone());
-                        } else if let Some(ctx) = cli_ctx {
-                            ctx.persistent_allowlist_shared
-                                .lock()
-                                .await
-                                .insert(cmd.clone());
-                        }
+                        crate::tool_approval::persist_allowlist_key(&allow_handles, &cmd).await;
                         effective_allowed_arc =
                             extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
                     }
@@ -957,32 +951,24 @@ pub(crate) async fn prefetch_http_fetch_parallel_approvals(
             ),
             web_timeline_prefix_zh: "http_fetch 审批：",
         };
-        match crate::tool_approval::request_tool_interactive_approval(
+        let allow_handles = crate::tool_approval::SharedAllowlistHandles {
+            web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+            cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
+        };
+        match crate::tool_approval::interactive_gate_after_whitelist_miss(
             web_ctx.map(|w| w.approval_sink()),
             cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
                 auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
             }),
             &spec,
             "tool_registry::http_fetch approval parallel prefetch",
+            &allow_handles,
         )
         .await
         {
-            Ok(CommandApprovalDecision::Deny) => {
-                failures.insert(key, format!("用户拒绝 http_fetch：{}", approval_args));
-            }
-            Ok(CommandApprovalDecision::AllowOnce) => {}
-            Ok(CommandApprovalDecision::AllowAlways) => {
-                if let Some(w) = web_ctx {
-                    w.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(storage_key);
-                } else if let Some(c) = cli_ctx {
-                    c.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(storage_key);
-                }
+            Ok(crate::tool_approval::InteractiveGateOutcome::Allowed) => {}
+            Ok(crate::tool_approval::InteractiveGateOutcome::Denied(msg)) => {
+                failures.insert(key, msg);
             }
             Err(crate::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
                 failures.insert(key, "错误：审批通道不可用，请重试。".to_string());
@@ -1034,38 +1020,27 @@ async fn execute_http_fetch_impl(
             ),
             web_timeline_prefix_zh: "http_fetch 审批：",
         };
-        let decision = match crate::tool_approval::request_tool_interactive_approval(
+        let allow_handles = crate::tool_approval::SharedAllowlistHandles {
+            web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+            cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
+        };
+        match crate::tool_approval::interactive_gate_after_whitelist_miss(
             web_ctx.map(|w| w.approval_sink()),
             cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
                 auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
             }),
             &spec,
             "tool_registry::http_fetch approval",
+            &allow_handles,
         )
         .await
         {
-            Ok(d) => d,
+            Ok(crate::tool_approval::InteractiveGateOutcome::Allowed) => {}
+            Ok(crate::tool_approval::InteractiveGateOutcome::Denied(msg)) => {
+                return (msg, None);
+            }
             Err(crate::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
                 return ("错误：审批通道不可用，请重试。".to_string(), None);
-            }
-        };
-        match decision {
-            CommandApprovalDecision::Deny => {
-                return (format!("用户拒绝 http_fetch：{}", approval_args), None);
-            }
-            CommandApprovalDecision::AllowOnce => {}
-            CommandApprovalDecision::AllowAlways => {
-                if let Some(w) = web_ctx {
-                    w.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(key.clone());
-                } else if let Some(c) = cli_ctx {
-                    c.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(key.clone());
-                }
             }
         }
     }
@@ -1152,38 +1127,27 @@ async fn execute_http_request_impl(
             ),
             web_timeline_prefix_zh: "http_request 审批：",
         };
-        let decision = match crate::tool_approval::request_tool_interactive_approval(
+        let allow_handles = crate::tool_approval::SharedAllowlistHandles {
+            web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+            cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
+        };
+        match crate::tool_approval::interactive_gate_after_whitelist_miss(
             web_ctx.map(|w| w.approval_sink()),
             cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
                 auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
             }),
             &spec,
             "tool_registry::http_request approval",
+            &allow_handles,
         )
         .await
         {
-            Ok(d) => d,
+            Ok(crate::tool_approval::InteractiveGateOutcome::Allowed) => {}
+            Ok(crate::tool_approval::InteractiveGateOutcome::Denied(msg)) => {
+                return (msg, None);
+            }
             Err(crate::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
                 return ("错误：审批通道不可用，请重试。".to_string(), None);
-            }
-        };
-        match decision {
-            CommandApprovalDecision::Deny => {
-                return (format!("用户拒绝 http_request：{}", approval_args), None);
-            }
-            CommandApprovalDecision::AllowOnce => {}
-            CommandApprovalDecision::AllowAlways => {
-                if let Some(w) = web_ctx {
-                    w.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(key.clone());
-                } else if let Some(c) = cli_ctx {
-                    c.persistent_allowlist_shared
-                        .lock()
-                        .await
-                        .insert(key.clone());
-                }
             }
         }
     }

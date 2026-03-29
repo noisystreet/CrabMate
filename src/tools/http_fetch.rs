@@ -1,4 +1,4 @@
-//! 受控 HTTP：`http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）。**CLI / Web 流式**下 URL 未匹配 `http_fetch_allowed_prefixes` 时走与 `run_command` 同类的审批（**`runtime::cli_approval`** / SSE）；**`--yes`** 亦跳过 CLI 提示。`workflow_execute` 等 **`run_tool` 同步路径**仍仅白名单前缀。
+//! 受控 HTTP：`http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）。**CLI / Web 流式**下 URL 未匹配 `http_fetch_allowed_prefixes` 时走与 `run_command` 同类的审批（**`tool_approval`**：SSE + **`cli_terminal`**）；**`--yes`** 亦跳过 CLI 提示。`workflow_execute` 等 **`run_tool` 同步路径**仍仅白名单前缀。
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -428,7 +428,7 @@ pub fn request_with_json_body(
     }
     out
 }
-/// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（同源 + 路径前缀边界）时才请求；未匹配时返回错误（**不**在此路径弹审批；CLI 经 `tool_registry` 异步路径可走 **`runtime::cli_approval`**）。
+/// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（同源 + 路径前缀边界）时才请求；未匹配时返回错误（**不**在此路径弹审批；CLI 经 `tool_registry` 异步路径可走 **`tool_approval`**）。
 pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     let (url, method) = match parse_http_fetch_args(args_json) {
         Ok(x) => x,

@@ -1,9 +1,12 @@
 //! 敏感工具 **Web / CLI 人工审批** 的单一真源：按「能力等级 + 展示字段」构造请求，避免 `run_command` / `http_fetch` / `http_request` / 工作流各处重复 SSE 与终端逻辑。
 //!
 //! - **能力等级** [`SensitiveCapability`]：用于日志、后续策略扩展（配额、按能力关闭 `--yes` 等）；当前不单独分支行为。
-//! - **策略**：Web 走 SSE `command_approval` + timeline；CLI 在 [`CliApprovalInput::auto_approve_all_sensitive`] 为真时等价「本次允许」（与历史 **`--yes`** 对齐），否则 [`runtime::cli_approval::prompt_tool_approval_cli`]。
+//! - **策略**：Web 走 SSE `command_approval` + timeline；CLI 在 [`CliApprovalInput::auto_approve_all_sensitive`] 为真时等价「本次允许」（与历史 **`--yes`** 对齐），否则子模块 **`cli_terminal`** 的 dialoguer / 读行。
 //! - **Web 通道模式**：[`WebApprovalChannelMode::Strict`] 在 `send` 失败时立即返回 Err（`tool_registry`）；[`WebApprovalChannelMode::Lenient`] 仍等待 receiver（工作流历史行为）。
 
+mod cli_terminal;
+
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use log::debug;
@@ -61,12 +64,59 @@ pub enum ToolApprovalWebError {
     ChannelUnavailable,
 }
 
+/// Web / CLI 会话级 **永久允许** 集合句柄（仅 `Arc<Mutex<HashSet>>` 引用，避免 `tool_approval` 依赖 `WebToolRuntime`）。
+pub struct SharedAllowlistHandles<'a> {
+    pub web: Option<&'a Arc<Mutex<HashSet<String>>>>,
+    pub cli: Option<&'a Arc<Mutex<HashSet<String>>>>,
+}
+
+/// 白名单未命中且已走交互审批之后的结果（`AllowOnce` / `AllowAlways` 均视为已放行）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InteractiveGateOutcome {
+    Allowed,
+    Denied(String),
+}
+
 fn web_timeline_detail(spec: &ApprovalRequestSpec) -> String {
     let a = spec.sse_args.trim();
     if a.is_empty() {
         spec.sse_command.clone()
     } else {
         format!("{} {}", spec.sse_command, a)
+    }
+}
+
+/// 将 `key` 写入 Web 或 CLI 的 persistent allowlist（与历史「二选一」一致）。
+pub async fn persist_allowlist_key(handles: &SharedAllowlistHandles<'_>, key: &str) {
+    if let Some(w) = handles.web {
+        w.lock().await.insert(key.to_string());
+    } else if let Some(c) = handles.cli {
+        c.lock().await.insert(key.to_string());
+    }
+}
+
+/// 配置白名单与 persistent 集合均未放行时：发起交互审批，并在 `AllowAlways` 时写入 [`ApprovalRequestSpec::allowlist_key`]（若有）。
+pub async fn interactive_gate_after_whitelist_miss(
+    web: Option<WebApprovalSink<'_>>,
+    cli: Option<CliApprovalInput>,
+    spec: &ApprovalRequestSpec,
+    sse_log_label: &'static str,
+    allowlist: &SharedAllowlistHandles<'_>,
+) -> Result<InteractiveGateOutcome, ToolApprovalWebError> {
+    let decision = request_tool_interactive_approval(web, cli, spec, sse_log_label).await?;
+    match decision {
+        CommandApprovalDecision::Deny => Ok(InteractiveGateOutcome::Denied(format!(
+            "用户拒绝 {}：{}",
+            spec.sse_command,
+            spec.sse_args.trim()
+        ))),
+        CommandApprovalDecision::AllowOnce => Ok(InteractiveGateOutcome::Allowed),
+        CommandApprovalDecision::AllowAlways => {
+            if let Some(k) = spec.allowlist_key.as_deref() {
+                persist_allowlist_key(allowlist, k).await;
+            }
+            Ok(InteractiveGateOutcome::Allowed)
+        }
     }
 }
 
@@ -136,11 +186,7 @@ pub async fn request_tool_interactive_approval(
             );
             return Ok(CommandApprovalDecision::AllowOnce);
         }
-        return Ok(crate::runtime::cli_approval::prompt_tool_approval_cli(
-            spec.cli_title,
-            &spec.cli_detail,
-        )
-        .await);
+        return Ok(cli_terminal::prompt_tool_approval_cli(spec.cli_title, &spec.cli_detail).await);
     }
     Err(ToolApprovalWebError::ChannelUnavailable)
 }
