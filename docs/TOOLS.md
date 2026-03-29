@@ -40,6 +40,7 @@
   - `text_diff`：两段 UTF-8 文本或工作区内两文件的**行级 unified diff**（与 Git 无关）；`structured_diff` 为键级结构化差异，二者互补。
   - `changelog_draft`：根据 **git log** 生成 **Markdown 变更说明草稿**（不写仓库）；可按提交日聚合、`flat` 平铺，或按 **相邻 tag** 分段（`tag_ranges`）。
   - `license_notice`：运行 **cargo metadata**，生成 **crate → license** 的 Markdown 表（未声明项有占位说明）；**非法律意见**，发版前需人工核对。
+  - `repo_overview_sweep`：只读**聚合**：预览主要文档（默认 `README.md`、`AGENTS.md`、`docs/DEVELOPMENT.md` 等，缺则跳过）、对 `src`（可改 `source_roots`）做 `list_tree`、用 glob 汇总 `Cargo.toml` / `package.json` / CI 等工作流相关路径；输出末尾附**结论撰写提纲**。**不调用 LLM**，结构化分析结论由模型根据本工具输出撰写。可选 `doc_paths`、`doc_preview_max_lines`、`list_tree_*`、`build_globs` 等。
   - `hash_file`：对工作区内文件做只读 **SHA-256 / SHA-512 / BLAKE3**（流式读取）；可选仅哈希前 `max_bytes` 字节，便于大文件或抽样校验。
   - `diagnostic_summary`：只读排障摘要——Rust 工具链（`rustc`/`cargo`/`rustup`/`bc`）、工作区 `target/` 与 `Cargo.toml` / `frontend` 常见路径、关键环境变量**是否设置**（**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。
   - `error_output_playbook`：对**已脱敏**的 rustc/cargo/npm/pytest 等错误输出做启发式**归类**，并输出 **2～3 条**可经 **`run_command`** 执行的命令**建议**（**不执行**；仅含当前白名单内命令，如默认已含 `cargo`/`git`/`python3`/`npm` 等）。可选 `ecosystem`：`auto` / `rust` / `node` / `python` / `generic`；可选 `max_chars`。内置对 `API_KEY=` 等样式的轻度掩码；粘贴前仍须人工脱敏。

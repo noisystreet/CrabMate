@@ -36,6 +36,7 @@ mod python_tools;
 mod quality_tools;
 mod regex_test;
 mod release_docs;
+mod repo_overview;
 mod rust_ide;
 mod schedule;
 mod schema_check;
@@ -395,6 +396,10 @@ fn runner_changelog_draft(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_license_notice(args: &str, ctx: &ToolContext<'_>) -> String {
     release_docs::license_notice(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_repo_overview_sweep(args: &str, ctx: &ToolContext<'_>) -> String {
+    repo_overview::repo_overview_sweep(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn runner_ci_pipeline_local(args: &str, ctx: &ToolContext<'_>) -> String {
