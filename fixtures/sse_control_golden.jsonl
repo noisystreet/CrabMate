@@ -1,0 +1,24 @@
+# SSE 控制面契约金样：每行 `描述<TAB>JSON<TAB>期望分类`（stop|handled|plain）
+# 分类须与 frontend/src/sse_control_dispatch.ts 及 src/sse/control_dispatch_mirror.rs 同步。
+
+error+code 流错误	{"v":1,"error":"x","code":"E"}	stop
+error 无 code 当正文	{"error":"division by zero"}	plain
+error+空白 code 当正文	{"error":"x","code":"  "}	plain
+plan_required	{"v":1,"plan_required":true}	handled
+staged_plan_started	{"v":1,"staged_plan_started":{"plan_id":"p1","total_steps":3}}	handled
+staged_plan_step_started	{"v":1,"staged_plan_step_started":{"plan_id":"p1","step_id":"s1","step_index":1,"total_steps":3,"description":"d"}}	handled
+staged_plan_step_finished	{"v":1,"staged_plan_step_finished":{"plan_id":"p1","step_id":"s1","step_index":1,"total_steps":3,"status":"ok"}}	handled
+staged_plan_finished	{"v":1,"staged_plan_finished":{"plan_id":"p1","total_steps":3,"completed_steps":3,"status":"ok"}}	handled
+workspace_changed	{"v":1,"workspace_changed":true}	handled
+tool_call 有 summary	{"v":1,"tool_call":{"name":"read_file","summary":"读：a.rs"}}	handled
+tool_call 无 summary 当正文	{"v":1,"tool_call":{"name":"read_file"}}	plain
+parsing_tool_calls	{"v":1,"parsing_tool_calls":true}	handled
+tool_running	{"v":1,"tool_running":false}	handled
+tool_result	{"v":1,"tool_result":{"name":"run_command","summary":"ls","output":"退出码：0","ok":true,"retryable":false,"tool_call_id":"tc1","execution_mode":"serial","stdout":"","stderr":""}}	handled
+command_approval_request	{"v":1,"command_approval_request":{"command":"git","args":"status","allowlist_key":"git"}}	handled
+staged_plan_notice 字符串	{"v":1,"staged_plan_notice":"line1\nline2"}	handled
+staged_plan_notice_clear	{"v":1,"staged_plan_notice_clear":true}	handled
+chat_ui_separator	{"v":1,"chat_ui_separator":true}	handled
+未知键当正文	{"v":1,"unknown_future_key":true}	plain
+conversation_saved 当前 Web 未分发	{"v":1,"conversation_saved":{"revision":42}}	plain
+timeline_log 当前 Web 未分发	{"v":1,"timeline_log":{"kind":"k","title":"t"}}	plain

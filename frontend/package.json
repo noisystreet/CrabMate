@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify-sse-contract": "tsx scripts/verify_sse_control_golden.ts"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",
@@ -27,6 +28,7 @@
     "daisyui": "^4.12.14",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
+    "tsx": "^4.19.3",
     "typescript": "~5.6.2",
     "vite": "^6.0.1"
   }
