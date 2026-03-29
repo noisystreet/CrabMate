@@ -573,8 +573,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 pub use config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig, load_config};
 pub use llm::{
-    ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
-    default_chat_completions_backend,
+    ChatCompletionsBackend, CompleteChatRetryingParams, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
+    StreamChatParams, default_chat_completions_backend,
 };
 pub use tool_registry::{
     ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata, execution_class_for_tool,

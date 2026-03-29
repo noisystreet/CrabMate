@@ -365,21 +365,38 @@ fn handler_id_for(name: &str) -> HandlerId {
         .unwrap_or(HandlerId::SyncDefault)
 }
 
+/// [`dispatch_tool`] 入参（聚合 Web / CLI 统一上下文）。
+pub struct DispatchToolParams<'a> {
+    pub runtime: ToolRuntime<'a>,
+    pub per_coord: &'a mut PerCoordinator,
+    pub cfg: &'a Arc<AgentConfig>,
+    pub effective_working_dir: &'a Path,
+    pub workspace_is_set: bool,
+    pub name: &'a str,
+    pub args: &'a str,
+    pub tc: &'a ToolCall,
+    pub read_file_turn_cache:
+        Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+    pub workspace_changelist:
+        Option<std::sync::Arc<crate::workspace_changelist::WorkspaceChangelist>>,
+    pub mcp_session: Option<&'a Arc<Mutex<crate::mcp::McpClientSession>>>,
+}
+
 /// Web / CLI 统一入口：`(tool_result_text, workflow 反思注入)`。
-#[allow(clippy::too_many_arguments)]
-pub async fn dispatch_tool(
-    runtime: ToolRuntime<'_>,
-    per_coord: &mut PerCoordinator,
-    cfg: &Arc<AgentConfig>,
-    effective_working_dir: &Path,
-    workspace_is_set: bool,
-    name: &str,
-    args: &str,
-    tc: &ToolCall,
-    read_file_turn_cache: Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
-    workspace_changelist: Option<std::sync::Arc<crate::workspace_changelist::WorkspaceChangelist>>,
-    mcp_session: Option<&Arc<Mutex<crate::mcp::McpClientSession>>>,
-) -> (String, Option<serde_json::Value>) {
+pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
+    let DispatchToolParams {
+        runtime,
+        per_coord,
+        cfg,
+        effective_working_dir,
+        workspace_is_set,
+        name,
+        args,
+        tc,
+        read_file_turn_cache,
+        workspace_changelist,
+        mcp_session,
+    } = p;
     if crate::mcp::is_mcp_proxy_tool(name) {
         let Some(remote) = crate::mcp::try_mcp_tool_name(cfg.as_ref(), name) else {
             return (

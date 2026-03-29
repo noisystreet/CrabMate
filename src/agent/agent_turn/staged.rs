@@ -10,7 +10,9 @@ use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::agent::plan_ensemble;
 use crate::agent::plan_optimizer::{self, STAGED_PLAN_OPTIMIZER_COACH_MARK};
 use crate::config::StagedPlanFeedbackMode;
-use crate::llm::{complete_chat_retrying, no_tools_chat_request_from_messages};
+use crate::llm::{
+    CompleteChatRetryingParams, complete_chat_retrying, no_tools_chat_request_from_messages,
+};
 use crate::sse::{SseErrorBody, SsePayload, encode_message};
 use crate::tool_result::tool_message_content_ok_for_model;
 use crate::types::{
@@ -54,19 +56,18 @@ async fn complete_one_staged_planner_assistant_round(
     log_label: &'static str,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let req = prepare_staged_planner_no_tools_request(p, per_coord, build_planner_messages).await?;
-    let (msg, finish_reason) = complete_chat_retrying(
-        p.llm_backend,
-        p.client,
-        p.api_key,
-        p.cfg.as_ref(),
-        &req,
-        p.out,
-        planner_render_to_terminal,
-        p.no_stream,
-        p.cancel,
-        p.plain_terminal_stream,
-    )
-    .await?;
+    let cc = CompleteChatRetryingParams {
+        llm_backend: p.llm_backend,
+        http: p.client,
+        api_key: p.api_key,
+        cfg: p.cfg.as_ref(),
+        out: p.out,
+        render_to_terminal: planner_render_to_terminal,
+        no_stream: p.no_stream,
+        cancel: p.cancel,
+        plain_terminal_stream: p.plain_terminal_stream,
+    };
+    let (msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
     debug!(
         target: "crabmate",
         "{} finish_reason={} assistant_preview={}",
@@ -442,19 +443,18 @@ where
     p.messages.push(make_step_user_message(feedback_user_body));
     let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
         .await?;
-    let (mut msg, finish_reason) = complete_chat_retrying(
-        p.llm_backend,
-        p.client,
-        p.api_key,
-        p.cfg.as_ref(),
-        &req,
-        p.out,
-        *planner_render_to_terminal,
-        p.no_stream,
-        p.cancel,
-        p.plain_terminal_stream,
-    )
-    .await?;
+    let cc = CompleteChatRetryingParams {
+        llm_backend: p.llm_backend,
+        http: p.client,
+        api_key: p.api_key,
+        cfg: p.cfg.as_ref(),
+        out: p.out,
+        render_to_terminal: *planner_render_to_terminal,
+        no_stream: p.no_stream,
+        cancel: p.cancel,
+        plain_terminal_stream: p.plain_terminal_stream,
+    };
+    let (mut msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
 
     debug!(
         target: "crabmate",
@@ -593,19 +593,18 @@ where
 {
     let planner_render_to_terminal =
         render_to_terminal && (p.out.is_some() || p.cfg.staged_plan_cli_show_planner_stream);
-    let (mut msg, finish_reason) = complete_chat_retrying(
-        p.llm_backend,
-        p.client,
-        p.api_key,
-        p.cfg.as_ref(),
-        &req,
-        p.out,
-        planner_render_to_terminal,
-        p.no_stream,
-        p.cancel,
-        p.plain_terminal_stream,
-    )
-    .await?;
+    let cc = CompleteChatRetryingParams {
+        llm_backend: p.llm_backend,
+        http: p.client,
+        api_key: p.api_key,
+        cfg: p.cfg.as_ref(),
+        out: p.out,
+        render_to_terminal: planner_render_to_terminal,
+        no_stream: p.no_stream,
+        cancel: p.cancel,
+        plain_terminal_stream: p.plain_terminal_stream,
+    };
+    let (mut msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
 
     debug!(
         target: "crabmate",

@@ -8,7 +8,6 @@ use crate::types::{
 use futures_util::StreamExt;
 use log::{debug, error, info};
 use markdown_to_ansi::{Options, render};
-use reqwest::Client;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::Sender;
@@ -408,20 +407,22 @@ async fn ingest_sse_data_payload(payload: &str, state: IngestSseState<'_>) -> io
 /// DeepSeek 等兼容实现可用；字段形态不同的网关需在调用侧适配或扩展解析。
 ///
 /// **DSML 物化**：正文中的 DeepSeek DSML 工具调用**不在**此处解析；由 [`crate::llm::complete_chat_retrying`] 在成功后按配置 **`materialize_deepseek_dsml_tool_calls`** 统一处理。
-#[allow(clippy::too_many_arguments)] // HTTP + 流式/终端/out/cancel 为固定组合，拆结构体收益有限
 pub async fn stream_chat(
-    client: &Client,
-    api_key: &str,
-    api_base: &str,
-    auth_mode: LlmHttpAuthMode,
+    params: &super::chat_params::StreamChatParams<'_>,
     req: &mut ChatRequest,
-    out: Option<&Sender<String>>,
-    render_to_terminal: bool,
-    no_stream: bool,
-    cancel: Option<&AtomicBool>,
-    plain_terminal_stream: bool,
-    fold_system_into_user: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+    let super::chat_params::StreamChatParams {
+        client,
+        api_key,
+        api_base,
+        auth_mode,
+        out,
+        render_to_terminal,
+        no_stream,
+        cancel,
+        plain_terminal_stream,
+        fold_system_into_user,
+    } = *params;
     let url = format!(
         "{}/{}",
         api_base.trim_end_matches('/'),

@@ -8,21 +8,21 @@
 
 mod api;
 pub mod backend;
+mod chat_params;
 mod openai_models;
 
+pub use chat_params::{CompleteChatRetryingParams, StreamChatParams};
 pub use openai_models::fetch_models_report;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use log::{debug, error, info};
-use tokio::sync::mpsc::Sender;
 
 use crate::config::AgentConfig;
 use crate::types::{
     ChatRequest, LlmSeedOverride, Message, Tool, is_long_term_memory_injection, resolved_llm_seed,
 };
-use reqwest::Client;
 
 pub use backend::{
     ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
@@ -101,48 +101,25 @@ pub fn no_tools_chat_request_from_messages(
 /// 调用 `chat/completions`：失败时按 `AgentConfig::api_retry_delay_secs` 做指数退避，最多 `api_max_retries + 1` 次。
 ///
 /// `llm_backend` 默认使用 [`default_chat_completions_backend`]（OpenAI 兼容 HTTP）；可换为自定义 [`ChatCompletionsBackend`]。
-#[allow(clippy::too_many_arguments)]
 pub async fn complete_chat_retrying(
-    llm_backend: &dyn backend::ChatCompletionsBackend,
-    http: &Client,
-    api_key: &str,
-    cfg: &AgentConfig,
+    p: &CompleteChatRetryingParams<'_>,
     request: &ChatRequest,
-    out: Option<&Sender<String>>,
-    render_to_terminal: bool,
-    no_stream: bool,
-    cancel: Option<&AtomicBool>,
-    plain_terminal_stream: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let t0 = Instant::now();
-    let max_attempts = cfg.api_max_retries + 1;
+    let max_attempts = p.cfg.api_max_retries + 1;
     let mut last_ok = None;
     let mut req = request.clone();
+    let stream = p.stream_params();
     for attempt in 0..max_attempts {
-        if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        if p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             return Err(crate::types::LLM_CANCELLED_ERROR.into());
         }
-        match llm_backend
-            .stream_chat(
-                http,
-                api_key,
-                &cfg.api_base,
-                cfg.llm_http_auth_mode,
-                &mut req,
-                out,
-                render_to_terminal,
-                no_stream,
-                cancel,
-                plain_terminal_stream,
-                cfg.llm_fold_system_into_user,
-            )
-            .await
-        {
+        match p.llm_backend.stream_chat(&stream, &mut req).await {
             Ok(r) => {
                 let (mut msg, finish_reason) = r;
                 crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
                     &mut msg,
-                    cfg.materialize_deepseek_dsml_tool_calls,
+                    p.cfg.materialize_deepseek_dsml_tool_calls,
                 );
                 info!(
                     target: "crabmate",
@@ -170,7 +147,8 @@ pub async fn complete_chat_retrying(
                     max_attempts
                 );
                 if attempt < max_attempts - 1 {
-                    let delay_secs = cfg
+                    let delay_secs = p
+                        .cfg
                         .api_retry_delay_secs
                         .saturating_mul(2_u64.saturating_pow(attempt));
                     info!(
@@ -179,7 +157,7 @@ pub async fn complete_chat_retrying(
                         delay_secs
                     );
                     tokio::time::sleep(Duration::from_secs(delay_secs)).await;
-                    if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+                    if p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
                         return Err(crate::types::LLM_CANCELLED_ERROR.into());
                     }
                 } else {

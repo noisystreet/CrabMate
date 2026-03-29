@@ -864,20 +864,36 @@ async fn run_one_cli_turn(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn run_chat_batch_jsonl(
-    cfg_holder: &SharedAgentConfig,
-    _config_path: Option<&str>,
-    client: &reqwest::Client,
-    api_key: &str,
-    tools: &[crate::types::Tool],
-    work_dir: &Path,
+struct RunChatBatchJsonlParams<'a> {
+    cfg_holder: &'a SharedAgentConfig,
+    _config_path: Option<&'a str>,
+    client: &'a reqwest::Client,
+    api_key: &'a str,
+    tools: &'a [crate::types::Tool],
+    work_dir: &'a Path,
     no_stream: bool,
-    cli_rt: &CliToolRuntime,
+    cli_rt: &'a CliToolRuntime,
     json_out: bool,
-    path: &str,
-    chat: &ChatCliArgs,
+    path: &'a str,
+    chat: &'a ChatCliArgs,
+}
+
+async fn run_chat_batch_jsonl(
+    p: RunChatBatchJsonlParams<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let RunChatBatchJsonlParams {
+        cfg_holder,
+        _config_path,
+        client,
+        api_key,
+        tools,
+        work_dir,
+        no_stream,
+        cli_rt,
+        json_out,
+        path,
+        chat,
+    } = p;
     let file = std::fs::File::open(path).map_err(|e| {
         CliExitError::new(EXIT_GENERAL, format!("无法打开 --message-file {path}: {e}"))
     })?;
@@ -985,19 +1001,19 @@ pub async fn run_chat_invocation(
     let json_out = chat.output.as_deref().is_some_and(|m| m == "json");
 
     if let Some(batch_path) = chat.message_file.as_deref() {
-        return run_chat_batch_jsonl(
+        return run_chat_batch_jsonl(RunChatBatchJsonlParams {
             cfg_holder,
-            config_path,
+            _config_path: config_path,
             client,
             api_key,
             tools,
-            work_dir.as_path(),
-            chat.no_stream,
-            &cli_rt,
+            work_dir: work_dir.as_path(),
+            no_stream: chat.no_stream,
+            cli_rt: &cli_rt,
             json_out,
-            batch_path,
+            path: batch_path,
             chat,
-        )
+        })
         .await;
     }
 

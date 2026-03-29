@@ -536,20 +536,21 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     ctx: web_tool_ctx,
                 }
             };
-            let (result, reflection_inject) = tool_registry::dispatch_tool(
-                runtime,
-                per_coord,
-                cfg,
-                effective_working_dir,
-                workspace_is_set,
-                &name,
-                &args,
-                tc,
-                read_file_turn_cache.clone(),
-                workspace_changelist.cloned(),
-                mcp_session,
-            )
-            .await;
+            let (result, reflection_inject) =
+                tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
+                    runtime,
+                    per_coord,
+                    cfg,
+                    effective_working_dir,
+                    workspace_is_set,
+                    name: &name,
+                    args: &args,
+                    tc,
+                    read_file_turn_cache: read_file_turn_cache.clone(),
+                    workspace_changelist: workspace_changelist.cloned(),
+                    mcp_session,
+                })
+                .await;
 
             info!(
                 target: "crabmate",
