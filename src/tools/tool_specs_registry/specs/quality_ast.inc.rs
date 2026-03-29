@@ -24,6 +24,14 @@ ToolSpec {
             summary: ToolSummaryKind::Static("codespell spell check"),
         },
         ToolSpec {
+            name: "docs_health_sweep",
+            description: "只读聚合：主文档头预览（默认 README/AGENTS/docs 等，与 repo_overview_sweep 列表一致）+ `typos_check` + `codespell_check` + `markdown_check_links`。**Markdown 外链**：仅当 `md_allowed_external_prefixes` 非空时由 `markdown_check_links` 内置 HTTP 发 HEAD，**不经过** `http_fetch`/`http_request` 与 `http_fetch_allowed_prefixes`，**无** Web/CLI 审批；默认不填前缀则外链仅计数、不联网。缺 typos/codespell CLI 时对应步记为 skipped。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_docs_health_sweep,
+            runner: runner_docs_health_sweep,
+            summary: ToolSummaryKind::Static("docs spell + md link sweep"),
+        },
+        ToolSpec {
             name: "ast_grep_run",
             description: "运行 [ast-grep](https://ast-grep.github.io/) `run` 做**结构化**代码搜索（非纯文本 grep）。必填 `pattern` 与 `lang`；默认仅在存在的 `src` 下搜索，并附加 `--globs` 排除 target、node_modules、.git、vendor、dist、build。可用 `paths` 收窄/改写根路径，`globs` 追加排除规则。需本机已安装 `ast-grep` 命令（`cargo install ast-grep`）。",
             category: ToolCategory::Development,

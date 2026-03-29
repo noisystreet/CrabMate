@@ -123,7 +123,10 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "lizard_complexity" => &[GENERAL, QUALITY],
 
         // --- 质量聚合（跨栈）---
-        "ci_pipeline_local" | "release_ready_check" | "repo_overview_sweep" => &[GENERAL, QUALITY],
+        "ci_pipeline_local"
+        | "release_ready_check"
+        | "repo_overview_sweep"
+        | "docs_health_sweep" => &[GENERAL, QUALITY],
         "run_lints" | "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],
 
         // --- 格式化（多语言由实现按扩展名分流）---
