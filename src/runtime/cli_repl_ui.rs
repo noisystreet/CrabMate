@@ -359,7 +359,7 @@ impl CliReplStyle {
         self.write_banner_subheading(&mut out, "内建命令")?;
         self.write_banner_note_line(
             &mut out,
-            "    /clear  /model  /models  /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
+            "    /clear  /model  /models（list·choose） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
         )?;
         self.write_banner_note_line(
             &mut out,
@@ -693,8 +693,12 @@ impl CliReplStyle {
                 "探测 api_base 的 GET …/models 连通性（同 crabmate probe；需 bearer 时依赖 API_KEY）",
             ),
             (
-                "/models",
+                "/models · /models list",
                 "列出 GET …/models 返回的模型 id（同 crabmate models；需 bearer 时依赖 API_KEY）",
+            ),
+            (
+                "/models choose <id>",
+                "从上述列表设当前 model（内存；支持唯一前缀；持久化请改配置）",
             ),
             ("/workspace", "显示当前工作区"),
             (

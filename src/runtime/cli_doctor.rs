@@ -1,5 +1,5 @@
 //! `crabmate doctor` / `models` / `probe`：面向终端的一页诊断与网关探测（输出脱敏，不打印密钥）。
-//! REPL 内建 **`/doctor`**、**`/probe`**、**`/models`** 分别复用 [`print_doctor_report`]、[`run_probe_cli`]、[`run_models_cli`]（与上述子命令对齐）。
+//! REPL 内建 **`/doctor`**、**`/probe`**、**`/models`** 分别复用 [`print_doctor_report`]、[`run_probe_cli`]、[`run_models_cli`]（与上述子命令对齐）；**`/models choose`** 见 [`run_models_choose_repl`]。
 
 use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use reqwest::Client;
 
 use crate::AgentConfig;
-use crate::config::{ExposeSecret, LlmHttpAuthMode};
+use crate::config::{ExposeSecret, LlmHttpAuthMode, SharedAgentConfig};
 use crate::llm::fetch_models_report;
 use crate::tools::{canonical_workspace_root, capture_trimmed};
 
@@ -215,6 +215,77 @@ pub async fn run_models_cli(
     Ok(())
 }
 
+/// 将用户输入的 `requested` 解析为 `ids` 中的**规范 id**（与列表一致）：先精确匹配，再整串不区分大小写唯一匹配，再唯一前缀（不区分大小写）。
+pub(crate) fn resolve_model_id_from_list(
+    ids: &[String],
+    requested: &str,
+) -> Result<String, String> {
+    let q = requested.trim();
+    if q.is_empty() {
+        return Err("模型 id 为空。".to_string());
+    }
+    if let Some(found) = ids.iter().find(|id| id.as_str() == q) {
+        return Ok(found.clone());
+    }
+    let mut ci: Vec<&String> = ids.iter().filter(|id| id.eq_ignore_ascii_case(q)).collect();
+    ci.sort_unstable();
+    ci.dedup();
+    match ci.len() {
+        0 => {}
+        1 => return Ok(ci[0].clone()),
+        _ => {
+            return Err(format!(
+                "「{q}」匹配到多个模型 id（仅大小写不同），请使用列表中的完整 id。"
+            ));
+        }
+    }
+    let q_l = q.to_ascii_lowercase();
+    let mut pref: Vec<&String> = ids
+        .iter()
+        .filter(|id| id.to_ascii_lowercase().starts_with(&q_l))
+        .collect();
+    pref.sort_unstable();
+    pref.dedup();
+    match pref.len() {
+        0 => Err(format!(
+            "「{q}」不在当前 GET …/models 返回的列表中；请先执行 /models 查看 id。"
+        )),
+        1 => Ok(pref[0].clone()),
+        n => Err(format!(
+            "「{q}」前缀不唯一（匹配 {n} 个），请加长前缀或写完整 id。"
+        )),
+    }
+}
+
+/// REPL **`/models choose`**：拉取列表、校验 id 后写入 [`SharedAgentConfig`] 内存中的 **`model`**（不落盘）。
+pub async fn run_models_choose_repl(
+    client: &Client,
+    cfg_holder: &SharedAgentConfig,
+    api_key: &str,
+    requested: &str,
+) -> Result<String, String> {
+    let (api_base, auth_mode) = {
+        let g = cfg_holder.read().await;
+        (g.api_base.clone(), g.llm_http_auth_mode)
+    };
+    let r = fetch_models_report(client, api_base.trim(), api_key.trim(), auth_mode)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !(200..300).contains(&r.http_status) {
+        return Err(format!(
+            "无法拉取模型列表（HTTP {}）；请检查 api_base 与 API_KEY。",
+            r.http_status
+        ));
+    }
+    if r.model_ids.is_empty() {
+        return Err("网关未返回可用模型 id，无法从列表选择。".to_string());
+    }
+    let resolved = resolve_model_id_from_list(&r.model_ids, requested)?;
+    let mut w = cfg_holder.write().await;
+    w.model = resolved.clone();
+    Ok(resolved)
+}
+
 /// `crabmate probe`：仅报告连通性与 HTTP 状态。
 pub async fn run_probe_cli(
     client: &Client,
@@ -252,4 +323,49 @@ pub async fn run_probe_cli(
         println!("{}", n);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod resolve_model_id_tests {
+    use super::resolve_model_id_from_list;
+
+    fn ids() -> Vec<String> {
+        vec![
+            "gpt-4o".to_string(),
+            "gpt-4o-mini".to_string(),
+            "Other".to_string(),
+        ]
+    }
+
+    fn ids_ambiguous_prefix() -> Vec<String> {
+        vec!["alpha-one".to_string(), "alpha-two".to_string()]
+    }
+
+    #[test]
+    fn exact_match() {
+        assert_eq!(
+            resolve_model_id_from_list(&ids(), "gpt-4o-mini").unwrap(),
+            "gpt-4o-mini"
+        );
+    }
+
+    #[test]
+    fn unique_prefix() {
+        assert_eq!(
+            resolve_model_id_from_list(&ids(), "gpt-4o-m").unwrap(),
+            "gpt-4o-mini"
+        );
+    }
+
+    #[test]
+    fn ambiguous_prefix() {
+        let e = resolve_model_id_from_list(&ids_ambiguous_prefix(), "alpha").unwrap_err();
+        assert!(e.contains("不唯一"), "{e}");
+    }
+
+    #[test]
+    fn not_in_list() {
+        let e = resolve_model_id_from_list(&ids(), "zz").unwrap_err();
+        assert!(e.contains("不在"), "{e}");
+    }
 }
