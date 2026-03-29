@@ -143,6 +143,17 @@ impl Completer for ReplSlashCompleter {
                 if tail.eq_ignore_ascii_case("save-session") {
                     return Self::suggestions_session_export_formats(span, "/save-session");
                 }
+                if tail.eq_ignore_ascii_case("config") {
+                    return ["reload"]
+                        .iter()
+                        .map(|a| Suggestion {
+                            value: format!("/config {a}"),
+                            span,
+                            append_whitespace: false,
+                            ..Default::default()
+                        })
+                        .collect();
+                }
                 if tail.eq_ignore_ascii_case("mcp") {
                     return ["list", "probe"]
                         .iter()
@@ -161,6 +172,25 @@ impl Completer for ReplSlashCompleter {
             }
             Some((cmd, after_ws)) => {
                 let cmd = cmd.trim();
+                if cmd.eq_ignore_ascii_case("config") {
+                    let ap = after_ws.trim_start();
+                    let ap_l = ap.to_ascii_lowercase();
+                    let hits: Vec<&str> = if ap_l.is_empty() || "reload".starts_with(ap_l.as_str())
+                    {
+                        vec!["reload"]
+                    } else {
+                        vec![]
+                    };
+                    return hits
+                        .into_iter()
+                        .map(|a| Suggestion {
+                            value: format!("/config {a}"),
+                            span,
+                            append_whitespace: false,
+                            ..Default::default()
+                        })
+                        .collect();
+                }
                 if cmd.eq_ignore_ascii_case("mcp") {
                     let ap = after_ws.trim_start();
                     let ap_l = ap.to_ascii_lowercase();
@@ -619,6 +649,16 @@ mod slash_completion_tests {
         let s2 = c.complete(line2, line2.len());
         assert_eq!(s2.len(), 1);
         assert_eq!(s2[0].value, "/save-session json");
+    }
+
+    #[test]
+    fn config_reload_completion() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        let s = c.complete("/config", 7);
+        assert!(s.iter().any(|x| x.value == "/config reload"));
+        let line = "/config ";
+        let s2 = c.complete(line, line.len());
+        assert!(s2.iter().any(|x| x.value == "/config reload"));
     }
 
     #[test]

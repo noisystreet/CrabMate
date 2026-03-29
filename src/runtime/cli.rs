@@ -1,5 +1,5 @@
-use crate::config::AgentConfig;
 use crate::config::cli::{ChatCliArgs, SaveSessionCli, SaveSessionFormat};
+use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::redact;
 use crate::runtime::cli_exit::{
     CliExitError, EXIT_GENERAL, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE,
@@ -73,6 +73,8 @@ enum ReplSlashHandled {
     RunMcpList {
         probe: bool,
     },
+    /// `/config reload`：磁盘+环境变量热更（见 `apply_hot_reload_config_subset`）
+    RunConfigReload,
 }
 
 const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。等同本机 `sh -c` / `cmd /C`，不受模型 `run_command` 白名单约束，仅应在可信环境使用。交互 TTY：空行按 `$` 即切换「我:」/ bash#:（也可单独一行 `$` 后 Enter）；管道/非 TTY 仍可用行内 `$ <命令>`。历史保存在工作区 `.crabmate/repl_history.txt`。示例: ls  pwd  git status";
@@ -282,9 +284,9 @@ pub fn run_save_session_command(
 }
 
 /// REPL 中以 `/` 开头的内建命令；[`ReplSlashHandled::NotSlash`] 时应将输入交给模型。
-fn try_handle_repl_slash_command(
+async fn try_handle_repl_slash_command(
     input: &str,
-    cfg: &AgentConfig,
+    cfg_holder: &SharedAgentConfig,
     tools: &[crate::types::Tool],
     messages: &mut Vec<Message>,
     work_dir: &mut PathBuf,
@@ -304,10 +306,12 @@ fn try_handle_repl_slash_command(
             let _ = style.eprint_error(&format!("未知命令 /{head}。输入 /help 查看列表。"));
         }
         ReplBuiltIn::Clear => {
+            let cfg = cfg_holder.read().await;
             *messages = vec![Message::system_only(cfg.system_prompt.clone())];
             let _ = style.print_success("已清空对话（保留当前 system 提示词），共 1 条消息。");
         }
         ReplBuiltIn::Model => {
+            let cfg = cfg_holder.read().await;
             let _ = style.print_line(&format!("model: {}", cfg.model));
             let _ = style.print_line(&format!("api_base: {}", cfg.api_base));
             let _ = style.print_line(&format!(
@@ -321,12 +325,22 @@ fn try_handle_repl_slash_command(
             }
         }
         ReplBuiltIn::Config(extra) => {
-            if !extra.is_empty() {
-                let _ = style.eprint_error("用法: /config（无额外参数）");
-            } else if let Err(e) =
-                style.print_repl_config_summary(cfg, work_dir.as_path(), tools.len(), no_stream)
-            {
-                let _ = style.eprint_error(&e.to_string());
+            let e = extra.trim();
+            if e.eq_ignore_ascii_case("reload") {
+                return ReplSlashHandled::RunConfigReload;
+            }
+            if !e.is_empty() {
+                let _ = style.eprint_error("用法: /config · /config reload（热重载，见文档）");
+            } else {
+                let cfg = cfg_holder.read().await;
+                if let Err(err) = style.print_repl_config_summary(
+                    &cfg,
+                    work_dir.as_path(),
+                    tools.len(),
+                    no_stream,
+                ) {
+                    let _ = style.eprint_error(&err.to_string());
+                }
             }
         }
         ReplBuiltIn::Doctor(extra) => {
@@ -334,7 +348,8 @@ fn try_handle_repl_slash_command(
                 let _ = style.eprint_error("用法: /doctor（无额外参数；同 crabmate doctor）");
             } else {
                 let ws = work_dir.to_str();
-                crate::runtime::cli_doctor::print_doctor_report(cfg, ws);
+                let cfg = cfg_holder.read().await;
+                crate::runtime::cli_doctor::print_doctor_report(&cfg, ws);
             }
         }
         ReplBuiltIn::Probe(extra) => {
@@ -420,7 +435,8 @@ fn try_handle_repl_slash_command(
                 session_file: None,
             };
             let ws = Some(work_dir.to_string_lossy().into_owned());
-            if let Err(e) = run_save_session_command(cfg, &ws, cli) {
+            let cfg = cfg_holder.read().await;
+            if let Err(e) = run_save_session_command(&cfg, &ws, cli) {
                 let _ = style.eprint_error(&e.to_string());
             }
         }
@@ -699,7 +715,8 @@ async fn run_one_cli_turn(
 
 #[allow(clippy::too_many_arguments)]
 async fn run_chat_batch_jsonl(
-    cfg: &Arc<AgentConfig>,
+    cfg_holder: &SharedAgentConfig,
+    _config_path: Option<&str>,
     client: &reqwest::Client,
     api_key: &str,
     tools: &[crate::types::Tool],
@@ -714,7 +731,10 @@ async fn run_chat_batch_jsonl(
         CliExitError::new(EXIT_GENERAL, format!("无法打开 --message-file {path}: {e}"))
     })?;
     let reader = std::io::BufReader::new(file);
-    let system_seed = resolve_system_prompt_for_chat(cfg, chat)?;
+    let system_seed = {
+        let g = cfg_holder.read().await;
+        resolve_system_prompt_for_chat(&Arc::new(g.clone()), chat)?
+    };
     let mut messages: Vec<Message> = Vec::new();
     let mut line_no: usize = 0;
     for line in reader.lines() {
@@ -772,10 +792,14 @@ async fn run_chat_batch_jsonl(
             .into());
         }
 
+        let cfg_snap = {
+            let g = cfg_holder.read().await;
+            Arc::new(g.clone())
+        };
         run_one_cli_turn(
             client,
             api_key,
-            cfg,
+            &cfg_snap,
             tools,
             &mut messages,
             work_dir,
@@ -785,7 +809,7 @@ async fn run_chat_batch_jsonl(
         .await?;
         ensure_all_run_commands_not_denied(cli_rt)?;
         if json_out {
-            print_json_reply_line(cfg, &messages, Some(line_no));
+            print_json_reply_line(&cfg_snap, &messages, Some(line_no));
         }
     }
     Ok(())
@@ -793,20 +817,25 @@ async fn run_chat_batch_jsonl(
 
 /// `chat` 子命令：单轮、整表 JSON、或 `--message-file` 多轮批跑。
 pub async fn run_chat_invocation(
-    cfg: &Arc<AgentConfig>,
+    cfg_holder: &SharedAgentConfig,
+    config_path: Option<&str>,
     client: &reqwest::Client,
     api_key: &str,
     tools: &[crate::types::Tool],
     workspace_cli: &Option<String>,
     chat: &ChatCliArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let work_dir = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    let work_dir = {
+        let g = cfg_holder.read().await;
+        cli_effective_work_dir(workspace_cli, &g.run_command_working_dir)
+    };
     let cli_rt = build_cli_runtime(chat);
     let json_out = chat.output.as_deref().is_some_and(|m| m == "json");
 
     if let Some(batch_path) = chat.message_file.as_deref() {
         return run_chat_batch_jsonl(
-            cfg,
+            cfg_holder,
+            config_path,
             client,
             api_key,
             tools,
@@ -828,10 +857,14 @@ pub async fn run_chat_invocation(
             path,
             messages.len()
         );
+        let cfg_snap = {
+            let g = cfg_holder.read().await;
+            Arc::new(g.clone())
+        };
         run_one_cli_turn(
             client,
             api_key,
-            cfg,
+            &cfg_snap,
             tools,
             &mut messages,
             work_dir.as_path(),
@@ -841,12 +874,15 @@ pub async fn run_chat_invocation(
         .await?;
         ensure_all_run_commands_not_denied(&cli_rt)?;
         if json_out {
-            print_json_reply_line(cfg, &messages, None);
+            print_json_reply_line(&cfg_snap, &messages, None);
         }
         return Ok(());
     }
 
-    let system = resolve_system_prompt_for_chat(cfg, chat)?;
+    let system = {
+        let g = cfg_holder.read().await;
+        resolve_system_prompt_for_chat(&Arc::new(g.clone()), chat)?
+    };
     let user = resolve_user_body(chat)?;
     let mut messages = messages_chat_seed(&system, &user);
     debug!(
@@ -855,10 +891,14 @@ pub async fn run_chat_invocation(
         system.len(),
         redact::preview_chars(&user, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
+    let cfg_snap = {
+        let g = cfg_holder.read().await;
+        Arc::new(g.clone())
+    };
     run_one_cli_turn(
         client,
         api_key,
-        cfg,
+        &cfg_snap,
         tools,
         &mut messages,
         work_dir.as_path(),
@@ -868,32 +908,46 @@ pub async fn run_chat_invocation(
     .await?;
     ensure_all_run_commands_not_denied(&cli_rt)?;
     if json_out {
-        print_json_reply_line(cfg, &messages, None);
+        print_json_reply_line(&cfg_snap, &messages, None);
     }
     Ok(())
 }
 
 /// 交互式 REPL 模式
 pub async fn run_repl(
-    cfg: &Arc<AgentConfig>,
+    cfg_holder: &SharedAgentConfig,
+    config_path: Option<&str>,
     client: &reqwest::Client,
     api_key: &str,
     tools: &[crate::types::Tool],
     workspace_cli: &Option<String>,
     no_stream: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut work_dir = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
-    let mut messages = crate::runtime::workspace_session::initial_workspace_messages(
-        cfg.as_ref(),
-        work_dir.as_path(),
-        cfg.tui_load_session_on_start,
-    );
+    let (run_root, tui_load) = {
+        let g = cfg_holder.read().await;
+        (
+            g.run_command_working_dir.clone(),
+            g.tui_load_session_on_start,
+        )
+    };
+    let mut work_dir = cli_effective_work_dir(workspace_cli, &run_root);
+    let mut messages = {
+        let g = cfg_holder.read().await;
+        crate::runtime::workspace_session::initial_workspace_messages(
+            &g,
+            work_dir.as_path(),
+            tui_load,
+        )
+    };
     let cli_rt = CliToolRuntime::new_interactive_default();
     let style = CliReplStyle::new();
 
-    style.print_banner(cfg.as_ref(), work_dir.as_path(), tools.len(), no_stream)?;
+    {
+        let g = cfg_holder.read().await;
+        style.print_banner(&g, work_dir.as_path(), tools.len(), no_stream)?;
+    }
 
-    let history_dir = PathBuf::from(&cfg.run_command_working_dir).join(".crabmate");
+    let history_dir = PathBuf::from(&run_root).join(".crabmate");
     std::fs::create_dir_all(&history_dir)
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     let history_file = history_dir.join("repl_history.txt");
@@ -941,41 +995,58 @@ pub async fn run_repl(
 
                 match try_handle_repl_slash_command(
                     input.as_str(),
-                    cfg.as_ref(),
+                    cfg_holder,
                     tools,
                     &mut messages,
                     &mut work_dir,
                     &style,
                     no_stream,
-                ) {
+                )
+                .await
+                {
                     ReplSlashHandled::NotSlash => {}
                     ReplSlashHandled::Handled => continue,
                     ReplSlashHandled::RunProbe => {
-                        if let Err(e) = crate::runtime::cli_doctor::run_probe_cli(
-                            client,
-                            cfg.as_ref(),
-                            api_key.trim(),
-                        )
-                        .await
+                        let g = cfg_holder.read().await;
+                        if let Err(e) =
+                            crate::runtime::cli_doctor::run_probe_cli(client, &g, api_key.trim())
+                                .await
                         {
                             let _ = style.eprint_error(&e.to_string());
                         }
                         continue;
                     }
                     ReplSlashHandled::RunModels => {
-                        if let Err(e) = crate::runtime::cli_doctor::run_models_cli(
-                            client,
-                            cfg.as_ref(),
-                            api_key.trim(),
-                        )
-                        .await
+                        let g = cfg_holder.read().await;
+                        if let Err(e) =
+                            crate::runtime::cli_doctor::run_models_cli(client, &g, api_key.trim())
+                                .await
                         {
                             let _ = style.eprint_error(&e.to_string());
                         }
                         continue;
                     }
                     ReplSlashHandled::RunMcpList { probe } => {
-                        crate::runtime::cli_mcp::run_mcp_list(cfg.as_ref(), probe, true).await;
+                        let g = cfg_holder.read().await;
+                        crate::runtime::cli_mcp::run_mcp_list(&g, probe, true).await;
+                        continue;
+                    }
+                    ReplSlashHandled::RunConfigReload => {
+                        match crate::runtime::config_reload::reload_shared_agent_config(
+                            cfg_holder,
+                            config_path,
+                        )
+                        .await
+                        {
+                            Ok(()) => {
+                                let _ = style.print_success(
+                                    "配置已热重载（conversation_store_sqlite_path 与 HTTP Client 未重建；详见文档）。",
+                                );
+                            }
+                            Err(e) => {
+                                let _ = style.eprint_error(&e);
+                            }
+                        }
                         continue;
                     }
                 }
@@ -988,10 +1059,14 @@ pub async fn run_repl(
                     redact::preview_chars(input.as_str(), redact::MESSAGE_LOG_PREVIEW_CHARS)
                 );
 
+                let cfg_snap = {
+                    let g = cfg_holder.read().await;
+                    Arc::new(g.clone())
+                };
                 if let Err(e) = run_agent_turn_for_cli(
                     client,
                     api_key,
-                    cfg,
+                    &cfg_snap,
                     tools,
                     &mut messages,
                     work_dir.as_path(),
@@ -1057,6 +1132,10 @@ mod repl_slash_tests {
         assert_eq!(
             classify_repl_slash_command("/CONFIG"),
             Some(ReplBuiltIn::Config(""))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/config reload"),
+            Some(ReplBuiltIn::Config("reload"))
         );
         assert_eq!(
             classify_repl_slash_command("/config extra"),

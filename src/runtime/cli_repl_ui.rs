@@ -681,6 +681,10 @@ impl CliReplStyle {
                 "打印关键运行配置摘要（与启动横幅同源字段；不含密钥）",
             ),
             (
+                "/config reload",
+                "从磁盘+环境变量热重载可更字段（不含会话 SQLite 路径；详见文档）",
+            ),
+            (
                 "/doctor",
                 "一页环境诊断（同 crabmate doctor；不要求 API_KEY）",
             ),

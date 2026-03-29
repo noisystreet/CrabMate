@@ -5,7 +5,7 @@
 use super::adapter::{BenchmarkAdapter, create_adapter};
 use super::metrics::{BatchSummary, TaskMetrics};
 use super::types::{BatchRunConfig, BenchmarkResult, BenchmarkTask, TaskStatus};
-use crate::config::AgentConfig;
+use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::types::Tool;
 use log::{error, info, warn};
 use std::collections::HashSet;
@@ -16,7 +16,7 @@ use std::time::Instant;
 
 /// 批量运行入口。
 pub async fn run_batch(
-    cfg: &Arc<AgentConfig>,
+    cfg: &SharedAgentConfig,
     client: &reqwest::Client,
     api_key: &str,
     tools: &[Tool],
@@ -49,9 +49,12 @@ pub async fn run_batch(
     };
 
     let mut results: Vec<BenchmarkResult> = Vec::new();
-    let base_work_dir = std::path::Path::new(&cfg.run_command_working_dir)
-        .canonicalize()
-        .unwrap_or_else(|_| std::path::PathBuf::from(&cfg.run_command_working_dir));
+    let base_work_dir = {
+        let g = cfg.read().await;
+        std::path::Path::new(&g.run_command_working_dir)
+            .canonicalize()
+            .unwrap_or_else(|_| std::path::PathBuf::from(&g.run_command_working_dir))
+    };
 
     let mut out_file = open_output_file(&batch_cfg.output_path, batch_cfg.resume_from_existing)?;
 
@@ -73,8 +76,12 @@ pub async fn run_batch(
             task.instance_id
         );
 
+        let base_snap = {
+            let g = cfg.read().await;
+            Arc::new(g.clone())
+        };
         let result = run_single_task(
-            cfg,
+            &base_snap,
             client,
             api_key,
             tools,

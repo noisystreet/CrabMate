@@ -158,7 +158,8 @@ async fn effective_workspace_base_canonical(
     let base_canonical = base
         .canonicalize()
         .map_err(|e| format!("工作目录无法解析: {}", e))?;
-    validate_effective_workspace_base(&state.cfg, &base_canonical)?;
+    let cfg = state.cfg.read().await;
+    validate_effective_workspace_base(&cfg, &base_canonical)?;
     Ok(base_canonical)
 }
 
@@ -184,7 +185,8 @@ pub async fn workspace_set_handler(
         *guard = Some(String::new());
         return Ok(Json(serde_json::json!({ "ok": true, "path": "" })));
     }
-    let canon = match validate_workspace_set_path(&state.cfg, raw) {
+    let cfg = state.cfg.read().await;
+    let canon = match validate_workspace_set_path(&cfg, raw) {
         Ok(p) => p,
         Err(msg) => {
             return Err((
@@ -315,11 +317,18 @@ pub async fn workspace_search_handler(
         args["ignore_hidden"] = serde_json::json!(ih);
     }
     let args_json = args.to_string();
-    let cfg = Arc::clone(&state.cfg);
+    let cfg_snap = {
+        let g = state.cfg.read().await;
+        g.clone()
+    };
+    let cfg_arc = Arc::new(cfg_snap);
     let work_dir = base_canonical.clone();
     let output = match tokio::task::spawn_blocking(move || {
-        let ctx =
-            crate::tools::tool_context_for(cfg.as_ref(), cfg.allowed_commands.as_ref(), &work_dir);
+        let ctx = crate::tools::tool_context_for(
+            cfg_arc.as_ref(),
+            cfg_arc.allowed_commands.as_ref(),
+            &work_dir,
+        );
         crate::tools::run_tool("search_in_files", &args_json, &ctx)
     })
     .await
@@ -544,7 +553,7 @@ pub async fn workspace_profile_handler(
             });
         }
     };
-    let max_chars = state.cfg.project_profile_inject_max_chars;
+    let max_chars = state.cfg.read().await.project_profile_inject_max_chars;
     let md_result = tokio::task::spawn_blocking(move || {
         crate::project_profile::build_project_profile_markdown(&base_canonical, max_chars)
     })
