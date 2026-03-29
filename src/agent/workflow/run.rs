@@ -7,11 +7,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use super::chrome_trace::maybe_write_workflow_chrome_trace;
 use super::dag::{topo_layers, validate_dag};
 use super::execute::{
     WorkflowApprovalMode, WorkflowToolExecCtx, execute_workflow_dag, truncate_for_summary,
 };
 use super::parse::parse_workflow_spec;
+use super::types::WorkflowTraceEvent;
 use super::types::{
     WORKFLOW_RUN_SEQ, WorkflowExecutionCompensationReport, WorkflowExecutionNodeReport,
     WorkflowExecutionReport, WorkflowExecutionStats,
@@ -303,5 +305,19 @@ pub async fn run_workflow_execute_tool(
         workflow_run_id,
         workspace_changed
     );
+
+    if std::env::var_os("CRABMATE_WORKFLOW_CHROME_TRACE_DIR").is_some()
+        || std::env::var_os("AGENT_WORKFLOW_CHROME_TRACE_DIR").is_some()
+    {
+        #[derive(serde::Deserialize)]
+        struct ReportTraceOnly {
+            #[serde(default)]
+            trace: Vec<WorkflowTraceEvent>,
+        }
+        if let Ok(parsed) = serde_json::from_str::<ReportTraceOnly>(&main_result) {
+            maybe_write_workflow_chrome_trace(&parsed.trace);
+        }
+    }
+
     (main_result, workspace_changed)
 }

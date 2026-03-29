@@ -72,6 +72,13 @@
 | `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | CLI / `chat` 无工具规划轮是否向 stdout 打印模型流（默认 `true`；见下文「分阶段规划」）。 |
 | `AGENT_STAGED_PLAN_OPTIMIZER_ROUND` | 是否启用规划步骤优化轮（默认 `true`）。 |
 
+### 工作流（Chrome Trace 导出）
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `CRABMATE_WORKFLOW_CHROME_TRACE_DIR` | 设为非空目录时，每次 **`workflow_execute` DAG 实际执行结束**后，将本次 **`trace`** 写成 Chrome **Trace Event Format** JSON（`workflow-{run_id}-{unix_ms}.json`），可用 `chrome://tracing` 或 [Perfetto UI](https://ui.perfetto.dev/) 打开。写入失败仅打日志，不影响工具返回。 |
+| `AGENT_WORKFLOW_CHROME_TRACE_DIR` | 与上一项同义（`AGENT_*` 别名）。 |
+
 ### 队列、并行与缓存
 
 | 环境变量 | 说明 |
