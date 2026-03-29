@@ -359,7 +359,7 @@ impl CliReplStyle {
         self.write_banner_subheading(&mut out, "内建命令")?;
         self.write_banner_note_line(
             &mut out,
-            "    /clear  /model  /models  /config  /doctor  /probe  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
+            "    /clear  /model  /models  /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
         )?;
         self.write_banner_note_line(
             &mut out,
@@ -706,6 +706,11 @@ impl CliReplStyle {
                 "/save-session [json|markdown|both]",
                 "从磁盘会话文件导出到 .crabmate/exports/（同 crabmate save-session；默认 tui_session.json）",
             ),
+            (
+                "/mcp · /mcp list · /mcp probe · /mcp list probe",
+                "列出本进程内 MCP stdio 缓存与合并工具名（同 crabmate mcp list；probe 会启动 mcp_command 子进程）",
+            ),
+            ("/version", "打印 crabmate 版本与 OS/ARCH（不含密钥）"),
             ("/help, /?", "本说明"),
             (
                 "$ → bash#:",
@@ -783,7 +788,7 @@ impl CliReplStyle {
         }
         writeln!(out)?;
         self.writeln_muted_line(
-            "「我:」下光标前为 /… 时按 Tab 可补全内建命令与 /export、/save-session 格式；bash#: 下不补全",
+            "「我:」下光标前为 /… 时按 Tab 可补全内建命令与 /export、/save-session、/mcp 子命令；bash#: 下不补全",
         )?;
         self.writeln_muted_line("退出：quit · exit · Ctrl+D")?;
         Ok(())

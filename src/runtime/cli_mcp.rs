@@ -3,7 +3,9 @@
 use crate::config::AgentConfig;
 
 /// 执行 `mcp list`（`probe` 为 true 时按配置尝试建立/刷新进程内 MCP 缓存）。
-pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool) {
+///
+/// `repl_context`：来自 REPL **`/mcp`** 时为 true，无缓存时的提示语指向 **`/mcp probe`** 与「输入用户消息跑一轮」。
+pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool, repl_context: bool) {
     if probe {
         let _ = crate::mcp::try_open_session_and_tools(cfg).await;
     }
@@ -21,6 +23,11 @@ pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool) {
             println!(
                 "MCP：已尝试按配置连接，但未在进程内留下可用会话（见日志 target=crabmate）。\
                  常见原因：子进程启动失败、握手失败或 tools/list 为空。"
+            );
+        } else if repl_context {
+            println!(
+                "MCP：本进程内尚无与当前配置匹配的已缓存 stdio 会话。\
+                 可先输入任意用户消息跑一轮以建立连接，或执行 **/mcp probe** 立即尝试连接（会启动 mcp_command 子进程）。"
             );
         } else {
             println!(

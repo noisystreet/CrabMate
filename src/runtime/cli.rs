@@ -49,6 +49,14 @@ enum ReplBuiltIn<'a> {
     Export(&'a str),
     /// 与 `crabmate save-session` 一致：从磁盘会话文件导出（非当前内存）。
     SaveSession(&'a str),
+    /// `/mcp` · `/mcp list` · `/mcp list probe` · `/mcp probe`（同 `crabmate mcp list`）
+    McpList {
+        probe: bool,
+    },
+    /// `/mcp …` 无法解析的子命令
+    McpUnknown(String),
+    /// `/version`：二进制与平台信息（不含密钥）
+    Version,
     Unknown(&'a str),
     BareSlash,
 }
@@ -61,6 +69,10 @@ enum ReplSlashHandled {
     Handled,
     RunProbe,
     RunModels,
+    /// 同 `crabmate mcp list`（`probe` 会启动 MCP 子进程）
+    RunMcpList {
+        probe: bool,
+    },
 }
 
 const REPL_SHELL_USAGE: &str = "bash#: <命令>  在当前工作区执行一行 shell（不发给模型；无交互 stdin）。等同本机 `sh -c` / `cmd /C`，不受模型 `run_command` 白名单约束，仅应在可信环境使用。交互 TTY：空行按 `$` 即切换「我:」/ bash#:（也可单独一行 `$` 后 Enter）；管道/非 TTY 仍可用行内 `$ <命令>`。历史保存在工作区 `.crabmate/repl_history.txt`。示例: ls  pwd  git status";
@@ -143,8 +155,43 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
         "help" | "?" => ReplBuiltIn::Help,
         "export" => ReplBuiltIn::Export(arg),
         "save-session" => ReplBuiltIn::SaveSession(arg),
+        "mcp" => {
+            let tail = arg.trim();
+            if tail.is_empty() {
+                ReplBuiltIn::McpList { probe: false }
+            } else {
+                let mut parts = tail.split_whitespace();
+                let a = parts.next().unwrap_or("").to_ascii_lowercase();
+                let b = parts.next();
+                if parts.next().is_some() {
+                    ReplBuiltIn::McpUnknown(tail.to_string())
+                } else if a == "list" {
+                    match b {
+                        None => ReplBuiltIn::McpList { probe: false },
+                        Some(x) if x.eq_ignore_ascii_case("probe") => {
+                            ReplBuiltIn::McpList { probe: true }
+                        }
+                        Some(_) => ReplBuiltIn::McpUnknown(tail.to_string()),
+                    }
+                } else if a == "probe" && b.is_none() {
+                    ReplBuiltIn::McpList { probe: true }
+                } else {
+                    ReplBuiltIn::McpUnknown(tail.to_string())
+                }
+            }
+        }
+        "version" => ReplBuiltIn::Version,
         _ => ReplBuiltIn::Unknown(head),
     })
+}
+
+fn print_repl_version_line() {
+    println!(
+        "crabmate {} ({}/{})",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
 }
 
 fn repl_export_kind_from_arg(arg: &str) -> Result<ReplExportKind, ()> {
@@ -376,6 +423,17 @@ fn try_handle_repl_slash_command(
             if let Err(e) = run_save_session_command(cfg, &ws, cli) {
                 let _ = style.eprint_error(&e.to_string());
             }
+        }
+        ReplBuiltIn::McpList { probe } => {
+            return ReplSlashHandled::RunMcpList { probe };
+        }
+        ReplBuiltIn::McpUnknown(tail) => {
+            let _ = style.eprint_error(&format!(
+                "未知 /mcp 子命令: {tail}。用法: /mcp · /mcp list · /mcp probe · /mcp list probe"
+            ));
+        }
+        ReplBuiltIn::Version => {
+            print_repl_version_line();
         }
     }
     ReplSlashHandled::Handled
@@ -916,6 +974,10 @@ pub async fn run_repl(
                         }
                         continue;
                     }
+                    ReplSlashHandled::RunMcpList { probe } => {
+                        crate::runtime::cli_mcp::run_mcp_list(cfg.as_ref(), probe, true).await;
+                        continue;
+                    }
                 }
 
                 messages.push(Message::user_only(input.to_string()));
@@ -1035,6 +1097,34 @@ mod repl_slash_tests {
         assert_eq!(
             classify_repl_slash_command("/nope"),
             Some(ReplBuiltIn::Unknown("nope"))
+        );
+    }
+
+    #[test]
+    fn mcp_and_version() {
+        assert_eq!(
+            classify_repl_slash_command("/mcp"),
+            Some(ReplBuiltIn::McpList { probe: false })
+        );
+        assert_eq!(
+            classify_repl_slash_command("/mcp list"),
+            Some(ReplBuiltIn::McpList { probe: false })
+        );
+        assert_eq!(
+            classify_repl_slash_command("/mcp probe"),
+            Some(ReplBuiltIn::McpList { probe: true })
+        );
+        assert_eq!(
+            classify_repl_slash_command("/mcp list probe"),
+            Some(ReplBuiltIn::McpList { probe: true })
+        );
+        assert!(matches!(
+            classify_repl_slash_command("/mcp list probe extra"),
+            Some(ReplBuiltIn::McpUnknown(_))
+        ));
+        assert_eq!(
+            classify_repl_slash_command("/version"),
+            Some(ReplBuiltIn::Version)
         );
     }
 }
