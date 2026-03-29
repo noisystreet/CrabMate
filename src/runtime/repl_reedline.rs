@@ -36,11 +36,13 @@ const SLASH_COMMANDS: &[&str] = &[
     "doctor",
     "export",
     "help",
+    "mcp",
     "model",
     "models",
     "probe",
     "save-session",
     "tools",
+    "version",
     "workspace",
 ];
 
@@ -141,6 +143,17 @@ impl Completer for ReplSlashCompleter {
                 if tail.eq_ignore_ascii_case("save-session") {
                     return Self::suggestions_session_export_formats(span, "/save-session");
                 }
+                if tail.eq_ignore_ascii_case("mcp") {
+                    return ["list", "probe"]
+                        .iter()
+                        .map(|a| Suggestion {
+                            value: format!("/mcp {a}"),
+                            span,
+                            append_whitespace: false,
+                            ..Default::default()
+                        })
+                        .collect();
+                }
                 Self::suggestions_first_token(tail)
                     .into_iter()
                     .map(|cmd| Self::suggestion_slash_command(span, cmd))
@@ -148,6 +161,37 @@ impl Completer for ReplSlashCompleter {
             }
             Some((cmd, after_ws)) => {
                 let cmd = cmd.trim();
+                if cmd.eq_ignore_ascii_case("mcp") {
+                    let ap = after_ws.trim_start();
+                    let ap_l = ap.to_ascii_lowercase();
+                    let hits: Vec<&str> = if ap_l.is_empty() {
+                        vec!["list", "probe"]
+                    } else if ap_l.starts_with("list") {
+                        let rest = ap_l.strip_prefix("list").unwrap_or("").trim_start();
+                        if rest.is_empty() {
+                            vec!["list", "list probe"]
+                        } else if "probe".starts_with(rest) {
+                            vec!["list probe"]
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        ["list", "probe"]
+                            .iter()
+                            .copied()
+                            .filter(|s| s.starts_with(ap_l.as_str()))
+                            .collect()
+                    };
+                    return hits
+                        .into_iter()
+                        .map(|a| Suggestion {
+                            value: format!("/mcp {a}"),
+                            span,
+                            append_whitespace: false,
+                            ..Default::default()
+                        })
+                        .collect();
+                }
                 let prefix = if cmd.eq_ignore_ascii_case("export") {
                     "/export"
                 } else if cmd.eq_ignore_ascii_case("save-session") {
@@ -575,5 +619,20 @@ mod slash_completion_tests {
         let s2 = c.complete(line2, line2.len());
         assert_eq!(s2.len(), 1);
         assert_eq!(s2[0].value, "/save-session json");
+    }
+
+    #[test]
+    fn mcp_subcommands() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        let s = c.complete("/mcp", 4);
+        assert!(s.iter().any(|x| x.value == "/mcp list"));
+        assert!(s.iter().any(|x| x.value == "/mcp probe"));
+        let line = "/mcp list ";
+        let s2 = c.complete(line, line.len());
+        assert!(s2.iter().any(|x| x.value == "/mcp list probe"));
+        let line3 = "/mcp list p";
+        let s3 = c.complete(line3, line3.len());
+        assert_eq!(s3.len(), 1);
+        assert_eq!(s3[0].value, "/mcp list probe");
     }
 }

@@ -227,7 +227,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
             }
         };
-        crate::runtime::cli_mcp::run_mcp_list(&cfg, probe).await;
+        crate::runtime::cli_mcp::run_mcp_list(&cfg, probe, false).await;
         return Ok(());
     }
 
