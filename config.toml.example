@@ -10,6 +10,8 @@
 # MiniMax（OpenAI 兼容）：api_base = "https://api.minimaxi.com/v1" ，API_KEY 环境变量；已测 model：MiniMax-M2.7、MiniMax-M2.7-highspeed、MiniMax-M2.5；建议 llm_fold_system_into_user = true；AGENT_LLM_FOLD_SYSTEM_INTO_USER
 # llm_reasoning_split = false
 # llm_fold_system_into_user = true
+# 智谱 GLM：api_base = "https://open.bigmodel.cn/api/paas/v4" ，model = "glm-5" ，API_KEY（Bearer）；与官方最小 cURL（model + messages + stream）一致时可不写 llm_bigmodel_thinking（默认 false）；深度思考见 docs/CONFIGURATION.md「智谱 GLM」
+# llm_bigmodel_thinking = false
 # max_message_history = 24
 # tui_load_session_on_start = false
 # tui_session_max_messages = 400

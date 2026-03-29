@@ -495,6 +495,9 @@ pub struct ChatRequest {
     /// MiniMax OpenAI 兼容扩展：为 `true` 时流式/非流式可将思维链与正文分离（`delta.reasoning_details` / `message.reasoning_details`）。
     #[serde(skip_serializing_if = "Option::is_none", rename = "reasoning_split")]
     pub reasoning_split: Option<bool>,
+    /// 智谱开放平台 **GLM-5** 等：文档中 **`thinking: { "type": "enabled" }`** 用于深度思考模式；由配置 **`llm_bigmodel_thinking`** 控制是否附带（见 `docs/CONFIGURATION.md`「智谱 GLM」）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<serde_json::Value>,
 }
 
 // ---------- 非流式响应（`stream: false` 时 chat/completions 返回体） ----------

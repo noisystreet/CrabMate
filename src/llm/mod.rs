@@ -29,6 +29,13 @@ pub use backend::{
     default_chat_completions_backend,
 };
 
+/// 智谱 **GLM-5** 等：按配置生成请求体 **`thinking`** 字段（文档示例为 `{ "type": "enabled" }`）。
+#[inline]
+pub(crate) fn chat_request_thinking_from_cfg(cfg: &AgentConfig) -> Option<serde_json::Value> {
+    cfg.llm_bigmodel_thinking
+        .then(|| serde_json::json!({ "type": "enabled" }))
+}
+
 /// 构造带 tools、**`tool_choice: auto`** 及采样参数的请求体（`stream` 由 [`api::stream_chat`] 按 `no_stream` 覆盖）。
 pub fn tool_chat_request(
     cfg: &AgentConfig,
@@ -50,6 +57,7 @@ pub fn tool_chat_request(
         seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
+        thinking: chat_request_thinking_from_cfg(cfg),
     }
 }
 
@@ -95,6 +103,7 @@ pub fn no_tools_chat_request_from_messages(
         seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
+        thinking: chat_request_thinking_from_cfg(cfg),
     }
 }
 
@@ -212,5 +221,30 @@ mod tests {
         assert_eq!(a.messages, b.messages);
         assert_eq!(a.tool_choice, b.tool_choice);
         assert_eq!(a.tools.as_ref().map(|t| t.len()), Some(0));
+    }
+
+    #[test]
+    fn bigmodel_thinking_inserts_json_when_enabled() {
+        let mut cfg = load_config(None).expect("default embedded config");
+        cfg.llm_bigmodel_thinking = false;
+        let req = super::tool_chat_request(
+            &cfg,
+            &[Message::user_only("hi")],
+            &[],
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        assert!(req.thinking.is_none());
+
+        cfg.llm_bigmodel_thinking = true;
+        let req = super::tool_chat_request(
+            &cfg,
+            &[Message::user_only("hi")],
+            &[],
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        let t = req.thinking.expect("thinking");
+        assert_eq!(t.get("type").and_then(|x| x.as_str()), Some("enabled"));
     }
 }
