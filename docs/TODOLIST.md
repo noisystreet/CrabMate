@@ -56,7 +56,7 @@
 
 **职责摘要**：`ChatRequest` 构造、`complete_chat_retrying`；`api` 中 SSE/JSON 解析；共享 `reqwest::Client` 连接池与超时。
 
-- [ ] **上游错误与限流分类**：区分可重试（429/5xx）与不可重试（401/400），与 `redact` 配合避免日志泄露，可选暴露指标。
+- [ ] **LLM 上游指标（可选）**：按 HTTP 状态/可重试维度暴露计数或对接外部 metrics（当前错误日志已含 `http_status` / `retryable` 字段）。
 - [ ] **Token / 费用预估（可选）**：调用前按消息粗算 token，与 `context_window` 预算联动。
 - [ ] **非流式与流式一致性测试**：为 `stream: false` 路径补充契约测试（与 P4 同向）。
 - [ ] **连接与 TLS 可观测**：可选 debug 级别记录连接复用、首字节延迟（不含敏感 URL 全量）。
@@ -67,7 +67,7 @@
 
 **职责摘要**：表驱动 `ToolSpec`、`run_tool`；`tool_registry` 中 Workflow / 阻塞超时 / 搜索等策略。
 
-- [ ] **危险操作分级与确认**：在 `run_command` / 写文件 / `workflow_execute` 等路径上强化策略（与 P1 Web 审批对齐）。
+- [ ] **危险操作分级与确认（续）**：写盘类等工具若需审批或细粒度策略，扩展 [`tool_approval::SensitiveCapability`] 与配置项（当前 `run_command` / `http_fetch` / `http_request` / 工作流审批已统一经 **`tool_approval`**）。
 - [ ] **新栈工具按需扩展**：在 `dev_tag` 体系下增加 JVM、容器等标签与最小工具集（保持白名单与路径安全）。Go 已有 `go_build`/`go_test`/`go_vet`/`go_mod_tidy`/`go_fmt_check`/`golangci_lint`；Node.js 已有 `npm_install`/`npm_run`/`npx_run`/`tsc_check`。
 - [ ] **registry 策略配置化**：超时、spawn_blocking 类别、`http_fetch` 等更多迁入 `AgentConfig`。
 - [ ] **MCP 扩展**：可选将本 agent 以 MCP server 暴露；客户端支持 Streamable HTTP / SSE、鉴权与多 server；与 `run_command` / 工作区策略的边界在文档中细化。

@@ -17,8 +17,10 @@ use reqwest::Client;
 
 use crate::config::AgentConfig;
 
-/// 将 `reqwest` 传输错误转为可读说明（日志与 CLI），不输出密钥；附带超时/连接类提示便于排障。
-pub fn map_reqwest_transport_err(e: reqwest::Error) -> Box<dyn std::error::Error + Send + Sync> {
+/// 将 `reqwest` 传输错误格式化为可读说明（日志与 CLI），不输出密钥；附带超时/连接类提示便于排障。
+///
+/// [`map_reqwest_transport_err`] 与 LLM 层 [`crate::llm::call_error::LlmCallError`] 共用此文案。
+pub fn format_reqwest_transport_err(e: &reqwest::Error) -> String {
     let mut msg = e.to_string();
     if e.is_timeout() {
         msg.push_str(
@@ -31,7 +33,12 @@ pub fn map_reqwest_transport_err(e: reqwest::Error) -> Box<dyn std::error::Error
         msg.push_str(" | ");
         msg.push_str(&src.to_string());
     }
-    std::io::Error::other(msg).into()
+    msg
+}
+
+/// 将 `reqwest` 传输错误转为可读说明（日志与 CLI），不输出密钥；附带超时/连接类提示便于排障。
+pub fn map_reqwest_transport_err(e: reqwest::Error) -> Box<dyn std::error::Error + Send + Sync> {
+    std::io::Error::other(format_reqwest_transport_err(&e)).into()
 }
 
 /// 建立 TLS 等阶段的上限，避免坏网络长时间挂死（与整请求 `timeout` 区分）。

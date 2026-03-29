@@ -24,6 +24,7 @@ mod runtime;
 mod sse;
 mod text_encoding;
 mod text_sanitize;
+mod tool_approval;
 mod tool_call_explain;
 mod tool_registry;
 mod tool_result;

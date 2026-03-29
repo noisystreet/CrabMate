@@ -879,37 +879,28 @@ async fn request_approval(
     command: &str,
     args: &str,
 ) -> CommandApprovalDecision {
-    // 保证同一时间只有一个审批请求处于“发送 -> 等待决策”的进行中，避免并发覆盖审批状态。
-    let _guard = approval_request_guard.lock().await;
-    let line = crate::sse::encode_message(crate::sse::SsePayload::CommandApproval {
-        command_approval_request: crate::sse::CommandApprovalBody {
-            command: command.to_string(),
-            args: args.to_string(),
-            allowlist_key: None,
-        },
-    });
-    let _ =
-        crate::sse::send_string_logged(&out_tx, line, "workflow::execute approval request").await;
-
-    let mut rx_guard = approval_rx.lock().await;
-    let decision = rx_guard
-        .recv()
-        .await
-        .unwrap_or(CommandApprovalDecision::Deny);
-    let detail = if args.trim().is_empty() {
-        command.to_string()
-    } else {
-        format!("{command} {}", args.trim())
+    let spec = crate::tool_approval::ApprovalRequestSpec {
+        capability: crate::tool_approval::SensitiveCapability::WorkflowGate,
+        sse_command: command.to_string(),
+        sse_args: args.to_string(),
+        allowlist_key: None,
+        cli_title: "工作流审批",
+        cli_detail: String::new(),
+        web_timeline_prefix_zh: "工作流审批：",
     };
-    crate::sse::web_approval::send_timeline_approval_decision(
-        &out_tx,
-        "工作流审批：",
-        Some(detail),
-        decision,
-        "workflow::execute approval timeline",
+    let sink = crate::tool_approval::WebApprovalSink {
+        out_tx: &out_tx,
+        approval_rx_shared: &approval_rx,
+        approval_request_guard: &approval_request_guard,
+    };
+    crate::tool_approval::run_web_tool_approval(
+        sink,
+        &spec,
+        "workflow::execute approval request",
+        crate::tool_approval::WebApprovalChannelMode::Lenient,
     )
-    .await;
-    decision
+    .await
+    .unwrap_or(CommandApprovalDecision::Deny)
 }
 
 fn format_main_summary(
