@@ -16,6 +16,8 @@
 # context_char_budget = 200000
 # parallel_readonly_tools_max = 4
 # read_file_turn_cache_max_entries = 64   # 0 关闭单轮 read_file 缓存；AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES
+# test_result_cache_enabled = true   # cargo_test / npm run test / run_command cargo test 进程内输出 LRU；AGENT_TEST_RESULT_CACHE_ENABLED
+# test_result_cache_max_entries = 32   # LRU 条数 1–512；AGENT_TEST_RESULT_CACHE_MAX_ENTRIES
 # session_workspace_changelist_enabled = true   # 本会话工具写入路径 + diff 摘要注入模型上下文；AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED
 # session_workspace_changelist_max_chars = 12000   # 0 用默认 12000；AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS
 # context_summary_trigger_chars = 0

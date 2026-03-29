@@ -451,6 +451,7 @@ pub fn playbook_run_commands(args_json: &str, ctx: &ToolContext<'_>) -> String {
             ctx.command_max_output_len,
             ctx.allowed_commands,
             ctx.working_dir,
+            None,
         );
         out.push_str(&r);
         out.push_str("\n\n");
@@ -491,6 +492,8 @@ mod tests {
             http_fetch_max_response_bytes: 8192,
             read_file_turn_cache: None,
             workspace_changelist: None,
+            test_result_cache_enabled: false,
+            test_result_cache_max_entries: 8,
         }
     }
 

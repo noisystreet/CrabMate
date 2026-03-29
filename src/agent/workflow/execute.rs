@@ -47,6 +47,8 @@ pub(crate) struct WorkflowToolExecCtx {
     pub(crate) effective_working_dir: PathBuf,
     pub(crate) workspace_is_set: bool,
     pub(crate) command_max_output_len: usize,
+    pub(crate) test_result_cache_enabled: bool,
+    pub(crate) test_result_cache_max_entries: usize,
     pub(crate) workflow_run_id: u64,
     /// 与本次 DAG 执行共享的轨迹缓冲（`execute_workflow_dag` 内创建）。
     pub(crate) trace_events: Option<Arc<StdMutex<Vec<WorkflowTraceEvent>>>>,
@@ -449,6 +451,8 @@ async fn execute_node_tool_phase(
     let hf_pfx = tool_exec_ctx.cfg_http_fetch_allowed_prefixes.clone();
     let hf_to = tool_exec_ctx.cfg_http_fetch_timeout_secs;
     let hf_mb = tool_exec_ctx.cfg_http_fetch_max_response_bytes;
+    let test_result_cache_enabled = tool_exec_ctx.test_result_cache_enabled;
+    let test_result_cache_max_entries = tool_exec_ctx.test_result_cache_max_entries;
 
     let output_res = async move {
         let work_dir = run_command_working_dir;
@@ -468,6 +472,8 @@ async fn execute_node_tool_phase(
                 http_fetch_max_response_bytes: hf_mb,
                 read_file_turn_cache: None,
                 workspace_changelist: None,
+                test_result_cache_enabled,
+                test_result_cache_max_entries,
             };
             crate::tools::run_tool_result(&tool_name_owned, &exec_args, &ctx)
         });

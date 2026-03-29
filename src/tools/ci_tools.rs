@@ -87,7 +87,7 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         summary.push(("cargo clippy".to_string(), "skipped"));
     }
     if run_test {
-        let r = cargo_tools::cargo_test("{}", workspace_root, max_output_len);
+        let r = cargo_tools::cargo_test("{}", workspace_root, max_output_len, None);
         let failed = section_failed(&r);
         summary.push((
             "cargo test".to_string(),

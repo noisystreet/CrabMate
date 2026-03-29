@@ -73,6 +73,8 @@ struct ConfigBuilder {
     chat_queue_max_pending: Option<u64>,
     parallel_readonly_tools_max: Option<u64>,
     read_file_turn_cache_max_entries: Option<u64>,
+    test_result_cache_enabled: Option<bool>,
+    test_result_cache_max_entries: Option<u64>,
     session_workspace_changelist_enabled: Option<bool>,
     session_workspace_changelist_max_chars: Option<u64>,
     staged_plan_execution: Option<bool>,
@@ -283,6 +285,12 @@ impl ConfigBuilder {
         self.read_file_turn_cache_max_entries = agent
             .read_file_turn_cache_max_entries
             .or(self.read_file_turn_cache_max_entries);
+        self.test_result_cache_enabled = agent
+            .test_result_cache_enabled
+            .or(self.test_result_cache_enabled);
+        self.test_result_cache_max_entries = agent
+            .test_result_cache_max_entries
+            .or(self.test_result_cache_max_entries);
         self.session_workspace_changelist_enabled = agent
             .session_workspace_changelist_enabled
             .or(self.session_workspace_changelist_enabled);
@@ -468,6 +476,8 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.chat_queue_max_pending = src.chat_queue_max_pending;
     dst.parallel_readonly_tools_max = src.parallel_readonly_tools_max;
     dst.read_file_turn_cache_max_entries = src.read_file_turn_cache_max_entries;
+    dst.test_result_cache_enabled = src.test_result_cache_enabled;
+    dst.test_result_cache_max_entries = src.test_result_cache_max_entries;
     dst.session_workspace_changelist_enabled = src.session_workspace_changelist_enabled;
     dst.session_workspace_changelist_max_chars = src.session_workspace_changelist_max_chars;
     dst.staged_plan_execution = src.staged_plan_execution;
@@ -879,6 +889,16 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.read_file_turn_cache_max_entries = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_TEST_RESULT_CACHE_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.test_result_cache_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_TEST_RESULT_CACHE_MAX_ENTRIES")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.test_result_cache_max_entries = Some(n);
     }
     if let Ok(v) = std::env::var("AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED")
         && let Some(val) = parse_bool_like(&v)
@@ -1342,6 +1362,9 @@ fn finalize(
         .clamp(1, 256);
     let read_file_turn_cache_max_entries =
         b.read_file_turn_cache_max_entries.unwrap_or(64).min(4096) as usize;
+    let test_result_cache_enabled = b.test_result_cache_enabled.unwrap_or(true);
+    let test_result_cache_max_entries =
+        b.test_result_cache_max_entries.unwrap_or(32).clamp(1, 512) as usize;
     let session_workspace_changelist_enabled =
         b.session_workspace_changelist_enabled.unwrap_or(true);
     let session_workspace_changelist_max_chars_raw =
@@ -1539,6 +1562,8 @@ fn finalize(
         chat_queue_max_pending,
         parallel_readonly_tools_max,
         read_file_turn_cache_max_entries,
+        test_result_cache_enabled,
+        test_result_cache_max_entries,
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
         staged_plan_execution,
