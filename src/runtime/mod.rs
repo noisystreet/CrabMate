@@ -9,6 +9,7 @@ pub mod cli_exit;
 pub(crate) mod cli_mcp;
 pub(crate) mod cli_repl_ui;
 pub(crate) mod cli_wait_spinner;
+pub(crate) mod config_reload;
 pub mod latex_unicode;
 pub(crate) mod message_display;
 pub(crate) mod plan_section;

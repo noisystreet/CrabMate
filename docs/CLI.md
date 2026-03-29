@@ -107,6 +107,8 @@ cargo run -- save-session --format json --workspace /path/to/proj
 
 **`/mcp`**：只读列出本进程内 MCP stdio 缓存与合并后的 OpenAI 工具名（与 **`crabmate mcp list`** 一致）；**`/mcp probe`** 或 **`/mcp list probe`** 会按配置尝试连接一次（启动 **`mcp_command`** 子进程）。**`/version`**：打印 **`crabmate`** 版本与 **`OS`/`ARCH`**（不含密钥）。
 
+**`/config reload`**：从 **`config.toml`** / **`.agent_demo.toml`**（或启动时 **`--config`** 指定文件）与当前进程环境变量重新合并配置，更新 **`api_base`、模型、超时、白名单、MCP、系统提示词文件重读** 等；**不**重建会话 SQLite 连接、**不**重建共享 **`reqwest::Client`**；**`API_KEY`** 仍只来自环境。Web 等价：**`POST /config/reload`**（与受保护 API 相同鉴权规则）。若启动时挂了 Bearer 中间件，**清空/设置 token 后是否启用该中间件**仍须**重启 `serve`**。详见 **`docs/CONFIGURATION.md`**「配置热重载」。
+
 **工具结果 stdout**：REPL / **`chat`**（无 SSE）下每轮工具执行后会打印 **`### 工具 · …`** 标题与正文摘要。**`read_file`**、**`read_dir`** 与 **`list_tree`** 仅打印标题与一行省略说明，**不**回显工具返回正文（避免大文件/目录列表刷屏）；完整结果仍写入对话历史并供模型使用。
 
 ### 行首 `$`（本地 shell，安全边界）
@@ -145,6 +147,7 @@ cargo run -- serve
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/` | 前端页面 |
+| POST | `/config/reload` | 热重载内存中的 `AgentConfig`（不含会话 SQLite 路径）；body 可为 `{}`；见 **`docs/CONFIGURATION.md`**「配置热重载」 |
 | POST | `/chat` | JSON 对话；可选 `conversation_id`、`temperature`、`seed`、`seed_policy` |
 | POST | `/chat/stream` | SSE；可选 `approval_session_id`；响应头 `x-conversation-id` |
 | POST | `/chat/approval` | 审批：`approval_session_id`、`decision` |

@@ -512,10 +512,14 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     cancel_for_watch.store(true, Ordering::SeqCst);
                 })
             };
+            let cfg_snap = {
+                let g = state.cfg.read().await;
+                std::sync::Arc::new(g.clone())
+            };
             let r = crate::run_agent_turn(crate::RunAgentTurnParams {
                 client: &state.client,
                 api_key: &state.api_key,
-                cfg: &state.cfg,
+                cfg: &cfg_snap,
                 tools: &state.tools,
                 messages: &mut messages,
                 out,
@@ -551,10 +555,10 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     let to_index = messages.clone();
                     if let (Some(ltm), true) = (
                         state.long_term_memory.as_ref(),
-                        state.cfg.long_term_memory_enabled,
+                        cfg_snap.long_term_memory_enabled,
                     ) {
                         ltm.clone()
-                            .spawn_index_turn(Arc::clone(&state.cfg), scope, to_index);
+                            .spawn_index_turn(Arc::clone(&cfg_snap), scope, to_index);
                     }
                     crate::long_term_memory::strip_long_term_memory_injections(&mut messages);
                     match state
@@ -673,10 +677,14 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             let _per_guard = state
                 .chat_queue
                 .begin_per_flight_job(job_id, flight.clone());
+            let cfg_snap = {
+                let g = state.cfg.read().await;
+                std::sync::Arc::new(g.clone())
+            };
             let r = crate::run_agent_turn(crate::RunAgentTurnParams {
                 client: &state.client,
                 api_key: &state.api_key,
-                cfg: &state.cfg,
+                cfg: &cfg_snap,
                 tools: &state.tools,
                 messages: &mut messages,
                 out: None,
@@ -703,10 +711,10 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     let to_index = messages.clone();
                     if let (Some(ltm), true) = (
                         state.long_term_memory.as_ref(),
-                        state.cfg.long_term_memory_enabled,
+                        cfg_snap.long_term_memory_enabled,
                     ) {
                         ltm.clone()
-                            .spawn_index_turn(Arc::clone(&state.cfg), scope, to_index);
+                            .spawn_index_turn(Arc::clone(&cfg_snap), scope, to_index);
                     }
                     crate::long_term_memory::strip_long_term_memory_injections(&mut messages);
                     match state

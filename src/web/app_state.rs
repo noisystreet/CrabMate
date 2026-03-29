@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::chat_job_queue::ChatJobQueue;
-use crate::config::AgentConfig;
+use crate::config::SharedAgentConfig;
 use crate::conversation_store::{
     self, CONVERSATION_STORE_MAX_ENTRIES, CONVERSATION_STORE_TTL_SECS, SaveConversationOutcome,
 };
@@ -37,7 +37,9 @@ pub(crate) struct ConversationTurnSeed {
 
 #[derive(Clone)]
 pub(crate) struct AppState {
-    pub(crate) cfg: Arc<AgentConfig>,
+    pub(crate) cfg: SharedAgentConfig,
+    /// 与启动时 `--config` / 默认探测一致，供 **`POST /config/reload`** 调用 [`load_config`]。
+    pub(crate) config_path_for_reload: Option<String>,
     pub(crate) api_key: String,
     pub(crate) client: reqwest::Client,
     pub(crate) tools: Vec<crate::types::Tool>,
@@ -113,16 +115,13 @@ async fn sqlite_conversation_store_op(
 }
 
 impl AppState {
-    pub(crate) fn web_api_auth_enabled(&self) -> bool {
-        !self.cfg.web_api_bearer_token.trim().is_empty()
-    }
-
     /// 当前生效的工作区根路径（前端已设置则用其值，否则用配置）
     pub(crate) async fn effective_workspace_path(&self) -> String {
         let guard = self.workspace_override.read().await;
+        let cfg = self.cfg.read().await;
         match guard.as_deref() {
-            None => self.cfg.run_command_working_dir.clone(),
-            Some(s) if s.trim().is_empty() => self.cfg.run_command_working_dir.clone(),
+            None => cfg.run_command_working_dir.clone(),
+            Some(s) if s.trim().is_empty() => cfg.run_command_working_dir.clone(),
             Some(s) => s.to_string(),
         }
     }

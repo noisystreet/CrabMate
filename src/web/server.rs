@@ -10,11 +10,13 @@ use tower::ServiceBuilder;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
+/// `web_api_bearer_layer_enabled`：启动时是否对受保护 API 挂 Bearer 中间件（热重载改 token 后须重启 `serve` 才能切换该层）。
 pub(crate) fn build_app(
     state: std::sync::Arc<crate::AppState>,
     no_web: bool,
     static_dir: std::path::PathBuf,
     uploads_dir_for_static: std::path::PathBuf,
+    web_api_bearer_layer_enabled: bool,
 ) -> Router {
     let mut protected_api = Router::new()
         .route("/chat", post(super::chat_handlers::chat_handler))
@@ -61,8 +63,12 @@ pub(crate) fn build_app(
         .route(
             "/tasks",
             get(crate::web::task::tasks_get_handler).post(crate::web::task::tasks_set_handler),
+        )
+        .route(
+            "/config/reload",
+            post(super::chat_handlers::config_reload_handler),
         );
-    if state.web_api_auth_enabled() {
+    if web_api_bearer_layer_enabled {
         protected_api = protected_api.route_layer(middleware::from_fn_with_state(
             state.clone(),
             super::chat_handlers::require_web_api_bearer_auth,
