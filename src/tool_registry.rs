@@ -113,6 +113,21 @@ pub fn execution_class_for_tool(name: &str) -> ToolExecutionClass {
         .unwrap_or(ToolExecutionClass::BlockingSync)
 }
 
+/// 并行只读批与 **`SyncDefault` + `spawn_blocking`** 路径共用的墙上时钟上限（秒），与各 `execute_*_web` 中 **`tokio::time::timeout`** 一致，避免批内工具无限阻塞。
+pub fn parallel_tool_wall_timeout_secs(cfg: &AgentConfig, tool_name: &str) -> u64 {
+    use ToolExecutionClass::*;
+    match execution_class_for_tool(tool_name) {
+        HttpFetchSpawnTimeout => cfg
+            .http_fetch_timeout_secs
+            .max(1)
+            .max(cfg.command_timeout_secs.max(1)),
+        WeatherSpawnTimeout => cfg.weather_timeout_secs.max(1),
+        WebSearchSpawnTimeout => cfg.web_search_timeout_secs.max(1),
+        CommandSpawnTimeout | ExecutableSpawnTimeout => cfg.command_timeout_secs.max(1),
+        Workflow | BlockingSync => cfg.command_timeout_secs.max(1),
+    }
+}
+
 /// 判断工具是否为只读（不修改工作区文件系统），供并行执行决策使用。
 /// 写操作工具（create/modify/delete/move/copy/format/apply_patch 等）及带审批的工具返回 false。
 pub fn is_readonly_tool(name: &str) -> bool {
@@ -560,7 +575,8 @@ pub async fn dispatch_tool(
             let work_dir = effective_working_dir.to_path_buf();
             let rfc = read_file_turn_cache.clone();
             let wcl = workspace_changelist.clone();
-            let result = tokio::task::spawn_blocking(move || {
+            let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), name);
+            let handle = tokio::task::spawn_blocking(move || {
                 let ctx = tools::tool_context_for_with_read_cache(
                     cfg2.as_ref(),
                     cfg2.allowed_commands.as_ref(),
@@ -569,9 +585,23 @@ pub async fn dispatch_tool(
                     wcl.as_ref(),
                 );
                 tools::run_tool(&tool_name, &tool_args, &ctx)
-            })
-            .await
-            .unwrap_or_else(|e| format!("工具执行 panic：{}", e));
+            });
+            let result = match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
+                Ok(Ok(s)) => s,
+                Ok(Err(e)) => {
+                    error!(
+                        target: "crabmate",
+                        "工具执行异常 tool={} error={:?}",
+                        name,
+                        e
+                    );
+                    format!("工具执行异常：{:?}", e)
+                }
+                Err(_) => {
+                    error!(target: "crabmate", "工具执行超时 tool={} wall_secs={}", name, wall_secs);
+                    format!("工具执行超时（{} 秒）", wall_secs)
+                }
+            };
             (result, None)
         }
     }
@@ -1539,6 +1569,19 @@ mod tests {
         assert_eq!(
             execution_class_for_tool("calc"),
             ToolExecutionClass::BlockingSync
+        );
+    }
+
+    #[test]
+    fn parallel_tool_wall_timeout_secs_smoke() {
+        let cfg = crate::config::load_config(None).expect("embed default");
+        let cmd_budget = parallel_tool_wall_timeout_secs(&cfg, "read_file");
+        assert!(cmd_budget >= 1);
+        let fetch_budget = parallel_tool_wall_timeout_secs(&cfg, "http_fetch");
+        assert!(fetch_budget >= cmd_budget);
+        assert_eq!(
+            parallel_tool_wall_timeout_secs(&cfg, "get_weather"),
+            cfg.weather_timeout_secs.max(1)
         );
     }
 }

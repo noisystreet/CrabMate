@@ -4,10 +4,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures_util::stream::{self, StreamExt};
-use log::{debug, info};
+use log::{debug, info, warn};
 use tokio::sync::mpsc;
 
 static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -336,59 +336,87 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                 if let Some(err) = prefetch_err {
                     return (name, args, err);
                 }
-                info!(target: "crabmate", "并行工具开始 tool={}", name);
-                debug!(
-                    target: "crabmate",
-                    "工具调用参数摘要 tool={} args_preview={}",
-                    name,
-                    crate::redact::tool_arguments_preview_for_log(&args)
+                let wall_secs = crate::tool_registry::parallel_tool_wall_timeout_secs(
+                    cfg.as_ref(),
+                    name.as_str(),
                 );
-                let t_tool = Instant::now();
-                let tool_name = name.clone();
-                let tool_args = args.clone();
-                let result = if name == "http_fetch" {
-                    tokio::task::spawn_blocking(move || {
-                        let ctx = tools::tool_context_for_with_read_cache(
-                            cfg.as_ref(),
-                            cfg.allowed_commands.as_ref(),
-                            wd.as_path(),
-                            rfc.as_ref().map(|a| a.as_ref()),
-                            wcl.as_ref(),
-                        );
-                        tools::http_fetch::run_direct(&tool_args, &ctx)
-                    })
-                    .await
-                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
-                } else if crate::tool_registry::sync_default_runs_inline(&name) {
-                    let ctx = tools::tool_context_for_with_read_cache(
-                        cfg.as_ref(),
-                        cfg.allowed_commands.as_ref(),
-                        wd.as_path(),
-                        rfc.as_ref().map(|a| a.as_ref()),
-                        wcl.as_ref(),
+                let name_timeout = name.clone();
+                let args_timeout = args.clone();
+                let work = async move {
+                    info!(target: "crabmate", "并行工具开始 tool={}", name);
+                    debug!(
+                        target: "crabmate",
+                        "工具调用参数摘要 tool={} args_preview={}",
+                        name,
+                        crate::redact::tool_arguments_preview_for_log(&args)
                     );
-                    tools::run_tool(&tool_name, &tool_args, &ctx)
-                } else {
-                    tokio::task::spawn_blocking(move || {
-                        let ctx = tools::tool_context_for_with_read_cache(
-                            cfg.as_ref(),
-                            cfg.allowed_commands.as_ref(),
-                            wd.as_path(),
-                            rfc.as_ref().map(|a| a.as_ref()),
-                            wcl.as_ref(),
-                        );
-                        tools::run_tool(&tool_name, &tool_args, &ctx)
-                    })
-                    .await
-                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                    let t_tool = Instant::now();
+                    let tool_name = name.clone();
+                    let tool_args = args.clone();
+                    let result = if name == "http_fetch" {
+                        tokio::task::spawn_blocking(move || {
+                            let ctx = tools::tool_context_for_with_read_cache(
+                                cfg.as_ref(),
+                                cfg.allowed_commands.as_ref(),
+                                wd.as_path(),
+                                rfc.as_ref().map(|a| a.as_ref()),
+                                wcl.as_ref(),
+                            );
+                            tools::http_fetch::run_direct(&tool_args, &ctx)
+                        })
+                        .await
+                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                    } else if crate::tool_registry::sync_default_runs_inline(&name) {
+                        tokio::task::spawn_blocking(move || {
+                            let ctx = tools::tool_context_for_with_read_cache(
+                                cfg.as_ref(),
+                                cfg.allowed_commands.as_ref(),
+                                wd.as_path(),
+                                rfc.as_ref().map(|a| a.as_ref()),
+                                wcl.as_ref(),
+                            );
+                            tools::run_tool(&tool_name, &tool_args, &ctx)
+                        })
+                        .await
+                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                    } else {
+                        tokio::task::spawn_blocking(move || {
+                            let ctx = tools::tool_context_for_with_read_cache(
+                                cfg.as_ref(),
+                                cfg.allowed_commands.as_ref(),
+                                wd.as_path(),
+                                rfc.as_ref().map(|a| a.as_ref()),
+                                wcl.as_ref(),
+                            );
+                            tools::run_tool(&tool_name, &tool_args, &ctx)
+                        })
+                        .await
+                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                    };
+                    info!(
+                        target: "crabmate",
+                        "并行工具完成 tool={} elapsed_ms={}",
+                        name,
+                        t_tool.elapsed().as_millis()
+                    );
+                    (name, args, result)
                 };
-                info!(
-                    target: "crabmate",
-                    "并行工具完成 tool={} elapsed_ms={}",
-                    name,
-                    t_tool.elapsed().as_millis()
-                );
-                (name, args, result)
+                match tokio::time::timeout(Duration::from_secs(wall_secs), work).await {
+                    Ok(triple) => triple,
+                    Err(_) => {
+                        warn!(
+                            target: "crabmate",
+                            "并行工具墙上时钟超时 tool={} wall_secs={}",
+                            name_timeout,
+                            wall_secs
+                        );
+                        (
+                            name_timeout,
+                            args_timeout,
+                            format!("工具执行超时（{} 秒）", wall_secs),
+                        )
+                    }
+                }
             });
         }
         let unique_outcomes: Vec<(String, String, String)> = stream::iter(unique_futs)

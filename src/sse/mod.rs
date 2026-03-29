@@ -13,7 +13,7 @@ mod mpsc_send;
 pub mod protocol;
 pub(crate) mod web_approval;
 
-pub(crate) use mpsc_send::send_string_logged;
+pub(crate) use mpsc_send::{send_string_logged, send_string_logged_cooperative_cancel};
 
 pub use protocol::{
     CommandApprovalBody, ConversationSavedBody, SseErrorBody, SsePayload, StagedPlanFinishedBody,

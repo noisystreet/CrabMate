@@ -1,7 +1,7 @@
 //! Web `/chat` / `/chat/stream` 的**进程内任务队列**：有界排队 + 并发上限，避免高并发时无界 `tokio::spawn`。
 //!
 //! - **多副本 / 跨进程重放**：需外部消息代理（Redis、SQS 等）与持久化；本模块仅单进程协调。
-//! - **可观测**：`job_id` 写入日志；`/status` 暴露运行中任务数与近期任务摘要。
+//! - **可观测**：`job_id` 写入日志；`/status` 暴露运行中任务数与近期任务摘要。流取消时 **`Receiver` drop** 打 **info**；取消且 SSE 仍可投递时补发 **`STREAM_CANCELLED`**（见 **`docs/SSE_PROTOCOL.md`**）。
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -456,6 +456,36 @@ fn is_user_cancelled_error(s: &str) -> bool {
     s.trim() == LLM_CANCELLED_ERROR
 }
 
+/// 流任务被取消且 **mpsc 仍有接收端** 时补发一条带 `code: STREAM_CANCELLED` 的控制面，便于前端与代理统一收尾（接收端已 drop 时仅 debug，避免误报）。
+async fn emit_stream_cancelled_terminal(sse_tx: &mpsc::Sender<String>, job_id: u64) {
+    if sse_tx.is_closed() {
+        debug!(
+            target: "crabmate",
+            "stream 任务已取消且 SSE 已无接收端，跳过 STREAM_CANCELLED 帧 job_id={}",
+            job_id
+        );
+        return;
+    }
+    let line =
+        crate::sse::encode_message(crate::sse::SsePayload::Error(crate::sse::SseErrorBody {
+            error: "流已取消".to_string(),
+            code: Some(crate::types::SSE_STREAM_CANCELLED_CODE.to_string()),
+        }));
+    if crate::sse::send_string_logged(
+        sse_tx,
+        line,
+        "chat_job_queue::emit_stream_cancelled_terminal",
+    )
+    .await
+    {
+        debug!(
+            target: "crabmate",
+            "stream 已下发 STREAM_CANCELLED 控制帧 job_id={}",
+            job_id
+        );
+    }
+}
+
 async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
     match job {
         QueuedChatJob::Stream {
@@ -507,9 +537,15 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             let cancel_watcher = {
                 let tx_for_watch = sse_tx.clone();
                 let cancel_for_watch = Arc::clone(&cancel);
+                let job_id_watch = job_id;
                 tokio::spawn(async move {
                     tx_for_watch.closed().await;
                     cancel_for_watch.store(true, Ordering::SeqCst);
+                    info!(
+                        target: "crabmate",
+                        "chat stream SSE 接收端关闭，已请求取消 job_id={}",
+                        job_id_watch
+                    );
                 })
             };
             let cfg_snap = {
@@ -649,6 +685,9 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     }
                 }
             };
+            if cancelled {
+                emit_stream_cancelled_terminal(&sse_tx, job_id).await;
+            }
             drop(sse_tx);
             JobOutcome::Stream { ok, cancelled, err }
         }
