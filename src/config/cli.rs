@@ -324,6 +324,9 @@ impl ChatCliArgs {
             "message_file",
         ]),
 ))]
+#[command(
+    after_long_help = "进程退出码与 `--output json` 稳定 JSON 行（`crabmate_chat_cli_result` v=1）见仓库 **docs/CLI_CONTRACT.md**；SSE 流错误码（如 INTERNAL_ERROR）见 **docs/SSE_PROTOCOL.md**。"
+)]
 pub struct ChatCmd {
     /// 直接在参数中给出用户消息
     #[arg(long, value_name = "TEXT")]
@@ -349,7 +352,7 @@ pub struct ChatCmd {
     #[arg(long = "message-file", value_name = "FILE")]
     pub message_file: Option<String>,
 
-    /// plain（默认）或 json：json 在每轮结束后额外输出一行 JSON 结果
+    /// plain（默认）或 json：每轮结束后 stdout 一行 JSON（`type=crabmate_chat_cli_result`，见 docs/CLI_CONTRACT.md）
     #[arg(long, value_name = "MODE")]
     pub output: Option<String>,
 
@@ -466,7 +469,8 @@ pub enum Commands {
 #[command(
     name = "crabmate",
     version,
-    about = "基于 DeepSeek API 的简易 Agent，支持工具调用、Web 界面与 CLI"
+    about = "基于 DeepSeek API 的简易 Agent，支持工具调用、Web 界面与 CLI",
+    after_long_help = "CLI 退出码、`chat --output json` 行协议与 SSE 错误码交叉引用：**docs/CLI_CONTRACT.md**、**docs/SSE_PROTOCOL.md**。子命令详情：**docs/CLI.md**。"
 )]
 pub struct RootCli {
     #[command(flatten)]

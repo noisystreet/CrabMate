@@ -25,6 +25,7 @@
 | [`docs/SSE_PROTOCOL.md`](docs/SSE_PROTOCOL.md) | `/chat/stream` 控制面 JSON |
 | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | 环境变量、`AGENT_*`、规划/上下文等配置详解 |
 | [`docs/CLI.md`](docs/CLI.md) | 子命令、选项、HTTP 路由、打包 deb |
+| [`docs/CLI_CONTRACT.md`](docs/CLI_CONTRACT.md) | `chat` 退出码、`--output json` 行协议、与 SSE 错误码交叉引用 |
 | [`docs/TODOLIST.md`](docs/TODOLIST.md) | 未完成待办（完成后从清单删除） |
 
 维护约定：用户可见变更需同步 README / DEVELOPMENT / TOOLS 等，见 `DEVELOPMENT.md`「TODOLIST 与功能文档约定」。
