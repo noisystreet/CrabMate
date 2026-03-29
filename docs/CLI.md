@@ -103,7 +103,9 @@ cargo run -- save-session --format json --workspace /path/to/proj
 
 以 `/` 开头：**`/help`**、**`/clear`**、**`/model`**、**`/config`**（无参数）、**`/doctor`**（同 **`crabmate doctor`**，无参数）、**`/probe`**（同 **`crabmate probe`**，无参数）、**`/models`**（同 **`crabmate models`**，无参数）、**`/workspace`** / **`/cd`**、**`/tools`**、**`/export`**（可选参数 `json` / `markdown` / `both`，默认 `both`；导出**当前内存**）、**`/save-session`**（同上格式参数；从磁盘 **`tui_session.json`** 导出，同 **`crabmate save-session`**）。`quit` / `exit` / Ctrl+D 退出。
 
-**Tab 补全**（交互 TTY、**reedline** 路径）：在「我:」提示下，若当前行（光标之前）去掉前导空白后以 **`/`** 开头，按 **Tab** 可弹出内建命令补全菜单（方向键或再按 **Tab** 选择；仅一项匹配时会直接填入）。**`/export`** 与 **`/save-session`** 在已输入完整命令名后再 **Tab** 可补 **`json` / `markdown` / `md` / `both`**。在 **`bash#:`** 本地 shell 模式下关闭补全，避免干扰普通命令输入。
+**Tab 补全**（交互 TTY、**reedline** 路径）：在「我:」提示下，若当前行（光标之前）去掉前导空白后以 **`/`** 开头，按 **Tab** 可弹出内建命令补全菜单（方向键或再按 **Tab** 选择；仅一项匹配时会直接填入）。**`/export`** 与 **`/save-session`** 在已输入完整命令名后再 **Tab** 可补 **`json` / `markdown` / `md` / `both`**。**`/mcp`** 后可补 **`list`**、**`probe`**、**`list probe`**（同 **`crabmate mcp list`** 语义）。在 **`bash#:`** 本地 shell 模式下关闭补全，避免干扰普通命令输入。
+
+**`/mcp`**：只读列出本进程内 MCP stdio 缓存与合并后的 OpenAI 工具名（与 **`crabmate mcp list`** 一致）；**`/mcp probe`** 或 **`/mcp list probe`** 会按配置尝试连接一次（启动 **`mcp_command`** 子进程）。**`/version`**：打印 **`crabmate`** 版本与 **`OS`/`ARCH`**（不含密钥）。
 
 **工具结果 stdout**：REPL / **`chat`**（无 SSE）下每轮工具执行后会打印 **`### 工具 · …`** 标题与正文摘要。**`read_file`**、**`read_dir`** 与 **`list_tree`** 仅打印标题与一行省略说明，**不**回显工具返回正文（避免大文件/目录列表刷屏）；完整结果仍写入对话历史并供模型使用。
 
