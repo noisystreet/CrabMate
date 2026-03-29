@@ -74,6 +74,14 @@
 # mcp_command = "npx -y @modelcontextprotocol/server-filesystem /path/to/sandbox"
 # mcp_tool_timeout_secs = 60   # 默认与 command_timeout_secs 相同
 
+# 代码语义检索工具 codebase_semantic_search（本地向量索引；AGENT_CODEBASE_SEMANTIC_*）
+# codebase_semantic_search_enabled = true
+# codebase_semantic_index_sqlite_path = ".crabmate/codebase_semantic.sqlite"
+# codebase_semantic_max_file_bytes = 524288
+# codebase_semantic_chunk_max_chars = 1200
+# codebase_semantic_top_k = 8
+# codebase_semantic_rebuild_max_files = 2000
+
 # http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/"]
 # http_fetch_timeout_secs = 30
 # http_fetch_max_response_bytes = 524288

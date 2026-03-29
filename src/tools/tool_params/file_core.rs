@@ -268,6 +268,41 @@ pub(in crate::tools) fn params_apply_patch() -> serde_json::Value {
 
 // params_search_in_files: superseded by params_search_in_files_enhanced
 
+pub(in crate::tools) fn params_codebase_semantic_search() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "自然语言查询；与 rebuild_index=true 二选一（重建时可省略）"
+            },
+            "rebuild_index": {
+                "type": "boolean",
+                "description": "为 true 时全量重建当前工作区（或 path 子树）的向量索引并写入 .crabmate/；首次使用或大改后建议先重建再 query"
+            },
+            "path": {
+                "type": "string",
+                "description": "可选：相对工作区的子目录，仅索引或缩小扫描范围"
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "返回最相近的块数量，默认取配置 codebase_semantic_top_k，范围 1～64",
+                "minimum": 1,
+                "maximum": 64
+            },
+            "file_glob": {
+                "type": "string",
+                "description": "可选：仅处理文件名匹配此 glob 的文件（如 *.rs）"
+            },
+            "extensions": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选：覆盖默认源码扩展名列表（不含点，如 rs、ts）；省略时使用内置常见代码/文档扩展名"
+            }
+        }
+    })
+}
+
 pub(in crate::tools) fn params_search_in_files_enhanced() -> serde_json::Value {
     serde_json::json!({
         "type": "object",

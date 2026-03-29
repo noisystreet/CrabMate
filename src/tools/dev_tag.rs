@@ -49,6 +49,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "extract_in_file"
         | "apply_patch"
         | "search_in_files"
+        | "codebase_semantic_search"
         | "markdown_check_links"
         | "delete_file"
         | "delete_dir"

@@ -111,4 +111,12 @@ ToolSpec {
             runner: runner_search_in_files,
             summary: ToolSummaryKind::None,
         },
+        ToolSpec {
+            name: "codebase_semantic_search",
+            description: "工作区内**语义**代码检索（本地 fastembed 向量 + SQLite 索引，与长期记忆分库）。首次或大改后请先 `rebuild_index: true` 建索引，再用 `query` 按自然语言找相近代码块（路径+行号+片段）。尊重 .gitignore；单文件大小与索引文件数受配置限制。精确字符串匹配仍优先用 search_in_files。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_codebase_semantic_search,
+            runner: runner_codebase_semantic_search,
+            summary: ToolSummaryKind::Dynamic(ts::summary_codebase_semantic_search),
+        },
 ]

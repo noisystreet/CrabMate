@@ -143,6 +143,14 @@ weather_timeout_secs = 15
 # tool_call_explain_min_chars = 8
 # tool_call_explain_max_chars = 400
 
+# --- 代码语义检索（codebase_semantic_search 工具；本地 fastembed + SQLite，索引默认 .crabmate/codebase_semantic.sqlite）---
+codebase_semantic_search_enabled = true
+# codebase_semantic_index_sqlite_path = ".crabmate/codebase_semantic.sqlite"
+codebase_semantic_max_file_bytes = 524288
+codebase_semantic_chunk_max_chars = 1200
+codebase_semantic_top_k = 8
+codebase_semantic_rebuild_max_files = 2000
+
 # --- MCP（stdio 客户端，可选）---
 # mcp_enabled = false
 # mcp_command = ""
