@@ -168,11 +168,18 @@ impl Completer for ReplSlashCompleter {
                 if tail.eq_ignore_ascii_case("models") {
                     return ["list", "choose"]
                         .iter()
-                        .map(|a| Suggestion {
-                            value: format!("/models {a} "),
-                            span,
-                            append_whitespace: false,
-                            ..Default::default()
+                        .map(|a| {
+                            let value = if *a == "choose" {
+                                format!("/models {a} ")
+                            } else {
+                                format!("/models {a}")
+                            };
+                            Suggestion {
+                                value,
+                                span,
+                                append_whitespace: false,
+                                ..Default::default()
+                            }
                         })
                         .collect();
                 }
