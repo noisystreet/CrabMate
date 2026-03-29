@@ -8,8 +8,10 @@ use std::path::Path;
 use super::path::{
     canonical_workspace_root, path_for_tool_display, resolve_for_read, resolve_for_write,
 };
+use crate::tools::ToolContext;
+use crate::workspace_changelist::record_file_state_after_write;
 
-pub fn delete_file(args_json: &str, working_dir: &Path) -> String {
+pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数 JSON 无效: {}", e),
@@ -33,11 +35,17 @@ pub fn delete_file(args_json: &str, working_dir: &Path) -> String {
             path_for_tool_display(working_dir, &target, Some(&path))
         );
     }
+    let before = std::fs::read_to_string(&target).ok();
     match std::fs::remove_file(&target) {
-        Ok(()) => format!(
-            "已删除文件：{}",
-            path_for_tool_display(working_dir, &target, Some(&path))
-        ),
+        Ok(()) => {
+            if let Some(c) = ctx.workspace_changelist {
+                c.record_mutation(&path, before, None);
+            }
+            format!(
+                "已删除文件：{}",
+                path_for_tool_display(working_dir, &target, Some(&path))
+            )
+        }
         Err(e) => format!("删除文件失败：{}", e),
     }
 }
@@ -103,7 +111,7 @@ pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
 
 // ── append_file ─────────────────────────────────────────────
 
-pub fn append_file(args_json: &str, working_dir: &Path) -> String {
+pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数 JSON 无效: {}", e),
@@ -141,6 +149,7 @@ pub fn append_file(args_json: &str, working_dir: &Path) -> String {
         return format!("创建父目录失败：{}", e);
     }
 
+    let before = std::fs::read_to_string(&target).ok();
     let mut file = match std::fs::OpenOptions::new()
         .append(true)
         .create(create_if_missing)
@@ -150,11 +159,16 @@ pub fn append_file(args_json: &str, working_dir: &Path) -> String {
         Err(e) => return format!("打开文件失败：{}", e),
     };
     match file.write_all(content.as_bytes()) {
-        Ok(()) => format!(
-            "已追加 {} 字节到 {}",
-            content.len(),
-            path_for_tool_display(working_dir, &target, Some(&path))
-        ),
+        Ok(()) => {
+            if let Some(c) = ctx.workspace_changelist {
+                c.record_mutation(&path, before, std::fs::read_to_string(&target).ok());
+            }
+            format!(
+                "已追加 {} 字节到 {}",
+                content.len(),
+                path_for_tool_display(working_dir, &target, Some(&path))
+            )
+        }
         Err(e) => format!("写入失败：{}", e),
     }
 }
@@ -204,7 +218,7 @@ pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
 
 // ── search_replace ──────────────────────────────────────────
 
-pub fn search_replace(args_json: &str, working_dir: &Path) -> String {
+pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数 JSON 无效: {}", e),
@@ -329,11 +343,20 @@ pub fn search_replace(args_json: &str, working_dir: &Path) -> String {
         return "拒绝执行：search_replace 写盘需要 confirm=true".to_string();
     }
 
+    let before = content.clone();
     match std::fs::write(&target, new_content.as_bytes()) {
-        Ok(()) => format!(
-            "已替换 {} 处匹配（\"{}\" → \"{}\"）：{}",
-            count, search, replace, display
-        ),
+        Ok(()) => {
+            record_file_state_after_write(
+                ctx.workspace_changelist,
+                working_dir,
+                &path,
+                Some(before),
+            );
+            format!(
+                "已替换 {} 处匹配（\"{}\" → \"{}\"）：{}",
+                count, search, replace, display
+            )
+        }
         Err(e) => format!("写入文件失败：{}", e),
     }
 }

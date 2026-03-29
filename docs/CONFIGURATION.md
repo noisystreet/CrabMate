@@ -26,6 +26,7 @@
 - **对话队列**：`AGENT_CHAT_QUEUE_MAX_CONCURRENT`、`AGENT_CHAT_QUEUE_MAX_PENDING`
 - **只读工具并行**：`AGENT_PARALLEL_READONLY_TOOLS_MAX`
 - **单轮 `read_file` 缓存**：`AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES`（`0` 关闭；写类工具或工作区变更后会话内缓存整表清空）
+- **会话工作区变更集**（`session_workspace_changelist_enabled` / `session_workspace_changelist_max_chars`）：`AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED`、`AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS`。默认开启：按 **`long_term_memory_scope_id`**（Web 为 **`conversation_id`**；CLI 未配记忆时为 `__default__`）累积 **`create_file` / `modify_file` / `apply_patch` / `structured_patch`** 等写路径，在每次 P 步 **`prepare_messages_for_model`** 末尾注入一条 **`user`**（**`name=crabmate_workspace_changelist`**），含相对路径列表与相对「本会话首次触碰」基线的 **unified diff**；**不写入**会话 SQLite（保存前剥离）。**`workflow_execute` 节点内工具**当前**不**汇入此表（与主对话变更集隔离）。
 - **`run_command` 白名单覆盖**：`AGENT_ALLOWED_COMMANDS`（逗号分隔）
 - **MCP**：`AGENT_MCP_ENABLED`、`AGENT_MCP_COMMAND`、`AGENT_MCP_TOOL_TIMEOUT_SECS`。同一 **`serve` / `repl` / `chat` / Web** 进程内按配置指纹**复用**一条 stdio 连接。运维可执行 **`crabmate mcp list`**（**不要**求 `API_KEY`）查看本进程已缓存会话及合并后的 OpenAI 工具名；**`mcp list --probe`** 会按配置尝试连接一次（排障用，会启动 `mcp_command` 子进程）。
 - **会话 SQLite**：`AGENT_CONVERSATION_STORE_SQLITE_PATH`

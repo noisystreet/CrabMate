@@ -561,6 +561,9 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             .spawn_index_turn(Arc::clone(&cfg_snap), scope, to_index);
                     }
                     crate::long_term_memory::strip_long_term_memory_injections(&mut messages);
+                    crate::workspace_changelist::strip_workspace_changelist_injections(
+                        &mut messages,
+                    );
                     match state
                         .save_conversation_messages_if_revision(
                             conversation_id.clone(),
@@ -717,6 +720,9 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             .spawn_index_turn(Arc::clone(&cfg_snap), scope, to_index);
                     }
                     crate::long_term_memory::strip_long_term_memory_injections(&mut messages);
+                    crate::workspace_changelist::strip_workspace_changelist_injections(
+                        &mut messages,
+                    );
                     match state
                         .save_conversation_messages_if_revision(
                             conversation_id,

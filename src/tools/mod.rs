@@ -60,9 +60,12 @@ mod web_search;
 
 pub mod dev_tag;
 
+use std::sync::Arc;
+
 use crate::config::AgentConfig;
 use crate::tool_result::ToolResult;
 use crate::types::{FunctionDef, Tool};
+use crate::workspace_changelist::WorkspaceChangelist;
 
 /// 工具顶层分类（用于 `build_tools_filtered`、文档与后续按场景裁剪工具列表）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,9 +90,19 @@ pub struct ToolContext<'a> {
     pub http_fetch_max_response_bytes: usize,
     /// 单轮 `run_agent_turn` 内 `read_file` 缓存；`None` 表示关闭。
     pub read_file_turn_cache: Option<&'a crate::read_file_turn_cache::ReadFileTurnCache>,
+    /// 本会话工作区变更集（按 `long_term_memory_scope_id`）；`None` 时不记录。
+    pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
+/// 与内置文件工具相同的路径规则：将相对路径解析为工作区内绝对路径（供变更集等跨模块只读）。
+pub fn resolve_workspace_path_for_read(
+    working_dir: &std::path::Path,
+    rel: &str,
+) -> Result<std::path::PathBuf, String> {
+    file::resolve_for_read(working_dir, rel)
+}
+
 pub fn tool_context_for<'a>(
     cfg: &'a AgentConfig,
     allowed_commands: &'a [String],
@@ -108,18 +121,21 @@ pub fn tool_context_for<'a>(
         http_fetch_timeout_secs: cfg.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: cfg.http_fetch_max_response_bytes,
         read_file_turn_cache: None,
+        workspace_changelist: None,
     }
 }
 
-/// 与 [`tool_context_for`] 相同，但可挂载单轮 `read_file` 缓存（供 `dispatch_tool` / `execute_tools`）。
+/// 与 [`tool_context_for`] 相同，但可挂载单轮 `read_file` 缓存与会话变更集（供 `dispatch_tool` / `execute_tools`）。
 pub fn tool_context_for_with_read_cache<'a>(
     cfg: &'a AgentConfig,
     allowed_commands: &'a [String],
     working_dir: &'a std::path::Path,
     read_file_turn_cache: Option<&'a crate::read_file_turn_cache::ReadFileTurnCache>,
+    workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
 ) -> ToolContext<'a> {
     ToolContext {
         read_file_turn_cache,
+        workspace_changelist,
         ..tool_context_for(cfg, allowed_commands, working_dir)
     }
 }
@@ -486,19 +502,19 @@ fn runner_git_clone(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 fn runner_create_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::create_file(args, ctx.working_dir)
+    file::create_file(args, ctx.working_dir, ctx)
 }
 
 fn runner_modify_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::modify_file(args, ctx.working_dir)
+    file::modify_file(args, ctx.working_dir, ctx)
 }
 
 fn runner_copy_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::copy_file(args, ctx.working_dir)
+    file::copy_file(args, ctx.working_dir, ctx)
 }
 
 fn runner_move_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::move_file(args, ctx.working_dir)
+    file::move_file(args, ctx.working_dir, ctx)
 }
 
 fn runner_read_file(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -534,7 +550,7 @@ fn runner_extract_in_file(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 fn runner_apply_patch(args: &str, ctx: &ToolContext<'_>) -> String {
-    patch::run(args, ctx.working_dir)
+    patch::run_with_changelist(args, ctx.working_dir, ctx.workspace_changelist)
 }
 
 fn runner_search_in_files(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -558,7 +574,7 @@ fn runner_structured_diff(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 fn runner_structured_patch(args: &str, ctx: &ToolContext<'_>) -> String {
-    structured_data::structured_patch(args, ctx.working_dir)
+    structured_data::structured_patch(args, ctx.working_dir, ctx)
 }
 
 fn runner_text_transform(args: &str, _ctx: &ToolContext<'_>) -> String {
@@ -708,19 +724,19 @@ fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
 // ── 文件增强 ────────────────────────────────────────────────
 
 fn runner_delete_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::delete_file(args, ctx.working_dir)
+    file::delete_file(args, ctx.working_dir, ctx)
 }
 fn runner_delete_dir(args: &str, ctx: &ToolContext<'_>) -> String {
     file::delete_dir(args, ctx.working_dir)
 }
 fn runner_append_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::append_file(args, ctx.working_dir)
+    file::append_file(args, ctx.working_dir, ctx)
 }
 fn runner_create_dir(args: &str, ctx: &ToolContext<'_>) -> String {
     file::create_dir(args, ctx.working_dir)
 }
 fn runner_search_replace(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::search_replace(args, ctx.working_dir)
+    file::search_replace(args, ctx.working_dir, ctx)
 }
 fn runner_chmod_file(args: &str, ctx: &ToolContext<'_>) -> String {
     file::chmod_file(args, ctx.working_dir)

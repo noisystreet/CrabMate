@@ -99,6 +99,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         http_fetch_timeout_secs: snap.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: snap.http_fetch_max_response_bytes,
         read_file_turn_cache: None,
+        workspace_changelist: None,
     };
     let k = inv.kind.trim();
     let out = match k {

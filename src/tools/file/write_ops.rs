@@ -6,10 +6,12 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
 use super::path::{parse_path_content, path_for_tool_display, resolve_for_read, resolve_for_write};
+use crate::tools::ToolContext;
+use crate::workspace_changelist::record_file_state_after_write;
 
 /// 创建文件：仅在文件不存在时创建；若已存在则报错。
 /// 参数 args_json: { "path": string, "content": string }
-pub fn create_file(args_json: &str, working_dir: &Path) -> String {
+pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let (path, content) = match parse_path_content(args_json) {
         Ok(pc) => pc,
         Err(e) => return e,
@@ -28,10 +30,13 @@ pub fn create_file(args_json: &str, working_dir: &Path) -> String {
         return format!("创建目录失败: {}", e);
     }
     match std::fs::write(&target, content.as_bytes()) {
-        Ok(()) => format!(
-            "已创建文件: {}",
-            path_for_tool_display(working_dir, &target, Some(&path))
-        ),
+        Ok(()) => {
+            record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, None);
+            format!(
+                "已创建文件: {}",
+                path_for_tool_display(working_dir, &target, Some(&path))
+            )
+        }
         Err(e) => format!("写入文件失败: {}", e),
     }
 }
@@ -104,7 +109,7 @@ fn try_rename_or_move_file(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// 在工作区内复制**文件**（非目录）。源须已存在；路径规则与 `create_file` / `read_file` 相同（相对路径、`..` 与 symlink 逃逸校验）。
 /// 参数：`from`、`to` 为相对工作目录路径；`overwrite` 可选，默认 `false`（目标已存在且为文件时须显式 `true` 才覆盖）。
-pub fn copy_file(args_json: &str, working_dir: &Path) -> String {
+pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let (from, to, overwrite) = match parse_from_to_overwrite(args_json) {
         Ok(x) => x,
         Err(e) => return e,
@@ -133,14 +138,17 @@ pub fn copy_file(args_json: &str, working_dir: &Path) -> String {
         return format!("创建目标父目录失败: {}", e);
     }
     match std::fs::copy(&src, &dst) {
-        Ok(n) => format!("已复制：{} -> {}（{} 字节）", from, to, n),
+        Ok(n) => {
+            record_file_state_after_write(ctx.workspace_changelist, working_dir, &to, None);
+            format!("已复制：{} -> {}（{} 字节）", from, to, n)
+        }
         Err(e) => format!("复制失败: {}", e),
     }
 }
 
 /// 在工作区内移动**文件**（重命名或迁路径）。`rename` 失败且为跨设备时自动回退为复制后删除源文件。
 /// `overwrite` 默认 `false`：目标已存在为文件时须 `true` 才覆盖（与 `copy_file` 一致）。
-pub fn move_file(args_json: &str, working_dir: &Path) -> String {
+pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let (from, to, overwrite) = match parse_from_to_overwrite(args_json) {
         Ok(x) => x,
         Err(e) => return e,
@@ -169,7 +177,11 @@ pub fn move_file(args_json: &str, working_dir: &Path) -> String {
         return format!("创建目标父目录失败: {}", e);
     }
     match try_rename_or_move_file(&src, &dst) {
-        Ok(()) => format!("已移动：{} -> {}", from, to),
+        Ok(()) => {
+            record_file_state_after_write(ctx.workspace_changelist, working_dir, &from, None);
+            record_file_state_after_write(ctx.workspace_changelist, working_dir, &to, None);
+            format!("已移动：{} -> {}", from, to)
+        }
         Err(e) => format!("移动失败: {}", e),
     }
 }
@@ -177,7 +189,7 @@ pub fn move_file(args_json: &str, working_dir: &Path) -> String {
 /// 修改文件：仅在文件已存在时写入。
 /// - 默认 `mode`=`full`：整文件覆盖（`content` 为全文）。
 /// - `mode`=`replace_lines`：`start_line`..=`end_line`（1-based，含边界）替换为 `content`（流式读写，适合大文件）。
-pub fn modify_file(args_json: &str, working_dir: &Path) -> String {
+pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("参数 JSON 无效: {}", e),
@@ -208,18 +220,22 @@ pub fn modify_file(args_json: &str, working_dir: &Path) -> String {
 
     if mode == "replace_lines" || mode == "lines" {
         let display = path_for_tool_display(working_dir, &target, Some(&path));
-        modify_file_replace_lines(&v, &target, &display)
+        modify_file_replace_lines(&v, &target, &display, ctx, working_dir, &path)
     } else if mode == "full" || mode.is_empty() {
         let content = v
             .get("content")
             .and_then(|c| c.as_str())
             .map(String::from)
             .unwrap_or_default();
+        let before = std::fs::read_to_string(&target).ok();
         match std::fs::write(&target, content.as_bytes()) {
-            Ok(()) => format!(
-                "已整文件覆盖: {}",
-                path_for_tool_display(working_dir, &target, Some(&path))
-            ),
+            Ok(()) => {
+                record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, before);
+                format!(
+                    "已整文件覆盖: {}",
+                    path_for_tool_display(working_dir, &target, Some(&path))
+                )
+            }
             Err(e) => format!("写入文件失败: {}", e),
         }
     } else {
@@ -227,7 +243,15 @@ pub fn modify_file(args_json: &str, working_dir: &Path) -> String {
     }
 }
 
-fn modify_file_replace_lines(v: &serde_json::Value, target: &Path, display_path: &str) -> String {
+fn modify_file_replace_lines(
+    v: &serde_json::Value,
+    target: &Path,
+    display_path: &str,
+    ctx: &ToolContext<'_>,
+    working_dir: &Path,
+    rel_path: &str,
+) -> String {
+    let original = std::fs::read_to_string(target).ok();
     let start_line = match v.get("start_line").and_then(|n| n.as_u64()) {
         Some(n) if n >= 1 => n as usize,
         _ => return "错误：replace_lines 需要 start_line（>=1）".to_string(),
@@ -342,6 +366,7 @@ fn modify_file_replace_lines(v: &serde_json::Value, target: &Path, display_path:
         return format!("替换目标文件失败: {}", e);
     }
 
+    record_file_state_after_write(ctx.workspace_changelist, working_dir, rel_path, original);
     format!(
         "已按行替换: {} (行 {}-{}，共删除 {} 行，写入新内容 {} 字节)",
         display_path,

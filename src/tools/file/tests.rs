@@ -124,9 +124,12 @@ fn test_modify_file_replace_lines() {
     let dir = make_test_dir();
     let file = dir.join("m.txt");
     std::fs::write(&file, "L1\nL2\nL3\nL4\n").unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
     let out = modify_file(
         r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":3,"content":"X"}"#,
         &dir,
+        &ctx,
     );
     assert!(out.contains("已按行替换"), "{}", out);
     let body = std::fs::read_to_string(&file).unwrap();
@@ -256,7 +259,9 @@ fn test_create_file_reject_symlink_escape() {
     let link = dir.join("link_out");
     symlink(&outside, &link).unwrap();
 
-    let out = create_file(r#"{"path":"link_out/pwned.txt","content":"x"}"#, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = create_file(r#"{"path":"link_out/pwned.txt","content":"x"}"#, &dir, &ctx);
     assert!(
         out.contains("路径不能超出工作目录"),
         "应拒绝 symlink 绕过写入: {}",
@@ -298,7 +303,9 @@ fn test_list_tree_respects_max_depth() {
 fn test_copy_file_basic() {
     let dir = make_test_dir();
     std::fs::write(dir.join("a.txt"), "hello").unwrap();
-    let out = copy_file(r#"{"from":"a.txt","to":"sub/b.txt"}"#, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = copy_file(r#"{"from":"a.txt","to":"sub/b.txt"}"#, &dir, &ctx);
     assert!(out.contains("已复制"), "{}", out);
     assert_eq!(
         std::fs::read_to_string(dir.join("sub/b.txt")).unwrap(),
@@ -312,7 +319,9 @@ fn test_copy_file_reject_existing_without_overwrite() {
     let dir = make_test_dir();
     std::fs::write(dir.join("a.txt"), "a").unwrap();
     std::fs::write(dir.join("b.txt"), "b").unwrap();
-    let out = copy_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = copy_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir, &ctx);
     assert!(out.contains("overwrite"), "{}", out);
     assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "b");
     let _ = std::fs::remove_dir_all(&dir);
@@ -323,7 +332,13 @@ fn test_copy_file_overwrite() {
     let dir = make_test_dir();
     std::fs::write(dir.join("a.txt"), "new").unwrap();
     std::fs::write(dir.join("b.txt"), "old").unwrap();
-    let out = copy_file(r#"{"from":"a.txt","to":"b.txt","overwrite":true}"#, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = copy_file(
+        r#"{"from":"a.txt","to":"b.txt","overwrite":true}"#,
+        &dir,
+        &ctx,
+    );
     assert!(out.contains("已复制"), "{}", out);
     assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "new");
     let _ = std::fs::remove_dir_all(&dir);
@@ -333,7 +348,9 @@ fn test_copy_file_overwrite() {
 fn test_move_file_basic() {
     let dir = make_test_dir();
     std::fs::write(dir.join("a.txt"), "mv").unwrap();
-    let out = move_file(r#"{"from":"a.txt","to":"c.txt"}"#, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = move_file(r#"{"from":"a.txt","to":"c.txt"}"#, &dir, &ctx);
     assert!(out.contains("已移动"), "{}", out);
     assert!(!dir.join("a.txt").exists());
     assert_eq!(std::fs::read_to_string(dir.join("c.txt")).unwrap(), "mv");
@@ -345,7 +362,9 @@ fn test_move_file_reject_existing_without_overwrite() {
     let dir = make_test_dir();
     std::fs::write(dir.join("a.txt"), "a").unwrap();
     std::fs::write(dir.join("b.txt"), "b").unwrap();
-    let out = move_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir);
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = move_file(r#"{"from":"a.txt","to":"b.txt"}"#, &dir, &ctx);
     assert!(out.contains("overwrite"), "{}", out);
     assert!(dir.join("a.txt").exists());
     let _ = std::fs::remove_dir_all(&dir);
