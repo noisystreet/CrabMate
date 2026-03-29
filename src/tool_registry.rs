@@ -2,7 +2,7 @@
 //!
 //! **`spawn_blocking` 与配置**：进入阻塞池前对 [`AgentConfig`] 使用 [`Arc::clone`]（仅增引用计数），闭包内通过 [`tools::tool_context_for`] 借用同一份配置与白名单；`allowed_commands` 在 [`AgentConfig`] 内为 [`std::sync::Arc`] 共享切片，避免每轮工具调用整表克隆。纯 CPU、无阻塞 IO 的少数工具可走 [`sync_default_runs_inline`] 在当前 async 任务上直接执行。
 //!
-//! 新增「需特殊运行时」的工具：在 `HANDLER_MAP` 初始化与 `all_dispatch_metadata()` 中各增一项，并在 `dispatch_tool` 的 `match hid` 中补分支。
+//! 新增「需特殊运行时」的工具：在下方 **`tool_dispatch_registry!`** 宏调用中增一行（`HandlerId` + `ToolDispatchMeta` 同源），并在 `dispatch_tool` 的 `match hid` 中补分支。
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -58,47 +58,6 @@ pub struct ToolDispatchMeta {
     pub name: &'static str,
     pub requires_workspace: bool,
     pub class: ToolExecutionClass,
-}
-
-/// 注册表中显式声明的工具；其余名称运行时走 `SyncDefault`（同步 `run_tool`）。
-pub fn all_dispatch_metadata() -> &'static [ToolDispatchMeta] {
-    &[
-        ToolDispatchMeta {
-            name: "workflow_execute",
-            requires_workspace: false,
-            class: ToolExecutionClass::Workflow,
-        },
-        ToolDispatchMeta {
-            name: "run_command",
-            requires_workspace: true,
-            class: ToolExecutionClass::CommandSpawnTimeout,
-        },
-        ToolDispatchMeta {
-            name: "run_executable",
-            requires_workspace: true,
-            class: ToolExecutionClass::ExecutableSpawnTimeout,
-        },
-        ToolDispatchMeta {
-            name: "get_weather",
-            requires_workspace: false,
-            class: ToolExecutionClass::WeatherSpawnTimeout,
-        },
-        ToolDispatchMeta {
-            name: "web_search",
-            requires_workspace: false,
-            class: ToolExecutionClass::WebSearchSpawnTimeout,
-        },
-        ToolDispatchMeta {
-            name: "http_fetch",
-            requires_workspace: false,
-            class: ToolExecutionClass::HttpFetchSpawnTimeout,
-        },
-        ToolDispatchMeta {
-            name: "http_request",
-            requires_workspace: false,
-            class: ToolExecutionClass::HttpFetchSpawnTimeout,
-        },
-    ]
 }
 
 /// 若在 `all_dispatch_metadata` 中登记则返回其元数据，否则 `None`（运行时走同步 `run_tool`）。
@@ -350,6 +309,45 @@ enum HandlerId {
     SyncDefault,
 }
 
+/// 由 `tool_dispatch_registry!` 展开：生成 `DISPATCH_METADATA` 与 `handler_dispatch_map_build`，与 `HANDLER_MAP` 同源。
+macro_rules! tool_dispatch_registry {
+    ( $( ( $name:literal, $reqws:expr, $class:ident, $handler:ident ) ),* $(,)? ) => {
+        static DISPATCH_METADATA: &[ToolDispatchMeta] = &[
+            $(
+                ToolDispatchMeta {
+                    name: $name,
+                    requires_workspace: $reqws,
+                    class: ToolExecutionClass::$class,
+                },
+            )*
+        ];
+
+        fn handler_dispatch_map_build() -> HashMap<&'static str, HandlerId> {
+            let mut m = HashMap::new();
+            $(
+                m.insert($name, HandlerId::$handler);
+            )*
+            m
+        }
+    };
+}
+
+tool_dispatch_registry! {
+    ("workflow_execute", false, Workflow, Workflow),
+    ("run_command", true, CommandSpawnTimeout, RunCommand),
+    ("run_executable", true, ExecutableSpawnTimeout, RunExecutable),
+    ("get_weather", false, WeatherSpawnTimeout, GetWeather),
+    ("web_search", false, WebSearchSpawnTimeout, WebSearch),
+    ("http_fetch", false, HttpFetchSpawnTimeout, HttpFetch),
+    ("http_request", false, HttpFetchSpawnTimeout, HttpRequest),
+}
+
+/// 注册表中显式声明的工具；其余名称运行时走 `SyncDefault`（同步 `run_tool`）。
+/// 与 `handler_id_for` / `HANDLER_MAP` 共用 `tool_dispatch_registry!` 生成的表，勿分开维护。
+pub fn all_dispatch_metadata() -> &'static [ToolDispatchMeta] {
+    DISPATCH_METADATA
+}
+
 static HANDLER_MAP: OnceLock<HashMap<&'static str, HandlerId>> = OnceLock::new();
 
 /// 无子进程、无阻塞网络/磁盘的 `SyncDefault` 工具：跳过 `spawn_blocking`，以免线程池调度开销大于工具本身。
@@ -359,17 +357,7 @@ pub(crate) fn sync_default_runs_inline(name: &str) -> bool {
 
 fn handler_id_for(name: &str) -> HandlerId {
     HANDLER_MAP
-        .get_or_init(|| {
-            let mut m = HashMap::new();
-            m.insert("workflow_execute", HandlerId::Workflow);
-            m.insert("run_command", HandlerId::RunCommand);
-            m.insert("run_executable", HandlerId::RunExecutable);
-            m.insert("get_weather", HandlerId::GetWeather);
-            m.insert("web_search", HandlerId::WebSearch);
-            m.insert("http_fetch", HandlerId::HttpFetch);
-            m.insert("http_request", HandlerId::HttpRequest);
-            m
-        })
+        .get_or_init(handler_dispatch_map_build)
         .get(name)
         .copied()
         .unwrap_or(HandlerId::SyncDefault)

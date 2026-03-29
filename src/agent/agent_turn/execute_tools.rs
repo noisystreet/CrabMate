@@ -267,7 +267,202 @@ struct ExecuteToolsCommonCtx<'a> {
     mcp_session: Option<&'a std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
 }
 
-async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
+/// 只读可并行批：去重后 `spawn_blocking` + 限并发，再按原 `tool_calls` 顺序回写 SSE / messages。
+async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
+    let ExecuteToolsCommonCtx {
+        tool_calls,
+        per_coord,
+        messages,
+        cfg,
+        effective_working_dir,
+        workspace_is_set: _,
+        read_file_turn_cache,
+        workspace_changelist,
+        out,
+        echo_terminal_transcript,
+        terminal_tool_display_max_chars,
+        tool_result_envelope_v1,
+        web_tool_ctx,
+        cli_tool_ctx,
+        mcp_session: _,
+    } = ctx;
+
+    let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
+    let parallel_max = cfg.parallel_readonly_tools_max.max(1);
+    info!(
+        target: "crabmate",
+        "并行执行工具批 count={} unique={} max_parallel={}（只读 SyncDefault + http_fetch + get_weather + web_search；构建锁类除外）",
+        tool_calls.len(),
+        dedup_count,
+        parallel_max
+    );
+
+    let parallel_batch_id = format!(
+        "prb-{}",
+        PARALLEL_READONLY_TOOL_BATCH_SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    let parallel_batch_id_ref = parallel_batch_id.as_str();
+
+    let prefetch_failures = if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
+        tool_registry::prefetch_http_fetch_parallel_approvals(
+            tool_calls,
+            cfg,
+            web_tool_ctx,
+            cli_tool_ctx,
+        )
+        .await
+    } else {
+        HashMap::new()
+    };
+
+    let mut seen_keys: HashSet<(String, String)> = HashSet::with_capacity(tool_calls.len());
+    let mut unique_futs = Vec::new();
+    for tc in tool_calls {
+        let key = (tc.function.name.clone(), tc.function.arguments.clone());
+        if !seen_keys.insert(key.clone()) {
+            continue;
+        }
+        let prefetch_err = prefetch_failures.get(&key).cloned();
+        let cfg = Arc::clone(cfg);
+        let wd = effective_working_dir.to_path_buf();
+        let rfc = read_file_turn_cache.clone();
+        let wcl = workspace_changelist.cloned();
+        let name = tc.function.name.clone();
+        let args = tc.function.arguments.clone();
+        let kind = if name == "http_fetch" {
+            ParallelToolKind::HttpFetch
+        } else {
+            ParallelToolKind::SyncDefault
+        };
+        unique_futs.push(async move {
+            if let Some(err) = prefetch_err {
+                return (name, args, err);
+            }
+            let wall_secs =
+                crate::tool_registry::parallel_tool_wall_timeout_secs(cfg.as_ref(), name.as_str());
+            let name_timeout = name.clone();
+            let args_timeout = args.clone();
+            let name_for_log = name.clone();
+            let args_for_log = args.clone();
+            let name_for_return = name.clone();
+            let args_for_return = args.clone();
+            let work = async move {
+                info!(target: "crabmate", "并行工具开始 tool={}", name_for_log);
+                debug!(
+                    target: "crabmate",
+                    "工具调用参数摘要 tool={} args_preview={}",
+                    name_for_log,
+                    crate::redact::tool_arguments_preview_for_log(&args_for_log)
+                );
+                let t_tool = Instant::now();
+                let result = match kind {
+                    ParallelToolKind::HttpFetch => tokio::task::spawn_blocking(move || {
+                        let ctx = tools::tool_context_for_with_read_cache(
+                            cfg.as_ref(),
+                            cfg.allowed_commands.as_ref(),
+                            wd.as_path(),
+                            rfc.as_ref().map(|a| a.as_ref()),
+                            wcl.as_ref(),
+                        );
+                        tools::http_fetch::run_direct(&args, &ctx)
+                    })
+                    .await
+                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
+                    ParallelToolKind::SyncDefault => tokio::task::spawn_blocking(move || {
+                        let ctx = tools::tool_context_for_with_read_cache(
+                            cfg.as_ref(),
+                            cfg.allowed_commands.as_ref(),
+                            wd.as_path(),
+                            rfc.as_ref().map(|a| a.as_ref()),
+                            wcl.as_ref(),
+                        );
+                        tools::run_tool(&name, &args, &ctx)
+                    })
+                    .await
+                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
+                };
+                info!(
+                    target: "crabmate",
+                    "并行工具完成 tool={} elapsed_ms={}",
+                    name_for_log,
+                    t_tool.elapsed().as_millis()
+                );
+                (name_for_return, args_for_return, result)
+            };
+            match tokio::time::timeout(Duration::from_secs(wall_secs), work).await {
+                Ok(triple) => triple,
+                Err(_) => {
+                    warn!(
+                        target: "crabmate",
+                        "并行工具墙上时钟超时 tool={} wall_secs={}",
+                        name_timeout,
+                        wall_secs
+                    );
+                    (
+                        name_timeout,
+                        args_timeout,
+                        format!("工具执行超时（{} 秒）", wall_secs),
+                    )
+                }
+            }
+        });
+    }
+    let unique_outcomes: Vec<(String, String, String)> = stream::iter(unique_futs)
+        .buffer_unordered(parallel_max)
+        .collect()
+        .await;
+    let result_map: HashMap<(&str, &str), &str> = unique_outcomes
+        .iter()
+        .map(|(n, a, r)| ((n.as_str(), a.as_str()), r.as_str()))
+        .collect();
+
+    for tc in tool_calls {
+        if abort_tool_batch_if_sse_closed(
+            out,
+            "SSE sender closed during parallel tool batch, aborting remainder",
+        )
+        .await
+        {
+            return ExecuteToolsBatchOutcome::AbortedSse;
+        }
+        emit_tool_call_summary_sse(out, &tc.function.name, &tc.function.arguments).await;
+        let cached = result_map
+            .get(&(tc.function.name.as_str(), tc.function.arguments.as_str()))
+            .copied()
+            .unwrap_or("")
+            .to_string();
+        let env = ToolEnvelopeContext {
+            tool_call_id: tc.id.as_str(),
+            execution_mode: "parallel_readonly_batch",
+            parallel_batch_id: Some(parallel_batch_id_ref),
+        };
+        emit_tool_result_sse_and_append(
+            messages,
+            per_coord,
+            EmitToolResultParams {
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
+                name: &tc.function.name,
+                args: &tc.function.arguments,
+                id: &tc.id,
+                result: cached,
+                reflection_inject: None,
+                envelope_ctx: Some(env),
+            },
+        )
+        .await;
+    }
+
+    ExecuteToolsBatchOutcome::Finished
+}
+
+/// 串行路径：`dispatch_tool`、只读结果缓存、写操作后清缓存。
+async fn execute_tools_serial(
+    ctx: ExecuteToolsCommonCtx<'_>,
+    workspace_changed: &mut bool,
+) -> ExecuteToolsBatchOutcome {
     let ExecuteToolsCommonCtx {
         tool_calls,
         per_coord,
@@ -285,292 +480,39 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         cli_tool_ctx,
         mcp_session,
     } = ctx;
-    let mut workspace_changed = false;
 
-    if let Some(tx) = out {
-        let _ = crate::sse::send_string_logged(
-            tx,
-            encode_message(SsePayload::ToolRunning { tool_running: true }),
-            "execute_tools::batch tool_running true",
+    let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
+    for tc in tool_calls {
+        if abort_tool_batch_if_sse_closed(
+            out,
+            "SSE sender closed during tool execution, aborting remaining tools",
         )
-        .await;
-    }
+        .await
+        {
+            return ExecuteToolsBatchOutcome::AbortedSse;
+        }
 
-    if tool_registry::tool_calls_allow_parallel_sync_batch(tool_calls) {
-        let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
-        let parallel_max = cfg.parallel_readonly_tools_max.max(1);
-        info!(
+        let name = tc.function.name.clone();
+        let args = tc.function.arguments.clone();
+        let id = tc.id.clone();
+        emit_tool_call_summary_sse(out, &name, &args).await;
+        info!(target: "crabmate", "调用工具 tool={}", name);
+        debug!(
             target: "crabmate",
-            "并行执行工具批 count={} unique={} max_parallel={}（只读 SyncDefault + http_fetch + get_weather + web_search；构建锁类除外）",
-            tool_calls.len(),
-            dedup_count,
-            parallel_max
+            "工具调用参数摘要 tool={} args_preview={}",
+            name,
+            crate::redact::tool_arguments_preview_for_log(&args)
         );
 
-        let parallel_batch_id = format!(
-            "prb-{}",
-            PARALLEL_READONLY_TOOL_BATCH_SEQ.fetch_add(1, Ordering::Relaxed)
-        );
-        let parallel_batch_id_ref = parallel_batch_id.as_str();
+        let is_readonly = tool_registry::is_readonly_tool(&name);
+        let cache_key = (name.clone(), args.clone());
 
-        let prefetch_failures = if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
-            tool_registry::prefetch_http_fetch_parallel_approvals(
-                tool_calls,
-                cfg,
-                web_tool_ctx,
-                cli_tool_ctx,
-            )
-            .await
-        } else {
-            HashMap::new()
-        };
-
-        let mut seen_keys: HashSet<(String, String)> = HashSet::with_capacity(tool_calls.len());
-        let mut unique_futs = Vec::new();
-        for tc in tool_calls {
-            let key = (tc.function.name.clone(), tc.function.arguments.clone());
-            if !seen_keys.insert(key.clone()) {
-                continue;
-            }
-            let prefetch_err = prefetch_failures.get(&key).cloned();
-            let cfg = Arc::clone(cfg);
-            let wd = effective_working_dir.to_path_buf();
-            let rfc = read_file_turn_cache.clone();
-            let wcl = workspace_changelist.cloned();
-            let name = tc.function.name.clone();
-            let args = tc.function.arguments.clone();
-            let kind = if name == "http_fetch" {
-                ParallelToolKind::HttpFetch
-            } else {
-                ParallelToolKind::SyncDefault
-            };
-            unique_futs.push(async move {
-                if let Some(err) = prefetch_err {
-                    return (name, args, err);
-                }
-                let wall_secs = crate::tool_registry::parallel_tool_wall_timeout_secs(
-                    cfg.as_ref(),
-                    name.as_str(),
-                );
-                let name_timeout = name.clone();
-                let args_timeout = args.clone();
-                let name_for_log = name.clone();
-                let args_for_log = args.clone();
-                let name_for_return = name.clone();
-                let args_for_return = args.clone();
-                let work = async move {
-                    info!(target: "crabmate", "并行工具开始 tool={}", name_for_log);
-                    debug!(
-                        target: "crabmate",
-                        "工具调用参数摘要 tool={} args_preview={}",
-                        name_for_log,
-                        crate::redact::tool_arguments_preview_for_log(&args_for_log)
-                    );
-                    let t_tool = Instant::now();
-                    let result = match kind {
-                        ParallelToolKind::HttpFetch => tokio::task::spawn_blocking(move || {
-                            let ctx = tools::tool_context_for_with_read_cache(
-                                cfg.as_ref(),
-                                cfg.allowed_commands.as_ref(),
-                                wd.as_path(),
-                                rfc.as_ref().map(|a| a.as_ref()),
-                                wcl.as_ref(),
-                            );
-                            tools::http_fetch::run_direct(&args, &ctx)
-                        })
-                        .await
-                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
-                        ParallelToolKind::SyncDefault => tokio::task::spawn_blocking(move || {
-                            let ctx = tools::tool_context_for_with_read_cache(
-                                cfg.as_ref(),
-                                cfg.allowed_commands.as_ref(),
-                                wd.as_path(),
-                                rfc.as_ref().map(|a| a.as_ref()),
-                                wcl.as_ref(),
-                            );
-                            tools::run_tool(&name, &args, &ctx)
-                        })
-                        .await
-                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
-                    };
-                    info!(
-                        target: "crabmate",
-                        "并行工具完成 tool={} elapsed_ms={}",
-                        name_for_log,
-                        t_tool.elapsed().as_millis()
-                    );
-                    (name_for_return, args_for_return, result)
-                };
-                match tokio::time::timeout(Duration::from_secs(wall_secs), work).await {
-                    Ok(triple) => triple,
-                    Err(_) => {
-                        warn!(
-                            target: "crabmate",
-                            "并行工具墙上时钟超时 tool={} wall_secs={}",
-                            name_timeout,
-                            wall_secs
-                        );
-                        (
-                            name_timeout,
-                            args_timeout,
-                            format!("工具执行超时（{} 秒）", wall_secs),
-                        )
-                    }
-                }
-            });
-        }
-        let unique_outcomes: Vec<(String, String, String)> = stream::iter(unique_futs)
-            .buffer_unordered(parallel_max)
-            .collect()
-            .await;
-        let result_map: HashMap<(&str, &str), &str> = unique_outcomes
-            .iter()
-            .map(|(n, a, r)| ((n.as_str(), a.as_str()), r.as_str()))
-            .collect();
-
-        for tc in tool_calls {
-            if abort_tool_batch_if_sse_closed(
-                out,
-                "SSE sender closed during parallel tool batch, aborting remainder",
-            )
-            .await
-            {
-                return ExecuteToolsBatchOutcome::AbortedSse;
-            }
-            emit_tool_call_summary_sse(out, &tc.function.name, &tc.function.arguments).await;
-            let cached = result_map
-                .get(&(tc.function.name.as_str(), tc.function.arguments.as_str()))
-                .copied()
-                .unwrap_or("")
-                .to_string();
-            let env = ToolEnvelopeContext {
-                tool_call_id: tc.id.as_str(),
-                execution_mode: "parallel_readonly_batch",
-                parallel_batch_id: Some(parallel_batch_id_ref),
-            };
-            emit_tool_result_sse_and_append(
-                messages,
-                per_coord,
-                EmitToolResultParams {
-                    out,
-                    echo_terminal_transcript,
-                    terminal_tool_display_max_chars,
-                    tool_result_envelope_v1,
-                    name: &tc.function.name,
-                    args: &tc.function.arguments,
-                    id: &tc.id,
-                    result: cached,
-                    reflection_inject: None,
-                    envelope_ctx: Some(env),
-                },
-            )
-            .await;
-        }
-    } else {
-        let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
-        for tc in tool_calls {
-            if abort_tool_batch_if_sse_closed(
-                out,
-                "SSE sender closed during tool execution, aborting remaining tools",
-            )
-            .await
-            {
-                return ExecuteToolsBatchOutcome::AbortedSse;
-            }
-
-            let name = tc.function.name.clone();
-            let args = tc.function.arguments.clone();
-            let id = tc.id.clone();
-            emit_tool_call_summary_sse(out, &name, &args).await;
-            info!(target: "crabmate", "调用工具 tool={}", name);
-            debug!(
-                target: "crabmate",
-                "工具调用参数摘要 tool={} args_preview={}",
-                name,
-                crate::redact::tool_arguments_preview_for_log(&args)
-            );
-
-            let is_readonly = tool_registry::is_readonly_tool(&name);
-            let cache_key = (name.clone(), args.clone());
-
-            if is_readonly && let Some(cached) = readonly_cache.get(&cache_key) {
-                info!(
-                    target: "crabmate",
-                    "工具结果命中缓存（只读去重） tool={}",
-                    name
-                );
-                let env = ToolEnvelopeContext {
-                    tool_call_id: id.as_str(),
-                    execution_mode: "serial",
-                    parallel_batch_id: None,
-                };
-                emit_tool_result_sse_and_append(
-                    messages,
-                    per_coord,
-                    EmitToolResultParams {
-                        out,
-                        echo_terminal_transcript,
-                        terminal_tool_display_max_chars,
-                        tool_result_envelope_v1,
-                        name: name.as_str(),
-                        args: args.as_str(),
-                        id: id.as_str(),
-                        result: cached.clone(),
-                        reflection_inject: None,
-                        envelope_ctx: Some(env),
-                    },
-                )
-                .await;
-                continue;
-            }
-
-            let t_tool = Instant::now();
-            let runtime = if let Some(cctx) = cli_tool_ctx {
-                ToolRuntime::Cli {
-                    workspace_changed: &mut workspace_changed,
-                    ctx: cctx,
-                }
-            } else {
-                ToolRuntime::Web {
-                    workspace_changed: &mut workspace_changed,
-                    ctx: web_tool_ctx,
-                }
-            };
-            let (result, reflection_inject) =
-                tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
-                    runtime,
-                    per_coord,
-                    cfg,
-                    effective_working_dir,
-                    workspace_is_set,
-                    name: &name,
-                    args: &args,
-                    tc,
-                    read_file_turn_cache: read_file_turn_cache.clone(),
-                    workspace_changelist: workspace_changelist.cloned(),
-                    mcp_session,
-                })
-                .await;
-
+        if is_readonly && let Some(cached) = readonly_cache.get(&cache_key) {
             info!(
                 target: "crabmate",
-                "工具调用完成 tool={} elapsed_ms={}",
-                name,
-                t_tool.elapsed().as_millis()
+                "工具结果命中缓存（只读去重） tool={}",
+                name
             );
-
-            if (!is_readonly || workspace_changed)
-                && let Some(c) = read_file_turn_cache.as_ref()
-            {
-                c.clear();
-            }
-
-            if is_readonly {
-                readonly_cache.insert(cache_key, result.clone());
-            } else {
-                readonly_cache.clear();
-            }
-
             let env = ToolEnvelopeContext {
                 tool_call_id: id.as_str(),
                 execution_mode: "serial",
@@ -587,14 +529,115 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     name: name.as_str(),
                     args: args.as_str(),
                     id: id.as_str(),
-                    result,
-                    reflection_inject,
+                    result: cached.clone(),
+                    reflection_inject: None,
                     envelope_ctx: Some(env),
                 },
             )
             .await;
+            continue;
         }
+
+        let t_tool = Instant::now();
+        let runtime = if let Some(cctx) = cli_tool_ctx {
+            ToolRuntime::Cli {
+                workspace_changed,
+                ctx: cctx,
+            }
+        } else {
+            ToolRuntime::Web {
+                workspace_changed,
+                ctx: web_tool_ctx,
+            }
+        };
+        let (result, reflection_inject) =
+            tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
+                runtime,
+                per_coord,
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                name: &name,
+                args: &args,
+                tc,
+                read_file_turn_cache: read_file_turn_cache.clone(),
+                workspace_changelist: workspace_changelist.cloned(),
+                mcp_session,
+            })
+            .await;
+
+        info!(
+            target: "crabmate",
+            "工具调用完成 tool={} elapsed_ms={}",
+            name,
+            t_tool.elapsed().as_millis()
+        );
+
+        if (!is_readonly || *workspace_changed)
+            && let Some(c) = read_file_turn_cache.as_ref()
+        {
+            c.clear();
+        }
+
+        if is_readonly {
+            readonly_cache.insert(cache_key, result.clone());
+        } else {
+            readonly_cache.clear();
+        }
+
+        let env = ToolEnvelopeContext {
+            tool_call_id: id.as_str(),
+            execution_mode: "serial",
+            parallel_batch_id: None,
+        };
+        emit_tool_result_sse_and_append(
+            messages,
+            per_coord,
+            EmitToolResultParams {
+                out,
+                echo_terminal_transcript,
+                terminal_tool_display_max_chars,
+                tool_result_envelope_v1,
+                name: name.as_str(),
+                args: args.as_str(),
+                id: id.as_str(),
+                result,
+                reflection_inject,
+                envelope_ctx: Some(env),
+            },
+        )
+        .await;
     }
+
+    ExecuteToolsBatchOutcome::Finished
+}
+
+async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
+    let out = ctx.out;
+
+    if let Some(tx) = out {
+        let _ = crate::sse::send_string_logged(
+            tx,
+            encode_message(SsePayload::ToolRunning { tool_running: true }),
+            "execute_tools::batch tool_running true",
+        )
+        .await;
+    }
+
+    let workspace_changed = if tool_registry::tool_calls_allow_parallel_sync_batch(ctx.tool_calls) {
+        let outcome = execute_tools_parallel(ctx).await;
+        if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+            return outcome;
+        }
+        false
+    } else {
+        let mut workspace_changed = false;
+        let outcome = execute_tools_serial(ctx, &mut workspace_changed).await;
+        if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+            return outcome;
+        }
+        workspace_changed
+    };
 
     if let Some(tx) = out {
         if workspace_changed {

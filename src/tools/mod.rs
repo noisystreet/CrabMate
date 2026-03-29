@@ -453,66 +453,52 @@ fn runner_workflow_execute(_args: &str, _ctx: &ToolContext<'_>) -> String {
     "workflow_execute：由运行时引擎执行（若你看到这条，说明拦截未生效）。".to_string()
 }
 
-fn runner_git_status(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::status(args, ctx.command_max_output_len, ctx.working_dir)
+/// 生成 `fn runner_git_* -> git::impl(args, max_len, cwd)`；新增 Git 工具时在列表中增一行并注册 `tool_specs_registry`。
+macro_rules! define_git_runner {
+    ($runner:ident, $git_fn:ident) => {
+        fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
+            git::$git_fn(args, ctx.command_max_output_len, ctx.working_dir)
+        }
+    };
 }
 
-fn runner_git_diff(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::diff(args, ctx.command_max_output_len, ctx.working_dir)
+macro_rules! define_git_runners {
+    ($( $runner:ident => $git_fn:ident ),* $(,)? ) => {
+        $( define_git_runner!($runner, $git_fn); )*
+    };
 }
 
-fn runner_git_clean_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::clean_check(args, ctx.command_max_output_len, ctx.working_dir)
-}
-
-fn runner_git_diff_stat(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::diff_stat(args, ctx.command_max_output_len, ctx.working_dir)
-}
-
-fn runner_git_diff_names(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::diff_names(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_log(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::log(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_show(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::show(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_diff_base(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::diff_base(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_blame(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::blame(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_file_history(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::file_history(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_branch_list(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::branch_list(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_remote_status(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::remote_status(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_stage_files(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::stage_files(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_commit(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::commit(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_fetch(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::fetch(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_remote_list(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::remote_list(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_remote_set_url(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::remote_set_url(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_apply(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::apply(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_clone(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::clone_repo(args, ctx.command_max_output_len, ctx.working_dir)
+define_git_runners! {
+    runner_git_status => status,
+    runner_git_diff => diff,
+    runner_git_clean_check => clean_check,
+    runner_git_diff_stat => diff_stat,
+    runner_git_diff_names => diff_names,
+    runner_git_log => log,
+    runner_git_show => show,
+    runner_git_diff_base => diff_base,
+    runner_git_blame => blame,
+    runner_git_file_history => file_history,
+    runner_git_branch_list => branch_list,
+    runner_git_remote_status => remote_status,
+    runner_git_stage_files => stage_files,
+    runner_git_commit => commit,
+    runner_git_fetch => fetch,
+    runner_git_remote_list => remote_list,
+    runner_git_remote_set_url => remote_set_url,
+    runner_git_apply => apply,
+    runner_git_clone => clone_repo,
+    runner_git_checkout => checkout,
+    runner_git_branch_create => branch_create,
+    runner_git_branch_delete => branch_delete,
+    runner_git_push => push,
+    runner_git_merge => merge,
+    runner_git_rebase => rebase,
+    runner_git_stash => stash,
+    runner_git_tag => tag,
+    runner_git_reset => reset,
+    runner_git_cherry_pick => cherry_pick,
+    runner_git_revert => revert,
 }
 
 fn runner_create_file(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -665,42 +651,6 @@ fn runner_delete_event(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_update_event(args: &str, ctx: &ToolContext<'_>) -> String {
     schedule::update_event(args, ctx.working_dir)
-}
-
-// ── Git 写操作补全 ──────────────────────────────────────────
-
-fn runner_git_checkout(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::checkout(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_branch_create(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::branch_create(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_branch_delete(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::branch_delete(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_push(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::push(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_merge(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::merge(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_rebase(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::rebase(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_stash(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::stash(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_tag(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::tag(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_reset(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::reset(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_cherry_pick(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::cherry_pick(args, ctx.command_max_output_len, ctx.working_dir)
-}
-fn runner_git_revert(args: &str, ctx: &ToolContext<'_>) -> String {
-    git::revert(args, ctx.command_max_output_len, ctx.working_dir)
 }
 
 // ── Node.js / npm / npx ─────────────────────────────────────
