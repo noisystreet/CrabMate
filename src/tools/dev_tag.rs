@@ -16,6 +16,8 @@ pub const VCS: &str = "vcs";
 pub const QUALITY: &str = "quality";
 /// Go 语言工具链。
 pub const GO: &str = "go";
+/// JVM（Maven / Gradle）。
+pub const JVM: &str = "jvm";
 /// 安全分析工具（SAST、漏洞扫描）。
 pub const SECURITY: &str = "security";
 /// Shell 脚本相关工具。
@@ -104,6 +106,11 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "go_build" | "go_test" | "go_mod_tidy" => &[GENERAL, GO],
         "go_vet" | "go_fmt_check" | "golangci_lint" => &[GENERAL, GO, QUALITY],
 
+        // --- JVM ---
+        "maven_compile" | "maven_test" | "gradle_compile" | "gradle_test" => {
+            &[GENERAL, JVM, QUALITY]
+        }
+
         // --- Python ---
         "ruff_check" | "mypy_check" => &[GENERAL, PYTHON, QUALITY],
         "pytest_run" | "python_install_editable" | "uv_sync" | "uv_run" => &[GENERAL, PYTHON],
@@ -122,6 +129,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "cppcheck_analyze" => &[GENERAL, CPP, QUALITY],
         "semgrep_scan" => &[GENERAL, SECURITY, QUALITY],
         "hadolint_check" => &[GENERAL, DOCKER, QUALITY],
+        "docker_build" | "docker_compose_ps" | "podman_images" => &[GENERAL, DOCKER, QUALITY],
         "bandit_scan" => &[GENERAL, PYTHON, SECURITY, QUALITY],
         "lizard_complexity" => &[GENERAL, QUALITY],
 
@@ -130,7 +138,8 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "release_ready_check"
         | "repo_overview_sweep"
         | "docs_health_sweep" => &[GENERAL, QUALITY],
-        "run_lints" | "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],
+        "run_lints" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],
+        "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, JVM, DOCKER, QUALITY],
 
         // --- 格式化（多语言由实现按扩展名分流）---
         "format_file" | "format_check_file" => &[GENERAL, RUST, FRONTEND, PYTHON, CPP],
@@ -140,7 +149,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
 
         // --- 代码度量与分析 ---
         "code_stats" => &[GENERAL],
-        "dependency_graph" => &[GENERAL, RUST, FRONTEND, GO],
+        "dependency_graph" => &[GENERAL, RUST, FRONTEND, GO, JVM],
         "coverage_report" => &[GENERAL, RUST, FRONTEND, PYTHON, GO, QUALITY],
 
         _ => &[GENERAL],
@@ -173,6 +182,14 @@ pub fn suggest_dev_tags_for_workspace(root: &std::path::Path) -> Vec<&'static st
     }
     if root.join("go.mod").is_file() {
         out.push(GO);
+    }
+    if root.join("pom.xml").is_file()
+        || root.join("build.gradle").is_file()
+        || root.join("build.gradle.kts").is_file()
+        || root.join("settings.gradle").is_file()
+        || root.join("settings.gradle.kts").is_file()
+    {
+        out.push(JVM);
     }
     if root.join("Dockerfile").is_file()
         || root.join("docker-compose.yml").is_file()
@@ -262,6 +279,17 @@ mod tests {
         std::fs::write(dir.join("configure.ac"), "AC_INIT([x],[1.0])\n").unwrap();
         let s = suggest_dev_tags_for_workspace(&dir);
         assert!(s.contains(&CPP));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn suggest_tags_includes_jvm_when_pom() {
+        let dir = std::env::temp_dir().join(format!("crabmate_dev_tag_jvm_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("pom.xml"), "<project/>").unwrap();
+        let s = suggest_dev_tags_for_workspace(&dir);
+        assert!(s.contains(&JVM));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

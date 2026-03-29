@@ -11,6 +11,7 @@ static SPECS_EXEC_PACKAGE: &[ToolSpec] = &include!("specs/exec_package.inc.rs");
 static SPECS_CARGO_RUST: &[ToolSpec] = &include!("specs/cargo_rust.inc.rs");
 static SPECS_FRONTEND_PYTHON: &[ToolSpec] = &include!("specs/frontend_python.inc.rs");
 static SPECS_GO: &[ToolSpec] = &include!("specs/go.inc.rs");
+static SPECS_JVM_CONTAINER: &[ToolSpec] = &include!("specs/jvm_container.inc.rs");
 static SPECS_QUALITY_AST: &[ToolSpec] = &include!("specs/quality_ast.inc.rs");
 static SPECS_FRONTEND_AUDIT_CI: &[ToolSpec] = &include!("specs/frontend_audit_ci.inc.rs");
 static SPECS_DIAGNOSTICS_DOCS: &[ToolSpec] = &include!("specs/diagnostics_docs.inc.rs");
@@ -39,6 +40,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             + SPECS_CARGO_RUST.len()
             + SPECS_FRONTEND_PYTHON.len()
             + SPECS_GO.len()
+            + SPECS_JVM_CONTAINER.len()
             + SPECS_QUALITY_AST.len()
             + SPECS_FRONTEND_AUDIT_CI.len()
             + SPECS_DIAGNOSTICS_DOCS.len()
@@ -63,6 +65,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
         v.extend_from_slice(SPECS_CARGO_RUST);
         v.extend_from_slice(SPECS_FRONTEND_PYTHON);
         v.extend_from_slice(SPECS_GO);
+        v.extend_from_slice(SPECS_JVM_CONTAINER);
         v.extend_from_slice(SPECS_QUALITY_AST);
         v.extend_from_slice(SPECS_FRONTEND_AUDIT_CI);
         v.extend_from_slice(SPECS_DIAGNOSTICS_DOCS);

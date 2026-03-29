@@ -39,8 +39,13 @@ allowed_commands = [
     "rustc",
     # 版本控制与语言运行时
     "git",
+    "gradle",
+    "mvn",
     "npm",
+    "podman",
     "python3",
+    # 容器 CLI（与 SyncDefault Docker 沙盒的 Engine API 不同；供内置 docker_* / podman_* 工具）
+    "docker",
     # 搜索与路径解析
     "egrep",
     "fgrep",
