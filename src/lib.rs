@@ -3,7 +3,7 @@
 //!
 //! 日志由 `log` + `env_logger` 处理；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
 
-mod agent;
+pub mod agent;
 mod agent_memory;
 mod chat_job_queue;
 /// 工作区代码语义索引与 `codebase_semantic_search` 工具（SQLite + fastembed）。

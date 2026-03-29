@@ -66,6 +66,8 @@ struct WorkflowTracePush<'a> {
     status: Option<&'a str>,
     elapsed_ms: Option<u64>,
     error_code: Option<&'a str>,
+    tool_name: Option<&'a str>,
+    phase: Option<&'a str>,
 }
 
 fn workflow_trace_push(p: WorkflowTracePush<'_>) {
@@ -86,6 +88,8 @@ fn workflow_trace_push(p: WorkflowTracePush<'_>) {
         status: p.status.map(|s| s.to_string()),
         elapsed_ms: p.elapsed_ms,
         error_code: p.error_code.map(|s| s.to_string()),
+        tool_name: p.tool_name.map(|s| s.to_string()),
+        phase: p.phase.map(|s| s.to_string()),
     };
     if let Ok(mut g) = t.lock() {
         g.push(ev);
@@ -124,6 +128,8 @@ pub(crate) async fn execute_workflow_dag(
         status: None,
         elapsed_ms: None,
         error_code: None,
+        tool_name: None,
+        phase: None,
     });
     info!(
         target: "crabmate",
@@ -188,6 +194,7 @@ pub(crate) async fn execute_workflow_dag(
                             exec_ctx,
                             completed_snapshot,
                             inject_max_chars,
+                            "main",
                         )
                         .await
                     });
@@ -332,6 +339,19 @@ pub(crate) async fn execute_workflow_dag(
     let mut workspace_changed_final = workspace_changed;
     let human_summary = if first_failure.is_some() {
         if spec.compensate_on_failure {
+            workflow_trace_push(WorkflowTracePush {
+                trace: &tool_exec_ctx.trace_events,
+                workflow_run_id,
+                event: "compensation_phase_start",
+                node_id: None,
+                detail: None,
+                attempt: None,
+                status: None,
+                elapsed_ms: None,
+                error_code: None,
+                tool_name: None,
+                phase: Some("compensation"),
+            });
             let command_max_output_len = command_max_output_len_from(&tool_exec_ctx);
             let (s, comp_workspace_changed) = execute_compensations(
                 &spec,
@@ -346,6 +366,19 @@ pub(crate) async fn execute_workflow_dag(
             workspace_changed_final = workspace_changed_final || comp_workspace_changed;
             compensation_summary = Some(s.clone());
             compensation_executed = true;
+            workflow_trace_push(WorkflowTracePush {
+                trace: &tool_exec_ctx.trace_events,
+                workflow_run_id,
+                event: "compensation_phase_end",
+                node_id: None,
+                detail: None,
+                attempt: None,
+                status: None,
+                elapsed_ms: None,
+                error_code: None,
+                tool_name: None,
+                phase: Some("compensation"),
+            });
             format!(
                 "{}\n\n====================\n\n补偿执行结果：\n{}",
                 main_summary, s
@@ -374,12 +407,16 @@ pub(crate) async fn execute_workflow_dag(
         status: Some(status.as_str()),
         elapsed_ms: None,
         error_code: None,
+        tool_name: None,
+        phase: None,
     });
     let trace_final: Vec<WorkflowTraceEvent> = tool_exec_ctx
         .trace_events
         .as_ref()
         .and_then(|t| t.lock().ok().map(|g| g.clone()))
         .unwrap_or_default();
+
+    let chrome_trace_path = super::chrome_trace::maybe_write_workflow_chrome_trace(&trace_final);
 
     let report = WorkflowExecutionReport {
         report_type: "workflow_execute_result".to_string(),
@@ -408,6 +445,7 @@ pub(crate) async fn execute_workflow_dag(
         trace: trace_final,
         completion_order: completion_order_out,
         human_summary,
+        chrome_trace_path,
     };
 
     let json = serde_json::to_string(&report).unwrap_or_else(|_| report.human_summary.clone());
@@ -542,6 +580,59 @@ async fn run_node(
     tool_exec_ctx: WorkflowToolExecCtx,
     completed_snapshot: HashMap<String, NodeRunResult>,
     inject_max_chars: usize,
+    phase: &'static str,
+) -> NodeRunResult {
+    let tool_name = node.tool_name.clone();
+    let node_run_wall_start = Instant::now();
+    workflow_trace_push(WorkflowTracePush {
+        trace: &tool_exec_ctx.trace_events,
+        workflow_run_id: tool_exec_ctx.workflow_run_id,
+        event: "node_run_start",
+        node_id: Some(node.id.as_str()),
+        detail: Some(format!("tool={tool_name} phase={phase}")),
+        attempt: None,
+        status: None,
+        elapsed_ms: None,
+        error_code: None,
+        tool_name: Some(tool_name.as_str()),
+        phase: Some(phase),
+    });
+    let res = run_node_inner(
+        node,
+        approval_mode,
+        tool_exec_ctx.clone(),
+        completed_snapshot,
+        inject_max_chars,
+        phase,
+    )
+    .await;
+    let st = match res.status {
+        NodeRunStatus::Passed => "passed",
+        NodeRunStatus::Failed => "failed",
+    };
+    workflow_trace_push(WorkflowTracePush {
+        trace: &tool_exec_ctx.trace_events,
+        workflow_run_id: tool_exec_ctx.workflow_run_id,
+        event: "node_run_end",
+        node_id: Some(res.id.as_str()),
+        detail: None,
+        attempt: Some(res.attempt),
+        status: Some(st),
+        elapsed_ms: Some(node_run_wall_start.elapsed().as_millis() as u64),
+        error_code: res.error_code.as_deref(),
+        tool_name: Some(tool_name.as_str()),
+        phase: Some(phase),
+    });
+    res
+}
+
+async fn run_node_inner(
+    node: WorkflowNodeSpec,
+    approval_mode: WorkflowApprovalMode,
+    tool_exec_ctx: WorkflowToolExecCtx,
+    completed_snapshot: HashMap<String, NodeRunResult>,
+    inject_max_chars: usize,
+    phase: &'static str,
 ) -> NodeRunResult {
     let node_start = Instant::now();
     info!(
@@ -776,6 +867,8 @@ async fn run_node(
         status: None,
         elapsed_ms: None,
         error_code: None,
+        tool_name: Some(node.tool_name.as_str()),
+        phase: Some(phase),
     });
 
     let max_attempts = node.max_retries.saturating_add(1).max(1);
@@ -793,6 +886,8 @@ async fn run_node(
             status: None,
             elapsed_ms: None,
             error_code: None,
+            tool_name: Some(node.tool_name.as_str()),
+            phase: Some(phase),
         });
 
         let mut res = execute_node_tool_phase(
@@ -821,6 +916,8 @@ async fn run_node(
             status: Some(st),
             elapsed_ms: Some(t0.elapsed().as_millis() as u64),
             error_code: res.error_code.as_deref(),
+            tool_name: Some(node.tool_name.as_str()),
+            phase: Some(phase),
         });
 
         if res.status == NodeRunStatus::Passed {
@@ -850,6 +947,8 @@ async fn run_node(
                 status: None,
                 elapsed_ms: None,
                 error_code: res.error_code.as_deref(),
+                tool_name: Some(node.tool_name.as_str()),
+                phase: Some(phase),
             });
             tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
             last = Some(res);
@@ -1066,6 +1165,7 @@ async fn execute_compensations(
             tool_exec_ctx.clone(),
             completed_snapshot,
             spec.output_inject_max_chars,
+            "compensation",
         )
         .await;
         if res.status == NodeRunStatus::Passed {

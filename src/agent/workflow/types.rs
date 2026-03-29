@@ -40,6 +40,12 @@ pub(crate) struct WorkflowTraceEvent {
     pub(crate) elapsed_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error_code: Option<String>,
+    /// 节点工具名（便于 trace / 日志对齐）；DAG 级事件可为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) tool_name: Option<String>,
+    /// `main`（默认 DAG 节点）或 `compensation`（失败补偿串行阶段）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) phase: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -99,4 +105,7 @@ pub(crate) struct WorkflowExecutionReport {
     /// 成功节点完成顺序（用于补偿逆序等）；失败运行亦包含已成功完成的 id。
     pub(crate) completion_order: Vec<String>,
     pub(crate) human_summary: String,
+    /// 若启用了 Chrome trace 目录且写入成功，为生成文件的**绝对或相对路径**字符串（便于自动化与 UI 链到 Perfetto）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) chrome_trace_path: Option<String>,
 }
