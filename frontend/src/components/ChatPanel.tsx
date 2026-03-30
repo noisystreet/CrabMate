@@ -7,7 +7,7 @@ import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { Send, User, Bot, Loader2, ImagePlus, FileText, Mic, Video, Square } from 'lucide-react'
 import type { Components } from 'react-markdown'
-import { Virtuoso } from 'react-virtuoso'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
   SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT,
   assistantStreamPlainDisplay,
@@ -379,7 +379,7 @@ export function ChatPanel({
   const [agentRoleIds, setAgentRoleIds] = useState<string[]>([])
   const [selectedAgentRole, setSelectedAgentRole] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
-  const virtuosoRef = useRef<null | { scrollToIndex?: (arg: any) => void }>(null)
+  const virtuosoRef = useRef<VirtuosoHandle | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const approvalSessionIdRef = useRef<string | null>(null)
@@ -390,14 +390,24 @@ export function ChatPanel({
 
   const isNearBottomRef = useRef(true)
   const scrollRafRef = useRef<number | null>(null)
-  const scheduleScrollToBottom = useCallback(() => {
-    if (!isNearBottomRef.current) return
+  /**
+   * @param force 流式只改 DOM、不增 messages 条数时，followOutput / scrollToIndex 往往不跟高；此时应传 true 并走 autoscrollToBottom。
+   */
+  const scheduleScrollToBottom = useCallback((force = false) => {
+    if (!force && !isNearBottomRef.current) return
     if (scrollRafRef.current != null) return
     scrollRafRef.current = window.requestAnimationFrame(() => {
       scrollRafRef.current = null
       const v = virtuosoRef.current
-      if (v?.scrollToIndex) {
-        v.scrollToIndex({ index: Math.max(0, messages.length - 1), align: 'end', behavior: 'auto' })
+      if (v) {
+        // 动态增高（流式 span、Markdown 展开等）：官方推荐 autoscrollToBottom，比反复 scrollToIndex 可靠
+        v.autoscrollToBottom()
+        // 改 textContent 后高度在下一帧才稳定，再跟一次避免仍留一截在视口外
+        if (force) {
+          requestAnimationFrame(() => {
+            virtuosoRef.current?.autoscrollToBottom()
+          })
+        }
         return
       }
       const el = listRef.current
@@ -416,6 +426,9 @@ export function ChatPanel({
     setAtBottom(atBottom)
   }, [])
 
+  /** 用 Virtuoso 在尺寸变化瞬间自带的 isAtBottom，避免与外部 ref 不一致导致跟底失败 */
+  const followChatOutput = useCallback((isAtBottom: boolean) => (isAtBottom ? ('auto' as const) : false), [])
+
   const scrollToIndex = useCallback((index: number) => {
     const v = virtuosoRef.current
     if (v?.scrollToIndex) {
@@ -425,10 +438,10 @@ export function ChatPanel({
 
   const scrollToBottomNow = useCallback(() => {
     const v = virtuosoRef.current
-    if (v?.scrollToIndex) {
-      v.scrollToIndex({ index: Math.max(0, messages.length - 1), align: 'end', behavior: 'smooth' })
+    if (v) {
+      v.autoscrollToBottom()
     }
-  }, [messages.length])
+  }, [])
 
   // 流式输出：只更新“最后一条 assistant 文本节点”，避免频繁触发 React 重渲染
   const streamingMsgIdRef = useRef<string | null>(null)
@@ -447,7 +460,7 @@ export function ChatPanel({
       const display = assistantStreamPlainDisplay(streamingTextRef.current)
       streamingSpanRef.current.textContent = display || '\u00A0'
     }
-    scheduleScrollToBottom()
+    scheduleScrollToBottom(true)
   }, [scheduleScrollToBottom])
 
   const enqueueDelta = useCallback((text: string) => {
@@ -472,27 +485,27 @@ export function ChatPanel({
       const shown = collapsed ? text.split('\n').slice(0, 18).join('\n') : text
       const fileName = `snippet.${lang === 'text' ? 'txt' : lang}`
       return (
-        <div className="border border-base-300 bg-base-100 rounded-none overflow-hidden my-2">
+        <div className="border border-base-content/10 bg-base-100 rounded-xl overflow-hidden my-2 shadow-sm">
           <div className="flex items-center justify-between px-2 py-1 bg-base-200 text-xs">
             <span className="font-mono text-base-content/70">{lang}</span>
             <div className="flex gap-1">
               <button
                 type="button"
-                className="btn btn-ghost btn-xs rounded-none"
+                className="btn btn-ghost btn-xs rounded-lg"
                 onClick={() => navigator.clipboard.writeText(text).catch(() => {})}
               >
                 复制
               </button>
               <button
                 type="button"
-                className="btn btn-ghost btn-xs rounded-none"
+                className="btn btn-ghost btn-xs rounded-lg"
                 onClick={() => downloadTextFile(fileName, text)}
               >
                 下载
               </button>
               <button
                 type="button"
-                className="btn btn-ghost btn-xs rounded-none"
+                className="btn btn-ghost btn-xs rounded-lg"
                 onClick={() => setCollapsedCodeBlocks((p) => ({ ...p, [key]: !collapsed }))}
               >
                 {collapsed ? '展开' : '折叠'}
@@ -564,6 +577,9 @@ export function ChatPanel({
     approvalSessionIdRef.current = null
     setAttachHint(null)
     setInput(initialDraft ?? '')
+    // 切换会话后应默认落在最新消息；否则若此前向上滚动过，isNearBottomRef 为 false 会阻止滚到底
+    isNearBottomRef.current = true
+    setAtBottom(true)
     setMessages(initialMessages ? [...initialMessages] : [])
     conversationIdRef.current = sessionId
     setSelectedAgentRole('')
@@ -1114,7 +1130,7 @@ export function ChatPanel({
   return (
     <div
       ref={panelRef}
-      className="card flex flex-col h-full min-h-0 bg-base-200 border border-base-300 border-r-0 border-b-0 shadow-none rounded-none"
+      className="card flex flex-col h-full min-h-0 bg-base-100/90 backdrop-blur-sm border border-base-content/10 shadow-lg rounded-2xl overflow-hidden"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       title="可将图片/音频/视频文件拖拽到此处上传"
@@ -1130,19 +1146,24 @@ export function ChatPanel({
         ) : (
           <div className="relative h-full">
             <Virtuoso
-              ref={virtuosoRef as any}
+              key={sessionId ?? 'default'}
+              ref={virtuosoRef}
               className="h-full"
               data={messages}
+              alignToBottom
+              atBottomThreshold={64}
               atBottomStateChange={handleAtBottomStateChange}
-              followOutput={isNearBottomRef.current ? 'smooth' : false}
+              initialTopMostItemIndex={{ index: 'LAST', align: 'end', behavior: 'auto' }}
+              followOutput={followChatOutput}
+              increaseViewportBy={{ top: 120, bottom: 240 }}
               itemContent={(_idx, m) => {
                 const userTextForChat =
                   m.role === 'user' ? formatStagedStepUserForChat(m.text) : m.text
                 return (
               m.role === 'system' && m.isChatSeparator ? (
-            <div key={m.id} className="flex justify-center px-4 py-2">
+            <div key={m.id} className="flex justify-center px-4 sm:px-6 py-2 w-full">
               <div
-                className={`w-full max-w-[720px] ${
+                className={`w-full ${
                   m.chatSeparatorShort
                     ? 'border-t border-dashed border-base-content/30'
                     : 'border-t-2 border-solid border-base-content/45'
@@ -1151,8 +1172,8 @@ export function ChatPanel({
             </div>
           ) : m.role === 'system' && m.isToolOutput ? (
             // 命令输出：使用卡片样式，可折叠 + 复制
-            <div key={m.id} className="flex justify-center text-xs text-base-content/70 px-4 pt-4">
-              <div className="w-full max-w-[720px] border border-base-300 bg-base-200 rounded-md overflow-hidden">
+            <div key={m.id} className="flex justify-center text-xs text-base-content/70 px-4 sm:px-6 pt-4 w-full">
+              <div className="w-full border border-base-300 bg-base-200 rounded-md overflow-hidden">
                 {(() => {
                   const idx = m.text.indexOf('\n')
                   const title = idx >= 0 ? m.text.slice(0, idx) : m.text
@@ -1195,7 +1216,7 @@ export function ChatPanel({
             </div>
           ) : m.role === 'system' ? (
             // 其他 system 消息（如工具调用摘要）：保持 pill 样式
-            <div key={m.id} className="flex justify-center text-xs text-base-content/60 px-4 pt-4">
+            <div key={m.id} className="flex justify-center text-xs text-base-content/60 px-4 sm:px-6 pt-4 w-full">
               <button
                 type="button"
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-base-300/80 hover:bg-base-300 transition-colors"
@@ -1219,7 +1240,9 @@ export function ChatPanel({
             !(m.videoUrls && m.videoUrls.length) ? null : (
             <div
               key={m.id}
-              className={`flex gap-3 items-end px-4 pt-4 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}
+              className={`flex gap-3 items-end px-4 sm:px-6 pt-4 w-full ${
+                m.role === 'user' ? 'justify-end' : 'justify-start'
+              }`}
               onContextMenu={(e) => {
                 e.preventDefault()
                 if (!m.text) return
@@ -1236,20 +1259,20 @@ export function ChatPanel({
                   : '右键复制整条'
               }
             >
+              {m.role === 'assistant' && (
+                <div
+                  className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full shadow-sm ring-2 ring-base-100 bg-accent/25 text-accent"
+                >
+                  <Bot size={20} />
+                </div>
+              )}
               <div
-                className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-none ${
-                  m.role === 'user' ? 'bg-success text-success-content' : 'bg-primary text-primary-content'
-                }`}
-              >
-                {m.role === 'user' ? <User size={20} /> : <Bot size={20} />}
-              </div>
-              <div
-                className={`max-w-[78%] px-4 py-2.5 rounded-none ${
+                className={`min-w-0 max-w-[95%] px-4 py-2.5 shadow-sm ${
                   m.role === 'user'
-                    ? 'bg-primary text-primary-content'
+                    ? 'rounded-2xl rounded-br-md bg-primary/15 text-base-content border border-primary/25'
                     : m.state === 'error'
-                      ? 'bg-error/20 text-error border border-error/30'
-                      : 'bg-base-300 text-base-content border border-base-content/10'
+                      ? 'rounded-2xl bg-error/15 text-error border border-error/35'
+                      : 'rounded-2xl rounded-bl-md bg-base-100/95 text-base-content border border-base-content/10 border-l-4 border-l-accent/60'
                 }`}
               >
                 {m.state === 'loading' ? (
@@ -1330,7 +1353,7 @@ export function ChatPanel({
                             </span>
                             <button
                               type="button"
-                              className="btn btn-ghost btn-xs rounded-none"
+                              className="btn btn-ghost btn-xs rounded-lg"
                               disabled={sending}
                               onClick={() => {
                                 if (!lastPrompt || sending) return
@@ -1346,6 +1369,11 @@ export function ChatPanel({
                   </div>
                 )}
               </div>
+              {m.role === 'user' && (
+                <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full shadow-sm ring-2 ring-base-100 bg-primary/20 text-primary">
+                  <User size={20} />
+                </div>
+              )}
             </div>
           )
             );
@@ -1356,7 +1384,7 @@ export function ChatPanel({
               {!atBottom && (
                 <button
                   type="button"
-                  className="btn btn-primary btn-sm rounded-none shadow-lg"
+                  className="btn btn-primary btn-sm rounded-xl shadow-lg"
                   onClick={scrollToBottomNow}
                   title="跳转到底部"
                 >
@@ -1365,7 +1393,7 @@ export function ChatPanel({
               )}
               <button
                 type="button"
-                className="btn btn-ghost btn-sm rounded-none bg-base-200/90 border border-base-300 shadow"
+                className="btn btn-ghost btn-sm rounded-xl bg-base-200/90 border border-base-content/10 shadow-md backdrop-blur-sm"
                 onClick={() => setJumpOpen(true)}
                 title="按序号跳转到某条消息"
               >
@@ -1375,7 +1403,7 @@ export function ChatPanel({
 
             {jumpOpen && (
               <div className="absolute inset-0 bg-black/30 flex items-center justify-center p-4">
-                <div className="w-full max-w-[420px] bg-base-100 border border-base-300 rounded-none shadow-xl">
+                <div className="w-full max-w-[420px] bg-base-100 border border-base-content/10 rounded-2xl shadow-2xl overflow-hidden">
                   <div className="px-4 py-3 border-b border-base-300 bg-base-200 flex items-center justify-between">
                     <div className="font-semibold">跳转到消息</div>
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => setJumpOpen(false)}>
@@ -1390,16 +1418,16 @@ export function ChatPanel({
                       value={jumpValue}
                       onChange={(e) => setJumpValue(e.target.value)}
                       placeholder="例如：1"
-                      className="input input-bordered w-full rounded-none"
+                      className="input input-bordered w-full rounded-lg"
                       inputMode="numeric"
                     />
                     <div className="flex justify-end gap-2">
-                      <button type="button" className="btn btn-ghost rounded-none" onClick={() => setJumpOpen(false)}>
+                      <button type="button" className="btn btn-ghost rounded-lg" onClick={() => setJumpOpen(false)}>
                         取消
                       </button>
                       <button
                         type="button"
-                        className="btn btn-primary rounded-none"
+                        className="btn btn-primary rounded-lg"
                         onClick={() => {
                           const n = Number(jumpValue)
                           if (!Number.isFinite(n)) return
@@ -1423,20 +1451,25 @@ export function ChatPanel({
         aria-orientation="horizontal"
         onPointerDown={handleInputResizePointerDown}
         onMouseDown={handleInputResizeMouseDown}
-        className="flex-shrink-0 h-3 cursor-row-resize bg-base-300 hover:bg-primary/30 active:bg-primary/40 flex items-center justify-center transition-colors select-none"
+        className="flex-shrink-0 h-3 cursor-row-resize bg-base-300/80 hover:bg-primary/25 active:bg-primary/35 flex items-center justify-center transition-colors select-none border-y border-base-content/5"
         title="拖动调节输入框高度"
       >
         <span className="w-14 h-[3px] rounded-full bg-base-content/40" />
       </div>
+      {/* 消息区 → 输入区：淡分隔，避免与列表硬切 */}
       <div
-        className="flex-shrink-0 p-4 border-t border-base-300 flex flex-col gap-2"
+        className="flex-shrink-0 h-4 bg-gradient-to-b from-transparent via-base-content/[0.06] to-base-content/[0.10]"
+        aria-hidden
+      />
+      <div
+        className="flex-shrink-0 p-4 pt-3 border-t border-base-content/[0.08] flex flex-col gap-2 bg-base-100/95 bg-gradient-to-b from-base-200/30 to-base-100/95 backdrop-blur-md supports-[backdrop-filter]:from-base-200/20 supports-[backdrop-filter]:to-base-100/80"
         style={{ height: inputHeight + 32 + (pendingImages.length || pendingAudios.length || pendingVideos.length ? 52 : 0) }}
       >
         {(pendingImages.length > 0 || pendingAudios.length > 0 || pendingVideos.length > 0) && (
           <div className="flex flex-wrap gap-2 items-center min-h-[48px]">
             <button
               type="button"
-              className="btn btn-ghost btn-xs rounded-none"
+              className="btn btn-ghost btn-xs rounded-lg"
               onClick={clearAttachments}
               title="清空所有附件"
             >
@@ -1514,7 +1547,7 @@ export function ChatPanel({
                 <span className="tabular-nums">{uploadPercent}%</span>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-xs rounded-none"
+                  className="btn btn-ghost btn-xs rounded-lg"
                   onClick={() => uploadAbortRef.current?.abort()}
                 >
                   取消上传
@@ -1530,7 +1563,7 @@ export function ChatPanel({
             </label>
             <select
               id="agent-role-select"
-              className="select select-bordered select-sm rounded-none max-w-[220px]"
+              className="select select-bordered select-sm rounded-lg max-w-[220px]"
               value={selectedAgentRole}
               onChange={(e) => setSelectedAgentRole(e.target.value)}
               title="仅本会话首条消息生效；后续沿用已建立的 system"
@@ -1602,9 +1635,20 @@ export function ChatPanel({
           }}
         />
         <div
-          className="chat-input flex-1 min-w-[120px] flex gap-2 items-end border-2 border-base-300 bg-base-100 rounded-xl px-2 pb-2 pt-2 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all duration-200"
+          className={`chat-input relative flex-1 min-w-[120px] flex flex-col rounded-xl overflow-hidden border-2 bg-base-100 transition-all duration-200 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 ${
+            sending
+              ? 'border-primary/50 shadow-[0_0_0_1px_hsl(var(--p)/0.18),inset_0_1px_0_0_hsl(var(--p)/0.08)] motion-reduce:shadow-none'
+              : 'border-base-300'
+          }`}
           style={{ minHeight: inputHeight }}
         >
+          {sending && (
+            <progress
+              className="progress progress-primary h-1 w-full shrink-0 rounded-none rounded-t-[0.65rem]"
+              aria-label="模型正在生成回复"
+            />
+          )}
+          <div className="flex flex-1 min-h-0 gap-2 items-end px-2 pb-2 pt-2">
           <div className="flex gap-1.5 shrink-0 pb-0.5">
             <button
               type="button"
@@ -1683,12 +1727,13 @@ export function ChatPanel({
               </button>
             </div>
           </div>
+          </div>
         </div>
         </div>
       </div>
       {pendingApproval && (
         <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-[680px] bg-base-100 border border-base-300 rounded-none shadow-xl">
+          <div className="w-full max-w-[680px] bg-base-100 border border-base-content/10 rounded-2xl shadow-2xl overflow-hidden">
             <div className="px-4 py-3 border-b border-base-300 bg-base-200 flex items-center justify-between">
               <div className="font-semibold">工具执行审批</div>
               <span className="text-xs text-base-content/60">请确认是否执行</span>
@@ -1708,7 +1753,7 @@ export function ChatPanel({
               <div className="flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
-                  className="btn btn-error rounded-none"
+                  className="btn btn-error rounded-lg"
                   disabled={!!pendingApproval.submitting}
                   onClick={() => { void submitApprovalDecision('deny') }}
                 >
@@ -1716,7 +1761,7 @@ export function ChatPanel({
                 </button>
                 <button
                   type="button"
-                  className="btn btn-warning rounded-none"
+                  className="btn btn-warning rounded-lg"
                   disabled={!!pendingApproval.submitting}
                   onClick={() => { void submitApprovalDecision('allow_once') }}
                 >
@@ -1724,7 +1769,7 @@ export function ChatPanel({
                 </button>
                 <button
                   type="button"
-                  className="btn btn-success rounded-none"
+                  className="btn btn-success rounded-lg"
                   disabled={!!pendingApproval.submitting}
                   onClick={() => { void submitApprovalDecision('allow_always') }}
                 >

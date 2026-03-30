@@ -145,10 +145,10 @@ ${desc}`
 
   return (
     <div
-      className="card flex-shrink-0 flex flex-col h-full min-h-0 bg-base-200 border border-base-300 border-t-0 border-b-0 shadow-none rounded-none"
+      className="card flex-shrink-0 flex flex-col h-full min-h-0 bg-base-100/85 backdrop-blur-sm border border-base-content/10 shadow-sm rounded-xl m-2 min-h-0"
       style={{ width: `${width}px` }}
     >
-      <header className="flex-shrink-0 px-4 py-2 border-b border-base-300 flex items-center justify-between gap-2">
+      <header className="flex-shrink-0 px-4 py-2 border-b border-base-content/10 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <ListTodo size={14} className="text-primary" />
           <h2 className="text-sm font-semibold text-base-content">任务清单</h2>
@@ -225,10 +225,10 @@ ${desc}`
         {!loading && data.items && data.items.length > 0 && (
           <ul className="space-y-1">
             {data.items.map((t) => (
-              <li key={t.id} className="flex items-center gap-2 px-2 py-1 rounded-none text-sm">
+              <li key={t.id} className="flex items-center gap-2 px-2 py-1 rounded-lg text-sm">
                 <input
                   type="checkbox"
-                  className="checkbox checkbox-xs rounded-none"
+                  className="checkbox checkbox-xs rounded-lg"
                   checked={t.done}
                   onChange={() => toggleTask(t.id)}
                 />
@@ -241,7 +241,7 @@ ${desc}`
       <div className="flex-shrink-0 px-3 py-2 border-t border-base-300 flex items-center justify-between text-[11px] text-base-content/50">
         <button
           type="button"
-          className="btn btn-ghost btn-xs rounded-none"
+          className="btn btn-ghost btn-xs rounded-lg"
           onClick={openQuickAdd}
           disabled={saving}
         >
@@ -272,20 +272,20 @@ ${desc}`
                 if (e.key === 'Escape') { setQuickAddOpen(false); setQuickAddTitle(''); }
               }}
               placeholder="输入任务描述"
-              className="input input-bordered input-sm w-full rounded-none"
+              className="input input-bordered input-sm w-full rounded-lg"
               autoFocus
             />
             <div className="flex gap-2 justify-end">
               <button
                 type="button"
-                className="btn btn-ghost btn-sm rounded-none"
+                className="btn btn-ghost btn-sm rounded-lg"
                 onClick={() => { setQuickAddOpen(false); setQuickAddTitle(''); }}
               >
                 取消
               </button>
               <button
                 type="button"
-                className="btn btn-primary btn-sm rounded-none"
+                className="btn btn-primary btn-sm rounded-lg"
                 onClick={submitQuickAdd}
                 disabled={!quickAddTitle.trim()}
               >
@@ -314,14 +314,14 @@ ${desc}`
                 if (e.key === 'Escape') { setGenerateOpen(false); setGenerateDesc(''); }
               }}
               placeholder="例如：为项目添加用户登录、注册与忘记密码功能"
-              className="textarea textarea-bordered flex-1 min-h-[120px] w-full rounded-none text-sm resize-y"
+              className="textarea textarea-bordered flex-1 min-h-[120px] w-full rounded-lg text-sm resize-y"
               spellCheck={false}
               autoFocus
             />
             <div className="flex gap-2 justify-end shrink-0">
               <button
                 type="button"
-                className="btn btn-ghost btn-sm rounded-none"
+                className="btn btn-ghost btn-sm rounded-lg"
                 onClick={() => { setGenerateOpen(false); setGenerateDesc(''); }}
                 disabled={saving}
               >
@@ -329,7 +329,7 @@ ${desc}`
               </button>
               <button
                 type="button"
-                className="btn btn-primary btn-sm rounded-none gap-1"
+                className="btn btn-primary btn-sm rounded-lg gap-1"
                 onClick={() => submitGenerate()}
                 disabled={!generateDesc.trim() || saving}
               >

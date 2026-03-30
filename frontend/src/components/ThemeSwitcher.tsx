@@ -39,7 +39,7 @@ export function ThemeSwitcher() {
       </label>
       <ul
         tabIndex={0}
-        className="dropdown-content menu menu-sm z-50 mt-2 p-2 shadow-xl bg-base-200 border border-base-300 w-36 rounded-none"
+        className="dropdown-content menu menu-sm z-50 mt-2 p-2 shadow-xl bg-base-200 border border-base-content/10 w-36 rounded-xl"
       >
         {THEMES.map((t) => (
           <li key={t.id}>
