@@ -106,61 +106,30 @@ pub(crate) fn workflow_node_failure_retryable(error_code: Option<&str>) -> bool 
     )
 }
 
-pub(crate) async fn execute_workflow_dag(
-    spec: WorkflowSpec,
-    approval_mode: WorkflowApprovalMode,
-    mut tool_exec_ctx: WorkflowToolExecCtx,
-) -> (String, bool) {
-    let workflow_run_id = tool_exec_ctx.workflow_run_id;
-    let trace = Arc::new(StdMutex::new(Vec::<WorkflowTraceEvent>::new()));
-    tool_exec_ctx.trace_events = Some(trace.clone());
-    workflow_trace_push(WorkflowTracePush {
-        trace: &Some(trace.clone()),
-        workflow_run_id,
-        event: "dag_start",
-        node_id: None,
-        detail: Some(format!(
-            "nodes_count={} max_parallelism={} fail_fast={} compensate_on_failure={}",
-            spec.nodes.len(),
-            spec.max_parallelism,
-            spec.fail_fast,
-            spec.compensate_on_failure
-        )),
-        attempt: None,
-        status: None,
-        elapsed_ms: None,
-        error_code: None,
-        tool_name: None,
-        phase: None,
-    });
-    info!(
-        target: "crabmate",
-        "workflow dag execute start workflow_run_id={} nodes_count={} max_parallelism={} fail_fast={} compensate_on_failure={}",
-        workflow_run_id,
-        spec.nodes.len(),
-        spec.max_parallelism,
-        spec.fail_fast,
-        spec.compensate_on_failure
-    );
-    let nodes: HashMap<String, WorkflowNodeSpec> = spec
-        .nodes
-        .iter()
-        .cloned()
-        .map(|n| (n.id.clone(), n))
-        .collect();
+/// `execute_workflow_dag` 主调度循环结束后的聚合状态。
+struct DagExecutionProgress {
+    completed: HashMap<String, NodeRunResult>,
+    started: HashSet<String>,
+    completion_order: Vec<String>,
+    first_failure: Option<NodeRunResult>,
+}
 
+/// 并行调度就绪节点并等待全部 inflight 完成。
+async fn dag_run_parallel_schedule_loop(
+    spec: &WorkflowSpec,
+    approval_mode: WorkflowApprovalMode,
+    tool_exec_ctx: WorkflowToolExecCtx,
+) -> DagExecutionProgress {
     let mut completed: HashMap<String, NodeRunResult> = HashMap::new();
     let mut started: HashSet<String> = HashSet::new();
     let mut completion_order: Vec<String> = Vec::new();
+    let mut first_failure: Option<NodeRunResult> = None;
 
     let max_parallelism = spec.max_parallelism.max(1);
     let semaphore = Arc::new(Semaphore::new(max_parallelism));
     let mut inflight: FuturesUnordered<_> = FuturesUnordered::new();
 
-    let mut first_failure: Option<NodeRunResult> = None;
-
     loop {
-        // 若 fail_fast 且已有失败，则不再启动新节点，只继续等待已启动节点结束。
         if !(spec.fail_fast && first_failure.is_some()) {
             for node in spec.nodes.iter() {
                 if started.contains(&node.id) || completed.contains_key(&node.id) {
@@ -214,7 +183,6 @@ pub(crate) async fn execute_workflow_dag(
                     if first_failure.is_none() {
                         first_failure = Some(res.clone());
                     }
-                    // 失败节点不放入 completed；但也要记录到输出里（后面统一拼装）
                     completed.insert(
                         res.id.clone(),
                         NodeRunResult {
@@ -232,31 +200,32 @@ pub(crate) async fn execute_workflow_dag(
         }
     }
 
-    let workspace_changed = completed.values().any(|r| r.workspace_changed);
+    DagExecutionProgress {
+        completed,
+        started,
+        completion_order,
+        first_failure,
+    }
+}
 
-    // 根据 completed/started 组装主结果
-    let main_summary = format_main_summary(
-        &spec,
-        &completed,
-        &started,
-        &completion_order,
-        first_failure.as_ref(),
-    );
+struct NodeReportsBundle {
+    reports: Vec<WorkflowExecutionNodeReport>,
+    passed: usize,
+    failed: usize,
+    skipped: usize,
+}
 
-    let status = if first_failure.is_some() {
-        "failed".to_string()
-    } else {
-        "passed".to_string()
-    };
-
-    // 组装节点级报告（按 spec.nodes 的声明顺序）
+fn build_workflow_node_reports(
+    spec: &WorkflowSpec,
+    progress: &DagExecutionProgress,
+) -> NodeReportsBundle {
     let mut passed: usize = 0;
     let mut failed: usize = 0;
     let mut skipped: usize = 0;
     let mut node_reports: Vec<WorkflowExecutionNodeReport> = Vec::new();
 
     for n in spec.nodes.iter() {
-        if let Some(r) = completed.get(&n.id) {
+        if let Some(r) = progress.completed.get(&n.id) {
             let st = match r.status {
                 NodeRunStatus::Passed => {
                     passed += 1;
@@ -283,7 +252,7 @@ pub(crate) async fn execute_workflow_dag(
                 max_retries: n.max_retries,
                 attempt: r.attempt,
             });
-        } else if started.contains(&n.id) {
+        } else if progress.started.contains(&n.id) {
             failed += 1;
             node_reports.push(WorkflowExecutionNodeReport {
                 id: n.id.clone(),
@@ -322,80 +291,194 @@ pub(crate) async fn execute_workflow_dag(
         }
     }
 
-    let first_failure_report = first_failure.as_ref().map(|f| {
-        let tool_name = nodes
-            .get(&f.id)
-            .map(|n| n.tool_name.clone())
-            .unwrap_or_default();
-        let first_line = f.output.lines().next().unwrap_or("").trim().to_string();
-        WorkflowExecutionFirstFailureReport {
-            id: f.id.clone(),
-            tool: tool_name,
-            first_line,
-        }
-    });
+    NodeReportsBundle {
+        reports: node_reports,
+        passed,
+        failed,
+        skipped,
+    }
+}
 
-    // 失败补偿（Saga：按成功完成顺序逆序执行补偿节点）
-    let mut compensation_summary: Option<String> = None;
-    let mut compensation_executed: bool = false;
-    let mut workspace_changed_final = workspace_changed;
-    let human_summary = if first_failure.is_some() {
-        if spec.compensate_on_failure {
-            workflow_trace_push(WorkflowTracePush {
-                trace: &tool_exec_ctx.trace_events,
-                workflow_run_id,
-                event: "compensation_phase_start",
-                node_id: None,
-                detail: None,
-                attempt: None,
-                status: None,
-                elapsed_ms: None,
-                error_code: None,
-                tool_name: None,
-                phase: Some("compensation"),
-            });
-            let command_max_output_len = command_max_output_len_from(&tool_exec_ctx);
-            let (s, comp_workspace_changed) = execute_compensations(
-                &spec,
-                &nodes,
-                &completion_order,
-                &completed,
-                approval_mode,
-                tool_exec_ctx.clone(),
-                command_max_output_len,
-            )
-            .await;
-            workspace_changed_final = workspace_changed_final || comp_workspace_changed;
-            compensation_summary = Some(s.clone());
-            compensation_executed = true;
-            workflow_trace_push(WorkflowTracePush {
-                trace: &tool_exec_ctx.trace_events,
-                workflow_run_id,
-                event: "compensation_phase_end",
-                node_id: None,
-                detail: None,
-                attempt: None,
-                status: None,
-                elapsed_ms: None,
-                error_code: None,
-                tool_name: None,
-                phase: Some("compensation"),
-            });
-            format!(
-                "{}\n\n====================\n\n补偿执行结果：\n{}",
-                main_summary, s
-            )
-        } else {
+fn build_first_failure_report(
+    nodes: &HashMap<String, WorkflowNodeSpec>,
+    first_failure: &NodeRunResult,
+) -> WorkflowExecutionFirstFailureReport {
+    let tool_name = nodes
+        .get(&first_failure.id)
+        .map(|n| n.tool_name.clone())
+        .unwrap_or_default();
+    let first_line = first_failure
+        .output
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    WorkflowExecutionFirstFailureReport {
+        id: first_failure.id.clone(),
+        tool: tool_name,
+        first_line,
+    }
+}
+
+/// 失败时可选补偿阶段，返回 `(human_summary, 补偿是否改动了工作区, compensation_summary, compensation_executed)`。
+async fn workflow_compensation_and_human_summary(
+    spec: &WorkflowSpec,
+    nodes: &HashMap<String, WorkflowNodeSpec>,
+    progress: &DagExecutionProgress,
+    main_summary: &str,
+    approval_mode: WorkflowApprovalMode,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+    workflow_run_id: u64,
+) -> (String, bool, Option<String>, bool) {
+    if progress.first_failure.is_none() {
+        return (main_summary.to_string(), false, None, false);
+    }
+
+    if !spec.compensate_on_failure {
+        return (
             format!(
                 "{}\n\n补偿已跳过（compensate_on_failure=false）",
                 main_summary
-            )
-        }
+            ),
+            false,
+            None,
+            false,
+        );
+    }
+
+    workflow_trace_push(WorkflowTracePush {
+        trace: &tool_exec_ctx.trace_events,
+        workflow_run_id,
+        event: "compensation_phase_start",
+        node_id: None,
+        detail: None,
+        attempt: None,
+        status: None,
+        elapsed_ms: None,
+        error_code: None,
+        tool_name: None,
+        phase: Some("compensation"),
+    });
+    let command_max_output_len = command_max_output_len_from(tool_exec_ctx);
+    let (s, comp_workspace_changed) = execute_compensations(
+        spec,
+        nodes,
+        &progress.completion_order,
+        &progress.completed,
+        approval_mode,
+        tool_exec_ctx.clone(),
+        command_max_output_len,
+    )
+    .await;
+    workflow_trace_push(WorkflowTracePush {
+        trace: &tool_exec_ctx.trace_events,
+        workflow_run_id,
+        event: "compensation_phase_end",
+        node_id: None,
+        detail: None,
+        attempt: None,
+        status: None,
+        elapsed_ms: None,
+        error_code: None,
+        tool_name: None,
+        phase: Some("compensation"),
+    });
+    let human = format!(
+        "{}\n\n====================\n\n补偿执行结果：\n{}",
+        main_summary, s
+    );
+    (human, comp_workspace_changed, Some(s), true)
+}
+
+pub(crate) async fn execute_workflow_dag(
+    spec: WorkflowSpec,
+    approval_mode: WorkflowApprovalMode,
+    mut tool_exec_ctx: WorkflowToolExecCtx,
+) -> (String, bool) {
+    let workflow_run_id = tool_exec_ctx.workflow_run_id;
+    let trace = Arc::new(StdMutex::new(Vec::<WorkflowTraceEvent>::new()));
+    tool_exec_ctx.trace_events = Some(trace.clone());
+    workflow_trace_push(WorkflowTracePush {
+        trace: &Some(trace.clone()),
+        workflow_run_id,
+        event: "dag_start",
+        node_id: None,
+        detail: Some(format!(
+            "nodes_count={} max_parallelism={} fail_fast={} compensate_on_failure={}",
+            spec.nodes.len(),
+            spec.max_parallelism,
+            spec.fail_fast,
+            spec.compensate_on_failure
+        )),
+        attempt: None,
+        status: None,
+        elapsed_ms: None,
+        error_code: None,
+        tool_name: None,
+        phase: None,
+    });
+    info!(
+        target: "crabmate",
+        "workflow dag execute start workflow_run_id={} nodes_count={} max_parallelism={} fail_fast={} compensate_on_failure={}",
+        workflow_run_id,
+        spec.nodes.len(),
+        spec.max_parallelism,
+        spec.fail_fast,
+        spec.compensate_on_failure
+    );
+    let nodes: HashMap<String, WorkflowNodeSpec> = spec
+        .nodes
+        .iter()
+        .cloned()
+        .map(|n| (n.id.clone(), n))
+        .collect();
+
+    let progress =
+        dag_run_parallel_schedule_loop(&spec, approval_mode.clone(), tool_exec_ctx.clone()).await;
+
+    let workspace_changed = progress.completed.values().any(|r| r.workspace_changed);
+
+    let main_summary = format_main_summary(
+        &spec,
+        &progress.completed,
+        &progress.started,
+        &progress.completion_order,
+        progress.first_failure.as_ref(),
+    );
+
+    let status = if progress.first_failure.is_some() {
+        "failed".to_string()
     } else {
-        main_summary.clone()
+        "passed".to_string()
     };
 
-    let completion_order_out = completion_order.clone();
+    let NodeReportsBundle {
+        reports: node_reports,
+        passed,
+        failed,
+        skipped,
+    } = build_workflow_node_reports(&spec, &progress);
+
+    let first_failure_report = progress
+        .first_failure
+        .as_ref()
+        .map(|f| build_first_failure_report(&nodes, f));
+
+    let (human_summary, comp_workspace_changed, compensation_summary, compensation_executed) =
+        workflow_compensation_and_human_summary(
+            &spec,
+            &nodes,
+            &progress,
+            main_summary.as_str(),
+            approval_mode,
+            &tool_exec_ctx,
+            workflow_run_id,
+        )
+        .await;
+    let workspace_changed_final = workspace_changed || comp_workspace_changed;
+
+    let completion_order_out = progress.completion_order.clone();
     workflow_trace_push(WorkflowTracePush {
         trace: &tool_exec_ctx.trace_events,
         workflow_run_id,
@@ -464,6 +547,7 @@ pub(crate) async fn execute_workflow_dag(
         skipped,
         workspace_changed_final
     );
+    // 与历史行为一致：第二返回值仅反映主 DAG 节点是否改动工作区，不含补偿阶段。
     (json, workspace_changed)
 }
 
@@ -631,226 +715,225 @@ async fn run_node(
     res
 }
 
-async fn run_node_inner(
-    node: WorkflowNodeSpec,
-    approval_mode: WorkflowApprovalMode,
-    tool_exec_ctx: WorkflowToolExecCtx,
-    completed_snapshot: HashMap<String, NodeRunResult>,
-    inject_max_chars: usize,
-    phase: &'static str,
-) -> NodeRunResult {
-    let node_start = Instant::now();
-    info!(
-        target: "crabmate",
-        "workflow node start workflow_run_id={} node_id={} tool_name={}",
-        tool_exec_ctx.workflow_run_id,
-        node.id,
-        node.tool_name
-    );
-    // 人工审批：仅对“非 run_command 的人工审批节点”提供通用入口；
-    // run_command 的审批仍按 cmd allowlist 逻辑处理。
-    let injected_tool_args =
-        inject_placeholders(&node.tool_args, &completed_snapshot, inject_max_chars);
-    let tool_args_json_str = if injected_tool_args.is_null() {
-        "{}".to_string()
-    } else {
-        injected_tool_args.to_string()
-    };
-    let mut effective_allowed_arc: Arc<[String]> = Arc::clone(&tool_exec_ctx.cfg_allowed_commands);
+fn workflow_node_workspace_failure_if_unset(
+    node: &WorkflowNodeSpec,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+) -> Option<NodeRunResult> {
+    if tool_exec_ctx.workspace_is_set {
+        return None;
+    }
+    if node.tool_name != "run_command" && node.tool_name != "run_executable" {
+        return None;
+    }
+    Some(NodeRunResult {
+        id: node.id.clone(),
+        status: NodeRunStatus::Failed,
+        output: "错误：未设置工作区，禁止在工作流中执行该工具（需要先在 CLI/Web 设置 workspace）。"
+            .into(),
+        workspace_changed: false,
+        exit_code: None,
+        error_code: Some("workspace_not_set".to_string()),
+        attempt: 1,
+    })
+}
 
-    // workspace_is_set 校验（主要覆盖 run_command/run_executable）
-    if !tool_exec_ctx.workspace_is_set
-        && (node.tool_name == "run_command" || node.tool_name == "run_executable")
-    {
-        return NodeRunResult {
-            id: node.id,
-            status: NodeRunStatus::Failed,
-            output:
-                "错误：未设置工作区，禁止在工作流中执行该工具（需要先在 CLI/Web 设置 workspace）。"
-                    .into(),
-            workspace_changed: false,
-            exit_code: None,
-            error_code: Some("workspace_not_set".to_string()),
-            attempt: 1,
-        };
+/// `run_command`：白名单扩展 + 交互审批；其它工具类型直接返回配置白名单。
+async fn apply_run_command_allowlist_approvals(
+    node: &WorkflowNodeSpec,
+    approval_mode: &WorkflowApprovalMode,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+) -> Result<Arc<[String]>, NodeRunResult> {
+    let mut effective_allowed_arc: Arc<[String]> = Arc::clone(&tool_exec_ctx.cfg_allowed_commands);
+    if node.tool_name != "run_command" {
+        return Ok(effective_allowed_arc);
+    }
+    let Some(cmd) = node.tool_args.get("command").and_then(|x| x.as_str()) else {
+        return Ok(effective_allowed_arc);
+    };
+    let cmd_lower = cmd.trim().to_lowercase();
+    let disallowed = !tool_exec_ctx
+        .cfg_allowed_commands
+        .as_ref()
+        .iter()
+        .any(|c| c.eq_ignore_ascii_case(&cmd_lower));
+
+    let already_allowed = match approval_mode {
+        WorkflowApprovalMode::Interactive {
+            persistent_allowlist,
+            ..
+        } => {
+            let guard = persistent_allowlist.lock().await;
+            guard.contains(&cmd_lower)
+        }
+        WorkflowApprovalMode::NoApproval => false,
+    };
+
+    if disallowed && already_allowed && !cmd_lower.is_empty() {
+        let mut v: Vec<String> = tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
+        v.push(cmd_lower.clone());
+        effective_allowed_arc = v.into();
     }
 
-    // run_command 特殊：按 cmd 白名单 + persistent allowlist 审批
-    if node.tool_name == "run_command" {
-        if let Some(cmd) = node.tool_args.get("command").and_then(|x| x.as_str()) {
-            let cmd_lower = cmd.trim().to_lowercase();
-            let disallowed = !tool_exec_ctx
-                .cfg_allowed_commands
-                .as_ref()
-                .iter()
-                .any(|c| c.eq_ignore_ascii_case(&cmd_lower));
+    if disallowed && !already_allowed && !cmd_lower.is_empty() {
+        let decision = match approval_mode {
+            WorkflowApprovalMode::Interactive {
+                out_tx,
+                approval_rx,
+                approval_request_guard,
+                ..
+            } => {
+                let args_preview = node
+                    .tool_args
+                    .get("args")
+                    .and_then(|x| x.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    })
+                    .unwrap_or_default();
+                request_approval(
+                    out_tx.clone(),
+                    approval_rx.clone(),
+                    approval_request_guard.clone(),
+                    &cmd_lower,
+                    &args_preview,
+                )
+                .await
+            }
+            WorkflowApprovalMode::NoApproval => {
+                return Err(NodeRunResult {
+                    id: node.id.clone(),
+                    status: NodeRunStatus::Failed,
+                    output: format!(
+                        "workflow 执行失败：run_command 命令不在允许列表且无法人工审批：{}",
+                        cmd_lower
+                    )
+                    .into(),
+                    workspace_changed: false,
+                    exit_code: None,
+                    error_code: Some("command_not_allowed".to_string()),
+                    attempt: 1,
+                });
+            }
+        };
 
-            let already_allowed = match &approval_mode {
-                WorkflowApprovalMode::Interactive {
-                    persistent_allowlist,
-                    ..
-                } => {
-                    let guard = persistent_allowlist.lock().await;
-                    guard.contains(&cmd_lower)
-                }
-                WorkflowApprovalMode::NoApproval => false,
-            };
-
-            if disallowed && already_allowed && !cmd_lower.is_empty() {
+        match decision {
+            CommandApprovalDecision::Deny => {
+                return Err(NodeRunResult {
+                    id: node.id.clone(),
+                    status: NodeRunStatus::Failed,
+                    output: format!(
+                        "workflow 执行失败：用户拒绝执行命令（run_command）：{}",
+                        cmd_lower
+                    )
+                    .into(),
+                    workspace_changed: false,
+                    exit_code: None,
+                    error_code: Some("command_denied".to_string()),
+                    attempt: 1,
+                });
+            }
+            CommandApprovalDecision::AllowOnce => {
                 let mut v: Vec<String> =
                     tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
                 v.push(cmd_lower.clone());
                 effective_allowed_arc = v.into();
             }
-
-            if disallowed && !already_allowed && !cmd_lower.is_empty() {
-                // 仅在提供审批通道时才能等待用户决策
-                let decision = match &approval_mode {
-                    WorkflowApprovalMode::Interactive {
-                        out_tx,
-                        approval_rx,
-                        approval_request_guard,
-                        ..
-                    } => {
-                        let args_preview = node
-                            .tool_args
-                            .get("args")
-                            .and_then(|x| x.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|x| x.as_str())
-                                    .collect::<Vec<_>>()
-                                    .join(" ")
-                            })
-                            .unwrap_or_default();
-                        request_approval(
-                            out_tx.clone(),
-                            approval_rx.clone(),
-                            approval_request_guard.clone(),
-                            &cmd_lower,
-                            &args_preview,
-                        )
-                        .await
-                    }
-                    WorkflowApprovalMode::NoApproval => {
-                        return NodeRunResult {
-                            id: node.id,
-                            status: NodeRunStatus::Failed,
-                            output: format!(
-                                "workflow 执行失败：run_command 命令不在允许列表且无法人工审批：{}",
-                                cmd_lower
-                            )
-                            .into(),
-                            workspace_changed: false,
-                            exit_code: None,
-                            error_code: Some("command_not_allowed".to_string()),
-                            attempt: 1,
-                        };
-                    }
-                };
-
-                match decision {
-                    CommandApprovalDecision::Deny => {
-                        return NodeRunResult {
-                            id: node.id,
-                            status: NodeRunStatus::Failed,
-                            output: format!(
-                                "workflow 执行失败：用户拒绝执行命令（run_command）：{}",
-                                cmd_lower
-                            )
-                            .into(),
-                            workspace_changed: false,
-                            exit_code: None,
-                            error_code: Some("command_denied".to_string()),
-                            attempt: 1,
-                        };
-                    }
-                    CommandApprovalDecision::AllowOnce => {
-                        let mut v: Vec<String> =
-                            tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
-                        v.push(cmd_lower.clone());
-                        effective_allowed_arc = v.into();
-                    }
-                    CommandApprovalDecision::AllowAlways => {
-                        if let WorkflowApprovalMode::Interactive {
-                            persistent_allowlist,
-                            ..
-                        } = &approval_mode
-                        {
-                            persistent_allowlist.lock().await.insert(cmd_lower.clone());
-                        }
-                        let mut v: Vec<String> =
-                            tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
-                        v.push(cmd_lower.clone());
-                        effective_allowed_arc = v.into();
-                    }
+            CommandApprovalDecision::AllowAlways => {
+                if let WorkflowApprovalMode::Interactive {
+                    persistent_allowlist,
+                    ..
+                } = approval_mode
+                {
+                    persistent_allowlist.lock().await.insert(cmd_lower.clone());
                 }
+                let mut v: Vec<String> =
+                    tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
+                v.push(cmd_lower.clone());
+                effective_allowed_arc = v.into();
             }
         }
-    } else if node.requires_approval {
-        // 通用人工审批节点：需 SSE 审批会话
-        let approval_key = format!("workflow_node:{}", node.id).to_lowercase();
+    }
 
-        match approval_mode {
-            WorkflowApprovalMode::NoApproval => {
-                return NodeRunResult {
-                    id: node.id,
-                    status: NodeRunStatus::Failed,
-                    output: format!(
-                        "workflow 执行失败：该节点需要人工审批，但当前未启用审批通道：{}",
-                        approval_key
-                    )
-                    .into(),
-                    workspace_changed: false,
-                    exit_code: None,
-                    error_code: Some("approval_required".to_string()),
-                    attempt: 1,
-                };
-            }
-            WorkflowApprovalMode::Interactive {
-                out_tx,
-                approval_rx,
-                approval_request_guard,
-                ref persistent_allowlist,
-            } => {
-                let already_allowed = persistent_allowlist.lock().await.contains(&approval_key);
-                if !already_allowed {
-                    let decision = request_approval(
-                        out_tx.clone(),
-                        approval_rx.clone(),
-                        approval_request_guard.clone(),
-                        &approval_key,
-                        &format!("工具：{}（requires_approval=true）", node.tool_name),
-                    )
-                    .await;
-                    match decision {
-                        CommandApprovalDecision::Deny => {
-                            return NodeRunResult {
-                                id: node.id,
-                                status: NodeRunStatus::Failed,
-                                output: format!(
-                                    "workflow 执行失败：用户拒绝人工审批节点：{}",
-                                    approval_key
-                                )
-                                .into(),
-                                workspace_changed: false,
-                                exit_code: None,
-                                error_code: Some("approval_denied".to_string()),
-                                attempt: 1,
-                            };
-                        }
-                        CommandApprovalDecision::AllowOnce => {}
-                        CommandApprovalDecision::AllowAlways => {
-                            persistent_allowlist.lock().await.insert(approval_key);
-                        }
+    Ok(effective_allowed_arc)
+}
+
+/// 非 `run_command` 且 `requires_approval` 时的通用人工审批门闩。
+async fn apply_generic_workflow_node_approval(
+    node: &WorkflowNodeSpec,
+    approval_mode: &WorkflowApprovalMode,
+) -> Result<(), NodeRunResult> {
+    if !node.requires_approval || node.tool_name == "run_command" {
+        return Ok(());
+    }
+    let approval_key = format!("workflow_node:{}", node.id).to_lowercase();
+
+    match approval_mode {
+        WorkflowApprovalMode::NoApproval => {
+            return Err(NodeRunResult {
+                id: node.id.clone(),
+                status: NodeRunStatus::Failed,
+                output: format!(
+                    "workflow 执行失败：该节点需要人工审批，但当前未启用审批通道：{}",
+                    approval_key
+                )
+                .into(),
+                workspace_changed: false,
+                exit_code: None,
+                error_code: Some("approval_required".to_string()),
+                attempt: 1,
+            });
+        }
+        WorkflowApprovalMode::Interactive {
+            out_tx,
+            approval_rx,
+            approval_request_guard,
+            persistent_allowlist,
+        } => {
+            let already_allowed = persistent_allowlist.lock().await.contains(&approval_key);
+            if !already_allowed {
+                let decision = request_approval(
+                    out_tx.clone(),
+                    approval_rx.clone(),
+                    approval_request_guard.clone(),
+                    &approval_key,
+                    &format!("工具：{}（requires_approval=true）", node.tool_name),
+                )
+                .await;
+                match decision {
+                    CommandApprovalDecision::Deny => {
+                        return Err(NodeRunResult {
+                            id: node.id.clone(),
+                            status: NodeRunStatus::Failed,
+                            output: format!(
+                                "workflow 执行失败：用户拒绝人工审批节点：{}",
+                                approval_key
+                            )
+                            .into(),
+                            workspace_changed: false,
+                            exit_code: None,
+                            error_code: Some("approval_denied".to_string()),
+                            attempt: 1,
+                        });
+                    }
+                    CommandApprovalDecision::AllowOnce => {}
+                    CommandApprovalDecision::AllowAlways => {
+                        persistent_allowlist.lock().await.insert(approval_key);
                     }
                 }
             }
         }
     }
+    Ok(())
+}
 
-    // 节点 SLA：timeout_secs 优先；否则按工具类型使用 cfg 默认值（run_command/run_executable 为 command_timeout_secs）
-    let timeout_secs = node.timeout_secs.or(match node.tool_name.as_str() {
+fn resolve_workflow_node_timeout_secs(
+    node: &WorkflowNodeSpec,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+) -> Option<u64> {
+    node.timeout_secs.or(match node.tool_name.as_str() {
         "run_command" | "run_executable" => Some(tool_exec_ctx.cfg_command_timeout_secs),
         "maven_compile" | "maven_test" | "gradle_compile" | "gradle_test" | "docker_build"
         | "docker_compose_ps" | "podman_images" => Some(tool_exec_ctx.cfg_command_timeout_secs),
@@ -862,22 +945,19 @@ async fn run_node_inner(
                 .max(tool_exec_ctx.cfg_command_timeout_secs),
         ),
         _ => None,
-    });
+    })
+}
 
-    workflow_trace_push(WorkflowTracePush {
-        trace: &tool_exec_ctx.trace_events,
-        workflow_run_id: tool_exec_ctx.workflow_run_id,
-        event: "node_ready_execute",
-        node_id: Some(node.id.as_str()),
-        detail: Some(format!("tool={}", node.tool_name)),
-        attempt: None,
-        status: None,
-        elapsed_ms: None,
-        error_code: None,
-        tool_name: Some(node.tool_name.as_str()),
-        phase: Some(phase),
-    });
-
+/// 工具执行 + 可重试失败退避（timeout / join / semaphore 类）。
+async fn run_workflow_node_tool_with_retries(
+    node: &WorkflowNodeSpec,
+    tool_args_json_str: &str,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+    effective_allowed_arc: Arc<[String]>,
+    timeout_secs: Option<u64>,
+    phase: &'static str,
+    node_start: Instant,
+) -> NodeRunResult {
     let max_attempts = node.max_retries.saturating_add(1).max(1);
     let mut last: Option<NodeRunResult> = None;
     let mut aggregate_workspace_changed = false;
@@ -900,8 +980,8 @@ async fn run_node_inner(
         let mut res = execute_node_tool_phase(
             node.id.as_str(),
             node.tool_name.as_str(),
-            tool_args_json_str.as_str(),
-            &tool_exec_ctx,
+            tool_args_json_str,
+            tool_exec_ctx,
             effective_allowed_arc.clone(),
             timeout_secs,
         )
@@ -980,6 +1060,73 @@ async fn run_node_inner(
         result.error_code,
     );
     result
+}
+
+async fn run_node_inner(
+    node: WorkflowNodeSpec,
+    approval_mode: WorkflowApprovalMode,
+    tool_exec_ctx: WorkflowToolExecCtx,
+    completed_snapshot: HashMap<String, NodeRunResult>,
+    inject_max_chars: usize,
+    phase: &'static str,
+) -> NodeRunResult {
+    let node_start = Instant::now();
+    info!(
+        target: "crabmate",
+        "workflow node start workflow_run_id={} node_id={} tool_name={}",
+        tool_exec_ctx.workflow_run_id,
+        node.id,
+        node.tool_name
+    );
+
+    let injected_tool_args =
+        inject_placeholders(&node.tool_args, &completed_snapshot, inject_max_chars);
+    let tool_args_json_str = if injected_tool_args.is_null() {
+        "{}".to_string()
+    } else {
+        injected_tool_args.to_string()
+    };
+
+    if let Some(fail) = workflow_node_workspace_failure_if_unset(&node, &tool_exec_ctx) {
+        return fail;
+    }
+
+    let effective_allowed_arc =
+        match apply_run_command_allowlist_approvals(&node, &approval_mode, &tool_exec_ctx).await {
+            Ok(a) => a,
+            Err(res) => return res,
+        };
+
+    if let Err(res) = apply_generic_workflow_node_approval(&node, &approval_mode).await {
+        return res;
+    }
+
+    let timeout_secs = resolve_workflow_node_timeout_secs(&node, &tool_exec_ctx);
+
+    workflow_trace_push(WorkflowTracePush {
+        trace: &tool_exec_ctx.trace_events,
+        workflow_run_id: tool_exec_ctx.workflow_run_id,
+        event: "node_ready_execute",
+        node_id: Some(node.id.as_str()),
+        detail: Some(format!("tool={}", node.tool_name)),
+        attempt: None,
+        status: None,
+        elapsed_ms: None,
+        error_code: None,
+        tool_name: Some(node.tool_name.as_str()),
+        phase: Some(phase),
+    });
+
+    run_workflow_node_tool_with_retries(
+        &node,
+        tool_args_json_str.as_str(),
+        &tool_exec_ctx,
+        effective_allowed_arc,
+        timeout_secs,
+        phase,
+        node_start,
+    )
+    .await
 }
 
 async fn request_approval(
