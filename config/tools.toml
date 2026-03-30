@@ -6,7 +6,7 @@
 [agent]
 
 # --- run_command（子进程）---
-command_timeout_secs = 10
+command_timeout_secs = 600
 command_max_output_len = 8192
 # 命令白名单（小写）；可被覆盖配置或 AGENT_ALLOWED_COMMANDS 整体替换。
 # 下列按类别用注释分段，仅为可读性；解析结果仍是单一数组（顺序不影响白名单语义）。
