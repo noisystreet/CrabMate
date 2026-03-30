@@ -18,6 +18,32 @@ pub(super) fn summary_codebase_semantic_search(v: &serde_json::Value) -> Option<
     }
 }
 
+/// 与 `semantic search` 等一致：`pattern` / 可选 `path` 截断，避免时间线里拖出整段 JSON。
+pub(super) fn summary_search_in_files(v: &serde_json::Value) -> Option<String> {
+    let pattern = v.get("pattern")?.as_str()?.trim();
+    const MAX_PATTERN_CHARS: usize = 40;
+    let mut pat: String = pattern.chars().take(MAX_PATTERN_CHARS).collect();
+    if pattern.chars().count() > MAX_PATTERN_CHARS {
+        pat.push('…');
+    }
+    let sub = v
+        .get("path")
+        .and_then(|p| p.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    const MAX_PATH_CHARS: usize = 28;
+    Some(match sub {
+        Some(p) => {
+            let mut ps: String = p.chars().take(MAX_PATH_CHARS).collect();
+            if p.chars().count() > MAX_PATH_CHARS {
+                ps.push('…');
+            }
+            format!("search in files: {} @ {}", pat, ps)
+        }
+        None => format!("search in files: {}", pat),
+    })
+}
+
 pub(super) fn summary_run_command(v: &serde_json::Value) -> Option<String> {
     let cmd = v.get("command")?.as_str()?.trim();
     let args = v

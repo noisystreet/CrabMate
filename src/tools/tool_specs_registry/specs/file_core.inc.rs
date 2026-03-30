@@ -109,7 +109,7 @@ ToolSpec {
             category: ToolCategory::Development,
             parameters: tool_params::params_search_in_files_enhanced,
             runner: runner_search_in_files,
-            summary: ToolSummaryKind::None,
+            summary: ToolSummaryKind::Dynamic(ts::summary_search_in_files),
         },
         ToolSpec {
             name: "codebase_semantic_search",
