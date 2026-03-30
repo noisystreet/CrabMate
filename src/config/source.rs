@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -6,6 +8,30 @@ pub(super) struct ConfigFile {
     /// 与 `config/agent_roles.toml` 同形：顶层 `[[agent_roles]]` 表数组
     #[serde(default)]
     pub(super) agent_roles: Vec<AgentRoleRow>,
+    /// 可选 `[tool_registry]`：工具分发超时、并行策略等（见 `config/tools.toml`）
+    #[serde(default)]
+    pub(super) tool_registry: Option<ToolRegistrySection>,
+}
+
+/// `config/tools.toml` / 用户 `config.toml` 中 **`[tool_registry]`** 段（与 `[agent]` 并列）。
+#[derive(Debug, Deserialize, Clone, Default)]
+pub(super) struct ToolRegistrySection {
+    /// `http_fetch` / `http_request` 在 **`spawn_blocking` 外圈** `tokio::time::timeout` 上限（秒）；省略则 `max(command_timeout_secs, http_fetch_timeout_secs)`。
+    #[serde(default)]
+    pub(super) http_fetch_wall_timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub(super) http_request_wall_timeout_secs: Option<u64>,
+    /// 按执行类覆盖 **并行只读批 / SyncDefault spawn** 墙上时钟（秒）。键与 `ToolExecutionClass` 蛇形一致，如 `http_fetch_spawn_timeout`、`blocking_sync`。
+    #[serde(default)]
+    pub(super) parallel_wall_timeout_secs: HashMap<String, u64>,
+    /// 禁止与其它只读工具同批并行的工具名（精确匹配）；省略则用内建默认表。
+    pub(super) parallel_sync_denied_tools: Option<Vec<String>>,
+    /// 禁止并行批的工具名前缀；省略则用内建默认前缀规则。
+    pub(super) parallel_sync_denied_prefixes: Option<Vec<String>>,
+    /// 在当前 async 任务上**内联**执行的 SyncDefault 工具名（跳过 `spawn_blocking`）；省略则仅 `get_current_time`、`convert_units`。
+    pub(super) sync_default_inline_tools: Option<Vec<String>>,
+    /// 视为「有写副作用」的工具名（`is_readonly_tool` 为假）；省略则用内建默认表。
+    pub(super) write_effect_tools: Option<Vec<String>>,
 }
 
 /// 与 `config/agent_roles.toml` 中 `[[agent_roles]]` 一行对应
@@ -155,12 +181,25 @@ pub(super) fn parse_agent_section(s: &str) -> Result<Option<AgentSection>, toml:
     Ok(toml::from_str::<ConfigFile>(s)?.agent)
 }
 
-/// 解析完整 TOML（`[agent]` + 可选 `[[agent_roles]]`）；`agent` 缺失时仍返回角色行供合并。
-pub(super) fn parse_config_file_roles(
-    s: &str,
-) -> Result<(Option<AgentSection>, Vec<AgentRoleRow>), toml::de::Error> {
+/// `parse_config_file_roles` 的解析结果：`[agent]`、角色行、`[tool_registry]`。
+pub(super) type ParsedConfigFileRoles = (
+    Option<AgentSection>,
+    Vec<AgentRoleRow>,
+    Option<ToolRegistrySection>,
+);
+
+/// 解析完整 TOML（`[agent]` + 可选 `[[agent_roles]]` + 可选 `[tool_registry]`）；`agent` 缺失时仍返回角色行供合并。
+pub(super) fn parse_config_file_roles(s: &str) -> Result<ParsedConfigFileRoles, toml::de::Error> {
     let f: ConfigFile = toml::from_str(s)?;
-    Ok((f.agent, f.agent_roles))
+    Ok((f.agent, f.agent_roles, f.tool_registry))
+}
+
+/// 解析 **`config/tools.toml`** 形文件（`[agent]` + 可选 `[tool_registry]`，无 `agent_roles`）。
+pub(super) fn parse_tools_config_bundle(
+    s: &str,
+) -> Result<(Option<AgentSection>, Option<ToolRegistrySection>), toml::de::Error> {
+    let f: ConfigFile = toml::from_str(s)?;
+    Ok((f.agent, f.tool_registry))
 }
 
 pub(super) fn parse_bool_like(s: &str) -> Option<bool> {

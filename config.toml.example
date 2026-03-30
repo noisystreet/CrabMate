@@ -95,6 +95,9 @@
 # http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/"]
 # http_fetch_timeout_secs = 30
 # http_fetch_max_response_bytes = 524288
+# 工具注册表策略（可选 `[tool_registry]`，与 `[agent]` 同文件；无 AGENT_* 别名）：HTTP spawn_blocking 外圈超时、并行墙钟覆盖、并行拒绝/内联/写副作用名单等，见 config/tools.toml 末尾注释与 docs/CONFIGURATION.md「tool_registry 策略」
+# [tool_registry]
+# http_fetch_wall_timeout_secs = 120
 # reflection_default_max_rounds = 5
 # final_plan_requirement = "workflow_reflection"  # never | workflow_reflection | always（实验性，每轮终答均校验）
 # plan_rewrite_max_attempts = 2

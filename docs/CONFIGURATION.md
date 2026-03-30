@@ -2,13 +2,13 @@
 
 # 配置说明
 
-默认配置由仓库 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`** 七段嵌入（均为 **`[agent]`** 扁平键；**`session`** 为 CLI 会话相关 **`tui_*`** 与 **`repl_initial_workspace_messages_enabled`**；**`context_inject`** 为首轮 **`agent_memory_file_*`**、**`project_profile_inject_*`**、**`project_dependency_brief_inject_*`**；**`tools`** 含 **`run_command`** 白名单/超时/工作目录、**`tool_message_*`** / **`tool_result_envelope_v1`**、**`read_file_turn_cache_*`**、**`test_result_cache_*`**、**`session_workspace_changelist_*`**、**`codebase_semantic_*`**（**`codebase_semantic_search`** 与写后失效 **`codebase_semantic_invalidate_on_workspace_change`**）、天气/搜索/**`http_fetch_*`**、**`tool_call_explain_*`**、**`mcp_*`** 等；**`sandbox`** 为 **SyncDefault Docker 沙盒** **`sync_default_tool_sandbox_*`**；**`planning`** 为规划 / 反思 / 编排；**`memory`** 为 **`long_term_memory_*`**）。`load_config` 按 **主默认 → session → context_inject → tools → sandbox → planning → memory** 顺序合并，再被 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，最后由环境变量覆盖。示例片段见 **`config.toml.example`**。
+默认配置由仓库 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`** 七段嵌入（各段主体为 **`[agent]`** 扁平键；**`config/tools.toml`** 还可选 **`[tool_registry]`** 表，见下文「`tool_registry` 策略」；**`session`** 为 CLI 会话相关 **`tui_*`** 与 **`repl_initial_workspace_messages_enabled`**；**`context_inject`** 为首轮 **`agent_memory_file_*`**、**`project_profile_inject_*`**、**`project_dependency_brief_inject_*`**；**`tools`** 的 **`[agent]`** 含 **`run_command`** 白名单/超时/工作目录、**`tool_message_*`** / **`tool_result_envelope_v1`**、**`read_file_turn_cache_*`**、**`test_result_cache_*`**、**`session_workspace_changelist_*`**、**`codebase_semantic_*`**（**`codebase_semantic_search`** 与写后失效 **`codebase_semantic_invalidate_on_workspace_change`**）、天气/搜索/**`http_fetch_*`**、**`tool_call_explain_*`**、**`mcp_*`** 等；**`sandbox`** 为 **SyncDefault Docker 沙盒** **`sync_default_tool_sandbox_*`**；**`planning`** 为规划 / 反思 / 编排；**`memory`** 为 **`long_term_memory_*`**）。`load_config` 按 **主默认 → session → context_inject → tools → sandbox → planning → memory** 顺序合并，再被 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，最后由环境变量覆盖。示例片段见 **`config.toml.example`**。
 
 ## 配置热重载（无需重启 `repl` / `serve` 主进程）
 
 - **CLI**：输入 **`/config reload`**（或 Tab 补全 **`/config reload`**）。从与启动时相同的配置文件路径（**`--config`** 或默认探测 **`config.toml`** / **`.agent_demo.toml`**）再读 TOML，并与**当前进程环境变量**合并后，将可热更字段写入内存中的 [`AgentConfig`](DEVELOPMENT.md)；随后清空 MCP 进程内 stdio 缓存，下一轮对话使用新 MCP 指纹。
 - **Web**：**`POST /config/reload`**（JSON body 可为 `{}`；鉴权与 **`/chat`** 等受保护 API 一致——若启动时启用了 Bearer 中间件则须带 token）。成功时返回 **`{ "ok": true, "message": "…" }`**。
-- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_bigmodel_thinking`**、**`llm_kimi_thinking_disabled`**、**`llm_fold_system_into_user`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。
+- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_bigmodel_thinking`**、**`llm_kimi_thinking_disabled`**、**`llm_fold_system_into_user`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`[tool_registry]`**（HTTP 外圈超时、并行墙钟覆盖、并行拒绝/内联/写副作用名单）、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。
 - **刻意不热更**：**`conversation_store_sqlite_path`**（会话库连接在启动时打开，改路径须重启 **`serve`**）。**`reqwest::Client`** 不重建，**`api_timeout_secs` 等**对**新连接**的生效可能受连接池保留的空闲连接影响。
 - **`API_KEY`**：仍只从**环境变量**读取；热重载**不**解析密钥文件。改 **`API_KEY`** 后通常需**重新 export** 并再执行 **`/config reload`**（或重启进程）以便与 **`llm_http_auth_mode=bearer`** 行为一致。
 - **Bearer 中间件层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权层；热重载**不会**拆除或新增该层——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的 token 字符串，用于已挂层时的校验。
@@ -172,6 +172,22 @@ Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共
 | `AGENT_HTTP_FETCH_ALLOWED_PREFIXES` | 允许 URL 前缀。 |
 | `AGENT_HTTP_FETCH_TIMEOUT_SECS` | 抓取超时（秒）。 |
 | `AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES` | 响应体截断上限。 |
+
+**`http_fetch` / `http_request` 外圈超时**：除 **`http_fetch_timeout_secs`**（`reqwest` 读超时）外，异步路径在 **`spawn_blocking`** 外包一层 **`tokio::time::timeout`**；默认与 **`command_timeout_secs`**、**`http_fetch_timeout_secs`** 取较大者。可在 TOML **`[tool_registry]`** 中设 **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** 单独收紧或放宽（见 **`config/tools.toml` 文件末尾注释**）。
+
+### `tool_registry` 策略（`tools.toml` / 主配置）
+
+在 **`config/tools.toml`** 或与嵌入顺序一致的用户 **`config.toml`** 中增加可选表 **`[tool_registry]`**，与 **`[agent]`** 一并解析并合并进 **`AgentConfig`**（热重载随 **`apply_hot_reload_config_subset`** 更新）。用于运维统一调参，**无对应 `AGENT_*` 环境变量**（须写 TOML）。
+
+| 键 | 说明 |
+| --- | --- |
+| **`http_fetch_wall_timeout_secs`** | **`http_fetch`** 外圈 `tokio::time::timeout`（秒）。 |
+| **`http_request_wall_timeout_secs`** | **`http_request`** 外圈超时；省略则与 fetch 外圈逻辑一致。 |
+| **`parallel_wall_timeout_secs`** | 子表：按 **`ToolExecutionClass` 蛇形键**覆盖并行只读批与 **`SyncDefault`+`spawn_blocking`** 墙上时钟，例如 **`blocking_sync`**、**`http_fetch_spawn_timeout`**、**`weather_spawn_timeout`** 等。 |
+| **`parallel_sync_denied_tools`** | 禁止与其它只读工具同批并行的工具名（精确匹配）；省略用内建构建锁类规则。 |
+| **`parallel_sync_denied_prefixes`** | 同上，按工具名前缀拒绝并行批。 |
+| **`sync_default_inline_tools`** | 在当前 async 任务上**内联**执行的 SyncDefault 工具（跳过 **`spawn_blocking`**）；省略则仅内建轻量工具。 |
+| **`write_effect_tools`** | 视为非只读（写副作用）的工具名；影响 **`is_readonly_tool`**、解释卡、代码语义索引失效等；省略用内建写工具表。 |
 
 ### 上下文与工具消息
 

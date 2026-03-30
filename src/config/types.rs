@@ -524,6 +524,23 @@ pub struct AgentConfig {
     pub codebase_semantic_query_max_chunks: usize,
     /// `rebuild_index` 时最多索引多少个文件（防超大仓拖死进程）。
     pub codebase_semantic_rebuild_max_files: usize,
+    /// `http_fetch`：`spawn_blocking` 外圈 `tokio::time::timeout`（秒）；`None` 表示 `max(command_timeout_secs, http_fetch_timeout_secs)`。
+    pub tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
+    /// `http_request`：同上。
+    pub tool_registry_http_request_wall_timeout_secs: Option<u64>,
+    /// 按执行类蛇形键覆盖 **并行批 / SyncDefault spawn** 墙上时钟；空表表示无覆盖。
+    pub tool_registry_parallel_wall_timeout_secs:
+        std::sync::Arc<std::collections::HashMap<String, u64>>,
+    /// 禁止与其它只读工具同批并行的工具名；`None` 用内建默认。
+    pub tool_registry_parallel_sync_denied_tools:
+        Option<std::sync::Arc<std::collections::HashSet<String>>>,
+    /// 禁止并行批的前缀；`None` 用内建默认。
+    pub tool_registry_parallel_sync_denied_prefixes: Option<std::sync::Arc<[String]>>,
+    /// SyncDefault 内联执行（不 `spawn_blocking`）；`None` 用内建默认。
+    pub tool_registry_sync_default_inline_tools:
+        Option<std::sync::Arc<std::collections::HashSet<String>>>,
+    /// 视为写副作用的工具集合；`None` 用内建默认（`is_readonly_tool`）。
+    pub tool_registry_write_effect_tools: Option<std::sync::Arc<std::collections::HashSet<String>>>,
 }
 
 impl AgentConfig {

@@ -760,7 +760,10 @@ where
     .await?;
 
     if plan.steps.len() >= 2 && p.staged_plan_optimizer_round {
-        let csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(p.tools_defs);
+        let csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(
+            p.tools_defs,
+            p.cfg.as_ref(),
+        );
         let opt_body = plan_optimizer::staged_plan_optimizer_user_body(&plan, csv.as_str());
         p.messages.push(make_step_user_message(opt_body));
         let (mut opt_msg, opt_finish) = complete_one_staged_planner_assistant_round(
