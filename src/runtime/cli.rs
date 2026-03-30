@@ -97,6 +97,12 @@ enum ReplBuiltIn<'a> {
     McpUnknown(String),
     /// `/version`：二进制与平台信息（不含密钥）
     Version,
+    /// `/agent list`：列出配置中的命名角色 id
+    AgentList,
+    /// `/agent set <id>`：校验 id 后更新 REPL 内存中的当前角色并重建首轮消息
+    AgentSet(String),
+    /// `/agent …` 用法错误
+    AgentUsage,
     Unknown(&'a str),
     BareSlash,
 }
@@ -236,6 +242,48 @@ fn mcp_primary_probe(second: Option<&str>, tail: &str) -> ReplBuiltIn<'static> {
     }
 }
 
+fn agent_subcommand_list(parts: &mut std::str::SplitWhitespace<'_>) -> ReplBuiltIn<'static> {
+    if parts.next().is_some() {
+        ReplBuiltIn::AgentUsage
+    } else {
+        ReplBuiltIn::AgentList
+    }
+}
+
+fn agent_subcommand_set(parts: &mut std::str::SplitWhitespace<'_>) -> ReplBuiltIn<'static> {
+    let rest: String = parts.collect::<Vec<_>>().join(" ");
+    let rest = rest.trim().to_string();
+    if rest.is_empty() {
+        ReplBuiltIn::AgentUsage
+    } else {
+        ReplBuiltIn::AgentSet(rest)
+    }
+}
+
+type AgentSubHandler = fn(&mut std::str::SplitWhitespace<'_>) -> ReplBuiltIn<'static>;
+
+const AGENT_SUBCOMMAND_HANDLERS: &[(&str, AgentSubHandler)] = &[
+    ("list", agent_subcommand_list),
+    ("set", agent_subcommand_set),
+];
+
+/// `/agent`、**`/agent list`**、**`/agent set …`**：首 token 在 [`AGENT_SUBCOMMAND_HANDLERS`] 中查找。
+fn classify_agent_slash_command(arg_tail: &str) -> ReplBuiltIn<'static> {
+    let t = arg_tail.trim();
+    if t.is_empty() {
+        return ReplBuiltIn::AgentList;
+    }
+    let mut parts = t.split_whitespace();
+    let first = parts.next().unwrap_or("");
+    let first_l = first.to_ascii_lowercase();
+    for (name, handler) in AGENT_SUBCOMMAND_HANDLERS {
+        if first_l == *name {
+            return handler(&mut parts);
+        }
+    }
+    ReplBuiltIn::AgentUsage
+}
+
 /// `/mcp` 及其子形式：至多两个 token（否则 [`ReplBuiltIn::McpUnknown`]），首 token 在 [`MCP_PRIMARY_HANDLERS`] 中查找。
 fn classify_mcp_slash_command(arg_tail: &str) -> ReplBuiltIn<'static> {
     let tail = arg_tail.trim();
@@ -288,6 +336,7 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
         "export" => ReplBuiltIn::Export(arg),
         "save-session" => ReplBuiltIn::SaveSession(arg),
         "mcp" => classify_mcp_slash_command(arg),
+        "agent" => classify_agent_slash_command(arg),
         "version" => ReplBuiltIn::Version,
         _ => ReplBuiltIn::Unknown(head),
     })
@@ -471,6 +520,46 @@ pub fn run_save_session_command(
     Ok(())
 }
 
+/// 与启动时 [`crate::runtime::workspace_session::repl_bootstrap_messages_fast`] 同源：按当前 `agent_role` 重建首轮 `system`（及可选画像注入）。
+async fn repl_rebuild_bootstrap_messages(
+    cfg: &AgentConfig,
+    work_dir: &Path,
+    agent_role: Option<&str>,
+) -> Vec<Message> {
+    let system_prompt = match cfg.system_prompt_for_new_conversation(agent_role) {
+        Ok(s) => s.to_string(),
+        Err(_) => cfg.system_prompt.clone(),
+    };
+    let system_prompt_fb = system_prompt.clone();
+    let wd = work_dir.to_path_buf();
+    let cfg = cfg.clone();
+    let want_heavy = (cfg.project_profile_inject_enabled
+        && cfg.project_profile_inject_max_chars > 0)
+        || (cfg.project_dependency_brief_inject_enabled
+            && cfg.project_dependency_brief_inject_max_chars > 0);
+    if want_heavy {
+        match tokio::task::spawn_blocking(move || {
+            if let Some(ctx) = build_first_turn_user_context_markdown(&wd, &cfg, None) {
+                vec![
+                    Message::system_only(system_prompt.clone()),
+                    Message::user_only(ctx),
+                ]
+            } else {
+                vec![Message::system_only(system_prompt)]
+            }
+        })
+        .await
+        {
+            Ok(v) => v,
+            Err(_) => vec![Message::system_only(system_prompt_fb)],
+        }
+    } else if let Some(ctx) = build_first_turn_user_context_markdown(work_dir, &cfg, None) {
+        vec![Message::system_only(system_prompt), Message::user_only(ctx)]
+    } else {
+        vec![Message::system_only(system_prompt)]
+    }
+}
+
 /// REPL 中以 `/` 开头的内建命令；[`ReplSlashHandled::NotSlash`] 时应将输入交给模型。
 #[allow(clippy::too_many_arguments)]
 async fn try_handle_repl_slash_command(
@@ -481,7 +570,7 @@ async fn try_handle_repl_slash_command(
     work_dir: &mut PathBuf,
     style: &CliReplStyle,
     no_stream: bool,
-    agent_role: Option<&str>,
+    agent_role: &mut Option<String>,
 ) -> ReplSlashHandled {
     let Some(builtin) = classify_repl_slash_command(input) else {
         return ReplSlashHandled::NotSlash;
@@ -497,40 +586,9 @@ async fn try_handle_repl_slash_command(
         }
         ReplBuiltIn::Clear => {
             let cfg = cfg_holder.read().await.clone();
-            let system_prompt = match cfg.system_prompt_for_new_conversation(agent_role) {
-                Ok(s) => s.to_string(),
-                Err(_) => cfg.system_prompt.clone(),
-            };
-            let system_prompt_fb = system_prompt.clone();
-            let wd = work_dir.clone();
-            let want_heavy = (cfg.project_profile_inject_enabled
-                && cfg.project_profile_inject_max_chars > 0)
-                || (cfg.project_dependency_brief_inject_enabled
-                    && cfg.project_dependency_brief_inject_max_chars > 0);
-            *messages = if want_heavy {
-                match tokio::task::spawn_blocking(move || {
-                    if let Some(ctx) = build_first_turn_user_context_markdown(&wd, &cfg, None) {
-                        vec![
-                            Message::system_only(system_prompt.clone()),
-                            Message::user_only(ctx),
-                        ]
-                    } else {
-                        vec![Message::system_only(system_prompt)]
-                    }
-                })
-                .await
-                {
-                    Ok(v) => v,
-                    Err(_) => vec![Message::system_only(system_prompt_fb)],
-                }
-            } else if let Some(ctx) = build_first_turn_user_context_markdown(work_dir, &cfg, None) {
-                vec![
-                    Message::system_only(cfg.system_prompt.clone()),
-                    Message::user_only(ctx),
-                ]
-            } else {
-                vec![Message::system_only(cfg.system_prompt.clone())]
-            };
+            *messages =
+                repl_rebuild_bootstrap_messages(&cfg, work_dir.as_path(), agent_role.as_deref())
+                    .await;
             let _ = style.print_success(&format!(
                 "已清空对话（保留当前 system 提示词），共 {} 条消息。",
                 messages.len()
@@ -673,6 +731,59 @@ async fn try_handle_repl_slash_command(
             let _ = style.eprint_error(&format!(
                 "未知 /mcp 子命令: {tail}。用法: /mcp · /mcp list · /mcp probe · /mcp list probe"
             ));
+        }
+        ReplBuiltIn::AgentList => {
+            let cfg = cfg_holder.read().await;
+            if cfg.agent_roles.is_empty() {
+                let _ = style.print_line(
+                    "当前配置未启用多角色（agent_roles 为空）。可在配置中加入 [[agent_roles]] 或 config/agent_roles.toml。",
+                );
+            } else {
+                let mut ids: Vec<&String> = cfg.agent_roles.keys().collect();
+                ids.sort();
+                let def = cfg.default_agent_role_id.as_deref();
+                let _ = style.print_line("可用角色 id：");
+                for id in ids {
+                    let mark = def.is_some_and(|d| d == id.as_str());
+                    let suffix = if mark { "（配置默认）" } else { "" };
+                    let _ = style.print_line(&format!("  · {id}{suffix}"));
+                }
+                let cur = agent_role.as_deref().filter(|s| !s.is_empty()).map_or_else(
+                    || "（未显式设置；新轮次用配置默认或全局 system）".to_string(),
+                    |r| format!("当前 REPL 选用: {r}"),
+                );
+                let _ = style.print_line(&cur);
+            }
+        }
+        ReplBuiltIn::AgentSet(id) => {
+            let cfg = cfg_holder.read().await;
+            if cfg.agent_roles.is_empty() {
+                let _ = style.eprint_error(
+                    "当前未配置多角色，无法 /agent set。请先配置 [[agent_roles]] 或 agent_roles.toml。",
+                );
+            } else if let Err(e) = cfg.system_prompt_for_new_conversation(Some(id.as_str())) {
+                let _ = style.eprint_error(&e);
+            } else {
+                let role_label = id.clone();
+                drop(cfg);
+                *agent_role = Some(id);
+                let cfg = cfg_holder.read().await.clone();
+                *messages = repl_rebuild_bootstrap_messages(
+                    &cfg,
+                    work_dir.as_path(),
+                    agent_role.as_deref(),
+                )
+                .await;
+                let _ = style.print_success(&format!(
+                    "已设当前角色为 \"{role_label}\"，并已按新 system 重建首轮消息（共 {} 条）。",
+                    messages.len()
+                ));
+            }
+        }
+        ReplBuiltIn::AgentUsage => {
+            let _ = style.eprint_error(
+                "用法: /agent · /agent list（列角色 id）· /agent set <id>（设当前角色并重建首轮 system）",
+            );
         }
         ReplBuiltIn::Version => {
             print_repl_version_line();
@@ -1212,7 +1323,7 @@ pub async fn run_repl(
         style.print_banner(&g, work_dir.as_path(), tools.len(), no_stream)?;
     }
 
-    let agent_role_owned = agent_role
+    let mut agent_role_owned = agent_role
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
@@ -1318,7 +1429,7 @@ pub async fn run_repl(
                     &mut work_dir,
                     &style,
                     no_stream,
-                    agent_role_owned.as_deref(),
+                    &mut agent_role_owned,
                 )
                 .await
                 {
@@ -1576,6 +1687,38 @@ mod repl_slash_tests {
             Some(ReplBuiltIn::Version)
         );
     }
+
+    #[test]
+    fn agent_slash_variants() {
+        assert_eq!(
+            classify_repl_slash_command("/agent"),
+            Some(ReplBuiltIn::AgentList)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/agent list"),
+            Some(ReplBuiltIn::AgentList)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/agent list extra"),
+            Some(ReplBuiltIn::AgentUsage)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/agent set  code"),
+            Some(ReplBuiltIn::AgentSet("code".to_string()))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/agent set  a b c "),
+            Some(ReplBuiltIn::AgentSet("a b c".to_string()))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/agent set"),
+            Some(ReplBuiltIn::AgentUsage)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/agent bogus"),
+            Some(ReplBuiltIn::AgentUsage)
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1605,6 +1748,19 @@ mod repl_slash_subcommand_table_tests {
             names.len(),
             names.iter().collect::<std::collections::HashSet<_>>().len(),
             "MCP_PRIMARY_HANDLERS 名字须唯一"
+        );
+    }
+
+    #[test]
+    fn agent_subcommand_table_sorted_unique() {
+        let names: Vec<&str> = AGENT_SUBCOMMAND_HANDLERS.iter().map(|(n, _)| *n).collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted, "AGENT_SUBCOMMAND_HANDLERS 应按名字典序排列");
+        assert_eq!(
+            names.len(),
+            names.iter().collect::<std::collections::HashSet<_>>().len(),
+            "AGENT_SUBCOMMAND_HANDLERS 名字须唯一"
         );
     }
 }
