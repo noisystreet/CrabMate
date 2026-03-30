@@ -26,6 +26,7 @@ const AGENT_ROLE_DISPLAY_NAMES: Record<string, string> = {
   engineer: '工程师',
   philosopher: '哲学家',
   literary: '文学家',
+  code_reviewer: '代码审阅员',
 }
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -1534,7 +1535,7 @@ export function ChatPanel({
               onChange={(e) => setSelectedAgentRole(e.target.value)}
               title="仅本会话首条消息生效；后续沿用已建立的 system"
             >
-              <option value="">默认（服务端配置）</option>
+              <option value="">default（服务端默认，同 /agent set default）</option>
               {agentRoleIds.map((id) => (
                 <option key={id} value={id}>
                   {AGENT_ROLE_DISPLAY_NAMES[id] ?? id}

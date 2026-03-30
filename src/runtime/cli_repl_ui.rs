@@ -702,11 +702,11 @@ impl CliReplStyle {
             ),
             (
                 "/agent · /agent list",
-                "列出配置中的命名角色 id（与 GET /status 的 agent_role_ids 同源；无表时提示未启用多角色）",
+                "列出内建 default 与配置中的命名角色 id（与 REPL「当前」行一致；无表时提示未启用多角色）",
             ),
             (
-                "/agent set <id>",
-                "设当前 REPL 选用的 agent_role（须存在于角色表），并按新 system 重建首轮消息（等同 /clear 的 system 语义）",
+                "/agent set <id> | /agent set default",
+                "set <id>：须存在于角色表；**set default**：清除显式角色，与 Web 未选角色及「默认」逻辑一致（default_agent_role_id 或全局 system）",
             ),
             ("/workspace", "显示当前工作区"),
             (

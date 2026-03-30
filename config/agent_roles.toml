@@ -32,3 +32,7 @@ system_prompt_file = "config/prompts/philosopher_system_prompt.md"
 # 内置文学向角色：细读、体裁脉络与写作技艺；CLI：`--agent-role literary`
 [agent_roles.roles.literary]
 system_prompt_file = "config/prompts/literary_system_prompt.md"
+
+# 内置代码审阅员：缺陷与风险结构化评审；CLI：`--agent-role code_reviewer`
+[agent_roles.roles.code_reviewer]
+system_prompt_file = "config/prompts/code_reviewer_system_prompt.md"
