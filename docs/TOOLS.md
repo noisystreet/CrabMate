@@ -1,3 +1,5 @@
+**语言 / Languages:** 中文（本页）· [English](en/TOOLS.md)
+
 # CrabMate 内置工具参考
 
 本文档列出各内置工具的能力说明，以及常见 Function Calling JSON 参数示例与发布检查排障指引。Web 工作区、流式与会话导出等行为说明仍在根目录 [`README.md`](../README.md)「功能概览」中；日常使用与入门亦见该文件。

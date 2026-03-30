@@ -1,3 +1,5 @@
+**语言 / Languages:** 中文（本页）· [English](en/CONFIGURATION.md)
+
 # 配置说明
 
 默认配置由仓库 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`** 七段嵌入（均为 **`[agent]`** 扁平键；**`session`** 为 CLI 会话相关 **`tui_*`** 与 **`repl_initial_workspace_messages_enabled`**；**`context_inject`** 为首轮 **`agent_memory_file_*`**、**`project_profile_inject_*`**、**`project_dependency_brief_inject_*`**；**`tools`** 含 **`run_command`** 白名单/超时/工作目录、**`tool_message_*`** / **`tool_result_envelope_v1`**、**`read_file_turn_cache_*`**、**`test_result_cache_*`**、**`session_workspace_changelist_*`**、**`codebase_semantic_*`**（**`codebase_semantic_search`** 工具）、天气/搜索/**`http_fetch_*`**、**`tool_call_explain_*`**、**`mcp_*`** 等；**`sandbox`** 为 **SyncDefault Docker 沙盒** **`sync_default_tool_sandbox_*`**；**`planning`** 为规划 / 反思 / 编排；**`memory`** 为 **`long_term_memory_*`**）。`load_config` 按 **主默认 → session → context_inject → tools → sandbox → planning → memory** 顺序合并，再被 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，最后由环境变量覆盖。示例片段见 **`config.toml.example`**。
