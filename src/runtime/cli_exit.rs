@@ -36,7 +36,7 @@ impl CliExitError {
     }
 }
 
-/// 根据 `run_agent_turn` / LLM 层常见错误文案归类退出码（启发式，与 `llm/api.rs` 用户可见串对齐）。
+/// 根据 `run_agent_turn` / LLM 层常见错误文案归类退出码（启发式，与 `llm::api` 用户可见串对齐）。
 pub fn classify_model_error_message(msg: &str) -> i32 {
     if msg.contains("HTTP 429")
         || msg.contains("http 429")

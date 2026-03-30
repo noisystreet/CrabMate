@@ -206,9 +206,9 @@ Crate root exports **`run`**, **`load_config`**, tool builders, **`dev_tag`**, e
 
 Shared client; separate connect vs request timeout; pool tuning for keep-alive.
 
-### `src/llm/api.rs`
+### `src/llm/api/` (`mod.rs` + `sse_parser` / `terminal_render` / `error_handler`)
 
-SSE parsing with tail-frame flush; vendor fields (`reasoning_split`, `reasoning_details`, GLM `thinking`, Kimi `thinking` disable + temperature clamps). CLI: defer ANSI rendering until complete assistant message when streaming; **`terminal_cli_transcript`** for staged notices and tool output; no full-screen redraw (avoids clobbering subprocess output).
+**`stream_chat`** orchestrates HTTP + branches. **`sse_parser`**: SSE line scan, delta ingest, tail-frame flush; vendor fields (`reasoning_split`, `reasoning_details`). **`error_handler`**: non-2xx bodies and non-stream JSON parse errors (retry remains in **`complete_chat_retrying`**). **`terminal_render`**: CLI Markdown/ANSI and plain streaming; defer ANSI until complete assistant message when streaming; **`terminal_cli_transcript`** for staged notices and tool output; no full-screen redraw (avoids clobbering subprocess output). GLM `thinking`, Kimi `thinking` disable + temperature clamps unchanged in behavior.
 
 ### `src/sse/protocol.rs` / `line.rs`
 
