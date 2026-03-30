@@ -542,29 +542,40 @@ fn App() -> impl IntoView {
     view! {
         <div class="app-root">
             <header class="topbar">
-                <h1>"CrabMate"</h1>
+                <div class="brand">
+                    <span class="brand-mark" aria-hidden="true"></span>
+                    <div class="brand-text">
+                        <h1>"CrabMate"</h1>
+                        <span class="brand-sub">"本地 Agent"</span>
+                    </div>
+                </div>
                 <span class="topbar-spacer"></span>
-                <button type="button" on:click=move |_| session_modal.set(true)>"会话"</button>
-                <button type="button" on:click=new_session.clone()>"新会话"</button>
-                <button
-                    type="button"
-                    class:active=move || workspace_visible.get()
-                    on:click=move |_| workspace_visible.update(|v| *v = !*v)
-                    title="工作区"
-                >"工作区"</button>
-                <button
-                    type="button"
-                    class:active=move || tasks_visible.get()
-                    on:click=move |_| tasks_visible.update(|v| *v = !*v)
-                    title="任务"
-                >"任务"</button>
-                <button
-                    type="button"
-                    class:active=move || status_bar_visible.get()
-                    on:click=move |_| status_bar_visible.update(|v| *v = !*v)
-                    title="状态栏"
-                >"状态"</button>
-                <button type="button" on:click=theme_toggle>"主题"</button>
+                <nav class="topbar-actions">
+                    <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| session_modal.set(true)>"会话"</button>
+                    <button type="button" class="btn btn-secondary btn-sm" on:click=new_session.clone()>"新会话"</button>
+                    <button
+                        type="button"
+                        class="btn btn-ghost btn-sm"
+                        class:active=move || workspace_visible.get()
+                        on:click=move |_| workspace_visible.update(|v| *v = !*v)
+                        title="工作区"
+                    >"工作区"</button>
+                    <button
+                        type="button"
+                        class="btn btn-ghost btn-sm"
+                        class:active=move || tasks_visible.get()
+                        on:click=move |_| tasks_visible.update(|v| *v = !*v)
+                        title="任务"
+                    >"任务"</button>
+                    <button
+                        type="button"
+                        class="btn btn-ghost btn-sm"
+                        class:active=move || status_bar_visible.get()
+                        on:click=move |_| status_bar_visible.update(|v| *v = !*v)
+                        title="状态栏"
+                    >"状态"</button>
+                    <button type="button" class="btn btn-ghost btn-sm" on:click=theme_toggle>"主题"</button>
+                </nav>
             </header>
 
             {move || {
@@ -576,7 +587,7 @@ fn App() -> impl IntoView {
                             <div>"需要审批：运行命令"</div>
                             <pre>{cmd}" "{args}</pre>
                             <div class="actions">
-                                <button type="button" on:click={
+                                <button type="button" class="btn btn-danger btn-sm" on:click={
                                     let sid = sid_deny;
                                     move |_| {
                                         let s = sid.clone();
@@ -586,7 +597,7 @@ fn App() -> impl IntoView {
                                         });
                                     }
                                 }>"拒绝"</button>
-                                <button type="button" on:click={
+                                <button type="button" class="btn btn-secondary btn-sm" on:click={
                                     let sid = sid_once.clone();
                                     move |_| {
                                         let s = sid.clone();
@@ -596,7 +607,7 @@ fn App() -> impl IntoView {
                                         });
                                     }
                                 }>"允许一次"</button>
-                                <button type="button" on:click={
+                                <button type="button" class="btn btn-primary btn-sm" on:click={
                                     let sid = sid.clone();
                                     move |_| {
                                         let s = sid.clone();
@@ -631,20 +642,28 @@ fn App() -> impl IntoView {
                                             _ if m.is_tool => "msg msg-tool",
                                             _ => "msg msg-system",
                                         };
-                                        let extra = if m.state.as_deref() == Some("loading") {
-                                            " …"
-                                        } else {
-                                            ""
-                                        };
+                                        let loading =
+                                            m.role == "assistant" && m.state.as_deref() == Some("loading");
                                         let err = m.state.as_deref() == Some("error");
                                         let class_final = if err {
                                             format!("{cls} msg-error")
+                                        } else if loading {
+                                            format!("{cls} msg-loading")
                                         } else {
                                             cls.to_string()
                                         };
                                         view! {
                                             <div class=class_final>
-                                                {m.text.clone()}{extra}
+                                                {m.text.clone()}
+                                                {loading.then(|| {
+                                                    view! {
+                                                        <span class="typing-dots" aria-hidden="true">
+                                                            <span></span>
+                                                            <span></span>
+                                                            <span></span>
+                                                        </span>
+                                                    }
+                                                })}
                                             </div>
                                         }
                                     })
@@ -654,6 +673,7 @@ fn App() -> impl IntoView {
                     </div>
                     <div class="composer">
                         <textarea
+                            class="composer-input"
                             prop:value=move || draft.get()
                             on:input=move |ev| {
                                 let v = event_target_value(&ev);
@@ -665,26 +685,30 @@ fn App() -> impl IntoView {
                             placeholder="输入消息…"
                             rows="3"
                         ></textarea>
-                        <button
-                            type="button"
-                            prop:disabled=move || status_busy.get() || !initialized.get()
-                            on:click=send_message.clone()
-                        >"发送"</button>
-                        <button
-                            type="button"
-                            prop:disabled=move || !status_busy.get()
-                            on:click=cancel_stream.clone()
-                        >"停止"</button>
+                        <div class="composer-actions">
+                            <button
+                                type="button"
+                                class="btn btn-primary"
+                                prop:disabled=move || status_busy.get() || !initialized.get()
+                                on:click=send_message.clone()
+                            >"发送"</button>
+                            <button
+                                type="button"
+                                class="btn btn-muted"
+                                prop:disabled=move || !status_busy.get()
+                                on:click=cancel_stream.clone()
+                            >"停止"</button>
+                        </div>
                     </div>
                 </div>
 
                 <Show when=move || workspace_visible.get() || tasks_visible.get()>
                     <div class="side-column" style:width=move || format!("{}px", side_width.get())>
-                        <div style="display:flex;gap:4px;padding:4px;border-bottom:1px solid var(--border)">
-                            <button type="button" class="topbar" on:click=narrow_side.clone()>"◀"</button>
-                            <button type="button" class="topbar" on:click=widen_side.clone()>"▶"</button>
+                        <div class="side-toolbar">
+                            <button type="button" class="btn btn-icon" title="收窄侧栏" on:click=narrow_side.clone()>"◀"</button>
+                            <button type="button" class="btn btn-icon" title="加宽侧栏" on:click=widen_side.clone()>"▶"</button>
                         </div>
-                        <div style="display:flex;min-height:0;flex:1">
+                        <div class="side-body">
                             <Show when=move || workspace_visible.get()>
                                 <div
                                     class="side-pane"
@@ -697,6 +721,7 @@ fn App() -> impl IntoView {
                                         }
                                     }
                                 >
+                                    <div class="side-pane-title">"工作区"</div>
                                     <div class="workspace-path">
                                         {move || workspace_data.get().map(|d| d.path).unwrap_or_default()}
                                     </div>
@@ -711,7 +736,7 @@ fn App() -> impl IntoView {
                                                 .unwrap_or_default()
                                         }}</div>
                                     </Show>
-                                    <button type="button" on:click=move |_| refresh_workspace()>"刷新列表"</button>
+                                    <button type="button" class="btn btn-secondary btn-sm side-action" on:click=move |_| refresh_workspace()>"刷新列表"</button>
                                     <ul class="workspace-list">
                                         {move || {
                                             let entries = workspace_data
@@ -746,8 +771,8 @@ fn App() -> impl IntoView {
                                         }
                                     }
                                 >
-                                    <div>"任务清单"</div>
-                                    <button type="button" on:click=move |_| refresh_tasks()>"刷新"</button>
+                                    <div class="side-pane-title">"任务清单"</div>
+                                    <button type="button" class="btn btn-secondary btn-sm side-action" on:click=move |_| refresh_tasks()>"刷新"</button>
                                     <Show when=move || tasks_err.get().is_some()>
                                         <div class="msg-error">{move || tasks_err.get().unwrap_or_default()}</div>
                                     </Show>
@@ -806,8 +831,10 @@ fn App() -> impl IntoView {
                 <div class="modal-backdrop" on:click=move |_| session_modal.set(false)>
                     <div class="modal" on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()>
                         <div class="modal-head">
-                            <span>"会话（本地）"</span>
-                            <button type="button" on:click=move |_| session_modal.set(false)>"关闭"</button>
+                            <h2 class="modal-title">"会话"</h2>
+                            <span class="modal-badge">"本地"</span>
+                            <span class="modal-head-spacer"></span>
+                            <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| session_modal.set(false)>"关闭"</button>
                         </div>
                         <div class="modal-body">
                             {move || {
@@ -820,6 +847,7 @@ fn App() -> impl IntoView {
                                         <div class=if active { "session-row active" } else { "session-row" }>
                                             <button
                                                 type="button"
+                                                class="session-open"
                                                 on:click={
                                                     let id = id.clone();
                                                     move |_| {
@@ -827,7 +855,10 @@ fn App() -> impl IntoView {
                                                         session_modal.set(false);
                                                     }
                                                 }
-                                            >{title}" — "{n}" 条"</button>
+                                            >
+                                                <span class="session-title">{title}</span>
+                                                <span class="session-meta">{n}" 条"</span>
+                                            </button>
                                         </div>
                                     }
                                 }).collect_view()
