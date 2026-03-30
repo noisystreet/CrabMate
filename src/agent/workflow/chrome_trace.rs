@@ -11,9 +11,17 @@ use std::path::Path;
 const ENV_PRIMARY: &str = "CRABMATE_WORKFLOW_CHROME_TRACE_DIR";
 const ENV_ALIAS: &str = "AGENT_WORKFLOW_CHROME_TRACE_DIR";
 
-/// 若环境变量设置了非空目录，则将 `trace` 写入该目录下的 JSON 文件；失败时打 `warn`，不影响主流程。
-/// 成功时返回写入路径的**显示用**字符串（优先 `canonicalize`，否则 `display`）。
-pub(crate) fn maybe_write_workflow_chrome_trace(trace: &[WorkflowTraceEvent]) -> Option<String> {
+/// 若 `merge_into` 为 `Some`，将工作流事件追加到该缓冲并返回 **`None`**（不写独立 `workflow-*.json`）。
+/// 否则若环境变量设置了非空目录，则将 `trace` 写入该目录下的 JSON 文件。
+pub(crate) fn maybe_write_workflow_chrome_trace(
+    trace: &[WorkflowTraceEvent],
+    merge_into: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+) -> Option<String> {
+    if let Some(t) = merge_into {
+        t.append_workflow_chrome_values(workflow_trace_to_chrome_events_only(trace));
+        return None;
+    }
+
     let dir_raw = std::env::var_os(ENV_PRIMARY)
         .or_else(|| std::env::var_os(ENV_ALIAS))
         .and_then(|s| {
@@ -131,26 +139,12 @@ fn event_args(ev: &WorkflowTraceEvent) -> Value {
     Value::Object(m)
 }
 
-/// `ts` / `dur` 使用**微秒**，时间轴以首条事件的 `timestamp_ms` 为 0。
-pub(crate) fn workflow_trace_to_chrome_json(trace: &[WorkflowTraceEvent]) -> Value {
+/// 仅工作流事件（无 `process_name` / `trace_config`），供并入整请求 `turn-*.json`。
+pub(crate) fn workflow_trace_to_chrome_events_only(trace: &[WorkflowTraceEvent]) -> Vec<Value> {
     let Some(t0_ms) = trace.first().map(|e| e.timestamp_ms) else {
-        return Value::Array(vec![]);
+        return vec![];
     };
-
-    let mut out = Vec::with_capacity(trace.len() + 3);
-    out.push(json!({
-        "name": "process_name",
-        "ph": "M",
-        "pid": 1,
-        "args": { "name": "CrabMate workflow" }
-    }));
-    out.push(json!({
-        "name": "trace_config",
-        "ph": "M",
-        "pid": 1,
-        "args": { "displayTimeUnit": "us" }
-    }));
-
+    let mut out = Vec::with_capacity(trace.len());
     for ev in trace {
         let tid = trace_tid(ev.workflow_run_id, ev.node_id.as_deref());
         let ts_us = ev.timestamp_ms.saturating_sub(t0_ms).saturating_mul(1000);
@@ -193,7 +187,25 @@ pub(crate) fn workflow_trace_to_chrome_json(trace: &[WorkflowTraceEvent]) -> Val
             }));
         }
     }
+    out
+}
 
+/// `ts` / `dur` 使用**微秒**，时间轴以首条事件的 `timestamp_ms` 为 0。
+pub(crate) fn workflow_trace_to_chrome_json(trace: &[WorkflowTraceEvent]) -> Value {
+    let mut out = Vec::with_capacity(trace.len() + 3);
+    out.push(json!({
+        "name": "process_name",
+        "ph": "M",
+        "pid": 1,
+        "args": { "name": "CrabMate workflow" }
+    }));
+    out.push(json!({
+        "name": "trace_config",
+        "ph": "M",
+        "pid": 1,
+        "args": { "displayTimeUnit": "us" }
+    }));
+    out.extend(workflow_trace_to_chrome_events_only(trace));
     Value::Array(out)
 }
 

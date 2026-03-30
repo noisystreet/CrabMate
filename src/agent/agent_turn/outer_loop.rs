@@ -61,6 +61,7 @@ pub(crate) async fn run_agent_outer_loop(
             plain_terminal_stream: p.plain_terminal_stream,
             temperature_override: p.temperature_override,
             seed_override: p.seed_override,
+            request_chrome_trace: p.request_chrome_trace.clone(),
         })
         .await?;
         if let Some(f) = p.per_flight.as_ref() {
@@ -134,6 +135,7 @@ pub(crate) async fn run_agent_outer_loop(
                 echo_terminal_transcript,
                 mcp_session: p.mcp_session.as_ref(),
                 workspace_changelist: p.workspace_changelist.as_ref(),
+                request_chrome_trace: p.request_chrome_trace.clone(),
             },
         )
         .await;

@@ -23,6 +23,7 @@ pub(crate) struct PerPlanCallModelParams<'a> {
     pub plain_terminal_stream: bool,
     pub temperature_override: Option<f32>,
     pub seed_override: LlmSeedOverride,
+    pub request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 }
 
 pub(crate) async fn per_plan_call_model_retrying(
@@ -42,6 +43,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         plain_terminal_stream,
         temperature_override,
         seed_override,
+        request_chrome_trace,
     } = p;
     let req = tool_chat_request(
         cfg,
@@ -60,6 +62,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         no_stream,
         cancel,
         plain_terminal_stream,
+        request_chrome_trace,
     };
     let (msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
     Ok((msg, finish_reason))

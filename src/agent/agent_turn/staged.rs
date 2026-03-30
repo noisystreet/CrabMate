@@ -66,6 +66,7 @@ async fn complete_one_staged_planner_assistant_round(
         no_stream: p.no_stream,
         cancel: p.cancel,
         plain_terminal_stream: p.plain_terminal_stream,
+        request_chrome_trace: p.request_chrome_trace.clone(),
     };
     let (msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
     debug!(
@@ -460,6 +461,7 @@ where
         no_stream: p.no_stream,
         cancel: p.cancel,
         plain_terminal_stream: p.plain_terminal_stream,
+        request_chrome_trace: p.request_chrome_trace.clone(),
     };
     let (mut msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
 
@@ -509,6 +511,7 @@ where
                         echo_terminal_transcript,
                         mcp_session: p.mcp_session.as_ref(),
                         workspace_changelist: p.workspace_changelist.as_ref(),
+                        request_chrome_trace: p.request_chrome_trace.clone(),
                     },
                 )
                 .await;
@@ -610,6 +613,7 @@ where
         no_stream: p.no_stream,
         cancel: p.cancel,
         plain_terminal_stream: p.plain_terminal_stream,
+        request_chrome_trace: p.request_chrome_trace.clone(),
     };
     let (mut msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
 
@@ -664,6 +668,7 @@ where
                         echo_terminal_transcript,
                         mcp_session: p.mcp_session.as_ref(),
                         workspace_changelist: p.workspace_changelist.as_ref(),
+                        request_chrome_trace: p.request_chrome_trace.clone(),
                     },
                 )
                 .await;

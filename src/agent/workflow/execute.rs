@@ -54,6 +54,8 @@ pub(crate) struct WorkflowToolExecCtx {
     pub(crate) workflow_run_id: u64,
     /// 与本次 DAG 执行共享的轨迹缓冲（`execute_workflow_dag` 内创建）。
     pub(crate) trace_events: Option<Arc<StdMutex<Vec<WorkflowTraceEvent>>>>,
+    /// 与整请求 `turn-*.json` 合并时传入；单独跑 `workflow_execute` 时为 `None`。
+    pub(crate) request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 }
 
 struct WorkflowTracePush<'a> {
@@ -416,7 +418,10 @@ pub(crate) async fn execute_workflow_dag(
         .and_then(|t| t.lock().ok().map(|g| g.clone()))
         .unwrap_or_default();
 
-    let chrome_trace_path = super::chrome_trace::maybe_write_workflow_chrome_trace(&trace_final);
+    let chrome_trace_path = super::chrome_trace::maybe_write_workflow_chrome_trace(
+        &trace_final,
+        tool_exec_ctx.request_chrome_merge.clone(),
+    );
 
     let report = WorkflowExecutionReport {
         report_type: "workflow_execute_result".to_string(),

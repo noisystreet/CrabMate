@@ -24,6 +24,7 @@ pub async fn run_workflow_execute_tool(
     workspace_is_set: bool,
     approval_mode: WorkflowApprovalMode,
     command_max_output_len: usize,
+    request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 ) -> (String, bool) {
     let workflow_run_id = WORKFLOW_RUN_SEQ.fetch_add(1, Ordering::Relaxed);
     info!(
@@ -294,6 +295,7 @@ pub async fn run_workflow_execute_tool(
             crate::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(cfg),
         workflow_run_id,
         trace_events: None,
+        request_chrome_merge,
     };
 
     let (main_result, workspace_changed) =
