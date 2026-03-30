@@ -631,57 +631,38 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.codebase_semantic_rebuild_max_files = src.codebase_semantic_rebuild_max_files;
 }
 
+/// 合并一条嵌入默认 TOML 中的 `[agent]`；解析失败返回 `Err`（不应在发布构建中发生）。
+fn apply_embedded_agent_shard(
+    b: &mut ConfigBuilder,
+    shard_label: &'static str,
+    toml_src: &'static str,
+) -> Result<(), String> {
+    let agent = parse_agent_section(toml_src).map_err(|e| {
+        format!("嵌入默认配置 {shard_label} TOML 无效（须与仓库 config 一致）: {e}")
+    })?;
+    if let Some(agent) = agent {
+        b.apply_section(agent);
+    }
+    Ok(())
+}
+
 pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut b = ConfigBuilder::default();
 
     // ── 1. 嵌入的默认配置 ──
-    if let Some(agent) = parse_agent_section(DEFAULT_CONFIG)
-        .expect("embedded config/default_config.toml must be valid TOML")
-    {
-        b.apply_section(agent);
-    }
-
+    apply_embedded_agent_shard(&mut b, "default_config.toml", DEFAULT_CONFIG)?;
     // ── 1b. CLI / REPL 会话嵌入默认
-    if let Some(agent) = parse_agent_section(SESSION_DEFAULT_CONFIG)
-        .expect("embedded config/session.toml must be valid TOML")
-    {
-        b.apply_section(agent);
-    }
-
+    apply_embedded_agent_shard(&mut b, "session.toml", SESSION_DEFAULT_CONFIG)?;
     // ── 1c. 首轮上下文注入嵌入默认
-    if let Some(agent) = parse_agent_section(CONTEXT_INJECT_DEFAULT_CONFIG)
-        .expect("embedded config/context_inject.toml must be valid TOML")
-    {
-        b.apply_section(agent);
-    }
-
+    apply_embedded_agent_shard(&mut b, "context_inject.toml", CONTEXT_INJECT_DEFAULT_CONFIG)?;
     // ── 1d. 内置工具嵌入默认（在主默认之后合并，用户文件与环境变量仍可覆盖）
-    if let Some(agent) = parse_agent_section(TOOLS_DEFAULT_CONFIG)
-        .expect("embedded config/tools.toml must be valid TOML")
-    {
-        b.apply_section(agent);
-    }
-
+    apply_embedded_agent_shard(&mut b, "tools.toml", TOOLS_DEFAULT_CONFIG)?;
     // ── 1e. SyncDefault Docker 沙盒嵌入默认
-    if let Some(agent) = parse_agent_section(SANDBOX_DEFAULT_CONFIG)
-        .expect("embedded config/sandbox.toml must be valid TOML")
-    {
-        b.apply_section(agent);
-    }
-
+    apply_embedded_agent_shard(&mut b, "sandbox.toml", SANDBOX_DEFAULT_CONFIG)?;
     // ── 1f. 规划 / 反思 / 编排嵌入默认
-    if let Some(agent) = parse_agent_section(PLANNING_DEFAULT_CONFIG)
-        .expect("embedded config/planning.toml must be valid TOML")
-    {
-        b.apply_section(agent);
-    }
-
+    apply_embedded_agent_shard(&mut b, "planning.toml", PLANNING_DEFAULT_CONFIG)?;
     // ── 1g. 长期记忆嵌入默认
-    if let Some(agent) = parse_agent_section(MEMORY_DEFAULT_CONFIG)
-        .expect("embedded config/memory.toml must be valid TOML")
-    {
-        b.apply_section(agent);
-    }
+    apply_embedded_agent_shard(&mut b, "memory.toml", MEMORY_DEFAULT_CONFIG)?;
 
     // ── 2. 用户配置文件覆盖 ──
     let config_paths: Vec<&str> = match config_path {
@@ -1909,6 +1890,25 @@ fn finalize(
         codebase_semantic_query_max_chunks,
         codebase_semantic_rebuild_max_files,
     })
+}
+
+#[cfg(test)]
+mod embedded_shard_parse_tests {
+    use super::{ConfigBuilder, apply_embedded_agent_shard};
+
+    #[test]
+    fn malformed_embedded_toml_returns_err_naming_shard() {
+        let mut b = ConfigBuilder::default();
+        let err = apply_embedded_agent_shard(&mut b, "test_shard.toml", "[[[not toml").unwrap_err();
+        assert!(
+            err.contains("test_shard.toml"),
+            "expected shard label in error: {err}"
+        );
+        assert!(
+            err.contains("嵌入默认配置"),
+            "expected Chinese prefix in error: {err}"
+        );
+    }
 }
 
 #[cfg(test)]
