@@ -23,6 +23,7 @@ mod project_dependency_brief;
 mod project_profile;
 mod read_file_turn_cache;
 mod redact;
+mod request_chrome_trace;
 mod runtime;
 mod sse;
 mod text_encoding;
@@ -170,6 +171,13 @@ pub async fn run_agent_turn<'a>(
         tools_for_turn.retain(|t| t.function.name != "codebase_semantic_search");
     }
 
+    let request_chrome_trace = crate::request_chrome_trace::request_trace_dir_from_env()
+        .map(|_| std::sync::Arc::new(crate::request_chrome_trace::RequestTurnTrace::new()));
+    let wall_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
     let mut loop_params = agent::agent_turn::RunLoopParams {
         llm_backend,
         client,
@@ -196,8 +204,17 @@ pub async fn run_agent_turn<'a>(
         workspace_changelist,
         staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
         staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
+        request_chrome_trace: request_chrome_trace.clone(),
     };
-    agent::agent_turn::run_agent_turn_common(&mut loop_params).await
+
+    if let Some(t) = request_chrome_trace {
+        crate::request_chrome_trace::with_turn_trace(t, wall_ms, async {
+            agent::agent_turn::run_agent_turn_common(&mut loop_params).await
+        })
+        .await
+    } else {
+        agent::agent_turn::run_agent_turn_common(&mut loop_params).await
+    }
 }
 
 pub(crate) use conversation_store::SaveConversationOutcome;

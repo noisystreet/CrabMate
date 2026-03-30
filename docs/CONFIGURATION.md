@@ -74,11 +74,17 @@
 | `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | CLI / `chat` 无工具规划轮是否向 stdout 打印模型流（默认 `true`；见下文「分阶段规划」）。 |
 | `AGENT_STAGED_PLAN_OPTIMIZER_ROUND` | 是否启用规划步骤优化轮（默认 `true`）。 |
 
+### 整请求 Chrome Trace（`run_agent_turn`）
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `CRABMATE_REQUEST_CHROME_TRACE_DIR` | 非空目录时，每轮 **`run_agent_turn`**（Web `/chat*`、CLI `chat`/`repl` 等）结束写入 **`turn-{unix_ms}.json`**（Chrome Trace Event Format，`displayTimeUnit: us`）。在 **async 主路径**记录 **`llm.chat_completions`**（每次 `complete_chat_retrying`）与 **`agent.tools_batch`**（每批工具调度）的 **B/E** 区间；**`spawn_blocking` 内耗时**不在此文件内展开。 |
+
 ### 工作流（Chrome Trace 导出）
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `CRABMATE_WORKFLOW_CHROME_TRACE_DIR` | 设为非空目录时，每次 **`workflow_execute` DAG 实际执行结束**后，将本次 **`trace`** 写成 Chrome **Trace Event Format** JSON（`workflow-{run_id}-{unix_ms}.json`），可用 `chrome://tracing` 或 [Perfetto UI](https://ui.perfetto.dev/) 打开。文件内含 **`displayTimeUnit: us`**（`ts`/`dur` 为微秒，时间轴相对首条 trace 事件）。**`trace`** 含 **`node_run_start` / `node_run_end`**（整节点墙钟，含审批与重试）、**`node_attempt_*`**、失败补偿时的 **`compensation_phase_*`**；节点事件带 **`tool_name`**、**`phase`**（`main` / `compensation`）。成功写入时结果 JSON 另含 **`chrome_trace_path`**（生成文件路径）。写入失败仅打日志，不影响工具返回。 |
+| `CRABMATE_WORKFLOW_CHROME_TRACE_DIR` | 设为非空目录时，每次 **`workflow_execute` DAG 实际执行结束**后，将本次 **`trace`** 写成 Chrome **Trace Event Format** JSON（`workflow-{run_id}-{unix_ms}.json`），可用 `chrome://tracing` 或 [Perfetto UI](https://ui.perfetto.dev/) 打开。文件内含 **`displayTimeUnit: us`**（`ts`/`dur` 为微秒，时间轴相对首条 trace 事件）。**`trace`** 含 **`node_run_start` / `node_run_end`**（整节点墙钟，含审批与重试）、**`node_attempt_*`**、失败补偿时的 **`compensation_phase_*`**；节点事件带 **`tool_name`**、**`phase`**（`main` / `compensation`）。成功写入时结果 JSON 另含 **`chrome_trace_path`**（生成文件路径）。写入失败仅打日志，不影响工具返回。**若同时设置 `CRABMATE_REQUEST_CHROME_TRACE_DIR`**：工作流事件**并入**对应回合的 **`turn-*.json`**，**不再**生成独立 `workflow-*.json`，且 **`chrome_trace_path` 为 null**。 |
 | `AGENT_WORKFLOW_CHROME_TRACE_DIR` | 与上一项同义（`AGENT_*` 别名）。 |
 
 ### 队列、并行与缓存

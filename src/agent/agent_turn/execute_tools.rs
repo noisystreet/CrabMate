@@ -48,6 +48,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     /// MCP stdio 会话；`None` 时 `mcp__*` 工具会报错。
     pub mcp_session: Option<&'a std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
     pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
+    /// 整请求 Chrome trace；与 `workflow_execute` 合并写 `turn-*.json`。
+    pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -286,6 +288,7 @@ struct ExecuteToolsCommonCtx<'a> {
     web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     mcp_session: Option<&'a std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
+    request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 }
 
 /// 只读可并行批：去重后 `spawn_blocking` + 限并发，再按原 `tool_calls` 顺序回写 SSE / messages。
@@ -306,6 +309,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         web_tool_ctx,
         cli_tool_ctx,
         mcp_session: _,
+        request_chrome_trace: _,
     } = ctx;
 
     let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
@@ -500,6 +504,7 @@ async fn execute_tools_serial(
         web_tool_ctx,
         cli_tool_ctx,
         mcp_session,
+        request_chrome_trace,
     } = ctx;
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
@@ -584,6 +589,7 @@ async fn execute_tools_serial(
                 read_file_turn_cache: read_file_turn_cache.clone(),
                 workspace_changelist: workspace_changelist.cloned(),
                 mcp_session,
+                request_chrome_merge: request_chrome_trace.clone(),
             })
             .await;
 
@@ -724,7 +730,12 @@ pub(crate) async fn per_execute_tools_web(
         echo_terminal_transcript,
         mcp_session,
         workspace_changelist,
+        request_chrome_trace,
     } = ctx;
+
+    let _tool_trace = request_chrome_trace
+        .as_ref()
+        .map(|t| t.enter_section("agent.tools_batch"));
 
     per_execute_tools_common(ExecuteToolsCommonCtx {
         tool_calls,
@@ -742,6 +753,7 @@ pub(crate) async fn per_execute_tools_web(
         web_tool_ctx,
         cli_tool_ctx,
         mcp_session,
+        request_chrome_trace,
     })
     .await
 }

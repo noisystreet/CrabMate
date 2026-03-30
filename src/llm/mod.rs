@@ -193,6 +193,10 @@ pub async fn complete_chat_retrying(
     p: &CompleteChatRetryingParams<'_>,
     request: &ChatRequest,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+    let _llm_trace = p
+        .request_chrome_trace
+        .as_ref()
+        .map(|t| t.enter_section("llm.chat_completions"));
     let t0 = Instant::now();
     let max_attempts = p.cfg.api_max_retries + 1;
     let mut last_ok = None;
