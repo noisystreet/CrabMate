@@ -5,57 +5,49 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::path_workspace::{absolutize_relative_under_root, ensure_canonical_within_root};
+use crate::path_workspace::{
+    WorkspacePathError, absolutize_relative_under_root, ensure_canonical_within_root,
+    ensure_existing_ancestor_within_root,
+};
 
 pub(crate) use crate::path_workspace::canonical_workspace_root;
 
-// 对“目标路径或其最近存在祖先”做 canonical 边界校验，防止借助工作区内 symlink 逃逸。
-fn ensure_existing_ancestor_within_workspace(
-    base_canonical: &Path,
-    target: &Path,
-) -> Result<(), String> {
-    let mut ancestor = target;
-    while !ancestor.exists() {
-        ancestor = ancestor
-            .parent()
-            .ok_or_else(|| "路径无法解析".to_string())?;
-    }
-    let ancestor_canonical = ancestor
-        .canonicalize()
-        .map_err(|e| format!("路径无法解析: {}", e))?;
-    ensure_canonical_within_root(&ancestor_canonical, base_canonical)
+/// 将 [`WorkspacePathError`] 格式化为工具返回给模型的前缀文案（与历史 `错误：…` 一致）。
+#[must_use]
+pub(crate) fn tool_user_error_from_workspace_path(e: WorkspacePathError) -> String {
+    format!("错误：{}", e.user_message())
 }
 
 /// 解析用于读取或修改的路径（目标必须存在；path 必须为相对工作目录的相对路径）
-pub(crate) fn resolve_for_read(base: &Path, sub: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_for_read(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();
     if sub.is_empty() {
-        return Err("path 不能为空".to_string());
+        return Err(WorkspacePathError::EmptyPath);
     }
     if Path::new(sub).is_absolute() {
-        return Err("路径必须为相对于工作目录的相对路径，不能使用绝对路径".to_string());
+        return Err(WorkspacePathError::AbsolutePathNotAllowed);
     }
     let base_canonical = canonical_workspace_root(base)?;
     let joined = base_canonical.join(sub);
     let canonical = joined
         .canonicalize()
-        .map_err(|e| format!("路径无法解析: {}", e))?;
+        .map_err(WorkspacePathError::PathResolveFailed)?;
     ensure_canonical_within_root(&canonical, &base_canonical)?;
     Ok(canonical)
 }
 
 /// 解析用于写入的路径（目标可不存在；path 必须为相对工作目录的相对路径，且不能通过 .. 超出工作目录）
-pub(super) fn resolve_for_write(base: &Path, sub: &str) -> Result<PathBuf, String> {
+pub(super) fn resolve_for_write(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();
     if sub.is_empty() {
-        return Err("path 不能为空".to_string());
+        return Err(WorkspacePathError::EmptyPath);
     }
     if Path::new(sub).is_absolute() {
-        return Err("路径必须为相对于工作目录的相对路径，不能使用绝对路径".to_string());
+        return Err(WorkspacePathError::AbsolutePathNotAllowed);
     }
     let base_canonical = canonical_workspace_root(base)?;
     let normalized = absolutize_relative_under_root(&base_canonical, sub)?;
-    ensure_existing_ancestor_within_workspace(&base_canonical, &normalized)?;
+    ensure_existing_ancestor_within_root(&base_canonical, &normalized)?;
     Ok(normalized)
 }
 

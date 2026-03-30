@@ -8,7 +8,7 @@
 //! - 禁止 `..` 路径穿越
 //! - 必须落在工作区根目录下
 
-use crate::path_workspace::absolutize_relative_under_root;
+use crate::path_workspace::{absolutize_relative_under_root, ensure_existing_ancestor_within_root};
 use crate::workspace_changelist::WorkspaceChangelist;
 use std::path::Path;
 use std::sync::Arc;
@@ -259,25 +259,9 @@ fn validate_single_path(raw_path: &str, root: &Path) -> Result<(), String> {
         return Err(format!("不允许绝对路径: {}", raw_path));
     }
     let normalized = absolutize_relative_under_root(root, path_no_prefix)
-        .map_err(|e| format!("路径超出工作区或无效: {} ({})", raw_path, e))?;
-    ensure_existing_ancestor_within_workspace(root, &normalized)?;
-    Ok(())
-}
-
-fn ensure_existing_ancestor_within_workspace(root: &Path, target: &Path) -> Result<(), String> {
-    let mut ancestor = target;
-    while !ancestor.exists() {
-        ancestor = ancestor
-            .parent()
-            .ok_or_else(|| format!("路径无法解析: {}", target.display()))?;
-    }
-    let ancestor_canonical = ancestor
-        .canonicalize()
-        .map_err(|e| format!("路径无法解析: {} ({})", ancestor.display(), e))?;
-    if !ancestor_canonical.starts_with(root) {
-        return Err(format!("路径超出工作区: {}", target.display()));
-    }
-    Ok(())
+        .map_err(|e| format!("路径超出工作区或无效: {} ({})", raw_path, e.user_message()))?;
+    ensure_existing_ancestor_within_root(root, &normalized)
+        .map_err(|e| format!("路径超出工作区或无效: {} ({})", raw_path, e.user_message()))
 }
 
 #[cfg(test)]

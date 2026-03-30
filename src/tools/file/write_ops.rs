@@ -5,7 +5,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
-use super::path::{parse_path_content, path_for_tool_display, resolve_for_read, resolve_for_write};
+use super::path::{
+    parse_path_content, path_for_tool_display, resolve_for_read, resolve_for_write,
+    tool_user_error_from_workspace_path,
+};
 use crate::tools::ToolContext;
 use crate::workspace_changelist::record_file_state_after_write;
 
@@ -18,7 +21,7 @@ pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     };
     let target = match resolve_for_write(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if target.exists() {
         return "错误：文件已存在，无法仅创建".to_string();
@@ -116,14 +119,14 @@ pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
     };
     let src = match resolve_for_read(working_dir, &from) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !src.is_file() {
         return "错误：源路径不是常规文件（或为目录），仅支持复制文件".to_string();
     }
     let dst = match resolve_for_write(working_dir, &to) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if src == dst {
         return "错误：源与目标解析后相同，无需复制".to_string();
@@ -155,14 +158,14 @@ pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
     };
     let src = match resolve_for_read(working_dir, &from) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !src.is_file() {
         return "错误：源路径不是常规文件（或为目录），仅支持移动文件".to_string();
     }
     let dst = match resolve_for_write(working_dir, &to) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if src == dst {
         return "错误：源与目标解析后相同".to_string();
@@ -212,7 +215,7 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !target.is_file() {
         return "错误：路径不是文件或不存在，无法仅修改".to_string();

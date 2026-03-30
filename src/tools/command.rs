@@ -6,11 +6,92 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use thiserror::Error;
+
 use super::output_util;
 use super::test_result_cache::{
     TestCacheKey, TestCacheKind, cargo_test_run_command_args_fingerprint,
     fingerprint_rust_workspace_sources, store_cached, try_get_cached, wrap_cache_hit,
 };
+
+/// `run_command` 在参数校验、限流、启动进程前的失败原因（可判别；成功路径仍返回带退出码的 `String` 正文）。
+#[derive(Debug, Error)]
+pub enum RunCommandError {
+    #[error("参数解析错误：{0}")]
+    JsonParse(#[from] serde_json::Error),
+    #[error("错误：缺少 command 参数")]
+    MissingCommand,
+    #[error("不允许的命令：{attempted}。允许的命令：{allowed}")]
+    DisallowedCommand { attempted: String, allowed: String },
+    #[error("错误：args 必须是字符串数组")]
+    ArgsNotArray,
+    #[error("错误：参数不允许包含 \"..\" 或绝对路径（以 / 开头）")]
+    UnsafeArg,
+    #[error("命令调用过于频繁：每秒最多允许 {max_per_sec} 次，请稍后再试")]
+    RateLimited { max_per_sec: u32 },
+    #[error("错误：命令 \"{cmd}\" 不存在或在当前环境中不可用（工作目录：{work_dir}）")]
+    CommandNotFound {
+        cmd: String,
+        work_dir: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("错误：没有权限执行命令 \"{cmd}\"（请检查可执行权限或安全策略）")]
+    PermissionDenied {
+        cmd: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("错误：无法执行命令 \"{cmd}\"（系统错误：{source}）")]
+    SpawnOther {
+        cmd: String,
+        #[source]
+        source: io::Error,
+    },
+}
+
+impl RunCommandError {
+    /// 简短分类键，供 metrics / 结构化日志（不含命令名等细节时可只记此项）。
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            RunCommandError::JsonParse(_) => "json_parse",
+            RunCommandError::MissingCommand => "missing_command",
+            RunCommandError::DisallowedCommand { .. } => "disallowed_command",
+            RunCommandError::ArgsNotArray => "args_not_array",
+            RunCommandError::UnsafeArg => "unsafe_arg",
+            RunCommandError::RateLimited { .. } => "rate_limited",
+            RunCommandError::CommandNotFound { .. } => "command_not_found",
+            RunCommandError::PermissionDenied { .. } => "permission_denied",
+            RunCommandError::SpawnOther { .. } => "spawn_other",
+        }
+    }
+
+    /// 与历史工具输出一致的完整说明。
+    #[must_use]
+    pub fn user_message(&self) -> String {
+        self.to_string()
+    }
+}
+
+fn map_spawn_error(cmd: &str, working_dir: &Path, e: io::Error) -> RunCommandError {
+    use io::ErrorKind::*;
+    match e.kind() {
+        NotFound => RunCommandError::CommandNotFound {
+            cmd: cmd.to_string(),
+            work_dir: working_dir.display().to_string(),
+            source: e,
+        },
+        PermissionDenied => RunCommandError::PermissionDenied {
+            cmd: cmd.to_string(),
+            source: e,
+        },
+        _ => RunCommandError::SpawnOther {
+            cmd: cmd.to_string(),
+            source: e,
+        },
+    }
+}
 
 /// 简单的每秒调用限流器状态
 struct RateLimitState {
@@ -61,38 +142,67 @@ pub fn run(
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
 ) -> String {
-    let args: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    match run_impl(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+    ) {
+        Ok(s) => s,
+        Err(e) => e.user_message(),
+    }
+}
+
+/// 与 [`run`] 相同，失败时返回结构化错误（成功仍为格式化输出字符串）。
+pub(crate) fn run_checked(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+) -> Result<String, RunCommandError> {
+    run_impl(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+    )
+}
+
+fn run_impl(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+) -> Result<String, RunCommandError> {
+    let args: serde_json::Value = serde_json::from_str(args_json)?;
     let cmd_name = match args.get("command").and_then(|c| c.as_str()) {
         Some(s) => s.trim().to_lowercase(),
-        None => return "错误：缺少 command 参数".to_string(),
+        None => return Err(RunCommandError::MissingCommand),
     };
     if !allowed_commands.iter().any(|c| c == &cmd_name) {
-        return format!(
-            "不允许的命令：{}。允许的命令：{}",
-            cmd_name,
-            allowed_commands.join(", ")
-        );
+        return Err(RunCommandError::DisallowedCommand {
+            attempted: cmd_name,
+            allowed: allowed_commands.join(", "),
+        });
     }
     let cmd_args: Vec<String> = match args.get("args") {
         Some(serde_json::Value::Array(arr)) => arr
             .iter()
             .filter_map(|v| v.as_str().map(String::from))
             .collect(),
-        Some(_) => return "错误：args 必须是字符串数组".to_string(),
+        Some(_) => return Err(RunCommandError::ArgsNotArray),
         None => vec![],
     };
     for a in &cmd_args {
         if !is_arg_safe(a) {
-            return "错误：参数不允许包含 \"..\" 或绝对路径（以 / 开头）".to_string();
+            return Err(RunCommandError::UnsafeArg);
         }
     }
-    // 简单的每秒调用限流，防止高频滥用命令执行
-    if let Err(e) = check_rate_limit() {
-        return e;
-    }
+    check_rate_limit()?;
 
     if cmd_name == "cargo"
         && let Some(opts) = test_cache.as_ref()
@@ -108,30 +218,24 @@ pub fn run(
             inputs_fingerprint: inputs_fp.clone(),
         };
         if let Some(hit) = try_get_cached(opts.enabled, opts.max_entries, &key) {
-            return wrap_cache_hit(&inputs_fp, &hit);
+            return Ok(wrap_cache_hit(&inputs_fp, &hit));
         }
-        let output = match Command::new(&cmd_name)
+        let output = Command::new(&cmd_name)
             .args(&cmd_args)
             .current_dir(working_dir)
             .output()
-        {
-            Ok(o) => o,
-            Err(e) => return format_spawn_error(&cmd_name, working_dir, &e),
-        };
+            .map_err(|e| map_spawn_error(&cmd_name, working_dir, e))?;
         let formatted = format_command_output(&cmd_name, output, max_output_len);
         store_cached(opts.enabled, opts.max_entries, key, formatted.clone());
-        return formatted;
+        return Ok(formatted);
     }
 
-    let output = match Command::new(&cmd_name)
+    let output = Command::new(&cmd_name)
         .args(&cmd_args)
         .current_dir(working_dir)
         .output()
-    {
-        Ok(o) => o,
-        Err(e) => return format_spawn_error(&cmd_name, working_dir, &e),
-    };
-    format_command_output(&cmd_name, output, max_output_len)
+        .map_err(|e| map_spawn_error(&cmd_name, working_dir, e))?;
+    Ok(format_command_output(&cmd_name, output, max_output_len))
 }
 
 fn format_command_output(
@@ -166,7 +270,7 @@ fn now_sec() -> u64 {
         .as_secs()
 }
 
-fn check_rate_limit() -> Result<(), String> {
+fn check_rate_limit() -> Result<(), RunCommandError> {
     let mut state = RATE_LIMIT.lock().unwrap_or_else(|e| e.into_inner());
     let now = now_sec();
     if now != state.window_sec {
@@ -174,30 +278,12 @@ fn check_rate_limit() -> Result<(), String> {
         state.count = 0;
     }
     if state.count >= MAX_COMMANDS_PER_SEC {
-        return Err(format!(
-            "命令调用过于频繁：每秒最多允许 {} 次，请稍后再试",
-            MAX_COMMANDS_PER_SEC
-        ));
+        return Err(RunCommandError::RateLimited {
+            max_per_sec: MAX_COMMANDS_PER_SEC,
+        });
     }
     state.count += 1;
     Ok(())
-}
-
-/// 将底层 IO 错误转为对用户更友好的提示
-fn format_spawn_error(cmd: &str, working_dir: &Path, e: &io::Error) -> String {
-    use io::ErrorKind::*;
-    match e.kind() {
-        NotFound => format!(
-            "错误：命令 \"{}\" 不存在或在当前环境中不可用（工作目录：{}）",
-            cmd,
-            working_dir.display()
-        ),
-        PermissionDenied => format!(
-            "错误：没有权限执行命令 \"{}\"（请检查可执行权限或安全策略）",
-            cmd
-        ),
-        _ => format!("错误：无法执行命令 \"{}\"（系统错误：{}）", cmd, e),
-    }
 }
 
 #[cfg(test)]
@@ -256,6 +342,19 @@ mod tests {
     }
 
     #[test]
+    fn test_run_missing_command_checked() {
+        let e = run_checked(
+            r#"{"args":[]}"#,
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            test_work_dir(),
+            None,
+        )
+        .expect_err("missing command");
+        assert_eq!(e.kind(), "missing_command");
+    }
+
+    #[test]
     fn test_run_missing_command() {
         let out = run(
             r#"{"args":[]}"#,
@@ -265,6 +364,22 @@ mod tests {
             None,
         );
         assert_eq!(out, "错误：缺少 command 参数");
+    }
+
+    #[test]
+    fn test_run_disallowed_command_checked() {
+        let e = run_checked(
+            r#"{"command":"rm","args":["-rf","/"]}"#,
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            test_work_dir(),
+            None,
+        )
+        .expect_err("disallowed");
+        assert_eq!(e.kind(), "disallowed_command");
+        let msg = e.user_message();
+        assert!(msg.contains("不允许的命令"));
+        assert!(msg.contains("rm"));
     }
 
     #[test]

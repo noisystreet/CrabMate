@@ -6,7 +6,7 @@ use std::path::Path;
 
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
 
-use super::path::{path_for_tool_display, resolve_for_read};
+use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_workspace_path};
 
 /// 在文件中按正则抽取匹配行（只读）。
 /// 参数：
@@ -95,7 +95,7 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !target.is_file() {
         return "错误：路径不是文件或不存在，无法读取".to_string();

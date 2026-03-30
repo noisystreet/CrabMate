@@ -105,7 +105,8 @@ fn read_source_bytes(
     if let Some(p) = path {
         let p = p.trim();
         if !p.is_empty() {
-            let pb = file::resolve_for_read(workspace, p)?;
+            let pb = file::resolve_for_read(workspace, p)
+                .map_err(|e| format!("错误：{}", e.user_message()))?;
             let meta = std::fs::metadata(&pb).map_err(|e| format!("读取元数据失败: {}", e))?;
             if meta.len() > MAX_FILE_BYTES {
                 return Err(format!(

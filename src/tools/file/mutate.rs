@@ -7,6 +7,7 @@ use std::path::Path;
 
 use super::path::{
     canonical_workspace_root, path_for_tool_display, resolve_for_read, resolve_for_write,
+    tool_user_error_from_workspace_path,
 };
 use crate::tools::ToolContext;
 use crate::workspace_changelist::record_file_state_after_write;
@@ -27,7 +28,7 @@ pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !target.is_file() {
         return format!(
@@ -72,7 +73,7 @@ pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !target.is_dir() {
         return format!(
@@ -82,7 +83,7 @@ pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
     }
     let base_canonical = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if target == base_canonical {
         return "错误：不能删除工作区根目录".to_string();
@@ -132,12 +133,14 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     let target = if create_if_missing {
         match resolve_for_write(working_dir, &path) {
             Ok(p) => p,
-            Err(e) => return e,
+            Err(e) => return tool_user_error_from_workspace_path(e),
         }
     } else {
         match resolve_for_read(working_dir, &path) {
             Ok(p) => p,
-            Err(e) => return format!("文件不存在（可设置 create_if_missing=true）：{}", e),
+            Err(e) => {
+                return format!("文件不存在（可设置 create_if_missing=true）：{}", e);
+            }
         }
     };
 
@@ -188,7 +191,7 @@ pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
 
     let target = match resolve_for_write(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if target.exists() {
         if target.is_dir() {
@@ -246,7 +249,7 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !target.is_file() {
         return format!("错误：{} 不是文件", path);
