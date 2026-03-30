@@ -237,6 +237,7 @@ function classifyErrorKind(msg: string): ErrorKind {
   return 'unknown'
 }
 import {
+  fetchStatus,
   sendChatStream,
   submitChatApproval,
   uploadFiles,
@@ -365,6 +366,8 @@ export function ChatPanel({
   const [uploadPercent, setUploadPercent] = useState(0)
   const uploadAbortRef = useRef<AbortController | null>(null)
   const [inputHeight, setInputHeight] = useState(getStoredInputHeight)
+  const [agentRoleIds, setAgentRoleIds] = useState<string[]>([])
+  const [selectedAgentRole, setSelectedAgentRole] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
   const virtuosoRef = useRef<null | { scrollToIndex?: (arg: any) => void }>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -507,6 +510,24 @@ export function ChatPanel({
   }, [inputHeight])
 
   useEffect(() => {
+    let cancelled = false
+    void fetchStatus()
+      .then((s) => {
+        if (cancelled) return
+        const ids = Array.isArray(s.agent_role_ids) ? s.agent_role_ids : []
+        setAgentRoleIds(ids)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAgentRoleIds([])
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     onMessagesChange?.(messages.length > 0)
   }, [messages, onMessagesChange])
 
@@ -535,6 +556,7 @@ export function ChatPanel({
     setInput(initialDraft ?? '')
     setMessages(initialMessages ? [...initialMessages] : [])
     conversationIdRef.current = sessionId
+    setSelectedAgentRole('')
     scheduleScrollToBottom()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
@@ -990,6 +1012,8 @@ export function ChatPanel({
         approvalSessionId,
         signal: controller.signal,
         conversationId: conversationIdRef.current ?? sessionId ?? undefined,
+        agentRole:
+          messages.length === 0 && selectedAgentRole.trim() ? selectedAgentRole.trim() : undefined,
       })
     } catch (e) {
       const msgText = e instanceof Error ? e.message : '请求失败'
@@ -1487,6 +1511,27 @@ export function ChatPanel({
                 </button>
               </div>
             )}
+          </div>
+        )}
+        {agentRoleIds.length > 0 && messages.length === 0 && (
+          <div className="flex items-center gap-2 text-sm shrink-0">
+            <label htmlFor="agent-role-select" className="text-base-content/70 whitespace-nowrap">
+              角色
+            </label>
+            <select
+              id="agent-role-select"
+              className="select select-bordered select-sm rounded-none max-w-[220px]"
+              value={selectedAgentRole}
+              onChange={(e) => setSelectedAgentRole(e.target.value)}
+              title="仅本会话首条消息生效；后续沿用已建立的 system"
+            >
+              <option value="">默认（服务端配置）</option>
+              {agentRoleIds.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
           </div>
         )}
         <div className="flex gap-3 items-stretch flex-1 min-h-0">

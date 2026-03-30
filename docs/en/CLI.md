@@ -2,7 +2,7 @@
 
 # CLI and subcommands
 
-Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root and **`chat --help`** footers cross-reference **`docs/CLI_CONTRACT.md`** and **`docs/SSE_PROTOCOL.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--no-tools`, `--log`.
+Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root and **`chat --help`** footers cross-reference **`docs/CLI_CONTRACT.md`** and **`docs/SSE_PROTOCOL.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--agent-role`, `--no-tools`, `--log`.
 
 **Script contract** (exit codes, `chat --output json` line JSON `type`/`v`, etc.): [`CLI_CONTRACT.md`](CLI_CONTRACT.md).
 
@@ -49,6 +49,7 @@ Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-r
 | `--host <ADDR>` | With `serve` |
 | `--query` / `--stdin` | Same as `chat` |
 | `--workspace <path>` | Override initial workspace |
+| `--agent-role <id>` | First-turn `system` for new `repl` / `chat` session (must exist in config; mutually exclusive with `chat --system-prompt-file`) |
 | `--output` | With `chat`: `plain` or `json` |
 | `--no-tools` | Disable tools |
 | `--no-web` / `--cli-only` | API only |
@@ -171,8 +172,8 @@ Static assets are served from `frontend/dist`.
 |--------|------|-------------|
 | GET | `/` | Frontend |
 | POST | `/config/reload` | Hot-reload in-memory `AgentConfig` (not SQLite path); body `{}` ok; see **`docs/CONFIGURATION.md`** |
-| POST | `/chat` | JSON chat; optional `conversation_id`, `temperature`, `seed`, `seed_policy` |
-| POST | `/chat/stream` | SSE; optional `approval_session_id`; header `x-conversation-id` |
+| POST | `/chat` | JSON chat; optional `conversation_id`, `agent_role` (new server-side session only), `temperature`, `seed`, `seed_policy` |
+| POST | `/chat/stream` | SSE; optional `approval_session_id`, `agent_role` (same); header `x-conversation-id` |
 | POST | `/chat/approval` | Approval: `approval_session_id`, `decision` |
 | POST | `/chat/branch` | Branch/truncate session (see dev doc) |
 | GET | `/status` | Backend status |

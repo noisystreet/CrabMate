@@ -1,5 +1,6 @@
 //! 运行配置：API 地址、模型等，从 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 嵌入默认 + 可选覆盖
 
+mod agent_roles;
 pub mod cli;
 mod cursor_rules;
 mod source;
@@ -7,7 +8,10 @@ mod types;
 mod workspace_roots;
 
 use crate::agent::per_coord::FinalPlanRequirementMode;
-use source::{AgentSection, parse_agent_section, parse_bool_like};
+use source::{
+    AgentRoleRow, AgentSection, parse_agent_section, parse_bool_like, parse_config_file_roles,
+};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 pub use types::{
     AgentConfig, ExposeSecret, LlmHttpAuthMode, LongTermMemoryScopeMode,
@@ -146,6 +150,10 @@ struct ConfigBuilder {
     codebase_semantic_top_k: Option<u64>,
     codebase_semantic_query_max_chunks: Option<u64>,
     codebase_semantic_rebuild_max_files: Option<u64>,
+    /// Web/CLI 未指定 `agent_role` 时使用的默认角色 id（须存在于角色表；与 `agent_roles.toml` / `AGENT_DEFAULT_AGENT_ROLE` 一致）
+    default_agent_role_id: Option<String>,
+    /// `id -> 未合并条目`；在 [`finalize`] 中与全局 cursor rules 设置一并落成 `AgentConfig.agent_roles`。
+    agent_role_entries: HashMap<String, agent_roles::AgentRoleEntryBuilder>,
 }
 
 /// 非空 trim 后覆盖 `String` 字段。
@@ -197,6 +205,7 @@ impl ConfigBuilder {
             .is_some_and(|s| !s.trim().is_empty());
         override_opt_string_non_empty(&mut self.system_prompt_file, agent.system_prompt_file);
         override_string(&mut self.system_prompt, agent.system_prompt);
+        override_opt_string_non_empty(&mut self.default_agent_role_id, agent.default_agent_role);
         // 本段若只给了内联 system_prompt、未再给 system_prompt_file，则不再沿用更早层（如嵌入默认）的文件路径
         if no_system_prompt_file_in_section && inline_system_prompt_nonempty {
             self.system_prompt_file = None;
@@ -465,6 +474,28 @@ impl ConfigBuilder {
             .codebase_semantic_rebuild_max_files
             .or(self.codebase_semantic_rebuild_max_files);
     }
+
+    fn merge_agent_role_rows(&mut self, rows: &[AgentRoleRow]) {
+        for row in rows {
+            let id = row.id.trim().to_string();
+            if id.is_empty() {
+                continue;
+            }
+            let slot = self.agent_role_entries.entry(id).or_default();
+            if let Some(ref p) = row.system_prompt {
+                let p = p.trim().to_string();
+                if !p.is_empty() {
+                    slot.system_prompt = Some(p);
+                }
+            }
+            if let Some(ref f) = row.system_prompt_file {
+                let f = f.trim().to_string();
+                if !f.is_empty() {
+                    slot.system_prompt_file = Some(f);
+                }
+            }
+        }
+    }
 }
 
 /// 加载配置：嵌入的 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为底，再被配置文件覆盖，最后被环境变量覆盖。
@@ -518,6 +549,9 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.plan_rewrite_max_attempts = src.plan_rewrite_max_attempts;
     dst.planner_executor_mode = src.planner_executor_mode;
     dst.system_prompt.clone_from(&src.system_prompt);
+    dst.default_agent_role_id
+        .clone_from(&src.default_agent_role_id);
+    dst.agent_roles = std::sync::Arc::clone(&src.agent_roles);
     dst.cursor_rules_enabled = src.cursor_rules_enabled;
     dst.cursor_rules_dir.clone_from(&src.cursor_rules_dir);
     dst.cursor_rules_include_agents_md = src.cursor_rules_include_agents_md;
@@ -663,16 +697,52 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             system_prompt_search_bases.push(directory_containing_config_file(path));
             let s = std::fs::read_to_string(path)
                 .map_err(|e| format!("无法读取配置文件 \"{}\": {}", path, e))?;
-            let parsed = parse_agent_section(&s)
+            let (agent_opt, role_rows) = parse_config_file_roles(&s)
                 .map_err(|e| format!("配置文件 \"{}\" TOML 解析失败: {}", path, e))?;
-            if let Some(agent) = parsed {
+            if let Some(agent) = agent_opt {
                 b.apply_section(agent);
             }
+            b.merge_agent_role_rows(&role_rows);
             if config_path.is_some() {
                 break;
             }
         } else if config_path.is_some() {
             return Err(format!("配置文件 \"{}\" 不存在", path));
+        }
+    }
+
+    // ── 2b. 可选 `agent_roles.toml`（与主配置同目录，或仓库 `config/agent_roles.toml`）──
+    if let Some(p) = config_path
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        let sidecar = Path::new(p)
+            .parent()
+            .map(|dir| dir.join("agent_roles.toml"));
+        if let Some(sc) = sidecar.filter(|x| x.exists()) {
+            let s = std::fs::read_to_string(&sc)
+                .map_err(|e| format!("无法读取角色配置文件 \"{}\": {}", sc.display(), e))?;
+            let mut default_slot: Option<String> = None;
+            agent_roles::merge_agent_roles_file_into_builder(
+                &s,
+                &mut default_slot,
+                &mut b.agent_role_entries,
+            )?;
+            override_opt_string_non_empty(&mut b.default_agent_role_id, default_slot);
+        }
+    } else {
+        let sc = Path::new("config/agent_roles.toml");
+        if sc.exists() {
+            let s = std::fs::read_to_string(sc)
+                .map_err(|e| format!("无法读取角色配置文件 \"{}\": {}", sc.display(), e))?;
+            let mut default_slot: Option<String> = None;
+            agent_roles::merge_agent_roles_file_into_builder(
+                &s,
+                &mut default_slot,
+                &mut b.agent_role_entries,
+            )?;
+            override_opt_string_non_empty(&mut b.default_agent_role_id, default_slot);
         }
     }
 
@@ -943,6 +1013,12 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         let p = p.trim().to_string();
         if !p.is_empty() {
             b.system_prompt_file = Some(p);
+        }
+    }
+    if let Ok(s) = std::env::var("AGENT_DEFAULT_AGENT_ROLE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.default_agent_role_id = Some(s);
         }
     }
     if let Ok(v) = std::env::var("AGENT_CURSOR_RULES_ENABLED")
@@ -1479,6 +1555,23 @@ fn finalize(
         cursor_rules_max_chars as usize,
     )?;
 
+    let default_agent_role_id = b
+        .default_agent_role_id
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let (default_agent_role_id, agent_roles) = agent_roles::finalize_agent_role_catalog(
+        b.agent_role_entries,
+        default_agent_role_id,
+        system_prompt.as_str(),
+        &system_prompt_search_bases,
+        run_command_working_dir.as_path(),
+        cursor_rules_enabled,
+        &cursor_rules_dir,
+        cursor_rules_include_agents_md,
+        cursor_rules_max_chars as usize,
+    )?;
+
     let final_plan_requirement = match b.final_plan_requirement_str.as_deref() {
         Some(s) => FinalPlanRequirementMode::parse(s)?,
         None => FinalPlanRequirementMode::default(),
@@ -1744,6 +1837,8 @@ fn finalize(
         plan_rewrite_max_attempts,
         planner_executor_mode,
         system_prompt,
+        default_agent_role_id,
+        agent_roles,
         cursor_rules_enabled,
         cursor_rules_dir,
         cursor_rules_include_agents_md,

@@ -74,8 +74,12 @@ pub fn load_workspace_session(
 }
 
 /// REPL 启动后**立刻**可用的消息列表（仅 `system`），不阻塞项目画像 / 会话恢复等耗时逻辑。
-pub fn repl_bootstrap_messages_fast(cfg: &AgentConfig) -> Vec<Message> {
-    vec![Message::system_only(cfg.system_prompt.clone())]
+pub fn repl_bootstrap_messages_fast(cfg: &AgentConfig, agent_role: Option<&str>) -> Vec<Message> {
+    let system = cfg
+        .system_prompt_for_new_conversation(agent_role)
+        .unwrap_or(cfg.system_prompt.as_str())
+        .to_string();
+    vec![Message::system_only(system)]
 }
 
 /// 从后台线程槽位取出至多一次的 [`initial_workspace_messages`] 结果，合并进当前 REPL `messages`。
@@ -132,27 +136,30 @@ pub fn initial_workspace_messages(
     cfg: &AgentConfig,
     workspace: &Path,
     load_from_disk: bool,
+    agent_role: Option<&str>,
 ) -> Vec<Message> {
+    let system_seed = match cfg.system_prompt_for_new_conversation(agent_role) {
+        Ok(s) => s.to_string(),
+        Err(_) => cfg.system_prompt.clone(),
+    };
     if !load_from_disk {
         if let Some(ctx) = build_first_turn_user_context_markdown(workspace, cfg, None) {
-            return vec![
-                Message::system_only(cfg.system_prompt.clone()),
-                Message::user_only(ctx),
-            ];
+            return vec![Message::system_only(system_seed), Message::user_only(ctx)];
         }
-        return vec![Message::system_only(cfg.system_prompt.clone())];
+        return vec![Message::system_only(system_seed)];
     }
-    load_workspace_session(workspace, &cfg.system_prompt, cfg.tui_session_max_messages)
-        .unwrap_or_else(|| {
+    load_workspace_session(workspace, &system_seed, cfg.tui_session_max_messages).unwrap_or_else(
+        || {
             if let Some(ctx) = build_first_turn_user_context_markdown(workspace, cfg, None) {
                 vec![
-                    Message::system_only(cfg.system_prompt.clone()),
+                    Message::system_only(system_seed.clone()),
                     Message::user_only(ctx),
                 ]
             } else {
-                vec![Message::system_only(cfg.system_prompt.clone())]
+                vec![Message::system_only(system_seed)]
             }
-        })
+        },
+    )
 }
 
 pub fn save_workspace_session(workspace: &Path, messages: &[Message]) -> std::io::Result<()> {

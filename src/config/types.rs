@@ -306,6 +306,9 @@ impl LongTermMemoryVectorBackend {
     }
 }
 
+/// 角色 id → 已合并 cursor rules 的 system 正文（`Arc` 便于配置热更共享）
+pub type AgentRoleCatalog = std::sync::Arc<std::collections::HashMap<String, String>>;
+
 /// Agent 运行配置
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -377,6 +380,10 @@ pub struct AgentConfig {
     pub planner_executor_mode: PlannerExecutorMode,
     /// 系统提示词：默认自 `system_prompt_file` 读盘；无文件路径时使用合并后的内联（见 `config::load_config` 与文档）
     pub system_prompt: String,
+    /// Web/CLI 未传 `agent_role` 时使用的默认角色 id（`None` 表示用 [`Self::system_prompt`]）
+    pub default_agent_role_id: Option<String>,
+    /// 命名角色表（`config/agent_roles.toml` 等）；空表表示未启用多角色
+    pub agent_roles: AgentRoleCatalog,
     /// 启用后：读取 `cursor_rules_dir` 下的 `*.mdc` 并附加到系统提示词
     pub cursor_rules_enabled: bool,
     /// Cursor-like 规则目录（相对路径相对进程当前目录）
@@ -517,6 +524,33 @@ pub struct AgentConfig {
     pub codebase_semantic_query_max_chunks: usize,
     /// `rebuild_index` 时最多索引多少个文件（防超大仓拖死进程）。
     pub codebase_semantic_rebuild_max_files: usize,
+}
+
+impl AgentConfig {
+    /// 新建 Web/CLI 会话首条 `system` 的正文来源。
+    ///
+    /// - 显式 `agent_role`：须在 [`Self::agent_roles`] 中存在，否则返回 `Err`。
+    /// - 未指定：使用 [`Self::default_agent_role_id`] 对应条目（若配置且存在），否则 [`Self::system_prompt`]。
+    pub fn system_prompt_for_new_conversation(
+        &self,
+        agent_role: Option<&str>,
+    ) -> Result<&str, String> {
+        match agent_role.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(id) => self
+                .agent_roles
+                .get(id)
+                .map(|s| s.as_str())
+                .ok_or_else(|| format!("未知的 agent_role: {id}（请在配置中定义该 id）")),
+            None => Ok(self
+                .default_agent_role_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .and_then(|id| self.agent_roles.get(id))
+                .map(|s| s.as_str())
+                .unwrap_or(self.system_prompt.as_str())),
+        }
+    }
 }
 
 #[cfg(test)]

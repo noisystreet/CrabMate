@@ -1,0 +1,15 @@
+# 可选多角色：与 `config/default_config.toml` 等一并被 `load_config` 合并（未使用 `--config` 时读取本文件）。
+# 若使用 `crabmate --config path/to/foo.toml`，则改为读取同目录下的 `agent_roles.toml`。
+# 完整说明见 docs/CONFIGURATION.md「多角色（agent_roles）」。
+#
+# 示例（取消注释并定义 id 后生效）：
+# [agent_roles]
+# default_role = "code"
+#
+# [agent_roles.roles.code]
+# system_prompt = "You are a concise assistant for coding tasks."
+#
+# [agent_roles.roles.reviewer]
+# system_prompt_file = "config/prompts/reviewer.md"
+
+[agent_roles]

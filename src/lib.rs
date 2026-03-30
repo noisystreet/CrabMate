@@ -208,6 +208,7 @@ pub(crate) use web::conversation_conflict_sse_line;
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let ParsedCliArgs {
         config_path,
+        agent_role_cli,
         chat_cli,
         serve_port,
         http_bind_host,
@@ -565,6 +566,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             &tools,
             &workspace_cli,
             &chat_cli,
+            agent_role_cli.as_deref(),
         )
         .await?;
         return Ok(());
@@ -578,6 +580,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         &tools,
         &workspace_cli,
         no_stream,
+        agent_role_cli.as_deref(),
     )
     .await
 }
