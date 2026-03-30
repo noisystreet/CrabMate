@@ -333,12 +333,14 @@ fn App() -> impl IntoView {
                         return;
                     }
                     sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act) {
-                            if let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id) {
-                                m.state = None;
-                                if m.text.trim().is_empty() {
-                                    m.text = "(无回复)".to_string();
-                                }
+                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act)
+                            && let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id)
+                            && m.state.as_deref() == Some("loading")
+                        {
+                            // 仅收尾「仍在生成」的气泡；SSE 已 on_error 的勿覆盖 error 状态
+                            m.state = None;
+                            if m.text.trim().is_empty() {
+                                m.text = "(无回复)".to_string();
                             }
                         }
                     });
