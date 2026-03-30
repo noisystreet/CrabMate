@@ -363,6 +363,27 @@ fn test_summarize_tool_call_dynamic_run_command() {
 }
 
 #[test]
+fn test_summarize_search_in_files_truncates_long_pattern() {
+    let pat = "x".repeat(80);
+    let s = summarize_tool_call("search_in_files", &format!(r#"{{"pattern":"{pat}"}}"#))
+        .expect("summary");
+    assert!(s.starts_with("search in files: "));
+    assert!(s.ends_with('…'), "expected ellipsis for long pattern: {s}");
+    assert!(
+        s.chars().count() <= 64,
+        "summary should stay short, got {} chars: {s}",
+        s.chars().count()
+    );
+}
+
+#[test]
+fn test_summarize_search_in_files_with_path_short() {
+    let s = summarize_tool_call("search_in_files", r#"{"pattern":"fn main","path":"src"}"#)
+        .expect("summary");
+    assert_eq!(s, "search in files: fn main @ src");
+}
+
+#[test]
 fn test_summarize_tool_call_none() {
     let s = summarize_tool_call("get_current_time", "{}");
     assert_eq!(s, None);
