@@ -30,6 +30,7 @@ const REPL_COMPLETION_MENU: &str = "completion_menu";
 /// 内建 `/` 命令名（不含斜杠；`?` 单独成项）。
 const SLASH_COMMANDS: &[&str] = &[
     "?",
+    "agent",
     "cd",
     "clear",
     "config",
@@ -183,6 +184,24 @@ impl Completer for ReplSlashCompleter {
                         })
                         .collect();
                 }
+                if tail.eq_ignore_ascii_case("agent") {
+                    return ["list", "set"]
+                        .iter()
+                        .map(|a| {
+                            let value = if *a == "set" {
+                                format!("/agent {a} ")
+                            } else {
+                                format!("/agent {a}")
+                            };
+                            Suggestion {
+                                value,
+                                span,
+                                append_whitespace: false,
+                                ..Default::default()
+                            }
+                        })
+                        .collect();
+                }
                 Self::suggestions_first_token(tail)
                     .into_iter()
                     .map(|cmd| Self::suggestion_slash_command(span, cmd))
@@ -259,6 +278,35 @@ impl Completer for ReplSlashCompleter {
                                 format!("/models {a} ")
                             } else {
                                 format!("/models {a}")
+                            };
+                            Suggestion {
+                                value,
+                                span,
+                                append_whitespace: false,
+                                ..Default::default()
+                            }
+                        })
+                        .collect();
+                }
+                if cmd.eq_ignore_ascii_case("agent") {
+                    let ap = after_ws.trim_start();
+                    let ap_l = ap.to_ascii_lowercase();
+                    let hits: Vec<&str> = if ap_l.is_empty() {
+                        vec!["list", "set"]
+                    } else {
+                        ["list", "set"]
+                            .iter()
+                            .copied()
+                            .filter(|s| s.starts_with(ap_l.as_str()))
+                            .collect()
+                    };
+                    return hits
+                        .into_iter()
+                        .map(|a| {
+                            let value = if a == "set" {
+                                format!("/agent {a} ")
+                            } else {
+                                format!("/agent {a}")
                             };
                             Suggestion {
                                 value,
@@ -741,5 +789,17 @@ mod slash_completion_tests {
         let s2 = c.complete(line, line.len());
         assert!(s2.iter().any(|x| x.value == "/models list"));
         assert!(s2.iter().any(|x| x.value == "/models choose "));
+    }
+
+    #[test]
+    fn agent_subcommands() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        let s = c.complete("/agent", 6);
+        assert!(s.iter().any(|x| x.value == "/agent list"));
+        assert!(s.iter().any(|x| x.value == "/agent set "));
+        let line = "/agent ";
+        let s2 = c.complete(line, line.len());
+        assert!(s2.iter().any(|x| x.value == "/agent list"));
+        assert!(s2.iter().any(|x| x.value == "/agent set "));
     }
 }
