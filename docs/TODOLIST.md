@@ -25,7 +25,6 @@
 
 ### P4 — 测试与质量
 
-- [ ] **错误类型统一（渐进）**：生产路径减少纯 `String` / `format!` 导致无法区分「不允许 / 未找到 / 非零退出」等；优先为 `run_command`（如 `tools/command.rs`）与路径解析等热点引入可判别错误类型；`path_workspace` 等逐步由 `Result<_, String>` 迁向结构化枚举（与安全边界、日志分类同向）。
 - [ ] **生产路径 unwrap/expect 审计**：梳理非测试代码中的 `unwrap` / `expect`（如 `per_coord`、`conversation_store`、命令退出码处理），改为显式传播或带业务上下文的 `expect`，降低低概率 panic 与排障成本。
 - [ ] **集成/契约测试**：在 `lib_smoke` 与 **`tests/cli_contract.rs`**（`parse_args_from_argv`、`normalize_legacy_argv` fixture、`classify_model_error_message` / `EXIT_*`）之外，可为 `plan_artifact` 边界、`classify_agent_sse_line` 协议行、`workflow_reflection_controller` 状态迁移增加 fixture 或快照用例。
 - [ ] **`stream_chat` 非流式**：可选 wiremock / 静态 JSON fixture 测 `ChatResponse` 解析。

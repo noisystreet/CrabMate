@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use super::ToolContext;
 use super::command;
 
+use log::warn;
 use regex::Regex;
 
 const DEFAULT_MAX_CHARS: usize = 24_000;
@@ -446,13 +447,25 @@ pub fn playbook_run_commands(args_json: &str, ctx: &ToolContext<'_>) -> String {
             }
         };
         out.push_str(&format!("—— 步骤 {}: `{}` ——\n", i + 1, t));
-        let r = command::run(
+        let r = match command::run_checked(
             &args_s,
             ctx.command_max_output_len,
             ctx.allowed_commands,
             ctx.working_dir,
             None,
-        );
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!(
+                    target: "crabmate",
+                    "playbook_run_commands step={} kind={} err={}",
+                    i + 1,
+                    e.kind(),
+                    e
+                );
+                e.user_message()
+            }
+        };
         out.push_str(&r);
         out.push_str("\n\n");
     }

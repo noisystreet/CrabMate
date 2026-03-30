@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use super::path::{path_for_tool_display, resolve_for_read};
+use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_workspace_path};
 
 /// read_binary_meta：默认读取文件头参与哈希的字节数
 const READ_BINARY_META_PREFIX_DEFAULT: usize = 8192;
@@ -87,7 +87,7 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !target.is_file() {
         return "错误：路径不是文件或不存在".to_string();
@@ -180,7 +180,7 @@ pub fn hash_file(args_json: &str, working_dir: &Path) -> String {
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !target.is_file() {
         return "错误：路径不是文件或不存在".to_string();

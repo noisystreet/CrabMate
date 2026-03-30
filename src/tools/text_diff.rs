@@ -54,7 +54,8 @@ fn parse_max_output(v: &Value) -> Result<usize, String> {
 }
 
 fn read_workspace_text(path: &str, base: &Path) -> Result<String, String> {
-    let pb = file::resolve_for_read(base, path)?;
+    let pb =
+        file::resolve_for_read(base, path).map_err(|e| format!("错误：{}", e.user_message()))?;
     let meta = fs::metadata(&pb).map_err(|e| format!("读取元数据失败: {}", e))?;
     if meta.len() > MAX_FILE_BYTES {
         return Err(format!(

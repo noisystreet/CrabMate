@@ -106,10 +106,12 @@ pub struct ToolContext<'a> {
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
 /// 与内置文件工具相同的路径规则：将相对路径解析为工作区内绝对路径（供变更集等跨模块只读）。
+pub use crate::path_workspace::WorkspacePathError;
+
 pub fn resolve_workspace_path_for_read(
     working_dir: &std::path::Path,
     rel: &str,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<std::path::PathBuf, WorkspacePathError> {
     file::resolve_for_read(working_dir, rel)
 }
 
@@ -118,21 +120,35 @@ pub fn resolve_repl_workspace_switch_path(
     cfg: &AgentConfig,
     current_work_dir: &Path,
     raw: &str,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<std::path::PathBuf, ReplWorkspaceSwitchError> {
     let raw = raw.trim();
     if raw.is_empty() {
-        return Err("用法: /workspace <路径>（须为已存在目录）".to_string());
+        return Err(ReplWorkspaceSwitchError::Usage);
     }
     if Path::new(raw).is_absolute() {
-        validate_workspace_set_path(cfg, raw)
+        validate_workspace_set_path(cfg, raw).map_err(ReplWorkspaceSwitchError::Path)
     } else {
-        let p = resolve_workspace_path_for_read(current_work_dir, raw)?;
+        let p = resolve_workspace_path_for_read(current_work_dir, raw)
+            .map_err(ReplWorkspaceSwitchError::Path)?;
         if !p.is_dir() {
-            return Err(format!("不是目录: {}", p.display()));
+            return Err(ReplWorkspaceSwitchError::NotADirectory(
+                p.display().to_string(),
+            ));
         }
-        validate_effective_workspace_base(cfg, &p)?;
+        validate_effective_workspace_base(cfg, &p).map_err(ReplWorkspaceSwitchError::Path)?;
         Ok(p)
     }
+}
+
+/// REPL `/workspace` 切换失败：用法提示或与 [`WorkspacePathError`] 同源的路径策略错误。
+#[derive(Debug, thiserror::Error)]
+pub enum ReplWorkspaceSwitchError {
+    #[error("用法: /workspace <路径>（须为已存在目录）")]
+    Usage,
+    #[error("不是目录: {0}")]
+    NotADirectory(String),
+    #[error(transparent)]
+    Path(#[from] WorkspacePathError),
 }
 
 pub fn tool_context_for<'a>(

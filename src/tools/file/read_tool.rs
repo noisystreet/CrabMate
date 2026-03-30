@@ -11,7 +11,7 @@ use crate::text_encoding::{
     resolve_text_encoding,
 };
 
-use super::path::{path_for_tool_display, resolve_for_read};
+use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_workspace_path};
 
 fn read_file_logical_cache_key(canonical: &std::path::Path, v: &serde_json::Value) -> String {
     let start_line = v.get("start_line").and_then(|n| n.as_u64()).unwrap_or(1);
@@ -187,7 +187,7 @@ pub fn read_file(
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     if !target.is_file() {
         return "错误：路径不是文件或不存在，无法读取".to_string();

@@ -122,7 +122,7 @@ pub(crate) fn index_path_for_workspace(
     workspace_root: &Path,
     configured: &str,
 ) -> Result<PathBuf, String> {
-    let base = canonical_workspace_root(workspace_root)?;
+    let base = canonical_workspace_root(workspace_root).map_err(|e| e.user_message())?;
     if configured.trim().is_empty() {
         return Ok(base.join(".crabmate/codebase_semantic.sqlite"));
     }
@@ -323,7 +323,7 @@ pub fn run_tool(
 
     let ws_root: std::path::PathBuf = match canonical_workspace_root(workspace_root) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return format!("错误：{}", e.user_message()),
     };
     let ws_key = ws_root.to_string_lossy().to_string();
 
