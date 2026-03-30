@@ -13,3 +13,22 @@
 # system_prompt_file = "config/prompts/reviewer.md"
 
 [agent_roles]
+# 内置陪聊角色：Web 新会话「角色」选 companion；CLI：`--agent-role companion`
+[agent_roles.roles.companion]
+system_prompt_file = "config/prompts/companion_system_prompt.md"
+
+# 内置科学家向角色：强调证据层级、不确定性与可检验性；CLI：`--agent-role scientist`
+[agent_roles.roles.scientist]
+system_prompt_file = "config/prompts/scientist_system_prompt.md"
+
+# 内置工程师向角色：交付、权衡、可靠性与可运维；CLI：`--agent-role engineer`
+[agent_roles.roles.engineer]
+system_prompt_file = "config/prompts/engineer_system_prompt.md"
+
+# 内置哲学向角色：概念澄清、论证结构与传统比较；CLI：`--agent-role philosopher`
+[agent_roles.roles.philosopher]
+system_prompt_file = "config/prompts/philosopher_system_prompt.md"
+
+# 内置文学向角色：细读、体裁脉络与写作技艺；CLI：`--agent-role literary`
+[agent_roles.roles.literary]
+system_prompt_file = "config/prompts/literary_system_prompt.md"
