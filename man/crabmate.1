@@ -4,7 +4,7 @@
 .SH NAME
 crabmate \- 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek / MiniMax / Ollama 等），支持工具调用、Web 界面与 CLI
 .SH SYNOPSIS
-\fBcrabmate\fR [\fB\-\-config\fR] [\fB\-\-workspace\fR] [\fB\-\-no\-tools\fR] [\fB\-\-log\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIsubcommands\fR]
+\fBcrabmate\fR [\fB\-\-config\fR] [\fB\-\-workspace\fR] [\fB\-\-no\-tools\fR] [\fB\-\-agent\-role\fR] [\fB\-\-log\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIsubcommands\fR]
 .SH DESCRIPTION
 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek / MiniMax / Ollama 等），支持工具调用、Web 界面与 CLI
 .SH OPTIONS
@@ -17,6 +17,9 @@ crabmate \- 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek /
 .TP
 \fB\-\-no\-tools\fR
 禁用所有工具调用，仅作为普通 Chat 使用
+.TP
+\fB\-\-agent\-role\fR \fI<ID>\fR
+新建 REPL / `chat` 会话时使用的命名角色 id（须与配置中 `[[agent_roles]]` 或 `agent_roles.toml` 一致；与 `\-\-system\-prompt\-file` 互斥时以后者为准）
 .TP
 \fB\-\-log\fR \fI<FILE>\fR
 将日志追加写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别写入，并同时输出到 stderr

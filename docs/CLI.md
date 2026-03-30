@@ -2,7 +2,7 @@
 
 # 命令行与子命令
 
-查看帮助：`crabmate --help`、`crabmate help`、`crabmate help <子命令>`（与 `--help` 等价）。根级与 **`chat --help`** 文末含 **`docs/CLI_CONTRACT.md`**、**`docs/SSE_PROTOCOL.md`** 交叉引用。**全局选项**写在子命令**之前**：`--config`、`--workspace`、`--no-tools`、`--log`。
+查看帮助：`crabmate --help`、`crabmate help`、`crabmate help <子命令>`（与 `--help` 等价）。根级与 **`chat --help`** 文末含 **`docs/CLI_CONTRACT.md`**、**`docs/SSE_PROTOCOL.md`** 交叉引用。**全局选项**写在子命令**之前**：`--config`、`--workspace`、`--agent-role`、`--no-tools`、`--log`。
 
 **脚本契约**（退出码、`chat --output json` 行内 JSON 的 `type`/`v` 等）：[`CLI_CONTRACT.md`](CLI_CONTRACT.md)。
 
@@ -49,6 +49,7 @@
 | `--host <ADDR>` | 随 `serve` |
 | `--query` / `--stdin` | 等价于 `chat` |
 | `--workspace <path>` | 覆盖初始工作区 |
+| `--agent-role <id>` | 新建 `repl` / `chat` 会话首条 `system` 用命名角色（须与配置一致；与 `chat --system-prompt-file` 互斥） |
 | `--output` | 随 `chat`：`plain` 或 `json` |
 | `--no-tools` | 禁用工具 |
 | `--no-web` / `--cli-only` | 仅 API |
@@ -175,8 +176,8 @@ cargo run -- serve
 |------|------|------|
 | GET | `/` | 前端页面 |
 | POST | `/config/reload` | 热重载内存中的 `AgentConfig`（不含会话 SQLite 路径）；body 可为 `{}`；见 **`docs/CONFIGURATION.md`**「配置热重载」 |
-| POST | `/chat` | JSON 对话；可选 `conversation_id`、`temperature`、`seed`、`seed_policy` |
-| POST | `/chat/stream` | SSE；可选 `approval_session_id`；响应头 `x-conversation-id` |
+| POST | `/chat` | JSON 对话；可选 `conversation_id`、`agent_role`（仅新建服务端会话时）、`temperature`、`seed`、`seed_policy` |
+| POST | `/chat/stream` | SSE；可选 `approval_session_id`、`agent_role`（同上）；响应头 `x-conversation-id` |
 | POST | `/chat/approval` | 审批：`approval_session_id`、`decision` |
 | POST | `/chat/branch` | 会话分叉截断（见开发文档） |
 | GET | `/status` | 后台状态 |

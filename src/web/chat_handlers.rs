@@ -32,6 +32,9 @@ pub(crate) struct ChatRequestBody {
     message: String,
     #[serde(default)]
     conversation_id: Option<String>,
+    /// 新建会话（无 `conversation_id` 或服务端尚无该 id）时选用命名角色；须与配置中角色 id 一致。已有会话时忽略。
+    #[serde(default, rename = "agent_role")]
+    agent_role: Option<String>,
     #[serde(default)]
     approval_session_id: Option<String>,
     /// 覆盖本回合 `chat/completions` 的 **`temperature`**（0～2）；省略则用服务端配置。
@@ -445,6 +448,24 @@ pub(crate) struct ApiError {
     pub message: String,
 }
 
+/// 可选 `agent_role`：非空时与 `conversation_id` 同类字符约束，最长 64。
+pub(crate) fn normalize_agent_role(raw: Option<&str>) -> Result<Option<String>, String> {
+    const MAX: usize = 64;
+    let Some(s) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    if s.len() > MAX {
+        return Err(format!("agent_role 过长（最多 {MAX} 个字符）"));
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
+    {
+        return Err("agent_role 仅允许字母、数字、- _ . :".to_string());
+    }
+    Ok(Some(s.to_string()))
+}
+
 pub(crate) fn normalize_client_conversation_id(
     raw: Option<&str>,
 ) -> Result<Option<String>, String> {
@@ -470,14 +491,18 @@ async fn build_messages_for_turn(
     state: &Arc<AppState>,
     conversation_id: &str,
     user_msg: &str,
-) -> ConversationTurnSeed {
+    agent_role: Option<&str>,
+) -> Result<ConversationTurnSeed, String> {
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
         seed.messages.push(Message::user_only(user_msg.to_string()));
-        return seed;
+        return Ok(seed);
     }
     // 先取工作区路径，再读 `cfg`，避免在持有 `cfg` 读锁时调用 `effective_workspace_path`（其内部再次 `cfg.read` 会死锁）。
     let root_str = state.effective_workspace_path().await;
     let cfg = state.cfg.read().await;
+    let system_for_turn = cfg
+        .system_prompt_for_new_conversation(agent_role)?
+        .to_string();
     let root = std::path::PathBuf::from(root_str);
     let memory_snippet = if cfg.agent_memory_file_enabled {
         load_memory_snippet(
@@ -513,16 +538,16 @@ async fn build_messages_for_turn(
 
     let messages = match combined {
         Some(ctx) => vec![
-            Message::system_only(cfg.system_prompt.clone()),
+            Message::system_only(system_for_turn.clone()),
             Message::user_only(ctx),
             Message::user_only(user_msg.to_string()),
         ],
-        None => messages_chat_seed(&cfg.system_prompt, user_msg),
+        None => messages_chat_seed(&system_for_turn, user_msg),
     };
-    ConversationTurnSeed {
+    Ok(ConversationTurnSeed {
         messages,
         expected_revision: None,
-    }
+    })
 }
 
 /// 与 SSE `code`、JSON `ApiError.code` 一致。
@@ -619,6 +644,15 @@ pub(crate) async fn chat_handler(
             )
         })?
         .unwrap_or_else(|| state.next_conversation_id());
+    let agent_role = normalize_agent_role(body.agent_role.as_deref()).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_AGENT_ROLE",
+                message: e,
+            }),
+        )
+    })?;
     let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -638,7 +672,17 @@ pub(crate) async fn chat_handler(
                 }),
             )
         })?;
-    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg).await;
+    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_AGENT_ROLE",
+                    message: e,
+                }),
+            )
+        })?;
     let work_dir_str = state.effective_workspace_path().await;
     let work_dir = work_dir_str.clone();
     let workspace_is_set = state.workspace_is_set().await;
@@ -886,6 +930,15 @@ pub(crate) async fn chat_stream_handler(
             )
         })?
         .unwrap_or_else(|| state.next_conversation_id());
+    let agent_role = normalize_agent_role(body.agent_role.as_deref()).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_AGENT_ROLE",
+                message: e,
+            }),
+        )
+    })?;
     let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -905,7 +958,17 @@ pub(crate) async fn chat_stream_handler(
                 }),
             )
         })?;
-    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg).await;
+    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_AGENT_ROLE",
+                    message: e,
+                }),
+            )
+        })?;
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
     let workspace_is_set = state.workspace_is_set().await;
     let approval_session_id = match body.approval_session_id.as_deref() {
@@ -1074,6 +1137,12 @@ struct StatusResponse {
     message_pipeline_orphan_tool_drops: u64,
     /// 模型 HTTP 鉴权：`bearer` | `none`（如本地 Ollama 可不设 API_KEY）。
     llm_http_auth_mode: &'static str,
+    /// 配置中的命名角色 id 列表（升序）；未启用多角色时为空。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    agent_role_ids: Vec<String>,
+    /// Web/CLI 未指定 `agent_role` 时使用的默认角色 id（`null` 表示用全局 `system_prompt`）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_agent_role_id: Option<String>,
 }
 
 pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -1092,6 +1161,8 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         .iter()
         .map(|t| t.function.name.clone())
         .collect();
+    let mut agent_role_ids: Vec<String> = cfg.agent_roles.keys().cloned().collect();
+    agent_role_ids.sort();
     Json(StatusResponse {
         status: "ok",
         model: cfg.model.clone(),
@@ -1153,6 +1224,8 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         message_pipeline_tool_compress_hits: mp.tool_compress_hits,
         message_pipeline_orphan_tool_drops: mp.orphan_tool_drops,
         llm_http_auth_mode: cfg.llm_http_auth_mode.as_str(),
+        agent_role_ids,
+        default_agent_role_id: cfg.default_agent_role_id.clone(),
     })
 }
 

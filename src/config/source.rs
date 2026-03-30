@@ -3,6 +3,17 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub(super) struct ConfigFile {
     pub(super) agent: Option<AgentSection>,
+    /// 与 `config/agent_roles.toml` 同形：顶层 `[[agent_roles]]` 表数组
+    #[serde(default)]
+    pub(super) agent_roles: Vec<AgentRoleRow>,
+}
+
+/// 与 `config/agent_roles.toml` 中 `[[agent_roles]]` 一行对应
+#[derive(Debug, Deserialize, Clone)]
+pub(super) struct AgentRoleRow {
+    pub(super) id: String,
+    pub(super) system_prompt: Option<String>,
+    pub(super) system_prompt_file: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +61,8 @@ pub(super) struct AgentSection {
     pub(super) planner_executor_mode: Option<String>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
+    /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）
+    pub(super) default_agent_role: Option<String>,
     pub(super) cursor_rules_enabled: Option<bool>,
     pub(super) cursor_rules_dir: Option<String>,
     pub(super) cursor_rules_include_agents_md: Option<bool>,
@@ -140,6 +153,14 @@ pub(super) struct AgentSection {
 /// TOML 解析失败时返回 `Err`，便于调用方区分「合法 TOML 但无 [agent]」与「格式错误」。
 pub(super) fn parse_agent_section(s: &str) -> Result<Option<AgentSection>, toml::de::Error> {
     Ok(toml::from_str::<ConfigFile>(s)?.agent)
+}
+
+/// 解析完整 TOML（`[agent]` + 可选 `[[agent_roles]]`）；`agent` 缺失时仍返回角色行供合并。
+pub(super) fn parse_config_file_roles(
+    s: &str,
+) -> Result<(Option<AgentSection>, Vec<AgentRoleRow>), toml::de::Error> {
+    let f: ConfigFile = toml::from_str(s)?;
+    Ok((f.agent, f.agent_roles))
 }
 
 pub(super) fn parse_bool_like(s: &str) -> Option<bool> {

@@ -299,6 +299,8 @@ export async function saveTasks(data: TasksData): Promise<TasksData> {
 
 export interface ChatRequestExtras {
   conversationId?: string
+  /** 新建会话首条请求可选：须与配置中角色 id 一致 */
+  agentRole?: string
   /** 0～2，覆盖服务端默认 temperature */
   temperature?: number
   /** 写入 chat/completions 的整数 seed（与 seedPolicy 互斥） */
@@ -310,6 +312,7 @@ export interface ChatRequestExtras {
 export async function sendChat(message: string, extras?: ChatRequestExtras): Promise<ChatResponse> {
   const body: Record<string, unknown> = { message }
   if (extras?.conversationId) body.conversation_id = extras.conversationId
+  if (extras?.agentRole) body.agent_role = extras.agentRole
   if (extras?.temperature !== undefined) body.temperature = extras.temperature
   if (extras?.seed !== undefined) body.seed = extras.seed
   if (extras?.seedPolicy) body.seed_policy = extras.seedPolicy
@@ -530,6 +533,7 @@ export async function sendChatStream(
     conversation_id: options?.conversationId || undefined,
     approval_session_id: options?.approvalSessionId || undefined,
   }
+  if (options?.agentRole) body.agent_role = options.agentRole
   if (options?.temperature !== undefined) body.temperature = options.temperature
   if (options?.seed !== undefined) body.seed = options.seed
   if (options?.seedPolicy) body.seed_policy = options.seedPolicy

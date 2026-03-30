@@ -166,5 +166,16 @@
       "fixture": "f.json",
       "compare_recorded": true
     }
+  },
+  {
+    "name": "repl_global_agent_role",
+    "argv": ["crabmate", "--agent-role", "code", "repl"],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": null,
+    "agent_role": "code"
   }
 ]

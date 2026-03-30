@@ -32,6 +32,7 @@
 | `AGENT_LLM_FOLD_SYSTEM_INTO_USER` | 为真时将 `system` 并入 `user`（不接受独立 `system` 的网关/代理）。 |
 | `AGENT_SYSTEM_PROMPT` | 内联系统提示；会清除继承的 `system_prompt_file`（若再设 `AGENT_SYSTEM_PROMPT_FILE` 则以文件为准，见「系统提示词」）。 |
 | `AGENT_SYSTEM_PROMPT_FILE` | 系统提示词文件路径。 |
+| `AGENT_DEFAULT_AGENT_ROLE` | 未传 Web `agent_role` / CLI `--agent-role` 时使用的**默认角色 id**（须已在角色表中定义；见下文「多角色」）。 |
 
 ### 采样与随机性
 
@@ -431,6 +432,19 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 - **finalize 阶段**：若仍存在 `system_prompt_file` 则读文件；否则使用非空内联；二者皆无则报错。
 
 仓库内默认正文含工具与任务拆分等约定（例如**同一工作区路径在未被修改前不要重复 `read_file`**）。完全自定义时可改 `config/prompts/default_system_prompt.md` 或换用自有路径。
+
+## 多角色（agent_roles）
+
+在全局 `system_prompt` 之外，可为**命名 id** 配置不同的首条 `system` 正文（每条在加载时**同样**经 `cursor_rules_*` 合并，与全局一致）。
+
+- **定义方式（二选一或混用，后加载覆盖同 id 字段）**  
+  1. 主配置文件中的 **`[[agent_roles]]`** 表数组：每行含 **`id`**，以及 **`system_prompt`** 和/或 **`system_prompt_file`**（其一即可；`system_prompt` 为空字符串表示**沿用**全局合并后的 `system_prompt`）。  
+  2. 仓库根 **`config/agent_roles.toml`**（未使用 **`--config`** 时）；若使用 **`crabmate --config path/to/foo.toml`**，则读取 **`path/to/agent_roles.toml`**（与主配置**同目录**）。文件形态为 **`[agent_roles]`** + **`default_role`** + **`[agent_roles.roles.<id>]`** 子表（见 `config/agent_roles.toml` 注释示例）。
+- **默认角色**：`[agent]` 中 **`default_agent_role`**，或 `agent_roles.toml` 的 **`[agent_roles] default_role`**，或环境变量 **`AGENT_DEFAULT_AGENT_ROLE`**。须指向已定义的角色 id；未配置默认时，未显式选角则使用全局 **`system_prompt`**。
+- **Web**：`POST /chat`、`POST /chat/stream` 可选 JSON 字段 **`agent_role`**（与 `conversation_id` 同类字符集，最长 64）。**仅当**服务端**尚无**该 `conversation_id` 的会话历史时生效（首轮建立 `system`）；已有会话时忽略，避免中途改口与人格不一致。
+- **CLI**：全局 **`--agent-role <id>`**（`repl` / `chat` 等）。与 **`--system-prompt-file`** 互斥。`chat` 在**未**使用 **`--messages-json-file`** 时，该 id 用于构造首条 system（含 **`--message-file`** 首轮）。
+- **热重载**：**`POST /config/reload`** / **`/config reload`** 会重载角色表（与 `system_prompt` 一致）。
+- **`GET /status`**：返回 **`agent_role_ids`**（升序）、**`default_agent_role_id`**，供前端展示角色下拉等。
 
 ## Cursor-like 规则注入
 

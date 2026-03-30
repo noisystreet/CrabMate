@@ -97,6 +97,10 @@ export interface StatusData {
   tool_call_explain_enabled?: boolean
   tool_call_explain_min_chars?: number
   tool_call_explain_max_chars?: number
+  /** 配置中的命名 agent 角色 id（升序）；未启用多角色时为空或省略 */
+  agent_role_ids?: string[]
+  /** 未传 `agent_role` 时服务端使用的默认角色 id */
+  default_agent_role_id?: string | null
 }
 
 export interface WorkspaceEntry {

@@ -18,6 +18,11 @@
 # tui_load_session_on_start = false
 # tui_session_max_messages = 400
 # repl_initial_workspace_messages_enabled = false
+# 多角色（可选）：未指定 Web `agent_role` / CLI `--agent-role` 时默认使用的角色 id（须存在对应 [[agent_roles]]）
+# default_agent_role = "code"
+# [[agent_roles]]
+# id = "code"
+# system_prompt_file = "config/prompts/code_system.md"
 # tool_message_max_chars = 32768
 # tool_result_envelope_v1 = true
 # 整请求 Chrome Trace：export CRABMATE_REQUEST_CHROME_TRACE_DIR=/tmp/crabmate-turns（见 docs/CONFIGURATION.md）
