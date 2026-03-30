@@ -28,7 +28,7 @@ llm_fold_system_into_user = false
 
 # 可选：写入 chat/completions 的整数 seed；省略则请求 JSON 不带该字段
 # llm_seed = 42
-api_timeout_secs = 60
+api_timeout_secs = 600
 api_max_retries = 3
 api_retry_delay_secs = 1
 
