@@ -384,6 +384,8 @@ pub struct DispatchToolParams<'a> {
     pub workspace_changelist:
         Option<std::sync::Arc<crate::workspace_changelist::WorkspaceChangelist>>,
     pub mcp_session: Option<&'a Arc<Mutex<crate::mcp::McpClientSession>>>,
+    /// 并入整请求 `turn-*.json` 时传给 `workflow_execute`。
+    pub request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 }
 
 /// `http_fetch` / `http_request` 共用：`Web` 带可选审批会话，`Cli` 带终端审批上下文（本路径不使用 `workspace_changed`）。
@@ -410,6 +412,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         read_file_turn_cache,
         workspace_changelist,
         mcp_session,
+        request_chrome_merge,
     } = p;
     if crate::mcp::is_mcp_proxy_tool(name) {
         let Some(remote) = crate::mcp::try_mcp_tool_name(cfg.as_ref(), name) else {
@@ -470,6 +473,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 effective_working_dir,
                 workspace_is_set,
                 args,
+                request_chrome_merge,
             )
             .await
         }
@@ -619,6 +623,7 @@ async fn execute_workflow(
     effective_working_dir: &Path,
     workspace_is_set: bool,
     args: &str,
+    request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 ) -> (String, Option<serde_json::Value>) {
     let prep = per_coord.prepare_workflow_execute(args);
     let reflection_inject = prep.reflection_inject.clone();
@@ -662,6 +667,7 @@ async fn execute_workflow(
                 workspace_is_set,
                 approval_mode,
                 cfg.command_max_output_len,
+                request_chrome_merge,
             )
             .await;
             *workspace_changed_ref |= wf_ws_changed;

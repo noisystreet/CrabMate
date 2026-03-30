@@ -1,5 +1,6 @@
 //! 单次 `chat/completions` 与带重试封装的入参聚合（控制长参数列表）。
 
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use reqwest::Client;
@@ -37,6 +38,7 @@ pub struct CompleteChatRetryingParams<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     pub plain_terminal_stream: bool,
+    pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 }
 
 impl CompleteChatRetryingParams<'_> {

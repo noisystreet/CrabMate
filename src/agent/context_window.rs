@@ -163,6 +163,7 @@ pub async fn maybe_summarize_with_llm(
         no_stream: true,
         cancel: None,
         plain_terminal_stream: false,
+        request_chrome_trace: None,
     };
     match complete_chat_retrying(&cc, &req).await {
         Ok((msg, _)) => {

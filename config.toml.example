@@ -20,8 +20,9 @@
 # repl_initial_workspace_messages_enabled = false
 # tool_message_max_chars = 32768
 # tool_result_envelope_v1 = true
-# 工作流 Chrome Trace（环境变量，无 TOML 键）：export CRABMATE_WORKFLOW_CHROME_TRACE_DIR=/tmp/crabmate-traces
-# 或 AGENT_WORKFLOW_CHROME_TRACE_DIR；见 docs/CONFIGURATION.md「工作流（Chrome Trace 导出）」
+# 整请求 Chrome Trace：export CRABMATE_REQUEST_CHROME_TRACE_DIR=/tmp/crabmate-turns（见 docs/CONFIGURATION.md）
+# 工作流 Chrome Trace：export CRABMATE_WORKFLOW_CHROME_TRACE_DIR=/tmp/crabmate-traces
+# 或 AGENT_WORKFLOW_CHROME_TRACE_DIR；与上项同时设则工作流事件并入 turn-*.json
 # materialize_deepseek_dsml_tool_calls = true
 # context_char_budget = 200000
 # parallel_readonly_tools_max = 4

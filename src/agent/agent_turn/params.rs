@@ -50,4 +50,6 @@ pub(crate) struct RunLoopParams<'a> {
     pub staged_plan_optimizer_round: bool,
     /// 逻辑多规划员：首轮后的独立规划份数上限（1=关闭）。见 `AgentConfig::staged_plan_ensemble_count`。
     pub staged_plan_ensemble_count: u8,
+    /// 整请求 Chrome trace（`CRABMATE_REQUEST_CHROME_TRACE_DIR`）；`None` 关闭。
+    pub request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 }
