@@ -19,6 +19,15 @@ import {
 /** 与后端 `message_display::SHOW_TOOL_RAW_OUTPUT_IN_CHAT` 对齐；false 时聊天区不展示工具 stdout/stderr 与完整 output，服务端日志仍为全文 */
 const SHOW_TOOL_RAW_OUTPUT_IN_CHAT = false
 
+/** 多角色 id → 界面展示名（未映射则显示 id；与 config/agent_roles.toml 等对齐） */
+const AGENT_ROLE_DISPLAY_NAMES: Record<string, string> = {
+  companion: '陪聊',
+  scientist: '科学家',
+  engineer: '工程师',
+  philosopher: '哲学家',
+  literary: '文学家',
+}
+
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024
 const MAX_VIDEO_BYTES = 80 * 1024 * 1024
@@ -1528,7 +1537,7 @@ export function ChatPanel({
               <option value="">默认（服务端配置）</option>
               {agentRoleIds.map((id) => (
                 <option key={id} value={id}>
-                  {id}
+                  {AGENT_ROLE_DISPLAY_NAMES[id] ?? id}
                 </option>
               ))}
             </select>
