@@ -12,7 +12,7 @@ use serde_json;
 
 use crate::AppState;
 use crate::path_workspace::{
-    resolve_web_workspace_read_path, resolve_web_workspace_write_path,
+    WorkspacePathError, resolve_web_workspace_read_path, resolve_web_workspace_write_path,
     validate_effective_workspace_base, validate_workspace_set_path,
 };
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
@@ -111,12 +111,12 @@ pub struct WorkspaceFileDeleteResponse {
 /// 解析当前会话工作区根为 canonical 路径，并校验仍在 `workspace_allowed_roots` 内、非敏感目录。
 async fn effective_workspace_base_canonical(
     state: &Arc<AppState>,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<std::path::PathBuf, WorkspacePathError> {
     let base_str = state.effective_workspace_path().await;
     let base = Path::new(&base_str);
     let base_canonical = base
         .canonicalize()
-        .map_err(|e| format!("工作目录无法解析: {}", e))?;
+        .map_err(WorkspacePathError::WorkspaceResolveFailed)?;
     let cfg = state.cfg.read().await;
     validate_effective_workspace_base(&cfg, &base_canonical)?;
     Ok(base_canonical)
@@ -147,10 +147,15 @@ pub async fn workspace_set_handler(
     let cfg = state.cfg.read().await;
     let canon = match validate_workspace_set_path(&cfg, raw) {
         Ok(p) => p,
-        Err(msg) => {
+        Err(e) => {
+            let status = if e.is_policy_denied() {
+                StatusCode::FORBIDDEN
+            } else {
+                StatusCode::BAD_REQUEST
+            };
             return Err((
-                StatusCode::FORBIDDEN,
-                Json(serde_json::json!({ "ok": false, "error": msg })),
+                status,
+                Json(serde_json::json!({ "ok": false, "error": e.user_message() })),
             ));
         }
     };
@@ -166,22 +171,27 @@ pub async fn workspace_handler(
 ) -> Json<WorkspaceResponse> {
     let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
-        Err(msg) => {
-            log::warn!("{}", msg);
+        Err(e) => {
+            log::warn!(
+                target: "crabmate",
+                "workspace list base error kind={} msg={}",
+                e.kind(),
+                e
+            );
             return Json(WorkspaceResponse {
                 path: String::new(),
                 entries: Vec::new(),
-                error: Some(msg),
+                error: Some(e.user_message()),
             });
         }
     };
     let canonical = match resolve_web_workspace_read_path(&base_canonical, query.path.as_deref()) {
         Ok(p) => p,
-        Err(msg) => {
+        Err(e) => {
             return Json(WorkspaceResponse {
                 path: base_canonical.display().to_string(),
                 entries: Vec::new(),
-                error: Some(msg),
+                error: Some(e.user_message()),
             });
         }
     };
@@ -238,7 +248,7 @@ pub async fn workspace_search_handler(
         Err(e) => {
             return Json(WorkspaceSearchResponse {
                 output: String::new(),
-                error: Some(e),
+                error: Some(e.user_message()),
             });
         }
     };
@@ -257,7 +267,7 @@ pub async fn workspace_search_handler(
             Err(e) => {
                 return Json(WorkspaceSearchResponse {
                     output: String::new(),
-                    error: Some(e),
+                    error: Some(e.user_message()),
                 });
             }
         },
@@ -328,7 +338,7 @@ pub async fn workspace_file_read_handler(
         Err(e) => {
             return Json(WorkspaceFileReadResponse {
                 content: String::new(),
-                error: Some(e),
+                error: Some(e.user_message()),
             });
         }
     };
@@ -341,10 +351,10 @@ pub async fn workspace_file_read_handler(
     }
     let canonical = match resolve_web_workspace_read_path(&base_canonical, Some(path)) {
         Ok(p) => p,
-        Err(msg) => {
+        Err(e) => {
             return Json(WorkspaceFileReadResponse {
                 content: String::new(),
-                error: Some(msg),
+                error: Some(e.user_message()),
             });
         }
     };
@@ -411,7 +421,9 @@ pub async fn workspace_file_delete_handler(
     let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
         Err(e) => {
-            return Json(WorkspaceFileDeleteResponse { error: Some(e) });
+            return Json(WorkspaceFileDeleteResponse {
+                error: Some(e.user_message()),
+            });
         }
     };
     let path = query.path.trim();
@@ -422,8 +434,10 @@ pub async fn workspace_file_delete_handler(
     }
     let canonical = match resolve_web_workspace_read_path(&base_canonical, Some(path)) {
         Ok(p) => p,
-        Err(msg) => {
-            return Json(WorkspaceFileDeleteResponse { error: Some(msg) });
+        Err(e) => {
+            return Json(WorkspaceFileDeleteResponse {
+                error: Some(e.user_message()),
+            });
         }
     };
     let meta = match tokio::fs::metadata(&canonical).await {
@@ -455,7 +469,9 @@ pub async fn workspace_file_write_handler(
     let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
         Err(e) => {
-            return Json(WorkspaceFileWriteResponse { error: Some(e) });
+            return Json(WorkspaceFileWriteResponse {
+                error: Some(e.user_message()),
+            });
         }
     };
     let path = body.path.trim();
@@ -466,8 +482,10 @@ pub async fn workspace_file_write_handler(
     }
     let canonical = match resolve_web_workspace_write_path(&base_canonical, path) {
         Ok(p) => p,
-        Err(msg) => {
-            return Json(WorkspaceFileWriteResponse { error: Some(msg) });
+        Err(e) => {
+            return Json(WorkspaceFileWriteResponse {
+                error: Some(e.user_message()),
+            });
         }
     };
 
@@ -505,10 +523,10 @@ pub async fn workspace_profile_handler(
 ) -> Json<WorkspaceProfileResponse> {
     let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
-        Err(msg) => {
+        Err(e) => {
             return Json(WorkspaceProfileResponse {
                 markdown: String::new(),
-                error: Some(msg),
+                error: Some(e.user_message()),
             });
         }
     };

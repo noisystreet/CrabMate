@@ -4,7 +4,10 @@
 use glob::Pattern;
 use std::path::Path;
 
-use super::path::{canonical_workspace_root, path_for_tool_display, resolve_for_read};
+use super::path::{
+    canonical_workspace_root, path_for_tool_display, resolve_for_read,
+    tool_user_error_from_workspace_path,
+};
 
 /// glob_files：默认/上限
 const GLOB_DEFAULT_MAX_DEPTH: usize = 20;
@@ -131,7 +134,7 @@ pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
     }
     let workspace_canonical = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
 
     let mut results: Vec<String> = Vec::new();
@@ -271,7 +274,7 @@ pub fn list_tree(args_json: &str, working_dir: &Path) -> String {
     }
     let workspace_canonical = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
 
     let mut lines: Vec<(String, bool)> = Vec::new();

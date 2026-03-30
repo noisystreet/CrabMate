@@ -418,12 +418,13 @@ fn repl_workspace_switch_rejects_slash_prefixed_as_tool_relative() {
         .cloned()
         .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
     let err = resolve_repl_workspace_switch_path(&cfg, &wd, "/tmp").expect_err("must reject");
+    let msg = err.to_string();
     assert!(
-        err.contains("允许范围")
-            || err.contains("敏感")
-            || err.contains("绝对路径")
-            || err.contains("相对路径"),
-        "{err}"
+        msg.contains("允许范围")
+            || msg.contains("敏感")
+            || msg.contains("绝对路径")
+            || msg.contains("相对路径"),
+        "{msg}"
     );
 }
 

@@ -22,18 +22,119 @@
 use path_absolutize::Absolutize;
 use std::path::{Path, PathBuf};
 
+use thiserror::Error;
+
 use crate::config::AgentConfig;
+
+/// 工作区路径解析与策略校验失败（可判别类别，供日志与调用方分支；对用户展示用 [`Display`] / [`WorkspacePathError::user_message`]）。
+#[derive(Debug, Error)]
+pub enum WorkspacePathError {
+    /// `path` 等入参为空或仅空白。
+    #[error("path 不能为空")]
+    EmptyPath,
+    /// 要求相对路径时收到了绝对路径。
+    #[error("路径必须为相对于工作目录的相对路径，不能使用绝对路径")]
+    AbsolutePathNotAllowed,
+    /// 切换工作区时路径参数为空。
+    #[error("路径不能为空")]
+    WorkspaceSetPathEmpty,
+    /// 无法取得当前工作目录（如 `getcwd` 失败）。
+    #[error("无法获取当前目录: {0}")]
+    CurrentDirUnavailable(#[source] std::io::Error),
+    /// 路径不存在、无法 canonicalize，或不是目录等与解析/存在性相关的问题。
+    #[error("工作区路径无效或不存在: {0}")]
+    WorkspacePathInvalid(#[source] std::io::Error),
+    /// 通用「无法解析 canonical 路径」（工具读文件、祖先校验等）。
+    #[error("路径无法解析: {0}")]
+    PathResolveFailed(#[source] std::io::Error),
+    /// 工作区根或当前目录无法 canonicalize。
+    #[error("工作目录无法解析: {0}")]
+    WorkspaceResolveFailed(#[source] std::io::Error),
+    /// 路径存在但不是目录。
+    #[error("工作区路径必须是已存在的目录")]
+    NotADirectory,
+    /// 命中敏感系统目录前缀黑名单。
+    #[error("工作区路径命中敏感目录黑名单，请选择业务目录")]
+    SensitivePathDenied,
+    /// 工作区根命中敏感前缀（与切换路径文案略异，便于区分场景）。
+    #[error("工作区根路径命中敏感目录黑名单")]
+    EffectiveRootSensitive,
+    /// 路径落在允许根集合之外（策略拒绝）。
+    #[error("工作区路径不在允许范围内（须位于以下根目录之一下: {roots_display})")]
+    OutsideAllowedRoots { roots_display: String },
+    /// 当前生效工作区根不在允许范围内。
+    #[error("工作区根不在允许范围内（须位于以下根目录之一: {roots_display})")]
+    EffectiveRootOutsideAllowed { roots_display: String },
+    /// 规范化后路径越过工作区根（`..` 逃逸或 Web 子路径越界）。
+    #[error("路径不能超出工作目录")]
+    OutsideWorkspaceRoot,
+    /// `path_absolutize` 词法规范化失败（`absolutize` / `absolutize_from` 的 IO 错误）。
+    #[error("路径规范化失败: {0}")]
+    NormalizationFailed(#[source] std::io::Error),
+    /// 自根向上找不到任何存在祖先（极少见，如根被删）。
+    #[error("路径无法解析")]
+    NoExistingAncestor,
+}
+
+impl WorkspacePathError {
+    /// 与历史 `String` 错误语义一致的简短分类，便于 metrics / 结构化日志（不含敏感路径全量时可只记此项）。
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            WorkspacePathError::EmptyPath => "empty_path",
+            WorkspacePathError::AbsolutePathNotAllowed => "absolute_path_not_allowed",
+            WorkspacePathError::WorkspaceSetPathEmpty => "workspace_set_path_empty",
+            WorkspacePathError::CurrentDirUnavailable(_) => "current_dir_unavailable",
+            WorkspacePathError::WorkspacePathInvalid(_) => "workspace_path_invalid",
+            WorkspacePathError::PathResolveFailed(_) => "path_resolve_failed",
+            WorkspacePathError::WorkspaceResolveFailed(_) => "workspace_resolve_failed",
+            WorkspacePathError::NotADirectory => "not_a_directory",
+            WorkspacePathError::SensitivePathDenied => "sensitive_path_denied",
+            WorkspacePathError::EffectiveRootSensitive => "effective_root_sensitive",
+            WorkspacePathError::OutsideAllowedRoots { .. } => "outside_allowed_roots",
+            WorkspacePathError::EffectiveRootOutsideAllowed { .. } => {
+                "effective_root_outside_allowed"
+            }
+            WorkspacePathError::OutsideWorkspaceRoot => "outside_workspace_root",
+            WorkspacePathError::NormalizationFailed(_) => "path_normalize_failed",
+            WorkspacePathError::NoExistingAncestor => "no_existing_ancestor",
+        }
+    }
+
+    /// 是否属于「策略/权限」类（越界、敏感目录、允许根外）；用于 HTTP 403 等映射。
+    #[must_use]
+    pub fn is_policy_denied(&self) -> bool {
+        matches!(
+            self,
+            WorkspacePathError::SensitivePathDenied
+                | WorkspacePathError::EffectiveRootSensitive
+                | WorkspacePathError::OutsideAllowedRoots { .. }
+                | WorkspacePathError::EffectiveRootOutsideAllowed { .. }
+                | WorkspacePathError::OutsideWorkspaceRoot
+                | WorkspacePathError::AbsolutePathNotAllowed
+        )
+    }
+
+    /// 面向用户/API 的说明（与实现 `Display` 一致，便于显式调用）。
+    #[must_use]
+    pub fn user_message(&self) -> String {
+        self.to_string()
+    }
+}
 
 /// 校验用于切换工作区根的 `path`（Web **`POST /workspace`** 与 REPL **`/workspace`** 共用）。
 ///
 /// 须为已存在目录，`canonicalize` 后落在 **`workspace_allowed_roots`** 内且不得命中敏感路径黑名单。
 /// 相对路径相对于**进程当前工作目录**解析（与历史 Web 行为一致）。
-pub(crate) fn validate_workspace_set_path(cfg: &AgentConfig, raw: &str) -> Result<PathBuf, String> {
+pub(crate) fn validate_workspace_set_path(
+    cfg: &AgentConfig,
+    raw: &str,
+) -> Result<PathBuf, WorkspacePathError> {
     let raw = raw.trim();
     if raw.is_empty() {
-        return Err("路径不能为空".to_string());
+        return Err(WorkspacePathError::WorkspaceSetPathEmpty);
     }
-    let cwd = std::env::current_dir().map_err(|e| format!("无法获取当前目录: {}", e))?;
+    let cwd = std::env::current_dir().map_err(WorkspacePathError::CurrentDirUnavailable)?;
     let p = Path::new(raw);
     let joined = if p.is_absolute() {
         p.to_path_buf()
@@ -42,24 +143,21 @@ pub(crate) fn validate_workspace_set_path(cfg: &AgentConfig, raw: &str) -> Resul
     };
     let canon = joined
         .canonicalize()
-        .map_err(|e| format!("工作区路径无效或不存在: {}", e))?;
+        .map_err(WorkspacePathError::WorkspacePathInvalid)?;
     if !canon.is_dir() {
-        return Err("工作区路径必须是已存在的目录".to_string());
+        return Err(WorkspacePathError::NotADirectory);
     }
     if is_sensitive_workspace_path(&canon) {
-        return Err("工作区路径命中敏感目录黑名单，请选择业务目录".to_string());
+        return Err(WorkspacePathError::SensitivePathDenied);
     }
     if !is_within_allowed_roots(&canon, &cfg.workspace_allowed_roots) {
-        let roots = cfg
+        let roots_display = cfg
             .workspace_allowed_roots
             .iter()
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        return Err(format!(
-            "工作区路径不在允许范围内（须位于以下根目录之一下: {}）",
-            roots
-        ));
+        return Err(WorkspacePathError::OutsideAllowedRoots { roots_display });
     }
     Ok(canon)
 }
@@ -70,9 +168,9 @@ const SENSITIVE_WORKSPACE_PREFIXES: &[&str] = &[
 ];
 
 /// 将工作目录（可为符号链接）解析为 **canonical** 绝对路径，供工具与 Web 共用。
-pub(crate) fn canonical_workspace_root(base: &Path) -> Result<PathBuf, String> {
+pub(crate) fn canonical_workspace_root(base: &Path) -> Result<PathBuf, WorkspacePathError> {
     base.canonicalize()
-        .map_err(|e| format!("工作目录无法解析: {}", e))
+        .map_err(WorkspacePathError::WorkspaceResolveFailed)
 }
 
 /// 规范化后的路径是否命中敏感系统目录前缀（用于拒绝把工作区设到或解析到此类路径）。
@@ -84,11 +182,14 @@ pub(crate) fn is_sensitive_workspace_path(path: &Path) -> bool {
 }
 
 /// `candidate` 与 `root` 均须已为 **canonical** 路径；要求 `candidate == root` 或 `candidate` 为 `root` 之下的子孙路径。错误文案与工具层越界一致。
-pub(crate) fn ensure_canonical_within_root(candidate: &Path, root: &Path) -> Result<(), String> {
+pub(crate) fn ensure_canonical_within_root(
+    candidate: &Path,
+    root: &Path,
+) -> Result<(), WorkspacePathError> {
     if candidate.starts_with(root) {
         Ok(())
     } else {
-        Err("路径不能超出工作目录".to_string())
+        Err(WorkspacePathError::OutsideWorkspaceRoot)
     }
 }
 
@@ -101,38 +202,36 @@ pub(crate) fn is_within_allowed_roots(candidate: &Path, roots: &[PathBuf]) -> bo
 pub(crate) fn validate_effective_workspace_base(
     cfg: &AgentConfig,
     base_canonical: &Path,
-) -> Result<(), String> {
+) -> Result<(), WorkspacePathError> {
     if is_sensitive_workspace_path(base_canonical) {
-        return Err("工作区根路径命中敏感目录黑名单".to_string());
+        return Err(WorkspacePathError::EffectiveRootSensitive);
     }
     if !is_within_allowed_roots(base_canonical, &cfg.workspace_allowed_roots) {
-        let roots = cfg
+        let roots_display = cfg
             .workspace_allowed_roots
             .iter()
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        return Err(format!(
-            "工作区根不在允许范围内（须位于以下根目录之一: {}）",
-            roots
-        ));
+        return Err(WorkspacePathError::EffectiveRootOutsideAllowed { roots_display });
     }
     Ok(())
 }
 
-fn ensure_existing_ancestor_within_root(
+/// 自 `target` 向上找到最近存在路径并 canonicalize，须落在 `root_canonical` 下（写入路径防 symlink 逃逸）。
+pub(crate) fn ensure_existing_ancestor_within_root(
     root_canonical: &Path,
     target: &Path,
-) -> Result<(), String> {
+) -> Result<(), WorkspacePathError> {
     let mut ancestor = target;
     while !ancestor.exists() {
         ancestor = ancestor
             .parent()
-            .ok_or_else(|| "路径无法解析".to_string())?;
+            .ok_or(WorkspacePathError::NoExistingAncestor)?;
     }
     let ancestor_canonical = ancestor
         .canonicalize()
-        .map_err(|e| format!("路径无法解析: {}", e))?;
+        .map_err(WorkspacePathError::PathResolveFailed)?;
     ensure_canonical_within_root(&ancestor_canonical, root_canonical)
 }
 
@@ -140,19 +239,19 @@ fn ensure_existing_ancestor_within_root(
 pub(crate) fn absolutize_relative_under_root(
     workspace_root: &Path,
     sub: &str,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();
     if sub.is_empty() {
-        return Err("path 不能为空".to_string());
+        return Err(WorkspacePathError::EmptyPath);
     }
     if Path::new(sub).is_absolute() {
-        return Err("路径必须为相对于工作目录的相对路径，不能使用绝对路径".to_string());
+        return Err(WorkspacePathError::AbsolutePathNotAllowed);
     }
     let normalized = Path::new(sub)
         .absolutize_from(workspace_root)
-        .map_err(|e| format!("路径规范化失败: {}", e))?;
+        .map_err(WorkspacePathError::NormalizationFailed)?;
     if !normalized.starts_with(workspace_root) {
-        return Err("路径不能超出工作目录".to_string());
+        return Err(WorkspacePathError::OutsideWorkspaceRoot);
     }
     Ok(normalized.into_owned())
 }
@@ -161,22 +260,22 @@ pub(crate) fn absolutize_relative_under_root(
 pub(crate) fn absolutize_workspace_subpath(
     base_canonical: &Path,
     sub: &str,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();
     if sub.is_empty() {
-        return Err("path 不能为空".to_string());
+        return Err(WorkspacePathError::EmptyPath);
     }
     let normalized = if Path::new(sub).is_absolute() {
         Path::new(sub)
             .absolutize()
-            .map_err(|e| format!("路径规范化失败: {}", e))?
+            .map_err(WorkspacePathError::NormalizationFailed)?
     } else {
         Path::new(sub)
             .absolutize_from(base_canonical)
-            .map_err(|e| format!("路径规范化失败: {}", e))?
+            .map_err(WorkspacePathError::NormalizationFailed)?
     };
     if !normalized.starts_with(base_canonical) {
-        return Err("路径不能超出工作目录".to_string());
+        return Err(WorkspacePathError::OutsideWorkspaceRoot);
     }
     Ok(normalized.into_owned())
 }
@@ -185,7 +284,7 @@ pub(crate) fn absolutize_workspace_subpath(
 pub(crate) fn resolve_web_workspace_read_path(
     base_canonical: &Path,
     sub: Option<&str>,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, WorkspacePathError> {
     let sub = match sub {
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return Ok(base_canonical.to_path_buf()),
@@ -193,7 +292,7 @@ pub(crate) fn resolve_web_workspace_read_path(
     let normalized = absolutize_workspace_subpath(base_canonical, sub)?;
     let canonical = normalized
         .canonicalize()
-        .map_err(|e| format!("路径无法解析: {}", e))?;
+        .map_err(WorkspacePathError::PathResolveFailed)?;
     ensure_canonical_within_root(&canonical, base_canonical)?;
     Ok(canonical)
 }
@@ -202,10 +301,10 @@ pub(crate) fn resolve_web_workspace_read_path(
 pub(crate) fn resolve_web_workspace_write_path(
     base_canonical: &Path,
     sub: &str,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();
     if sub.is_empty() {
-        return Err("path 不能为空".to_string());
+        return Err(WorkspacePathError::EmptyPath);
     }
     let normalized = absolutize_workspace_subpath(base_canonical, sub)?;
     ensure_existing_ancestor_within_root(base_canonical, &normalized)?;
@@ -239,6 +338,14 @@ mod tests {
     fn validate_workspace_set_path_rejects_empty() {
         let cfg = crate::config::load_config(None).expect("embedded default config");
         let e = validate_workspace_set_path(&cfg, "  ").expect_err("empty");
-        assert!(e.contains("空"), "{e}");
+        assert_eq!(e.kind(), "workspace_set_path_empty");
+        let msg = e.user_message();
+        assert!(msg.contains("空"), "{msg}");
+    }
+
+    #[test]
+    fn outside_workspace_root_kind() {
+        let e = WorkspacePathError::OutsideWorkspaceRoot;
+        assert_eq!(e.kind(), "outside_workspace_root");
     }
 }

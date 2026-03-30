@@ -3,7 +3,8 @@
 //! 路径为相对于工作目录的相对路径，且不能通过 .. 超出工作目录。
 
 use crate::path_workspace::{
-    absolutize_relative_under_root, canonical_workspace_root, ensure_canonical_within_root,
+    WorkspacePathError, absolutize_relative_under_root, canonical_workspace_root,
+    ensure_existing_ancestor_within_root,
 };
 use std::io;
 use std::path::{Path, PathBuf};
@@ -28,35 +29,18 @@ static RATE_LIMIT: Mutex<RateLimitState> = Mutex::new(RateLimitState {
     count: 0,
 });
 
-// 对“目标路径或其最近存在祖先”做 canonical 校验，防止通过 symlink 指向工作区外。
-fn ensure_existing_ancestor_within_workspace(
-    base_canonical: &Path,
-    target: &Path,
-) -> Result<(), String> {
-    let mut ancestor = target;
-    while !ancestor.exists() {
-        ancestor = ancestor
-            .parent()
-            .ok_or_else(|| "路径无法解析".to_string())?;
-    }
-    let ancestor_canonical = ancestor
-        .canonicalize()
-        .map_err(|e| format!("路径无法解析: {}", e))?;
-    ensure_canonical_within_root(&ancestor_canonical, base_canonical)
-}
-
 /// 解析相对工作目录的路径，且不允许超出工作目录
-fn resolve_executable_path(base: &Path, sub: &str) -> Result<PathBuf, String> {
+fn resolve_executable_path(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();
     if sub.is_empty() {
-        return Err("path 不能为空".to_string());
+        return Err(WorkspacePathError::EmptyPath);
     }
     if Path::new(sub).is_absolute() {
-        return Err("路径必须为相对于工作目录的相对路径，不能使用绝对路径".to_string());
+        return Err(WorkspacePathError::AbsolutePathNotAllowed);
     }
     let base_canonical = canonical_workspace_root(base)?;
     let normalized = absolutize_relative_under_root(&base_canonical, sub)?;
-    ensure_existing_ancestor_within_workspace(&base_canonical, &normalized)?;
+    ensure_existing_ancestor_within_root(&base_canonical, &normalized)?;
     Ok(normalized)
 }
 
@@ -83,7 +67,7 @@ pub fn run(args_json: &str, max_output_len: usize, working_dir: &Path) -> String
     };
     let target = match resolve_executable_path(working_dir, exec_path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return format!("错误：{}", e.user_message()),
     };
     if !target.exists() {
         // 不回显完整内部路径，避免在多租户环境下泄露目录结构
@@ -217,11 +201,10 @@ mod tests {
 
         let res = resolve_executable_path(&dir, "bin/tool.sh");
         assert!(res.is_err(), "应拒绝 symlink 绕过执行路径");
+        let msg = res.err().map(|e| e.to_string()).unwrap_or_default();
         assert!(
-            res.err()
-                .unwrap_or_default()
-                .contains("路径不能超出工作目录"),
-            "报错应提示越界"
+            msg.contains("路径不能超出工作目录"),
+            "报错应提示越界: {msg}"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

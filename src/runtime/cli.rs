@@ -675,7 +675,7 @@ async fn try_handle_repl_slash_command(
                     let _ = style.print_success(&format!("工作区已切换为: {}", work_dir.display()));
                 }
                 Err(e) => {
-                    let _ = style.eprint_error(&e);
+                    let _ = style.eprint_error(&e.to_string());
                 }
             }
         }

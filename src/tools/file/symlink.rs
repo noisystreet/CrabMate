@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::path::canonical_workspace_root;
+use super::path::{canonical_workspace_root, tool_user_error_from_workspace_path};
 
 pub fn symlink_info(args_json: &str, working_dir: &Path) -> String {
     let v: serde_json::Value = match serde_json::from_str(args_json) {
@@ -20,7 +20,7 @@ pub fn symlink_info(args_json: &str, working_dir: &Path) -> String {
 
     let base_canonical = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
     let target = base_canonical.join(&path);
 

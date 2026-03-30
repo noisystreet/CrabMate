@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::path::{path_for_tool_display, resolve_for_read};
+use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_workspace_path};
 
 // ── chmod_file ──────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ pub fn chmod_file(args_json: &str, working_dir: &Path) -> String {
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return e,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
 
     let perms = std::fs::Permissions::from_mode(mode);
