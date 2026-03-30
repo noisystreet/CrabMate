@@ -13,6 +13,7 @@ End-user features: **`README.md`**; env/config: **`docs/en/CONFIGURATION.md`**; 
 - **PR/Issue templates**: `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/`.
 - **Pre-commit**: `.pre-commit-config.yaml` (`cargo fmt`, `cargo clippy -D warnings`, Conventional Commits on `commit-msg`). Install: `pip install pre-commit && pre-commit install` (add `--hook-type commit-msg` if needed). Agent rule: `.cursor/rules/pre-commit-before-commit.mdc`. Rust tests/error handling: `rust-clippy-and-tests.mdc`, `rust-error-handling.mdc`.
 - **Commits**: Conventional Commits (`.cursor/rules/conventional-commits.mdc`).
+- **Dependency security**: GitHub Actions **`.github/workflows/dependency-security.yml`** runs **`cargo audit`** and **`cargo deny check licenses bans sources`** (see root **`deny.toml`**). Locally: `cargo install cargo-audit cargo-deny`, then the same commands. Full **`cargo deny check`** includes advisory lints that overlap with audit warnings; CI uses the subset above on purpose.
 
 ## System overview
 

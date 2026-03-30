@@ -31,6 +31,8 @@ Standard commands from `README.md`:
 | Rust tests | `cargo test` |
 | Rust tests (nightly) | `cargo +nightly test` |
 | Rust clippy | `cargo clippy` |
+| 依赖漏洞（RustSec，需安装 `cargo-audit`） | `cargo audit` |
+| 依赖许可证/来源（需安装 `cargo-deny`） | `cargo deny check licenses bans sources`（配置见根目录 `deny.toml`；CI 见 `.github/workflows/dependency-security.yml`） |
 | Rust format check | `cargo fmt --check` |
 | TypeScript check | `cd frontend && npx tsc -b --noEmit` |
 | Frontend install | `cd frontend && npm install` |

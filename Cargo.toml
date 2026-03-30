@@ -2,6 +2,7 @@
 name = "crabmate"
 version = "0.1.0"
 edition = "2024"
+license = "Apache-2.0"
 description = "Rust AI agent: OpenAI-compatible chat/completions, function calling, Web UI, CLI"
 # 存在 `crabmate-gen-man` 时，`cargo run` 须默认主二进制（与 README「cargo run」一致）。
 default-run = "crabmate"
