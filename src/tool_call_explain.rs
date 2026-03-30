@@ -25,7 +25,7 @@ pub fn annotate_tool_defs_for_explain_card(tools: &mut [Tool], cfg: &AgentConfig
     }
     for t in tools.iter_mut() {
         let name = t.function.name.as_str();
-        if is_readonly_tool(name) || crate::mcp::is_mcp_proxy_tool(name) {
+        if is_readonly_tool(cfg, name) || crate::mcp::is_mcp_proxy_tool(name) {
             continue;
         }
         if !t.function.description.contains("crabmate_explain_why") {
@@ -42,7 +42,7 @@ pub fn require_explain_for_mutation<'a>(
     args: &'a str,
 ) -> Result<Cow<'a, str>, String> {
     if !cfg.tool_call_explain_enabled
-        || is_readonly_tool(tool_name)
+        || is_readonly_tool(cfg, tool_name)
         || crate::mcp::is_mcp_proxy_tool(tool_name)
     {
         return Ok(Cow::Borrowed(args));

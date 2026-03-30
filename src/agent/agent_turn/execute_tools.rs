@@ -530,7 +530,7 @@ async fn execute_tools_serial(
             crate::redact::tool_arguments_preview_for_log(&args)
         );
 
-        let is_readonly = tool_registry::is_readonly_tool(&name);
+        let is_readonly = tool_registry::is_readonly_tool(cfg.as_ref(), name.as_str());
         let cache_key = (name.clone(), args.clone());
 
         if is_readonly && let Some(cached) = readonly_cache.get(&cache_key) {
@@ -617,6 +617,7 @@ async fn execute_tools_serial(
                 };
                 if should_apply {
                     let inv = crate::codebase_semantic_invalidation::invalidation_for_tool_call(
+                        cfg.as_ref(),
                         name.as_str(),
                         args.as_str(),
                     )
@@ -680,20 +681,21 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
 
     emit_sse_tool_running(out, true, "execute_tools::batch tool_running true").await;
 
-    let workspace_changed = if tool_registry::tool_calls_allow_parallel_sync_batch(ctx.tool_calls) {
-        let outcome = execute_tools_parallel(ctx).await;
-        if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-            return outcome;
-        }
-        false
-    } else {
-        let mut workspace_changed = false;
-        let outcome = execute_tools_serial(ctx, &mut workspace_changed).await;
-        if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-            return outcome;
-        }
-        workspace_changed
-    };
+    let workspace_changed =
+        if tool_registry::tool_calls_allow_parallel_sync_batch(ctx.cfg.as_ref(), ctx.tool_calls) {
+            let outcome = execute_tools_parallel(ctx).await;
+            if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+                return outcome;
+            }
+            false
+        } else {
+            let mut workspace_changed = false;
+            let outcome = execute_tools_serial(ctx, &mut workspace_changed).await;
+            if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+                return outcome;
+            }
+            workspace_changed
+        };
 
     if let Some(tx) = out
         && workspace_changed

@@ -2,13 +2,13 @@
 
 # Configuration
 
-Default settings are merged from seven embedded TOML fragments under **`config/`**: **`default_config.toml`**, **`session.toml`**, **`context_inject.toml`**, **`tools.toml`**, **`sandbox.toml`**, **`planning.toml`**, **`memory.toml`** (all flattened under **`[agent]`**). **`session`** covers CLI session **`tui_*`** and **`repl_initial_workspace_messages_enabled`**; **`context_inject`** covers first-turn **`agent_memory_file_*`**, **`project_profile_inject_*`**, **`project_dependency_brief_inject_*`**; **`tools`** covers **`run_command`** allowlist/timeouts/working dir, **`tool_message_*`** / **`tool_result_envelope_v1`**, **`read_file_turn_cache_*`**, **`test_result_cache_*`**, **`session_workspace_changelist_*`**, **`codebase_semantic_*`** (the **`codebase_semantic_search`** tool), weather/search/**`http_fetch_*`**, **`tool_call_explain_*`**, **`mcp_*`**, etc.; **`sandbox`** is **SyncDefault Docker** **`sync_default_tool_sandbox_*`**; **`planning`** is planning/reflection/orchestration; **`memory`** is **`long_term_memory_*`**. `load_config` merges in order **defaults → session → context_inject → tools → sandbox → planning → memory**, then **`config.toml`** or **`.agent_demo.toml`**, then environment variables. See **`config.toml.example`** for snippets.
+Default settings are merged from seven embedded TOML fragments under **`config/`**: **`default_config.toml`**, **`session.toml`**, **`context_inject.toml`**, **`tools.toml`**, **`sandbox.toml`**, **`planning.toml`**, **`memory.toml`** (each fragment is mostly flattened under **`[agent]`**; **`config/tools.toml`** may also define optional **`[tool_registry]`**—see “`tool_registry` policy” below). **`session`** covers CLI session **`tui_*`** and **`repl_initial_workspace_messages_enabled`**; **`context_inject`** covers first-turn **`agent_memory_file_*`**, **`project_profile_inject_*`**, **`project_dependency_brief_inject_*`**; **`tools`** **`[agent]`** covers **`run_command`** allowlist/timeouts/working dir, **`tool_message_*`** / **`tool_result_envelope_v1`**, **`read_file_turn_cache_*`**, **`test_result_cache_*`**, **`session_workspace_changelist_*`**, **`codebase_semantic_*`** (the **`codebase_semantic_search`** tool), weather/search/**`http_fetch_*`**, **`tool_call_explain_*`**, **`mcp_*`**, etc.; **`sandbox`** is **SyncDefault Docker** **`sync_default_tool_sandbox_*`**; **`planning`** is planning/reflection/orchestration; **`memory`** is **`long_term_memory_*`**. `load_config` merges in order **defaults → session → context_inject → tools → sandbox → planning → memory**, then **`config.toml`** or **`.agent_demo.toml`**, then environment variables. See **`config.toml.example`** for snippets.
 
 ## Hot reload (without restarting `repl` / `serve`)
 
 - **CLI**: Type **`/config reload`** (Tab completes). Re-reads the same config path as startup (**`--config`** or default **`config.toml`** / **`.agent_demo.toml`**), merges with **current process env**, writes hot fields into in-memory [`AgentConfig`](DEVELOPMENT.md); clears MCP stdio cache; next turn uses the new MCP fingerprint.
 - **Web**: **`POST /config/reload`** (JSON body may be `{}`; same auth as **`/chat`** and other protected APIs—Bearer if the layer is enabled). Success: **`{ "ok": true, "message": "…" }`**.
-- **Typically hot-reloaded**: **`api_base`**, **`model`**, **`llm_http_auth_mode`**, **`llm_reasoning_split`**, **`llm_bigmodel_thinking`**, **`llm_kimi_thinking_disabled`**, **`llm_fold_system_into_user`**, **`temperature` / `llm_seed`**, timeouts/retries, **`run_command`** allowlist, **`http_fetch_allowed_prefixes`**, **`workspace_allowed_roots`**, **`web_api_bearer_token`** (handler-side check only; see below), **`mcp_*`**, **`system_prompt_file` re-read**, context/planning keys (implementation: **`apply_hot_reload_config_subset`**).
+- **Typically hot-reloaded**: **`api_base`**, **`model`**, **`llm_http_auth_mode`**, **`llm_reasoning_split`**, **`llm_bigmodel_thinking`**, **`llm_kimi_thinking_disabled`**, **`llm_fold_system_into_user`**, **`temperature` / `llm_seed`**, timeouts/retries, **`run_command`** allowlist, **`http_fetch_allowed_prefixes`**, **`workspace_allowed_roots`**, **`web_api_bearer_token`** (handler-side check only; see below), **`mcp_*`**, **`[tool_registry]`** fields (outer HTTP walls, parallel wall overrides, deny/inline/write-effect lists), **`system_prompt_file` re-read**, context/planning keys (implementation: **`apply_hot_reload_config_subset`**).
 - **Not hot-reloaded**: **`conversation_store_sqlite_path`** (SQLite opened at startup—change path requires **`serve` restart**). **`reqwest::Client`** is not rebuilt; **`api_timeout_secs`** may lag on pooled idle connections.
 - **`API_KEY`**: Still **environment only**; hot reload does not read secret files. After changing **`API_KEY`**, re-**export** and **`/config reload`** (or restart) for **`llm_http_auth_mode=bearer`** consistency.
 - **Bearer Axum layer**: If **`serve`** started with non-empty **`web_api_bearer_token`**, the auth layer is mounted for the process lifetime; hot reload **does not** add/remove it—switching between “no token” and “token” requires **`serve` restart**. Hot reload still updates the token string used inside handlers when the layer exists.
@@ -157,6 +157,22 @@ With Web `conversation_store_sqlite_path`, session and memory may share one SQLi
 | `AGENT_HTTP_FETCH_ALLOWED_PREFIXES` | Allowed URL prefixes. |
 | `AGENT_HTTP_FETCH_TIMEOUT_SECS` | Fetch timeout. |
 | `AGENT_HTTP_FETCH_MAX_RESPONSE_BYTES` | Max response bytes. |
+
+**Outer `tokio::time::timeout` around `spawn_blocking`**: besides **`http_fetch_timeout_secs`** (client read timeout), the async path wraps blocking work. Defaults align with **`command_timeout_secs`** and **`http_fetch_timeout_secs`**. Override with TOML **`[tool_registry]`** keys **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** (see commented examples at the end of **`config/tools.toml`**).
+
+### `tool_registry` policy (`tools.toml` / main config)
+
+Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`config.toml`** (merged like other fragments) maps into **`AgentConfig`** and is updated on hot reload. **No `AGENT_*` aliases**—use TOML.
+
+| Key | Purpose |
+| --- | --- |
+| **`http_fetch_wall_timeout_secs`** | Outer timeout for **`http_fetch`** (seconds). |
+| **`http_request_wall_timeout_secs`** | Outer timeout for **`http_request`**; if omitted, follows fetch outer logic. |
+| **`parallel_wall_timeout_secs`** | Subtable: per-**`ToolExecutionClass`** snake_case keys (**`blocking_sync`**, **`http_fetch_spawn_timeout`**, …) overriding parallel readonly batch / **`SyncDefault`+`spawn_blocking`** wall clocks. |
+| **`parallel_sync_denied_tools`** | Tool names never batched with other readonly tools (exact match); default built-in denylist if omitted. |
+| **`parallel_sync_denied_prefixes`** | Same, by name prefix. |
+| **`sync_default_inline_tools`** | **`SyncDefault`** tools run inline on the async task (skip **`spawn_blocking`**); default small builtin set if omitted. |
+| **`write_effect_tools`** | Tools treated as mutating for **`is_readonly_tool`**, explain card, codebase semantic invalidation, etc.; default builtin set if omitted. |
 
 ### Context & tool messages
 

@@ -3,17 +3,21 @@
 use std::collections::BTreeSet;
 
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
+use crate::config::AgentConfig;
 use crate::types::Tool;
 
 /// 步骤优化轮注入的 user 正文标记（取消/失败时弹出临时 user）。
 pub(crate) const STAGED_PLAN_OPTIMIZER_COACH_MARK: &str = "### 分阶段规划 · 步骤优化（服务端注入）";
 
 /// 本会话 `tools_defs` 中，满足「同轮可多调用并行 `spawn_blocking`」的工具名（逗号分隔，已排序去重）。
-pub(crate) fn parallel_batchable_tool_names_csv_from_defs(tools: &[Tool]) -> String {
+pub(crate) fn parallel_batchable_tool_names_csv_from_defs(
+    tools: &[Tool],
+    cfg: &AgentConfig,
+) -> String {
     let mut names = BTreeSet::new();
     for t in tools {
         let n = t.function.name.as_str();
-        if crate::tool_registry::tool_ok_for_parallel_readonly_batch_piece(n) {
+        if crate::tool_registry::tool_ok_for_parallel_readonly_batch_piece(cfg, n) {
             names.insert(n.to_string());
         }
     }
@@ -90,7 +94,8 @@ mod tests {
                 },
             },
         ];
-        let csv = parallel_batchable_tool_names_csv_from_defs(&tools);
+        let cfg = crate::config::load_config(None).expect("embed default");
+        let csv = parallel_batchable_tool_names_csv_from_defs(&tools, &cfg);
         assert!(csv.contains("read_file"));
         assert!(!csv.contains("create_file"));
     }

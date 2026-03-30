@@ -9,10 +9,12 @@ mod workspace_roots;
 
 use crate::agent::per_coord::FinalPlanRequirementMode;
 use source::{
-    AgentRoleRow, AgentSection, parse_agent_section, parse_bool_like, parse_config_file_roles,
+    AgentRoleRow, AgentSection, ToolRegistrySection, parse_agent_section, parse_bool_like,
+    parse_config_file_roles, parse_tools_config_bundle,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 pub use types::{
     AgentConfig, ExposeSecret, LlmHttpAuthMode, LongTermMemoryScopeMode,
     LongTermMemoryVectorBackend, PlannerExecutorMode, StagedPlanFeedbackMode,
@@ -150,6 +152,14 @@ struct ConfigBuilder {
     codebase_semantic_top_k: Option<u64>,
     codebase_semantic_query_max_chunks: Option<u64>,
     codebase_semantic_rebuild_max_files: Option<u64>,
+    /// 见 `[tool_registry]`：`http_fetch` spawn 外圈超时秒数
+    tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
+    tool_registry_http_request_wall_timeout_secs: Option<u64>,
+    tool_registry_parallel_wall_timeout_secs: HashMap<String, u64>,
+    tool_registry_parallel_sync_denied_tools: Option<Vec<String>>,
+    tool_registry_parallel_sync_denied_prefixes: Option<Vec<String>>,
+    tool_registry_sync_default_inline_tools: Option<Vec<String>>,
+    tool_registry_write_effect_tools: Option<Vec<String>>,
     /// Web/CLI 未指定 `agent_role` 时使用的默认角色 id（须存在于角色表；与 `agent_roles.toml` / `AGENT_DEFAULT_AGENT_ROLE` 一致）
     default_agent_role_id: Option<String>,
     /// `id -> 未合并条目`；在 [`finalize`] 中与全局 cursor rules 设置一并落成 `AgentConfig.agent_roles`。
@@ -496,6 +506,30 @@ impl ConfigBuilder {
             }
         }
     }
+
+    fn apply_tool_registry(&mut self, tr: ToolRegistrySection) {
+        if let Some(v) = tr.http_fetch_wall_timeout_secs {
+            self.tool_registry_http_fetch_wall_timeout_secs = Some(v);
+        }
+        if let Some(v) = tr.http_request_wall_timeout_secs {
+            self.tool_registry_http_request_wall_timeout_secs = Some(v);
+        }
+        for (k, v) in tr.parallel_wall_timeout_secs {
+            self.tool_registry_parallel_wall_timeout_secs.insert(k, v);
+        }
+        if let Some(v) = tr.parallel_sync_denied_tools {
+            self.tool_registry_parallel_sync_denied_tools = Some(v);
+        }
+        if let Some(v) = tr.parallel_sync_denied_prefixes {
+            self.tool_registry_parallel_sync_denied_prefixes = Some(v);
+        }
+        if let Some(v) = tr.sync_default_inline_tools {
+            self.tool_registry_sync_default_inline_tools = Some(v);
+        }
+        if let Some(v) = tr.write_effect_tools {
+            self.tool_registry_write_effect_tools = Some(v);
+        }
+    }
 }
 
 /// 加载配置：嵌入的 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为底，再被配置文件覆盖，最后被环境变量覆盖。
@@ -629,6 +663,18 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.codebase_semantic_top_k = src.codebase_semantic_top_k;
     dst.codebase_semantic_query_max_chunks = src.codebase_semantic_query_max_chunks;
     dst.codebase_semantic_rebuild_max_files = src.codebase_semantic_rebuild_max_files;
+    dst.tool_registry_http_fetch_wall_timeout_secs = src.tool_registry_http_fetch_wall_timeout_secs;
+    dst.tool_registry_http_request_wall_timeout_secs =
+        src.tool_registry_http_request_wall_timeout_secs;
+    dst.tool_registry_parallel_wall_timeout_secs =
+        std::sync::Arc::clone(&src.tool_registry_parallel_wall_timeout_secs);
+    dst.tool_registry_parallel_sync_denied_tools =
+        src.tool_registry_parallel_sync_denied_tools.clone();
+    dst.tool_registry_parallel_sync_denied_prefixes =
+        src.tool_registry_parallel_sync_denied_prefixes.clone();
+    dst.tool_registry_sync_default_inline_tools =
+        src.tool_registry_sync_default_inline_tools.clone();
+    dst.tool_registry_write_effect_tools = src.tool_registry_write_effect_tools.clone();
 }
 
 /// 合并一条嵌入默认 TOML 中的 `[agent]`；解析失败返回 `Err`（不应在发布构建中发生）。
@@ -656,7 +702,14 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     // ── 1c. 首轮上下文注入嵌入默认
     apply_embedded_agent_shard(&mut b, "context_inject.toml", CONTEXT_INJECT_DEFAULT_CONFIG)?;
     // ── 1d. 内置工具嵌入默认（在主默认之后合并，用户文件与环境变量仍可覆盖）
-    apply_embedded_agent_shard(&mut b, "tools.toml", TOOLS_DEFAULT_CONFIG)?;
+    let (tools_agent, tools_tr) = parse_tools_config_bundle(TOOLS_DEFAULT_CONFIG)
+        .map_err(|e| format!("嵌入默认配置 tools.toml TOML 无效（须与仓库 config 一致）: {e}"))?;
+    if let Some(agent) = tools_agent {
+        b.apply_section(agent);
+    }
+    if let Some(tr) = tools_tr {
+        b.apply_tool_registry(tr);
+    }
     // ── 1e. SyncDefault Docker 沙盒嵌入默认
     apply_embedded_agent_shard(&mut b, "sandbox.toml", SANDBOX_DEFAULT_CONFIG)?;
     // ── 1f. 规划 / 反思 / 编排嵌入默认
@@ -678,12 +731,15 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
             system_prompt_search_bases.push(directory_containing_config_file(path));
             let s = std::fs::read_to_string(path)
                 .map_err(|e| format!("无法读取配置文件 \"{}\": {}", path, e))?;
-            let (agent_opt, role_rows) = parse_config_file_roles(&s)
+            let (agent_opt, role_rows, tr_opt) = parse_config_file_roles(&s)
                 .map_err(|e| format!("配置文件 \"{}\" TOML 解析失败: {}", path, e))?;
             if let Some(agent) = agent_opt {
                 b.apply_section(agent);
             }
             b.merge_agent_role_rows(&role_rows);
+            if let Some(tr) = tr_opt {
+                b.apply_tool_registry(tr);
+            }
             if config_path.is_some() {
                 break;
             }
@@ -1778,6 +1834,54 @@ fn finalize(
         .unwrap_or(524_288)
         .clamp(1024, 4_194_304) as usize;
 
+    let tool_registry_http_fetch_wall_timeout_secs = b
+        .tool_registry_http_fetch_wall_timeout_secs
+        .map(|s| s.clamp(1, 86_400));
+    let tool_registry_http_request_wall_timeout_secs = b
+        .tool_registry_http_request_wall_timeout_secs
+        .map(|s| s.clamp(1, 86_400));
+    let tool_registry_parallel_wall_timeout_secs = Arc::new(
+        b.tool_registry_parallel_wall_timeout_secs
+            .into_iter()
+            .map(|(k, v)| (k, v.clamp(1, 86_400)))
+            .collect::<HashMap<_, _>>(),
+    );
+    let tool_registry_parallel_sync_denied_tools =
+        b.tool_registry_parallel_sync_denied_tools.map(|v| {
+            Arc::new(
+                v.into_iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<HashSet<_>>(),
+            )
+        });
+    let tool_registry_parallel_sync_denied_prefixes =
+        b.tool_registry_parallel_sync_denied_prefixes.map(|v| {
+            let cleaned: Vec<String> = v
+                .into_iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            Arc::from(cleaned.into_boxed_slice())
+        });
+    let tool_registry_sync_default_inline_tools =
+        b.tool_registry_sync_default_inline_tools.map(|v| {
+            Arc::new(
+                v.into_iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<HashSet<_>>(),
+            )
+        });
+    let tool_registry_write_effect_tools = b.tool_registry_write_effect_tools.map(|v| {
+        Arc::new(
+            v.into_iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<HashSet<_>>(),
+        )
+    });
+
     let llm_http_auth_mode = match b.llm_http_auth_mode_str.as_deref() {
         Some(s) => types::LlmHttpAuthMode::parse(s)?,
         None => types::LlmHttpAuthMode::default(),
@@ -1889,6 +1993,13 @@ fn finalize(
         codebase_semantic_top_k,
         codebase_semantic_query_max_chunks,
         codebase_semantic_rebuild_max_files,
+        tool_registry_http_fetch_wall_timeout_secs,
+        tool_registry_http_request_wall_timeout_secs,
+        tool_registry_parallel_wall_timeout_secs,
+        tool_registry_parallel_sync_denied_tools,
+        tool_registry_parallel_sync_denied_prefixes,
+        tool_registry_sync_default_inline_tools,
+        tool_registry_write_effect_tools,
     })
 }
 

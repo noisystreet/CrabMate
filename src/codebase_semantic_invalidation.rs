@@ -5,6 +5,7 @@ use std::path::Path;
 use rusqlite::params;
 
 use crate::codebase_semantic_index::{index_path_for_workspace, open_codebase_semantic_db};
+use crate::config::AgentConfig;
 use crate::tool_result::parse_legacy_output;
 use crate::tools::canonical_workspace_root;
 
@@ -27,10 +28,11 @@ pub(crate) enum CodebaseSemanticInvalidation {
 
 /// 根据工具名与参数推断应失效的范围；**只读工具**返回 `None`。
 pub(crate) fn invalidation_for_tool_call(
+    cfg: &AgentConfig,
     name: &str,
     args_json: &str,
 ) -> Option<CodebaseSemanticInvalidation> {
-    if crate::tool_registry::is_readonly_tool(name) {
+    if crate::tool_registry::is_readonly_tool(cfg, name) {
         return None;
     }
 
@@ -244,6 +246,10 @@ pub(crate) fn tool_output_semantic_success(tool_name: &str, output: &str) -> boo
 mod tests {
     use super::*;
 
+    fn default_cfg() -> AgentConfig {
+        crate::config::load_config(None).expect("embed default")
+    }
+
     #[test]
     fn patch_paths_parses_git_style() {
         let p = r#"--- a/src/foo.rs
@@ -256,7 +262,9 @@ mod tests {
 
     #[test]
     fn run_command_invalidates_full() {
-        let inv = invalidation_for_tool_call("run_command", r#"{"command":"touch","args":["x"]}"#);
+        let cfg = default_cfg();
+        let inv =
+            invalidation_for_tool_call(&cfg, "run_command", r#"{"command":"touch","args":["x"]}"#);
         assert!(matches!(
             inv,
             Some(CodebaseSemanticInvalidation::FullWorkspace)
@@ -265,12 +273,14 @@ mod tests {
 
     #[test]
     fn read_file_no_invalidation() {
-        assert!(invalidation_for_tool_call("read_file", r#"{"path":"a.rs"}"#).is_none());
+        let cfg = default_cfg();
+        assert!(invalidation_for_tool_call(&cfg, "read_file", r#"{"path":"a.rs"}"#).is_none());
     }
 
     #[test]
     fn delete_dir_uses_prefix_scope() {
-        let inv = invalidation_for_tool_call("delete_dir", r#"{"path":"src/lib"}"#);
+        let cfg = default_cfg();
+        let inv = invalidation_for_tool_call(&cfg, "delete_dir", r#"{"path":"src/lib"}"#);
         let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
             panic!("expected RelScopes");
         };
@@ -281,7 +291,8 @@ mod tests {
 
     #[test]
     fn create_file_is_file_scope() {
-        let inv = invalidation_for_tool_call("create_file", r#"{"path":"a/b.rs"}"#);
+        let cfg = default_cfg();
+        let inv = invalidation_for_tool_call(&cfg, "create_file", r#"{"path":"a/b.rs"}"#);
         let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
             panic!("expected RelScopes");
         };
