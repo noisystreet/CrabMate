@@ -71,7 +71,7 @@ npm run dev
 
 **CLI**：`cargo run`（省略子命令）默认进入**交互式终端对话**；启动时打印模型、工作区与内建命令等**分节摘要**，运行中以 `/` 开头的命令（如 `/config`、`/config reload`、`/doctor`、`/probe`、`/models`、`/mcp`、`/version`）及可选 `bash#:` 本地一行 shell 等，详见 [docs/CLI.md](docs/CLI.md)「CLI 内建命令」（含 Tab 补全、`$` 切换、分阶段规划终端输出、**SyncDefault Docker**、等待 **spinner**、`✓` / `[ok]` 反馈样式等）。对应配置键见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
 
-**前端**：先执行 `cd frontend && npm install && npm run build`，再启动 `serve`（静态资源来自 `frontend/dist`）。
+**前端**：默认先执行 `cd frontend && npm install && npm run build`，再启动 `serve`（静态资源来自 `frontend/dist`）。若已构建 **Leptos WASM**（`cd frontend-leptos && trunk build`，输出 `frontend-leptos/dist`），`serve` **优先**使用该目录，无需再构建 npm 前端。
 
 **配置**：`config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml`（编译嵌入）+ 可选 `config.toml`；默认通过 `system_prompt_file = "config/prompts/default_system_prompt.md"` 从仓库文件加载（**改该文件无需重编**；相对路径会按当前目录、配置文件所在目录、`run_command_working_dir` 依次解析，见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)）。**环境变量与高级项**同见该文档。**子命令与 Benchmark** 见 [docs/CLI.md](docs/CLI.md)；**release 构建、`cargo deb`、`man` 页**见下文 **[「源码编译与打包」](#源码编译与打包)**。
 
@@ -81,7 +81,7 @@ npm run dev
 
 - **工具链**：后端需 **Rust 1.85+**（edition 2024）；构建 Web 前端需 **Node.js / npm**。Linux 上系统库与链接说明（如 `libssl-dev`、`libssh2`，以及长期记忆、可选 ONNX / `g++` 等）见 [AGENTS.md](AGENTS.md)。
 - **Debug 版本构建**：仓库根目录执行 `cargo build`，二进制位于 `target/debug/crabmate`。
-- **Release 版本构建**：`cargo build --release`，二进制位于 `target/release/crabmate`。若以 `serve` 提供 Web UI，须先构建前端：`cd frontend && npm install && npm run build`（输出 `frontend/dist`），再启动后端。
+- **Release 版本构建**：`cargo build --release`，二进制位于 `target/release/crabmate`。若以 `serve` 提供 Web UI，须先构建前端：**`frontend/dist`**（`cd frontend && npm install && npm run build`）或 **`frontend-leptos/dist`**（`cd frontend-leptos && trunk build`；存在时优先于前者），再启动后端。
 - **检查与测试**（维护者/CI）：`cargo fmt --all`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test`；前端类型检查 `cd frontend && npx tsc -b --noEmit`。仓库 pre-commit 配置见 [.pre-commit-config.yaml](.pre-commit-config.yaml)。
 - **安装到本机**：`cargo install --path .`（在克隆目录下；默认安装 release 二进制到 `~/.cargo/bin`）。`cargo install` 不会自动安装 `man` 页；可手动安装 [man/crabmate.1](man/crabmate.1) 或优先使用下方 `.deb`。
 - **手册页**：`clap` 与 troff 不同步时，在仓库根执行 `cargo run --bin crabmate-gen-man` 再提交更新后的 [man/crabmate.1](man/crabmate.1)。

@@ -36,6 +36,7 @@ pub mod tool_sandbox;
 mod tools;
 mod types;
 mod web;
+mod web_static_dir;
 mod workspace_changelist;
 
 use config::cli::init_logging;
@@ -304,10 +305,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
             }
         };
-        let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+        let static_dir = web_static_dir::resolve_web_static_dir();
         if !static_dir.is_dir() {
             let msg = format!(
-                "dry-run 失败：前端静态目录不存在：{}（请先在 frontend/ 下构建）",
+                "dry-run 失败：前端静态目录不存在：{}（请先构建：cd frontend-leptos && trunk build，或 cd frontend && npm run build）",
                 static_dir.display()
             );
             eprintln!("{msg}");
@@ -457,7 +458,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             long_term_memory,
             web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         });
-        let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+        let static_dir = web_static_dir::resolve_web_static_dir();
         let web_api_bearer_layer_enabled = {
             let g = cfg_holder.read().await;
             !crate::config::ExposeSecret::expose_secret(&g.web_api_bearer_token)

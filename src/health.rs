@@ -50,7 +50,7 @@ pub async fn build_health_report(
     );
 
     if include_frontend_static {
-        let static_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist");
+        let static_dir = crate::web_static_dir::resolve_web_static_dir();
         let static_ok = static_dir.is_dir();
         checks.insert(
             "frontend_static_dir".to_string(),
