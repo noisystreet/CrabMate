@@ -27,11 +27,19 @@ struct MutexWrite<W: Write + Send>(Mutex<W>);
 
 impl<W: Write + Send> Write for MutexWrite<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().write(buf)
+        let mut g = self
+            .0
+            .lock()
+            .map_err(|_| io::Error::other("MutexWrite: 日志管道互斥锁已中毒（poisoned）"))?;
+        g.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.0.lock().unwrap().flush()
+        let mut g = self
+            .0
+            .lock()
+            .map_err(|_| io::Error::other("MutexWrite: 日志管道互斥锁已中毒（poisoned）"))?;
+        g.flush()
     }
 }
 
