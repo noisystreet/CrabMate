@@ -276,10 +276,10 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
 
   return (
     <div
-      className="card flex-shrink-0 flex flex-col flex-1 min-h-0 bg-base-200 border border-base-300 border-b-0 shadow-none rounded-none"
+      className="card flex-shrink-0 flex flex-col flex-1 min-h-0 bg-base-100/85 backdrop-blur-sm border border-base-content/10 shadow-sm rounded-xl m-2 min-h-0"
       style={{ width: `${width}px` }}
     >
-      <header className="flex-shrink-0 px-4 py-3 border-b border-base-300 flex items-center justify-between gap-2">
+      <header className="flex-shrink-0 px-4 py-3 border-b border-base-content/10 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-base-content">工作区</h2>
         <div className="flex items-center gap-1">
           {workspaceDir !== null && data && !data.error && (
@@ -332,12 +332,12 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
             <>
               <div
                 tabIndex={0}
-                className="dropdown-content menu p-3 bg-base-200 border border-base-300 w-72 rounded-none shadow-lg z-50"
+                className="dropdown-content menu p-3 bg-base-200 border border-base-content/10 w-72 rounded-xl shadow-xl z-50"
               >
                 <p className="text-xs text-base-content/70 mb-2">设置工作区目录（可浏览选择或输入路径，留空使用默认）</p>
                 <button
                   type="button"
-                  className="btn btn-outline btn-sm w-full rounded-none mb-2"
+                  className="btn btn-outline btn-sm w-full rounded-lg mb-2"
                   onClick={handlePickFolder}
                   disabled={pickLoading || !pickSupported}
                 >
@@ -353,15 +353,15 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
                   onChange={(e) => setDirInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && applyDir()}
                   placeholder="或输入路径，留空为默认"
-                  className="input input-bordered input-sm w-full rounded-none mb-2"
+                  className="input input-bordered input-sm w-full rounded-lg mb-2"
                 />
                 <div className="flex gap-2">
-                  <button type="button" className="btn btn-primary btn-sm flex-1 rounded-none" onClick={applyDir}>
+                  <button type="button" className="btn btn-primary btn-sm flex-1 rounded-lg" onClick={applyDir}>
                     确定
                   </button>
                   <button
                     type="button"
-                    className="btn btn-outline btn-sm rounded-none"
+                    className="btn btn-outline btn-sm rounded-lg"
                     onClick={() => {
                       // 清除本地记忆的工作区路径，并让前端回到「未设置」状态
                       setWorkspaceDir(null)
@@ -376,7 +376,7 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
                   </button>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-sm rounded-none"
+                    className="btn btn-ghost btn-sm rounded-lg"
                     onClick={() => { setMenuOpen(false); setDirInput(''); }}
                   >
                     取消
@@ -452,7 +452,7 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
               <div className="px-2 pt-1 flex gap-1">
                 <button
                   type="button"
-                  className="btn btn-ghost btn-xs rounded-none"
+                  className="btn btn-ghost btn-xs rounded-lg"
                   onClick={() => onSendToChat(`以下为当前工作区自动生成的项目画像，请结合仓库实际使用：\n\n${profileMd}`)}
                 >
                   发送到聊天
@@ -518,7 +518,7 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
                   <button
                     key={p}
                     type="button"
-                    className="px-1.5 py-0.5 border border-base-300 rounded-none hover:bg-base-300/70 text-[11px] font-mono max-w-[200px] truncate"
+                    className="px-1.5 py-0.5 border border-base-300 rounded-lg hover:bg-base-300/70 text-[11px] font-mono max-w-[200px] truncate"
                     title={p}
                     onClick={() => openEditFileByFullPath(p)}
                   >
@@ -538,12 +538,12 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
                 {data.entries.map((e) => (
                   <li
                     key={e.name}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded-none text-sm text-base-content transition-colors cursor-pointer ${
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-base-content transition-colors cursor-pointer ${
                       e.is_dir
-                        ? 'hover:bg-base-300'
+                        ? 'hover:bg-base-200/80'
                         : activeFile && data.path && joinPath(data.path, e.name) === activeFile
-                          ? 'bg-base-300/70'
-                          : 'hover:bg-base-300'
+                          ? 'bg-primary/10 border border-primary/20'
+                          : 'hover:bg-base-200/80'
                     }`}
                     onClick={async () => {
                       if (e.is_dir) {
@@ -608,7 +608,7 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
             onClick={() => setContextMenu(null)}
           />
           <div
-            className="fixed z-50 bg-base-200 border border-base-300 rounded-none shadow-xl text-sm"
+            className="fixed z-50 bg-base-200 border border-base-300 rounded-lg shadow-xl text-sm"
             style={{ top: contextMenu.y, left: contextMenu.x }}
           >
             <ul className="menu menu-sm p-1">
@@ -646,7 +646,7 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
                     value={filePath}
                     onChange={(e) => setFilePath(e.target.value)}
                     placeholder="例如：newfile.txt"
-                    className="input input-bordered input-sm w-full rounded-none"
+                    className="input input-bordered input-sm w-full rounded-lg"
                   />
                 </div>
               )}
@@ -655,15 +655,15 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
                 <textarea
                   value={fileContent}
                   onChange={(e) => setFileContent(e.target.value)}
-                  className="textarea textarea-bordered flex-1 min-h-[200px] w-full rounded-none font-mono text-sm"
+                  className="textarea textarea-bordered flex-1 min-h-[200px] w-full rounded-lg font-mono text-sm"
                   placeholder="文件内容…"
                   spellCheck={false}
                 />
               </div>
               {fileError && <p className="text-sm text-error">{fileError}</p>}
               <div className="flex gap-2 justify-end">
-                <button type="button" className="btn btn-ghost btn-sm rounded-none" onClick={closeFileModal}>取消</button>
-                <button type="button" className="btn btn-primary btn-sm rounded-none gap-1" onClick={saveFile} disabled={fileSaving}>
+                <button type="button" className="btn btn-ghost btn-sm rounded-lg" onClick={closeFileModal}>取消</button>
+                <button type="button" className="btn btn-primary btn-sm rounded-lg gap-1" onClick={saveFile} disabled={fileSaving}>
                   {fileSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                   保存
                 </button>
@@ -708,7 +708,7 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
                 </label>
                 <input
                   type="text"
-                  className="input input-bordered input-sm w-full rounded-none"
+                  className="input input-bordered input-sm w-full rounded-lg"
                   placeholder="例如：main\\(|TODO|fn\\s+run_agent_turn"
                   value={searchPattern}
                   onChange={(e) => setSearchPattern(e.target.value)}
@@ -738,7 +738,7 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
                 <div className="flex gap-2 justify-end">
                   <button
                     type="button"
-                    className="btn btn-outline btn-sm rounded-none"
+                    className="btn btn-outline btn-sm rounded-lg"
                     onClick={async () => {
                       if (!data?.path || !searchPattern.trim()) return
                       setSearchLoading(true)
@@ -765,13 +765,13 @@ export function WorkspacePanel({ width = 280, refreshTrigger = 0, onSendToChat }
               {searchError && <p className="text-xs text-error">{searchError}</p>}
               <div className="flex-1 min-h-0 mt-2">
                 <label className="text-xs text-base-content/70 block mb-1">搜索结果</label>
-                <pre className="w-full h-full max-h-[340px] overflow-auto bg-base-100 border border-base-300 rounded-none p-2 text-[11px] font-mono whitespace-pre-wrap leading-relaxed">
+                <pre className="w-full h-full max-h-[340px] overflow-auto bg-base-100 border border-base-300 rounded-lg p-2 text-[11px] font-mono whitespace-pre-wrap leading-relaxed">
                   {searchResult || '（尚未搜索）'}
                 </pre>
                 <div className="mt-2 flex justify-end">
                   <button
                     type="button"
-                    className="btn btn-ghost btn-xs rounded-none"
+                    className="btn btn-ghost btn-xs rounded-lg"
                     disabled={!searchResult.trim()}
                     onClick={() => {
                       if (!searchResult.trim()) return

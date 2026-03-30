@@ -266,7 +266,7 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-base-100">
       {/* 顶部菜单栏 */}
-      <div className="navbar min-h-0 h-12 shrink-0 bg-base-200/60 border-b border-base-300 px-3">
+      <div className="navbar min-h-0 h-12 shrink-0 bg-base-200/80 backdrop-blur-sm border-b border-base-content/10 shadow-sm px-3">
         <span className="text-lg font-semibold text-base-content shrink-0">CrabMate</span>
         <div className="flex-1" />
         <div className="flex gap-1">
@@ -355,7 +355,7 @@ export default function App() {
       </div>
       <div className="flex-1 min-h-0 flex flex-col">
         <div ref={mainRowRef} className="flex-1 min-h-0 flex overflow-hidden">
-          <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden p-3 bg-gradient-to-br from-base-200/40 via-base-100/50 to-base-100">
             <ChatPanel
               onSendStart={() => {
                 setStatusBusy(true)
@@ -418,7 +418,10 @@ export default function App() {
           {(workspaceVisible || tasksVisible) && (
             <>
               <ResizeHandle containerRef={mainRowRef} onResize={setWorkspaceWidth} />
-              <div className="flex min-h-0" style={{ width: workspaceWidth }}>
+              <div
+                className="flex min-h-0 border-l border-base-content/10 bg-base-200/30 shadow-[inset_1px_0_0_rgba(0,0,0,0.03)]"
+                style={{ width: workspaceWidth }}
+              >
                 {workspaceVisible && (
                   <WorkspacePanel
                     width={tasksVisible ? Math.max(180, workspaceWidth / 2) : workspaceWidth}
@@ -446,8 +449,8 @@ export default function App() {
 
       {sessionModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-[720px] bg-base-100 border border-base-300 rounded-none shadow-xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-base-300 bg-base-200">
+          <div className="w-full max-w-[720px] bg-base-100 border border-base-content/10 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-base-content/10 bg-base-200/90">
               <div className="flex items-center gap-2">
                 <span className="font-semibold">会话管理</span>
                 <span className="text-xs text-base-content/60">（本地保存）</span>
@@ -459,24 +462,24 @@ export default function App() {
 
             <div className="p-4 space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="join">
-                  <button type="button" className={`btn btn-sm rounded-none join-item ${sessionView === 'all' ? 'btn-active' : 'btn-ghost'}`} onClick={() => setSessionView('all')}>全部</button>
-                  <button type="button" className={`btn btn-sm rounded-none join-item ${sessionView === 'starred' ? 'btn-active' : 'btn-ghost'}`} onClick={() => setSessionView('starred')}>收藏</button>
-                  <button type="button" className={`btn btn-sm rounded-none join-item ${sessionView === 'archived' ? 'btn-active' : 'btn-ghost'}`} onClick={() => setSessionView('archived')}>归档</button>
+                <div className="join join-horizontal rounded-lg overflow-hidden">
+                  <button type="button" className={`btn btn-sm join-item ${sessionView === 'all' ? 'btn-active' : 'btn-ghost'}`} onClick={() => setSessionView('all')}>全部</button>
+                  <button type="button" className={`btn btn-sm join-item ${sessionView === 'starred' ? 'btn-active' : 'btn-ghost'}`} onClick={() => setSessionView('starred')}>收藏</button>
+                  <button type="button" className={`btn btn-sm join-item ${sessionView === 'archived' ? 'btn-active' : 'btn-ghost'}`} onClick={() => setSessionView('archived')}>归档</button>
                 </div>
                 <input
                   value={sessionSearch}
                   onChange={(e) => setSessionSearch(e.target.value)}
                   placeholder="搜索会话标题或内容…"
-                  className="input input-bordered input-sm flex-1 min-w-[200px] rounded-none"
+                  className="input input-bordered input-sm flex-1 min-w-[200px] rounded-lg"
                 />
-                <button type="button" className="btn btn-primary btn-sm rounded-none" onClick={createSession}>
+                <button type="button" className="btn btn-primary btn-sm rounded-lg" onClick={createSession}>
                   新建
                 </button>
-                <button type="button" className="btn btn-ghost btn-sm rounded-none" onClick={exportAllSessions}>
+                <button type="button" className="btn btn-ghost btn-sm rounded-lg" onClick={exportAllSessions}>
                   导出全部
                 </button>
-                <label className="btn btn-ghost btn-sm rounded-none">
+                <label className="btn btn-ghost btn-sm rounded-lg">
                   导入（全部/单个）
                   <input
                     type="file"
@@ -497,7 +500,7 @@ export default function App() {
                   <span className="text-base-content/60">已选择 {selectedSessionIds.size} 个</span>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-sm rounded-none"
+                    className="btn btn-ghost btn-sm rounded-lg"
                     onClick={() => {
                       setSessionState((st) => ({
                         ...st,
@@ -510,7 +513,7 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-sm rounded-none"
+                    className="btn btn-ghost btn-sm rounded-lg"
                     onClick={() => {
                       setSessionState((st) => ({
                         ...st,
@@ -523,7 +526,7 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-sm rounded-none"
+                    className="btn btn-ghost btn-sm rounded-lg"
                     onClick={() => {
                       setSessionState((st) => ({
                         ...st,
@@ -536,7 +539,7 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-sm rounded-none"
+                    className="btn btn-ghost btn-sm rounded-lg"
                     onClick={() => {
                       setSessionState((st) => ({
                         ...st,
@@ -549,7 +552,7 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-sm rounded-none text-error"
+                    className="btn btn-ghost btn-sm rounded-lg text-error"
                     onClick={() => {
                       if (!window.confirm('确定批量删除所选会话？此操作不可恢复（本地）。')) return
                       setSessionState((st) => {
@@ -563,13 +566,13 @@ export default function App() {
                   >
                     批量删除
                   </button>
-                  <button type="button" className="btn btn-ghost btn-sm rounded-none" onClick={() => setSelectedSessionIds(new Set())}>
+                  <button type="button" className="btn btn-ghost btn-sm rounded-lg" onClick={() => setSelectedSessionIds(new Set())}>
                     清空选择
                   </button>
                 </div>
               )}
 
-              <div className="max-h-[380px] overflow-auto border border-base-300">
+              <div className="max-h-[380px] overflow-auto border border-base-content/10 rounded-xl">
                 {sessions
                   .filter((s) => {
                     const q = sessionSearch.trim().toLowerCase()
@@ -591,7 +594,7 @@ export default function App() {
                     >
                       <input
                         type="checkbox"
-                        className="checkbox checkbox-sm rounded-none"
+                        className="checkbox checkbox-sm rounded-md"
                         checked={selectedSessionIds.has(s.id)}
                         onChange={(e) => {
                           setSelectedSessionIds((prev) => {
@@ -623,7 +626,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs rounded-none"
+                        className="btn btn-ghost btn-xs rounded-lg"
                         onClick={() => updateSession(s.id, { starred: !s.starred })}
                         title={s.starred ? '取消收藏' : '收藏'}
                       >
@@ -631,7 +634,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs rounded-none"
+                        className="btn btn-ghost btn-xs rounded-lg"
                         onClick={() => {
                           const raw = window.prompt('编辑标签（用逗号分隔）', (s.tags || []).join(','))
                           if (raw == null) return
@@ -643,7 +646,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs rounded-none"
+                        className="btn btn-ghost btn-xs rounded-lg"
                         onClick={() => updateSession(s.id, { archived: !s.archived })}
                         title={s.archived ? '取消归档' : '归档'}
                       >
@@ -651,20 +654,20 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs rounded-none"
+                        className="btn btn-ghost btn-xs rounded-lg"
                         onClick={() => exportOneSession(s)}
                       >
                         导出
                       </button>
-                      <button type="button" className="btn btn-ghost btn-xs rounded-none" onClick={() => exportSessionMarkdown(s)}>
+                      <button type="button" className="btn btn-ghost btn-xs rounded-lg" onClick={() => exportSessionMarkdown(s)}>
                         导出MD
                       </button>
-                      <button type="button" className="btn btn-ghost btn-xs rounded-none" onClick={() => exportSessionPdf(s)}>
+                      <button type="button" className="btn btn-ghost btn-xs rounded-lg" onClick={() => exportSessionPdf(s)}>
                         导出PDF
                       </button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs rounded-none"
+                        className="btn btn-ghost btn-xs rounded-lg"
                         onClick={() => {
                           const title = window.prompt('重命名会话', s.title)
                           if (title == null) return
@@ -675,7 +678,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs rounded-none text-error"
+                        className="btn btn-ghost btn-xs rounded-lg text-error"
                         onClick={() => {
                           if (!window.confirm('确定删除该会话？此操作不可恢复（本地）。')) return
                           const also = window.confirm('同时删除该会话关联的上传文件（/uploads/*）吗？')

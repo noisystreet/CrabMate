@@ -10,9 +10,6 @@ use crate::types::StreamChunk;
 use super::super::call_error::LlmCallError;
 use super::terminal_render::cli_terminal_write_plain_fragment;
 
-/// 流式正文 delta 在发往 `out`（SSE 等）前合并，减少 `mpsc` 次与 `String` 小片 clone。
-pub(super) const SSE_STREAM_DELTA_FLUSH_BYTES: usize = 256;
-
 /// Web 流式：`out` 存在且提供 **`coop_cancel`** 时，发送失败会置位取消标志，与 `chat_job_queue` 的 `closed()` 监视一致。
 #[inline]
 pub(super) async fn sse_out_send(
@@ -34,7 +31,6 @@ async fn accumulate_reasoning_stream_delta(
     fragment: &str,
     reasoning_acc: &mut String,
     out: Option<&Sender<String>>,
-    pending_sse_delta: &mut String,
     cli_terminal_plain: bool,
     cli_plain_prefix_emitted: &mut bool,
     cli_plain_reasoning_style_active: &mut bool,
@@ -53,17 +49,14 @@ async fn accumulate_reasoning_stream_delta(
         )?;
     }
     if let Some(tx) = out {
-        pending_sse_delta.push_str(fragment);
-        if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
-            let line = std::mem::take(pending_sse_delta);
-            let _ = sse_out_send(
-                tx,
-                line,
-                "llm::stream_chat ingest delta (reasoning)",
-                coop_cancel,
-            )
-            .await;
-        }
+        // Web/SSE：立即下发，保证聊天区逐 token/逐段更新；CLI `out.is_none()` 时不走此分支。
+        let _ = sse_out_send(
+            tx,
+            fragment.to_string(),
+            "llm::stream_chat ingest delta (reasoning)",
+            coop_cancel,
+        )
+        .await;
     }
     Ok(())
 }
@@ -73,7 +66,6 @@ struct MinimaxReasoningDetailsCtx<'a> {
     snaps: &'a mut Vec<String>,
     reasoning_acc: &'a mut String,
     out: Option<&'a Sender<String>>,
-    pending_sse_delta: &'a mut String,
     cli_terminal_plain: bool,
     cli_plain_prefix_emitted: &'a mut bool,
     cli_plain_reasoning_style_active: &'a mut bool,
@@ -88,7 +80,6 @@ async fn accumulate_minimax_reasoning_details_deltas(
         snaps,
         reasoning_acc,
         out,
-        pending_sse_delta,
         cli_terminal_plain,
         cli_plain_prefix_emitted,
         cli_plain_reasoning_style_active,
@@ -114,7 +105,6 @@ async fn accumulate_minimax_reasoning_details_deltas(
             fragment,
             reasoning_acc,
             out,
-            pending_sse_delta,
             cli_terminal_plain,
             cli_plain_prefix_emitted,
             cli_plain_reasoning_style_active,
@@ -202,7 +192,6 @@ pub(super) async fn ingest_sse_data_payload(
             s,
             reasoning_acc,
             out,
-            pending_sse_delta,
             cli_terminal_plain,
             cli_plain_prefix_emitted,
             cli_plain_reasoning_style_active,
@@ -219,7 +208,6 @@ pub(super) async fn ingest_sse_data_payload(
                 snaps: minimax_reasoning_snaps,
                 reasoning_acc,
                 out,
-                pending_sse_delta,
                 cli_terminal_plain,
                 cli_plain_prefix_emitted,
                 cli_plain_reasoning_style_active,
@@ -241,17 +229,13 @@ pub(super) async fn ingest_sse_data_payload(
             )?;
         }
         if let Some(tx) = out {
-            pending_sse_delta.push_str(s);
-            if pending_sse_delta.len() >= SSE_STREAM_DELTA_FLUSH_BYTES {
-                let line = std::mem::take(pending_sse_delta);
-                let _ = sse_out_send(
-                    tx,
-                    line,
-                    "llm::stream_chat ingest delta (content)",
-                    coop_cancel,
-                )
-                .await;
-            }
+            let _ = sse_out_send(
+                tx,
+                s.clone(),
+                "llm::stream_chat ingest delta (content)",
+                coop_cancel,
+            )
+            .await;
         }
     }
     if let Some(tcs) = delta.tool_calls {

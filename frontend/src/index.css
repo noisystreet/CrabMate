@@ -2,14 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 扁平化：去除圆角 */
-.card, .btn, .input, .dropdown-content, .menu, .menu li {
-  border-radius: 0 !important;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
-/* 聊天输入框：保留圆角与焦点样式 */
+/* 聊天输入框：与气泡风格一致 */
 .chat-input {
-  border-radius: 0.75rem !important;
+  @apply rounded-xl;
+}
+
+/* 键盘焦点：与 daisyUI 并存 */
+@layer components {
+  .btn:focus-visible:not(:disabled),
+  .input:focus-visible,
+  .select:focus-visible,
+  .textarea:focus-visible {
+    @apply outline-none ring-2 ring-primary/40 ring-offset-2 ring-offset-base-100;
+  }
 }
 
 /* Markdown in chat bubbles - use theme colors，并保留后端返回的换行 */
