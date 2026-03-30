@@ -1,4 +1,6 @@
 //! 工作区路径解析与校验（`file` 工具子模块）。
+//!
+//! 边界语义与 [`crate::path_workspace`] 一致。**`canonicalize` 校验通过之后**到 **`std::fs` 实际打开**之间仍存在 TOCTOU（路径可被替换为根外 symlink）；现状与 **`O_NOFOLLOW` / `openat`** 等强化路线见该模块文档。
 #![allow(clippy::manual_string_new)]
 
 use std::path::{Path, PathBuf};

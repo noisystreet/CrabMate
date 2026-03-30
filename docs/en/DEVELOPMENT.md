@@ -106,7 +106,7 @@ flowchart TB
 | `text_sanitize.rs` | DSML materialization for DeepSeek-style tool calls (`materialize_deepseek_dsml_tool_calls_*`). |
 | `health.rs` | **`build_health_report`** for **`GET /health`**. |
 | `llm/` | **`complete_chat_retrying`**, **`ChatCompletionsBackend`**, **`api::stream_chat`**, vendor quirks (reasoning_split, GLM thinking, Kimi temperature/thinking), CLI terminal rendering, **`openai_models`**. |
-| `path_workspace.rs` | Canonical workspace resolution, allowlist validation, web read/write path helpers (TOCTOU notes in module). |
+| `path_workspace.rs` | Canonical workspace resolution, allowlist validation, web read/write path helpers. **TOCTOU**: path may change between `canonicalize` and `open`; module docs describe limits and mitigations (**`O_NOFOLLOW`**, **`openat`**, Linux **`openat2` `RESOLVE_*`**). Aligns with **README**, **CONFIGURATION.md** (workspace), **TODOLIST** (P0). |
 | `runtime/` | CLI: `chat`, interactive REPL, **`save-session`**, **`tool-replay`**, slash commands, doctor/probe/models, reedline completion, **`CliExitError`**, **`CliToolRuntime`**, transcripts, benchmark, export. |
 | `sse/` | **`protocol`**, **`line`**, test mirror + golden fixtures, **`web_approval`**. |
 | `tool_approval/` | Single source for Web + CLI approval (`SensitiveCapability`, dialoguer / pipe fallback). |

@@ -17,6 +17,7 @@
 
 - [ ] **HTTP 无鉴权**：`/chat`、`/chat/stream`、工作区、文件、上传、任务等均未校验调用方身份；`API_KEY` 仅用于调模型，不能防止他人滥用接口与配额。
 - [ ] **多角色与人设切换**：支持创建/配置多种**角色**（各角色可绑定不同系统提示、工具可见性、温度等策略）；**CLI**（如 `repl` 的 `/` 命令）与 **Web** 提供**内建命令或等价控件**切换当前会话生效角色，且与会话持久化、导出、`POST /config/reload` 可重载字段的边界在 `README` / `docs/DEVELOPMENT.md` 中写清；若对多租户开放须与上条鉴权同盘。
+- [ ] **工作区路径 TOCTOU / 打开竞态**：`path_workspace` 与 `resolve_for_read` 等在 `canonicalize` 通过后，实际 `open` 前路径仍可能被替换为指向允许根外的 symlink（或与校验时非同一对象）。当前为尽力校验，**非**不可逃逸保证。更强方案需在打开路径上采用 Unix **`O_NOFOLLOW`**、基于目录 fd 的 **`openat`**、Linux **`openat2` `RESOLVE_*`** 等，并贯通 Web 与 `file` 工具；风险与缓解路线见 **`src/path_workspace.rs`** 模块注释及 **`README.md`** / **`docs/CONFIGURATION.md`**（工作区）。
 
 ### P3 — 架构（PER）与文档澄清
 
@@ -75,7 +76,6 @@
 
 - [ ] **危险操作分级与确认（续）**：写盘类等工具若需审批或细粒度策略，扩展 [`tool_approval::SensitiveCapability`] 与配置项（当前 `run_command` / `http_fetch` / `http_request` / 工作流审批已统一经 **`tool_approval`**）。
 - [ ] **新栈工具按需扩展**：在 `dev_tag` 体系下按需增加其它语言栈标签与最小工具集（保持白名单与路径安全）。Go 已有 `go_build`/`go_test`/`go_vet`/`go_mod_tidy`/`go_fmt_check`/`golangci_lint`；JVM 已有 `maven_*`/`gradle_*`；容器已有 `docker_*`/`podman_images`；Node.js 已有 `npm_install`/`npm_run`/`npx_run`/`tsc_check`。
-- [ ] **registry 策略配置化**：超时、spawn_blocking 类别、`http_fetch` 等更多迁入 `AgentConfig`。
 - [ ] **MCP 扩展**：可选将本 agent 以 MCP server 暴露；客户端支持 Streamable HTTP / SSE、鉴权与多 server；与 `run_command` / 工作区策略的边界在文档中细化。
 
 ---
