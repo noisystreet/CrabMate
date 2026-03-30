@@ -201,7 +201,9 @@ pub(crate) fn print_cli_playbook_healing_hint(
 ///
 /// 标题行为 `### 工具 · {name}`；有详情时统一为 **`### 工具 · {name} : …`**（摘要已以 `:` 开头时不再重复冒号），例：`run_command` + `ls -la` → `### 工具 · run_command : ls -la`，`create_file` + 去重后 `: a.cpp` → `### 工具 · create_file : a.cpp`。
 ///
-/// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（用于 `read_file` / `read_dir` / `list_tree` 等易刷屏工具；完整结果仍由调用方写入对话历史）。
+/// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（用于 `read_dir` / `list_tree` 等易刷屏工具；完整结果仍由调用方写入对话历史）。
+///
+/// `read_file` 在 [`echo_tool_result_transcript`] 中改为传入**摘要正文**（元数据 + 正文前若干行），不再整段省略。
 pub(crate) fn print_tool_result_terminal(
     name: &str,
     args: &str,
@@ -273,6 +275,75 @@ pub(crate) fn print_tool_result_terminal(
     w.flush()
 }
 
+/// CLI 下 `read_file` 终端展示：保留编码/行范围等元数据块，正文仅展示前若干行（与 `assemble_read_output` 的 `行号|内容` 格式对齐），避免刷屏；完整串仍写入对话历史。
+#[must_use]
+pub(crate) fn read_file_result_terminal_summary(raw: &str) -> String {
+    let raw = raw.trim_end();
+    if raw.is_empty() {
+        return String::new();
+    }
+    // 短错误、参数问题：原样展示
+    if raw.starts_with("错误：")
+        || raw.starts_with("参数 JSON 无效")
+        || raw.starts_with("缺少 path")
+        || raw.starts_with("读取元数据失败")
+        || raw.starts_with("打开文件失败")
+        || raw.starts_with("文件为空:")
+    {
+        return raw.to_string();
+    }
+    const PREVIEW_LINES: usize = 16;
+    const MAX_LINE_CHARS: usize = 256;
+    const FALLBACK_MAX_CHARS: usize = 1600;
+    let lines: Vec<&str> = raw.lines().collect();
+    let mut content_start: Option<usize> = None;
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim_start();
+        let Some((prefix, _rest)) = t.split_once('|') else {
+            continue;
+        };
+        if prefix.trim().chars().all(|c| c.is_ascii_digit()) && !prefix.trim().is_empty() {
+            content_start = Some(i);
+            break;
+        }
+    }
+    let Some(cs) = content_start else {
+        let mut s = raw.to_string();
+        let n = s.chars().count();
+        if n > FALLBACK_MAX_CHARS {
+            s = s
+                .chars()
+                .take(FALLBACK_MAX_CHARS.saturating_sub(80))
+                .collect();
+            s.push_str("\n…\n（输出过长已截断；完整内容在对话历史）");
+        }
+        return s;
+    };
+    let header = lines[..cs].join("\n");
+    let body_lines = &lines[cs..];
+    let n_preview = body_lines.len().min(PREVIEW_LINES);
+    let mut preview = String::new();
+    for line in body_lines.iter().take(n_preview) {
+        let line_len = line.chars().count();
+        let lim: String = line.chars().take(MAX_LINE_CHARS).collect();
+        preview.push_str(&lim);
+        if line_len > MAX_LINE_CHARS {
+            preview.push_str(" …(行内截断)");
+        }
+        preview.push('\n');
+    }
+    let more = body_lines.len().saturating_sub(n_preview);
+    let more_note = if more > 0 {
+        format!("尚有后续 {more} 行未在终端显示。")
+    } else {
+        "本段正文已在上方尽数展示。".to_string()
+    };
+    format!(
+        "{header}\n\n---\n终端摘要：以下为正文前 {n_preview} 行（本段共 {} 行）。{more_note}\n\n{preview}（完整输出已写入本轮对话上下文。）",
+        body_lines.len(),
+    )
+}
+
 /// `agent_turn::execute_tools` 在 `echo_terminal_transcript` 为真时的 CLI 回显入口：打印工具标题/正文，并在**未**挂 SSE（`sse_attached == false`）且结果为失败时附加 [`print_cli_playbook_healing_hint`]。
 pub(crate) fn echo_tool_result_transcript(
     echo: bool,
@@ -286,12 +357,15 @@ pub(crate) fn echo_tool_result_transcript(
     if !echo {
         return;
     }
-    let omit_body = matches!(name, "read_file" | "read_dir" | "list_tree");
+    let omit_body = matches!(name, "read_dir" | "list_tree");
+    let read_file_summary =
+        (name == "read_file").then(|| read_file_result_terminal_summary(result));
+    let body_for_print = read_file_summary.as_deref().unwrap_or(result);
     let _ = print_tool_result_terminal(
         name,
         args,
         tool_summary,
-        result,
+        body_for_print,
         terminal_tool_display_max_chars,
         omit_body,
     );
@@ -391,5 +465,60 @@ mod tool_header_detail_tests {
         let d = tool_result_header_detail(&json, None).expect("detail");
         assert!(d.ends_with('…'));
         assert!(d.chars().count() <= 161);
+    }
+}
+
+#[cfg(test)]
+mod read_file_terminal_summary_tests {
+    use super::read_file_result_terminal_summary;
+
+    #[test]
+    fn error_passthrough() {
+        let s = "错误：路径不是文件或不存在，无法读取";
+        assert_eq!(read_file_result_terminal_summary(s), s);
+    }
+
+    #[test]
+    fn metadata_plus_preview_shows_all_when_short() {
+        let raw = "文本编码: utf-8\n\
+文件: src/lib.rs\n\
+总行数: 100\n\
+本段行范围: 1-5（单次 max_lines=500）\n\
+已读到文件末尾（本段范围内无更多行）。\n\
+\n\
+1|alpha\n\
+2|beta\n\
+3|gamma\n";
+        let out = read_file_result_terminal_summary(raw);
+        assert!(out.contains("终端摘要"));
+        assert!(out.contains("1|alpha"));
+        assert!(out.contains("3|gamma"));
+        assert!(out.contains("本段共 3 行"));
+        assert!(
+            out.contains("本段正文已在上方尽数展示"),
+            "no '尚有后续' when all lines fit in preview"
+        );
+    }
+
+    #[test]
+    fn metadata_plus_preview_truncates_when_many_body_lines() {
+        let mut raw = "文件: x\n总行数: 20\n本段行范围: 1-20\n\n".to_string();
+        for i in 1..=20 {
+            raw.push_str(&format!("{i}|line{i}\n"));
+        }
+        let out = read_file_result_terminal_summary(&raw);
+        assert!(out.contains("本段共 20 行"));
+        assert!(out.contains("尚有后续 4 行"));
+        assert!(out.contains("1|line1"));
+        assert!(out.contains("16|line16"));
+        assert!(!out.contains("20|line20"));
+    }
+
+    #[test]
+    fn no_numbered_lines_uses_fallback_truncation() {
+        let body = "x".repeat(2000);
+        let out = read_file_result_terminal_summary(&body);
+        assert!(out.contains("…"));
+        assert!(out.contains("对话历史"));
     }
 }
