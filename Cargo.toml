@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "frontend-leptos"]
+resolver = "2"
+
 [package]
 name = "crabmate"
 version = "0.1.0"
