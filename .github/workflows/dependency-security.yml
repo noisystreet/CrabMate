@@ -1,0 +1,35 @@
+# 依赖安全：已知漏洞（RustSec）与许可证/来源策略（cargo-deny）。
+# 本地：cargo install cargo-audit cargo-deny && cargo audit && cargo deny check licenses bans sources
+name: Dependency security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit@0.22,cargo-deny@0.19
+
+      - name: cargo audit (RustSec)
+        run: cargo audit
+
+      # 不含 advisories：避免与 cargo audit 重复且将「unmaintained」与漏洞混为一谈；策略见仓库根 deny.toml。
+      - name: cargo deny (licenses / bans / sources)
+        run: cargo deny check licenses bans sources

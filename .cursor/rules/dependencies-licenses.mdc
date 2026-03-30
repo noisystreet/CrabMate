@@ -12,7 +12,7 @@ alwaysApply: true
 
 ## 建议动作
 
-- **Rust**：核对新 crate **许可证** 是否与项目分发方式兼容；警惕 **copyleft**（如 GPL）与 **网络条款**（如 AGPL）是否在你们的分发/部署场景下可接受。
+- **Rust**：核对新 crate **许可证** 是否与项目分发方式兼容；警惕 **copyleft**（如 GPL）与 **网络条款**（如 AGPL）是否在你们的分发/部署场景下可接受。仓库根 **`deny.toml`** 供 **`cargo deny check licenses bans sources`** 使用（与 CI **`.github/workflows/dependency-security.yml`** 一致）；若新增许可证标识符不在允许列表中，须更新 **`deny.toml`** 并说明理由。已知漏洞用 **`cargo audit`**（与 deny 的 advisories 子集刻意分工，见 **`docs/DEVELOPMENT.md`**）。
 - **npm**：同样核对许可证；优先使用维护活跃、下载量稳定的包。
 - **锁文件**：提交时保持 **`Cargo.lock`** / **`package-lock.json`** 与清单一致，避免可复现构建被破坏。
 - 若引入 **本地 path / git** 依赖，在 PR 或 **`docs/DEVELOPMENT.md`** 中说明来源与更新策略。
