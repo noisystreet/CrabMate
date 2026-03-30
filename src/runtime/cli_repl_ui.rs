@@ -359,7 +359,7 @@ impl CliReplStyle {
         self.write_banner_subheading(&mut out, "内建命令")?;
         self.write_banner_note_line(
             &mut out,
-            "    /clear  /model  /models（list·choose） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
+            "    /clear  /model  /models（list·choose） /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
         )?;
         self.write_banner_note_line(
             &mut out,
@@ -699,6 +699,14 @@ impl CliReplStyle {
             (
                 "/models choose <id>",
                 "从上述列表设当前 model（内存；支持唯一前缀；持久化请改配置）",
+            ),
+            (
+                "/agent · /agent list",
+                "列出配置中的命名角色 id（与 GET /status 的 agent_role_ids 同源；无表时提示未启用多角色）",
+            ),
+            (
+                "/agent set <id>",
+                "设当前 REPL 选用的 agent_role（须存在于角色表），并按新 system 重建首轮消息（等同 /clear 的 system 语义）",
             ),
             ("/workspace", "显示当前工作区"),
             (
