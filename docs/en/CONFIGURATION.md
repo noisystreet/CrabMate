@@ -367,6 +367,7 @@ Besides the global `system_prompt`, you can define **named ids** with their own 
 - **Default role**: **`[agent] default_agent_role`**, or **`agent_roles.toml` `[agent_roles] default_role`**, or **`AGENT_DEFAULT_AGENT_ROLE`**. Must reference a defined id; if unset, omitting `agent_role` uses the global **`system_prompt`**.
 - **Web**: optional JSON **`agent_role`** on **`POST /chat`** / **`POST /chat/stream`**. Applied only when the server **has no stored history** for that **`conversation_id`** (first turn); ignored for existing sessions.
 - **CLI**: global **`--agent-role <id>`** for **`repl`** / **`chat`**. Mutually exclusive with **`chat --system-prompt-file`**. For **`chat`** without **`--messages-json-file`**, applies to the first-turn system (including **`--message-file`** first line).
+- **REPL**: **`/agent list`** prints the built-in pseudo id **`default`** first (no explicit named role; same as Web omitting **`agent_role`**: **`default_agent_role_id`** if set, else global **`system_prompt`**), then configured ids (same names as **`GET /status`** **`agent_role_ids`**). **`/agent set default`** (case-insensitive) clears the explicit REPL role and rebuilds the first-turn system messages.
 - **Hot reload**: role table reloads with **`POST /config/reload`** / **`/config reload`**.
 - **`GET /status`**: **`agent_role_ids`**, **`default_agent_role_id`**.
 

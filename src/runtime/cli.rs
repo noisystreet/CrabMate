@@ -97,9 +97,9 @@ enum ReplBuiltIn<'a> {
     McpUnknown(String),
     /// `/version`：二进制与平台信息（不含密钥）
     Version,
-    /// `/agent list`：列出配置中的命名角色 id
+    /// `/agent list`：列出内建 `default` 与配置中的命名角色 id
     AgentList,
-    /// `/agent set <id>`：校验 id 后更新 REPL 内存中的当前角色并重建首轮消息
+    /// `/agent set <id>`：校验 id 后更新 REPL 内存中的当前角色并重建首轮消息；**`default`** 为内建伪 id，表示清除显式角色
     AgentSet(String),
     /// `/agent …` 用法错误
     AgentUsage,
@@ -282,6 +282,11 @@ fn classify_agent_slash_command(arg_tail: &str) -> ReplBuiltIn<'static> {
         }
     }
     ReplBuiltIn::AgentUsage
+}
+
+/// `/agent set default`（不区分大小写、忽略首尾空白）：清除 REPL 显式 `agent_role`，与「未设置」及 Web 未选角色时一致（`default_agent_role_id` 或全局 `system_prompt`）。
+fn repl_agent_role_set_is_default_pseudo(id: &str) -> bool {
+    id.trim().eq_ignore_ascii_case("default")
 }
 
 /// `/mcp` 及其子形式：至多两个 token（否则 [`ReplBuiltIn::McpUnknown`]），首 token 在 [`MCP_PRIMARY_HANDLERS`] 中查找。
@@ -743,14 +748,17 @@ async fn try_handle_repl_slash_command(
                 ids.sort();
                 let def = cfg.default_agent_role_id.as_deref();
                 let _ = style.print_line("可用角色 id：");
+                let _ = style.print_line(
+                    "  · default（内建：未显式选用命名角色；与 Web「默认」一致：先按 default_agent_role_id，未配置则用全局 system_prompt）",
+                );
                 for id in ids {
                     let mark = def.is_some_and(|d| d == id.as_str());
                     let suffix = if mark { "（配置默认）" } else { "" };
                     let _ = style.print_line(&format!("  · {id}{suffix}"));
                 }
                 let cur = agent_role.as_deref().filter(|s| !s.is_empty()).map_or_else(
-                    || "（未显式设置；新轮次用配置默认或全局 system）".to_string(),
-                    |r| format!("当前 REPL 选用: {r}"),
+                    || "当前 REPL: default（未显式设置命名角色）".to_string(),
+                    |r| format!("当前 REPL 选用命名角色: {r}"),
                 );
                 let _ = style.print_line(&cur);
             }
@@ -761,6 +769,20 @@ async fn try_handle_repl_slash_command(
                 let _ = style.eprint_error(
                     "当前未配置多角色，无法 /agent set。请先配置 [[agent_roles]] 或 agent_roles.toml。",
                 );
+            } else if repl_agent_role_set_is_default_pseudo(id.as_str()) {
+                drop(cfg);
+                *agent_role = None;
+                let cfg = cfg_holder.read().await.clone();
+                *messages = repl_rebuild_bootstrap_messages(
+                    &cfg,
+                    work_dir.as_path(),
+                    agent_role.as_deref(),
+                )
+                .await;
+                let _ = style.print_success(&format!(
+                    "已设回 default（清除显式命名角色），并已按新 system 重建首轮消息（共 {} 条）。",
+                    messages.len()
+                ));
             } else if let Err(e) = cfg.system_prompt_for_new_conversation(Some(id.as_str())) {
                 let _ = style.eprint_error(&e);
             } else {
@@ -782,7 +804,7 @@ async fn try_handle_repl_slash_command(
         }
         ReplBuiltIn::AgentUsage => {
             let _ = style.eprint_error(
-                "用法: /agent · /agent list（列角色 id）· /agent set <id>（设当前角色并重建首轮 system）",
+                "用法: /agent · /agent list（列角色 id，含内建 default）· /agent set <id> | /agent set default（default=清除显式角色，回到与 Web 默认相同逻辑）",
             );
         }
         ReplBuiltIn::Version => {
@@ -1717,6 +1739,18 @@ mod repl_slash_tests {
         assert_eq!(
             classify_repl_slash_command("/agent bogus"),
             Some(ReplBuiltIn::AgentUsage)
+        );
+    }
+
+    #[test]
+    fn repl_agent_role_default_pseudo() {
+        assert!(super::repl_agent_role_set_is_default_pseudo("default"));
+        assert!(super::repl_agent_role_set_is_default_pseudo(" Default "));
+        assert!(!super::repl_agent_role_set_is_default_pseudo("companion"));
+        assert!(!super::repl_agent_role_set_is_default_pseudo("defaults"));
+        assert_eq!(
+            classify_repl_slash_command("/agent set default"),
+            Some(ReplBuiltIn::AgentSet("default".to_string()))
         );
     }
 }

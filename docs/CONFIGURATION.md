@@ -443,6 +443,7 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 - **默认角色**：`[agent]` 中 **`default_agent_role`**，或 `agent_roles.toml` 的 **`[agent_roles] default_role`**，或环境变量 **`AGENT_DEFAULT_AGENT_ROLE`**。须指向已定义的角色 id；未配置默认时，未显式选角则使用全局 **`system_prompt`**。
 - **Web**：`POST /chat`、`POST /chat/stream` 可选 JSON 字段 **`agent_role`**（与 `conversation_id` 同类字符集，最长 64）。**仅当**服务端**尚无**该 `conversation_id` 的会话历史时生效（首轮建立 `system`）；已有会话时忽略，避免中途改口与人格不一致。
 - **CLI**：全局 **`--agent-role <id>`**（`repl` / `chat` 等）。与 **`--system-prompt-file`** 互斥。`chat` 在**未**使用 **`--messages-json-file`** 时，该 id 用于构造首条 system（含 **`--message-file`** 首轮）。
+- **REPL**：**`/agent list`** 先列出内建伪 id **`default`**（未显式选用命名角色；语义同 Web 未传 **`agent_role`**：有 **`default_agent_role_id`** 则用其条目，否则用全局 **`system_prompt`**），再列配置中的命名 id（与 **`GET /status`** 的 **`agent_role_ids`** 同源）；**`/agent set default`**（不区分大小写）清除本进程 REPL 的显式角色并按新 system **重建首轮消息**。
 - **热重载**：**`POST /config/reload`** / **`/config reload`** 会重载角色表（与 `system_prompt` 一致）。
 - **`GET /status`**：返回 **`agent_role_ids`**（升序）、**`default_agent_role_id`**，供前端展示角色下拉等。
 
