@@ -1,3 +1,5 @@
+**语言 / Languages:** 中文（本页）· [English](en/TODOLIST.md)
+
 # 后续修复与完善清单
 
 本文仅保留**未完成**待办。**某项完成后必须从本文件删除该条目**（勿长期保留 `[x]`）；空的小节可删掉标题。追溯完成时间请查 Git。维护约定见 `docs/DEVELOPMENT.md`「TODOLIST 与功能文档约定」。

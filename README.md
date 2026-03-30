@@ -1,3 +1,5 @@
+**语言 / Languages:** 中文（本页）· [English](README-en.md)
+
 # CrabMate
 
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型；内置 **Function Calling** 以及工作区内的命令、文件等工具，并提供 **Web UI** 与 **CLI**。
@@ -15,15 +17,16 @@
 
 ## 文档索引
 
-| 文档                                               | 内容                                           |
-| ------------------------------------------------ | -------------------------------------------- |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)       | 架构、模块索引、协议与扩展点                               |
-| [docs/TOOLS.md](docs/TOOLS.md)                   | 内置工具说明与调用示例                                  |
-| [docs/SSE_PROTOCOL.md](docs/SSE_PROTOCOL.md)     | `/chat/stream` 控制面 JSON                      |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md)   | 环境变量、`AGENT_*`、规划/上下文等配置详解                   |
-| [docs/CLI.md](docs/CLI.md)                       | 子命令、选项、HTTP 路由、打包 deb                        |
-| [docs/CLI_CONTRACT.md](docs/CLI_CONTRACT.md)     | `chat` 退出码、`--output json` 行协议、与 SSE 错误码交叉引用 |
-| [docs/TODOLIST.md](docs/TODOLIST.md)             | 未完成待办：全局 P0–P5 + 按模块分章（完成后从清单删除）             |
+| 文档                                               | 内容                                           | English |
+| ------------------------------------------------ | -------------------------------------------- | ------- |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)       | 架构、模块索引、协议与扩展点                               | [en](docs/en/DEVELOPMENT.md) |
+| [docs/TOOLS.md](docs/TOOLS.md)                   | 内置工具说明与调用示例                                  | [en](docs/en/TOOLS.md) |
+| [docs/SSE_PROTOCOL.md](docs/SSE_PROTOCOL.md)     | `/chat/stream` 控制面 JSON                      | [en](docs/en/SSE_PROTOCOL.md) |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md)   | 环境变量、`AGENT_*`、规划/上下文等配置详解                   | [en](docs/en/CONFIGURATION.md) |
+| [docs/CLI.md](docs/CLI.md)                       | 子命令、选项、HTTP 路由、打包 deb                        | [en](docs/en/CLI.md) |
+| [docs/CLI_CONTRACT.md](docs/CLI_CONTRACT.md)     | `chat` 退出码、`--output json` 行协议、与 SSE 错误码交叉引用 | [en](docs/en/CLI_CONTRACT.md) |
+| [docs/TODOLIST.md](docs/TODOLIST.md)             | 未完成待办：全局 P0–P5 + 按模块分章（完成后从清单删除）             | [en](docs/en/TODOLIST.md) |
+| [docs/CODEBASE_INDEX_PLAN.md](docs/CODEBASE_INDEX_PLAN.md) | 统一代码索引与增量缓存规划 | [en](docs/en/CODEBASE_INDEX_PLAN.md) |
 
 维护约定：用户可见变更需同步 README、[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)、[docs/TOOLS.md](docs/TOOLS.md) 等，见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)「TODOLIST 与功能文档约定」。
 

@@ -1,3 +1,5 @@
+**语言 / Languages:** 中文（本页）· [English](en/CODEBASE_INDEX_PLAN.md)
+
 # 工作区统一代码索引与增量缓存 — 产品化支持计划
 
 本文描述「把整个仓库源码 + 元数据做成**持久、可增量更新**的统一索引，以加速代码浏览与检索」的方向性规划。实现时须与 **工作区路径安全**（`resolve_for_read` / 白名单根、`..` 与符号链接策略）、**密钥与日志脱敏**、以及 **P0 Web 鉴权**（多租户隔离）对齐；详见 `.cursor/rules/security-sensitive-surface.mdc` 与 `docs/TODOLIST.md` 全局 P0。

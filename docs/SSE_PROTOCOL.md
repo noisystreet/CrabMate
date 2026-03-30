@@ -1,3 +1,5 @@
+**语言 / Languages:** 中文（本页）· [English](en/SSE_PROTOCOL.md)
+
 # Agent SSE 控制面协议（`/chat/stream`）
 
 本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。实现与类型的**单一事实来源**为 Rust `src/sse/protocol.rs`；浏览器消费逻辑为 `frontend/src/api.ts` 中的 `tryDispatchSseControlPayload`（由 `sendChatStream` 调用）。Rust 侧行分类见 `src/sse/line.rs`（`classify_agent_sse_line`），须与本表语义一致。
