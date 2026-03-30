@@ -4,7 +4,20 @@
 //!
 //! - **前缀校验**使用 [`Path::starts_with`]（按路径分量），避免 `/foo/bar` 误匹配 `/foo/bar-baz`。
 //! - **`..` / 相对路径**：由 [`path_absolutize::Absolutize`] 在已 canonical 的根下解析；对**已存在路径**再 `canonicalize` 以解析符号链接真实位置。
-//! - **竞态**：`canonicalize` 与打开文件之间路径可能被替换为指向根外的 symlink；完全堵住需 `O_NOFOLLOW` 等，与 **TODOLIST** 已知项一致，此处为尽力校验。
+//!
+//! ## 校验与打开之间的竞态（TOCTOU）
+//!
+//! 在**信任工作区**的典型开发场景下，本模块在访问前对路径做 `canonicalize` 与 `starts_with` 检查，可拒绝在**检查时刻**已指向根外的符号链接等情形。
+//!
+//! **已知局限**：从「完成校验」到进程实际 `open` / `read_dir` 之间，同一路径字符串可能被并发替换为指向工作区外的符号链接（或父目录被重组），按路径重新打开时**不保证**仍与校验时观察到的是同一 dentry。本仓库**尚未**在全路径上采用「打开时禁止跟随」策略，因此**不要**将当前实现等同于「不可逃逸」保证；多租户或不可信工作区须与 **P0 鉴权**等一并评估。
+//!
+//! **更强缓解方向**（需在 `file` / Web 等调用链贯通，并处理可移植性与 API 语义）：
+//!
+//! - Unix：对末级或关键分量使用 **`O_NOFOLLOW`**（[`std::os::unix::fs::OpenOptionsExt::custom_flags`]）；
+//! - 在已校验的**工作区根目录 fd** 上用相对分量的 **`openat`** 逐级打开，缩短窗口；
+//! - Linux：评估 **`openat2`** 与 **`RESOLVE_NO_SYMLINKS`** / **`RESOLVE_IN_ROOT`** 等（内核与 MSRV 约束单独评估）。
+//!
+//! 用户可见说明见 **`README.md`**、**`docs/CONFIGURATION.md`**（工作区）；跟踪项见 **`docs/TODOLIST.md`** 全局安全相关条目。工具侧解析实现见 **`src/tools/file/path.rs`**。
 
 use path_absolutize::Absolutize;
 use std::path::{Path, PathBuf};

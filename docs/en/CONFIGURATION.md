@@ -59,6 +59,8 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | Append `AGENTS.md`. |
 | `AGENT_CURSOR_RULES_MAX_CHARS` | Max injected chars. |
 
+**Path safety (matches implementation)**: `workspace_allowed_roots` and per-request revalidation catch `..` escapes and symlinks that already point outside roots **at check time**. They **do not remove** the **TOCTOU** between check and `open` (concurrent symlink swaps). Stronger guarantees need **`O_NOFOLLOW`**, **`openat`** from a trusted directory fd, etc. (see **`src/path_workspace.rs`** module docs and **`docs/TODOLIST.md`** P0). Untrusted workspaces or open networks need **Web auth** (see hot reload / P0 notes in this doc).
+
 ### Planning & staged planning
 
 | Variable | Description |

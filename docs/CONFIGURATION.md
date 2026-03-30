@@ -59,6 +59,8 @@
 | `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | 是否并入 `AGENTS.md`。 |
 | `AGENT_CURSOR_RULES_MAX_CHARS` | 注入长度上限。 |
 
+**路径安全（与实现一致）**：`workspace_allowed_roots` 与每次请求对当前工作区根的重验可拒绝明显的 `..` 逃逸与**校验时刻**已指向根外的 symlink。**不能消除**「校验通过 → 随后 `open`」之间的 **TOCTOU**：恶意或并发替换路径仍可能导致打开与校验不一致的对象。更强保证需在打开时使用 **`O_NOFOLLOW`**、基于目录 fd 的 **`openat`** 等（见 **`src/path_workspace.rs`** 模块注释、**`docs/TODOLIST.md`** P0）。在不可信工作区或开放网络上须与 **Web 鉴权**（见该文档热重载与 P0 说明）一并评估。
+
 ### 规划与分阶段规划
 
 | 环境变量 | 说明 |

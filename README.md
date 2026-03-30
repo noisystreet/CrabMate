@@ -91,7 +91,7 @@ npm run dev
 
 - **默认仅本机**：`serve` 绑定 `127.0.0.1`。监听 `0.0.0.0` 时须配置 `web_api_bearer_token`，或显式开启 `allow_insecure_no_auth_for_non_loopback`（**不安全**，仅建议在可信网络下临时使用）。
 - **Bearer**：设置后主要 API 需 `Authorization: Bearer`；前端可从 `localStorage["crabmate-api-bearer-token"]` 读取。
-- **工作区路径**：须在允许的根目录内；每次请求重验。未配白名单时仅允许 `run_command_working_dir` 下路径。无鉴权时不要暴露在不可信网络。
+- **工作区路径**：须在允许的根目录内；每次请求重验。未配白名单时仅允许 `run_command_working_dir` 下路径。无鉴权时不要暴露在不可信网络。**路径安全为尽力校验**：`canonicalize` 与真正打开文件之间仍存在 **TOCTOU / symlink 竞态**（路径可能被替换），不可等同于内核级沙箱；缓解路线见 [`src/path_workspace.rs`](src/path_workspace.rs) 模块注释与 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「工作区与 Cursor 式规则」。
 - **联网搜索 Key**：`web_search_api_key` 与主对话所用 `API_KEY` 分离，注意文件权限。
 - **可选 Docker 工具沙盒**：将 SyncDefault 与部分工具（含 `run_command` 等，在宿主白名单/审批后）放到一次性容器内执行；需本机 Docker、**自管镜像**（镜像提供 CLI 依赖，宿主 `crabmate` 二进制只读挂入容器）。完整步骤、镜像要求、网络与 `user` 见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「SyncDefault 工具 Docker 沙盒」。
 
