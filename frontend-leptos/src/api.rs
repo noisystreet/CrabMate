@@ -207,6 +207,22 @@ pub async fn send_chat_stream(
         .dyn_into()
         .map_err(|_| "stream reader".to_string())?;
 
+    // 块边界可能截断 UTF-8：只把完整前缀解码进 `text`，余字节留在 `raw`。
+    fn append_chunk_to_text_buffer(raw: &mut Vec<u8>, chunk: &[u8], text: &mut String) {
+        raw.extend_from_slice(chunk);
+        let mut valid_end = raw.len();
+        while valid_end > 0 && std::str::from_utf8(&raw[..valid_end]).is_err() {
+            valid_end -= 1;
+        }
+        if valid_end > 0 {
+            let taken: Vec<u8> = raw.drain(..valid_end).collect();
+            if let Ok(s) = String::from_utf8(taken) {
+                text.push_str(&s);
+            }
+        }
+    }
+
+    let mut raw: Vec<u8> = Vec::new();
     let mut buffer = String::new();
     loop {
         let read_promise = reader.read();
@@ -223,10 +239,13 @@ pub async fn send_chat_stream(
         let value =
             js_sys::Reflect::get(&chunk, &JsValue::from_str("value")).unwrap_or(JsValue::NULL);
         if let Some(u8) = value.dyn_ref::<js_sys::Uint8Array>() {
-            let v = u8.to_vec();
-            buffer.push_str(&String::from_utf8_lossy(&v));
+            append_chunk_to_text_buffer(&mut raw, &u8.to_vec(), &mut buffer);
         }
         process_sse_buffer(&mut buffer, &cbs)?;
+    }
+    if !raw.is_empty() {
+        buffer.push_str(&String::from_utf8_lossy(&raw));
+        raw.clear();
     }
     flush_sse_tail(&mut buffer, &cbs)?;
     (cbs.on_done)();
