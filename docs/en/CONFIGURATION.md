@@ -32,6 +32,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_LLM_FOLD_SYSTEM_INTO_USER` | Merge `system` into `user` for gateways that reject standalone `system`. |
 | `AGENT_SYSTEM_PROMPT` | Inline system prompt; clears inherited `system_prompt_file` unless `AGENT_SYSTEM_PROMPT_FILE` is set (see § System prompt). |
 | `AGENT_SYSTEM_PROMPT_FILE` | Path to system prompt file. |
+| `AGENT_DEFAULT_AGENT_ROLE` | Default **role id** when Web `agent_role` / CLI `--agent-role` is omitted (must exist in the role table; see § Multi-role). |
 
 ### Sampling
 
@@ -355,6 +356,19 @@ Env: `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`, `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DO
 - **Relative path resolution**: process **cwd** → each overlay **config file directory** (later wins, e.g. `.agent_demo.toml` before `config.toml`) → **`run_command_working_dir`**. **Absolute** paths tried as-is.
 - **Overrides**: Inline **`system_prompt`** without **`system_prompt_file`** in a layer **drops** inherited file for that layer. Env: **`AGENT_SYSTEM_PROMPT`** clears merged file; **`AGENT_SYSTEM_PROMPT_FILE`** wins if both set.
 - **finalize**: Read file if **`system_prompt_file`** set; else non-empty inline; else error.
+
+## Multi-role (agent_roles)
+
+Besides the global `system_prompt`, you can define **named ids** with their own first-turn `system` text (each merged with **`cursor_rules_*`** like the global prompt).
+
+- **Sources** (later overlays win for the same id):  
+  1. **`[[agent_roles]]`** rows in the main config: **`id`**, plus **`system_prompt`** and/or **`system_prompt_file`**. Empty inline **`system_prompt`** means **inherit** the global merged system.  
+  2. **`config/agent_roles.toml`** when not using **`--config`**; with **`--config path/to/foo.toml`**, read **`path/to/agent_roles.toml`** next to it. Shape: **`[agent_roles]`**, optional **`default_role`**, **`[agent_roles.roles.<id>]`** (see `config/agent_roles.toml`).
+- **Default role**: **`[agent] default_agent_role`**, or **`agent_roles.toml` `[agent_roles] default_role`**, or **`AGENT_DEFAULT_AGENT_ROLE`**. Must reference a defined id; if unset, omitting `agent_role` uses the global **`system_prompt`**.
+- **Web**: optional JSON **`agent_role`** on **`POST /chat`** / **`POST /chat/stream`**. Applied only when the server **has no stored history** for that **`conversation_id`** (first turn); ignored for existing sessions.
+- **CLI**: global **`--agent-role <id>`** for **`repl`** / **`chat`**. Mutually exclusive with **`chat --system-prompt-file`**. For **`chat`** without **`--messages-json-file`**, applies to the first-turn system (including **`--message-file`** first line).
+- **Hot reload**: role table reloads with **`POST /config/reload`** / **`/config reload`**.
+- **`GET /status`**: **`agent_role_ids`**, **`default_agent_role_id`**.
 
 ## Cursor-like rules
 

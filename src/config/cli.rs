@@ -228,6 +228,8 @@ pub fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
             || a == "--yes"
             || a == "--approve-commands"
             || a.starts_with("--approve-commands=")
+            || a == "--agent-role"
+            || a.starts_with("--agent-role=")
     });
     if has_chat {
         let mut out = vec![prog, "chat".into()];
@@ -254,6 +256,10 @@ pub struct GlobalOpts {
     /// 禁用所有工具调用，仅作为普通 Chat 使用
     #[arg(long, global = true)]
     pub no_tools: bool,
+
+    /// 新建 REPL / `chat` 会话时使用的命名角色 id（须与配置中 `[[agent_roles]]` 或 `agent_roles.toml` 一致；与 `--system-prompt-file` 互斥时以后者为准）
+    #[arg(long = "agent-role", global = true, value_name = "ID")]
+    pub agent_role: Option<String>,
 
     /// 将日志追加写入指定文件（与 `RUST_LOG` 配合）。未设置 `RUST_LOG` 时，指定本选项会启用默认 **info** 级别写入，并同时输出到 stderr
     #[arg(long, global = true, value_name = "FILE")]
@@ -591,6 +597,8 @@ pub struct BenchmarkCliArgs {
 #[derive(Debug, Clone)]
 pub struct ParsedCliArgs {
     pub config_path: Option<String>,
+    /// 全局 `--agent-role`：REPL / `chat` 新建会话首条 system 用（配置须含该 id）
+    pub agent_role_cli: Option<String>,
     pub chat_cli: ChatCliArgs,
     pub serve_port: Option<u16>,
     /// `serve` 时使用；来自 `serve --host`、`AGENT_HTTP_HOST` 或默认 `127.0.0.1`。
@@ -655,7 +663,12 @@ fn build_parsed_cli_args(
         workspace,
         no_tools,
         log,
+        agent_role,
     } = root.global;
+    let agent_role_cli = agent_role
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     let log_path = log
         .as_ref()
@@ -679,6 +692,7 @@ fn build_parsed_cli_args(
     Ok(match root.command {
         None => ParsedCliArgs {
             config_path: config,
+            agent_role_cli: agent_role_cli.clone(),
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -697,6 +711,7 @@ fn build_parsed_cli_args(
             let port = s.port.or(Some(8080));
             ParsedCliArgs {
                 config_path: config,
+                agent_role_cli: agent_role_cli.clone(),
                 chat_cli: ChatCliArgs::default(),
                 serve_port: port,
                 http_bind_host: http_bind_host(s.host),
@@ -714,6 +729,7 @@ fn build_parsed_cli_args(
         }
         Some(Commands::Repl(r)) => ParsedCliArgs {
             config_path: config,
+            agent_role_cli: agent_role_cli.clone(),
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -742,6 +758,7 @@ fn build_parsed_cli_args(
             let chat_output = parse_output_mode(c.output);
             ParsedCliArgs {
                 config_path: config,
+                agent_role_cli: agent_role_cli.clone(),
                 chat_cli: ChatCliArgs {
                     inline_user_text,
                     user_prompt_file: c.user_prompt_file,
@@ -769,6 +786,7 @@ fn build_parsed_cli_args(
         }
         Some(Commands::Bench(b)) => ParsedCliArgs {
             config_path: config,
+            agent_role_cli: agent_role_cli.clone(),
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -794,6 +812,7 @@ fn build_parsed_cli_args(
         // `config` 子命令恒走配置检查并退出，与是否写 `--dry-run` 无关（`--dry-run` 保留为显式别名）。
         Some(Commands::Config(_c)) => ParsedCliArgs {
             config_path: config,
+            agent_role_cli: agent_role_cli.clone(),
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -810,6 +829,7 @@ fn build_parsed_cli_args(
         },
         Some(Commands::Doctor) => ParsedCliArgs {
             config_path: config,
+            agent_role_cli: agent_role_cli.clone(),
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -826,6 +846,7 @@ fn build_parsed_cli_args(
         },
         Some(Commands::Models) => ParsedCliArgs {
             config_path: config,
+            agent_role_cli: agent_role_cli.clone(),
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -842,6 +863,7 @@ fn build_parsed_cli_args(
         },
         Some(Commands::Probe) => ParsedCliArgs {
             config_path: config,
+            agent_role_cli: agent_role_cli.clone(),
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -858,6 +880,7 @@ fn build_parsed_cli_args(
         },
         Some(Commands::SaveSession(e)) => ParsedCliArgs {
             config_path: config,
+            agent_role_cli: agent_role_cli.clone(),
             chat_cli: ChatCliArgs::default(),
             serve_port: None,
             http_bind_host: http_bind_host(None),
@@ -889,6 +912,7 @@ fn build_parsed_cli_args(
             };
             ParsedCliArgs {
                 config_path: config,
+                agent_role_cli: agent_role_cli.clone(),
                 chat_cli: ChatCliArgs::default(),
                 serve_port: None,
                 http_bind_host: http_bind_host(None),
@@ -910,6 +934,7 @@ fn build_parsed_cli_args(
             };
             ParsedCliArgs {
                 config_path: config,
+                agent_role_cli: agent_role_cli.clone(),
                 chat_cli: ChatCliArgs::default(),
                 serve_port: None,
                 http_bind_host: http_bind_host(None),

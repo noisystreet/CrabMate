@@ -472,6 +472,7 @@ pub fn run_save_session_command(
 }
 
 /// REPL 中以 `/` 开头的内建命令；[`ReplSlashHandled::NotSlash`] 时应将输入交给模型。
+#[allow(clippy::too_many_arguments)]
 async fn try_handle_repl_slash_command(
     input: &str,
     cfg_holder: &SharedAgentConfig,
@@ -480,6 +481,7 @@ async fn try_handle_repl_slash_command(
     work_dir: &mut PathBuf,
     style: &CliReplStyle,
     no_stream: bool,
+    agent_role: Option<&str>,
 ) -> ReplSlashHandled {
     let Some(builtin) = classify_repl_slash_command(input) else {
         return ReplSlashHandled::NotSlash;
@@ -495,7 +497,10 @@ async fn try_handle_repl_slash_command(
         }
         ReplBuiltIn::Clear => {
             let cfg = cfg_holder.read().await.clone();
-            let system_prompt = cfg.system_prompt.clone();
+            let system_prompt = match cfg.system_prompt_for_new_conversation(agent_role) {
+                Ok(s) => s.to_string(),
+                Err(_) => cfg.system_prompt.clone(),
+            };
             let system_prompt_fb = system_prompt.clone();
             let wd = work_dir.clone();
             let want_heavy = (cfg.project_profile_inject_enabled
@@ -801,6 +806,7 @@ fn build_cli_runtime(chat: &ChatCliArgs) -> CliToolRuntime {
 fn resolve_system_prompt_for_chat(
     cfg: &Arc<AgentConfig>,
     chat: &ChatCliArgs,
+    agent_role: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(p) = chat.system_prompt_file.as_deref() {
         let t = std::fs::read_to_string(p).map_err(|e| {
@@ -811,7 +817,10 @@ fn resolve_system_prompt_for_chat(
         })?;
         return Ok(t);
     }
-    Ok(cfg.system_prompt.clone())
+    Ok(cfg
+        .system_prompt_for_new_conversation(agent_role)
+        .map_err(|e| CliExitError::new(EXIT_USAGE, e))?
+        .to_string())
 }
 
 fn resolve_user_body(chat: &ChatCliArgs) -> Result<String, Box<dyn std::error::Error>> {
@@ -946,6 +955,7 @@ struct RunChatBatchJsonlParams<'a> {
     json_out: bool,
     path: &'a str,
     chat: &'a ChatCliArgs,
+    agent_role: Option<&'a str>,
 }
 
 async fn run_chat_batch_jsonl(
@@ -963,6 +973,7 @@ async fn run_chat_batch_jsonl(
         json_out,
         path,
         chat,
+        agent_role,
     } = p;
     let file = std::fs::File::open(path).map_err(|e| {
         CliExitError::new(EXIT_GENERAL, format!("无法打开 --message-file {path}: {e}"))
@@ -970,7 +981,7 @@ async fn run_chat_batch_jsonl(
     let reader = std::io::BufReader::new(file);
     let system_seed = {
         let g = cfg_holder.read().await;
-        resolve_system_prompt_for_chat(&Arc::new(g.clone()), chat)?
+        resolve_system_prompt_for_chat(&Arc::new(g.clone()), chat, agent_role)?
     };
     let mut messages: Vec<Message> = Vec::new();
     let mut line_no: usize = 0;
@@ -1054,6 +1065,7 @@ async fn run_chat_batch_jsonl(
 }
 
 /// `chat` 子命令：单轮、整表 JSON、或 `--message-file` 多轮批跑。
+#[allow(clippy::too_many_arguments)]
 pub async fn run_chat_invocation(
     cfg_holder: &SharedAgentConfig,
     config_path: Option<&str>,
@@ -1062,11 +1074,26 @@ pub async fn run_chat_invocation(
     tools: &[crate::types::Tool],
     workspace_cli: &Option<String>,
     chat: &ChatCliArgs,
+    agent_role: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let work_dir = {
         let g = cfg_holder.read().await;
         cli_effective_work_dir(workspace_cli, &g.run_command_working_dir)
     };
+    {
+        let g = cfg_holder.read().await;
+        if agent_role.is_some() && chat.system_prompt_file.is_some() {
+            return Err(CliExitError::new(
+                EXIT_USAGE,
+                "--agent-role 与 --system-prompt-file 不能同时使用",
+            )
+            .into());
+        }
+        if let Some(r) = agent_role.map(str::trim).filter(|s| !s.is_empty()) {
+            g.system_prompt_for_new_conversation(Some(r))
+                .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
+        }
+    }
     let cli_rt = build_cli_runtime(chat);
     let json_out = chat.output.as_deref().is_some_and(|m| m == "json");
 
@@ -1083,6 +1110,7 @@ pub async fn run_chat_invocation(
             json_out,
             path: batch_path,
             chat,
+            agent_role,
         })
         .await;
     }
@@ -1119,7 +1147,7 @@ pub async fn run_chat_invocation(
 
     let system = {
         let g = cfg_holder.read().await;
-        resolve_system_prompt_for_chat(&Arc::new(g.clone()), chat)?
+        resolve_system_prompt_for_chat(&Arc::new(g.clone()), chat, agent_role)?
     };
     let user = resolve_user_body(chat)?;
     let mut messages = messages_chat_seed(&system, &user);
@@ -1153,6 +1181,7 @@ pub async fn run_chat_invocation(
 }
 
 /// 交互式 REPL 模式
+#[allow(clippy::too_many_arguments)]
 pub async fn run_repl(
     cfg_holder: &SharedAgentConfig,
     config_path: Option<&str>,
@@ -1161,6 +1190,7 @@ pub async fn run_repl(
     tools: &[crate::types::Tool],
     workspace_cli: &Option<String>,
     no_stream: bool,
+    agent_role: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (run_root, tui_load) = {
         let g = cfg_holder.read().await;
@@ -1175,13 +1205,25 @@ pub async fn run_repl(
 
     {
         let g = cfg_holder.read().await;
+        if let Some(r) = agent_role.map(str::trim).filter(|s| !s.is_empty()) {
+            g.system_prompt_for_new_conversation(Some(r))
+                .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
+        }
         style.print_banner(&g, work_dir.as_path(), tools.len(), no_stream)?;
     }
+
+    let agent_role_owned = agent_role
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
 
     // `repl_initial_workspace_messages_enabled` 为 true 时：`initial_workspace_messages` 在独立线程中构建，不阻塞 REPL。
     let (mut messages, initial_pending) = {
         let g = cfg_holder.read().await;
-        let fast = crate::runtime::workspace_session::repl_bootstrap_messages_fast(&g);
+        let fast = crate::runtime::workspace_session::repl_bootstrap_messages_fast(
+            &g,
+            agent_role_owned.as_deref(),
+        );
         if !g.repl_initial_workspace_messages_enabled {
             (fast, None)
         } else {
@@ -1202,11 +1244,13 @@ pub async fn run_repl(
                 Arc::new(StdMutex::new(None));
             let slot_bg = Arc::clone(&slot);
             let wd_bg = work_dir.clone();
+            let role_for_bg = agent_role_owned.clone();
             std::thread::spawn(move || {
                 let built = crate::runtime::workspace_session::initial_workspace_messages(
                     &cfg_bg,
                     wd_bg.as_path(),
                     tui_load,
+                    role_for_bg.as_deref(),
                 );
                 let mut guard = slot_bg.lock().unwrap_or_else(|e| e.into_inner());
                 *guard = Some(built);
@@ -1274,6 +1318,7 @@ pub async fn run_repl(
                     &mut work_dir,
                     &style,
                     no_stream,
+                    agent_role_owned.as_deref(),
                 )
                 .await
                 {

@@ -125,6 +125,15 @@ fn fixture_parse_args_from_argv_contract() {
                 "{name} chat_wants"
             );
 
+            if let Some(ar) = case.get("agent_role").and_then(|v| v.as_str()) {
+                assert_eq!(p.agent_role_cli.as_deref(), Some(ar), "{name} agent_role");
+            } else {
+                assert!(
+                    p.agent_role_cli.is_none(),
+                    "{name}: agent_role_cli should be absent"
+                );
+            }
+
             if let Some(ws) = case.get("workspace").and_then(|v| v.as_str()) {
                 assert_eq!(p.workspace_cli.as_deref(), Some(ws), "{name} workspace");
             }

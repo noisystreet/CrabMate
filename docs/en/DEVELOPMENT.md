@@ -99,7 +99,7 @@ flowchart TB
 | `agent/` | **`agent_turn/`**: main loop; **`message_pipeline`**, **`context_window`**, **`per_coord`**, **`plan_artifact`**, **`workflow/`**, staged planning, tool execution (**E**), reflection (**R**), planner (**P**). |
 | `chat_job_queue.rs` | Bounded queue for `/chat` + `/chat/stream`; **`per_active_jobs`** for `/status`. |
 | `codebase_semantic_index.rs` | **`codebase_semantic_search`**: fastembed + SQLite per workspace; removed from tool list when disabled. |
-| `config/` | **`AgentConfig`**, embedded TOML shards + user file + env, CLI parsing, secrets as **`SecretString`**, cursor rules merge, long-term memory keys (`finalize` rejects external vector backends not wired). |
+| `config/` | **`AgentConfig`**, embedded TOML shards + user file + optional **`config/agent_roles.toml`** (or sibling of **`--config`**) + env, CLI parsing (**`ParsedCliArgs::agent_role_cli`**), secrets as **`SecretString`**, cursor rules merge, **`agent_roles` / `default_agent_role_id`** (**`system_prompt_for_new_conversation`**), long-term memory keys (`finalize` rejects external vector backends not wired). |
 | `http_client.rs` | Shared `reqwest::Client`. |
 | `redact.rs` | Log previews for long HTTP bodies. |
 | `text_encoding.rs` | Shared decoding for **`read_file`**, **`extract_in_file`**, **`GET /workspace/file`** (`encoding`, `auto`, strict UTF-8 errors). |
