@@ -1,3 +1,5 @@
+**语言 / Languages:** 中文（本页）· [English](en/CLI_CONTRACT.md)
+
 # CLI 契约参考（退出码、JSON、`chat` 输出）
 
 面向脚本与 CI：与 `src/runtime/cli_exit.rs`、`src/config/cli.rs`（clap）及 `crabmate --help` 中的 **after_help** 对齐。流式 **Web** 侧错误码见 **[`docs/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**（「流错误 `code` 枚举」一节）。

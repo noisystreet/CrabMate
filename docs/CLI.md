@@ -1,3 +1,5 @@
+**语言 / Languages:** 中文（本页）· [English](en/CLI.md)
+
 # 命令行与子命令
 
 查看帮助：`crabmate --help`、`crabmate help`、`crabmate help <子命令>`（与 `--help` 等价）。根级与 **`chat --help`** 文末含 **`docs/CLI_CONTRACT.md`**、**`docs/SSE_PROTOCOL.md`** 交叉引用。**全局选项**写在子命令**之前**：`--config`、`--workspace`、`--no-tools`、`--log`。
