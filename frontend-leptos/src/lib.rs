@@ -143,6 +143,8 @@ fn App() -> impl IntoView {
     let pending_approval = RwSignal::new(None::<(String, String, String)>);
     let session_modal = RwSignal::new(false);
     let abort_cell: Rc<RefCell<Option<web_sys::AbortController>>> = Rc::new(RefCell::new(None));
+    // 用户点「停止」后为 true，避免异步 on_done / on_error 覆盖已写入的「已停止」文案。
+    let user_cancelled_stream: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
 
     Effect::new(move |_| {
         if initialized.get() {
@@ -262,6 +264,7 @@ fn App() -> impl IntoView {
 
     let send_message = {
         let abort_cell = Rc::clone(&abort_cell);
+        let user_cancelled_stream = Rc::clone(&user_cancelled_stream);
         move |_| {
             let text = draft.get().trim().to_string();
             if text.is_empty() || !initialized.get() || status_busy.get() {
@@ -294,6 +297,7 @@ fn App() -> impl IntoView {
             if let Some(prev) = abort_cell.borrow_mut().take() {
                 prev.abort();
             }
+            *user_cancelled_stream.borrow_mut() = false;
             let ac = web_sys::AbortController::new().expect("AbortController");
             let signal = ac.signal();
             *abort_cell.borrow_mut() = Some(ac);
@@ -301,6 +305,7 @@ fn App() -> impl IntoView {
             let conv = conversation_id.get();
             let appr_for_stream = approval_session_id();
             let appr_store = appr_for_stream.clone();
+            let user_cancelled_for_spawn = Rc::clone(&user_cancelled_stream);
 
             let on_delta: Rc<dyn Fn(String)> = {
                 let sessions = sessions;
@@ -321,7 +326,12 @@ fn App() -> impl IntoView {
                 let aid_act = active_id.get();
                 let asst_id = asst_id.clone();
                 let abort_cell = Rc::clone(&abort_cell);
+                let user_cancelled_stream = Rc::clone(&user_cancelled_for_spawn);
                 Rc::new(move || {
+                    if *user_cancelled_stream.borrow() {
+                        *abort_cell.borrow_mut() = None;
+                        return;
+                    }
                     sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid_act) {
                             if let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id) {
@@ -341,7 +351,12 @@ fn App() -> impl IntoView {
                 let aid_act = active_id.get();
                 let asst_id = asst_id.clone();
                 let abort_cell = Rc::clone(&abort_cell);
+                let user_cancelled_stream = Rc::clone(&user_cancelled_for_spawn);
                 Rc::new(move |msg: String| {
+                    if *user_cancelled_stream.borrow() {
+                        *abort_cell.borrow_mut() = None;
+                        return;
+                    }
                     sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid_act) {
                             if let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id) {
@@ -414,22 +429,51 @@ fn App() -> impl IntoView {
                 let stream_result =
                     send_chat_stream(text, conv, Some(appr_for_stream), &signal, cbs.clone()).await;
                 if let Err(e) = stream_result {
-                    status_err.set(Some(e));
-                    on_done();
+                    if *user_cancelled_for_spawn.borrow() {
+                        return;
+                    }
+                    // `stream stopped`：SSE 控制面已调用 `on_error`，勿再收尾以免覆盖助手气泡。
+                    if e == "stream stopped" {
+                        return;
+                    }
+                    status_err.set(Some(e.clone()));
+                    on_error(e);
                 }
             });
         }
     };
 
-    let cancel_stream = {
-        let abort_cell = Rc::clone(&abort_cell);
-        move |_| {
-            if let Some(ac) = abort_cell.borrow_mut().take() {
-                ac.abort();
+    let cancel_stream =
+        {
+            let abort_cell = Rc::clone(&abort_cell);
+            let user_cancelled_stream = Rc::clone(&user_cancelled_stream);
+            move |_| {
+                if abort_cell.borrow().is_none() {
+                    return;
+                }
+                *user_cancelled_stream.borrow_mut() = true;
+                if let Some(ac) = abort_cell.borrow_mut().take() {
+                    ac.abort();
+                }
+                let aid = active_id.get();
+                sessions.update(|list| {
+                    if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                        if let Some(m) = s.messages.iter_mut().rev().find(|m| {
+                            m.role == "assistant" && m.state.as_deref() == Some("loading")
+                        }) {
+                            m.state = None;
+                            if m.text.trim().is_empty() {
+                                m.text = "已停止".to_string();
+                            } else {
+                                m.text.push_str("\n\n[已停止]");
+                            }
+                        }
+                    }
+                });
+                status_busy.set(false);
+                tool_busy.set(false);
             }
-            status_busy.set(false);
-        }
-    };
+        };
 
     let toggle_task = {
         move |id: String| {
