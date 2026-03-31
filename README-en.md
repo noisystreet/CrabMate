@@ -27,7 +27,7 @@
 - **Built-in tools**: Files, commands, HTTP, web search, multi-language dev helpers (including **JVM**: Maven/Gradle; **containers**: minimal `docker` / `podman` / `docker compose` wrappers); **capabilities and JSON examples** in [docs/en/TOOLS.md](docs/en/TOOLS.md). The default `run_command` allowlist includes **GitHub CLI `gh`** (install locally and authenticate; same arg rules as other allowlisted commands: no `..`, no `/`-prefixed args). `cargo_test` / `npm run test` and some `run_command cargo test` paths reuse truncated output in-process by source fingerprint + args and mark **cache hits** (`test_result_cache_*`, see [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
 - **CLI**: Default `cargo run` / `crabmate repl` opens an **interactive CLI** (streaming chat, slash commands like `/config` / `/doctor` / `/probe` / `/models` including `/models choose` to pick the current model, optional `bash#:` one-line shell); `crabmate chat` for **one-shot** use in scripts/pipes; `crabmate serve` shares the same agent and tools as the Web UI. Also `doctor`, `config`, `bench`, `save-session` / `export-session`, `tool-replay`, `mcp list`, etc. Global options include `--config`, `--workspace`, `--agent-role` (multi-role first system; [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)), `--no-tools`, `--no-stream`. Full list, exit codes, and `man crabmate`: [docs/en/CLI.md](docs/en/CLI.md).
 - **Web UI**: Chat, workspace browse/edit (`GET /workspace/file` optional `encoding` query, same semantics as `read_file` for legacy encodings), task list (in-process `/tasks`, cleared on restart), status bar; workspace list refreshes after agent writes files. Optional **multi-role**: configure `[[agent_roles]]` or `config/agent_roles.toml`, then send `agent_role` on the first request (or set `default_agent_role` / `AGENT_DEFAULT_AGENT_ROLE`). The repo ships built-in **`companion`** (casual chat), **`scientist`** (rigorous, evidence-aware), **`engineer`** (delivery, tradeoffs, reliability), **`philosopher`** (concepts, arguments, traditions), **`literary`** (close reading, craft, context), and **`code_reviewer`** (structured code review) roles in `config/agent_roles.toml` and `config/prompts/*_system_prompt.md`. See [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) § Multi-role.
-- **Project profile**: Sidebar read-only summary (`Cargo.toml` / `package.json`, directories, tokei); can merge with workspace memo for first-turn injection (`project_profile_inject_*`). Optional **cargo metadata** workspace crate dependency graph (Mermaid + JSON) and dependency name excerpts from root / `frontend/package.json` (`project_dependency_brief_inject_*`). The `repo_overview_sweep` tool can pull the same profile (`include_project_profile` / `project_profile_max_chars`, [docs/en/TOOLS.md](docs/en/TOOLS.md)).
+- **Project profile**: Sidebar read-only summary (`Cargo.toml` / `package.json`, directories, tokei); can merge with workspace memo for first-turn injection (`project_profile_inject_*`). Optional **cargo metadata** workspace crate dependency graph (Mermaid + JSON) and dependency name excerpts from root `package.json` (`project_dependency_brief_inject_*`). The `repo_overview_sweep` tool can pull the same profile (`include_project_profile` / `project_profile_max_chars`, [docs/en/TOOLS.md](docs/en/TOOLS.md)).
 - **Streaming and approval**: Web SSE; `run_command` and `http_fetch` / `http_request` without a matching prefix can use `POST /chat/approval`. On client disconnect or cooperative cancel you may get control-plane `error` + `code: STREAM_CANCELLED` when SSE can still deliver (see [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md)). CLI uses the same approval path for non-whitelist `run_command` and unmatched HTTP tools (TTY: dialoguer menu; pipe: line `y` / `a` / `n`; or `--yes` / `--approve-commands`). **Web vs CLI matrix**: [docs/en/CLI.md](docs/en/CLI.md) § CLI vs Web.
 - **Sessions and export**: Web optional `conversation_id` + `conversation_store_sqlite_path` (TTL/limits in config), export JSON/MD from the UI. CLI: `crabmate save-session` (alias `export-session`; reads `.crabmate/tui_session.json`, writes `.crabmate/exports/`, same shape as the frontend), `/save-session` or `/export` in interactive CLI. `crabmate tool-replay` extracts tool-call sequences from session JSON (see [docs/en/CLI.md](docs/en/CLI.md)). Optional restore from `tui_session.json` (`tui_load_session_on_start`); by default **no** background `initial_workspace_messages` unless `repl_initial_workspace_messages_enabled` (or `AGENT_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED`). Per-session **tool write paths + unified diff** injected before each model request (`session_workspace_changelist_*`, stripped before save). Memo `agent_memory_file`, long-term memory: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 - **Optional MCP (stdio)**: With `mcp_enabled` + `mcp_command`, remote tools merge as `mcp__{slug}__{tool}`; one stdio connection per process fingerprint (`serve` / `repl` / `chat` share it). `crabmate mcp list` shows cached sessions and merged tool names (**no** `API_KEY`); `mcp list --probe` tries one connection (starts `mcp_command`). Configure only in trusted environments.
@@ -77,21 +77,21 @@ export API_KEY="your-api-key"
 cargo build
 cargo run              # default: interactive CLI
 
-cargo run -- serve     # Web, default :8080
-cd frontend && npm run dev
+cd frontend-leptos && trunk build
+cargo run -- serve     # Web, default :8080 (serves frontend-leptos/dist)
 ```
 
 **CLI**: Slash commands and `bash#:` are documented in [docs/en/CLI.md](docs/en/CLI.md).
 
-**Frontend**: `cd frontend && npm install && npm run build` before `serve` (static assets from `frontend/dist`).
+**Frontend**: run `cd frontend-leptos && trunk build` before `serve` (static assets from `frontend-leptos/dist`).
 
 **Config**: Embedded defaults under `config/*.toml` plus optional `config.toml`; `system_prompt_file` can be edited without rebuild (path resolution in CONFIGURATION).
 
 ## Build and packaging
 
 - **Debug**: `cargo build` → `target/debug/crabmate`
-- **Release**: `cargo build --release`; build frontend before `serve`
-- **Maintainers**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`; `cd frontend && npx tsc -b --noEmit`
+- **Release**: `cargo build --release`; run `cd frontend-leptos && trunk build` before `serve`
+- **Maintainers**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`
 - **Install**: `cargo install --path .`
 - **Man page**: `cargo run --bin crabmate-gen-man`
 - **Debian**: `cargo deb` after release build + frontend build; see [docs/en/CLI.md](docs/en/CLI.md)

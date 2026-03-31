@@ -2,11 +2,11 @@
 
 # Agent SSE 控制面协议（`/chat/stream`）
 
-本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。实现与类型的**单一事实来源**为 Rust `src/sse/protocol.rs`；浏览器消费逻辑为 `frontend/src/api.ts` 中的 `tryDispatchSseControlPayload`（由 `sendChatStream` 调用）。Rust 侧行分类见 `src/sse/line.rs`（`classify_agent_sse_line`），须与本表语义一致。
+本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。实现与类型的**单一事实来源**为 Rust `src/sse/protocol.rs`；浏览器消费逻辑在 `frontend-leptos/src/sse_dispatch.rs`（由 `frontend-leptos/src/api.rs` 调用）。Rust 侧行分类见 `src/sse/line.rs`（`classify_agent_sse_line`），须与本表语义一致。
 
 ## 协议版本 `v`
 
-- 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`1`**，与常量 **`sse::protocol::SSE_PROTOCOL_VERSION`** 及前端 **`SSE_PROTOCOL_VERSION`**（`api.ts`）对齐。
+- 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`1`**，与常量 **`sse::protocol::SSE_PROTOCOL_VERSION`** 对齐。
 - **缺省**：历史载荷可省略 `v`，反序列化时按 **`1`** 处理（见 `SseMessage` 的 `#[serde(default = "default_sse_v")]`）。
 - **演进**：递增 `v` 时须同步更新本文档、`SSE_PROTOCOL_VERSION`（Rust）、`SSE_PROTOCOL_VERSION`（TS），并在前端对未知版本做降级或显式报错（当前实现按字段形状解析，未强制校验 `v`）。
 
@@ -124,20 +124,18 @@
 变更以下任一时，须同步另一方及本文档：
 
 1. `src/sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`、`SSE_PROTOCOL_VERSION`
-2. `frontend/src/sse_control_dispatch.ts`（及 `api.ts` 再导出）：`SseControlPayload`、`classifySseControlPayloadParsed`、`tryDispatchSseControlPayload`、`SSE_PROTOCOL_VERSION`
+2. `frontend-leptos/src/sse_dispatch.rs` 与 `frontend-leptos/src/api.rs`：控制面分类与分发分支顺序
 3. `src/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致）
 4. 新增 `encode_message(SsePayload::…)` 的调用点
 
 ## 契约测试（控制面分类）
 
-Web 将一条合并后的 `data:` 字符串解析为 JSON 后，按**固定顺序**判定 `stop` / `handled` / `plain`（见 `frontend/src/sse_control_dispatch.ts`）。Rust 侧镜像实现为 **`src/sse/control_dispatch_mirror.rs`**（仅 `cfg(test)`），与 **同一份金样**对齐：
+Web 将一条合并后的 `data:` 字符串解析为 JSON 后，按**固定顺序**判定 `stop` / `handled` / `plain`（见 `frontend-leptos/src/sse_dispatch.rs`）。Rust 侧镜像实现为 **`src/sse/control_dispatch_mirror.rs`**（仅 `cfg(test)`），与 **同一份金样**对齐：
 
 - **`fixtures/sse_control_golden.jsonl`**：每行 `描述<TAB>JSON<TAB>期望分类`（`#` 开头行为注释）。
 - **Rust**：`cargo test golden_sse_control`（或 `cargo test control_dispatch_mirror`）。
-- **Node**：`cd frontend && npm run verify-sse-contract`（依赖 `tsx`）。
-
-若新增控制面顶层键且 Web 应消费：在 **`tryDispatchSseControlPayload`** 增加分支后，同步 **`classifySseControlPayloadParsed`**、**`control_dispatch_mirror::classify_sse_control_outcome`** 与金样行。
+若新增控制面顶层键且 Web 应消费：在 `frontend-leptos/src/sse_dispatch.rs` 增加分支后，同步 **`control_dispatch_mirror::classify_sse_control_outcome`** 与金样行。
 
 ---
 
-维护者备注：表格与枚举力求与代码一致；若发现漂移，以 **`protocol.rs` + `sse_control_dispatch.ts`** 为准并修正本文档。
+维护者备注：表格与枚举力求与代码一致；若发现漂移，以 **`protocol.rs` + `frontend-leptos/src/sse_dispatch.rs`** 为准并修正本文档。

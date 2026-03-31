@@ -1,7 +1,7 @@
 [
         ToolSpec {
             name: "diagnostic_summary",
-            description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `frontend/package.json` / `frontend/dist` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `AGENT_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。",
+            description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `frontend-leptos/Trunk.toml` / `frontend-leptos/dist` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `AGENT_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。",
             category: ToolCategory::Development,
             parameters: tool_params::params_diagnostic_summary,
             runner: runner_diagnostic_summary,

@@ -1,6 +1,6 @@
 //! 对经 SSE `data:` 下发的一行字符串做分类（与 `super::protocol` 及历史兼容键名对齐）。
 //!
-//! Web 前端在 `frontend/src/api.ts` 的 `sendChatStream` 中做等价解析；此处为 **Rust 侧** 单一实现，供后续终端 UI 等与 Web 语义对齐复用。
+//! Web 前端在 `frontend-leptos/src/api.rs` 的 `sendChatStream` 中做等价解析；此处为 **Rust 侧** 单一实现，供后续终端 UI 等与 Web 语义对齐复用。
 #![allow(dead_code)]
 
 /// 与 `protocol` 模块对齐的 SSE 控制行；无法识别则视为模型流式正文。

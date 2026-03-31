@@ -91,7 +91,7 @@ cargo run -- save-session --format json --workspace /path/to/proj
 
 ## `save-session`
 
-Reads **`<workspace>/.crabmate/tui_session.json`** by default (`--workspace` and global `--config` before subcommand), writes timestamped **`chat_export_*.json`** / **`chat_export_*.md`** under **`<workspace>/.crabmate/exports/`** (same contract as Web; see `runtime/chat_export.rs` and `frontend/src/chatExport.ts`). Each stdout line is the absolute path of a written file for scripts.
+Reads **`<workspace>/.crabmate/tui_session.json`** by default (`--workspace` and global `--config` before subcommand), writes timestamped **`chat_export_*.json`** / **`chat_export_*.md`** under **`<workspace>/.crabmate/exports/`** (same contract as Web; see `runtime/chat_export.rs` and `frontend-leptos/src/lib.rs`). Each stdout line is the absolute path of a written file for scripts.
 
 ## `tool-replay` (tool timeline fixture)
 
@@ -160,11 +160,11 @@ Keep this section in sync with `README.md` when export behavior changes.
 ## Frontend build and Web
 
 ```bash
-cd frontend && npm install && npm run build && cd ..
+cd frontend-leptos && trunk build && cd ..
 cargo run -- serve
 ```
 
-Static assets are served from `frontend/dist`.
+Static assets are served from `frontend-leptos/dist`.
 
 ## Main HTTP routes (`serve`)
 
@@ -188,7 +188,7 @@ SSE control-plane fields: **`docs/SSE_PROTOCOL.md`**.
 
 ```bash
 cargo install cargo-deb
-cd frontend && npm install && npm run build && cd ..
+cd frontend-leptos && trunk build && cd ..
 cargo build --release
 cargo deb
 sudo dpkg -i target/debian/crabmate_*.deb

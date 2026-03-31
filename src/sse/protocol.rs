@@ -1,8 +1,8 @@
 //! 经 SSE `data:` 行发往浏览器等的**控制类** JSON 协议（与 `llm::api::stream_chat` 下发的纯文本 delta 区分）。
 //!
-//! 统一带版本字段 `v`，键名与现有前端 `frontend/src/api.ts` 兼容；新增事件通过新键扩展。
+//! 统一带版本字段 `v`，键名与现有前端 `frontend-leptos/src/api.rs` 兼容；新增事件通过新键扩展。
 //!
-//! **完整契约**（版本、`error`/`code` 与 `tool_result.error_code` 枚举、双端对齐清单）见仓库 **`docs/SSE_PROTOCOL.md`**（与 `frontend/src/api.ts` 的 `tryDispatchSseControlPayload` 对齐）。
+//! **完整契约**（版本、`error`/`code` 与 `tool_result.error_code` 枚举、双端对齐清单）见仓库 **`docs/SSE_PROTOCOL.md`**（与 `frontend-leptos/src/sse_dispatch.rs` 对齐）。
 
 /// 当前协议版本；须与 `docs/SSE_PROTOCOL.md` 及前端 `SSE_PROTOCOL_VERSION`（`api.ts`）一致。
 pub const SSE_PROTOCOL_VERSION: u8 = 1;
@@ -51,7 +51,7 @@ pub enum SsePayload {
     PlanRequired {
         plan_required: bool,
     },
-    /// 分阶段规划：前端可忽略（`frontend/src/api.ts` 吞掉不当下文）。
+    /// 分阶段规划：前端可忽略（`frontend-leptos/src/api.rs` 吞掉不当下文）。
     StagedPlanNotice {
         /// 可多行 `\n` 分隔。
         #[serde(rename = "staged_plan_notice")]

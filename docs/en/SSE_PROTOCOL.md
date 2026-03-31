@@ -2,11 +2,11 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. The source of truth for types is Rust `src/sse/protocol.rs`; the browser consumes via `tryDispatchSseControlPayload` in `frontend/src/api.ts` (called from `sendChatStream`). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. The source of truth for types is Rust `src/sse/protocol.rs`; the browser consumes via `frontend-leptos/src/sse_dispatch.rs` (called by `frontend-leptos/src/api.rs`). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
 
 ## Protocol version `v`
 
-- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`1`**, aligned with **`sse::protocol::SSE_PROTOCOL_VERSION`** and frontend **`SSE_PROTOCOL_VERSION`** in `api.ts`.
+- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`1`**, aligned with **`sse::protocol::SSE_PROTOCOL_VERSION`**.
 - **Default**: Legacy payloads may omit `v`; deserialization treats missing as **`1`** (`SseMessage` `#[serde(default = "default_sse_v")]`).
 - **Evolution**: When bumping `v`, update this doc, Rust and TS constants, and handle unknown versions in the frontend (today parsing is shape-based without strict `v` checks).
 
@@ -124,7 +124,7 @@ Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUE
 When changing any of:
 
 1. `src/sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody`, `SSE_PROTOCOL_VERSION`
-2. `frontend/src/sse_control_dispatch.ts` (and `api.ts`): `SseControlPayload`, `classifySseControlPayloadParsed`, `tryDispatchSseControlPayload`, `SSE_PROTOCOL_VERSION`
+2. `frontend-leptos/src/sse_dispatch.rs` and `frontend-leptos/src/api.rs`: control-payload classification and dispatch ordering
 3. `src/sse/line.rs`: `classify_agent_sse_line`
 4. New `encode_message(SsePayload::…)` call sites
 
@@ -132,14 +132,12 @@ When changing any of:
 
 ## Contract tests (control-plane classification)
 
-After parsing one merged `data:` string as JSON, the frontend applies a **fixed order** to decide `stop` / `handled` / `plain` (`sse_control_dispatch.ts`). Rust mirror: **`src/sse/control_dispatch_mirror.rs`** (`#[cfg(test)]`), same golden file:
+After parsing one merged `data:` string as JSON, the frontend applies a **fixed order** to decide `stop` / `handled` / `plain` (`frontend-leptos/src/sse_dispatch.rs`). Rust mirror: **`src/sse/control_dispatch_mirror.rs`** (`#[cfg(test)]`), same golden file:
 
 - **`fixtures/sse_control_golden.jsonl`**: each line `description<TAB>JSON<TAB>expected-class` (`#` lines are comments).
 - **Rust**: `cargo test golden_sse_control` or `cargo test control_dispatch_mirror`.
-- **Node**: `cd frontend && npm run verify-sse-contract` (needs `tsx`).
-
-When adding a new top-level key consumed by the Web UI: update **`tryDispatchSseControlPayload`**, **`classifySseControlPayloadParsed`**, **`control_dispatch_mirror::classify_sse_control_outcome`**, and add golden lines.
+When adding a new top-level key consumed by the Web UI: update `frontend-leptos/src/sse_dispatch.rs`, **`control_dispatch_mirror::classify_sse_control_outcome`**, and golden lines.
 
 ---
 
-Maintainers: tables should match code; if they drift, treat **`protocol.rs` + `sse_control_dispatch.ts`** as authoritative and fix this doc.
+Maintainers: tables should match code; if they drift, treat **`protocol.rs` + `frontend-leptos/src/sse_dispatch.rs`** as authoritative and fix this doc.

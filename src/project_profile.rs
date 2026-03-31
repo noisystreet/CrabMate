@@ -322,38 +322,12 @@ fn section_package_json(root: &Path) -> Option<String> {
     {
         blocks.push(line);
     }
-    let fe = root.join("frontend/package.json");
-    if fe.is_file()
-        && let Some(line) = read_package_json_line_for_frontend(&fe)
-    {
-        blocks.push(line);
-    }
     if blocks.is_empty() {
         return None;
     }
     let mut out = String::from("### Node / 前端（package.json）\n");
     out.push_str(&blocks.join(""));
     Some(out)
-}
-
-fn read_package_json_line_for_frontend(path: &Path) -> Option<String> {
-    let raw = fs::read_to_string(path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let name = v.get("name").and_then(|n| n.as_str()).unwrap_or("(未命名)");
-    let mut dep_n = 0usize;
-    for key in [
-        "dependencies",
-        "devDependencies",
-        "peerDependencies",
-        "optionalDependencies",
-    ] {
-        if let Some(o) = v.get(key).and_then(|x| x.as_object()) {
-            dep_n += o.len();
-        }
-    }
-    Some(format!(
-        "- `frontend/package.json`：npm 包 **{name}**，声明依赖条目约 **{dep_n}** 个\n"
-    ))
 }
 
 fn section_python_hints(root: &Path) -> Option<String> {

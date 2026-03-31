@@ -1,5 +1,5 @@
-//! 与 `frontend/src/sse_control_dispatch.ts` 中 `classifySseControlPayloadParsed` **同序**的控制面分类（不含 `JSON.parse`）。
-//! 用于 `fixtures/sse_control_golden.jsonl` 契约测试；修改分支顺序时须同步 TS 与金样。
+//! 与前端控制面分类逻辑 **同序**的控制面分类（不含 `JSON.parse`）。
+//! 用于 `fixtures/sse_control_golden.jsonl` 契约测试；修改分支顺序时须同步金样。
 
 use serde_json::Value;
 

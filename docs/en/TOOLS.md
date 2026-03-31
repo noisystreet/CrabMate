@@ -378,13 +378,13 @@ Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
   Default roots: `README.md` and `docs/`.
 - `structured_validate`:
   ```json
-  {"path":"frontend/package.json","format":"auto","summarize":true}
+  {"path":"frontend-leptos/Cargo.toml","format":"auto","summarize":true}
   ```
 - `structured_query`:
   ```json
   {"path":"Cargo.toml","query":"/package/name","format":"toml"}
   ```
-  Dot path: `{"path":"frontend/package.json","query":"devDependencies.vite"}`.
+  Dot path: `{"path":"frontend-leptos/Cargo.toml","query":"dependencies.leptos"}`.
 - `structured_diff`:
   ```json
   {"path_a":"specs/openapi.v1.json","path_b":"specs/openapi.v2.json","max_diff_lines":200}
