@@ -61,7 +61,7 @@
 # long_term_memory_async_index = true
 # command_timeout_secs = 10
 # command_max_output_len = 8192
-# allowed_commands：逗号分隔命令名，覆盖默认白名单（完整列表见 config/tools.toml；含 stat/grep/diff/git/cargo、文本与压缩只读工具等）
+# allowed_commands：逗号分隔命令名，覆盖默认白名单（完整列表见 config/tools.toml；含 stat/grep/diff/git/gh/cargo、文本与压缩只读工具等）
 # AGENT_ALLOWED_COMMANDS=ls,pwd,git,grep
 # run_command_working_dir = "."
 # web_api_bearer_token = "YOUR_STRONG_RANDOM_TOKEN"
