@@ -178,6 +178,9 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
     if let Some(Value::Bool(_)) = obj.get("chat_ui_separator") {
         return SseDispatch::Handled;
     }
+    if key_present_non_null(obj, "conversation_saved") {
+        return SseDispatch::Handled;
+    }
 
     SseDispatch::Plain
 }

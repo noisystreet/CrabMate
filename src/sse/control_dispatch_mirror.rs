@@ -79,6 +79,9 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
     if let Some(Value::Bool(_)) = obj.get("chat_ui_separator") {
         return "handled";
     }
+    if key_present_non_null(obj, "conversation_saved") {
+        return "handled";
+    }
 
     "plain"
 }
