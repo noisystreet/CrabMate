@@ -2,7 +2,20 @@
 
 # CrabMate
 
+![CrabMate Logo](crabmate.svg)
+
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型；内置 **Function Calling** 以及工作区内的命令、文件等工具，并提供 **Web UI** 与 **CLI**。
+
+## 目录
+
+- [功能概览](#功能概览)
+- [文档索引](#文档索引)
+- [后端模型支持](#后端模型支持)
+- [环境与快速开始](#环境与快速开始)
+- [源码编译与打包](#源码编译与打包)
+- [部署与安全](#部署与安全)
+- [项目结构](#项目结构)
+- [参考](#参考)
 
 ## 功能概览
 
