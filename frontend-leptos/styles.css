@@ -337,11 +337,16 @@ body > * {
 /* 勿用 fit-content/max-content：部分引擎会收成窄条；用列宽百分比给出确定宽度 */
 .msg-user {
   align-self: flex-end;
-  width: min(92%, 720px);
+  width: fit-content;
   max-width: 100%;
+  max-width: min(92%, 720px);
   box-sizing: border-box;
   background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 28%, var(--surface)) 0%, color-mix(in srgb, var(--accent) 18%, var(--surface)) 100%);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.msg-user .msg-body {
+  text-align: right;
 }
 
 .msg-assistant {

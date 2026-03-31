@@ -116,6 +116,9 @@ export function classifySseControlPayloadParsed(parsed: SseControlPayload): SseC
   if (typeof parsed.chat_ui_separator === 'boolean') {
     return 'handled'
   }
+  if (parsed.conversation_saved != null) {
+    return 'handled'
+  }
   return 'plain'
 }
 
@@ -293,6 +296,9 @@ export function tryDispatchSseControlPayload(
     }
     if (typeof parsed.chat_ui_separator === 'boolean') {
       callbacks.onChatUiSeparator?.(parsed.chat_ui_separator)
+      return 'handled'
+    }
+    if (parsed.conversation_saved != null) {
       return 'handled'
     }
   } catch {

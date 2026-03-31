@@ -20,5 +20,5 @@ staged_plan_notice 字符串	{"v":1,"staged_plan_notice":"line1\nline2"}	handled
 staged_plan_notice_clear	{"v":1,"staged_plan_notice_clear":true}	handled
 chat_ui_separator	{"v":1,"chat_ui_separator":true}	handled
 未知键当正文	{"v":1,"unknown_future_key":true}	plain
-conversation_saved 当前 Web 未分发	{"v":1,"conversation_saved":{"revision":42}}	plain
+conversation_saved 前端消费并静默处理	{"v":1,"conversation_saved":{"revision":42}}	handled
 timeline_log 当前 Web 未分发	{"v":1,"timeline_log":{"kind":"k","title":"t"}}	plain
