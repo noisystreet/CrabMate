@@ -2,20 +2,24 @@
 
 # CrabMate
 
-![CrabMate Logo](crabmate.svg)
+<p align="center">
+  <img src="crabmate.svg" alt="CrabMate Logo" width="240" />
+</p>
 
 **CrabMate** is a Rust-based AI agent that talks to DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, local Ollama, and other backends through **OpenAI-compatible** `chat/completions`. It includes **function calling** plus workspace commands, files, and more tools, with both a **Web UI** and **CLI**.
 
 ## Contents
 
-- [Features](#features)
-- [Documentation index](#documentation-index)
-- [Backend models](#backend-models)
-- [Quick start](#quick-start)
-- [Build and packaging](#build-and-packaging)
-- [Deployment and security](#deployment-and-security)
-- [Project layout](#project-layout)
-- [References](#references)
+- [CrabMate](#crabmate)
+  - [Contents](#contents)
+  - [Features](#features)
+  - [Documentation index](#documentation-index)
+  - [Backend models](#backend-models)
+  - [Quick start](#quick-start)
+  - [Build and packaging](#build-and-packaging)
+  - [Deployment and security](#deployment-and-security)
+  - [Project layout](#project-layout)
+  - [References](#references)
 
 ## Features
 
