@@ -9,8 +9,8 @@ mod sse_dispatch;
 mod storage;
 
 use api::{
-    ChatStreamCallbacks, TaskItem, TasksData, WorkspaceData, fetch_tasks, fetch_workspace,
-    save_tasks, send_chat_stream, submit_chat_approval,
+    ChatStreamCallbacks, StatusData, TaskItem, TasksData, WorkspaceData, fetch_status, fetch_tasks,
+    fetch_workspace, save_tasks, send_chat_stream, submit_chat_approval,
 };
 use gloo_timers::future::TimeoutFuture;
 use leptos::html::Div;
@@ -34,6 +34,7 @@ const WORKSPACE_VISIBLE_KEY: &str = "agent-demo-workspace-visible";
 const TASKS_VISIBLE_KEY: &str = "agent-demo-tasks-visible";
 const STATUS_BAR_VISIBLE_KEY: &str = "agent-demo-status-bar-visible";
 const THEME_KEY: &str = "crabmate-theme";
+const AGENT_ROLE_KEY: &str = "agent-demo-agent-role";
 const DEFAULT_SIDE_WIDTH: f64 = 280.0;
 const MIN_SIDE_WIDTH: f64 = 200.0;
 const MAX_SIDE_WIDTH: f64 = 560.0;
@@ -357,6 +358,13 @@ fn App() -> impl IntoView {
     let tool_busy = RwSignal::new(false);
     let workspace_data = RwSignal::new(None::<WorkspaceData>);
     let workspace_err = RwSignal::new(None::<String>);
+    let status_data = RwSignal::new(None::<StatusData>);
+    let selected_agent_role = RwSignal::new(
+        local_storage()
+            .and_then(|s| s.get_item(AGENT_ROLE_KEY).ok().flatten())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+    );
     let tasks_data = RwSignal::new(TasksData { items: vec![] });
     let tasks_err = RwSignal::new(None::<String>);
     let pending_approval = RwSignal::new(None::<(String, String, String)>);
@@ -412,6 +420,23 @@ fn App() -> impl IntoView {
         store_bool_key(STATUS_BAR_VISIBLE_KEY, status_bar_visible.get());
     });
     Effect::new(move |_| {
+        if let Some(st) = local_storage() {
+            match selected_agent_role
+                .get()
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                Some(role) => {
+                    let _ = st.set_item(AGENT_ROLE_KEY, role);
+                }
+                None => {
+                    let _ = st.remove_item(AGENT_ROLE_KEY);
+                }
+            }
+        }
+    });
+    Effect::new(move |_| {
         store_f64_key(WORKSPACE_WIDTH_KEY, side_width.get());
     });
 
@@ -465,6 +490,27 @@ fn App() -> impl IntoView {
             });
         }
     };
+
+    let refresh_status = {
+        move || {
+            spawn_local(async move {
+                if let Ok(d) = fetch_status().await {
+                    if let Some(cur) = selected_agent_role.get_untracked()
+                        && !d.agent_role_ids.iter().any(|id| id == &cur)
+                    {
+                        selected_agent_role.set(None);
+                    }
+                    status_data.set(Some(d));
+                }
+            });
+        }
+    };
+
+    Effect::new(move |_| {
+        if initialized.get() && status_data.get().is_none() {
+            refresh_status();
+        }
+    });
 
     Effect::new(move |_| {
         if tasks_visible.get() && initialized.get() {
@@ -578,6 +624,7 @@ fn App() -> impl IntoView {
             *abort_cell.borrow_mut() = Some(ac);
 
             let conv = conversation_id.get();
+            let agent_role = selected_agent_role.get();
             let appr_for_stream = approval_session_id();
             let appr_store = appr_for_stream.clone();
             let user_cancelled_for_spawn = Rc::clone(&user_cancelled_stream);
@@ -703,8 +750,15 @@ fn App() -> impl IntoView {
             };
 
             spawn_local(async move {
-                let stream_result =
-                    send_chat_stream(text, conv, Some(appr_for_stream), &signal, cbs.clone()).await;
+                let stream_result = send_chat_stream(
+                    text,
+                    conv,
+                    agent_role,
+                    Some(appr_for_stream),
+                    &signal,
+                    cbs.clone(),
+                )
+                .await;
                 if let Err(e) = stream_result {
                     if *user_cancelled_for_spawn.borrow() {
                         return;
@@ -1128,21 +1182,66 @@ fn App() -> impl IntoView {
                         "status-bar"
                     }
                 }>
-                    {move || {
+                    <span class="status-meta" title=move || {
+                        status_data
+                            .get()
+                            .map(|d| format!("模型: {} | base_url: {}", d.model, d.api_base))
+                            .unwrap_or_else(|| "模型: - | base_url: -".to_string())
+                    }>{move || {
+                        status_data
+                            .get()
+                            .map(|d| format!("模型: {} | base_url: {}", d.model, d.api_base))
+                            .unwrap_or_else(|| "模型: - | base_url: -".to_string())
+                    }}</span>
+                    <select
+                        class="status-agent-select"
+                        title="Agent 角色（对标 CLI /agent set）"
+                        prop:value=move || selected_agent_role.get().unwrap_or_else(|| "__default__".to_string())
+                        on:change=move |ev| {
+                            let v = event_target_value(&ev);
+                            let t = v.trim();
+                            if t.is_empty() || t == "__default__" {
+                                selected_agent_role.set(None);
+                            } else {
+                                selected_agent_role.set(Some(t.to_string()));
+                            }
+                        }
+                    >
+                        <option value="__default__">{move || {
+                            status_data
+                                .get()
+                                .and_then(|d| d.default_agent_role_id)
+                                .map(|id| format!("角色: default ({id})"))
+                                .unwrap_or_else(|| "角色: default".to_string())
+                        }}</option>
+                        {move || {
+                            status_data
+                                .get()
+                                .map(|d| d.agent_role_ids)
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|id| {
+                                    let label = format!("角色: {id}");
+                                    view! { <option value=id.clone()>{label}</option> }
+                                })
+                                .collect_view()
+                        }}
+                    </select>
+                    <span class="status-activity">{move || {
                         if tool_busy.get() {
-                            "工具执行中… "
+                            "工具执行中… ".to_string()
                         } else {
-                            ""
+                            String::new()
                         }
                     }}
                     {move || {
                         if status_busy.get() {
-                            "模型生成中…"
+                            "模型生成中…".to_string()
                         } else {
-                            "就绪"
+                            "就绪".to_string()
                         }
                     }}
-                    {move || status_err.get().map(|e| format!(" | {e}")).unwrap_or_default()}
+                    {move || status_err.get().map(|e| format!(" | {e}")).unwrap_or_default()}</span>
                 </footer>
             </Show>
 

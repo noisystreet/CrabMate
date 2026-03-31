@@ -57,6 +57,16 @@ pub struct TasksData {
     pub items: Vec<TaskItem>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct StatusData {
+    pub model: String,
+    pub api_base: String,
+    #[serde(default)]
+    pub agent_role_ids: Vec<String>,
+    #[serde(default)]
+    pub default_agent_role_id: Option<String>,
+}
+
 pub async fn fetch_workspace(path: Option<&str>) -> Result<WorkspaceData, String> {
     let url = match path {
         Some(p) if !p.trim().is_empty() => format!("/workspace?path={}", urlencoding::encode(p)),
@@ -67,6 +77,10 @@ pub async fn fetch_workspace(path: Option<&str>) -> Result<WorkspaceData, String
 
 pub async fn fetch_tasks() -> Result<TasksData, String> {
     fetch_json("GET", "/tasks", None).await
+}
+
+pub async fn fetch_status() -> Result<StatusData, String> {
+    fetch_json("GET", "/status", None).await
 }
 
 pub async fn save_tasks(data: &TasksData) -> Result<TasksData, String> {
@@ -159,6 +173,7 @@ impl Clone for ChatStreamCallbacks {
 pub async fn send_chat_stream(
     message: String,
     conversation_id: Option<String>,
+    agent_role: Option<String>,
     approval_session_id: Option<String>,
     signal: &web_sys::AbortSignal,
     cbs: ChatStreamCallbacks,
@@ -167,6 +182,7 @@ pub async fn send_chat_stream(
     let body = serde_json::json!({
         "message": message,
         "conversation_id": conversation_id,
+        "agent_role": agent_role,
         "approval_session_id": approval_session_id,
     });
     let init = RequestInit::new();
