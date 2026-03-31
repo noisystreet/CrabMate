@@ -440,8 +440,8 @@ body > * {
   min-width: 0;
   flex-shrink: 0;
   box-sizing: border-box;
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.6;
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border-subtle);
   overflow-x: hidden;
