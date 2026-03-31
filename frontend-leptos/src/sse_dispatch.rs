@@ -1,5 +1,5 @@
-//! 与 `frontend/src/sse_control_dispatch.ts` 中 `tryDispatchSseControlPayload` 行为对齐（`serde_json::Value`）。
-//! 分支顺序须与 `src/sse/control_dispatch_mirror.rs` 一致。
+//! 前端 SSE 控制面 JSON 的分类与分发（`serde_json::Value`）。
+//! 分支顺序须与 `src/sse/control_dispatch_mirror.rs` 与 `fixtures/sse_control_golden.jsonl` 一致。
 
 use serde_json::Value;
 

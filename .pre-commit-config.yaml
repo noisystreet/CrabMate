@@ -22,11 +22,11 @@ repos:
         pass_filenames: false
         always_run: true
       - id: sse-control-golden
-        name: SSE control golden (frontend vs Rust mirror)
-        entry: bash -c 'cd frontend && npm run verify-sse-contract'
+        name: SSE control golden (Rust mirror)
+        entry: cargo test golden_sse_control
         language: system
         pass_filenames: false
-        files: ^(fixtures/sse_control_golden\.jsonl|frontend/src/sse_control_dispatch\.ts|frontend/scripts/verify_sse_control_golden\.ts|src/sse/control_dispatch_mirror\.rs|frontend/package\.json)$
+        files: ^(fixtures/sse_control_golden\.jsonl|src/sse/control_dispatch_mirror\.rs)$
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0

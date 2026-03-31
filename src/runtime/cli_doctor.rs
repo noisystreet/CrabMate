@@ -105,9 +105,11 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     println!("【工作区路径】");
     println!("  当前目录: {}", ws.display());
     path_status_line("Cargo.toml", &ws.join("Cargo.toml"));
-    path_status_line("frontend/package.json", &ws.join("frontend/package.json"));
-    path_status_line("frontend/node_modules", &ws.join("frontend/node_modules"));
-    path_status_line("frontend/dist", &ws.join("frontend/dist"));
+    path_status_line(
+        "frontend-leptos/Trunk.toml",
+        &ws.join("frontend-leptos/Trunk.toml"),
+    );
+    path_status_line("frontend-leptos/dist", &ws.join("frontend-leptos/dist"));
     path_status_line("target", &ws.join("target"));
     if let Ok(root) = canonical_workspace_root(&ws)
         && root != ws
@@ -135,16 +137,15 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     }
     println!();
 
-    let pkg_json = ws.join("frontend/package.json");
-    println!("【Node / npm（若存在 frontend/package.json）】");
-    if pkg_json.is_file() {
-        if let Some(s) = capture_trimmed("npm", &["--version"]) {
-            println!("  npm --version: {}", s);
+    println!("【Web 前端构建（frontend-leptos）】");
+    if ws.join("frontend-leptos/Trunk.toml").is_file() {
+        if let Some(s) = capture_trimmed("trunk", &["--version"]) {
+            println!("  trunk --version: {}", s);
         } else {
-            println!("  npm: 未找到或执行失败");
+            println!("  trunk: 未找到或执行失败");
         }
     } else {
-        println!("  （跳过：无 frontend/package.json）");
+        println!("  （跳过：无 frontend-leptos/Trunk.toml）");
     }
     println!();
 

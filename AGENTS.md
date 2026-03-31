@@ -4,7 +4,7 @@
 
 ### Project overview
 
-CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides Web UI (Axum + React) and CLI (interactive terminal / `chat` single-shot / `serve`). See `README.md` for quick start and feature overview; `docs/CONFIGURATION.md` for env vars and TOML; `docs/CLI.md` for subcommands and routes; `docs/TOOLS.md` for built-in tools; `docs/DEVELOPMENT.md` for architecture (module index). If you change module layout or layering, update `docs/DEVELOPMENT.md` per `.cursor/rules/architecture-docs-sync.mdc`.
+CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides Web UI (Axum + Leptos) and CLI (interactive terminal / `chat` single-shot / `serve`). See `README.md` for quick start and feature overview; `docs/CONFIGURATION.md` for env vars and TOML; `docs/CLI.md` for subcommands and routes; `docs/TOOLS.md` for built-in tools; `docs/DEVELOPMENT.md` for architecture (module index). If you change module layout or layering, update `docs/DEVELOPMENT.md` per `.cursor/rules/architecture-docs-sync.mdc`.
 
 ### Environment variable `API_KEY`
 
@@ -17,9 +17,8 @@ CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/complet
 ### Running services
 
 - **Backend + Web UI**: `API_KEY="..." cargo run -- serve` (subcommand `serve`; default port 8080, binds **127.0.0.1** only). For LAN access use `serve --host 0.0.0.0` (see README). Legacy `cargo run -- --serve` still works. Optional global `--log /path/to.log` appends logs and mirrors to stderr. Without `RUST_LOG`, `serve` defaults to **info**; `repl` / `chat` / `bench` / `config` / `save-session` (alias `export-session`) default to **warn** unless you set `RUST_LOG` or `--log`. **`POST /config/reload`** (same auth as protected APIs) hot-reloads most `AgentConfig` fields without restarting `serve`; see **`docs/CONFIGURATION.md`**.
-- **CLI diagnostics**: `cargo run -- doctor` — human-readable check (Rust/npm/frontend paths, allowlist size, redacted secrets); **no `API_KEY`**. **`save-session`** exports chat JSON/Markdown to `<workspace>/.crabmate/exports/` (same shape as Web; alias `export-session`); **no `API_KEY`**. **`mcp list`** prints the in-process MCP stdio session cache (merged OpenAI tool names) when MCP is enabled; **`mcp list --probe`** tries one connection (starts `mcp_command`); **no `API_KEY`**. `cargo run -- models` / `probe` use `GET {api_base}/models` with Bearer only when `llm_http_auth_mode=bearer`; with `none`, no `Authorization` header is sent.
-- **Frontend dev server** (optional, for hot-reload): `cd frontend && npm run dev` (Vite proxies API calls to `:8080`)
-- Before running the backend in `serve` mode, build a static UI: either `cd frontend && npm run build` (outputs `frontend/dist`) or `cd frontend-leptos && trunk build` (outputs `frontend-leptos/dist`). If `frontend-leptos/dist` exists, the server prefers it over `frontend/dist`.
+- **CLI diagnostics**: `cargo run -- doctor` — human-readable check (Rust/tooling/workspace paths, allowlist size, redacted secrets); **no `API_KEY`**. **`save-session`** exports chat JSON/Markdown to `<workspace>/.crabmate/exports/` (same shape as Web; alias `export-session`); **no `API_KEY`**. **`mcp list`** prints the in-process MCP stdio session cache (merged OpenAI tool names) when MCP is enabled; **`mcp list --probe`** tries one connection (starts `mcp_command`); **no `API_KEY`**. `cargo run -- models` / `probe` use `GET {api_base}/models` with Bearer only when `llm_http_auth_mode=bearer`; with `none`, no `Authorization` header is sent.
+- Before running the backend in `serve` mode, build static UI: `cd frontend-leptos && trunk build` (outputs `frontend-leptos/dist`).
 
 ### Lint / Test / Build
 
@@ -34,9 +33,7 @@ Standard commands from `README.md`:
 | 依赖漏洞（RustSec，需安装 `cargo-audit`） | `cargo audit` |
 | 依赖许可证/来源（需安装 `cargo-deny`） | `cargo deny check licenses bans sources`（配置见根目录 `deny.toml`；CI 见 `.github/workflows/dependency-security.yml`） |
 | Rust format check | `cargo fmt --check` |
-| TypeScript check | `cd frontend && npx tsc -b --noEmit` |
-| Frontend install | `cd frontend && npm install` |
-| Frontend build | `cd frontend && npm run build` |
+| Leptos frontend build | `cd frontend-leptos && trunk build` |
 | Regenerate `man` page (troff) | `cargo run --bin crabmate-gen-man`（写入 `man/crabmate.1`） |
 
 ### Gotchas

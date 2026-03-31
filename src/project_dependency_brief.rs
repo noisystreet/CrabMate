@@ -285,10 +285,7 @@ fn mermaid_escape_label(name: &str) -> String {
 
 fn npm_package_summaries(root: &Path) -> Vec<NpmBriefEntry> {
     let mut out: Vec<NpmBriefEntry> = Vec::new();
-    let candidates = [
-        root.join("package.json"),
-        root.join("frontend/package.json"),
-    ];
+    let candidates = [root.join("package.json")];
     for path in candidates {
         if !path.is_file() {
             continue;

@@ -417,13 +417,13 @@
   省略 `roots` 时默认扫描 `README.md` 与 `docs` 目录。
 - `structured_validate`（解析 `package.json` / `Cargo.toml` / `.yml` 等是否合法，可选顶层摘要）：
   ```json
-  {"path":"frontend/package.json","format":"auto","summarize":true}
+  {"path":"frontend-leptos/Cargo.toml","format":"auto","summarize":true}
   ```
 - `structured_query`（取嵌套字段，省上下文）：
   ```json
   {"path":"Cargo.toml","query":"/package/name","format":"toml"}
   ```
-  点号路径示例：`{"path":"frontend/package.json","query":"devDependencies.vite"}`。
+  点号路径示例：`{"path":"frontend-leptos/Cargo.toml","query":"dependencies.leptos"}`。
 - `structured_diff`（两份 OpenAPI/配置的结构差异，非行级 diff）：
   ```json
   {"path_a":"specs/openapi.v1.json","path_b":"specs/openapi.v2.json","max_diff_lines":200}

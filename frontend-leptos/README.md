@@ -1,6 +1,6 @@
 # CrabMate Web（Leptos + WASM，实验性）
 
-与根目录 `frontend/`（Vite + React）并行；`cargo run -- serve` 在 **`frontend-leptos/dist` 存在时优先**提供该目录，否则使用 `frontend/dist`。
+当前项目唯一 Web 前端实现；`cargo run -- serve` 读取 **`frontend-leptos/dist`**。
 
 ## 依赖
 
@@ -20,6 +20,4 @@ trunk build --release
 
 ## 能力与现状
 
-已覆盖与 React 版相近的**壳层**：顶栏、聊天列表 + 输入框、`POST /chat/stream` SSE、命令审批条、工作区列表、任务清单勾选、本地会话列表（与 React 共用 `localStorage` 键）、深浅主题切换。
-
-**尚未**对齐 React 版的完整能力（示例：Markdown/KaTeX 渲染、虚拟列表、附件上传、会话管理全功能、工作区文件编辑/搜索等）。后续可按需移植 `frontend/src/` 中的逻辑。
+已覆盖当前 Web 端能力：顶栏、聊天列表 + 输入框、`POST /chat/stream` SSE、命令审批条、工作区列表、任务清单勾选、本地会话列表、深浅主题切换。

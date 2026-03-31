@@ -123,7 +123,7 @@ flowchart TB
 | `agent_memory.rs` / `project_profile.rs` / `project_dependency_brief.rs` | Workspace memo + project profile + dependency brief for first-turn context. |
 | `read_file_turn_cache.rs` | Per-turn **`read_file`** cache. |
 | `workspace_changelist.rs` | Session write tracking + injected changelist user message. |
-| `web/` | Axum **`AppState`**, chat handlers, workspace, tasks (in-memory per workspace), static **`frontend/dist`**, config reload path alignment. |
+| `web/` | Axum **`AppState`**, chat handlers, workspace, tasks (in-memory per workspace), static **`frontend-leptos/dist`**, config reload path alignment. |
 
 ### `lib.rs` responsibilities
 

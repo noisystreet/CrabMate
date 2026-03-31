@@ -125,11 +125,11 @@ flowchart TB
 | `mcp/mod.rs` | **MCP 客户端（stdio）**：`run_agent_turn` 开头可选 `try_open_session_and_tools`（`rmcp` + `TokioChildProcess`），按 **`mcp_enabled` + `mcp_command` 指纹** 在**进程内复用**同一条 stdio 连接（避免每轮重启子进程）；将远端 `tools/list` 映射为 OpenAI `Tool`（`mcp__{slug}__{name}`）并与内建列表合并；执行经 `tool_registry::dispatch_tool` → `tools/call`（超时 `mcp_tool_timeout_secs`，输出按 `command_max_output_len` 截断）。**安全**：`mcp_command` 显式允许启动子进程，须可信配置源；**未**复用 `run_command` 白名单。当前仅 stdio；HTTP/SSE 传输、资源/采样、将本进程暴露为 MCP server 等仍为后续方向。 |
 | `agent_memory.rs` | 工作区相对路径备忘文件读取（`load_memory_snippet`）；与 **项目画像**、**依赖结构摘要** 合并后首轮消息组装在 **`project_profile::build_first_turn_user_context_markdown`**（Web **`build_messages_for_turn`**、CLI **`prepend_cli_first_turn_injection`**、CLI 路径 **`workspace_session::initial_workspace_messages`**）。 |
 | `project_profile.rs` | **项目画像**：只读扫描 `Cargo.toml` / `package.json` / 顶层目录 / **tokei** 语言占比 / 可选 **`cargo metadata --no-deps`**，生成 Markdown；Web **`GET /workspace/profile`**；首轮与备忘、**`project_dependency_brief`** 合并见 **`build_first_turn_user_context_markdown`**（**`project_profile_inject_*`**）。 |
-| `project_dependency_brief.rs` | **依赖结构摘要**：工作区内执行 **`cargo metadata`**（完整 resolve，**非** `--locked`），从 **`resolve.nodes[].deps`** 提取 **workspace 成员包之间**的边，输出 **Mermaid**（`flowchart LR`，节点/边上限制）与 **JSON**（`crabmate_project_dependency_brief_version` + `cargo` / `npm`）；npm 为根与 `frontend/package.json` 的依赖**名**节选。首轮注入预算 **`project_dependency_brief_inject_*`**。 |
+| `project_dependency_brief.rs` | **依赖结构摘要**：工作区内执行 **`cargo metadata`**（完整 resolve，**非** `--locked`），从 **`resolve.nodes[].deps`** 提取 **workspace 成员包之间**的边，输出 **Mermaid**（`flowchart LR`，节点/边上限制）与 **JSON**（`crabmate_project_dependency_brief_version` + `cargo` / `npm`）；npm 仅统计仓库根 `package.json`（若存在）。首轮注入预算 **`project_dependency_brief_inject_*`**。 |
 | `read_file_turn_cache.rs` | 单轮 **`run_agent_turn`** 内 **`read_file`** 结果缓存（键：canonical 路径 + 行区间等；校验 **mtime + size**）。**`execute_tools`** 在任意非只读工具执行后或 **`workspace_changed`** 时 **`clear`**，避免脏读。容量 **`read_file_turn_cache_max_entries`**（`0` 关闭）；嵌入方可选传入 **`RunAgentTurnParams::read_file_turn_cache`** 覆盖默认句柄。 |
 | `workspace_changelist.rs` | **会话级**工作区写入追踪：按作用域键（**`long_term_memory_scope_id`**；Web 为 **`conversation_id`**；无则为 **`__default__`**）在 **`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_file` / `append_file` / `search_replace` / `apply_patch` / `structured_patch`** 成功写盘后累积相对路径与「本会话首次触碰」基线；**`prepare_messages_for_model`** 在可选 LLM 摘要**之后**注入 **`user.name=crabmate_workspace_changelist`**（unified diff 摘要，受 **`session_workspace_changelist_max_chars`** 约束）。**`workflow_execute` 节点**内工具经独立 **`ToolContext`**，**不**写入此表。 |
 | `web/` | Web（HTTP）专用 axum 模块：`app_state`（`AppState`、`ConversationBacking`：内存或 SQLite、可选 **`long_term_memory`**、**`web_tasks_by_workspace`**：侧栏任务清单按工作区键入的进程内表；**`cfg`** 为 **`Arc<RwLock<AgentConfig>>`** 供 **`POST /config/reload`** 与 handler 读快照；**`config_path_for_reload`** 与启动时 **`--config`** 对齐；SQLite 路径下 **`save` / `truncate`** 经统一 **`sqlite_conversation_store_op`** 包装）、`tasks_types`（`TasksData` / `TaskItem`）、`chat_handlers`（`/chat*`、`/chat/branch`、`/config/reload`、`/upload*`、`/health`、`/status`；**`CONVERSATION_CONFLICT_*`** 与 **`conversation_conflict_sse_line`** 供 HTTP 与 SSE 冲突文案一致）、`server`（Router 组装；Bearer 中间件是否在启动时挂载由 **`web_api_bearer_layer_enabled`** 决定，热重载不切换该层）、`workspace`（含 **`GET /workspace/profile`** 项目画像）、`task`（`/tasks` 读写内存表）。`open_conversation_sqlite` 会 **`LongTermMemoryRuntime::migrate_on_connection`**；`AppState` 由 `lib.rs::run` 装配；`SaveConversationOutcome` 在 **`conversation_store`**，crate 根再导出供 `chat_job_queue` 等使用。 |
-| `web_static_dir.rs` | **`resolve_web_static_dir`**：`serve`、**`config --dry-run`** 与 **`GET /health`** 的 **`frontend_static_dir`** 检查共用的静态资源根；若仓库内 **`frontend-leptos/dist`** 为目录则优先（Leptos + Trunk 的 WASM 构建产物），否则使用 **`frontend/dist`**（Vite/React）。 |
+| `web_static_dir.rs` | **`resolve_web_static_dir`**：`serve`、**`config --dry-run`** 与 **`GET /health`** 的 **`frontend_static_dir`** 检查共用的静态资源根；固定为仓库内 **`frontend-leptos/dist`**（Leptos + Trunk 的 WASM 构建产物）。 |
 
 ### `lib.rs` 额外职责（非独立文件但需知）
 
@@ -395,38 +395,24 @@ flowchart LR
   - **`runtime/config_reload`**：**`reload_shared_agent_config`**：`load_config` → **`apply_hot_reload_config_subset`** → **`mcp::clear_mcp_process_cache`**；供交互式 CLI **`/config reload`** 与 **`POST /config/reload`** 共用。
   - **`runtime/tool_replay`**：从 **`ChatSessionFile`** 消息序列提取 `assistant.tool_calls` 与对应 `tool` 消息，写出 **`ToolReplayFile`** fixture；**`tool-replay run`** 按步调用 **`tools::run_tool`**（与 Agent 路径相同，**无** LLM、**无** CLI 审批交互）。**`--compare-recorded`** 与 `recorded_output` 全等比较失败时退出码 **`EXIT_TOOL_REPLAY_MISMATCH`（6）**。
 
-## 前端模块说明（`frontend/src/`）
+## 前端模块说明（`frontend-leptos/`）
 
-### `frontend/src/api.ts`
+### `frontend-leptos/src/api.rs`
 
-- **统一请求封装**：超时、重试、错误分类（`ApiError`）、GET 去重与轻量缓存（SWR）。
-- **SSE 协议版本**：导出常量 **`SSE_PROTOCOL_VERSION`**，须与 **`sse::protocol::SSE_PROTOCOL_VERSION`** 及 **`docs/SSE_PROTOCOL.md`** 一致。
-- **流式聊天**：`sendChatStream` 消费 `/chat/stream` 的 SSE，把：
-  - 请求体中的可选 `conversation_id` 传给后端；若首轮未传，读取响应头 `x-conversation-id` 并缓存到面板状态
-  - 纯文本 `data:` 当作 delta
-  - JSON `data:` 识别 `tool_running`/`tool_call`（兼容旧服务端）/`tool_result`（含可选 `summary`）/`workspace_changed`/`command_approval_request` 并分发回调；审批决策通过 `submitChatApproval` 发到 `POST /chat/approval`
+- 浏览器 `fetch` 封装与 `/chat/stream` SSE 读取（UTF-8 分块安全拼接、`data:` 分发、`[DONE]` 处理）。
+- 纯文本 `data:` 作为 delta；JSON `data:` 经 `sse_dispatch.rs` 分类为控制面并消费（工具状态、审批请求、工作区刷新、分阶段规划通知等）。
+- 审批决策通过 `submit_chat_approval` 发送到 `POST /chat/approval`。
 
-### `frontend/src/components/ChatPanel.tsx`
+### `frontend-leptos/src/lib.rs`
 
-- **聊天主面板**：维护消息列表、流式渲染（尽量只更新最后一条 assistant），以及工具输出的“系统消息卡片”（可折叠/复制）。
-- **附件**：图片/音频/视频本地压缩/转 DataURL（当前实现以 DataURL 形式随消息发送/展示；上传 API 也已在 `api.ts` 提供，用于走服务端 `/upload`）。
-- **会话导出**：把当前对话导出为 JSON。
+- Web 主界面（会话列表、聊天区、工作区与任务侧栏、状态栏、主题切换）。
+- 流式消息渲染与自动跟底策略（用户上滚时禁用、回到底部附近恢复）。
+- `agent_reply_plan` 展示过滤：不回显原始 JSON，保留可读信息或终答正文。
 
-### `frontend/src/components/WorkspacePanel.tsx`
+### `frontend-leptos/src/storage.rs`
 
-- **工作区浏览/编辑**：调用 `/workspace` 与 `/workspace/file` 做目录浏览、文件读写、删除与下载。`frontend/src/api.ts` 会在请求时自动附带 `localStorage["crabmate-api-bearer-token"]`（若存在）作为 `Authorization: Bearer <token>`，用于 Web API 鉴权。
-- **工作区设置**：把用户选择的目录同步到后端（`POST /workspace`），并本地持久化到 `localStorage`。
-- **目录内搜索**：调用 `/workspace/search`，并可“一键把结果发到聊天”。
-
-### `frontend/src/components/TasksPanel.tsx`
-
-- **任务清单**：读写 `/tasks`（后端按**当前生效工作区路径**保存在 **`AppState.web_tasks_by_workspace`**，**进程内存**；服务重启后丢失；**不**写工作区 `tasks.json`）。
-- **从描述生成**：用一次独立 `/chat` 请求让模型输出严格 JSON，然后 `POST /tasks`。
-
-### `frontend/src/components/StatusBar.tsx`
-
-- **状态轮询**：轮询 `/status`，页面不可见时暂停；失败指数退避。
-- **忙碌状态**：结合 Chat 面板的 `busy` 与 `toolBusy` 展示“模型生成中…”/“工具运行中…”。
+- `localStorage` 会话持久化（会话列表、活动会话、草稿等）。
+- 与导出结构保持兼容，供 `runtime/chat_export` 与前端互通。
 
 ## 数据与文件持久化约定
 
@@ -446,5 +432,5 @@ flowchart LR
   - Web 模式下的工作区设置会影响“工具执行目录”，需要明确这一点避免误操作。
   - **密钥与日志**：勿将真实 API key、token、`.env` 内容写入代码、示例配置、commit message 或日志；日志与错误回显须脱敏。Cursor 规则见 **`.cursor/rules/secrets-and-logging.mdc`**。
   - 已知 HTTP 鉴权、监听地址、`workspace_set` 等安全与协议债见 [`docs/TODOLIST.md`](TODOLIST.md)。
-- **SSE 协议演进**：后端以 **`sse::protocol::SseMessage` / `SsePayload`**（及 `sse/mod.rs` 再导出）为单一事实来源；`v` 递增时前端可按版本分支。Rust 侧行分类见 **`sse/line.rs`**；浏览器侧在 **`frontend/src/sse_control_dispatch.ts`**（`tryDispatchSseControlPayload`，由 `api.ts` 的 `sendChatStream` 调用）。**人读契约与错误码表**：**`docs/SSE_PROTOCOL.md`**。**控制面分类契约测试**：`fixtures/sse_control_golden.jsonl` + `cargo test golden_sse_control` + `cd frontend && npm run verify-sse-contract`。
+- **SSE 协议演进**：后端以 **`sse::protocol::SseMessage` / `SsePayload`**（及 `sse/mod.rs` 再导出）为单一事实来源；`v` 递增时前端可按版本分支。Rust 侧行分类见 **`sse/line.rs`**；浏览器侧在 **`frontend-leptos/src/sse_dispatch.rs`**（由 `frontend-leptos/src/api.rs` 调用）。**人读契约与错误码表**：**`docs/SSE_PROTOCOL.md`**。**控制面分类契约测试**：`fixtures/sse_control_golden.jsonl` + `cargo test golden_sse_control`。
 

@@ -25,7 +25,7 @@ pub struct HealthReport {
 
 /// 构建健康报告（阻塞工作放在 `spawn_blocking` 内）。
 ///
-/// `include_frontend_static`：为 true 时检查 `frontend/dist`（与 Web 服务模式一致）；TUI 也可为 true 以便本地开发时看到前端构建是否缺失。
+/// `include_frontend_static`：为 true 时检查 `frontend-leptos/dist`（与 Web 服务模式一致）；TUI 也可为 true 以便本地开发时看到前端构建是否缺失。
 pub async fn build_health_report(
     workspace_dir: &Path,
     api_key: &str,

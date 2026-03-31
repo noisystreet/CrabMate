@@ -1,4 +1,4 @@
-//! 浏览器 `fetch` + `/chat/stream` SSE 解析（与 `frontend/src/api.ts` 对齐）。
+//! 浏览器 `fetch` + `/chat/stream` SSE 解析（单前端实现）。
 
 #![allow(clippy::collapsible_if)]
 

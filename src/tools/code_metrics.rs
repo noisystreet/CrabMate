@@ -144,7 +144,7 @@ pub fn dependency_graph(args_json: &str, workspace_root: &Path, max_output_len: 
         return go_dep_graph(workspace_root, format, max_output_len);
     }
     if (workspace_root.join("package.json").is_file()
-        || workspace_root.join("frontend/package.json").is_file())
+        || workspace_root.join("package.json").is_file())
         && (kind == "auto" || kind == "npm" || kind == "node")
     {
         return npm_dep_graph(workspace_root, format, max_output_len);

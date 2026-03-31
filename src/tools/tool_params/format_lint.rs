@@ -44,7 +44,7 @@ pub(in crate::tools) fn params_format_file() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作区根目录的文件路径，如 src/main.rs、frontend/src/App.tsx、src/pkg/__init__.py、src/foo.cpp（.py 使用 ruff format；.c/.h/.cpp 等使用 clang-format）"
+                "description": "相对工作区根目录的文件路径，如 src/main.rs、frontend-leptos/src/lib.rs、src/pkg/__init__.py、src/foo.cpp（.py 使用 ruff format；.c/.h/.cpp 等使用 clang-format）"
             }
         },
         "required": ["path"]
