@@ -12,6 +12,8 @@ use api::{
     ChatStreamCallbacks, TaskItem, TasksData, WorkspaceData, fetch_tasks, fetch_workspace,
     save_tasks, send_chat_stream, submit_chat_approval,
 };
+use gloo_timers::future::TimeoutFuture;
+use leptos::html::Div;
 use leptos::mount::mount_to_body;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -21,6 +23,7 @@ use std::rc::Rc;
 use storage::{
     ChatSession, StoredMessage, ensure_at_least_one, load_sessions, make_session_id, save_sessions,
 };
+use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
 use crate::sse_dispatch::{CommandApprovalRequest, ToolResultInfo};
@@ -145,6 +148,9 @@ fn App() -> impl IntoView {
     let abort_cell: Rc<RefCell<Option<web_sys::AbortController>>> = Rc::new(RefCell::new(None));
     // 用户点「停止」后为 true，避免异步 on_done / on_error 覆盖已写入的「已停止」文案。
     let user_cancelled_stream: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
+    let messages_scroller = NodeRef::<Div>::new();
+    // 为 false 时表示用户已离开底部，流式输出不再强行跟底；滚回底部附近会重新置 true。
+    let auto_scroll_chat = RwSignal::new(true);
 
     Effect::new(move |_| {
         if initialized.get() {
@@ -262,14 +268,52 @@ fn App() -> impl IntoView {
         conversation_id.set(None);
     });
 
-    let send_message = {
+    Effect::new(move |_| {
+        let aid = active_id.get();
+        let _fingerprint = sessions.with(|list| {
+            list.iter()
+                .find(|s| s.id == aid)
+                .map(|s| {
+                    s.messages
+                        .iter()
+                        .fold(0u64, |acc, m| acc.wrapping_add(m.text.len() as u64))
+                        .wrapping_add((s.messages.len() as u64).saturating_mul(17))
+                })
+                .unwrap_or(0)
+        });
+
+        if !auto_scroll_chat.get() {
+            return;
+        }
+
+        let mref = messages_scroller;
+        spawn_local(async move {
+            TimeoutFuture::new(0).await;
+            if let Some(el) = mref.get() {
+                el.set_scroll_top(el.scroll_height());
+            }
+            TimeoutFuture::new(0).await;
+            if let Some(el) = mref.get() {
+                el.set_scroll_top(el.scroll_height());
+            }
+            // 再等一帧：流式换行后布局高度可能在本轮 paint 后才稳定
+            TimeoutFuture::new(16).await;
+            if let Some(el) = mref.get() {
+                el.set_scroll_top(el.scroll_height());
+            }
+        });
+    });
+
+    let run_send_message: Rc<dyn Fn()> = Rc::new({
         let abort_cell = Rc::clone(&abort_cell);
         let user_cancelled_stream = Rc::clone(&user_cancelled_stream);
-        move |_| {
+        let auto_scroll_chat = auto_scroll_chat;
+        move || {
             let text = draft.get().trim().to_string();
             if text.is_empty() || !initialized.get() || status_busy.get() {
                 return;
             }
+            auto_scroll_chat.set(true);
             let uid = make_message_id();
             let asst_id = make_message_id();
             patch_active_session(sessions, &active_id.get(), |s| {
@@ -442,6 +486,12 @@ fn App() -> impl IntoView {
                     on_error(e);
                 }
             });
+        }
+    });
+    let send_message = {
+        let r = Rc::clone(&run_send_message);
+        move |_e: web_sys::MouseEvent| {
+            r();
         }
     };
 
@@ -625,51 +675,66 @@ fn App() -> impl IntoView {
 
             <div class="main-row">
                 <div class="chat-column">
-                    <div class="messages">
-                        {move || {
-                            let id = active_id.get();
-                            sessions.with(|list| {
-                                list.iter()
-                                    .find(|s| s.id == id)
-                                    .map(|s| s.messages.clone())
-                                    .unwrap_or_default()
-                                    .into_iter()
-                                    .map(|m| {
-                                        let cls = match m.role.as_str() {
-                                            "user" => "msg msg-user",
-                                            "assistant" if m.is_tool => "msg msg-tool",
-                                            "assistant" => "msg msg-assistant",
-                                            _ if m.is_tool => "msg msg-tool",
-                                            _ => "msg msg-system",
-                                        };
-                                        let loading =
-                                            m.role == "assistant" && m.state.as_deref() == Some("loading");
-                                        let err = m.state.as_deref() == Some("error");
-                                        let class_final = if err {
-                                            format!("{cls} msg-error")
-                                        } else if loading {
-                                            format!("{cls} msg-loading")
-                                        } else {
-                                            cls.to_string()
-                                        };
-                                        view! {
-                                            <div class=class_final>
-                                                {m.text.clone()}
-                                                {loading.then(|| {
-                                                    view! {
-                                                        <span class="typing-dots" aria-hidden="true">
-                                                            <span></span>
-                                                            <span></span>
-                                                            <span></span>
-                                                        </span>
-                                                    }
-                                                })}
-                                            </div>
-                                        }
-                                    })
-                                    .collect_view()
-                            })
-                        }}
+                    <div
+                        class="messages"
+                        node_ref=messages_scroller
+                        on:scroll=move |ev: web_sys::Event| {
+                            if let Some(t) = ev.target() {
+                                if let Ok(el) = t.dyn_into::<web_sys::HtmlElement>() {
+                                    let gap = el.scroll_height()
+                                        - el.scroll_top()
+                                        - el.client_height();
+                                    auto_scroll_chat.set(gap <= 72);
+                                }
+                            }
+                        }
+                    >
+                        <div class="messages-inner">
+                            {move || {
+                                let id = active_id.get();
+                                sessions.with(|list| {
+                                    list.iter()
+                                        .find(|s| s.id == id)
+                                        .map(|s| s.messages.clone())
+                                        .unwrap_or_default()
+                                        .into_iter()
+                                        .map(|m| {
+                                            let cls = match m.role.as_str() {
+                                                "user" => "msg msg-user",
+                                                "assistant" if m.is_tool => "msg msg-tool",
+                                                "assistant" => "msg msg-assistant",
+                                                _ if m.is_tool => "msg msg-tool",
+                                                _ => "msg msg-system",
+                                            };
+                                            let loading = m.role == "assistant"
+                                                && m.state.as_deref() == Some("loading");
+                                            let err = m.state.as_deref() == Some("error");
+                                            let class_final = if err {
+                                                format!("{cls} msg-error")
+                                            } else if loading {
+                                                format!("{cls} msg-loading")
+                                            } else {
+                                                cls.to_string()
+                                            };
+                                            view! {
+                                                <div class=class_final>
+                                                    <span class="msg-body">{m.text.clone()}</span>
+                                                    {loading.then(|| {
+                                                        view! {
+                                                            <span class="typing-dots" aria-hidden="true">
+                                                                <span></span>
+                                                                <span></span>
+                                                                <span></span>
+                                                            </span>
+                                                        }
+                                                    })}
+                                                </div>
+                                            }
+                                        })
+                                        .collect_view()
+                                })
+                            }}
+                        </div>
                     </div>
                     <div class="composer">
                         <textarea
@@ -682,7 +747,16 @@ fn App() -> impl IntoView {
                                     s.draft = v;
                                 });
                             }
-                            placeholder="输入消息…"
+                            on:keydown={
+                                let r = Rc::clone(&run_send_message);
+                                move |ev: web_sys::KeyboardEvent| {
+                                    if ev.key() == "Enter" && !ev.shift_key() {
+                                        ev.prevent_default();
+                                        r();
+                                    }
+                                }
+                            }
+                            placeholder="输入消息，Enter 发送 / Shift+Enter 换行…"
                             rows="3"
                         ></textarea>
                         <div class="composer-actions">
