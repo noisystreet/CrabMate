@@ -632,7 +632,41 @@ body > * {
   color: var(--muted);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+}
+
+/* 不占满剩余宽度，避免「就绪/生成中」被顶到状态栏最右侧 */
+.status-meta {
+  min-width: 0;
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.status-agent-select {
+  flex: 0 0 auto;
+  min-width: 180px;
+  max-width: 260px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.status-agent-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.status-activity {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .status-bar.error {
