@@ -358,7 +358,9 @@ fn App() -> impl IntoView {
     let tool_busy = RwSignal::new(false);
     let workspace_data = RwSignal::new(None::<WorkspaceData>);
     let workspace_err = RwSignal::new(None::<String>);
+    let workspace_loading = RwSignal::new(false);
     let status_data = RwSignal::new(None::<StatusData>);
+    let status_loading = RwSignal::new(true);
     let selected_agent_role = RwSignal::new(
         local_storage()
             .and_then(|s| s.get_item(AGENT_ROLE_KEY).ok().flatten())
@@ -367,6 +369,7 @@ fn App() -> impl IntoView {
     );
     let tasks_data = RwSignal::new(TasksData { items: vec![] });
     let tasks_err = RwSignal::new(None::<String>);
+    let tasks_loading = RwSignal::new(false);
     let pending_approval = RwSignal::new(None::<(String, String, String)>);
     let session_modal = RwSignal::new(false);
     let abort_cell: Rc<RefCell<Option<web_sys::AbortController>>> = Rc::new(RefCell::new(None));
@@ -454,6 +457,7 @@ fn App() -> impl IntoView {
 
     let refresh_workspace = {
         move || {
+            workspace_loading.set(true);
             spawn_local(async move {
                 match fetch_workspace(None).await {
                     Ok(d) => {
@@ -465,6 +469,7 @@ fn App() -> impl IntoView {
                         workspace_data.set(None);
                     }
                 }
+                workspace_loading.set(false);
             });
         }
     };
@@ -477,6 +482,7 @@ fn App() -> impl IntoView {
 
     let refresh_tasks = {
         move || {
+            tasks_loading.set(true);
             spawn_local(async move {
                 match fetch_tasks().await {
                     Ok(d) => {
@@ -487,21 +493,29 @@ fn App() -> impl IntoView {
                         tasks_err.set(Some(e));
                     }
                 }
+                tasks_loading.set(false);
             });
         }
     };
 
     let refresh_status = {
         move || {
+            status_loading.set(true);
             spawn_local(async move {
-                if let Ok(d) = fetch_status().await {
-                    if let Some(cur) = selected_agent_role.get_untracked()
-                        && !d.agent_role_ids.iter().any(|id| id == &cur)
-                    {
-                        selected_agent_role.set(None);
+                match fetch_status().await {
+                    Ok(d) => {
+                        if let Some(cur) = selected_agent_role.get_untracked()
+                            && !d.agent_role_ids.iter().any(|id| id == &cur)
+                        {
+                            selected_agent_role.set(None);
+                        }
+                        status_data.set(Some(d));
                     }
-                    status_data.set(Some(d));
+                    Err(_) => {
+                        status_data.set(None);
+                    }
                 }
+                status_loading.set(false);
             });
         }
     };
@@ -1094,42 +1108,71 @@ fn App() -> impl IntoView {
                                         }
                                     }
                                 >
-                                    <div class="side-pane-title">"工作区"</div>
-                                    <div class="workspace-path">
-                                        {move || workspace_data.get().map(|d| d.path).unwrap_or_default()}
-                                    </div>
-                                    <Show when=move || {
-                                        workspace_err.get().is_some()
-                                            || workspace_data.get().and_then(|d| d.error).is_some()
-                                    }>
-                                        <div class="msg-error">{move || {
-                                            workspace_err
-                                                .get()
-                                                .or_else(|| workspace_data.get().and_then(|d| d.error))
-                                                .unwrap_or_default()
-                                        }}</div>
-                                    </Show>
-                                    <button type="button" class="btn btn-secondary btn-sm side-action" on:click=move |_| refresh_workspace()>"刷新列表"</button>
-                                    <ul class="workspace-list">
-                                        {move || {
-                                            let entries = workspace_data
-                                                .get()
-                                                .map(|d| d.entries)
-                                                .unwrap_or_default();
-                                            if entries.is_empty() {
-                                                view! { <li>"（无数据）"</li> }.into_any()
-                                            } else {
-                                                entries
-                                                    .into_iter()
-                                                    .map(|e| {
-                                                        let mark = if e.is_dir { "dir" } else { "file" };
-                                                        view! { <li class=mark>{e.name}</li> }
-                                                    })
-                                                    .collect_view()
+                                    <div class="side-card">
+                                        <div class="side-card-head">
+                                            <div class="side-pane-title">"工作区"</div>
+                                            <button type="button" class="btn btn-secondary btn-sm side-head-action" on:click=move |_| refresh_workspace()>"刷新列表"</button>
+                                        </div>
+                                        <div class="side-card-body">
+                                            {move || {
+                                                if workspace_loading.get() {
+                                                    view! {
+                                                        <div class="skeleton-stack" aria-busy="true" aria-label="加载工作区">
+                                                            <div class="skeleton skeleton-block skeleton-ws-path"></div>
+                                                            <ul class="workspace-list workspace-list-skeleton">
+                                                                <li><span class="skeleton skeleton-line skeleton-ws-row"></span></li>
+                                                                <li><span class="skeleton skeleton-line skeleton-ws-row"></span></li>
+                                                                <li><span class="skeleton skeleton-line skeleton-ws-row"></span></li>
+                                                                <li><span class="skeleton skeleton-line skeleton-ws-row"></span></li>
+                                                                <li><span class="skeleton skeleton-line skeleton-ws-row"></span></li>
+                                                            </ul>
+                                                        </div>
+                                                    }
                                                     .into_any()
-                                            }
-                                        }}
-                                    </ul>
+                                                } else {
+                                                    view! {
+                                                        <div class="side-card-loaded">
+                                                            <div class="workspace-path">
+                                                                {workspace_data.get().map(|d| d.path).unwrap_or_default()}
+                                                            </div>
+                                                            <Show when=move || {
+                                                                workspace_err.get().is_some()
+                                                                    || workspace_data.get().and_then(|d| d.error).is_some()
+                                                            }>
+                                                                <div class="msg-error">{move || {
+                                                                    workspace_err
+                                                                        .get()
+                                                                        .or_else(|| workspace_data.get().and_then(|d| d.error))
+                                                                        .unwrap_or_default()
+                                                                }}</div>
+                                                            </Show>
+                                                            <ul class="workspace-list">
+                                                                {move || {
+                                                                    let entries = workspace_data
+                                                                        .get()
+                                                                        .map(|d| d.entries)
+                                                                        .unwrap_or_default();
+                                                                    if entries.is_empty() {
+                                                                        view! { <li>"（无数据）"</li> }.into_any()
+                                                                    } else {
+                                                                        entries
+                                                                            .into_iter()
+                                                                            .map(|e| {
+                                                                                let mark = if e.is_dir { "dir" } else { "file" };
+                                                                                view! { <li class=mark>{e.name}</li> }
+                                                                            })
+                                                                            .collect_view()
+                                                                            .into_any()
+                                                                    }
+                                                                }}
+                                                            </ul>
+                                                        </div>
+                                                    }
+                                                    .into_any()
+                                                }
+                                            }}
+                                        </div>
+                                    </div>
                                 </div>
                             </Show>
                             <Show when=move || tasks_visible.get()>
@@ -1144,29 +1187,56 @@ fn App() -> impl IntoView {
                                         }
                                     }
                                 >
-                                    <div class="side-pane-title">"任务清单"</div>
-                                    <button type="button" class="btn btn-secondary btn-sm side-action" on:click=move |_| refresh_tasks()>"刷新"</button>
-                                    <Show when=move || tasks_err.get().is_some()>
-                                        <div class="msg-error">{move || tasks_err.get().unwrap_or_default()}</div>
-                                    </Show>
-                                    <ul class="tasks-list">
-                                        {move || {
-                                            tasks_data.get().items.into_iter().map(|t: TaskItem| {
-                                                let id = t.id.clone();
-                                                let done = t.done;
-                                                view! {
-                                                    <li>
-                                                        <input
-                                                            type="checkbox"
-                                                            prop:checked=done
-                                                            on:change=move |_| toggle_task(id.clone())
-                                                        />
-                                                        <span>{t.title}</span>
-                                                    </li>
+                                    <div class="side-card">
+                                        <div class="side-card-head">
+                                            <div class="side-pane-title">"任务清单"</div>
+                                            <button type="button" class="btn btn-secondary btn-sm side-head-action" on:click=move |_| refresh_tasks()>"刷新"</button>
+                                        </div>
+                                        <div class="side-card-body">
+                                            {move || {
+                                                if tasks_loading.get() {
+                                                    view! {
+                                                        <div class="skeleton-stack" aria-busy="true" aria-label="加载任务">
+                                                            <ul class="tasks-list tasks-list-skeleton">
+                                                                <li><span class="skeleton skeleton-task-check"></span><span class="skeleton skeleton-line skeleton-task-line"></span></li>
+                                                                <li><span class="skeleton skeleton-task-check"></span><span class="skeleton skeleton-line skeleton-task-line"></span></li>
+                                                                <li><span class="skeleton skeleton-task-check"></span><span class="skeleton skeleton-line skeleton-task-line"></span></li>
+                                                                <li><span class="skeleton skeleton-task-check"></span><span class="skeleton skeleton-line skeleton-task-line"></span></li>
+                                                            </ul>
+                                                        </div>
+                                                    }
+                                                    .into_any()
+                                                } else {
+                                                    view! {
+                                                        <div class="side-card-loaded">
+                                                            <Show when=move || tasks_err.get().is_some()>
+                                                                <div class="msg-error">{move || tasks_err.get().unwrap_or_default()}</div>
+                                                            </Show>
+                                                            <ul class="tasks-list">
+                                                                {move || {
+                                                                    tasks_data.get().items.into_iter().map(|t: TaskItem| {
+                                                                        let id = t.id.clone();
+                                                                        let done = t.done;
+                                                                        view! {
+                                                                            <li>
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    prop:checked=done
+                                                                                    on:change=move |_| toggle_task(id.clone())
+                                                                                />
+                                                                                <span>{t.title}</span>
+                                                                            </li>
+                                                                        }
+                                                                    }).collect_view()
+                                                                }}
+                                                            </ul>
+                                                        </div>
+                                                    }
+                                                    .into_any()
                                                 }
-                                            }).collect_view()
-                                        }}
-                                    </ul>
+                                            }}
+                                        </div>
+                                    </div>
                                 </div>
                             </Show>
                         </div>
@@ -1175,73 +1245,124 @@ fn App() -> impl IntoView {
             </div>
 
             <Show when=move || status_bar_visible.get()>
-                <footer class=move || {
-                    if status_err.get().is_some() {
-                        "status-bar error"
-                    } else {
-                        "status-bar"
-                    }
-                }>
-                    <span class="status-meta" title=move || {
-                        status_data
-                            .get()
-                            .map(|d| format!("模型: {} | base_url: {}", d.model, d.api_base))
-                            .unwrap_or_else(|| "模型: - | base_url: -".to_string())
-                    }>{move || {
-                        status_data
-                            .get()
-                            .map(|d| format!("模型: {} | base_url: {}", d.model, d.api_base))
-                            .unwrap_or_else(|| "模型: - | base_url: -".to_string())
-                    }}</span>
-                    <select
-                        class="status-agent-select"
-                        title="Agent 角色（对标 CLI /agent set）"
-                        prop:value=move || selected_agent_role.get().unwrap_or_else(|| "__default__".to_string())
-                        on:change=move |ev| {
-                            let v = event_target_value(&ev);
-                            let t = v.trim();
-                            if t.is_empty() || t == "__default__" {
-                                selected_agent_role.set(None);
-                            } else {
-                                selected_agent_role.set(Some(t.to_string()));
-                            }
-                        }
-                    >
-                        <option value="__default__">{move || {
-                            status_data
-                                .get()
-                                .and_then(|d| d.default_agent_role_id)
-                                .map(|id| format!("角色: default ({id})"))
-                                .unwrap_or_else(|| "角色: default".to_string())
-                        }}</option>
+                <footer class="status-bar">
+                    <div class="status-chips">
                         {move || {
-                            status_data
-                                .get()
-                                .map(|d| d.agent_role_ids)
-                                .unwrap_or_default()
-                                .into_iter()
-                                .map(|id| {
-                                    let label = format!("角色: {id}");
-                                    view! { <option value=id.clone()>{label}</option> }
-                                })
-                                .collect_view()
+                            if status_loading.get() {
+                                view! {
+                                    <div class="status-chips-skeleton" aria-busy="true" aria-label="加载状态">
+                                        <span class="status-chip status-chip-skeleton">
+                                            <span class="skeleton skeleton-chip-label"></span>
+                                            <span class="skeleton skeleton-chip-value skeleton-chip-model"></span>
+                                        </span>
+                                        <span class="status-chip status-chip-skeleton status-chip-url">
+                                            <span class="skeleton skeleton-chip-label"></span>
+                                            <span class="skeleton skeleton-chip-value skeleton-chip-url-bar"></span>
+                                        </span>
+                                        <span class="status-chip status-chip-skeleton status-chip-role">
+                                            <span class="skeleton skeleton-chip-label"></span>
+                                            <span class="skeleton skeleton-chip-value skeleton-chip-role-select"></span>
+                                        </span>
+                                    </div>
+                                }
+                                .into_any()
+                            } else {
+                                view! {
+                                    <>
+                                        <span class="status-chip">
+                                            <span class="status-chip-label">"模型"</span>
+                                            <span class="status-chip-value">{move || {
+                                                status_data
+                                                    .get()
+                                                    .map(|d| d.model)
+                                                    .unwrap_or_else(|| "-".to_string())
+                                            }}</span>
+                                        </span>
+                                        <span class="status-chip status-chip-url" title=move || {
+                                            status_data
+                                                .get()
+                                                .map(|d| d.api_base)
+                                                .unwrap_or_else(|| "-".to_string())
+                                        }>
+                                            <span class="status-chip-label">"base_url"</span>
+                                            <span class="status-chip-value">{move || {
+                                                status_data
+                                                    .get()
+                                                    .map(|d| d.api_base)
+                                                    .unwrap_or_else(|| "-".to_string())
+                                            }}</span>
+                                        </span>
+                                        <label class="status-chip status-chip-role" title="Agent 角色（对标 CLI /agent set）">
+                                            <span class="status-chip-label">"角色"</span>
+                                            <select
+                                                class="status-agent-select"
+                                                prop:value=move || {
+                                                    selected_agent_role
+                                                        .get()
+                                                        .unwrap_or_else(|| "__default__".to_string())
+                                                }
+                                                on:change=move |ev| {
+                                                    let v = event_target_value(&ev);
+                                                    let t = v.trim();
+                                                    if t.is_empty() || t == "__default__" {
+                                                        selected_agent_role.set(None);
+                                                    } else {
+                                                        selected_agent_role.set(Some(t.to_string()));
+                                                    }
+                                                }
+                                            >
+                                                <option value="__default__">{move || {
+                                                    status_data
+                                                        .get()
+                                                        .and_then(|d| d.default_agent_role_id)
+                                                        .map(|id| format!("default ({id})"))
+                                                        .unwrap_or_else(|| "default".to_string())
+                                                }}</option>
+                                                {move || {
+                                                    status_data
+                                                        .get()
+                                                        .map(|d| d.agent_role_ids)
+                                                        .unwrap_or_default()
+                                                        .into_iter()
+                                                        .map(|id| {
+                                                            let label = id.clone();
+                                                            view! { <option value=id>{label}</option> }
+                                                        })
+                                                        .collect_view()
+                                                }}
+                                            </select>
+                                        </label>
+                                    </>
+                                }
+                                .into_any()
+                            }
                         }}
-                    </select>
-                    <span class="status-activity">{move || {
-                        if tool_busy.get() {
-                            "工具执行中… ".to_string()
+                    </div>
+                    <span class=move || {
+                        let kind = if status_err.get().is_some() {
+                            "error"
+                        } else if tool_busy.get() {
+                            "tool"
+                        } else if status_busy.get() {
+                            "running"
                         } else {
-                            String::new()
-                        }
-                    }}
-                    {move || {
-                        if status_busy.get() {
-                            "模型生成中…".to_string()
-                        } else {
-                            "就绪".to_string()
-                        }
-                    }}
-                    {move || status_err.get().map(|e| format!(" | {e}")).unwrap_or_default()}</span>
+                            "ready"
+                        };
+                        format!("status-run status-run-{kind}")
+                    }>
+                        <span class="status-run-dot" aria-hidden="true"></span>
+                        <span>{move || {
+                            if let Some(e) = status_err.get() {
+                                format!("错误: {e}")
+                            } else if tool_busy.get() {
+                                "工具执行中…".to_string()
+                            } else if status_busy.get() {
+                                "模型生成中…".to_string()
+                            } else {
+                                "就绪".to_string()
+                            }
+                        }}</span>
+                    </span>
                 </footer>
             </Show>
 
