@@ -15,6 +15,7 @@ static SPECS_JVM_CONTAINER: &[ToolSpec] = &include!("specs/jvm_container.inc.rs"
 static SPECS_QUALITY_AST: &[ToolSpec] = &include!("specs/quality_ast.inc.rs");
 static SPECS_FRONTEND_AUDIT_CI: &[ToolSpec] = &include!("specs/frontend_audit_ci.inc.rs");
 static SPECS_DIAGNOSTICS_DOCS: &[ToolSpec] = &include!("specs/diagnostics_docs.inc.rs");
+static SPECS_GITHUB_CLI: &[ToolSpec] = &include!("specs/github_cli.inc.rs");
 static SPECS_GIT_READ: &[ToolSpec] = &include!("specs/git_read.inc.rs");
 static SPECS_GIT_WRITE_CORE: &[ToolSpec] = &include!("specs/git_write_core.inc.rs");
 static SPECS_FILE_CORE: &[ToolSpec] = &include!("specs/file_core.inc.rs");
@@ -44,6 +45,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             + SPECS_QUALITY_AST.len()
             + SPECS_FRONTEND_AUDIT_CI.len()
             + SPECS_DIAGNOSTICS_DOCS.len()
+            + SPECS_GITHUB_CLI.len()
             + SPECS_GIT_READ.len()
             + SPECS_GIT_WRITE_CORE.len()
             + SPECS_FILE_CORE.len()
@@ -69,6 +71,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
         v.extend_from_slice(SPECS_QUALITY_AST);
         v.extend_from_slice(SPECS_FRONTEND_AUDIT_CI);
         v.extend_from_slice(SPECS_DIAGNOSTICS_DOCS);
+        v.extend_from_slice(SPECS_GITHUB_CLI);
         v.extend_from_slice(SPECS_GIT_READ);
         v.extend_from_slice(SPECS_GIT_WRITE_CORE);
         v.extend_from_slice(SPECS_FILE_CORE);

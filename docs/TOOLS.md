@@ -4,7 +4,7 @@
 
 本文档列出各内置工具的能力说明，以及常见 Function Calling JSON 参数示例与发布检查排障指引。Web 工作区、流式与会话导出等行为说明仍在根目录 [`README.md`](../README.md)「功能概览」中；日常使用与入门亦见该文件。
 
-**可选「解释卡」**（配置 `tool_call_explain_enabled`）：启用后，凡**非只读**内置工具（与 `tool_registry::is_readonly_tool(&AgentConfig, name)` 一致，含 `run_command`、`run_executable`、写文件、`http_request`、git 写操作、`workflow_execute` 等；**`[tool_registry] write_effect_tools`** 可覆写只读判定）调用时，须在 JSON **顶层**增加字符串字段 **`crabmate_explain_why`**，用一句自然语言说明本步目的；服务端校验长度后**执行前会剥离**该键，避免与 `additionalProperties: false` 冲突。只读工具与 MCP 代理工具不要求；MCP 调用仍会剥离该键再转发。与命令/HTTP **审批**互补（审批管授权，解释卡管可理解性）。
+**可选「解释卡」**（配置 `tool_call_explain_enabled`）：启用后，凡**非只读**内置工具（与 `tool_registry::is_readonly_tool(&AgentConfig, name)` 一致，含 `run_command`、`run_executable`、写文件、`http_request`、**`gh_api`**、git 写操作、`workflow_execute` 等；**`[tool_registry] write_effect_tools`** 可覆写只读判定）调用时，须在 JSON **顶层**增加字符串字段 **`crabmate_explain_why`**，用一句自然语言说明本步目的；服务端校验长度后**执行前会剥离**该键，避免与 `additionalProperties: false` 冲突。只读工具与 MCP 代理工具不要求；MCP 调用仍会剥离该键再转发。与命令/HTTP **审批**互补（审批管授权，解释卡管可理解性）。
 
 **长输出进模型上下文**（`tool_result_envelope_v1` 默认开启）：写入历史的 `role: tool` 为 **`crabmate_tool`** JSON 信封（`summary`、`output` 等）。另含 **`tool_call_id`**、**`execution_mode`**（`serial` / `parallel_readonly_batch`）、**`parallel_batch_id`**（同批并行只读工具共享）；失败时含 **`retryable`**（与 `error_code` 配套的**启发式**，非保证）。**并行只读批**内各工具使用与串行 **`dispatch_tool`** 对齐的**墙上时钟**（`tool_registry::parallel_tool_wall_timeout_secs`，如 **`http_fetch`** 取 **`http_fetch_timeout_secs` 与 `command_timeout_secs` 的较大者**，**`get_weather` / `web_search`** 用各自超时，其余多为 **`command_timeout_secs`**）；超时时输出含「超时」文案，**`tool_result.error_code`** 为 **`timeout`**。每次请求模型前若超过 **`tool_message_max_chars`**，服务端对 **`output`** 做**首尾采样**并设置 **`output_truncated`**、**`output_original_chars`**、**`output_kept_head_chars`**、**`output_kept_tail_chars`**，避免单次 grep/构建日志撑满上下文；完整原文仍可通过 SSE/导出等在会话中查看（视 UI 设置）。SSE **`tool_result`** 事件含相同关联字段，与信封对齐。详见 **`docs/DEVELOPMENT.md`**、**`docs/SSE_PROTOCOL.md`** 与 **`docs/CONFIGURATION.md`**。
 
@@ -24,6 +24,7 @@
   - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内**精确**字符串/正则匹配优先用 `search_in_files`；**语义**相近片段用 `codebase_semantic_search`（须先 `rebuild_index`，见下文与 **`docs/CONFIGURATION.md`**）。
   - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时直接执行；不匹配时，Web（`/chat/stream` 携带 `approval_session_id`）或 **CLI** 可人工审批 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键；CLI 见 `tool_approval::cli_terminal`）。
   - `http_request`：对给定 URL 发起 **POST / PUT / PATCH / DELETE**（可选 `json_body`）。受 `http_fetch_allowed_prefixes` 约束（同源 + 路径前缀边界）；匹配则直接执行，**未匹配**时 Web（`/chat/stream` + `approval_session_id`）与 **CLI** 可与 `http_fetch` 一样走 **拒绝 / 本次允许 / 永久允许**（永久键为 `http_request:<METHOD>:<URL>`，与 `http_fetch:` 键区分）。**`workflow_execute` 节点**内仍仅白名单前缀（同步路径无审批）。返回状态、Content-Type、重定向链与正文预览（默认建议先 dry-run，不在 body 中放真实密钥）。
+  - **GitHub CLI 封装**（须本机 **`gh`** 且 **`allowed_commands` 含 `gh`**）：`gh_pr_list`、`gh_pr_view`、`gh_issue_list`、`gh_issue_view`、`gh_run_list` — 结构化参数（`repo`、`state`、`limit` 默认 30 且≤200、`fields` 传 `gh` 的 `--json` 字段名、`extra_args`、`web`）；若提供 `fields` 且命令成功，输出末尾附加**缩进 JSON** 便于模型解析。`gh_api`：`path` 为无前导 `/` 的 API 相对路径（字符集受限），`method` 默认 GET，可选 JSON `body`；**写方法可能修改远端**，已视为非只读工具。通用 `run_command` 仍可手动拼 `gh`。
   - `run_command`：执行白名单内的只读/查询类 Linux 命令（`ls`、`pwd`、`whoami`、`date`、`cat`、`file`、`head`、`tail`、`wc`、`cmake`、`ctest`、`mkdir`、`ninja`、`gcc`、`g++`、`clang`、`clang++`、`c++filt`、`autoreconf`、`autoconf`、`automake`、`aclocal`、`make`，以及 **GNU Binutils 常用只读分析**：`objdump`、`nm`、`readelf`、`strings`、`size`；开发环境默认另含 `ar` 等），带超时与输出截断。**GitHub CLI**：默认白名单含 **`gh`**（需本机安装并完成 `gh auth login` 等认证）；与 `git` 相同，**参数不得含 `..`、不得以 `/` 开头**，调用 Issue/PR 等子命令时请用 `owner/repo` 或相对路径，勿在参数中传入绝对文件路径。未安装时 **`GET /health`** 中 **`dep_gh`** 为 degraded；**`crabmate doctor`** 的「Rust 工具链」段会报告 `gh` 是否可执行。**CMake / ctest**：已列入白名单，常用 `cmake -S . -B build`、`cmake --build build`、`ctest --test-dir build` 等；参数不得含 `..` 或以 `/` 开头，建议构建目录用相对路径（勿在 args 里写绝对路径的 `-D`）。未安装时 `/health` 中 `dep_cmake` / `dep_ctest` 可能为 degraded。**mkdir**：创建目录（与内置 **`create_dir`** 互补）；同样须遵守上述参数规则。**c++filt**：可将链接器/栈追踪中的修饰名（mangled）反解为可读 C++ 名（Binutils/LLVM 通常提供）；未安装时 `dep_cxxfilt` 可能为 degraded。**Binutils**：`objdump`/`nm`/`readelf`/`strings`/`size`（及 `ar`）未安装时 `/health` 对应 `dep_objdump` / `dep_nm` / `dep_readelf` / `dep_strings_binutils` / `dep_size` / `dep_ar` 可能为 degraded。**Autotools**：默认白名单含 `autoreconf`/`autoconf`/`automake`/`aclocal`，便于维护仍使用 `configure.ac` / `Makefile.am` 的仓库；会处理项目内 m4/shell，仅应在**信任的工作区**使用，且 `run_command` 参数规则仍生效。**测试输出缓存**（配置 `test_result_cache_enabled`）：当 **`command` 为 `cargo` 且 `args` 以 `test` 开头**且**不含** `--nocapture` / `--test-threads` 时，与 `cargo_test` 工具共用进程内 LRU；命中时在输出首段标注 **`[CrabMate 测试输出缓存命中]`**。
   - `run_executable`：在工作区目录下按**相对路径**运行可执行文件（如 `./main`、编译产物）；与 `run_command`（仅白名单系统命令）分工——**运行当前目录/工作区内的程序请用本工具**，不要用 `run_command`。
   - `package_query`：只读查询 Linux 包信息（apt/rpm 统一抽象）：是否安装、版本、来源。支持 `manager=auto|apt|rpm`（默认 `auto`，优先 `dpkg-query` 后尝试 `rpm`），不执行安装/卸载操作。
@@ -67,6 +68,26 @@
     - `hadolint_check`：使用 [Hadolint](https://github.com/hadolint/hadolint) 对 Dockerfile 做 lint。可指定 `path`（默认 Dockerfile）、`format`、`ignore`（规则列表）、`trusted_registries`。
     - `bandit_scan`：使用 [Bandit](https://bandit.readthedocs.io/) 对 Python 代码做安全分析。可指定 `paths`、`severity`、`confidence`、`skip`（跳过测试 ID）、`format`。
     - `lizard_complexity`：使用 [lizard](https://github.com/terryyin/lizard) 做多语言代码圈复杂度分析。可指定 `paths`、`threshold`（复杂度阈值）、`language`、`sort`、`warnings_only`、`exclude`。
+
+## GitHub CLI（`gh_*`）示例
+
+- `gh_pr_list`（结构化列表 + `--json`，成功时末尾附格式化 JSON）：
+  ```json
+  {"repo":"octocat/Hello-World","state":"open","limit":10,"fields":["number","title","author","state"]}
+  ```
+- `gh_pr_view`：
+  ```json
+  {"repo":"octocat/Hello-World","number":1,"fields":["title","body","state","author","commits"]}
+  ```
+- `gh_issue_list` / `gh_issue_view`：参数形状与上类似（`state` 为 open/closed/all）。
+- `gh_run_list`：
+  ```json
+  {"repo":"octocat/Hello-World","limit":5,"fields":["databaseId","status","conclusion","headBranch"]}
+  ```
+- `gh_api`（只读 GET 示例；`POST`/`PATCH` 等为写操作，启用解释卡时须 `crabmate_explain_why`）：
+  ```json
+  {"path":"repos/octocat/Hello-World/pulls","method":"GET"}
+  ```
 
 ## Rust 开发工具示例
 

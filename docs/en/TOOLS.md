@@ -4,7 +4,7 @@
 
 This document describes built-in tools, common function-calling JSON examples, and release-check troubleshooting. Workspace browsing, streaming, and session export remain in the root [`README.md`](../../README.md) “Features”; day-to-day use also starts there.
 
-**Optional “explain card”** (`tool_call_explain_enabled`): When enabled, every **non-read-only** built-in tool (same notion as `tool_registry::is_readonly_tool(&AgentConfig, name)`, including `run_command`, `run_executable`, file writers, `http_request`, mutating git, `workflow_execute`, …; overridable via **`[tool_registry] write_effect_tools`**) must include top-level string **`crabmate_explain_why`** describing intent in natural language; the server validates length and **strips** it before execution to avoid conflicting with `additionalProperties: false`. Read-only tools and MCP proxies do not require it; MCP still strips the key before forwarding. Complements command/HTTP **approval** (approval authorizes, explain card improves traceability).
+**Optional “explain card”** (`tool_call_explain_enabled`): When enabled, every **non-read-only** built-in tool (same notion as `tool_registry::is_readonly_tool(&AgentConfig, name)`, including `run_command`, `run_executable`, file writers, `http_request`, **`gh_api`**, mutating git, `workflow_execute`, …; overridable via **`[tool_registry] write_effect_tools`**) must include top-level string **`crabmate_explain_why`** describing intent in natural language; the server validates length and **strips** it before execution to avoid conflicting with `additionalProperties: false`. Read-only tools and MCP proxies do not require it; MCP still strips the key before forwarding. Complements command/HTTP **approval** (approval authorizes, explain card improves traceability).
 
 **Long outputs in model context** (`tool_result_envelope_v1`, default on): History `role: tool` uses the **`crabmate_tool`** JSON envelope (`summary`, `output`, …) plus **`tool_call_id`**, **`execution_mode`** (`serial` / `parallel_readonly_batch`), **`parallel_batch_id`** (shared within a parallel read-only batch); failures may include **`retryable`** (heuristic with `error_code`, not a guarantee). **Parallel read-only batches** use the same wall-clock as serial **`dispatch_tool`** (`tool_registry::parallel_tool_wall_timeout_secs`; e.g. **`http_fetch`** uses **`max(http_fetch_timeout_secs, command_timeout_secs)`**, **`get_weather` / `web_search`** use their own timeouts, others often **`command_timeout_secs`**); on timeout the text mentions timeout and **`tool_result.error_code`** is **`timeout`**. Before each model request, if over **`tool_message_max_chars`**, the server head/tail-samples **`output`** and sets **`output_truncated`**, **`output_original_chars`**, **`output_kept_head_chars`**, **`output_kept_tail_chars`** so one grep/build log cannot fill the window; full text may still appear via SSE/export depending on UI. SSE **`tool_result`** carries the same correlation fields. See **`docs/en/DEVELOPMENT.md`**, **`docs/en/SSE_PROTOCOL.md`**, **`docs/en/CONFIGURATION.md`**.
 
@@ -24,6 +24,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `web_search`: **Web search** ([Brave](https://brave.com/search/api/) or [Tavily](https://tavily.com/)); set `web_search_api_key` and `web_search_provider` (`brave` / `tavily`). Without a key the tool returns an explanatory error. Prefer `search_in_files` for exact string/regex; use `codebase_semantic_search` for semantic matches (needs `rebuild_index`; see below and **`docs/en/CONFIGURATION.md`**).
   - `http_fetch`: **GET** (default) or **HEAD**. GET returns status, Content-Type, **redirect chain**, body (timeouts/size caps); **HEAD** skips body. URLs matching `http_fetch_allowed_prefixes` (**same origin + path prefix boundary**) run immediately; otherwise Web (`/chat/stream` + `approval_session_id`) or **CLI** can approve **deny / once / always** (GET/HEAD share normalized whitelist key; CLI: `tool_approval::cli_terminal`).
   - `http_request`: **POST / PUT / PATCH / DELETE** (optional `json_body`). Same prefix rules; unmatched URLs use the same approval path (**permanent key** `http_request:<METHOD>:<URL>` vs `http_fetch:`). **`workflow_execute` nodes** still require whitelist match (no approval on sync path). Returns status, Content-Type, redirects, body preview (dry-run first; never put real secrets in bodies).
+  - **GitHub CLI wrappers** (local **`gh`**, **`allowed_commands` must include `gh`**): `gh_pr_list`, `gh_pr_view`, `gh_issue_list`, `gh_issue_view`, `gh_run_list` — structured args (`repo`, `state`, `limit` default 30, max 200, `fields` → `--json`, `extra_args`, `web`); when `fields` is set and the command succeeds, output appends **pretty-printed JSON**. **`gh_api`**: relative API `path` (no leading `/`, charset-limited), optional `method` (default GET) and JSON `body`; **mutating methods are non-read-only**. You can still use raw `run_command` with `gh` for other subcommands.
   - `run_command`: Whitelisted read/query Linux commands (`ls`, `pwd`, `whoami`, `date`, `cat`, `file`, `head`, `tail`, `wc`, `cmake`, `ctest`, `mkdir`, `ninja`, `gcc`, `g++`, `clang`, `clang++`, `c++filt`, `autoreconf`, `autoconf`, `automake`, `aclocal`, `make`, GNU Binutils read-only tools `objdump`, `nm`, `readelf`, `strings`, `size`, default also `ar`, …) with timeout and output truncation. **GitHub CLI**: allowlist includes **`gh`** (install locally and authenticate, e.g. `gh auth login`); same arg rules as `git`—no `..` and no `/`-prefixed args—use `owner/repo` or relative paths, not absolute filesystem paths in arguments. Missing CLI → **`dep_gh`** degraded on **`GET /health`**; **`crabmate doctor`** reports `gh` availability in the toolchain section. **CMake/ctest** are allowlisted; args must not contain `..` or start with `/`; prefer relative build dirs (avoid absolute `-D`). Missing tools may show `dep_cmake` / `dep_ctest` degraded on `/health`. **mkdir**: creates dirs (complements **`create_dir`**). **c++filt**: demangle C++ symbols. **Binutils**: missing → corresponding `dep_*` degraded. **Autotools**: trusted workspaces only. **Test output cache** (`test_result_cache_enabled`): when **`command` is `cargo` and `args` start with `test`** and **omit** `--nocapture` / `--test-threads`, shares in-process LRU with `cargo_test`; hits prefix output with **`[CrabMate test output cache hit]`**.
   - `run_executable`: Run a **relative-path** executable under the workspace (e.g. `./main`, build artifacts). Use this for workspace binaries—not `run_command`.
   - `package_query`: Read-only Linux package info (apt/rpm abstraction): installed?, version, source. `manager=auto|apt|rpm` (default `auto`, tries `dpkg-query` then `rpm`); no install/remove.
@@ -67,6 +68,26 @@ This document describes built-in tools, common function-calling JSON examples, a
     - `hadolint_check`: [Hadolint](https://github.com/hadolint/hadolint) for Dockerfile; `path`, `format`, `ignore`, `trusted_registries`.
     - `bandit_scan`: [Bandit](https://bandit.readthedocs.io/) for Python; `paths`, `severity`, `confidence`, `skip`, `format`.
     - `lizard_complexity`: [lizard](https://github.com/terryyin/lizard) complexity; `paths`, `threshold`, `language`, `sort`, `warnings_only`, `exclude`.
+
+## GitHub CLI (`gh_*`) examples
+
+- `gh_pr_list` (`fields` → `--json`; on success, pretty JSON is appended):
+  ```json
+  {"repo":"octocat/Hello-World","state":"open","limit":10,"fields":["number","title","author","state"]}
+  ```
+- `gh_pr_view`:
+  ```json
+  {"repo":"octocat/Hello-World","number":1,"fields":["title","body","state","author","commits"]}
+  ```
+- `gh_issue_list` / `gh_issue_view`: same shape as above (`state` is `open` / `closed` / `all`).
+- `gh_run_list`:
+  ```json
+  {"repo":"octocat/Hello-World","limit":5,"fields":["databaseId","status","conclusion","headBranch"]}
+  ```
+- `gh_api` (read-only GET; mutating methods need `crabmate_explain_why` when explain-card is on):
+  ```json
+  {"path":"repos/octocat/Hello-World/pulls","method":"GET"}
+  ```
 
 ## Rust dev tool examples
 

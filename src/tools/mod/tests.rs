@@ -207,6 +207,12 @@ fn test_build_tools_names() {
     assert!(names.contains(&"http_fetch"));
     assert!(names.contains(&"http_request"));
     assert!(names.contains(&"run_command"));
+    assert!(names.contains(&"gh_pr_list"));
+    assert!(names.contains(&"gh_pr_view"));
+    assert!(names.contains(&"gh_issue_list"));
+    assert!(names.contains(&"gh_issue_view"));
+    assert!(names.contains(&"gh_run_list"));
+    assert!(names.contains(&"gh_api"));
     assert!(names.contains(&"cargo_check"));
     assert!(names.contains(&"cargo_test"));
     assert!(names.contains(&"cargo_clippy"));
