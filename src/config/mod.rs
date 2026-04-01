@@ -1,17 +1,16 @@
 //! 运行配置：API 地址、模型等，从 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 嵌入默认 + 可选覆盖
 
 mod agent_roles;
+mod assembly;
 pub mod cli;
 mod cursor_rules;
 mod source;
 mod types;
+mod validate;
 mod workspace_roots;
 
 use crate::agent::per_coord::FinalPlanRequirementMode;
-use source::{
-    AgentRoleRow, AgentSection, ToolRegistrySection, parse_agent_section, parse_bool_like,
-    parse_config_file_roles, parse_tools_config_bundle,
-};
+use source::{AgentRoleRow, AgentSection, ToolRegistrySection, parse_bool_like};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -23,27 +22,6 @@ pub use types::{
 
 /// 进程内共享的 [`AgentConfig`]（`serve` / `repl` / `chat` / `bench`）；热重载时 `write` 更新，回合开始时 `read`+`clone` 得快照传入 `run_agent_turn`。
 pub type SharedAgentConfig = std::sync::Arc<tokio::sync::RwLock<AgentConfig>>;
-
-/// 编译时嵌入的默认配置（与仓库 `config/default_config.toml` 一致）
-const DEFAULT_CONFIG: &str = include_str!("../../config/default_config.toml");
-
-/// CLI / REPL 会话相关嵌入默认（与仓库 `config/session.toml` 一致）
-const SESSION_DEFAULT_CONFIG: &str = include_str!("../../config/session.toml");
-
-/// 首轮上下文注入相关嵌入默认（与仓库 `config/context_inject.toml` 一致）
-const CONTEXT_INJECT_DEFAULT_CONFIG: &str = include_str!("../../config/context_inject.toml");
-
-/// 内置工具相关嵌入默认（`run_command`、工具入模、缓存、联网工具超时、MCP 等；与仓库 `config/tools.toml` 一致）
-const TOOLS_DEFAULT_CONFIG: &str = include_str!("../../config/tools.toml");
-
-/// SyncDefault Docker 沙盒相关嵌入默认（与仓库 `config/sandbox.toml` 一致）
-const SANDBOX_DEFAULT_CONFIG: &str = include_str!("../../config/sandbox.toml");
-
-/// 规划 / 反思 / 编排相关嵌入默认（与仓库 `config/planning.toml` 一致）
-const PLANNING_DEFAULT_CONFIG: &str = include_str!("../../config/planning.toml");
-
-/// 长期记忆相关嵌入默认（与仓库 `config/memory.toml` 一致）
-const MEMORY_DEFAULT_CONFIG: &str = include_str!("../../config/memory.toml");
 
 /// 配置累加器：依次接受嵌入默认 TOML → 用户配置文件 → 环境变量的覆盖，最终 `finalize` 为 `AgentConfig`。
 #[derive(Default)]
@@ -677,121 +655,21 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.tool_registry_write_effect_tools = src.tool_registry_write_effect_tools.clone();
 }
 
-/// 合并一条嵌入默认 TOML 中的 `[agent]`；解析失败返回 `Err`（不应在发布构建中发生）。
-fn apply_embedded_agent_shard(
-    b: &mut ConfigBuilder,
-    shard_label: &'static str,
-    toml_src: &'static str,
-) -> Result<(), String> {
-    let agent = parse_agent_section(toml_src).map_err(|e| {
-        format!("嵌入默认配置 {shard_label} TOML 无效（须与仓库 config 一致）: {e}")
-    })?;
-    if let Some(agent) = agent {
-        b.apply_section(agent);
-    }
-    Ok(())
-}
-
 pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
     let mut b = ConfigBuilder::default();
 
-    // ── 1. 嵌入的默认配置 ──
-    apply_embedded_agent_shard(&mut b, "default_config.toml", DEFAULT_CONFIG)?;
-    // ── 1b. CLI / REPL 会话嵌入默认
-    apply_embedded_agent_shard(&mut b, "session.toml", SESSION_DEFAULT_CONFIG)?;
-    // ── 1c. 首轮上下文注入嵌入默认
-    apply_embedded_agent_shard(&mut b, "context_inject.toml", CONTEXT_INJECT_DEFAULT_CONFIG)?;
-    // ── 1d. 内置工具嵌入默认（在主默认之后合并，用户文件与环境变量仍可覆盖）
-    let (tools_agent, tools_tr) = parse_tools_config_bundle(TOOLS_DEFAULT_CONFIG)
-        .map_err(|e| format!("嵌入默认配置 tools.toml TOML 无效（须与仓库 config 一致）: {e}"))?;
-    if let Some(agent) = tools_agent {
-        b.apply_section(agent);
-    }
-    if let Some(tr) = tools_tr {
-        b.apply_tool_registry(tr);
-    }
-    // ── 1e. SyncDefault Docker 沙盒嵌入默认
-    apply_embedded_agent_shard(&mut b, "sandbox.toml", SANDBOX_DEFAULT_CONFIG)?;
-    // ── 1f. 规划 / 反思 / 编排嵌入默认
-    apply_embedded_agent_shard(&mut b, "planning.toml", PLANNING_DEFAULT_CONFIG)?;
-    // ── 1g. 长期记忆嵌入默认
-    apply_embedded_agent_shard(&mut b, "memory.toml", MEMORY_DEFAULT_CONFIG)?;
+    // 嵌入默认分片与用户 TOML 的合并顺序见 `assembly` 模块文档。
+    assembly::apply_embedded_config_shards(&mut b)?;
+    let system_prompt_search_bases = assembly::merge_user_config_layers(config_path, &mut b)?;
 
-    // ── 2. 用户配置文件覆盖 ──
-    let config_paths: Vec<&str> = match config_path {
-        Some(p) => {
-            let p = p.trim();
-            if p.is_empty() { vec![] } else { vec![p] }
-        }
-        None => vec!["config.toml", ".agent_demo.toml"],
-    };
-    let mut system_prompt_search_bases: Vec<PathBuf> = Vec::new();
-    for path in &config_paths {
-        if Path::new(path).exists() {
-            system_prompt_search_bases.push(directory_containing_config_file(path));
-            let s = std::fs::read_to_string(path)
-                .map_err(|e| format!("无法读取配置文件 \"{}\": {}", path, e))?;
-            let (agent_opt, role_rows, tr_opt) = parse_config_file_roles(&s)
-                .map_err(|e| format!("配置文件 \"{}\" TOML 解析失败: {}", path, e))?;
-            if let Some(agent) = agent_opt {
-                b.apply_section(agent);
-            }
-            b.merge_agent_role_rows(&role_rows);
-            if let Some(tr) = tr_opt {
-                b.apply_tool_registry(tr);
-            }
-            if config_path.is_some() {
-                break;
-            }
-        } else if config_path.is_some() {
-            return Err(format!("配置文件 \"{}\" 不存在", path));
-        }
-    }
-
-    // ── 2b. 可选 `agent_roles.toml`（与主配置同目录，或仓库 `config/agent_roles.toml`）──
-    if let Some(p) = config_path
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-    {
-        let sidecar = Path::new(p)
-            .parent()
-            .map(|dir| dir.join("agent_roles.toml"));
-        if let Some(sc) = sidecar.filter(|x| x.exists()) {
-            let s = std::fs::read_to_string(&sc)
-                .map_err(|e| format!("无法读取角色配置文件 \"{}\": {}", sc.display(), e))?;
-            let mut default_slot: Option<String> = None;
-            agent_roles::merge_agent_roles_file_into_builder(
-                &s,
-                &mut default_slot,
-                &mut b.agent_role_entries,
-            )?;
-            override_opt_string_non_empty(&mut b.default_agent_role_id, default_slot);
-        }
-    } else {
-        let sc = Path::new("config/agent_roles.toml");
-        if sc.exists() {
-            let s = std::fs::read_to_string(sc)
-                .map_err(|e| format!("无法读取角色配置文件 \"{}\": {}", sc.display(), e))?;
-            let mut default_slot: Option<String> = None;
-            agent_roles::merge_agent_roles_file_into_builder(
-                &s,
-                &mut default_slot,
-                &mut b.agent_role_entries,
-            )?;
-            override_opt_string_non_empty(&mut b.default_agent_role_id, default_slot);
-        }
-    }
-
-    // ── 3. 环境变量覆盖（优先级最高） ──
+    // 环境变量覆盖（优先级最高）
     apply_env_overrides(&mut b);
 
-    // ── 4. 验证与最终转换 ──
     finalize(b, system_prompt_search_bases)
 }
 
 /// `system_prompt_file` 相对路径解析：与 `foo.toml` 同目录下的 `config/prompts/...` 等可被找到。
-fn directory_containing_config_file(config_path: &str) -> PathBuf {
+pub(super) fn directory_containing_config_file(config_path: &str) -> PathBuf {
     let p = Path::new(config_path);
     match p.parent() {
         None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
@@ -1420,6 +1298,7 @@ fn finalize(
     b: ConfigBuilder,
     system_prompt_search_bases: Vec<PathBuf>,
 ) -> Result<AgentConfig, String> {
+    validate::validate_builder_numeric_ranges(&b)?;
     if b.api_base.is_empty() {
         return Err("配置错误：未设置 api_base（请在 config/default_config.toml、config.toml、.agent_demo.toml 或环境变量 AGENT_API_BASE 中设置）".to_string());
     }
@@ -2005,12 +1884,15 @@ fn finalize(
 
 #[cfg(test)]
 mod embedded_shard_parse_tests {
-    use super::{ConfigBuilder, apply_embedded_agent_shard};
+    use super::ConfigBuilder;
+    use super::assembly;
 
     #[test]
     fn malformed_embedded_toml_returns_err_naming_shard() {
         let mut b = ConfigBuilder::default();
-        let err = apply_embedded_agent_shard(&mut b, "test_shard.toml", "[[[not toml").unwrap_err();
+        let err =
+            assembly::apply_embedded_agent_shard_for_test(&mut b, "test_shard.toml", "[[[not toml")
+                .unwrap_err();
         assert!(
             err.contains("test_shard.toml"),
             "expected shard label in error: {err}"
@@ -2056,5 +1938,34 @@ mod context_budget_warning_tests {
     #[test]
     fn not_suspicious_when_min_below_max_history() {
         assert!(!context_budget_vs_history_suspicious(32, 50_000, 4));
+    }
+}
+
+#[cfg(test)]
+mod numeric_validate_tests {
+    use super::ConfigBuilder;
+    use super::validate;
+    use std::collections::HashMap;
+
+    #[test]
+    fn rejects_temperature_above_two() {
+        let b = ConfigBuilder {
+            temperature: Some(3.0),
+            ..Default::default()
+        };
+        let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
+        assert!(err.contains("temperature"), "err: {err}");
+    }
+
+    #[test]
+    fn parallel_wall_timeout_out_of_range() {
+        let mut m = HashMap::new();
+        m.insert("http_fetch_spawn_timeout".into(), 100_000u64);
+        let b = ConfigBuilder {
+            tool_registry_parallel_wall_timeout_secs: m,
+            ..Default::default()
+        };
+        let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
+        assert!(err.contains("parallel_wall_timeout_secs"), "err: {err}");
     }
 }

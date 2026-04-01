@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct ConfigFile {
     pub(super) agent: Option<AgentSection>,
     /// 与 `config/agent_roles.toml` 同形：顶层 `[[agent_roles]]` 表数组
@@ -15,6 +16,7 @@ pub(super) struct ConfigFile {
 
 /// `config/tools.toml` / 用户 `config.toml` 中 **`[tool_registry]`** 段（与 `[agent]` 并列）。
 #[derive(Debug, Deserialize, Clone, Default)]
+#[serde(deny_unknown_fields)]
 pub(super) struct ToolRegistrySection {
     /// `http_fetch` / `http_request` 在 **`spawn_blocking` 外圈** `tokio::time::timeout` 上限（秒）；省略则 `max(command_timeout_secs, http_fetch_timeout_secs)`。
     #[serde(default)]
@@ -36,6 +38,7 @@ pub(super) struct ToolRegistrySection {
 
 /// 与 `config/agent_roles.toml` 中 `[[agent_roles]]` 一行对应
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub(super) struct AgentRoleRow {
     pub(super) id: String,
     pub(super) system_prompt: Option<String>,
@@ -43,6 +46,7 @@ pub(super) struct AgentRoleRow {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct AgentSection {
     pub(super) api_base: Option<String>,
     pub(super) model: Option<String>,
@@ -232,12 +236,23 @@ model = "deepseek-chat"
 
     #[test]
     fn parse_valid_toml_without_agent_section() {
+        // 顶层仅允许 `agent` / `agent_roles` / `tool_registry`；注释与空文档合法且无 `[agent]`。
+        let toml = "# no tables\n";
+        let result = parse_agent_section(toml).expect("should parse valid TOML");
+        assert!(result.is_none(), "no [agent] section should yield None");
+    }
+
+    #[test]
+    fn parse_rejects_unknown_top_level_table() {
         let toml = r#"
 [other]
 key = "value"
 "#;
-        let result = parse_agent_section(toml).expect("should parse valid TOML");
-        assert!(result.is_none(), "no [agent] section should yield None");
+        let err = parse_agent_section(toml).expect_err("unknown top-level table should fail");
+        assert!(
+            err.to_string().contains("unknown field") || err.to_string().contains("other"),
+            "expected unknown field error, got: {err}"
+        );
     }
 
     #[test]
@@ -251,6 +266,22 @@ key = "value"
         let bad = "[[[ not valid toml !!!";
         let result = parse_agent_section(bad);
         assert!(result.is_err(), "malformed TOML should return Err");
+    }
+
+    #[test]
+    fn parse_rejects_unknown_key_in_agent_section() {
+        let toml = r#"
+[agent]
+api_base = "https://api.example.com"
+model = "m"
+typo_unknown_key = 1
+"#;
+        let err = parse_agent_section(toml).expect_err("unknown key should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field") || msg.contains("unknown"),
+            "expected serde unknown field error, got: {msg}"
+        );
     }
 
     #[test]
