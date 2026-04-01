@@ -24,7 +24,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `web_search`: **Web search** ([Brave](https://brave.com/search/api/) or [Tavily](https://tavily.com/)); set `web_search_api_key` and `web_search_provider` (`brave` / `tavily`). Without a key the tool returns an explanatory error. Prefer `search_in_files` for exact string/regex; use `codebase_semantic_search` for semantic matches (needs `rebuild_index`; see below and **`docs/en/CONFIGURATION.md`**).
   - `http_fetch`: **GET** (default) or **HEAD**. GET returns status, Content-Type, **redirect chain**, body (timeouts/size caps); **HEAD** skips body. URLs matching `http_fetch_allowed_prefixes` (**same origin + path prefix boundary**) run immediately; otherwise Web (`/chat/stream` + `approval_session_id`) or **CLI** can approve **deny / once / always** (GET/HEAD share normalized whitelist key; CLI: `tool_approval::cli_terminal`).
   - `http_request`: **POST / PUT / PATCH / DELETE** (optional `json_body`). Same prefix rules; unmatched URLs use the same approval path (**permanent key** `http_request:<METHOD>:<URL>` vs `http_fetch:`). **`workflow_execute` nodes** still require whitelist match (no approval on sync path). Returns status, Content-Type, redirects, body preview (dry-run first; never put real secrets in bodies).
-  - **GitHub CLI wrappers** (local **`gh`**, **`allowed_commands` must include `gh`**): `gh_pr_list`, `gh_pr_view`, `gh_issue_list`, `gh_issue_view`, `gh_run_list` — structured args (`repo`, `state`, `limit` default 30, max 200, `fields` → `--json`, `extra_args`, `web`); when `fields` is set and the command succeeds, output appends **pretty-printed JSON**. **`gh_api`**: relative API `path` (no leading `/`, charset-limited), optional `method` (default GET) and JSON `body`; **mutating methods are non-read-only**. You can still use raw `run_command` with `gh` for other subcommands.
+  - **GitHub CLI wrappers** (local **`gh`**, **`allowed_commands` must include `gh`**): `gh_pr_*` (incl. **`gh_pr_diff`**), `gh_issue_*`, `gh_run_*` (incl. **`gh_run_view`** with optional **`log`/`job`**, logs are truncated by output limits), **`gh_release_list` / `gh_release_view`**, **`gh_search`** (**`scope` ∈ {issues, prs, repos}**; **`query`** size/charset limited; no **`repo`** when `scope=repos`), **`gh_api`**. On **exit code 0**, if **stdout is a single JSON value**, output appends **pretty JSON** (not tied to passing `fields`). **`gh_api`** mutating methods are non-read-only. Raw `run_command` remains for other `gh` subcommands.
   - `run_command`: Whitelisted read/query Linux commands (`ls`, `pwd`, `whoami`, `date`, `cat`, `file`, `head`, `tail`, `wc`, `cmake`, `ctest`, `mkdir`, `ninja`, `gcc`, `g++`, `clang`, `clang++`, `c++filt`, `autoreconf`, `autoconf`, `automake`, `aclocal`, `make`, GNU Binutils read-only tools `objdump`, `nm`, `readelf`, `strings`, `size`, default also `ar`, …) with timeout and output truncation. **GitHub CLI**: allowlist includes **`gh`** (install locally and authenticate, e.g. `gh auth login`); same arg rules as `git`—no `..` and no `/`-prefixed args—use `owner/repo` or relative paths, not absolute filesystem paths in arguments. Missing CLI → **`dep_gh`** degraded on **`GET /health`**; **`crabmate doctor`** reports `gh` availability in the toolchain section. **CMake/ctest** are allowlisted; args must not contain `..` or start with `/`; prefer relative build dirs (avoid absolute `-D`). Missing tools may show `dep_cmake` / `dep_ctest` degraded on `/health`. **mkdir**: creates dirs (complements **`create_dir`**). **c++filt**: demangle C++ symbols. **Binutils**: missing → corresponding `dep_*` degraded. **Autotools**: trusted workspaces only. **Test output cache** (`test_result_cache_enabled`): when **`command` is `cargo` and `args` start with `test`** and **omit** `--nocapture` / `--test-threads`, shares in-process LRU with `cargo_test`; hits prefix output with **`[CrabMate test output cache hit]`**.
   - `run_executable`: Run a **relative-path** executable under the workspace (e.g. `./main`, build artifacts). Use this for workspace binaries—not `run_command`.
   - `package_query`: Read-only Linux package info (apt/rpm abstraction): installed?, version, source. `manager=auto|apt|rpm` (default `auto`, tries `dpkg-query` then `rpm`); no install/remove.
@@ -83,6 +83,28 @@ This document describes built-in tools, common function-calling JSON examples, a
 - `gh_run_list`:
   ```json
   {"repo":"octocat/Hello-World","limit":5,"fields":["databaseId","status","conclusion","headBranch"]}
+  ```
+- `gh_pr_diff`:
+  ```json
+  {"repo":"octocat/Hello-World","number":1}
+  ```
+- `gh_run_view` (JSON summary vs logs):
+  ```json
+  {"repo":"octocat/Hello-World","run_id":"12345678901","fields":["status","conclusion"]}
+  ```
+  ```json
+  {"repo":"octocat/Hello-World","run_id":"12345678901","log":true,"job":"build"}
+  ```
+- `gh_release_list` / `gh_release_view`:
+  ```json
+  {"repo":"octocat/Hello-World","limit":5,"fields":["tagName","name"]}
+  ```
+  ```json
+  {"repo":"octocat/Hello-World","tag":"v1.0.0","fields":["body"]}
+  ```
+- `gh_search`:
+  ```json
+  {"scope":"prs","repo":"octocat/Hello-World","query":"is:open author:octocat","limit":20}
   ```
 - `gh_api` (read-only GET; mutating methods need `crabmate_explain_why` when explain-card is on):
   ```json
