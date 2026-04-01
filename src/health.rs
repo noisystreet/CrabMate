@@ -142,6 +142,8 @@ pub async fn build_health_report(
         m.insert("gradle", check_cmd("gradle", &["--version"]));
         m.insert("docker", check_cmd("docker", &["--version"]));
         m.insert("podman", check_cmd("podman", &["--version"]));
+        // GitHub CLI：默认 run_command 白名单含 `gh`；未安装时工具调用会失败
+        m.insert("gh", check_cmd("gh", &["version"]));
 
         m.insert("typos", check_cmd("typos", &["--version"]));
         m.insert("codespell", check_cmd("codespell", &["--version"]));
@@ -186,6 +188,7 @@ pub async fn build_health_report(
             "gradle" => "dep_gradle",
             "docker" => "dep_docker_cli",
             "podman" => "dep_podman",
+            "gh" => "dep_gh",
             "typos" => "dep_typos",
             "codespell" => "dep_codespell",
             "ast_grep" => "dep_ast_grep",
