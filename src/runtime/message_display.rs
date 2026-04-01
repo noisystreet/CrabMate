@@ -12,7 +12,7 @@ use crate::agent::plan_artifact::{
     strip_agent_reply_plan_fence_blocks_for_display,
 };
 use crate::runtime::latex_unicode::latex_math_to_unicode;
-use crate::tool_result::ToolResult;
+use crate::tool_result::{ToolResult, normalize_tool_message_content};
 use crate::types::Message;
 
 /// 工具结果中「原始输出」块的 Markdown 小标题（与 Web `ChatPanel`、CLI 完整回显一致）。
@@ -41,26 +41,19 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
     if t.starts_with('{')
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(t)
     {
-        if let Some(ct) = v.get("crabmate_tool").and_then(|x| x.as_object()) {
-            let summary = ct
-                .get("summary")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .trim();
-            let trunc_note = if ct.get("output_truncated").and_then(|x| x.as_bool()) == Some(true) {
-                let orig = ct
-                    .get("output_original_chars")
-                    .and_then(|x| x.as_u64())
+        if let Some(env) = normalize_tool_message_content(t) {
+            let summary = env.summary.trim();
+            let trunc_note = if env.output_truncated {
+                let orig = env
+                    .output_original_chars
                     .map(|n| n.to_string())
                     .unwrap_or_else(|| "?".to_string());
-                let head = ct
-                    .get("output_kept_head_chars")
-                    .and_then(|x| x.as_u64())
+                let head = env
+                    .output_kept_head_chars
                     .map(|n| n.to_string())
                     .unwrap_or_else(|| "?".to_string());
-                let tail = ct
-                    .get("output_kept_tail_chars")
-                    .and_then(|x| x.as_u64())
+                let tail = env
+                    .output_kept_tail_chars
                     .map(|n| n.to_string())
                     .unwrap_or_else(|| "?".to_string());
                 Some(format!(
@@ -71,14 +64,13 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
             };
             let struct_note = {
                 let mut parts: Vec<String> = Vec::new();
-                if ct.get("execution_mode").and_then(|x| x.as_str())
-                    == Some("parallel_readonly_batch")
-                    && let Some(bid) = ct.get("parallel_batch_id").and_then(|x| x.as_str())
+                if env.execution_mode.as_deref() == Some("parallel_readonly_batch")
+                    && let Some(ref bid) = env.parallel_batch_id
                     && !bid.is_empty()
                 {
                     parts.push(format!("并行只读批次 `{bid}`"));
                 }
-                if ct.get("retryable").and_then(|x| x.as_bool()) == Some(true) {
+                if env.retryable == Some(true) {
                     parts.push("失败可能可重试（启发式 `retryable`）".to_string());
                 }
                 if parts.is_empty() {

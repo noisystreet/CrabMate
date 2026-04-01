@@ -61,6 +61,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Tool name |
+| `result_version` | number | **Tool-result payload version**, aligned with **`crabmate_tool.v`** in history (currently **1**). **Distinct from** top-level **`v`** (`SSE_PROTOCOL_VERSION`). Defaults to **1** if omitted. |
 | `summary` | string? | Same source as `summarize_tool_call` |
 | `output` | string | Full text output |
 | `ok` | bool? | Success |
@@ -113,7 +114,7 @@ Machine-readable failure classification (separate from stream `code`). Common va
 | `workflow_tool_join_error` | Workflow tool task join failed |
 | `{tool_name}_failed` | Generic tool failure (e.g. `run_command_failed`) |
 
-Full heuristics: `src/tool_result.rs` (`classify_error_code`); workflow: `src/agent/workflow/execute.rs`.
+Full heuristics: `src/tool_result/` (`classify_error_code`); workflow: `src/agent/workflow/execute.rs`.
 
 ## vs `POST /chat` HTTP errors
 
@@ -137,6 +138,11 @@ After parsing one merged `data:` string as JSON, the frontend applies a **fixed 
 - **`fixtures/sse_control_golden.jsonl`**: each line `description<TAB>JSON<TAB>expected-class` (`#` lines are comments).
 - **Rust**: `cargo test golden_sse_control` or `cargo test control_dispatch_mirror`.
 When adding a new top-level key consumed by the Web UI: update `frontend-leptos/src/sse_dispatch.rs`, **`control_dispatch_mirror::classify_sse_control_outcome`**, and golden lines.
+
+## Contract tests (`crabmate_tool` history envelope)
+
+- **`fixtures/tool_result_envelope_golden.jsonl`**: each line `description<TAB>single-line JSON` (`#` lines are comments); round-trip via **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`**.
+- **Rust**: `cargo test tool_result_envelope_golden`.
 
 ---
 

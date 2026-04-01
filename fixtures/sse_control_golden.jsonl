@@ -14,7 +14,7 @@ tool_call 有 summary	{"v":1,"tool_call":{"name":"read_file","summary":"读：a.
 tool_call 无 summary 当正文	{"v":1,"tool_call":{"name":"read_file"}}	plain
 parsing_tool_calls	{"v":1,"parsing_tool_calls":true}	handled
 tool_running	{"v":1,"tool_running":false}	handled
-tool_result	{"v":1,"tool_result":{"name":"run_command","summary":"ls","output":"退出码：0","ok":true,"retryable":false,"tool_call_id":"tc1","execution_mode":"serial","stdout":"","stderr":""}}	handled
+tool_result	{"v":1,"tool_result":{"name":"run_command","result_version":1,"summary":"ls","output":"退出码：0","ok":true,"retryable":false,"tool_call_id":"tc1","execution_mode":"serial","stdout":"","stderr":""}}	handled
 command_approval_request	{"v":1,"command_approval_request":{"command":"git","args":"status","allowlist_key":"git"}}	handled
 staged_plan_notice 字符串	{"v":1,"staged_plan_notice":"line1\nline2"}	handled
 staged_plan_notice_clear	{"v":1,"staged_plan_notice_clear":true}	handled
