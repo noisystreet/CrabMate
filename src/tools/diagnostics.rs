@@ -236,6 +236,14 @@ pub fn diagnostic_summary(args_json: &str, working_dir: &Path) -> String {
             }
             _ => out.push_str("  bc(calc 工具): 不可用（/health 可能报 dep_bc 降级）\n"),
         }
+        if let Some(s) = capture_trimmed("gh", &["version"]) {
+            let line = s.lines().next().unwrap_or(&s).trim();
+            out.push_str(&format!("  gh(GitHub CLI): 可用 ({line})\n"));
+        } else {
+            out.push_str(
+                "  gh(GitHub CLI): 不可用（/health 可能报 dep_gh 降级；默认 run_command 白名单含 gh）\n",
+            );
+        }
         out.push_str(&format!(
             "  平台: {} / {}\n",
             std::env::consts::OS,
