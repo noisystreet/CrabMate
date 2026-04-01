@@ -20,7 +20,7 @@ pub(in crate::tools) fn params_gh_pr_list() -> serde_json::Value {
             "fields": {
                 "type": "array",
                 "items": { "type": "string" },
-                "description": "传给 `gh pr list --json` 的字段名列表（如 number、title、author、state）。若提供，成功时工具会在输出末尾附加**格式化后的 JSON** 便于模型消费。"
+                "description": "传给 `gh pr list --json` 的字段名列表（如 number、title、author、state）。**退出码 0** 且 stdout 为整段 JSON 时，工具会在输出末尾附加**格式化 JSON**（可不传本字段，只要 gh 输出 JSON）。"
             },
             "web": {
                 "type": "boolean",
@@ -51,7 +51,7 @@ pub(in crate::tools) fn params_gh_pr_view() -> serde_json::Value {
             "fields": {
                 "type": "array",
                 "items": { "type": "string" },
-                "description": "传给 `gh pr view --json` 的字段名；若提供则附加解析后的格式化 JSON。"
+                "description": "传给 `gh pr view --json` 的字段名。成功且 stdout 为 JSON 时附加格式化块。"
             },
             "web": { "type": "boolean", "description": "追加 `--web`。" },
             "extra_args": {
@@ -136,6 +136,142 @@ pub(in crate::tools) fn params_gh_run_list() -> serde_json::Value {
                 "items": { "type": "string" }
             }
         },
+        "additionalProperties": false
+    })
+}
+
+pub(in crate::tools) fn params_gh_pr_diff() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "number": { "type": "integer", "description": "PR 编号。" },
+            "repo": { "type": "string", "description": "可选 `owner/repo`。" },
+            "patch": {
+                "type": "boolean",
+                "description": "为 true 时追加 `--patch`（patch 文本而非 unified diff）。"
+            },
+            "extra_args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "附加参数（安全规则同 run_command）。"
+            }
+        },
+        "required": ["number"],
+        "additionalProperties": false
+    })
+}
+
+pub(in crate::tools) fn params_gh_run_view() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "run_id": {
+                "type": "string",
+                "description": "运行 ID（与 `gh run list --json databaseId` 一致，纯数字，≤24 位）。"
+            },
+            "repo": { "type": "string", "description": "可选 `owner/repo`。" },
+            "log": {
+                "type": "boolean",
+                "description": "为 true 时追加 `--log`（日志体积大，受 command_max_output_len 截断）。"
+            },
+            "job": {
+                "type": "string",
+                "description": "与 `--log` 联用：`--job` 名称（字母数字、空格、`-`、`_`，≤128 字符）。"
+            },
+            "fields": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "不传 `log` 时可用 `--json` 字段取结构化摘要。"
+            },
+            "web": { "type": "boolean" },
+            "extra_args": {
+                "type": "array",
+                "items": { "type": "string" }
+            }
+        },
+        "required": ["run_id"],
+        "additionalProperties": false
+    })
+}
+
+pub(in crate::tools) fn params_gh_release_list() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "repo": { "type": "string" },
+            "limit": { "type": "integer", "description": "默认 30，最大 200。" },
+            "fields": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "`gh release list --json` 字段。"
+            },
+            "web": { "type": "boolean" },
+            "extra_args": {
+                "type": "array",
+                "items": { "type": "string" }
+            }
+        },
+        "additionalProperties": false
+    })
+}
+
+pub(in crate::tools) fn params_gh_release_view() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "tag": {
+                "type": "string",
+                "description": "版本 tag（如 v1.0.0；字符集受限，长度 ≤200）。"
+            },
+            "repo": { "type": "string" },
+            "fields": {
+                "type": "array",
+                "items": { "type": "string" }
+            },
+            "web": { "type": "boolean" },
+            "extra_args": {
+                "type": "array",
+                "items": { "type": "string" }
+            }
+        },
+        "required": ["tag"],
+        "additionalProperties": false
+    })
+}
+
+pub(in crate::tools) fn params_gh_search() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "scope": {
+                "type": "string",
+                "description": "仅允许 `issues`、`prs` 或 `repos`（对应 `gh search <scope>`）。",
+                "enum": ["issues", "prs", "repos"]
+            },
+            "query": {
+                "type": "string",
+                "description": "搜索字符串（≤400 字节；禁止 `..`、换行及 shell 元字符如 ;|&`$<>）。"
+            },
+            "repo": {
+                "type": "string",
+                "description": "可选；**issues/prs** 时作为 `--repo owner/repo` 收窄；**repos** 时禁止使用。"
+            },
+            "limit": {
+                "type": "integer",
+                "description": "结果条数，默认 30，最大 100。"
+            },
+            "fields": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "`--json` 字段列表。"
+            },
+            "extra_args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "额外参数（须通过安全校验）。"
+            }
+        },
+        "required": ["scope", "query"],
         "additionalProperties": false
     })
 }

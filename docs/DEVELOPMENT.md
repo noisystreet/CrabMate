@@ -375,7 +375,7 @@ flowchart LR
 - **`web_search.rs`**：`reqwest::blocking` + `serde` 调用 Brave Web Search 或 Tavily；Key 与 `web_search_provider` 来自 `AgentConfig`。Web 路径在 `tool_registry` 中登记为 `WebSearchSpawnTimeout`（`spawn_blocking` + 超时）。
 - **`http_fetch.rs`**：`http_fetch`（阻塞 GET/HEAD）与 `http_request`（阻塞 POST/PUT/PATCH/DELETE + 可选 JSON body）；共用 `redirect::Policy` 记录重定向跳数与响应截断。二者在 **`tool_registry` 异步路径**（Web 流式 + 审批会话、CLI）下未匹配 `http_fetch_allowed_prefixes` 时均可走审批（`http_request` 白名单键为 **`http_request:<METHOD>:<URL>`**）；**`run_tool` / workflow 节点**仍仅白名单前缀。
 - **`command.rs`**：命令白名单 + 超时 + 输出截断；配合 `allowed_commands` 与工作区路径限制。
-- **`github_cli.rs`**：GitHub CLI 封装（`gh_pr_list` / `gh_pr_view` / `gh_issue_list` / `gh_issue_view` / `gh_run_list` / `gh_api`）：结构化参数、`limit` 上限、`fields` 触发 `--json` 并在成功时附加格式化 JSON；`gh_api` 限制 `path` 字符集且列入写副作用工具（`POST` 等）。依赖 **`allowed_commands` 含 `gh`**，内部对列表类命令复用 `command::run` 调用 `gh`。
+- **`github_cli.rs`**：GitHub CLI 封装（`gh_pr_*` / `gh_issue_*` / `gh_run_*` / `gh_release_*` / `gh_search` / `gh_api`）：结构化参数；**退出码 0** 且 **stdout 整段为合法 JSON** 时附加格式化块（不限于传入 `fields`）。`gh_search` 将 **`scope` 限制为 issues/prs/repos** 并校验 **`query`**；`gh_run_view` 支持 **`log`/`job`**（日志受输出上限截断）；`gh_api` 限制 `path` 且 **`gh_api`** 列入写副作用工具。依赖 **`allowed_commands` 含 `gh`**，列表类命令复用 `command::run`。
 - **`package_query.rs`**：Linux 包查询（`dpkg-query` / `rpm`）只读封装，统一返回安装状态、版本与来源字段，不执行安装/卸载。
 - **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）。
 - **`file/`**：工作区内创建/覆盖/复制/移动文件；`resolve_for_read` / `resolve_for_write` 与祖先 symlink 校验是安全边界的关键（见 **`file/path.rs`**）；`copy_file` / `move_file` 仅针对常规文件，`overwrite` 控制目标已存在时的覆盖策略；`hash_file` 仅对常规文件流式哈希（`sha256` / `sha512` / `blake3`），可选 `max_bytes` 前缀模式。

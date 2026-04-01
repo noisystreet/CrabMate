@@ -688,6 +688,49 @@ pub(super) fn summary_gh_run_list(v: &serde_json::Value) -> Option<String> {
     Some(format!("gh run list{} limit={}", gh_repo_suffix(v), lim))
 }
 
+pub(super) fn summary_gh_pr_diff(v: &serde_json::Value) -> Option<String> {
+    let n = v.get("number").and_then(|x| x.as_u64())?;
+    Some(format!("gh pr diff #{}{}", n, gh_repo_suffix(v)))
+}
+
+pub(super) fn summary_gh_run_view(v: &serde_json::Value) -> Option<String> {
+    let id = v.get("run_id")?.as_str()?.trim();
+    let log = v.get("log").and_then(|x| x.as_bool()) == Some(true);
+    Some(format!(
+        "gh run view {}{}",
+        id,
+        if log { " --log" } else { "" }
+    ))
+}
+
+pub(super) fn summary_gh_release_list(v: &serde_json::Value) -> Option<String> {
+    let lim = v.get("limit").and_then(|x| x.as_u64()).unwrap_or(30);
+    Some(format!(
+        "gh release list{} limit={}",
+        gh_repo_suffix(v),
+        lim
+    ))
+}
+
+pub(super) fn summary_gh_release_view(v: &serde_json::Value) -> Option<String> {
+    let tag = v.get("tag")?.as_str()?.trim();
+    let mut t: String = tag.chars().take(32).collect();
+    if tag.chars().count() > 32 {
+        t.push('…');
+    }
+    Some(format!("gh release view {}{}", t, gh_repo_suffix(v)))
+}
+
+pub(super) fn summary_gh_search(v: &serde_json::Value) -> Option<String> {
+    let scope = v.get("scope")?.as_str()?.trim();
+    let q = v.get("query")?.as_str()?.trim();
+    let mut qs: String = q.chars().take(40).collect();
+    if q.chars().count() > 40 {
+        qs.push('…');
+    }
+    Some(format!("gh search {} {}", scope, qs))
+}
+
 pub(super) fn summary_gh_api(v: &serde_json::Value) -> Option<String> {
     let path = v.get("path")?.as_str()?.trim();
     let method = v
