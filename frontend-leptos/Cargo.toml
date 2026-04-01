@@ -21,11 +21,14 @@ wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
     "AbortController",
     "AbortSignal",
+    "Blob",
+    "BlobPropertyBag",
     "DomRect",
     "Event",
     "File",
     "FileList",
     "Headers",
+    "HtmlAnchorElement",
     "HtmlElement",
     "HtmlInputElement",
     "KeyboardEvent",
@@ -38,6 +41,7 @@ web-sys = { version = "0.3", features = [
     "RequestMode",
     "Response",
     "Storage",
+    "Url",
     "WheelEvent",
     "Window",
 ] }

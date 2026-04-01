@@ -5,6 +5,7 @@
 #![allow(clippy::clone_on_copy)]
 
 mod api;
+mod session_export;
 mod sse_dispatch;
 mod storage;
 
@@ -19,6 +20,9 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use serde_json::Value;
+use session_export::{
+    export_filename_stem, session_to_export_file, session_to_markdown, trigger_download,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
 use storage::{
@@ -258,7 +262,7 @@ fn strip_agent_reply_plan_fence_blocks_for_display(content: &str) -> String {
     out
 }
 
-fn assistant_text_for_display(raw: &str, is_streaming_last_assistant: bool) -> String {
+pub(crate) fn assistant_text_for_display(raw: &str, is_streaming_last_assistant: bool) -> String {
     let trimmed = raw.trim();
 
     if is_streaming_last_assistant && should_buffer_agent_reply_plan_stream(trimmed) {
@@ -333,6 +337,200 @@ fn patch_active_session(
             s.updated_at = js_sys::Date::now() as i64;
         }
     });
+}
+
+#[component]
+fn SessionModalRow(
+    id: String,
+    title: String,
+    message_count: usize,
+    active: bool,
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    conversation_id: RwSignal<Option<String>>,
+    session_modal: RwSignal<bool>,
+) -> impl IntoView {
+    let id_rename = id.clone();
+    let id_json = id.clone();
+    let id_md = id.clone();
+    let id_del = id.clone();
+    let row_class = if active {
+        "session-row active"
+    } else {
+        "session-row"
+    };
+    view! {
+        <div class=row_class>
+            <button
+                type="button"
+                class="session-open"
+                on:click={
+                    let id = id.clone();
+                    move |_| {
+                        active_id.set(id.clone());
+                        session_modal.set(false);
+                    }
+                }
+            >
+                <span class="session-title">{title}</span>
+                <span class="session-meta">{message_count}" 条"</span>
+            </button>
+            <div class="session-row-actions">
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    title="重命名"
+                    on:click={
+                        let sessions = sessions;
+                        let id = id_rename.clone();
+                        move |_| {
+                            let default_title = sessions.with(|list| {
+                                list.iter()
+                                    .find(|s| s.id == id)
+                                    .map(|s| s.title.clone())
+                                    .unwrap_or_default()
+                            });
+                            let Some(w) = web_sys::window() else {
+                                return;
+                            };
+                            let raw = match w.prompt_with_message_and_default("会话标题", &default_title)
+                            {
+                                Ok(Some(s)) => s,
+                                Ok(None) | Err(_) => return,
+                            };
+                            let t = raw.trim().to_string();
+                            if t.is_empty() {
+                                return;
+                            }
+                            sessions.update(|list| {
+                                if let Some(s) = list.iter_mut().find(|s| s.id == id) {
+                                    s.title = t;
+                                    s.updated_at = js_sys::Date::now() as i64;
+                                }
+                            });
+                        }
+                    }
+                >
+                    "重命名"
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    title="导出 JSON（ChatSessionFile v1）"
+                    on:click={
+                        let sessions = sessions;
+                        let id = id_json.clone();
+                        move |_| {
+                            let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
+                            let Some(s) = session else {
+                                return;
+                            };
+                            let file = session_to_export_file(&s);
+                            let Ok(json) = serde_json::to_string_pretty(&file) else {
+                                return;
+                            };
+                            let stem = export_filename_stem("chat_export");
+                            let name = format!("{stem}.json");
+                            if let Err(e) = trigger_download(&name, "application/json", &json) {
+                                if let Some(w) = web_sys::window() {
+                                    let _ = w.alert_with_message(&e);
+                                }
+                            }
+                        }
+                    }
+                >
+                    "JSON"
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    title="导出 Markdown"
+                    on:click={
+                        let sessions = sessions;
+                        let id = id_md.clone();
+                        move |_| {
+                            let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
+                            let Some(s) = session else {
+                                return;
+                            };
+                            let md = session_to_markdown(&s);
+                            let stem = export_filename_stem("chat_export");
+                            let name = format!("{stem}.md");
+                            if let Err(e) =
+                                trigger_download(&name, "text/markdown;charset=utf-8", &md)
+                            {
+                                if let Some(w) = web_sys::window() {
+                                    let _ = w.alert_with_message(&e);
+                                }
+                            }
+                        }
+                    }
+                >
+                    "MD"
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-danger btn-sm"
+                    title="删除此会话"
+                    on:click={
+                        let sessions = sessions;
+                        let active_id = active_id;
+                        let draft = draft;
+                        let conversation_id = conversation_id;
+                        let id = id_del.clone();
+                        move |_| {
+                            let Some(w) = web_sys::window() else {
+                                return;
+                            };
+                            if !w
+                                .confirm_with_message("确定删除此本地会话？此操作不可恢复。")
+                                .unwrap_or(false)
+                            {
+                                return;
+                            }
+                            let was_active = active_id.get() == id;
+                            sessions.update(|list| {
+                                list.retain(|s| s.id != id);
+                            });
+                            if sessions.with(|l| l.is_empty()) {
+                                let (list, def_id) = ensure_at_least_one(Vec::new());
+                                sessions.set(list);
+                                active_id.set(def_id.clone());
+                                draft.set(
+                                    sessions
+                                        .with(|l| {
+                                            l.iter()
+                                                .find(|s| s.id == def_id)
+                                                .map(|s| s.draft.clone())
+                                        })
+                                        .unwrap_or_default(),
+                                );
+                                conversation_id.set(None);
+                                return;
+                            }
+                            if was_active {
+                                let pick = sessions.with(|list| list[0].id.clone());
+                                active_id.set(pick.clone());
+                                draft.set(
+                                    sessions
+                                        .with(|l| {
+                                            l.iter()
+                                                .find(|s| s.id == pick)
+                                                .map(|s| s.draft.clone())
+                                        })
+                                        .unwrap_or_default(),
+                                );
+                                conversation_id.set(None);
+                            }
+                        }
+                    }
+                >
+                    "删除"
+                </button>
+            </div>
+        </div>
+    }
 }
 
 #[component]
@@ -1407,31 +1605,31 @@ fn App() -> impl IntoView {
                             <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| session_modal.set(false)>"关闭"</button>
                         </div>
                         <div class="modal-body">
+                            <p class="modal-hint">
+                                "本地保存在浏览器；可导出为与 CLI save-session 同形的 JSON / Markdown 下载。"
+                            </p>
                             {move || {
-                                sessions.get().into_iter().map(|s| {
-                                    let id = s.id.clone();
-                                    let active = active_id.get() == id;
-                                    let title = s.title.clone();
-                                    let n = s.messages.len();
-                                    view! {
-                                        <div class=if active { "session-row active" } else { "session-row" }>
-                                            <button
-                                                type="button"
-                                                class="session-open"
-                                                on:click={
-                                                    let id = id.clone();
-                                                    move |_| {
-                                                        active_id.set(id.clone());
-                                                        session_modal.set(false);
-                                                    }
-                                                }
-                                            >
-                                                <span class="session-title">{title}</span>
-                                                <span class="session-meta">{n}" 条"</span>
-                                            </button>
-                                        </div>
-                                    }
-                                }).collect_view()
+                                sessions
+                                    .get()
+                                    .into_iter()
+                                    .map(|s| {
+                                        let id = s.id.clone();
+                                        let active = active_id.get() == id;
+                                        view! {
+                                            <SessionModalRow
+                                                id=id.clone()
+                                                title=s.title.clone()
+                                                message_count=s.messages.len()
+                                                active=active
+                                                sessions=sessions
+                                                active_id=active_id
+                                                draft=draft
+                                                conversation_id=conversation_id
+                                                session_modal=session_modal
+                                            />
+                                        }
+                                    })
+                                    .collect_view()
                             }}
                         </div>
                     </div>
