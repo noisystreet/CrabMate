@@ -17,17 +17,20 @@ pub(super) struct AgentRoleEntryBuilder {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AgentRolesToml {
     agent_roles: Option<AgentRolesSection>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AgentRolesSection {
     default_role: Option<String>,
     roles: Option<HashMap<String, AgentRoleEntryToml>>,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
+#[serde(deny_unknown_fields)]
 struct AgentRoleEntryToml {
     system_prompt: Option<String>,
     system_prompt_file: Option<String>,
