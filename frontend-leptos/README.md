@@ -20,4 +20,4 @@ trunk build --release
 
 ## 能力与现状
 
-已覆盖当前 Web 端能力：顶栏、聊天列表 + 输入框、`POST /chat/stream` SSE、命令审批条、工作区列表、任务清单勾选、本地会话列表（弹窗内可重命名、删除、下载 **JSON** / **Markdown** 导出，JSON 为 `ChatSessionFile` v1，与 CLI `save-session` 落盘同形）、深浅主题切换。状态栏在 `GET /status` 失败时展示错误说明与「重试」按钮。
+已覆盖当前 Web 端能力：顶栏、聊天列表 + 输入框、`POST /chat/stream` SSE、命令审批条、工作区列表、任务清单勾选、本地会话列表（弹窗内可重命名、删除、下载 **JSON** / **Markdown** 导出，JSON 为 `ChatSessionFile` v1，与 CLI `save-session` 落盘同形）、深浅主题切换。状态栏在 `GET /status` 失败时展示错误说明与「重试」按钮。动效：生成中/工具执行中状态点脉冲、侧栏宽度与显隐过渡、工作区/任务列表加载后行级渐显；`prefers-reduced-motion: reduce` 下关闭上述动画与过渡。
