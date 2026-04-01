@@ -3,33 +3,10 @@
 > 范围：`frontend-leptos` 的视觉与交互优化（不改业务协议）。
 > 目标：在现有样式基础上，持续提升层次感、一致性、可读性与可访问性。
 
-## P1 排版与信息密度
-
-- [ ] 消息区元信息优化：补充轻量级时间/角色标识（可隐藏或弱化展示）。
-- [ ] 侧栏卡头信息增强：工作区与任务卡片头增加统计（如条目数）与状态提示。
-- [ ] 顶栏密度自适应：窄屏下将次要按钮收纳到「更多」入口，避免挤压换行。
-
-## P2 组件精致度
-
-- [ ] 角色下拉视觉统一：将 `select` 外观与 chip 体系进一步统一（保持原生可访问性）。
-- [ ] 会话列表反馈增强：`hover/active/focus` 层次更清晰，当前会话标识更稳定。
-- [ ] 审批条降噪：命令预览支持折叠/展开，默认降低视觉占用。
-
-## P2 主题与可访问性
-
-- [ ] 对比度走查：重点检查 light 主题下 `muted`、`border-subtle` 与背景的对比度。
-- [ ] 焦点态一致性：输入框、下拉、按钮、会话行统一 `focus-visible` 反馈规则。
-- [ ] 语义色校准：`info/success/warn/error` 在深浅主题下保持可辨且不过饱和。
-
-## P3 工程化与可维护性
-
-- [ ] 样式拆分：将 `styles.css` 按模块拆分（如 `layout` / `chat` / `sidebar` / `status`）。
-- [ ] 设计 token 扩展：补齐 `spacing` / `typography` / `motion` token，减少魔法数字。
-- [ ] 视觉回归清单：建立关键页面检查项（主题切换、窄屏、长消息、空态、骨架屏）。
-
 ## 验收建议（每次改动）
 
 - [ ] `cd frontend-leptos && cargo check --target wasm32-unknown-unknown`
 - [ ] 手动验证 dark / light 两套主题
 - [ ] 手动验证窄屏（顶栏、侧栏、状态栏不重叠）
 - [ ] 手动验证骨架屏到真实内容的切换是否平滑
+- [ ] 对照 [`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`](frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md) 做关键路径手测

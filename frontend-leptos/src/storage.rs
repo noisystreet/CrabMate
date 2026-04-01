@@ -13,6 +13,9 @@ pub struct StoredMessage {
     pub state: Option<String>,
     #[serde(default)]
     pub is_tool: bool,
+    /// 消息创建时间（毫秒，与 `js_sys::Date::now()` 一致）；旧数据缺省为 0，UI 不显示时钟点。
+    #[serde(default)]
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
