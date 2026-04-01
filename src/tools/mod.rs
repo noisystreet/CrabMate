@@ -22,6 +22,7 @@ pub(crate) use file::canonical_workspace_root;
 mod format;
 mod frontend_tools;
 mod git;
+mod github_cli;
 mod go_tools;
 mod grep;
 pub mod http_fetch;
@@ -292,6 +293,60 @@ fn runner_run_executable(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_package_query(args: &str, ctx: &ToolContext<'_>) -> String {
     package_query::run(args, ctx.command_max_output_len)
+}
+
+fn runner_gh_pr_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_pr_list(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_pr_view(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_pr_view(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_issue_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_issue_list(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_issue_view(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_issue_view(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_run_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_run_list(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_api(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_api(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
 }
 
 fn runner_cargo_check(args: &str, ctx: &ToolContext<'_>) -> String {

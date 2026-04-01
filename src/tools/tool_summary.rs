@@ -641,3 +641,64 @@ pub(super) fn summary_symlink_info(v: &serde_json::Value) -> Option<String> {
     let path = v.get("path")?.as_str()?.trim();
     Some(format!("symlink info: {}", path))
 }
+
+fn gh_repo_suffix(v: &serde_json::Value) -> String {
+    v.get("repo")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|r| format!(" ({})", r))
+        .unwrap_or_default()
+}
+
+pub(super) fn summary_gh_pr_list(v: &serde_json::Value) -> Option<String> {
+    let st = v.get("state").and_then(|x| x.as_str()).unwrap_or("open");
+    let lim = v.get("limit").and_then(|x| x.as_u64()).unwrap_or(30);
+    Some(format!(
+        "gh pr list{} state={} limit={}",
+        gh_repo_suffix(v),
+        st,
+        lim
+    ))
+}
+
+pub(super) fn summary_gh_pr_view(v: &serde_json::Value) -> Option<String> {
+    let n = v.get("number").and_then(|x| x.as_u64())?;
+    Some(format!("gh pr view #{}{}", n, gh_repo_suffix(v)))
+}
+
+pub(super) fn summary_gh_issue_list(v: &serde_json::Value) -> Option<String> {
+    let st = v.get("state").and_then(|x| x.as_str()).unwrap_or("open");
+    let lim = v.get("limit").and_then(|x| x.as_u64()).unwrap_or(30);
+    Some(format!(
+        "gh issue list{} state={} limit={}",
+        gh_repo_suffix(v),
+        st,
+        lim
+    ))
+}
+
+pub(super) fn summary_gh_issue_view(v: &serde_json::Value) -> Option<String> {
+    let n = v.get("number").and_then(|x| x.as_u64())?;
+    Some(format!("gh issue view #{}{}", n, gh_repo_suffix(v)))
+}
+
+pub(super) fn summary_gh_run_list(v: &serde_json::Value) -> Option<String> {
+    let lim = v.get("limit").and_then(|x| x.as_u64()).unwrap_or(30);
+    Some(format!("gh run list{} limit={}", gh_repo_suffix(v), lim))
+}
+
+pub(super) fn summary_gh_api(v: &serde_json::Value) -> Option<String> {
+    let path = v.get("path")?.as_str()?.trim();
+    let method = v
+        .get("method")
+        .and_then(|x| x.as_str())
+        .unwrap_or("GET")
+        .trim()
+        .to_ascii_uppercase();
+    let mut p: String = path.chars().take(40).collect();
+    if path.chars().count() > 40 {
+        p.push('…');
+    }
+    Some(format!("gh api {} {}", method, p))
+}

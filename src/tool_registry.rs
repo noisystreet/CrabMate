@@ -167,6 +167,7 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "run_executable",
             "workflow_execute",
             "http_request",
+            "gh_api",
         ]
         .into_iter()
         .map(|s| s.to_string())
@@ -225,6 +226,7 @@ fn builtin_parallel_sync_prefix_hit(name: &str) -> bool {
         || name.starts_with("python_")
         || name.starts_with("typos_")
         || name.starts_with("codespell_")
+        || name.starts_with("gh_")
 }
 
 /// 即使 [`is_readonly_tool`] 为真，并行 `spawn_blocking` 仍可能争抢 cargo/npm 等构建锁或缓存；勿与同批其它工具并行。
