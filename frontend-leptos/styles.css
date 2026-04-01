@@ -366,6 +366,7 @@ body > * {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  align-items: stretch;
 }
 
 .chat-column {
@@ -376,6 +377,7 @@ body > * {
   border-right: 1px solid var(--border-subtle);
   /* 介于页面与卡片之间，对话区略「抬升」、与侧栏区隔 */
   background: color-mix(in srgb, var(--bg-elevated) 62%, var(--bg));
+  transition: border-color 0.22s ease;
 }
 
 /* 仅作滚动容器：勿对 .msg 做纵 flex 子项，否则 flex-shrink + overflow 会把气泡压成一行高 */
@@ -658,6 +660,23 @@ body > * {
   flex-shrink: 0;
   background: color-mix(in srgb, var(--bg) 78%, var(--bg-elevated));
   border-left: 1px solid var(--border-subtle);
+  overflow: hidden;
+  box-sizing: border-box;
+  transition:
+    width 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.22s ease,
+    opacity 0.2s ease;
+  will-change: width;
+}
+
+.side-column-collapsed {
+  border-left-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.main-row-side-collapsed .chat-column {
+  border-right-color: transparent;
 }
 
 .side-toolbar {
@@ -683,6 +702,7 @@ body > * {
   min-width: 0;
   display: flex;
   min-height: 0;
+  transition: min-width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .side-pane:first-child {
@@ -769,6 +789,25 @@ body > * {
 .workspace-list li.file {
   border-left: 3px solid transparent;
   padding-left: 10px;
+}
+
+/* 列表加载完成后轻量渐显（工作区 / 任务） */
+@keyframes list-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.list-stagger > li {
+  opacity: 0;
+  animation: list-row-in 0.4s ease forwards;
+  animation-delay: calc(var(--list-stagger, 0) * 38ms);
 }
 
 .tasks-list {
@@ -1073,6 +1112,26 @@ body > * {
   background: var(--warn);
 }
 
+/* 模型生成中 / 工具执行中：状态点轻微脉冲 */
+@keyframes status-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.62;
+    transform: scale(1.18);
+  }
+}
+
+.status-run-running .status-run-dot,
+.status-run-tool .status-run-dot {
+  animation: status-dot-pulse 1.55s ease-in-out infinite;
+  transform-origin: center;
+}
+
 .status-run-error {
   color: var(--error);
   border-color: color-mix(in srgb, var(--error) 35%, var(--border));
@@ -1318,5 +1377,30 @@ body > * {
   .modal-backdrop,
   .modal {
     animation: none;
+  }
+
+  .side-column {
+    transition: none;
+  }
+
+  .side-pane {
+    transition: none;
+  }
+
+  .chat-column {
+    transition: none;
+  }
+
+  .list-stagger > li {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .status-run-running .status-run-dot,
+  .status-run-tool .status-run-dot {
+    animation: none;
+    opacity: 1;
+    transform: none;
   }
 }

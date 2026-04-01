@@ -1173,7 +1173,13 @@ fn App() -> impl IntoView {
                 })
             }}
 
-            <div class="main-row">
+            <div class=move || {
+                if workspace_visible.get() || tasks_visible.get() {
+                    "main-row"
+                } else {
+                    "main-row main-row-side-collapsed"
+                }
+            }>
                 <div class="chat-column">
                     <div
                         class="messages"
@@ -1290,8 +1296,22 @@ fn App() -> impl IntoView {
                     </div>
                 </div>
 
-                <Show when=move || workspace_visible.get() || tasks_visible.get()>
-                    <div class="side-column" style:width=move || format!("{}px", side_width.get())>
+                <div
+                    class=move || {
+                        if workspace_visible.get() || tasks_visible.get() {
+                            "side-column"
+                        } else {
+                            "side-column side-column-collapsed"
+                        }
+                    }
+                    style:width=move || {
+                        if workspace_visible.get() || tasks_visible.get() {
+                            format!("{}px", side_width.get())
+                        } else {
+                            "0px".to_string()
+                        }
+                    }
+                >
                         <div class="side-toolbar">
                             <button type="button" class="btn btn-icon" title="收窄侧栏" on:click=narrow_side.clone()>"◀"</button>
                             <button type="button" class="btn btn-icon" title="加宽侧栏" on:click=widen_side.clone()>"▶"</button>
@@ -1347,7 +1367,17 @@ fn App() -> impl IntoView {
                                                                         .unwrap_or_default()
                                                                 }}</div>
                                                             </Show>
-                                                            <ul class="workspace-list">
+                                                            <ul class=move || {
+                                                                let entries = workspace_data
+                                                                    .get()
+                                                                    .map(|d| d.entries)
+                                                                    .unwrap_or_default();
+                                                                if entries.is_empty() {
+                                                                    "workspace-list"
+                                                                } else {
+                                                                    "workspace-list list-stagger"
+                                                                }
+                                                            }>
                                                                 {move || {
                                                                     let entries = workspace_data
                                                                         .get()
@@ -1358,9 +1388,18 @@ fn App() -> impl IntoView {
                                                                     } else {
                                                                         entries
                                                                             .into_iter()
-                                                                            .map(|e| {
+                                                                            .enumerate()
+                                                                            .map(|(i, e)| {
                                                                                 let mark = if e.is_dir { "dir" } else { "file" };
-                                                                                view! { <li class=mark>{e.name}</li> }
+                                                                                let stagger = i.to_string();
+                                                                                view! {
+                                                                                    <li
+                                                                                        class=mark
+                                                                                        style=format!("--list-stagger: {stagger}")
+                                                                                    >
+                                                                                        {e.name}
+                                                                                    </li>
+                                                                                }
                                                                             })
                                                                             .collect_view()
                                                                             .into_any()
@@ -1413,22 +1452,35 @@ fn App() -> impl IntoView {
                                                             <Show when=move || tasks_err.get().is_some()>
                                                                 <div class="msg-error">{move || tasks_err.get().unwrap_or_default()}</div>
                                                             </Show>
-                                                            <ul class="tasks-list">
+                                                            <ul class=move || {
+                                                                if tasks_data.get().items.is_empty() {
+                                                                    "tasks-list"
+                                                                } else {
+                                                                    "tasks-list list-stagger"
+                                                                }
+                                                            }>
                                                                 {move || {
-                                                                    tasks_data.get().items.into_iter().map(|t: TaskItem| {
-                                                                        let id = t.id.clone();
-                                                                        let done = t.done;
-                                                                        view! {
-                                                                            <li>
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    prop:checked=done
-                                                                                    on:change=move |_| toggle_task(id.clone())
-                                                                                />
-                                                                                <span>{t.title}</span>
-                                                                            </li>
-                                                                        }
-                                                                    }).collect_view()
+                                                                    tasks_data
+                                                                        .get()
+                                                                        .items
+                                                                        .into_iter()
+                                                                        .enumerate()
+                                                                        .map(|(i, t): (usize, TaskItem)| {
+                                                                            let id = t.id.clone();
+                                                                            let done = t.done;
+                                                                            let stagger = i.to_string();
+                                                                            view! {
+                                                                                <li style=format!("--list-stagger: {stagger}")>
+                                                                                    <input
+                                                                                        type="checkbox"
+                                                                                        prop:checked=done
+                                                                                        on:change=move |_| toggle_task(id.clone())
+                                                                                    />
+                                                                                    <span>{t.title}</span>
+                                                                                </li>
+                                                                            }
+                                                                        })
+                                                                        .collect_view()
                                                                 }}
                                                             </ul>
                                                         </div>
@@ -1441,8 +1493,7 @@ fn App() -> impl IntoView {
                                 </div>
                             </Show>
                         </div>
-                    </div>
-                </Show>
+                </div>
             </div>
 
             <Show when=move || status_bar_visible.get()>
