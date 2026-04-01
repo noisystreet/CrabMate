@@ -340,6 +340,51 @@ fn runner_gh_run_list(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
+fn runner_gh_pr_diff(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_pr_diff(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_run_view(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_run_view(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_release_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_release_list(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_release_view(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_release_view(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+fn runner_gh_search(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_search(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
 fn runner_gh_api(args: &str, ctx: &ToolContext<'_>) -> String {
     github_cli::gh_api(
         args,

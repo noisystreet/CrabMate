@@ -1,4 +1,4 @@
-//! 内置 GitHub CLI（`gh`）封装：结构化参数、`--json` 成功时附加格式化 JSON。
+//! 内置 GitHub CLI（`gh`）封装：结构化参数；**退出码 0** 且 **stdout 整段为合法 JSON** 时附加格式化块（与是否传入 `--json` 字段无关）。
 //!
 //! 须 **`allowed_commands` 含 `gh`**（嵌入默认已含）。**`gh_api`** 在变更类 HTTP 方法下可能修改远端资源，已列入写副作用工具集。
 
@@ -13,7 +13,11 @@ use super::output_util;
 
 const MAX_LIMIT: u32 = 200;
 const DEFAULT_LIST_LIMIT: u32 = 30;
+const MAX_SEARCH_LIMIT: u32 = 100;
 const TRUNCATE_LINES: usize = 500;
+const MAX_SEARCH_QUERY_BYTES: usize = 400;
+const MAX_RELEASE_TAG_LEN: usize = 200;
+const MAX_JOB_NAME_LEN: usize = 128;
 
 fn is_safe_token(s: &str) -> bool {
     let t = s.trim();
@@ -120,12 +124,36 @@ fn wrap_with_parsed(raw: String, stdout: &str) -> String {
     }
 }
 
+/// 从 `command::run` 风格输出中提取「标准输出：」段落（不含后续「标准错误：」）。
+fn extract_stdout_from_formatted(out: &str) -> &str {
+    let Some(idx) = out.find("标准输出：\n") else {
+        return "";
+    };
+    let start = idx + "标准输出：\n".len();
+    let end = out[start..]
+        .find("\n标准错误：\n")
+        .map(|e| start + e)
+        .unwrap_or(out.len());
+    &out[start..end]
+}
+
+/// 首行 `退出码：N` 为 0 且 stdout 可解析为 JSON 时附加格式化块。
+fn attach_json_if_exit_zero(formatted: String, stdout_raw: &str) -> String {
+    let first = formatted.lines().next().unwrap_or("");
+    let code = first
+        .strip_prefix("退出码：")
+        .and_then(|s| s.trim().parse::<i32>().ok());
+    if code != Some(0) {
+        return formatted;
+    }
+    wrap_with_parsed(formatted, stdout_raw)
+}
+
 fn run_gh_vec(
     argv: Vec<String>,
     max_output_len: usize,
     allowed_commands: &[String],
     working_dir: &Path,
-    parse_json_stdout: bool,
 ) -> String {
     let args_json = match serde_json::to_string(&serde_json::json!({
         "command": "gh",
@@ -141,15 +169,90 @@ fn run_gh_vec(
         working_dir,
         None,
     );
-    if !parse_json_stdout {
-        return out;
+    let stdout = extract_stdout_from_formatted(&out).to_string();
+    attach_json_if_exit_zero(out, stdout.as_str())
+}
+
+fn validate_run_id(id: &str) -> Result<(), String> {
+    let t = id.trim();
+    if t.is_empty() {
+        return Err("错误：run_id 不能为空".to_string());
     }
-    if let Some(idx) = out.find("标准输出：\n") {
-        let rest = &out[idx + "标准输出：\n".len()..];
-        let stdout_part = rest.split("\n标准错误：\n").next().unwrap_or(rest);
-        return wrap_with_parsed(out.clone(), stdout_part);
+    if t.len() > 24 {
+        return Err("错误：run_id 过长".to_string());
     }
-    out
+    if !t.chars().all(|c| c.is_ascii_digit()) {
+        return Err(
+            "错误：run_id 须为纯数字（与 `gh run list --json databaseId` 一致）".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_release_tag(tag: &str) -> Result<(), String> {
+    let t = tag.trim();
+    if t.is_empty() {
+        return Err("错误：tag 不能为空".to_string());
+    }
+    if t.len() > MAX_RELEASE_TAG_LEN {
+        return Err("错误：tag 过长".to_string());
+    }
+    if t.contains("..") || t.starts_with('/') {
+        return Err("错误：tag 不得含 \"..\" 或以 \"/\" 开头".to_string());
+    }
+    if !t
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "-_.+@".contains(c))
+    {
+        return Err("错误：tag 仅允许字母数字与 - _ . + @".to_string());
+    }
+    Ok(())
+}
+
+fn validate_search_query(q: &str) -> Result<(), String> {
+    let t = q.trim();
+    if t.is_empty() {
+        return Err("错误：query 不能为空".to_string());
+    }
+    if t.len() > MAX_SEARCH_QUERY_BYTES {
+        return Err(format!(
+            "错误：query 过长（上限 {} 字节）",
+            MAX_SEARCH_QUERY_BYTES
+        ));
+    }
+    if t.contains("..") {
+        return Err("错误：query 不得包含 \"..\"".to_string());
+    }
+    for ch in t.chars() {
+        if matches!(ch, '\n' | '\r' | '\0' | '\t') {
+            return Err("错误：query 不得含换行、制表符或空字符".to_string());
+        }
+        if matches!(ch, ';' | '|' | '&' | '`' | '$' | '<' | '>') {
+            return Err(format!("错误：query 含不允许的字符 {:?}", ch));
+        }
+    }
+    Ok(())
+}
+
+fn validate_job_name(name: &str) -> Result<(), String> {
+    let t = name.trim();
+    if t.is_empty() {
+        return Err("错误：job 不能为空".to_string());
+    }
+    if t.len() > MAX_JOB_NAME_LEN {
+        return Err("错误：job 名称过长".to_string());
+    }
+    if !t
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ' ')
+    {
+        return Err("错误：job 仅允许字母数字、空格、连字符与下划线".to_string());
+    }
+    Ok(())
+}
+
+fn clamp_search_limit(n: Option<u32>) -> u32 {
+    n.unwrap_or(DEFAULT_LIST_LIMIT).clamp(1, MAX_SEARCH_LIMIT)
 }
 
 /// `gh pr list`
@@ -213,11 +316,7 @@ pub fn gh_pr_list(
         }
         argv.extend(extra);
     }
-    let parse = v
-        .get("fields")
-        .and_then(|x| x.as_array())
-        .is_some_and(|a| !a.is_empty());
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir, parse)
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
 /// `gh pr view <n>`
@@ -272,11 +371,7 @@ pub fn gh_pr_view(
         }
         argv.extend(extra);
     }
-    let parse = v
-        .get("fields")
-        .and_then(|x| x.as_array())
-        .is_some_and(|a| !a.is_empty());
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir, parse)
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
 /// `gh issue list`
@@ -340,11 +435,7 @@ pub fn gh_issue_list(
         }
         argv.extend(extra);
     }
-    let parse = v
-        .get("fields")
-        .and_then(|x| x.as_array())
-        .is_some_and(|a| !a.is_empty());
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir, parse)
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
 /// `gh issue view <n>`
@@ -399,11 +490,7 @@ pub fn gh_issue_view(
         }
         argv.extend(extra);
     }
-    let parse = v
-        .get("fields")
-        .and_then(|x| x.as_array())
-        .is_some_and(|a| !a.is_empty());
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir, parse)
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
 /// `gh run list`
@@ -457,11 +544,298 @@ pub fn gh_run_list(
         }
         argv.extend(extra);
     }
-    let parse = v
-        .get("fields")
-        .and_then(|x| x.as_array())
-        .is_some_and(|a| !a.is_empty());
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir, parse)
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+}
+
+/// `gh pr diff`（只读）
+pub fn gh_pr_diff(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> String {
+    if let Err(e) = gh_allowed(allowed_commands) {
+        return e;
+    }
+    let v: JsonValue = match serde_json::from_str(args_json) {
+        Ok(x) => x,
+        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+    };
+    let num = match v.get("number").and_then(|x| x.as_u64()) {
+        Some(n) if n > 0 && n <= 999_999 => n.to_string(),
+        _ => return "错误：缺少或非法 number".to_string(),
+    };
+    let mut argv = vec!["pr".into(), "diff".into(), num];
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        if let Err(e) = validate_repo(r) {
+            return e;
+        }
+        argv.push("-R".into());
+        argv.push(r.trim().to_string());
+    }
+    if v.get("patch").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--patch".into());
+    }
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        if let Err(e) = validate_extra_args(&extra) {
+            return e;
+        }
+        argv.extend(extra);
+    }
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+}
+
+/// `gh run view`（日志/摘要；输出受 `command_max_output_len` 截断）
+pub fn gh_run_view(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> String {
+    if let Err(e) = gh_allowed(allowed_commands) {
+        return e;
+    }
+    let v: JsonValue = match serde_json::from_str(args_json) {
+        Ok(x) => x,
+        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+    };
+    let run_id = match v.get("run_id").and_then(|x| x.as_str()) {
+        Some(s) => s.trim(),
+        None => return "错误：缺少 run_id".to_string(),
+    };
+    if let Err(e) = validate_run_id(run_id) {
+        return e;
+    }
+    let mut argv = vec!["run".into(), "view".into(), run_id.to_string()];
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        if let Err(e) = validate_repo(r) {
+            return e;
+        }
+        argv.push("-R".into());
+        argv.push(r.trim().to_string());
+    }
+    if v.get("log").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--log".into());
+        if let Some(j) = v.get("job").and_then(|x| x.as_str()) {
+            if let Err(e) = validate_job_name(j) {
+                return e;
+            }
+            argv.push("--job".into());
+            argv.push(j.trim().to_string());
+        }
+    }
+    if let Some(arr) = v.get("fields").and_then(|x| x.as_array()) {
+        let fields: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        match join_json_fields(&fields) {
+            Ok(j) => {
+                argv.push("--json".into());
+                argv.push(j);
+            }
+            Err(e) => return e,
+        }
+    }
+    if v.get("web").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--web".into());
+    }
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        if let Err(e) = validate_extra_args(&extra) {
+            return e;
+        }
+        argv.extend(extra);
+    }
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+}
+
+/// `gh release list`
+pub fn gh_release_list(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> String {
+    if let Err(e) = gh_allowed(allowed_commands) {
+        return e;
+    }
+    let v: JsonValue = match serde_json::from_str(args_json) {
+        Ok(x) => x,
+        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+    };
+    let mut argv = vec!["release".into(), "list".into()];
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        if let Err(e) = validate_repo(r) {
+            return e;
+        }
+        argv.push("-R".into());
+        argv.push(r.trim().to_string());
+    }
+    let lim = clamp_limit(v.get("limit").and_then(|x| x.as_u64()).map(|u| u as u32));
+    argv.push("--limit".into());
+    argv.push(lim.to_string());
+    if let Some(arr) = v.get("fields").and_then(|x| x.as_array()) {
+        let fields: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        match join_json_fields(&fields) {
+            Ok(j) => {
+                argv.push("--json".into());
+                argv.push(j);
+            }
+            Err(e) => return e,
+        }
+    }
+    if v.get("web").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--web".into());
+    }
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        if let Err(e) = validate_extra_args(&extra) {
+            return e;
+        }
+        argv.extend(extra);
+    }
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+}
+
+/// `gh release view`
+pub fn gh_release_view(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> String {
+    if let Err(e) = gh_allowed(allowed_commands) {
+        return e;
+    }
+    let v: JsonValue = match serde_json::from_str(args_json) {
+        Ok(x) => x,
+        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+    };
+    let tag = match v.get("tag").and_then(|x| x.as_str()) {
+        Some(s) => s.trim(),
+        None => return "错误：缺少 tag".to_string(),
+    };
+    if let Err(e) = validate_release_tag(tag) {
+        return e;
+    }
+    let mut argv = vec!["release".into(), "view".into(), tag.to_string()];
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        if let Err(e) = validate_repo(r) {
+            return e;
+        }
+        argv.push("-R".into());
+        argv.push(r.trim().to_string());
+    }
+    if let Some(arr) = v.get("fields").and_then(|x| x.as_array()) {
+        let fields: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        match join_json_fields(&fields) {
+            Ok(j) => {
+                argv.push("--json".into());
+                argv.push(j);
+            }
+            Err(e) => return e,
+        }
+    }
+    if v.get("web").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--web".into());
+    }
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        if let Err(e) = validate_extra_args(&extra) {
+            return e;
+        }
+        argv.extend(extra);
+    }
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+}
+
+/// `gh search`（仅允许 issues / prs / repos）
+pub fn gh_search(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> String {
+    if let Err(e) = gh_allowed(allowed_commands) {
+        return e;
+    }
+    let v: JsonValue = match serde_json::from_str(args_json) {
+        Ok(x) => x,
+        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+    };
+    let scope = match v.get("scope").and_then(|x| x.as_str()) {
+        Some(s) => s.trim(),
+        None => return "错误：缺少 scope".to_string(),
+    };
+    if !matches!(scope, "issues" | "prs" | "repos") {
+        return "错误：scope 须为 issues、prs 或 repos".to_string();
+    }
+    let q = match v.get("query").and_then(|x| x.as_str()) {
+        Some(s) => s,
+        None => return "错误：缺少 query".to_string(),
+    };
+    if let Err(e) = validate_search_query(q) {
+        return e;
+    }
+    let mut argv = vec!["search".into(), scope.into(), q.trim().to_string()];
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        if scope != "repos" {
+            if let Err(e) = validate_repo(r) {
+                return e;
+            }
+            argv.push("--repo".into());
+            argv.push(r.trim().to_string());
+        } else {
+            return "错误：scope=repos 时不要使用 repo 参数".to_string();
+        }
+    }
+    let lim = clamp_search_limit(v.get("limit").and_then(|x| x.as_u64()).map(|u| u as u32));
+    argv.push("--limit".into());
+    argv.push(lim.to_string());
+    if let Some(arr) = v.get("fields").and_then(|x| x.as_array()) {
+        let fields: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        match join_json_fields(&fields) {
+            Ok(j) => {
+                argv.push("--json".into());
+                argv.push(j);
+            }
+            Err(e) => return e,
+        }
+    }
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        if let Err(e) = validate_extra_args(&extra) {
+            return e;
+        }
+        argv.extend(extra);
+    }
+    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
 /// `gh api`（受限 path + 方法；可选 JSON body 经 stdin 传入）
@@ -572,12 +946,7 @@ pub fn gh_api(
     }
 
     let truncated = output_util::truncate_output_lines(&result, max_output_len, TRUNCATE_LINES);
-    let try_parse = matches!(method.as_str(), "GET" | "HEAD") || body.is_some();
-    if try_parse {
-        wrap_with_parsed(truncated, stdout.as_ref())
-    } else {
-        truncated
-    }
+    attach_json_if_exit_zero(truncated, stdout.as_ref())
 }
 
 #[cfg(test)]
@@ -600,6 +969,32 @@ mod tests {
         assert!(validate_api_path("repos/foo/bar/issues").is_ok());
         assert!(validate_api_path("/repos/x").is_err());
         assert!(validate_api_path("repos/../x").is_err());
+    }
+
+    #[test]
+    fn attach_json_if_exit_zero_appends_on_json_stdout() {
+        let raw = "退出码：0\n标准输出：\n[1,2]\n".to_string();
+        let out = attach_json_if_exit_zero(raw, "[1,2]");
+        assert!(out.contains("解析后的 JSON"), "{}", out);
+    }
+
+    #[test]
+    fn attach_json_skips_on_nonzero_exit() {
+        let raw = "退出码：1\n标准输出：\n{}\n".to_string();
+        let out = attach_json_if_exit_zero(raw, "{}");
+        assert!(!out.contains("解析后的 JSON"), "{}", out);
+    }
+
+    #[test]
+    fn validate_search_query_rejects_shell_chars() {
+        assert!(validate_search_query("foo;rm").is_err());
+        assert!(validate_search_query("repo:foo/bar").is_ok());
+    }
+
+    #[test]
+    fn validate_run_id_numeric() {
+        assert!(validate_run_id("12345").is_ok());
+        assert!(validate_run_id("12a").is_err());
     }
 
     #[test]
