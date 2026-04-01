@@ -1229,9 +1229,18 @@ body > * {
   overflow: auto;
 }
 
+.modal-hint {
+  margin: 0 14px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 .session-row {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
+  gap: 0;
   border-bottom: 1px solid var(--border-subtle);
   font-size: 13px;
   transition: background 0.12s ease;
@@ -1282,6 +1291,23 @@ body > * {
   font-size: 11px;
   color: var(--muted);
   flex-shrink: 0;
+}
+
+.session-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 12px 10px 14px;
+  border-top: 1px solid var(--border-subtle);
+  width: 100%;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+}
+
+.session-row.active .session-row-actions {
+  background: color-mix(in srgb, var(--accent-dim) 55%, var(--bg));
 }
 
 .hidden-input {

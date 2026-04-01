@@ -1,5 +1,5 @@
 //! 会话导出：与 `.crabmate/tui_session.json` 同形的 JSON，以及 Markdown 文本生成。
-//! 供 `runtime/workspace_session` 使用；Web 前端 `frontend-leptos/src/lib.rs` 应对齐 `CHAT_SESSION_FILE_VERSION` 与字段含义。
+//! 供 `runtime/workspace_session` 使用；Web 前端 `frontend-leptos/src/session_export.rs` 应对齐 `CHAT_SESSION_FILE_VERSION` 与字段含义。
 #![allow(dead_code)]
 
 use crate::types::Message;
