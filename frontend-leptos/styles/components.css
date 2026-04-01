@@ -1,0 +1,330 @@
+/* —— 顶栏 —— */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--topbar-h);
+  padding: 0 16px 0 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  background:
+    color-mix(in srgb, var(--bg-elevated) 82%, var(--surface))
+    url("../brand-mark.svg")
+    center / 20px 20px
+    no-repeat;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
+    0 2px 8px color-mix(in srgb, var(--accent) 20%, transparent);
+  flex-shrink: 0;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 760;
+  letter-spacing: -0.018em;
+  line-height: 1.15;
+  color: var(--text);
+}
+
+.brand-sub {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-weight: 560;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.topbar-spacer {
+  flex: 1;
+}
+
+.topbar-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  position: relative;
+}
+
+.topbar-cluster-primary,
+.topbar-cluster-wide {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.topbar-cluster-narrow {
+  position: relative;
+  display: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.topbar-more-btn {
+  min-width: 52px;
+}
+
+.topbar-overflow-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: transparent;
+}
+
+.topbar-overflow-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 168px;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.topbar-overflow-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-family: inherit;
+  font-size: 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.topbar-overflow-item:hover {
+  background: var(--surface-hover);
+}
+
+.topbar-overflow-item.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.topbar-overflow-item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+@media (max-width: 720px) {
+  .topbar-cluster-wide {
+    display: none;
+  }
+
+  .topbar-cluster-narrow {
+    display: flex;
+  }
+}
+
+/* —— 按钮体系 —— */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease,
+    filter 0.15s ease;
+}
+
+.btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+}
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--border-subtle);
+}
+
+.btn-ghost:active:not(:disabled) {
+  background: color-mix(in srgb, var(--surface-hover) 75%, var(--surface));
+  border-color: color-mix(in srgb, var(--muted) 26%, var(--border-subtle));
+  transform: translateY(1px);
+}
+
+.btn-ghost:disabled {
+  color: color-mix(in srgb, var(--muted) 65%, transparent);
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn-ghost.active,
+.topbar-actions .btn.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 95%, #fff) 0%, var(--accent) 100%);
+  border-color: color-mix(in srgb, var(--accent) 70%, #000);
+  color: #fff;
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 12%, transparent) inset;
+}
+
+:root[data-theme="light"] .btn-primary {
+  background: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 85%, #000);
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.07) saturate(1.03);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 14%, transparent) inset,
+    0 5px 14px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.btn-primary:active:not(:disabled) {
+  filter: brightness(0.98) saturate(0.98);
+  transform: translateY(1px);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
+    0 1px 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.btn-primary:disabled {
+  background: color-mix(in srgb, var(--accent) 38%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  color: color-mix(in srgb, #fff 75%, transparent);
+}
+
+.btn-secondary {
+  background: var(--surface-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(1px);
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.btn-secondary:disabled {
+  background: color-mix(in srgb, var(--surface) 70%, var(--bg));
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+}
+
+.btn-muted {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.btn-muted:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn-muted:active:not(:disabled) {
+  transform: translateY(1px);
+  background: color-mix(in srgb, var(--surface-hover) 72%, var(--surface));
+  border-color: color-mix(in srgb, var(--muted) 32%, var(--border));
+}
+
+.btn-muted:disabled {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--border) 65%, transparent);
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+}
+
+.btn-danger {
+  background: var(--error-bg);
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border));
+  color: var(--error);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 18%, var(--surface));
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}

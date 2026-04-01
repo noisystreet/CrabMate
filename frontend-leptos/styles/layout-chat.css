@@ -1,0 +1,326 @@
+/* —— 主区 —— */
+.main-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+.chat-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-subtle);
+  /* 介于页面与卡片之间，对话区略「抬升」、与侧栏区隔 */
+  background: color-mix(in srgb, var(--bg-elevated) 62%, var(--bg));
+  transition: border-color 0.22s ease;
+}
+
+/* 仅作滚动容器：勿对 .msg 做纵 flex 子项，否则 flex-shrink + overflow 会把气泡压成一行高 */
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-4) calc(var(--space-3) + 6px) var(--space-5);
+  scroll-behavior: auto;
+}
+
+.messages-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-gap-msg);
+  min-height: min-content;
+}
+
+/* 消息区/侧栏/弹窗统一滚动条风格 */
+.messages,
+.side-pane,
+.modal-body {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 58%, var(--border))
+    transparent;
+}
+
+.messages::-webkit-scrollbar,
+.side-pane::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.messages::-webkit-scrollbar-track,
+.side-pane::-webkit-scrollbar-track,
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messages::-webkit-scrollbar-thumb,
+.side-pane::-webkit-scrollbar-thumb,
+.modal-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 58%, var(--border));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.messages::-webkit-scrollbar-thumb:hover,
+.side-pane::-webkit-scrollbar-thumb:hover,
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 88%, var(--accent));
+}
+
+/* —— 消息气泡 —— */
+.msg-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--muted) 88%, transparent);
+  font-weight: var(--font-weight-label);
+  line-height: var(--line-tight);
+}
+
+.msg-meta-time:empty {
+  display: none;
+}
+
+.msg-meta-time {
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  opacity: 0.88;
+}
+
+.msg-user .msg-meta {
+  flex-direction: row-reverse;
+}
+
+.msg {
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-inset-msg);
+  min-width: 0;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  font-size: 14px;
+  line-height: 1.6;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-subtle);
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+/* 正文单独一层：loading 时与 typing 同行 flex，避免匿名 flex 项 min-width:auto 撑破 */
+.msg-body {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  /* 流式增量换行后增高；勿用 overflow-x:auto 把超长行收成横向条滚动 */
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+/* 勿用 fit-content/max-content：部分引擎会收成窄条；用列宽百分比给出确定宽度 */
+.msg-user {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: 100%;
+  max-width: min(92%, 720px);
+  box-sizing: border-box;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--accent) 34%, var(--surface)) 0%,
+    color-mix(in srgb, var(--accent) 20%, var(--surface)) 58%,
+    color-mix(in srgb, var(--accent) 14%, var(--surface)) 100%
+  );
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset,
+    0 2px 8px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.msg-user .msg-body {
+  text-align: right;
+}
+
+.msg-assistant {
+  align-self: flex-start;
+  width: min(92%, 720px);
+  max-width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--border) 90%, var(--surface));
+  box-shadow: var(--shadow-sm);
+}
+
+.msg-system {
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+  background: var(--bg-elevated);
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid color-mix(in srgb, var(--muted) 65%, var(--border));
+  box-shadow: none;
+}
+
+.msg-tool {
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+  background: color-mix(in srgb, var(--info) 8%, var(--bg-elevated));
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid color-mix(in srgb, var(--info) 70%, var(--border));
+  box-shadow: none;
+}
+
+.msg-error {
+  border-color: var(--error);
+  color: var(--error);
+  background: var(--error-bg);
+}
+
+/* 生成中：纵向排布，正文占满气泡宽度，高度随流式文本换行持续增长（避免横向 flex 卡死高度） */
+.msg-loading {
+  min-height: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.msg-loading .msg-body {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.msg-loading .typing-dots {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding-left: 0;
+}
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 4px;
+  vertical-align: middle;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.35;
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing-bounce {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots span {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* —— 输入区 —— */
+.composer {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+  align-items: flex-end;
+}
+
+.composer-input {
+  flex: 1;
+  min-height: 48px;
+  max-height: 200px;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 11px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.composer-input::placeholder {
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.composer-input:hover {
+  border-color: color-mix(in srgb, var(--muted) 50%, var(--border));
+}
+
+.composer-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 88%, var(--border));
+  /* 内圈描边 + 中环柔光（复用 token）+ 外圈漫射，层次比单层 ring 更明显 */
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent),
+    0 0 0 5px var(--accent-glow),
+    0 10px 28px color-mix(in srgb, var(--accent) 14%, transparent),
+    0 2px 8px color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.composer-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.composer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.composer-actions .btn {
+  min-width: 76px;
+}

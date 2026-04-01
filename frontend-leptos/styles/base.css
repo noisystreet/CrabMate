@@ -1,0 +1,37 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 120% 80% at 100% -20%, var(--accent-glow), transparent 50%),
+    radial-gradient(ellipse 80% 50% at -10% 100%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 45%);
+  background-attachment: fixed;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme="light"] body {
+  background-image:
+    radial-gradient(ellipse 100% 60% at 100% 0%, var(--accent-glow), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 0% 100%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 50%);
+}
+
+#root,
+body > * {
+  height: 100%;
+}
+
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}

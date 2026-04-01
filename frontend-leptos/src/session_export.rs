@@ -151,6 +151,7 @@ mod tests {
             text: text.to_string(),
             state: None,
             is_tool,
+            created_at: 0,
         }
     }
 

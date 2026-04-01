@@ -1,0 +1,113 @@
+/* —— 审批条（可折叠命令预览） —— */
+.approval-bar {
+  padding: var(--space-3) var(--space-4);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--info) 16%, var(--surface)) 0%,
+    var(--surface) 100%
+  );
+  border-bottom: 1px solid color-mix(in srgb, var(--info) 22%, var(--border));
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.approval-bar-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-2);
+  margin: 0 0 var(--space-2);
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 40%, var(--surface));
+  color: var(--text);
+  cursor: pointer;
+}
+
+.approval-bar-toggle:hover {
+  border-color: color-mix(in srgb, var(--info) 30%, var(--border));
+  background: color-mix(in srgb, var(--info) 6%, var(--surface));
+}
+
+.approval-bar-toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.approval-bar-toggle-label {
+  flex: 0 0 auto;
+  font-weight: 650;
+}
+
+.approval-bar-toggle-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-bar-chevron {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform var(--dur-fast) ease;
+}
+
+.approval-bar-toggle[aria-expanded="true"] .approval-bar-chevron {
+  transform: rotate(-180deg);
+}
+
+.approval-bar-detail {
+  overflow: hidden;
+  max-height: 320px;
+  opacity: 1;
+  transition:
+    max-height 0.28s var(--ease-out-soft),
+    opacity 0.22s ease,
+    margin 0.22s ease;
+}
+
+.approval-bar-detail-collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+}
+
+.approval-bar-detail pre {
+  margin: 0 0 var(--space-3);
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: var(--space-3);
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  color: var(--text);
+}
+
+.approval-bar .actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .approval-bar-detail {
+    transition: none;
+  }
+
+  .approval-bar-chevron {
+    transition: none;
+  }
+}

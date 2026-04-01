@@ -1,0 +1,35 @@
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal {
+    animation: none;
+  }
+
+  .side-column {
+    transition: none;
+  }
+
+  .side-pane {
+    transition: none;
+  }
+
+  .chat-column {
+    transition: none;
+  }
+
+  .list-stagger > li {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .status-run-running .status-run-dot,
+  .status-run-tool .status-run-dot {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .approval-bar-detail {
+    transition: none;
+  }
+}
