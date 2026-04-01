@@ -2,16 +2,23 @@
 //!
 //! ## 写入对话历史的 `role: tool` 信封（可选，见配置项 **`tool_result_envelope_v1`** / **`AGENT_TOOL_RESULT_ENVELOPE_V1`**）
 //!
-//! 顶层键 **`crabmate_tool`**，内含 `v`（当前为 **1**）、`name`、`summary`（与 SSE / `summarize_tool_call` 同源）、
+//! 顶层键 **`crabmate_tool`**，内含 `v`（**载荷版本**，当前为 **1**；与 SSE 整条控制面的 **`SseMessage.v`** 不同）、`name`、`summary`（与 SSE / `summarize_tool_call` 同源）、
 //! `ok`、`exit_code`、`error_code`、`output`（工具原始返回正文，供模型阅读或再解析）。
+//! SSE `tool_result` 对象另含 **`result_version`**，与 `crabmate_tool.v` 对齐，便于客户端区分「控制面版本」与「工具结果载荷版本」。
 //! 可选扩展（见 [`ToolEnvelopeContext`]）：**`tool_call_id`**、**`execution_mode`**（`serial` / `parallel_readonly_batch`）、
 //! **`parallel_batch_id`**（同批并行只读工具共享）、失败时的 **`retryable`**（与 `error_code` 配套的启发式，非保证）。
 //! 经 [`maybe_compress_tool_message_content`] 截断时，会保留 **`output` 的首尾采样**（便于 grep/构建日志等仍见上下文），并写入
 //! **`output_truncated`**、**`output_original_chars`**、**`output_kept_head_chars`**、**`output_kept_tail_chars`** 供模型与 UI 引用。
+//!
+//! 读路径请优先经 [`normalize::NormalizedToolEnvelope`]（[`normalize_tool_message_content`]），避免在展示层重复解析 `crabmate_tool` 字段。
+
+mod normalize;
+
+pub use normalize::{
+    CRABMATE_TOOL_ENVELOPE_VERSION_V1, NormalizedToolEnvelope, normalize_tool_message_content,
+};
 
 use std::borrow::Cow;
-
-use serde_json::{Map, Value};
 
 #[derive(Debug, Clone)]
 pub struct ToolResult {
@@ -179,62 +186,26 @@ pub fn encode_tool_message_envelope_v1(
     raw_output: &str,
     envelope_ctx: Option<&ToolEnvelopeContext<'_>>,
 ) -> String {
-    let mut ct = Map::new();
-    ct.insert("v".into(), Value::from(1_u32));
-    ct.insert("name".into(), Value::String(tool_name.to_string()));
-    ct.insert("summary".into(), Value::String(summary));
-    ct.insert("ok".into(), Value::Bool(parsed.ok));
-    ct.insert("output".into(), Value::String(raw_output.to_string()));
-    if let Some(c) = parsed.exit_code {
-        ct.insert("exit_code".into(), Value::from(c));
-    }
-    if let Some(ref e) = parsed.error_code {
-        ct.insert("error_code".into(), Value::String(e.clone()));
-    }
-    if !parsed.ok {
-        ct.insert(
-            "retryable".into(),
-            Value::Bool(tool_error_retryable_heuristic(parsed.error_code.as_deref())),
-        );
-    }
-    if let Some(ctx) = envelope_ctx {
-        ct.insert(
-            "tool_call_id".into(),
-            Value::String(ctx.tool_call_id.to_string()),
-        );
-        ct.insert(
-            "execution_mode".into(),
-            Value::String(ctx.execution_mode.to_string()),
-        );
-        if let Some(bid) = ctx.parallel_batch_id {
-            ct.insert("parallel_batch_id".into(), Value::String(bid.to_string()));
-        }
-    }
-    let mut root = Map::new();
-    root.insert("crabmate_tool".into(), Value::Object(ct));
-    serde_json::to_string(&Value::Object(root)).unwrap_or_else(|_| raw_output.to_string())
+    NormalizedToolEnvelope::from_tool_run(tool_name, summary, parsed, raw_output, envelope_ctx)
+        .encode_to_message_line()
 }
 
 /// 从 `role: tool` 正文中取出用于 **JSON 再解析** 的载荷（如 `workflow_validate_result`）。
 /// 非信封或解析失败时返回 trim 后的 `content` 借用。
+pub fn tool_message_payload_for_inner_parse<'a>(content: &'a str) -> Cow<'a, str> {
+    if let Some(env) = normalize_tool_message_content(content) {
+        return Cow::Owned(env.output);
+    }
+    Cow::Borrowed(content.trim())
+}
+
 /// 从已写入对话历史的 `role: tool` `content` 判断工具是否**成功**（与信封 `ok` 或 `parse_legacy_output` 一致）。
 /// `tool_name_fallback` 在非信封正文时用于 `parse_legacy_output` 的错误码归类。
 pub fn tool_message_content_ok_for_model(content: &str, tool_name_fallback: &str) -> bool {
-    let trimmed = content.trim();
-    if let Ok(v) = serde_json::from_str::<Value>(trimmed)
-        && let Some(ct) = v.get("crabmate_tool").and_then(|x| x.as_object())
-    {
-        if let Some(ok) = ct.get("ok").and_then(|x| x.as_bool()) {
-            return ok;
-        }
-        let name = ct
-            .get("name")
-            .and_then(|x| x.as_str())
-            .unwrap_or(tool_name_fallback);
-        let output = ct.get("output").and_then(|x| x.as_str()).unwrap_or("");
-        return parse_legacy_output(name, output).ok;
+    if let Some(env) = normalize_tool_message_content(content) {
+        return env.ok;
     }
-    parse_legacy_output(tool_name_fallback, trimmed).ok
+    parse_legacy_output(tool_name_fallback, content.trim()).ok
 }
 
 /// 为 `output` 字段生成首尾采样正文（Unicode 标量计数），`max_output_chars` 为**整个**替换后 `output` 字符串的字符上限。
@@ -264,20 +235,6 @@ fn tool_output_head_tail_sample(original: &str, max_output_chars: usize) -> (Str
     (body, head_n, tail_n)
 }
 
-pub fn tool_message_payload_for_inner_parse<'a>(content: &'a str) -> Cow<'a, str> {
-    let t = content.trim();
-    let Ok(v) = serde_json::from_str::<Value>(t) else {
-        return Cow::Borrowed(t);
-    };
-    let Some(ct) = v.get("crabmate_tool") else {
-        return Cow::Borrowed(t);
-    };
-    let Some(Value::String(out)) = ct.get("output") else {
-        return Cow::Borrowed(t);
-    };
-    Cow::Owned(out.clone())
-}
-
 /// 对过长 `role: tool` 正文截断：若为 [`encode_tool_message_envelope_v1`] 形状，对 **`output`** 做**首尾采样**并写入
 /// `output_truncated` / `output_original_chars` / `output_kept_*`；否则整段按前缀截断。
 pub fn maybe_compress_tool_message_content(content: &str, max_chars: usize) -> Option<String> {
@@ -286,20 +243,18 @@ pub fn maybe_compress_tool_message_content(content: &str, max_chars: usize) -> O
     if total_chars <= max_chars {
         return None;
     }
-    if let Ok(mut v) = serde_json::from_str::<Value>(content)
-        && let Some(Value::Object(ct)) = v.get_mut("crabmate_tool")
-        && let Some(Value::String(out)) = ct.get_mut("output")
-    {
-        let out_chars = out.chars().count();
+    if let Some(mut env) = normalize_tool_message_content(content) {
+        let out_chars = env.output.chars().count();
         if out_chars > max_chars {
-            let (sampled, head_n, tail_n) = tool_output_head_tail_sample(out, max_chars);
-            *out = sampled;
-            ct.insert("output_truncated".into(), Value::Bool(true));
-            ct.insert("output_original_chars".into(), Value::from(out_chars));
-            ct.insert("output_kept_head_chars".into(), Value::from(head_n as u64));
-            ct.insert("output_kept_tail_chars".into(), Value::from(tail_n as u64));
-            return serde_json::to_string(&v).ok();
+            let (sampled, head_n, tail_n) = tool_output_head_tail_sample(&env.output, max_chars);
+            env.output = sampled;
+            env.output_truncated = true;
+            env.output_original_chars = Some(out_chars as u64);
+            env.output_kept_head_chars = Some(head_n as u64);
+            env.output_kept_tail_chars = Some(tail_n as u64);
+            return Some(env.encode_to_message_line());
         }
+        return None;
     }
     let truncated: String = content.chars().take(max_chars).collect();
     Some(format!(
@@ -310,6 +265,8 @@ pub fn maybe_compress_tool_message_content(content: &str, max_chars: usize) -> O
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use super::*;
 
     #[test]
@@ -438,5 +395,66 @@ mod tests {
             ct.get("parallel_batch_id").and_then(|x| x.as_str()),
             Some("pb-1")
         );
+    }
+}
+
+#[cfg(test)]
+mod golden_envelope_tests {
+    use std::fs;
+    use std::path::PathBuf;
+
+    use serde_json::Value;
+
+    use super::normalize_tool_message_content;
+
+    #[test]
+    fn tool_result_envelope_golden_roundtrip() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let path = root.join("fixtures/tool_result_envelope_golden.jsonl");
+        let raw =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        for (line_no, line) in raw.lines().enumerate() {
+            let t = line.trim();
+            if t.is_empty() || t.starts_with('#') {
+                continue;
+            }
+            let mut parts = t.splitn(2, '\t');
+            let label = parts.next().unwrap_or("?");
+            let expected_line = parts
+                .next()
+                .unwrap_or_else(|| panic!("line {}: missing tab-separated JSON", line_no + 1));
+            let expected: Value = serde_json::from_str(expected_line).unwrap_or_else(|e| {
+                panic!(
+                    "line {} ({}): invalid expected JSON: {e}",
+                    line_no + 1,
+                    label
+                )
+            });
+            let content = expected_line.to_string();
+            let norm = normalize_tool_message_content(&content).unwrap_or_else(|| {
+                panic!(
+                    "line {} ({}): normalize_tool_message_content returned None",
+                    line_no + 1,
+                    label
+                )
+            });
+            let round = norm.encode_to_message_line();
+            let got: Value = serde_json::from_str(&round).unwrap_or_else(|e| {
+                panic!(
+                    "line {} ({}): round-trip JSON invalid: {e}",
+                    line_no + 1,
+                    label
+                )
+            });
+            assert_eq!(
+                got,
+                expected,
+                "line {} ({}): round-trip mismatch\nexpected: {}\n     got: {}",
+                line_no + 1,
+                label,
+                expected_line,
+                round
+            );
+        }
     }
 }

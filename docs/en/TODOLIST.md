@@ -133,7 +133,6 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 - [ ] Request correlation ID through logs and SSE.
 - [ ] Health/capacity dimensions (disk, queue depth).
-- [ ] Unified `ToolResult` evolution: envelope version, normalize layer, golden tests (see Chinese TODOLIST for full checklist).
 - [ ] Central rules library for `redact` and truncation when adding tools.
 
 ---
