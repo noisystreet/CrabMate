@@ -16,9 +16,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::sse::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
-use crate::tool_result::{
-    self, ToolEnvelopeContext, parse_legacy_output, tool_error_retryable_heuristic,
-};
+use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
 use crate::tools;
 use crate::types::{Message, ToolCall};
 use crate::workspace_changelist::WorkspaceChangelist;
@@ -82,6 +80,16 @@ async fn emit_sse_tool_result(
     envelope_ctx: Option<ToolEnvelopeContext<'_>>,
 ) {
     let parsed = parse_legacy_output(name, result);
+    let summary_for_norm = tool_summary
+        .clone()
+        .unwrap_or_else(|| format!("tool: {name}"));
+    let norm = NormalizedToolEnvelope::from_tool_run(
+        name,
+        summary_for_norm,
+        &parsed,
+        result,
+        envelope_ctx.as_ref(),
+    );
     let stdout = if parsed.stdout.is_empty() {
         None
     } else {
@@ -92,30 +100,21 @@ async fn emit_sse_tool_result(
     } else {
         Some(parsed.stderr)
     };
-    let retryable = if parsed.ok {
-        None
-    } else {
-        Some(tool_error_retryable_heuristic(parsed.error_code.as_deref()))
-    };
-    let tool_call_id = envelope_ctx.map(|c| c.tool_call_id.to_string());
-    let execution_mode = envelope_ctx.map(|c| c.execution_mode.to_string());
-    let parallel_batch_id = envelope_ctx
-        .and_then(|c| c.parallel_batch_id)
-        .map(|s| s.to_string());
     let _ = crate::sse::send_string_logged(
         tx,
         encode_message(SsePayload::ToolResult {
             tool_result: ToolResultBody {
-                name: name.to_string(),
+                name: norm.name,
+                result_version: norm.envelope_version,
                 summary: tool_summary,
                 output: result.to_string(),
-                ok: Some(parsed.ok),
-                exit_code: parsed.exit_code,
-                error_code: parsed.error_code.clone(),
-                retryable,
-                tool_call_id,
-                execution_mode,
-                parallel_batch_id,
+                ok: Some(norm.ok),
+                exit_code: norm.exit_code,
+                error_code: norm.error_code.clone(),
+                retryable: norm.retryable,
+                tool_call_id: norm.tool_call_id,
+                execution_mode: norm.execution_mode,
+                parallel_batch_id: norm.parallel_batch_id,
                 stdout,
                 stderr,
             },

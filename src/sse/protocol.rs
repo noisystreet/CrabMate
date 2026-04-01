@@ -120,9 +120,16 @@ pub struct ToolCallSummary {
     pub summary: String,
 }
 
+fn default_tool_result_payload_version() -> u32 {
+    crate::tool_result::CRABMATE_TOOL_ENVELOPE_VERSION_V1
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolResultBody {
     pub name: String,
+    /// 与 `crabmate_tool.v` 对齐的**工具结果载荷版本**（区别于顶层 `SseMessage.v` / `SSE_PROTOCOL_VERSION`）。
+    #[serde(default = "default_tool_result_payload_version")]
+    pub result_version: u32,
     /// 与 `summarize_tool_call` 同源；与 `output` 同帧下发，供 Web 在工具结束后再展示「先摘要后输出」。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
@@ -271,6 +278,7 @@ mod tests {
         let s = encode_message(SsePayload::ToolResult {
             tool_result: ToolResultBody {
                 name: "run_command".into(),
+                result_version: 1,
                 summary: Some("ls".into()),
                 output: "退出码：1".into(),
                 ok: Some(false),

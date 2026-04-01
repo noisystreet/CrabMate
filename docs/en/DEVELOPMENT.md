@@ -114,7 +114,7 @@ flowchart TB
 | `tool_registry.rs` | Macro-built dispatch map, readonly/parallel rules, Docker sandbox dispatch for selected tools, **`CliToolRuntime`**. |
 | `tool_sandbox/` | Docker runner config + bollard backend. |
 | `tool_call_explain.rs` | Explain-card strip/annotate for mutating tools. |
-| `tool_result.rs` | **`crabmate_tool`** v1 envelope + compression helpers. |
+| `tool_result/` | **`crabmate_tool`** payload version **`v`** (see **`NormalizedToolEnvelope`**, **`fixtures/tool_result_envelope_golden.jsonl`**) + SSE **`result_version`** alignment + compression helpers. |
 | `tools/` | All tool specs, **`run_tool`**, **`ToolContext`**, summaries (see sub-table below). |
 | `types.rs` | OpenAI-shaped messages/tools/chunks; normalization for vendor requests. |
 | `conversation_store.rs` | Optional SQLite conversations + revision updates. |

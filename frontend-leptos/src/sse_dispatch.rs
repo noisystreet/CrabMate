@@ -31,6 +31,8 @@ pub struct SseCallbacks<'a> {
 #[allow(dead_code)] // 与后端 JSON 同形；展示层当前仅用 name/summary。
 pub struct ToolResultInfo {
     pub name: String,
+    /// 与 `crabmate_tool.v` 对齐；缺省按 **1**（与后端 `serde(default)` 一致）。
+    pub result_version: u32,
     pub summary: Option<String>,
     pub output: String,
     pub ok: Option<bool>,
@@ -125,6 +127,11 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                 .and_then(|x| x.as_str())
                 .unwrap_or("")
                 .to_string(),
+            result_version: tr
+                .get("result_version")
+                .and_then(|x| x.as_u64())
+                .map(|u| u as u32)
+                .unwrap_or(1),
             summary: tr.get("summary").and_then(|x| x.as_str()).map(String::from),
             output: tr
                 .get("output")

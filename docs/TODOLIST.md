@@ -141,12 +141,6 @@
 
 - [ ] **请求关联 ID**：自 `lib` 入口生成 `request_id`，贯穿日志与 SSE（与 P5「日志关联」同向）。
 - [ ] **健康与容量维度扩展**：在 P5「健康检查扩展」基础上，可选补充磁盘、队列深度等（实现时可合并为少数指标项）。
-- [ ] **统一 ToolResult 演进（载荷版本 + 迁移 + 契约）**：避免 Web（SSE `tool_result` / `ToolResultBody`）、写入历史的 **`crabmate_tool` 信封**（`tool_result_envelope_v1`）与 **CLI/TUI**（`runtime/message_display.rs` 对 JSON / 纯文本分支）各自演进时语义分叉。
-  - **现状锚点**：信封内已有 **`crabmate_tool.v: 1`**（`src/tool_result.rs` 的 `encode_tool_message_envelope_v1` 等）；SSE 为外层 **`SseMessage.v`**（`SSE_PROTOCOL_VERSION`，见 `src/sse/protocol.rs`）+ 扁平 **`tool_result`** 字段；前端 **`frontend/src/api.ts` 的 `ToolResultInfo`** 与 **`frontend/src/sse_control_dispatch.ts` 的 `ToolResultInfoDispatch`** 手写同形，须与 Rust 同步。
-  - **版本语义**：明确区分「整条 SSE 控制面版本」与「工具结果载荷版本」；载荷 bump 时同步 **`docs/SSE_PROTOCOL.md`**、**`src/sse/protocol.rs`**、**`tool_result` 信封编解码**、**`execute_tools` 下发字段** 与 **前端解析**；breaking 时按 **`api-sse-chat-protocol.mdc`** 跑 **`golden_sse_control`** / **`verify-sse-contract`** 等。
-  - **迁移与读路径收口**：新增/变更字段时优先经 **单一 normalize 层**（按信封 `v` / 可选 SSE 内层版本分支 → 内部统一结构），再供 UI 与导出消费；**纯文本旧输出**仍走 **`parse_legacy_output` / `ToolResult::from_legacy_output`**，避免重复解析逻辑散落在 `message_display` 与 SSE 回调。
-  - **契约测试**：在现有 **`fixtures/sse_control_golden.jsonl`** + **`src/sse/control_dispatch_mirror.rs`** 基础上，为 **`crabmate_tool` 各版本样例**（含压缩后的 `output_truncated` 等）补充 golden 或 **`tool_result` 单元测**，防止回放/导出与线上一致性回归。
-  - **可选长期**：以 JSON Schema 或 codegen 生成/校验 TS 与 Rust，减少双端字段漂移（与 **`sse/` 章「与 TypeScript 类型同源」** 同向）。
 - [ ] **敏感信息规则库**：`redact` 与工具输出截断策略集中维护，新增工具时 checklist。
 
 ---
