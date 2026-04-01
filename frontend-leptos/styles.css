@@ -1089,6 +1089,30 @@ body > * {
   border-top-color: color-mix(in srgb, var(--error) 25%, var(--border));
 }
 
+.status-bar-fetch-error {
+  border-top-color: color-mix(in srgb, var(--warn) 28%, var(--border));
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-elevated));
+}
+
+.status-fetch-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--text);
+}
+
+.status-fetch-error-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 /* —— 审批条 —— */
 .approval-bar {
   padding: 12px 16px;
