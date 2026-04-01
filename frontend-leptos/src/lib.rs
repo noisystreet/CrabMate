@@ -140,7 +140,7 @@ fn format_agent_reply_plan_json_for_display(json_text: &str, goal: &str) -> Opti
 }
 
 fn fenced_body_after_optional_jsonish_lang_label(inner: &str) -> Option<&str> {
-    let s = inner.trim_start_matches(|c: char| c == '\n' || c == '\r' || c == ' ' || c == '\t');
+    let s = inner.trim_start_matches(['\n', '\r', ' ', '\t']);
     if s.is_empty() {
         return Some("");
     }
@@ -159,9 +159,7 @@ fn fenced_body_after_optional_jsonish_lang_label(inner: &str) -> Option<&str> {
                 || next == Some('{')
                 || next == Some('[')
             {
-                return Some(rest.trim_start_matches(|c: char| {
-                    c == '\n' || c == '\r' || c == ' ' || c == '\t'
-                }));
+                return Some(rest.trim_start_matches(['\n', '\r', ' ', '\t']));
             }
         }
     }
@@ -361,6 +359,8 @@ fn App() -> impl IntoView {
     let workspace_loading = RwSignal::new(false);
     let status_data = RwSignal::new(None::<StatusData>);
     let status_loading = RwSignal::new(true);
+    // `GET /status` 失败时的说明（与流式对话错误 `status_err` 区分）。
+    let status_fetch_err = RwSignal::new(None::<String>);
     let selected_agent_role = RwSignal::new(
         local_storage()
             .and_then(|s| s.get_item(AGENT_ROLE_KEY).ok().flatten())
@@ -501,9 +501,11 @@ fn App() -> impl IntoView {
     let refresh_status = {
         move || {
             status_loading.set(true);
+            status_fetch_err.set(None);
             spawn_local(async move {
                 match fetch_status().await {
                     Ok(d) => {
+                        status_fetch_err.set(None);
                         if let Some(cur) = selected_agent_role.get_untracked()
                             && !d.agent_role_ids.iter().any(|id| id == &cur)
                         {
@@ -511,8 +513,9 @@ fn App() -> impl IntoView {
                         }
                         status_data.set(Some(d));
                     }
-                    Err(_) => {
+                    Err(e) => {
                         status_data.set(None);
+                        status_fetch_err.set(Some(e));
                     }
                 }
                 status_loading.set(false);
@@ -1245,7 +1248,13 @@ fn App() -> impl IntoView {
             </div>
 
             <Show when=move || status_bar_visible.get()>
-                <footer class="status-bar">
+                <footer class=move || {
+                    if status_fetch_err.get().is_some() {
+                        "status-bar status-bar-fetch-error"
+                    } else {
+                        "status-bar"
+                    }
+                }>
                     <div class="status-chips">
                         {move || {
                             if status_loading.get() {
@@ -1263,6 +1272,26 @@ fn App() -> impl IntoView {
                                             <span class="skeleton skeleton-chip-label"></span>
                                             <span class="skeleton skeleton-chip-value skeleton-chip-role-select"></span>
                                         </span>
+                                    </div>
+                                }
+                                .into_any()
+                            } else if let Some(fetch_err) = status_fetch_err.get() {
+                                view! {
+                                    <div
+                                        class="status-fetch-error"
+                                        role="status"
+                                        aria-live="polite"
+                                    >
+                                        <span class="status-fetch-error-text" title=fetch_err.clone()>
+                                            {format!("无法加载状态（/status）：{fetch_err}")}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            class="btn btn-secondary btn-sm"
+                                            on:click=move |_| refresh_status()
+                                        >
+                                            "重试"
+                                        </button>
                                     </div>
                                 }
                                 .into_any()
@@ -1339,7 +1368,7 @@ fn App() -> impl IntoView {
                         }}
                     </div>
                     <span class=move || {
-                        let kind = if status_err.get().is_some() {
+                        let kind = if status_fetch_err.get().is_some() || status_err.get().is_some() {
                             "error"
                         } else if tool_busy.get() {
                             "tool"
@@ -1352,7 +1381,9 @@ fn App() -> impl IntoView {
                     }>
                         <span class="status-run-dot" aria-hidden="true"></span>
                         <span>{move || {
-                            if let Some(e) = status_err.get() {
+                            if status_fetch_err.get().is_some() {
+                                "/status 不可用".to_string()
+                            } else if let Some(e) = status_err.get() {
                                 format!("错误: {e}")
                             } else if tool_busy.get() {
                                 "工具执行中…".to_string()
