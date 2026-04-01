@@ -398,6 +398,11 @@ flowchart LR
 
 ## 前端模块说明（`frontend-leptos/`）
 
+### 样式结构
+
+- 入口 **`frontend-leptos/styles.css`**：`@import` 引用 **`frontend-leptos/styles/`** 下 `tokens.css`、`base.css`、`components.css`、`layout-chat.css`、`sidebar.css`、`status.css`、`approval.css`、`modal.css`、`motion.css`（设计 token 与模块边界见各文件头注释）。
+- 视觉回归手测项：**`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`**。
+
 ### `frontend-leptos/src/api.rs`
 
 - 浏览器 `fetch` 封装与 `/chat/stream` SSE 读取（UTF-8 分块安全拼接、`data:` 分发、`[DONE]` 处理）。

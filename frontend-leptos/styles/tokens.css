@@ -1,0 +1,99 @@
+/* 设计 token：颜色、间距、排版、动效时长（业务样式见各模块文件） */
+
+:root {
+  /* 间距（4px 基准） */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-inset-msg: var(--space-4);
+  --space-gap-msg: 14px;
+
+  /* 排版 */
+  --text-xs: 10px;
+  --text-2xs: 9px;
+  --font-weight-label: 650;
+  --line-tight: 1.35;
+
+  /* 动效 */
+  --dur-fast: 0.15s;
+  --dur-sidebar: 0.26s;
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* 页面最深；侧栏/状态栏向 --bg 靠拢更「退后」 */
+  --bg: #080b10;
+  /* 次级承载（系统消息等），与 --surface 明度差拉大 */
+  --bg-elevated: #0e131c;
+  /* 主卡片/助手气泡/输入条：相对更亮，主内容更「浮起」 */
+  --surface: #1a2332;
+  --surface-hover: #232e42;
+  /* dark: 边框弱一点、阴影强一点，避免线框感过重 */
+  --border: #253141;
+  --border-subtle: #151d28;
+  --text: #e8edf4;
+  /* 与 --text 对比度略高于 4.5:1，作次要文案 */
+  --muted: #9aa8bc;
+  --accent: #4f8ff7;
+  --accent-dim: color-mix(in srgb, var(--accent) 35%, var(--surface));
+  --accent-glow: color-mix(in srgb, var(--accent) 25%, transparent);
+
+  /* 语义色：统一用于状态、消息、提示 */
+  --info: #4f8ff7;
+  --success: #5ee397;
+  --warn: #fbbf24;
+  --error: #fb7185;
+
+  --info-bg: color-mix(in srgb, var(--info) 13%, var(--surface));
+  --success-bg: color-mix(in srgb, var(--success) 13%, var(--surface));
+  --warn-bg: color-mix(in srgb, var(--warn) 15%, var(--surface));
+  --error-bg: color-mix(in srgb, var(--error) 12%, var(--surface));
+
+  /* 兼容历史变量（逐步迁移） */
+  --danger: var(--error);
+  --danger-bg: var(--error-bg);
+  --ok: var(--success);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.36);
+  --shadow-md: 0 16px 42px rgba(0, 0, 0, 0.52);
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+  --topbar-h: 52px;
+}
+
+:root[data-theme="light"] {
+  /* 浅色：三者拉开，避免 elevated 与 surface 糊成一片 */
+  --bg: #e6eaf2;
+  --bg-elevated: #eef2f9;
+  --surface: #ffffff;
+  --surface-hover: #f1f4fa;
+  /* light: 边框强一点、阴影弱一点，层次更干净 */
+  --border: #c2ccdc;
+  --border-subtle: #d4ddea;
+  --text: #141a22;
+  /* light：muted 与 surface 背景对比加强 */
+  --muted: #4b5a6e;
+  --accent: #2563eb;
+  --accent-dim: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  --accent-glow: color-mix(in srgb, var(--accent) 14%, transparent);
+
+  --info: #2563eb;
+  --success: #16a34a;
+  --warn: #b45309;
+  --error: #b91c1c;
+
+  --info-bg: color-mix(in srgb, var(--info) 10%, var(--surface));
+  --success-bg: color-mix(in srgb, var(--success) 10%, var(--surface));
+  --warn-bg: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  --error-bg: color-mix(in srgb, var(--error) 10%, var(--surface));
+
+  --danger: var(--error);
+  --danger-bg: var(--error-bg);
+  --ok: var(--success);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+}

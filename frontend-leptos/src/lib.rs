@@ -317,6 +317,31 @@ fn message_text_for_display(m: &StoredMessage) -> String {
     }
 }
 
+fn message_created_ms() -> i64 {
+    js_sys::Date::now() as i64
+}
+
+fn format_msg_time_label(ms: i64) -> Option<String> {
+    if ms <= 0 {
+        return None;
+    }
+    let d = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ms as f64));
+    let h = d.get_hours();
+    let m = d.get_minutes();
+    Some(format!("{h:02}:{m:02}"))
+}
+
+fn message_role_label(m: &StoredMessage) -> &'static str {
+    match m.role.as_str() {
+        "user" => "用户",
+        "assistant" if m.is_tool => "工具",
+        "assistant" => "助手",
+        _ if m.is_tool => "工具",
+        "system" => "系统",
+        _ => "其它",
+    }
+}
+
 fn approval_session_id() -> String {
     format!(
         "approval_{}_{}",
@@ -570,6 +595,9 @@ fn App() -> impl IntoView {
     let tasks_loading = RwSignal::new(false);
     let pending_approval = RwSignal::new(None::<(String, String, String)>);
     let session_modal = RwSignal::new(false);
+    let topbar_menu_open = RwSignal::new(false);
+    let approval_expanded = RwSignal::new(false);
+    let last_approval_sid = RwSignal::new(String::new());
     let abort_cell: Rc<RefCell<Option<web_sys::AbortController>>> = Rc::new(RefCell::new(None));
     // 用户点「停止」后为 true，避免异步 on_done / on_error 覆盖已写入的「已停止」文案。
     let user_cancelled_stream: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
@@ -639,6 +667,17 @@ fn App() -> impl IntoView {
     });
     Effect::new(move |_| {
         store_f64_key(WORKSPACE_WIDTH_KEY, side_width.get());
+    });
+
+    Effect::new(move |_| {
+        if let Some((sid, _, _)) = pending_approval.get() {
+            if last_approval_sid.get_untracked() != sid {
+                last_approval_sid.set(sid);
+                approval_expanded.set(false);
+            }
+        } else {
+            last_approval_sid.set(String::new());
+        }
     });
 
     Effect::new(move |_| {
@@ -809,12 +848,14 @@ fn App() -> impl IntoView {
             let uid = make_message_id();
             let asst_id = make_message_id();
             patch_active_session(sessions, &active_id.get(), |s| {
+                let now = message_created_ms();
                 s.messages.push(StoredMessage {
                     id: uid.clone(),
                     role: "user".to_string(),
                     text: text.clone(),
                     state: None,
                     is_tool: false,
+                    created_at: now,
                 });
                 s.messages.push(StoredMessage {
                     id: asst_id.clone(),
@@ -822,6 +863,7 @@ fn App() -> impl IntoView {
                     text: String::new(),
                     state: Some("loading".to_string()),
                     is_tool: false,
+                    created_at: now,
                 });
                 s.draft.clear();
             });
@@ -934,6 +976,7 @@ fn App() -> impl IntoView {
                                 text: t,
                                 state: None,
                                 is_tool: true,
+                                created_at: message_created_ms(),
                             });
                         }
                     });
@@ -1101,30 +1144,97 @@ fn App() -> impl IntoView {
                 </div>
                 <span class="topbar-spacer"></span>
                 <nav class="topbar-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| session_modal.set(true)>"会话"</button>
-                    <button type="button" class="btn btn-secondary btn-sm" on:click=new_session.clone()>"新会话"</button>
-                    <button
-                        type="button"
-                        class="btn btn-ghost btn-sm"
-                        class:active=move || workspace_visible.get()
-                        on:click=move |_| workspace_visible.update(|v| *v = !*v)
-                        title="工作区"
-                    >"工作区"</button>
-                    <button
-                        type="button"
-                        class="btn btn-ghost btn-sm"
-                        class:active=move || tasks_visible.get()
-                        on:click=move |_| tasks_visible.update(|v| *v = !*v)
-                        title="任务"
-                    >"任务"</button>
-                    <button
-                        type="button"
-                        class="btn btn-ghost btn-sm"
-                        class:active=move || status_bar_visible.get()
-                        on:click=move |_| status_bar_visible.update(|v| *v = !*v)
-                        title="状态栏"
-                    >"状态"</button>
-                    <button type="button" class="btn btn-ghost btn-sm" on:click=theme_toggle>"主题"</button>
+                    <div class="topbar-cluster-primary">
+                        <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| session_modal.set(true)>"会话"</button>
+                        <button type="button" class="btn btn-secondary btn-sm" on:click=new_session.clone()>"新会话"</button>
+                    </div>
+                    <div class="topbar-cluster-wide">
+                        <button
+                            type="button"
+                            class="btn btn-ghost btn-sm"
+                            class:active=move || workspace_visible.get()
+                            on:click=move |_| workspace_visible.update(|v| *v = !*v)
+                            title="工作区"
+                        >"工作区"</button>
+                        <button
+                            type="button"
+                            class="btn btn-ghost btn-sm"
+                            class:active=move || tasks_visible.get()
+                            on:click=move |_| tasks_visible.update(|v| *v = !*v)
+                            title="任务"
+                        >"任务"</button>
+                        <button
+                            type="button"
+                            class="btn btn-ghost btn-sm"
+                            class:active=move || status_bar_visible.get()
+                            on:click=move |_| status_bar_visible.update(|v| *v = !*v)
+                            title="状态栏"
+                        >"状态"</button>
+                        <button type="button" class="btn btn-ghost btn-sm" on:click=theme_toggle>"主题"</button>
+                    </div>
+                    <div class="topbar-cluster-narrow">
+                        <button
+                            type="button"
+                            class="btn btn-ghost btn-sm topbar-more-btn"
+                            aria-haspopup="true"
+                            aria-expanded=move || topbar_menu_open.get()
+                            on:click=move |_| topbar_menu_open.update(|o| *o = !*o)
+                        >"更多"</button>
+                        <Show when=move || topbar_menu_open.get()>
+                            <div
+                                class="topbar-overflow-backdrop"
+                                aria-hidden="true"
+                                on:click=move |_| topbar_menu_open.set(false)
+                            ></div>
+                            <div class="topbar-overflow-menu" role="menu">
+                                <button
+                                    type="button"
+                                    class="topbar-overflow-item"
+                                    role="menuitem"
+                                    class:active=move || workspace_visible.get()
+                                    on:click=move |_| {
+                                        workspace_visible.update(|v| *v = !*v);
+                                        topbar_menu_open.set(false);
+                                    }
+                                >"工作区"</button>
+                                <button
+                                    type="button"
+                                    class="topbar-overflow-item"
+                                    role="menuitem"
+                                    class:active=move || tasks_visible.get()
+                                    on:click=move |_| {
+                                        tasks_visible.update(|v| *v = !*v);
+                                        topbar_menu_open.set(false);
+                                    }
+                                >"任务"</button>
+                                <button
+                                    type="button"
+                                    class="topbar-overflow-item"
+                                    role="menuitem"
+                                    class:active=move || status_bar_visible.get()
+                                    on:click=move |_| {
+                                        status_bar_visible.update(|v| *v = !*v);
+                                        topbar_menu_open.set(false);
+                                    }
+                                >"状态栏"</button>
+                                <button
+                                    type="button"
+                                    class="topbar-overflow-item"
+                                    role="menuitem"
+                                    on:click=move |_| {
+                                        theme.update(|t| {
+                                            if t == "dark" {
+                                                *t = "light".to_string();
+                                            } else {
+                                                *t = "dark".to_string();
+                                            }
+                                        });
+                                        topbar_menu_open.set(false);
+                                    }
+                                >"切换主题"</button>
+                            </div>
+                        </Show>
+                    </div>
                 </nav>
             </header>
 
@@ -1132,10 +1242,34 @@ fn App() -> impl IntoView {
                 pending_approval.get().map(|(sid, cmd, args)| {
                     let sid_deny = sid.clone();
                     let sid_once = sid.clone();
+                    let preview = format!("{cmd} {args}");
+                    let preview_short: String = preview.chars().take(72).collect();
+                    let preview_tail = if preview.chars().count() > 72 {
+                        "…"
+                    } else {
+                        ""
+                    };
                     view! {
                         <div class="approval-bar">
-                            <div>"需要审批：运行命令"</div>
-                            <pre>{cmd}" "{args}</pre>
+                            <button
+                                type="button"
+                                class="approval-bar-toggle"
+                                aria-expanded=move || approval_expanded.get()
+                                on:click=move |_| approval_expanded.update(|e| *e = !*e)
+                            >
+                                <span class="approval-bar-toggle-label">"需要审批：运行命令"</span>
+                                <span class="approval-bar-toggle-preview">{preview_short}{preview_tail}</span>
+                                <span class="approval-bar-chevron" aria-hidden="true">"▾"</span>
+                            </button>
+                            <div class=move || {
+                                if approval_expanded.get() {
+                                    "approval-bar-detail"
+                                } else {
+                                    "approval-bar-detail approval-bar-detail-collapsed"
+                                }
+                            }>
+                                <pre>{cmd}" "{args}</pre>
+                            </div>
                             <div class="actions">
                                 <button type="button" class="btn btn-danger btn-sm" on:click={
                                     let sid = sid_deny;
@@ -1236,8 +1370,15 @@ fn App() -> impl IntoView {
                                             } else {
                                                 cls.to_string()
                                             };
+                                            let role_lbl = message_role_label(&m);
+                                            let time_str =
+                                                format_msg_time_label(m.created_at).unwrap_or_default();
                                             view! {
                                                 <div class=class_final>
+                                                    <div class="msg-meta" aria-hidden="true">
+                                                        <span class="msg-meta-role">{role_lbl}</span>
+                                                        <span class="msg-meta-time">{time_str}</span>
+                                                    </div>
                                                     <span class="msg-body">{message_text_for_display(&m)}</span>
                                                     {loading.then(|| {
                                                         view! {
@@ -1331,7 +1472,27 @@ fn App() -> impl IntoView {
                                 >
                                     <div class="side-card">
                                         <div class="side-card-head">
-                                            <div class="side-pane-title">"工作区"</div>
+                                            <div class="side-head-main">
+                                                <div class="side-pane-title">"工作区"</div>
+                                                <span class="side-head-stat">{move || {
+                                                    if workspace_loading.get() {
+                                                        "加载中…".to_string()
+                                                    } else if workspace_err.get().is_some()
+                                                        || workspace_data
+                                                            .get()
+                                                            .and_then(|d| d.error.clone())
+                                                            .is_some()
+                                                    {
+                                                        "错误".to_string()
+                                                    } else {
+                                                        let n = workspace_data
+                                                            .get()
+                                                            .map(|d| d.entries.len())
+                                                            .unwrap_or(0);
+                                                        format!("{n} 项")
+                                                    }
+                                                }}</span>
+                                            </div>
                                             <button type="button" class="btn btn-secondary btn-sm side-head-action" on:click=move |_| refresh_workspace()>"刷新列表"</button>
                                         </div>
                                         <div class="side-card-body">
@@ -1429,7 +1590,21 @@ fn App() -> impl IntoView {
                                 >
                                     <div class="side-card">
                                         <div class="side-card-head">
-                                            <div class="side-pane-title">"任务清单"</div>
+                                            <div class="side-head-main">
+                                                <div class="side-pane-title">"任务清单"</div>
+                                                <span class="side-head-stat">{move || {
+                                                    if tasks_loading.get() {
+                                                        "加载中…".to_string()
+                                                    } else if tasks_err.get().is_some() {
+                                                        "错误".to_string()
+                                                    } else {
+                                                        let items = tasks_data.get().items;
+                                                        let total = items.len();
+                                                        let done = items.iter().filter(|t| t.done).count();
+                                                        format!("{done}/{total} 完成")
+                                                    }
+                                                }}</span>
+                                            </div>
                                             <button type="button" class="btn btn-secondary btn-sm side-head-action" on:click=move |_| refresh_tasks()>"刷新"</button>
                                         </div>
                                         <div class="side-card-body">

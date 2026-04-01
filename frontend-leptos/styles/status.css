@@ -1,0 +1,193 @@
+/* —— 状态栏 —— */
+.status-bar {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  font-size: 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg) 68%, var(--bg-elevated));
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.status-chips {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 1px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 86%, var(--surface));
+  color: var(--text);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.status-chip-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.status-chip-value {
+  min-width: 0;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-chip-url .status-chip-value {
+  max-width: 420px;
+}
+
+.status-chip-role {
+  padding: 0 4px 0 8px;
+  gap: 4px;
+}
+
+.status-agent-select {
+  appearance: none;
+  height: 24px;
+  min-width: 88px;
+  max-width: 190px;
+  margin: 0 2px;
+  padding: 0 22px 0 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background:
+    color-mix(in srgb, var(--bg) 55%, var(--surface))
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238b9aaf' d='M0 0h10L5 6z'/%3E%3C/svg%3E")
+    no-repeat right 7px center / 9px 5px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.status-agent-select:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background-color: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.status-agent-select:focus {
+  outline: none;
+}
+
+.status-agent-select:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+:root[data-theme="light"] .status-agent-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%234b5a6e' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+}
+
+.status-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-hover) 70%, var(--surface));
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.status-run-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.status-run-ready .status-run-dot {
+  background: var(--success);
+}
+
+.status-run-running .status-run-dot {
+  background: var(--info);
+}
+
+.status-run-tool .status-run-dot {
+  background: var(--warn);
+}
+
+/* 模型生成中 / 工具执行中：状态点轻微脉冲 */
+@keyframes status-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.62;
+    transform: scale(1.18);
+  }
+}
+
+.status-run-running .status-run-dot,
+.status-run-tool .status-run-dot {
+  animation: status-dot-pulse 1.55s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.status-run-error {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 35%, var(--border));
+  background: var(--error-bg);
+}
+
+.status-run-error .status-run-dot {
+  background: var(--error);
+}
+
+.status-bar.error {
+  color: var(--error);
+  background: var(--error-bg);
+  border-top-color: color-mix(in srgb, var(--error) 25%, var(--border));
+}
+
+.status-bar-fetch-error {
+  border-top-color: color-mix(in srgb, var(--warn) 28%, var(--border));
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-elevated));
+}
+
+.status-fetch-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--text);
+}
+
+.status-fetch-error-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.35;
+}
