@@ -418,12 +418,15 @@ flowchart LR
 ### `frontend-leptos/src/lib.rs`
 
 - Web 主界面（会话列表、聊天区、工作区与任务侧栏、状态栏、主题切换）；左栏「最近」会话 **`contextmenu`** 打开菜单，导出 JSON/Markdown 与删除与 **`SessionModalRow`** 共用 **`export_session_*_for_id` / `delete_session_after_confirm`**。
+- 首条用户消息发送后：若会话标题仍为 **`storage::DEFAULT_CHAT_SESSION_TITLE`**（默认「新会话」），则 **`title_from_user_prompt`** 用该条提问生成侧栏/管理列表标题（压平换行、限长约 48 字）；用户事先重命名则不改写。
+- 首条用户消息发送时：若 `ChatSession.title` 仍为 **`storage::DEFAULT_CHAT_SESSION_TITLE`**，则 **`title_from_user_prompt`** 将标题设为提问摘要（单行、限长约 48 字）；用户事先重命名过的会话不覆盖。
 - 流式消息渲染与自动跟底策略（用户上滚时禁用、回到底部附近恢复）。
 - `agent_reply_plan` 展示过滤：不回显原始 JSON，保留可读信息或终答正文。
 
 ### `frontend-leptos/src/storage.rs`
 
 - `localStorage` 会话持久化（会话列表、活动会话、草稿等）。
+- **`DEFAULT_CHAT_SESSION_TITLE`**：新建会话默认标题，与 `lib.rs` 首条消息自动命名条件一致。
 - 与导出结构保持兼容，供 `runtime/chat_export` 与前端互通。
 
 ## 数据与文件持久化约定

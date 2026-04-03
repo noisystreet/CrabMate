@@ -29,7 +29,8 @@ use session_export::{
 use std::cell::RefCell;
 use std::rc::Rc;
 use storage::{
-    ChatSession, StoredMessage, ensure_at_least_one, load_sessions, make_session_id, save_sessions,
+    ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, ensure_at_least_one, load_sessions,
+    make_session_id, save_sessions,
 };
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -405,6 +406,32 @@ fn approval_session_id() -> String {
         js_sys::Date::now() as i64,
         (js_sys::Math::random() * 1e9) as i64
     )
+}
+
+/// 首条用户消息生成侧栏/「管理会话」列表标题：压平换行、折叠空白，截断过长前缀。
+fn title_from_user_prompt(text: &str) -> String {
+    let t = text.trim();
+    if t.is_empty() {
+        return DEFAULT_CHAT_SESSION_TITLE.to_string();
+    }
+    let single_line: String = t
+        .chars()
+        .map(|c| if matches!(c, '\n' | '\r') { ' ' } else { c })
+        .collect();
+    let collapsed = single_line.split_whitespace().collect::<Vec<_>>().join(" ");
+    const MAX_CHARS: usize = 48;
+    let n = collapsed.chars().count();
+    if n <= MAX_CHARS {
+        collapsed
+    } else {
+        format!(
+            "{}…",
+            collapsed
+                .chars()
+                .take(MAX_CHARS.saturating_sub(1))
+                .collect::<String>()
+        )
+    }
 }
 
 fn patch_active_session(
@@ -1030,6 +1057,8 @@ fn App() -> impl IntoView {
             let asst_id = make_message_id();
             patch_active_session(sessions, &active_id.get(), |s| {
                 let now = message_created_ms();
+                let is_first_user_turn =
+                    s.messages.iter().filter(|m| m.role == "user").count() == 0;
                 s.messages.push(StoredMessage {
                     id: uid.clone(),
                     role: "user".to_string(),
@@ -1046,6 +1075,9 @@ fn App() -> impl IntoView {
                     is_tool: false,
                     created_at: now,
                 });
+                if is_first_user_turn && s.title == DEFAULT_CHAT_SESSION_TITLE {
+                    s.title = title_from_user_prompt(&text);
+                }
                 s.draft.clear();
             });
             draft.set(String::new());
@@ -1271,7 +1303,7 @@ fn App() -> impl IntoView {
             let now = js_sys::Date::now() as i64;
             let s = ChatSession {
                 id: make_session_id(),
-                title: "新会话".to_string(),
+                title: DEFAULT_CHAT_SESSION_TITLE.to_string(),
                 draft: String::new(),
                 messages: vec![],
                 updated_at: now,
@@ -2374,6 +2406,29 @@ pub fn main() {
 #[cfg(test)]
 mod tests {
     use super::assistant_text_for_display;
+    use super::title_from_user_prompt;
+    use crate::storage::DEFAULT_CHAT_SESSION_TITLE;
+
+    #[test]
+    fn title_from_prompt_flattens_whitespace() {
+        assert_eq!(title_from_user_prompt("  hello\nworld  "), "hello world");
+    }
+
+    #[test]
+    fn title_from_prompt_truncates_long() {
+        let body = "a".repeat(60);
+        let out = title_from_user_prompt(&body);
+        assert!(out.ends_with('…'), "got {out:?}");
+        assert!(out.chars().count() <= 48, "len {}", out.chars().count());
+    }
+
+    #[test]
+    fn title_from_blank_is_default() {
+        assert_eq!(
+            title_from_user_prompt("  \n\t  "),
+            DEFAULT_CHAT_SESSION_TITLE
+        );
+    }
 
     #[test]
     fn hide_inline_agent_reply_plan_json_fence() {

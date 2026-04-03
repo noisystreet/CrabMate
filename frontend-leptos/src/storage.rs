@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 const SESSIONS_KEY: &str = "agent-demo-sessions-v1";
 const ACTIVE_ID_KEY: &str = "agent-demo-active-session-id";
 
+/// 新建会话默认标题；与 `lib.rs` 中首条消息自动命名逻辑一致。
+pub const DEFAULT_CHAT_SESSION_TITLE: &str = "新会话";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredMessage {
     pub id: String,
@@ -93,7 +96,7 @@ pub fn ensure_at_least_one(mut sessions: Vec<ChatSession>) -> (Vec<ChatSession>,
     let now = js_sys::Date::now() as i64;
     let s = ChatSession {
         id: make_session_id(),
-        title: "新会话".to_string(),
+        title: DEFAULT_CHAT_SESSION_TITLE.to_string(),
         draft: String::new(),
         messages: Vec::new(),
         updated_at: now,
