@@ -400,7 +400,7 @@ flowchart LR
 
 ### 样式结构
 
-- 入口 **`frontend-leptos/styles.css`**：`@import` 引用 **`frontend-leptos/styles/`** 下 `tokens.css`、`base.css`、`components.css`、`layout-chat.css`、`sidebar.css`、`status.css`、`approval.css`、`modal.css`、`motion.css`（设计 token 与模块边界见各文件头注释）。
+- 样式加载：**`frontend-leptos/index.html`** 内多条 **`data-trunk` `rel="css"`** 指向 **`frontend-leptos/styles/`** 下 `tokens.css`、`base.css`、`components.css`、`layout-chat.css`、`sidebar.css`、`status.css`、`approval.css`、`modal.css`、`motion.css`（顺序即层叠顺序；Trunk 不会跟随根目录 `styles.css` 的 `@import` 复制子文件，故须在此声明）。设计 token 与模块边界见各文件头注释。
 - 视觉回归手测项：**`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`**。
 
 ### `frontend-leptos/src/api.rs`

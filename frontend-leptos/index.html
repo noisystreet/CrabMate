@@ -10,7 +10,16 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link data-trunk rel="css" href="styles.css" />
+    <!-- Trunk 不会把 @import 打进单文件，也不会复制未声明的 CSS；须逐条声明，否则 dist 缺样式 -->
+    <link data-trunk rel="css" href="styles/tokens.css" />
+    <link data-trunk rel="css" href="styles/base.css" />
+    <link data-trunk rel="css" href="styles/components.css" />
+    <link data-trunk rel="css" href="styles/layout-chat.css" />
+    <link data-trunk rel="css" href="styles/sidebar.css" />
+    <link data-trunk rel="css" href="styles/status.css" />
+    <link data-trunk rel="css" href="styles/approval.css" />
+    <link data-trunk rel="css" href="styles/modal.css" />
+    <link data-trunk rel="css" href="styles/motion.css" />
   </head>
   <body>
     <link data-trunk rel="rust" data-wasm-opt="0" />
