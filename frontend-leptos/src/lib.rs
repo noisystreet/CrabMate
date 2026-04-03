@@ -11,14 +11,17 @@ mod storage;
 
 use api::{
     ChatStreamCallbacks, StatusData, TaskItem, TasksData, WorkspaceData, fetch_status, fetch_tasks,
-    fetch_workspace, save_tasks, send_chat_stream, submit_chat_approval,
+    fetch_workspace, fetch_workspace_pick, post_workspace_set, save_tasks, send_chat_stream,
+    submit_chat_approval,
 };
 use gloo_timers::future::TimeoutFuture;
 use leptos::html::Div;
 use leptos::mount::mount_to_body;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_dom::helpers::WindowListenerHandle;
 use leptos_dom::helpers::event_target_value;
+use leptos_dom::helpers::window_event_listener;
 use serde_json::Value;
 use session_export::{
     export_filename_stem, session_to_export_file, session_to_markdown, trigger_download,
@@ -42,6 +45,8 @@ const AGENT_ROLE_KEY: &str = "agent-demo-agent-role";
 const DEFAULT_SIDE_WIDTH: f64 = 280.0;
 const MIN_SIDE_WIDTH: f64 = 200.0;
 const MAX_SIDE_WIDTH: f64 = 560.0;
+/// 为左侧对话列预留的最小宽度（视口过窄时仍允许侧栏拖到 `MIN_SIDE_WIDTH`，由 flex 挤压主列）。
+const MIN_CHAT_RESERVE_PX: f64 = 240.0;
 /// 工作区与任务均关闭时，右列仅保留工具栏（工作区/任务/状态/主题）的窄轨宽度。
 const TOOLBAR_RAIL_WIDTH_PX: f64 = 84.0;
 const AUTO_SCROLL_RESUME_GAP_PX: i32 = 24;
@@ -50,16 +55,25 @@ fn local_storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok().flatten()
 }
 
+fn clamp_side_width_for_viewport(w: f64) -> f64 {
+    let win = web_sys::window()
+        .and_then(|win| win.inner_width().ok())
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1200.0);
+    let max_w = (win - MIN_CHAT_RESERVE_PX).clamp(MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
+    w.clamp(MIN_SIDE_WIDTH, max_w)
+}
+
 fn load_f64_key(key: &str, default: f64) -> f64 {
     let Some(st) = local_storage() else {
-        return default;
+        return clamp_side_width_for_viewport(default);
     };
     let Ok(Some(v)) = st.get_item(key) else {
-        return default;
+        return clamp_side_width_for_viewport(default);
     };
     match v.parse::<f64>() {
-        Ok(n) if (MIN_SIDE_WIDTH..=MAX_SIDE_WIDTH).contains(&n) => n,
-        _ => default,
+        Ok(n) => clamp_side_width_for_viewport(n),
+        _ => clamp_side_width_for_viewport(default),
     }
 }
 
@@ -89,21 +103,62 @@ fn make_message_id() -> String {
     storage::make_session_id()
 }
 
+/// 去掉摘要里**连续重复**的非空行（服务端或上游偶发会下发两行相同摘要，如 `read file: 2.md`）。
+fn collapse_duplicate_summary_lines(text: &str) -> String {
+    let mut kept: Vec<&str> = Vec::new();
+    let mut last: Option<&str> = None;
+    for line in text.lines() {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if last == Some(t) {
+            continue;
+        }
+        last = Some(t);
+        kept.push(t);
+    }
+    kept.join("\n")
+}
+
 fn tool_card_text(info: &ToolResultInfo) -> String {
     let sum = info.summary.as_deref().unwrap_or("").trim();
     let name = info.name.trim();
-    let title = if !sum.is_empty() {
-        sum.lines().next().unwrap_or(sum).to_string()
-    } else if !name.is_empty() {
-        format!("工具：{name}")
-    } else {
-        "工具输出".to_string()
-    };
-    let mut out = title;
-    if !sum.is_empty() {
-        out.push_str("\n\n");
-        out.push_str(sum);
+    if sum.is_empty() {
+        return if !name.is_empty() {
+            format!("工具：{name}")
+        } else {
+            "工具输出".to_string()
+        };
     }
+    let sum = collapse_duplicate_summary_lines(sum);
+    if sum.is_empty() {
+        return if !name.is_empty() {
+            format!("工具：{name}")
+        } else {
+            "工具输出".to_string()
+        };
+    }
+    // 首行 + 其余行；其余行中再剔除与首行相同的行，避免「标题行 + 正文重复首行」。
+    let mut lines = sum.lines();
+    let first = lines.next().unwrap_or_default().trim().to_string();
+    if first.is_empty() {
+        return if !name.is_empty() {
+            format!("工具：{name}")
+        } else {
+            "工具输出".to_string()
+        };
+    }
+    let rest: Vec<&str> = lines
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && *l != first.as_str())
+        .collect();
+    if rest.is_empty() {
+        return first;
+    }
+    let mut out = first;
+    out.push_str("\n\n");
+    out.push_str(&rest.join("\n"));
     out
 }
 
@@ -610,6 +665,80 @@ fn SessionModalRow(
     }
 }
 
+async fn reload_workspace_panel(
+    workspace_loading: RwSignal<bool>,
+    workspace_err: RwSignal<Option<String>>,
+    workspace_path_draft: RwSignal<String>,
+    workspace_data: RwSignal<Option<WorkspaceData>>,
+) {
+    workspace_loading.set(true);
+    match fetch_workspace(None).await {
+        Ok(d) => {
+            workspace_err.set(None);
+            workspace_path_draft.set(d.path.clone());
+            workspace_data.set(Some(d));
+        }
+        Err(e) => {
+            workspace_err.set(Some(e));
+            workspace_data.set(None);
+        }
+    }
+    workspace_loading.set(false);
+}
+
+fn begin_side_column_resize(
+    ev: web_sys::MouseEvent,
+    workspace_visible: RwSignal<bool>,
+    tasks_visible: RwSignal<bool>,
+    side_width: RwSignal<f64>,
+    side_resize_dragging: RwSignal<bool>,
+    side_resize_session: Rc<RefCell<Option<(f64, f64)>>>,
+    side_resize_handles: Rc<RefCell<Option<(WindowListenerHandle, WindowListenerHandle)>>>,
+) {
+    if ev.button() != 0 {
+        return;
+    }
+    if !workspace_visible.get_untracked() && !tasks_visible.get_untracked() {
+        return;
+    }
+    ev.prevent_default();
+    if let Some((m, u)) = side_resize_handles.borrow_mut().take() {
+        m.remove();
+        u.remove();
+        *side_resize_session.borrow_mut() = None;
+        side_resize_dragging.set(false);
+    }
+
+    *side_resize_session.borrow_mut() = Some((ev.client_x() as f64, side_width.get_untracked()));
+    side_resize_dragging.set(true);
+
+    let session_m = Rc::clone(&side_resize_session);
+    let session_u = Rc::clone(&side_resize_session);
+    let handles_slot = Rc::clone(&side_resize_handles);
+    let side_w = side_width;
+    let drag_sig = side_resize_dragging;
+
+    let hm = window_event_listener(leptos::ev::mousemove, move |e: web_sys::MouseEvent| {
+        let borrow = session_m.borrow();
+        let Some((sx, sw)) = *borrow else {
+            return;
+        };
+        let cx = e.client_x() as f64;
+        side_w.set(clamp_side_width_for_viewport(sw - (cx - sx)));
+    });
+
+    let hu = window_event_listener(leptos::ev::mouseup, move |_e: web_sys::MouseEvent| {
+        *session_u.borrow_mut() = None;
+        drag_sig.set(false);
+        if let Some((m, u)) = handles_slot.borrow_mut().take() {
+            m.remove();
+            u.remove();
+        }
+    });
+
+    *side_resize_handles.borrow_mut() = Some((hm, hu));
+}
+
 #[component]
 fn App() -> impl IntoView {
     let sessions = RwSignal::new(Vec::<ChatSession>::new());
@@ -632,6 +761,10 @@ fn App() -> impl IntoView {
     let workspace_data = RwSignal::new(None::<WorkspaceData>);
     let workspace_err = RwSignal::new(None::<String>);
     let workspace_loading = RwSignal::new(false);
+    let workspace_path_draft = RwSignal::new(String::new());
+    let workspace_set_err = RwSignal::new(None::<String>);
+    let workspace_set_busy = RwSignal::new(false);
+    let workspace_pick_busy = RwSignal::new(false);
     let status_data = RwSignal::new(None::<StatusData>);
     let status_loading = RwSignal::new(true);
     // `GET /status` 失败时的说明（与流式对话错误 `status_err` 区分）。
@@ -747,19 +880,14 @@ fn App() -> impl IntoView {
 
     let refresh_workspace = {
         move || {
-            workspace_loading.set(true);
             spawn_local(async move {
-                match fetch_workspace(None).await {
-                    Ok(d) => {
-                        workspace_err.set(None);
-                        workspace_data.set(Some(d));
-                    }
-                    Err(e) => {
-                        workspace_err.set(Some(e));
-                        workspace_data.set(None);
-                    }
-                }
-                workspace_loading.set(false);
+                reload_workspace_panel(
+                    workspace_loading,
+                    workspace_err,
+                    workspace_path_draft,
+                    workspace_data,
+                )
+                .await;
             });
         }
     };
@@ -1170,20 +1298,10 @@ fn App() -> impl IntoView {
         }
     };
 
-    let narrow_side = {
-        move |_| {
-            side_width.update(|w| {
-                *w = (*w - 40.0).clamp(MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
-            });
-        }
-    };
-    let widen_side = {
-        move |_| {
-            side_width.update(|w| {
-                *w = (*w + 40.0).clamp(MIN_SIDE_WIDTH, MAX_SIDE_WIDTH);
-            });
-        }
-    };
+    let side_resize_session: Rc<RefCell<Option<(f64, f64)>>> = Rc::new(RefCell::new(None));
+    let side_resize_handles: Rc<RefCell<Option<(WindowListenerHandle, WindowListenerHandle)>>> =
+        Rc::new(RefCell::new(None));
+    let side_resize_dragging = RwSignal::new(false);
 
     view! {
         <div class="app-root app-shell-ds">
@@ -1468,7 +1586,10 @@ fn App() -> impl IntoView {
                 })
             }}
 
-            <div class="main-row">
+            <div
+                class:main-row-resizing=move || side_resize_dragging.get()
+                class="main-row"
+            >
                 <div class="chat-column">
                     <div
                         class="messages"
@@ -1619,6 +1740,32 @@ fn App() -> impl IntoView {
                 </div>
 
                 <div
+                    class="column-resize-handle"
+                    class:column-resize-handle-off=move || {
+                        !workspace_visible.get() && !tasks_visible.get()
+                    }
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="拖拽调整右列宽度"
+                    on:mousedown={
+                        let sess = Rc::clone(&side_resize_session);
+                        let hands = Rc::clone(&side_resize_handles);
+                        move |ev| {
+                            begin_side_column_resize(
+                                ev,
+                                workspace_visible,
+                                tasks_visible,
+                                side_width,
+                                side_resize_dragging,
+                                Rc::clone(&sess),
+                                Rc::clone(&hands),
+                            );
+                        }
+                    }
+                ></div>
+
+                <div
+                    class:side-column-resizing=move || side_resize_dragging.get()
                     class=move || {
                         let mut c = String::from("side-column");
                         if !workspace_visible.get() && !tasks_visible.get() {
@@ -1666,14 +1813,6 @@ fn App() -> impl IntoView {
                                 "主题"
                             </button>
                         </div>
-                        <Show when=move || {
-                            workspace_visible.get() || tasks_visible.get()
-                        }>
-                            <div class="side-toolbar">
-                                <button type="button" class="btn btn-icon" title="收窄侧栏" on:click=narrow_side.clone()>"◀"</button>
-                                <button type="button" class="btn btn-icon" title="加宽侧栏" on:click=widen_side.clone()>"▶"</button>
-                            </div>
-                        </Show>
                         <div class="side-body">
                             <Show when=move || workspace_visible.get()>
                                 <div
@@ -1731,8 +1870,150 @@ fn App() -> impl IntoView {
                                                 } else {
                                                     view! {
                                                         <div class="side-card-loaded">
-                                                            <div class="workspace-path">
-                                                                {workspace_data.get().map(|d| d.path).unwrap_or_default()}
+                                                            <div class="workspace-set">
+                                                                <div class="workspace-set-label">"工作区根目录"</div>
+                                                                <div class="workspace-set-input-row">
+                                                                    <input
+                                                                        type="text"
+                                                                        class="workspace-set-input"
+                                                                        placeholder="绝对路径，须落在服务端允许根内"
+                                                                        prop:value=move || workspace_path_draft.get()
+                                                                        on:input=move |ev| {
+                                                                            workspace_path_draft
+                                                                                .set(event_target_value(&ev));
+                                                                        }
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-secondary btn-sm workspace-set-browse"
+                                                                        title="在运行 serve 的机器上打开系统选目录对话框"
+                                                                        prop:disabled=move || {
+                                                                            workspace_pick_busy.get()
+                                                                                || workspace_loading.get()
+                                                                        }
+                                                                        on:click=move |_| {
+                                                                            workspace_set_err.set(None);
+                                                                            workspace_pick_busy.set(true);
+                                                                            spawn_local(async move {
+                                                                                match fetch_workspace_pick().await {
+                                                                                    Ok(Some(p)) => {
+                                                                                        workspace_path_draft.set(p);
+                                                                                    }
+                                                                                    Ok(None) => {
+                                                                                        workspace_set_err.set(Some(
+                                                                                            "未选择目录，或服务端无法弹窗（无图形/无头/SSH 远端）。请手动填写路径。"
+                                                                                                .into(),
+                                                                                        ));
+                                                                                    }
+                                                                                    Err(e) => {
+                                                                                        workspace_set_err.set(Some(e));
+                                                                                    }
+                                                                                }
+                                                                                workspace_pick_busy.set(false);
+                                                                            });
+                                                                        }
+                                                                    >
+                                                                        {move || {
+                                                                            if workspace_pick_busy.get() {
+                                                                                "…"
+                                                                            } else {
+                                                                                "浏览…"
+                                                                            }
+                                                                        }}
+                                                                    </button>
+                                                                </div>
+                                                                <div class="workspace-set-actions">
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-primary btn-sm"
+                                                                        prop:disabled=move || {
+                                                                            workspace_set_busy.get()
+                                                                                || workspace_pick_busy.get()
+                                                                                || workspace_loading.get()
+                                                                        }
+                                                                        on:click=move |_| {
+                                                                            workspace_set_err.set(None);
+                                                                            let p = workspace_path_draft
+                                                                                .get()
+                                                                                .trim()
+                                                                                .to_string();
+                                                                            if p.is_empty() {
+                                                                                workspace_set_err.set(Some(
+                                                                                    "请填写目录路径，或使用「恢复默认」。"
+                                                                                        .into(),
+                                                                                ));
+                                                                                return;
+                                                                            }
+                                                                            workspace_set_busy.set(true);
+                                                                            spawn_local(async move {
+                                                                                match post_workspace_set(Some(p)).await {
+                                                                                    Ok(_) => {
+                                                                                        reload_workspace_panel(
+                                                                                            workspace_loading,
+                                                                                            workspace_err,
+                                                                                            workspace_path_draft,
+                                                                                            workspace_data,
+                                                                                        )
+                                                                                        .await;
+                                                                                    }
+                                                                                    Err(e) => {
+                                                                                        workspace_set_err.set(Some(e));
+                                                                                    }
+                                                                                }
+                                                                                workspace_set_busy.set(false);
+                                                                            });
+                                                                        }
+                                                                    >
+                                                                        "应用"
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-secondary btn-sm"
+                                                                        prop:disabled=move || {
+                                                                            workspace_set_busy.get()
+                                                                                || workspace_pick_busy.get()
+                                                                                || workspace_loading.get()
+                                                                        }
+                                                                        title="恢复为服务端默认工作目录"
+                                                                        on:click=move |_| {
+                                                                            workspace_set_err.set(None);
+                                                                            workspace_set_busy.set(true);
+                                                                            spawn_local(async move {
+                                                                                match post_workspace_set(None).await {
+                                                                                    Ok(_) => {
+                                                                                        reload_workspace_panel(
+                                                                                            workspace_loading,
+                                                                                            workspace_err,
+                                                                                            workspace_path_draft,
+                                                                                            workspace_data,
+                                                                                        )
+                                                                                        .await;
+                                                                                    }
+                                                                                    Err(e) => {
+                                                                                        workspace_set_err.set(Some(e));
+                                                                                    }
+                                                                                }
+                                                                                workspace_set_busy.set(false);
+                                                                            });
+                                                                        }
+                                                                    >
+                                                                        "恢复默认"
+                                                                    </button>
+                                                                </div>
+                                                                <Show when=move || workspace_set_err.get().is_some()>
+                                                                    <div class="msg-error workspace-set-error">{move || {
+                                                                        workspace_set_err
+                                                                            .get()
+                                                                            .unwrap_or_default()
+                                                                    }}</div>
+                                                                </Show>
+                                                                <p class="workspace-set-hint">
+                                                                    "「浏览…」在运行 "
+                                                                    <code>"serve"</code>
+                                                                    " 的机器上打开系统文件夹对话框（需图形界面；远程/无头请手填）。路径须为已存在目录，并符合服务端 "
+                                                                    <code>"workspace_allowed_roots"</code>
+                                                                    "；详见 README / CONFIGURATION。"
+                                                                </p>
                                                             </div>
                                                             <Show when=move || {
                                                                 workspace_err.get().is_some()

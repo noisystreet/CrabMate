@@ -8,6 +8,11 @@
     transition: none;
   }
 
+  .column-resize-handle:hover,
+  .column-resize-handle:active {
+    background: transparent;
+  }
+
   .side-pane {
     transition: none;
   }
