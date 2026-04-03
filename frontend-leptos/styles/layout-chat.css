@@ -222,6 +222,10 @@
   line-height: var(--line-tight);
 }
 
+.msg-meta-role:empty {
+  display: none;
+}
+
 .msg-meta-time:empty {
   display: none;
 }
@@ -320,6 +324,11 @@
   border: 1px solid var(--border-subtle);
   border-left: 3px solid color-mix(in srgb, var(--info) 70%, var(--border));
   box-shadow: none;
+}
+
+/* 无角色标签时时间靠右，避免单行 meta 贴在左侧 */
+.msg-tool .msg-meta-time:not(:empty) {
+  margin-left: auto;
 }
 
 .msg-error {
