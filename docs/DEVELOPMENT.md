@@ -404,7 +404,7 @@ flowchart LR
 
 ### 样式结构
 
-- 样式加载：**`frontend-leptos/index.html`** 内多条 **`data-trunk` `rel="css"`** 指向 **`frontend-leptos/styles/`** 下 `tokens.css`、`base.css`、`components.css`、`layout-chat.css`、`sidebar.css`、`status.css`、`approval.css`、`modal.css`、`motion.css`（顺序即层叠顺序；Trunk 不会跟随根目录 `styles.css` 的 `@import` 复制子文件，故须在此声明）。设计 token 与模块边界见各文件头注释。
+- 样式加载：**`frontend-leptos/index.html`** 内多条 **`data-trunk` `rel="css"`** 指向 **`frontend-leptos/styles/`** 下 `tokens.css`、`base.css`、`components.css`、`layout-chat.css`、`shell-ds.css`（DeepSeek 式左栏 + 居中线程 + 底栏一体输入；**`shell-main-toolbar`** 在 **`side-column`** 顶部，不占聊天列；工作区与任务均关时 **`side-column-rail-only`** 保留窄轨宽度；**`session-ctx-*`** 为左栏会话右键菜单）、`sidebar.css`、`status.css`、`approval.css`、`modal.css`、`motion.css`（顺序即层叠顺序；Trunk 不会跟随根目录 `styles.css` 的 `@import` 复制子文件，故须在此声明）。设计 token 与模块边界见各文件头注释。
 - 视觉回归手测项：**`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`**。
 
 ### `frontend-leptos/src/api.rs`
@@ -415,7 +415,7 @@ flowchart LR
 
 ### `frontend-leptos/src/lib.rs`
 
-- Web 主界面（会话列表、聊天区、工作区与任务侧栏、状态栏、主题切换）。
+- Web 主界面（会话列表、聊天区、工作区与任务侧栏、状态栏、主题切换）；左栏「最近」会话 **`contextmenu`** 打开菜单，导出 JSON/Markdown 与删除与 **`SessionModalRow`** 共用 **`export_session_*_for_id` / `delete_session_after_confirm`**。
 - 流式消息渲染与自动跟底策略（用户上滚时禁用、回到底部附近恢复）。
 - `agent_reply_plan` 展示过滤：不回显原始 JSON，保留可读信息或终答正文。
 

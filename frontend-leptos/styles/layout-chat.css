@@ -22,6 +22,8 @@
 .messages {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
   padding: var(--space-4) calc(var(--space-3) + 6px) var(--space-5);
@@ -34,6 +36,98 @@
   align-items: stretch;
   gap: var(--space-gap-msg);
   min-height: min-content;
+  /* 有消息时按内容增高，滚动交给 .messages */
+  flex: 0 0 auto;
+}
+
+/* 空会话：在可视区内垂直居中占位，避免大片留白 */
+.messages-inner:has(> .messages-empty) {
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+}
+
+.messages-empty {
+  width: 100%;
+  max-width: 400px;
+  padding: var(--space-4) var(--space-3);
+  animation: messages-empty-in 0.45s var(--ease-out-soft) both;
+}
+
+@keyframes messages-empty-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .messages-empty {
+    animation: none;
+  }
+}
+
+.messages-empty-card {
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  position: relative;
+  overflow: hidden;
+}
+
+.messages-empty-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 55%, transparent),
+    color-mix(in srgb, var(--accent) 18%, transparent)
+  );
+  pointer-events: none;
+}
+
+.messages-empty-title {
+  margin: 0 0 var(--space-2);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.messages-empty-lead {
+  margin: 0 0 var(--space-4);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.messages-empty-tips {
+  margin: 0;
+  padding-left: 1.15rem;
+  font-size: 12px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--muted) 94%, var(--text));
+}
+
+.messages-empty-tips li {
+  margin-bottom: var(--space-2);
+}
+
+.messages-empty-tips li:last-child {
+  margin-bottom: 0;
 }
 
 /* 消息区/侧栏/弹窗统一滚动条风格 */
@@ -269,6 +363,15 @@
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(8px);
   align-items: flex-end;
+  box-shadow:
+    0 -1px 0 color-mix(in srgb, #fff 5%, transparent) inset,
+    0 -12px 28px color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
+:root[data-theme="light"] .composer {
+  box-shadow:
+    0 -1px 0 color-mix(in srgb, #fff 70%, transparent) inset,
+    0 -8px 20px color-mix(in srgb, var(--border) 12%, transparent);
 }
 
 .composer-input {

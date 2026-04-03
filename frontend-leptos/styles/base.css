@@ -2,6 +2,16 @@
   box-sizing: border-box;
 }
 
+::selection {
+  background: color-mix(in srgb, var(--accent) 32%, var(--surface));
+  color: var(--text);
+}
+
+:root[data-theme="light"] ::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+}
+
 html,
 body {
   margin: 0;
