@@ -390,11 +390,13 @@ fn format_msg_time_label(ms: i64) -> Option<String> {
 }
 
 fn message_role_label(m: &StoredMessage) -> &'static str {
+    // 工具结果气泡用 `msg-tool` 样式区分，不再显示「工具」字样。
+    if m.is_tool {
+        return "";
+    }
     match m.role.as_str() {
         "user" => "用户",
-        "assistant" if m.is_tool => "工具",
         "assistant" => "助手",
-        _ if m.is_tool => "工具",
         "system" => "系统",
         _ => "其它",
     }
@@ -1859,31 +1861,28 @@ fn App() -> impl IntoView {
                                     }
                                 >
                                     <div class="side-card">
-                                        <div class="side-card-head">
-                                            <div class="side-head-main">
-                                                <div class="side-pane-title">"工作区"</div>
-                                                <span class="side-head-stat">{move || {
-                                                    if workspace_loading.get() {
-                                                        "加载中…".to_string()
-                                                    } else if workspace_err.get().is_some()
-                                                        || workspace_data
-                                                            .get()
-                                                            .and_then(|d| d.error.clone())
-                                                            .is_some()
-                                                    {
-                                                        "错误".to_string()
-                                                    } else {
-                                                        let n = workspace_data
-                                                            .get()
-                                                            .map(|d| d.entries.len())
-                                                            .unwrap_or(0);
-                                                        format!("{n} 项")
-                                                    }
-                                                }}</span>
+                                        <Show when=move || {
+                                            workspace_loading.get()
+                                                || workspace_err.get().is_some()
+                                                || workspace_data
+                                                    .get()
+                                                    .and_then(|d| d.error.clone())
+                                                    .is_some()
+                                        }>
+                                            <div class="side-card-head">
+                                                <div class="side-head-main">
+                                                    <span class="side-head-stat">{move || {
+                                                        if workspace_loading.get() {
+                                                            "加载中…".to_string()
+                                                        } else {
+                                                            "错误".to_string()
+                                                        }
+                                                    }}</span>
+                                                </div>
                                             </div>
-                                            <button type="button" class="btn btn-secondary btn-sm side-head-action" on:click=move |_| refresh_workspace()>"刷新列表"</button>
-                                        </div>
-                                        <div class="side-card-body">
+                                        </Show>
+                                        <div class="side-card-body workspace-side-card-body">
+                                            <div class="workspace-side-card-scroll">
                                             {move || {
                                                 if workspace_loading.get() {
                                                     view! {
@@ -1971,8 +1970,7 @@ fn App() -> impl IntoView {
                                                                                 .to_string();
                                                                             if p.is_empty() {
                                                                                 workspace_set_err.set(Some(
-                                                                                    "请填写目录路径，或使用「恢复默认」。"
-                                                                                        .into(),
+                                                                                    "请填写目录路径。".into(),
                                                                                 ));
                                                                                 return;
                                                                             }
@@ -1998,39 +1996,6 @@ fn App() -> impl IntoView {
                                                                     >
                                                                         "应用"
                                                                     </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        class="btn btn-secondary btn-sm"
-                                                                        prop:disabled=move || {
-                                                                            workspace_set_busy.get()
-                                                                                || workspace_pick_busy.get()
-                                                                                || workspace_loading.get()
-                                                                        }
-                                                                        title="恢复为服务端默认工作目录"
-                                                                        on:click=move |_| {
-                                                                            workspace_set_err.set(None);
-                                                                            workspace_set_busy.set(true);
-                                                                            spawn_local(async move {
-                                                                                match post_workspace_set(None).await {
-                                                                                    Ok(_) => {
-                                                                                        reload_workspace_panel(
-                                                                                            workspace_loading,
-                                                                                            workspace_err,
-                                                                                            workspace_path_draft,
-                                                                                            workspace_data,
-                                                                                        )
-                                                                                        .await;
-                                                                                    }
-                                                                                    Err(e) => {
-                                                                                        workspace_set_err.set(Some(e));
-                                                                                    }
-                                                                                }
-                                                                                workspace_set_busy.set(false);
-                                                                            });
-                                                                        }
-                                                                    >
-                                                                        "恢复默认"
-                                                                    </button>
                                                                 </div>
                                                                 <Show when=move || workspace_set_err.get().is_some()>
                                                                     <div class="msg-error workspace-set-error">{move || {
@@ -2039,13 +2004,6 @@ fn App() -> impl IntoView {
                                                                             .unwrap_or_default()
                                                                     }}</div>
                                                                 </Show>
-                                                                <p class="workspace-set-hint">
-                                                                    "「浏览…」在运行 "
-                                                                    <code>"serve"</code>
-                                                                    " 的机器上打开系统文件夹对话框（需图形界面；远程/无头请手填）。路径须为已存在目录，并符合服务端 "
-                                                                    <code>"workspace_allowed_roots"</code>
-                                                                    "；详见 README / CONFIGURATION。"
-                                                                </p>
                                                             </div>
                                                             <Show when=move || {
                                                                 workspace_err.get().is_some()
@@ -2102,6 +2060,16 @@ fn App() -> impl IntoView {
                                                     .into_any()
                                                 }
                                             }}
+                                            </div>
+                                            <div class="workspace-list-refresh">
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-secondary btn-sm workspace-list-refresh-btn"
+                                                    on:click=move |_| refresh_workspace()
+                                                >
+                                                    "刷新列表"
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
