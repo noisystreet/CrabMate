@@ -106,6 +106,40 @@ fn make_message_id() -> String {
     storage::make_session_id()
 }
 
+/// 去掉失败助手泡及其后消息，挂上新的 loading 助手泡；返回本回合用户原文与新助手 id。
+fn prepare_retry_failed_assistant_turn(
+    sessions: &mut [ChatSession],
+    active_id: &str,
+    failed_asst_id: &str,
+) -> Option<(String, String)> {
+    let s = sessions.iter_mut().find(|sess| sess.id == active_id)?;
+    let idx = s.messages.iter().position(|m| {
+        m.id == failed_asst_id
+            && m.role == "assistant"
+            && !m.is_tool
+            && m.state.as_deref() == Some("error")
+    })?;
+    if idx == 0 {
+        return None;
+    }
+    if s.messages[idx - 1].role != "user" {
+        return None;
+    }
+    let user_text = s.messages[idx - 1].text.clone();
+    s.messages.truncate(idx);
+    let new_asst_id = make_message_id();
+    let now = message_created_ms();
+    s.messages.push(StoredMessage {
+        id: new_asst_id.clone(),
+        role: "assistant".to_string(),
+        text: String::new(),
+        state: Some("loading".to_string()),
+        is_tool: false,
+        created_at: now,
+    });
+    Some((user_text, new_asst_id))
+}
+
 /// 去掉摘要里**连续重复**的非空行（服务端或上游偶发会下发两行相同摘要，如 `read file: 2.md`）。
 fn collapse_duplicate_summary_lines(text: &str) -> String {
     let mut kept: Vec<&str> = Vec::new();
@@ -1062,48 +1096,19 @@ fn App() -> impl IntoView {
         });
     });
 
-    let run_send_message: Rc<dyn Fn()> = Rc::new({
+    let attach_chat_stream: Rc<dyn Fn(String, String)> = Rc::new({
         let abort_cell = Rc::clone(&abort_cell);
         let user_cancelled_stream = Rc::clone(&user_cancelled_stream);
-        let auto_scroll_chat = auto_scroll_chat;
-        move || {
-            let text = draft.get().trim().to_string();
-            if text.is_empty() || !initialized.get() || status_busy.get() {
-                return;
-            }
-            auto_scroll_chat.set(true);
-            let uid = make_message_id();
-            let asst_id = make_message_id();
-            patch_active_session(sessions, &active_id.get(), |s| {
-                let now = message_created_ms();
-                let is_first_user_turn =
-                    s.messages.iter().filter(|m| m.role == "user").count() == 0;
-                s.messages.push(StoredMessage {
-                    id: uid.clone(),
-                    role: "user".to_string(),
-                    text: text.clone(),
-                    state: None,
-                    is_tool: false,
-                    created_at: now,
-                });
-                s.messages.push(StoredMessage {
-                    id: asst_id.clone(),
-                    role: "assistant".to_string(),
-                    text: String::new(),
-                    state: Some("loading".to_string()),
-                    is_tool: false,
-                    created_at: now,
-                });
-                if is_first_user_turn && s.title == DEFAULT_CHAT_SESSION_TITLE {
-                    s.title = title_from_user_prompt(&text);
-                }
-                s.draft.clear();
-            });
-            draft.set(String::new());
-            status_busy.set(true);
-            status_err.set(None);
-            pending_approval.set(None);
-
+        let sessions = sessions;
+        let active_id = active_id;
+        let conversation_id = conversation_id;
+        let selected_agent_role = selected_agent_role;
+        let status_busy = status_busy;
+        let status_err = status_err;
+        let pending_approval = pending_approval;
+        let tool_busy = tool_busy;
+        let refresh_workspace = refresh_workspace;
+        move |user_text: String, asst_id: String| {
             if let Some(prev) = abort_cell.borrow_mut().take() {
                 prev.abort();
             }
@@ -1241,7 +1246,7 @@ fn App() -> impl IntoView {
 
             spawn_local(async move {
                 let stream_result = send_chat_stream(
-                    text,
+                    user_text,
                     conv,
                     agent_role,
                     Some(appr_for_stream),
@@ -1263,6 +1268,82 @@ fn App() -> impl IntoView {
             });
         }
     });
+
+    let run_send_message: Rc<dyn Fn()> = Rc::new({
+        let attach = Rc::clone(&attach_chat_stream);
+        let auto_scroll_chat = auto_scroll_chat;
+        move || {
+            let text = draft.get().trim().to_string();
+            if text.is_empty() || !initialized.get() || status_busy.get() {
+                return;
+            }
+            auto_scroll_chat.set(true);
+            let uid = make_message_id();
+            let asst_id = make_message_id();
+            patch_active_session(sessions, &active_id.get(), |s| {
+                let now = message_created_ms();
+                let is_first_user_turn =
+                    s.messages.iter().filter(|m| m.role == "user").count() == 0;
+                s.messages.push(StoredMessage {
+                    id: uid.clone(),
+                    role: "user".to_string(),
+                    text: text.clone(),
+                    state: None,
+                    is_tool: false,
+                    created_at: now,
+                });
+                s.messages.push(StoredMessage {
+                    id: asst_id.clone(),
+                    role: "assistant".to_string(),
+                    text: String::new(),
+                    state: Some("loading".to_string()),
+                    is_tool: false,
+                    created_at: now,
+                });
+                if is_first_user_turn && s.title == DEFAULT_CHAT_SESSION_TITLE {
+                    s.title = title_from_user_prompt(&text);
+                }
+                s.draft.clear();
+            });
+            draft.set(String::new());
+            status_busy.set(true);
+            status_err.set(None);
+            pending_approval.set(None);
+            attach(text, asst_id);
+        }
+    });
+
+    // 由消息气泡「重试」写入助手消息 id，Effect 中消费并发起流（避免在非 Send 的渲染闭包里捕获 Rc<dyn Fn>）。
+    let retry_assistant_target = RwSignal::new(None::<String>);
+
+    Effect::new({
+        let attach = Rc::clone(&attach_chat_stream);
+        let auto_scroll_chat = auto_scroll_chat;
+        move |_| {
+            let Some(failed_asst_id) = retry_assistant_target.get() else {
+                return;
+            };
+            // 先消费信号，避免在 `status_busy` 等依赖触发下反复入队同一次重试。
+            retry_assistant_target.set(None);
+            if !initialized.get() || status_busy.get() {
+                return;
+            }
+            let aid = active_id.get();
+            let mut prepared: Option<(String, String)> = None;
+            sessions.update(|list| {
+                prepared = prepare_retry_failed_assistant_turn(list, &aid, &failed_asst_id);
+            });
+            let Some((user_text, asst_id)) = prepared else {
+                return;
+            };
+            auto_scroll_chat.set(true);
+            status_busy.set(true);
+            status_err.set(None);
+            pending_approval.set(None);
+            attach(user_text, asst_id);
+        }
+    });
+
     let send_message = {
         let r = Rc::clone(&run_send_message);
         move |_e: web_sys::MouseEvent| {
@@ -1708,6 +1789,7 @@ fn App() -> impl IntoView {
                                                 let role_lbl = message_role_label(&m);
                                                 let time_str =
                                                     format_msg_time_label(m.created_at).unwrap_or_default();
+                                                let mid_retry = m.id.clone();
                                                 view! {
                                                     <div class=class_final>
                                                         <div class="msg-meta" aria-hidden="true">
@@ -1722,6 +1804,23 @@ fn App() -> impl IntoView {
                                                                     <span></span>
                                                                     <span></span>
                                                                 </span>
+                                                            }
+                                                        })}
+                                                        {err.then(move || {
+                                                            let mid = mid_retry.clone();
+                                                            view! {
+                                                                <div class="msg-retry-row">
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-secondary btn-sm"
+                                                                        prop:disabled=move || status_busy.get()
+                                                                        on:click=move |_| {
+                                                                            retry_assistant_target.set(Some(mid.clone()));
+                                                                        }
+                                                                    >
+                                                                        "重试"
+                                                                    </button>
+                                                                </div>
                                                             }
                                                         })}
                                                     </div>
