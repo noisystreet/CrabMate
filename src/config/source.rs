@@ -64,7 +64,7 @@ pub(super) struct AgentSection {
     pub(super) max_tokens: Option<u64>,
     pub(super) temperature: Option<f64>,
     pub(super) llm_seed: Option<i64>,
-    /// MiniMax 等：`reasoning_split` 与 OpenAI 兼容扩展。
+    /// MiniMax 等：`reasoning_split`；`None` 时由 `finalize` 按网关推断默认（MiniMax 为 `true`）。
     pub(super) llm_reasoning_split: Option<bool>,
     /// 智谱 **bigmodel.cn** GLM-5 等：为真时请求体带 **`thinking: { "type": "enabled" }`**（深度思考，见官方文档）。
     pub(super) llm_bigmodel_thinking: Option<bool>,

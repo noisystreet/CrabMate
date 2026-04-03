@@ -55,7 +55,7 @@ CrabMate uses `POST {api_base}/chat/completions` (OpenAI shape, optional SSE, to
 | Scenario | Notes |
 |----------|--------|
 | **DeepSeek** | `api_base`: `https://api.deepseek.com/v1`; models such as `deepseek-chat`, `deepseek-reasoner`; see [DeepSeek](https://platform.deepseek.com/) and [API docs](https://api-docs.deepseek.com/api/create-chat-completion). |
-| **MiniMax** | `api_base`: `https://api.minimaxi.com/v1`; models such as `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`, `MiniMax-M2.5`. Often needs `llm_fold_system_into_user = true`. Optional `llm_reasoning_split`. See [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) § MiniMax. |
+| **MiniMax** | `api_base`: `https://api.minimaxi.com/v1`; models such as `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`, `MiniMax-M2.5`. Often needs `llm_fold_system_into_user = true`. If `llm_reasoning_split` is omitted, MiniMax gateways default to **on** (`reasoning_split`); set `false` / `AGENT_LLM_REASONING_SPLIT=0` to disable. See [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) § MiniMax. |
 | **Zhipu GLM** | `api_base`: `https://open.bigmodel.cn/api/paas/v4`; e.g. `glm-5`. Optional `llm_bigmodel_thinking`. See CONFIGURATION § GLM. |
 | **Moonshot Kimi** | `api_base`: `https://api.moonshot.cn/v1`; e.g. `kimi-k2.5`. Temperature coercion and optional `llm_kimi_thinking_disabled` for k2.5. See CONFIGURATION § Kimi. |
 | **Local Ollama** | e.g. `http://127.0.0.1:11434/v1`; `llm_http_auth_mode = "none"`; no `API_KEY` needed. Tool calling quality depends on model/Ollama version. |
