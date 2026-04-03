@@ -42,6 +42,8 @@ const AGENT_ROLE_KEY: &str = "agent-demo-agent-role";
 const DEFAULT_SIDE_WIDTH: f64 = 280.0;
 const MIN_SIDE_WIDTH: f64 = 200.0;
 const MAX_SIDE_WIDTH: f64 = 560.0;
+/// 工作区与任务均关闭时，右列仅保留工具栏（工作区/任务/状态/主题）的窄轨宽度。
+const TOOLBAR_RAIL_WIDTH_PX: f64 = 84.0;
 const AUTO_SCROLL_RESUME_GAP_PX: i32 = 24;
 
 fn local_storage() -> Option<web_sys::Storage> {
@@ -364,6 +366,114 @@ fn patch_active_session(
     });
 }
 
+fn export_session_json_for_id(sessions: RwSignal<Vec<ChatSession>>, id: &str) {
+    let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
+    let Some(s) = session else {
+        return;
+    };
+    let file = session_to_export_file(&s);
+    let Ok(json) = serde_json::to_string_pretty(&file) else {
+        return;
+    };
+    let stem = export_filename_stem("chat_export");
+    let name = format!("{stem}.json");
+    if let Err(e) = trigger_download(&name, "application/json", &json) {
+        if let Some(w) = web_sys::window() {
+            let _ = w.alert_with_message(&e);
+        }
+    }
+}
+
+fn export_session_markdown_for_id(sessions: RwSignal<Vec<ChatSession>>, id: &str) {
+    let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
+    let Some(s) = session else {
+        return;
+    };
+    let md = session_to_markdown(&s);
+    let stem = export_filename_stem("chat_export");
+    let name = format!("{stem}.md");
+    if let Err(e) = trigger_download(&name, "text/markdown;charset=utf-8", &md) {
+        if let Some(w) = web_sys::window() {
+            let _ = w.alert_with_message(&e);
+        }
+    }
+}
+
+fn delete_session_after_confirm(
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    conversation_id: RwSignal<Option<String>>,
+    id: &str,
+) {
+    let Some(w) = web_sys::window() else {
+        return;
+    };
+    if !w
+        .confirm_with_message("确定删除此本地会话？此操作不可恢复。")
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let id = id.to_string();
+    let was_active = active_id.get() == id;
+    sessions.update(|list| {
+        list.retain(|s| s.id != id);
+    });
+    if sessions.with(|l| l.is_empty()) {
+        let (list, def_id) = ensure_at_least_one(Vec::new());
+        sessions.set(list);
+        active_id.set(def_id.clone());
+        draft.set(
+            sessions
+                .with(|l| l.iter().find(|s| s.id == def_id).map(|s| s.draft.clone()))
+                .unwrap_or_default(),
+        );
+        conversation_id.set(None);
+        return;
+    }
+    if was_active {
+        let pick = sessions.with(|list| list[0].id.clone());
+        active_id.set(pick.clone());
+        draft.set(
+            sessions
+                .with(|l| l.iter().find(|s| s.id == pick).map(|s| s.draft.clone()))
+                .unwrap_or_default(),
+        );
+        conversation_id.set(None);
+    }
+}
+
+/// 左栏会话右键菜单锚点（`position: fixed` 使用视口坐标）。
+#[derive(Clone)]
+struct SessionContextAnchor {
+    session_id: String,
+    x: f64,
+    y: f64,
+}
+
+fn clamp_session_ctx_menu_pos(cx: i32, cy: i32) -> (f64, f64) {
+    const MENU_W: f64 = 190.0;
+    const MENU_H: f64 = 148.0;
+    let (ww, wh) = web_sys::window()
+        .map(|w| {
+            (
+                w.inner_width()
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(800.0),
+                w.inner_height()
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(600.0),
+            )
+        })
+        .unwrap_or((800.0, 600.0));
+    let x = (f64::from(cx)).clamp(6.0, (ww - MENU_W - 6.0).max(6.0));
+    let y = (f64::from(cy)).clamp(6.0, (wh - MENU_H - 6.0).max(6.0));
+    (x, y)
+}
+
 #[component]
 fn SessionModalRow(
     id: String,
@@ -394,6 +504,15 @@ fn SessionModalRow(
                     let id = id.clone();
                     move |_| {
                         active_id.set(id.clone());
+                        draft.set(
+                            sessions.with(|list| {
+                                list.iter()
+                                    .find(|s| s.id == id)
+                                    .map(|s| s.draft.clone())
+                                    .unwrap_or_default()
+                            }),
+                        );
+                        conversation_id.set(None);
                         session_modal.set(false);
                     }
                 }
@@ -446,23 +565,7 @@ fn SessionModalRow(
                     on:click={
                         let sessions = sessions;
                         let id = id_json.clone();
-                        move |_| {
-                            let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
-                            let Some(s) = session else {
-                                return;
-                            };
-                            let file = session_to_export_file(&s);
-                            let Ok(json) = serde_json::to_string_pretty(&file) else {
-                                return;
-                            };
-                            let stem = export_filename_stem("chat_export");
-                            let name = format!("{stem}.json");
-                            if let Err(e) = trigger_download(&name, "application/json", &json) {
-                                if let Some(w) = web_sys::window() {
-                                    let _ = w.alert_with_message(&e);
-                                }
-                            }
-                        }
+                        move |_| export_session_json_for_id(sessions, &id)
                     }
                 >
                     "JSON"
@@ -474,22 +577,7 @@ fn SessionModalRow(
                     on:click={
                         let sessions = sessions;
                         let id = id_md.clone();
-                        move |_| {
-                            let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
-                            let Some(s) = session else {
-                                return;
-                            };
-                            let md = session_to_markdown(&s);
-                            let stem = export_filename_stem("chat_export");
-                            let name = format!("{stem}.md");
-                            if let Err(e) =
-                                trigger_download(&name, "text/markdown;charset=utf-8", &md)
-                            {
-                                if let Some(w) = web_sys::window() {
-                                    let _ = w.alert_with_message(&e);
-                                }
-                            }
-                        }
+                        move |_| export_session_markdown_for_id(sessions, &id)
                     }
                 >
                     "MD"
@@ -505,49 +593,13 @@ fn SessionModalRow(
                         let conversation_id = conversation_id;
                         let id = id_del.clone();
                         move |_| {
-                            let Some(w) = web_sys::window() else {
-                                return;
-                            };
-                            if !w
-                                .confirm_with_message("确定删除此本地会话？此操作不可恢复。")
-                                .unwrap_or(false)
-                            {
-                                return;
-                            }
-                            let was_active = active_id.get() == id;
-                            sessions.update(|list| {
-                                list.retain(|s| s.id != id);
-                            });
-                            if sessions.with(|l| l.is_empty()) {
-                                let (list, def_id) = ensure_at_least_one(Vec::new());
-                                sessions.set(list);
-                                active_id.set(def_id.clone());
-                                draft.set(
-                                    sessions
-                                        .with(|l| {
-                                            l.iter()
-                                                .find(|s| s.id == def_id)
-                                                .map(|s| s.draft.clone())
-                                        })
-                                        .unwrap_or_default(),
-                                );
-                                conversation_id.set(None);
-                                return;
-                            }
-                            if was_active {
-                                let pick = sessions.with(|list| list[0].id.clone());
-                                active_id.set(pick.clone());
-                                draft.set(
-                                    sessions
-                                        .with(|l| {
-                                            l.iter()
-                                                .find(|s| s.id == pick)
-                                                .map(|s| s.draft.clone())
-                                        })
-                                        .unwrap_or_default(),
-                                );
-                                conversation_id.set(None);
-                            }
+                            delete_session_after_confirm(
+                                sessions,
+                                active_id,
+                                draft,
+                                conversation_id,
+                                &id,
+                            );
                         }
                     }
                 >
@@ -595,7 +647,8 @@ fn App() -> impl IntoView {
     let tasks_loading = RwSignal::new(false);
     let pending_approval = RwSignal::new(None::<(String, String, String)>);
     let session_modal = RwSignal::new(false);
-    let topbar_menu_open = RwSignal::new(false);
+    let session_context_menu = RwSignal::new(None::<SessionContextAnchor>);
+    let mobile_nav_open = RwSignal::new(false);
     let approval_expanded = RwSignal::new(false);
     let last_approval_sid = RwSignal::new(String::new());
     let abort_cell: Rc<RefCell<Option<web_sys::AbortController>>> = Rc::new(RefCell::new(None));
@@ -1133,110 +1186,218 @@ fn App() -> impl IntoView {
     };
 
     view! {
-        <div class="app-root">
-            <header class="topbar">
-                <div class="brand">
+        <div class="app-root app-shell-ds">
+            <aside class=move || {
+                let mut s = String::from("nav-rail");
+                if mobile_nav_open.get() {
+                    s.push_str(" nav-rail-mobile-open");
+                }
+                s
+            }>
+                <div class="nav-rail-brand">
                     <span class="brand-mark" aria-hidden="true"></span>
-                    <div class="brand-text">
+                    <div class="nav-rail-brand-text">
                         <h1>"CrabMate"</h1>
                         <span class="brand-sub">"本地 Agent"</span>
                     </div>
                 </div>
-                <span class="topbar-spacer"></span>
-                <nav class="topbar-actions">
-                    <div class="topbar-cluster-primary">
-                        <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| session_modal.set(true)>"会话"</button>
-                        <button type="button" class="btn btn-secondary btn-sm" on:click=new_session.clone()>"新会话"</button>
-                    </div>
-                    <div class="topbar-cluster-wide">
-                        <button
-                            type="button"
-                            class="btn btn-ghost btn-sm"
-                            class:active=move || workspace_visible.get()
-                            on:click=move |_| workspace_visible.update(|v| *v = !*v)
-                            title="工作区"
-                        >"工作区"</button>
-                        <button
-                            type="button"
-                            class="btn btn-ghost btn-sm"
-                            class:active=move || tasks_visible.get()
-                            on:click=move |_| tasks_visible.update(|v| *v = !*v)
-                            title="任务"
-                        >"任务"</button>
-                        <button
-                            type="button"
-                            class="btn btn-ghost btn-sm"
-                            class:active=move || status_bar_visible.get()
-                            on:click=move |_| status_bar_visible.update(|v| *v = !*v)
-                            title="状态栏"
-                        >"状态"</button>
-                        <button type="button" class="btn btn-ghost btn-sm" on:click=theme_toggle>"主题"</button>
-                    </div>
-                    <div class="topbar-cluster-narrow">
-                        <button
-                            type="button"
-                            class="btn btn-ghost btn-sm topbar-more-btn"
-                            aria-haspopup="true"
-                            aria-expanded=move || topbar_menu_open.get()
-                            on:click=move |_| topbar_menu_open.update(|o| *o = !*o)
-                        >"更多"</button>
-                        <Show when=move || topbar_menu_open.get()>
-                            <div
-                                class="topbar-overflow-backdrop"
-                                aria-hidden="true"
-                                on:click=move |_| topbar_menu_open.set(false)
-                            ></div>
-                            <div class="topbar-overflow-menu" role="menu">
-                                <button
-                                    type="button"
-                                    class="topbar-overflow-item"
-                                    role="menuitem"
-                                    class:active=move || workspace_visible.get()
-                                    on:click=move |_| {
-                                        workspace_visible.update(|v| *v = !*v);
-                                        topbar_menu_open.set(false);
-                                    }
-                                >"工作区"</button>
-                                <button
-                                    type="button"
-                                    class="topbar-overflow-item"
-                                    role="menuitem"
-                                    class:active=move || tasks_visible.get()
-                                    on:click=move |_| {
-                                        tasks_visible.update(|v| *v = !*v);
-                                        topbar_menu_open.set(false);
-                                    }
-                                >"任务"</button>
-                                <button
-                                    type="button"
-                                    class="topbar-overflow-item"
-                                    role="menuitem"
-                                    class:active=move || status_bar_visible.get()
-                                    on:click=move |_| {
-                                        status_bar_visible.update(|v| *v = !*v);
-                                        topbar_menu_open.set(false);
-                                    }
-                                >"状态栏"</button>
-                                <button
-                                    type="button"
-                                    class="topbar-overflow-item"
-                                    role="menuitem"
-                                    on:click=move |_| {
-                                        theme.update(|t| {
-                                            if t == "dark" {
-                                                *t = "light".to_string();
+                <button
+                    type="button"
+                    class="btn btn-primary btn-new-chat-ds"
+                    on:click={
+                        let new_session = new_session.clone();
+                        move |_| {
+                            new_session(());
+                            mobile_nav_open.set(false);
+                        }
+                    }
+                >
+                    "新对话"
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-nav-ghost-ds"
+                    on:click={
+                        move |_| {
+                            session_modal.set(true);
+                            mobile_nav_open.set(false);
+                        }
+                    }
+                >
+                    "管理会话…"
+                </button>
+                <div class="nav-rail-scroll">
+                    <div class="nav-rail-scroll-label">"最近"</div>
+                    {move || {
+                        let mut v: Vec<ChatSession> = sessions.get().into_iter().collect();
+                        v.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
+                        v.into_iter()
+                            .map(|s| {
+                                let session_id_class = s.id.clone();
+                                let session_id_click = s.id.clone();
+                                let session_id_ctx = s.id.clone();
+                                let title = s.title.clone();
+                                let n = s.messages.len();
+                                view! {
+                                    <button
+                                        type="button"
+                                        class=move || {
+                                            if active_id.get() == session_id_class {
+                                                "nav-session-item is-active"
                                             } else {
-                                                *t = "dark".to_string();
+                                                "nav-session-item"
                                             }
-                                        });
-                                        topbar_menu_open.set(false);
-                                    }
-                                >"切换主题"</button>
-                            </div>
-                        </Show>
-                    </div>
-                </nav>
-            </header>
+                                        }
+                                        on:contextmenu=move |ev: web_sys::MouseEvent| {
+                                            ev.prevent_default();
+                                            ev.stop_propagation();
+                                            let (x, y) = clamp_session_ctx_menu_pos(
+                                                ev.client_x(),
+                                                ev.client_y(),
+                                            );
+                                            session_context_menu.set(Some(SessionContextAnchor {
+                                                session_id: session_id_ctx.clone(),
+                                                x,
+                                                y,
+                                            }));
+                                        }
+                                        on:click={
+                                            let id = session_id_click;
+                                            move |_| {
+                                                session_context_menu.set(None);
+                                                active_id.set(id.clone());
+                                                draft.set(
+                                                    sessions.with(|list| {
+                                                        list.iter()
+                                                            .find(|s| s.id == id)
+                                                            .map(|s| s.draft.clone())
+                                                            .unwrap_or_default()
+                                                    }),
+                                                );
+                                                conversation_id.set(None);
+                                                mobile_nav_open.set(false);
+                                            }
+                                        }
+                                    >
+                                        <span class="nav-session-title">{title}</span>
+                                        <span class="nav-session-meta">{n}" 条"</span>
+                                    </button>
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </div>
+            </aside>
+
+            <Show when=move || session_context_menu.get().is_some()>
+                <div class="session-ctx-layer">
+                <div
+                    class="session-ctx-backdrop"
+                    aria-hidden="true"
+                    on:click=move |_| session_context_menu.set(None)
+                ></div>
+                <div
+                    class="session-ctx-menu"
+                    role="menu"
+                    on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                    style=move || {
+                        session_context_menu
+                            .get()
+                            .map(|a| format!("left:{}px;top:{}px;", a.x, a.y))
+                            .unwrap_or_default()
+                    }
+                >
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let anchor = session_context_menu.get();
+                            let Some(a) = anchor else {
+                                return;
+                            };
+                            let id = a.session_id;
+                            session_context_menu.set(None);
+                            export_session_json_for_id(sessions, &id);
+                        }
+                    >
+                        "导出 JSON"
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let anchor = session_context_menu.get();
+                            let Some(a) = anchor else {
+                                return;
+                            };
+                            let id = a.session_id;
+                            session_context_menu.set(None);
+                            export_session_markdown_for_id(sessions, &id);
+                        }
+                    >
+                        "导出 Markdown"
+                    </button>
+                    <button
+                        type="button"
+                        class="session-ctx-item session-ctx-item-danger"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let anchor = session_context_menu.get();
+                            let Some(a) = anchor else {
+                                return;
+                            };
+                            let id = a.session_id;
+                            session_context_menu.set(None);
+                            delete_session_after_confirm(
+                                sessions,
+                                active_id,
+                                draft,
+                                conversation_id,
+                                &id,
+                            );
+                        }
+                    >
+                        "删除会话"
+                    </button>
+                </div>
+                </div>
+            </Show>
+
+            <Show when=move || mobile_nav_open.get()>
+                <div
+                    class="nav-rail-backdrop"
+                    aria-hidden="true"
+                    on:click=move |_| mobile_nav_open.set(false)
+                ></div>
+            </Show>
+
+            <div class="shell-main">
+                <div class="shell-main-header-mobile">
+                    <button
+                        type="button"
+                        class="btn btn-icon"
+                        aria-label="打开菜单"
+                        on:click=move |_| mobile_nav_open.update(|o| *o = !*o)
+                    >
+                        "☰"
+                    </button>
+                    <span class="shell-main-header-title">"CrabMate"</span>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        on:click={
+                            let new_session = new_session.clone();
+                            move |_| {
+                                new_session(());
+                                mobile_nav_open.set(false);
+                            }
+                        }
+                    >
+                        "新对话"
+                    </button>
+                </div>
 
             {move || {
                 pending_approval.get().map(|(sid, cmd, args)| {
@@ -1307,13 +1468,7 @@ fn App() -> impl IntoView {
                 })
             }}
 
-            <div class=move || {
-                if workspace_visible.get() || tasks_visible.get() {
-                    "main-row"
-                } else {
-                    "main-row main-row-side-collapsed"
-                }
-            }>
+            <div class="main-row">
                 <div class="chat-column">
                     <div
                         class="messages"
@@ -1343,61 +1498,85 @@ fn App() -> impl IntoView {
                             }
                         }
                     >
+                        <div class="chat-thread">
                         <div class="messages-inner">
                             {move || {
                                 let id = active_id.get();
                                 sessions.with(|list| {
-                                    list.iter()
+                                    let msgs = list
+                                        .iter()
                                         .find(|s| s.id == id)
                                         .map(|s| s.messages.clone())
-                                        .unwrap_or_default()
-                                        .into_iter()
-                                        .map(|m| {
-                                            let cls = match m.role.as_str() {
-                                                "user" => "msg msg-user",
-                                                "assistant" if m.is_tool => "msg msg-tool",
-                                                "assistant" => "msg msg-assistant",
-                                                _ if m.is_tool => "msg msg-tool",
-                                                _ => "msg msg-system",
-                                            };
-                                            let loading = m.role == "assistant"
-                                                && m.state.as_deref() == Some("loading");
-                                            let err = m.state.as_deref() == Some("error");
-                                            let class_final = if err {
-                                                format!("{cls} msg-error")
-                                            } else if loading {
-                                                format!("{cls} msg-loading")
-                                            } else {
-                                                cls.to_string()
-                                            };
-                                            let role_lbl = message_role_label(&m);
-                                            let time_str =
-                                                format_msg_time_label(m.created_at).unwrap_or_default();
-                                            view! {
-                                                <div class=class_final>
-                                                    <div class="msg-meta" aria-hidden="true">
-                                                        <span class="msg-meta-role">{role_lbl}</span>
-                                                        <span class="msg-meta-time">{time_str}</span>
-                                                    </div>
-                                                    <span class="msg-body">{message_text_for_display(&m)}</span>
-                                                    {loading.then(|| {
-                                                        view! {
-                                                            <span class="typing-dots" aria-hidden="true">
-                                                                <span></span>
-                                                                <span></span>
-                                                                <span></span>
-                                                            </span>
-                                                        }
-                                                    })}
+                                        .unwrap_or_default();
+                                    if msgs.is_empty() {
+                                        view! {
+                                            <div class="messages-empty" role="status">
+                                                <div class="messages-empty-card">
+                                                    <p class="messages-empty-title">"开始对话"</p>
+                                                    <p class="messages-empty-lead">
+                                                        "在下方输入消息，Enter 发送，Shift+Enter 换行。"
+                                                    </p>
+                                                    <ul class="messages-empty-tips">
+                                                        <li>"左侧可新建对话、切换最近会话，或「管理会话」导出与重命名。"</li>
+                                                        <li>"最右列为工具栏与工作区/任务面板：右列顶部可开关工作区、任务、状态栏与主题。"</li>
+                                                    </ul>
                                                 </div>
-                                            }
-                                        })
-                                        .collect_view()
+                                            </div>
+                                        }
+                                        .into_any()
+                                    } else {
+                                        msgs
+                                            .into_iter()
+                                            .map(|m| {
+                                                let cls = match m.role.as_str() {
+                                                    "user" => "msg msg-user",
+                                                    "assistant" if m.is_tool => "msg msg-tool",
+                                                    "assistant" => "msg msg-assistant",
+                                                    _ if m.is_tool => "msg msg-tool",
+                                                    _ => "msg msg-system",
+                                                };
+                                                let loading = m.role == "assistant"
+                                                    && m.state.as_deref() == Some("loading");
+                                                let err = m.state.as_deref() == Some("error");
+                                                let class_final = if err {
+                                                    format!("{cls} msg-error")
+                                                } else if loading {
+                                                    format!("{cls} msg-loading")
+                                                } else {
+                                                    cls.to_string()
+                                                };
+                                                let role_lbl = message_role_label(&m);
+                                                let time_str =
+                                                    format_msg_time_label(m.created_at).unwrap_or_default();
+                                                view! {
+                                                    <div class=class_final>
+                                                        <div class="msg-meta" aria-hidden="true">
+                                                            <span class="msg-meta-role">{role_lbl}</span>
+                                                            <span class="msg-meta-time">{time_str}</span>
+                                                        </div>
+                                                        <span class="msg-body">{message_text_for_display(&m)}</span>
+                                                        {loading.then(|| {
+                                                            view! {
+                                                                <span class="typing-dots" aria-hidden="true">
+                                                                    <span></span>
+                                                                    <span></span>
+                                                                    <span></span>
+                                                                </span>
+                                                            }
+                                                        })}
+                                                    </div>
+                                                }
+                                            })
+                                            .collect_view()
+                                            .into_any()
+                                    }
                                 })
                             }}
                         </div>
+                        </div>
                     </div>
-                    <div class="composer">
+                    <div class="composer composer-ds">
+                        <div class="composer-inner-ds">
                         <textarea
                             class="composer-input"
                             prop:value=move || draft.get()
@@ -1420,43 +1599,81 @@ fn App() -> impl IntoView {
                             placeholder="输入消息，Enter 发送 / Shift+Enter 换行…"
                             rows="3"
                         ></textarea>
-                        <div class="composer-actions">
+                        <div class="composer-bar-actions">
                             <button
                                 type="button"
-                                class="btn btn-primary"
-                                prop:disabled=move || status_busy.get() || !initialized.get()
-                                on:click=send_message.clone()
-                            >"发送"</button>
-                            <button
-                                type="button"
-                                class="btn btn-muted"
+                                class="btn btn-muted btn-sm"
                                 prop:disabled=move || !status_busy.get()
                                 on:click=cancel_stream.clone()
                             >"停止"</button>
+                            <button
+                                type="button"
+                                class="btn btn-primary btn-send-icon"
+                                prop:disabled=move || status_busy.get() || !initialized.get()
+                                on:click=send_message.clone()
+                                title="发送"
+                            >"➤"</button>
+                        </div>
                         </div>
                     </div>
                 </div>
 
                 <div
                     class=move || {
-                        if workspace_visible.get() || tasks_visible.get() {
-                            "side-column"
-                        } else {
-                            "side-column side-column-collapsed"
+                        let mut c = String::from("side-column");
+                        if !workspace_visible.get() && !tasks_visible.get() {
+                            c.push_str(" side-column-rail-only");
                         }
+                        c
                     }
                     style:width=move || {
                         if workspace_visible.get() || tasks_visible.get() {
                             format!("{}px", side_width.get())
                         } else {
-                            "0px".to_string()
+                            format!("{TOOLBAR_RAIL_WIDTH_PX}px")
                         }
                     }
                 >
-                        <div class="side-toolbar">
-                            <button type="button" class="btn btn-icon" title="收窄侧栏" on:click=narrow_side.clone()>"◀"</button>
-                            <button type="button" class="btn btn-icon" title="加宽侧栏" on:click=widen_side.clone()>"▶"</button>
+                        <div class="shell-main-toolbar" role="toolbar" aria-label="视图与主题">
+                            <button
+                                type="button"
+                                class="btn btn-secondary btn-sm"
+                                class:active=move || workspace_visible.get()
+                                on:click=move |_| workspace_visible.update(|v| *v = !*v)
+                                title="工作区"
+                            >
+                                "工作区"
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-secondary btn-sm"
+                                class:active=move || tasks_visible.get()
+                                on:click=move |_| tasks_visible.update(|v| *v = !*v)
+                                title="任务"
+                            >
+                                "任务"
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-secondary btn-sm"
+                                class:active=move || status_bar_visible.get()
+                                on:click=move |_| status_bar_visible.update(|v| *v = !*v)
+                                title="状态栏"
+                            >
+                                "状态"
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm" on:click=theme_toggle>
+                                "主题"
+                            </button>
                         </div>
+                        <Show when=move || {
+                            workspace_visible.get() || tasks_visible.get()
+                        }>
+                            <div class="side-toolbar">
+                                <button type="button" class="btn btn-icon" title="收窄侧栏" on:click=narrow_side.clone()>"◀"</button>
+                                <button type="button" class="btn btn-icon" title="加宽侧栏" on:click=widen_side.clone()>"▶"</button>
+                            </div>
+                        </Show>
                         <div class="side-body">
                             <Show when=move || workspace_visible.get()>
                                 <div
@@ -1820,6 +2037,8 @@ fn App() -> impl IntoView {
                     </span>
                 </footer>
             </Show>
+
+            </div>
 
             <Show when=move || session_modal.get()>
                 <div class="modal-backdrop" on:click=move |_| session_modal.set(false)>

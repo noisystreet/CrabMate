@@ -25,6 +25,11 @@
   border-right-color: transparent;
 }
 
+/* 仅显示右列工具栏窄轨时隐藏侧栏内容区，避免占高 */
+.side-column-rail-only .side-body {
+  display: none;
+}
+
 .side-toolbar {
   display: flex;
   gap: 6px;
