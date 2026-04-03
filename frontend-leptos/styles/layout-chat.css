@@ -107,12 +107,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .messages-empty {
-    animation: none;
-  }
-}
-
 .messages-empty-card {
   padding: var(--space-5) var(--space-5) var(--space-4);
   border-radius: var(--radius-lg);
@@ -393,13 +387,6 @@
   40% {
     opacity: 1;
     transform: translateY(-3px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .typing-dots span {
-    animation: none;
-    opacity: 0.6;
   }
 }
 

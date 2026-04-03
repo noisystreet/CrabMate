@@ -87,6 +87,48 @@
   color: var(--muted);
 }
 
+/* —— 设置弹窗 —— */
+.settings-block {
+  margin-bottom: var(--space-5);
+}
+
+.settings-block:last-child {
+  margin-bottom: 0;
+}
+
+.settings-block-title {
+  margin: 0 0 var(--space-2);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.settings-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-checkbox-label input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
 .session-row {
   display: flex;
   align-items: stretch;

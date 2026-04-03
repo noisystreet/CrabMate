@@ -191,7 +191,7 @@
   backdrop-filter: blur(10px);
 }
 
-/* 工作区 / 任务 / 状态 / 主题：右列（side-column）顶部，不占聊天列 */
+/* 工作区 / 任务 / 状态 / 设置：右列（side-column）顶部，不占聊天列 */
 .side-column .shell-main-toolbar {
   display: flex;
   flex-shrink: 0;

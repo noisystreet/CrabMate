@@ -1,11 +1,19 @@
 @media (prefers-reduced-motion: reduce) {
-  .modal-backdrop,
+  /* 弹窗：去掉入场动画后显式落到终态，避免个别引擎在 animation:none 下残留 keyframe 初始帧 */
+  .modal-backdrop {
+    animation: none;
+    opacity: 1;
+  }
+
   .modal {
     animation: none;
+    opacity: 1;
+    transform: none;
   }
 
   .side-column {
     transition: none;
+    will-change: auto;
   }
 
   .column-resize-handle:hover,
@@ -27,6 +35,19 @@
     transform: none;
   }
 
+  /* 与 list-stagger 同理：空会话占位曾用 both 填充，显式终态避免闪隐或位移残留 */
+  .messages-empty {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .typing-dots span {
+    animation: none;
+    opacity: 0.6;
+    transform: none;
+  }
+
   .status-run-running .status-run-dot,
   .status-run-tool .status-run-dot {
     animation: none;
@@ -34,7 +55,20 @@
     transform: none;
   }
 
-  .approval-bar-detail {
+  .approval-bar-detail,
+  .approval-bar-chevron {
     transition: none;
+  }
+
+  /* 移动端抽屉式左栏：与桌面右列一致，关闭 transform 过渡，避免展开/收起时「拖影」式布局感知 */
+  @media (max-width: 768px) {
+    .nav-rail {
+      transition: none;
+    }
+
+    .nav-rail-backdrop {
+      animation: none;
+      opacity: 1;
+    }
   }
 }
