@@ -236,7 +236,8 @@ async fn prepare_staged_planner_no_tools_request(
     } else {
         instr.to_string()
     };
-    let preserve = crate::llm::kimi_k2_5_vendor_requires_tool_call_reasoning(p.cfg.as_ref());
+    let preserve = crate::llm::llm_vendor_adapter(p.cfg.as_ref())
+        .preserve_assistant_tool_call_reasoning(p.cfg.as_ref());
     Ok(no_tools_chat_request_from_messages(
         p.cfg.as_ref(),
         build_planner_messages(p.messages, plan_system, preserve),

@@ -26,7 +26,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_API_BASE` | Overrides `api_base`. |
 | `AGENT_MODEL` | Overrides `model`. |
 | `AGENT_LLM_HTTP_AUTH_MODE` | `bearer` (needs **`API_KEY`**) or `none` (no `Authorization` on `chat/completions` / `models`). |
-| `AGENT_LLM_REASONING_SPLIT` | If true, request body includes `reasoning_split: true` (MiniMax chain split; see § MiniMax). |
+| `AGENT_LLM_REASONING_SPLIT` | Overrides `llm_reasoning_split`. If unset in TOML/env: **MiniMax** gateways (by `model` / `api_base`) default to **on**; others default **off** (see § MiniMax). |
 | `AGENT_LLM_BIGMODEL_THINKING` | If true, Zhipu **`thinking: { "type": "enabled" }`** (GLM-5; see § GLM). |
 | `AGENT_LLM_KIMI_THINKING_DISABLED` | If true, **`thinking: { "type": "disabled" }`** for Moonshot **kimi-k2.5** (see § Kimi). |
 | `AGENT_LLM_FOLD_SYSTEM_INTO_USER` | Merge `system` into `user` for gateways that reject standalone `system`. |
@@ -242,10 +242,10 @@ api_base = "https://api.minimaxi.com/v1"
 model = "MiniMax-M2.7"
 llm_http_auth_mode = "bearer"
 llm_fold_system_into_user = true
-llm_reasoning_split = true
+# llm_reasoning_split: omit → defaults to true on MiniMax; set false to disable
 ```
 
-**`API_KEY`** as Bearer. **`llm_reasoning_split`**: request includes **`reasoning_split: true`**; streaming **`delta.reasoning_details`** may fold into **`reasoning_content`**.
+**`API_KEY`** as Bearer. When **`llm_reasoning_split`** is true (including MiniMax default when omitted), the request includes **`reasoning_split: true`**; streaming **`delta.reasoning_details`** may fold into **`reasoning_content`**.
 
 ## Zhipu GLM (OpenAI-compatible)
 

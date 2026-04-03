@@ -28,7 +28,7 @@
 | `AGENT_API_BASE` | 覆盖 `api_base`。 |
 | `AGENT_MODEL` | 覆盖 `model`。 |
 | `AGENT_LLM_HTTP_AUTH_MODE` | `bearer`（默认，需 **`API_KEY`**）或 `none`（不向 `chat/completions` / `models` 发 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）。 |
-| `AGENT_LLM_REASONING_SPLIT` | 为真时在请求体中带 `reasoning_split: true`（MiniMax 等思维链分离；见下文「MiniMax」）。 |
+| `AGENT_LLM_REASONING_SPLIT` | 覆盖 `llm_reasoning_split`。未在 TOML/环境变量设置时：**MiniMax 网关**（`model` 或 `api_base` 可识别为 MiniMax）**默认为开**（`true`），其它网关默认为关；见下文「MiniMax」。 |
 | `AGENT_LLM_BIGMODEL_THINKING` | 为真时在请求体中带智谱 **`thinking: { "type": "enabled" }`**（GLM-5 深度思考；见下文「智谱 GLM」）。 |
 | `AGENT_LLM_KIMI_THINKING_DISABLED` | 为真时在请求体中带 **`thinking: { "type": "disabled" }`**（关闭 Moonshot **kimi-k2.5** 默认思考；见下文「Moonshot（Kimi）」）。 |
 | `AGENT_LLM_FOLD_SYSTEM_INTO_USER` | 为真时将 `system` 并入 `user`（不接受独立 `system` 的网关/代理）。 |
@@ -261,10 +261,11 @@ api_base = "https://api.minimaxi.com/v1"
 model = "MiniMax-M2.7"   # 或 M2.7-highspeed / M2.5 等；以控制台为准
 llm_http_auth_mode = "bearer"
 llm_fold_system_into_user = true
-llm_reasoning_split = true
+# llm_reasoning_split：可省略；未写时 MiniMax 网关默认为 true（思维链分离）
+# llm_reasoning_split = false   # 若不需要 reasoning_split，可显式关闭
 ```
 
-环境变量 **`API_KEY`** 填平台发放的密钥（与 DeepSeek 等一致，走 **`Authorization: Bearer`**）。**`llm_reasoning_split = true`** 时请求体会包含 **`reasoning_split: true`**（与文档中 `extra_body={"reasoning_split": True}` 一致）；供应商若在流式 **`delta`** 中返回 **`reasoning_details`**（常见为带 **`text`** 的 JSON 数组），CrabMate 会将其**增量合并**进内部的 **`reasoning_content`** 流与终态消息，终端/Web 仍按现有「思考 / 正文」路径展示。不需要分离思维链时保持默认 **`llm_reasoning_split = false`** 即可。
+环境变量 **`API_KEY`** 填平台发放的密钥（与 DeepSeek 等一致，走 **`Authorization: Bearer`**）。**`llm_reasoning_split`** 为 **`true`**（含未写配置时 MiniMax 的默认值）时，请求体会包含 **`reasoning_split: true`**（与文档中 `extra_body={"reasoning_split": True}` 一致）；供应商若在流式 **`delta`** 中返回 **`reasoning_details`**（常见为带 **`text`** 的 JSON 数组），CrabMate 会将其**增量合并**进内部的 **`reasoning_content`** 流与终态消息，终端/Web 仍按现有「思考 / 正文」路径展示。非 MiniMax 网关未写该键时默认为 **`false`**；MiniMax 下不需要分离思维链时请显式 **`llm_reasoning_split = false`** 或 **`AGENT_LLM_REASONING_SPLIT=0`**。
 
 ## 智谱 GLM（OpenAI 兼容）
 

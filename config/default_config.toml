@@ -13,10 +13,6 @@ max_tokens = 2048
 # 注意：一些模型只支持设置固定的温度，如kimi-k2.5系列模型。
 temperature = 0.7
 
-# 对于MiniMax系列模型: 已测 model 含 MiniMax-M2.7、MiniMax-M2.7-highspeed、MiniMax-M2.5；
-# 可选 llm_reasoning_split = true（见 docs/CONFIGURATION.md 与 platform.minimaxi.com OpenAI 兼容文档）。
-# llm_reasoning_split = false
-
 # MiniMax系列模型文档示例含 role: system，但直连 api.minimaxi.com 等仍常见 HTTP 400「invalid message role: system」；默认 true 将系统提示并入 user。换 DeepSeek / 标准 OpenAI 兼容且需保留独立 system 条时可设 false（AGENT_LLM_FOLD_SYSTEM_INTO_USER=0）。
 llm_fold_system_into_user = false
 

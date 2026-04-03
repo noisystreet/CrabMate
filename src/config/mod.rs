@@ -1766,6 +1766,10 @@ fn finalize(
         None => types::LlmHttpAuthMode::default(),
     };
 
+    let llm_reasoning_split = b.llm_reasoning_split.unwrap_or_else(|| {
+        crate::llm::vendor::default_llm_reasoning_split_for_gateway(&b.model, &b.api_base)
+    });
+
     Ok(AgentConfig {
         api_base: b.api_base,
         model: b.model,
@@ -1781,7 +1785,7 @@ fn finalize(
         max_tokens,
         temperature,
         llm_seed: b.llm_seed,
-        llm_reasoning_split: b.llm_reasoning_split.unwrap_or(false),
+        llm_reasoning_split,
         llm_bigmodel_thinking: b.llm_bigmodel_thinking.unwrap_or(false),
         llm_kimi_thinking_disabled: b.llm_kimi_thinking_disabled.unwrap_or(false),
         llm_fold_system_into_user: b.llm_fold_system_into_user.unwrap_or(false),
@@ -1901,6 +1905,59 @@ mod embedded_shard_parse_tests {
             err.contains("嵌入默认配置"),
             "expected Chinese prefix in error: {err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod llm_reasoning_split_default_tests {
+    use super::load_config;
+    use std::fs;
+
+    #[test]
+    fn finalize_respects_omitted_reasoning_split_for_non_minimax() {
+        assert!(
+            !crate::llm::vendor::default_llm_reasoning_split_for_gateway(
+                "deepseek-chat",
+                "https://api.deepseek.com/v1",
+            )
+        );
+    }
+
+    #[test]
+    fn minimax_user_toml_without_key_defaults_true() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("agent.toml");
+        fs::write(
+            &path,
+            r#"[agent]
+api_base = "https://api.minimaxi.com/v1"
+model = "MiniMax-M2.7"
+llm_fold_system_into_user = true
+"#,
+        )
+        .expect("write");
+        let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+        assert!(
+            cfg.llm_reasoning_split,
+            "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
+        );
+    }
+
+    #[test]
+    fn minimax_user_toml_explicit_false() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("agent.toml");
+        fs::write(
+            &path,
+            r#"[agent]
+api_base = "https://api.minimaxi.com/v1"
+model = "MiniMax-M2.7"
+llm_reasoning_split = false
+"#,
+        )
+        .expect("write");
+        let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+        assert!(!cfg.llm_reasoning_split);
     }
 }
 

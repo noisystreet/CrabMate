@@ -10,7 +10,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::llm::{
     ChatCompletionsBackend, CompleteChatRetryingParams, chat_request_thinking_from_cfg,
-    complete_chat_retrying, vendor_temperature_for_model,
+    complete_chat_retrying, vendor_temperature_for_config,
 };
 use crate::types::{ChatRequest, Message, is_message_excluded_from_llm_context_except_memory};
 
@@ -146,7 +146,7 @@ pub async fn maybe_summarize_with_llm(
         tools: None,
         tool_choice: None,
         max_tokens: cfg.context_summary_max_tokens,
-        temperature: vendor_temperature_for_model(&cfg.model, 0.2),
+        temperature: vendor_temperature_for_config(cfg, 0.2),
         seed: None,
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),

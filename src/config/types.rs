@@ -340,7 +340,7 @@ pub struct AgentConfig {
     pub temperature: f32,
     /// 可选：写入 `chat/completions` 的 **`seed`**（OpenAI 兼容；`None` 则请求 JSON 省略该字段）。
     pub llm_seed: Option<i64>,
-    /// MiniMax OpenAI 兼容：为 `true` 时请求体带 **`reasoning_split`**，流式思维链可走 **`delta.reasoning_details`**（并入 [`crate::types::Message::reasoning_content`]）。
+    /// MiniMax OpenAI 兼容：为 `true` 时请求体带 **`reasoning_split`**，流式思维链可走 **`delta.reasoning_details`**（并入 [`crate::types::Message::reasoning_content`]）。未在配置中显式设置时，**MiniMax 网关默认为 `true`**，其余为 **`false`**（见 [`crate::llm::vendor::default_llm_reasoning_split_for_gateway`]）。
     pub llm_reasoning_split: bool,
     /// 智谱 **open.bigmodel.cn**（GLM-5 等）：为 `true` 时请求体带 **`thinking: { "type": "enabled" }`**，与 [GLM-5 调用示例](https://docs.bigmodel.cn/cn/guide/models/text/glm-5) 一致；流式 **`delta.reasoning_content`** 由现有解析路径消费。
     pub llm_bigmodel_thinking: bool,
