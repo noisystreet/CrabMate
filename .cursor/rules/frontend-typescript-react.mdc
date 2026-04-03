@@ -21,4 +21,4 @@ alwaysApply: false
 ## 其它
 
 - 勿将真实 **API Key**、token 写入前端源码或提交到仓库；环境变量示例用占位符（见 **`.cursor/rules/secrets-and-logging.mdc`**）。
-- 样式与结构尽量沿用现有 `frontend-leptos/styles.css`（聚合入口）与 **`frontend-leptos/styles/*.css`** 模块划分，避免无关大重构。
+- 样式与结构尽量沿用 **`frontend-leptos/styles/*.css`** 模块与 **`frontend-leptos/index.html`** 中的 `data-trunk` CSS 链；新增全局样式时同步在 `index.html` 增加对应 `link`，避免无关大重构。

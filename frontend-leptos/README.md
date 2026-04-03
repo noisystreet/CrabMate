@@ -9,7 +9,7 @@
 
 构建时若环境变量 **`NO_COLOR=1`**，部分 Trunk 版本会报错，可先 `unset NO_COLOR` 再执行 `trunk build`。
 
-样式源文件按模块拆在 **`frontend-leptos/styles/*.css`**，根目录 **`styles.css`** 仅 `@import` 聚合；修改后仍需 `trunk build` 生成 `dist`。发版前视觉手测清单见 **`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`**。
+样式源文件按模块拆在 **`frontend-leptos/styles/*.css`**；**Trunk** 在 **`index.html`** 里对每条模块 CSS 使用 `<link data-trunk rel="css" href="styles/…">` 打入 `dist`（单文件 `@import` 在打包后路径会失效，勿只靠根目录 `styles.css` 聚合）。修改后仍需 `trunk build` 生成 `dist`。发版前视觉手测清单见 **`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`**。
 
 ## 构建
 

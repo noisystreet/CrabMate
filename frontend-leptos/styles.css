@@ -1,11 +1,5 @@
-/* Trunk 入口：按模块 @import；具体规则在 styles/*.css */
-
-@import "./styles/tokens.css";
-@import "./styles/base.css";
-@import "./styles/components.css";
-@import "./styles/layout-chat.css";
-@import "./styles/sidebar.css";
-@import "./styles/status.css";
-@import "./styles/approval.css";
-@import "./styles/modal.css";
-@import "./styles/motion.css";
+/*
+ * 样式模块在 styles/*.css；Trunk 构建时由 index.html 中多条
+ * <link data-trunk rel="css" href="styles/…"> 逐文件打入 dist。
+ * 勿依赖本文件的 @import：打包后相对路径无法解析到子目录中的 CSS。
+ */
