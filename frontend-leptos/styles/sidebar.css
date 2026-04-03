@@ -15,6 +15,10 @@
   will-change: width;
 }
 
+.side-column.side-column-resizing {
+  transition: none;
+}
+
 .side-column-collapsed {
   border-left-color: transparent;
   opacity: 0;
@@ -28,15 +32,6 @@
 /* 仅显示右列工具栏窄轨时隐藏侧栏内容区，避免占高 */
 .side-column-rail-only .side-body {
   display: none;
-}
-
-.side-toolbar {
-  display: flex;
-  gap: 6px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--bg-elevated) 38%, var(--bg));
-  flex-shrink: 0;
 }
 
 .side-body {
@@ -121,16 +116,88 @@
   flex-shrink: 0;
 }
 
-.workspace-path {
-  font-size: 11px;
-  font-family: var(--font-mono);
+.workspace-set {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.workspace-set-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--muted);
-  margin-bottom: 10px;
-  word-break: break-all;
+  margin-bottom: 6px;
+}
+
+.workspace-set-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+
+.workspace-set-input-row .workspace-set-input {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.workspace-set-browse {
+  flex-shrink: 0;
+  align-self: stretch;
+  white-space: nowrap;
+}
+
+.workspace-set-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
   padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text);
   background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle);
+}
+
+.workspace-set-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.workspace-set-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.workspace-set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.workspace-set-error {
+  margin-top: 6px;
+  margin-bottom: 0;
+  font-size: 12px;
+}
+
+.workspace-set-hint {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--muted) 92%, var(--text));
+}
+
+.workspace-set-hint code {
+  font-family: var(--font-mono);
+  font-size: 9px;
 }
 
 .workspace-list {

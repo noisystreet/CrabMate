@@ -178,6 +178,8 @@ Static assets are served from `frontend-leptos/dist`.
 | POST | `/chat/branch` | Branch/truncate session (see dev doc) |
 | GET | `/status` | Backend status |
 | GET | `/workspace` | Workspace list |
+| POST | `/workspace` | Set Web workspace root: JSON `{"path":"/abs/dir"}`; omit `path` or use empty string to reset to default (`run_command_working_dir`); path must exist and lie under `workspace_allowed_roots` |
+| GET | `/workspace/pick` | Native folder picker on the **server host** (`rfd`), JSON `{"path":null}` or `{"path":"/chosen"}`; often `null` without GUI or if cancelled; used by Web sidebar “Browse…” |
 | GET | `/workspace/profile` | Project profile Markdown |
 | GET | `/workspace/file` | Read file in workspace (`path` required; optional **`encoding`**, same as `read_file`, default UTF-8 strict; 1 MiB cap) |
 | GET | `/health` | Health |

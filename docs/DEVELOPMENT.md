@@ -410,6 +410,8 @@ flowchart LR
 ### `frontend-leptos/src/api.rs`
 
 - 浏览器 `fetch` 封装与 `/chat/stream` SSE 读取（UTF-8 分块安全拼接、`data:` 分发、`[DONE]` 处理）。
+- **`post_workspace_set`**：`POST /workspace` 设置或恢复工作区根；错误响应解析 `error` 字段供侧栏展示。
+- **`fetch_workspace_pick`**：`GET /workspace/pick` 触发服务端 `rfd` 选目录，将返回路径写入侧栏输入框（再点「应用」提交 `POST /workspace`）。
 - 纯文本 `data:` 作为 delta；JSON `data:` 经 `sse_dispatch.rs` 分类为控制面并消费（工具状态、审批请求、工作区刷新、分阶段规划通知等）。
 - 审批决策通过 `submit_chat_approval` 发送到 `POST /chat/approval`。
 

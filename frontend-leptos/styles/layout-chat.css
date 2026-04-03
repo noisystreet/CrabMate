@@ -7,6 +7,46 @@
   align-items: stretch;
 }
 
+/* 对话列与右列之间的拖拽分隔条（隐藏时不占交互，见 .column-resize-handle-off） */
+.column-resize-handle {
+  flex-shrink: 0;
+  width: 6px;
+  margin: 0 -3px;
+  cursor: col-resize;
+  z-index: 2;
+  touch-action: none;
+  position: relative;
+  align-self: stretch;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.column-resize-handle:hover,
+.column-resize-handle:active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.column-resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border-subtle);
+  pointer-events: none;
+}
+
+.column-resize-handle-off {
+  display: none;
+}
+
+.main-row-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
 .chat-column {
   flex: 1;
   min-width: 0;
