@@ -102,12 +102,3 @@
   flex-wrap: wrap;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .approval-bar-detail {
-    transition: none;
-  }
-
-  .approval-bar-chevron {
-    transition: none;
-  }
-}

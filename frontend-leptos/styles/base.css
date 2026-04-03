@@ -34,6 +34,12 @@ body {
     radial-gradient(ellipse 60% 40% at 0% 100%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 50%);
 }
 
+/* 设置中关闭「背景光晕」时仅保留纯色底，避免与浅色 body's 渐变规则抢优先级，放在其后 */
+:root[data-bg-decor="plain"] html,
+:root[data-bg-decor="plain"] body {
+  background-image: none;
+}
+
 #root,
 body > * {
   height: 100%;

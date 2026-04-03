@@ -42,13 +42,15 @@ const WORKSPACE_VISIBLE_KEY: &str = "agent-demo-workspace-visible";
 const TASKS_VISIBLE_KEY: &str = "agent-demo-tasks-visible";
 const STATUS_BAR_VISIBLE_KEY: &str = "agent-demo-status-bar-visible";
 const THEME_KEY: &str = "crabmate-theme";
+/// 为 `true` 时显示页面径向渐变光晕；`false` 时仅纯色背景（`data-bg-decor="plain"`）。
+const BG_DECOR_KEY: &str = "crabmate-bg-decor";
 const AGENT_ROLE_KEY: &str = "agent-demo-agent-role";
 const DEFAULT_SIDE_WIDTH: f64 = 280.0;
 const MIN_SIDE_WIDTH: f64 = 200.0;
 const MAX_SIDE_WIDTH: f64 = 560.0;
 /// 为左侧对话列预留的最小宽度（视口过窄时仍允许侧栏拖到 `MIN_SIDE_WIDTH`，由 flex 挤压主列）。
 const MIN_CHAT_RESERVE_PX: f64 = 240.0;
-/// 工作区与任务均关闭时，右列仅保留工具栏（工作区/任务/状态/主题）的窄轨宽度。
+/// 工作区与任务均关闭时，右列仅保留工具栏（工作区/任务/状态/设置）的窄轨宽度。
 const TOOLBAR_RAIL_WIDTH_PX: f64 = 84.0;
 const AUTO_SCROLL_RESUME_GAP_PX: i32 = 24;
 
@@ -784,6 +786,7 @@ fn App() -> impl IntoView {
             .and_then(|s| s.get_item(THEME_KEY).ok().flatten())
             .unwrap_or_else(|| "dark".to_string()),
     );
+    let bg_decor = RwSignal::new(load_bool_key(BG_DECOR_KEY, true));
     let status_busy = RwSignal::new(false);
     let status_err = RwSignal::new(None::<String>);
     let tool_busy = RwSignal::new(false);
@@ -809,6 +812,7 @@ fn App() -> impl IntoView {
     let tasks_loading = RwSignal::new(false);
     let pending_approval = RwSignal::new(None::<(String, String, String)>);
     let session_modal = RwSignal::new(false);
+    let settings_modal = RwSignal::new(false);
     let session_context_menu = RwSignal::new(None::<SessionContextAnchor>);
     let mobile_nav_open = RwSignal::new(false);
     let approval_expanded = RwSignal::new(false);
@@ -904,6 +908,19 @@ fn App() -> impl IntoView {
             && let Some(root) = doc.document_element()
         {
             let _ = root.set_attribute("data-theme", &t);
+        }
+    });
+
+    Effect::new(move |_| {
+        store_bool_key(BG_DECOR_KEY, bg_decor.get());
+        if let Some(doc) = web_sys::window().and_then(|w| w.document())
+            && let Some(root) = doc.document_element()
+        {
+            if bg_decor.get() {
+                let _ = root.remove_attribute("data-bg-decor");
+            } else {
+                let _ = root.set_attribute("data-bg-decor", "plain");
+            }
         }
     });
 
@@ -1320,18 +1337,6 @@ fn App() -> impl IntoView {
         }
     };
 
-    let theme_toggle = {
-        move |_| {
-            theme.update(|t| {
-                if t == "dark" {
-                    *t = "light".to_string();
-                } else {
-                    *t = "dark".to_string();
-                }
-            });
-        }
-    };
-
     let side_resize_session: Rc<RefCell<Option<(f64, f64)>>> = Rc::new(RefCell::new(None));
     let side_resize_handles: Rc<RefCell<Option<(WindowListenerHandle, WindowListenerHandle)>>> =
         Rc::new(RefCell::new(None));
@@ -1673,7 +1678,7 @@ fn App() -> impl IntoView {
                                                     </p>
                                                     <ul class="messages-empty-tips">
                                                         <li>"左侧可新建对话、切换最近会话，或「管理会话」导出与重命名。"</li>
-                                                        <li>"最右列为工具栏与工作区/任务面板：右列顶部可开关工作区、任务、状态栏与主题。"</li>
+                                                        <li>"最右列为工具栏与工作区/任务面板：右列顶部可开关工作区、任务、状态栏，并通过「设置」调整主题与页面背景。"</li>
                                                     </ul>
                                                 </div>
                                             </div>
@@ -1815,7 +1820,7 @@ fn App() -> impl IntoView {
                         }
                     }
                 >
-                        <div class="shell-main-toolbar" role="toolbar" aria-label="视图与主题">
+                        <div class="shell-main-toolbar" role="toolbar" aria-label="视图与设置">
                             <button
                                 type="button"
                                 class="btn btn-secondary btn-sm"
@@ -1843,8 +1848,13 @@ fn App() -> impl IntoView {
                             >
                                 "状态"
                             </button>
-                            <button type="button" class="btn btn-secondary btn-sm" on:click=theme_toggle>
-                                "主题"
+                            <button
+                                type="button"
+                                class="btn btn-secondary btn-sm"
+                                on:click=move |_| settings_modal.set(true)
+                                title="外观与背景"
+                            >
+                                "设置"
                             </button>
                         </div>
                         <div class="side-body">
@@ -2357,6 +2367,62 @@ fn App() -> impl IntoView {
                                     })
                                     .collect_view()
                             }}
+                        </div>
+                    </div>
+                </div>
+            </Show>
+
+            <Show when=move || settings_modal.get()>
+                <div class="modal-backdrop" on:click=move |_| settings_modal.set(false)>
+                    <div
+                        class="modal"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="settings-modal-title"
+                        on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                    >
+                        <div class="modal-head">
+                            <h2 class="modal-title" id="settings-modal-title">"设置"</h2>
+                            <span class="modal-badge">"外观"</span>
+                            <span class="modal-head-spacer"></span>
+                            <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| settings_modal.set(false)>
+                                "关闭"
+                            </button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="modal-hint">"主题与页面背景选项保存在本机浏览器（localStorage）。"</p>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">"主题"</h3>
+                                <div class="settings-row">
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        class:active=move || theme.get() == "dark"
+                                        on:click=move |_| theme.set("dark".to_string())
+                                    >
+                                        "深色"
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        class:active=move || theme.get() == "light"
+                                        on:click=move |_| theme.set("light".to_string())
+                                    >
+                                        "浅色"
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">"页面背景"</h3>
+                                <label class="settings-checkbox-label">
+                                    <input
+                                        type="checkbox"
+                                        prop:checked=move || bg_decor.get()
+                                        on:change=move |_| bg_decor.update(|v| *v = !*v)
+                                    />
+                                    <span>"显示背景光晕（径向渐变）"</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </div>
