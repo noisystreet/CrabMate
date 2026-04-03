@@ -38,6 +38,8 @@
 # session_workspace_changelist_enabled = true   # 本会话工具写入路径 + diff 摘要注入模型上下文；AGENT_SESSION_WORKSPACE_CHANGELIST_ENABLED
 # session_workspace_changelist_max_chars = 12000   # 0 用默认 12000；AGENT_SESSION_WORKSPACE_CHANGELIST_MAX_CHARS
 # context_summary_trigger_chars = 0
+# health_llm_models_probe = false   # true：/health 附带 GET …/models 连通性（无 completion）；AGENT_HEALTH_LLM_MODELS_PROBE
+# health_llm_models_probe_cache_secs = 120   # 5–86400；AGENT_HEALTH_LLM_MODELS_PROBE_CACHE_SECS
 # chat_queue_max_concurrent = 2
 # chat_queue_max_pending = 32
 # conversation_store_sqlite_path = ".crabmate/conversations.db"

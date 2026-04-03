@@ -74,6 +74,8 @@ struct ConfigBuilder {
     context_summary_tail_messages: Option<u64>,
     context_summary_max_tokens: Option<u64>,
     context_summary_transcript_max_chars: Option<u64>,
+    health_llm_models_probe: Option<bool>,
+    health_llm_models_probe_cache_secs: Option<u64>,
     chat_queue_max_concurrent: Option<u64>,
     chat_queue_max_pending: Option<u64>,
     parallel_readonly_tools_max: Option<u64>,
@@ -306,6 +308,12 @@ impl ConfigBuilder {
         self.context_summary_transcript_max_chars = agent
             .context_summary_transcript_max_chars
             .or(self.context_summary_transcript_max_chars);
+        self.health_llm_models_probe = agent
+            .health_llm_models_probe
+            .or(self.health_llm_models_probe);
+        self.health_llm_models_probe_cache_secs = agent
+            .health_llm_models_probe_cache_secs
+            .or(self.health_llm_models_probe_cache_secs);
         self.chat_queue_max_concurrent = agent
             .chat_queue_max_concurrent
             .or(self.chat_queue_max_concurrent);
@@ -521,6 +529,7 @@ impl ConfigBuilder {
 /// - **`API_KEY`**：仍来自**进程环境**；本函数**不**读取或改写密钥，与启动时一致。
 /// - **`conversation_store_sqlite_path`**：**不**热更（会话 SQLite 连接在启动时打开；改路径须重启 `serve`）。
 /// - **`api_base` / `model` / `llm_http_auth_mode`**：从磁盘+环境变量**重新应用**（与 [`load_config`] 一致），**下一轮** LLM 请求起生效；共享 `reqwest::Client` 的连接池可能短暂保留旧主机空闲连接，直至池超时。
+/// - **`health_llm_models_probe` / `health_llm_models_probe_cache_secs`**：热更后下一 **`GET /health`** 起生效；**不**自动清空进程内探测缓存（仍在 TTL 内会继续沿用旧结果直至过期）。
 /// - **`system_prompt`**（含 **`system_prompt_file`** 重读）：从 `src` 写入，下一轮起生效。
 /// - **MCP**：`mcp_enabled` / `mcp_command` / `mcp_tool_timeout_secs` 会更新；调用方应在提交前 [`crate::mcp::clear_mcp_process_cache`].
 pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) {
@@ -582,6 +591,8 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.web_api_bearer_token
         .clone_from(&src.web_api_bearer_token);
     dst.allow_insecure_no_auth_for_non_loopback = src.allow_insecure_no_auth_for_non_loopback;
+    dst.health_llm_models_probe = src.health_llm_models_probe;
+    dst.health_llm_models_probe_cache_secs = src.health_llm_models_probe_cache_secs;
     dst.chat_queue_max_concurrent = src.chat_queue_max_concurrent;
     dst.chat_queue_max_pending = src.chat_queue_max_pending;
     dst.parallel_readonly_tools_max = src.parallel_readonly_tools_max;
@@ -1001,6 +1012,16 @@ fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.context_summary_transcript_max_chars = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_HEALTH_LLM_MODELS_PROBE")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.health_llm_models_probe = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_HEALTH_LLM_MODELS_PROBE_CACHE_SECS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.health_llm_models_probe_cache_secs = Some(n);
     }
     if let Ok(v) = std::env::var("AGENT_CHAT_QUEUE_MAX_CONCURRENT")
         && let Ok(n) = v.trim().parse::<u64>()
@@ -1533,6 +1554,11 @@ fn finalize(
         .context_summary_transcript_max_chars
         .unwrap_or(120_000)
         .clamp(10_000, 2_000_000) as usize;
+    let health_llm_models_probe = b.health_llm_models_probe.unwrap_or(false);
+    let health_llm_models_probe_cache_secs = b
+        .health_llm_models_probe_cache_secs
+        .unwrap_or(120)
+        .clamp(5, 86_400);
     let chat_queue_max_concurrent = b.chat_queue_max_concurrent.unwrap_or(2).clamp(1, 256) as usize;
     let chat_queue_max_pending = b.chat_queue_max_pending.unwrap_or(32).clamp(1, 8192) as usize;
     let parallel_readonly_tools_max = b
@@ -1823,6 +1849,8 @@ fn finalize(
         workspace_allowed_roots,
         web_api_bearer_token,
         allow_insecure_no_auth_for_non_loopback,
+        health_llm_models_probe,
+        health_llm_models_probe_cache_secs,
         chat_queue_max_concurrent,
         chat_queue_max_pending,
         parallel_readonly_tools_max,

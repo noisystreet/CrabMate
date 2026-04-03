@@ -16,7 +16,7 @@
 
 | 子命令 | 说明 |
 |--------|------|
-| `serve [PORT]` | Web UI + HTTP API，默认 **8080**；`serve --host <ADDR>` 绑定地址（默认 `127.0.0.1`）。`--no-web` / `--cli-only` 仅 API。 |
+| `serve [PORT]` | Web UI + HTTP API，默认 **8080**；端口可写位置参数或 **`serve --port <PORT>`**（二者同时给出时 **`--port` 优先**）。`serve --host <ADDR>` 绑定地址（默认 `127.0.0.1`）。`--no-web` / `--cli-only` 仅 API。 |
 | `repl` | 交互式对话；**不写子命令时默认进入 repl**。 |
 | `chat` | 单次/脚本对话：`--query` / `--stdin` / `--user-prompt-file`、`--system-prompt-file`、`--messages-json-file`、`--message-file`（JSONL）、`--yes` / `--approve-commands`、`--output json`、`--no-stream`。 |
 | `bench` | 批量测评：`--benchmark`、`--batch` 等。 |
@@ -77,6 +77,7 @@ cargo run -- --config /path/to/my.toml serve
 RUST_LOG=debug cargo run -- --log /tmp/crabmate.log repl
 cargo run -- serve
 cargo run -- serve 3000
+cargo run -- serve --port 3000               # 与上一行等价
 cargo run -- --workspace /path/to/project serve 8080
 cargo run -- serve --host 0.0.0.0            # 注意安全与鉴权
 cargo run -- chat --query "北京今天天气怎么样"

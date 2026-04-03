@@ -277,9 +277,13 @@ pub struct GlobalOpts {
 /// Web 服务
 #[derive(Parser, Debug, Clone)]
 pub struct ServeCmd {
-    /// 监听端口（默认 8080）
-    #[arg(value_name = "PORT")]
+    /// 监听端口（默认 8080）；与位置参数 `PORT` 二选一，同时给出时以本选项为准
+    #[arg(long = "port", value_name = "PORT")]
     pub port: Option<u16>,
+
+    /// 监听端口（位置参数；与 `--port` 二选一）
+    #[arg(value_name = "PORT", index = 1)]
+    pub port_positional: Option<u16>,
 
     /// 监听 IP（默认 127.0.0.1）；局域网可设 0.0.0.0
     #[arg(long, value_name = "ADDR")]
@@ -716,7 +720,7 @@ fn build_parsed_cli_args(
             tool_replay: None,
         },
         Some(Commands::Serve(s)) => {
-            let port = s.port.or(Some(8080));
+            let port = s.port.or(s.port_positional).or(Some(8080));
             ParsedCliArgs {
                 config_path: config,
                 agent_role_cli: agent_role_cli.clone(),

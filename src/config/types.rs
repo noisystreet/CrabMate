@@ -418,6 +418,10 @@ pub struct AgentConfig {
     pub web_api_bearer_token: SecretString,
     /// 当监听非 loopback 地址且 `web_api_bearer_token` 为空时，是否允许继续启动（不安全，默认 false）。
     pub allow_insecure_no_auth_for_non_loopback: bool,
+    /// 为 `true` 时 `GET /health` 对当前 `api_base` 可选发起 **GET …/models**（仅列表 HTTP，无 chat/completions 计费）；默认 `false`，避免探活风暴。
+    pub health_llm_models_probe: bool,
+    /// [`Self::health_llm_models_probe`] 开启时，探测结果在进程内缓存的秒数（降低频繁 `/health` 对上游的请求频率）。
+    pub health_llm_models_probe_cache_secs: u64,
     /// Web `/chat` 任务最大并发执行数（单进程）
     pub chat_queue_max_concurrent: usize,
     /// Web 对话任务有界等待队列长度（`try_send` 满则 503）

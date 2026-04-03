@@ -81,6 +81,8 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 
 | Variable | Description |
 | --- | --- |
+| `AGENT_HEALTH_LLM_MODELS_PROBE` | When `1`/`true`, **`GET /health`** runs a **GET …/models** check (list endpoint only, no completion cost). Default off. |
+| `AGENT_HEALTH_LLM_MODELS_PROBE_CACHE_SECS` | Cache probe results in-process (**5–86400**, default **120**) to limit upstream traffic from frequent health polls. |
 | `AGENT_CHAT_QUEUE_MAX_CONCURRENT` | Max concurrent chat jobs. |
 | `AGENT_CHAT_QUEUE_MAX_PENDING` | Max queued chat jobs. |
 | `AGENT_PARALLEL_READONLY_TOOLS_MAX` | Max parallel readonly tools per round. |

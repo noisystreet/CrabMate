@@ -35,7 +35,6 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 - [ ] **Cross-process / multi-replica queue**: Today single-process `mpsc` + `Semaphore`; horizontal scale needs Redis/SQS etc.
 - [ ] **Rate limits / quotas**: For `/chat`, `/chat/stream` by IP or token (often with P0 auth).
-- [ ] **Health extensions**: Optional model connectivity probes (watch cost/frequency).
 - [ ] **Log correlation**: Unify `request_id` / `conversation_id` once session model lands.
 
 ---
@@ -132,7 +131,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 **Summary**: OpenAI-shaped types; structured tool results; `/health`; redaction; UI sanitization.
 
 - [ ] Request correlation ID through logs and SSE.
-- [ ] Health/capacity dimensions (disk, queue depth).
+- [ ] Health/capacity dimensions (disk, queue depth) on top of optional **`GET /health`** **`llm_models_endpoint`** (**`health_llm_models_probe`**).
 - [ ] Central rules library for `redact` and truncation when adding tools.
 
 ---

@@ -96,6 +96,8 @@
 
 | 环境变量 | 说明 |
 | --- | --- |
+| `AGENT_HEALTH_LLM_MODELS_PROBE` | 为 `1`/`true` 时 **`GET /health`** 附带对当前 **`api_base`** 的 **GET …/models** 连通性检查（列表接口，无 chat 计费）；默认关闭。 |
+| `AGENT_HEALTH_LLM_MODELS_PROBE_CACHE_SECS` | 上述探测结果在进程内缓存秒数（**5–86400**，默认 **120**），减轻高频健康检查对上游的请求。 |
 | `AGENT_CHAT_QUEUE_MAX_CONCURRENT` | 对话队列最大并发。 |
 | `AGENT_CHAT_QUEUE_MAX_PENDING` | 对话队列最大排队。 |
 | `AGENT_PARALLEL_READONLY_TOOLS_MAX` | 同轮只读工具并行上限。 |
