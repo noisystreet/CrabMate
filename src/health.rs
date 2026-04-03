@@ -1,10 +1,14 @@
 //! 运行状况检查：与 **`GET /health`** JSON 形状一致，供 Axum handler 与 TUI（F10）共用。
 //!
-//! 不发起网络请求；仅检查本进程可见的 API Key 是否非空、工作区可写、前端静态目录（可选）与若干本地 CLI。
+//! 默认**不**请求上游 LLM；可选（配置 [`crate::config::AgentConfig::health_llm_models_probe`]）对当前 `api_base` 发起 **GET …/models**（与 `crabmate probe` 同源，无 chat/completions 计费），并带进程内缓存以降低探活频率。
 
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Mutex;
+use std::time::Instant;
+
+use reqwest::Client;
 
 use crate::config::LlmHttpAuthMode;
 
@@ -21,6 +25,119 @@ pub struct HealthCheckItem {
 pub struct HealthReport {
     pub status: String,
     pub checks: BTreeMap<String, HealthCheckItem>,
+}
+
+/// 进程内缓存的上一次 **GET …/models** 健康探测结果（供 [`append_llm_models_endpoint_probe`] 复用）。
+#[derive(Clone)]
+pub struct CachedLlmModelsHealthProbe {
+    pub checked_at: Instant,
+    pub item: HealthCheckItem,
+}
+
+/// [`append_llm_models_endpoint_probe`] 的输入（减少参数个数，满足 clippy）。
+pub struct LlmModelsEndpointProbeParams<'a> {
+    pub enabled: bool,
+    pub cache_secs: u64,
+    pub cache_cell: &'a Mutex<Option<CachedLlmModelsHealthProbe>>,
+    pub client: &'a Client,
+    pub api_base: &'a str,
+    pub api_key: &'a str,
+    pub auth_mode: LlmHttpAuthMode,
+}
+
+fn health_report_status(checks: &BTreeMap<String, HealthCheckItem>) -> String {
+    let required_ok = checks.get("api_key").map(|c| c.ok).unwrap_or(false)
+        && checks
+            .get("workspace_writable")
+            .map(|c| c.ok)
+            .unwrap_or(false);
+    if required_ok && checks.values().all(|c| c.ok) {
+        "ok".to_string()
+    } else {
+        "degraded".to_string()
+    }
+}
+
+/// 在 [`build_health_report`] 之后可选追加 **`llm_models_endpoint`** 检查项并重算 **`status`**。
+///
+/// 使用与 **`crabmate models` / `crabmate probe`** 相同的 [`crate::llm::fetch_models_report`]；**`bearer` 且无 `API_KEY`** 时跳过探测（检查项 `ok: true`，说明中标注跳过）。
+pub async fn append_llm_models_endpoint_probe(
+    report: &mut HealthReport,
+    p: LlmModelsEndpointProbeParams<'_>,
+) {
+    if !p.enabled {
+        return;
+    }
+
+    let item = if p.auth_mode == LlmHttpAuthMode::Bearer && p.api_key.trim().is_empty() {
+        HealthCheckItem {
+            ok: true,
+            detail: Some("跳过（bearer 且无 API_KEY）".to_string()),
+        }
+    } else {
+        let cache_ttl = std::time::Duration::from_secs(p.cache_secs.max(1));
+        let from_cache = p.cache_cell.lock().ok().and_then(|guard| {
+            guard.as_ref().and_then(|c| {
+                if c.checked_at.elapsed() < cache_ttl {
+                    Some(c.item.clone())
+                } else {
+                    None
+                }
+            })
+        });
+
+        if let Some(cached) = from_cache {
+            cached
+        } else {
+            let fresh =
+                probe_llm_models_endpoint(p.client, p.api_base, p.api_key, p.auth_mode).await;
+            if let Ok(mut guard) = p.cache_cell.lock() {
+                *guard = Some(CachedLlmModelsHealthProbe {
+                    checked_at: Instant::now(),
+                    item: fresh.clone(),
+                });
+            }
+            fresh
+        }
+    };
+
+    report
+        .checks
+        .insert("llm_models_endpoint".to_string(), item);
+    report.status = health_report_status(&report.checks);
+}
+
+async fn probe_llm_models_endpoint(
+    client: &Client,
+    api_base: &str,
+    api_key: &str,
+    auth_mode: LlmHttpAuthMode,
+) -> HealthCheckItem {
+    match crate::llm::fetch_models_report(client, api_base, api_key, auth_mode).await {
+        Ok(rep) => {
+            let ok = (200..300).contains(&rep.http_status)
+                && rep.note.is_none()
+                && !rep.model_ids.is_empty();
+            let detail = if ok {
+                Some(format!(
+                    "HTTP {} · {}ms · {} 个模型 id（仅列表，无 completion）",
+                    rep.http_status,
+                    rep.elapsed_ms,
+                    rep.model_ids.len()
+                ))
+            } else {
+                Some(
+                    rep.note
+                        .unwrap_or_else(|| format!("HTTP {}（无可用模型 id）", rep.http_status)),
+                )
+            };
+            HealthCheckItem { ok, detail }
+        }
+        Err(e) => HealthCheckItem {
+            ok: false,
+            detail: Some(format!("请求失败: {e}")),
+        },
+    }
 }
 
 /// 构建健康报告（阻塞工作放在 `spawn_blocking` 内）。
@@ -224,19 +341,8 @@ pub async fn build_health_report(
         }
     }
 
-    let required_ok = checks.get("api_key").map(|c| c.ok).unwrap_or(false)
-        && checks
-            .get("workspace_writable")
-            .map(|c| c.ok)
-            .unwrap_or(false);
-    let status = if required_ok && checks.values().all(|c| c.ok) {
-        "ok"
-    } else {
-        "degraded"
-    };
-
     HealthReport {
-        status: status.to_string(),
+        status: health_report_status(&checks),
         checks,
     }
 }
@@ -262,4 +368,64 @@ pub fn format_health_report_terminal(report: &HealthReport) -> String {
     }
     s.push_str("\n按 Esc 或 F10 关闭");
     s
+}
+
+#[cfg(test)]
+mod health_status_tests {
+    use super::{HealthCheckItem, health_report_status};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn status_ok_when_required_and_all_checks_ok() {
+        let mut checks = BTreeMap::new();
+        checks.insert(
+            "api_key".into(),
+            HealthCheckItem {
+                ok: true,
+                detail: None,
+            },
+        );
+        checks.insert(
+            "workspace_writable".into(),
+            HealthCheckItem {
+                ok: true,
+                detail: None,
+            },
+        );
+        checks.insert(
+            "dep_bc".into(),
+            HealthCheckItem {
+                ok: true,
+                detail: Some("ok".into()),
+            },
+        );
+        assert_eq!(health_report_status(&checks), "ok");
+    }
+
+    #[test]
+    fn status_degraded_when_optional_dep_fails() {
+        let mut checks = BTreeMap::new();
+        checks.insert(
+            "api_key".into(),
+            HealthCheckItem {
+                ok: true,
+                detail: None,
+            },
+        );
+        checks.insert(
+            "workspace_writable".into(),
+            HealthCheckItem {
+                ok: true,
+                detail: None,
+            },
+        );
+        checks.insert(
+            "dep_bc".into(),
+            HealthCheckItem {
+                ok: false,
+                detail: Some("missing".into()),
+            },
+        );
+        assert_eq!(health_report_status(&checks), "degraded");
+    }
 }

@@ -1047,8 +1047,29 @@ pub(crate) async fn chat_stream_handler(
 
 pub(crate) async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
-    let auth_mode = { state.cfg.read().await.llm_http_auth_mode };
-    let report = health::build_health_report(&work_dir, &state.api_key, auth_mode, true).await;
+    let (auth_mode, probe, probe_cache_secs, api_base) = {
+        let g = state.cfg.read().await;
+        (
+            g.llm_http_auth_mode,
+            g.health_llm_models_probe,
+            g.health_llm_models_probe_cache_secs,
+            g.api_base.clone(),
+        )
+    };
+    let mut report = health::build_health_report(&work_dir, &state.api_key, auth_mode, true).await;
+    health::append_llm_models_endpoint_probe(
+        &mut report,
+        health::LlmModelsEndpointProbeParams {
+            enabled: probe,
+            cache_secs: probe_cache_secs,
+            cache_cell: state.llm_models_health_cache.as_ref(),
+            client: &state.client,
+            api_base: api_base.as_str(),
+            api_key: state.api_key.as_str(),
+            auth_mode,
+        },
+    )
+    .await;
     Json(report)
 }
 

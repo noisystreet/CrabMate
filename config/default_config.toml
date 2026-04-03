@@ -44,6 +44,11 @@ context_summary_transcript_max_chars = 120000
 # 默认见 **`config/session.toml`**
 
 # 5. Web 对话队列（并发上限；单轮只读工具并行与 read_file 缓存见 **`config/tools.toml`**）
+# GET /health 可选：对当前 api_base 发 GET …/models（列表接口，无 chat 计费；默认关）。AGENT_HEALTH_LLM_MODELS_PROBE
+health_llm_models_probe = false
+# 开启时探测结果进程内缓存秒数（5–86400），降低 kube 等高频 /health 对上游压力。AGENT_HEALTH_LLM_MODELS_PROBE_CACHE_SECS
+health_llm_models_probe_cache_secs = 120
+
 chat_queue_max_concurrent = 2
 chat_queue_max_pending = 32
 

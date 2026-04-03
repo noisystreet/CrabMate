@@ -16,7 +16,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 | Subcommand | Description |
 |------------|-------------|
-| `serve [PORT]` | Web UI + HTTP API, default **8080**; `serve --host <ADDR>` bind address (default `127.0.0.1`). `--no-web` / `--cli-only` API only. |
+| `serve [PORT]` | Web UI + HTTP API, default **8080**; port as positional or **`serve --port <PORT>`** (**`--port` wins** if both). `serve --host <ADDR>` bind address (default `127.0.0.1`). `--no-web` / `--cli-only` API only. |
 | `repl` | Interactive chat; **default when no subcommand**. |
 | `chat` | One-shot / scripted chat: `--query` / `--stdin` / `--user-prompt-file`, `--system-prompt-file`, `--messages-json-file`, `--message-file` (JSONL), `--yes` / `--approve-commands`, `--output json`, `--no-stream`. |
 | `bench` | Batch eval: `--benchmark`, `--batch`, etc. |
@@ -77,6 +77,7 @@ cargo run -- --config /path/to/my.toml serve
 RUST_LOG=debug cargo run -- --log /tmp/crabmate.log repl
 cargo run -- serve
 cargo run -- serve 3000
+cargo run -- serve --port 3000               # same as above
 cargo run -- --workspace /path/to/project serve 8080
 cargo run -- serve --host 0.0.0.0            # mind auth & safety
 cargo run -- chat --query "What's the weather in Beijing?"

@@ -59,6 +59,9 @@ pub(crate) struct AppState {
     pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     /// Web 侧栏任务清单：按**当前生效工作区路径**键入，仅存本进程内存（**不**写 `tasks.json`）。
     pub(crate) web_tasks_by_workspace: Arc<tokio::sync::RwLock<HashMap<String, TasksData>>>,
+    /// [`GET /health`](crate::web::chat_handlers::health_handler) 可选 **GET …/models** 探测结果缓存（见 `health_llm_models_probe_cache_secs`）。
+    pub(crate) llm_models_health_cache:
+        Arc<std::sync::Mutex<Option<crate::health::CachedLlmModelsHealthProbe>>>,
 }
 
 /// Web 会话存储后端。

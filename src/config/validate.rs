@@ -153,6 +153,13 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
     )?;
 
     check_u64_inclusive(
+        "health_llm_models_probe_cache_secs",
+        b.health_llm_models_probe_cache_secs,
+        5,
+        86_400,
+    )?;
+
+    check_u64_inclusive(
         "chat_queue_max_concurrent",
         b.chat_queue_max_concurrent,
         1,

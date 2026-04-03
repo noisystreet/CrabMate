@@ -72,6 +72,26 @@
     "save_session_format": null
   },
   {
+    "name": "serve_long_port_9090",
+    "argv": ["crabmate", "serve", "--port", "9090"],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": 9090,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": null
+  },
+  {
+    "name": "serve_flag_overrides_positional_port",
+    "argv": ["crabmate", "serve", "8080", "--port", "9090"],
+    "extra_cli": "None",
+    "dry_run": false,
+    "serve_port": 9090,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": null
+  },
+  {
     "name": "chat_query_json_output",
     "argv": ["crabmate", "chat", "--query", "hello", "--output", "json"],
     "extra_cli": "None",

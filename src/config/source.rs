@@ -106,6 +106,8 @@ pub(super) struct AgentSection {
     pub(super) context_summary_tail_messages: Option<u64>,
     pub(super) context_summary_max_tokens: Option<u64>,
     pub(super) context_summary_transcript_max_chars: Option<u64>,
+    pub(super) health_llm_models_probe: Option<bool>,
+    pub(super) health_llm_models_probe_cache_secs: Option<u64>,
     pub(super) chat_queue_max_concurrent: Option<u64>,
     pub(super) chat_queue_max_pending: Option<u64>,
     /// 单轮并行只读 eligible 工具批时 `spawn_blocking` 最大并发；默认与 `chat_queue_max_concurrent` 相同。
