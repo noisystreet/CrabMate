@@ -331,6 +331,13 @@
   background: var(--error-bg);
 }
 
+.msg-retry-row {
+  margin-top: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* 生成中：纵向排布，正文占满气泡宽度，高度随流式文本换行持续增长（避免横向 flex 卡死高度） */
 .msg-loading {
   min-height: 2.5rem;

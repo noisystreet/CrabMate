@@ -22,4 +22,4 @@ trunk build --release
 
 ## 能力与现状
 
-已覆盖当前 Web 端能力：顶栏、聊天列表 + 输入框、`POST /chat/stream` SSE、命令审批条、工作区列表、任务清单勾选、本地会话列表（弹窗内可重命名、删除、下载 **JSON** / **Markdown** 导出，JSON 为 `ChatSessionFile` v1，与 CLI `save-session` 落盘同形）。右列工具栏「**设置**」弹窗内可切换深浅主题与是否显示页面背景光晕（`localStorage`：`crabmate-theme`、`crabmate-bg-decor`）。状态栏在 `GET /status` 失败时展示错误说明与「重试」按钮。动效：生成中/工具执行中状态点脉冲、右列宽度与显隐过渡、窄屏左栏抽屉滑动、工作区/任务列表加载后行级渐显；`prefers-reduced-motion: reduce` 下在 `styles/motion.css` 统一关闭相关动画与尺寸/transform 过渡，并显式落到终态以避免布局闪跳（主题切换仅变量换色，无 CSS 过渡）。
+已覆盖当前 Web 端能力：顶栏、聊天列表 + 输入框、`POST /chat/stream` SSE、命令审批条、工作区列表、任务清单勾选、本地会话列表（弹窗内可重命名、删除、下载 **JSON** / **Markdown** 导出，JSON 为 `ChatSessionFile` v1，与 CLI `save-session` 落盘同形）。助手消息处于错误态（`state: error`）时气泡内提供 **「重试」**：去掉该条及之后消息并以同一条用户提问重新走流式对话。右列工具栏「**设置**」弹窗内可切换深浅主题与是否显示页面背景光晕（`localStorage`：`crabmate-theme`、`crabmate-bg-decor`）。状态栏在 `GET /status` 失败时展示错误说明与「重试」按钮。动效：生成中/工具执行中状态点脉冲、右列宽度与显隐过渡、窄屏左栏抽屉滑动、工作区/任务列表加载后行级渐显；`prefers-reduced-motion: reduce` 下在 `styles/motion.css` 统一关闭相关动画与尺寸/transform 过渡，并显式落到终态以避免布局闪跳（主题切换仅变量换色，无 CSS 过渡）。
