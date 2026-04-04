@@ -13,9 +13,43 @@ use log::{debug, error, info, warn};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
 use crate::AppState;
+use crate::config::{AgentConfig, LlmHttpAuthMode};
 use crate::types::{CommandApprovalDecision, LLM_CANCELLED_ERROR, LlmSeedOverride, Message};
 
 const RECENT_CAP: usize = 32;
+
+/// Web `POST /chat` / `/chat/stream` 请求体中可选的 **`client_llm`**：仅作用于**该次入队任务**，不写盘。
+#[derive(Clone, Debug, Default)]
+pub struct WebChatLlmOverride {
+    pub api_base: Option<String>,
+    pub model: Option<String>,
+    pub api_key: Option<String>,
+}
+
+fn resolve_web_llm_for_job(
+    state: &AppState,
+    cfg_snap: Arc<AgentConfig>,
+    ov: Option<&WebChatLlmOverride>,
+) -> (Arc<AgentConfig>, String) {
+    match ov {
+        None => (cfg_snap, state.api_key.clone()),
+        Some(o) => {
+            let mut c = (*cfg_snap).clone();
+            let mut key = state.api_key.clone();
+            if let Some(ref x) = o.api_base {
+                c.api_base.clone_from(x);
+            }
+            if let Some(ref x) = o.model {
+                c.model.clone_from(x);
+            }
+            if let Some(ref x) = o.api_key {
+                key.clone_from(x);
+                c.llm_http_auth_mode = LlmHttpAuthMode::Bearer;
+            }
+            (Arc::new(c), key)
+        }
+    }
+}
 
 /// 单条 `/chat` / `/chat/stream` 任务在跑 `run_agent_turn` 时，PER 相关状态的只读镜像（进程内、按 `job_id` 区分）。
 ///
@@ -74,6 +108,8 @@ pub struct JsonSubmitParams {
     pub workspace_is_set: bool,
     pub temperature_override: Option<f32>,
     pub seed_override: LlmSeedOverride,
+    /// 可选：本任务覆盖 `api_base` / `model` / `api_key`（见 [`WebChatLlmOverride`]）。
+    pub llm_override: Option<WebChatLlmOverride>,
     pub reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
 }
 
@@ -88,6 +124,8 @@ pub struct StreamSubmitParams {
     pub workspace_is_set: bool,
     pub temperature_override: Option<f32>,
     pub seed_override: LlmSeedOverride,
+    /// 可选：本任务覆盖 `api_base` / `model` / `api_key`（见 [`WebChatLlmOverride`]）。
+    pub llm_override: Option<WebChatLlmOverride>,
     pub sse_tx: mpsc::Sender<String>,
     pub web_approval_session: Option<WebApprovalSession>,
 }
@@ -132,6 +170,7 @@ enum QueuedChatJob {
         workspace_is_set: bool,
         temperature_override: Option<f32>,
         seed_override: LlmSeedOverride,
+        llm_override: Option<WebChatLlmOverride>,
         sse_tx: mpsc::Sender<String>,
         web_approval_session: Option<WebApprovalSession>,
     },
@@ -145,6 +184,7 @@ enum QueuedChatJob {
         workspace_is_set: bool,
         temperature_override: Option<f32>,
         seed_override: LlmSeedOverride,
+        llm_override: Option<WebChatLlmOverride>,
         reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
     },
 }
@@ -294,6 +334,7 @@ impl ChatJobQueue {
             workspace_is_set,
             temperature_override,
             seed_override,
+            llm_override,
             sse_tx,
             web_approval_session,
         } = p;
@@ -307,6 +348,7 @@ impl ChatJobQueue {
             workspace_is_set,
             temperature_override,
             seed_override,
+            llm_override,
             sse_tx,
             web_approval_session,
         };
@@ -329,6 +371,7 @@ impl ChatJobQueue {
             workspace_is_set,
             temperature_override,
             seed_override,
+            llm_override,
             reply_tx,
         } = p;
         let job = QueuedChatJob::Json {
@@ -341,6 +384,7 @@ impl ChatJobQueue {
             workspace_is_set,
             temperature_override,
             seed_override,
+            llm_override,
             reply_tx,
         };
         self.inner
@@ -498,6 +542,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             workspace_is_set,
             temperature_override,
             seed_override,
+            llm_override,
             sse_tx,
             web_approval_session,
         } => {
@@ -552,10 +597,12 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 let g = state.cfg.read().await;
                 std::sync::Arc::new(g.clone())
             };
+            let (cfg_turn, api_key_turn) =
+                resolve_web_llm_for_job(&state, cfg_snap.clone(), llm_override.as_ref());
             let r = crate::run_agent_turn(crate::RunAgentTurnParams {
                 client: &state.client,
-                api_key: &state.api_key,
-                cfg: &cfg_snap,
+                api_key: api_key_turn.as_str(),
+                cfg: &cfg_turn,
                 tools: &state.tools,
                 messages: &mut messages,
                 out,
@@ -701,6 +748,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             workspace_is_set,
             temperature_override,
             seed_override,
+            llm_override,
             reply_tx,
         } => {
             info!(
@@ -723,10 +771,12 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 let g = state.cfg.read().await;
                 std::sync::Arc::new(g.clone())
             };
+            let (cfg_turn, api_key_turn) =
+                resolve_web_llm_for_job(&state, cfg_snap.clone(), llm_override.as_ref());
             let r = crate::run_agent_turn(crate::RunAgentTurnParams {
                 client: &state.client,
-                api_key: &state.api_key,
-                cfg: &cfg_snap,
+                api_key: api_key_turn.as_str(),
+                cfg: &cfg_turn,
                 tools: &state.tools,
                 messages: &mut messages,
                 out: None,

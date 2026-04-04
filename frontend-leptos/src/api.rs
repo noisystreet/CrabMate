@@ -15,13 +15,106 @@ use crate::sse_dispatch::{
 
 const WEB_API_BEARER_TOKEN_KEY: &str = "crabmate-api-bearer-token";
 
+/// Web 设置中保存的 LLM 网关基址（`client_llm.api_base`）。
+pub const CLIENT_LLM_API_BASE_STORAGE_KEY: &str = "crabmate-client-llm-api-base";
+/// Web 设置中保存的模型名（`client_llm.model`）。
+pub const CLIENT_LLM_MODEL_STORAGE_KEY: &str = "crabmate-client-llm-model";
+/// Web 设置中保存的云端 API 密钥（`client_llm.api_key`）；**仅存本机**。
+pub const CLIENT_LLM_API_KEY_STORAGE_KEY: &str = "crabmate-client-llm-api-key";
+
+fn local_storage() -> Option<web_sys::Storage> {
+    window().and_then(|w| w.local_storage().ok().flatten())
+}
+
+fn storage_trimmed_item(key: &str) -> Option<String> {
+    let st = local_storage()?;
+    let s = st.get_item(key).ok().flatten()?;
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
+/// 是否已在 localStorage 保存过 `client_llm.api_key`（不返回密钥内容）。
+pub fn client_llm_storage_has_api_key() -> bool {
+    storage_trimmed_item(CLIENT_LLM_API_KEY_STORAGE_KEY).is_some()
+}
+
+/// 供设置弹窗加载：`api_base` / `model` 的已存值（无则空串）。
+pub fn load_client_llm_text_fields_from_storage() -> (String, String) {
+    (
+        storage_trimmed_item(CLIENT_LLM_API_BASE_STORAGE_KEY).unwrap_or_default(),
+        storage_trimmed_item(CLIENT_LLM_MODEL_STORAGE_KEY).unwrap_or_default(),
+    )
+}
+
+/// 将模型相关设置写入 localStorage。`api_key` 为 `None` 时不改已存密钥；为 `Some("")` 可配合调用方在「清除」时 `remove_item`。
+pub fn persist_client_llm_to_storage(
+    api_base: &str,
+    model: &str,
+    api_key_update: Option<&str>,
+) -> Result<(), String> {
+    let st = local_storage().ok_or_else(|| "无 localStorage".to_string())?;
+    let b = api_base.trim();
+    let m = model.trim();
+    if b.is_empty() {
+        let _ = st.remove_item(CLIENT_LLM_API_BASE_STORAGE_KEY);
+    } else {
+        st.set_item(CLIENT_LLM_API_BASE_STORAGE_KEY, b)
+            .map_err(|_| "无法写入 api_base".to_string())?;
+    }
+    if m.is_empty() {
+        let _ = st.remove_item(CLIENT_LLM_MODEL_STORAGE_KEY);
+    } else {
+        st.set_item(CLIENT_LLM_MODEL_STORAGE_KEY, m)
+            .map_err(|_| "无法写入 model".to_string())?;
+    }
+    if let Some(k) = api_key_update {
+        let t = k.trim();
+        if t.is_empty() {
+            let _ = st.remove_item(CLIENT_LLM_API_KEY_STORAGE_KEY);
+        } else {
+            st.set_item(CLIENT_LLM_API_KEY_STORAGE_KEY, t)
+                .map_err(|_| "无法写入 api_key".to_string())?;
+        }
+    }
+    Ok(())
+}
+
+pub fn clear_client_llm_api_key_storage() -> Result<(), String> {
+    let st = local_storage().ok_or_else(|| "无 localStorage".to_string())?;
+    let _ = st.remove_item(CLIENT_LLM_API_KEY_STORAGE_KEY);
+    Ok(())
+}
+
+/// 合并进 `/chat/stream` 请求体的 `client_llm` 对象（省略未配置的字段）。
+pub fn client_llm_json_for_chat_body() -> Option<Value> {
+    let mut m = serde_json::Map::new();
+    if let Some(v) = storage_trimmed_item(CLIENT_LLM_API_BASE_STORAGE_KEY) {
+        m.insert("api_base".into(), Value::String(v));
+    }
+    if let Some(v) = storage_trimmed_item(CLIENT_LLM_MODEL_STORAGE_KEY) {
+        m.insert("model".into(), Value::String(v));
+    }
+    if let Some(v) = storage_trimmed_item(CLIENT_LLM_API_KEY_STORAGE_KEY) {
+        m.insert("api_key".into(), Value::String(v));
+    }
+    if m.is_empty() {
+        None
+    } else {
+        Some(Value::Object(m))
+    }
+}
+
 fn window() -> Option<Window> {
     web_sys::window()
 }
 
 fn auth_headers() -> Headers {
     let h = Headers::new().expect("Headers::new");
-    if let Some(st) = window().and_then(|w| w.local_storage().ok().flatten()) {
+    if let Some(st) = local_storage() {
         if let Ok(Some(t)) = st.get_item(WEB_API_BEARER_TOKEN_KEY) {
             let t = t.trim();
             if !t.is_empty() {
@@ -247,12 +340,15 @@ pub async fn send_chat_stream(
     cbs: ChatStreamCallbacks,
 ) -> Result<(), String> {
     let w = window().ok_or_else(|| "no window".to_string())?;
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "message": message,
         "conversation_id": conversation_id,
         "agent_role": agent_role,
         "approval_session_id": approval_session_id,
     });
+    if let Some(cl) = client_llm_json_for_chat_body() {
+        body["client_llm"] = cl;
+    }
     let init = RequestInit::new();
     init.set_method("POST");
     init.set_mode(RequestMode::Cors);

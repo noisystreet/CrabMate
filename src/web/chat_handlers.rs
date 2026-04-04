@@ -46,6 +46,82 @@ pub(crate) struct ChatRequestBody {
     /// `omit` / `none`：本回合请求**不**带 `seed`（即使配置了默认 `llm_seed`）。
     #[serde(default)]
     seed_policy: Option<String>,
+    /// 可选：浏览器侧覆盖本回合 LLM 网关 `api_base` / `model` / `api_key`（不写服务端配置）。
+    #[serde(default)]
+    client_llm: Option<ClientLlmBody>,
+}
+
+/// `ChatRequestBody::client_llm` 的 JSON 形状（与前端 `client_llm` 对象一致）。
+#[derive(serde::Deserialize, Default)]
+struct ClientLlmBody {
+    #[serde(default)]
+    api_base: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    api_key: Option<String>,
+}
+
+const CLIENT_LLM_API_BASE_MAX: usize = 2048;
+const CLIENT_LLM_MODEL_MAX: usize = 512;
+const CLIENT_LLM_API_KEY_MAX: usize = 16384;
+
+fn parse_client_llm_override(
+    raw: Option<ClientLlmBody>,
+) -> Result<Option<chat_job_queue::WebChatLlmOverride>, String> {
+    let Some(b) = raw else {
+        return Ok(None);
+    };
+    let api_base = b
+        .api_base
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let model = b
+        .model
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let api_key = b
+        .api_key
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    if api_base.is_none() && model.is_none() && api_key.is_none() {
+        return Ok(None);
+    }
+    if let Some(ref s) = api_base
+        && s.len() > CLIENT_LLM_API_BASE_MAX
+    {
+        return Err(format!(
+            "client_llm.api_base 过长（上限 {} 字符）",
+            CLIENT_LLM_API_BASE_MAX
+        ));
+    }
+    if let Some(ref s) = model
+        && s.len() > CLIENT_LLM_MODEL_MAX
+    {
+        return Err(format!(
+            "client_llm.model 过长（上限 {} 字符）",
+            CLIENT_LLM_MODEL_MAX
+        ));
+    }
+    if let Some(ref s) = api_key
+        && s.len() > CLIENT_LLM_API_KEY_MAX
+    {
+        return Err(format!(
+            "client_llm.api_key 过长（上限 {} 字符）",
+            CLIENT_LLM_API_KEY_MAX
+        ));
+    }
+    Ok(Some(chat_job_queue::WebChatLlmOverride {
+        api_base,
+        model,
+        api_key,
+    }))
 }
 
 fn parse_optional_chat_temperature(raw: Option<f64>) -> Result<Option<f32>, String> {
@@ -672,6 +748,15 @@ pub(crate) async fn chat_handler(
                 }),
             )
         })?;
+    let llm_override = parse_client_llm_override(body.client_llm).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_CLIENT_LLM",
+                message: e,
+            }),
+        )
+    })?;
     let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
         .await
         .map_err(|e| {
@@ -708,6 +793,7 @@ pub(crate) async fn chat_handler(
             workspace_is_set,
             temperature_override,
             seed_override,
+            llm_override,
             reply_tx,
         })
         .map_err(|e| {
@@ -958,6 +1044,15 @@ pub(crate) async fn chat_stream_handler(
                 }),
             )
         })?;
+    let llm_override = parse_client_llm_override(body.client_llm).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_CLIENT_LLM",
+                message: e,
+            }),
+        )
+    })?;
     let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
         .await
         .map_err(|e| {
@@ -1016,6 +1111,7 @@ pub(crate) async fn chat_stream_handler(
             workspace_is_set,
             temperature_override,
             seed_override,
+            llm_override,
             sse_tx: tx,
             web_approval_session,
         })
