@@ -415,11 +415,15 @@ flowchart LR
 - 纯文本 `data:` 作为 delta；JSON `data:` 经 `sse_dispatch.rs` 分类为控制面并消费（工具状态、审批请求、工作区刷新、分阶段规划通知等）。
 - 审批决策通过 `submit_chat_approval` 发送到 `POST /chat/approval`。
 
+### `frontend-leptos/src/markdown.rs`
+
+- **`pulldown-cmark`** 将 Markdown 转为 HTML 片段，**`ammonia::clean`** 白名单净化后供助手气泡 **`innerHTML`** 注入（含多级标题、列表、代码块、表格、任务列表等）。
+
 ### `frontend-leptos/src/lib.rs`
 
 - Web 主界面（会话列表、聊天区、工作区与任务侧栏、状态栏、主题切换）；左栏「最近」会话 **`contextmenu`** 打开菜单，导出 JSON/Markdown 与删除与 **`SessionModalRow`** 共用 **`export_session_*_for_id` / `delete_session_after_confirm`**。
+- 助手**非工具**消息走 **`markdown::to_safe_html`** + **`assistant_markdown_body_view`**（`Effect` + 微任务延迟写入，随会话信号刷新）；用户 / 工具 / 系统消息仍为纯文本 **`span.msg-body`**。
 - 首条用户消息发送后：若会话标题仍为 **`storage::DEFAULT_CHAT_SESSION_TITLE`**（默认「新会话」），则 **`title_from_user_prompt`** 用该条提问生成侧栏/管理列表标题（压平换行、限长约 48 字）；用户事先重命名则不改写。
-- 首条用户消息发送时：若 `ChatSession.title` 仍为 **`storage::DEFAULT_CHAT_SESSION_TITLE`**，则 **`title_from_user_prompt`** 将标题设为提问摘要（单行、限长约 48 字）；用户事先重命名过的会话不覆盖。
 - 流式消息渲染与自动跟底策略（用户上滚时禁用、回到底部附近恢复）。
 - `agent_reply_plan` 展示过滤：不回显原始 JSON，保留可读信息或终答正文。
 
