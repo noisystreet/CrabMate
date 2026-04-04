@@ -201,7 +201,7 @@ Crate root exports **`run`**, **`load_config`**, tool builders, **`dev_tag`**, e
 
 ### `src/llm/*`
 
-**`tool_chat_request` / `no_tools_chat_request`**, folding **`llm_fold_system_into_user`**, Kimi reasoning preservation flags, **`complete_chat_retrying`** backoff. **`openai_models`**: `GET /models` with optional Bearer.
+**`tool_chat_request` / `no_tools_chat_request`**, folding via **`llm::fold_system_into_user_for_config`** (MiniMax auto), Kimi reasoning preservation flags, **`complete_chat_retrying`** backoff. **`openai_models`**: `GET /models` with optional Bearer.
 
 ### `src/http_client.rs`
 

@@ -31,7 +31,10 @@ pub use backend::{
     ChatCompletionsBackend, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
     default_chat_completions_backend,
 };
-pub use vendor::{LlmVendorAdapter, llm_vendor_adapter, llm_vendor_adapter_for_model};
+pub use vendor::{
+    LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter,
+    llm_vendor_adapter_for_model,
+};
 
 /// **kimi-k2.5** 在**未**显式关闭思考时，服务端 **`thinking` 默认启用**；此时含 **`tool_calls`** 的 assistant 历史消息必须带 **`reasoning_content`**，否则返回 `invalid_request_error`（见 Moonshot [Chat API](https://platform.moonshot.cn/docs/api/chat) 与实测报错）。
 #[inline]
@@ -71,7 +74,7 @@ pub fn tool_chat_request(
         model: cfg.model.clone(),
         messages: crate::agent::message_pipeline::conversation_messages_to_vendor_body(
             messages,
-            cfg.llm_fold_system_into_user,
+            fold_system_into_user_for_config(cfg),
             v.preserve_assistant_tool_call_reasoning(cfg),
         ),
         tools: Some(tools.to_vec()),
@@ -123,7 +126,7 @@ pub fn no_tools_chat_request_from_messages(
         model: cfg.model.clone(),
         messages: crate::agent::message_pipeline::normalize_stripped_messages_for_vendor_body(
             messages,
-            cfg.llm_fold_system_into_user,
+            fold_system_into_user_for_config(cfg),
         ),
         tools: Some(vec![]),
         tool_choice: Some("none".to_string()),

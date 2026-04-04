@@ -8,7 +8,7 @@ Default settings are merged from seven embedded TOML fragments under **`config/`
 
 - **CLI**: Type **`/config reload`** (Tab completes). Re-reads the same config path as startup (**`--config`** or default **`config.toml`** / **`.agent_demo.toml`**), merges with **current process env**, writes hot fields into in-memory [`AgentConfig`](DEVELOPMENT.md); clears MCP stdio cache; next turn uses the new MCP fingerprint.
 - **Web**: **`POST /config/reload`** (JSON body may be `{}`; same auth as **`/chat`** and other protected APIs—Bearer if the layer is enabled). Success: **`{ "ok": true, "message": "…" }`**.
-- **Typically hot-reloaded**: **`api_base`**, **`model`**, **`llm_http_auth_mode`**, **`llm_reasoning_split`**, **`llm_bigmodel_thinking`**, **`llm_kimi_thinking_disabled`**, **`llm_fold_system_into_user`**, **`temperature` / `llm_seed`**, timeouts/retries, **`run_command`** allowlist, **`http_fetch_allowed_prefixes`**, **`workspace_allowed_roots`**, **`web_api_bearer_token`** (handler-side check only; see below), **`mcp_*`**, **`[tool_registry]`** fields (outer HTTP walls, parallel wall overrides, deny/inline/write-effect lists), **`system_prompt_file` re-read**, context/planning keys (implementation: **`apply_hot_reload_config_subset`**).
+- **Typically hot-reloaded**: **`api_base`**, **`model`**, **`llm_http_auth_mode`**, **`llm_reasoning_split`**, **`llm_bigmodel_thinking`**, **`llm_kimi_thinking_disabled`**, **`temperature` / `llm_seed`**, timeouts/retries, **`run_command`** allowlist, **`http_fetch_allowed_prefixes`**, **`workspace_allowed_roots`**, **`web_api_bearer_token`** (handler-side check only; see below), **`mcp_*`**, **`[tool_registry]`** fields (outer HTTP walls, parallel wall overrides, deny/inline/write-effect lists), **`system_prompt_file` re-read**, context/planning keys (implementation: **`apply_hot_reload_config_subset`**). **`system`→`user` folding** for MiniMax follows **`model` / `api_base`** on the next request after reload (not an `AgentConfig` field).
 - **Not hot-reloaded**: **`conversation_store_sqlite_path`** (SQLite opened at startup—change path requires **`serve` restart**). **`reqwest::Client`** is not rebuilt; **`api_timeout_secs`** may lag on pooled idle connections.
 - **`API_KEY`**: Still **environment only**; hot reload does not read secret files. After changing **`API_KEY`**, re-**export** and **`/config reload`** (or restart) for **`llm_http_auth_mode=bearer`** consistency.
 - **Bearer Axum layer**: If **`serve`** started with non-empty **`web_api_bearer_token`**, the auth layer is mounted for the process lifetime; hot reload **does not** add/remove it—switching between “no token” and “token” requires **`serve` restart**. Hot reload still updates the token string used inside handlers when the layer exists.
@@ -29,7 +29,6 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_LLM_REASONING_SPLIT` | Overrides `llm_reasoning_split`. If unset in TOML/env: **MiniMax** gateways (by `model` / `api_base`) default to **on**; others default **off** (see § MiniMax). |
 | `AGENT_LLM_BIGMODEL_THINKING` | If true, Zhipu **`thinking: { "type": "enabled" }`** (GLM-5; see § GLM). |
 | `AGENT_LLM_KIMI_THINKING_DISABLED` | If true, **`thinking: { "type": "disabled" }`** for Moonshot **kimi-k2.5** (see § Kimi). |
-| `AGENT_LLM_FOLD_SYSTEM_INTO_USER` | Merge `system` into `user` for gateways that reject standalone `system`. |
 | `AGENT_SYSTEM_PROMPT` | Inline system prompt; clears inherited `system_prompt_file` unless `AGENT_SYSTEM_PROMPT_FILE` is set (see § System prompt). |
 | `AGENT_SYSTEM_PROMPT_FILE` | Path to system prompt file. |
 | `AGENT_DEFAULT_AGENT_ROLE` | Default **role id** when Web `agent_role` / CLI `--agent-role` is omitted (must exist in the role table; see § Multi-role). |
@@ -234,7 +233,7 @@ Then **`API_KEY`** is not required for `serve` / `repl` / `chat`. Function-calli
 
 ## MiniMax (OpenAI-compatible)
 
-MiniMax **`https://api.minimaxi.com/v1`** (aliases like **`https://api.minimax.io/v1`** may exist—use console). Docs show **`role: "system"`** but live API often returns **`invalid message role: system`**. Embedded defaults target DeepSeek-style usage with **`llm_fold_system_into_user = false`**. For MiniMax set **`llm_fold_system_into_user = true`** to merge system into the first relevant **`user`**.
+MiniMax **`https://api.minimaxi.com/v1`** (aliases like **`https://api.minimax.io/v1`** may exist—use console). Docs show **`role: "system"`** but live API often returns **`invalid message role: system`**. CrabMate **auto-merges** **`system`** into **`user`** when **`model` / `api_base`** identify MiniMax (no TOML key). Other gateways keep a standalone **`system`** message.
 
 Tested model IDs in this repo: **`MiniMax-M2.7`**, **`MiniMax-M2.7-highspeed`**, **`MiniMax-M2.5`**.
 
@@ -243,7 +242,6 @@ Tested model IDs in this repo: **`MiniMax-M2.7`**, **`MiniMax-M2.7-highspeed`**,
 api_base = "https://api.minimaxi.com/v1"
 model = "MiniMax-M2.7"
 llm_http_auth_mode = "bearer"
-llm_fold_system_into_user = true
 # llm_reasoning_split: omit → defaults to true on MiniMax; set false to disable
 ```
 

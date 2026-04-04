@@ -13,9 +13,6 @@ max_tokens = 2048
 # 注意：一些模型只支持设置固定的温度，如kimi-k2.5系列模型。
 temperature = 0.7
 
-# MiniMax系列模型文档示例含 role: system，但直连 api.minimaxi.com 等仍常见 HTTP 400「invalid message role: system」；默认 true 将系统提示并入 user。换 DeepSeek / 标准 OpenAI 兼容且需保留独立 system 条时可设 false（AGENT_LLM_FOLD_SYSTEM_INTO_USER=0）。
-llm_fold_system_into_user = false
-
 # 智谱 GLM（OpenAI 兼容）：api_base = "https://open.bigmodel.cn/api/paas/v4" ，model = "glm-5" ；与官方最小 cURL（仅 model/messages/stream）一致时保持 llm_bigmodel_thinking = false（默认）；深度思考见 GLM-5 文档 thinking 字段时用 llm_bigmodel_thinking = true ；AGENT_LLM_BIGMODEL_THINKING
 # llm_bigmodel_thinking = false
 
