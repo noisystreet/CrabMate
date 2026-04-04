@@ -36,7 +36,7 @@ struct AgentRoleEntryToml {
     system_prompt_file: Option<String>,
 }
 
-/// 将 `config/agent_roles.toml` 合并进 [`super::ConfigBuilder`]（多文件时后加载的覆盖同 id 字段）。
+/// 将 `config/agent_roles.toml` 合并进 [`super::builder::ConfigBuilder`]（多文件时后加载的覆盖同 id 字段）。
 pub(super) fn merge_agent_roles_file_into_builder(
     content: &str,
     default_role_slot: &mut Option<String>,

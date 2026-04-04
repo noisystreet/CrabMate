@@ -11,13 +11,13 @@
 //! 7. 嵌入 **`config/memory.toml`**
 //! 8. 用户 **`config.toml`** 或 **`.agent_demo.toml`**（或 **`--config`** 指定单文件；存在则不再探测另一默认名）
 //! 9. 可选 **`agent_roles.toml`**（与主配置同目录，或仓库 **`config/agent_roles.toml`**）
-//! 10. **`AGENT_*` 环境变量**（在 `config/mod.rs` 的 `apply_env_overrides` 中应用，本模块不负责）
+//! 10. **`AGENT_*` 环境变量**（在 `config/env_overrides.rs` 的 `apply_env_overrides` 中应用，本模块不负责）
 
 use std::path::{Path, PathBuf};
 
 use super::agent_roles;
+use super::builder::{ConfigBuilder, override_opt_string_non_empty};
 use super::source::{parse_agent_section, parse_config_file_roles, parse_tools_config_bundle};
-use super::{ConfigBuilder, override_opt_string_non_empty};
 
 /// 编译时嵌入（与 `mod.rs` 中常量一致，仅在此集中说明顺序）
 const DEFAULT_CONFIG: &str = include_str!("../../config/default_config.toml");
@@ -89,7 +89,7 @@ pub(super) fn merge_user_config_layers(
 
     for path in &config_paths {
         if Path::new(path).exists() {
-            system_prompt_search_bases.push(super::directory_containing_config_file(path));
+            system_prompt_search_bases.push(directory_containing_config_file(path));
             let s = std::fs::read_to_string(path)
                 .map_err(|e| format!("无法读取配置文件 \"{}\": {}", path, e))?;
             let (agent_opt, role_rows, tr_opt) = parse_config_file_roles(&s)
@@ -144,4 +144,16 @@ pub(super) fn merge_user_config_layers(
     }
 
     Ok(system_prompt_search_bases)
+}
+
+/// `system_prompt_file` 相对路径解析：与 `foo.toml` 同目录下的 `config/prompts/...` 等可被找到。
+fn directory_containing_config_file(config_path: &str) -> PathBuf {
+    let p = Path::new(config_path);
+    match p.parent() {
+        None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        Some(parent) if parent.as_os_str().is_empty() => {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        }
+        Some(parent) => parent.to_path_buf(),
+    }
 }
