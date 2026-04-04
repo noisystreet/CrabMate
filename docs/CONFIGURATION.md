@@ -482,6 +482,8 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 
 `/chat` 与 `/chat/stream` 经有界队列调度；满时 **503**、`QUEUE_FULL`。`/status` 返回队列与 `per_active_jobs` 等字段。
 
+- **可选 `client_llm` 对象**（仅作用于**本次入队**的对话任务，**不写**服务端配置）：可含 **`api_base`**、**`model`**、**`api_key`**（均可选；trim 后为空表示该字段不覆盖）。若携带非空 **`api_key`**，该任务对 LLM 的 HTTP 请求按 **Bearer** 使用该密钥（即使进程配置为 **`llm_http_auth_mode = none`**）。长度上限：`api_base` 2048 字符、`model` 512、`api_key` 16384；不合法时 **400**、错误码 **`INVALID_CLIENT_LLM`**。**安全提示**：密钥会出现在发往 CrabMate 后端的 **JSON 请求体** 中，请仅在 **HTTPS** 等可信链路使用；Web「设置」可将密钥存入 **`localStorage`**（密码框不回显已存值），公共电脑勿用。
+
 ## 只读工具并行（`parallel_readonly_tools_max`）
 
 限制同轮多只读工具进入 blocking 池的并发数： eligible 批含内建只读 **`SyncDefault`**、**`http_fetch`**（GET/HEAD）、**`get_weather`**、**`web_search`**（不含 **`http_request`**、**`run_command`**、MCP 等）。构建锁类（如 **`cargo_*`**、**`npm_*`**）整批降级为串行。

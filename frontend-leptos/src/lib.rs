@@ -11,8 +11,10 @@ mod sse_dispatch;
 mod storage;
 
 use api::{
-    ChatStreamCallbacks, StatusData, TaskItem, TasksData, WorkspaceData, fetch_status, fetch_tasks,
-    fetch_workspace, fetch_workspace_pick, post_workspace_set, save_tasks, send_chat_stream,
+    ChatStreamCallbacks, StatusData, TaskItem, TasksData, WorkspaceData,
+    clear_client_llm_api_key_storage, client_llm_storage_has_api_key, fetch_status, fetch_tasks,
+    fetch_workspace, fetch_workspace_pick, load_client_llm_text_fields_from_storage,
+    persist_client_llm_to_storage, post_workspace_set, save_tasks, send_chat_stream,
     submit_chat_approval,
 };
 use gloo_timers::future::TimeoutFuture;
@@ -105,6 +107,30 @@ const AUTO_SCROLL_RESUME_GAP_PX: i32 = 24;
 
 fn local_storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok().flatten()
+}
+
+/// 状态栏「模型」：本机保存的 `client_llm.model` 非空时优先，否则用 `/status`。
+fn status_bar_effective_model(server: Option<&StatusData>, stored_model: &str) -> String {
+    let t = stored_model.trim();
+    if !t.is_empty() {
+        t.to_string()
+    } else {
+        server
+            .map(|d| d.model.clone())
+            .unwrap_or_else(|| "-".to_string())
+    }
+}
+
+/// 状态栏「base_url」：本机 `client_llm.api_base` 非空时优先，否则用 `/status`。
+fn status_bar_effective_api_base(server: Option<&StatusData>, stored_api_base: &str) -> String {
+    let t = stored_api_base.trim();
+    if !t.is_empty() {
+        t.to_string()
+    } else {
+        server
+            .map(|d| d.api_base.clone())
+            .unwrap_or_else(|| "-".to_string())
+    }
 }
 
 fn clamp_side_width_for_viewport(w: f64) -> f64 {
@@ -930,6 +956,13 @@ fn App() -> impl IntoView {
     let pending_approval = RwSignal::new(None::<(String, String, String)>);
     let session_modal = RwSignal::new(false);
     let settings_modal = RwSignal::new(false);
+    let llm_api_base_draft = RwSignal::new(String::new());
+    let llm_model_draft = RwSignal::new(String::new());
+    let llm_api_key_draft = RwSignal::new(String::new());
+    let llm_has_saved_key = RwSignal::new(false);
+    let llm_settings_feedback = RwSignal::new(None::<String>);
+    // 本机模型设置写入后递增，使状态栏订阅并重新读取 localStorage。
+    let client_llm_storage_tick = RwSignal::new(0_u64);
     let session_context_menu = RwSignal::new(None::<SessionContextAnchor>);
     let mobile_nav_open = RwSignal::new(false);
     let approval_expanded = RwSignal::new(false);
@@ -1039,6 +1072,29 @@ fn App() -> impl IntoView {
                 let _ = root.set_attribute("data-bg-decor", "plain");
             }
         }
+    });
+
+    Effect::new(move |_| {
+        if !settings_modal.get() {
+            return;
+        }
+        let (stored_base, stored_model) = load_client_llm_text_fields_from_storage();
+        let sd = status_data.get_untracked();
+        let base = if stored_base.trim().is_empty() {
+            sd.as_ref().map(|d| d.api_base.clone()).unwrap_or_default()
+        } else {
+            stored_base
+        };
+        let model = if stored_model.trim().is_empty() {
+            sd.as_ref().map(|d| d.model.clone()).unwrap_or_default()
+        } else {
+            stored_model
+        };
+        llm_api_base_draft.set(base);
+        llm_model_draft.set(model);
+        llm_api_key_draft.set(String::new());
+        llm_has_saved_key.set(client_llm_storage_has_api_key());
+        llm_settings_feedback.set(None);
     });
 
     let refresh_workspace = {
@@ -2452,24 +2508,36 @@ fn App() -> impl IntoView {
                                         <span class="status-chip">
                                             <span class="status-chip-label">"模型"</span>
                                             <span class="status-chip-value">{move || {
-                                                status_data
-                                                    .get()
-                                                    .map(|d| d.model)
-                                                    .unwrap_or_else(|| "-".to_string())
+                                                let _tick = client_llm_storage_tick.get();
+                                                let sd = status_data.get();
+                                                let (_, stored_model) =
+                                                    load_client_llm_text_fields_from_storage();
+                                                status_bar_effective_model(
+                                                    sd.as_ref(),
+                                                    stored_model.as_str(),
+                                                )
                                             }}</span>
                                         </span>
                                         <span class="status-chip status-chip-url" title=move || {
-                                            status_data
-                                                .get()
-                                                .map(|d| d.api_base)
-                                                .unwrap_or_else(|| "-".to_string())
+                                            let _tick = client_llm_storage_tick.get();
+                                            let sd = status_data.get();
+                                            let (stored_base, _) =
+                                                load_client_llm_text_fields_from_storage();
+                                            status_bar_effective_api_base(
+                                                sd.as_ref(),
+                                                stored_base.as_str(),
+                                            )
                                         }>
                                             <span class="status-chip-label">"base_url"</span>
                                             <span class="status-chip-value">{move || {
-                                                status_data
-                                                    .get()
-                                                    .map(|d| d.api_base)
-                                                    .unwrap_or_else(|| "-".to_string())
+                                                let _tick = client_llm_storage_tick.get();
+                                                let sd = status_data.get();
+                                                let (stored_base, _stored_model) =
+                                                    load_client_llm_text_fields_from_storage();
+                                                status_bar_effective_api_base(
+                                                    sd.as_ref(),
+                                                    stored_base.as_str(),
+                                                )
                                             }}</span>
                                         </span>
                                         <label class="status-chip status-chip-role" title="Agent 角色（对标 CLI /agent set）">
@@ -2602,14 +2670,14 @@ fn App() -> impl IntoView {
                     >
                         <div class="modal-head">
                             <h2 class="modal-title" id="settings-modal-title">"设置"</h2>
-                            <span class="modal-badge">"外观"</span>
+                            <span class="modal-badge">"本机"</span>
                             <span class="modal-head-spacer"></span>
                             <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| settings_modal.set(false)>
                                 "关闭"
                             </button>
                         </div>
                         <div class="modal-body">
-                            <p class="modal-hint">"主题与页面背景选项保存在本机浏览器（localStorage）。"</p>
+                            <p class="modal-hint">"主题与页面背景保存在本机（localStorage）。模型网关与 API 密钥也可仅存本机；发消息时会在 JSON 中附带覆盖项，请仅在可信环境（HTTPS）使用。"</p>
                             <div class="settings-block">
                                 <h3 class="settings-block-title">"主题"</h3>
                                 <div class="settings-row">
@@ -2641,6 +2709,119 @@ fn App() -> impl IntoView {
                                     />
                                     <span>"显示背景光晕（径向渐变）"</span>
                                 </label>
+                            </div>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">"模型网关（可选覆盖）"</h3>
+                                <p class="modal-hint settings-field-nested-hint">
+                                    "留空则使用服务端配置与环境变量 API_KEY。API 密钥使用密码框，不会以明文显示。"
+                                </p>
+                                <div class="settings-field">
+                                    <label class="settings-field-label" for="settings-llm-api-base">
+                                        "API 基址（api_base）"
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="settings-llm-api-base"
+                                        class="settings-text-input"
+                                        placeholder="例如 https://api.deepseek.com/v1"
+                                        prop:value=move || llm_api_base_draft.get()
+                                        on:input=move |ev| {
+                                            llm_api_base_draft.set(event_target_value(&ev));
+                                        }
+                                    />
+                                </div>
+                                <div class="settings-field">
+                                    <label class="settings-field-label" for="settings-llm-model">
+                                        "模型名称（model）"
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="settings-llm-model"
+                                        class="settings-text-input"
+                                        placeholder="例如 deepseek-chat"
+                                        prop:value=move || llm_model_draft.get()
+                                        on:input=move |ev| {
+                                            llm_model_draft.set(event_target_value(&ev));
+                                        }
+                                    />
+                                </div>
+                                <div class="settings-field">
+                                    <label class="settings-field-label" for="settings-llm-api-key">
+                                        "API 密钥（覆盖 API_KEY）"
+                                    </label>
+                                    <input
+                                        type="password"
+                                        id="settings-llm-api-key"
+                                        class="settings-text-input"
+                                        autocomplete="off"
+                                        placeholder="留空保留已存密钥；填写新密钥后点保存"
+                                        prop:value=move || llm_api_key_draft.get()
+                                        on:input=move |ev| {
+                                            llm_api_key_draft.set(event_target_value(&ev));
+                                        }
+                                    />
+                                </div>
+                                <Show when=move || llm_has_saved_key.get()>
+                                    <p class="modal-hint settings-field-nested-hint">
+                                        "当前已在本机保存密钥（不会回显到输入框）。"
+                                    </p>
+                                </Show>
+                                <div class="settings-actions-row">
+                                    <button
+                                        type="button"
+                                        class="btn btn-primary btn-sm"
+                                        on:click=move |_| {
+                                            llm_settings_feedback.set(None);
+                                            let key_raw = llm_api_key_draft.get();
+                                            let api_key_upd = if key_raw.trim().is_empty() {
+                                                None
+                                            } else {
+                                                Some(key_raw)
+                                            };
+                                            let base = llm_api_base_draft.get();
+                                            let model = llm_model_draft.get();
+                                            match persist_client_llm_to_storage(
+                                                &base,
+                                                &model,
+                                                api_key_upd.as_deref(),
+                                            ) {
+                                                Ok(()) => {
+                                                    llm_api_key_draft.set(String::new());
+                                                    llm_has_saved_key
+                                                        .set(client_llm_storage_has_api_key());
+                                                    client_llm_storage_tick
+                                                        .update(|n| *n = n.wrapping_add(1));
+                                                    llm_settings_feedback.set(Some(
+                                                        "已保存到本机浏览器".into(),
+                                                    ));
+                                                }
+                                                Err(e) => llm_settings_feedback.set(Some(e)),
+                                            }
+                                        }
+                                    >
+                                        "保存模型设置"
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        prop:disabled=move || !llm_has_saved_key.get()
+                                        on:click=move |_| {
+                                            llm_settings_feedback.set(None);
+                                            let _ = clear_client_llm_api_key_storage();
+                                            llm_has_saved_key.set(false);
+                                            llm_settings_feedback.set(Some(
+                                                "已清除本机保存的密钥".into(),
+                                            ));
+                                        }
+                                    >
+                                        "清除已存密钥"
+                                    </button>
+                                </div>
+                                <Show when=move || llm_settings_feedback.get().is_some()>
+                                    <p class="settings-save-feedback">{move || {
+                                        llm_settings_feedback.get().unwrap_or_default()
+                                    }}</p>
+                                </Show>
                             </div>
                         </div>
                     </div>
