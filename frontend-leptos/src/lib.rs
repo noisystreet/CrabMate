@@ -13,6 +13,7 @@ mod message_format;
 mod session_export;
 mod session_modal_row;
 mod session_ops;
+mod session_search;
 mod sse_dispatch;
 mod storage;
 mod workspace_shell;
