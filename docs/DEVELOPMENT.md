@@ -421,16 +421,42 @@ flowchart LR
 
 ### `frontend-leptos/src/lib.rs`
 
-- Web 主界面（会话列表、聊天区、工作区与任务侧栏、状态栏、主题切换）；左栏「最近」会话 **`contextmenu`** 打开菜单，导出 JSON/Markdown 与删除与 **`SessionModalRow`** 共用 **`export_session_*_for_id` / `delete_session_after_confirm`**。
-- 助手**非工具**消息走 **`markdown::to_safe_html`** + **`assistant_markdown_body_view`**（`Effect` + 微任务延迟写入，随会话信号刷新）；用户 / 工具 / 系统消息仍为纯文本 **`span.msg-body`**。
-- 首条用户消息发送后：若会话标题仍为 **`storage::DEFAULT_CHAT_SESSION_TITLE`**（默认「新会话」），则 **`title_from_user_prompt`** 用该条提问生成侧栏/管理列表标题（压平换行、限长约 48 字）；用户事先重命名则不改写。
-- 流式消息渲染与自动跟底策略（用户上滚时禁用、回到底部附近恢复）。
-- `agent_reply_plan` 展示过滤：不回显原始 JSON，保留可读信息或终答正文。
+- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下。
+
+### `frontend-leptos/src/app.rs`
+
+- 单根 **`App`** 组件：会话列表、聊天区、工作区与任务侧栏、状态栏、主题/设置模态、流式与审批条等（状态与 `Effect` 集中于此）。
+- 左栏「最近」会话 **`contextmenu`** 打开菜单；导出 JSON/Markdown 与删除与 **`SessionModalRow`** 共用 **`session_ops::export_session_*_for_id` / `delete_session_after_confirm`**。
+- 流式消息与自动跟底策略（用户上滚时禁用、回到底部附近恢复）。
+
+### `frontend-leptos/src/app_prefs.rs`
+
+- **`localStorage`** 键与侧栏视图枚举（**`SidePanelView`**）、状态栏用的本机/服务端 **`api_base` / `model`** 合并展示、侧栏宽度钳制与读写。
+
+### `frontend-leptos/src/message_format.rs`
+
+- 工具卡摘要去重、**`agent_reply_plan`** 围栏/流式缓冲与 **`assistant_text_for_display`**（单测在此模块）；**`message_text_for_display`** 供气泡与导出路径复用。
+
+### `frontend-leptos/src/assistant_body.rs`
+
+- 助手**非工具**消息：**`markdown::to_safe_html`** + **`assistant_markdown_body_view`**（`Effect` + 微任务延迟写入）；用户 / 工具 / 系统消息在 **`app.rs`** 中仍为纯文本 **`span.msg-body`**。
+
+### `frontend-leptos/src/session_ops.rs`
+
+- 会话补丁、重试准备、标题 **`title_from_user_prompt`**（首条用户消息且标题仍为默认时改写侧栏名）、导出/删除、右键菜单锚点与 **`approval_session_id`**（单测：标题生成）。
+
+### `frontend-leptos/src/session_modal_row.rs`
+
+- 「管理会话」模态中单行 **`SessionModalRow`**。
+
+### `frontend-leptos/src/workspace_shell.rs`
+
+- **`reload_workspace_panel`**（`GET /workspace`）、主/侧列 **`begin_side_column_resize`**（全局 mousemove/mouseup）。
 
 ### `frontend-leptos/src/storage.rs`
 
 - `localStorage` 会话持久化（会话列表、活动会话、草稿等）。
-- **`DEFAULT_CHAT_SESSION_TITLE`**：新建会话默认标题，与 `lib.rs` 首条消息自动命名条件一致。
+- **`DEFAULT_CHAT_SESSION_TITLE`**：新建会话默认标题，与 **`app.rs`** 首条消息自动命名（**`session_ops::title_from_user_prompt`**）条件一致。
 - 与导出结构保持兼容，供 `runtime/chat_export` 与前端互通。
 
 ## 数据与文件持久化约定
