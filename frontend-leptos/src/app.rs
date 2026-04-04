@@ -119,6 +119,7 @@ pub fn App() -> impl IntoView {
     let chat_find_query = RwSignal::new(String::new());
     let chat_find_match_ids = RwSignal::new(Vec::<String>::new());
     let chat_find_cursor = RwSignal::new(0_usize);
+    let chat_find_panel_open = RwSignal::new(false);
     // 从侧栏跳转后滚动到该消息（DOM 就绪后消费）。
     let focus_message_id_after_nav = RwSignal::new(None::<String>);
 
@@ -1192,90 +1193,127 @@ pub fn App() -> impl IntoView {
                 })
             }}
 
-            <div class="chat-find-bar" role="search" aria-label="在当前会话中查找">
-                <label class="chat-find-label" for="chat-find-input">"查找"</label>
-                <input
-                    id="chat-find-input"
-                    type="search"
-                    class="chat-find-input"
-                    placeholder="当前会话消息…"
-                    prop:value=move || chat_find_query.get()
-                    on:input=move |ev| {
-                        chat_find_query.set(event_target_value(&ev));
-                    }
-                />
-                <span class="chat-find-meta" aria-live="polite">
-                    {move || {
-                        let q = chat_find_query.get();
-                        if q.trim().is_empty() {
-                            return String::new();
-                        }
-                        let n = chat_find_match_ids.with(|v| v.len());
-                        let c = chat_find_cursor.get();
-                        if n == 0 {
-                            "无匹配".to_string()
-                        } else {
-                            format!("{} / {}", c + 1, n)
-                        }
-                    }}
-                </span>
-                <button
-                    type="button"
-                    class="btn btn-muted btn-sm chat-find-nav"
-                    title="上一条匹配"
-                    prop:disabled=move || {
-                        chat_find_query.get().trim().is_empty()
-                            || chat_find_match_ids.with(|v| v.is_empty())
-                    }
-                    on:click=move |_| {
-                        let ids = chat_find_match_ids.get();
-                        if ids.is_empty() {
-                            return;
-                        }
-                        auto_scroll_chat.set(false);
-                        chat_find_cursor.update(|i| {
-                            if *i == 0 {
-                                *i = ids.len() - 1;
-                            } else {
-                                *i -= 1;
-                            }
-                        });
-                        let idx = chat_find_cursor.get();
-                        scroll_message_into_view(&ids[idx]);
-                    }
-                >
-                    "↑"
-                </button>
-                <button
-                    type="button"
-                    class="btn btn-muted btn-sm chat-find-nav"
-                    title="下一条匹配"
-                    prop:disabled=move || {
-                        chat_find_query.get().trim().is_empty()
-                            || chat_find_match_ids.with(|v| v.is_empty())
-                    }
-                    on:click=move |_| {
-                        let ids = chat_find_match_ids.get();
-                        if ids.is_empty() {
-                            return;
-                        }
-                        auto_scroll_chat.set(false);
-                        chat_find_cursor.update(|i| {
-                            *i = (*i + 1) % ids.len();
-                        });
-                        let idx = chat_find_cursor.get();
-                        scroll_message_into_view(&ids[idx]);
-                    }
-                >
-                    "↓"
-                </button>
-            </div>
+            <Show when=move || chat_find_panel_open.get()>
+                <div class="chat-find-wrap">
+                    <div class="chat-find-bar" role="search" aria-label="在当前会话中查找">
+                                <label class="chat-find-label" for="chat-find-input">"查找"</label>
+                                <input
+                                    id="chat-find-input"
+                                    type="search"
+                                    class="chat-find-input"
+                                    placeholder="当前会话消息…"
+                                    prop:value=move || chat_find_query.get()
+                                    on:input=move |ev| {
+                                        chat_find_query.set(event_target_value(&ev));
+                                    }
+                                />
+                                <span class="chat-find-meta" aria-live="polite">
+                                    {move || {
+                                        let q = chat_find_query.get();
+                                        if q.trim().is_empty() {
+                                            return String::new();
+                                        }
+                                        let n = chat_find_match_ids.with(|v| v.len());
+                                        let c = chat_find_cursor.get();
+                                        if n == 0 {
+                                            "无匹配".to_string()
+                                        } else {
+                                            format!("{} / {}", c + 1, n)
+                                        }
+                                    }}
+                                </span>
+                                <button
+                                    type="button"
+                                    class="btn btn-muted btn-sm chat-find-nav"
+                                    title="上一条匹配"
+                                    prop:disabled=move || {
+                                        chat_find_query.get().trim().is_empty()
+                                            || chat_find_match_ids.with(|v| v.is_empty())
+                                    }
+                                    on:click=move |_| {
+                                        let ids = chat_find_match_ids.get();
+                                        if ids.is_empty() {
+                                            return;
+                                        }
+                                        auto_scroll_chat.set(false);
+                                        chat_find_cursor.update(|i| {
+                                            if *i == 0 {
+                                                *i = ids.len() - 1;
+                                            } else {
+                                                *i -= 1;
+                                            }
+                                        });
+                                        let idx = chat_find_cursor.get();
+                                        scroll_message_into_view(&ids[idx]);
+                                    }
+                                >
+                                    "↑"
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn btn-muted btn-sm chat-find-nav"
+                                    title="下一条匹配"
+                                    prop:disabled=move || {
+                                        chat_find_query.get().trim().is_empty()
+                                            || chat_find_match_ids.with(|v| v.is_empty())
+                                    }
+                                    on:click=move |_| {
+                                        let ids = chat_find_match_ids.get();
+                                        if ids.is_empty() {
+                                            return;
+                                        }
+                                        auto_scroll_chat.set(false);
+                                        chat_find_cursor.update(|i| {
+                                            *i = (*i + 1) % ids.len();
+                                        });
+                                        let idx = chat_find_cursor.get();
+                                        scroll_message_into_view(&ids[idx]);
+                                    }
+                                >
+                                    "↓"
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn btn-muted btn-sm chat-find-close"
+                                    title="收起查找栏"
+                                    aria-label="收起查找栏"
+                                    on:click=move |_| chat_find_panel_open.set(false)
+                                >
+                                    "×"
+                                </button>
+                    </div>
+                </div>
+            </Show>
 
             <div
                 class:main-row-resizing=move || side_resize_dragging.get()
                 class="main-row"
             >
                 <div class="chat-column">
+                    <Show when=move || !chat_find_panel_open.get()>
+                        <button
+                            type="button"
+                            class="chat-find-toggle"
+                            title="在当前会话中查找"
+                            aria-label="在当前会话中查找"
+                            aria-expanded="false"
+                            on:click=move |_| chat_find_panel_open.set(true)
+                        >
+                            <svg
+                                class="chat-find-icon"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true"
+                            >
+                                <circle cx="11" cy="11" r="8" />
+                                <path d="m21 21-4.3-4.3" />
+                            </svg>
+                        </button>
+                    </Show>
                     <div
                         class="messages"
                         node_ref=messages_scroller
@@ -1405,8 +1443,9 @@ pub fn App() -> impl IntoView {
                                                         <div class="msg-actions" role="group" aria-label="消息操作">
                                                             <button
                                                                 type="button"
-                                                                class="btn btn-muted btn-sm msg-action-btn"
+                                                                class="btn btn-muted btn-sm msg-action-btn msg-copy-btn"
                                                                 title="复制本条展示文本"
+                                                                aria-label="复制本条展示文本"
                                                                 on:click=move |_| {
                                                                     let t = sessions.with(|list| {
                                                                         let aid = active_id.get_untracked();
@@ -1423,7 +1462,28 @@ pub fn App() -> impl IntoView {
                                                                     write_clipboard_text(&t);
                                                                 }
                                                             >
-                                                                "复制"
+                                                                <svg
+                                                                    class="msg-copy-icon"
+                                                                    viewBox="0 0 24 24"
+                                                                    fill="none"
+                                                                    xmlns="http://www.w3.org/2000/svg"
+                                                                    aria-hidden="true"
+                                                                >
+                                                                    <rect
+                                                                        x="9"
+                                                                        y="9"
+                                                                        width="13"
+                                                                        height="13"
+                                                                        rx="2"
+                                                                        stroke="currentColor"
+                                                                        stroke-width="2"
+                                                                    />
+                                                                    <path
+                                                                        d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                                                                        stroke="currentColor"
+                                                                        stroke-width="2"
+                                                                    />
+                                                                </svg>
                                                             </button>
                                                             {is_user_plain.then(|| {
                                                                 let idx = msg_idx;
