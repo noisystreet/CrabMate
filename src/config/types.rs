@@ -346,8 +346,6 @@ pub struct AgentConfig {
     pub llm_bigmodel_thinking: bool,
     /// Moonshot **Kimi**（**kimi-k2.5**）：为 `true` 时请求体带 **`thinking: { "type": "disabled" }`**，关闭文档所述默认思考行为（见 [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) **`thinking`** 字段）。**仅**在对接 Moonshot 且模型为 **kimi-k2.5** 时使用；其它网关勿开。
     pub llm_kimi_thinking_disabled: bool,
-    /// 为 `true` 时出站 **`chat/completions`** 请求**不**再含 **`role: "system"`**，将系统提示等并入后续 **`user`** 正文。MiniMax **`api.minimaxi.com`** 等线上接口仍常报 **`invalid message role: system`**，嵌入默认 **`true`**；换 DeepSeek 等且需保留独立 **`system`** 条时可 **`false`**。
-    pub llm_fold_system_into_user: bool,
     /// HTTP 请求超时（秒），用于 chat 等 API
     pub api_timeout_secs: u64,
     /// API 失败时最大重试次数（0 = 仅首次，不再重试）

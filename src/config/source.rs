@@ -70,7 +70,8 @@ pub(super) struct AgentSection {
     pub(super) llm_bigmodel_thinking: Option<bool>,
     /// Moonshot **kimi-k2.5**：为真时请求体带 **`thinking: { "type": "disabled" }`**（文档默认服务端为 enabled，见 Kimi Chat API）。
     pub(super) llm_kimi_thinking_disabled: Option<bool>,
-    /// 将 `system` 折叠进 `user`（MiniMax 线上常见拒收独立 `system`）。
+    /// 已废弃：仍解析以兼容旧 `[agent]` 配置，**运行时已忽略**。MiniMax 由源码按 **`model` / `api_base`** 自动折叠 **`system`→`user`**（见 [`crate::llm::vendor::fold_system_into_user_for_config`]）。
+    #[allow(dead_code)]
     pub(super) llm_fold_system_into_user: Option<bool>,
     pub(super) api_timeout_secs: Option<u64>,
     pub(super) api_max_retries: Option<u64>,

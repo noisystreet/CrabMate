@@ -102,6 +102,12 @@ pub(crate) fn default_llm_reasoning_split_for_gateway(model: &str, api_base: &st
     is_minimax_family_model_id(model) || api_base_looks_minimax(api_base)
 }
 
+/// 出站是否将独立 **`system`** 折叠进 **`user`**：**MiniMax**（按 `model` / `api_base` 与 [`llm_vendor_adapter`] 同源规则识别）为 **`true`**，其余为 **`false`**（不再由 TOML / 环境变量配置）。
+#[inline]
+pub fn fold_system_into_user_for_config(cfg: &AgentConfig) -> bool {
+    is_minimax_family_model_id(&cfg.model) || api_base_looks_minimax(&cfg.api_base)
+}
+
 fn kimi_coerce_temperature(model: &str, temperature: f32) -> f32 {
     if is_kimi_k2_thinking_model(model) {
         return 1.0;
@@ -361,5 +367,25 @@ mod tests {
             "deepseek-chat",
             "https://api.deepseek.com/v1"
         ));
+    }
+
+    #[test]
+    fn fold_system_into_user_true_for_minimax_model() {
+        let mut cfg = cfg_neutral_deepseek_base();
+        cfg.model = "MiniMax-M2.7".to_string();
+        assert!(super::fold_system_into_user_for_config(&cfg));
+    }
+
+    #[test]
+    fn fold_system_into_user_true_for_minimax_api_base() {
+        let mut cfg = cfg_neutral_deepseek_base();
+        cfg.api_base = "https://api.minimaxi.com/v1".to_string();
+        assert!(super::fold_system_into_user_for_config(&cfg));
+    }
+
+    #[test]
+    fn fold_system_into_user_false_for_deepseek_default() {
+        let cfg = cfg_neutral_deepseek_base();
+        assert!(!super::fold_system_into_user_for_config(&cfg));
     }
 }

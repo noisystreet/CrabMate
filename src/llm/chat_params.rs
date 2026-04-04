@@ -53,7 +53,7 @@ impl CompleteChatRetryingParams<'_> {
             no_stream: self.no_stream,
             cancel: self.cancel,
             plain_terminal_stream: self.plain_terminal_stream,
-            fold_system_into_user: self.cfg.llm_fold_system_into_user,
+            fold_system_into_user: super::fold_system_into_user_for_config(self.cfg),
             preserve_reasoning_on_assistant_tool_calls: super::llm_vendor_adapter(self.cfg)
                 .preserve_assistant_tool_call_reasoning(self.cfg),
         }
