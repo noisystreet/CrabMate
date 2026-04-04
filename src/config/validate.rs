@@ -1,7 +1,7 @@
-//! 在 [`super::finalize`] 前对 `ConfigBuilder` 做显式数值范围校验。
+//! 在 [`super::finalize::finalize`] 前对 `ConfigBuilder` 做显式数值范围校验。
 //! 与 `finalize` 中的 `clamp` 区分：**越界则报错**，避免静默截断导致与运维预期不符。
 
-use super::ConfigBuilder;
+use super::builder::ConfigBuilder;
 
 fn err_out_of_range(
     key: &str,
