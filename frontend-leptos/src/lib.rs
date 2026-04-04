@@ -52,8 +52,6 @@ const MIN_SIDE_WIDTH: f64 = 200.0;
 const MAX_SIDE_WIDTH: f64 = 560.0;
 /// 为左侧对话列预留的最小宽度（视口过窄时仍允许侧栏拖到 `MIN_SIDE_WIDTH`，由 flex 挤压主列）。
 const MIN_CHAT_RESERVE_PX: f64 = 240.0;
-/// 侧栏关闭时，右列仅保留工具栏（视图/状态/设置）的窄轨宽度。
-const TOOLBAR_RAIL_WIDTH_PX: f64 = 84.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum SidePanelView {
@@ -1809,7 +1807,7 @@ fn App() -> impl IntoView {
                                                     </p>
                                                     <ul class="messages-empty-tips">
                                                         <li>"左侧可新建对话、切换最近会话，或「管理会话」导出与重命名。"</li>
-                                                        <li>"最右列为工具栏与侧栏：顶部「视图」菜单可在隐藏侧栏、工作区、任务之间切换；另有状态栏与「设置」（主题与页面背景）。"</li>
+                                                        <li>"侧栏展开时工具栏在右列顶部；「隐藏侧栏」后右侧贴边纵向三键，同宽铺满一条，无额外围框。视图菜单可在隐藏、工作区、任务之间切换。"</li>
                                                     </ul>
                                                 </div>
                                             </div>
@@ -1962,7 +1960,7 @@ fn App() -> impl IntoView {
                     }
                     style:width=move || {
                         if matches!(side_panel_view.get(), SidePanelView::None) {
-                            format!("{TOOLBAR_RAIL_WIDTH_PX}px")
+                            "0px".to_string()
                         } else {
                             format!("{}px", side_width.get())
                         }
