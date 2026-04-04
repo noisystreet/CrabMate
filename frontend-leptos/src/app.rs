@@ -27,6 +27,10 @@ use crate::session_ops::{
     truncate_at_user_message_and_prepare_regenerate, truncate_at_user_message_branch_local,
     user_ordinal_for_message_index, write_clipboard_text,
 };
+use crate::session_search::{
+    MESSAGE_SEARCH_MAX_HITS, collect_message_search_hits, normalize_search_query,
+    scroll_message_into_view, session_title_matches,
+};
 use crate::sse_dispatch::{CommandApprovalRequest, ToolResultInfo};
 use crate::storage::{
     ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, ensure_at_least_one, load_sessions,
@@ -107,6 +111,16 @@ pub fn App() -> impl IntoView {
     let auto_scroll_chat = RwSignal::new(true);
     // 记录滚动方向：仅当用户向下回到底部附近时才恢复自动跟底，避免上滚初期抖动。
     let last_messages_scroll_top = RwSignal::new(0_i32);
+    // 侧栏：按标题过滤会话。
+    let sidebar_session_query = RwSignal::new(String::new());
+    // 侧栏：跨会话消息全文搜索（本地）。
+    let global_message_query = RwSignal::new(String::new());
+    // 主区：当前会话内查找。
+    let chat_find_query = RwSignal::new(String::new());
+    let chat_find_match_ids = RwSignal::new(Vec::<String>::new());
+    let chat_find_cursor = RwSignal::new(0_usize);
+    // 从侧栏跳转后滚动到该消息（DOM 就绪后消费）。
+    let focus_message_id_after_nav = RwSignal::new(None::<String>);
 
     Effect::new(move |_| {
         if initialized.get() {
@@ -367,6 +381,81 @@ pub fn App() -> impl IntoView {
                 el.set_scroll_top(el.scroll_height());
             }
         });
+    });
+
+    // 当前会话内查找：匹配列表随消息更新；仅当查询或会话切换时重置光标并滚到首条。
+    let chat_find_prev_key: Rc<RefCell<(String, String)>> =
+        Rc::new(RefCell::new((String::new(), String::new())));
+    Effect::new({
+        let sessions = sessions;
+        let active_id = active_id;
+        let chat_find_query = chat_find_query;
+        let chat_find_match_ids = chat_find_match_ids;
+        let chat_find_cursor = chat_find_cursor;
+        let auto_scroll_chat = auto_scroll_chat;
+        let chat_find_prev_key = Rc::clone(&chat_find_prev_key);
+        move |_| {
+            let aid = active_id.get();
+            let q = normalize_search_query(&chat_find_query.get());
+            let ids = if q.is_empty() {
+                Vec::new()
+            } else {
+                sessions.with(|list| {
+                    list.iter()
+                        .find(|s| s.id == aid)
+                        .map(|s| {
+                            s.messages
+                                .iter()
+                                .filter(|m| message_text_for_display(m).to_lowercase().contains(&q))
+                                .map(|m| m.id.clone())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                })
+            };
+            chat_find_match_ids.set(ids.clone());
+            let mut prev = chat_find_prev_key.borrow_mut();
+            let key_changed = prev.0 != q || prev.1 != aid;
+            if key_changed {
+                prev.0 = q.clone();
+                prev.1 = aid.clone();
+                chat_find_cursor.set(0);
+                if !q.is_empty() && !ids.is_empty() {
+                    auto_scroll_chat.set(false);
+                    let first = ids[0].clone();
+                    spawn_local(async move {
+                        TimeoutFuture::new(32).await;
+                        scroll_message_into_view(&first);
+                    });
+                }
+            } else {
+                chat_find_cursor.update(|c| {
+                    if ids.is_empty() {
+                        *c = 0;
+                    } else if *c >= ids.len() {
+                        *c = ids.len() - 1;
+                    }
+                });
+            }
+        }
+    });
+
+    // 侧栏「在消息中打开」后滚动到对应气泡。
+    Effect::new({
+        let focus_message_id_after_nav = focus_message_id_after_nav;
+        move |_| {
+            let Some(mid) = focus_message_id_after_nav.get() else {
+                return;
+            };
+            focus_message_id_after_nav.set(None);
+            let mid = mid.clone();
+            spawn_local(async move {
+                TimeoutFuture::new(48).await;
+                scroll_message_into_view(&mid);
+                TimeoutFuture::new(120).await;
+                scroll_message_into_view(&mid);
+            });
+        }
     });
 
     let attach_chat_stream: Rc<dyn Fn(String, String)> = Rc::new({
@@ -769,12 +858,101 @@ pub fn App() -> impl IntoView {
                 >
                     "管理会话…"
                 </button>
+                <div class="nav-rail-search">
+                    <label class="nav-rail-search-label" for="nav-session-filter">"筛选会话"</label>
+                    <input
+                        id="nav-session-filter"
+                        type="search"
+                        class="nav-session-search-input"
+                        placeholder="按标题筛选…"
+                        prop:value=move || sidebar_session_query.get()
+                        on:input=move |ev| {
+                            sidebar_session_query.set(event_target_value(&ev));
+                        }
+                    />
+                    <label class="nav-rail-search-label" for="nav-msg-search">"搜索消息"</label>
+                    <input
+                        id="nav-msg-search"
+                        type="search"
+                        class="nav-global-search-input"
+                        placeholder="全文搜索（本地）…"
+                        prop:value=move || global_message_query.get()
+                        on:input=move |ev| {
+                            global_message_query.set(event_target_value(&ev));
+                        }
+                    />
+                </div>
                 <div class="nav-rail-scroll">
                     <div class="nav-rail-scroll-label">"最近"</div>
                     {move || {
-                        let mut v: Vec<ChatSession> = sessions.get().into_iter().collect();
+                        let needle = normalize_search_query(&sidebar_session_query.get());
+                        let msg_needle = normalize_search_query(&global_message_query.get());
+                        let mut v: Vec<ChatSession> = sessions
+                            .get()
+                            .into_iter()
+                            .filter(|s| session_title_matches(s, &needle))
+                            .collect();
                         v.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
-                        v.into_iter()
+                        let hits = if msg_needle.is_empty() {
+                            Vec::new()
+                        } else {
+                            sessions.with(|list| {
+                                collect_message_search_hits(list, &msg_needle, MESSAGE_SEARCH_MAX_HITS)
+                            })
+                        };
+                        let hit_views = if !msg_needle.is_empty() {
+                            if hits.is_empty() {
+                                view! {
+                                    <div class="nav-search-hits-empty" role="status">
+                                        "无匹配消息"
+                                    </div>
+                                }
+                                .into_any()
+                            } else {
+                                hits
+                                    .into_iter()
+                                    .map(|h| {
+                                        let sid = h.session_id.clone();
+                                        let mid = h.message_id.clone();
+                                        let title = h.session_title.clone();
+                                        let snip = h.snippet.clone();
+                                        view! {
+                                            <button
+                                                type="button"
+                                                class="nav-search-hit"
+                                                on:click=move |_| {
+                                                    session_context_menu.set(None);
+                                                    active_id.set(sid.clone());
+                                                    draft.set(
+                                                        sessions.with(|list| {
+                                                            list.iter()
+                                                                .find(|s| s.id == sid)
+                                                                .map(|s| s.draft.clone())
+                                                                .unwrap_or_default()
+                                                        }),
+                                                    );
+                                                    conversation_id.set(None);
+                                                    conversation_revision.set(None);
+                                                    focus_message_id_after_nav.set(Some(mid.clone()));
+                                                    mobile_nav_open.set(false);
+                                                }
+                                            >
+                                                <span class="nav-search-hit-title">{title}</span>
+                                                <span class="nav-search-hit-snippet">{snip}</span>
+                                            </button>
+                                        }
+                                    })
+                                    .collect_view()
+                                    .into_any()
+                            }
+                        } else {
+                            view! { <></> }.into_any()
+                        };
+                        view! {
+                            <div class="nav-search-hits" role="region" aria-label="消息搜索结果">
+                                {hit_views}
+                            </div>
+                            {v.into_iter()
                             .map(|s| {
                                 let session_id_class = s.id.clone();
                                 let session_id_click = s.id.clone();
@@ -818,6 +996,7 @@ pub fn App() -> impl IntoView {
                                                     }),
                                                 );
                                                 conversation_id.set(None);
+                                                conversation_revision.set(None);
                                                 mobile_nav_open.set(false);
                                             }
                                         }
@@ -827,7 +1006,9 @@ pub fn App() -> impl IntoView {
                                     </button>
                                 }
                             })
-                            .collect_view()
+                            .collect_view()}
+                        }
+                        .into_any()
                     }}
                 </div>
             </aside>
@@ -1011,6 +1192,85 @@ pub fn App() -> impl IntoView {
                 })
             }}
 
+            <div class="chat-find-bar" role="search" aria-label="在当前会话中查找">
+                <label class="chat-find-label" for="chat-find-input">"查找"</label>
+                <input
+                    id="chat-find-input"
+                    type="search"
+                    class="chat-find-input"
+                    placeholder="当前会话消息…"
+                    prop:value=move || chat_find_query.get()
+                    on:input=move |ev| {
+                        chat_find_query.set(event_target_value(&ev));
+                    }
+                />
+                <span class="chat-find-meta" aria-live="polite">
+                    {move || {
+                        let q = chat_find_query.get();
+                        if q.trim().is_empty() {
+                            return String::new();
+                        }
+                        let n = chat_find_match_ids.with(|v| v.len());
+                        let c = chat_find_cursor.get();
+                        if n == 0 {
+                            "无匹配".to_string()
+                        } else {
+                            format!("{} / {}", c + 1, n)
+                        }
+                    }}
+                </span>
+                <button
+                    type="button"
+                    class="btn btn-muted btn-sm chat-find-nav"
+                    title="上一条匹配"
+                    prop:disabled=move || {
+                        chat_find_query.get().trim().is_empty()
+                            || chat_find_match_ids.with(|v| v.is_empty())
+                    }
+                    on:click=move |_| {
+                        let ids = chat_find_match_ids.get();
+                        if ids.is_empty() {
+                            return;
+                        }
+                        auto_scroll_chat.set(false);
+                        chat_find_cursor.update(|i| {
+                            if *i == 0 {
+                                *i = ids.len() - 1;
+                            } else {
+                                *i -= 1;
+                            }
+                        });
+                        let idx = chat_find_cursor.get();
+                        scroll_message_into_view(&ids[idx]);
+                    }
+                >
+                    "↑"
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-muted btn-sm chat-find-nav"
+                    title="下一条匹配"
+                    prop:disabled=move || {
+                        chat_find_query.get().trim().is_empty()
+                            || chat_find_match_ids.with(|v| v.is_empty())
+                    }
+                    on:click=move |_| {
+                        let ids = chat_find_match_ids.get();
+                        if ids.is_empty() {
+                            return;
+                        }
+                        auto_scroll_chat.set(false);
+                        chat_find_cursor.update(|i| {
+                            *i = (*i + 1) % ids.len();
+                        });
+                        let idx = chat_find_cursor.get();
+                        scroll_message_into_view(&ids[idx]);
+                    }
+                >
+                    "↓"
+                </button>
+            </div>
+
             <div
                 class:main-row-resizing=move || side_resize_dragging.get()
                 class="main-row"
@@ -1085,13 +1345,14 @@ pub fn App() -> impl IntoView {
                                                 let loading = m.role == "assistant"
                                                     && m.state.as_deref() == Some("loading");
                                                 let err = m.state.as_deref() == Some("error");
-                                                let class_final = if err {
+                                                let class_prefix = if err {
                                                     format!("{cls} msg-error")
                                                 } else if loading {
                                                     format!("{cls} msg-loading")
                                                 } else {
                                                     cls.to_string()
                                                 };
+                                                let mid_highlight = m.id.clone();
                                                 let role_lbl = message_role_label(&m);
                                                 let time_str =
                                                     format_msg_time_label(m.created_at).unwrap_or_default();
@@ -1117,7 +1378,25 @@ pub fn App() -> impl IntoView {
                                                     .into_any()
                                                 };
                                                 view! {
-                                                    <div class=class_final>
+                                                    <div
+                                                        class=move || {
+                                                            let mut c = class_prefix.clone();
+                                                            if !chat_find_query.get().trim().is_empty() {
+                                                                let cur = chat_find_cursor.get();
+                                                                let hit = chat_find_match_ids.with(|ids| {
+                                                                    ids
+                                                                        .get(cur)
+                                                                        .map(|x| x == &mid_highlight)
+                                                                        .unwrap_or(false)
+                                                                });
+                                                                if hit {
+                                                                    c.push_str(" msg-find-highlight");
+                                                                }
+                                                            }
+                                                            c
+                                                        }
+                                                        id=format!("msg-{}", m.id)
+                                                    >
                                                         <div class="msg-meta" aria-hidden="true">
                                                             <span class="msg-meta-role">{role_lbl}</span>
                                                             <span class="msg-meta-time">{time_str}</span>

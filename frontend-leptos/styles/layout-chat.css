@@ -47,6 +47,58 @@
   cursor: col-resize;
 }
 
+.chat-find-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-elevated) 35%, var(--bg));
+}
+
+.chat-find-label {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.chat-find-input {
+  flex: 1;
+  min-width: 120px;
+  max-width: 320px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface) 55%, var(--bg));
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.chat-find-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-subtle));
+}
+
+.chat-find-meta {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5em;
+}
+
+.chat-find-nav {
+  min-width: 2rem;
+}
+
+.msg-find-highlight {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent),
+    var(--shadow-sm);
+}
+
 .chat-column {
   flex: 1;
   min-width: 0;
