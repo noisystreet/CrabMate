@@ -34,6 +34,12 @@
   display: none;
 }
 
+/* 窄轨时「视图」下拉会向左超出列宽：勿裁切，并抬高叠层以免被对话列盖住 */
+.side-column.side-column-rail-only {
+  overflow: visible;
+  z-index: 3;
+}
+
 .side-body {
   display: flex;
   min-height: 0;

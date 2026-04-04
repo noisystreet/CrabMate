@@ -191,7 +191,70 @@
   backdrop-filter: blur(10px);
 }
 
-/* 工作区 / 任务 / 状态 / 设置：右列（side-column）顶部，不占聊天列 */
+/* 「视图」下拉：工作区 / 任务 / 隐藏侧栏 */
+.toolbar-view-wrap {
+  position: relative;
+  z-index: 2;
+}
+
+.toolbar-view-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: transparent;
+  cursor: default;
+}
+
+.toolbar-view-trigger {
+  min-width: 0;
+}
+
+.toolbar-view-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 41;
+  margin-top: 4px;
+  min-width: 128px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.toolbar-view-menu-item {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toolbar-view-menu-item:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.toolbar-view-menu-item.active {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-dim);
+}
+
+.side-column-rail-only .toolbar-view-menu {
+  left: auto;
+  right: 0;
+  z-index: 60;
+}
+
+/* 视图 / 状态 / 设置：右列（side-column）顶部，不占聊天列 */
 .side-column .shell-main-toolbar {
   display: flex;
   flex-shrink: 0;
@@ -214,6 +277,7 @@
   border-bottom: none;
   flex: 1;
   min-height: 0;
+  overflow: visible;
 }
 
 .side-column-rail-only .shell-main-toolbar .btn {
