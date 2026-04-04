@@ -29,7 +29,7 @@ use crate::session_ops::{
 };
 use crate::session_search::{
     MESSAGE_SEARCH_MAX_HITS, collect_message_search_hits, normalize_search_query,
-    scroll_message_into_view, session_title_matches,
+    scroll_message_into_view, session_title_matches, split_for_find_highlight,
 };
 use crate::sse_dispatch::{CommandApprovalRequest, ToolResultInfo};
 use crate::storage::{
@@ -947,7 +947,7 @@ pub fn App() -> impl IntoView {
                                     .into_any()
                             }
                         } else {
-                            view! { <></> }.into_any()
+                            ().into_any()
                         };
                         view! {
                             <div class="nav-search-hits" role="region" aria-label="消息搜索结果">
@@ -1408,9 +1408,26 @@ pub fn App() -> impl IntoView {
                                                     )
                                                     .into_any()
                                                 } else {
+                                                    let display_for_find = message_text_for_display(&m);
                                                     view! {
                                                         <span class="msg-body">
-                                                            {message_text_for_display(&m)}
+                                                            {move || {
+                                                                let q =
+                                                                    normalize_search_query(&chat_find_query.get());
+                                                                let segs =
+                                                                    split_for_find_highlight(&display_for_find, &q);
+                                                                segs
+                                                                    .into_iter()
+                                                                    .map(|(s, hl)| {
+                                                                        if hl {
+                                                                            view! { <mark class="msg-find-inline">{s}</mark> }
+                                                                                .into_any()
+                                                                        } else {
+                                                                            view! { {s} }.into_any()
+                                                                        }
+                                                                    })
+                                                                    .collect_view()
+                                                            }}
                                                         </span>
                                                     }
                                                     .into_any()
@@ -1419,15 +1436,22 @@ pub fn App() -> impl IntoView {
                                                     <div
                                                         class=move || {
                                                             let mut c = class_prefix.clone();
-                                                            if !chat_find_query.get().trim().is_empty() {
+                                                            let q = normalize_search_query(&chat_find_query.get());
+                                                            if !q.is_empty() {
+                                                                let in_list = chat_find_match_ids.with(|ids| {
+                                                                    ids.iter().any(|x| x == &mid_highlight)
+                                                                });
+                                                                if in_list {
+                                                                    c.push_str(" msg-find-match");
+                                                                }
                                                                 let cur = chat_find_cursor.get();
-                                                                let hit = chat_find_match_ids.with(|ids| {
+                                                                let is_current = chat_find_match_ids.with(|ids| {
                                                                     ids
                                                                         .get(cur)
                                                                         .map(|x| x == &mid_highlight)
                                                                         .unwrap_or(false)
                                                                 });
-                                                                if hit {
+                                                                if is_current {
                                                                     c.push_str(" msg-find-highlight");
                                                                 }
                                                             }
