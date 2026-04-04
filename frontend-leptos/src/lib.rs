@@ -40,6 +40,8 @@ use crate::sse_dispatch::{CommandApprovalRequest, ToolResultInfo};
 const WORKSPACE_WIDTH_KEY: &str = "agent-demo-workspace-width";
 const WORKSPACE_VISIBLE_KEY: &str = "agent-demo-workspace-visible";
 const TASKS_VISIBLE_KEY: &str = "agent-demo-tasks-visible";
+/// 右列侧栏视图：`none` | `workspace` | `tasks`（与旧版双开关互斥，仅其一展示）。
+const SIDE_PANEL_VIEW_KEY: &str = "agent-demo-side-panel-view";
 const STATUS_BAR_VISIBLE_KEY: &str = "agent-demo-status-bar-visible";
 const THEME_KEY: &str = "crabmate-theme";
 /// 为 `true` 时显示页面径向渐变光晕；`false` 时仅纯色背景（`data-bg-decor="plain"`）。
@@ -50,8 +52,57 @@ const MIN_SIDE_WIDTH: f64 = 200.0;
 const MAX_SIDE_WIDTH: f64 = 560.0;
 /// 为左侧对话列预留的最小宽度（视口过窄时仍允许侧栏拖到 `MIN_SIDE_WIDTH`，由 flex 挤压主列）。
 const MIN_CHAT_RESERVE_PX: f64 = 240.0;
-/// 工作区与任务均关闭时，右列仅保留工具栏（工作区/任务/状态/设置）的窄轨宽度。
+/// 侧栏关闭时，右列仅保留工具栏（视图/状态/设置）的窄轨宽度。
 const TOOLBAR_RAIL_WIDTH_PX: f64 = 84.0;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum SidePanelView {
+    None,
+    Workspace,
+    Tasks,
+}
+
+fn load_side_panel_view() -> SidePanelView {
+    let Some(st) = local_storage() else {
+        return SidePanelView::Workspace;
+    };
+    if let Ok(Some(v)) = st.get_item(SIDE_PANEL_VIEW_KEY) {
+        return match v.trim() {
+            "none" => SidePanelView::None,
+            "tasks" => SidePanelView::Tasks,
+            "workspace" | _ => SidePanelView::Workspace,
+        };
+    }
+    let wv = load_bool_key(WORKSPACE_VISIBLE_KEY, true);
+    let tv = load_bool_key(TASKS_VISIBLE_KEY, false);
+    let migrated = if wv && tv {
+        SidePanelView::Workspace
+    } else if wv {
+        SidePanelView::Workspace
+    } else if tv {
+        SidePanelView::Tasks
+    } else {
+        SidePanelView::None
+    };
+    let slug = match migrated {
+        SidePanelView::None => "none",
+        SidePanelView::Workspace => "workspace",
+        SidePanelView::Tasks => "tasks",
+    };
+    let _ = st.set_item(SIDE_PANEL_VIEW_KEY, slug);
+    migrated
+}
+
+fn store_side_panel_view(v: SidePanelView) {
+    if let Some(st) = local_storage() {
+        let slug = match v {
+            SidePanelView::None => "none",
+            SidePanelView::Workspace => "workspace",
+            SidePanelView::Tasks => "tasks",
+        };
+        let _ = st.set_item(SIDE_PANEL_VIEW_KEY, slug);
+    }
+}
 const AUTO_SCROLL_RESUME_GAP_PX: i32 = 24;
 
 fn local_storage() -> Option<web_sys::Storage> {
@@ -753,8 +804,7 @@ async fn reload_workspace_panel(
 
 fn begin_side_column_resize(
     ev: web_sys::MouseEvent,
-    workspace_visible: RwSignal<bool>,
-    tasks_visible: RwSignal<bool>,
+    side_panel_view: RwSignal<SidePanelView>,
     side_width: RwSignal<f64>,
     side_resize_dragging: RwSignal<bool>,
     side_resize_session: Rc<RefCell<Option<(f64, f64)>>>,
@@ -763,7 +813,7 @@ fn begin_side_column_resize(
     if ev.button() != 0 {
         return;
     }
-    if !workspace_visible.get_untracked() && !tasks_visible.get_untracked() {
+    if matches!(side_panel_view.get_untracked(), SidePanelView::None) {
         return;
     }
     ev.prevent_default();
@@ -811,8 +861,8 @@ fn App() -> impl IntoView {
     let initialized = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
     let conversation_id = RwSignal::new(None::<String>);
-    let workspace_visible = RwSignal::new(load_bool_key(WORKSPACE_VISIBLE_KEY, true));
-    let tasks_visible = RwSignal::new(load_bool_key(TASKS_VISIBLE_KEY, false));
+    let side_panel_view = RwSignal::new(load_side_panel_view());
+    let view_menu_open = RwSignal::new(false);
     let status_bar_visible = RwSignal::new(load_bool_key(STATUS_BAR_VISIBLE_KEY, true));
     let side_width = RwSignal::new(load_f64_key(WORKSPACE_WIDTH_KEY, DEFAULT_SIDE_WIDTH));
     let theme = RwSignal::new(
@@ -893,10 +943,10 @@ fn App() -> impl IntoView {
     });
 
     Effect::new(move |_| {
-        store_bool_key(WORKSPACE_VISIBLE_KEY, workspace_visible.get());
-    });
-    Effect::new(move |_| {
-        store_bool_key(TASKS_VISIBLE_KEY, tasks_visible.get());
+        let v = side_panel_view.get();
+        store_side_panel_view(v);
+        store_bool_key(WORKSPACE_VISIBLE_KEY, matches!(v, SidePanelView::Workspace));
+        store_bool_key(TASKS_VISIBLE_KEY, matches!(v, SidePanelView::Tasks));
     });
     Effect::new(move |_| {
         store_bool_key(STATUS_BAR_VISIBLE_KEY, status_bar_visible.get());
@@ -973,7 +1023,7 @@ fn App() -> impl IntoView {
     };
 
     Effect::new(move |_| {
-        if workspace_visible.get() && initialized.get() {
+        if matches!(side_panel_view.get(), SidePanelView::Workspace) && initialized.get() {
             refresh_workspace();
         }
     });
@@ -1028,7 +1078,7 @@ fn App() -> impl IntoView {
     });
 
     Effect::new(move |_| {
-        if tasks_visible.get() && initialized.get() {
+        if matches!(side_panel_view.get(), SidePanelView::Tasks) && initialized.get() {
             refresh_tasks();
         }
     });
@@ -1759,7 +1809,7 @@ fn App() -> impl IntoView {
                                                     </p>
                                                     <ul class="messages-empty-tips">
                                                         <li>"左侧可新建对话、切换最近会话，或「管理会话」导出与重命名。"</li>
-                                                        <li>"最右列为工具栏与工作区/任务面板：右列顶部可开关工作区、任务、状态栏，并通过「设置」调整主题与页面背景。"</li>
+                                                        <li>"最右列为工具栏与侧栏：顶部「视图」菜单可在隐藏侧栏、工作区、任务之间切换；另有状态栏与「设置」（主题与页面背景）。"</li>
                                                     </ul>
                                                 </div>
                                             </div>
@@ -1880,7 +1930,7 @@ fn App() -> impl IntoView {
                 <div
                     class="column-resize-handle"
                     class:column-resize-handle-off=move || {
-                        !workspace_visible.get() && !tasks_visible.get()
+                        matches!(side_panel_view.get(), SidePanelView::None)
                     }
                     role="separator"
                     aria-orientation="vertical"
@@ -1891,8 +1941,7 @@ fn App() -> impl IntoView {
                         move |ev| {
                             begin_side_column_resize(
                                 ev,
-                                workspace_visible,
-                                tasks_visible,
+                                side_panel_view,
                                 side_width,
                                 side_resize_dragging,
                                 Rc::clone(&sess),
@@ -1906,38 +1955,81 @@ fn App() -> impl IntoView {
                     class:side-column-resizing=move || side_resize_dragging.get()
                     class=move || {
                         let mut c = String::from("side-column");
-                        if !workspace_visible.get() && !tasks_visible.get() {
+                        if matches!(side_panel_view.get(), SidePanelView::None) {
                             c.push_str(" side-column-rail-only");
                         }
                         c
                     }
                     style:width=move || {
-                        if workspace_visible.get() || tasks_visible.get() {
-                            format!("{}px", side_width.get())
-                        } else {
+                        if matches!(side_panel_view.get(), SidePanelView::None) {
                             format!("{TOOLBAR_RAIL_WIDTH_PX}px")
+                        } else {
+                            format!("{}px", side_width.get())
                         }
                     }
                 >
                         <div class="shell-main-toolbar" role="toolbar" aria-label="视图与设置">
-                            <button
-                                type="button"
-                                class="btn btn-secondary btn-sm"
-                                class:active=move || workspace_visible.get()
-                                on:click=move |_| workspace_visible.update(|v| *v = !*v)
-                                title="工作区"
-                            >
-                                "工作区"
-                            </button>
-                            <button
-                                type="button"
-                                class="btn btn-secondary btn-sm"
-                                class:active=move || tasks_visible.get()
-                                on:click=move |_| tasks_visible.update(|v| *v = !*v)
-                                title="任务"
-                            >
-                                "任务"
-                            </button>
+                            <div class="toolbar-view-wrap">
+                                <Show when=move || view_menu_open.get()>
+                                    <div
+                                        class="toolbar-view-backdrop"
+                                        on:click=move |_| view_menu_open.set(false)
+                                    ></div>
+                                </Show>
+                                <button
+                                    type="button"
+                                    class="btn btn-secondary btn-sm toolbar-view-trigger"
+                                    class:active=move || !matches!(side_panel_view.get(), SidePanelView::None)
+                                    class:toolbar-view-trigger-open=move || view_menu_open.get()
+                                    on:click=move |_| view_menu_open.update(|o| *o = !*o)
+                                    title="选择侧栏：隐藏 / 工作区 / 任务"
+                                >
+                                    {move || {
+                                        let suffix = if view_menu_open.get() { "▴" } else { "▾" };
+                                        format!("视图{suffix}")
+                                    }}
+                                </button>
+                                <Show when=move || view_menu_open.get()>
+                                    <div class="toolbar-view-menu" role="menu" aria-label="侧栏视图">
+                                        <button
+                                            type="button"
+                                            class="toolbar-view-menu-item"
+                                            class:active=move || matches!(side_panel_view.get(), SidePanelView::None)
+                                            role="menuitem"
+                                            on:click=move |_| {
+                                                side_panel_view.set(SidePanelView::None);
+                                                view_menu_open.set(false);
+                                            }
+                                        >
+                                            "隐藏侧栏"
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="toolbar-view-menu-item"
+                                            class:active=move || matches!(side_panel_view.get(), SidePanelView::Workspace)
+                                            role="menuitem"
+                                            on:click=move |_| {
+                                                side_panel_view.set(SidePanelView::Workspace);
+                                                view_menu_open.set(false);
+                                            }
+                                        >
+                                            "工作区"
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="toolbar-view-menu-item"
+                                            class:active=move || matches!(side_panel_view.get(), SidePanelView::Tasks)
+                                            role="menuitem"
+                                            on:click=move |_| {
+                                                side_panel_view.set(SidePanelView::Tasks);
+                                                view_menu_open.set(false);
+                                            }
+                                        >
+                                            "任务"
+                                        </button>
+                                    </div>
+                                </Show>
+                            </div>
                             <button
                                 type="button"
                                 class="btn btn-secondary btn-sm"
@@ -1957,18 +2049,8 @@ fn App() -> impl IntoView {
                             </button>
                         </div>
                         <div class="side-body">
-                            <Show when=move || workspace_visible.get()>
-                                <div
-                                    class="side-pane"
-                                    style:flex="1"
-                                    style:min-width=move || {
-                                        if tasks_visible.get() {
-                                            "180px"
-                                        } else {
-                                            "0"
-                                        }
-                                    }
-                                >
+                            <Show when=move || matches!(side_panel_view.get(), SidePanelView::Workspace)>
+                                <div class="side-pane" style:flex="1" style:min-width="0">
                                     <div class="side-card">
                                         <Show when=move || {
                                             workspace_loading.get()
@@ -2183,18 +2265,8 @@ fn App() -> impl IntoView {
                                     </div>
                                 </div>
                             </Show>
-                            <Show when=move || tasks_visible.get()>
-                                <div
-                                    class="side-pane"
-                                    style:flex="1"
-                                    style:min-width=move || {
-                                        if workspace_visible.get() {
-                                            "180px"
-                                        } else {
-                                            "0"
-                                        }
-                                    }
-                                >
+                            <Show when=move || matches!(side_panel_view.get(), SidePanelView::Tasks)>
+                                <div class="side-pane" style:flex="1" style:min-width="0">
                                     <div class="side-card">
                                         <div class="side-card-head">
                                             <div class="side-head-main">
