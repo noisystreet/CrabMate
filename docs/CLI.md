@@ -180,7 +180,7 @@ cargo run -- serve
 | POST | `/chat` | JSON 对话；可选 `conversation_id`、`agent_role`（仅新建服务端会话时）、`temperature`、`seed`、`seed_policy` |
 | POST | `/chat/stream` | SSE；可选 `approval_session_id`、`agent_role`（同上）；响应头 `x-conversation-id` |
 | POST | `/chat/approval` | 审批：`approval_session_id`、`decision` |
-| POST | `/chat/branch` | 会话分叉截断（见开发文档） |
+| POST | `/chat/branch` | 会话分叉截断：JSON `conversation_id`、`before_user_ordinal`（0-based 普通用户消息序号）、`expected_revision`；服务端截断到该序号对应用户消息**之前**（与 Web「从此处重试」一致：随后由 `/chat/stream` 再发同一条用户文本）。须已持久化会话且 `revision` 匹配 |
 | GET | `/status` | 后台状态 |
 | GET | `/workspace` | 工作区列表 |
 | POST | `/workspace` | 设置当前 Web 工作区根：JSON `{"path":"/abs/dir"}`；省略 `path` 或空串恢复为默认（`run_command_working_dir`）；须为已存在目录且在 `workspace_allowed_roots` 内 |
