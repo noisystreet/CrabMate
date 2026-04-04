@@ -7,7 +7,7 @@ use crate::api::{
     ChatStreamCallbacks, StatusData, TaskItem, TasksData, WorkspaceData,
     clear_client_llm_api_key_storage, client_llm_storage_has_api_key, fetch_status, fetch_tasks,
     fetch_workspace_pick, load_client_llm_text_fields_from_storage, persist_client_llm_to_storage,
-    post_workspace_set, save_tasks, send_chat_stream, submit_chat_approval,
+    post_chat_branch, post_workspace_set, save_tasks, send_chat_stream, submit_chat_approval,
 };
 use crate::app_prefs::{
     AGENT_ROLE_KEY, AUTO_SCROLL_RESUME_GAP_PX, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH,
@@ -16,7 +16,7 @@ use crate::app_prefs::{
     status_bar_effective_api_base, status_bar_effective_model, store_bool_key, store_f64_key,
     store_side_panel_view,
 };
-use crate::assistant_body::assistant_markdown_body_view;
+use crate::assistant_body::assistant_markdown_collapsible_view;
 use crate::message_format::{message_text_for_display, tool_card_text};
 use crate::session_modal_row::SessionModalRow;
 use crate::session_ops::{
@@ -24,6 +24,8 @@ use crate::session_ops::{
     delete_session_after_confirm, export_session_json_for_id, export_session_markdown_for_id,
     format_msg_time_label, make_message_id, message_created_ms, message_role_label,
     patch_active_session, prepare_retry_failed_assistant_turn, title_from_user_prompt,
+    truncate_at_user_message_and_prepare_regenerate, truncate_at_user_message_branch_local,
+    user_ordinal_for_message_index, write_clipboard_text,
 };
 use crate::sse_dispatch::{CommandApprovalRequest, ToolResultInfo};
 use crate::storage::{
@@ -46,6 +48,10 @@ pub fn App() -> impl IntoView {
     let initialized = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
     let conversation_id = RwSignal::new(None::<String>);
+    // 最近一次 SSE `conversation_saved.revision`；`POST /chat/branch` 需要与服务端一致。
+    let conversation_revision = RwSignal::new(None::<u64>);
+    // 已完成长助手消息默认折叠；在此列表中的 id 表示已展开。
+    let expanded_long_assistant_ids = RwSignal::new(Vec::<String>::new());
     let side_panel_view = RwSignal::new(load_side_panel_view());
     let view_menu_open = RwSignal::new(false);
     let status_bar_visible = RwSignal::new(load_bool_key(STATUS_BAR_VISIBLE_KEY, true));
@@ -310,6 +316,8 @@ pub fn App() -> impl IntoView {
             }
         });
         conversation_id.set(None);
+        conversation_revision.set(None);
+        expanded_long_assistant_ids.set(Vec::new());
     });
 
     Effect::new(move |_| {
@@ -367,6 +375,7 @@ pub fn App() -> impl IntoView {
         let sessions = sessions;
         let active_id = active_id;
         let conversation_id = conversation_id;
+        let conversation_revision = conversation_revision;
         let selected_agent_role = selected_agent_role;
         let status_busy = status_busy;
         let status_err = status_err;
@@ -493,8 +502,16 @@ pub fn App() -> impl IntoView {
             };
             let on_cid: Rc<dyn Fn(String)> = {
                 let conversation_id = conversation_id;
+                let conversation_revision = conversation_revision;
                 Rc::new(move |id: String| {
                     conversation_id.set(Some(id));
+                    conversation_revision.set(None);
+                })
+            };
+            let on_conv_rev: Rc<dyn Fn(u64)> = {
+                let conversation_revision = conversation_revision;
+                Rc::new(move |rev: u64| {
+                    conversation_revision.set(Some(rev));
                 })
             };
 
@@ -507,6 +524,7 @@ pub fn App() -> impl IntoView {
                 on_tool_result,
                 on_approval,
                 on_conversation_id: on_cid,
+                on_conversation_revision: on_conv_rev,
             };
 
             spawn_local(async move {
@@ -580,6 +598,8 @@ pub fn App() -> impl IntoView {
 
     // 由消息气泡「重试」写入助手消息 id，Effect 中消费并发起流（避免在非 Send 的渲染闭包里捕获 Rc<dyn Fn>）。
     let retry_assistant_target = RwSignal::new(None::<String>);
+    // 「从此处重试」截断后写入 (用户原文, 新助手 id)，由 Effect 调用 `attach_chat_stream`。
+    let regen_stream_after_truncate = RwSignal::new(None::<(String, String)>);
 
     Effect::new({
         let attach = Rc::clone(&attach_chat_stream);
@@ -601,6 +621,25 @@ pub fn App() -> impl IntoView {
             let Some((user_text, asst_id)) = prepared else {
                 return;
             };
+            auto_scroll_chat.set(true);
+            status_busy.set(true);
+            status_err.set(None);
+            pending_approval.set(None);
+            attach(user_text, asst_id);
+        }
+    });
+
+    Effect::new({
+        let attach = Rc::clone(&attach_chat_stream);
+        let auto_scroll_chat = auto_scroll_chat;
+        move |_| {
+            let Some((user_text, asst_id)) = regen_stream_after_truncate.get() else {
+                return;
+            };
+            regen_stream_after_truncate.set(None);
+            if !initialized.get() || status_busy.get() {
+                return;
+            }
             auto_scroll_chat.set(true);
             status_busy.set(true);
             status_err.set(None);
@@ -680,6 +719,7 @@ pub fn App() -> impl IntoView {
             active_id.set(id);
             draft.set(String::new());
             conversation_id.set(None);
+            conversation_revision.set(None);
         }
     };
 
@@ -1033,7 +1073,8 @@ pub fn App() -> impl IntoView {
                                     } else {
                                         msgs
                                             .into_iter()
-                                            .map(|m| {
+                                            .enumerate()
+                                            .map(|(msg_idx, m)| {
                                                 let cls = match m.role.as_str() {
                                                     "user" => "msg msg-user",
                                                     "assistant" if m.is_tool => "msg msg-tool",
@@ -1055,11 +1096,16 @@ pub fn App() -> impl IntoView {
                                                 let time_str =
                                                     format_msg_time_label(m.created_at).unwrap_or_default();
                                                 let mid_retry = m.id.clone();
+                                                let copy_id = m.id.clone();
+                                                let user_retry_id = m.id.clone();
+                                                let user_branch_id = m.id.clone();
+                                                let is_user_plain = m.role == "user" && !m.is_tool;
                                                 let msg_core = if m.role == "assistant" && !m.is_tool {
-                                                    assistant_markdown_body_view(
+                                                    assistant_markdown_collapsible_view(
                                                         sessions,
                                                         active_id,
                                                         m.id.clone(),
+                                                        expanded_long_assistant_ids,
                                                     )
                                                     .into_any()
                                                 } else {
@@ -1077,6 +1123,197 @@ pub fn App() -> impl IntoView {
                                                             <span class="msg-meta-time">{time_str}</span>
                                                         </div>
                                                         {msg_core}
+                                                        <div class="msg-actions" role="group" aria-label="消息操作">
+                                                            <button
+                                                                type="button"
+                                                                class="btn btn-muted btn-sm msg-action-btn"
+                                                                title="复制本条展示文本"
+                                                                on:click=move |_| {
+                                                                    let t = sessions.with(|list| {
+                                                                        let aid = active_id.get_untracked();
+                                                                        list.iter()
+                                                                            .find(|s| s.id == aid)
+                                                                            .and_then(|s| {
+                                                                                s.messages
+                                                                                    .iter()
+                                                                                    .find(|msg| msg.id == copy_id)
+                                                                            })
+                                                                            .map(message_text_for_display)
+                                                                            .unwrap_or_default()
+                                                                    });
+                                                                    write_clipboard_text(&t);
+                                                                }
+                                                            >
+                                                                "复制"
+                                                            </button>
+                                                            {is_user_plain.then(|| {
+                                                                let idx = msg_idx;
+                                                                let uid_r = user_retry_id.clone();
+                                                                let uid_b = user_branch_id.clone();
+                                                                view! {
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-muted btn-sm msg-action-btn"
+                                                                        title="删除本条及之后消息并重新生成（服务端会话需已持久化）"
+                                                                        prop:disabled=move || status_busy.get()
+                                                                        on:click=move |_| {
+                                                                            if status_busy.get() {
+                                                                                return;
+                                                                            }
+                                                                            let cid = conversation_id.get();
+                                                                            let rev = conversation_revision.get();
+                                                                            let ord = sessions.with(|list| {
+                                                                                let aid = active_id.get_untracked();
+                                                                                list.iter()
+                                                                                    .find(|s| s.id == aid)
+                                                                                    .and_then(|s| {
+                                                                                        user_ordinal_for_message_index(
+                                                                                            &s.messages,
+                                                                                            idx,
+                                                                                        )
+                                                                                    })
+                                                                            });
+                                                                            let uid = uid_r.clone();
+                                                                            match (cid, rev, ord) {
+                                                                                (
+                                                                                    Some(conv),
+                                                                                    Some(exp_rev),
+                                                                                    Some(before_ord),
+                                                                                ) => {
+                                                                                    spawn_local(async move {
+                                                                                        match post_chat_branch(
+                                                                                            &conv,
+                                                                                            before_ord,
+                                                                                            exp_rev,
+                                                                                        )
+                                                                                        .await
+                                                                                        {
+                                                                                            Ok(new_rev) => {
+                                                                                                conversation_revision
+                                                                                                    .set(Some(new_rev));
+                                                                                                let mut prep: Option<
+                                                                                                    (String, String),
+                                                                                                > = None;
+                                                                                                sessions.update(|list| {
+                                                                                                    let aid = active_id
+                                                                                                        .get_untracked();
+                                                                                                    prep = truncate_at_user_message_and_prepare_regenerate(
+                                                                                                        list,
+                                                                                                        &aid,
+                                                                                                        &uid,
+                                                                                                    );
+                                                                                                });
+                                                                                                if let Some((ut, aid)) =
+                                                                                                    prep
+                                                                                                {
+                                                                                                    regen_stream_after_truncate
+                                                                                                        .set(Some((ut, aid)));
+                                                                                                }
+                                                                                            }
+                                                                                            Err(e) => {
+                                                                                                status_err.set(Some(e));
+                                                                                            }
+                                                                                        }
+                                                                                    });
+                                                                                }
+                                                                                _ => {
+                                                                                    let mut prep: Option<
+                                                                                        (String, String),
+                                                                                    > = None;
+                                                                                    sessions.update(|list| {
+                                                                                        let aid = active_id
+                                                                                            .get_untracked();
+                                                                                        prep = truncate_at_user_message_and_prepare_regenerate(
+                                                                                            list,
+                                                                                            &aid,
+                                                                                            &uid,
+                                                                                        );
+                                                                                    });
+                                                                                    if let Some((ut, aid)) = prep {
+                                                                                        regen_stream_after_truncate
+                                                                                            .set(Some((ut, aid)));
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    >
+                                                                        "从此处重试"
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-muted btn-sm msg-action-btn"
+                                                                        title="删除本条及之后消息（不自动发送；服务端会话同步截断需已持久化）"
+                                                                        prop:disabled=move || status_busy.get()
+                                                                        on:click=move |_| {
+                                                                            if status_busy.get() {
+                                                                                return;
+                                                                            }
+                                                                            let cid = conversation_id.get();
+                                                                            let rev = conversation_revision.get();
+                                                                            let ord = sessions.with(|list| {
+                                                                                let aid = active_id.get_untracked();
+                                                                                list.iter()
+                                                                                    .find(|s| s.id == aid)
+                                                                                    .and_then(|s| {
+                                                                                        user_ordinal_for_message_index(
+                                                                                            &s.messages,
+                                                                                            idx,
+                                                                                        )
+                                                                                    })
+                                                                            });
+                                                                            let uid = uid_b.clone();
+                                                                            match (cid, rev, ord) {
+                                                                                (
+                                                                                    Some(conv),
+                                                                                    Some(exp_rev),
+                                                                                    Some(before_ord),
+                                                                                ) => {
+                                                                                    spawn_local(async move {
+                                                                                        match post_chat_branch(
+                                                                                            &conv,
+                                                                                            before_ord,
+                                                                                            exp_rev,
+                                                                                        )
+                                                                                        .await
+                                                                                        {
+                                                                                            Ok(new_rev) => {
+                                                                                                conversation_revision
+                                                                                                    .set(Some(new_rev));
+                                                                                                sessions.update(|list| {
+                                                                                                    let aid = active_id
+                                                                                                        .get_untracked();
+                                                                                                    let _ = truncate_at_user_message_branch_local(
+                                                                                                        list,
+                                                                                                        &aid,
+                                                                                                        &uid,
+                                                                                                    );
+                                                                                                });
+                                                                                            }
+                                                                                            Err(e) => {
+                                                                                                status_err.set(Some(e));
+                                                                                            }
+                                                                                        }
+                                                                                    });
+                                                                                }
+                                                                                _ => {
+                                                                                    sessions.update(|list| {
+                                                                                        let aid = active_id
+                                                                                            .get_untracked();
+                                                                                        let _ = truncate_at_user_message_branch_local(
+                                                                                            list,
+                                                                                            &aid,
+                                                                                            &uid,
+                                                                                        );
+                                                                                    });
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    >
+                                                                        "分支对话"
+                                                                    </button>
+                                                                }
+                                                            })}
+                                                        </div>
                                                         {loading.then(|| {
                                                             view! {
                                                                 <span class="typing-dots" aria-hidden="true">

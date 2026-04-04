@@ -314,6 +314,8 @@ pub struct ChatStreamCallbacks {
     pub on_tool_result: std::rc::Rc<dyn Fn(ToolResultInfo)>,
     pub on_approval: std::rc::Rc<dyn Fn(CommandApprovalRequest)>,
     pub on_conversation_id: std::rc::Rc<dyn Fn(String)>,
+    /// SSE `conversation_saved.revision`，供 `POST /chat/branch`。
+    pub on_conversation_revision: std::rc::Rc<dyn Fn(u64)>,
 }
 
 impl Clone for ChatStreamCallbacks {
@@ -327,6 +329,7 @@ impl Clone for ChatStreamCallbacks {
             on_tool_result: std::rc::Rc::clone(&self.on_tool_result),
             on_approval: std::rc::Rc::clone(&self.on_approval),
             on_conversation_id: std::rc::Rc::clone(&self.on_conversation_id),
+            on_conversation_revision: std::rc::Rc::clone(&self.on_conversation_revision),
         }
     }
 }
@@ -476,6 +479,7 @@ fn handle_sse_block(block: &str, cbs: &ChatStreamCallbacks) -> Result<(), String
     let mut on_parse = |_b: bool| {};
     let mut on_tool_res = |info: ToolResultInfo| (cbs.on_tool_result)(info);
     let mut on_appr = |req: CommandApprovalRequest| (cbs.on_approval)(req);
+    let mut on_conv_rev = |rev: u64| (cbs.on_conversation_revision)(rev);
 
     let mut cbs2 = SseCallbacks {
         on_error: &mut on_err,
@@ -485,6 +489,7 @@ fn handle_sse_block(block: &str, cbs: &ChatStreamCallbacks) -> Result<(), String
         on_parsing_tool_calls_change: Some(&mut on_parse),
         on_tool_result: Some(&mut on_tool_res),
         on_command_approval_request: Some(&mut on_appr),
+        on_conversation_saved_revision: Some(&mut on_conv_rev),
     };
     match try_dispatch_sse_control_payload(data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(()),
@@ -509,6 +514,39 @@ fn handle_sse_block(block: &str, cbs: &ChatStreamCallbacks) -> Result<(), String
 struct ApprovalBody<'a> {
     approval_session_id: &'a str,
     decision: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatBranchBody {
+    conversation_id: String,
+    before_user_ordinal: u64,
+    expected_revision: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChatBranchResponse {
+    pub ok: bool,
+    #[serde(default)]
+    pub revision: u64,
+}
+
+/// `POST /chat/branch`：服务端按 `before_user_ordinal` 截断持久化会话（须 `conversation_store_sqlite_path` 等已启用）。
+pub async fn post_chat_branch(
+    conversation_id: &str,
+    before_user_ordinal: u64,
+    expected_revision: u64,
+) -> Result<u64, String> {
+    let body = serde_json::to_string(&ChatBranchBody {
+        conversation_id: conversation_id.to_string(),
+        before_user_ordinal,
+        expected_revision,
+    })
+    .map_err(|e| e.to_string())?;
+    let r: ChatBranchResponse = fetch_json_with_body("POST", "/chat/branch", &body).await?;
+    if !r.ok {
+        return Err("分支请求未成功".to_string());
+    }
+    Ok(r.revision)
 }
 
 pub async fn submit_chat_approval(session_id: &str, decision: &str) -> Result<(), String> {

@@ -176,7 +176,7 @@ Static assets are served from `frontend-leptos/dist`.
 | POST | `/chat` | JSON chat; optional `conversation_id`, `agent_role` (new server-side session only), `temperature`, `seed`, `seed_policy` |
 | POST | `/chat/stream` | SSE; optional `approval_session_id`, `agent_role` (same); header `x-conversation-id` |
 | POST | `/chat/approval` | Approval: `approval_session_id`, `decision` |
-| POST | `/chat/branch` | Branch/truncate session (see dev doc) |
+| POST | `/chat/branch` | Branch/truncate: JSON `conversation_id`, `before_user_ordinal` (0-based plain user index), `expected_revision`; server truncates **before** that user message (same as Web “regenerate from here”: resend the user text via `/chat/stream`). Requires persisted conversation and matching `revision` |
 | GET | `/status` | Backend status |
 | GET | `/workspace` | Workspace list |
 | POST | `/workspace` | Set Web workspace root: JSON `{"path":"/abs/dir"}`; omit `path` or use empty string to reset to default (`run_command_working_dir`); path must exist and lie under `workspace_allowed_roots` |
