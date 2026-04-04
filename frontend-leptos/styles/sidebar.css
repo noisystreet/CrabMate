@@ -29,15 +29,18 @@
   border-right-color: transparent;
 }
 
-/* 仅显示右列工具栏窄轨时隐藏侧栏内容区，避免占高 */
+/* 隐藏侧栏时：不占宽，工具栏改为 fixed 浮动（见 shell-ds.css） */
 .side-column-rail-only .side-body {
   display: none;
 }
 
-/* 窄轨时「视图」下拉会向左超出列宽：勿裁切，并抬高叠层以免被对话列盖住 */
+/* 宽度为 0：不显示侧栏条；子工具栏 fixed 脱出，需可见溢出与较高叠层 */
 .side-column.side-column-rail-only {
   overflow: visible;
-  z-index: 3;
+  z-index: 25;
+  border-left: none;
+  background: transparent;
+  pointer-events: none;
 }
 
 .side-body {
