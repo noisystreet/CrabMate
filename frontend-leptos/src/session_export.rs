@@ -4,6 +4,7 @@ use gloo_timers::callback::Timeout;
 use serde::Serialize;
 use wasm_bindgen::JsCast;
 
+use crate::message_format::assistant_text_for_display;
 use crate::storage::{ChatSession, StoredMessage};
 
 /// 须与 `src/runtime/chat_export.rs` 中 `CHAT_SESSION_FILE_VERSION` 一致。
@@ -56,7 +57,7 @@ fn stored_messages_to_export(messages: &[StoredMessage]) -> Vec<ExportMessage> {
 
 fn message_text_for_export(m: &StoredMessage) -> String {
     if m.role == "assistant" {
-        crate::assistant_text_for_display(&m.text, m.state.as_deref() == Some("loading"))
+        assistant_text_for_display(&m.text, m.state.as_deref() == Some("loading"))
     } else {
         m.text.clone()
     }
