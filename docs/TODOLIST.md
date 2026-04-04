@@ -72,6 +72,7 @@
 
 **职责摘要**：表驱动 `ToolSpec`、`run_tool`；`tool_registry` 中 Workflow / 阻塞超时 / 搜索等策略。
 
+- [ ] **工具 runner 显式 `Result` 与 `ToolError`**：已有 **`tool_result::ToolError`** / **`ToolFailureCategory`** 与边界 API **`tools::run_tool_try`**；各 `ToolRunner` 仍返回 `String`，编排层仍以 `run_tool` + `ToolResult::from_legacy_output` 为主。后续可按工具逐个改为 `fn(...) -> Result<String, ToolError>`，减少「错误：」前缀启发式与重复解析。
 - [ ] **危险操作分级与确认（续）**：写盘类等工具若需审批或细粒度策略，扩展 [`tool_approval::SensitiveCapability`] 与配置项（当前 `run_command` / `http_fetch` / `http_request` / 工作流审批已统一经 **`tool_approval`**）。
 - [ ] **新栈工具按需扩展**：在 `dev_tag` 体系下按需增加其它语言栈标签与最小工具集（保持白名单与路径安全）。Go 已有 `go_build`/`go_test`/`go_vet`/`go_mod_tidy`/`go_fmt_check`/`golangci_lint`；JVM 已有 `maven_*`/`gradle_*`；容器已有 `docker_*`/`podman_images`；Node.js 已有 `npm_install`/`npm_run`/`npx_run`/`tsc_check`。
 - [ ] **MCP 扩展**：可选将本 agent 以 MCP server 暴露；客户端支持 Streamable HTTP / SSE、鉴权与多 server；与 `run_command` / 工作区策略的边界在文档中细化。

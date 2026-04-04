@@ -71,6 +71,23 @@ fn test_run_tool_unknown() {
 }
 
 #[test]
+fn test_run_tool_try_unknown_is_err() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let e = run_tool_try("unknown_tool", "{}", &ctx).expect_err("unknown tool");
+    assert_eq!(e.code, "unknown_tool");
+    assert!(!e.retryable);
+}
+
+#[test]
+fn test_run_tool_try_calc_ok() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool_try("calc", r#"{"expression":"1+1"}"#, &ctx).expect("calc");
+    assert!(out.contains('2'), "got {out:?}");
+}
+
+#[test]
 fn test_run_tool_calc_missing_expression() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
