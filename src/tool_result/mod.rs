@@ -13,10 +13,13 @@
 //! 读路径请优先经 [`normalize::NormalizedToolEnvelope`]（[`normalize_tool_message_content`]），避免在展示层重复解析 `crabmate_tool` 字段。
 
 mod normalize;
+mod tool_error;
 
 pub use normalize::{
     CRABMATE_TOOL_ENVELOPE_VERSION_V1, NormalizedToolEnvelope, normalize_tool_message_content,
 };
+#[allow(unused_imports)] // `pub use` 再导出供外部使用，本文件不直接引用
+pub use tool_error::{ToolError, ToolFailureCategory};
 
 use std::borrow::Cow;
 
@@ -76,7 +79,11 @@ impl ToolResult {
     /// 将既有“字符串工具输出”转换为结构化结果。
     pub fn from_legacy_output(tool_name: &str, output: String) -> Self {
         let parsed = parse_legacy_output(tool_name, &output);
+        Self::from_parsed(output, parsed)
+    }
 
+    /// 已由 [`parse_legacy_output`] 解析过的输出（与 `tools::run_tool_result` 单次解析路径共用）。
+    pub(crate) fn from_parsed(output: String, parsed: ParsedLegacyOutput) -> Self {
         Self {
             ok: parsed.ok,
             exit_code: parsed.exit_code,

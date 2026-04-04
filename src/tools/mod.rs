@@ -1054,10 +1054,50 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     }
 }
 
+fn run_tool_parsed_legacy(
+    name: &str,
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> (String, crate::tool_result::ParsedLegacyOutput) {
+    let output = run_tool(name, args_json, ctx);
+    let parsed = crate::tool_result::parse_legacy_output(name, &output);
+    (output, parsed)
+}
+
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，刻意保持栈上完整语义
+fn run_tool_dispatch(
+    name: &str,
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<(String, crate::tool_result::ParsedLegacyOutput), crate::tool_result::ToolError> {
+    let (output, parsed) = run_tool_parsed_legacy(name, args_json, ctx);
+    if parsed.ok {
+        Ok((output, parsed))
+    } else {
+        Err(crate::tool_result::ToolError::from_parsed_legacy(
+            name, &parsed, output,
+        ))
+    }
+}
+
+/// 与 [`run_tool`] 相同，但失败时返回 [`crate::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**），成功时返回完整输出字符串。
+///
+/// 当前 runner 仍返回 `String`，语义由 [`crate::tool_result::parse_legacy_output`] 推断；后续可将各 runner 改为 `Result<String, ToolError>` 并在此直接传递。
+#[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
+pub fn run_tool_try(
+    name: &str,
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, crate::tool_result::ToolError> {
+    run_tool_dispatch(name, args_json, ctx).map(|(output, _)| output)
+}
+
 /// 执行本地工具并返回结构化结果（兼容既有字符串输出）。
 pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> ToolResult {
-    let output = run_tool(name, args_json, ctx);
-    ToolResult::from_legacy_output(name, output)
+    match run_tool_dispatch(name, args_json, ctx) {
+        Ok((output, parsed)) => ToolResult::from_parsed(output, parsed),
+        Err(e) => ToolResult::from_parsed(e.message, e.legacy_parsed),
+    }
 }
 
 /// 判断本次 run_command 是否为“成功的编译命令”（常见 C/C++ 构建工具且退出码为 0）
