@@ -25,6 +25,8 @@ pub struct SseCallbacks<'a> {
     pub on_parsing_tool_calls_change: Option<&'a mut dyn FnMut(bool)>,
     pub on_tool_result: Option<&'a mut dyn FnMut(ToolResultInfo)>,
     pub on_command_approval_request: Option<&'a mut dyn FnMut(CommandApprovalRequest)>,
+    /// `conversation_saved.revision`，供 `POST /chat/branch` 与冲突检测。
+    pub on_conversation_saved_revision: Option<&'a mut dyn FnMut(u64)>,
 }
 
 #[derive(Debug, Clone)]
@@ -186,6 +188,12 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
     if key_present_non_null(obj, "conversation_saved") {
+        if let Some(Value::Object(saved)) = obj.get("conversation_saved")
+            && let Some(rev) = saved.get("revision").and_then(|x| x.as_u64())
+            && let Some(f) = cbs.on_conversation_saved_revision.as_mut()
+        {
+            f(rev);
+        }
         return SseDispatch::Handled;
     }
 

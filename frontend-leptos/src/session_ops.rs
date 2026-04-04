@@ -1,6 +1,7 @@
 //! 会话列表、导出、删除与消息元数据辅助逻辑。
 
 use leptos::prelude::*;
+use wasm_bindgen_futures::JsFuture;
 
 use crate::session_export::{
     export_filename_stem, session_to_export_file, session_to_markdown, trigger_download,
@@ -14,6 +15,76 @@ pub fn make_message_id() -> String {
 }
 
 /// 去掉失败助手泡及其后消息，挂上新的 loading 助手泡；返回本回合用户原文与新助手 id。
+/// 第 `idx` 条消息若为普通用户消息，返回其在本会话中的 **0-based 用户序号**（与 `POST /chat/branch` 的 `before_user_ordinal` 一致）。
+pub fn user_ordinal_for_message_index(messages: &[StoredMessage], idx: usize) -> Option<u64> {
+    let m = messages.get(idx)?;
+    if m.role != "user" || m.is_tool {
+        return None;
+    }
+    let mut ord = 0_u64;
+    for (i, x) in messages.iter().enumerate() {
+        if i >= idx {
+            break;
+        }
+        if x.role == "user" && !x.is_tool {
+            ord = ord.saturating_add(1);
+        }
+    }
+    Some(ord)
+}
+
+/// 保留指定用户气泡（同 id），删除其后的消息，并挂上新的 loading 助手泡；返回用户原文与新助手 id。
+pub fn truncate_at_user_message_and_prepare_regenerate(
+    sessions: &mut [ChatSession],
+    active_id: &str,
+    user_msg_id: &str,
+) -> Option<(String, String)> {
+    let s = sessions.iter_mut().find(|sess| sess.id == active_id)?;
+    let idx = s.messages.iter().position(|m| m.id == user_msg_id)?;
+    let um = s.messages.get(idx)?;
+    if um.role != "user" || um.is_tool {
+        return None;
+    }
+    let user_msg = um.clone();
+    let user_text = user_msg.text.clone();
+    s.messages.truncate(idx);
+    s.messages.push(user_msg);
+    let new_asst_id = make_message_id();
+    let now = message_created_ms();
+    s.messages.push(StoredMessage {
+        id: new_asst_id.clone(),
+        role: "assistant".to_string(),
+        text: String::new(),
+        state: Some("loading".to_string()),
+        is_tool: false,
+        created_at: now,
+    });
+    Some((user_text, new_asst_id))
+}
+
+/// 截断到指定用户消息之前（含该条及之后全部移除），不追加助手泡。
+pub fn truncate_at_user_message_branch_local(
+    sessions: &mut [ChatSession],
+    active_id: &str,
+    user_msg_id: &str,
+) -> bool {
+    let Some(s) = sessions.iter_mut().find(|sess| sess.id == active_id) else {
+        return false;
+    };
+    let Some(idx) = s.messages.iter().position(|m| m.id == user_msg_id) else {
+        return false;
+    };
+    let um = match s.messages.get(idx) {
+        Some(m) => m,
+        None => return false,
+    };
+    if um.role != "user" || um.is_tool {
+        return false;
+    }
+    s.messages.truncate(idx);
+    true
+}
+
 pub fn prepare_retry_failed_assistant_turn(
     sessions: &mut [ChatSession],
     active_id: &str,
@@ -140,6 +211,24 @@ pub fn export_session_json_for_id(sessions: RwSignal<Vec<ChatSession>>, id: &str
     }
 }
 
+/// 将文本写入系统剪贴板；失败时 `window.alert` 简短提示。
+pub fn write_clipboard_text(text: &str) {
+    let Some(w) = web_sys::window() else {
+        return;
+    };
+    let t = text.to_string();
+    wasm_bindgen_futures::spawn_local(async move {
+        let nav = w.navigator();
+        let clip = nav.clipboard();
+        match JsFuture::from(clip.write_text(&t)).await {
+            Ok(_) => {}
+            Err(_) => {
+                let _ = w.alert_with_message("复制失败：浏览器未授权剪贴板或不可用。");
+            }
+        }
+    });
+}
+
 pub fn export_session_markdown_for_id(sessions: RwSignal<Vec<ChatSession>>, id: &str) {
     let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
     let Some(s) = session else {
@@ -206,6 +295,89 @@ pub struct SessionContextAnchor {
     pub session_id: String,
     pub x: f64,
     pub y: f64,
+}
+
+#[cfg(test)]
+mod message_branch_tests {
+    use super::*;
+
+    #[test]
+    fn user_ordinal_matches_backend_semantics() {
+        let messages = vec![
+            StoredMessage {
+                id: "1".into(),
+                role: "user".into(),
+                text: "a".into(),
+                state: None,
+                is_tool: false,
+                created_at: 0,
+            },
+            StoredMessage {
+                id: "2".into(),
+                role: "assistant".into(),
+                text: "b".into(),
+                state: None,
+                is_tool: false,
+                created_at: 0,
+            },
+            StoredMessage {
+                id: "3".into(),
+                role: "user".into(),
+                text: "c".into(),
+                state: None,
+                is_tool: false,
+                created_at: 0,
+            },
+        ];
+        assert_eq!(user_ordinal_for_message_index(&messages, 0), Some(0));
+        assert_eq!(user_ordinal_for_message_index(&messages, 2), Some(1));
+        assert!(user_ordinal_for_message_index(&messages, 1).is_none());
+    }
+
+    #[test]
+    fn truncate_branch_local_drops_from_user_onwards() {
+        let mut sessions = vec![ChatSession {
+            id: "s1".into(),
+            title: "t".into(),
+            draft: String::new(),
+            messages: vec![
+                StoredMessage {
+                    id: "u0".into(),
+                    role: "user".into(),
+                    text: "first".into(),
+                    state: None,
+                    is_tool: false,
+                    created_at: 0,
+                },
+                StoredMessage {
+                    id: "a0".into(),
+                    role: "assistant".into(),
+                    text: "ok".into(),
+                    state: None,
+                    is_tool: false,
+                    created_at: 0,
+                },
+                StoredMessage {
+                    id: "u1".into(),
+                    role: "user".into(),
+                    text: "retry me".into(),
+                    state: None,
+                    is_tool: false,
+                    created_at: 0,
+                },
+            ],
+            updated_at: 0,
+        }];
+        assert!(truncate_at_user_message_branch_local(
+            &mut sessions,
+            "s1",
+            "u1"
+        ));
+        // 与后端一致：`before_user_ordinal`=1 时保留第 0 条用户及其后直到下一条用户之前（含中间助手）。
+        assert_eq!(sessions[0].messages.len(), 2);
+        assert_eq!(sessions[0].messages[0].id, "u0");
+        assert_eq!(sessions[0].messages[1].id, "a0");
+    }
 }
 
 pub fn clamp_session_ctx_menu_pos(cx: i32, cy: i32) -> (f64, f64) {

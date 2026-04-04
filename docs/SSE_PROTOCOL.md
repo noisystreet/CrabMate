@@ -53,7 +53,7 @@
 | `command_approval_request` | `run_command` / 工作流等需用户审批 | `onCommandApprovalRequest` |
 | `staged_plan_notice` / `staged_plan_notice_clear` | 规划进度文本（TUI 等）；Web **吞掉**不当下文 | `handled`，不 `onDelta` |
 | `chat_ui_separator` | 聊天区分隔线；`true` 短、`false` 长 | `onChatUiSeparator` |
-| `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测 | `onConversationSaved` |
+| `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测 | Leptos：`sse_dispatch` 解析后更新内存中的 `revision`；`onConversationSaved`（TS 等） |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
 ### `tool_result` 常用字段
