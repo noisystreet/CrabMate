@@ -3,6 +3,8 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 
+use std::mem;
+
 use crate::message_format::message_text_for_display;
 use crate::storage::ChatSession;
 
@@ -12,6 +14,58 @@ pub fn normalize_search_query(raw: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
+}
+
+/// 会话内查找：将展示文本按命中切片，用于 `<mark>` 内联高亮。
+///
+/// `needle_lower` 须为 [`normalize_search_query`] 的结果。按 Unicode 标量值窗口做大小写不敏感比较；
+/// 命中区间合并（重叠子串并集）。
+pub fn split_for_find_highlight(haystack: &str, needle_lower: &str) -> Vec<(String, bool)> {
+    if needle_lower.is_empty() {
+        return vec![(haystack.to_string(), false)];
+    }
+    let hay_chars: Vec<char> = haystack.chars().collect();
+    let n = needle_lower.chars().count();
+    if n == 0 || hay_chars.len() < n {
+        return vec![(haystack.to_string(), false)];
+    }
+    let mut marked = vec![false; hay_chars.len()];
+    for start in 0..=hay_chars.len() - n {
+        let slice: String = hay_chars[start..start + n].iter().collect();
+        if slice.to_lowercase() == needle_lower {
+            for m in &mut marked[start..start + n] {
+                *m = true;
+            }
+        }
+    }
+    let mut out: Vec<(String, bool)> = Vec::new();
+    let mut cur = String::new();
+    let mut cur_hl: Option<bool> = None;
+    for (i, &ch) in hay_chars.iter().enumerate() {
+        let hl = marked[i];
+        match cur_hl {
+            None => {
+                cur_hl = Some(hl);
+                cur.push(ch);
+            }
+            Some(prev) if prev == hl => cur.push(ch),
+            Some(prev) => {
+                out.push((mem::take(&mut cur), prev));
+                cur.push(ch);
+                cur_hl = Some(hl);
+            }
+        }
+    }
+    if !cur.is_empty() {
+        if let Some(hl) = cur_hl {
+            out.push((cur, hl));
+        }
+    }
+    if out.is_empty() {
+        vec![(haystack.to_string(), false)]
+    } else {
+        out
+    }
 }
 
 /// 会话标题是否匹配（小写子串）。
@@ -157,6 +211,26 @@ mod tests {
         assert!(is_safe_dom_token("s_123_456"));
         assert!(!is_safe_dom_token(""));
         assert!(!is_safe_dom_token("x\"y"));
+    }
+
+    #[test]
+    fn find_highlight_splits_ascii_case_insensitive() {
+        let segs = split_for_find_highlight("Hello HELLO hello", "hello");
+        let joined: String = segs.iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(joined, "Hello HELLO hello");
+        assert!(segs.iter().any(|(_, hl)| *hl));
+    }
+
+    #[test]
+    fn find_highlight_cjk_unchanged_length() {
+        let segs = split_for_find_highlight("你好世界你好", "你好");
+        assert_eq!(segs.len(), 3);
+        assert_eq!(segs[0].0, "你好");
+        assert!(segs[0].1);
+        assert_eq!(segs[1].0, "世界");
+        assert!(!segs[1].1);
+        assert_eq!(segs[2].0, "你好");
+        assert!(segs[2].1);
     }
 
     #[test]
