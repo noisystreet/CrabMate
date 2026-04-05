@@ -193,6 +193,21 @@ pub fn patch_active_session(
     });
 }
 
+/// 将输入框草稿写入指定会话（切换会话、新建会话前调用），触发 `sessions` 更新与本地持久化。
+pub fn flush_composer_draft_to_session(
+    sessions: RwSignal<Vec<ChatSession>>,
+    session_id: &str,
+    text: &str,
+) {
+    if session_id.is_empty() {
+        return;
+    }
+    let t = text.to_string();
+    patch_active_session(sessions, session_id, move |s| {
+        s.draft = t;
+    });
+}
+
 pub fn export_session_json_for_id(sessions: RwSignal<Vec<ChatSession>>, id: &str) {
     let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
     let Some(s) = session else {
