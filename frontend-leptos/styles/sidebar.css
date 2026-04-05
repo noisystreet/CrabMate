@@ -329,6 +329,9 @@
 }
 
 .workspace-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 8px;
   cursor: default;
   border-radius: var(--radius-sm);
@@ -340,14 +343,36 @@
   background: var(--surface-hover);
 }
 
-.workspace-list li.dir {
-  border-left: 3px solid var(--accent);
-  padding-left: 10px;
+.workspace-entry-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  color: var(--muted);
 }
 
-.workspace-list li.file {
-  border-left: 3px solid transparent;
-  padding-left: 10px;
+.workspace-list li.dir .workspace-entry-icon {
+  color: color-mix(in srgb, var(--accent) 72%, var(--muted));
+}
+
+.workspace-list li.file .workspace-entry-icon {
+  color: color-mix(in srgb, var(--muted) 88%, var(--text));
+}
+
+.workspace-entry-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.workspace-entry-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 列表加载完成后轻量渐显（工作区 / 任务） */
