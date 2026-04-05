@@ -119,6 +119,99 @@
   justify-content: center;
 }
 
+.workspace-list-refresh-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workspace-list-refresh-row .workspace-list-refresh-btn,
+.workspace-list-refresh-row .workspace-changelog-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* 会话工作区变更集预览（与 session_workspace_changelist 注入正文同源 Markdown） */
+.changelist-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  pointer-events: none;
+}
+
+.changelist-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+  pointer-events: auto;
+}
+
+.changelist-modal {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  width: min(920px, 100%);
+  max-height: min(88vh, 900px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.changelist-modal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-elevated) 40%, var(--surface));
+}
+
+.changelist-modal-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.changelist-modal-rev {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.changelist-modal-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.changelist-modal-body {
+  padding: 12px 14px 16px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.changelist-modal-status {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.changelist-modal-prose pre {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .side-pane-title {
   font-size: 11px;
   font-weight: 700;

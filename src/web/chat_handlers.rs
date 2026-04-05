@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Multipart, Request, State};
+use axum::extract::{Multipart, Query, Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -26,6 +26,7 @@ use crate::project_profile::build_first_turn_user_context_markdown;
 use crate::redact;
 use crate::tool_registry;
 use crate::types::{CommandApprovalDecision, Message, messages_chat_seed};
+use crate::workspace_changelist;
 
 #[derive(serde::Deserialize)]
 pub(crate) struct ChatRequestBody {
@@ -1139,6 +1140,62 @@ pub(crate) async fn chat_stream_handler(
         resp.headers_mut().insert("x-conversation-id", v);
     }
     Ok(resp)
+}
+
+/// `GET /workspace/changelog`：本会话工作区变更集 Markdown（与 **`session_workspace_changelist`** 注入正文同源）。
+#[derive(serde::Deserialize)]
+pub(crate) struct WorkspaceChangelogQuery {
+    #[serde(default)]
+    conversation_id: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct WorkspaceChangelogResponse {
+    revision: u64,
+    markdown: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+pub(crate) async fn workspace_changelog_handler(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<WorkspaceChangelogQuery>,
+) -> Json<WorkspaceChangelogResponse> {
+    let cid = match normalize_client_conversation_id(q.conversation_id.as_deref()) {
+        Ok(o) => o,
+        Err(msg) => {
+            return Json(WorkspaceChangelogResponse {
+                revision: 0,
+                markdown: String::new(),
+                error: Some(msg),
+            });
+        }
+    };
+    let scope = cid
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("__default__");
+    let cfg = state.cfg.read().await;
+    if !cfg.session_workspace_changelist_enabled {
+        return Json(WorkspaceChangelogResponse {
+            revision: 0,
+            markdown: String::new(),
+            error: Some(
+                "会话工作区变更集已在配置中关闭（session_workspace_changelist_enabled）"
+                    .to_string(),
+            ),
+        });
+    }
+    let max_chars = cfg.session_workspace_changelist_max_chars;
+    drop(cfg);
+    let cl = workspace_changelist::changelist_for_scope(scope);
+    let (rev, body) = cl.snapshot_markdown(max_chars);
+    Json(WorkspaceChangelogResponse {
+        revision: rev,
+        markdown: body.unwrap_or_default(),
+        error: None,
+    })
 }
 
 pub(crate) async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {

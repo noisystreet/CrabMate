@@ -122,8 +122,8 @@ flowchart TB
 | `mcp/mod.rs` | stdio MCP client, tool name prefix `mcp__`, session reuse by fingerprint. |
 | `agent_memory.rs` / `project_profile.rs` / `project_dependency_brief.rs` | Workspace memo + project profile + dependency brief for first-turn context. |
 | `read_file_turn_cache.rs` | Per-turn **`read_file`** cache. |
-| `workspace_changelist.rs` | Session write tracking + injected changelist user message. |
-| `web/` | Axum **`AppState`**, chat handlers, workspace, tasks (in-memory per workspace), static **`frontend-leptos/dist`**, config reload path alignment. |
+| `workspace_changelist.rs` | Session write tracking + injected changelist user message; Web **`GET /workspace/changelog`** returns the same Markdown for UI preview. |
+| `web/` | Axum **`AppState`**, chat handlers (including **`GET /workspace/changelog`**), workspace, tasks (in-memory per workspace), static **`frontend-leptos/dist`**, config reload path alignment. |
 
 ### `lib.rs` responsibilities
 
