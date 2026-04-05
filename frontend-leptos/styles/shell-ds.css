@@ -463,8 +463,7 @@
   box-shadow: none;
 }
 
-.app-shell-ds .msg-system,
-.app-shell-ds .msg-tool {
+.app-shell-ds .msg-system {
   border-radius: var(--radius-md);
 }
 
