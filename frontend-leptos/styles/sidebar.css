@@ -361,6 +361,42 @@
   color: color-mix(in srgb, var(--muted) 88%, var(--text));
 }
 
+.workspace-list li.file.workspace-file-kind--code .workspace-entry-icon {
+  color: color-mix(in srgb, var(--accent) 68%, var(--muted));
+}
+
+.workspace-list li.file.workspace-file-kind--data .workspace-entry-icon {
+  color: color-mix(in srgb, var(--warn) 52%, var(--muted));
+}
+
+.workspace-list li.file.workspace-file-kind--markdown .workspace-entry-icon {
+  color: color-mix(in srgb, var(--info) 62%, var(--muted));
+}
+
+.workspace-list li.file.workspace-file-kind--image .workspace-entry-icon {
+  color: color-mix(in srgb, var(--success) 58%, var(--muted));
+}
+
+.workspace-list li.file.workspace-file-kind--shell .workspace-entry-icon {
+  color: color-mix(in srgb, var(--success) 48%, var(--text));
+}
+
+.workspace-list li.file.workspace-file-kind--web .workspace-entry-icon {
+  color: color-mix(in srgb, var(--info) 55%, var(--accent) 22%);
+}
+
+.workspace-list li.file.workspace-file-kind--lock .workspace-entry-icon {
+  color: color-mix(in srgb, var(--warn) 58%, var(--muted));
+}
+
+.workspace-list li.file.workspace-file-kind--text .workspace-entry-icon {
+  color: color-mix(in srgb, var(--muted) 94%, var(--text));
+}
+
+.workspace-list li.file.workspace-file-kind--generic .workspace-entry-icon {
+  color: color-mix(in srgb, var(--muted) 88%, var(--text));
+}
+
 .workspace-entry-svg {
   display: block;
   width: 100%;

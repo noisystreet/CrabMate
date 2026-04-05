@@ -451,7 +451,7 @@ flowchart LR
 
 ### `frontend-leptos/src/workspace_shell.rs`
 
-- **`reload_workspace_panel`**（`GET /workspace`）、主/侧列 **`begin_side_column_resize`**（全局 mousemove/mouseup）。
+- **`reload_workspace_panel`**（`GET /workspace`）、主/侧列 **`begin_side_column_resize`**（全局 mousemove/mouseup）。**工作区列表行**：按扩展名与常见无后缀名（`Makefile`、`Dockerfile` 等）归类为 **`WorkspaceFileKind`**，**`workspace_list_row_class`** / **`workspace_list_row_icon`** 供 **`app.rs`** 渲染不同 SVG 与 **`workspace-file-kind--*`** 样式（见 **`sidebar.css`**）。
 
 ### `frontend-leptos/src/storage.rs`
 
