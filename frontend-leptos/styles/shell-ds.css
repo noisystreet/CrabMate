@@ -426,10 +426,12 @@
   background: var(--bg);
 }
 
+/* 勿设小于聊天列的 max-width：气泡的 % 相对本容器计算，固定 48rem 会在列宽>48rem 时与拖拽右列无关 */
 .chat-thread {
-  max-width: 48rem;
-  margin: 0 auto;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 auto;
   box-sizing: border-box;
   padding-left: max(var(--space-3), env(safe-area-inset-left, 0px));
   padding-right: max(var(--space-3), env(safe-area-inset-right, 0px));
@@ -444,13 +446,15 @@
   padding: 0 2px;
 }
 
-/* DeepSeek 风：助手偏「文档流」，用户为轻量气泡 */
+/* DeepSeek 风：用户为轻量卡片；助手为独立卡片（中性色，与用户 accent 气泡区分） */
 .app-shell-ds .msg-assistant {
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  padding-left: 0;
-  padding-right: 0;
+  background: linear-gradient(
+    168deg,
+    color-mix(in srgb, var(--surface) 92%, var(--bg)) 0%,
+    color-mix(in srgb, var(--surface) 96%, var(--border-subtle)) 100%
+  );
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
 }
 
 .app-shell-ds .msg-user {
@@ -476,9 +480,10 @@
   display: flex;
   align-items: flex-end;
   gap: 10px;
-  max-width: 48rem;
-  margin: 0 auto;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 auto;
   box-sizing: border-box;
   padding: 10px 12px;
   border-radius: 16px;
@@ -492,7 +497,7 @@
   min-width: 0;
   min-height: 44px;
   max-height: 200px;
-  max-width: min(var(--chat-message-max-width), 100%);
+  max-width: 100%;
   resize: none;
   border: none;
   background: transparent;
