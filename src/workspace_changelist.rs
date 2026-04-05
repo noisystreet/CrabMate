@@ -79,6 +79,11 @@ impl WorkspaceChangelist {
         let body = format_inner(&g, max_total_chars);
         (rev, body)
     }
+
+    /// 与注入模型的变更集正文一致；供 Web **`GET /workspace/changelog`** 等只读展示。
+    pub fn snapshot_markdown(&self, max_total_chars: usize) -> (u64, Option<String>) {
+        self.snapshot_revision_and_format(max_total_chars)
+    }
 }
 
 fn format_inner(inner: &ChangelistInner, max_total_chars: usize) -> Option<String> {

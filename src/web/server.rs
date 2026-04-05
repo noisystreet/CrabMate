@@ -61,6 +61,10 @@ pub(crate) fn build_app(
             get(crate::web::workspace::workspace_profile_handler),
         )
         .route(
+            "/workspace/changelog",
+            get(super::chat_handlers::workspace_changelog_handler),
+        )
+        .route(
             "/tasks",
             get(crate::web::task::tasks_get_handler).post(crate::web::task::tasks_set_handler),
         )

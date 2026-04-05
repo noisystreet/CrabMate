@@ -183,6 +183,30 @@ pub async fn fetch_workspace_pick() -> Result<Option<String>, String> {
         .filter(|s| !s.is_empty()))
 }
 
+/// 与 **`session_workspace_changelist`** 注入模型正文同源（Markdown）。
+#[derive(Debug, Deserialize)]
+pub struct WorkspaceChangelogResponse {
+    pub revision: u64,
+    #[serde(default)]
+    pub markdown: String,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// `GET /workspace/changelog`：可选 `conversation_id` 与 Web 会话作用域对齐。
+pub async fn fetch_workspace_changelog(
+    conversation_id: Option<&str>,
+) -> Result<WorkspaceChangelogResponse, String> {
+    let url = match conversation_id {
+        Some(id) if !id.trim().is_empty() => format!(
+            "/workspace/changelog?conversation_id={}",
+            urlencoding::encode(id.trim())
+        ),
+        _ => "/workspace/changelog".to_string(),
+    };
+    fetch_json("GET", &url, None).await
+}
+
 #[derive(Serialize)]
 struct WorkspaceSetBody {
     /// `None`：省略字段，服务端按「恢复默认工作目录」处理。
