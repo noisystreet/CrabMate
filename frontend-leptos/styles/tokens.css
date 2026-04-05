@@ -55,11 +55,18 @@
   --danger: var(--error);
   --danger-bg: var(--error-bg);
   --ok: var(--success);
+  /* 圆角分档：xs 标签/高亮块，sm 按钮/小输入，md 卡片/气泡/侧栏卡，lg 大按钮/菜单，xl 一体输入条，pill 徽章 */
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
-  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.36);
-  --shadow-md: 0 16px 42px rgba(0, 0, 0, 0.52);
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  /* 阴影分档：raised 顶栏/卡片/气泡贴面，overlay 下拉/模态/抽屉 */
+  --shadow-raised: 0 2px 6px rgba(0, 0, 0, 0.36);
+  --shadow-overlay: 0 16px 42px rgba(0, 0, 0, 0.52);
+  --shadow-sm: var(--shadow-raised);
+  --shadow-md: var(--shadow-overlay);
   --font-sans: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
   --topbar-h: 52px;
@@ -67,13 +74,13 @@
 
 :root[data-theme="light"] {
   /* 浅色：三者拉开，避免 elevated 与 surface 糊成一片 */
-  --bg: #e6eaf2;
-  --bg-elevated: #eef2f9;
+  --bg: #e8ecf4;
+  --bg-elevated: #f0f3fa;
   --surface: #ffffff;
-  --surface-hover: #f1f4fa;
-  /* light: 边框强一点、阴影弱一点，层次更干净 */
-  --border: #c2ccdc;
-  --border-subtle: #d4ddea;
+  --surface-hover: #f4f6fb;
+  /* 边框偏冷灰、subtle 更淡，减轻「灰边发脏」 */
+  --border: #d1d9e6;
+  --border-subtle: #e6eaf2;
   --text: #141a22;
   /* light：muted 与 surface 背景对比加强 */
   --muted: #4b5a6e;
@@ -94,6 +101,8 @@
   --danger: var(--error);
   --danger-bg: var(--error-bg);
   --ok: var(--success);
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-raised: 0 1px 2px rgba(15, 23, 42, 0.028);
+  --shadow-overlay: 0 10px 28px rgba(15, 23, 42, 0.055);
+  --shadow-sm: var(--shadow-raised);
+  --shadow-md: var(--shadow-overlay);
 }

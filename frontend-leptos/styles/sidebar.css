@@ -416,7 +416,7 @@
 
 .skeleton {
   display: block;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--muted) 10%, var(--border-subtle)) 0%,
@@ -493,7 +493,7 @@
 .skeleton-task-check {
   width: 16px;
   height: 16px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -531,13 +531,13 @@
 .skeleton-chip-label {
   width: 34px;
   height: 9px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   flex-shrink: 0;
 }
 
 .skeleton-chip-value {
   height: 11px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 .skeleton-chip-model {
