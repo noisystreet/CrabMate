@@ -1824,6 +1824,7 @@ pub fn App() -> impl IntoView {
                                                             />
                                                         </label>
                                                     </Show>
+                                                    <div class="msg-stack">
                                                     <div
                                                         class=move || {
                                                             let mut c = class_prefix.clone();
@@ -1855,10 +1856,20 @@ pub fn App() -> impl IntoView {
                                                             <span class="msg-meta-time">{time_str}</span>
                                                         </div>
                                                         {msg_core}
-                                                        <div class="msg-actions" role="group" aria-label="消息操作">
+                                                        {loading.then(|| {
+                                                            view! {
+                                                                <span class="typing-dots" aria-hidden="true">
+                                                                    <span></span>
+                                                                    <span></span>
+                                                                    <span></span>
+                                                                </span>
+                                                            }
+                                                        })}
+                                                    </div>
+                                                    <div class="msg-actions msg-actions-below" role="group" aria-label="消息操作">
                                                             <button
                                                                 type="button"
-                                                                class="btn btn-muted btn-sm msg-action-btn msg-copy-btn"
+                                                                class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
                                                                 title="复制本条展示文本"
                                                                 aria-label="复制本条展示文本"
                                                                 on:click=move |_| {
@@ -1878,7 +1889,7 @@ pub fn App() -> impl IntoView {
                                                                 }
                                                             >
                                                                 <svg
-                                                                    class="msg-copy-icon"
+                                                                    class="msg-action-icon"
                                                                     viewBox="0 0 24 24"
                                                                     fill="none"
                                                                     xmlns="http://www.w3.org/2000/svg"
@@ -1907,8 +1918,9 @@ pub fn App() -> impl IntoView {
                                                                 view! {
                                                                     <button
                                                                         type="button"
-                                                                        class="btn btn-muted btn-sm msg-action-btn"
+                                                                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
                                                                         title="删除本条及之后消息并重新生成（服务端会话需已持久化）"
+                                                                        aria-label="从此处重试"
                                                                         prop:disabled=move || status_busy.get()
                                                                         on:click=move |_| {
                                                                             if status_busy.get() {
@@ -1991,12 +2003,28 @@ pub fn App() -> impl IntoView {
                                                                             }
                                                                         }
                                                                     >
-                                                                        "从此处重试"
+                                                                        <svg
+                                                                            class="msg-action-icon"
+                                                                            viewBox="0 0 24 24"
+                                                                            fill="none"
+                                                                            stroke="currentColor"
+                                                                            stroke-width="2"
+                                                                            stroke-linecap="round"
+                                                                            stroke-linejoin="round"
+                                                                            xmlns="http://www.w3.org/2000/svg"
+                                                                            aria-hidden="true"
+                                                                        >
+                                                                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                                                                            <path d="M21 3v5h-5" />
+                                                                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                                                                            <path d="M8 16H3v5" />
+                                                                        </svg>
                                                                     </button>
                                                                     <button
                                                                         type="button"
-                                                                        class="btn btn-muted btn-sm msg-action-btn"
+                                                                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
                                                                         title="删除本条及之后消息（不自动发送；服务端会话同步截断需已持久化）"
+                                                                        aria-label="分支对话"
                                                                         prop:disabled=move || status_busy.get()
                                                                         on:click=move |_| {
                                                                             if status_busy.get() {
@@ -2063,39 +2091,72 @@ pub fn App() -> impl IntoView {
                                                                             }
                                                                         }
                                                                     >
-                                                                        "分支对话"
+                                                                        <svg
+                                                                            class="msg-action-icon"
+                                                                            viewBox="0 0 24 24"
+                                                                            fill="none"
+                                                                            stroke="currentColor"
+                                                                            stroke-width="2"
+                                                                            stroke-linecap="round"
+                                                                            stroke-linejoin="round"
+                                                                            xmlns="http://www.w3.org/2000/svg"
+                                                                            aria-hidden="true"
+                                                                        >
+                                                                            <line
+                                                                                x1="6"
+                                                                                y1="3"
+                                                                                x2="6"
+                                                                                y2="15"
+                                                                                fill="none"
+                                                                            />
+                                                                            <circle cx="6" cy="3" r="2" fill="none" />
+                                                                            <path
+                                                                                d="M6 15v-1a4 4 0 0 1 4-4h4a4 4 0 0 0 4-4V5"
+                                                                                fill="none"
+                                                                            />
+                                                                            <circle cx="18" cy="5" r="2" fill="none" />
+                                                                            <circle cx="18" cy="19" r="2" fill="none" />
+                                                                            <path d="M18 7v12" fill="none" />
+                                                                        </svg>
                                                                     </button>
                                                                 }
                                                             })}
-                                                        </div>
-                                                        {loading.then(|| {
-                                                            view! {
-                                                                <span class="typing-dots" aria-hidden="true">
-                                                                    <span></span>
-                                                                    <span></span>
-                                                                    <span></span>
-                                                                </span>
-                                                            }
-                                                        })}
-                                                        {err.then(move || {
+                                                            {err.then(move || {
                                                             let mid = mid_retry.clone();
                                                             view! {
-                                                                <div class="msg-retry-row">
                                                                     <button
                                                                         type="button"
-                                                                        class="btn btn-secondary btn-sm"
+                                                                        class="btn btn-secondary btn-sm msg-action-icon-btn"
+                                                                        title="重试当前助手生成"
+                                                                        aria-label="重试"
                                                                         prop:disabled=move || status_busy.get()
                                                                         on:click=move |_| {
                                                                             retry_assistant_target.set(Some(mid.clone()));
                                                                         }
                                                                     >
-                                                                        "重试"
+                                                                        <svg
+                                                                            class="msg-action-icon"
+                                                                            viewBox="0 0 24 24"
+                                                                            fill="none"
+                                                                            stroke="currentColor"
+                                                                            stroke-width="2"
+                                                                            stroke-linecap="round"
+                                                                            stroke-linejoin="round"
+                                                                            xmlns="http://www.w3.org/2000/svg"
+                                                                            aria-hidden="true"
+                                                                        >
+                                                                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                                                                            <path d="M21 3v5h-5" />
+                                                                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                                                                            <path d="M8 16H3v5" />
+                                                                        </svg>
                                                                     </button>
-                                                                </div>
                                                             }
-                                                        })}
+                                                            })}
                                                     </div>
                                                     </div>
+                                                    </div>
+
                                                 }
                                             })
                                             .collect_view()
