@@ -2201,7 +2201,23 @@ pub fn App() -> impl IntoView {
                                 prop:disabled=move || status_busy.get() || !initialized.get()
                                 on:click=send_message.clone()
                                 title="发送"
-                            >"➤"</button>
+                                aria-label="发送"
+                            >
+                                <svg
+                                    class="btn-send-icon-svg"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    aria-hidden="true"
+                                >
+                                    <path d="M22 2 11 13" />
+                                    <path d="M22 2 15 22 11 13 2 9 22 2Z" />
+                                </svg>
+                            </button>
                         </div>
                         </div>
                     </div>

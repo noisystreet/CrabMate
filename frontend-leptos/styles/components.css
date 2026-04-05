@@ -23,7 +23,7 @@
 .brand-mark {
   width: 24px;
   height: 24px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
   background:
     color-mix(in srgb, var(--bg-elevated) 82%, var(--surface))
