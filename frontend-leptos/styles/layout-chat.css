@@ -88,6 +88,43 @@
   border-color: color-mix(in srgb, var(--accent) 42%, var(--border-subtle));
 }
 
+/* 多选导出：在搜索按钮左侧（更靠左 = 更大的 right） */
+.bubble-md-toggle {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top, 0px));
+  right: max(
+    calc(var(--space-3) + 6px + 2.25rem + 8px),
+    calc(env(safe-area-inset-right, 0px) + 2.25rem + 8px)
+  );
+  z-index: 4;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface) 88%, var(--bg));
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.bubble-md-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-subtle));
+}
+
+.bubble-md-toggle[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.bubble-md-toggle-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
 .chat-find-icon {
   width: 1.125rem;
   height: 1.125rem;
@@ -763,4 +800,63 @@
 
 .composer-actions .btn {
   min-width: 76px;
+}
+
+/* 多选包装层：对齐须作用在本层，不能占满列宽，否则会盖住 .msg-user 的 flex-end */
+.msg-with-select {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.msg-with-select:has(.msg-user) {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.msg-with-select:has(.msg-user) > .msg {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.msg-with-select:has(.msg-assistant) {
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.msg-with-select:has(.msg-assistant) > .msg {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.msg-with-select:has(.msg-system),
+.msg-with-select:has(.msg-tool) {
+  align-self: stretch;
+  width: 100%;
+}
+
+.msg-with-select:has(.msg-system) > .msg,
+.msg-with-select:has(.msg-tool) > .msg {
+  flex: 1;
+  min-width: 0;
+}
+
+.msg-select-label {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-top: 6px;
+  cursor: pointer;
+}
+
+.msg-select-cb {
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+  accent-color: var(--accent, #3b82f6);
 }

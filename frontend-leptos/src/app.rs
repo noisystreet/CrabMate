@@ -22,6 +22,9 @@ use crate::app_prefs::{
 use crate::assistant_body::assistant_markdown_collapsible_view;
 use crate::markdown;
 use crate::message_format::{message_text_for_display, tool_card_text};
+use crate::session_export::{
+    export_filename_stem, stored_messages_by_ids_to_markdown, trigger_download,
+};
 use crate::session_modal_row::SessionModalRow;
 use crate::session_ops::{
     SessionContextAnchor, approval_session_id, clamp_session_ctx_menu_pos,
@@ -148,6 +151,10 @@ pub fn App() -> impl IntoView {
     let chat_find_match_ids = RwSignal::new(Vec::<String>::new());
     let chat_find_cursor = RwSignal::new(0_usize);
     let chat_find_panel_open = RwSignal::new(false);
+    // 主区：多选聊天气泡导出 Markdown（由聊天区右键菜单进入）。
+    let bubble_md_select_mode = RwSignal::new(false);
+    let bubble_md_selected_ids = RwSignal::new(Vec::<String>::new());
+    let chat_export_ctx_menu = RwSignal::new(None::<(f64, f64)>);
     // 从侧栏跳转后滚动到该消息（DOM 就绪后消费）。
     let focus_message_id_after_nav = RwSignal::new(None::<String>);
     let changelist_modal_open = RwSignal::new(false);
@@ -426,6 +433,7 @@ pub fn App() -> impl IntoView {
         conversation_id.set(None);
         conversation_revision.set(None);
         expanded_long_assistant_ids.set(Vec::new());
+        bubble_md_selected_ids.set(Vec::new());
     });
 
     // `draft` 仅程序化更新：同步到 Mutex 与 textarea（输入过程不订阅 `draft`）。
@@ -1438,6 +1446,124 @@ pub fn App() -> impl IntoView {
                 </div>
             </Show>
 
+            <Show when=move || chat_export_ctx_menu.get().is_some()>
+                <div class="session-ctx-layer">
+                    <div
+                        class="session-ctx-backdrop"
+                        aria-hidden="true"
+                        on:click=move |_| chat_export_ctx_menu.set(None)
+                    ></div>
+                    <div
+                        class="session-ctx-menu"
+                        role="menu"
+                        aria-label="聊天区菜单"
+                        on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                        style=move || {
+                            chat_export_ctx_menu
+                                .get()
+                                .map(|(x, y)| format!("left:{}px;top:{}px;", x, y))
+                                .unwrap_or_default()
+                        }
+                    >
+                        <Show when=move || !bubble_md_select_mode.get()>
+                            <button
+                                type="button"
+                                class="session-ctx-item"
+                                role="menuitem"
+                                on:click=move |_| {
+                                    chat_export_ctx_menu.set(None);
+                                    bubble_md_selected_ids.set(Vec::new());
+                                    bubble_md_select_mode.set(true);
+                                }
+                            >
+                                "多选导出 Markdown…"
+                            </button>
+                        </Show>
+                        <Show when=move || bubble_md_select_mode.get()>
+                            <button
+                                type="button"
+                                class="session-ctx-item"
+                                role="menuitem"
+                                on:click=move |_| {
+                                    chat_export_ctx_menu.set(None);
+                                    let ids = sessions.with(|list| {
+                                        let aid = active_id.get_untracked();
+                                        list.iter()
+                                            .find(|s| s.id == aid)
+                                            .map(|s| {
+                                                s.messages.iter().map(|m| m.id.clone()).collect::<Vec<_>>()
+                                            })
+                                            .unwrap_or_default()
+                                    });
+                                    bubble_md_selected_ids.set(ids);
+                                }
+                            >
+                                "全选消息"
+                            </button>
+                            <button
+                                type="button"
+                                class="session-ctx-item"
+                                role="menuitem"
+                                on:click=move |_| {
+                                    chat_export_ctx_menu.set(None);
+                                    bubble_md_selected_ids.set(Vec::new());
+                                }
+                            >
+                                "清除选择"
+                            </button>
+                            <button
+                                type="button"
+                                class="session-ctx-item"
+                                role="menuitem"
+                                prop:disabled=move || bubble_md_selected_ids.with(|v| v.is_empty())
+                                on:click=move |_| {
+                                    chat_export_ctx_menu.set(None);
+                                    let ids = bubble_md_selected_ids.get();
+                                    if ids.is_empty() {
+                                        return;
+                                    }
+                                    let md = sessions.with(|list| {
+                                        let aid = active_id.get_untracked();
+                                        list.iter()
+                                            .find(|s| s.id == aid)
+                                            .map(|s| stored_messages_by_ids_to_markdown(&s.messages, &ids))
+                                            .unwrap_or_default()
+                                    });
+                                    let stem = export_filename_stem("chat_selection");
+                                    let name = format!("{stem}.md");
+                                    if let Err(e) = trigger_download(&name, "text/markdown;charset=utf-8", &md) {
+                                        if let Some(w) = web_sys::window() {
+                                            let _ = w.alert_with_message(&e);
+                                        }
+                                    }
+                                }
+                            >
+                                {move || {
+                                    let n = bubble_md_selected_ids.with(|v| v.len());
+                                    if n == 0 {
+                                        "导出已选为 Markdown".to_string()
+                                    } else {
+                                        format!("导出已选为 Markdown（{n} 条）")
+                                    }
+                                }}
+                            </button>
+                            <button
+                                type="button"
+                                class="session-ctx-item"
+                                role="menuitem"
+                                on:click=move |_| {
+                                    chat_export_ctx_menu.set(None);
+                                    bubble_md_select_mode.set(false);
+                                    bubble_md_selected_ids.set(Vec::new());
+                                }
+                            >
+                                "退出多选"
+                            </button>
+                        </Show>
+                    </div>
+                </div>
+            </Show>
+
             <div
                 class:main-row-resizing=move || side_resize_dragging.get()
                 class="main-row"
@@ -1489,6 +1615,41 @@ pub fn App() -> impl IntoView {
                     <Show when=move || !chat_find_panel_open.get()>
                         <button
                             type="button"
+                            class="bubble-md-toggle"
+                            title="多选消息导出 Markdown（聊天区亦可右键）"
+                            aria-label="多选导出 Markdown"
+                            aria-pressed=move || bubble_md_select_mode.get()
+                            on:click=move |_| {
+                                let next = !bubble_md_select_mode.get();
+                                bubble_md_select_mode.set(next);
+                                if !next {
+                                    bubble_md_selected_ids.set(Vec::new());
+                                }
+                            }
+                        >
+                            <svg
+                                class="bubble-md-toggle-icon"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true"
+                            >
+                                <path d="M9 11l2 2 4-4" />
+                                <path d="M4 6h.01" />
+                                <path d="M4 12h.01" />
+                                <path d="M4 18h.01" />
+                                <path d="M8 6h13" />
+                                <path d="M8 12h13" />
+                                <path d="M8 18h9" />
+                            </svg>
+                        </button>
+                    </Show>
+                    <Show when=move || !chat_find_panel_open.get()>
+                        <button
+                            type="button"
                             class="chat-find-toggle"
                             title="在当前会话中查找"
                             aria-label="在当前会话中查找"
@@ -1513,6 +1674,12 @@ pub fn App() -> impl IntoView {
                     <div
                         class="messages"
                         node_ref=messages_scroller
+                        on:contextmenu=move |ev: web_sys::MouseEvent| {
+                            ev.prevent_default();
+                            session_context_menu.set(None);
+                            let (x, y) = clamp_session_ctx_menu_pos(ev.client_x(), ev.client_y());
+                            chat_export_ctx_menu.set(Some((x, y)));
+                        }
                         on:wheel=move |ev: web_sys::WheelEvent| {
                             // 用户上滚查看历史时，立即关闭自动跟底，避免流式期间被强行拉回底部。
                             if ev.delta_y() < 0.0 {
@@ -1631,7 +1798,32 @@ pub fn App() -> impl IntoView {
                                                     }
                                                     .into_any()
                                                 };
+                                                let mid_for_select = StoredValue::new(m.id.clone());
                                                 view! {
+                                                    <div class="msg-with-select">
+                                                    <Show when=move || bubble_md_select_mode.get()>
+                                                        <label class="msg-select-label" title="选中以加入导出">
+                                                            <input
+                                                                type="checkbox"
+                                                                class="msg-select-cb"
+                                                                aria-label="选中此条以导出 Markdown"
+                                                                prop:checked=move || {
+                                                                    let mid = mid_for_select.get_value();
+                                                                    bubble_md_selected_ids.with(|v| v.contains(&mid))
+                                                                }
+                                                                on:change=move |_| {
+                                                                    let mid = mid_for_select.get_value();
+                                                                    bubble_md_selected_ids.update(|v| {
+                                                                        if let Some(i) = v.iter().position(|x| x == &mid) {
+                                                                            v.remove(i);
+                                                                        } else {
+                                                                            v.push(mid);
+                                                                        }
+                                                                    });
+                                                                }
+                                                            />
+                                                        </label>
+                                                    </Show>
                                                     <div
                                                         class=move || {
                                                             let mut c = class_prefix.clone();
@@ -1902,6 +2094,7 @@ pub fn App() -> impl IntoView {
                                                                 </div>
                                                             }
                                                         })}
+                                                    </div>
                                                     </div>
                                                 }
                                             })

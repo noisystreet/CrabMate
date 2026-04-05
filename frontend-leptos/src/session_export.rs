@@ -63,11 +63,9 @@ fn message_text_for_export(m: &StoredMessage) -> String {
     }
 }
 
-/// 与 `chat_export::messages_to_markdown` 一致：跳过 `system`；`tool` 与 `user`/`assistant` 分段。
-pub fn session_to_markdown(session: &ChatSession) -> String {
-    let messages = stored_messages_to_export(&session.messages);
-    let mut md = String::from("# CrabMate 聊天记录\n\n");
-    for m in &messages {
+fn markdown_sections_for_export(messages: &[ExportMessage]) -> String {
+    let mut md = String::new();
+    for m in messages {
         let role = m.role.as_str();
         if role == "system" {
             continue;
@@ -83,6 +81,33 @@ pub fn session_to_markdown(session: &ChatSession) -> String {
         md.push_str(m.content.as_deref().unwrap_or(""));
         md.push_str("\n\n");
     }
+    md
+}
+
+/// 与 `chat_export::messages_to_markdown` 一致：跳过 `system`；`tool` 与 `user`/`assistant` 分段。
+pub fn session_to_markdown(session: &ChatSession) -> String {
+    let messages = stored_messages_to_export(&session.messages);
+    let mut md = String::from("# CrabMate 聊天记录\n\n");
+    md.push_str(&markdown_sections_for_export(&messages));
+    md
+}
+
+/// 按会话内顺序导出**已选 id** 对应的消息（与全会话 Markdown 规则相同；未选中的 id 忽略）。
+pub fn stored_messages_by_ids_to_markdown(
+    all_messages: &[StoredMessage],
+    selected_ids: &[String],
+) -> String {
+    use std::collections::HashSet;
+
+    let set: HashSet<&str> = selected_ids.iter().map(|s| s.as_str()).collect();
+    let subset: Vec<StoredMessage> = all_messages
+        .iter()
+        .filter(|m| set.contains(m.id.as_str()))
+        .cloned()
+        .collect();
+    let messages = stored_messages_to_export(&subset);
+    let mut md = String::from("# CrabMate 聊天记录（已选消息）\n\n");
+    md.push_str(&markdown_sections_for_export(&messages));
     md
 }
 
@@ -154,6 +179,31 @@ mod tests {
             is_tool,
             created_at: 0,
         }
+    }
+
+    #[test]
+    fn by_ids_keeps_session_order_and_omits_unselected() {
+        let session = ChatSession {
+            id: "s1".to_string(),
+            title: "t".to_string(),
+            draft: String::new(),
+            messages: vec![
+                msg("a", "user", "first", false),
+                msg("b", "assistant", "second", false),
+                msg("c", "user", "third", false),
+            ],
+            updated_at: 0,
+        };
+        let md = stored_messages_by_ids_to_markdown(&session.messages, &["c".into(), "a".into()]);
+        assert!(md.contains("first"));
+        assert!(!md.contains("second"));
+        assert!(md.contains("third"));
+        let pos_first = md.find("first").unwrap();
+        let pos_third = md.find("third").unwrap();
+        assert!(
+            pos_first < pos_third,
+            "export should follow session order, not selection order"
+        );
     }
 
     #[test]

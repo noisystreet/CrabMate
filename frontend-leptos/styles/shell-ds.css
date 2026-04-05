@@ -650,6 +650,15 @@
   outline-offset: var(--focus-ring-offset);
 }
 
+.session-ctx-item:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.session-ctx-item:disabled:hover {
+  background: transparent;
+}
+
 .session-ctx-item-danger {
   color: var(--error);
 }

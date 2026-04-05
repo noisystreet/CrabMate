@@ -397,7 +397,8 @@ mod message_branch_tests {
 
 pub fn clamp_session_ctx_menu_pos(cx: i32, cy: i32) -> (f64, f64) {
     const MENU_W: f64 = 190.0;
-    const MENU_H: f64 = 148.0;
+    // 上限略大，兼容聊天区多选菜单（多项）与侧栏会话菜单。
+    const MENU_H: f64 = 220.0;
     let (ww, wh) = web_sys::window()
         .map(|w| {
             (
