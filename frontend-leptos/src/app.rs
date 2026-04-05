@@ -1765,6 +1765,9 @@ pub fn App() -> impl IntoView {
                                                 let user_retry_id = m.id.clone();
                                                 let user_branch_id = m.id.clone();
                                                 let is_user_plain = m.role == "user" && !m.is_tool;
+                                                let is_tool_bubble = m.is_tool;
+                                                let show_msg_action_bar =
+                                                    !is_tool_bubble || is_user_plain || err;
                                                 let msg_core = if m.role == "assistant" && !m.is_tool {
                                                     assistant_markdown_collapsible_view(
                                                         sessions,
@@ -1866,7 +1869,11 @@ pub fn App() -> impl IntoView {
                                                             }
                                                         })}
                                                     </div>
+                                                    {show_msg_action_bar.then(|| {
+                                                        view! {
                                                     <div class="msg-actions msg-actions-below" role="group" aria-label="消息操作">
+                                                            {(!is_tool_bubble).then(|| {
+                                                                view! {
                                                             <button
                                                                 type="button"
                                                                 class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
@@ -1911,6 +1918,8 @@ pub fn App() -> impl IntoView {
                                                                     />
                                                                 </svg>
                                                             </button>
+                                                                }
+                                                            })}
                                                             {is_user_plain.then(|| {
                                                                 let idx = msg_idx;
                                                                 let uid_r = user_retry_id.clone();
@@ -2154,6 +2163,8 @@ pub fn App() -> impl IntoView {
                                                             }
                                                             })}
                                                     </div>
+                                                        }
+                                                    })}
                                                     </div>
                                                     </div>
 

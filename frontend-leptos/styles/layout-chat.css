@@ -672,21 +672,64 @@
   box-shadow: none;
 }
 
+/* 工具结果：终端 / shell 面板（等宽、暗底、提示符；与助手 Markdown 气泡区分） */
 .msg-tool {
   align-self: stretch;
   width: auto;
   max-width: none;
-  background: color-mix(in srgb, var(--info) 8%, var(--bg-elevated));
+  border-radius: 0;
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--muted);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid color-mix(in srgb, var(--info) 70%, var(--border));
-  box-shadow: none;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--text) 90%, var(--success) 10%);
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--bg) 82%, var(--surface) 18%) 94%,
+    var(--success) 6%
+  );
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, var(--success) 14%);
+  border-left: 3px solid color-mix(in srgb, var(--success) 58%, var(--border));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
+    0 1px 0 color-mix(in srgb, #000 22%, transparent);
 }
 
-/* 无角色标签时时间靠右，避免单行 meta 贴在左侧 */
-.msg-tool .msg-meta-time:not(:empty) {
-  margin-left: auto;
+.msg-tool .msg-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--muted) 88%, var(--success) 12%);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 装饰性提示符；复制仍走原文（不含 $，见 message_text_for_display） */
+.msg-tool:not(.msg-loading) .msg-body::before {
+  content: "$ ";
+  color: color-mix(in srgb, var(--success) 72%, var(--muted));
+  font-weight: 600;
+  user-select: none;
+}
+
+.msg-tool .msg-find-inline {
+  font-family: inherit;
+}
+
+/* 工具气泡：时间与摘要从同一行起排；窄宽时正文折到下一行。loading 仍用纵向布局（见 .msg-loading） */
+.msg-tool:not(.msg-loading) {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.55rem;
+}
+
+.msg-tool:not(.msg-loading) .msg-meta {
+  margin-bottom: 0;
+  flex: 0 0 auto;
+}
+
+.msg-tool:not(.msg-loading) .msg-body {
+  flex: 1 1 10rem;
+  min-width: 0;
 }
 
 .msg-error {
