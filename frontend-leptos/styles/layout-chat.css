@@ -433,10 +433,29 @@
 
 .msg-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-2);
   opacity: 0.92;
+}
+
+/* 气泡外的工具条：紧贴气泡下沿，不占气泡内边距 */
+.msg-actions.msg-actions-below {
+  margin-top: 6px;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* 与 .msg-stack 的 align-items 配合，整行图标仍可用 justify 控制间距 */
+.msg-with-select:has(.msg-user) .msg-actions-below {
+  justify-content: flex-end;
+}
+
+.msg-with-select:has(.msg-assistant) .msg-actions-below {
+  justify-content: flex-start;
 }
 
 .msg-action-btn {
@@ -444,8 +463,9 @@
   padding: 0.2rem 0.5rem;
 }
 
-/* 复制：仅图标，与文字按钮同排对齐 */
-.msg-copy-btn {
+/* 消息操作：仅图标（复制、从此处重试、分支对话等） */
+.msg-action-icon-btn {
+  flex-shrink: 0;
   min-width: 1.75rem;
   width: 1.75rem;
   height: 1.75rem;
@@ -455,7 +475,7 @@
   justify-content: center;
 }
 
-.msg-copy-icon {
+.msg-action-icon {
   width: 1rem;
   height: 1rem;
   display: block;
@@ -599,7 +619,7 @@
   align-self: flex-end;
   width: fit-content;
   max-width: 100%;
-  max-width: min(92%, 720px);
+  max-width: min(92%, var(--chat-message-max-width));
   box-sizing: border-box;
   background: linear-gradient(
     160deg,
@@ -615,11 +635,15 @@
 
 .msg-user .msg-body {
   text-align: right;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .msg-assistant {
   align-self: flex-start;
-  width: min(92%, 720px);
+  width: min(92%, var(--chat-message-max-width));
   max-width: 100%;
   box-sizing: border-box;
   background: var(--surface);
@@ -660,13 +684,6 @@
   border-color: var(--error);
   color: var(--error);
   background: var(--error-bg);
-}
-
-.msg-retry-row {
-  margin-top: var(--space-2);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }
 
 /* 生成中：纵向排布，正文占满气泡宽度，高度随流式文本换行持续增长（避免横向 flex 卡死高度） */
@@ -749,9 +766,11 @@
 }
 
 .composer-input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 48px;
   max-height: 200px;
+  max-width: min(var(--chat-message-max-width), 100%);
   resize: vertical;
   background: var(--bg);
   color: var(--text);
@@ -818,9 +837,28 @@
   max-width: 100%;
 }
 
-.msg-with-select:has(.msg-user) > .msg {
-  flex: 0 1 auto;
+/* 气泡 + 其下工具条纵向成组 */
+.msg-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.msg-with-select:has(.msg-user) > .msg-stack {
+  align-items: flex-end;
+}
+
+.msg-with-select:has(.msg-assistant) > .msg-stack {
+  align-items: flex-start;
+}
+
+.msg-with-select:has(.msg-user) > .msg-stack > .msg {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .msg-with-select:has(.msg-assistant) {
@@ -829,7 +867,7 @@
   max-width: 100%;
 }
 
-.msg-with-select:has(.msg-assistant) > .msg {
+.msg-with-select:has(.msg-assistant) > .msg-stack > .msg {
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -840,8 +878,8 @@
   width: 100%;
 }
 
-.msg-with-select:has(.msg-system) > .msg,
-.msg-with-select:has(.msg-tool) > .msg {
+.msg-with-select:has(.msg-system) > .msg-stack > .msg,
+.msg-with-select:has(.msg-tool) > .msg-stack > .msg {
   flex: 1;
   min-width: 0;
 }

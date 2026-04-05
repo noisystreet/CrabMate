@@ -9,6 +9,8 @@
   --space-5: 20px;
   --space-inset-msg: var(--space-4);
   --space-gap-msg: 14px;
+  /* 用户消息气泡与底部输入：正文达到此宽度后再换行（与列宽取 min） */
+  --chat-message-max-width: 720px;
 
   /* 排版 */
   --text-xs: 10px;
