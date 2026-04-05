@@ -222,6 +222,8 @@
   min-height: min-content;
   /* 有消息时按内容增高，滚动交给 .messages */
   flex: 0 0 auto;
+  /* 气泡宽度百分比以此列为参照，随中部聊天区伸缩 */
+  min-width: 0;
 }
 
 /* 空会话：在可视区内垂直居中占位，避免大片留白 */
@@ -618,8 +620,7 @@
 .msg-user {
   align-self: flex-end;
   width: fit-content;
-  max-width: 100%;
-  max-width: min(92%, var(--chat-message-max-width));
+  max-width: min(92%, 100%);
   box-sizing: border-box;
   background: linear-gradient(
     160deg,
@@ -641,14 +642,22 @@
   word-break: normal;
 }
 
+/* 助手气泡：中性灰阶渐变 + 轮廓，避免与用户侧 accent 渐变同色同质 */
 .msg-assistant {
   align-self: flex-start;
-  width: min(92%, var(--chat-message-max-width));
-  max-width: 100%;
+  width: fit-content;
+  max-width: min(92%, 100%);
   box-sizing: border-box;
-  background: var(--surface);
-  border-color: color-mix(in srgb, var(--border) 90%, var(--surface));
-  box-shadow: var(--shadow-sm);
+  background: linear-gradient(
+    168deg,
+    color-mix(in srgb, var(--surface) 90%, var(--muted)) 0%,
+    color-mix(in srgb, var(--surface) 94%, var(--bg-elevated)) 55%,
+    color-mix(in srgb, var(--surface) 88%, var(--border-subtle)) 100%
+  );
+  border-color: color-mix(in srgb, var(--border) 50%, var(--muted));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 6%, transparent) inset,
+    0 2px 10px color-mix(in srgb, var(--bg) 38%, transparent);
 }
 
 .msg-system {
@@ -770,7 +779,7 @@
   min-width: 0;
   min-height: 48px;
   max-height: 200px;
-  max-width: min(var(--chat-message-max-width), 100%);
+  max-width: 100%;
   resize: vertical;
   background: var(--bg);
   color: var(--text);
