@@ -1,5 +1,7 @@
 //! 助手消息 Markdown 渲染（随会话信号刷新 DOM）；超长回复可折叠。
 
+use std::sync::{Arc, Mutex};
+
 use gloo_timers::future::TimeoutFuture;
 use leptos::html::Div;
 use leptos::prelude::*;
@@ -23,6 +25,7 @@ pub fn assistant_markdown_collapsible_view(
     let body_ref = NodeRef::<Div>::new();
     let mid = message_id.clone();
     let mid_for_btn = message_id.clone();
+    let prev_raw = StoredValue::new(Arc::new(Mutex::new(String::new())));
 
     Effect::new({
         let body_ref = body_ref.clone();
@@ -39,6 +42,22 @@ pub fn assistant_markdown_collapsible_view(
                     .map(message_text_for_display)
                     .unwrap_or_default()
             });
+            let is_loading = sessions.with(|list| {
+                let aid = active_id.get_untracked();
+                list.iter()
+                    .find(|s| s.id == aid)
+                    .and_then(|s| s.messages.iter().find(|msg| msg.id == mid))
+                    .map(|m| m.state.as_deref() == Some("loading"))
+                    .unwrap_or(false)
+            });
+            let first_stream_chunk = {
+                let arc = prev_raw.get_value();
+                let mut g = arc.lock().expect("assistant prev_raw mutex poisoned");
+                let prev_empty = g.is_empty();
+                let first = prev_empty && !raw.is_empty() && is_loading;
+                *g = raw.clone();
+                first
+            };
             let html = markdown::to_safe_html(&raw);
             let r = body_ref.clone();
             spawn_local(async move {
@@ -46,7 +65,11 @@ pub fn assistant_markdown_collapsible_view(
                 if let Some(n) = r.get()
                     && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
                 {
+                    let _ = he.class_list().remove_1("msg-md-first-chunk");
                     he.set_inner_html(&html);
+                    if first_stream_chunk {
+                        let _ = he.class_list().add_1("msg-md-first-chunk");
+                    }
                 }
             });
         }

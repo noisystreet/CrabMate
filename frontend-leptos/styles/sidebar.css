@@ -9,9 +9,9 @@
   overflow: hidden;
   box-sizing: border-box;
   transition:
-    width 0.26s cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 0.22s ease,
-    opacity 0.2s ease;
+    width var(--dur-side-drag-release) cubic-bezier(0.22, 1, 0.36, 1),
+    border-color var(--dur-fast) ease,
+    opacity var(--dur-fast) ease;
   will-change: width;
 }
 
@@ -57,7 +57,7 @@
   min-width: 0;
   display: flex;
   min-height: 0;
-  transition: min-width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: min-width var(--dur-side-drag-release) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .side-pane:first-child {

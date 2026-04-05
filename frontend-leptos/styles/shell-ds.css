@@ -567,7 +567,7 @@
     z-index: 100;
     width: min(var(--nav-rail-w), 88vw);
     transform: translateX(-100%);
-    transition: transform 0.26s var(--ease-out-soft);
+    transition: transform var(--dur-layout-col) var(--ease-out-soft);
     box-shadow: var(--shadow-md);
   }
 

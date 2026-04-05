@@ -1,3 +1,50 @@
+/* 默认动效（尊重 prefers-reduced-motion 见文末） */
+
+@keyframes msg-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 仅最后一条入场：避免整表重绘时每条都闪；新消息多在底部追加 */
+.messages-inner > .msg-with-select:last-child {
+  animation: msg-row-enter var(--dur-msg-enter) var(--ease-out-soft) both;
+}
+
+/* 流式生成中略压暗正文区，结束后过渡回 1，减轻 innerHTML 刷新时的跳变感 */
+.msg-assistant .msg-md-wrap {
+  transition: opacity var(--dur-stream-prose) ease-out;
+}
+
+.msg-assistant.msg-loading .msg-md-wrap {
+  opacity: 0.94;
+}
+
+.msg-assistant:not(.msg-loading) .msg-md-wrap {
+  opacity: 1;
+}
+
+/* 首段可见字符：由 assistant_body 在首次非空 innerHTML 时加 class，一次性淡入 */
+@keyframes assistant-md-first-chunk {
+  from {
+    opacity: 0.82;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.msg-md-prose.msg-md-first-chunk {
+  animation: assistant-md-first-chunk var(--dur-stream-prose) ease-out forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* 弹窗：去掉入场动画后显式落到终态，避免个别引擎在 animation:none 下残留 keyframe 初始帧 */
   .modal-backdrop {
@@ -40,6 +87,24 @@
     animation: none;
     opacity: 1;
     transform: none;
+  }
+
+  .messages-inner > .msg-with-select:last-child {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .msg-assistant .msg-md-wrap,
+  .msg-assistant.msg-loading .msg-md-wrap,
+  .msg-assistant:not(.msg-loading) .msg-md-wrap {
+    transition: none;
+    opacity: 1;
+  }
+
+  .msg-md-prose.msg-md-first-chunk {
+    animation: none;
+    opacity: 1;
   }
 
   .typing-dots span {
