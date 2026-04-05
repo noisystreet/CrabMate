@@ -1442,7 +1442,50 @@ pub fn App() -> impl IntoView {
                 class:main-row-resizing=move || side_resize_dragging.get()
                 class="main-row"
             >
-                <div class="chat-column">
+                <div
+                    class="chat-column"
+                    on:keydown=move |ev: web_sys::KeyboardEvent| {
+                        if ev.key() != "End" {
+                            return;
+                        }
+                        let Some(t) = ev.target() else {
+                            return;
+                        };
+                        let Ok(he) = t.dyn_into::<web_sys::HtmlElement>() else {
+                            return;
+                        };
+                        let tag = he.tag_name();
+                        if tag.eq_ignore_ascii_case("TEXTAREA")
+                            || tag.eq_ignore_ascii_case("INPUT")
+                            || tag.eq_ignore_ascii_case("SELECT")
+                            || tag.eq_ignore_ascii_case("OPTION")
+                        {
+                            return;
+                        }
+                        if he.is_content_editable() {
+                            return;
+                        }
+                        ev.prevent_default();
+                        auto_scroll_chat.set(true);
+                        let mref = messages_scroller;
+                        let scroll_from_effect = messages_scroll_from_effect;
+                        spawn_local(async move {
+                            let _guard = MessagesScrollFromEffectGuard::new(scroll_from_effect);
+                            TimeoutFuture::new(0).await;
+                            if let Some(el) = mref.get() {
+                                el.set_scroll_top(el.scroll_height());
+                            }
+                            TimeoutFuture::new(0).await;
+                            if let Some(el) = mref.get() {
+                                el.set_scroll_top(el.scroll_height());
+                            }
+                            TimeoutFuture::new(16).await;
+                            if let Some(el) = mref.get() {
+                                el.set_scroll_top(el.scroll_height());
+                            }
+                        });
+                    }
+                >
                     <Show when=move || !chat_find_panel_open.get()>
                         <button
                             type="button"
