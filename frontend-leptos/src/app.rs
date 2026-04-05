@@ -43,7 +43,10 @@ use crate::storage::{
     ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, ensure_at_least_one, load_sessions,
     make_session_id, save_sessions,
 };
-use crate::workspace_shell::{begin_side_column_resize, reload_workspace_panel};
+use crate::workspace_shell::{
+    begin_side_column_resize, reload_workspace_panel, workspace_list_row_class,
+    workspace_list_row_icon,
+};
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::html::{Div, Textarea};
@@ -2537,62 +2540,18 @@ pub fn App() -> impl IntoView {
                                                                             .into_iter()
                                                                             .enumerate()
                                                                             .map(|(i, e)| {
-                                                                                let mark = if e.is_dir { "dir" } else { "file" };
                                                                                 let stagger = i.to_string();
                                                                                 let name = e.name.clone();
                                                                                 let is_dir = e.is_dir;
+                                                                                let row_class =
+                                                                                    workspace_list_row_class(is_dir, name.as_str());
                                                                                 view! {
                                                                                     <li
-                                                                                        class=mark
+                                                                                        class=row_class
                                                                                         style=format!("--list-stagger: {stagger}")
                                                                                     >
                                                                                         <span class="workspace-entry-icon" aria-hidden="true">
-                                                                                            {if is_dir {
-                                                                                                view! {
-                                                                                                    <svg
-                                                                                                        class="workspace-entry-svg"
-                                                                                                        viewBox="0 0 24 24"
-                                                                                                        fill="none"
-                                                                                                        xmlns="http://www.w3.org/2000/svg"
-                                                                                                        aria-hidden="true"
-                                                                                                    >
-                                                                                                        <path
-                                                                                                            d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
-                                                                                                            stroke="currentColor"
-                                                                                                            stroke-width="2"
-                                                                                                            stroke-linecap="round"
-                                                                                                            stroke-linejoin="round"
-                                                                                                        />
-                                                                                                    </svg>
-                                                                                                }
-                                                                                                    .into_any()
-                                                                                            } else {
-                                                                                                view! {
-                                                                                                    <svg
-                                                                                                        class="workspace-entry-svg"
-                                                                                                        viewBox="0 0 24 24"
-                                                                                                        fill="none"
-                                                                                                        xmlns="http://www.w3.org/2000/svg"
-                                                                                                        aria-hidden="true"
-                                                                                                    >
-                                                                                                        <path
-                                                                                                            d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-                                                                                                            stroke="currentColor"
-                                                                                                            stroke-width="2"
-                                                                                                            stroke-linecap="round"
-                                                                                                            stroke-linejoin="round"
-                                                                                                        />
-                                                                                                        <polyline
-                                                                                                            points="14 2 14 8 20 8"
-                                                                                                            stroke="currentColor"
-                                                                                                            stroke-width="2"
-                                                                                                            stroke-linecap="round"
-                                                                                                            stroke-linejoin="round"
-                                                                                                        />
-                                                                                                    </svg>
-                                                                                                }
-                                                                                                    .into_any()
-                                                                                            }}
+                                                                                            {workspace_list_row_icon(is_dir, name.as_str())}
                                                                                         </span>
                                                                                         <span class="workspace-entry-name">{name}</span>
                                                                                     </li>
