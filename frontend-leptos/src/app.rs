@@ -2,6 +2,8 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use crate::api::{
     ChatStreamCallbacks, StatusData, TaskItem, TasksData, WorkspaceData,
@@ -24,10 +26,10 @@ use crate::session_modal_row::SessionModalRow;
 use crate::session_ops::{
     SessionContextAnchor, approval_session_id, clamp_session_ctx_menu_pos,
     delete_session_after_confirm, export_session_json_for_id, export_session_markdown_for_id,
-    format_msg_time_label, make_message_id, message_created_ms, message_role_label,
-    patch_active_session, prepare_retry_failed_assistant_turn, title_from_user_prompt,
-    truncate_at_user_message_and_prepare_regenerate, truncate_at_user_message_branch_local,
-    user_ordinal_for_message_index, write_clipboard_text,
+    flush_composer_draft_to_session, format_msg_time_label, make_message_id, message_created_ms,
+    message_role_label, patch_active_session, prepare_retry_failed_assistant_turn,
+    title_from_user_prompt, truncate_at_user_message_and_prepare_regenerate,
+    truncate_at_user_message_branch_local, user_ordinal_for_message_index, write_clipboard_text,
 };
 use crate::session_search::{
     MESSAGE_SEARCH_MAX_HITS, collect_message_search_hits, normalize_search_query,
@@ -41,7 +43,7 @@ use crate::storage::{
 use crate::workspace_shell::{begin_side_column_resize, reload_workspace_panel};
 
 use gloo_timers::future::TimeoutFuture;
-use leptos::html::Div;
+use leptos::html::{Div, Textarea};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_dom::helpers::WindowListenerHandle;
@@ -72,6 +74,9 @@ pub fn App() -> impl IntoView {
     let active_id = RwSignal::new(String::new());
     let initialized = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
+    // 输入草稿：仅写 Mutex，不在每键 `sessions.update`；发送 / 切会话时再写入 `ChatSession.draft`。
+    let composer_draft_buffer: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let composer_input_ref: NodeRef<Textarea> = NodeRef::new();
     let conversation_id = RwSignal::new(None::<String>);
     // 最近一次 SSE `conversation_saved.revision`；`POST /chat/branch` 需要与服务端一致。
     let conversation_revision = RwSignal::new(None::<u64>);
@@ -405,20 +410,42 @@ pub fn App() -> impl IntoView {
         }
     });
 
+    // 仅随 `active_id` 切换加载草稿；勿订阅 `sessions`，否则流式更新会反复覆盖输入缓冲。
     Effect::new(move |_| {
-        let _ = active_id.get();
+        let id = active_id.get();
         if !initialized.get() {
             return;
         }
-        let id = active_id.get();
-        sessions.with(|list| {
-            if let Some(s) = list.iter().find(|s| s.id == id) {
-                draft.set(s.draft.clone());
-            }
-        });
+        let list = sessions.get_untracked();
+        let d = list
+            .iter()
+            .find(|s| s.id == id)
+            .map(|s| s.draft.clone())
+            .unwrap_or_default();
+        draft.set(d);
         conversation_id.set(None);
         conversation_revision.set(None);
         expanded_long_assistant_ids.set(Vec::new());
+    });
+
+    // `draft` 仅程序化更新：同步到 Mutex 与 textarea（输入过程不订阅 `draft`）。
+    Effect::new({
+        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
+        let composer_input_ref = composer_input_ref.clone();
+        move |_| {
+            let d = draft.get();
+            *composer_draft_buffer.lock().unwrap() = d.clone();
+            let d_for_dom = d.clone();
+            let cref = composer_input_ref.clone();
+            spawn_local(async move {
+                TimeoutFuture::new(0).await;
+                if let Some(el) = cref.get() {
+                    if el.value() != d_for_dom {
+                        el.set_value(&d_for_dom);
+                    }
+                }
+            });
+        }
     });
 
     Effect::new(move |_| {
@@ -740,8 +767,9 @@ pub fn App() -> impl IntoView {
     let run_send_message: Rc<dyn Fn()> = Rc::new({
         let attach = Rc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
+        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
         move || {
-            let text = draft.get().trim().to_string();
+            let text = composer_draft_buffer.lock().unwrap().trim().to_string();
             if text.is_empty() || !initialized.get() || status_busy.get() {
                 return;
             }
@@ -888,7 +916,13 @@ pub fn App() -> impl IntoView {
     };
 
     let new_session = {
+        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
         move |_| {
+            let prev = active_id.get_untracked();
+            if !prev.is_empty() {
+                let buf = composer_draft_buffer.lock().unwrap().clone();
+                flush_composer_draft_to_session(sessions, &prev, &buf);
+            }
             let now = js_sys::Date::now() as i64;
             let s = ChatSession {
                 id: make_session_id(),
@@ -912,6 +946,10 @@ pub fn App() -> impl IntoView {
     let side_resize_handles: Rc<RefCell<Option<(WindowListenerHandle, WindowListenerHandle)>>> =
         Rc::new(RefCell::new(None));
     let side_resize_dragging = RwSignal::new(false);
+
+    let composer_buf_nav = Arc::clone(&composer_draft_buffer);
+    let composer_buf_modal_stored = StoredValue::new(Arc::clone(&composer_draft_buffer));
+    let composer_buf_ta = Arc::clone(&composer_draft_buffer);
 
     view! {
         <div class="app-root app-shell-ds">
@@ -1012,11 +1050,21 @@ pub fn App() -> impl IntoView {
                                         let mid = h.message_id.clone();
                                         let title = h.session_title.clone();
                                         let snip = h.snippet.clone();
+                                        let buf_hit = Arc::clone(&composer_buf_nav);
                                         view! {
                                             <button
                                                 type="button"
                                                 class="nav-search-hit"
                                                 on:click=move |_| {
+                                                    let prev = active_id.get_untracked();
+                                                    if !prev.is_empty() {
+                                                        let t = buf_hit.lock().unwrap().clone();
+                                                        flush_composer_draft_to_session(
+                                                            sessions,
+                                                            &prev,
+                                                            &t,
+                                                        );
+                                                    }
                                                     session_context_menu.set(None);
                                                     active_id.set(sid.clone());
                                                     draft.set(
@@ -1055,6 +1103,7 @@ pub fn App() -> impl IntoView {
                                 let session_id_ctx = s.id.clone();
                                 let title = s.title.clone();
                                 let n = s.messages.len();
+                                let buf_sess = Arc::clone(&composer_buf_nav);
                                 view! {
                                     <button
                                         type="button"
@@ -1081,6 +1130,15 @@ pub fn App() -> impl IntoView {
                                         on:click={
                                             let id = session_id_click;
                                             move |_| {
+                                                let prev = active_id.get_untracked();
+                                                if !prev.is_empty() {
+                                                    let t = buf_sess.lock().unwrap().clone();
+                                                    flush_composer_draft_to_session(
+                                                        sessions,
+                                                        &prev,
+                                                        &t,
+                                                    );
+                                                }
                                                 session_context_menu.set(None);
                                                 active_id.set(id.clone());
                                                 draft.set(
@@ -1816,13 +1874,10 @@ pub fn App() -> impl IntoView {
                         <div class="composer-inner-ds">
                         <textarea
                             class="composer-input"
-                            prop:value=move || draft.get()
+                            node_ref=composer_input_ref
                             on:input=move |ev| {
                                 let v = event_target_value(&ev);
-                                draft.set(v.clone());
-                                patch_active_session(sessions, &active_id.get(), |s| {
-                                    s.draft = v;
-                                });
+                                *composer_buf_ta.lock().unwrap() = v;
                             }
                             on:keydown={
                                 let r = Rc::clone(&run_send_message);
@@ -2474,6 +2529,7 @@ pub fn App() -> impl IntoView {
                                     .map(|s| {
                                         let id = s.id.clone();
                                         let active = active_id.get() == id;
+                                        let row_buf = Arc::clone(&composer_buf_modal_stored.get_value());
                                         view! {
                                             <SessionModalRow
                                                 id=id.clone()
@@ -2483,6 +2539,7 @@ pub fn App() -> impl IntoView {
                                                 sessions=sessions
                                                 active_id=active_id
                                                 draft=draft
+                                                composer_draft_buffer=row_buf
                                                 conversation_id=conversation_id
                                                 session_modal=session_modal
                                             />
