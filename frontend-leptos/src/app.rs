@@ -47,6 +47,25 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::WindowListenerHandle;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
+
+/// 跟底 Effect 程序化 `set_scroll_top` 期间为 true；Drop 时清除，避免 `on:scroll` 误判 gap。
+struct MessagesScrollFromEffectGuard {
+    flag: RwSignal<bool>,
+}
+
+impl MessagesScrollFromEffectGuard {
+    fn new(flag: RwSignal<bool>) -> Self {
+        flag.set(true);
+        Self { flag }
+    }
+}
+
+impl Drop for MessagesScrollFromEffectGuard {
+    fn drop(&mut self) {
+        self.flag.set(false);
+    }
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     let sessions = RwSignal::new(Vec::<ChatSession>::new());
@@ -111,6 +130,8 @@ pub fn App() -> impl IntoView {
     let messages_scroller = NodeRef::<Div>::new();
     // 为 false 时表示用户已离开底部，流式输出不再强行跟底；滚回底部附近会重新置 true。
     let auto_scroll_chat = RwSignal::new(true);
+    // Effect 程序化滚底时置 true，避免 `scroll_height` 已变而 `scrollTop` 尚未跟上时，`on:scroll` 误判 gap 并关掉跟底。
+    let messages_scroll_from_effect = RwSignal::new(false);
     // 记录滚动方向：仅当用户向下回到底部附近时才恢复自动跟底，避免上滚初期抖动。
     let last_messages_scroll_top = RwSignal::new(0_i32);
     // 侧栏：按标题过滤会话。
@@ -420,7 +441,9 @@ pub fn App() -> impl IntoView {
 
         let mref = messages_scroller;
         let follow = auto_scroll_chat;
+        let scroll_from_effect = messages_scroll_from_effect;
         spawn_local(async move {
+            let _scroll_from_effect_guard = MessagesScrollFromEffectGuard::new(scroll_from_effect);
             if !follow.get_untracked() {
                 return;
             }
@@ -1401,6 +1424,9 @@ pub fn App() -> impl IntoView {
                                     let top = el.scroll_top();
                                     let prev_top = last_messages_scroll_top.get_untracked();
                                     last_messages_scroll_top.set(top);
+                                    if messages_scroll_from_effect.get_untracked() {
+                                        return;
+                                    }
                                     let gap = el.scroll_height()
                                         - top
                                         - el.client_height();
