@@ -411,6 +411,106 @@
   white-space: nowrap;
 }
 
+/* 工作区目录树：可折叠子级 */
+.workspace-list li.workspace-dir-node {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  margin-bottom: 2px;
+  background: transparent;
+  cursor: default;
+}
+
+.workspace-list li.workspace-dir-node:hover {
+  background: transparent;
+}
+
+.workspace-dir-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.12s ease;
+}
+
+.workspace-list li.workspace-dir-node .workspace-dir-head:hover {
+  background: var(--surface-hover);
+}
+
+.workspace-tree-chevron {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.65rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.workspace-tree-chevron:hover {
+  background: color-mix(in srgb, var(--surface-hover) 80%, transparent);
+  color: var(--text);
+}
+
+.workspace-tree-chevron:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  outline-offset: 1px;
+}
+
+.workspace-tree-chevron-spacer {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.workspace-list-nested {
+  margin: 0;
+  padding: 0 0 2px 0;
+  padding-inline-start: 0.5rem;
+  margin-inline-start: 0.35rem;
+  border-inline-start: 1px solid var(--border-subtle);
+}
+
+.workspace-dir-children {
+  width: 100%;
+  min-width: 0;
+}
+
+.workspace-tree-loading,
+.workspace-tree-err,
+.workspace-tree-placeholder {
+  margin: 4px 8px 6px 1.75rem;
+  font-size: 12px;
+}
+
+.workspace-tree-placeholder {
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 /* 列表加载完成后轻量渐显（工作区 / 任务） */
 @keyframes list-row-in {
   from {
