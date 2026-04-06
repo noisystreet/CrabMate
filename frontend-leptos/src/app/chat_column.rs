@@ -233,6 +233,7 @@ pub fn chat_column_view(
                                                     chat_find_cursor,
                                                     bubble_md_select_mode,
                                                     bubble_md_selected_ids,
+                                                    auto_scroll_chat,
                                                     status_busy,
                                                     conversation_id,
                                                     conversation_revision,
@@ -260,6 +261,7 @@ pub fn chat_column_view(
                                                         regen_stream_after_truncate,
                                                         retry_assistant_target,
                                                         status_err,
+                                                        auto_scroll_chat,
                                                     )
                                                     .into_any()
                                                 }

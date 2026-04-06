@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -9,11 +10,23 @@ use crate::api::post_chat_branch;
 use crate::assistant_body::assistant_markdown_collapsible_view;
 use crate::message_format::message_text_for_display;
 use crate::session_ops::{
-    format_msg_time_label, message_role_label, truncate_at_user_message_and_prepare_regenerate,
-    truncate_at_user_message_branch_local, user_ordinal_for_message_index, write_clipboard_text,
+    format_msg_time_label, message_role_label, preceding_plain_user_message_id,
+    truncate_at_user_message_and_prepare_regenerate, truncate_at_user_message_branch_local,
+    user_ordinal_for_message_index, write_clipboard_text,
 };
-use crate::session_search::{normalize_search_query, split_for_find_highlight};
+use crate::session_search::{
+    normalize_search_query, scroll_message_into_view, split_for_find_highlight,
+};
 use crate::storage::{ChatSession, StoredMessage};
+
+fn trigger_jump_to_user_prompt(uid: &str, auto_scroll_chat: RwSignal<bool>) {
+    auto_scroll_chat.set(false);
+    let u = uid.to_string();
+    spawn_local(async move {
+        TimeoutFuture::new(32).await;
+        scroll_message_into_view(&u);
+    });
+}
 
 pub(crate) enum ChatChunk {
     Single {
@@ -76,6 +89,7 @@ pub(crate) fn tool_run_group_view(
     regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
+    auto_scroll_chat: RwSignal<bool>,
 ) -> impl IntoView {
     let items_sv = StoredValue::new(items);
     let group_ids: Vec<String> = items_sv
@@ -139,6 +153,7 @@ pub(crate) fn tool_run_group_view(
                                         chat_find_cursor,
                                         bubble_md_select_mode,
                                         bubble_md_selected_ids,
+                                        auto_scroll_chat,
                                         status_busy,
                                         conversation_id,
                                         conversation_revision,
@@ -181,6 +196,7 @@ pub(crate) fn tool_run_group_view(
                             chat_find_cursor,
                             bubble_md_select_mode,
                             bubble_md_selected_ids,
+                            auto_scroll_chat,
                             status_busy,
                             conversation_id,
                             conversation_revision,
@@ -210,6 +226,7 @@ pub(crate) fn chat_message_row(
     chat_find_cursor: RwSignal<usize>,
     bubble_md_select_mode: RwSignal<bool>,
     bubble_md_selected_ids: RwSignal<Vec<String>>,
+    auto_scroll_chat: RwSignal<bool>,
     status_busy: RwSignal<bool>,
     conversation_id: RwSignal<Option<String>>,
     conversation_revision: RwSignal<Option<u64>>,
@@ -243,6 +260,16 @@ pub(crate) fn chat_message_row(
     let user_branch_id = m.id.clone();
     let is_user_plain = m.role == "user" && !m.is_tool;
     let is_tool_bubble = m.is_tool;
+    let jump_uid = if is_tool_bubble {
+        sessions.with(|list| {
+            let aid = active_id.get();
+            list.iter()
+                .find(|s| s.id == aid)
+                .and_then(|sess| preceding_plain_user_message_id(&sess.messages, msg_idx))
+        })
+    } else {
+        None
+    };
     let show_msg_action_bar = !is_tool_bubble || is_user_plain || err;
     let msg_core = if m.role == "assistant" && !m.is_tool {
         assistant_markdown_collapsible_view(
@@ -254,25 +281,67 @@ pub(crate) fn chat_message_row(
         .into_any()
     } else {
         let display_for_find = message_text_for_display(&m);
-        view! {
-            <span class="msg-body">
-                {move || {
-                    let q = normalize_search_query(&chat_find_query.get());
-                    let segs = split_for_find_highlight(&display_for_find, &q);
-                    segs
-                        .into_iter()
-                        .map(|(s, hl)| {
-                            if hl {
-                                view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
-                            } else {
-                                view! { {s} }.into_any()
+        let asc = auto_scroll_chat;
+        match jump_uid {
+            Some(uid) => {
+                let uid_click = uid.clone();
+                let uid_key = uid.clone();
+                view! {
+                    <span
+                        class="msg-body msg-tool-body-jump"
+                        role="link"
+                        tabindex="0"
+                        title="点击跳转到对应用户消息"
+                        aria-label="跳转到对应用户消息"
+                        on:click=move |_| {
+                            trigger_jump_to_user_prompt(&uid_click, asc);
+                        }
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            let k = ev.key();
+                            if k == "Enter" || k == " " {
+                                ev.prevent_default();
+                                trigger_jump_to_user_prompt(&uid_key, asc);
                             }
-                        })
-                        .collect_view()
-                }}
-            </span>
+                        }
+                    >
+                        {move || {
+                            let q = normalize_search_query(&chat_find_query.get());
+                            let segs = split_for_find_highlight(&display_for_find, &q);
+                            segs
+                                .into_iter()
+                                .map(|(s, hl)| {
+                                    if hl {
+                                        view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
+                                    } else {
+                                        view! { {s} }.into_any()
+                                    }
+                                })
+                                .collect_view()
+                        }}
+                    </span>
+                }
+                .into_any()
+            }
+            None => view! {
+                <span class="msg-body">
+                    {move || {
+                        let q = normalize_search_query(&chat_find_query.get());
+                        let segs = split_for_find_highlight(&display_for_find, &q);
+                        segs
+                            .into_iter()
+                            .map(|(s, hl)| {
+                                if hl {
+                                    view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
+                                } else {
+                                    view! { {s} }.into_any()
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </span>
+            }
+            .into_any(),
         }
-        .into_any()
     };
     let mid_for_select = StoredValue::new(m.id.clone());
     let mid_dom = m.id.clone();
