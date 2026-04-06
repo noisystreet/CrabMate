@@ -184,7 +184,7 @@ cargo run -- serve
 | GET | `/status` | 后台状态 |
 | GET | `/workspace` | 工作区列表 |
 | POST | `/workspace` | 设置当前 Web 工作区根：JSON `{"path":"/abs/dir"}`；省略 `path` 或空串恢复为默认（`run_command_working_dir`）；须为已存在目录且在 `workspace_allowed_roots` 内 |
-| GET | `/workspace/pick` | 在**服务端进程所在机器**上弹出原生选目录对话框（`rfd`），返回 JSON `{"path":null}` 或 `{"path":"/chosen"}`；无图形/取消时多为 `null`；供 Web 侧栏「浏览…」填入路径 |
+| GET | `/workspace/pick` | 在**服务端进程所在机器**上弹出原生选目录对话框（`rfd`），返回 JSON `{"path":null}` 或 `{"path":"/chosen"}`；无图形/取消时多为 `null`；Web 侧栏「浏览…」取到路径后会紧接着 **`POST /workspace`** 自动生效 |
 | GET | `/workspace/profile` | 项目画像 Markdown |
 | GET | `/workspace/changelog` | 本会话工作区变更集 Markdown（可选查询 `conversation_id`；与 **`session_workspace_changelist`** 注入模型正文同源，只读） |
 | GET | `/workspace/file` | 读工作区内文件（`path` 必填；可选 **`encoding`**，与工具 `read_file` 一致，默认 UTF-8 严格；单文件上限 1 MiB） |

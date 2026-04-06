@@ -308,13 +308,6 @@
   outline-offset: var(--focus-ring-offset);
 }
 
-.workspace-set-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
 .workspace-set-error {
   margin-top: 6px;
   margin-bottom: 0;

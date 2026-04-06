@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
+use web_sys::KeyboardEvent;
 
 use crate::api::{TaskItem, TasksData, WorkspaceData, fetch_workspace_pick, post_workspace_set};
 use crate::app_prefs::SidePanelView;
@@ -330,62 +331,18 @@ pub fn side_column_view(
                                                                     <input
                                                                         type="text"
                                                                         class="workspace-set-input"
-                                                                        placeholder="绝对路径，须落在服务端允许根内"
+                                                                        placeholder="绝对路径（允许根内）；浏览选目录将自动生效，手动输入后按 Enter"
+                                                                        title="在运行 serve 的机器上选目录后会立即提交；亦可手输路径后按 Enter"
                                                                         prop:value=move || workspace_path_draft.get()
                                                                         on:input=move |ev| {
                                                                             workspace_path_draft
                                                                                 .set(event_target_value(&ev));
                                                                         }
-                                                                    />
-                                                                    <button
-                                                                        type="button"
-                                                                        class="btn btn-secondary btn-sm workspace-set-browse"
-                                                                        title="在运行 serve 的机器上打开系统选目录对话框"
-                                                                        prop:disabled=move || {
-                                                                            workspace_pick_busy.get()
-                                                                                || workspace_loading.get()
-                                                                        }
-                                                                        on:click=move |_| {
-                                                                            workspace_set_err.set(None);
-                                                                            workspace_pick_busy.set(true);
-                                                                            spawn_local(async move {
-                                                                                match fetch_workspace_pick().await {
-                                                                                    Ok(Some(p)) => {
-                                                                                        workspace_path_draft.set(p);
-                                                                                    }
-                                                                                    Ok(None) => {
-                                                                                        workspace_set_err.set(Some(
-                                                                                            "未选择目录，或服务端无法弹窗（无图形/无头/SSH 远端）。请手动填写路径。"
-                                                                                                .into(),
-                                                                                        ));
-                                                                                    }
-                                                                                    Err(e) => {
-                                                                                        workspace_set_err.set(Some(e));
-                                                                                    }
-                                                                                }
-                                                                                workspace_pick_busy.set(false);
-                                                                            });
-                                                                        }
-                                                                    >
-                                                                        {move || {
-                                                                            if workspace_pick_busy.get() {
-                                                                                "…"
-                                                                            } else {
-                                                                                "浏览…"
+                                                                        on:keydown=move |ev: KeyboardEvent| {
+                                                                            if ev.key() != "Enter" {
+                                                                                return;
                                                                             }
-                                                                        }}
-                                                                    </button>
-                                                                </div>
-                                                                <div class="workspace-set-actions">
-                                                                    <button
-                                                                        type="button"
-                                                                        class="btn btn-primary btn-sm"
-                                                                        prop:disabled=move || {
-                                                                            workspace_set_busy.get()
-                                                                                || workspace_pick_busy.get()
-                                                                                || workspace_loading.get()
-                                                                        }
-                                                                        on:click=move |_| {
+                                                                            ev.prevent_default();
                                                                             workspace_set_err.set(None);
                                                                             let p = workspace_path_draft
                                                                                 .get()
@@ -395,6 +352,12 @@ pub fn side_column_view(
                                                                                 workspace_set_err.set(Some(
                                                                                     "请填写目录路径。".into(),
                                                                                 ));
+                                                                                return;
+                                                                            }
+                                                                            if workspace_set_busy.get()
+                                                                                || workspace_pick_busy.get()
+                                                                                || workspace_loading.get()
+                                                                            {
                                                                                 return;
                                                                             }
                                                                             workspace_set_busy.set(true);
@@ -419,8 +382,63 @@ pub fn side_column_view(
                                                                                 workspace_set_busy.set(false);
                                                                             });
                                                                         }
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-secondary btn-sm workspace-set-browse"
+                                                                        title="在运行 serve 的机器上打开系统选目录对话框"
+                                                                        prop:disabled=move || {
+                                                                            workspace_pick_busy.get()
+                                                                                || workspace_set_busy.get()
+                                                                                || workspace_loading.get()
+                                                                        }
+                                                                        on:click=move |_| {
+                                                                            workspace_set_err.set(None);
+                                                                            workspace_pick_busy.set(true);
+                                                                            spawn_local(async move {
+                                                                                match fetch_workspace_pick().await {
+                                                                                    Ok(Some(p)) => {
+                                                                                        workspace_path_draft.set(p.clone());
+                                                                                        workspace_set_err.set(None);
+                                                                                        match post_workspace_set(Some(p)).await {
+                                                                                            Ok(_) => {
+                                                                                                reload_workspace_panel(
+                                                                                                    workspace_loading,
+                                                                                                    workspace_err,
+                                                                                                    workspace_path_draft,
+                                                                                                    workspace_data,
+                                                                                                    workspace_subtree_expanded,
+                                                                                                    workspace_subtree_cache,
+                                                                                                    workspace_subtree_loading,
+                                                                                                )
+                                                                                                .await;
+                                                                                            }
+                                                                                            Err(e) => {
+                                                                                                workspace_set_err.set(Some(e));
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                    Ok(None) => {
+                                                                                        workspace_set_err.set(Some(
+                                                                                            "未选择目录，或服务端无法弹窗（无图形/无头/SSH 远端）。请手动填写路径后按 Enter。"
+                                                                                                .into(),
+                                                                                        ));
+                                                                                    }
+                                                                                    Err(e) => {
+                                                                                        workspace_set_err.set(Some(e));
+                                                                                    }
+                                                                                }
+                                                                                workspace_pick_busy.set(false);
+                                                                            });
+                                                                        }
                                                                     >
-                                                                        "应用"
+                                                                        {move || {
+                                                                            if workspace_pick_busy.get() {
+                                                                                "…"
+                                                                            } else {
+                                                                                "浏览…"
+                                                                            }
+                                                                        }}
                                                                     </button>
                                                                 </div>
                                                                 <Show when=move || workspace_set_err.get().is_some()>
