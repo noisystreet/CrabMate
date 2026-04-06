@@ -456,7 +456,11 @@ flowchart LR
 
 ### `frontend-leptos/src/workspace_shell.rs`
 
-- **`reload_workspace_panel`**（`GET /workspace`）、主/侧列 **`begin_side_column_resize`**（全局 mousemove/mouseup）。**工作区列表行**：按扩展名与常见无后缀名（`Makefile`、`Dockerfile` 等）归类为 **`WorkspaceFileKind`**，**`workspace_list_row_class`** / **`workspace_list_row_icon`** 供 **`app/side_column.rs`** 渲染不同 SVG 与 **`workspace-file-kind--*`** 样式（见 **`sidebar.css`**）。
+- **`reload_workspace_panel`**（`GET /workspace`）、主/侧列 **`begin_side_column_resize`**（全局 mousemove/mouseup）。**工作区列表行**：按扩展名与常见无后缀名（`Makefile`、`Dockerfile` 等）归类为 **`WorkspaceFileKind`**，**`workspace_list_row_class`** / **`workspace_list_row_icon`** 供 **`workspace_tree.rs`** 与侧栏渲染不同 SVG 与 **`workspace-file-kind--*`** 样式（见 **`sidebar.css`**）。刷新根列表时会清空 **`App`** 中子目录展开/缓存/加载中的 **`RwSignal`**，避免切换工作区根后树状态串台。
+
+### `frontend-leptos/src/workspace_tree.rs`
+
+- **`WorkspaceFilesystemTree`**：右侧工作区文件列表的树形 UI；目录默认折叠，展开时对子路径调用 **`GET /workspace?path=`**（**`api::fetch_workspace`**），结果缓存在 **`HashMap`** 中；**`workspace_child_rel`** 与后端相对路径规则一致。
 
 ### `frontend-leptos/src/storage.rs`
 

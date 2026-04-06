@@ -1,6 +1,7 @@
 //! 工作区侧栏数据刷新与主/侧列拖拽宽度。
 
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -333,7 +334,13 @@ pub async fn reload_workspace_panel(
     workspace_err: RwSignal<Option<String>>,
     workspace_path_draft: RwSignal<String>,
     workspace_data: RwSignal<Option<WorkspaceData>>,
+    workspace_subtree_expanded: RwSignal<HashSet<String>>,
+    workspace_subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
+    workspace_subtree_loading: RwSignal<HashSet<String>>,
 ) {
+    workspace_subtree_expanded.set(HashSet::new());
+    workspace_subtree_cache.set(HashMap::new());
+    workspace_subtree_loading.set(HashSet::new());
     workspace_loading.set(true);
     match fetch_workspace(None).await {
         Ok(d) => {

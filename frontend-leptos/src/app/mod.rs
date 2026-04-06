@@ -26,6 +26,7 @@ use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
 
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -90,6 +91,9 @@ pub fn App() -> impl IntoView {
     let status_err = RwSignal::new(None::<String>);
     let tool_busy = RwSignal::new(false);
     let workspace_data = RwSignal::new(None::<WorkspaceData>);
+    let workspace_subtree_expanded = RwSignal::new(HashSet::<String>::new());
+    let workspace_subtree_cache = RwSignal::new(HashMap::<String, WorkspaceData>::new());
+    let workspace_subtree_loading = RwSignal::new(HashSet::<String>::new());
     let workspace_err = RwSignal::new(None::<String>);
     let workspace_loading = RwSignal::new(false);
     let workspace_path_draft = RwSignal::new(String::new());
@@ -286,6 +290,9 @@ pub fn App() -> impl IntoView {
                     workspace_err,
                     workspace_path_draft,
                     workspace_data,
+                    workspace_subtree_expanded,
+                    workspace_subtree_cache,
+                    workspace_subtree_loading,
                 )
                 .await;
             });
@@ -1039,6 +1046,9 @@ pub fn App() -> impl IntoView {
                         status_bar_visible,
                         settings_modal,
                         workspace_data,
+                        workspace_subtree_expanded,
+                        workspace_subtree_cache,
+                        workspace_subtree_loading,
                         workspace_err,
                         workspace_loading,
                         workspace_path_draft,

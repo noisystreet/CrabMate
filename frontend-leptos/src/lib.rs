@@ -17,6 +17,7 @@ mod session_search;
 mod sse_dispatch;
 mod storage;
 mod workspace_shell;
+mod workspace_tree;
 
 use app::App;
 use leptos::mount::mount_to_body;

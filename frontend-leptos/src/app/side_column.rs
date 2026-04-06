@@ -4,15 +4,14 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::api::{TaskItem, TasksData, WorkspaceData, fetch_workspace_pick, post_workspace_set};
 use crate::app_prefs::SidePanelView;
-use crate::workspace_shell::{
-    begin_side_column_resize, reload_workspace_panel, workspace_list_row_class,
-    workspace_list_row_icon,
-};
+use crate::workspace_shell::{begin_side_column_resize, reload_workspace_panel};
+use crate::workspace_tree::WorkspaceFilesystemTree;
 
 #[component]
 fn SideColumnTasksLoadedPane(
@@ -141,6 +140,9 @@ pub fn side_column_view(
     status_bar_visible: RwSignal<bool>,
     settings_modal: RwSignal<bool>,
     workspace_data: RwSignal<Option<WorkspaceData>>,
+    workspace_subtree_expanded: RwSignal<HashSet<String>>,
+    workspace_subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
+    workspace_subtree_loading: RwSignal<HashSet<String>>,
     workspace_err: RwSignal<Option<String>>,
     workspace_loading: RwSignal<bool>,
     workspace_path_draft: RwSignal<String>,
@@ -404,6 +406,9 @@ pub fn side_column_view(
                                                                                             workspace_err,
                                                                                             workspace_path_draft,
                                                                                             workspace_data,
+                                                                                            workspace_subtree_expanded,
+                                                                                            workspace_subtree_cache,
+                                                                                            workspace_subtree_loading,
                                                                                         )
                                                                                         .await;
                                                                                     }
@@ -437,51 +442,12 @@ pub fn side_column_view(
                                                                         .unwrap_or_default()
                                                                 }}</div>
                                                             </Show>
-                                                            <ul class=move || {
-                                                                let entries = workspace_data
-                                                                    .get()
-                                                                    .map(|d| d.entries)
-                                                                    .unwrap_or_default();
-                                                                if entries.is_empty() {
-                                                                    "workspace-list"
-                                                                } else {
-                                                                    "workspace-list list-stagger"
-                                                                }
-                                                            }>
-                                                                {move || {
-                                                                    let entries = workspace_data
-                                                                        .get()
-                                                                        .map(|d| d.entries)
-                                                                        .unwrap_or_default();
-                                                                    if entries.is_empty() {
-                                                                        view! { <li>"（无数据）"</li> }.into_any()
-                                                                    } else {
-                                                                        entries
-                                                                            .into_iter()
-                                                                            .enumerate()
-                                                                            .map(|(i, e)| {
-                                                                                let stagger = i.to_string();
-                                                                                let name = e.name.clone();
-                                                                                let is_dir = e.is_dir;
-                                                                                let row_class =
-                                                                                    workspace_list_row_class(is_dir, name.as_str());
-                                                                                view! {
-                                                                                    <li
-                                                                                        class=row_class
-                                                                                        style=format!("--list-stagger: {stagger}")
-                                                                                    >
-                                                                                        <span class="workspace-entry-icon" aria-hidden="true">
-                                                                                            {workspace_list_row_icon(is_dir, name.as_str())}
-                                                                                        </span>
-                                                                                        <span class="workspace-entry-name">{name}</span>
-                                                                                    </li>
-                                                                                }
-                                                                            })
-                                                                            .collect_view()
-                                                                            .into_any()
-                                                                    }
-                                                                }}
-                                                            </ul>
+                                                            <WorkspaceFilesystemTree
+                                                                workspace_data=workspace_data
+                                                                subtree_expanded=workspace_subtree_expanded
+                                                                subtree_cache=workspace_subtree_cache
+                                                                subtree_loading=workspace_subtree_loading
+                                                            />
                                                         </div>
                                                     }
                                                     .into_any()
