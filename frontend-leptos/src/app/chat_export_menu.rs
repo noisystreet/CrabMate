@@ -1,15 +1,16 @@
-//! 聊天区右键菜单：多选导出 Markdown。
+//! 聊天区右键菜单：复制选中文本、多选导出 Markdown。
 
 use leptos::prelude::*;
 
 use crate::session_export::{
     export_filename_stem, stored_messages_by_ids_to_markdown, trigger_download,
 };
+use crate::session_ops::write_clipboard_text;
 use crate::storage::ChatSession;
 
 #[component]
 pub fn ChatExportContextMenu(
-    chat_export_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    chat_export_ctx_menu: RwSignal<Option<(f64, f64, Option<String>)>>,
     bubble_md_select_mode: RwSignal<bool>,
     bubble_md_selected_ids: RwSignal<Vec<String>>,
     sessions: RwSignal<Vec<ChatSession>>,
@@ -30,10 +31,31 @@ pub fn ChatExportContextMenu(
                 style=move || {
                     chat_export_ctx_menu
                         .get()
-                        .map(|(x, y)| format!("left:{}px;top:{}px;", x, y))
+                        .map(|(x, y, _)| format!("left:{}px;top:{}px;", x, y))
                         .unwrap_or_default()
                 }
             >
+                <Show when=move || {
+                    matches!(
+                        chat_export_ctx_menu.get(),
+                        Some((_, _, Some(ref s))) if !s.is_empty()
+                    )
+                }>
+                    <button
+                        type="button"
+                        class="session-ctx-item"
+                        role="menuitem"
+                        on:click=move |_| {
+                            let Some((_, _, Some(text))) = chat_export_ctx_menu.get() else {
+                                return;
+                            };
+                            chat_export_ctx_menu.set(None);
+                            write_clipboard_text(&text);
+                        }
+                    >
+                        "复制选中文字"
+                    </button>
+                </Show>
                 <Show when=move || !bubble_md_select_mode.get()>
                     <button
                         type="button"

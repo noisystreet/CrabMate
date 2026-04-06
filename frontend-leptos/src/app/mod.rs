@@ -145,7 +145,7 @@ pub fn App() -> impl IntoView {
     // 主区：多选聊天气泡导出 Markdown（由聊天区右键菜单进入）。
     let bubble_md_select_mode = RwSignal::new(false);
     let bubble_md_selected_ids = RwSignal::new(Vec::<String>::new());
-    let chat_export_ctx_menu = RwSignal::new(None::<(f64, f64)>);
+    let chat_export_ctx_menu = RwSignal::new(None::<(f64, f64, Option<String>)>);
     // 从侧栏跳转后滚动到该消息（DOM 就绪后消费）。
     let focus_message_id_after_nav = RwSignal::new(None::<String>);
     let changelist_modal_open = RwSignal::new(false);

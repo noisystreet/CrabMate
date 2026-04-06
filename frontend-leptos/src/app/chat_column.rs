@@ -15,8 +15,8 @@ use crate::assistant_body::assistant_markdown_collapsible_view;
 use crate::message_format::message_text_for_display;
 use crate::session_ops::{
     clamp_session_ctx_menu_pos, format_msg_time_label, message_role_label,
-    truncate_at_user_message_and_prepare_regenerate, truncate_at_user_message_branch_local,
-    user_ordinal_for_message_index, write_clipboard_text,
+    selected_text_in_messages_for_context_copy, truncate_at_user_message_and_prepare_regenerate,
+    truncate_at_user_message_branch_local, user_ordinal_for_message_index, write_clipboard_text,
 };
 use crate::session_search::{normalize_search_query, split_for_find_highlight};
 use crate::storage::ChatSession;
@@ -28,7 +28,7 @@ pub fn chat_column_view(
     messages_scroll_from_effect: RwSignal<bool>,
     last_messages_scroll_top: RwSignal<i32>,
     session_context_menu: RwSignal<Option<crate::session_ops::SessionContextAnchor>>,
-    chat_export_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    chat_export_ctx_menu: RwSignal<Option<(f64, f64, Option<String>)>>,
     chat_find_panel_open: RwSignal<bool>,
     bubble_md_select_mode: RwSignal<bool>,
     bubble_md_selected_ids: RwSignal<Vec<String>>,
@@ -161,7 +161,11 @@ pub fn chat_column_view(
                             ev.prevent_default();
                             session_context_menu.set(None);
                             let (x, y) = clamp_session_ctx_menu_pos(ev.client_x(), ev.client_y());
-                            chat_export_ctx_menu.set(Some((x, y)));
+                            let selection = ev
+                                .current_target()
+                                .and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok())
+                                .and_then(|el| selected_text_in_messages_for_context_copy(&el));
+                            chat_export_ctx_menu.set(Some((x, y, selection)));
                         }
                         on:wheel=move |ev: web_sys::WheelEvent| {
                             // 用户上滚查看历史时，立即关闭自动跟底，避免流式期间被强行拉回底部。
