@@ -360,6 +360,8 @@
   color: color-mix(in srgb, var(--muted) 88%, transparent);
   font-weight: var(--font-weight-label);
   line-height: var(--line-tight);
+  /* 中文角色名（如「助手」）在极窄气泡内会逐字换行呈竖排；与英文标签共用一行 meta，禁止该行内折行 */
+  white-space: nowrap;
 }
 
 .msg-meta-role:empty {
@@ -417,6 +419,8 @@
 
 .msg-md-prose {
   white-space: normal;
+  /* 流式全量替换 innerHTML 时缩小重排影响范围 */
+  contain: layout style;
 }
 
 /* 长助手回复默认折叠高度，避免单条占满屏 */
