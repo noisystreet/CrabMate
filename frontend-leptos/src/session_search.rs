@@ -173,7 +173,7 @@ pub fn scroll_message_into_view(msg_id: &str) {
         return;
     };
     if let Ok(he) = el.dyn_into::<web_sys::HtmlElement>() {
-        let _ = he.scroll_into_view();
+        he.scroll_into_view();
     }
 }
 

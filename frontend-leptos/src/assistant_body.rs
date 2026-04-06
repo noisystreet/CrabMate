@@ -2,10 +2,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use gloo_timers::future::TimeoutFuture;
 use leptos::html::Div;
 use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos_dom::helpers::request_animation_frame;
 use wasm_bindgen::JsCast;
 
 use crate::markdown;
@@ -14,6 +13,14 @@ use crate::storage::ChatSession;
 
 /// 超过该字符数（按展示用 `message_text_for_display` 计）的已完成助手消息默认折叠。
 const LONG_ASSISTANT_COLLAPSE_THRESHOLD: usize = 2400;
+
+#[derive(Default)]
+struct AssistantMdPaint {
+    latest_html: String,
+    raf_scheduled: bool,
+    /// 本帧内是否曾出现「由空到有字」的流式首包（用于一次性淡入 class）。
+    pending_first_chunk_anim: bool,
+}
 
 /// 助手非工具消息：Markdown → 净化 HTML；可选折叠长文。
 pub fn assistant_markdown_collapsible_view(
@@ -26,6 +33,7 @@ pub fn assistant_markdown_collapsible_view(
     let mid = message_id.clone();
     let mid_for_btn = message_id.clone();
     let prev_raw = StoredValue::new(Arc::new(Mutex::new(String::new())));
+    let paint = StoredValue::new(Arc::new(Mutex::new(AssistantMdPaint::default())));
 
     Effect::new({
         let body_ref = body_ref.clone();
@@ -59,15 +67,35 @@ pub fn assistant_markdown_collapsible_view(
                 first
             };
             let html = markdown::to_safe_html(&raw);
-            let r = body_ref.clone();
-            spawn_local(async move {
-                TimeoutFuture::new(0).await;
-                if let Some(n) = r.get()
+            let paint_arc = paint.get_value();
+            {
+                let mut g = paint_arc.lock().expect("assistant paint mutex poisoned");
+                g.latest_html = html;
+                if first_stream_chunk {
+                    g.pending_first_chunk_anim = true;
+                }
+                if g.raf_scheduled {
+                    return;
+                }
+                g.raf_scheduled = true;
+            }
+            let paint_run = Arc::clone(&paint_arc);
+            let body_ref = body_ref.clone();
+            request_animation_frame(move || {
+                let (html, do_first) = {
+                    let mut g = paint_run.lock().expect("assistant paint mutex poisoned");
+                    g.raf_scheduled = false;
+                    let html = g.latest_html.clone();
+                    let do_first = g.pending_first_chunk_anim;
+                    g.pending_first_chunk_anim = false;
+                    (html, do_first)
+                };
+                if let Some(n) = body_ref.get()
                     && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
                 {
                     let _ = he.class_list().remove_1("msg-md-first-chunk");
                     he.set_inner_html(&html);
-                    if first_stream_chunk {
+                    if do_first {
                         let _ = he.class_list().add_1("msg-md-first-chunk");
                     }
                 }
