@@ -710,6 +710,24 @@
   font-size: 11px;
 }
 
+/* 可跳转的工具摘要：点击正文跳转到对应用户消息 */
+.msg-tool .msg-tool-body-jump {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--success) 45%, transparent);
+  text-underline-offset: 3px;
+}
+
+.msg-tool .msg-tool-body-jump:hover {
+  text-decoration-color: color-mix(in srgb, var(--success) 75%, var(--text));
+}
+
+.msg-tool .msg-tool-body-jump:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--success) 55%, var(--border));
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .msg-tool-run-empty {
   display: none;
 }
