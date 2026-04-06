@@ -423,9 +423,14 @@ flowchart LR
 
 - **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下。
 
-### `frontend-leptos/src/app.rs`
+### `frontend-leptos/src/app/`
 
-- 单根 **`App`** 组件：会话列表、聊天区、工作区与任务侧栏、状态栏、主题/设置模态、流式与审批条等（状态与 `Effect` 集中于此）。
+- **`mod.rs`**：单根 **`App`**；会话/流式/审批等 **`RwSignal` / `Effect`** 与 **`attach_chat_stream`** 编排仍集中于此，主 `view!` 组合子视图。
+- **`sidebar_nav.rs`**：左侧导航与会话列表；**`mobile_shell_header.rs`**：窄屏顶栏。
+- **`chat_column.rs`**：中部消息列表与输入区；**`chat_find_bar.rs`** / **`chat_export_menu.rs`**：查找条与导出上下文菜单。
+- **`side_column.rs`**：右列（工作区/任务、`SideColumnTasksCard` 等）；**`status_bar.rs`**：底栏状态。
+- **`approval_bar.rs`**：工具审批条；**`session_list_modal.rs`**、**`settings_modal.rs`**、**`changelist_modal.rs`**：各模态。
+- **`scroll_guard.rs`**：程序化滚底与 `on:scroll` 协调（**`MessagesScrollFromEffectGuard`**）。
 - 左栏「最近」会话 **`contextmenu`** 打开菜单；导出 JSON/Markdown 与删除与 **`SessionModalRow`** 共用 **`session_ops::export_session_*_for_id` / `delete_session_after_confirm`**。
 - 流式消息与自动跟底策略（用户上滚时禁用、回到底部附近恢复）。
 
@@ -439,7 +444,7 @@ flowchart LR
 
 ### `frontend-leptos/src/assistant_body.rs`
 
-- 助手**非工具**消息：**`markdown::to_safe_html`** + **`assistant_markdown_body_view`**（`Effect` + 微任务延迟写入）；用户 / 工具 / 系统消息在 **`app.rs`** 中仍为纯文本 **`span.msg-body`**。
+- 助手**非工具**消息：**`markdown::to_safe_html`** + **`assistant_markdown_body_view`**（`Effect` + 微任务延迟写入）；用户 / 工具 / 系统消息在 **`app/`（聊天列）** 中仍为纯文本 **`span.msg-body`**。
 
 ### `frontend-leptos/src/session_ops.rs`
 
@@ -451,12 +456,12 @@ flowchart LR
 
 ### `frontend-leptos/src/workspace_shell.rs`
 
-- **`reload_workspace_panel`**（`GET /workspace`）、主/侧列 **`begin_side_column_resize`**（全局 mousemove/mouseup）。**工作区列表行**：按扩展名与常见无后缀名（`Makefile`、`Dockerfile` 等）归类为 **`WorkspaceFileKind`**，**`workspace_list_row_class`** / **`workspace_list_row_icon`** 供 **`app.rs`** 渲染不同 SVG 与 **`workspace-file-kind--*`** 样式（见 **`sidebar.css`**）。
+- **`reload_workspace_panel`**（`GET /workspace`）、主/侧列 **`begin_side_column_resize`**（全局 mousemove/mouseup）。**工作区列表行**：按扩展名与常见无后缀名（`Makefile`、`Dockerfile` 等）归类为 **`WorkspaceFileKind`**，**`workspace_list_row_class`** / **`workspace_list_row_icon`** 供 **`app/side_column.rs`** 渲染不同 SVG 与 **`workspace-file-kind--*`** 样式（见 **`sidebar.css`**）。
 
 ### `frontend-leptos/src/storage.rs`
 
 - `localStorage` 会话持久化（会话列表、活动会话、草稿等）。
-- **`DEFAULT_CHAT_SESSION_TITLE`**：新建会话默认标题，与 **`app.rs`** 首条消息自动命名（**`session_ops::title_from_user_prompt`**）条件一致。
+- **`DEFAULT_CHAT_SESSION_TITLE`**：新建会话默认标题，与 **`app/mod.rs`** 首条消息自动命名（**`session_ops::title_from_user_prompt`**）条件一致。
 - 与导出结构保持兼容，供 `runtime/chat_export` 与前端互通。
 
 ## 数据与文件持久化约定
