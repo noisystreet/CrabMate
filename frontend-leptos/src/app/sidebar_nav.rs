@@ -1,0 +1,333 @@
+//! 左侧导航：品牌、新对话、会话筛选与列表、全文搜索命中、会话右键菜单。
+
+use std::sync::{Arc, Mutex};
+
+use leptos::prelude::*;
+use leptos_dom::helpers::event_target_value;
+
+use crate::session_ops::{
+    SessionContextAnchor, clamp_session_ctx_menu_pos, delete_session_after_confirm,
+    export_session_json_for_id, export_session_markdown_for_id, flush_composer_draft_to_session,
+};
+use crate::session_search::{
+    MESSAGE_SEARCH_MAX_HITS, collect_message_search_hits, normalize_search_query,
+    session_title_matches,
+};
+use crate::storage::ChatSession;
+
+#[allow(clippy::too_many_arguments)]
+pub fn sidebar_nav_view(
+    mobile_nav_open: RwSignal<bool>,
+    session_modal: RwSignal<bool>,
+    new_session: impl Fn() + Clone + 'static,
+    sidebar_session_query: RwSignal<String>,
+    global_message_query: RwSignal<String>,
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    conversation_id: RwSignal<Option<String>>,
+    conversation_revision: RwSignal<Option<u64>>,
+    focus_message_id_after_nav: RwSignal<Option<String>>,
+    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
+    composer_buf_nav: Arc<Mutex<String>>,
+) -> impl IntoView {
+    view! {
+        <>
+        <aside class=move || {
+            let mut s = String::from("nav-rail");
+            if mobile_nav_open.get() {
+                s.push_str(" nav-rail-mobile-open");
+            }
+            s
+        }>
+            <div class="nav-rail-brand">
+                <span class="brand-mark" aria-hidden="true"></span>
+                <div class="nav-rail-brand-text">
+                    <h1>"CrabMate"</h1>
+                    <span class="brand-sub">"本地 Agent"</span>
+                </div>
+            </div>
+            <button
+                type="button"
+                class="btn btn-primary btn-new-chat-ds"
+                on:click={
+                    let new_session = new_session.clone();
+                    move |_| {
+                        new_session();
+                        mobile_nav_open.set(false);
+                    }
+                }
+            >
+                "新对话"
+            </button>
+            <button
+                type="button"
+                class="btn btn-nav-ghost-ds"
+                on:click=move |_| {
+                    session_modal.set(true);
+                    mobile_nav_open.set(false);
+                }
+            >
+                "管理会话…"
+            </button>
+            <div class="nav-rail-search">
+                <label class="nav-rail-search-label" for="nav-session-filter">"筛选会话"</label>
+                <input
+                    id="nav-session-filter"
+                    type="search"
+                    class="nav-session-search-input"
+                    placeholder="按标题筛选…"
+                    prop:value=move || sidebar_session_query.get()
+                    on:input=move |ev| {
+                        sidebar_session_query.set(event_target_value(&ev));
+                    }
+                />
+                <label class="nav-rail-search-label" for="nav-msg-search">"搜索消息"</label>
+                <input
+                    id="nav-msg-search"
+                    type="search"
+                    class="nav-global-search-input"
+                    placeholder="全文搜索（本地）…"
+                    prop:value=move || global_message_query.get()
+                    on:input=move |ev| {
+                        global_message_query.set(event_target_value(&ev));
+                    }
+                />
+            </div>
+            <div class="nav-rail-scroll">
+                <div class="nav-rail-scroll-label">"最近"</div>
+                {move || {
+                    let needle = normalize_search_query(&sidebar_session_query.get());
+                    let msg_needle = normalize_search_query(&global_message_query.get());
+                    let mut v: Vec<ChatSession> = sessions
+                        .get()
+                        .into_iter()
+                        .filter(|s| session_title_matches(s, &needle))
+                        .collect();
+                    v.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
+                    let hits = if msg_needle.is_empty() {
+                        Vec::new()
+                    } else {
+                        sessions.with(|list| {
+                            collect_message_search_hits(list, &msg_needle, MESSAGE_SEARCH_MAX_HITS)
+                        })
+                    };
+                    let hit_views = if !msg_needle.is_empty() {
+                        if hits.is_empty() {
+                            view! {
+                                <div class="nav-search-hits-empty" role="status">
+                                    "无匹配消息"
+                                </div>
+                            }
+                            .into_any()
+                        } else {
+                            hits
+                                .into_iter()
+                                .map(|h| {
+                                    let sid = h.session_id.clone();
+                                    let mid = h.message_id.clone();
+                                    let title = h.session_title.clone();
+                                    let snip = h.snippet.clone();
+                                    let buf_hit = Arc::clone(&composer_buf_nav);
+                                    view! {
+                                        <button
+                                            type="button"
+                                            class="nav-search-hit"
+                                            on:click=move |_| {
+                                                let prev = active_id.get_untracked();
+                                                if !prev.is_empty() {
+                                                    let t = buf_hit.lock().unwrap().clone();
+                                                    flush_composer_draft_to_session(
+                                                        sessions,
+                                                        &prev,
+                                                        &t,
+                                                    );
+                                                }
+                                                session_context_menu.set(None);
+                                                active_id.set(sid.clone());
+                                                draft.set(
+                                                    sessions.with(|list| {
+                                                        list.iter()
+                                                            .find(|s| s.id == sid)
+                                                            .map(|s| s.draft.clone())
+                                                            .unwrap_or_default()
+                                                    }),
+                                                );
+                                                conversation_id.set(None);
+                                                conversation_revision.set(None);
+                                                focus_message_id_after_nav.set(Some(mid.clone()));
+                                                mobile_nav_open.set(false);
+                                            }
+                                        >
+                                            <span class="nav-search-hit-title">{title}</span>
+                                            <span class="nav-search-hit-snippet">{snip}</span>
+                                        </button>
+                                    }
+                                })
+                                .collect_view()
+                                .into_any()
+                        }
+                    } else {
+                        ().into_any()
+                    };
+                    view! {
+                        <div class="nav-search-hits" role="region" aria-label="消息搜索结果">
+                            {hit_views}
+                        </div>
+                        {v.into_iter()
+                        .map(|s| {
+                            let session_id_class = s.id.clone();
+                            let session_id_click = s.id.clone();
+                            let session_id_ctx = s.id.clone();
+                            let title = s.title.clone();
+                            let n = s.messages.len();
+                            let buf_sess = Arc::clone(&composer_buf_nav);
+                            view! {
+                                <button
+                                    type="button"
+                                    class=move || {
+                                        if active_id.get() == session_id_class {
+                                            "nav-session-item is-active"
+                                        } else {
+                                            "nav-session-item"
+                                        }
+                                    }
+                                    on:contextmenu=move |ev: web_sys::MouseEvent| {
+                                        ev.prevent_default();
+                                        ev.stop_propagation();
+                                        let (x, y) = clamp_session_ctx_menu_pos(
+                                            ev.client_x(),
+                                            ev.client_y(),
+                                        );
+                                        session_context_menu.set(Some(SessionContextAnchor {
+                                            session_id: session_id_ctx.clone(),
+                                            x,
+                                            y,
+                                        }));
+                                    }
+                                    on:click={
+                                        let id = session_id_click;
+                                        move |_| {
+                                            let prev = active_id.get_untracked();
+                                            if !prev.is_empty() {
+                                                let t = buf_sess.lock().unwrap().clone();
+                                                flush_composer_draft_to_session(
+                                                    sessions,
+                                                    &prev,
+                                                    &t,
+                                                );
+                                            }
+                                            session_context_menu.set(None);
+                                            active_id.set(id.clone());
+                                            draft.set(
+                                                sessions.with(|list| {
+                                                    list.iter()
+                                                        .find(|s| s.id == id)
+                                                        .map(|s| s.draft.clone())
+                                                        .unwrap_or_default()
+                                                }),
+                                            );
+                                            conversation_id.set(None);
+                                            conversation_revision.set(None);
+                                            mobile_nav_open.set(false);
+                                        }
+                                    }
+                                >
+                                    <span class="nav-session-title">{title}</span>
+                                    <span class="nav-session-meta">{n}" 条"</span>
+                                </button>
+                            }
+                        })
+                        .collect_view()}
+                    }
+                    .into_any()
+                }}
+            </div>
+        </aside>
+
+        <Show when=move || session_context_menu.get().is_some()>
+            <div class="session-ctx-layer">
+            <div
+                class="session-ctx-backdrop"
+                aria-hidden="true"
+                on:click=move |_| session_context_menu.set(None)
+            ></div>
+            <div
+                class="session-ctx-menu"
+                role="menu"
+                on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                style=move || {
+                    session_context_menu
+                        .get()
+                        .map(|a| format!("left:{}px;top:{}px;", a.x, a.y))
+                        .unwrap_or_default()
+                }
+            >
+                <button
+                    type="button"
+                    class="session-ctx-item"
+                    role="menuitem"
+                    on:click=move |_| {
+                        let anchor = session_context_menu.get();
+                        let Some(a) = anchor else {
+                            return;
+                        };
+                        let id = a.session_id;
+                        session_context_menu.set(None);
+                        export_session_json_for_id(sessions, &id);
+                    }
+                >
+                    "导出 JSON"
+                </button>
+                <button
+                    type="button"
+                    class="session-ctx-item"
+                    role="menuitem"
+                    on:click=move |_| {
+                        let anchor = session_context_menu.get();
+                        let Some(a) = anchor else {
+                            return;
+                        };
+                        let id = a.session_id;
+                        session_context_menu.set(None);
+                        export_session_markdown_for_id(sessions, &id);
+                    }
+                >
+                    "导出 Markdown"
+                </button>
+                <button
+                    type="button"
+                    class="session-ctx-item session-ctx-item-danger"
+                    role="menuitem"
+                    on:click=move |_| {
+                        let anchor = session_context_menu.get();
+                        let Some(a) = anchor else {
+                            return;
+                        };
+                        let id = a.session_id;
+                        session_context_menu.set(None);
+                        delete_session_after_confirm(
+                            sessions,
+                            active_id,
+                            draft,
+                            conversation_id,
+                            &id,
+                        );
+                    }
+                >
+                    "删除会话"
+                </button>
+            </div>
+            </div>
+        </Show>
+
+        <Show when=move || mobile_nav_open.get()>
+            <div
+                class="nav-rail-backdrop"
+                aria-hidden="true"
+                on:click=move |_| mobile_nav_open.set(false)
+            ></div>
+        </Show>
+        </>
+    }
+}
