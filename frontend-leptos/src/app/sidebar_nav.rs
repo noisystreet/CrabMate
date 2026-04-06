@@ -1,8 +1,15 @@
 //! 左侧导航：品牌、新对话、会话筛选与列表、全文搜索命中、会话右键菜单。
+//!
+//! 「筛选会话」「搜索消息」输入框仍即时写入 `sidebar_session_query` / `global_message_query`；
+//! 列表与 `collect_message_search_hits` 使用防抖后的副本，避免每次 `input` 全量遍历。
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 
 use crate::session_ops::{
@@ -14,6 +21,31 @@ use crate::session_search::{
     session_title_matches,
 };
 use crate::storage::ChatSession;
+
+/// 会话标题筛选防抖（毫秒）。
+const SIDEBAR_SESSION_FILTER_DEBOUNCE_MS: u32 = 250;
+/// 跨会话消息搜索防抖（毫秒）。
+const GLOBAL_MESSAGE_SEARCH_DEBOUNCE_MS: u32 = 250;
+
+fn debounce_signal_to_effect(source: RwSignal<String>, target: RwSignal<String>, delay_ms: u32) {
+    let debounce_seq: Rc<Cell<u64>> = Rc::new(Cell::new(0));
+    Effect::new({
+        let debounce_seq = Rc::clone(&debounce_seq);
+        move |_| {
+            let v = source.get();
+            let id = debounce_seq.get().wrapping_add(1);
+            debounce_seq.set(id);
+            let seq = Rc::clone(&debounce_seq);
+            spawn_local(async move {
+                TimeoutFuture::new(delay_ms).await;
+                if seq.get() != id {
+                    return;
+                }
+                target.set(v);
+            });
+        }
+    });
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn sidebar_nav_view(
@@ -31,6 +63,19 @@ pub fn sidebar_nav_view(
     session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     composer_buf_nav: Arc<Mutex<String>>,
 ) -> impl IntoView {
+    let sidebar_filter_debounced = RwSignal::new(String::new());
+    let global_message_filter_debounced = RwSignal::new(String::new());
+    debounce_signal_to_effect(
+        sidebar_session_query,
+        sidebar_filter_debounced,
+        SIDEBAR_SESSION_FILTER_DEBOUNCE_MS,
+    );
+    debounce_signal_to_effect(
+        global_message_query,
+        global_message_filter_debounced,
+        GLOBAL_MESSAGE_SEARCH_DEBOUNCE_MS,
+    );
+
     view! {
         <>
         <aside class=move || {
@@ -97,8 +142,8 @@ pub fn sidebar_nav_view(
             <div class="nav-rail-scroll">
                 <div class="nav-rail-scroll-label">"最近"</div>
                 {move || {
-                    let needle = normalize_search_query(&sidebar_session_query.get());
-                    let msg_needle = normalize_search_query(&global_message_query.get());
+                    let needle = normalize_search_query(&sidebar_filter_debounced.get());
+                    let msg_needle = normalize_search_query(&global_message_filter_debounced.get());
                     let mut v: Vec<ChatSession> = sessions
                         .get()
                         .into_iter()
