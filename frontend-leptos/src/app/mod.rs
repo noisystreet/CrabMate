@@ -5,6 +5,7 @@ mod changelist_modal;
 mod chat_column;
 mod chat_export_menu;
 mod chat_find_bar;
+mod chat_message_render;
 mod mobile_shell_header;
 pub mod scroll_guard;
 mod session_list_modal;
@@ -77,6 +78,8 @@ pub fn App() -> impl IntoView {
     let conversation_revision = RwSignal::new(None::<u64>);
     // 已完成长助手消息默认折叠；在此列表中的 id 表示已展开。
     let expanded_long_assistant_ids = RwSignal::new(Vec::<String>::new());
+    // 连续工具输出分组：以组内首条消息 id 为键，表示该组处于展开态（默认折叠只显示最新一条）。
+    let expanded_tool_run_heads = RwSignal::new(HashSet::<String>::new());
     let side_panel_view = RwSignal::new(load_side_panel_view());
     let view_menu_open = RwSignal::new(false);
     let status_bar_visible = RwSignal::new(load_bool_key(STATUS_BAR_VISIBLE_KEY, true));
@@ -1020,6 +1023,7 @@ pub fn App() -> impl IntoView {
                         sessions,
                         active_id,
                         expanded_long_assistant_ids,
+                        expanded_tool_run_heads,
                         chat_find_query,
                         chat_find_match_ids,
                         chat_find_cursor,

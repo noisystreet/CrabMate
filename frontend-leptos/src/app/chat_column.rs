@@ -1,5 +1,6 @@
 //! 中部聊天列：消息列表、输入框、查找/多选入口。
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use gloo_timers::future::TimeoutFuture;
@@ -8,17 +9,12 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
 
-use super::scroll_guard::MessagesScrollFromEffectGuard;
-use crate::api::post_chat_branch;
-use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
-use crate::assistant_body::assistant_markdown_collapsible_view;
-use crate::message_format::message_text_for_display;
-use crate::session_ops::{
-    clamp_session_ctx_menu_pos, format_msg_time_label, message_role_label,
-    selected_text_in_messages_for_context_copy, truncate_at_user_message_and_prepare_regenerate,
-    truncate_at_user_message_branch_local, user_ordinal_for_message_index, write_clipboard_text,
+use super::chat_message_render::{
+    ChatChunk, chat_message_row, chunk_messages, tool_run_group_view,
 };
-use crate::session_search::{normalize_search_query, split_for_find_highlight};
+use super::scroll_guard::MessagesScrollFromEffectGuard;
+use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
+use crate::session_ops::{clamp_session_ctx_menu_pos, selected_text_in_messages_for_context_copy};
 use crate::storage::ChatSession;
 
 #[allow(clippy::too_many_arguments)]
@@ -35,6 +31,7 @@ pub fn chat_column_view(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
+    expanded_tool_run_heads: RwSignal<HashSet<String>>,
     chat_find_query: RwSignal<String>,
     chat_find_match_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
@@ -222,439 +219,49 @@ pub fn chat_column_view(
                                         }
                                         .into_any()
                                     } else {
-                                        msgs
+                                        chunk_messages(&msgs)
                                             .into_iter()
-                                            .enumerate()
-                                            .map(|(msg_idx, m)| {
-                                                let cls = match m.role.as_str() {
-                                                    "user" => "msg msg-user",
-                                                    "assistant" if m.is_tool => "msg msg-tool",
-                                                    "assistant" => "msg msg-assistant",
-                                                    _ if m.is_tool => "msg msg-tool",
-                                                    _ => "msg msg-system",
-                                                };
-                                                let loading = m.role == "assistant"
-                                                    && m.state.as_deref() == Some("loading");
-                                                let err = m.state.as_deref() == Some("error");
-                                                let class_prefix = if err {
-                                                    format!("{cls} msg-error")
-                                                } else if loading {
-                                                    format!("{cls} msg-loading")
-                                                } else {
-                                                    cls.to_string()
-                                                };
-                                                let mid_highlight = m.id.clone();
-                                                let role_lbl = message_role_label(&m);
-                                                let time_str =
-                                                    format_msg_time_label(m.created_at).unwrap_or_default();
-                                                let mid_retry = m.id.clone();
-                                                let copy_id = m.id.clone();
-                                                let user_retry_id = m.id.clone();
-                                                let user_branch_id = m.id.clone();
-                                                let is_user_plain = m.role == "user" && !m.is_tool;
-                                                let is_tool_bubble = m.is_tool;
-                                                let show_msg_action_bar =
-                                                    !is_tool_bubble || is_user_plain || err;
-                                                let msg_core = if m.role == "assistant" && !m.is_tool {
-                                                    assistant_markdown_collapsible_view(
+                                            .map(|chunk| match chunk {
+                                                ChatChunk::Single { idx, msg } => chat_message_row(
+                                                    idx,
+                                                    msg,
+                                                    sessions,
+                                                    active_id,
+                                                    expanded_long_assistant_ids,
+                                                    chat_find_query,
+                                                    chat_find_match_ids,
+                                                    chat_find_cursor,
+                                                    bubble_md_select_mode,
+                                                    bubble_md_selected_ids,
+                                                    status_busy,
+                                                    conversation_id,
+                                                    conversation_revision,
+                                                    regen_stream_after_truncate,
+                                                    retry_assistant_target,
+                                                    status_err,
+                                                )
+                                                .into_any(),
+                                                ChatChunk::ToolGroup { head_id, items } => {
+                                                    tool_run_group_view(
+                                                        head_id,
+                                                        items,
+                                                        expanded_tool_run_heads,
+                                                        chat_find_query,
+                                                        chat_find_match_ids,
                                                         sessions,
                                                         active_id,
-                                                        m.id.clone(),
                                                         expanded_long_assistant_ids,
+                                                        bubble_md_select_mode,
+                                                        bubble_md_selected_ids,
+                                                        chat_find_cursor,
+                                                        status_busy,
+                                                        conversation_id,
+                                                        conversation_revision,
+                                                        regen_stream_after_truncate,
+                                                        retry_assistant_target,
+                                                        status_err,
                                                     )
                                                     .into_any()
-                                                } else {
-                                                    let display_for_find = message_text_for_display(&m);
-                                                    view! {
-                                                        <span class="msg-body">
-                                                            {move || {
-                                                                let q =
-                                                                    normalize_search_query(&chat_find_query.get());
-                                                                let segs =
-                                                                    split_for_find_highlight(&display_for_find, &q);
-                                                                segs
-                                                                    .into_iter()
-                                                                    .map(|(s, hl)| {
-                                                                        if hl {
-                                                                            view! { <mark class="msg-find-inline">{s}</mark> }
-                                                                                .into_any()
-                                                                        } else {
-                                                                            view! { {s} }.into_any()
-                                                                        }
-                                                                    })
-                                                                    .collect_view()
-                                                            }}
-                                                        </span>
-                                                    }
-                                                    .into_any()
-                                                };
-                                                let mid_for_select = StoredValue::new(m.id.clone());
-                                                view! {
-                                                    <div class="msg-with-select">
-                                                    <Show when=move || bubble_md_select_mode.get()>
-                                                        <label class="msg-select-label" title="选中以加入导出">
-                                                            <input
-                                                                type="checkbox"
-                                                                class="msg-select-cb"
-                                                                aria-label="选中此条以导出 Markdown"
-                                                                prop:checked=move || {
-                                                                    let mid = mid_for_select.get_value();
-                                                                    bubble_md_selected_ids.with(|v| v.contains(&mid))
-                                                                }
-                                                                on:change=move |_| {
-                                                                    let mid = mid_for_select.get_value();
-                                                                    bubble_md_selected_ids.update(|v| {
-                                                                        if let Some(i) = v.iter().position(|x| x == &mid) {
-                                                                            v.remove(i);
-                                                                        } else {
-                                                                            v.push(mid);
-                                                                        }
-                                                                    });
-                                                                }
-                                                            />
-                                                        </label>
-                                                    </Show>
-                                                    <div class="msg-stack">
-                                                    <div
-                                                        class=move || {
-                                                            let mut c = class_prefix.clone();
-                                                            let q = normalize_search_query(&chat_find_query.get());
-                                                            if !q.is_empty() {
-                                                                let in_list = chat_find_match_ids.with(|ids| {
-                                                                    ids.iter().any(|x| x == &mid_highlight)
-                                                                });
-                                                                if in_list {
-                                                                    c.push_str(" msg-find-match");
-                                                                }
-                                                                let cur = chat_find_cursor.get();
-                                                                let is_current = chat_find_match_ids.with(|ids| {
-                                                                    ids
-                                                                        .get(cur)
-                                                                        .map(|x| x == &mid_highlight)
-                                                                        .unwrap_or(false)
-                                                                });
-                                                                if is_current {
-                                                                    c.push_str(" msg-find-highlight");
-                                                                }
-                                                            }
-                                                            c
-                                                        }
-                                                        id=format!("msg-{}", m.id)
-                                                    >
-                                                        <div class="msg-meta" aria-hidden="true">
-                                                            <span class="msg-meta-role">{role_lbl}</span>
-                                                            <span class="msg-meta-time">{time_str}</span>
-                                                        </div>
-                                                        {msg_core}
-                                                        {loading.then(|| {
-                                                            view! {
-                                                                <span class="typing-dots" aria-hidden="true">
-                                                                    <span></span>
-                                                                    <span></span>
-                                                                    <span></span>
-                                                                </span>
-                                                            }
-                                                        })}
-                                                    </div>
-                                                    {show_msg_action_bar.then(|| {
-                                                        view! {
-                                                    <div class="msg-actions msg-actions-below" role="group" aria-label="消息操作">
-                                                            {(!is_tool_bubble).then(|| {
-                                                                view! {
-                                                            <button
-                                                                type="button"
-                                                                class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                                                                title="复制本条展示文本"
-                                                                aria-label="复制本条展示文本"
-                                                                on:click=move |_| {
-                                                                    let t = sessions.with(|list| {
-                                                                        let aid = active_id.get_untracked();
-                                                                        list.iter()
-                                                                            .find(|s| s.id == aid)
-                                                                            .and_then(|s| {
-                                                                                s.messages
-                                                                                    .iter()
-                                                                                    .find(|msg| msg.id == copy_id)
-                                                                            })
-                                                                            .map(message_text_for_display)
-                                                                            .unwrap_or_default()
-                                                                    });
-                                                                    write_clipboard_text(&t);
-                                                                }
-                                                            >
-                                                                <svg
-                                                                    class="msg-action-icon"
-                                                                    viewBox="0 0 24 24"
-                                                                    fill="none"
-                                                                    xmlns="http://www.w3.org/2000/svg"
-                                                                    aria-hidden="true"
-                                                                >
-                                                                    <rect
-                                                                        x="9"
-                                                                        y="9"
-                                                                        width="13"
-                                                                        height="13"
-                                                                        rx="2"
-                                                                        stroke="currentColor"
-                                                                        stroke-width="2"
-                                                                    />
-                                                                    <path
-                                                                        d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
-                                                                        stroke="currentColor"
-                                                                        stroke-width="2"
-                                                                    />
-                                                                </svg>
-                                                            </button>
-                                                                }
-                                                            })}
-                                                            {is_user_plain.then(|| {
-                                                                let idx = msg_idx;
-                                                                let uid_r = user_retry_id.clone();
-                                                                let uid_b = user_branch_id.clone();
-                                                                view! {
-                                                                    <button
-                                                                        type="button"
-                                                                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                                                                        title="删除本条及之后消息并重新生成（服务端会话需已持久化）"
-                                                                        aria-label="从此处重试"
-                                                                        prop:disabled=move || status_busy.get()
-                                                                        on:click=move |_| {
-                                                                            if status_busy.get() {
-                                                                                return;
-                                                                            }
-                                                                            let cid = conversation_id.get();
-                                                                            let rev = conversation_revision.get();
-                                                                            let ord = sessions.with(|list| {
-                                                                                let aid = active_id.get_untracked();
-                                                                                list.iter()
-                                                                                    .find(|s| s.id == aid)
-                                                                                    .and_then(|s| {
-                                                                                        user_ordinal_for_message_index(
-                                                                                            &s.messages,
-                                                                                            idx,
-                                                                                        )
-                                                                                    })
-                                                                            });
-                                                                            let uid = uid_r.clone();
-                                                                            match (cid, rev, ord) {
-                                                                                (
-                                                                                    Some(conv),
-                                                                                    Some(exp_rev),
-                                                                                    Some(before_ord),
-                                                                                ) => {
-                                                                                    spawn_local(async move {
-                                                                                        match post_chat_branch(
-                                                                                            &conv,
-                                                                                            before_ord,
-                                                                                            exp_rev,
-                                                                                        )
-                                                                                        .await
-                                                                                        {
-                                                                                            Ok(new_rev) => {
-                                                                                                conversation_revision
-                                                                                                    .set(Some(new_rev));
-                                                                                                let mut prep: Option<
-                                                                                                    (String, String),
-                                                                                                > = None;
-                                                                                                sessions.update(|list| {
-                                                                                                    let aid = active_id
-                                                                                                        .get_untracked();
-                                                                                                    prep = truncate_at_user_message_and_prepare_regenerate(
-                                                                                                        list,
-                                                                                                        &aid,
-                                                                                                        &uid,
-                                                                                                    );
-                                                                                                });
-                                                                                                if let Some((ut, aid)) =
-                                                                                                    prep
-                                                                                                {
-                                                                                                    regen_stream_after_truncate
-                                                                                                        .set(Some((ut, aid)));
-                                                                                                }
-                                                                                            }
-                                                                                            Err(e) => {
-                                                                                                status_err.set(Some(e));
-                                                                                            }
-                                                                                        }
-                                                                                    });
-                                                                                }
-                                                                                _ => {
-                                                                                    let mut prep: Option<
-                                                                                        (String, String),
-                                                                                    > = None;
-                                                                                    sessions.update(|list| {
-                                                                                        let aid = active_id
-                                                                                            .get_untracked();
-                                                                                        prep = truncate_at_user_message_and_prepare_regenerate(
-                                                                                            list,
-                                                                                            &aid,
-                                                                                            &uid,
-                                                                                        );
-                                                                                    });
-                                                                                    if let Some((ut, aid)) = prep {
-                                                                                        regen_stream_after_truncate
-                                                                                            .set(Some((ut, aid)));
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    >
-                                                                        <svg
-                                                                            class="msg-action-icon"
-                                                                            viewBox="0 0 24 24"
-                                                                            fill="none"
-                                                                            stroke="currentColor"
-                                                                            stroke-width="2"
-                                                                            stroke-linecap="round"
-                                                                            stroke-linejoin="round"
-                                                                            xmlns="http://www.w3.org/2000/svg"
-                                                                            aria-hidden="true"
-                                                                        >
-                                                                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                                                                            <path d="M21 3v5h-5" />
-                                                                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                                                                            <path d="M8 16H3v5" />
-                                                                        </svg>
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                                                                        title="删除本条及之后消息（不自动发送；服务端会话同步截断需已持久化）"
-                                                                        aria-label="分支对话"
-                                                                        prop:disabled=move || status_busy.get()
-                                                                        on:click=move |_| {
-                                                                            if status_busy.get() {
-                                                                                return;
-                                                                            }
-                                                                            let cid = conversation_id.get();
-                                                                            let rev = conversation_revision.get();
-                                                                            let ord = sessions.with(|list| {
-                                                                                let aid = active_id.get_untracked();
-                                                                                list.iter()
-                                                                                    .find(|s| s.id == aid)
-                                                                                    .and_then(|s| {
-                                                                                        user_ordinal_for_message_index(
-                                                                                            &s.messages,
-                                                                                            idx,
-                                                                                        )
-                                                                                    })
-                                                                            });
-                                                                            let uid = uid_b.clone();
-                                                                            match (cid, rev, ord) {
-                                                                                (
-                                                                                    Some(conv),
-                                                                                    Some(exp_rev),
-                                                                                    Some(before_ord),
-                                                                                ) => {
-                                                                                    spawn_local(async move {
-                                                                                        match post_chat_branch(
-                                                                                            &conv,
-                                                                                            before_ord,
-                                                                                            exp_rev,
-                                                                                        )
-                                                                                        .await
-                                                                                        {
-                                                                                            Ok(new_rev) => {
-                                                                                                conversation_revision
-                                                                                                    .set(Some(new_rev));
-                                                                                                sessions.update(|list| {
-                                                                                                    let aid = active_id
-                                                                                                        .get_untracked();
-                                                                                                    let _ = truncate_at_user_message_branch_local(
-                                                                                                        list,
-                                                                                                        &aid,
-                                                                                                        &uid,
-                                                                                                    );
-                                                                                                });
-                                                                                            }
-                                                                                            Err(e) => {
-                                                                                                status_err.set(Some(e));
-                                                                                            }
-                                                                                        }
-                                                                                    });
-                                                                                }
-                                                                                _ => {
-                                                                                    sessions.update(|list| {
-                                                                                        let aid = active_id
-                                                                                            .get_untracked();
-                                                                                        let _ = truncate_at_user_message_branch_local(
-                                                                                            list,
-                                                                                            &aid,
-                                                                                            &uid,
-                                                                                        );
-                                                                                    });
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    >
-                                                                        <svg
-                                                                            class="msg-action-icon"
-                                                                            viewBox="0 0 24 24"
-                                                                            fill="none"
-                                                                            stroke="currentColor"
-                                                                            stroke-width="2"
-                                                                            stroke-linecap="round"
-                                                                            stroke-linejoin="round"
-                                                                            xmlns="http://www.w3.org/2000/svg"
-                                                                            aria-hidden="true"
-                                                                        >
-                                                                            <line
-                                                                                x1="6"
-                                                                                y1="3"
-                                                                                x2="6"
-                                                                                y2="15"
-                                                                                fill="none"
-                                                                            />
-                                                                            <circle cx="6" cy="3" r="2" fill="none" />
-                                                                            <path
-                                                                                d="M6 15v-1a4 4 0 0 1 4-4h4a4 4 0 0 0 4-4V5"
-                                                                                fill="none"
-                                                                            />
-                                                                            <circle cx="18" cy="5" r="2" fill="none" />
-                                                                            <circle cx="18" cy="19" r="2" fill="none" />
-                                                                            <path d="M18 7v12" fill="none" />
-                                                                        </svg>
-                                                                    </button>
-                                                                }
-                                                            })}
-                                                            {err.then(move || {
-                                                            let mid = mid_retry.clone();
-                                                            view! {
-                                                                    <button
-                                                                        type="button"
-                                                                        class="btn btn-secondary btn-sm msg-action-icon-btn"
-                                                                        title="重试当前助手生成"
-                                                                        aria-label="重试"
-                                                                        prop:disabled=move || status_busy.get()
-                                                                        on:click=move |_| {
-                                                                            retry_assistant_target.set(Some(mid.clone()));
-                                                                        }
-                                                                    >
-                                                                        <svg
-                                                                            class="msg-action-icon"
-                                                                            viewBox="0 0 24 24"
-                                                                            fill="none"
-                                                                            stroke="currentColor"
-                                                                            stroke-width="2"
-                                                                            stroke-linecap="round"
-                                                                            stroke-linejoin="round"
-                                                                            xmlns="http://www.w3.org/2000/svg"
-                                                                            aria-hidden="true"
-                                                                        >
-                                                                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                                                                            <path d="M21 3v5h-5" />
-                                                                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                                                                            <path d="M8 16H3v5" />
-                                                                        </svg>
-                                                                    </button>
-                                                            }
-                                                            })}
-                                                    </div>
-                                                        }
-                                                    })}
-                                                    </div>
-                                                    </div>
-
                                                 }
                                             })
                                             .collect_view()

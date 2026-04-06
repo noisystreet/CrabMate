@@ -676,6 +676,44 @@
   box-shadow: none;
 }
 
+/* 连续多条工具输出：默认折叠为一条，可展开查看全部 */
+.msg-tool-run {
+  align-self: stretch;
+  width: 100%;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.msg-tool-run-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-self: flex-start;
+  width: auto;
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 0 6px 2px;
+  box-sizing: border-box;
+}
+
+.msg-tool-run-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.msg-tool-run-toggle {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.msg-tool-run-empty {
+  display: none;
+}
+
 /* 工具结果：终端 / shell 面板（等宽、暗底、提示符；与助手 Markdown 气泡区分） */
 .msg-tool {
   align-self: stretch;
