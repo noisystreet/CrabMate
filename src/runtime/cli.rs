@@ -1,5 +1,5 @@
 use crate::config::cli::{ChatCliArgs, SaveSessionCli, SaveSessionFormat, ToolReplayCli};
-use crate::config::{AgentConfig, SharedAgentConfig};
+use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
 use crate::project_profile::build_first_turn_user_context_markdown;
 use crate::redact;
 use crate::runtime::cli_exit::{
@@ -97,6 +97,14 @@ enum ReplBuiltIn<'a> {
     McpUnknown(String),
     /// `/version`：二进制与平台信息（不含密钥）
     Version,
+    /// `/api-key`：用法说明
+    ApiKeyUsage,
+    /// `/api-key status`
+    ApiKeyStatus,
+    /// `/api-key clear`
+    ApiKeyClear,
+    /// `/api-key set <密钥>`：`set ` 后为完整密钥（仅本进程内存）
+    ApiKeySet(String),
     /// `/agent list`：列出内建 `default` 与配置中的命名角色 id
     AgentList,
     /// `/agent set <id>`：校验 id 后更新 REPL 内存中的当前角色并重建首轮消息；**`default`** 为内建伪 id，表示清除显式角色
@@ -309,6 +317,18 @@ fn classify_mcp_slash_command(arg_tail: &str) -> ReplBuiltIn<'static> {
     ReplBuiltIn::McpUnknown(tail.to_string())
 }
 
+/// `/api-key set …`：`set` 与大小写无关，其后为完整密钥（单行）。
+fn repl_api_key_secret_after_set(arg_trim: &str) -> Option<&str> {
+    let t = arg_trim.trim_start();
+    const PREF: &str = "set ";
+    if t.len() >= PREF.len() && t[..PREF.len()].eq_ignore_ascii_case(PREF) {
+        let rest = t[PREF.len()..].trim();
+        if rest.is_empty() { None } else { Some(rest) }
+    } else {
+        None
+    }
+}
+
 /// 解析 REPL 行首 `/` 内建命令；非内建前缀返回 `None`。
 fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
     let s = input.trim();
@@ -341,6 +361,20 @@ fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
         "export" => ReplBuiltIn::Export(arg),
         "save-session" => ReplBuiltIn::SaveSession(arg),
         "mcp" => classify_mcp_slash_command(arg),
+        "api-key" | "apikey" => {
+            let a = arg.trim();
+            if a.is_empty() {
+                ReplBuiltIn::ApiKeyUsage
+            } else if a.eq_ignore_ascii_case("status") {
+                ReplBuiltIn::ApiKeyStatus
+            } else if a.eq_ignore_ascii_case("clear") {
+                ReplBuiltIn::ApiKeyClear
+            } else if let Some(secret) = repl_api_key_secret_after_set(a) {
+                ReplBuiltIn::ApiKeySet(secret.to_string())
+            } else {
+                ReplBuiltIn::ApiKeyUsage
+            }
+        }
         "agent" => classify_agent_slash_command(arg),
         "version" => ReplBuiltIn::Version,
         _ => ReplBuiltIn::Unknown(head),
@@ -576,6 +610,7 @@ async fn try_handle_repl_slash_command(
     style: &CliReplStyle,
     no_stream: bool,
     agent_role: &mut Option<String>,
+    api_key_holder: &Arc<StdMutex<String>>,
 ) -> ReplSlashHandled {
     let Some(builtin) = classify_repl_slash_command(input) else {
         return ReplSlashHandled::NotSlash;
@@ -809,6 +844,47 @@ async fn try_handle_repl_slash_command(
         }
         ReplBuiltIn::Version => {
             print_repl_version_line();
+        }
+        ReplBuiltIn::ApiKeyUsage => {
+            let _ = style.print_line(
+                "用法: /api-key status（是否已在本进程设置密钥）· /api-key set <密钥> · /api-key clear",
+            );
+            let _ = style.print_line(
+                "说明: 密钥仅存本进程内存，不写盘；未设置环境变量 API_KEY 时可用此命令。/config reload 不会清除此处设置的值。",
+            );
+        }
+        ReplBuiltIn::ApiKeyStatus => {
+            let g = cfg_holder.read().await;
+            let k = api_key_holder.lock().unwrap_or_else(|e| e.into_inner());
+            let set = !k.trim().is_empty();
+            drop(k);
+            if g.llm_http_auth_mode == LlmHttpAuthMode::None {
+                let _ = style.print_line(
+                    "当前 llm_http_auth_mode=none：发往 LLM 的请求不附带 Bearer，通常无需配置 API 密钥。",
+                );
+            } else if set {
+                let _ = style.print_success("本进程已设置 LLM API 密钥（非空，值已隐藏）。");
+            } else {
+                let _ = style.print_line(
+                    "本进程尚未设置 LLM API 密钥（环境变量 API_KEY 与 /api-key 均为空）；发消息前请 /api-key set <密钥> 或 export API_KEY 后重启。",
+                );
+            }
+        }
+        ReplBuiltIn::ApiKeyClear => {
+            api_key_holder
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear();
+            let _ = style
+                .print_success("已清除本进程内存中的 LLM API 密钥（环境变量 API_KEY 不受影响）。");
+        }
+        ReplBuiltIn::ApiKeySet(secret) => {
+            if secret.len() > 16384 {
+                let _ = style.eprint_error("密钥过长（上限 16384 字符）。");
+            } else {
+                *api_key_holder.lock().unwrap_or_else(|e| e.into_inner()) = secret;
+                let _ = style.print_success("已写入本进程 LLM API 密钥（仅存内存；值已隐藏）。");
+            }
         }
     }
     ReplSlashHandled::Handled
@@ -1335,6 +1411,7 @@ pub async fn run_repl(
     let mut work_dir = cli_effective_work_dir(workspace_cli, &run_root);
     let cli_rt = CliToolRuntime::new_interactive_default();
     let style = CliReplStyle::new();
+    let api_key_holder = Arc::new(StdMutex::new(api_key.to_string()));
 
     {
         let g = cfg_holder.read().await;
@@ -1342,7 +1419,14 @@ pub async fn run_repl(
             g.system_prompt_for_new_conversation(Some(r))
                 .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
         }
-        style.print_banner(&g, work_dir.as_path(), tools.len(), no_stream)?;
+        let repl_llm_bearer_key_ready = !api_key.trim().is_empty();
+        style.print_banner(
+            &g,
+            work_dir.as_path(),
+            tools.len(),
+            no_stream,
+            repl_llm_bearer_key_ready,
+        )?;
     }
 
     let mut agent_role_owned = agent_role
@@ -1452,6 +1536,7 @@ pub async fn run_repl(
                     &style,
                     no_stream,
                     &mut agent_role_owned,
+                    &api_key_holder,
                 )
                 .await
                 {
@@ -1459,9 +1544,12 @@ pub async fn run_repl(
                     ReplSlashHandled::Handled => continue,
                     ReplSlashHandled::RunProbe => {
                         let g = cfg_holder.read().await;
+                        let k = api_key_holder
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .clone();
                         if let Err(e) =
-                            crate::runtime::cli_doctor::run_probe_cli(client, &g, api_key.trim())
-                                .await
+                            crate::runtime::cli_doctor::run_probe_cli(client, &g, k.trim()).await
                         {
                             let _ = style.eprint_error(&e.to_string());
                         }
@@ -1469,19 +1557,26 @@ pub async fn run_repl(
                     }
                     ReplSlashHandled::RunModels => {
                         let g = cfg_holder.read().await;
+                        let k = api_key_holder
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .clone();
                         if let Err(e) =
-                            crate::runtime::cli_doctor::run_models_cli(client, &g, api_key.trim())
-                                .await
+                            crate::runtime::cli_doctor::run_models_cli(client, &g, k.trim()).await
                         {
                             let _ = style.eprint_error(&e.to_string());
                         }
                         continue;
                     }
                     ReplSlashHandled::RunModelsChoose { model_id } => {
+                        let k = api_key_holder
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .clone();
                         match crate::runtime::cli_doctor::run_models_choose_repl(
                             client,
                             cfg_holder,
-                            api_key.trim(),
+                            k.trim(),
                             &model_id,
                         )
                         .await
@@ -1526,6 +1621,19 @@ pub async fn run_repl(
                     &mut messages,
                     initial_pending.as_ref(),
                 );
+                {
+                    let g = cfg_holder.read().await;
+                    if g.llm_http_auth_mode == LlmHttpAuthMode::Bearer {
+                        let k = api_key_holder.lock().unwrap_or_else(|e| e.into_inner());
+                        if k.trim().is_empty() {
+                            drop(k);
+                            let _ = style.eprint_error(
+                                "当前为 llm_http_auth_mode=bearer，但未配置 LLM API 密钥。请执行 /api-key set <密钥>（仅本进程）或设置环境变量 API_KEY 后重启。",
+                            );
+                            continue;
+                        }
+                    }
+                }
                 messages.push(Message::user_only(input.to_string()));
                 debug!(
                     target: "crabmate::print",
@@ -1538,9 +1646,13 @@ pub async fn run_repl(
                     let g = cfg_holder.read().await;
                     Arc::new(g.clone())
                 };
+                let key_snap = api_key_holder
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
                 if let Err(e) = run_agent_turn_for_cli(
                     client,
-                    api_key,
+                    key_snap.as_str(),
                     &cfg_snap,
                     tools,
                     &mut messages,
@@ -1707,6 +1819,26 @@ mod repl_slash_tests {
         assert_eq!(
             classify_repl_slash_command("/version"),
             Some(ReplBuiltIn::Version)
+        );
+    }
+
+    #[test]
+    fn api_key_slash_variants() {
+        assert_eq!(
+            classify_repl_slash_command("/api-key"),
+            Some(ReplBuiltIn::ApiKeyUsage)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/apikey status"),
+            Some(ReplBuiltIn::ApiKeyStatus)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/api-key clear"),
+            Some(ReplBuiltIn::ApiKeyClear)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/API-KEY SET sk-test"),
+            Some(ReplBuiltIn::ApiKeySet("sk-test".to_string()))
         );
     }
 

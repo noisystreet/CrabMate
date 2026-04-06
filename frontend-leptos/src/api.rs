@@ -404,6 +404,12 @@ pub async fn send_chat_stream(
             .ok()
             .and_then(|v| v.as_string())
             .unwrap_or_else(|| "请求失败".to_string());
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg)
+            && let Some(m) = v.get("message").and_then(|x| x.as_str())
+            && !m.trim().is_empty()
+        {
+            return Err(m.to_string());
+        }
         return Err(msg);
     }
     let Some(body) = resp.body() else {

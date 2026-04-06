@@ -12,7 +12,7 @@
 - **Web**：**`POST /config/reload`**（JSON body 可为 `{}`；鉴权与 **`/chat`** 等受保护 API 一致——若启动时启用了 Bearer 中间件则须带 token）。成功时返回 **`{ "ok": true, "message": "…" }`**。
 - **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_bigmodel_thinking`**、**`llm_kimi_thinking_disabled`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`[tool_registry]`**（HTTP 外圈超时、并行墙钟覆盖、并行拒绝/内联/写副作用名单）、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。**`system`→`user` 折叠**随 **`api_base` / `model`** 热更后由下一轮请求按 MiniMax 识别自动生效（非 `AgentConfig` 字段）。
 - **刻意不热更**：**`conversation_store_sqlite_path`**（会话库连接在启动时打开，改路径须重启 **`serve`**）。**`reqwest::Client`** 不重建，**`api_timeout_secs` 等**对**新连接**的生效可能受连接池保留的空闲连接影响。
-- **`API_KEY`**：仍只从**环境变量**读取；热重载**不**解析密钥文件。改 **`API_KEY`** 后通常需**重新 export** 并再执行 **`/config reload`**（或重启进程）以便与 **`llm_http_auth_mode=bearer`** 行为一致。
+- **`API_KEY`**：进程内 **`serve` / `repl` / `chat`** 启动时从**环境变量**读入并保存在 **`AppState.api_key`**（可为空）。**热重载不**重读环境里的 **`API_KEY`**。未 export 时：**Web** 须在侧栏「设置」随请求发送 **`client_llm.api_key`**；**REPL** 可用 **`/api-key set <密钥>`** 写入**本进程内存**（不写盘，**`/config reload` 不会清除**）。**`crabmate models` / `probe`** 在 **`bearer`** 下仍要求启动前环境变量 **`API_KEY`** 非空。
 - **Bearer 中间件层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权层；热重载**不会**拆除或新增该层——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的 token 字符串，用于已挂层时的校验。
 - **敏感字段内存表示**：**`web_api_bearer_token`** 与 **`web_search_api_key`** 在 [`AgentConfig`](DEVELOPMENT.md) 内为 **secrecy `SecretString`**，**`Debug` / 结构化日志默认不打印明文**；源码中通过 **`ExposeSecret::expose_secret()`** 取用（`config` crate 再导出 **`ExposeSecret`**）。**`API_KEY`** 仍为仅环境变量，未并入 `AgentConfig`。
 
@@ -24,7 +24,7 @@
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `API_KEY` | 云厂商 / OpenAI 兼容后端的 Bearer token；`llm_http_auth_mode=bearer`（默认）时发往 `chat/completions` / `models` 的 `Authorization`。**不写 TOML**；热重载不解析密钥文件，改值后通常须重新 export 并 **`/config reload`** 或重启进程。`llm_http_auth_mode=none`（如本地 Ollama）时可不设。 |
+| `API_KEY` | 云厂商 / OpenAI 兼容后端的 Bearer token；`llm_http_auth_mode=bearer`（默认）时用于发往 `chat/completions` 等。**不写 TOML**。**`serve` / `repl` / `chat` 可在未设置时启动**；对话前须有关密钥：**Web** 的 **`client_llm.api_key`**、本环境变量、或 **REPL `/api-key`**。**`models` / `probe` 子命令**在 bearer 下仍要求此处非空。`llm_http_auth_mode=none`（如本地 Ollama）时可不设。 |
 | `AGENT_API_BASE` | 覆盖 `api_base`。 |
 | `AGENT_MODEL` | 覆盖 `model`。 |
 | `AGENT_LLM_HTTP_AUTH_MODE` | `bearer`（默认，需 **`API_KEY`**）或 `none`（不向 `chat/completions` / `models` 发 `Authorization`，本地 Ollama 等可不设 **`API_KEY`**）。 |
@@ -246,7 +246,7 @@ model = "llama3.2"   # 以 ollama list 为准
 llm_http_auth_mode = "none"
 ```
 
-然后可不设环境变量 **`API_KEY`** 即启动 `serve` / `repl` / `chat`。**工具调用（function calling）**依赖模型与 Ollama 版本；若不稳定可先 **`--no-tools`** 验证对话。`crabmate config`（自检）**不要求** **`API_KEY`**。
+然后可不设环境变量 **`API_KEY`** 即启动 `serve` / `repl` / `chat`。若使用默认 **`llm_http_auth_mode=bearer`**（云端网关）而未 export **`API_KEY`**，进程仍可启动；须在 **Web「设置」**填写密钥或 **REPL `/api-key set …`** 后再对话，否则会返回 **`LLM_API_KEY_REQUIRED`** 等错误。**工具调用（function calling）**依赖模型与 Ollama 版本；若不稳定可先 **`--no-tools`** 验证对话。`crabmate config`（自检）**不要求** **`API_KEY`**。
 
 ## MiniMax（OpenAI 兼容）
 

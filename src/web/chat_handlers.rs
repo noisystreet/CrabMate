@@ -19,7 +19,7 @@ use super::app_state::{AppState, CONVERSATION_ID_MAX_LEN, ConversationTurnSeed};
 use crate::agent::message_pipeline::MESSAGE_PIPELINE_COUNTERS;
 use crate::agent_memory::load_memory_snippet;
 use crate::chat_job_queue;
-use crate::config::ExposeSecret;
+use crate::config::{ExposeSecret, LlmHttpAuthMode};
 use crate::conversation_store::SaveConversationOutcome;
 use crate::health;
 use crate::project_profile::build_first_turn_user_context_markdown;
@@ -123,6 +123,44 @@ fn parse_client_llm_override(
         model,
         api_key,
     }))
+}
+
+fn effective_llm_api_key_for_web_chat(
+    state: &AppState,
+    ov: &Option<chat_job_queue::WebChatLlmOverride>,
+) -> String {
+    if let Some(o) = ov
+        && let Some(ref k) = o.api_key
+        && !k.trim().is_empty()
+    {
+        return k.clone();
+    }
+    state.api_key.clone()
+}
+
+async fn ensure_bearer_api_key_for_chat(
+    state: &AppState,
+    llm_override: &Option<chat_job_queue::WebChatLlmOverride>,
+) -> Result<(), (StatusCode, Json<ApiError>)> {
+    let auth = {
+        let g = state.cfg.read().await;
+        g.llm_http_auth_mode
+    };
+    if auth != LlmHttpAuthMode::Bearer {
+        return Ok(());
+    }
+    let k = effective_llm_api_key_for_web_chat(state, llm_override);
+    if k.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "LLM_API_KEY_REQUIRED",
+                message: "当前为 bearer 鉴权但未配置 LLM API 密钥：请在侧栏「设置」中填写「API 密钥」（仅存本机浏览器），或设置环境变量 API_KEY 后重启服务。"
+                    .to_string(),
+            }),
+        ));
+    }
+    Ok(())
 }
 
 fn parse_optional_chat_temperature(raw: Option<f64>) -> Result<Option<f32>, String> {
@@ -758,6 +796,7 @@ pub(crate) async fn chat_handler(
             }),
         )
     })?;
+    ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
     let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
         .await
         .map_err(|e| {
@@ -1054,6 +1093,7 @@ pub(crate) async fn chat_stream_handler(
             }),
         )
     })?;
+    ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
     let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
         .await
         .map_err(|e| {
