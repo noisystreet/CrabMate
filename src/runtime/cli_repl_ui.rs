@@ -4,7 +4,7 @@ use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
 use crate::agent::per_coord::FinalPlanRequirementMode;
-use crate::config::{AgentConfig, PlannerExecutorMode};
+use crate::config::{AgentConfig, LlmHttpAuthMode, PlannerExecutorMode};
 
 use crossterm::{
     QueueableCommand, queue,
@@ -314,12 +314,14 @@ impl CliReplStyle {
     }
 
     /// 启动横幅：**FIGlet CrabMate** 顶栏 + **模型状态**、**内建命令**、**要点配置**分节（与 `/help` 同色阶；**`NO_COLOR`** 下纯文本）。
+    /// `repl_llm_bearer_key_ready`：为 true 时不在横幅打印「未设 API_KEY」提示（启动时环境变量非空即可为 true；REPL 内设置密钥后横幅不会自动刷新）。
     pub(crate) fn print_banner(
         &self,
         cfg: &AgentConfig,
         work_dir: &Path,
         tool_count: usize,
         no_stream: bool,
+        repl_llm_bearer_key_ready: bool,
     ) -> io::Result<()> {
         let mut out = io::stdout();
         let (tw, _) = crossterm::terminal::size().unwrap_or((72, 24));
@@ -359,7 +361,7 @@ impl CliReplStyle {
         self.write_banner_subheading(&mut out, "内建命令")?;
         self.write_banner_note_line(
             &mut out,
-            "    /clear  /model  /models（list·choose） /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
+            "    /clear  /model  /models（list·choose） /api-key  /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
         )?;
         self.write_banner_note_line(
             &mut out,
@@ -369,6 +371,12 @@ impl CliReplStyle {
             &mut out,
             "    非白名单 run_command：y 一次 / a 本会话允许该命令名",
         )?;
+        if cfg.llm_http_auth_mode == LlmHttpAuthMode::Bearer && !repl_llm_bearer_key_ready {
+            self.write_banner_note_line(
+                &mut out,
+                "    提示：未检测到环境变量 API_KEY；对话前请执行 /api-key set <密钥>（仅本进程）或 export API_KEY 后重启。",
+            )?;
+        }
 
         self.write_banner_subheading(&mut out, "要点配置")?;
         self.write_banner_item(&mut out, "max_tokens", &cfg.max_tokens.to_string())?;
@@ -676,6 +684,10 @@ impl CliReplStyle {
         let rows: &[(&str, &str)] = &[
             ("/clear", "清空对话，仅保留当前 system 提示词"),
             ("/model", "显示 model、api_base、temperature、llm_seed"),
+            (
+                "/api-key · /api-key status · /api-key set <密钥> · /api-key clear",
+                "本进程内存中的 LLM Bearer 密钥（不写盘；未 export API_KEY 时可用；/config reload 不清除）",
+            ),
             (
                 "/config",
                 "打印关键运行配置摘要（与启动横幅同源字段；不含密钥）",

@@ -54,16 +54,34 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use types::Message;
 
-fn require_api_key_for_llm(cfg: &config::AgentConfig) -> Result<String, std::io::Error> {
+/// `crabmate models` / `crabmate probe`：`bearer` 时仍要求进程环境变量 **`API_KEY`** 非空。
+fn require_api_key_for_cli_models_probe(
+    cfg: &config::AgentConfig,
+) -> Result<String, std::io::Error> {
     let v = env::var("API_KEY").unwrap_or_default();
     if cfg.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer && v.trim().is_empty() {
-        eprintln!("请设置环境变量 API_KEY（当前 llm_http_auth_mode=bearer）");
+        eprintln!(
+            "请设置环境变量 API_KEY（当前 llm_http_auth_mode=bearer；models/probe 须从环境读取密钥）"
+        );
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "未设置环境变量 API_KEY",
         ));
     }
     Ok(v)
+}
+
+/// `serve` / `repl` / `chat` / `bench`：读取 **`API_KEY`**；`bearer` 且未设置时返回空串（不报错）。
+/// Web 可在侧栏「设置」填写密钥（`client_llm.api_key`）；REPL 可用 **`/api-key set …`** 写入本进程内存。
+fn read_llm_api_key_from_env_lenient(cfg: &config::AgentConfig) -> String {
+    let v = env::var("API_KEY").unwrap_or_default();
+    if cfg.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer && v.trim().is_empty() {
+        info!(
+            target: "crabmate",
+            "API_KEY 未设置（llm_http_auth_mode=bearer）：Web 请在侧栏设置中填写 API 密钥；REPL 请使用 /api-key set <密钥>"
+        );
+    }
+    v
 }
 
 /// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
@@ -323,7 +341,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 {
                     "llm_http_auth_mode=bearer 且 API_KEY 非空".to_string()
                 } else {
-                    "llm_http_auth_mode=bearer：当前未检测到非空 API_KEY（启动 serve/repl/chat 前请设置）"
+                    "llm_http_auth_mode=bearer：当前未检测到非空 API_KEY（可在 Web 侧栏设置或 REPL /api-key 配置后再对话）"
                         .to_string()
                 }
             }
@@ -345,7 +363,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if matches!(extra_cli, ExtraCliCommand::Models | ExtraCliCommand::Probe) {
-        let api_key = require_api_key_for_llm(&cfg)?;
+        let api_key = require_api_key_for_cli_models_probe(&cfg)?;
         let client = http_client::build_shared_api_client(&cfg)?;
         if extra_cli == ExtraCliCommand::Models {
             crate::runtime::cli_doctor::run_models_cli(&client, &cfg, api_key.trim()).await?;
@@ -355,7 +373,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let api_key = require_api_key_for_llm(&cfg)?;
+    let api_key = read_llm_api_key_from_env_lenient(&cfg);
 
     let cfg_holder: config::SharedAgentConfig = std::sync::Arc::new(tokio::sync::RwLock::new(cfg));
     {

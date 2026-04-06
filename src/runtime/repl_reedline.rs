@@ -31,6 +31,8 @@ const REPL_COMPLETION_MENU: &str = "completion_menu";
 const SLASH_COMMANDS: &[&str] = &[
     "?",
     "agent",
+    "api-key",
+    "apikey",
     "cd",
     "clear",
     "config",
