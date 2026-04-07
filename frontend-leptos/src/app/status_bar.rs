@@ -8,27 +8,31 @@ use leptos_dom::helpers::event_target_value;
 use crate::api::StatusData;
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{status_bar_effective_api_base, status_bar_effective_model};
+use crate::i18n::{self, Locale};
 
 #[component]
 fn StatusFetchErrorPanel(
     fetch_err: String,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
+    locale: RwSignal<Locale>,
 ) -> impl IntoView {
+    let fetch_err_for_title = fetch_err.clone();
+    let fetch_err_for_body = fetch_err;
     view! {
         <div
             class="status-fetch-error"
             role="status"
             aria-live="polite"
         >
-            <span class="status-fetch-error-text" title=fetch_err.clone()>
-                {format!("无法加载状态（/status）：{fetch_err}")}
+            <span class="status-fetch-error-text" title=fetch_err_for_title.clone()>
+                {move || i18n::status_fetch_error(locale.get(), fetch_err_for_body.as_str())}
             </span>
             <button
                 type="button"
                 class="btn btn-secondary btn-sm"
                 on:click=move |_| refresh_status()
             >
-                "重试"
+                {move || i18n::status_retry(locale.get())}
             </button>
         </div>
     }
@@ -46,6 +50,7 @@ fn StatusBarFooterBody(
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
+    locale: RwSignal<Locale>,
 ) -> impl IntoView {
     view! {
         <footer class=move || {
@@ -59,7 +64,11 @@ fn StatusBarFooterBody(
                 {move || {
                     if status_loading.get() {
                         view! {
-                            <div class="status-chips-skeleton" aria-busy="true" aria-label="加载状态">
+                            <div
+                                class="status-chips-skeleton"
+                                aria-busy="true"
+                                prop:aria-label=move || i18n::status_loading_aria(locale.get())
+                            >
                                 <span class="status-chip status-chip-skeleton">
                                     <span class="skeleton skeleton-chip-label"></span>
                                     <span class="skeleton skeleton-chip-value skeleton-chip-model"></span>
@@ -80,6 +89,7 @@ fn StatusBarFooterBody(
                             <StatusFetchErrorPanel
                                 fetch_err=fetch_err
                                 refresh_status=refresh_status.clone()
+                                locale=locale
                             />
                         }
                         .into_any()
@@ -87,7 +97,9 @@ fn StatusBarFooterBody(
                         view! {
                             <>
                                 <span class="status-chip">
-                                    <span class="status-chip-label">"模型"</span>
+                                    <span class="status-chip-label">
+                                        {move || i18n::status_chip_model(locale.get())}
+                                    </span>
                                     <span class="status-chip-value">{move || {
                                         let _tick = client_llm_storage_tick.get();
                                         let sd = status_data.get();
@@ -109,7 +121,9 @@ fn StatusBarFooterBody(
                                         stored_base.as_str(),
                                     )
                                 }>
-                                    <span class="status-chip-label">"base_url"</span>
+                                    <span class="status-chip-label">
+                                        {move || i18n::status_chip_base_url(locale.get())}
+                                    </span>
                                     <span class="status-chip-value">{move || {
                                         let _tick = client_llm_storage_tick.get();
                                         let sd = status_data.get();
@@ -121,8 +135,13 @@ fn StatusBarFooterBody(
                                         )
                                     }}</span>
                                 </span>
-                                <label class="status-chip status-chip-role" title="Agent 角色（对标 CLI /agent set）">
-                                    <span class="status-chip-label">"角色"</span>
+                                <label
+                                    class="status-chip status-chip-role"
+                                    prop:title=move || i18n::status_role_title_attr(locale.get())
+                                >
+                                    <span class="status-chip-label">
+                                        {move || i18n::status_role_label(locale.get())}
+                                    </span>
                                     <select
                                         class="status-agent-select"
                                         prop:value=move || {
@@ -141,11 +160,16 @@ fn StatusBarFooterBody(
                                         }
                                     >
                                         <option value="__default__">{move || {
-                                            status_data
+                                            let loc = locale.get();
+                                            match status_data
                                                 .get()
-                                                .and_then(|d| d.default_agent_role_id)
-                                                .map(|id| format!("default ({id})"))
-                                                .unwrap_or_else(|| "default".to_string())
+                                                .and_then(|d| d.default_agent_role_id.clone())
+                                            {
+                                                Some(id) => {
+                                                    i18n::status_default_option(loc, Some(id.as_str()))
+                                                }
+                                                None => i18n::status_default_option(loc, None),
+                                            }
                                         }}</option>
                                         {move || {
                                             status_data
@@ -181,16 +205,17 @@ fn StatusBarFooterBody(
             }>
                 <span class="status-run-dot" aria-hidden="true"></span>
                 <span>{move || {
+                    let loc = locale.get();
                     if status_fetch_err.get().is_some() {
-                        "/status 不可用".to_string()
+                        i18n::status_unavailable(loc).to_string()
                     } else if let Some(e) = status_err.get() {
-                        format!("错误: {e}")
+                        format!("{}{e}", i18n::status_error_prefix(loc))
                     } else if tool_busy.get() {
-                        "工具执行中…".to_string()
+                        i18n::status_tool_running(loc).to_string()
                     } else if status_busy.get() {
-                        "模型生成中…".to_string()
+                        i18n::status_model_running(loc).to_string()
                     } else {
-                        "就绪".to_string()
+                        i18n::status_ready(loc).to_string()
                     }
                 }}</span>
             </span>
@@ -210,6 +235,7 @@ pub fn status_bar_footer_view(
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
+    locale: RwSignal<Locale>,
 ) -> impl IntoView {
     view! {
         <Show when=move || status_bar_visible.get()>
@@ -223,6 +249,7 @@ pub fn status_bar_footer_view(
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role
                 refresh_status=refresh_status.clone()
+                locale=locale
             />
         </Show>
     }

@@ -7,6 +7,7 @@ use leptos::prelude::*;
 use leptos_dom::helpers::request_animation_frame;
 use wasm_bindgen::JsCast;
 
+use crate::i18n::{self, Locale};
 use crate::markdown;
 use crate::message_format::message_text_for_display;
 use crate::storage::ChatSession;
@@ -28,6 +29,7 @@ pub fn assistant_markdown_collapsible_view(
     active_id: RwSignal<String>,
     message_id: String,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
+    locale: RwSignal<Locale>,
 ) -> impl IntoView {
     let body_ref = NodeRef::<Div>::new();
     let mid = message_id.clone();
@@ -42,12 +44,14 @@ pub fn assistant_markdown_collapsible_view(
             let _ = sessions.get();
             let _ = active_id.get();
             let _ = expanded_long_assistant_ids.get();
+            let _ = locale.get();
+            let loc = locale.get_untracked();
             let raw = sessions.with(|list| {
                 let aid = active_id.get_untracked();
                 list.iter()
                     .find(|s| s.id == aid)
                     .and_then(|s| s.messages.iter().find(|msg| msg.id == mid))
-                    .map(message_text_for_display)
+                    .map(|m| message_text_for_display(m, loc))
                     .unwrap_or_default()
             });
             let is_loading = sessions.with(|list| {
@@ -106,6 +110,7 @@ pub fn assistant_markdown_collapsible_view(
     view! {
         <div class="msg-md-wrap">
             {move || {
+                let loc = locale.get();
                 let (is_loading, raw_len) = sessions.with(|list| {
                     let aid = active_id.get();
                     let m = list
@@ -115,7 +120,7 @@ pub fn assistant_markdown_collapsible_view(
                     match m {
                         Some(msg) => (
                             msg.state.as_deref() == Some("loading"),
-                            message_text_for_display(msg).chars().count(),
+                            message_text_for_display(msg, loc).chars().count(),
                         ),
                         None => (false, 0),
                     }
@@ -149,7 +154,13 @@ pub fn assistant_markdown_collapsible_view(
                                     });
                                 }
                             >
-                                {if expanded { "收起" } else { "展开全文" }}
+                                {move || {
+                                    if expanded {
+                                        i18n::assistant_md_collapse(loc)
+                                    } else {
+                                        i18n::assistant_md_expand_full(loc)
+                                    }
+                                }}
                             </button>
                         }
                     })}

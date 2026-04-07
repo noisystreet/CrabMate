@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 const SESSIONS_KEY: &str = "agent-demo-sessions-v1";
 const ACTIVE_ID_KEY: &str = "agent-demo-active-session-id";
 
-/// 新建会话默认标题；与 `lib.rs` 中首条消息自动命名逻辑一致。
-pub const DEFAULT_CHAT_SESSION_TITLE: &str = "新会话";
+/// 新建会话默认标题（**存储用**，与语言无关）；界面展示用 [`crate::i18n::session_title_for_display`]。
+pub const DEFAULT_CHAT_SESSION_TITLE: &str = "New chat";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredMessage {
@@ -88,7 +88,10 @@ pub fn make_session_id() -> String {
     )
 }
 
-pub fn ensure_at_least_one(mut sessions: Vec<ChatSession>) -> (Vec<ChatSession>, String) {
+pub fn ensure_at_least_one(
+    mut sessions: Vec<ChatSession>,
+    default_title: String,
+) -> (Vec<ChatSession>, String) {
     if !sessions.is_empty() {
         let id = sessions[0].id.clone();
         return (sessions, id);
@@ -96,7 +99,7 @@ pub fn ensure_at_least_one(mut sessions: Vec<ChatSession>) -> (Vec<ChatSession>,
     let now = js_sys::Date::now() as i64;
     let s = ChatSession {
         id: make_session_id(),
-        title: DEFAULT_CHAT_SESSION_TITLE.to_string(),
+        title: default_title,
         draft: String::new(),
         messages: Vec::new(),
         updated_at: now,

@@ -1056,3 +1056,395 @@ pub fn delete_session_confirm(l: Locale) -> &'static str {
         Locale::En => "Delete this local session? This cannot be undone.",
     }
 }
+
+/// 新建会话默认标题（写入 `ChatSession.title`）；与旧数据 **`新会话`** 等价判断见 [`is_default_session_title`]。
+pub fn default_session_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "新会话",
+        Locale::En => "New chat",
+    }
+}
+
+/// 是否与当前语言下的默认会话标题等价（含历史中文默认值）。
+pub fn is_default_session_title(s: &str) -> bool {
+    let t = s.trim();
+    t == default_session_title(Locale::ZhHans)
+        || t == default_session_title(Locale::En)
+        || t == "新会话"
+        || t.eq_ignore_ascii_case("new chat")
+}
+
+/// 侧栏/列表展示用：默认标题随界面语言切换，其它标题保持原样。
+pub fn session_title_for_display(stored: &str, loc: Locale) -> String {
+    if is_default_session_title(stored) {
+        default_session_title(loc).to_string()
+    } else {
+        stored.to_string()
+    }
+}
+
+// --- 聊天列空态 ---
+
+pub fn chat_empty_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "开始对话",
+        Locale::En => "Start a conversation",
+    }
+}
+
+// --- 流式 / 停止 ---
+
+pub fn stream_empty_reply(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "(无回复)",
+        Locale::En => "(No reply)",
+    }
+}
+
+pub fn stream_stopped_suffix(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "\n\n[已停止]",
+        Locale::En => "\n\n[Stopped]",
+    }
+}
+
+pub fn stream_stopped_inline(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已停止",
+        Locale::En => "Stopped",
+    }
+}
+
+pub fn chat_failed_banner(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "对话失败",
+        Locale::En => "Chat failed",
+    }
+}
+
+// --- 审批条 ---
+
+pub fn approval_toggle_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "需要审批：运行命令",
+        Locale::En => "Approval required: run command",
+    }
+}
+
+pub fn approval_deny(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "拒绝",
+        Locale::En => "Deny",
+    }
+}
+
+pub fn approval_allow_once(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "允许一次",
+        Locale::En => "Allow once",
+    }
+}
+
+pub fn approval_allow_always(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "始终允许",
+        Locale::En => "Always allow",
+    }
+}
+
+pub fn ellipsis_tail() -> &'static str {
+    "…"
+}
+
+// --- 状态栏 ---
+
+pub fn status_fetch_error(l: Locale, err: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("无法加载状态（/status）：{err}"),
+        Locale::En => format!("Failed to load status (/status): {err}"),
+    }
+}
+
+pub fn status_retry(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "重试",
+        Locale::En => "Retry",
+    }
+}
+
+pub fn status_loading_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "加载状态",
+        Locale::En => "Loading status",
+    }
+}
+
+pub fn status_chip_model(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "模型",
+        Locale::En => "Model",
+    }
+}
+
+pub fn status_chip_base_url(_l: Locale) -> &'static str {
+    "base_url"
+}
+
+pub fn status_role_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "角色",
+        Locale::En => "Role",
+    }
+}
+
+pub fn status_role_title_attr(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Agent 角色（对标 CLI /agent set）",
+        Locale::En => "Agent role (same as CLI /agent set)",
+    }
+}
+
+pub fn status_default_option(l: Locale, id: Option<&str>) -> String {
+    match l {
+        Locale::ZhHans => match id {
+            Some(i) => format!("default ({i})"),
+            None => "default".to_string(),
+        },
+        Locale::En => match id {
+            Some(i) => format!("default ({i})"),
+            None => "default".to_string(),
+        },
+    }
+}
+
+pub fn status_unavailable(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "/status 不可用",
+        Locale::En => "/status unavailable",
+    }
+}
+
+pub fn status_error_prefix(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "错误: ",
+        Locale::En => "Error: ",
+    }
+}
+
+pub fn status_tool_running(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "工具执行中…",
+        Locale::En => "Running tools…",
+    }
+}
+
+pub fn status_model_running(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "模型生成中…",
+        Locale::En => "Model generating…",
+    }
+}
+
+pub fn status_ready(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "就绪",
+        Locale::En => "Ready",
+    }
+}
+
+// --- 工作区树 ---
+
+pub fn workspace_tree_no_data(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "（无数据）",
+        Locale::En => "(No data)",
+    }
+}
+
+pub fn workspace_tree_toggle_dir_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "展开或折叠子目录",
+        Locale::En => "Expand or collapse subdirectory",
+    }
+}
+
+pub fn workspace_tree_expand_folder(l: Locale, name: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("展开子文件夹 {name}"),
+        Locale::En => format!("Expand subfolder {name}"),
+    }
+}
+
+pub fn workspace_tree_collapse_folder(l: Locale, name: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("折叠子文件夹 {name}"),
+        Locale::En => format!("Collapse subfolder {name}"),
+    }
+}
+
+// --- 助手 Markdown 折叠 ---
+
+pub fn assistant_md_collapse(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "收起",
+        Locale::En => "Collapse",
+    }
+}
+
+pub fn assistant_md_expand_full(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "展开全文",
+        Locale::En => "Expand full text",
+    }
+}
+
+// --- message_format / 工具卡 ---
+
+pub fn tool_card_prefix(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "工具：",
+        Locale::En => "Tool: ",
+    }
+}
+
+pub fn tool_card_fallback(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "工具输出",
+        Locale::En => "Tool output",
+    }
+}
+
+pub fn plan_generated(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已生成分阶段规划。",
+        Locale::En => "Staged plan generated.",
+    }
+}
+
+pub fn plan_step_no_desc(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "(未提供描述)",
+        Locale::En => "(no description)",
+    }
+}
+
+pub fn plan_step_placeholder_id() -> &'static str {
+    "step"
+}
+
+pub fn plan_step_line(l: Locale, idx: usize, id: &str, desc: &str) -> String {
+    let n = idx + 1;
+    match l {
+        Locale::ZhHans => format!("{n}. `{id}`: {desc}"),
+        Locale::En => format!("{n}. `{id}`: {desc}"),
+    }
+}
+
+// --- Markdown 导出（前端下载用，与 CLI 中文标题可并存）---
+
+pub fn export_md_title_full(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "# CrabMate 聊天记录\n\n",
+        Locale::En => "# CrabMate chat export\n\n",
+    }
+}
+
+pub fn export_md_title_selection(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "# CrabMate 聊天记录（已选消息）\n\n",
+        Locale::En => "# CrabMate chat export (selected messages)\n\n",
+    }
+}
+
+pub fn export_md_heading_user(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "## 用户",
+        Locale::En => "## User",
+    }
+}
+
+pub fn export_md_heading_assistant(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "## 助手",
+        Locale::En => "## Assistant",
+    }
+}
+
+pub fn export_md_heading_tool(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "## 工具",
+        Locale::En => "## Tool",
+    }
+}
+
+pub fn export_md_heading_other(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "## 其它",
+        Locale::En => "## Other",
+    }
+}
+
+// --- API / 存储错误（设置、分支、审批等回显）---
+
+pub fn api_err_no_local_storage(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "无 localStorage",
+        Locale::En => "localStorage is unavailable",
+    }
+}
+
+pub fn api_err_write_api_base(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "无法写入 api_base",
+        Locale::En => "Could not save api_base",
+    }
+}
+
+pub fn api_err_write_model(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "无法写入 model",
+        Locale::En => "Could not save model",
+    }
+}
+
+pub fn api_err_write_api_key(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "无法写入 api_key",
+        Locale::En => "Could not save api_key",
+    }
+}
+
+pub fn api_err_workspace_set_failed(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "设置失败",
+        Locale::En => "Workspace update failed",
+    }
+}
+
+pub fn api_err_request_failed(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "请求失败",
+        Locale::En => "Request failed",
+    }
+}
+
+pub fn api_err_no_response_body(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "无响应体",
+        Locale::En => "Empty response body",
+    }
+}
+
+pub fn api_err_branch_failed(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "分支请求未成功",
+        Locale::En => "Branch request did not succeed",
+    }
+}
+
+pub fn api_err_approval_failed(l: Locale, status: u16) -> String {
+    match l {
+        Locale::ZhHans => format!("审批请求失败 {status}"),
+        Locale::En => format!("Approval request failed ({status})"),
+    }
+}

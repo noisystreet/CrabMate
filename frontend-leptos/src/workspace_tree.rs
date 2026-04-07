@@ -6,6 +6,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api::{WorkspaceData, WorkspaceEntry, fetch_workspace};
+use crate::i18n::{self, Locale};
 use crate::workspace_shell::{workspace_list_row_class, workspace_list_row_icon};
 
 /// 相对工作区根的路径片段拼接（POSIX 风格，与后端 `path` 查询一致）。
@@ -73,6 +74,7 @@ pub fn WorkspaceFilesystemTree(
     subtree_expanded: RwSignal<HashSet<String>>,
     subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
     subtree_loading: RwSignal<HashSet<String>>,
+    locale: RwSignal<Locale>,
 ) -> impl IntoView {
     view! {
         <ul class=move || {
@@ -92,7 +94,10 @@ pub fn WorkspaceFilesystemTree(
                     .map(|d| d.entries)
                     .unwrap_or_default();
                 if entries.is_empty() {
-                    view! { <li>"（无数据）"</li> }.into_any()
+                    view! {
+                        <li>{move || i18n::workspace_tree_no_data(locale.get())}</li>
+                    }
+                    .into_any()
                 } else {
                     view! {
                         <WorkspaceTreeNodes
@@ -102,6 +107,7 @@ pub fn WorkspaceFilesystemTree(
                             subtree_expanded=subtree_expanded
                             subtree_cache=subtree_cache
                             subtree_loading=subtree_loading
+                            locale=locale
                         />
                     }
                     .into_any()
@@ -120,6 +126,7 @@ fn WorkspaceTreeNodes(
     subtree_expanded: RwSignal<HashSet<String>>,
     subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
     subtree_loading: RwSignal<HashSet<String>>,
+    locale: RwSignal<Locale>,
 ) -> impl IntoView {
     entries
         .into_iter()
@@ -151,8 +158,7 @@ fn WorkspaceTreeNodes(
                 let rel_glyph = rel.clone();
                 let rel_show = rel.clone();
                 let rel_inner = StoredValue::new(rel);
-                let label_open = format!("展开子文件夹 {}", name);
-                let label_close = format!("折叠子文件夹 {}", name);
+                let name_for_aria = name.clone();
                 view! {
                     <li
                         class=format!("{row_class} workspace-dir-node")
@@ -163,7 +169,7 @@ fn WorkspaceTreeNodes(
                                 type="button"
                                 class="workspace-tree-chevron"
                                 aria-expanded=move || subtree_expanded.get().contains(&rel_aria)
-                                title="展开或折叠子目录"
+                                prop:title=move || i18n::workspace_tree_toggle_dir_title(locale.get())
                                 on:click=move |_| {
                                     toggle_workspace_dir(
                                         rel_click.clone(),
@@ -175,10 +181,17 @@ fn WorkspaceTreeNodes(
                             >
                                 <span class="workspace-tree-chevron-label" class:sr-only=true>
                                     {move || {
+                                        let loc = locale.get();
                                         if subtree_expanded.get().contains(&rel_label) {
-                                            label_close.clone()
+                                            i18n::workspace_tree_collapse_folder(
+                                                loc,
+                                                name_for_aria.as_str(),
+                                            )
                                         } else {
-                                            label_open.clone()
+                                            i18n::workspace_tree_expand_folder(
+                                                loc,
+                                                name_for_aria.as_str(),
+                                            )
                                         }
                                     }}
                                 </span>
@@ -206,7 +219,7 @@ fn WorkspaceTreeNodes(
                                     if loading && cached.is_none() {
                                         view! {
                                             <p class="workspace-tree-loading" role="status">
-                                                "加载中…"
+                                                {move || i18n::changelist_loading(locale.get())}
                                             </p>
                                         }
                                         .into_any()
@@ -228,6 +241,7 @@ fn WorkspaceTreeNodes(
                                                         subtree_expanded=subtree_expanded
                                                         subtree_cache=subtree_cache
                                                         subtree_loading=subtree_loading
+                                                        locale=locale
                                                     />
                                                 </ul>
                                             }
