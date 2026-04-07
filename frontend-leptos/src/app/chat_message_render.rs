@@ -283,10 +283,11 @@ pub(crate) fn chat_message_row(
             active_id,
             m.id.clone(),
             expanded_long_assistant_ids,
+            locale,
         )
         .into_any()
     } else {
-        let display_for_find = message_text_for_display(&m);
+        let display_for_find = message_text_for_display(&m, locale.get_untracked());
         let asc = auto_scroll_chat;
         match jump_uid {
             Some(uid) => {
@@ -429,6 +430,7 @@ pub(crate) fn chat_message_row(
                                         prop:title=move || i18n::msg_copy_title(locale.get())
                                         prop:aria-label=move || i18n::msg_copy_aria(locale.get())
                                         on:click=move |_| {
+                                            let loc = locale.get_untracked();
                                             let t = sessions.with(|list| {
                                                 let aid = active_id.get_untracked();
                                                 list.iter()
@@ -438,10 +440,10 @@ pub(crate) fn chat_message_row(
                                                             .iter()
                                                             .find(|msg| msg.id == copy_id)
                                                     })
-                                                    .map(message_text_for_display)
+                                                    .map(|msg| message_text_for_display(msg, loc))
                                                     .unwrap_or_default()
                                             });
-                                            write_clipboard_text(&t, locale.get_untracked());
+                                            write_clipboard_text(&t, loc);
                                         }
                                     >
                                         <svg
@@ -504,11 +506,13 @@ pub(crate) fn chat_message_row(
                                                     Some(exp_rev),
                                                     Some(before_ord),
                                                 ) => {
+                                                    let loc = locale.get_untracked();
                                                     spawn_local(async move {
                                                         match post_chat_branch(
                                                             &conv,
                                                             before_ord,
                                                             exp_rev,
+                                                            loc,
                                                         )
                                                         .await
                                                         {
@@ -603,11 +607,13 @@ pub(crate) fn chat_message_row(
                                                     Some(exp_rev),
                                                     Some(before_ord),
                                                 ) => {
+                                                    let loc_b = locale.get_untracked();
                                                     spawn_local(async move {
                                                         match post_chat_branch(
                                                             &conv,
                                                             before_ord,
                                                             exp_rev,
+                                                            loc_b,
                                                         )
                                                         .await
                                                         {

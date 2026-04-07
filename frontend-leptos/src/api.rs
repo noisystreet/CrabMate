@@ -9,6 +9,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Headers, Request, RequestInit, RequestMode, Response, Window};
 
+use crate::i18n::Locale;
 use crate::sse_dispatch::{
     CommandApprovalRequest, SseCallbacks, ToolResultInfo, try_dispatch_sse_control_payload,
 };
@@ -55,21 +56,23 @@ pub fn persist_client_llm_to_storage(
     api_base: &str,
     model: &str,
     api_key_update: Option<&str>,
+    loc: Locale,
 ) -> Result<(), String> {
-    let st = local_storage().ok_or_else(|| "无 localStorage".to_string())?;
+    let st =
+        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
     let b = api_base.trim();
     let m = model.trim();
     if b.is_empty() {
         let _ = st.remove_item(CLIENT_LLM_API_BASE_STORAGE_KEY);
     } else {
         st.set_item(CLIENT_LLM_API_BASE_STORAGE_KEY, b)
-            .map_err(|_| "无法写入 api_base".to_string())?;
+            .map_err(|_| crate::i18n::api_err_write_api_base(loc).to_string())?;
     }
     if m.is_empty() {
         let _ = st.remove_item(CLIENT_LLM_MODEL_STORAGE_KEY);
     } else {
         st.set_item(CLIENT_LLM_MODEL_STORAGE_KEY, m)
-            .map_err(|_| "无法写入 model".to_string())?;
+            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
     }
     if let Some(k) = api_key_update {
         let t = k.trim();
@@ -77,14 +80,15 @@ pub fn persist_client_llm_to_storage(
             let _ = st.remove_item(CLIENT_LLM_API_KEY_STORAGE_KEY);
         } else {
             st.set_item(CLIENT_LLM_API_KEY_STORAGE_KEY, t)
-                .map_err(|_| "无法写入 api_key".to_string())?;
+                .map_err(|_| crate::i18n::api_err_write_api_key(loc).to_string())?;
         }
     }
     Ok(())
 }
 
-pub fn clear_client_llm_api_key_storage() -> Result<(), String> {
-    let st = local_storage().ok_or_else(|| "无 localStorage".to_string())?;
+pub fn clear_client_llm_api_key_storage(loc: Locale) -> Result<(), String> {
+    let st =
+        local_storage().ok_or_else(|| crate::i18n::api_err_no_local_storage(loc).to_string())?;
     let _ = st.remove_item(CLIENT_LLM_API_KEY_STORAGE_KEY);
     Ok(())
 }
@@ -216,7 +220,7 @@ struct WorkspaceSetBody {
 
 /// `POST /workspace`：设置当前 Web 会话工作区根。`path: None` 表示恢复服务端默认（`run_command_working_dir`）。
 /// 成功返回规范化后的路径字符串（可能为空，表示默认）。
-pub async fn post_workspace_set(path: Option<String>) -> Result<String, String> {
+pub async fn post_workspace_set(path: Option<String>, loc: Locale) -> Result<String, String> {
     let body = serde_json::to_string(&WorkspaceSetBody { path }).map_err(|e| e.to_string())?;
     let init = RequestInit::new();
     init.set_method("POST");
@@ -244,7 +248,7 @@ pub async fn post_workspace_set(path: Option<String>) -> Result<String, String> 
             return Err(v
                 .get("error")
                 .and_then(|x| x.as_str())
-                .unwrap_or("设置失败")
+                .unwrap_or(crate::i18n::api_err_workspace_set_failed(loc))
                 .to_string());
         }
         return Ok(v
@@ -365,6 +369,7 @@ pub async fn send_chat_stream(
     approval_session_id: Option<String>,
     signal: &web_sys::AbortSignal,
     cbs: ChatStreamCallbacks,
+    loc: Locale,
 ) -> Result<(), String> {
     let w = window().ok_or_else(|| "no window".to_string())?;
     let mut body = serde_json::json!({
@@ -403,7 +408,7 @@ pub async fn send_chat_stream(
             .await
             .ok()
             .and_then(|v| v.as_string())
-            .unwrap_or_else(|| "请求失败".to_string());
+            .unwrap_or_else(|| crate::i18n::api_err_request_failed(loc).to_string());
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg)
             && let Some(m) = v.get("message").and_then(|x| x.as_str())
             && !m.trim().is_empty()
@@ -413,7 +418,7 @@ pub async fn send_chat_stream(
         return Err(msg);
     }
     let Some(body) = resp.body() else {
-        return Err("无响应体".to_string());
+        return Err(crate::i18n::api_err_no_response_body(loc).to_string());
     };
     let reader: web_sys::ReadableStreamDefaultReader = body
         .get_reader()
@@ -578,6 +583,7 @@ pub async fn post_chat_branch(
     conversation_id: &str,
     before_user_ordinal: u64,
     expected_revision: u64,
+    loc: Locale,
 ) -> Result<u64, String> {
     let body = serde_json::to_string(&ChatBranchBody {
         conversation_id: conversation_id.to_string(),
@@ -587,12 +593,16 @@ pub async fn post_chat_branch(
     .map_err(|e| e.to_string())?;
     let r: ChatBranchResponse = fetch_json_with_body("POST", "/chat/branch", &body).await?;
     if !r.ok {
-        return Err("分支请求未成功".to_string());
+        return Err(crate::i18n::api_err_branch_failed(loc).to_string());
     }
     Ok(r.revision)
 }
 
-pub async fn submit_chat_approval(session_id: &str, decision: &str) -> Result<(), String> {
+pub async fn submit_chat_approval(
+    session_id: &str,
+    decision: &str,
+    loc: Locale,
+) -> Result<(), String> {
     let body = serde_json::to_string(&ApprovalBody {
         approval_session_id: session_id,
         decision,
@@ -613,7 +623,7 @@ pub async fn submit_chat_approval(session_id: &str, decision: &str) -> Result<()
         .map_err(|e| format!("fetch: {:?}", e))?;
     let resp: Response = resp_val.dyn_into().map_err(|_| "not Response")?;
     if !resp.ok() {
-        return Err(format!("审批请求失败 {}", resp.status()));
+        return Err(crate::i18n::api_err_approval_failed(loc, resp.status()));
     }
     Ok(())
 }

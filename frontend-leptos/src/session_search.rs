@@ -5,6 +5,7 @@ use wasm_bindgen::JsCast;
 
 use std::mem;
 
+use crate::i18n::Locale;
 use crate::message_format::message_text_for_display;
 use crate::storage::ChatSession;
 
@@ -95,6 +96,7 @@ pub fn collect_message_search_hits(
     sessions: &[ChatSession],
     needle_lower: &str,
     max_hits: usize,
+    loc: Locale,
 ) -> Vec<MessageSearchHit> {
     if needle_lower.is_empty() || max_hits == 0 {
         return Vec::new();
@@ -102,7 +104,7 @@ pub fn collect_message_search_hits(
     let mut out = Vec::new();
     for s in sessions {
         for m in &s.messages {
-            let display = message_text_for_display(m);
+            let display = message_text_for_display(m, loc);
             let lower = display.to_lowercase();
             if lower.contains(needle_lower) {
                 out.push(MessageSearchHit {
@@ -185,6 +187,7 @@ pub fn scroll_message_into_view(msg_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::Locale;
     use crate::storage::StoredMessage;
 
     fn sess(id: &str, title: &str, messages: Vec<StoredMessage>) -> ChatSession {
@@ -261,7 +264,7 @@ mod tests {
                 }],
             ),
         ];
-        let hits = collect_message_search_hits(&sessions, "beta", 10);
+        let hits = collect_message_search_hits(&sessions, "beta", 10, Locale::ZhHans);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].session_id, "s1");
         assert_eq!(hits[0].message_id, "m1");

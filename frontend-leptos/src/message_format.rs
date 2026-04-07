@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 
+use crate::i18n::Locale;
 use crate::sse_dispatch::ToolResultInfo;
 use crate::storage::StoredMessage;
 
@@ -23,22 +24,22 @@ pub fn collapse_duplicate_summary_lines(text: &str) -> String {
     kept.join("\n")
 }
 
-pub fn tool_card_text(info: &ToolResultInfo) -> String {
+pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
     let sum = info.summary.as_deref().unwrap_or("").trim();
     let name = info.name.trim();
     if sum.is_empty() {
         return if !name.is_empty() {
-            format!("工具：{name}")
+            format!("{}{name}", crate::i18n::tool_card_prefix(loc))
         } else {
-            "工具输出".to_string()
+            crate::i18n::tool_card_fallback(loc).to_string()
         };
     }
     let sum = collapse_duplicate_summary_lines(sum);
     if sum.is_empty() {
         return if !name.is_empty() {
-            format!("工具：{name}")
+            format!("{}{name}", crate::i18n::tool_card_prefix(loc))
         } else {
-            "工具输出".to_string()
+            crate::i18n::tool_card_fallback(loc).to_string()
         };
     }
     // 首行 + 其余行；其余行中再剔除与首行相同的行，避免「标题行 + 正文重复首行」。
@@ -46,9 +47,9 @@ pub fn tool_card_text(info: &ToolResultInfo) -> String {
     let first = lines.next().unwrap_or_default().trim().to_string();
     if first.is_empty() {
         return if !name.is_empty() {
-            format!("工具：{name}")
+            format!("{}{name}", crate::i18n::tool_card_prefix(loc))
         } else {
-            "工具输出".to_string()
+            crate::i18n::tool_card_fallback(loc).to_string()
         };
     }
     let rest: Vec<&str> = lines
@@ -64,7 +65,11 @@ pub fn tool_card_text(info: &ToolResultInfo) -> String {
     out
 }
 
-fn format_agent_reply_plan_json_for_display(json_text: &str, goal: &str) -> Option<String> {
+fn format_agent_reply_plan_json_for_display(
+    json_text: &str,
+    goal: &str,
+    loc: Locale,
+) -> Option<String> {
     let v: Value = serde_json::from_str(json_text).ok()?;
     let obj = v.as_object()?;
     if obj.get("type").and_then(|x| x.as_str()) != Some("agent_reply_plan") {
@@ -81,7 +86,7 @@ fn format_agent_reply_plan_json_for_display(json_text: &str, goal: &str) -> Opti
         if !goal.is_empty() {
             return Some(goal.to_string());
         }
-        return Some("已生成分阶段规划。".to_string());
+        return Some(crate::i18n::plan_generated(loc).to_string());
     }
     if !goal.is_empty() {
         lines.push(String::new());
@@ -91,13 +96,18 @@ fn format_agent_reply_plan_json_for_display(json_text: &str, goal: &str) -> Opti
             .get("id")
             .and_then(|x| x.as_str())
             .filter(|x| !x.trim().is_empty())
-            .unwrap_or("step");
+            .unwrap_or(crate::i18n::plan_step_placeholder_id());
         let desc = s
             .get("description")
             .and_then(|x| x.as_str())
             .filter(|x| !x.trim().is_empty())
-            .unwrap_or("(未提供描述)");
-        lines.push(format!("{}. `{}`: {}", idx + 1, id.trim(), desc.trim()));
+            .unwrap_or(crate::i18n::plan_step_no_desc(loc));
+        lines.push(crate::i18n::plan_step_line(
+            loc,
+            idx,
+            id.trim(),
+            desc.trim(),
+        ));
     }
     Some(lines.join("\n"))
 }
@@ -167,7 +177,7 @@ fn should_buffer_agent_reply_plan_stream(stripped: &str) -> bool {
     if !t.starts_with('{') {
         return false;
     }
-    if format_agent_reply_plan_json_for_display(t, "").is_some() {
+    if format_agent_reply_plan_json_for_display(t, "", Locale::ZhHans).is_some() {
         return false;
     }
     serde_json::from_str::<Value>(t).is_err()
@@ -186,7 +196,7 @@ fn fence_inner_should_hide_agent_reply_plan_json(inner: &str) -> bool {
     if !body.starts_with('{') {
         return false;
     }
-    if format_agent_reply_plan_json_for_display(body, "").is_some() {
+    if format_agent_reply_plan_json_for_display(body, "", Locale::ZhHans).is_some() {
         return true;
     }
     if !body.contains("\"agent_reply_plan\"") || !body.contains("\"steps\"") {
@@ -221,14 +231,18 @@ fn strip_agent_reply_plan_fence_blocks_for_display(content: &str) -> String {
     out
 }
 
-pub(crate) fn assistant_text_for_display(raw: &str, is_streaming_last_assistant: bool) -> String {
+pub(crate) fn assistant_text_for_display(
+    raw: &str,
+    is_streaming_last_assistant: bool,
+    loc: Locale,
+) -> String {
     let trimmed = raw.trim();
 
     if is_streaming_last_assistant && should_buffer_agent_reply_plan_stream(trimmed) {
         return prose_before_first_fence(trimmed);
     }
 
-    if let Some(display) = format_agent_reply_plan_json_for_display(trimmed, "")
+    if let Some(display) = format_agent_reply_plan_json_for_display(trimmed, "", loc)
         && !display.trim().is_empty()
     {
         return display;
@@ -259,7 +273,7 @@ pub(crate) fn assistant_text_for_display(raw: &str, is_streaming_last_assistant:
     let stripped_trim = stripped_fences.trim();
     if stripped_trim != trimmed {
         if stripped_trim.is_empty() && raw.contains("\"agent_reply_plan\"") {
-            return "已生成分阶段规划。".to_string();
+            return crate::i18n::plan_generated(loc).to_string();
         }
         return stripped_trim.to_string();
     }
@@ -267,10 +281,10 @@ pub(crate) fn assistant_text_for_display(raw: &str, is_streaming_last_assistant:
     raw.to_string()
 }
 
-pub fn message_text_for_display(m: &StoredMessage) -> String {
+pub fn message_text_for_display(m: &StoredMessage, loc: Locale) -> String {
     if m.role == "assistant" {
         let is_streaming_last_assistant = m.state.as_deref() == Some("loading");
-        assistant_text_for_display(&m.text, is_streaming_last_assistant)
+        assistant_text_for_display(&m.text, is_streaming_last_assistant, loc)
     } else {
         m.text.clone()
     }
@@ -279,11 +293,12 @@ pub fn message_text_for_display(m: &StoredMessage) -> String {
 #[cfg(test)]
 mod tests {
     use super::assistant_text_for_display;
+    use crate::i18n::Locale;
 
     #[test]
     fn hide_inline_agent_reply_plan_json_fence() {
         let raw = r#"```json{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}```"#;
-        let out = assistant_text_for_display(raw, true);
+        let out = assistant_text_for_display(raw, true, Locale::ZhHans);
         assert!(
             !out.contains("agent_reply_plan"),
             "raw agent_reply_plan json should be filtered: {out}"
@@ -297,7 +312,7 @@ mod tests {
     #[test]
     fn no_task_empty_plan_has_non_empty_fallback() {
         let raw = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#;
-        let out = assistant_text_for_display(raw, false);
+        let out = assistant_text_for_display(raw, false, Locale::ZhHans);
         assert!(
             !out.trim().is_empty(),
             "filtered plan text should not become empty"
@@ -307,7 +322,7 @@ mod tests {
     #[test]
     fn keep_answer_after_fenced_plan_json() {
         let raw = r#"```json{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}```最终结论：已完成。"#;
-        let out = assistant_text_for_display(raw, false);
+        let out = assistant_text_for_display(raw, false, Locale::ZhHans);
         assert!(
             out.contains("最终结论"),
             "tail answer should be kept: {out}"
@@ -321,7 +336,7 @@ mod tests {
     #[test]
     fn keep_answer_after_unfenced_plan_json_prefix() {
         let raw = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}最终结论：继续执行。"#;
-        let out = assistant_text_for_display(raw, false);
+        let out = assistant_text_for_display(raw, false, Locale::ZhHans);
         assert!(
             out.contains("最终结论"),
             "tail answer should be kept: {out}"

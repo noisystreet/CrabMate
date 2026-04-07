@@ -228,12 +228,16 @@ pub fn flush_composer_draft_to_session(
     });
 }
 
-pub fn export_session_json_for_id(sessions: RwSignal<Vec<ChatSession>>, id: &str) {
+pub fn export_session_json_for_id(
+    sessions: RwSignal<Vec<ChatSession>>,
+    id: &str,
+    loc: crate::i18n::Locale,
+) {
     let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
     let Some(s) = session else {
         return;
     };
-    let file = session_to_export_file(&s);
+    let file = session_to_export_file(&s, loc);
     let Ok(json) = serde_json::to_string_pretty(&file) else {
         return;
     };
@@ -305,12 +309,16 @@ pub fn write_clipboard_text(text: &str, locale: crate::i18n::Locale) {
     });
 }
 
-pub fn export_session_markdown_for_id(sessions: RwSignal<Vec<ChatSession>>, id: &str) {
+pub fn export_session_markdown_for_id(
+    sessions: RwSignal<Vec<ChatSession>>,
+    id: &str,
+    loc: crate::i18n::Locale,
+) {
     let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
     let Some(s) = session else {
         return;
     };
-    let md = session_to_markdown(&s);
+    let md = session_to_markdown(&s, loc);
     let stem = export_filename_stem("chat_export");
     let name = format!("{stem}.md");
     if let Err(e) = trigger_download(&name, "text/markdown;charset=utf-8", &md) {
@@ -341,7 +349,10 @@ pub fn delete_session_after_confirm(
         list.retain(|s| s.id != id);
     });
     if sessions.with(|l| l.is_empty()) {
-        let (list, def_id) = ensure_at_least_one(Vec::new());
+        let (list, def_id) = ensure_at_least_one(
+            Vec::new(),
+            crate::i18n::default_session_title(locale).to_string(),
+        );
         sessions.set(list);
         active_id.set(def_id.clone());
         draft.set(

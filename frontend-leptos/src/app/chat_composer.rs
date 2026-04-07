@@ -10,6 +10,7 @@ use leptos::task::spawn_local;
 use gloo_timers::future::TimeoutFuture;
 
 use crate::api::{ChatStreamCallbacks, send_chat_stream};
+use crate::i18n::{self, Locale};
 use crate::message_format::tool_card_text;
 use crate::session_ops::{
     approval_session_id, flush_composer_draft_to_session, make_message_id, message_created_ms,
@@ -21,6 +22,7 @@ use crate::storage::{ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, mak
 /// 单次 `/chat/stream` 的 SSE 回调共享状态：各 `Rc<dyn Fn>` 只再包一层 `Rc<ChatStreamCallbackCtx>`，避免重复 `Arc::clone` 与多字段捕获。
 struct ChatStreamCallbackCtx {
     sessions: RwSignal<Vec<ChatSession>>,
+    locale: RwSignal<Locale>,
     active_session_id: String,
     assistant_message_id: String,
     abort_cell: Arc<Mutex<Option<web_sys::AbortController>>>,
@@ -106,6 +108,7 @@ pub(super) fn wire_draft_sync_to_buffer_and_textarea(
 pub(super) fn wire_chat_composer_streams(
     initialized: RwSignal<bool>,
     sessions: RwSignal<Vec<ChatSession>>,
+    locale: RwSignal<Locale>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
     conversation_id: RwSignal<Option<String>>,
@@ -127,6 +130,7 @@ pub(super) fn wire_chat_composer_streams(
         let abort_cell = Arc::clone(&abort_cell);
         let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
         let sessions = sessions;
+        let locale_sig = locale;
         let active_id = active_id;
         let conversation_id = conversation_id;
         let conversation_revision = conversation_revision;
@@ -155,6 +159,7 @@ pub(super) fn wire_chat_composer_streams(
 
             let stream_ctx = Rc::new(ChatStreamCallbackCtx {
                 sessions,
+                locale: locale_sig,
                 active_session_id: active_id.get(),
                 assistant_message_id: asst_id.clone(),
                 abort_cell: Arc::clone(&abort_cell),
@@ -192,6 +197,7 @@ pub(super) fn wire_chat_composer_streams(
                         *stream_ctx.abort_cell.lock().unwrap() = None;
                         return;
                     }
+                    let loc = stream_ctx.locale.get_untracked();
                     let aid = stream_ctx.active_session_id.clone();
                     let mid = stream_ctx.assistant_message_id.clone();
                     stream_ctx.sessions.update(|list| {
@@ -202,7 +208,7 @@ pub(super) fn wire_chat_composer_streams(
                             // 仅收尾「仍在生成」的气泡；SSE 已 on_error 的勿覆盖 error 状态
                             m.state = None;
                             if m.text.trim().is_empty() {
-                                m.text = "(无回复)".to_string();
+                                m.text = i18n::stream_empty_reply(loc).to_string();
                             }
                         }
                     });
@@ -228,7 +234,9 @@ pub(super) fn wire_chat_composer_streams(
                         }
                     });
                     stream_ctx.status_busy.set(false);
-                    stream_ctx.status_err.set(Some("对话失败".to_string()));
+                    stream_ctx.status_err.set(Some(
+                        i18n::chat_failed_banner(stream_ctx.locale.get_untracked()).to_string(),
+                    ));
                     *stream_ctx.abort_cell.lock().unwrap() = None;
                 })
             };
@@ -252,7 +260,7 @@ pub(super) fn wire_chat_composer_streams(
             let on_tool_result: Rc<dyn Fn(ToolResultInfo)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |info: ToolResultInfo| {
-                    let t = tool_card_text(&info);
+                    let t = tool_card_text(&info, stream_ctx.locale.get_untracked());
                     let id = make_message_id();
                     let aid = stream_ctx.active_session_id.as_str();
                     stream_ctx.sessions.update(|list| {
@@ -313,6 +321,7 @@ pub(super) fn wire_chat_composer_streams(
                     Some(appr_for_stream),
                     &signal,
                     cbs.clone(),
+                    locale_sig.get_untracked(),
                 )
                 .await;
                 if let Err(e) = stream_result {
@@ -362,7 +371,7 @@ pub(super) fn wire_chat_composer_streams(
                     is_tool: false,
                     created_at: now,
                 });
-                if is_first_user_turn && s.title == DEFAULT_CHAT_SESSION_TITLE {
+                if is_first_user_turn && i18n::is_default_session_title(&s.title) {
                     s.title = title_from_user_prompt(&text);
                 }
                 s.draft.clear();
@@ -429,6 +438,7 @@ pub(super) fn wire_chat_composer_streams(
         Arc::new({
             let abort_cell = Arc::clone(&abort_cell);
             let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
+            let locale = locale;
             move || {
                 if abort_cell.lock().unwrap().is_none() {
                     return;
@@ -437,6 +447,7 @@ pub(super) fn wire_chat_composer_streams(
                 if let Some(ac) = abort_cell.lock().unwrap().take() {
                     ac.abort();
                 }
+                let loc = locale.get_untracked();
                 let aid = active_id.get();
                 sessions.update(|list| {
                     if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
@@ -445,9 +456,9 @@ pub(super) fn wire_chat_composer_streams(
                         }) {
                             m.state = None;
                             if m.text.trim().is_empty() {
-                                m.text = "已停止".to_string();
+                                m.text = i18n::stream_stopped_inline(loc).to_string();
                             } else {
-                                m.text.push_str("\n\n[已停止]");
+                                m.text.push_str(i18n::stream_stopped_suffix(loc));
                             }
                         }
                     }

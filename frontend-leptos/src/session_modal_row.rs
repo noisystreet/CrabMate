@@ -63,7 +63,9 @@ pub fn SessionModalRow(
                     }
                 }
             >
-                <span class="session-title">{title}</span>
+                <span class="session-title">
+                    {move || i18n::session_title_for_display(&title, locale.get())}
+                </span>
                 <span class="session-meta">{move || i18n::session_row_msg_count(locale.get(), message_count)}</span>
             </button>
             <div class="session-row-actions">
@@ -114,7 +116,9 @@ pub fn SessionModalRow(
                     on:click={
                         let sessions = sessions;
                         let id = id_json.clone();
-                        move |_| export_session_json_for_id(sessions, &id)
+                        move |_| {
+                            export_session_json_for_id(sessions, &id, locale.get_untracked())
+                        }
                     }
                 >
                     "JSON"
@@ -126,7 +130,9 @@ pub fn SessionModalRow(
                     on:click={
                         let sessions = sessions;
                         let id = id_md.clone();
-                        move |_| export_session_markdown_for_id(sessions, &id)
+                        move |_| {
+                            export_session_markdown_for_id(sessions, &id, locale.get_untracked())
+                        }
                     }
                 >
                     "MD"

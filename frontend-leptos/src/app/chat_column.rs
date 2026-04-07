@@ -208,7 +208,9 @@ pub fn chat_column_view(
                                         view! {
                                             <div class="messages-empty" role="status">
                                                 <div class="messages-empty-card">
-                                                    <p class="messages-empty-title">"开始对话"</p>
+                                                    <p class="messages-empty-title">
+                                                        {move || i18n::chat_empty_title(locale.get())}
+                                                    </p>
                                                     <p class="messages-empty-lead">
                                                         {move || i18n::chat_empty_lead(locale.get())}
                                                     </p>
