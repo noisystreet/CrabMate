@@ -425,11 +425,15 @@ flowchart LR
 
 ### `frontend-leptos/src/app/`
 
-- **`mod.rs`**：单根 **`App`**；会话/流式/审批等 **`RwSignal` / `Effect`** 与 **`attach_chat_stream`** 编排仍集中于此，主 `view!` 组合子视图。
+- **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、持久化偏好 **`Effect`**、**`GET /status` / tasks** 刷新与主 `view!` 组合子视图。流式发送、草稿同步、会话切换重置等见 **`chat_composer`**；跟底与侧栏跳转滚入见 **`chat_scroll`**；会话内查找匹配见 **`chat_find`**；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
+- **`chat_composer.rs`**：草稿缓冲与 textarea 同步、**`send_chat_stream`** 回调编排、发送 / 停止 / 重试 / 截断再生、新会话。
+- **`chat_scroll.rs`**：消息列表指纹变化时的自动跟底、**`focus_message_id_after_nav`** 滚入视图。
+- **`chat_find.rs`**：主区查找匹配 id、光标与首条 **`scroll_message_into_view`**。
+- **`workspace_panel.rs`**：**`reload_workspace_panel`** 封装与切换到 Workspace 侧栏时自动拉取。
 - **`sidebar_nav.rs`**：左侧导航与会话列表；**`mobile_shell_header.rs`**：窄屏顶栏。
 - **`chat_column.rs`**：中部消息列表与输入区；**`chat_find_bar.rs`** / **`chat_export_menu.rs`**：查找条与导出上下文菜单。
 - **`side_column.rs`**：右列（工作区/任务、`SideColumnTasksCard` 等）；**`status_bar.rs`**：底栏状态。
-- **`approval_bar.rs`**：工具审批条；**`session_list_modal.rs`**、**`settings_modal.rs`**、**`changelist_modal.rs`**：各模态。
+- **`approval_bar.rs`**：工具审批条；**`session_list_modal.rs`**、**`settings_modal.rs`**、**`changelist_modal.rs`**：各模态（含变更集 fetch 副作用）。
 - **`scroll_guard.rs`**：程序化滚底与 `on:scroll` 协调（**`MessagesScrollFromEffectGuard`**）。
 - 左栏「最近」会话 **`contextmenu`** 打开菜单；导出 JSON/Markdown 与删除与 **`SessionModalRow`** 共用 **`session_ops::export_session_*_for_id` / `delete_session_after_confirm`**。
 - 流式消息与自动跟底策略（用户上滚时禁用、回到底部附近恢复）。
