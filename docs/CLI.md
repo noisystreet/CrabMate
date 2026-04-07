@@ -165,7 +165,8 @@ crabmate tool-replay run --fixture ./fixture.json --compare-recorded   # CI 回�
 ## 前端构建与 Web
 
 ```bash
-cd frontend-leptos && trunk build && cd ..
+cd frontend-leptos && trunk build && cd ..   # 开发（较快，不跑 wasm-opt）
+# 发布或在意 WASM 体积：cd frontend-leptos && trunk build --release && cd ..
 cargo run -- serve
 ```
 
@@ -196,7 +197,7 @@ SSE 控制面字段见 **`docs/SSE_PROTOCOL.md`**。
 
 ```bash
 cargo install cargo-deb
-cd frontend-leptos && trunk build && cd ..
+cd frontend-leptos && trunk build --release && cd ..
 cargo build --release
 cargo deb
 sudo dpkg -i target/debian/crabmate_*.deb

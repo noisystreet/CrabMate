@@ -13,12 +13,19 @@
 
 ## 构建
 
+- **日常调试**：`trunk build`（Trunk 在 dev 模式下不跑 `wasm-opt`，构建更快）。
+- **发布 / 与生产体积一致**：`trunk build --release`（启用默认 `wasm-opt`，WASM 更小、冷启动通常更好）。
+
 ```bash
 cd frontend-leptos
+trunk build          # 开发
+# 或
 trunk build --release
 ```
 
 产物在 **`frontend-leptos/dist/`**。
+
+`index.html` 中 **`rel="rust"`** 未设置 **`data-wasm-opt`** 时即按上述规则区分；若要在 release 构建中也跳过优化，可给该标签加 **`data-wasm-opt="0"`**；更激进压体积可用 **`data-wasm-opt="z"`** 等（见 [Trunk](https://trunkrs.dev/) 文档）。
 
 ## 能力与现状
 

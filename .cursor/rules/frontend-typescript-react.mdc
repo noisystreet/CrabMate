@@ -9,9 +9,9 @@ alwaysApply: false
 ## 自检命令（仓库根目录）
 
 - wasm 检查：`cd frontend-leptos && cargo check --target wasm32-unknown-unknown`
-- 与生产一致构建：`cd frontend-leptos && trunk build`
+- 与生产一致构建：`cd frontend-leptos && trunk build --release`（默认启用 `wasm-opt`）；日常开发可用 **`trunk build`**（较快，不跑 `wasm-opt`）。
 
-大改组件、SSE 分发或打包配置后至少执行其一；准备合并或发版前建议执行 **`trunk build`**。
+大改组件、SSE 分发或打包配置后至少执行其一；准备合并或发版前建议执行 **`trunk build --release`**。
 
 ## 与后端一致
 

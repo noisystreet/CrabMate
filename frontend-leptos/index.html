@@ -23,6 +23,10 @@
     <link data-trunk rel="css" href="styles/motion.css" />
   </head>
   <body>
-    <link data-trunk rel="rust" data-wasm-opt="0" />
+    <!--
+      Trunk：`trunk build`（默认 dev）不跑 wasm-opt，迭代快；`trunk build --release` 使用默认 wasm-opt，体积与冷启动更优。
+      若要在 release 下也跳过 wasm-opt，可加 `data-wasm-opt="0"`；若要偏体积累可加 `data-wasm-opt="z"` 等（见 Trunk 文档）。
+    -->
+    <link data-trunk rel="rust" />
   </body>
 </html>
