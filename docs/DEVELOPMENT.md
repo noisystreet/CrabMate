@@ -405,6 +405,7 @@ flowchart LR
 ### 样式结构
 
 - 样式加载：**`frontend-leptos/index.html`** 内多条 **`data-trunk` `rel="css"`** 指向 **`frontend-leptos/styles/`** 下 `tokens.css`、`base.css`、`components.css`、`layout-chat.css`、`shell-ds.css`（DeepSeek 式左栏 + 居中线程 + 底栏一体输入；**`shell-main-toolbar`** 在 **`side-column`** 顶部，不占聊天列；工作区与任务均关时 **`side-column-rail-only`** 保留窄轨宽度；**`session-ctx-*`** 为左栏会话右键菜单）、`sidebar.css`、`status.css`、`approval.css`、`modal.css`、`motion.css`（顺序即层叠顺序；Trunk 不会跟随根目录 `styles.css` 的 `@import` 复制子文件，故须在此声明）。设计 token 与模块边界见各文件头注释。
+- **Trunk / wasm-opt**：根目录 **`index.html`** 中 **`rel="rust"`** 不写 **`data-wasm-opt`** 时，**`trunk build`**（非 release）跳过 **`wasm-opt`**（调试迭代快）；**`trunk build --release`** 使用 Trunk 默认优化级别以减小 WASM 体积。发布或打包 `.deb` 前应对前端执行 **`trunk build --release`**。若需显式关闭或改为偏体积的级别，可在该标签上使用 **`data-wasm-opt="0"`** / **`"z"`** 等（见 Trunk 文档）。
 - 视觉回归手测项：**`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`**。
 
 ### 单元测试（`frontend-leptos`）
