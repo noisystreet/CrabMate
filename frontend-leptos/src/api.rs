@@ -420,17 +420,30 @@ pub async fn send_chat_stream(
         .dyn_into()
         .map_err(|_| "stream reader".to_string())?;
 
-    // 块边界可能截断 UTF-8：只把完整前缀解码进 `text`，余字节留在 `raw`。
+    // 块边界可能截断 UTF-8：只把从开头起「完整码点」前缀解码进 `text`，余字节留在 `raw`。
+    // 使用 `Utf8Error::valid_up_to` 一次确定合法前缀，避免对每个字节反复 `from_utf8`（原 while 递减为 O(n²)）。
+    // SSE 仍由下方 `process_sse_buffer` 按 `\n\n` 分帧；ReadableStream 块与 UTF-8/行边界无关，只能缓冲后解码。
     fn append_chunk_to_text_buffer(raw: &mut Vec<u8>, chunk: &[u8], text: &mut String) {
         raw.extend_from_slice(chunk);
-        let mut valid_end = raw.len();
-        while valid_end > 0 && std::str::from_utf8(&raw[..valid_end]).is_err() {
-            valid_end -= 1;
-        }
-        if valid_end > 0 {
-            let taken: Vec<u8> = raw.drain(..valid_end).collect();
-            if let Ok(s) = String::from_utf8(taken) {
-                text.push_str(&s);
+        loop {
+            if raw.is_empty() {
+                break;
+            }
+            match std::str::from_utf8(raw) {
+                Ok(s) => {
+                    text.push_str(s);
+                    raw.clear();
+                    break;
+                }
+                Err(e) => {
+                    let n = e.valid_up_to();
+                    if n == 0 {
+                        break;
+                    }
+                    // `valid_up_to` 保证 `raw[..n]` 为合法 UTF-8 且落在码点边界上。
+                    text.push_str(std::str::from_utf8(&raw[..n]).expect("valid_up_to"));
+                    raw.drain(..n);
+                }
             }
         }
     }
