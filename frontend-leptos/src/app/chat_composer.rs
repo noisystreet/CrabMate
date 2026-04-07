@@ -18,6 +18,25 @@ use crate::session_ops::{
 use crate::sse_dispatch::{CommandApprovalRequest, ToolResultInfo};
 use crate::storage::{ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, make_session_id};
 
+/// 单次 `/chat/stream` 的 SSE 回调共享状态：各 `Rc<dyn Fn>` 只再包一层 `Rc<ChatStreamCallbackCtx>`，避免重复 `Arc::clone` 与多字段捕获。
+struct ChatStreamCallbackCtx {
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_session_id: String,
+    assistant_message_id: String,
+    abort_cell: Arc<Mutex<Option<web_sys::AbortController>>>,
+    user_cancelled_stream: Arc<Mutex<bool>>,
+    status_busy: RwSignal<bool>,
+    status_err: RwSignal<Option<String>>,
+    tool_busy: RwSignal<bool>,
+    pending_approval: RwSignal<Option<(String, String, String)>>,
+    approval_session_store_id: String,
+    conversation_id: RwSignal<Option<String>>,
+    conversation_revision: RwSignal<Option<u64>>,
+    changelist_modal_open: RwSignal<bool>,
+    changelist_fetch_nonce: RwSignal<u64>,
+    refresh_workspace: Arc<dyn Fn() + Send + Sync>,
+}
+
 pub(super) struct ChatComposerWires {
     pub retry_assistant_target: RwSignal<Option<String>>,
     pub regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
@@ -134,14 +153,32 @@ pub(super) fn wire_chat_composer_streams(
             let appr_store = appr_for_stream.clone();
             let user_cancelled_for_spawn = Arc::clone(&user_cancelled_stream);
 
+            let stream_ctx = Rc::new(ChatStreamCallbackCtx {
+                sessions,
+                active_session_id: active_id.get(),
+                assistant_message_id: asst_id.clone(),
+                abort_cell: Arc::clone(&abort_cell),
+                user_cancelled_stream: Arc::clone(&user_cancelled_stream),
+                status_busy,
+                status_err,
+                tool_busy,
+                pending_approval,
+                approval_session_store_id: appr_store.clone(),
+                conversation_id,
+                conversation_revision,
+                changelist_modal_open,
+                changelist_fetch_nonce,
+                refresh_workspace: Arc::clone(&refresh_workspace),
+            });
+
             let on_delta: Rc<dyn Fn(String)> = {
-                let sessions = sessions;
-                let aid_act = active_id.get();
-                let asst_id = asst_id.clone();
+                let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |chunk: String| {
-                    sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act) {
-                            if let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id) {
+                    let aid = stream_ctx.active_session_id.as_str();
+                    let mid = stream_ctx.assistant_message_id.as_str();
+                    stream_ctx.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                            if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
                                 m.text.push_str(&chunk);
                             }
                         }
@@ -149,19 +186,17 @@ pub(super) fn wire_chat_composer_streams(
                 })
             };
             let on_done: Rc<dyn Fn()> = {
-                let sessions = sessions;
-                let aid_act = active_id.get();
-                let asst_id = asst_id.clone();
-                let abort_cell = Arc::clone(&abort_cell);
-                let user_cancelled_stream = Arc::clone(&user_cancelled_for_spawn);
+                let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move || {
-                    if *user_cancelled_stream.lock().unwrap() {
-                        *abort_cell.lock().unwrap() = None;
+                    if *stream_ctx.user_cancelled_stream.lock().unwrap() {
+                        *stream_ctx.abort_cell.lock().unwrap() = None;
                         return;
                     }
-                    sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act)
-                            && let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id)
+                    let aid = stream_ctx.active_session_id.clone();
+                    let mid = stream_ctx.assistant_message_id.clone();
+                    stream_ctx.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|s| s.id == aid)
+                            && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
                             && m.state.as_deref() == Some("loading")
                         {
                             // 仅收尾「仍在生成」的气泡；SSE 已 on_error 的勿覆盖 error 状态
@@ -171,59 +206,57 @@ pub(super) fn wire_chat_composer_streams(
                             }
                         }
                     });
-                    status_busy.set(false);
-                    *abort_cell.lock().unwrap() = None;
+                    stream_ctx.status_busy.set(false);
+                    *stream_ctx.abort_cell.lock().unwrap() = None;
                 })
             };
             let on_error: Rc<dyn Fn(String)> = {
-                let sessions = sessions;
-                let aid_act = active_id.get();
-                let asst_id = asst_id.clone();
-                let abort_cell = Arc::clone(&abort_cell);
-                let user_cancelled_stream = Arc::clone(&user_cancelled_for_spawn);
+                let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |msg: String| {
-                    if *user_cancelled_stream.lock().unwrap() {
-                        *abort_cell.lock().unwrap() = None;
+                    if *stream_ctx.user_cancelled_stream.lock().unwrap() {
+                        *stream_ctx.abort_cell.lock().unwrap() = None;
                         return;
                     }
-                    sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act) {
-                            if let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id) {
+                    let aid = stream_ctx.active_session_id.clone();
+                    let mid = stream_ctx.assistant_message_id.clone();
+                    stream_ctx.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                            if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
                                 m.text = msg;
                                 m.state = Some("error".to_string());
                             }
                         }
                     });
-                    status_busy.set(false);
-                    status_err.set(Some("对话失败".to_string()));
-                    *abort_cell.lock().unwrap() = None;
+                    stream_ctx.status_busy.set(false);
+                    stream_ctx.status_err.set(Some("对话失败".to_string()));
+                    *stream_ctx.abort_cell.lock().unwrap() = None;
                 })
             };
             let on_ws: Rc<dyn Fn()> = {
-                let changelist_modal_open = changelist_modal_open;
-                let changelist_fetch_nonce = changelist_fetch_nonce;
-                let refresh_workspace = Arc::clone(&refresh_workspace);
+                let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move || {
-                    refresh_workspace();
-                    if changelist_modal_open.get_untracked() {
-                        changelist_fetch_nonce.update(|x| *x = x.wrapping_add(1));
+                    (stream_ctx.refresh_workspace)();
+                    if stream_ctx.changelist_modal_open.get_untracked() {
+                        stream_ctx
+                            .changelist_fetch_nonce
+                            .update(|x| *x = x.wrapping_add(1));
                     }
                 })
             };
             let on_tool_status: Rc<dyn Fn(bool)> = {
-                let tool_busy = tool_busy;
+                let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |b: bool| {
-                    tool_busy.set(b);
+                    stream_ctx.tool_busy.set(b);
                 })
             };
             let on_tool_result: Rc<dyn Fn(ToolResultInfo)> = {
-                let sessions = sessions;
-                let aid_act = active_id.get();
+                let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |info: ToolResultInfo| {
                     let t = tool_card_text(&info);
                     let id = make_message_id();
-                    sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act) {
+                    let aid = stream_ctx.active_session_id.as_str();
+                    stream_ctx.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             s.messages.push(StoredMessage {
                                 id,
                                 role: "system".to_string(),
@@ -237,24 +270,26 @@ pub(super) fn wire_chat_composer_streams(
                 })
             };
             let on_approval: Rc<dyn Fn(CommandApprovalRequest)> = {
-                let pending_approval = pending_approval;
-                let sid = appr_store.clone();
+                let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |req: CommandApprovalRequest| {
-                    pending_approval.set(Some((sid.clone(), req.command, req.args)));
+                    stream_ctx.pending_approval.set(Some((
+                        stream_ctx.approval_session_store_id.clone(),
+                        req.command,
+                        req.args,
+                    )));
                 })
             };
             let on_cid: Rc<dyn Fn(String)> = {
-                let conversation_id = conversation_id;
-                let conversation_revision = conversation_revision;
+                let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |id: String| {
-                    conversation_id.set(Some(id));
-                    conversation_revision.set(None);
+                    stream_ctx.conversation_id.set(Some(id));
+                    stream_ctx.conversation_revision.set(None);
                 })
             };
             let on_conv_rev: Rc<dyn Fn(u64)> = {
-                let conversation_revision = conversation_revision;
+                let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |rev: u64| {
-                    conversation_revision.set(Some(rev));
+                    stream_ctx.conversation_revision.set(Some(rev));
                 })
             };
 
