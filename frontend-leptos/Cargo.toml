@@ -54,3 +54,6 @@ web-sys = { version = "0.3", features = [
     "WheelEvent",
     "Window",
 ] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
