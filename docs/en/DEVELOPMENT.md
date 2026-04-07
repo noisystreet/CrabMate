@@ -28,7 +28,7 @@ Single **Tokio** process: **Axum** HTTP, **`runtime/`** CLI (interactive + one-s
 
 ### Layers (outside → in)
 
-1. **Ingress**: HTTP handlers (`web/server`, `chat_handlers`), `serve`, CLI parsing (`config::cli`, `runtime/cli`).
+1. **Ingress**: HTTP handlers (`web/server`, `web/chat_handlers/`), `serve`, CLI parsing (`config::cli`, `runtime/cli`).
 2. **Orchestration**: `chat_job_queue`, agent loop, context/PER/workflow (`agent/`).
 3. **Model**: `http_client`, `llm` request/retry, **`llm::api::stream_chat`**; upstream bodies redacted before logs.
 4. **Tools & workflow**: table-driven tools (`tools/mod.rs`), `tool_registry` dispatch/timeouts, DAG workflows (`agent::workflow`). **`workflow_execute`** validates **`tool_name`** and required JSON keys (see `tools/schema_check.rs`); results carry **`workflow_run_id`**, **`trace`**, **`completion_order`**; **`max_retries`** only for retryable infra errors (see **`docs/en/TOOLS.md`**).
