@@ -1,11 +1,16 @@
 //! 主界面：单根 `App`（导航、对话、侧栏、状态栏、模态框与偏好副作用）。
+//!
+//! 聊天滚动、查找、输入/流式、Workspace 刷新、变更集拉取等副作用拆至子模块，见 `chat_scroll`、`chat_find`、`chat_composer`、`workspace_panel`、`changelist_modal`。
 
 mod approval_bar;
 mod changelist_modal;
 mod chat_column;
+mod chat_composer;
 mod chat_export_menu;
+mod chat_find;
 mod chat_find_bar;
 mod chat_message_render;
+mod chat_scroll;
 mod mobile_shell_header;
 pub mod scroll_guard;
 mod session_list_modal;
@@ -13,18 +18,28 @@ mod settings_modal;
 mod side_column;
 mod sidebar_nav;
 mod status_bar;
+mod workspace_panel;
 
 use approval_bar::ApprovalBar;
-use changelist_modal::changelist_modal_view;
+use changelist_modal::{
+    changelist_modal_view, wire_changelist_body_inner_html, wire_changelist_fetch_effects,
+};
 use chat_column::chat_column_view;
+use chat_composer::{
+    wire_chat_composer_streams, wire_draft_sync_to_buffer_and_textarea,
+    wire_session_switch_clears_chat_state,
+};
 use chat_export_menu::ChatExportContextMenu;
+use chat_find::wire_chat_find_matches;
 use chat_find_bar::ChatFindBar;
+use chat_scroll::{wire_focus_message_after_nav, wire_messages_auto_scroll};
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
 use settings_modal::settings_modal_view;
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
+use workspace_panel::{make_refresh_workspace, wire_workspace_refresh_when_visible};
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -32,9 +47,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::api::{
-    ChatStreamCallbacks, StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key,
-    fetch_status, fetch_tasks, fetch_workspace_changelog, load_client_llm_text_fields_from_storage,
-    save_tasks, send_chat_stream,
+    StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key, fetch_status,
+    fetch_tasks, load_client_llm_text_fields_from_storage, save_tasks,
 };
 use crate::app_prefs::{
     AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, SidePanelView,
@@ -42,27 +56,13 @@ use crate::app_prefs::{
     load_f64_key, load_side_panel_view, local_storage, store_bool_key, store_f64_key,
     store_side_panel_view,
 };
-use crate::markdown;
-use crate::message_format::{message_text_for_display, tool_card_text};
-use crate::session_ops::{
-    SessionContextAnchor, approval_session_id, flush_composer_draft_to_session, make_message_id,
-    message_created_ms, patch_active_session, prepare_retry_failed_assistant_turn,
-    title_from_user_prompt,
-};
-use crate::session_search::{normalize_search_query, scroll_message_into_view};
-use crate::sse_dispatch::{CommandApprovalRequest, ToolResultInfo};
-use crate::storage::{
-    ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, ensure_at_least_one, load_sessions,
-    make_session_id, save_sessions,
-};
-use crate::workspace_shell::reload_workspace_panel;
+use crate::session_ops::SessionContextAnchor;
+use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
-use gloo_timers::future::TimeoutFuture;
 use leptos::html::{Div, Textarea};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_dom::helpers::WindowListenerHandle;
-use wasm_bindgen::JsCast;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -285,86 +285,31 @@ pub fn App() -> impl IntoView {
         llm_settings_feedback.set(None);
     });
 
-    let refresh_workspace: Arc<dyn Fn() + Send + Sync> = Arc::new({
-        move || {
-            spawn_local(async move {
-                reload_workspace_panel(
-                    workspace_loading,
-                    workspace_err,
-                    workspace_path_draft,
-                    workspace_data,
-                    workspace_subtree_expanded,
-                    workspace_subtree_cache,
-                    workspace_subtree_loading,
-                )
-                .await;
-            });
-        }
-    });
+    let refresh_workspace = make_refresh_workspace(
+        workspace_loading,
+        workspace_err,
+        workspace_path_draft,
+        workspace_data,
+        workspace_subtree_expanded,
+        workspace_subtree_cache,
+        workspace_subtree_loading,
+    );
 
-    Effect::new({
-        let conversation_id = conversation_id;
-        let changelist_fetch_nonce = changelist_fetch_nonce;
-        let changelist_modal_loading = changelist_modal_loading;
-        let changelist_modal_err = changelist_modal_err;
-        let changelist_modal_html = changelist_modal_html;
-        let changelist_modal_rev = changelist_modal_rev;
-        move |_| {
-            let n = changelist_fetch_nonce.get();
-            if n == 0 {
-                return;
-            }
-            changelist_modal_loading.set(true);
-            changelist_modal_err.set(None);
-            let cid = conversation_id.get();
-            spawn_local(async move {
-                match fetch_workspace_changelog(cid.as_deref()).await {
-                    Ok(r) => {
-                        if let Some(e) = r.error {
-                            changelist_modal_err.set(Some(e));
-                            changelist_modal_html.set(String::new());
-                            changelist_modal_rev.set(0);
-                        } else {
-                            changelist_modal_rev.set(r.revision);
-                            changelist_modal_html.set(markdown::to_safe_html(&r.markdown));
-                        }
-                    }
-                    Err(e) => {
-                        changelist_modal_err.set(Some(e));
-                        changelist_modal_html.set(String::new());
-                        changelist_modal_rev.set(0);
-                    }
-                }
-                changelist_modal_loading.set(false);
-            });
-        }
-    });
+    wire_changelist_fetch_effects(
+        conversation_id,
+        changelist_fetch_nonce,
+        changelist_modal_loading,
+        changelist_modal_err,
+        changelist_modal_html,
+        changelist_modal_rev,
+    );
+    wire_changelist_body_inner_html(changelist_modal_html, changelist_body_ref);
 
-    Effect::new({
-        let changelist_modal_html = changelist_modal_html;
-        let changelist_body_ref = changelist_body_ref.clone();
-        move |_| {
-            let html = changelist_modal_html.get();
-            let r = changelist_body_ref.clone();
-            spawn_local(async move {
-                TimeoutFuture::new(0).await;
-                if let Some(n) = r.get()
-                    && let Ok(he) = n.dyn_into::<web_sys::HtmlElement>()
-                {
-                    he.set_inner_html(&html);
-                }
-            });
-        }
-    });
-
-    Effect::new({
-        let refresh_workspace = Arc::clone(&refresh_workspace);
-        move |_| {
-            if matches!(side_panel_view.get(), SidePanelView::Workspace) && initialized.get() {
-                refresh_workspace();
-            }
-        }
-    });
+    wire_workspace_refresh_when_visible(
+        side_panel_view,
+        initialized,
+        Arc::clone(&refresh_workspace),
+    );
 
     let refresh_tasks: Arc<dyn Fn() + Send + Sync> = Arc::new({
         move || {
@@ -427,491 +372,62 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    // 仅随 `active_id` 切换加载草稿；勿订阅 `sessions`，否则流式更新会反复覆盖输入缓冲。
-    Effect::new(move |_| {
-        let id = active_id.get();
-        if !initialized.get() {
-            return;
-        }
-        let list = sessions.get_untracked();
-        let d = list
-            .iter()
-            .find(|s| s.id == id)
-            .map(|s| s.draft.clone())
-            .unwrap_or_default();
-        draft.set(d);
-        conversation_id.set(None);
-        conversation_revision.set(None);
-        expanded_long_assistant_ids.set(Vec::new());
-        bubble_md_selected_ids.set(Vec::new());
-    });
+    wire_session_switch_clears_chat_state(
+        initialized,
+        sessions,
+        active_id,
+        draft,
+        conversation_id,
+        conversation_revision,
+        expanded_long_assistant_ids,
+        bubble_md_selected_ids,
+    );
 
-    // `draft` 仅程序化更新：同步到 Mutex 与 textarea（输入过程不订阅 `draft`）。
-    Effect::new({
-        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
-        let composer_input_ref = composer_input_ref.clone();
-        move |_| {
-            let d = draft.get();
-            *composer_draft_buffer.lock().unwrap() = d.clone();
-            let d_for_dom = d.clone();
-            let cref = composer_input_ref.clone();
-            spawn_local(async move {
-                TimeoutFuture::new(0).await;
-                if let Some(el) = cref.get() {
-                    if el.value() != d_for_dom {
-                        el.set_value(&d_for_dom);
-                    }
-                }
-            });
-        }
-    });
+    wire_draft_sync_to_buffer_and_textarea(
+        draft,
+        Arc::clone(&composer_draft_buffer),
+        composer_input_ref.clone(),
+    );
 
-    Effect::new(move |_| {
-        let aid = active_id.get();
-        let _fingerprint = sessions.with(|list| {
-            list.iter()
-                .find(|s| s.id == aid)
-                .map(|s| {
-                    s.messages
-                        .iter()
-                        .fold(0u64, |acc, m| acc.wrapping_add(m.text.len() as u64))
-                        .wrapping_add((s.messages.len() as u64).saturating_mul(17))
-                })
-                .unwrap_or(0)
-        });
+    wire_messages_auto_scroll(
+        sessions,
+        active_id,
+        messages_scroller,
+        auto_scroll_chat,
+        messages_scroll_from_effect,
+    );
 
-        if !auto_scroll_chat.get() {
-            return;
-        }
+    wire_chat_find_matches(
+        sessions,
+        active_id,
+        chat_find_query,
+        chat_find_match_ids,
+        chat_find_cursor,
+        auto_scroll_chat,
+    );
 
-        let mref = messages_scroller;
-        let follow = auto_scroll_chat;
-        let scroll_from_effect = messages_scroll_from_effect;
-        spawn_local(async move {
-            let _scroll_from_effect_guard =
-                scroll_guard::MessagesScrollFromEffectGuard::new(scroll_from_effect);
-            if !follow.get_untracked() {
-                return;
-            }
-            TimeoutFuture::new(0).await;
-            if !follow.get_untracked() {
-                return;
-            }
-            if let Some(el) = mref.get() {
-                el.set_scroll_top(el.scroll_height());
-            }
-            TimeoutFuture::new(0).await;
-            if !follow.get_untracked() {
-                return;
-            }
-            if let Some(el) = mref.get() {
-                el.set_scroll_top(el.scroll_height());
-            }
-            // 再等一帧：流式换行后布局高度可能在本轮 paint 后才稳定
-            TimeoutFuture::new(16).await;
-            if !follow.get_untracked() {
-                return;
-            }
-            if let Some(el) = mref.get() {
-                el.set_scroll_top(el.scroll_height());
-            }
-        });
-    });
+    wire_focus_message_after_nav(focus_message_id_after_nav);
 
-    // 当前会话内查找：匹配列表随消息更新；仅当查询或会话切换时重置光标并滚到首条。
-    let chat_find_prev_key: Rc<RefCell<(String, String)>> =
-        Rc::new(RefCell::new((String::new(), String::new())));
-    Effect::new({
-        let sessions = sessions;
-        let active_id = active_id;
-        let chat_find_query = chat_find_query;
-        let chat_find_match_ids = chat_find_match_ids;
-        let chat_find_cursor = chat_find_cursor;
-        let auto_scroll_chat = auto_scroll_chat;
-        let chat_find_prev_key = Rc::clone(&chat_find_prev_key);
-        move |_| {
-            let aid = active_id.get();
-            let q = normalize_search_query(&chat_find_query.get());
-            let ids = if q.is_empty() {
-                Vec::new()
-            } else {
-                sessions.with(|list| {
-                    list.iter()
-                        .find(|s| s.id == aid)
-                        .map(|s| {
-                            s.messages
-                                .iter()
-                                .filter(|m| message_text_for_display(m).to_lowercase().contains(&q))
-                                .map(|m| m.id.clone())
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default()
-                })
-            };
-            chat_find_match_ids.set(ids.clone());
-            let mut prev = chat_find_prev_key.borrow_mut();
-            let key_changed = prev.0 != q || prev.1 != aid;
-            if key_changed {
-                prev.0 = q.clone();
-                prev.1 = aid.clone();
-                chat_find_cursor.set(0);
-                if !q.is_empty() && !ids.is_empty() {
-                    auto_scroll_chat.set(false);
-                    let first = ids[0].clone();
-                    spawn_local(async move {
-                        TimeoutFuture::new(32).await;
-                        scroll_message_into_view(&first);
-                    });
-                }
-            } else {
-                chat_find_cursor.update(|c| {
-                    if ids.is_empty() {
-                        *c = 0;
-                    } else if *c >= ids.len() {
-                        *c = ids.len() - 1;
-                    }
-                });
-            }
-        }
-    });
-
-    // 侧栏「在消息中打开」后滚动到对应气泡。
-    Effect::new({
-        let focus_message_id_after_nav = focus_message_id_after_nav;
-        move |_| {
-            let Some(mid) = focus_message_id_after_nav.get() else {
-                return;
-            };
-            focus_message_id_after_nav.set(None);
-            let mid = mid.clone();
-            spawn_local(async move {
-                TimeoutFuture::new(48).await;
-                scroll_message_into_view(&mid);
-                TimeoutFuture::new(120).await;
-                scroll_message_into_view(&mid);
-            });
-        }
-    });
-
-    let attach_chat_stream: Arc<dyn Fn(String, String) + Send + Sync> = Arc::new({
-        let abort_cell = Arc::clone(&abort_cell);
-        let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
-        let sessions = sessions;
-        let active_id = active_id;
-        let conversation_id = conversation_id;
-        let conversation_revision = conversation_revision;
-        let selected_agent_role = selected_agent_role;
-        let status_busy = status_busy;
-        let status_err = status_err;
-        let pending_approval = pending_approval;
-        let tool_busy = tool_busy;
-        let refresh_workspace = Arc::clone(&refresh_workspace);
-        let changelist_modal_open = changelist_modal_open;
-        let changelist_fetch_nonce = changelist_fetch_nonce;
-        move |user_text: String, asst_id: String| {
-            if let Some(prev) = abort_cell.lock().unwrap().take() {
-                prev.abort();
-            }
-            *user_cancelled_stream.lock().unwrap() = false;
-            let ac = web_sys::AbortController::new().expect("AbortController");
-            let signal = ac.signal();
-            *abort_cell.lock().unwrap() = Some(ac);
-
-            let conv = conversation_id.get();
-            let agent_role = selected_agent_role.get();
-            let appr_for_stream = approval_session_id();
-            let appr_store = appr_for_stream.clone();
-            let user_cancelled_for_spawn = Arc::clone(&user_cancelled_stream);
-
-            let on_delta: Rc<dyn Fn(String)> = {
-                let sessions = sessions;
-                let aid_act = active_id.get();
-                let asst_id = asst_id.clone();
-                Rc::new(move |chunk: String| {
-                    sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act) {
-                            if let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id) {
-                                m.text.push_str(&chunk);
-                            }
-                        }
-                    });
-                })
-            };
-            let on_done: Rc<dyn Fn()> = {
-                let sessions = sessions;
-                let aid_act = active_id.get();
-                let asst_id = asst_id.clone();
-                let abort_cell = Arc::clone(&abort_cell);
-                let user_cancelled_stream = Arc::clone(&user_cancelled_for_spawn);
-                Rc::new(move || {
-                    if *user_cancelled_stream.lock().unwrap() {
-                        *abort_cell.lock().unwrap() = None;
-                        return;
-                    }
-                    sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act)
-                            && let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id)
-                            && m.state.as_deref() == Some("loading")
-                        {
-                            // 仅收尾「仍在生成」的气泡；SSE 已 on_error 的勿覆盖 error 状态
-                            m.state = None;
-                            if m.text.trim().is_empty() {
-                                m.text = "(无回复)".to_string();
-                            }
-                        }
-                    });
-                    status_busy.set(false);
-                    *abort_cell.lock().unwrap() = None;
-                })
-            };
-            let on_error: Rc<dyn Fn(String)> = {
-                let sessions = sessions;
-                let aid_act = active_id.get();
-                let asst_id = asst_id.clone();
-                let abort_cell = Arc::clone(&abort_cell);
-                let user_cancelled_stream = Arc::clone(&user_cancelled_for_spawn);
-                Rc::new(move |msg: String| {
-                    if *user_cancelled_stream.lock().unwrap() {
-                        *abort_cell.lock().unwrap() = None;
-                        return;
-                    }
-                    sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act) {
-                            if let Some(m) = s.messages.iter_mut().find(|m| m.id == asst_id) {
-                                m.text = msg;
-                                m.state = Some("error".to_string());
-                            }
-                        }
-                    });
-                    status_busy.set(false);
-                    status_err.set(Some("对话失败".to_string()));
-                    *abort_cell.lock().unwrap() = None;
-                })
-            };
-            let on_ws: Rc<dyn Fn()> = {
-                let changelist_modal_open = changelist_modal_open;
-                let changelist_fetch_nonce = changelist_fetch_nonce;
-                let refresh_workspace = Arc::clone(&refresh_workspace);
-                Rc::new(move || {
-                    refresh_workspace();
-                    if changelist_modal_open.get_untracked() {
-                        changelist_fetch_nonce.update(|x| *x = x.wrapping_add(1));
-                    }
-                })
-            };
-            let on_tool_status: Rc<dyn Fn(bool)> = {
-                let tool_busy = tool_busy;
-                Rc::new(move |b: bool| {
-                    tool_busy.set(b);
-                })
-            };
-            let on_tool_result: Rc<dyn Fn(ToolResultInfo)> = {
-                let sessions = sessions;
-                let aid_act = active_id.get();
-                Rc::new(move |info: ToolResultInfo| {
-                    let t = tool_card_text(&info);
-                    let id = make_message_id();
-                    sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid_act) {
-                            s.messages.push(StoredMessage {
-                                id,
-                                role: "system".to_string(),
-                                text: t,
-                                state: None,
-                                is_tool: true,
-                                created_at: message_created_ms(),
-                            });
-                        }
-                    });
-                })
-            };
-            let on_approval: Rc<dyn Fn(CommandApprovalRequest)> = {
-                let pending_approval = pending_approval;
-                let sid = appr_store.clone();
-                Rc::new(move |req: CommandApprovalRequest| {
-                    pending_approval.set(Some((sid.clone(), req.command, req.args)));
-                })
-            };
-            let on_cid: Rc<dyn Fn(String)> = {
-                let conversation_id = conversation_id;
-                let conversation_revision = conversation_revision;
-                Rc::new(move |id: String| {
-                    conversation_id.set(Some(id));
-                    conversation_revision.set(None);
-                })
-            };
-            let on_conv_rev: Rc<dyn Fn(u64)> = {
-                let conversation_revision = conversation_revision;
-                Rc::new(move |rev: u64| {
-                    conversation_revision.set(Some(rev));
-                })
-            };
-
-            let cbs = ChatStreamCallbacks {
-                on_delta,
-                on_done: on_done.clone(),
-                on_error: on_error.clone(),
-                on_workspace_changed: on_ws,
-                on_tool_status,
-                on_tool_result,
-                on_approval,
-                on_conversation_id: on_cid,
-                on_conversation_revision: on_conv_rev,
-            };
-
-            spawn_local(async move {
-                let stream_result = send_chat_stream(
-                    user_text,
-                    conv,
-                    agent_role,
-                    Some(appr_for_stream),
-                    &signal,
-                    cbs.clone(),
-                )
-                .await;
-                if let Err(e) = stream_result {
-                    if *user_cancelled_for_spawn.lock().unwrap() {
-                        return;
-                    }
-                    // `stream stopped`：SSE 控制面已调用 `on_error`，勿再收尾以免覆盖助手气泡。
-                    if e == "stream stopped" {
-                        return;
-                    }
-                    status_err.set(Some(e.clone()));
-                    on_error(e);
-                }
-            });
-        }
-    });
-
-    let run_send_message: Arc<dyn Fn() + Send + Sync> = Arc::new({
-        let attach = Arc::clone(&attach_chat_stream);
-        let auto_scroll_chat = auto_scroll_chat;
-        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
-        move || {
-            let text = composer_draft_buffer.lock().unwrap().trim().to_string();
-            if text.is_empty() || !initialized.get() || status_busy.get() {
-                return;
-            }
-            auto_scroll_chat.set(true);
-            let uid = make_message_id();
-            let asst_id = make_message_id();
-            patch_active_session(sessions, &active_id.get(), |s| {
-                let now = message_created_ms();
-                let is_first_user_turn =
-                    s.messages.iter().filter(|m| m.role == "user").count() == 0;
-                s.messages.push(StoredMessage {
-                    id: uid.clone(),
-                    role: "user".to_string(),
-                    text: text.clone(),
-                    state: None,
-                    is_tool: false,
-                    created_at: now,
-                });
-                s.messages.push(StoredMessage {
-                    id: asst_id.clone(),
-                    role: "assistant".to_string(),
-                    text: String::new(),
-                    state: Some("loading".to_string()),
-                    is_tool: false,
-                    created_at: now,
-                });
-                if is_first_user_turn && s.title == DEFAULT_CHAT_SESSION_TITLE {
-                    s.title = title_from_user_prompt(&text);
-                }
-                s.draft.clear();
-            });
-            draft.set(String::new());
-            status_busy.set(true);
-            status_err.set(None);
-            pending_approval.set(None);
-            attach(text, asst_id);
-        }
-    });
-
-    // 由消息气泡「重试」写入助手消息 id，Effect 中消费并发起流（避免在非 Send 的渲染闭包里捕获 Rc<dyn Fn>）。
-    let retry_assistant_target = RwSignal::new(None::<String>);
-    // 「从此处重试」截断后写入 (用户原文, 新助手 id)，由 Effect 调用 `attach_chat_stream`。
-    let regen_stream_after_truncate = RwSignal::new(None::<(String, String)>);
-
-    Effect::new({
-        let attach = Arc::clone(&attach_chat_stream);
-        let auto_scroll_chat = auto_scroll_chat;
-        move |_| {
-            let Some(failed_asst_id) = retry_assistant_target.get() else {
-                return;
-            };
-            // 先消费信号，避免在 `status_busy` 等依赖触发下反复入队同一次重试。
-            retry_assistant_target.set(None);
-            if !initialized.get() || status_busy.get() {
-                return;
-            }
-            let aid = active_id.get();
-            let mut prepared: Option<(String, String)> = None;
-            sessions.update(|list| {
-                prepared = prepare_retry_failed_assistant_turn(list, &aid, &failed_asst_id);
-            });
-            let Some((user_text, asst_id)) = prepared else {
-                return;
-            };
-            auto_scroll_chat.set(true);
-            status_busy.set(true);
-            status_err.set(None);
-            pending_approval.set(None);
-            attach(user_text, asst_id);
-        }
-    });
-
-    Effect::new({
-        let attach = Arc::clone(&attach_chat_stream);
-        let auto_scroll_chat = auto_scroll_chat;
-        move |_| {
-            let Some((user_text, asst_id)) = regen_stream_after_truncate.get() else {
-                return;
-            };
-            regen_stream_after_truncate.set(None);
-            if !initialized.get() || status_busy.get() {
-                return;
-            }
-            auto_scroll_chat.set(true);
-            status_busy.set(true);
-            status_err.set(None);
-            pending_approval.set(None);
-            attach(user_text, asst_id);
-        }
-    });
-
-    let cancel_stream: Arc<dyn Fn() + Send + Sync> =
-        Arc::new({
-            let abort_cell = Arc::clone(&abort_cell);
-            let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
-            move || {
-                if abort_cell.lock().unwrap().is_none() {
-                    return;
-                }
-                *user_cancelled_stream.lock().unwrap() = true;
-                if let Some(ac) = abort_cell.lock().unwrap().take() {
-                    ac.abort();
-                }
-                let aid = active_id.get();
-                sessions.update(|list| {
-                    if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                        if let Some(m) = s.messages.iter_mut().rev().find(|m| {
-                            m.role == "assistant" && m.state.as_deref() == Some("loading")
-                        }) {
-                            m.state = None;
-                            if m.text.trim().is_empty() {
-                                m.text = "已停止".to_string();
-                            } else {
-                                m.text.push_str("\n\n[已停止]");
-                            }
-                        }
-                    }
-                });
-                status_busy.set(false);
-                tool_busy.set(false);
-            }
-        });
+    let chat_wires = wire_chat_composer_streams(
+        initialized,
+        sessions,
+        active_id,
+        draft,
+        conversation_id,
+        conversation_revision,
+        selected_agent_role,
+        status_busy,
+        status_err,
+        pending_approval,
+        tool_busy,
+        Arc::clone(&composer_draft_buffer),
+        auto_scroll_chat,
+        Arc::clone(&abort_cell),
+        Arc::clone(&user_cancelled_stream),
+        Arc::clone(&refresh_workspace),
+        changelist_modal_open,
+        changelist_fetch_nonce,
+    );
 
     let toggle_task: Arc<dyn Fn(String) + Send + Sync> = Arc::new({
         move |id: String| {
@@ -928,33 +444,6 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    let new_session = {
-        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
-        move || {
-            let prev = active_id.get_untracked();
-            if !prev.is_empty() {
-                let buf = composer_draft_buffer.lock().unwrap().clone();
-                flush_composer_draft_to_session(sessions, &prev, &buf);
-            }
-            let now = js_sys::Date::now() as i64;
-            let s = ChatSession {
-                id: make_session_id(),
-                title: DEFAULT_CHAT_SESSION_TITLE.to_string(),
-                draft: String::new(),
-                messages: vec![],
-                updated_at: now,
-            };
-            let id = s.id.clone();
-            sessions.update(|list| {
-                list.insert(0, s);
-            });
-            active_id.set(id);
-            draft.set(String::new());
-            conversation_id.set(None);
-            conversation_revision.set(None);
-        }
-    };
-
     let side_resize_session: Rc<RefCell<Option<(f64, f64)>>> = Rc::new(RefCell::new(None));
     let side_resize_handles: Rc<RefCell<Option<(WindowListenerHandle, WindowListenerHandle)>>> =
         Rc::new(RefCell::new(None));
@@ -962,6 +451,11 @@ pub fn App() -> impl IntoView {
 
     let composer_buf_nav = Arc::clone(&composer_draft_buffer);
     let composer_buf_ta = Arc::clone(&composer_draft_buffer);
+
+    let new_session = {
+        let inner = chat_wires.new_session.clone();
+        move || inner()
+    };
 
     view! {
         <div class="app-root app-shell-ds">
@@ -1029,14 +523,14 @@ pub fn App() -> impl IntoView {
                         chat_find_cursor,
                         composer_input_ref,
                         composer_buf_ta.clone(),
-                        run_send_message.clone(),
-                        Arc::clone(&cancel_stream),
+                        chat_wires.run_send_message.clone(),
+                        Arc::clone(&chat_wires.cancel_stream),
                         status_busy,
                         initialized,
                         conversation_id,
                         conversation_revision,
-                        regen_stream_after_truncate,
-                        retry_assistant_target,
+                        chat_wires.regen_stream_after_truncate,
+                        chat_wires.retry_assistant_target,
                         status_err,
                     )}
 
