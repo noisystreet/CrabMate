@@ -1,8 +1,5 @@
 //! 主区会话内查找：匹配 id 列表、光标与首条滚入视图。
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -20,8 +17,8 @@ pub(super) fn wire_chat_find_matches(
     chat_find_cursor: RwSignal<usize>,
     auto_scroll_chat: RwSignal<bool>,
 ) {
-    let chat_find_prev_key: Rc<RefCell<(String, String)>> =
-        Rc::new(RefCell::new((String::new(), String::new())));
+    // 上一次用于生成匹配列表的 `(规范化查询, 活动会话 id)`；非响应式，仅避免同键重复重置光标。
+    let chat_find_prev_key = StoredValue::new((String::new(), String::new()));
     Effect::new({
         let sessions = sessions;
         let active_id = active_id;
@@ -29,7 +26,6 @@ pub(super) fn wire_chat_find_matches(
         let chat_find_match_ids = chat_find_match_ids;
         let chat_find_cursor = chat_find_cursor;
         let auto_scroll_chat = auto_scroll_chat;
-        let chat_find_prev_key = Rc::clone(&chat_find_prev_key);
         move |_| {
             let aid = active_id.get();
             let q = normalize_search_query(&chat_find_query.get());
@@ -50,11 +46,17 @@ pub(super) fn wire_chat_find_matches(
                 })
             };
             chat_find_match_ids.set(ids.clone());
-            let mut prev = chat_find_prev_key.borrow_mut();
-            let key_changed = prev.0 != q || prev.1 != aid;
+            let key_changed = chat_find_prev_key
+                .try_update_value(|prev| {
+                    let key_changed = prev.0 != q || prev.1 != aid;
+                    if key_changed {
+                        prev.0 = q.clone();
+                        prev.1 = aid.clone();
+                    }
+                    key_changed
+                })
+                .unwrap_or(true);
             if key_changed {
-                prev.0 = q.clone();
-                prev.1 = aid.clone();
                 chat_find_cursor.set(0);
                 if !q.is_empty() && !ids.is_empty() {
                     auto_scroll_chat.set(false);
