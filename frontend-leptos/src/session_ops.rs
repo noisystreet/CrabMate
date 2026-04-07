@@ -152,16 +152,16 @@ pub fn format_msg_time_label(ms: i64) -> Option<String> {
     Some(format!("{h:02}:{m:02}"))
 }
 
-pub fn message_role_label(m: &StoredMessage) -> &'static str {
+pub fn message_role_label(m: &StoredMessage, locale: crate::i18n::Locale) -> &'static str {
     // 工具结果气泡用 `msg-tool` 样式区分，不再显示「工具」字样。
     if m.is_tool {
         return "";
     }
     match m.role.as_str() {
-        "user" => "用户",
-        "assistant" => "助手",
-        "system" => "系统",
-        _ => "其它",
+        "user" => crate::i18n::msg_role_user(locale),
+        "assistant" => crate::i18n::msg_role_assistant(locale),
+        "system" => crate::i18n::msg_role_system(locale),
+        _ => crate::i18n::msg_role_other(locale),
     }
 }
 
@@ -287,18 +287,19 @@ pub fn selected_text_in_messages_for_context_copy(messages: &HtmlElement) -> Opt
 }
 
 /// 将文本写入系统剪贴板；失败时 `window.alert` 简短提示。
-pub fn write_clipboard_text(text: &str) {
+pub fn write_clipboard_text(text: &str, locale: crate::i18n::Locale) {
     let Some(w) = web_sys::window() else {
         return;
     };
     let t = text.to_string();
+    let msg = crate::i18n::clipboard_failed(locale).to_string();
     wasm_bindgen_futures::spawn_local(async move {
         let nav = w.navigator();
         let clip = nav.clipboard();
         match JsFuture::from(clip.write_text(&t)).await {
             Ok(_) => {}
             Err(_) => {
-                let _ = w.alert_with_message("复制失败：浏览器未授权剪贴板或不可用。");
+                let _ = w.alert_with_message(&msg);
             }
         }
     });
@@ -325,14 +326,13 @@ pub fn delete_session_after_confirm(
     draft: RwSignal<String>,
     conversation_id: RwSignal<Option<String>>,
     id: &str,
+    locale: crate::i18n::Locale,
 ) {
     let Some(w) = web_sys::window() else {
         return;
     };
-    if !w
-        .confirm_with_message("确定删除此本地会话？此操作不可恢复。")
-        .unwrap_or(false)
-    {
+    let confirm_msg = crate::i18n::delete_session_confirm(locale);
+    if !w.confirm_with_message(confirm_msg).unwrap_or(false) {
         return;
     }
     let id = id.to_string();

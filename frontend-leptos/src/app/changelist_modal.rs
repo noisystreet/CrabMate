@@ -1,13 +1,14 @@
 //! 工作区变更预览模态（视图 + fetch / innerHTML 副作用）。
 
+use gloo_timers::future::TimeoutFuture;
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-
-use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen::JsCast;
 
+use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::api::fetch_workspace_changelog;
+use crate::i18n::{self, Locale};
 use crate::markdown;
 
 /// `changelist_fetch_nonce` 递增后拉取 `GET /workspace/changelog`；`nonce==0` 时不请求。
@@ -83,12 +84,32 @@ pub(super) fn wire_changelist_body_inner_html(
 
 pub fn changelist_modal_view(
     changelist_modal_open: RwSignal<bool>,
+    locale: RwSignal<Locale>,
     changelist_modal_loading: RwSignal<bool>,
     changelist_modal_err: RwSignal<Option<String>>,
     changelist_modal_rev: RwSignal<u64>,
     changelist_fetch_nonce: RwSignal<u64>,
     changelist_body_ref: NodeRef<Div>,
 ) -> impl IntoView {
+    let dialog_ref = NodeRef::<Div>::new();
+
+    Effect::new({
+        let dialog_ref = dialog_ref.clone();
+        let open = changelist_modal_open;
+        move |_| {
+            if !open.get() {
+                return;
+            }
+            let r = dialog_ref.clone();
+            spawn_local(async move {
+                TimeoutFuture::new(0).await;
+                if let Some(el) = r.get() {
+                    focus_first_in_modal_container(el.as_ref());
+                }
+            });
+        }
+    });
+
     view! {
             <Show when=move || changelist_modal_open.get()>
                 <div class="changelist-modal-layer">
@@ -99,18 +120,28 @@ pub fn changelist_modal_view(
                     ></div>
                     <div
                         class="changelist-modal"
+                        node_ref=dialog_ref
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="changelist-modal-title"
+                        tabindex="-1"
                         on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Tab" {
+                                if let Some(el) = dialog_ref.get() {
+                                    trap_tab_in_container(&ev, el.as_ref());
+                                }
+                            }
+                        }
                     >
                         <div class="changelist-modal-head">
                             <h2 id="changelist-modal-title" class="changelist-modal-title">
-                                "会话工作区变更"
+                                {move || i18n::changelist_title(locale.get())}
                             </h2>
                             <span class="changelist-modal-rev">{move || {
-                                if changelist_modal_rev.get() > 0 {
-                                    format!("rev {}", changelist_modal_rev.get())
+                                let n = changelist_modal_rev.get();
+                                if n > 0 {
+                                    i18n::changelist_rev(locale.get(), n)
                                 } else {
                                     String::new()
                                 }
@@ -124,20 +155,20 @@ pub fn changelist_modal_view(
                                         changelist_fetch_nonce.update(|x| *x = x.wrapping_add(1));
                                     }
                                 >
-                                    "刷新"
+                                    {move || i18n::changelist_refresh(locale.get())}
                                 </button>
                                 <button
                                     type="button"
                                     class="btn btn-muted btn-sm"
                                     on:click=move |_| changelist_modal_open.set(false)
                                 >
-                                    "关闭"
+                                    {move || i18n::settings_close(locale.get())}
                                 </button>
                             </div>
                         </div>
                         <div class="changelist-modal-body">
                             <Show when=move || changelist_modal_loading.get()>
-                                <p class="changelist-modal-status">"加载中…"</p>
+                                <p class="changelist-modal-status">{move || i18n::changelist_loading(locale.get())}</p>
                             </Show>
                             <Show when=move || changelist_modal_err.get().is_some()>
                                 <p class="msg-error">{move || {

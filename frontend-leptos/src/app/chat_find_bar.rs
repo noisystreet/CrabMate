@@ -3,11 +3,13 @@
 use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
 
+use crate::i18n::{self, Locale};
 use crate::session_search::scroll_message_into_view;
 
 #[component]
 pub fn ChatFindBar(
     chat_find_panel_open: RwSignal<bool>,
+    locale: RwSignal<Locale>,
     chat_find_query: RwSignal<String>,
     chat_find_match_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
@@ -15,13 +17,13 @@ pub fn ChatFindBar(
 ) -> impl IntoView {
     view! {
         <div class="chat-find-wrap">
-            <div class="chat-find-bar" role="search" aria-label="在当前会话中查找">
-                <label class="chat-find-label" for="chat-find-input">"查找"</label>
+            <div class="chat-find-bar" role="search" prop:aria-label=move || i18n::chat_find_region(locale.get())>
+                <label class="chat-find-label" for="chat-find-input">{move || i18n::chat_find_label(locale.get())}</label>
                 <input
                     id="chat-find-input"
                     type="search"
                     class="chat-find-input"
-                    placeholder="当前会话消息…"
+                    prop:placeholder=move || i18n::chat_find_ph(locale.get())
                     prop:value=move || chat_find_query.get()
                     on:input=move |ev| {
                         chat_find_query.set(event_target_value(&ev));
@@ -36,7 +38,7 @@ pub fn ChatFindBar(
                         let n = chat_find_match_ids.with(|v| v.len());
                         let c = chat_find_cursor.get();
                         if n == 0 {
-                            "无匹配".to_string()
+                            i18n::chat_find_no_match(locale.get()).to_string()
                         } else {
                             format!("{} / {}", c + 1, n)
                         }
@@ -45,7 +47,7 @@ pub fn ChatFindBar(
                 <button
                     type="button"
                     class="btn btn-muted btn-sm chat-find-nav"
-                    title="上一条匹配"
+                    prop:title=move || i18n::chat_find_prev_title(locale.get())
                     prop:disabled=move || {
                         chat_find_query.get().trim().is_empty()
                             || chat_find_match_ids.with(|v| v.is_empty())
@@ -72,7 +74,7 @@ pub fn ChatFindBar(
                 <button
                     type="button"
                     class="btn btn-muted btn-sm chat-find-nav"
-                    title="下一条匹配"
+                    prop:title=move || i18n::chat_find_next_title(locale.get())
                     prop:disabled=move || {
                         chat_find_query.get().trim().is_empty()
                             || chat_find_match_ids.with(|v| v.is_empty())
@@ -95,8 +97,8 @@ pub fn ChatFindBar(
                 <button
                     type="button"
                     class="btn btn-muted btn-sm chat-find-close"
-                    title="收起查找栏"
-                    aria-label="收起查找栏"
+                    prop:title=move || i18n::chat_find_close_title(locale.get())
+                    prop:aria-label=move || i18n::chat_find_close_aria(locale.get())
                     on:click=move |_| chat_find_panel_open.set(false)
                 >
                     "×"
