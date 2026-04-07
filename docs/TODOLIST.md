@@ -81,12 +81,12 @@
 
 ## `sse/`（协议与行分类）
 
-**职责摘要**：`protocol` 编码控制面 JSON；`line` 供 Rust 侧行分类（与 `frontend/src/api.ts` 语义对齐）。
+**职责摘要**：`protocol` 编码控制面 JSON；`line` 供 Rust 侧行分类（与 `frontend-leptos/src/sse_dispatch.rs` / `api.rs` 消费语义对齐）。
 
 - [ ] **协议版本演进**：`SSE_PROTOCOL_VERSION` bump 时的双端兼容与特性协商（前端分支解析）。
 - [ ] **断线重连（可选）**：`Last-Event-ID` 或自定义游标，配合浏览器端重试。
 - [ ] **调试/运维事件**：不脱敏前提下可关闭的 `debug` 类 payload（阶段名、耗时等），仅开发模式启用。
-- [ ] **与 TypeScript 类型同源**：减少手写 `api.ts` 与 Rust 结构体漂移（生成或共享契约测试）。
+- [ ] **与 Leptos 前端契约同源**：减少 `frontend-leptos/src/api.rs` / `sse_dispatch.rs` 与 Rust 后端结构体漂移（生成或共享契约测试）。
 - [ ] **错误码全集文档化**：`error.code` 与 HTTP 状态在 `DEVELOPMENT`/`README` 可查。
 
 ---
@@ -123,9 +123,9 @@
 
 ---
 
-## `frontend/`（Web UI）
+## `frontend-leptos/`（Web UI，Leptos CSR + WASM）
 
-**职责摘要**：`api.ts`、各 Panel 组件、`sessionStore`、`chatExport` 等。
+**职责摘要**：根入口 `frontend-leptos/src/lib.rs`；HTTP/SSE 与本地存储见 `api.rs`、`sse_dispatch.rs`、`storage.rs`、`app_prefs.rs`；主界面 `app/mod.rs`（`chat_column`、`chat_composer`、`chat_message_render`、`sidebar_nav`、`side_column`、`workspace_panel`、各 `*_modal` 等）；会话与导出见 `session_ops.rs`、`session_export.rs`、`session_search.rs`；Markdown 与展示见 `markdown.rs`、`assistant_body.rs`、`message_format.rs`；样式与打包见 `frontend-leptos/styles/*.css`、`index.html`、`Trunk.toml`。
 
 - [ ] **浏览器侧多轮状态**：与后端会话 API 同步，刷新不丢、可选加密本地缓存（与 P1 同向）。
 - [ ] **聊天列表虚拟化**：极长对话下减少 DOM 与重渲染。
