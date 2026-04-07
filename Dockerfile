@@ -31,7 +31,7 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --pr
     && rustup component add rustfmt clippy \
     && rustup target add wasm32-unknown-unknown
 
-# Trunk：构建 frontend-leptos（`cd frontend-leptos && trunk build`）
+# Trunk：构建 frontend-leptos（开发 `trunk build`；发布体积用 `trunk build --release`）
 RUN cargo install trunk --locked
 
 # 非 root：挂载宿主目录时避免 root 写文件权限问题

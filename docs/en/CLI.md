@@ -161,7 +161,8 @@ Keep this section in sync with `README.md` when export behavior changes.
 ## Frontend build and Web
 
 ```bash
-cd frontend-leptos && trunk build && cd ..
+cd frontend-leptos && trunk build && cd ..   # dev (faster, no wasm-opt)
+# For production WASM size: cd frontend-leptos && trunk build --release && cd ..
 cargo run -- serve
 ```
 
@@ -192,7 +193,7 @@ SSE control-plane fields: **`docs/SSE_PROTOCOL.md`**.
 
 ```bash
 cargo install cargo-deb
-cd frontend-leptos && trunk build && cd ..
+cd frontend-leptos && trunk build --release && cd ..
 cargo build --release
 cargo deb
 sudo dpkg -i target/debian/crabmate_*.deb

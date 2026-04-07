@@ -78,20 +78,21 @@ export API_KEY="your-api-key"
 cargo build
 cargo run              # default: interactive CLI
 
-cd frontend-leptos && trunk build
+cd frontend-leptos && trunk build   # dev: faster, no wasm-opt
+# For release-sized WASM: trunk build --release
 cargo run -- serve     # Web, default :8080 (serves frontend-leptos/dist)
 ```
 
 **CLI**: Slash commands and `bash#:` are documented in [docs/en/CLI.md](docs/en/CLI.md).
 
-**Frontend**: run `cd frontend-leptos && trunk build` before `serve` (static assets from `frontend-leptos/dist`).
+**Frontend**: run `cd frontend-leptos && trunk build` before `serve` (static assets from `frontend-leptos/dist`). Use **`trunk build --release`** for production-sized WASM (default `wasm-opt`); see **`frontend-leptos/README.md`** / **`docs/DEVELOPMENT.md`**.
 
 **Config**: Embedded defaults under `config/*.toml` plus optional `config.toml`; `system_prompt_file` can be edited without rebuild (path resolution in CONFIGURATION).
 
 ## Build and packaging
 
 - **Debug**: `cargo build` → `target/debug/crabmate`
-- **Release**: `cargo build --release`; run `cd frontend-leptos && trunk build` before `serve`
+- **Release**: `cargo build --release`; run `cd frontend-leptos && trunk build --release` before `serve` (WASM optimized)
 - **Maintainers**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`
 - **Install**: `cargo install --path .`
 - **Man page**: `cargo run --bin crabmate-gen-man`
