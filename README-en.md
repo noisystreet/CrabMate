@@ -67,6 +67,7 @@ Vendor docs are authoritative for model IDs, limits, and vendor-specific fields;
 ## Quick start
 
 - **Rust**: 1.85+ (edition 2024, see [AGENTS.md](AGENTS.md))
+- **Docker dev image** (optional): root [Dockerfile](Dockerfile) on **Ubuntu 24.04** with stable Rust, `wasm32-unknown-unknown`, `rustfmt` / `clippy`, `trunk`, `libssl-dev`, `libssh2-1-dev`, `g++` (matches `.cargo/config.toml` Linux linker notes). Example: `docker build -t crabmate-dev .` then `docker run --rm -it -v "$(pwd)":/workspace -w /workspace crabmate-dev`. If your host UID/GID ≠ 1000, pass `--build-arg DEV_UID=$(id -u) --build-arg DEV_GID=$(id -g)` on build. Does **not** include `pre-commit` or Node by default.
 - **Env**: `API_KEY` for cloud Bearer when `llm_http_auth_mode=bearer` (not required for `doctor` / `save-session`, etc.). `AGENT_API_BASE`, `AGENT_MODEL` override config. See CONFIGURATION for the full `AGENT_*` list.
 
 ```bash
