@@ -11,6 +11,7 @@ use web_sys::KeyboardEvent;
 
 use crate::api::{TaskItem, TasksData, WorkspaceData, fetch_workspace_pick, post_workspace_set};
 use crate::app_prefs::SidePanelView;
+use crate::i18n::{self, Locale};
 use crate::workspace_shell::{begin_side_column_resize, reload_workspace_panel};
 use crate::workspace_tree::WorkspaceFilesystemTree;
 
@@ -63,6 +64,7 @@ fn SideColumnTasksLoadedPane(
 
 #[component]
 fn SideColumnTasksCard(
+    locale: RwSignal<Locale>,
     tasks_loading: RwSignal<bool>,
     tasks_err: RwSignal<Option<String>>,
     tasks_data: RwSignal<TasksData>,
@@ -74,17 +76,17 @@ fn SideColumnTasksCard(
             <div class="side-card">
                 <div class="side-card-head">
                     <div class="side-head-main">
-                        <div class="side-pane-title">"任务清单"</div>
+                        <div class="side-pane-title">{move || i18n::tasks_title(locale.get())}</div>
                         <span class="side-head-stat">{move || {
                             if tasks_loading.get() {
-                                "加载中…".to_string()
+                                i18n::tasks_loading(locale.get()).to_string()
                             } else if tasks_err.get().is_some() {
-                                "错误".to_string()
+                                i18n::tasks_error(locale.get()).to_string()
                             } else {
                                 let items = tasks_data.get().items;
                                 let total = items.len();
                                 let done = items.iter().filter(|t| t.done).count();
-                                format!("{done}/{total} 完成")
+                                i18n::tasks_done_ratio(locale.get(), done, total)
                             }
                         }}</span>
                     </div>
@@ -96,12 +98,12 @@ fn SideColumnTasksCard(
                             move |_| refresh_tasks()
                         }
                     >
-                        "刷新"
+                        {move || i18n::tasks_refresh(locale.get())}
                     </button>
                 </div>
                 <div class="side-card-body">
                     <Show when=move || tasks_loading.get()>
-                        <div class="skeleton-stack" aria-busy="true" aria-label="加载任务">
+                        <div class="skeleton-stack" aria-busy="true" prop:aria-label=move || i18n::tasks_loading_aria(locale.get())>
                             <ul class="tasks-list tasks-list-skeleton">
                                 <li><span class="skeleton skeleton-task-check"></span><span class="skeleton skeleton-line skeleton-task-line"></span></li>
                                 <li><span class="skeleton skeleton-task-check"></span><span class="skeleton skeleton-line skeleton-task-line"></span></li>
@@ -125,6 +127,7 @@ fn SideColumnTasksCard(
 
 #[allow(clippy::too_many_arguments)]
 pub fn side_column_view(
+    locale: RwSignal<Locale>,
     side_resize_dragging: RwSignal<bool>,
     side_panel_view: RwSignal<SidePanelView>,
     side_width: RwSignal<f64>,
@@ -167,7 +170,7 @@ pub fn side_column_view(
                     }
                     role="separator"
                     aria-orientation="vertical"
-                    aria-label="拖拽调整右列宽度"
+                    prop:aria-label=move || i18n::side_resize_handle(locale.get())
                     on:mousedown={
                         let sess = Rc::clone(&side_resize_session);
                         let hands = Rc::clone(&side_resize_handles);
@@ -201,7 +204,7 @@ pub fn side_column_view(
                         }
                     }
                 >
-                        <div class="shell-main-toolbar" role="toolbar" aria-label="视图与设置">
+                        <div class="shell-main-toolbar" role="toolbar" prop:aria-label=move || i18n::side_toolbar_aria(locale.get())>
                             <div class="toolbar-view-wrap">
                                 <Show when=move || view_menu_open.get()>
                                     <div
@@ -215,15 +218,12 @@ pub fn side_column_view(
                                     class:active=move || !matches!(side_panel_view.get(), SidePanelView::None)
                                     class:toolbar-view-trigger-open=move || view_menu_open.get()
                                     on:click=move |_| view_menu_open.update(|o| *o = !*o)
-                                    title="选择侧栏：隐藏 / 工作区 / 任务"
+                                    prop:title=move || i18n::side_view_menu_title(locale.get())
                                 >
-                                    {move || {
-                                        let suffix = if view_menu_open.get() { "▴" } else { "▾" };
-                                        format!("视图{suffix}")
-                                    }}
+                                    {move || i18n::side_view_label(locale.get(), view_menu_open.get())}
                                 </button>
                                 <Show when=move || view_menu_open.get()>
-                                    <div class="toolbar-view-menu" role="menu" aria-label="侧栏视图">
+                                    <div class="toolbar-view-menu" role="menu" prop:aria-label=move || i18n::side_view_menu_aria(locale.get())>
                                         <button
                                             type="button"
                                             class="toolbar-view-menu-item"
@@ -234,7 +234,7 @@ pub fn side_column_view(
                                                 view_menu_open.set(false);
                                             }
                                         >
-                                            "隐藏侧栏"
+                                            {move || i18n::side_panel_hide(locale.get())}
                                         </button>
                                         <button
                                             type="button"
@@ -246,7 +246,7 @@ pub fn side_column_view(
                                                 view_menu_open.set(false);
                                             }
                                         >
-                                            "工作区"
+                                            {move || i18n::side_panel_workspace(locale.get())}
                                         </button>
                                         <button
                                             type="button"
@@ -258,7 +258,7 @@ pub fn side_column_view(
                                                 view_menu_open.set(false);
                                             }
                                         >
-                                            "任务"
+                                            {move || i18n::side_panel_tasks(locale.get())}
                                         </button>
                                     </div>
                                 </Show>
@@ -268,17 +268,17 @@ pub fn side_column_view(
                                 class="btn btn-secondary btn-sm"
                                 class:active=move || status_bar_visible.get()
                                 on:click=move |_| status_bar_visible.update(|v| *v = !*v)
-                                title="状态栏"
+                                prop:title=move || i18n::side_status_btn_title(locale.get())
                             >
-                                "状态"
+                                {move || i18n::side_status_btn(locale.get())}
                             </button>
                             <button
                                 type="button"
                                 class="btn btn-secondary btn-sm"
                                 on:click=move |_| settings_modal.set(true)
-                                title="外观与背景"
+                                prop:title=move || i18n::side_settings_title(locale.get())
                             >
-                                "设置"
+                                {move || i18n::side_settings_btn(locale.get())}
                             </button>
                         </div>
                         <div class="side-body">
@@ -297,9 +297,9 @@ pub fn side_column_view(
                                                 <div class="side-head-main">
                                                     <span class="side-head-stat">{move || {
                                                         if workspace_loading.get() {
-                                                            "加载中…".to_string()
+                                                            i18n::changelist_loading(locale.get()).to_string()
                                                         } else {
-                                                            "错误".to_string()
+                                                            i18n::tasks_error(locale.get()).to_string()
                                                         }
                                                     }}</span>
                                                 </div>
@@ -310,7 +310,7 @@ pub fn side_column_view(
                                             {move || {
                                                 if workspace_loading.get() {
                                                     view! {
-                                                        <div class="skeleton-stack" aria-busy="true" aria-label="加载工作区">
+                                                        <div class="skeleton-stack" aria-busy="true" prop:aria-label=move || i18n::ws_loading_aria(locale.get())>
                                                             <div class="skeleton skeleton-block skeleton-ws-path"></div>
                                                             <ul class="workspace-list workspace-list-skeleton">
                                                                 <li><span class="skeleton skeleton-line skeleton-ws-row"></span></li>
@@ -326,13 +326,13 @@ pub fn side_column_view(
                                                     view! {
                                                         <div class="side-card-loaded">
                                                             <div class="workspace-set">
-                                                                <div class="workspace-set-label">"工作区根目录"</div>
+                                                                <div class="workspace-set-label">{move || i18n::ws_root_label(locale.get())}</div>
                                                                 <div class="workspace-set-input-row">
                                                                     <input
                                                                         type="text"
                                                                         class="workspace-set-input"
-                                                                        placeholder="绝对路径（允许根内）；浏览选目录将自动生效，手动输入后按 Enter"
-                                                                        title="在运行 serve 的机器上选目录后会立即提交；亦可手输路径后按 Enter"
+                                                                        prop:placeholder=move || i18n::ws_input_ph(locale.get())
+                                                                        prop:title=move || i18n::ws_input_title(locale.get())
                                                                         prop:value=move || workspace_path_draft.get()
                                                                         on:input=move |ev| {
                                                                             workspace_path_draft
@@ -350,7 +350,7 @@ pub fn side_column_view(
                                                                                 .to_string();
                                                                             if p.is_empty() {
                                                                                 workspace_set_err.set(Some(
-                                                                                    "请填写目录路径。".into(),
+                                                                                    i18n::ws_path_required(locale.get()).to_string(),
                                                                                 ));
                                                                                 return;
                                                                             }
@@ -386,7 +386,7 @@ pub fn side_column_view(
                                                                     <button
                                                                         type="button"
                                                                         class="btn btn-secondary btn-sm workspace-set-browse"
-                                                                        title="在运行 serve 的机器上打开系统选目录对话框"
+                                                                        prop:title=move || i18n::ws_browse_title(locale.get())
                                                                         prop:disabled=move || {
                                                                             workspace_pick_busy.get()
                                                                                 || workspace_set_busy.get()
@@ -420,8 +420,7 @@ pub fn side_column_view(
                                                                                     }
                                                                                     Ok(None) => {
                                                                                         workspace_set_err.set(Some(
-                                                                                            "未选择目录，或服务端无法弹窗（无图形/无头/SSH 远端）。请手动填写路径后按 Enter。"
-                                                                                                .into(),
+                                                                                            i18n::ws_pick_none(locale.get()).to_string(),
                                                                                         ));
                                                                                     }
                                                                                     Err(e) => {
@@ -434,9 +433,9 @@ pub fn side_column_view(
                                                                     >
                                                                         {move || {
                                                                             if workspace_pick_busy.get() {
-                                                                                "…"
+                                                                                i18n::ws_browse_busy(locale.get()).to_string()
                                                                             } else {
-                                                                                "浏览…"
+                                                                                i18n::ws_browse_label(locale.get()).to_string()
                                                                             }
                                                                         }}
                                                                     </button>
@@ -481,19 +480,19 @@ pub fn side_column_view(
                                                         move |_| refresh_workspace()
                                                     }
                                                 >
-                                                    "刷新列表"
+                                                    {move || i18n::ws_refresh_list(locale.get())}
                                                 </button>
                                                 <button
                                                     type="button"
                                                     class="btn btn-muted btn-sm workspace-changelog-btn"
-                                                    title="查看本会话工具写入的 unified diff 摘要（与注入模型的变更集同源）"
+                                                    prop:title=move || i18n::ws_changelog_title(locale.get())
                                                     on:click=move |_| {
                                                         changelist_modal_open.set(true);
                                                         changelist_fetch_nonce
                                                             .update(|x| *x = x.wrapping_add(1));
                                                     }
                                                 >
-                                                    "变更预览"
+                                                    {move || i18n::ws_changelog_btn(locale.get())}
                                                 </button>
                                             </div>
                                         </div>
@@ -502,6 +501,7 @@ pub fn side_column_view(
                             </Show>
                             <Show when=move || matches!(side_panel_view.get(), SidePanelView::Tasks)>
                                 <SideColumnTasksCard
+                                    locale=locale
                                     tasks_loading=tasks_loading
                                     tasks_err=tasks_err
                                     tasks_data=tasks_data

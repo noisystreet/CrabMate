@@ -6,11 +6,13 @@
 #![allow(clippy::redundant_locals)]
 #![allow(clippy::clone_on_copy)]
 
+mod a11y;
 mod api;
 mod app;
 mod app_prefs;
 mod assistant_body;
 mod debounce_schedule;
+mod i18n;
 mod markdown;
 mod message_format;
 mod session_export;

@@ -9,6 +9,8 @@ pub const TASKS_VISIBLE_KEY: &str = "agent-demo-tasks-visible";
 pub const SIDE_PANEL_VIEW_KEY: &str = "agent-demo-side-panel-view";
 pub const STATUS_BAR_VISIBLE_KEY: &str = "agent-demo-status-bar-visible";
 pub const THEME_KEY: &str = "crabmate-theme";
+/// 界面语言：`zh-Hans` | `en`（与 `<html lang>` 一致）。
+pub const LOCALE_KEY: &str = "crabmate-locale";
 /// 为 `true` 时显示页面径向渐变光晕；`false` 时仅纯色背景（`data-bg-decor="plain"`）。
 pub const BG_DECOR_KEY: &str = "crabmate-bg-decor";
 pub const AGENT_ROLE_KEY: &str = "agent-demo-agent-role";

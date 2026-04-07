@@ -2,8 +2,11 @@
 
 use leptos::prelude::*;
 
+use crate::i18n::{self, Locale};
+
 pub fn mobile_shell_header_view(
     mobile_nav_open: RwSignal<bool>,
+    locale: RwSignal<Locale>,
     new_session: impl Fn() + Clone + 'static,
 ) -> impl IntoView {
     view! {
@@ -11,7 +14,7 @@ pub fn mobile_shell_header_view(
             <button
                 type="button"
                 class="btn btn-icon"
-                aria-label="打开菜单"
+                prop:aria-label=move || i18n::mobile_open_menu(locale.get())
                 on:click=move |_| mobile_nav_open.update(|o| *o = !*o)
             >
                 "☰"
@@ -28,7 +31,7 @@ pub fn mobile_shell_header_view(
                     }
                 }
             >
-                "新对话"
+                {move || i18n::nav_new_chat(locale.get())}
             </button>
         </div>
     }

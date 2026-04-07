@@ -435,11 +435,20 @@ flowchart LR
 
 ### `frontend-leptos/src/lib.rs`
 
-- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下（含 **`debounce_schedule`**）。
+- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下（含 **`debounce_schedule`**、`i18n`、`a11y`）。
+
+### `frontend-leptos/src/i18n.rs`
+
+- **`Locale`**：**`zh-Hans`** / **`en`**；**`localStorage`** 键 **`crabmate-locale`**（与 **`app_prefs::LOCALE_KEY`** 一致）。设置弹窗可切换语言；**`<html lang>`** 由 **`App`** 内 **`Effect`** 同步。
+- 用户可见文案按模块集中为函数；新增/修改 UI 字符串时优先在此维护，便于后续接 ICU 或更多语言。
+
+### `frontend-leptos/src/a11y.rs`
+
+- **`focus_first_in_modal_container`** / **`trap_tab_in_container`**：用于 **`settings_modal`**、**`session_list_modal`**、**`changelist_modal`** 打开时首焦与 **Tab** 循环（跳过 **`aria-hidden`** 子树）。
 
 ### `frontend-leptos/src/app/`
 
-- **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、持久化偏好 **`Effect`**、**`GET /status` / tasks** 刷新与主 `view!` 组合子视图。流式发送、草稿同步、会话切换重置等见 **`chat_composer`**；跟底与侧栏跳转滚入见 **`chat_scroll`**；会话内查找匹配见 **`chat_find`**；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
+- **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、持久化偏好 **`Effect`**、**`GET /status` / tasks** 刷新与主 `view!` 组合子视图；**全局 `Escape`**（在 **`input`/`textarea`/`contenteditable` 外**）按层级关闭聊天右键菜单、侧栏会话菜单、查找栏、视图菜单、移动抽屉、变更集/设置/会话模态。流式发送、草稿同步、会话切换重置等见 **`chat_composer`**；跟底与侧栏跳转滚入见 **`chat_scroll`**；会话内查找匹配见 **`chat_find`**；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
 - **`chat_composer.rs`**：草稿缓冲与 textarea 同步、**`send_chat_stream`** 回调编排、发送 / 停止 / 重试 / 截断再生、新会话。
 - **`chat_scroll.rs`**：消息列表指纹变化时的自动跟底、**`focus_message_id_after_nav`** 滚入视图。
 - **`chat_find.rs`**：主区查找匹配 id、光标与首条 **`scroll_message_into_view`**。

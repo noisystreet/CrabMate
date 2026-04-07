@@ -1,15 +1,21 @@
 //! 设置：主题、背景、本机模型覆盖。
 
+use gloo_timers::future::TimeoutFuture;
+use leptos::html::Div;
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 
+use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::api::{
     clear_client_llm_api_key_storage, client_llm_storage_has_api_key, persist_client_llm_to_storage,
 };
+use crate::i18n::{self, Locale, store_locale_slug};
 
 #[allow(clippy::too_many_arguments)]
 pub fn settings_modal_view(
     settings_modal: RwSignal<bool>,
+    locale: RwSignal<Locale>,
     theme: RwSignal<String>,
     bg_decor: RwSignal<bool>,
     #[allow(unused_variables)] status_data: RwSignal<Option<crate::api::StatusData>>,
@@ -20,28 +26,82 @@ pub fn settings_modal_view(
     llm_settings_feedback: RwSignal<Option<String>>,
     client_llm_storage_tick: RwSignal<u64>,
 ) -> impl IntoView {
+    let settings_dialog_ref = NodeRef::<Div>::new();
+
+    Effect::new({
+        let settings_dialog_ref = settings_dialog_ref.clone();
+        move |_| {
+            if !settings_modal.get() {
+                return;
+            }
+            let r = settings_dialog_ref.clone();
+            spawn_local(async move {
+                TimeoutFuture::new(0).await;
+                if let Some(el) = r.get() {
+                    focus_first_in_modal_container(el.as_ref());
+                }
+            });
+        }
+    });
+
     view! {
             <Show when=move || settings_modal.get()>
                 <div class="modal-backdrop" on:click=move |_| settings_modal.set(false)>
                     <div
                         class="modal"
+                        node_ref=settings_dialog_ref
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="settings-modal-title"
+                        tabindex="-1"
                         on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Tab" {
+                                if let Some(el) = settings_dialog_ref.get() {
+                                    trap_tab_in_container(&ev, el.as_ref());
+                                }
+                            }
+                        }
                     >
                         <div class="modal-head">
-                            <h2 class="modal-title" id="settings-modal-title">"设置"</h2>
-                            <span class="modal-badge">"本机"</span>
+                            <h2 class="modal-title" id="settings-modal-title">{move || i18n::settings_title(locale.get())}</h2>
+                            <span class="modal-badge">{move || i18n::settings_badge_local(locale.get())}</span>
                             <span class="modal-head-spacer"></span>
                             <button type="button" class="btn btn-ghost btn-sm" on:click=move |_| settings_modal.set(false)>
-                                "关闭"
+                                {move || i18n::settings_close(locale.get())}
                             </button>
                         </div>
                         <div class="modal-body">
-                            <p class="modal-hint">"主题与页面背景保存在本机（localStorage）。模型网关与 API 密钥也可仅存本机；发消息时会在 JSON 中附带覆盖项，请仅在可信环境（HTTPS）使用。"</p>
+                            <p class="modal-hint">{move || i18n::settings_intro(locale.get())}</p>
                             <div class="settings-block">
-                                <h3 class="settings-block-title">"主题"</h3>
+                                <h3 class="settings-block-title">{move || i18n::settings_block_language(locale.get())}</h3>
+                                <div class="settings-row">
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        class:active=move || locale.get() == Locale::ZhHans
+                                        on:click=move |_| {
+                                            locale.set(Locale::ZhHans);
+                                            store_locale_slug(Locale::ZhHans.storage_slug());
+                                        }
+                                    >
+                                        {move || i18n::settings_lang_zh(locale.get())}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        class:active=move || locale.get() == Locale::En
+                                        on:click=move |_| {
+                                            locale.set(Locale::En);
+                                            store_locale_slug(Locale::En.storage_slug());
+                                        }
+                                    >
+                                        {move || i18n::settings_lang_en(locale.get())}
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">{move || i18n::settings_block_theme(locale.get())}</h3>
                                 <div class="settings-row">
                                     <button
                                         type="button"
@@ -49,7 +109,7 @@ pub fn settings_modal_view(
                                         class:active=move || theme.get() == "dark"
                                         on:click=move |_| theme.set("dark".to_string())
                                     >
-                                        "深色"
+                                        {move || i18n::settings_theme_dark(locale.get())}
                                     </button>
                                     <button
                                         type="button"
@@ -57,35 +117,35 @@ pub fn settings_modal_view(
                                         class:active=move || theme.get() == "light"
                                         on:click=move |_| theme.set("light".to_string())
                                     >
-                                        "浅色"
+                                        {move || i18n::settings_theme_light(locale.get())}
                                     </button>
                                 </div>
                             </div>
                             <div class="settings-block">
-                                <h3 class="settings-block-title">"页面背景"</h3>
+                                <h3 class="settings-block-title">{move || i18n::settings_block_bg(locale.get())}</h3>
                                 <label class="settings-checkbox-label">
                                     <input
                                         type="checkbox"
                                         prop:checked=move || bg_decor.get()
                                         on:change=move |_| bg_decor.update(|v| *v = !*v)
                                     />
-                                    <span>"显示背景光晕（径向渐变）"</span>
+                                    <span>{move || i18n::settings_bg_glow(locale.get())}</span>
                                 </label>
                             </div>
                             <div class="settings-block">
-                                <h3 class="settings-block-title">"模型网关（可选覆盖）"</h3>
+                                <h3 class="settings-block-title">{move || i18n::settings_block_llm(locale.get())}</h3>
                                 <p class="modal-hint settings-field-nested-hint">
-                                    "留空则使用服务端配置与环境变量 API_KEY。API 密钥使用密码框，不会以明文显示。"
+                                    {move || i18n::settings_llm_hint(locale.get())}
                                 </p>
                                 <div class="settings-field">
                                     <label class="settings-field-label" for="settings-llm-api-base">
-                                        "API 基址（api_base）"
+                                        {move || i18n::settings_label_api_base(locale.get())}
                                     </label>
                                     <input
                                         type="text"
                                         id="settings-llm-api-base"
                                         class="settings-text-input"
-                                        placeholder="例如 https://api.deepseek.com/v1"
+                                        prop:placeholder=move || i18n::settings_ph_api_base(locale.get())
                                         prop:value=move || llm_api_base_draft.get()
                                         on:input=move |ev| {
                                             llm_api_base_draft.set(event_target_value(&ev));
@@ -94,13 +154,13 @@ pub fn settings_modal_view(
                                 </div>
                                 <div class="settings-field">
                                     <label class="settings-field-label" for="settings-llm-model">
-                                        "模型名称（model）"
+                                        {move || i18n::settings_label_model(locale.get())}
                                     </label>
                                     <input
                                         type="text"
                                         id="settings-llm-model"
                                         class="settings-text-input"
-                                        placeholder="例如 deepseek-chat"
+                                        prop:placeholder=move || i18n::settings_ph_model(locale.get())
                                         prop:value=move || llm_model_draft.get()
                                         on:input=move |ev| {
                                             llm_model_draft.set(event_target_value(&ev));
@@ -109,14 +169,14 @@ pub fn settings_modal_view(
                                 </div>
                                 <div class="settings-field">
                                     <label class="settings-field-label" for="settings-llm-api-key">
-                                        "API 密钥（覆盖 API_KEY）"
+                                        {move || i18n::settings_label_api_key(locale.get())}
                                     </label>
                                     <input
                                         type="password"
                                         id="settings-llm-api-key"
                                         class="settings-text-input"
                                         autocomplete="off"
-                                        placeholder="留空保留已存密钥；填写新密钥后点保存"
+                                        prop:placeholder=move || i18n::settings_ph_api_key(locale.get())
                                         prop:value=move || llm_api_key_draft.get()
                                         on:input=move |ev| {
                                             llm_api_key_draft.set(event_target_value(&ev));
@@ -125,7 +185,7 @@ pub fn settings_modal_view(
                                 </div>
                                 <Show when=move || llm_has_saved_key.get()>
                                     <p class="modal-hint settings-field-nested-hint">
-                                        "当前已在本机保存密钥（不会回显到输入框）。"
+                                        {move || i18n::settings_key_saved_note(locale.get())}
                                     </p>
                                 </Show>
                                 <div class="settings-actions-row">
@@ -134,6 +194,7 @@ pub fn settings_modal_view(
                                         class="btn btn-primary btn-sm"
                                         on:click=move |_| {
                                             llm_settings_feedback.set(None);
+                                            let loc = locale.get_untracked();
                                             let key_raw = llm_api_key_draft.get();
                                             let api_key_upd = if key_raw.trim().is_empty() {
                                                 None
@@ -154,14 +215,14 @@ pub fn settings_modal_view(
                                                     client_llm_storage_tick
                                                         .update(|n| *n = n.wrapping_add(1));
                                                     llm_settings_feedback.set(Some(
-                                                        "已保存到本机浏览器".into(),
+                                                        i18n::settings_saved_browser(loc).to_string(),
                                                     ));
                                                 }
                                                 Err(e) => llm_settings_feedback.set(Some(e)),
                                             }
                                         }
                                     >
-                                        "保存模型设置"
+                                        {move || i18n::settings_save_llm(locale.get())}
                                     </button>
                                     <button
                                         type="button"
@@ -169,14 +230,15 @@ pub fn settings_modal_view(
                                         prop:disabled=move || !llm_has_saved_key.get()
                                         on:click=move |_| {
                                             llm_settings_feedback.set(None);
+                                            let loc = locale.get_untracked();
                                             let _ = clear_client_llm_api_key_storage();
                                             llm_has_saved_key.set(false);
                                             llm_settings_feedback.set(Some(
-                                                "已清除本机保存的密钥".into(),
+                                                i18n::settings_cleared_key(loc).to_string(),
                                             ));
                                         }
                                     >
-                                        "清除已存密钥"
+                                        {move || i18n::settings_clear_key(locale.get())}
                                     </button>
                                 </div>
                                 <Show when=move || llm_settings_feedback.get().is_some()>
@@ -184,6 +246,10 @@ pub fn settings_modal_view(
                                         llm_settings_feedback.get().unwrap_or_default()
                                     }}</p>
                                 </Show>
+                            </div>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">{move || i18n::settings_block_shortcuts(locale.get())}</h3>
+                                <p class="modal-hint">{move || i18n::settings_shortcuts_body(locale.get())}</p>
                             </div>
                         </div>
                     </div>

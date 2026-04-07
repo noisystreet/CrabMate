@@ -14,11 +14,13 @@ use super::chat_message_render::{
 };
 use super::scroll_guard::MessagesScrollFromEffectGuard;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
+use crate::i18n::{self, Locale};
 use crate::session_ops::{clamp_session_ctx_menu_pos, selected_text_in_messages_for_context_copy};
 use crate::storage::ChatSession;
 
 #[allow(clippy::too_many_arguments)]
 pub fn chat_column_view(
+    locale: RwSignal<Locale>,
     messages_scroller: NodeRef<leptos::html::Div>,
     auto_scroll_chat: RwSignal<bool>,
     messages_scroll_from_effect: RwSignal<bool>,
@@ -96,8 +98,8 @@ pub fn chat_column_view(
                         <button
                             type="button"
                             class="bubble-md-toggle"
-                            title="多选消息导出 Markdown（聊天区亦可右键）"
-                            aria-label="多选导出 Markdown"
+                            prop:title=move || i18n::bubble_md_toggle_title(locale.get())
+                            prop:aria-label=move || i18n::bubble_md_toggle_aria(locale.get())
                             aria-pressed=move || bubble_md_select_mode.get()
                             on:click=move |_| {
                                 let next = !bubble_md_select_mode.get();
@@ -131,8 +133,8 @@ pub fn chat_column_view(
                         <button
                             type="button"
                             class="chat-find-toggle"
-                            title="在当前会话中查找"
-                            aria-label="在当前会话中查找"
+                            prop:title=move || i18n::chat_find_toggle_title(locale.get())
+                            prop:aria-label=move || i18n::chat_find_toggle_aria(locale.get())
                             aria-expanded="false"
                             on:click=move |_| chat_find_panel_open.set(true)
                         >
@@ -208,11 +210,11 @@ pub fn chat_column_view(
                                                 <div class="messages-empty-card">
                                                     <p class="messages-empty-title">"开始对话"</p>
                                                     <p class="messages-empty-lead">
-                                                        "在下方输入消息，Enter 发送，Shift+Enter 换行。"
+                                                        {move || i18n::chat_empty_lead(locale.get())}
                                                     </p>
                                                     <ul class="messages-empty-tips">
-                                                        <li>"左侧可新建对话、切换最近会话，或「管理会话」导出与重命名。"</li>
-                                                        <li>"侧栏展开时工具栏在右列顶部；「隐藏侧栏」后右侧贴边纵向三键，同宽铺满一条，无额外围框。视图菜单可在隐藏、工作区、任务之间切换。"</li>
+                                                        <li>{move || i18n::chat_empty_tip1(locale.get())}</li>
+                                                        <li>{move || i18n::chat_empty_tip2(locale.get())}</li>
                                                     </ul>
                                                 </div>
                                             </div>
@@ -240,6 +242,7 @@ pub fn chat_column_view(
                                                     regen_stream_after_truncate,
                                                     retry_assistant_target,
                                                     status_err,
+                                                    locale,
                                                 )
                                                 .into_any(),
                                                 ChatChunk::ToolGroup { head_id, items } => {
@@ -262,6 +265,7 @@ pub fn chat_column_view(
                                                         retry_assistant_target,
                                                         status_err,
                                                         auto_scroll_chat,
+                                                        locale,
                                                     )
                                                     .into_any()
                                                 }
@@ -292,7 +296,7 @@ pub fn chat_column_view(
                                     }
                                 }
                             }
-                            placeholder="输入消息，Enter 发送 / Shift+Enter 换行…"
+                            prop:placeholder=move || i18n::composer_ph(locale.get())
                             rows="3"
                         ></textarea>
                         <div class="composer-bar-actions">
@@ -304,7 +308,7 @@ pub fn chat_column_view(
                                     let t = Arc::clone(&trigger_stop);
                                     move |_| t()
                                 }
-                            >"停止"</button>
+                            >{move || i18n::composer_stop(locale.get())}</button>
                             <button
                                 type="button"
                                 class="btn btn-primary btn-send-icon"
@@ -313,8 +317,8 @@ pub fn chat_column_view(
                                     let r = Arc::clone(&run_send_message);
                                     move |_| r()
                                 }
-                                title="发送"
-                                aria-label="发送"
+                                prop:title=move || i18n::composer_send_aria(locale.get())
+                                prop:aria-label=move || i18n::composer_send_aria(locale.get())
                             >
                                 <svg
                                     class="btn-send-icon-svg"

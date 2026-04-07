@@ -56,13 +56,15 @@ use crate::app_prefs::{
     load_f64_key, load_side_panel_view, local_storage, store_bool_key, store_f64_key,
     store_side_panel_view,
 };
+use crate::i18n::load_locale_from_storage;
 use crate::session_ops::SessionContextAnchor;
 use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
 use leptos::html::{Div, Textarea};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use leptos_dom::helpers::WindowListenerHandle;
+use leptos_dom::helpers::{WindowListenerHandle, window_event_listener};
+use wasm_bindgen::JsCast;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -163,6 +165,7 @@ pub fn App() -> impl IntoView {
     let changelist_body_ref = NodeRef::<Div>::new();
     // 递增后由 Effect 拉取 GET /workspace/changelog（避免在 view 中捕获非 Send 的 Rc<dyn Fn>）。
     let changelist_fetch_nonce = RwSignal::new(0_u64);
+    let locale = RwSignal::new(load_locale_from_storage());
 
     Effect::new(move |_| {
         if initialized.get() {
@@ -246,6 +249,15 @@ pub fn App() -> impl IntoView {
             && let Some(root) = doc.document_element()
         {
             let _ = root.set_attribute("data-theme", &t);
+        }
+    });
+
+    Effect::new(move |_| {
+        let lang = locale.get().html_lang();
+        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+            let _ = doc
+                .document_element()
+                .map(|root| root.set_attribute("lang", lang));
         }
     });
 
@@ -457,9 +469,66 @@ pub fn App() -> impl IntoView {
         move || inner()
     };
 
+    Effect::new(move |_| {
+        let h = window_event_listener(leptos::ev::keydown, move |ev: web_sys::KeyboardEvent| {
+            if ev.key() != "Escape" {
+                return;
+            }
+            if let Some(t) = ev.target() {
+                if let Ok(he) = t.dyn_into::<web_sys::HtmlElement>() {
+                    let tag = he.tag_name();
+                    if tag.eq_ignore_ascii_case("TEXTAREA")
+                        || tag.eq_ignore_ascii_case("INPUT")
+                        || tag.eq_ignore_ascii_case("SELECT")
+                        || tag.eq_ignore_ascii_case("OPTION")
+                    {
+                        return;
+                    }
+                    if he.is_content_editable() {
+                        return;
+                    }
+                }
+            }
+            ev.prevent_default();
+            if chat_export_ctx_menu.get_untracked().is_some() {
+                chat_export_ctx_menu.set(None);
+                return;
+            }
+            if session_context_menu.get_untracked().is_some() {
+                session_context_menu.set(None);
+                return;
+            }
+            if chat_find_panel_open.get_untracked() {
+                chat_find_panel_open.set(false);
+                return;
+            }
+            if view_menu_open.get_untracked() {
+                view_menu_open.set(false);
+                return;
+            }
+            if mobile_nav_open.get_untracked() {
+                mobile_nav_open.set(false);
+                return;
+            }
+            if changelist_modal_open.get_untracked() {
+                changelist_modal_open.set(false);
+                return;
+            }
+            if settings_modal.get_untracked() {
+                settings_modal.set(false);
+                return;
+            }
+            if session_modal.get_untracked() {
+                session_modal.set(false);
+            }
+        });
+        on_cleanup(move || h.remove());
+    });
+
     view! {
         <div class="app-root app-shell-ds">
             {sidebar_nav_view(
+                locale,
                 mobile_nav_open,
                 session_modal,
                 new_session.clone(),
@@ -476,13 +545,14 @@ pub fn App() -> impl IntoView {
             )}
 
             <div class="shell-main">
-                {mobile_shell_header_view(mobile_nav_open, new_session.clone())}
+                {mobile_shell_header_view(mobile_nav_open, locale, new_session.clone())}
 
                 <ApprovalBar pending_approval=pending_approval approval_expanded=approval_expanded />
 
                 <Show when=move || chat_find_panel_open.get()>
                     <ChatFindBar
                         chat_find_panel_open=chat_find_panel_open
+                        locale=locale
                         chat_find_query=chat_find_query
                         chat_find_match_ids=chat_find_match_ids
                         chat_find_cursor=chat_find_cursor
@@ -493,6 +563,7 @@ pub fn App() -> impl IntoView {
                 <Show when=move || chat_export_ctx_menu.get().is_some()>
                     <ChatExportContextMenu
                         chat_export_ctx_menu=chat_export_ctx_menu
+                        locale=locale
                         bubble_md_select_mode=bubble_md_select_mode
                         bubble_md_selected_ids=bubble_md_selected_ids
                         sessions=sessions
@@ -505,6 +576,7 @@ pub fn App() -> impl IntoView {
                     class="main-row"
                 >
                     {chat_column_view(
+                        locale,
                         messages_scroller,
                         auto_scroll_chat,
                         messages_scroll_from_effect,
@@ -535,6 +607,7 @@ pub fn App() -> impl IntoView {
                     )}
 
                     {side_column_view(
+                        locale,
                         side_resize_dragging,
                         side_panel_view,
                         side_width,
@@ -580,6 +653,7 @@ pub fn App() -> impl IntoView {
 
             {session_list_modal_view(
                 session_modal,
+                locale,
                 sessions,
                 active_id,
                 draft,
@@ -589,6 +663,7 @@ pub fn App() -> impl IntoView {
 
             {settings_modal_view(
                 settings_modal,
+                locale,
                 theme,
                 bg_decor,
                 status_data,
@@ -602,6 +677,7 @@ pub fn App() -> impl IntoView {
 
             {changelist_modal_view(
                 changelist_modal_open,
+                locale,
                 changelist_modal_loading,
                 changelist_modal_err,
                 changelist_modal_rev,
