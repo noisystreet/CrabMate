@@ -13,6 +13,7 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 
 use crate::debounce_schedule;
+use crate::i18n::{self, Locale};
 use crate::session_ops::{
     SessionContextAnchor, clamp_session_ctx_menu_pos, delete_session_after_confirm,
     export_session_json_for_id, export_session_markdown_for_id, flush_composer_draft_to_session,
@@ -49,6 +50,7 @@ fn debounce_signal_to_effect(source: RwSignal<String>, target: RwSignal<String>,
 
 #[allow(clippy::too_many_arguments)]
 pub fn sidebar_nav_view(
+    locale: RwSignal<Locale>,
     mobile_nav_open: RwSignal<bool>,
     session_modal: RwSignal<bool>,
     new_session: impl Fn() + Clone + 'static,
@@ -89,7 +91,7 @@ pub fn sidebar_nav_view(
                 <span class="brand-mark" aria-hidden="true"></span>
                 <div class="nav-rail-brand-text">
                     <h1>"CrabMate"</h1>
-                    <span class="brand-sub">"本地 Agent"</span>
+                    <span class="brand-sub">{move || i18n::brand_sub(locale.get())}</span>
                 </div>
             </div>
             <button
@@ -103,7 +105,7 @@ pub fn sidebar_nav_view(
                     }
                 }
             >
-                "新对话"
+                {move || i18n::nav_new_chat(locale.get())}
             </button>
             <button
                 type="button"
@@ -113,26 +115,26 @@ pub fn sidebar_nav_view(
                     mobile_nav_open.set(false);
                 }
             >
-                "管理会话…"
+                {move || i18n::nav_manage_sessions(locale.get())}
             </button>
             <div class="nav-rail-search">
-                <label class="nav-rail-search-label" for="nav-session-filter">"筛选会话"</label>
+                <label class="nav-rail-search-label" for="nav-session-filter">{move || i18n::nav_filter_sessions(locale.get())}</label>
                 <input
                     id="nav-session-filter"
                     type="search"
                     class="nav-session-search-input"
-                    placeholder="按标题筛选…"
+                    prop:placeholder=move || i18n::nav_ph_filter(locale.get())
                     prop:value=move || sidebar_session_query.get()
                     on:input=move |ev| {
                         sidebar_session_query.set(event_target_value(&ev));
                     }
                 />
-                <label class="nav-rail-search-label" for="nav-msg-search">"搜索消息"</label>
+                <label class="nav-rail-search-label" for="nav-msg-search">{move || i18n::nav_search_messages(locale.get())}</label>
                 <input
                     id="nav-msg-search"
                     type="search"
                     class="nav-global-search-input"
-                    placeholder="全文搜索（本地）…"
+                    prop:placeholder=move || i18n::nav_ph_global_search(locale.get())
                     prop:value=move || global_message_query.get()
                     on:input=move |ev| {
                         global_message_query.set(event_target_value(&ev));
@@ -140,7 +142,7 @@ pub fn sidebar_nav_view(
                 />
             </div>
             <div class="nav-rail-scroll">
-                <div class="nav-rail-scroll-label">"最近"</div>
+                <div class="nav-rail-scroll-label">{move || i18n::nav_recent(locale.get())}</div>
                 {move || {
                     let needle = normalize_search_query(&sidebar_filter_debounced.get());
                     let msg_needle = normalize_search_query(&global_message_filter_debounced.get());
@@ -161,7 +163,7 @@ pub fn sidebar_nav_view(
                         if hits.is_empty() {
                             view! {
                                 <div class="nav-search-hits-empty" role="status">
-                                    "无匹配消息"
+                                    {move || i18n::nav_no_message_hits(locale.get())}
                                 </div>
                             }
                             .into_any()
@@ -216,7 +218,7 @@ pub fn sidebar_nav_view(
                         ().into_any()
                     };
                     view! {
-                        <div class="nav-search-hits" role="region" aria-label="消息搜索结果">
+                        <div class="nav-search-hits" role="region" prop:aria-label=move || i18n::nav_search_hits_region(locale.get())>
                             {hit_views}
                         </div>
                         {v.into_iter()
@@ -279,7 +281,7 @@ pub fn sidebar_nav_view(
                                     }
                                 >
                                     <span class="nav-session-title">{title}</span>
-                                    <span class="nav-session-meta">{n}" 条"</span>
+                                    <span class="nav-session-meta">{move || i18n::session_row_msg_count(locale.get(), n)}</span>
                                 </button>
                             }
                         })
@@ -322,7 +324,7 @@ pub fn sidebar_nav_view(
                         export_session_json_for_id(sessions, &id);
                     }
                 >
-                    "导出 JSON"
+                    {move || i18n::ctx_export_json(locale.get())}
                 </button>
                 <button
                     type="button"
@@ -338,7 +340,7 @@ pub fn sidebar_nav_view(
                         export_session_markdown_for_id(sessions, &id);
                     }
                 >
-                    "导出 Markdown"
+                    {move || i18n::ctx_export_md(locale.get())}
                 </button>
                 <button
                     type="button"
@@ -357,10 +359,11 @@ pub fn sidebar_nav_view(
                             draft,
                             conversation_id,
                             &id,
+                            locale.get_untracked(),
                         );
                     }
                 >
-                    "删除会话"
+                    {move || i18n::ctx_delete_session(locale.get())}
                 </button>
             </div>
             </div>

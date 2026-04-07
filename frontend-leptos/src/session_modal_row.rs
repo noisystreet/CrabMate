@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use leptos::prelude::*;
 
+use crate::i18n::{self, Locale};
 use crate::session_ops::{
     delete_session_after_confirm, export_session_json_for_id, export_session_markdown_for_id,
     flush_composer_draft_to_session,
@@ -16,6 +17,7 @@ pub fn SessionModalRow(
     title: String,
     message_count: usize,
     active: bool,
+    locale: RwSignal<Locale>,
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
@@ -62,17 +64,18 @@ pub fn SessionModalRow(
                 }
             >
                 <span class="session-title">{title}</span>
-                <span class="session-meta">{message_count}" 条"</span>
+                <span class="session-meta">{move || i18n::session_row_msg_count(locale.get(), message_count)}</span>
             </button>
             <div class="session-row-actions">
                 <button
                     type="button"
                     class="btn btn-ghost btn-sm"
-                    title="重命名"
+                    prop:title=move || i18n::session_row_rename_title_attr(locale.get())
                     on:click={
                         let sessions = sessions;
                         let id = id_rename.clone();
                         move |_| {
+                            let loc = locale.get_untracked();
                             let default_title = sessions.with(|list| {
                                 list.iter()
                                     .find(|s| s.id == id)
@@ -82,8 +85,10 @@ pub fn SessionModalRow(
                             let Some(w) = web_sys::window() else {
                                 return;
                             };
-                            let raw = match w.prompt_with_message_and_default("会话标题", &default_title)
-                            {
+                            let raw = match w.prompt_with_message_and_default(
+                                i18n::session_prompt_title_label(loc),
+                                &default_title,
+                            ) {
                                 Ok(Some(s)) => s,
                                 Ok(None) | Err(_) => return,
                             };
@@ -100,12 +105,12 @@ pub fn SessionModalRow(
                         }
                     }
                 >
-                    "重命名"
+                    {move || i18n::session_row_rename_button(locale.get())}
                 </button>
                 <button
                     type="button"
                     class="btn btn-secondary btn-sm"
-                    title="导出 JSON（ChatSessionFile v1）"
+                    prop:title=move || i18n::session_row_export_json_title(locale.get())
                     on:click={
                         let sessions = sessions;
                         let id = id_json.clone();
@@ -117,7 +122,7 @@ pub fn SessionModalRow(
                 <button
                     type="button"
                     class="btn btn-secondary btn-sm"
-                    title="导出 Markdown"
+                    prop:title=move || i18n::session_row_export_md_title(locale.get())
                     on:click={
                         let sessions = sessions;
                         let id = id_md.clone();
@@ -129,7 +134,7 @@ pub fn SessionModalRow(
                 <button
                     type="button"
                     class="btn btn-danger btn-sm"
-                    title="删除此会话"
+                    prop:title=move || i18n::session_row_delete_title(locale.get())
                     on:click={
                         let sessions = sessions;
                         let active_id = active_id;
@@ -143,11 +148,12 @@ pub fn SessionModalRow(
                                 draft,
                                 conversation_id,
                                 &id,
+                                locale.get_untracked(),
                             );
                         }
                     }
                 >
-                    "删除"
+                    {move || i18n::session_row_delete_button(locale.get())}
                 </button>
             </div>
         </div>

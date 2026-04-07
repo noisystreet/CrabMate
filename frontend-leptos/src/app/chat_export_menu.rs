@@ -2,6 +2,7 @@
 
 use leptos::prelude::*;
 
+use crate::i18n::{self, Locale};
 use crate::session_export::{
     export_filename_stem, stored_messages_by_ids_to_markdown, trigger_download,
 };
@@ -11,6 +12,7 @@ use crate::storage::ChatSession;
 #[component]
 pub fn ChatExportContextMenu(
     chat_export_ctx_menu: RwSignal<Option<(f64, f64, Option<String>)>>,
+    locale: RwSignal<Locale>,
     bubble_md_select_mode: RwSignal<bool>,
     bubble_md_selected_ids: RwSignal<Vec<String>>,
     sessions: RwSignal<Vec<ChatSession>>,
@@ -26,7 +28,7 @@ pub fn ChatExportContextMenu(
             <div
                 class="session-ctx-menu"
                 role="menu"
-                aria-label="聊天区菜单"
+                prop:aria-label=move || i18n::chat_ctx_menu_aria(locale.get())
                 on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
                 style=move || {
                     chat_export_ctx_menu
@@ -50,10 +52,10 @@ pub fn ChatExportContextMenu(
                                 return;
                             };
                             chat_export_ctx_menu.set(None);
-                            write_clipboard_text(&text);
+                            write_clipboard_text(&text, locale.get_untracked());
                         }
                     >
-                        "复制选中文字"
+                        {move || i18n::chat_ctx_copy_selection(locale.get())}
                     </button>
                 </Show>
                 <Show when=move || !bubble_md_select_mode.get()>
@@ -67,7 +69,7 @@ pub fn ChatExportContextMenu(
                             bubble_md_select_mode.set(true);
                         }
                     >
-                        "多选导出 Markdown…"
+                        {move || i18n::chat_ctx_md_multi(locale.get())}
                     </button>
                 </Show>
                 <Show when=move || bubble_md_select_mode.get()>
@@ -89,7 +91,7 @@ pub fn ChatExportContextMenu(
                             bubble_md_selected_ids.set(ids);
                         }
                     >
-                        "全选消息"
+                        {move || i18n::chat_ctx_select_all(locale.get())}
                     </button>
                     <button
                         type="button"
@@ -100,7 +102,7 @@ pub fn ChatExportContextMenu(
                             bubble_md_selected_ids.set(Vec::new());
                         }
                     >
-                        "清除选择"
+                        {move || i18n::chat_ctx_clear_sel(locale.get())}
                     </button>
                     <button
                         type="button"
@@ -131,10 +133,11 @@ pub fn ChatExportContextMenu(
                     >
                         {move || {
                             let n = bubble_md_selected_ids.with(|v| v.len());
+                            let loc = locale.get();
                             if n == 0 {
-                                "导出已选为 Markdown".to_string()
+                                i18n::chat_ctx_export_md_empty(loc).to_string()
                             } else {
-                                format!("导出已选为 Markdown（{n} 条）")
+                                i18n::chat_ctx_export_md_n(loc, n)
                             }
                         }}
                     </button>
@@ -148,7 +151,7 @@ pub fn ChatExportContextMenu(
                             bubble_md_selected_ids.set(Vec::new());
                         }
                     >
-                        "退出多选"
+                        {move || i18n::chat_ctx_exit_multi(locale.get())}
                     </button>
                 </Show>
             </div>

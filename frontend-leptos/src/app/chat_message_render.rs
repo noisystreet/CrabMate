@@ -8,6 +8,7 @@ use leptos::task::spawn_local;
 
 use crate::api::post_chat_branch;
 use crate::assistant_body::assistant_markdown_collapsible_view;
+use crate::i18n::{self, Locale};
 use crate::message_format::message_text_for_display;
 use crate::session_ops::{
     format_msg_time_label, message_role_label, preceding_plain_user_message_id,
@@ -90,6 +91,7 @@ pub(crate) fn tool_run_group_view(
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
     auto_scroll_chat: RwSignal<bool>,
+    locale: RwSignal<Locale>,
 ) -> impl IntoView {
     let items_sv = StoredValue::new(items);
     let group_ids: Vec<String> = items_sv
@@ -121,13 +123,13 @@ pub(crate) fn tool_run_group_view(
                 let expand_on_click = head_for_expand_hint.clone();
                 if show_all {
                     view! {
-                        <div class="msg-tool-run-head" role="group" aria-label="连续工具输出">
-                            <span class="msg-tool-run-count">{n} " 条工具输出"</span>
+                        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(locale.get())>
+                            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(locale.get(), n)}</span>
                             <button
                                 type="button"
                                 class="btn btn-muted btn-sm msg-tool-run-toggle"
-                                title="折叠连续工具输出"
-                                aria-label="折叠连续工具输出"
+                                prop:title=move || i18n::msg_tool_collapse_title(locale.get())
+                                prop:aria-label=move || i18n::msg_tool_collapse_aria(locale.get())
                                 on:click=move |_| {
                                     let k = fold_on_click.clone();
                                     expanded_tool_run_heads.update(|s| {
@@ -135,7 +137,7 @@ pub(crate) fn tool_run_group_view(
                                     });
                                 }
                             >
-                                "折叠"
+                                {move || i18n::msg_tool_collapse_btn(locale.get())}
                             </button>
                         </div>
                         {
@@ -160,6 +162,7 @@ pub(crate) fn tool_run_group_view(
                                         regen_stream_after_truncate,
                                         retry_assistant_target,
                                         status_err,
+                                        locale,
                                     )
                                 })
                                 .collect_view()
@@ -168,13 +171,13 @@ pub(crate) fn tool_run_group_view(
                     .into_any()
                 } else if let Some((msg_idx, last)) = entries.last().cloned() {
                     view! {
-                        <div class="msg-tool-run-head" role="group" aria-label="连续工具输出">
-                            <span class="msg-tool-run-count">{n} " 条工具输出"</span>
+                        <div class="msg-tool-run-head" role="group" prop:aria-label=move || i18n::msg_tool_run_group_aria(locale.get())>
+                            <span class="msg-tool-run-count">{move || i18n::msg_tool_run_count(locale.get(), n)}</span>
                             <button
                                 type="button"
                                 class="btn btn-muted btn-sm msg-tool-run-toggle"
-                                title="展开连续工具输出"
-                                aria-label="展开连续工具输出"
+                                prop:title=move || i18n::msg_tool_expand_title(locale.get())
+                                prop:aria-label=move || i18n::msg_tool_expand_aria(locale.get())
                                 on:click=move |_| {
                                     let h = expand_on_click.clone();
                                     expanded_tool_run_heads.update(|s| {
@@ -182,7 +185,7 @@ pub(crate) fn tool_run_group_view(
                                     });
                                 }
                             >
-                                "展开"
+                                {move || i18n::msg_tool_expand_btn(locale.get())}
                             </button>
                         </div>
                         {chat_message_row(
@@ -203,6 +206,7 @@ pub(crate) fn tool_run_group_view(
                             regen_stream_after_truncate,
                             retry_assistant_target,
                             status_err,
+                            locale,
                         )}
                     }
                     .into_any()
@@ -233,6 +237,7 @@ pub(crate) fn chat_message_row(
     regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
+    locale: RwSignal<Locale>,
 ) -> impl IntoView {
     let cls = match m.role.as_str() {
         "user" => "msg msg-user",
@@ -252,7 +257,8 @@ pub(crate) fn chat_message_row(
         cls.to_string()
     };
     let mid_highlight = m.id.clone();
-    let role_lbl = message_role_label(&m);
+    let m_role = m.clone();
+    let role_lbl = move || message_role_label(&m_role, locale.get());
     let time_str = format_msg_time_label(m.created_at).unwrap_or_default();
     let mid_retry = m.id.clone();
     let copy_id = m.id.clone();
@@ -291,8 +297,8 @@ pub(crate) fn chat_message_row(
                         class="msg-body msg-tool-body-jump"
                         role="link"
                         tabindex="0"
-                        title="点击跳转到对应用户消息"
-                        aria-label="跳转到对应用户消息"
+                        prop:title=move || i18n::msg_jump_user_title(locale.get())
+                        prop:aria-label=move || i18n::msg_jump_user_aria(locale.get())
                         on:click=move |_| {
                             trigger_jump_to_user_prompt(&uid_click, asc);
                         }
@@ -348,11 +354,11 @@ pub(crate) fn chat_message_row(
     view! {
         <div class="msg-with-select">
             <Show when=move || bubble_md_select_mode.get()>
-                <label class="msg-select-label" title="选中以加入导出">
+                <label class="msg-select-label" prop:title=move || i18n::msg_select_label_title(locale.get())>
                     <input
                         type="checkbox"
                         class="msg-select-cb"
-                        aria-label="选中此条以导出 Markdown"
+                        prop:aria-label=move || i18n::msg_select_cb_aria(locale.get())
                         prop:checked=move || {
                             let mid = mid_for_select.get_value();
                             bubble_md_selected_ids.with(|v| v.contains(&mid))
@@ -414,14 +420,14 @@ pub(crate) fn chat_message_row(
                 </div>
                 {show_msg_action_bar.then(|| {
                     view! {
-                        <div class="msg-actions msg-actions-below" role="group" aria-label="消息操作">
+                        <div class="msg-actions msg-actions-below" role="group" prop:aria-label=move || i18n::msg_actions_group_aria(locale.get())>
                             {(!is_tool_bubble).then(|| {
                                 view! {
                                     <button
                                         type="button"
                                         class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                                        title="复制本条展示文本"
-                                        aria-label="复制本条展示文本"
+                                        prop:title=move || i18n::msg_copy_title(locale.get())
+                                        prop:aria-label=move || i18n::msg_copy_aria(locale.get())
                                         on:click=move |_| {
                                             let t = sessions.with(|list| {
                                                 let aid = active_id.get_untracked();
@@ -435,7 +441,7 @@ pub(crate) fn chat_message_row(
                                                     .map(message_text_for_display)
                                                     .unwrap_or_default()
                                             });
-                                            write_clipboard_text(&t);
+                                            write_clipboard_text(&t, locale.get_untracked());
                                         }
                                     >
                                         <svg
@@ -471,8 +477,8 @@ pub(crate) fn chat_message_row(
                                     <button
                                         type="button"
                                         class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                                        title="删除本条及之后消息并重新生成（服务端会话需已持久化）"
-                                        aria-label="从此处重试"
+                                        prop:title=move || i18n::msg_regen_title(locale.get())
+                                        prop:aria-label=move || i18n::msg_regen_aria(locale.get())
                                         prop:disabled=move || status_busy.get()
                                         on:click=move |_| {
                                             if status_busy.get() {
@@ -570,8 +576,8 @@ pub(crate) fn chat_message_row(
                                     <button
                                         type="button"
                                         class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                                        title="删除本条及之后消息（不自动发送；服务端会话同步截断需已持久化）"
-                                        aria-label="分支对话"
+                                        prop:title=move || i18n::msg_branch_title(locale.get())
+                                        prop:aria-label=move || i18n::msg_branch_aria(locale.get())
                                         prop:disabled=move || status_busy.get()
                                         on:click=move |_| {
                                             if status_busy.get() {
@@ -673,8 +679,8 @@ pub(crate) fn chat_message_row(
                                     <button
                                         type="button"
                                         class="btn btn-secondary btn-sm msg-action-icon-btn"
-                                        title="重试当前助手生成"
-                                        aria-label="重试"
+                                        prop:title=move || i18n::msg_retry_title(locale.get())
+                                        prop:aria-label=move || i18n::msg_retry_aria(locale.get())
                                         prop:disabled=move || status_busy.get()
                                         on:click=move |_| {
                                             retry_assistant_target.set(Some(mid.clone()));
