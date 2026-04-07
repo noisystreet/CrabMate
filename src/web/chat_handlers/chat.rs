@@ -1,0 +1,542 @@
+//! `POST /chat`、`/chat/stream`、`/chat/approval`、`/chat/branch`。
+
+use std::sync::Arc;
+
+use axum::Json;
+use axum::extract::State;
+use axum::http::{HeaderValue, StatusCode};
+use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::{IntoResponse, Response};
+use futures_util::StreamExt;
+use log::{debug, error, info};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+
+use super::super::app_state::{AppState, ConversationTurnSeed};
+use super::conflict::conversation_conflict_api_error;
+use super::parse::{
+    ensure_bearer_api_key_for_chat, normalize_agent_role, normalize_approval_session_id,
+    normalize_client_conversation_id, parse_client_llm_override, parse_optional_chat_temperature,
+    parse_seed_override_from_body,
+};
+use super::types::{
+    ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
+    ChatBranchResponseBody, ChatRequestBody, ChatResponseBody,
+};
+use crate::agent_memory::load_memory_snippet;
+use crate::chat_job_queue;
+use crate::conversation_store::SaveConversationOutcome;
+use crate::project_profile::build_first_turn_user_context_markdown;
+use crate::redact;
+use crate::types::{CommandApprovalDecision, Message, messages_chat_seed};
+
+async fn build_messages_for_turn(
+    state: &Arc<AppState>,
+    conversation_id: &str,
+    user_msg: &str,
+    agent_role: Option<&str>,
+) -> Result<ConversationTurnSeed, String> {
+    if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
+        seed.messages.push(Message::user_only(user_msg.to_string()));
+        return Ok(seed);
+    }
+    // 先取工作区路径，再读 `cfg`，避免在持有 `cfg` 读锁时调用 `effective_workspace_path`（其内部再次 `cfg.read` 会死锁）。
+    let root_str = state.effective_workspace_path().await;
+    let cfg = state.cfg.read().await;
+    let system_for_turn = cfg
+        .system_prompt_for_new_conversation(agent_role)?
+        .to_string();
+    let root = std::path::PathBuf::from(root_str);
+    let memory_snippet = if cfg.agent_memory_file_enabled {
+        load_memory_snippet(
+            &root,
+            cfg.agent_memory_file.as_str(),
+            cfg.agent_memory_file_max_chars,
+        )
+    } else {
+        None
+    };
+
+    let want_heavy_scan = (cfg.project_profile_inject_enabled
+        && cfg.project_profile_inject_max_chars > 0)
+        || (cfg.project_dependency_brief_inject_enabled
+            && cfg.project_dependency_brief_inject_max_chars > 0);
+    let combined = if want_heavy_scan {
+        let cfg_owned = cfg.clone();
+        let root_scan = root.clone();
+        match tokio::task::spawn_blocking(move || {
+            build_first_turn_user_context_markdown(&root_scan, &cfg_owned, memory_snippet)
+        })
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                debug!("first_turn_user_context spawn_blocking failed: {}", e);
+                None
+            }
+        }
+    } else {
+        build_first_turn_user_context_markdown(&root, &cfg, memory_snippet)
+    };
+
+    let messages = match combined {
+        Some(ctx) => vec![
+            Message::system_only(system_for_turn.clone()),
+            Message::user_only(ctx),
+            Message::user_only(user_msg.to_string()),
+        ],
+        None => messages_chat_seed(&system_for_turn, user_msg),
+    };
+    Ok(ConversationTurnSeed {
+        messages,
+        expected_revision: None,
+    })
+}
+
+pub(crate) async fn chat_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatRequestBody>,
+) -> Result<Json<ChatResponseBody>, (StatusCode, Json<ApiError>)> {
+    let msg = body.message.trim();
+    if msg.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "EMPTY_MESSAGE",
+                message: "提问内容不能为空".to_string(),
+            }),
+        ));
+    }
+    let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CONVERSATION_ID",
+                    message: e,
+                }),
+            )
+        })?
+        .unwrap_or_else(|| state.next_conversation_id());
+    let agent_role = normalize_agent_role(body.agent_role.as_deref()).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_AGENT_ROLE",
+                message: e,
+            }),
+        )
+    })?;
+    let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_TEMPERATURE",
+                message: e,
+            }),
+        )
+    })?;
+    let seed_override =
+        parse_seed_override_from_body(body.seed, body.seed_policy).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_SEED",
+                    message: e,
+                }),
+            )
+        })?;
+    let llm_override = parse_client_llm_override(body.client_llm).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_CLIENT_LLM",
+                message: e,
+            }),
+        )
+    })?;
+    ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
+    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_AGENT_ROLE",
+                    message: e,
+                }),
+            )
+        })?;
+    let work_dir_str = state.effective_workspace_path().await;
+    let work_dir = work_dir_str.clone();
+    let workspace_is_set = state.workspace_is_set().await;
+    let job_id = state.chat_queue.next_job_id();
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+    debug!(
+        target: "crabmate",
+        "chat json 请求摘要 job_id={} user_len={} user_preview={}",
+        job_id,
+        msg.len(),
+        redact::preview_chars(msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
+    info!(target: "crabmate", "chat json 任务入队 job_id={}", job_id);
+    state
+        .chat_queue
+        .try_submit_json(chat_job_queue::JsonSubmitParams {
+            job_id,
+            state: state.clone(),
+            conversation_id: conversation_id.clone(),
+            messages: turn_seed.messages,
+            expected_revision: turn_seed.expected_revision,
+            work_dir: std::path::PathBuf::from(work_dir),
+            workspace_is_set,
+            temperature_override,
+            seed_override,
+            llm_override,
+            reply_tx,
+        })
+        .map_err(|e| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApiError {
+                    code: "QUEUE_FULL",
+                    message: format!(
+                        "对话任务队列已满（最多等待 {} 个），请稍后重试",
+                        e.max_pending
+                    ),
+                }),
+            )
+        })?;
+    let messages = reply_rx
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    code: "INTERNAL_ERROR",
+                    message: "对话任务被取消或内部错误".to_string(),
+                }),
+            )
+        })?
+        .map_err(|e| {
+            if e.trim() == "CONVERSATION_CONFLICT" {
+                return conversation_conflict_api_error();
+            }
+            error!(
+                target: "crabmate",
+                "chat_handler 队列任务失败 job_id={} error={}",
+                job_id,
+                e
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    code: "INTERNAL_ERROR",
+                    message: "对话失败，请稍后重试".to_string(),
+                }),
+            )
+        })?;
+    let reply = messages
+        .last()
+        .and_then(|m| m.content.as_deref())
+        .unwrap_or("")
+        .to_string();
+    let conversation_revision = state
+        .load_conversation_seed(&conversation_id)
+        .await
+        .and_then(|s| s.expected_revision);
+    Ok(Json(ChatResponseBody {
+        reply,
+        conversation_id,
+        conversation_revision,
+    }))
+}
+
+pub(crate) async fn chat_approval_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatApprovalRequestBody>,
+) -> Result<Json<ChatApprovalResponseBody>, (StatusCode, Json<ApiError>)> {
+    let session_id = normalize_approval_session_id(&body.approval_session_id).ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(ApiError {
+            code: "INVALID_APPROVAL_SESSION_ID",
+            message: "approval_session_id 非法或为空".to_string(),
+        }),
+    ))?;
+    let decision = match body.decision.trim().to_ascii_lowercase().as_str() {
+        "deny" => CommandApprovalDecision::Deny,
+        "allow_once" => CommandApprovalDecision::AllowOnce,
+        "allow_always" => CommandApprovalDecision::AllowAlways,
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_APPROVAL_DECISION",
+                    message: "decision 仅支持 deny / allow_once / allow_always".to_string(),
+                }),
+            ));
+        }
+    };
+    let tx = {
+        let guard = state.approval_sessions.read().await;
+        guard.get(&session_id).cloned()
+    }
+    .ok_or((
+        StatusCode::NOT_FOUND,
+        Json(ApiError {
+            code: "APPROVAL_SESSION_NOT_FOUND",
+            message: "审批会话不存在或已结束".to_string(),
+        }),
+    ))?;
+    if tx.send(decision).await.is_err() {
+        debug!(
+            target: "crabmate::sse_mpsc",
+            "approval decision mpsc send failed: session_id={} receiver dropped",
+            session_id
+        );
+        state.approval_sessions.write().await.remove(&session_id);
+        return Err((
+            StatusCode::GONE,
+            Json(ApiError {
+                code: "APPROVAL_SESSION_CLOSED",
+                message: "审批会话已关闭".to_string(),
+            }),
+        ));
+    }
+    Ok(Json(ChatApprovalResponseBody { ok: true }))
+}
+
+/// 将会话历史截断到前 N 条消息（`keep_message_count`），**同一** `conversation_id` 下继续对话。
+pub(crate) async fn chat_branch_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatBranchRequestBody>,
+) -> Result<Json<ChatBranchResponseBody>, (StatusCode, Json<ApiError>)> {
+    let conversation_id =
+        normalize_client_conversation_id(Some(&body.conversation_id)).map_err(|msg| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CONVERSATION_ID",
+                    message: msg,
+                }),
+            )
+        })?;
+    let Some(cid) = conversation_id else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_CONVERSATION_ID",
+                message: "conversation_id 不能为空".to_string(),
+            }),
+        ));
+    };
+    let ord = usize::try_from(body.before_user_ordinal).unwrap_or(usize::MAX);
+    let seed = state.load_conversation_seed(&cid).await;
+    let Some(seed) = seed else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ApiError {
+                code: "CONVERSATION_NOT_FOUND",
+                message: "会话不存在或已过期".to_string(),
+            }),
+        ));
+    };
+    let Some(exp) = seed.expected_revision else {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ApiError {
+                code: "CONVERSATION_REVISION_UNKNOWN",
+                message: "无法分支：缺少 revision 信息".to_string(),
+            }),
+        ));
+    };
+    if exp != body.expected_revision {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ApiError {
+                code: "CONVERSATION_CONFLICT",
+                message: "revision 不匹配，请刷新后重试".to_string(),
+            }),
+        ));
+    }
+    match state
+        .truncate_conversation_before_user_ordinal_if_revision(
+            cid.clone(),
+            ord,
+            body.expected_revision,
+        )
+        .await
+    {
+        SaveConversationOutcome::Saved => {}
+        SaveConversationOutcome::Conflict => {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ApiError {
+                    code: "CONVERSATION_CONFLICT",
+                    message: "会话已被其他请求更新或 revision 不匹配".to_string(),
+                }),
+            ));
+        }
+    }
+    let new_rev = state
+        .load_conversation_seed(&cid)
+        .await
+        .and_then(|s| s.expected_revision)
+        .unwrap_or(body.expected_revision);
+    Ok(Json(ChatBranchResponseBody {
+        ok: true,
+        revision: new_rev,
+    }))
+}
+
+/// 流式 chat：返回 SSE，每个 event 的 data 为一段 content delta（或结束时一条 error JSON）
+pub(crate) async fn chat_stream_handler(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChatRequestBody>,
+) -> Result<Response, (StatusCode, Json<ApiError>)> {
+    let msg = body.message.trim();
+    if msg.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "EMPTY_MESSAGE",
+                message: "提问内容不能为空".to_string(),
+            }),
+        ));
+    }
+    let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CONVERSATION_ID",
+                    message: e,
+                }),
+            )
+        })?
+        .unwrap_or_else(|| state.next_conversation_id());
+    let agent_role = normalize_agent_role(body.agent_role.as_deref()).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_AGENT_ROLE",
+                message: e,
+            }),
+        )
+    })?;
+    let temperature_override = parse_optional_chat_temperature(body.temperature).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_TEMPERATURE",
+                message: e,
+            }),
+        )
+    })?;
+    let seed_override =
+        parse_seed_override_from_body(body.seed, body.seed_policy).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_SEED",
+                    message: e,
+                }),
+            )
+        })?;
+    let llm_override = parse_client_llm_override(body.client_llm).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_CLIENT_LLM",
+                message: e,
+            }),
+        )
+    })?;
+    ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
+    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_AGENT_ROLE",
+                    message: e,
+                }),
+            )
+        })?;
+    let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let workspace_is_set = state.workspace_is_set().await;
+    let approval_session_id = match body.approval_session_id.as_deref() {
+        Some(v) => Some(normalize_approval_session_id(v).ok_or((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_APPROVAL_SESSION_ID",
+                message: "approval_session_id 非法或为空".to_string(),
+            }),
+        ))?),
+        None => None,
+    };
+    let mut web_approval_session = None;
+    if let Some(session_id) = approval_session_id.as_ref() {
+        let (approval_tx, approval_rx) = mpsc::channel::<CommandApprovalDecision>(8);
+        state
+            .approval_sessions
+            .write()
+            .await
+            .insert(session_id.clone(), approval_tx);
+        web_approval_session = Some(chat_job_queue::WebApprovalSession {
+            session_id: session_id.clone(),
+            approval_rx,
+        });
+    }
+    let job_id = state.chat_queue.next_job_id();
+    let (tx, rx) = mpsc::channel::<String>(1024);
+    debug!(
+        target: "crabmate",
+        "chat stream 请求摘要 job_id={} user_len={} user_preview={}",
+        job_id,
+        msg.len(),
+        redact::preview_chars(msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
+    );
+    info!(target: "crabmate", "chat stream 任务入队 job_id={}", job_id);
+    if let Err(e) = state
+        .chat_queue
+        .try_submit_stream(chat_job_queue::StreamSubmitParams {
+            job_id,
+            state: state.clone(),
+            conversation_id: conversation_id.clone(),
+            messages: turn_seed.messages,
+            expected_revision: turn_seed.expected_revision,
+            work_dir,
+            workspace_is_set,
+            temperature_override,
+            seed_override,
+            llm_override,
+            sse_tx: tx,
+            web_approval_session,
+        })
+    {
+        if let Some(session_id) = approval_session_id {
+            state.approval_sessions.write().await.remove(&session_id);
+        }
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiError {
+                code: "QUEUE_FULL",
+                message: format!(
+                    "对话任务队列已满（最多等待 {} 个），请稍后重试",
+                    e.max_pending
+                ),
+            }),
+        ));
+    }
+    let stream = ReceiverStream::new(rx)
+        .map(|s| Ok::<Event, std::convert::Infallible>(Event::default().data(s)));
+    let mut resp = Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response();
+    if let Ok(v) = HeaderValue::from_str(&conversation_id) {
+        resp.headers_mut().insert("x-conversation-id", v);
+    }
+    Ok(resp)
+}
