@@ -3,7 +3,7 @@
 //! 当前实现目标是支持模型通过 `workflow_execute` 一次性下发一个 DAG，并由运行时执行引擎在本地完成编排。
 //!
 //! 子模块：`model`（规格结构）、`dag`（拓扑与依赖校验）、`parse`（JSON→`WorkflowSpec`）、`types`（运行期状态与报告 JSON）、
-//! `placeholders`（`{{node.output}}` 等注入）、`execute`（调度与单节点执行）、`run`（`workflow_execute` 工具入口）、`chrome_trace`（可选 Chrome Trace JSON 导出）。
+//! `placeholders`（`{{node.output}}` 等注入）、`execute/`（**`trace`** / **`retry`** / **`node`** / **`schedule`** / **`report`** / **`compensation`**；DAG 调度与单节点执行）、`run`（`workflow_execute` 工具入口）、`chrome_trace`（可选 Chrome Trace JSON 导出）。
 
 mod chrome_trace;
 mod dag;
