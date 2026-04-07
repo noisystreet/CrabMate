@@ -12,6 +12,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 
+use crate::debounce_schedule;
 use crate::session_ops::{
     SessionContextAnchor, clamp_session_ctx_menu_pos, delete_session_after_confirm,
     export_session_json_for_id, export_session_markdown_for_id, flush_composer_draft_to_session,
@@ -38,10 +39,9 @@ fn debounce_signal_to_effect(source: RwSignal<String>, target: RwSignal<String>,
             let seq = Rc::clone(&debounce_seq);
             spawn_local(async move {
                 TimeoutFuture::new(delay_ms).await;
-                if seq.get() != id {
-                    return;
+                if debounce_schedule::debounce_should_apply(id, seq.get()) {
+                    target.set(v);
                 }
-                target.set(v);
             });
         }
     });

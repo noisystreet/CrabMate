@@ -1,4 +1,6 @@
 #![recursion_limit = "256"]
+// `cdylib` + 测试 harness 在 wasm32 上会与生成的 `main` 冲突；WASM 单测走 `wasm-bindgen-test`。
+#![cfg_attr(all(test, target_arch = "wasm32"), no_main)]
 // CSR 宏生成与大量闭包捕获使若干 style lint 噪声偏高；保持与主包 `-D warnings` 分离。
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::redundant_locals)]
@@ -8,6 +10,7 @@ mod api;
 mod app;
 mod app_prefs;
 mod assistant_body;
+mod debounce_schedule;
 mod markdown;
 mod message_format;
 mod session_export;

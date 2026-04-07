@@ -407,6 +407,14 @@ flowchart LR
 - 样式加载：**`frontend-leptos/index.html`** 内多条 **`data-trunk` `rel="css"`** 指向 **`frontend-leptos/styles/`** 下 `tokens.css`、`base.css`、`components.css`、`layout-chat.css`、`shell-ds.css`（DeepSeek 式左栏 + 居中线程 + 底栏一体输入；**`shell-main-toolbar`** 在 **`side-column`** 顶部，不占聊天列；工作区与任务均关时 **`side-column-rail-only`** 保留窄轨宽度；**`session-ctx-*`** 为左栏会话右键菜单）、`sidebar.css`、`status.css`、`approval.css`、`modal.css`、`motion.css`（顺序即层叠顺序；Trunk 不会跟随根目录 `styles.css` 的 `@import` 复制子文件，故须在此声明）。设计 token 与模块边界见各文件头注释。
 - 视觉回归手测项：**`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`**。
 
+### 单元测试（`frontend-leptos`）
+
+- **宿主目标（默认）**：仓库根执行 **`cargo test -p crabmate-web-leptos`**（或 **`cd frontend-leptos && cargo test`**）。覆盖 `session_ops`、`session_search`、`markdown`（`#[test]`）、**`debounce_schedule`** 等纯逻辑与 HTML 净化断言。
+- **WASM 目标（可选）**：`wasm-bindgen-test` 用例在 **`markdown.rs`** 的 **`wasm_bindgen_tests`** 子模块（`#[wasm_bindgen_test]`）。需已安装与依赖 **`wasm-bindgen`** 版本一致的 **`wasm-bindgen-cli`**（提供 **`wasm-bindgen-test-runner`**），且本机有 **Node** 等 runner 所需运行时。示例：
+  - `cargo install wasm-bindgen-cli --version 0.2.114 --locked`（版本以 **`Cargo.lock`** 中 **`wasm-bindgen`** 为准）
+  - `CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --target wasm32-unknown-unknown -p crabmate-web-leptos`
+- **`lib.rs`**：crate 为 **`cdylib`** 时，测试 profile 下对 **`wasm32`** 启用 **`#![cfg_attr(all(test, target_arch = "wasm32"), no_main)]`**，避免与测试 harness 的入口符号冲突。
+
 ### `frontend-leptos/src/api.rs`
 
 - 浏览器 `fetch` 封装与 `/chat/stream` SSE 读取（UTF-8 分块安全拼接、`data:` 分发、`[DONE]` 处理）。
@@ -418,10 +426,15 @@ flowchart LR
 ### `frontend-leptos/src/markdown.rs`
 
 - **`pulldown-cmark`** 将 Markdown 转为 HTML 片段，**`ammonia::clean`** 白名单净化后供助手气泡 **`innerHTML`** 注入（含多级标题、列表、代码块、表格、任务列表等）。
+- 单测：宿主目标下 **`#[test]`** 校验表格、脚本剔除、围栏代码等；**`wasm32`** 下另有 **`#[wasm_bindgen_test]`** 烟测（与生产同路径调用 **`to_safe_html`**）。
+
+### `frontend-leptos/src/debounce_schedule.rs`
+
+- 侧栏「筛选会话」「搜索消息」防抖的**纯代数规则**（**`debounce_should_apply`**）：与 **`app/sidebar_nav.rs`** 中 **`Cell<u64>`** 递增一代一致，超时回调仅在「当前代数仍等于派发时代数」时写入防抖目标信号。
 
 ### `frontend-leptos/src/lib.rs`
 
-- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下。
+- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下（含 **`debounce_schedule`**）。
 
 ### `frontend-leptos/src/app/`
 
@@ -430,7 +443,7 @@ flowchart LR
 - **`chat_scroll.rs`**：消息列表指纹变化时的自动跟底、**`focus_message_id_after_nav`** 滚入视图。
 - **`chat_find.rs`**：主区查找匹配 id、光标与首条 **`scroll_message_into_view`**。
 - **`workspace_panel.rs`**：**`reload_workspace_panel`** 封装与切换到 Workspace 侧栏时自动拉取。
-- **`sidebar_nav.rs`**：左侧导航与会话列表；**`mobile_shell_header.rs`**：窄屏顶栏。
+- **`sidebar_nav.rs`**：左侧导航与会话列表；**`debounce_signal_to_effect`** 对会话标题筛选与跨会话消息搜索做 **`TimeoutFuture`** 防抖（规则见 **`debounce_schedule`**）。**`mobile_shell_header.rs`**：窄屏顶栏。
 - **`chat_column.rs`**：中部消息列表与输入区；**`chat_find_bar.rs`** / **`chat_export_menu.rs`**：查找条与导出上下文菜单。
 - **`side_column.rs`**：右列（工作区/任务、`SideColumnTasksCard` 等）；**`status_bar.rs`**：底栏状态。
 - **`approval_bar.rs`**：工具审批条；**`session_list_modal.rs`**、**`settings_modal.rs`**、**`changelist_modal.rs`**：各模态（含变更集 fetch 副作用）。
