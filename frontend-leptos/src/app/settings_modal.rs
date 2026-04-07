@@ -207,6 +207,7 @@ pub fn settings_modal_view(
                                                 &base,
                                                 &model,
                                                 api_key_upd.as_deref(),
+                                                loc,
                                             ) {
                                                 Ok(()) => {
                                                     llm_api_key_draft.set(String::new());
@@ -231,7 +232,7 @@ pub fn settings_modal_view(
                                         on:click=move |_| {
                                             llm_settings_feedback.set(None);
                                             let loc = locale.get_untracked();
-                                            let _ = clear_client_llm_api_key_storage();
+                                            let _ = clear_client_llm_api_key_storage(loc);
                                             llm_has_saved_key.set(false);
                                             llm_settings_feedback.set(Some(
                                                 i18n::settings_cleared_key(loc).to_string(),

@@ -56,7 +56,7 @@ use crate::app_prefs::{
     load_f64_key, load_side_panel_view, local_storage, store_bool_key, store_f64_key,
     store_side_panel_view,
 };
-use crate::i18n::load_locale_from_storage;
+use crate::i18n::{self, load_locale_from_storage};
 use crate::session_ops::SessionContextAnchor;
 use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
@@ -172,7 +172,10 @@ pub fn App() -> impl IntoView {
             return;
         }
         let (list, aid) = load_sessions();
-        let (list, def_id) = ensure_at_least_one(list);
+        let (list, def_id) = ensure_at_least_one(
+            list,
+            i18n::default_session_title(locale.get_untracked()).to_string(),
+        );
         let pick = aid
             .filter(|id| list.iter().any(|s| s.id == *id))
             .unwrap_or(def_id);
@@ -416,6 +419,7 @@ pub fn App() -> impl IntoView {
         chat_find_match_ids,
         chat_find_cursor,
         auto_scroll_chat,
+        locale,
     );
 
     wire_focus_message_after_nav(focus_message_id_after_nav);
@@ -423,6 +427,7 @@ pub fn App() -> impl IntoView {
     let chat_wires = wire_chat_composer_streams(
         initialized,
         sessions,
+        locale,
         active_id,
         draft,
         conversation_id,
@@ -547,7 +552,11 @@ pub fn App() -> impl IntoView {
             <div class="shell-main">
                 {mobile_shell_header_view(mobile_nav_open, locale, new_session.clone())}
 
-                <ApprovalBar pending_approval=pending_approval approval_expanded=approval_expanded />
+                <ApprovalBar
+                    pending_approval=pending_approval
+                    approval_expanded=approval_expanded
+                    locale=locale
+                />
 
                 <Show when=move || chat_find_panel_open.get()>
                     <ChatFindBar
@@ -648,6 +657,7 @@ pub fn App() -> impl IntoView {
                     client_llm_storage_tick,
                     selected_agent_role,
                     Arc::clone(&refresh_status),
+                    locale,
                 )}
             </div>
 

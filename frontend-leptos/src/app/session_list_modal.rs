@@ -78,10 +78,11 @@ fn SessionListModalPanel(
                             let id = s.id.clone();
                             let active = active_id.get() == id;
                             let row_buf = Arc::clone(&buf);
+                            let row_title = s.title.clone();
                             view! {
                                 <SessionModalRow
                                     id=id.clone()
-                                    title=s.title.clone()
+                                    title=row_title
                                     message_count=s.messages.len()
                                     active=active
                                     locale=locale

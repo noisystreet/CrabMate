@@ -115,11 +115,18 @@ pub fn ChatExportContextMenu(
                             if ids.is_empty() {
                                 return;
                             }
+                            let loc = locale.get_untracked();
                             let md = sessions.with(|list| {
                                 let aid = active_id.get_untracked();
                                 list.iter()
                                     .find(|s| s.id == aid)
-                                    .map(|s| stored_messages_by_ids_to_markdown(&s.messages, &ids))
+                                    .map(|s| {
+                                        stored_messages_by_ids_to_markdown(
+                                            &s.messages,
+                                            &ids,
+                                            loc,
+                                        )
+                                    })
                                     .unwrap_or_default()
                             });
                             let stem = export_filename_stem("chat_selection");

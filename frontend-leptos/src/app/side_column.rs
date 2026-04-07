@@ -361,8 +361,9 @@ pub fn side_column_view(
                                                                                 return;
                                                                             }
                                                                             workspace_set_busy.set(true);
+                                                                            let loc = locale.get_untracked();
                                                                             spawn_local(async move {
-                                                                                match post_workspace_set(Some(p)).await {
+                                                                                match post_workspace_set(Some(p), loc).await {
                                                                                     Ok(_) => {
                                                                                         reload_workspace_panel(
                                                                                             workspace_loading,
@@ -395,12 +396,13 @@ pub fn side_column_view(
                                                                         on:click=move |_| {
                                                                             workspace_set_err.set(None);
                                                                             workspace_pick_busy.set(true);
+                                                                            let loc_pick = locale.get_untracked();
                                                                             spawn_local(async move {
                                                                                 match fetch_workspace_pick().await {
                                                                                     Ok(Some(p)) => {
                                                                                         workspace_path_draft.set(p.clone());
                                                                                         workspace_set_err.set(None);
-                                                                                        match post_workspace_set(Some(p)).await {
+                                                                                        match post_workspace_set(Some(p), loc_pick).await {
                                                                                             Ok(_) => {
                                                                                                 reload_workspace_panel(
                                                                                                     workspace_loading,
@@ -464,6 +466,7 @@ pub fn side_column_view(
                                                                 subtree_expanded=workspace_subtree_expanded
                                                                 subtree_cache=workspace_subtree_cache
                                                                 subtree_loading=workspace_subtree_loading
+                                                                locale=locale
                                                             />
                                                         </div>
                                                     }

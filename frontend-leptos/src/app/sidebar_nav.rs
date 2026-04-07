@@ -156,7 +156,12 @@ pub fn sidebar_nav_view(
                         Vec::new()
                     } else {
                         sessions.with(|list| {
-                            collect_message_search_hits(list, &msg_needle, MESSAGE_SEARCH_MAX_HITS)
+                            collect_message_search_hits(
+                                list,
+                                &msg_needle,
+                                MESSAGE_SEARCH_MAX_HITS,
+                                locale.get(),
+                            )
                         })
                     };
                     let hit_views = if !msg_needle.is_empty() {
@@ -206,7 +211,11 @@ pub fn sidebar_nav_view(
                                                 mobile_nav_open.set(false);
                                             }
                                         >
-                                            <span class="nav-search-hit-title">{title}</span>
+                                            <span class="nav-search-hit-title">
+                                                {move || {
+                                                    i18n::session_title_for_display(&title, locale.get())
+                                                }}
+                                            </span>
                                             <span class="nav-search-hit-snippet">{snip}</span>
                                         </button>
                                     }
@@ -280,7 +289,11 @@ pub fn sidebar_nav_view(
                                         }
                                     }
                                 >
-                                    <span class="nav-session-title">{title}</span>
+                                    <span class="nav-session-title">
+                                        {move || {
+                                            i18n::session_title_for_display(&title, locale.get())
+                                        }}
+                                    </span>
                                     <span class="nav-session-meta">{move || i18n::session_row_msg_count(locale.get(), n)}</span>
                                 </button>
                             }
@@ -321,7 +334,7 @@ pub fn sidebar_nav_view(
                         };
                         let id = a.session_id;
                         session_context_menu.set(None);
-                        export_session_json_for_id(sessions, &id);
+                        export_session_json_for_id(sessions, &id, locale.get_untracked());
                     }
                 >
                     {move || i18n::ctx_export_json(locale.get())}
@@ -337,7 +350,7 @@ pub fn sidebar_nav_view(
                         };
                         let id = a.session_id;
                         session_context_menu.set(None);
-                        export_session_markdown_for_id(sessions, &id);
+                        export_session_markdown_for_id(sessions, &id, locale.get_untracked());
                     }
                 >
                     {move || i18n::ctx_export_md(locale.get())}
