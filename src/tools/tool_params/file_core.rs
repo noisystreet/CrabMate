@@ -278,7 +278,11 @@ pub(in crate::tools) fn params_codebase_semantic_search() -> serde_json::Value {
             },
             "rebuild_index": {
                 "type": "boolean",
-                "description": "为 true 时全量重建当前工作区（或 path 子树）的向量索引并写入 .crabmate/；首次使用或大改后建议先重建再 query"
+                "description": "为 true 时重建向量索引并写入 .crabmate/。整库默认增量（见 incremental / codebase_semantic_rebuild_incremental）；指定 path 时为该子树全量替换。首次或需强制对齐时可用 incremental:false"
+            },
+            "incremental": {
+                "type": "boolean",
+                "description": "仅 rebuild_index 时有效：整库是否按文件指纹跳过未改文件（默认取配置 codebase_semantic_rebuild_incremental）；false 时清空并全量重嵌入"
             },
             "path": {
                 "type": "string",

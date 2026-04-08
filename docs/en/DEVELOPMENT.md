@@ -99,7 +99,7 @@ flowchart TB
 |------|---------------------------|
 | `agent/` | **`agent_turn/`**: main loop; **`message_pipeline`**, **`context_window`**, **`per_coord`**, **`plan_artifact`**, **`workflow/`**, staged planning, tool execution (**E**), reflection (**R**), planner (**P**). |
 | `chat_job_queue.rs` | Bounded queue for `/chat` + `/chat/stream`; **`per_active_jobs`** for `/status`. |
-| `codebase_semantic_index.rs` | **`codebase_semantic_search`**: fastembed + SQLite per workspace; removed from tool list when disabled. |
+| `codebase_semantic_index.rs` | **`codebase_semantic_search`**: fastembed + SQLite per workspace; **`crabmate_codebase_files`** stores per-file **`size` / `mtime_ns` / `content_sha256`** for **workspace-wide** incremental rebuild (default; **`codebase_semantic_rebuild_incremental`**, override with tool **`incremental:false`** for full); subtree **`path`** still replaces that prefix. Rust chunks add lightweight **symbol hint lines** before embed text. Schema v3; removed from tool list when disabled. |
 | `config/` | **`AgentConfig`**, embedded TOML shards + user file + optional **`config/agent_roles.toml`** (or sibling of **`--config`**) + env, CLI parsing (**`ParsedCliArgs::agent_role_cli`**), secrets as **`SecretString`**, cursor rules merge, **`agent_roles` / `default_agent_role_id`** (**`system_prompt_for_new_conversation`**), long-term memory keys (`finalize` rejects external vector backends not wired). |
 | `http_client.rs` | Shared `reqwest::Client`. |
 | `redact.rs` | Log previews for long HTTP bodies. |

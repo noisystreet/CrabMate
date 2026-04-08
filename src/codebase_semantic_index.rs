@@ -26,6 +26,13 @@ pub struct CodebaseSemanticToolParams {
     #[serde(default = "default_semantic_query_max_chunks")]
     pub query_max_chunks: usize,
     pub rebuild_max_files: usize,
+    /// `rebuild_index` 且未指定 `path`（整库）时：按文件 `mtime+size+SHA256` 跳过未改文件，仅重嵌入变更项（`incremental:false` 可强制全量）。
+    #[serde(default = "default_semantic_rebuild_incremental")]
+    pub rebuild_incremental: bool,
+}
+
+fn default_semantic_rebuild_incremental() -> bool {
+    true
 }
 
 impl CodebaseSemanticToolParams {
@@ -39,25 +46,31 @@ impl CodebaseSemanticToolParams {
             top_k: cfg.codebase_semantic_top_k,
             query_max_chunks: cfg.codebase_semantic_query_max_chunks,
             rebuild_max_files: cfg.codebase_semantic_rebuild_max_files,
+            rebuild_incremental: cfg.codebase_semantic_rebuild_incremental,
         }
     }
 }
 
 use std::cmp::{Ordering, Reverse};
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 use ignore::WalkBuilder;
+use regex::Regex;
 use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
 use crate::tools::canonical_workspace_root;
 
 const TABLE: &str = "crabmate_codebase_chunks";
-const SCHEMA_VERSION: i64 = 2;
+const TABLE_FILES: &str = "crabmate_codebase_files";
+/// 供失效逻辑删除文件目录表（与 chunks 同步）。
+pub(crate) const CODEBASE_SEMANTIC_FILES_TABLE: &str = TABLE_FILES;
+const SCHEMA_VERSION: i64 = 3;
 
 fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(&format!(
@@ -78,6 +91,15 @@ fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
         CREATE INDEX IF NOT EXISTS idx_{TABLE}_workspace ON {TABLE}(workspace_root);
         CREATE INDEX IF NOT EXISTS idx_{TABLE}_ws_rel ON {TABLE}(workspace_root, rel_path);
+        CREATE TABLE IF NOT EXISTS {TABLE_FILES} (
+            workspace_root TEXT NOT NULL,
+            rel_path TEXT NOT NULL,
+            size INTEGER NOT NULL,
+            mtime_ns INTEGER NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            PRIMARY KEY (workspace_root, rel_path)
+        );
+        CREATE INDEX IF NOT EXISTS idx_{TABLE_FILES}_ws ON {TABLE_FILES}(workspace_root);
         "#
     ))?;
 
@@ -97,6 +119,19 @@ fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
             ),
             [],
         );
+        let _ = conn.execute_batch(&format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS {TABLE_FILES} (
+                workspace_root TEXT NOT NULL,
+                rel_path TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                mtime_ns INTEGER NOT NULL,
+                content_sha256 TEXT NOT NULL,
+                PRIMARY KEY (workspace_root, rel_path)
+            );
+            CREATE INDEX IF NOT EXISTS idx_{TABLE_FILES}_ws ON {TABLE_FILES}(workspace_root);
+            "#
+        ));
         conn.execute(
             "INSERT OR REPLACE INTO crabmate_codebase_index_meta (key, value) VALUES ('schema_version', ?1)",
             params![SCHEMA_VERSION.to_string()],
@@ -372,6 +407,11 @@ pub fn run_tool(
         query_max_chunks = query_max_chunks.clamp(1, 2_000_000);
     }
 
+    let incremental = v
+        .get("incremental")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(p.rebuild_incremental);
+
     if rebuild {
         return rebuild_index(
             &ws_root,
@@ -383,6 +423,7 @@ pub fn run_tool(
             p.rebuild_max_files,
             &ext_set,
             file_glob_pat.as_ref(),
+            incremental,
         );
     }
 
@@ -396,7 +437,97 @@ pub fn run_tool(
     )
 }
 
-#[allow(clippy::too_many_arguments)] // 重建扫描参数较多；与 `run_tool` 分层清晰
+fn file_fingerprint(path: &Path, max_file_bytes: usize) -> Option<(u64, i64, String, String)> {
+    let meta = fs::metadata(path).ok()?;
+    let size = meta.len();
+    let mtime_ns = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| {
+            let n = d.as_nanos();
+            if n > i64::MAX as u128 {
+                i64::MAX
+            } else {
+                n as i64
+            }
+        })
+        .unwrap_or(0);
+    let f = fs::File::open(path).ok()?;
+    let mut buf = Vec::new();
+    f.take(max_file_bytes as u64 + 1)
+        .read_to_end(&mut buf)
+        .ok()?;
+    if buf.len() > max_file_bytes {
+        return None;
+    }
+    let text = String::from_utf8(buf).ok()?;
+    let mut h = Sha256::new();
+    h.update(text.as_bytes());
+    let hex = format!("{:x}", h.finalize());
+    Some((size, mtime_ns, text, hex))
+}
+
+static RUST_FN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^\s*(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)").expect("regex")
+});
+static RUST_TYPE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^\s*(?:pub\s+)?(?:struct|enum|trait|type)\s+([A-Za-z_][A-Za-z0-9_]*)")
+        .expect("regex")
+});
+static RUST_IMPL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^\s*(?:pub\s+)?impl(?:<[^>]+>)?\s+([A-Za-z_][A-Za-z0-9_:]*)").expect("regex")
+});
+
+fn rust_symbol_hints_for_chunk(chunk: &str) -> String {
+    let mut names: Vec<String> = Vec::new();
+    for cap in RUST_FN_RE.captures_iter(chunk) {
+        if let Some(m) = cap.get(1) {
+            names.push(m.as_str().to_string());
+        }
+    }
+    for cap in RUST_TYPE_RE.captures_iter(chunk) {
+        if let Some(m) = cap.get(1) {
+            names.push(m.as_str().to_string());
+        }
+    }
+    for cap in RUST_IMPL_RE.captures_iter(chunk) {
+        if let Some(m) = cap.get(1) {
+            let s = m.as_str();
+            if !s.starts_with("for ") {
+                names.push(s.to_string());
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        String::new()
+    } else {
+        let mut s = names.join(", ");
+        const MAX: usize = 400;
+        if s.len() > MAX {
+            s.truncate(MAX);
+            s.push('…');
+        }
+        format!("symbols: {}", s)
+    }
+}
+
+fn embed_doc_for_chunk(rel: &str, ext: &str, chunk: &str) -> String {
+    let hints = if ext == "rs" {
+        rust_symbol_hints_for_chunk(chunk)
+    } else {
+        String::new()
+    };
+    if hints.is_empty() {
+        format!("file: {}\n{}", rel, chunk)
+    } else {
+        format!("file: {}\n{}\n{}", rel, hints, chunk)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn rebuild_index(
     ws_root: &Path,
     ws_key: &str,
@@ -407,6 +538,7 @@ fn rebuild_index(
     rebuild_max_files: usize,
     ext_set: &HashSet<String>,
     file_glob_pat: Option<&glob::Pattern>,
+    incremental: bool,
 ) -> String {
     let mut conn = match open_codebase_semantic_db(index_path) {
         Ok(c) => c,
@@ -436,13 +568,23 @@ fn rebuild_index(
         Err(e) => return format!("索引事务开始失败: {}", e),
     };
     let delete_scope = sub_path.and_then(posix_subdir_prefix_for_delete);
+    let subtree = delete_scope.is_some();
+
     match delete_scope.as_deref() {
         None | Some("") | Some(".") => {
-            if let Err(e) = tx.execute(
-                &format!("DELETE FROM {TABLE} WHERE workspace_root = ?1"),
-                params![ws_key],
-            ) {
-                return format!("清空旧索引失败: {}", e);
+            if !incremental {
+                if let Err(e) = tx.execute(
+                    &format!("DELETE FROM {TABLE} WHERE workspace_root = ?1"),
+                    params![ws_key],
+                ) {
+                    return format!("清空旧向量块失败: {}", e);
+                }
+                if let Err(e) = tx.execute(
+                    &format!("DELETE FROM {TABLE_FILES} WHERE workspace_root = ?1"),
+                    params![ws_key],
+                ) {
+                    return format!("清空文件目录失败: {}", e);
+                }
             }
         }
         Some(prefix) => {
@@ -453,7 +595,15 @@ fn rebuild_index(
                 ),
                 params![ws_key, prefix, like_pat],
             ) {
-                return format!("清空子树旧索引失败: {}", e);
+                return format!("清空子树旧向量块失败: {}", e);
+            }
+            if let Err(e) = tx.execute(
+                &format!(
+                    "DELETE FROM {TABLE_FILES} WHERE workspace_root = ?1 AND (rel_path = ?2 OR rel_path LIKE ?3 ESCAPE '\\')"
+                ),
+                params![ws_key, prefix, like_pat],
+            ) {
+                return format!("清空子树文件目录失败: {}", e);
             }
         }
     }
@@ -463,6 +613,30 @@ fn rebuild_index(
         Err(e) => return e,
     };
 
+    let mut catalog: HashMap<String, (u64, i64, String)> = HashMap::new();
+    if incremental && !subtree {
+        let mut stmt = match tx.prepare_cached(&format!(
+            "SELECT rel_path, size, mtime_ns, content_sha256 FROM {TABLE_FILES} WHERE workspace_root = ?1"
+        )) {
+            Ok(s) => s,
+            Err(e) => return format!("读取文件目录失败: {}", e),
+        };
+        let rows = match stmt.query_map(params![ws_key], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)? as u64,
+                r.get::<_, i64>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        }) {
+            Ok(it) => it,
+            Err(e) => return format!("遍历文件目录失败: {}", e),
+        };
+        for (rel, sz, mt, sha) in rows.flatten() {
+            catalog.insert(rel, (sz, mt, sha));
+        }
+    }
+
     let walker = WalkBuilder::new(&search_root)
         .hidden(true)
         .git_ignore(true)
@@ -471,19 +645,18 @@ fn rebuild_index(
         .build();
 
     let mut files_indexed = 0usize;
+    let mut files_unchanged = 0usize;
     let mut chunks_total = 0usize;
     let mut skipped_files = 0usize;
-    let mut embed_batches: Vec<(String, String, usize, usize, String)> = Vec::new();
+    let mut embed_batches: Vec<(String, String, usize, usize, String, String)> = Vec::new();
+    let mut seen_rels: HashSet<String> = HashSet::new();
+    let mut file_rows: Vec<(String, u64, i64, String)> = Vec::new();
 
     for entry in walker {
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
         };
-        if files_indexed >= rebuild_max_files {
-            skipped_files = skipped_files.saturating_add(1);
-            continue;
-        }
         if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
@@ -510,38 +683,95 @@ fn rebuild_index(
             Some(r) => r,
             None => continue,
         };
+        seen_rels.insert(rel.clone());
 
-        let f = match fs::File::open(path) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
-        let mut buf = Vec::new();
-        if f.take(max_file_bytes as u64 + 1)
-            .read_to_end(&mut buf)
-            .is_err()
-        {
+        let Some((size, mtime_ns, text, sha_hex)) = file_fingerprint(path, max_file_bytes) else {
+            if incremental && !subtree {
+                let _ = tx.execute(
+                    &format!("DELETE FROM {TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"),
+                    params![ws_key, rel.as_str()],
+                );
+                let _ = tx.execute(
+                    &format!(
+                        "DELETE FROM {TABLE_FILES} WHERE workspace_root = ?1 AND rel_path = ?2"
+                    ),
+                    params![ws_key, rel.as_str()],
+                );
+            }
+            skipped_files = skipped_files.saturating_add(1);
             continue;
+        };
+        if incremental && !subtree {
+            if let Some((sz, mt, sh)) = catalog.get(&rel)
+                && *sz == size
+                && *mt == mtime_ns
+                && *sh == sha_hex
+            {
+                files_unchanged += 1;
+                continue;
+            }
+            if let Err(e) = tx.execute(
+                &format!("DELETE FROM {TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"),
+                params![ws_key, rel.as_str()],
+            ) {
+                return format!("删除旧块失败: {}", e);
+            }
         }
-        if buf.len() > max_file_bytes {
+
+        if files_indexed >= rebuild_max_files {
             skipped_files = skipped_files.saturating_add(1);
             continue;
         }
-        let text = match String::from_utf8(buf) {
-            Ok(s) => s,
-            Err(_) => {
-                skipped_files = skipped_files.saturating_add(1);
-                continue;
-            }
-        };
 
+        let mut file_chunks = 0usize;
         for (sl, el, chunk) in chunk_text_lines(&text, chunk_max_chars) {
             if chunk.chars().count() < 8 {
                 continue;
             }
             let h = hash_chunk(&rel, &chunk);
-            embed_batches.push((rel.clone(), h, sl, el, chunk));
+            embed_batches.push((rel.clone(), h, sl, el, chunk, ext.clone()));
+            file_chunks += 1;
         }
-        files_indexed += 1;
+        if file_chunks > 0 {
+            files_indexed += 1;
+            file_rows.push((rel, size, mtime_ns, sha_hex));
+        } else {
+            if incremental && !subtree {
+                let _ = tx.execute(
+                    &format!("DELETE FROM {TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"),
+                    params![ws_key, rel.as_str()],
+                );
+                let _ = tx.execute(
+                    &format!(
+                        "DELETE FROM {TABLE_FILES} WHERE workspace_root = ?1 AND rel_path = ?2"
+                    ),
+                    params![ws_key, rel.as_str()],
+                );
+            }
+            skipped_files = skipped_files.saturating_add(1);
+        }
+    }
+
+    if incremental && !subtree {
+        let stale: Vec<String> = catalog
+            .keys()
+            .filter(|k| !seen_rels.contains(*k))
+            .cloned()
+            .collect();
+        for rel in stale {
+            if let Err(e) = tx.execute(
+                &format!("DELETE FROM {TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"),
+                params![ws_key, rel.as_str()],
+            ) {
+                return format!("删除已删除文件的块失败: {}", e);
+            }
+            if let Err(e) = tx.execute(
+                &format!("DELETE FROM {TABLE_FILES} WHERE workspace_root = ?1 AND rel_path = ?2"),
+                params![ws_key, rel.as_str()],
+            ) {
+                return format!("删除文件目录行失败: {}", e);
+            }
+        }
     }
 
     const BATCH: usize = 32;
@@ -550,7 +780,7 @@ fn rebuild_index(
         let end = (i + BATCH).min(embed_batches.len());
         let docs: Vec<String> = embed_batches[i..end]
             .iter()
-            .map(|(rel, _, _, _, body)| format!("file: {}\n{}", rel, body))
+            .map(|(rel, _, _, _, body, ext)| embed_doc_for_chunk(rel, ext, body))
             .collect();
         let docs_ref: Vec<&str> = docs.iter().map(|s| s.as_str()).collect();
         let embeddings = match embedder.embed(docs_ref, None) {
@@ -562,7 +792,7 @@ fn rebuild_index(
         }
         for (j, emb) in embeddings.into_iter().enumerate() {
             let blob = f32_slice_to_bytes(&emb);
-            let (rel, h, sl, el, body) = &embed_batches[i + j];
+            let (rel, h, sl, el, body, _) = &embed_batches[i + j];
             if let Err(e) = tx.execute(
                 &format!(
                     "INSERT INTO {TABLE} (workspace_root, rel_path, start_line, end_line, chunk_text, content_hash, embedding) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
@@ -574,6 +804,17 @@ fn rebuild_index(
             chunks_total += 1;
         }
         i = end;
+    }
+
+    for (rel, sz, mt, sha) in file_rows {
+        if let Err(e) = tx.execute(
+            &format!(
+                "INSERT OR REPLACE INTO {TABLE_FILES} (workspace_root, rel_path, size, mtime_ns, content_sha256) VALUES (?1, ?2, ?3, ?4, ?5)"
+            ),
+            params![ws_key, rel, sz as i64, mt, sha],
+        ) {
+            return format!("写入文件目录失败: {}", e);
+        }
     }
 
     if let Err(e) = tx.execute(
@@ -591,11 +832,22 @@ fn rebuild_index(
         None => "范围：整库（未指定 path 或 path 为 .）".to_string(),
         Some(p) => format!("范围：子树 `{}`（其余路径索引保留）", p),
     };
+    let mode_note = if subtree {
+        "模式：子树全量重嵌入（已清空该子树目录表与块）。".to_string()
+    } else if incremental {
+        format!(
+            "模式：整库增量（mtime+size+SHA256 未变的文件跳过嵌入；未再出现的文件已删块与目录行）。未改文件数：{}",
+            files_unchanged
+        )
+    } else {
+        "模式：整库全量（已清空向量块与文件目录后重建）。".to_string()
+    };
     format!(
-        "代码语义索引已重建。\n索引文件：{}\n工作区键：{}\n{}\n已索引文件数（上限 {}）：{}\n文本块数：{}\n跳过/超限文件数：{}\n提示：之后用 query 检索；大仓可适当提高 codebase_semantic_rebuild_max_files 或缩小 path/extensions；子目录增量重建请传 path。",
+        "代码语义索引已重建。\n索引文件：{}\n工作区键：{}\n{}\n{}\n已嵌入文件数（本趟；上限 {}）：{}\n文本块数（本趟写入）：{}\n跳过/超限/未产生块：{}\n提示：大仓可调高 codebase_semantic_rebuild_max_files 或缩小 path/extensions；整库默认增量见 codebase_semantic_rebuild_incremental；强制全量可传 incremental:false。",
         index_path.display(),
         ws_key,
         scope_note,
+        mode_note,
         rebuild_max_files,
         files_indexed,
         chunks_total,
@@ -819,5 +1071,19 @@ mod tests {
     #[test]
     fn sqlite_like_escape_escapes_wildcards() {
         assert_eq!(sqlite_like_escape("a%b_c\\"), "a\\%b\\_c\\\\");
+    }
+
+    #[test]
+    fn rust_symbol_hints_fn_struct_impl() {
+        let c = r#"
+impl MyType {
+    pub fn do_work() {}
+}
+pub struct Other {}
+"#;
+        let h = rust_symbol_hints_for_chunk(c);
+        assert!(h.contains("do_work"), "{}", h);
+        assert!(h.contains("MyType"), "{}", h);
+        assert!(h.contains("Other"), "{}", h);
     }
 }

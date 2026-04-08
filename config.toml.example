@@ -93,6 +93,7 @@
 # codebase_semantic_top_k = 8
 # codebase_semantic_query_max_chunks = 50000
 # codebase_semantic_rebuild_max_files = 2000
+# codebase_semantic_rebuild_incremental = true
 
 # http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/"]
 # http_fetch_timeout_secs = 30

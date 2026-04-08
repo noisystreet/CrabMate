@@ -565,4 +565,9 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.codebase_semantic_rebuild_max_files = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_REBUILD_INCREMENTAL")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.codebase_semantic_rebuild_incremental = Some(val);
+    }
 }

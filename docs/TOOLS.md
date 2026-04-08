@@ -35,7 +35,7 @@
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限及 **`encoding`**（`utf-8` 严格、`utf-8-sig`、`gb18030`/`gbk`/`big5`、`utf-16le`/`be`、`auto` 等；非法序列报错而非静默替换）；`modify_file` 支持按行区间替换（大文件友好）。**单轮** `run_agent_turn` 内，服务端可对相同文件+相同读取参数缓存 `read_file` 正文（比对磁盘 **mtime+size**；执行写类工具或工作区变更后缓存清空），键含 **encoding**，见配置 **`read_file_turn_cache_max_entries`**。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的文件，正文解码规则与 `read_file` 一致，可选查询参数 **`encoding`**；超出大小返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
-  - `codebase_semantic_search`：工作区**语义**代码检索（本地 **fastembed** + SQLite，与**会话长期记忆**分库）。**`rebuild_index: true`** 扫描 `.gitignore` 感知的源码树，将分块文本嵌入并写入默认 **`.crabmate/codebase_semantic.sqlite`**（可用配置改相对路径）；再用 **`query`** 做余弦相似度 Top-K（流式扫描 + 最小堆，内存随 **`top_k`** 而非全表）。**`rebuild_index`** 未指定 **`path`**（或 **`path`** 为 **`.`**）时删除并重建**整库**该工作区键下的块；指定子目录 **`path`** 时**仅替换该子树**，其余路径索引保留。单文件大小、默认 Top-K、**`query_max_chunks`**（扫描块数上限，默认见配置）、重建文件数上限见 **`codebase_semantic_*`** / **`AGENT_CODEBASE_SEMANTIC_*`**。不设为只读：`rebuild_index` 会写索引库。大仓请先设 **`path`** 或缩小扩展名。关闭工具：`codebase_semantic_search_enabled = false`。**与写工具联动**（默认开启 **`codebase_semantic_invalidate_on_workspace_change`**）：单文件写成功删除该 **`rel_path`**；**`delete_dir`** / **`create_dir`** 按**目录前缀**删除子树块；`run_command` / `git_*` / `workflow_execute` 等无法静态解析路径时**清空当前工作区键下整表**，避免陈旧命中；仅只读工具但本轮已 `workspace_changed`（如前置 `run_command` 编译成功）时亦整表清空。
+  - `codebase_semantic_search`：工作区**语义**代码检索（本地 **fastembed** + SQLite，与**会话长期记忆**分库；库内另有 **`crabmate_codebase_files`** 记录每文件指纹）。**`rebuild_index: true`** 扫描 `.gitignore` 感知的源码树并写入默认 **`.crabmate/codebase_semantic.sqlite`**。**整库**（未指定 **`path`** 或 **`.`**）默认**增量**：**`mtime`+`size`+内容 SHA256** 未变的文件跳过嵌入；传 **`incremental:false`** 或配置 **`codebase_semantic_rebuild_incremental=false`** 则清空向量块与文件表后全量重嵌入。指定子目录 **`path`** 时仍**仅替换该子树**（清空子树后全量重嵌入该范围）。**`.rs`** 分块在嵌入前附带轻量 **`fn`/`struct` 等符号行**，便于按标识符语义召回。再用 **`query`** 做余弦 Top-K（流式扫描 + 最小堆）；**`query_max_chunks`** 限制扫描块数。单文件大小、默认 Top-K、**`codebase_semantic_rebuild_max_files`**（单趟最多**重新嵌入**的文件数）等见 **`codebase_semantic_*`** / **`AGENT_CODEBASE_SEMANTIC_*`**。不设为只读：`rebuild_index` 会写索引库。关闭工具：`codebase_semantic_search_enabled = false`。**与写工具联动**（默认 **`codebase_semantic_invalidate_on_workspace_change`**）：按路径删块并同步删文件表行；目录类工具按前缀删；`run_command` / `git_*` 等仍可能整表清空。
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接与 `#fragment` 锚点；支持 `output_format=text|json|sarif`。`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测（同 URL 去重缓存）。
   - `typos_check` / `codespell_check`：文档拼写检查（**只读**，需本机安装 [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)）；默认优先检查存在的 `README.md` 与 `docs/`，可用 `paths` 收窄；`typos_check` 支持 `config_path`（项目词典通常在 `.typos.toml`），`codespell_check` 支持 `dictionary_paths`（`-I` 词典文件）与 `ignore_words_list`（`-L`）。
   - `ast_grep_run`：用 [ast-grep](https://ast-grep.github.io/) 做**语法树级**搜索（需本机安装 `ast-grep`，如 `cargo install ast-grep`）；必填 `pattern` 与 `lang`，默认在存在的 `src` 下搜索，并内置排除 `target`、`node_modules`、`.git` 等；可用 `paths` / `globs` 进一步限制范围。
@@ -478,7 +478,15 @@
   {"include_toolchain":true,"include_workspace_paths":true,"include_env":true,"extra_env_vars":["CI"]}
   ```
 - `codebase_semantic_search`（先建索引再查；依赖本机 **fastembed/ONNX**，与长期记忆相同栈）：
-  - 重建（可省略 `query`）：
+  - 整库增量重建（可省略 `query`；未改文件跳过嵌入）：
+  ```json
+  {"rebuild_index": true}
+  ```
+  - 强制全量重建：
+  ```json
+  {"rebuild_index": true, "incremental": false}
+  ```
+  - 仅重建子目录（仍为该子树全量替换）：
   ```json
   {"rebuild_index": true, "path": "src"}
   ```
