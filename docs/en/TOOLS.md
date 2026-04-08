@@ -35,7 +35,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `create_file` / `modify_file`; `read_file` supports ranges, line caps, **`encoding`** (`utf-8` strict, `utf-8-sig`, `gb18030`/`gbk`/`big5`, `utf-16le`/`be`, `auto`, …; malformed → error). `modify_file` can replace line ranges. **Per-turn** `read_file` cache (mtime+size; cleared on writes / workspace change), key includes **encoding**, cap **`read_file_turn_cache_max_entries`**. Web `GET /workspace/file` caps **1 MiB**, same decoding, optional **`encoding`**. Paths in outputs are **relative to workspace** (POSIX), not host absolutes.
   - `copy_file` / `move_file`: Copy/move **files** inside workspace (path safety like `create_file`); default no overwrite unless `overwrite: true`; cross-device `move_file` copies then deletes source.
   - `read_dir` / `glob_files` / `list_tree`: List dir; glob recurse; tree with `max_depth` / `max_entries` caps, stay inside workspace.
-  - `codebase_semantic_search`: **Semantic** code search (local **fastembed** + SQLite, separate from session long-term memory). **`rebuild_index: true`** scans `.gitignore`-aware tree, embeds chunks into **`.crabmate/codebase_semantic.sqlite`** (configurable path); **`query`** for cosine Top-K. Limits: **`codebase_semantic_*`** / **`AGENT_CODEBASE_SEMANTIC_*`**. Not read-only: `rebuild_index` **overwrites** index for the workspace key. Large repos: set **`path`** or narrow extensions. Disable tool: `codebase_semantic_search_enabled = false`.
+  - `codebase_semantic_search`: **Semantic** code search (local **fastembed** + SQLite, separate from long-term memory; **`crabmate_codebase_files`** stores per-file fingerprints). **`rebuild_index: true`** scans a `.gitignore`-aware tree into **`.crabmate/codebase_semantic.sqlite`**. **Workspace-wide** rebuild is **incremental** by default (**`mtime` + `size` + SHA256**); **`incremental: false`** or **`codebase_semantic_rebuild_incremental=false`** clears chunks + file rows then full re-embed. Subtree **`path`** still replaces only that prefix. **Rust** chunks add lightweight **symbol hint lines** before embed text. **`query`** cosine Top-K; **`query_max_chunks`** caps scan work. **`codebase_semantic_rebuild_max_files`** caps files **re-embedded** per run. Not read-only. Disable: `codebase_semantic_search_enabled = false`. Invalidation deletes matching chunk + catalog rows (or full clear when paths are unknown).
   - `markdown_check_links`: Scan Markdown (default `README.md`, `docs/`) for relative links and `#fragment` anchors; `output_format=text|json|sarif`. External `http(s)://` default offline; optional `allowed_external_prefixes` enables HEAD probes (deduped cache).
   - `typos_check` / `codespell_check`: Spell check (read-only; needs [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)); default `README.md` + `docs/` if present; `paths` narrows; `typos_check` `config_path`; `codespell_check` `dictionary_paths` / `ignore_words_list`.
   - `ast_grep_run`: AST search with [ast-grep](https://ast-grep.github.io/) (install `ast-grep`); requires `pattern`, `lang`; default search under `src` excluding `target`, `node_modules`, `.git`; optional `paths` / `globs`.
@@ -439,13 +439,21 @@ Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
   {"include_toolchain":true,"include_workspace_paths":true,"include_env":true,"extra_env_vars":["CI"]}
   ```
 - `codebase_semantic_search` (fastembed/ONNX; same stack as long-term memory):
-  - Rebuild (query optional):
+  - Workspace-wide incremental rebuild (query optional):
+  ```json
+  {"rebuild_index": true}
+  ```
+  - Force full rebuild:
+  ```json
+  {"rebuild_index": true, "incremental": false}
+  ```
+  - Rebuild subtree only:
   ```json
   {"rebuild_index": true, "path": "src"}
   ```
   - Query:
   ```json
-  {"query": "Where is chat job queue concurrency configured?", "top_k": 6}
+  {"query": "Where is chat job queue concurrency configured?", "top_k": 6, "query_max_chunks": 20000}
   ```
 - `apply_patch` (**unified diff**; dry-run then apply—small steps, rollback-friendly, context-rich):
   - Same format as `git diff`: `---`/`+++` headers, `@@` hunks, `-`/`+` lines, **context lines start with a single space**.

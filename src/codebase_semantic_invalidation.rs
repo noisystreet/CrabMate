@@ -4,7 +4,9 @@ use std::path::Path;
 
 use rusqlite::params;
 
-use crate::codebase_semantic_index::{index_path_for_workspace, open_codebase_semantic_db};
+use crate::codebase_semantic_index::{
+    CODEBASE_SEMANTIC_FILES_TABLE, index_path_for_workspace, open_codebase_semantic_db,
+};
 use crate::config::AgentConfig;
 use crate::tool_result::parse_legacy_output;
 use crate::tools::canonical_workspace_root;
@@ -181,6 +183,10 @@ pub(crate) fn apply_after_successful_tool(
                 &format!("DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1"),
                 params![ws_key],
             );
+            let _ = conn.execute(
+                &format!("DELETE FROM {CODEBASE_SEMANTIC_FILES_TABLE} WHERE workspace_root = ?1"),
+                params![ws_key],
+            );
         }
         CodebaseSemanticInvalidation::RelScopes(scopes) => {
             if scopes.is_empty() {
@@ -195,19 +201,33 @@ pub(crate) fn apply_after_successful_tool(
                 let res = if sc.is_dir {
                     let like_pat =
                         sqlite_like_escape(&format!("{}/%", sc.path.trim_end_matches('/')));
-                    tx.execute(
+                    let r1 = tx.execute(
                         &format!(
                             "DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1 AND (rel_path = ?2 OR rel_path LIKE ?3 ESCAPE '\\')"
                         ),
                         params![ws_key, sc.path.trim_end_matches('/'), like_pat],
-                    )
+                    );
+                    let r2 = tx.execute(
+                        &format!(
+                            "DELETE FROM {CODEBASE_SEMANTIC_FILES_TABLE} WHERE workspace_root = ?1 AND (rel_path = ?2 OR rel_path LIKE ?3 ESCAPE '\\')"
+                        ),
+                        params![ws_key, sc.path.trim_end_matches('/'), like_pat],
+                    );
+                    r1.and(r2)
                 } else {
-                    tx.execute(
+                    let r1 = tx.execute(
                         &format!(
                             "DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"
                         ),
                         params![ws_key, sc.path.as_str()],
-                    )
+                    );
+                    let r2 = tx.execute(
+                        &format!(
+                            "DELETE FROM {CODEBASE_SEMANTIC_FILES_TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"
+                        ),
+                        params![ws_key, sc.path.as_str()],
+                    );
+                    r1.and(r2)
                 };
                 if res.is_err() {
                     ok = false;

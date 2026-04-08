@@ -109,7 +109,8 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_CODEBASE_SEMANTIC_MAX_FILE_BYTES` | Max bytes per indexed file. |
 | `AGENT_CODEBASE_SEMANTIC_CHUNK_MAX_CHARS` | Max chars per chunk. |
 | `AGENT_CODEBASE_SEMANTIC_TOP_K` | Default Top-K. |
-| `AGENT_CODEBASE_SEMANTIC_REBUILD_MAX_FILES` | Max files per **`rebuild_index`**. |
+| `AGENT_CODEBASE_SEMANTIC_REBUILD_MAX_FILES` | Max files **re-embedded** per **`rebuild_index`** (large-repo guard; unchanged files are skipped in incremental mode). |
+| `AGENT_CODEBASE_SEMANTIC_REBUILD_INCREMENTAL` | Workspace-wide **`rebuild_index`** defaults to **incremental** (**`mtime` + `size` + SHA256**); **`false`** clears chunk + file-catalog rows then full re-embed. Subtree **`path`** still replaces that prefix only. |
 | `AGENT_CONVERSATION_STORE_SQLITE_PATH` | Conversation SQLite path. |
 
 ### First-turn injection

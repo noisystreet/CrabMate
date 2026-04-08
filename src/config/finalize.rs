@@ -478,6 +478,8 @@ pub(super) fn finalize(
         .codebase_semantic_rebuild_max_files
         .unwrap_or(2000)
         .clamp(1, 100_000) as usize;
+    let codebase_semantic_rebuild_incremental =
+        b.codebase_semantic_rebuild_incremental.unwrap_or(true);
 
     let web_search_provider = match b.web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
@@ -659,6 +661,7 @@ pub(super) fn finalize(
         codebase_semantic_top_k,
         codebase_semantic_query_max_chunks,
         codebase_semantic_rebuild_max_files,
+        codebase_semantic_rebuild_incremental,
         tool_registry_http_fetch_wall_timeout_secs,
         tool_registry_http_request_wall_timeout_secs,
         tool_registry_parallel_wall_timeout_secs,
