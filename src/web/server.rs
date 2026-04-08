@@ -80,6 +80,7 @@ pub(crate) fn build_app(
     }
     let mut app = Router::new()
         .merge(protected_api)
+        .route("/openapi.json", get(super::openapi::openapi_json_handler))
         .route("/health", get(super::chat_handlers::health_handler))
         .route("/status", get(super::chat_handlers::status_handler))
         .nest_service(
