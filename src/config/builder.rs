@@ -79,7 +79,9 @@ pub(crate) struct ConfigBuilder {
     pub(crate) staged_plan_patch_max_attempts: Option<u64>,
     pub(crate) staged_plan_cli_show_planner_stream: Option<bool>,
     pub(crate) staged_plan_optimizer_round: Option<bool>,
+    pub(crate) staged_plan_optimizer_requires_parallel_tools: Option<bool>,
     pub(crate) staged_plan_ensemble_count: Option<u64>,
+    pub(crate) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
     pub(crate) sync_default_tool_sandbox_mode_str: Option<String>,
     pub(crate) sync_default_tool_sandbox_docker_image: Option<String>,
     pub(crate) sync_default_tool_sandbox_docker_network: Option<String>,
@@ -354,9 +356,15 @@ impl ConfigBuilder {
         self.staged_plan_optimizer_round = agent
             .staged_plan_optimizer_round
             .or(self.staged_plan_optimizer_round);
+        self.staged_plan_optimizer_requires_parallel_tools = agent
+            .staged_plan_optimizer_requires_parallel_tools
+            .or(self.staged_plan_optimizer_requires_parallel_tools);
         self.staged_plan_ensemble_count = agent
             .staged_plan_ensemble_count
             .or(self.staged_plan_ensemble_count);
+        self.staged_plan_skip_ensemble_on_casual_prompt = agent
+            .staged_plan_skip_ensemble_on_casual_prompt
+            .or(self.staged_plan_skip_ensemble_on_casual_prompt);
         override_opt_string_non_empty(
             &mut self.sync_default_tool_sandbox_mode_str,
             agent.sync_default_tool_sandbox_mode,

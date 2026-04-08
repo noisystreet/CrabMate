@@ -14,4 +14,6 @@ staged_plan_execution = true
 # staged_plan_patch_max_attempts = 2
 staged_plan_cli_show_planner_stream = false
 staged_plan_optimizer_round = true
+staged_plan_optimizer_requires_parallel_tools = true
 staged_plan_ensemble_count = 1
+staged_plan_skip_ensemble_on_casual_prompt = true
