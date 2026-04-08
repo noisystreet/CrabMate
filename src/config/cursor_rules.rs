@@ -1,9 +1,5 @@
 use std::path::{Path, PathBuf};
 
-fn truncate_chars(s: &str, max_chars: usize) -> String {
-    s.chars().take(max_chars).collect()
-}
-
 fn load_cursor_rule_documents(
     cwd: &Path,
     rules_dir: &str,
@@ -88,7 +84,7 @@ fn render_cursor_rules_appendix(docs: &[(String, String)], max_chars: usize) -> 
     if body.chars().count() <= max_chars {
         return body;
     }
-    let mut truncated = truncate_chars(&body, max_chars);
+    let mut truncated = super::super::text_util::truncate_str_to_max_chars(&body, max_chars);
     truncated.push_str("\n\n[提示] 规则内容已按 cursor_rules_max_chars 截断。");
     truncated
 }

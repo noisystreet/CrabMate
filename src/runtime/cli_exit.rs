@@ -38,23 +38,7 @@ impl CliExitError {
 
 /// 根据 `run_agent_turn` / LLM 层常见错误文案归类退出码（启发式，与 `llm::api` 用户可见串对齐）。
 pub fn classify_model_error_message(msg: &str) -> i32 {
-    if msg.contains("HTTP 429")
-        || msg.contains("http 429")
-        || msg.contains("status=429")
-        || msg.contains("限流")
-        || msg.contains("quota")
-        || msg.contains("Quota")
-    {
-        return EXIT_QUOTA_OR_RATE_LIMIT;
-    }
-    if msg.contains("HTTP 402")
-        || msg.contains("http 402")
-        || msg.contains("余额")
-        || msg.contains("insufficient")
-    {
-        return EXIT_QUOTA_OR_RATE_LIMIT;
-    }
-    if msg.contains("HTTP 503") || msg.contains("http 503") || msg.contains("status=503") {
+    if crate::agent_errors::is_quota_or_rate_limit_llm_message(msg) {
         return EXIT_QUOTA_OR_RATE_LIMIT;
     }
     if msg.contains("模型接口返回错误")

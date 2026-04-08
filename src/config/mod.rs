@@ -15,7 +15,7 @@ mod validate;
 mod workspace_roots;
 
 pub use hot_reload::apply_hot_reload_config_subset;
-pub use load::load_config;
+pub use load::{load_config, load_config_for_cli};
 
 #[allow(unused_imports)] // 部分类型仅对外再导出，本文件内不直接使用
 pub use types::{
