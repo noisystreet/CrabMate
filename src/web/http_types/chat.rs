@@ -25,6 +25,9 @@ pub(crate) struct ChatRequestBody {
     /// 断线重连：挂接到进行中的 `job_id`；`after_seq` 与请求头 **`Last-Event-ID`** 取较大值后从环形缓冲重放。
     #[serde(default)]
     pub(crate) stream_resume: Option<StreamResumeBody>,
+    /// 客户端实现的 SSE 控制面版本（与 `crabmate_sse_protocol::SSE_PROTOCOL_VERSION` 对齐）。省略表示不声明，服务端不据此拒绝；若 **大于** 服务端版本则 **400**（`SSE_CLIENT_TOO_NEW`）。
+    #[serde(default, rename = "client_sse_protocol")]
+    pub(crate) client_sse_protocol: Option<u8>,
 }
 
 #[derive(serde::Deserialize)]

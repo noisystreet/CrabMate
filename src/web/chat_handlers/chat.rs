@@ -36,6 +36,34 @@ fn sse_event_with_id(seq: u64, data: String) -> Result<Event, Infallible> {
     Ok(Event::default().id(seq.to_string()).data(data))
 }
 
+fn reject_if_client_sse_protocol_invalid(
+    client_sse_protocol: Option<u8>,
+) -> Result<(), (StatusCode, Json<ApiError>)> {
+    let Some(v) = client_sse_protocol else {
+        return Ok(());
+    };
+    if v == 0 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_SSE_CLIENT_PROTOCOL",
+                message: "client_sse_protocol 非法（须为 1～255）".to_string(),
+            }),
+        ));
+    }
+    if v > crate::sse::protocol::SSE_PROTOCOL_VERSION {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "SSE_CLIENT_TOO_NEW",
+                message: "客户端声明的 SSE 协议版本高于服务端，请升级服务器或更换匹配的前端构建"
+                    .to_string(),
+            }),
+        ));
+    }
+    Ok(())
+}
+
 fn parse_last_event_id(headers: &HeaderMap) -> Option<u64> {
     let raw = headers.get(axum::http::HeaderName::from_static("last-event-id"))?;
     let s = raw.to_str().ok()?.trim();
@@ -122,6 +150,7 @@ pub(crate) async fn chat_handler(
             }),
         ));
     }
+    reject_if_client_sse_protocol_invalid(body.client_sse_protocol)?;
     let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
         .map_err(|e| {
             (
@@ -421,6 +450,7 @@ pub(crate) async fn chat_stream_handler(
             }),
         ));
     }
+    reject_if_client_sse_protocol_invalid(body.client_sse_protocol)?;
     let conversation_id = normalize_client_conversation_id(body.conversation_id.as_deref())
         .map_err(|e| {
             (

@@ -4,14 +4,13 @@
 //!
 //! **完整契约**（版本、`error`/`code` 与 `tool_result.error_code` 枚举、双端对齐清单）见仓库 **`docs/SSE_PROTOCOL.md`**（与 `frontend-leptos/src/sse_dispatch.rs` 对齐）。
 
-/// 当前协议版本；须与 `docs/SSE_PROTOCOL.md` 及前端 `SSE_PROTOCOL_VERSION`（`api.rs`）一致。
-pub const SSE_PROTOCOL_VERSION: u8 = 1;
+pub use crabmate_sse_protocol::SSE_PROTOCOL_VERSION;
 
 /// 服务端为每条 `/chat/stream` SSE 事件分配的 **`id:`**（`Last-Event-ID`）环形缓冲容量（仅内存；进程重启后不可恢复）。
 pub const SSE_RESUME_RING_CAP: usize = 512;
 
 fn default_sse_v() -> u8 {
-    1
+    SSE_PROTOCOL_VERSION
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -246,7 +245,10 @@ pub fn encode_message(payload: SsePayload) -> String {
             "sse_protocol encode failed error={}",
             e
         );
-        r#"{"v":1,"error":"内部协议序列化失败","code":"SSE_ENCODE"}"#.to_string()
+        format!(
+            r#"{{"v":{},"error":"内部协议序列化失败","code":"SSE_ENCODE"}}"#,
+            SSE_PROTOCOL_VERSION
+        )
     })
 }
 
@@ -282,7 +284,7 @@ mod tests {
     #[test]
     fn deserialize_legacy_no_v_field() {
         let m: SseMessage = serde_json::from_str(r#"{"tool_running":false}"#).unwrap();
-        assert_eq!(m.v, 1);
+        assert_eq!(m.v, SSE_PROTOCOL_VERSION);
         assert!(matches!(
             m.payload,
             SsePayload::ToolRunning {

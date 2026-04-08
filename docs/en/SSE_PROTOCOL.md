@@ -2,13 +2,15 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. The source of truth for types is Rust `src/sse/protocol.rs`; the browser consumes via `frontend-leptos/src/sse_dispatch.rs` (called by `frontend-leptos/src/api.rs`). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** are defined in Rust `src/sse/protocol.rs`; the **numeric protocol version** is shared with the Leptos UI via workspace crate **`crabmate-sse-protocol`** (constant **`SSE_PROTOCOL_VERSION`**, re-exported from `sse::protocol`). The browser consumes via `frontend-leptos/src/sse_dispatch.rs` (called by `frontend-leptos/src/api.rs`). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
 
-## Protocol version `v`
+## Protocol version `v` and negotiation
 
-- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`1`**, aligned with **`sse::protocol::SSE_PROTOCOL_VERSION`**.
-- **Default**: Legacy payloads may omit `v`; deserialization treats missing as **`1`** (`SseMessage` `#[serde(default = "default_sse_v")]`).
-- **Evolution**: When bumping `v`, update this doc, Rust and TS constants, and handle unknown versions in the frontend (today parsing is shape-based without strict `v` checks).
+- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`1`**, aligned with **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**.
+- **Default**: Legacy payloads may omit `v`; deserialization treats missing as **`SSE_PROTOCOL_VERSION`** (`SseMessage` `#[serde(default = "default_sse_v")]`).
+- **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**, `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**.
+- **First frame**: After a new stream is attached, the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to its compile-time constant; on mismatch it calls `onError` and stops reading; the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older; usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
+- **Evolution**: Bump **`crates/crabmate-sse-protocol`**, this doc and the Chinese twin, and run **`cargo test -p crabmate-sse-protocol`** (doc marker self-check).
 
 ## Transport and framing
 
@@ -55,7 +57,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `staged_plan_notice` / `staged_plan_notice_clear` | Plan progress text; Web **swallows** | `handled`, not `onDelta` |
 | `chat_ui_separator` | UI separator; `true` short, `false` long | `onChatUiSeparator` |
 | `conversation_saved` | Session persisted; `revision` for branching/conflict | `onConversationSaved` |
-| `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Web: **swallow**; integrations can persist `job_id` for resume |
+| `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
 | `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `cancelled`) | Web: **swallow**; clients may stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
@@ -86,18 +88,27 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 
 ## Stream error `code` enum (`error` + `code`)
 
-SSE **stream** error codes (not HTTP JSON body). Update this table and `api.ts` when adding codes.
+**`SsePayload::Error`** on SSE `data:` lines (`error` + non-empty `code`). Distinct from model text that only has `error` without `code` (see above).
 
 | `code` | Source | Meaning |
 |--------|--------|---------|
-| `CONVERSATION_CONFLICT` | `web/chat_handlers`, `chat_job_queue` | Session revision / save conflict |
-| `INTERNAL_ERROR` | `chat_job_queue` | Queue or unexpected internal error |
-| `STREAM_JOB_GONE` | `chat_stream_handler` | **`stream_resume`** job not in hub (HTTP **410** + JSON, not SSE) |
-| `STREAM_CANCELLED` | `chat_job_queue` | Stream cancelled (e.g. client disconnect + cooperative cancel while SSE can still deliver) |
-| `staged_plan_tool_calls` | **Legacy/compat** | Rare today |
-| `staged_plan_invalid` | **Legacy/compat** | Rare today |
-| `plan_rewrite_exhausted` | `agent_turn/outer_loop` | Final plan rewrite budget exhausted |
-| `SSE_ENCODE` | `sse/protocol` | Control JSON serialization failure |
+| `CONVERSATION_CONFLICT` | `web/chat_handlers/conflict`, `chat_job_queue` | Session revision / save conflict |
+| `INTERNAL_ERROR` | `chat_job_queue` | `run_agent_turn` failure (non-cancel), user-facing fallback text |
+| `STREAM_CANCELLED` | `chat_job_queue` | Cancelled stream, delivered when channel still open |
+| `plan_rewrite_exhausted` | `agent_turn/outer_loop`, `agent_turn/staged` | Final plan rewrite budget exhausted |
+| `SSE_ENCODE` | `sse/protocol` | `encode_message` serialization fallback |
+
+**HTTP only** (JSON `ApiError`, not SSE `data:`), stream-related extras:
+
+| `code` | HTTP | Notes |
+|--------|------|------|
+| `STREAM_JOB_GONE` | 410 | **`stream_resume`** job not in hub |
+| `SSE_CLIENT_TOO_NEW` | 400 | **`client_sse_protocol`** greater than server **`SSE_PROTOCOL_VERSION`** |
+| `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
+
+**Client-only hints** (in `onError` text from official Leptos when **`sse_capabilities`** disagrees): **`SSE_SERVER_TOO_NEW`**, **`SSE_SERVER_TOO_OLD`**.
+
+**Legacy** (rarely emitted today): `staged_plan_tool_calls`, `staged_plan_invalid` — see `chat_job_queue` logging for `staged_plan_invalid:` prefix errors.
 
 ## `tool_result.error_code` (tools / workflow)
 
@@ -122,18 +133,18 @@ Full heuristics: `src/tool_result/` (`classify_error_code`); workflow: `src/agen
 
 ## vs `POST /chat` HTTP errors
 
-Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUEUE_FULL"`), **not** SSE `data:` lines. See `web/chat_handlers` and README API notes; **this file covers only SSE control-plane payloads.**
+Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUEUE_FULL"`), **not** SSE `data:` lines. The full **`ApiError.code`** table lives in **`docs/CLI_CONTRACT.md`**; **this doc** focuses on SSE control-plane and **`client_sse_protocol`**-related HTTP codes, complementing the stream error table above.
 
 ## Dual-end checklist
 
 When changing any of:
 
-1. `src/sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody`, `SSE_PROTOCOL_VERSION`
-2. `frontend-leptos/src/sse_dispatch.rs` and `frontend-leptos/src/api.rs`: control-payload classification and dispatch ordering
+1. **`crates/crabmate-sse-protocol`**: **`SSE_PROTOCOL_VERSION`**; `src/sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (version from the crate, re-exported in `protocol`)
+2. `frontend-leptos/src/sse_dispatch.rs` and `frontend-leptos/src/api.rs`: classification order and **`client_sse_protocol`** in the request body
 3. `src/sse/line.rs`: `classify_agent_sse_line`
 4. New `encode_message(SsePayload::…)` call sites
 
-…keep Rust, TS, and this doc aligned.
+…keep Rust, Leptos, and this doc aligned.
 
 ## Contract tests (control-plane classification)
 

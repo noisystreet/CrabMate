@@ -9,6 +9,8 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Headers, Request, RequestInit, RequestMode, Response, Window};
 
+use crabmate_sse_protocol::SSE_PROTOCOL_VERSION;
+
 use crate::i18n::Locale;
 use crate::sse_dispatch::{
     CommandApprovalRequest, SseCallbacks, ToolResultInfo, try_dispatch_sse_control_payload,
@@ -398,6 +400,7 @@ pub async fn send_chat_stream(
             "conversation_id": conversation_id,
             "agent_role": agent_role,
             "approval_session_id": approval_session_id,
+            "client_sse_protocol": SSE_PROTOCOL_VERSION,
         });
         if let Some(jid) = stream_resume_job_id {
             body["stream_resume"] = serde_json::json!({

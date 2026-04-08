@@ -2,13 +2,15 @@
 
 # Agent SSE 控制面协议（`/chat/stream`）
 
-本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。实现与类型的**单一事实来源**为 Rust `src/sse/protocol.rs`；浏览器消费逻辑在 `frontend-leptos/src/sse_dispatch.rs`（由 `frontend-leptos/src/api.rs` 调用）。Rust 侧行分类见 `src/sse/line.rs`（`classify_agent_sse_line`），须与本表语义一致。
+本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**的单一事实来源为 Rust `src/sse/protocol.rs`；**协议版本号**与 Leptos 前端共用 workspace crate **`crabmate-sse-protocol`**（常量 **`SSE_PROTOCOL_VERSION`**，`protocol.rs` 再导出同名常量）。浏览器消费逻辑在 `frontend-leptos/src/sse_dispatch.rs`（由 `frontend-leptos/src/api.rs` 调用）。Rust 侧行分类见 `src/sse/line.rs`（`classify_agent_sse_line`），须与本表语义一致。
 
-## 协议版本 `v`
+## 协议版本 `v` 与协商
 
-- 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`1`**，与常量 **`sse::protocol::SSE_PROTOCOL_VERSION`** 对齐。
-- **缺省**：历史载荷可省略 `v`，反序列化时按 **`1`** 处理（见 `SseMessage` 的 `#[serde(default = "default_sse_v")]`）。
-- **演进**：递增 `v` 时须同步更新本文档、`SSE_PROTOCOL_VERSION`（Rust）、`SSE_PROTOCOL_VERSION`（TS），并在前端对未知版本做降级或显式报错（当前实现按字段形状解析，未强制校验 `v`）。
+- 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`1`**，与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**（及 `sse::protocol::SSE_PROTOCOL_VERSION`）一致。
+- **缺省**：历史载荷可省略 `v`，反序列化时按 **`SSE_PROTOCOL_VERSION`** 处理（见 `SseMessage` 的 `#[serde(default = "default_sse_v")]`）。
+- **请求体（可选）**：`POST /chat` 与 **`POST /chat/stream`** 的 JSON 可带 **`client_sse_protocol`**（`u8`）。**省略**时服务端不据此拒绝（兼容旧客户端）。若 **`client_sse_protocol >` 服务端 `SSE_PROTOCOL_VERSION`** → **HTTP 400**，`ApiError.code` 为 **`SSE_CLIENT_TOO_NEW`**；若为 **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**。
+- **首帧能力**：新流建立后，服务端尽快下发 **`sse_capabilities`**，其中 **`supported_sse_v`** 等于服务端 **`SSE_PROTOCOL_VERSION`**。官方 Leptos 前端在收到该帧时比对本地常量：若 **`supported_sse_v ≠ SSE_PROTOCOL_VERSION`**，触发 `onError` 并停止读流，文案中含 **`SSE_SERVER_TOO_NEW`**（服务端更**新**、前端更**旧**）或 **`SSE_SERVER_TOO_OLD`**（服务端更**旧**、前端更**新**；通常此前已被 **`SSE_CLIENT_TOO_NEW`** 拒绝，保留用于重连重放等边界）。
+- **演进**：递增 `v` 时须同步：**`crates/crabmate-sse-protocol`**、本文档与中英 **`docs/en/SSE_PROTOCOL.md`**、**`cargo test -p crabmate-sse-protocol`**（文档内版本标记自检）。
 
 ## 传输与分帧
 
@@ -55,7 +57,7 @@
 | `staged_plan_notice` / `staged_plan_notice_clear` | 规划进度文本（TUI 等）；Web **吞掉**不当下文 | `handled`，不 `onDelta` |
 | `chat_ui_separator` | 聊天区分隔线；`true` 短、`false` 长 | `onChatUiSeparator` |
 | `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测 | Leptos：`sse_dispatch` 解析后更新内存中的 `revision`；`onConversationSaved`（TS 等） |
-| `sse_capabilities` | 首帧能力：`supported_sse_v`、`resume_ring_cap`、`job_id`（与 `x-stream-job-id` 一致） | Web：**吞掉**（不当下文）；集成方可据此保存 `job_id` 做重连 |
+| `sse_capabilities` | 首帧能力：`supported_sse_v`、`resume_ring_cap`、`job_id`（与 `x-stream-job-id` 一致） | 官方 Web：与本地 **`SSE_PROTOCOL_VERSION`** 校验；匹配则**吞掉**（不当下文）；不匹配则 **`onError`** 并停止。集成方可据此保存 `job_id` 做重连 |
 | `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `cancelled`） | Web：**吞掉**；客户端可据此停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
@@ -86,18 +88,27 @@
 
 ## 流错误 `code` 枚举（`error` + `code`）
 
-以下为当前 Rust 路径会下发的 **SSE 流错误**码（非 HTTP JSON）。新增码时须更新本表并改 `api.ts` 若需分支逻辑。
+以下为 **当前代码路径**会经 SSE `data:` 下发的 **`SsePayload::Error`**（`error` + 非空 `code`）。与「仅有 `error` 字符串、无 `code`」的模型正文片段区分见上文「与模型正文的区分」。
 
 | `code` | 来源（模块） | 含义 |
 |--------|----------------|------|
-| `CONVERSATION_CONFLICT` | `web/chat_handlers`、`chat_job_queue` | 会话版本冲突 / 保存冲突 |
-| `INTERNAL_ERROR` | `chat_job_queue` | 队列或内部未预期错误 |
-| `STREAM_JOB_GONE` | `chat_stream_handler` | **`stream_resume`** 指向的任务已结束或不在本进程 hub（HTTP **410** + JSON，非 SSE） |
-| `STREAM_CANCELLED` | `chat_job_queue` | 流式任务被取消（如客户端断开导致协作取消，且 SSE 仍可投递时补发）；与 `llm::api::stream_chat` 在 **`out` 发送失败** 时置位的取消标志配合，减少静默空转 |
-| `staged_plan_tool_calls` | `agent_turn/staged` | （**保留/兼容**）旧版在规划轮因原生 `tool_calls` 报错；**当前**规划轮丢弃原生 `tool_calls` 并从正文 DSML 物化，**通常不再下发** |
-| `staged_plan_invalid` | （保留/兼容） | 旧版在规划 JSON 无效时下发；**当前服务端**对该情况已改为降级为常规循环，**通常不再出现** |
-| `plan_rewrite_exhausted` | `agent_turn/outer_loop` | 终答规划重写次数用尽 |
-| `SSE_ENCODE` | `sse/protocol` | 控制面 JSON 序列化失败（兜底） |
+| `CONVERSATION_CONFLICT` | `web/chat_handlers/conflict`、`chat_job_queue`（流式保存冲突） | 会话 revision / 保存冲突 |
+| `INTERNAL_ERROR` | `chat_job_queue` | `run_agent_turn` 失败等非取消类错误（用户可见兜底文案） |
+| `STREAM_CANCELLED` | `chat_job_queue` | 流被取消且仍可投递时补发（与协作取消配合） |
+| `plan_rewrite_exhausted` | `agent_turn/outer_loop`、`agent_turn/staged` | 终答规划重写次数用尽 |
+| `SSE_ENCODE` | `sse/protocol` | `encode_message` 序列化失败兜底 |
+
+**仅 HTTP、不经 SSE `data:`**（`POST /chat`、`POST /chat/stream` 的 JSON 体，`ApiError`）与流式相关的补充码：
+
+| `code` | HTTP | 说明 |
+|--------|------|------|
+| `STREAM_JOB_GONE` | 410 | **`stream_resume`** 任务不在 hub（见 `chat_stream_handler`） |
+| `SSE_CLIENT_TOO_NEW` | 400 | 请求体 **`client_sse_protocol`** 大于服务端 **`SSE_PROTOCOL_VERSION`** |
+| `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
+
+**客户端仅日志/文案用（非服务端下发的 SSE `code`）**：官方 Leptos 在 **`sse_capabilities`** 与本地版本不一致时，`onError` 字符串中含 **`SSE_SERVER_TOO_NEW`** 或 **`SSE_SERVER_TOO_OLD`**。
+
+**历史/文档保留（当前实现通常不再下发对应 SSE 帧）**：`staged_plan_tool_calls`、`staged_plan_invalid`（旧版规划轮行为；见 `chat_job_queue` 对 `staged_plan_invalid:` 前缀错误的日志分支，一般不序列化为控制面错误）。
 
 ## `tool_result.error_code`（工具 / 工作流）
 
@@ -122,14 +133,14 @@
 
 ## 与 `POST /chat` HTTP 错误的区别
 
-队列满、鉴权失败等可能返回 **HTTP 4xx/5xx + JSON**（如 `code: "QUEUE_FULL"`），**不**经 SSE `data:`。此类码见 `web/chat_handlers` 与 README 的 API 说明；**本文件仅覆盖 SSE 流内控制面。**
+队列满、鉴权失败等可能返回 **HTTP 4xx/5xx + JSON**（如 `code: "QUEUE_FULL"`），**不**经 SSE `data:`。完整 **`ApiError.code`** 表维护在 **`docs/CLI_CONTRACT.md`**（HTTP 契约）；**本文件**以 SSE 控制面与 **`client_sse_protocol`** 相关 HTTP 码为主，并与上文流错误表互补。
 
 ## 双端对齐检查清单
 
 变更以下任一时，须同步另一方及本文档：
 
-1. `src/sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`、`SSE_PROTOCOL_VERSION`
-2. `frontend-leptos/src/sse_dispatch.rs` 与 `frontend-leptos/src/api.rs`：控制面分类与分发分支顺序
+1. **`crates/crabmate-sse-protocol`**：`SSE_PROTOCOL_VERSION`；`src/sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`（版本常量由 crate 提供并在 `protocol` 再导出）
+2. `frontend-leptos/src/sse_dispatch.rs` 与 `frontend-leptos/src/api.rs`：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
 3. `src/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致）
 4. 新增 `encode_message(SsePayload::…)` 的调用点
 

@@ -509,7 +509,12 @@ pub fn build_openapi_spec() -> Value {
                         "temperature": { "type": "number", "format": "double" },
                         "seed": { "type": "integer", "format": "int64" },
                         "seed_policy": { "type": "string", "description": "如 omit / none" },
-                        "client_llm": { "$ref": "#/components/schemas/ClientLlmBody" }
+                        "client_llm": { "$ref": "#/components/schemas/ClientLlmBody" },
+                        "client_sse_protocol": {
+                            "type": "integer",
+                            "format": "int32",
+                            "description": "可选；客户端 SSE 控制面版本，须 ≤ 服务端。大于服务端时 400（SSE_CLIENT_TOO_NEW）。见 docs/SSE_PROTOCOL.md"
+                        }
                     }
                 },
                 "ChatResponseBody": {

@@ -1006,6 +1006,7 @@ dependencies = [
  "chrono",
  "clap 4.6.0",
  "clap_mangen",
+ "crabmate-sse-protocol",
  "crossterm",
  "csv",
  "dialoguer",
@@ -1050,11 +1051,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabmate-sse-protocol"
+version = "0.1.0"
+
+[[package]]
 name = "crabmate-web-leptos"
 version = "0.1.0"
 dependencies = [
  "ammonia",
  "console_error_panic_hook",
+ "crabmate-sse-protocol",
  "gloo-timers",
  "js-sys",
  "leptos",

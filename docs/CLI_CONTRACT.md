@@ -31,6 +31,8 @@
 
 **`INTERNAL_ERROR`** 仅出现在 **SSE 流** 场景，**不**映射为 `chat` 子进程的上述数字退出码；`chat` 失败仍由 `classify_model_error_message` 等对**错误字符串**归类。
 
+**HTTP JSON（非 SSE `data:`）**：`POST /chat`、`POST /chat/stream` 在握手阶段返回的 **`ApiError.code`** 全集以 **`web/chat_handlers`** 与 OpenAPI 为准；与 **SSE 协议版本**相关的补充码见 **[`docs/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**（`SSE_CLIENT_TOO_NEW`、`INVALID_SSE_CLIENT_PROTOCOL`、`STREAM_JOB_GONE` 等）。
+
 ## `chat --output json` 每行结果（稳定形状）
 
 每轮结束后向 **stdout** 打印**一行** JSON（UTF-8），便于 `jq` / 脚本解析。
