@@ -10,6 +10,19 @@ use crate::types::StreamChunk;
 use super::super::call_error::LlmCallError;
 use super::terminal_render::cli_terminal_write_plain_fragment;
 
+/// 将单次 `delta.reasoning_content` 转为应追加到 [`IngestSseState::reasoning_acc`] 的片段。
+///
+/// - **真增量**（如常见 `reasoning_content` 流）：`s` 通常不是已累积 `acc` 的前缀延长，返回整段 `s`。
+/// - **累积快照**（部分网关每帧重发当前全文）：`s` 以 `acc` 为前缀时只返回新增后缀，避免整段重复拼接。
+#[inline]
+fn reasoning_content_delta_fragment<'a>(acc: &str, s: &'a str) -> &'a str {
+    if s.starts_with(acc) && s.len() >= acc.len() {
+        &s[acc.len()..]
+    } else {
+        s
+    }
+}
+
 /// Web 流式：`out` 存在且提供 **`coop_cancel`** 时，发送失败会置位取消标志，与 `chat_job_queue` 的 `closed()` 监视一致。
 #[inline]
 pub(super) async fn sse_out_send(
@@ -185,19 +198,29 @@ pub(super) async fn ingest_sse_data_payload(
         *finish_reason = reason;
     }
     let delta = choice.delta;
+    let has_reasoning_details = delta
+        .reasoning_details
+        .as_ref()
+        .is_some_and(|d| !d.is_empty());
+    // 同一帧若同时带 `reasoning_details`（如 MiniMax `reasoning_split`）与 `reasoning_content`，
+    // 二者往往同源；只走 `reasoning_details` 路径，避免思维链在 UI/会话里重复一份。
     if let Some(ref s) = delta.reasoning_content
         && !s.is_empty()
+        && !has_reasoning_details
     {
-        accumulate_reasoning_stream_delta(
-            s,
-            reasoning_acc,
-            out,
-            cli_terminal_plain,
-            cli_plain_prefix_emitted,
-            cli_plain_reasoning_style_active,
-            coop_cancel,
-        )
-        .await?;
+        let fragment = reasoning_content_delta_fragment(reasoning_acc.as_str(), s.as_str());
+        if !fragment.is_empty() {
+            accumulate_reasoning_stream_delta(
+                fragment,
+                reasoning_acc,
+                out,
+                cli_terminal_plain,
+                cli_plain_prefix_emitted,
+                cli_plain_reasoning_style_active,
+                coop_cancel,
+            )
+            .await?;
+        }
     }
     if let Some(ref details) = delta.reasoning_details
         && !details.is_empty()
@@ -407,4 +430,35 @@ where
         cli_plain_prefix_emitted,
         cli_plain_reasoning_style_active,
     })
+}
+
+#[cfg(test)]
+mod reasoning_delta_tests {
+    use super::reasoning_content_delta_fragment;
+
+    #[test]
+    fn reasoning_content_delta_empty_acc_is_whole_s() {
+        assert_eq!(reasoning_content_delta_fragment("", "hello"), "hello");
+    }
+
+    #[test]
+    fn reasoning_content_delta_incremental_not_prefix_extends_whole_s() {
+        assert_eq!(
+            reasoning_content_delta_fragment("hello", " world"),
+            " world"
+        );
+    }
+
+    #[test]
+    fn reasoning_content_delta_cumulative_yields_suffix_only() {
+        assert_eq!(
+            reasoning_content_delta_fragment("The user", "The user is asking"),
+            " is asking"
+        );
+    }
+
+    #[test]
+    fn reasoning_content_delta_duplicate_snapshot_yields_empty() {
+        assert_eq!(reasoning_content_delta_fragment("same", "same"), "");
+    }
 }
