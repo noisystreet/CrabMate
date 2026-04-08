@@ -7,7 +7,6 @@ use axum::{
     http::StatusCode,
 };
 use log::error;
-use serde::{Deserialize, Serialize};
 use serde_json;
 
 use crate::AppState;
@@ -16,6 +15,12 @@ use crate::path_workspace::{
     validate_effective_workspace_base, validate_workspace_set_path,
 };
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
+use crate::web::http_types::workspace::{
+    WorkspaceEntry, WorkspaceFileDeleteResponse, WorkspaceFileQuery, WorkspaceFileReadResponse,
+    WorkspaceFileWriteBody, WorkspaceFileWriteResponse, WorkspacePickResponse,
+    WorkspaceProfileResponse, WorkspaceQuery, WorkspaceResponse, WorkspaceSearchBody,
+    WorkspaceSearchResponse, WorkspaceSetBody,
+};
 #[cfg(unix)]
 use crate::workspace_fs::{
     open_directory_under_root, open_existing_file_under_root, open_file_write_under_root,
@@ -31,95 +36,6 @@ use nix::fcntl::AtFlags;
 use nix::sys::stat::fstatat;
 
 const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
-
-#[derive(Serialize)]
-pub struct WorkspacePickResponse {
-    pub path: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct WorkspaceEntry {
-    pub name: String,
-    pub is_dir: bool,
-}
-
-#[derive(Deserialize)]
-pub struct WorkspaceQuery {
-    pub path: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct WorkspaceResponse {
-    pub path: String,
-    pub entries: Vec<WorkspaceEntry>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct WorkspaceSetBody {
-    pub path: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct WorkspaceSearchBody {
-    pub pattern: String,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(default)]
-    pub max_results: Option<usize>,
-    #[serde(default)]
-    pub case_insensitive: Option<bool>,
-    #[serde(default)]
-    pub ignore_hidden: Option<bool>,
-}
-
-#[derive(Serialize)]
-pub struct WorkspaceSearchResponse {
-    pub output: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-/// `GET /workspace/profile`：只读生成的项目画像 Markdown（与首轮注入同源逻辑）。
-#[derive(Serialize)]
-pub struct WorkspaceProfileResponse {
-    pub markdown: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct WorkspaceFileQuery {
-    pub path: String,
-    /// 可选：`utf-8`（默认）、`utf-8-sig`、`gb18030`、`gbk`、`big5`、`utf-16le`、`utf-16be`、`auto`（与 `read_file` 一致）。
-    #[serde(default)]
-    pub encoding: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct WorkspaceFileWriteBody {
-    pub path: String,
-    pub content: String,
-    /// 仅创建：若文件已存在则报错
-    #[serde(default)]
-    pub create_only: bool,
-    /// 仅修改：若文件不存在则报错
-    #[serde(default)]
-    pub update_only: bool,
-}
-
-#[derive(Serialize)]
-pub struct WorkspaceFileWriteResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct WorkspaceFileDeleteResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
 
 /// 解析当前会话工作区根为 canonical 路径，并校验仍在 `workspace_allowed_roots` 内、非敏感目录。
 async fn effective_workspace_base_canonical(
@@ -398,13 +314,6 @@ pub async fn workspace_search_handler(
         output,
         error: None,
     })
-}
-
-#[derive(Serialize)]
-pub struct WorkspaceFileReadResponse {
-    pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
 }
 
 /// 工作区文件读取：按 path 返回文件内容（path 为工作区内文件路径）

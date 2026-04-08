@@ -7,7 +7,7 @@ use axum::extract::{Query, State};
 
 use super::super::app_state::AppState;
 use super::parse::normalize_client_conversation_id;
-use super::types::{WorkspaceChangelogQuery, WorkspaceChangelogResponse};
+use crate::web::http_types::workspace::{WorkspaceChangelogQuery, WorkspaceChangelogResponse};
 use crate::workspace_changelist;
 
 pub(crate) async fn workspace_changelog_handler(

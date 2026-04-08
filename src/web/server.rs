@@ -4,7 +4,7 @@ use axum::{
     Router,
     http::{HeaderValue, header},
     middleware,
-    routing::{get, post},
+    routing::get,
 };
 use tower::ServiceBuilder;
 use tower_http::services::ServeDir;
@@ -19,59 +19,10 @@ pub(crate) fn build_app(
     web_api_bearer_layer_enabled: bool,
 ) -> Router {
     let mut protected_api = Router::new()
-        .route("/chat", post(super::chat_handlers::chat_handler))
-        .route(
-            "/chat/stream",
-            post(super::chat_handlers::chat_stream_handler),
-        )
-        .route(
-            "/chat/approval",
-            post(super::chat_handlers::chat_approval_handler),
-        )
-        .route(
-            "/chat/branch",
-            post(super::chat_handlers::chat_branch_handler),
-        )
-        .route("/upload", post(super::chat_handlers::upload_handler))
-        .route(
-            "/uploads/delete",
-            post(super::chat_handlers::delete_uploads_handler),
-        )
-        .route(
-            "/workspace",
-            get(crate::web::workspace::workspace_handler)
-                .post(crate::web::workspace::workspace_set_handler),
-        )
-        .route(
-            "/workspace/pick",
-            get(crate::web::workspace::workspace_pick_handler),
-        )
-        .route(
-            "/workspace/search",
-            post(crate::web::workspace::workspace_search_handler),
-        )
-        .route(
-            "/workspace/file",
-            get(crate::web::workspace::workspace_file_read_handler)
-                .post(crate::web::workspace::workspace_file_write_handler)
-                .delete(crate::web::workspace::workspace_file_delete_handler),
-        )
-        .route(
-            "/workspace/profile",
-            get(crate::web::workspace::workspace_profile_handler),
-        )
-        .route(
-            "/workspace/changelog",
-            get(super::chat_handlers::workspace_changelog_handler),
-        )
-        .route(
-            "/tasks",
-            get(crate::web::task::tasks_get_handler).post(crate::web::task::tasks_set_handler),
-        )
-        .route(
-            "/config/reload",
-            post(super::chat_handlers::config_reload_handler),
-        );
+        .merge(super::routes::chat::router())
+        .merge(super::routes::workspace::router())
+        .merge(super::routes::tasks::router())
+        .merge(super::routes::config::router());
     if web_api_bearer_layer_enabled {
         protected_api = protected_api.route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -81,8 +32,7 @@ pub(crate) fn build_app(
     let mut app = Router::new()
         .merge(protected_api)
         .route("/openapi.json", get(super::openapi::openapi_json_handler))
-        .route("/health", get(super::chat_handlers::health_handler))
-        .route("/status", get(super::chat_handlers::status_handler))
+        .merge(super::routes::system::router())
         .nest_service(
             "/uploads",
             ServiceBuilder::new()
