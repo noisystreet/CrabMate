@@ -120,6 +120,31 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
         1_048_576,
     )?;
 
+    check_u64_inclusive(
+        "agent_tool_stats_window_events",
+        b.agent_tool_stats_window_events,
+        16,
+        65_536,
+    )?;
+    check_u64_inclusive(
+        "agent_tool_stats_min_samples",
+        b.agent_tool_stats_min_samples,
+        1,
+        10_000,
+    )?;
+    check_u64_inclusive(
+        "agent_tool_stats_max_chars",
+        b.agent_tool_stats_max_chars,
+        64,
+        32_768,
+    )?;
+    check_f64_inclusive(
+        "agent_tool_stats_warn_below_success_ratio",
+        b.agent_tool_stats_warn_below_success_ratio,
+        0.0,
+        1.0,
+    )?;
+
     check_u64_inclusive("context_char_budget", b.context_char_budget, 0, 50_000_000)?;
     check_u64_inclusive(
         "context_min_messages_after_system",

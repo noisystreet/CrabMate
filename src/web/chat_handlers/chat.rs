@@ -86,9 +86,10 @@ async fn build_messages_for_turn(
     // 先取工作区路径，再读 `cfg`，避免在持有 `cfg` 读锁时调用 `effective_workspace_path`（其内部再次 `cfg.read` 会死锁）。
     let root_str = state.effective_workspace_path().await;
     let cfg = state.cfg.read().await;
-    let system_for_turn = cfg
+    let base_system = cfg
         .system_prompt_for_new_conversation(agent_role)?
         .to_string();
+    let system_for_turn = crate::tool_stats::augment_system_prompt(&base_system, &cfg);
     let root = std::path::PathBuf::from(root_str);
     let memory_snippet = if cfg.agent_memory_file_enabled {
         load_memory_snippet(

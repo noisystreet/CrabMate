@@ -35,6 +35,7 @@ mod tool_call_explain;
 mod tool_registry;
 mod tool_result;
 pub mod tool_sandbox;
+mod tool_stats;
 mod tools;
 mod types;
 mod web;

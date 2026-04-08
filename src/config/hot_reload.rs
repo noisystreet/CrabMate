@@ -10,6 +10,7 @@ use super::types::AgentConfig;
 /// - **`api_base` / `model` / `llm_http_auth_mode`**：从磁盘+环境变量**重新应用**（与 [`load_config`] 一致），**下一轮** LLM 请求起生效；共享 `reqwest::Client` 的连接池可能短暂保留旧主机空闲连接，直至池超时。
 /// - **`health_llm_models_probe` / `health_llm_models_probe_cache_secs`**：热更后下一 **`GET /health`** 起生效；**不**自动清空进程内探测缓存（仍在 TTL 内会继续沿用旧结果直至过期）。
 /// - **`system_prompt`**（含 **`system_prompt_file`** 重读）：从 `src` 写入，下一轮起生效。
+/// - **`agent_tool_stats_*`**：热更后影响**下一轮起**附加段内容；已打开会话的 `system` 不会自动改写。
 /// - **MCP**：`mcp_enabled` / `mcp_command` / `mcp_tool_timeout_secs` 会更新；调用方应在提交前 [`crate::mcp::clear_mcp_process_cache`].
 pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) {
     dst.api_base.clone_from(&src.api_base);
@@ -57,6 +58,11 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.cursor_rules_max_chars = src.cursor_rules_max_chars;
     dst.tool_message_max_chars = src.tool_message_max_chars;
     dst.tool_result_envelope_v1 = src.tool_result_envelope_v1;
+    dst.agent_tool_stats_enabled = src.agent_tool_stats_enabled;
+    dst.agent_tool_stats_window_events = src.agent_tool_stats_window_events;
+    dst.agent_tool_stats_min_samples = src.agent_tool_stats_min_samples;
+    dst.agent_tool_stats_max_chars = src.agent_tool_stats_max_chars;
+    dst.agent_tool_stats_warn_below_success_ratio = src.agent_tool_stats_warn_below_success_ratio;
     dst.materialize_deepseek_dsml_tool_calls = src.materialize_deepseek_dsml_tool_calls;
     dst.context_char_budget = src.context_char_budget;
     dst.context_min_messages_after_system = src.context_min_messages_after_system;

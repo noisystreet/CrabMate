@@ -36,6 +36,12 @@ context_summary_transcript_max_chars = 120000
 
 # 3. 内置工具（run_command、工具入模、缓存、联网工具、MCP、解释卡等）
 # 默认见 **`config/tools.toml`**
+# 可选：进程内工具调用统计，新会话首条 system 末尾附加短提示（单进程全局滑动窗口，不按会话分桶）
+# agent_tool_stats_enabled = false
+# agent_tool_stats_window_events = 200
+# agent_tool_stats_min_samples = 5
+# agent_tool_stats_max_chars = 800
+# agent_tool_stats_warn_below_success_ratio = 0.65
 
 # 4. CLI 会话（tui_session.json 等）
 # 默认见 **`config/session.toml`**

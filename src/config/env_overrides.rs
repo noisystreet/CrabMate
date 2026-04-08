@@ -240,6 +240,31 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.tool_result_envelope_v1 = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_TOOL_STATS_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.agent_tool_stats_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_TOOL_STATS_WINDOW_EVENTS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.agent_tool_stats_window_events = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_TOOL_STATS_MIN_SAMPLES")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.agent_tool_stats_min_samples = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_TOOL_STATS_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.agent_tool_stats_max_chars = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO")
+        && let Ok(x) = v.trim().parse::<f64>()
+    {
+        b.agent_tool_stats_warn_below_success_ratio = Some(x);
+    }
     if let Ok(v) = std::env::var("AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS")
         && let Some(val) = parse_bool_like(&v)
     {

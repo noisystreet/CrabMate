@@ -202,7 +202,14 @@ Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共
 | `AGENT_MAX_MESSAGE_HISTORY` | 保留消息条数上限。 |
 | `AGENT_TOOL_MESSAGE_MAX_CHARS` | 单条 `role: tool` 发往模型前压缩阈值。 |
 | `AGENT_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` 信封 v1。 |
+| `AGENT_TOOL_STATS_ENABLED` | 为 `true`/`1`/`yes`/`on` 时启用进程内工具调用统计，并在**新会话**首条 `system` 末尾附加短提示（见下）。 |
+| `AGENT_TOOL_STATS_WINDOW_EVENTS` | 滑动窗口保留的调用事件条数（16–65536；与 TOML `agent_tool_stats_window_events` 一致）。 |
+| `AGENT_TOOL_STATS_MIN_SAMPLES` | 某工具在窗口内总次数 ≥ 该值才参与提示（1–10000）。 |
+| `AGENT_TOOL_STATS_MAX_CHARS` | 附录 Markdown 最大字符数（64–32768，超出截断）。 |
+| `AGENT_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO` | 成功率低于该阈值（0.0–1.0）且满足 `min_samples` 时提示；有失败时也会提示。 |
 | `AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | DeepSeek DSML 工具调用物化。 |
+
+**`[agent]` 对应 TOML 键**（可写入 `config.toml` / `.agent_demo.toml` 等）：`agent_tool_stats_enabled`、`agent_tool_stats_window_events`、`agent_tool_stats_min_samples`、`agent_tool_stats_max_chars`、`agent_tool_stats_warn_below_success_ratio`。统计为**单进程内存**、**全局**（不按 `conversation_id` 分桶）；**不**记录工具参数与完整输出。Web 侧**仅**在新建会话（无已存 `conversation_id` 种子）时拼入；CLI **`chat` / `repl`** 与 **`workspace_session::initial_workspace_messages`** 在「新起一轮首条 system」路径拼入，从磁盘恢复的会话仍以基底 system 对齐且不附加该段。
 | `AGENT_CONTEXT_CHAR_BUDGET` | 上下文字符预算。 |
 | `AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | 摘要后至少保留条数。 |
 | `AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS` | 触发摘要的字符阈值。 |

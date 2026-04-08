@@ -141,19 +141,19 @@ fn resolve_system_prompt_for_chat(
     chat: &ChatCliArgs,
     agent_role: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    if let Some(p) = chat.system_prompt_file.as_deref() {
-        let t = std::fs::read_to_string(p).map_err(|e| {
+    let base = if let Some(p) = chat.system_prompt_file.as_deref() {
+        std::fs::read_to_string(p).map_err(|e| {
             CliExitError::new(
                 EXIT_GENERAL,
                 format!("无法读取 --system-prompt-file {p}: {e}"),
             )
-        })?;
-        return Ok(t);
-    }
-    Ok(cfg
-        .system_prompt_for_new_conversation(agent_role)
-        .map_err(|e| CliExitError::new(EXIT_USAGE, e))?
-        .to_string())
+        })?
+    } else {
+        cfg.system_prompt_for_new_conversation(agent_role)
+            .map_err(|e| CliExitError::new(EXIT_USAGE, e))?
+            .to_string()
+    };
+    Ok(crate::tool_stats::augment_system_prompt(&base, cfg))
 }
 
 fn resolve_user_body(chat: &ChatCliArgs) -> Result<String, Box<dyn std::error::Error>> {

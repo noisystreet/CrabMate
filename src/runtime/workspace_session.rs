@@ -75,10 +75,11 @@ pub fn load_workspace_session(
 
 /// REPL 启动后**立刻**可用的消息列表（仅 `system`），不阻塞项目画像 / 会话恢复等耗时逻辑。
 pub fn repl_bootstrap_messages_fast(cfg: &AgentConfig, agent_role: Option<&str>) -> Vec<Message> {
-    let system = cfg
+    let base = cfg
         .system_prompt_for_new_conversation(agent_role)
         .unwrap_or(cfg.system_prompt.as_str())
         .to_string();
+    let system = crate::tool_stats::augment_system_prompt(&base, cfg);
     vec![Message::system_only(system)]
 }
 
@@ -138,18 +139,20 @@ pub fn initial_workspace_messages(
     load_from_disk: bool,
     agent_role: Option<&str>,
 ) -> Vec<Message> {
-    let system_seed = match cfg.system_prompt_for_new_conversation(agent_role) {
+    let base_system = match cfg.system_prompt_for_new_conversation(agent_role) {
         Ok(s) => s.to_string(),
         Err(_) => cfg.system_prompt.clone(),
     };
     if !load_from_disk {
+        let system_seed = crate::tool_stats::augment_system_prompt(&base_system, cfg);
         if let Some(ctx) = build_first_turn_user_context_markdown(workspace, cfg, None) {
             return vec![Message::system_only(system_seed), Message::user_only(ctx)];
         }
         return vec![Message::system_only(system_seed)];
     }
-    load_workspace_session(workspace, &system_seed, cfg.tui_session_max_messages).unwrap_or_else(
+    load_workspace_session(workspace, &base_system, cfg.tui_session_max_messages).unwrap_or_else(
         || {
+            let system_seed = crate::tool_stats::augment_system_prompt(&base_system, cfg);
             if let Some(ctx) = build_first_turn_user_context_markdown(workspace, cfg, None) {
                 vec![
                     Message::system_only(system_seed.clone()),

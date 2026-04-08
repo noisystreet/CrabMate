@@ -50,6 +50,11 @@ pub(crate) struct ConfigBuilder {
     pub(crate) cursor_rules_max_chars: Option<u64>,
     pub(crate) tool_message_max_chars: Option<u64>,
     pub(crate) tool_result_envelope_v1: Option<bool>,
+    pub(crate) agent_tool_stats_enabled: Option<bool>,
+    pub(crate) agent_tool_stats_window_events: Option<u64>,
+    pub(crate) agent_tool_stats_min_samples: Option<u64>,
+    pub(crate) agent_tool_stats_max_chars: Option<u64>,
+    pub(crate) agent_tool_stats_warn_below_success_ratio: Option<f64>,
     pub(crate) materialize_deepseek_dsml_tool_calls: Option<bool>,
     pub(crate) context_char_budget: Option<u64>,
     pub(crate) context_min_messages_after_system: Option<u64>,
@@ -270,6 +275,21 @@ impl ConfigBuilder {
         self.tool_result_envelope_v1 = agent
             .tool_result_envelope_v1
             .or(self.tool_result_envelope_v1);
+        self.agent_tool_stats_enabled = agent
+            .agent_tool_stats_enabled
+            .or(self.agent_tool_stats_enabled);
+        self.agent_tool_stats_window_events = agent
+            .agent_tool_stats_window_events
+            .or(self.agent_tool_stats_window_events);
+        self.agent_tool_stats_min_samples = agent
+            .agent_tool_stats_min_samples
+            .or(self.agent_tool_stats_min_samples);
+        self.agent_tool_stats_max_chars = agent
+            .agent_tool_stats_max_chars
+            .or(self.agent_tool_stats_max_chars);
+        self.agent_tool_stats_warn_below_success_ratio = agent
+            .agent_tool_stats_warn_below_success_ratio
+            .or(self.agent_tool_stats_warn_below_success_ratio);
         self.materialize_deepseek_dsml_tool_calls = agent
             .materialize_deepseek_dsml_tool_calls
             .or(self.materialize_deepseek_dsml_tool_calls);

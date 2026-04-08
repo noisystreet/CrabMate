@@ -394,6 +394,16 @@ pub struct AgentConfig {
     pub tool_message_max_chars: usize,
     /// 为 true（默认）时：写入历史的 `role: tool` 使用 `crabmate_tool` JSON 信封（含 `summary`/`ok`/`output` 等），便于聚合解析；为 false 时保持纯工具原文。
     pub tool_result_envelope_v1: bool,
+    /// 为 true 时：进程内记录各工具完结的 `ok`/`error_code`（滑动窗口），并在**新会话**首条 `system` 末尾可选附加短提示；不按会话分桶、不落盘。
+    pub agent_tool_stats_enabled: bool,
+    /// 上述统计滑动窗口最多保留的事件条数（单进程全局）。
+    pub agent_tool_stats_window_events: usize,
+    /// 某工具在窗口内总调用次数 ≥ 此值才参与提示。
+    pub agent_tool_stats_min_samples: usize,
+    /// 附加 Markdown 段的最大 Unicode 标量数（超出截断）。
+    pub agent_tool_stats_max_chars: usize,
+    /// 成功率（成功次数/总次数）**低于**该阈值且满足 `min_samples` 时输出提示；有失败时也会提示。
+    pub agent_tool_stats_warn_below_success_ratio: f64,
     /// 为 true（默认）时：若 API 未给出**可用的**原生 `tool_calls`，从助手 `content`/`reasoning_content` 中的 DeepSeek DSML 解析并写入 `tool_calls`。
     /// 为 false 时：**不**做 DSML 物化，仅信任 API `tool_calls`（与「仅一段 JSON 约定工具调用」等结构化网关更一致）。
     pub materialize_deepseek_dsml_tool_calls: bool,
