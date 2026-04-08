@@ -4,10 +4,10 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use tokei::LanguageType;
 
+use crate::cargo_metadata::cargo_metadata_command;
 use crate::config::AgentConfig;
 
 /// 与 `tools/code_metrics.rs` 中 `code_stats` 排除目录一致，避免统计噪声。
@@ -205,11 +205,7 @@ fn section_cargo_metadata(root: &Path) -> Option<String> {
     if !root.join("Cargo.toml").is_file() {
         return None;
     }
-    let output = match Command::new("cargo")
-        .args(["metadata", "--format-version", "1", "--no-deps"])
-        .current_dir(root)
-        .output()
-    {
+    let output = match cargo_metadata_command(root, true, 1).output() {
         Ok(o) => o,
         Err(_) => {
             return Some(
