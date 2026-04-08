@@ -4,6 +4,7 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::cargo_metadata::cargo_metadata_command;
 use crate::tool_result::ToolError;
 
 use super::ToolContext;
@@ -173,13 +174,7 @@ pub fn cargo_metadata_try(
         ));
     }
 
-    let mut cmd = Command::new("cargo");
-    cmd.arg("metadata")
-        .arg(format!("--format-version={}", format_version));
-    if no_deps {
-        cmd.arg("--no-deps");
-    }
-    cmd.current_dir(workspace_root);
+    let cmd = cargo_metadata_command(workspace_root, no_deps, format_version);
     run_and_format_try(cmd, max_output_len, "cargo metadata", "cargo_metadata")
 }
 

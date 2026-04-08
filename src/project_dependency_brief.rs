@@ -4,9 +4,10 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use serde::Serialize;
+
+use crate::cargo_metadata::cargo_metadata_command;
 use serde_json::json;
 
 const BRIEF_VERSION: u32 = 1;
@@ -106,11 +107,7 @@ fn cargo_metadata_brief(root: &Path) -> CargoBlock {
         };
     }
 
-    let output = match Command::new("cargo")
-        .args(["metadata", "--format-version", "1"])
-        .current_dir(root)
-        .output()
-    {
+    let output = match cargo_metadata_command(root, false, 1).output() {
         Ok(o) => o,
         Err(e) => {
             return CargoBlock {
