@@ -102,7 +102,7 @@ cargo run -- serve     # Web, default :8080 (serves frontend-leptos/dist)
 
 - **Bind**: `serve` defaults to `127.0.0.1`. For `0.0.0.0` set `web_api_bearer_token` or explicit insecure flag (see README security warnings).
 - **Bearer**: Frontend may use `localStorage["crabmate-api-bearer-token"]`.
-- **Workspace paths**: Must stay under allowed roots; revalidated per request.
+- **Workspace paths**: Must stay under allowed roots; revalidated per request. On **Unix**, built-in `read_file` and Web workspace APIs prefer **`openat2` + `RESOLVE_IN_ROOT` (Linux)** from an opened root fd to narrow TOCTOU; this is still **not** a kernel-level escape-proof sandbox—see [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) (workspace) and `src/path_workspace.rs`.
 - **Web search key**: Separate from main `API_KEY`; protect file permissions.
 - **Optional Docker tool sandbox**: See CONFIGURATION § SyncDefault Docker sandbox.
 

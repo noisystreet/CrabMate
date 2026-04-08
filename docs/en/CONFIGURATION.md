@@ -58,7 +58,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | Append `AGENTS.md`. |
 | `AGENT_CURSOR_RULES_MAX_CHARS` | Max injected chars. |
 
-**Path safety (matches implementation)**: `workspace_allowed_roots` and per-request revalidation catch `..` escapes and symlinks that already point outside roots **at check time**. They **do not remove** the **TOCTOU** between check and `open` (concurrent symlink swaps). Stronger guarantees need **`O_NOFOLLOW`**, **`openat`** from a trusted directory fd, etc. (see **`src/path_workspace.rs`** module docs and **`docs/TODOLIST.md`** P0). Untrusted workspaces or open networks need **Web auth** (see hot reload / P0 notes in this doc).
+**Path safety (matches implementation)**: `workspace_allowed_roots` and per-request revalidation catch `..` escapes and symlinks that already point outside roots **at check time**. On **Unix**, **`read_file`** (`resolve_for_read_open`) and Web workspace list/read/write/delete go through **`src/workspace_fs.rs`**: on Linux, **`openat2` + `RESOLVE_IN_ROOT`** opens paths relative to an already-open workspace-root fd, narrowing the race between policy checks and `open`; symlinks inside the tree may still be followed, but resolution cannot escape the root. **Residual risk**: checks still depend on `canonicalize` at check time; non-Linux paths and code that does not use `workspace_fs` may still be TOCTOU-prone; **`create_dir_all`** + opens are not fully atomic. This is **not** a kernel sandbox; use **Web auth** on open networks. See **`src/path_workspace.rs`**.
 
 ### Planning & staged planning
 

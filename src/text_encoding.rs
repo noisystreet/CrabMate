@@ -223,7 +223,15 @@ pub fn resolve_text_encoding(
 
 /// 打开文件并读取不超过 `max_head` 的前缀（用于嗅探）；文件指针位于已读字节之后。
 pub fn open_file_and_read_head(path: &Path, max_head: usize) -> Result<(File, Vec<u8>), String> {
-    let mut file = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
+    let file = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
+    open_file_and_read_head_from(file, max_head)
+}
+
+/// 对已打开的 `File` 读取不超过 `max_head` 的前缀（用于嗅探）；指针位于已读字节之后。
+pub fn open_file_and_read_head_from(
+    mut file: File,
+    max_head: usize,
+) -> Result<(File, Vec<u8>), String> {
     let len = file
         .metadata()
         .map_err(|e| format!("读取元数据失败: {}", e))?
@@ -324,12 +332,25 @@ pub fn decode_bytes_strict(
 pub fn for_each_decoded_line<F>(
     path: &Path,
     hint: TextEncodingName,
+    on_line: F,
+) -> Result<(usize, DecodedFileNote), String>
+where
+    F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
+{
+    let file = File::open(path).map_err(|e| format!("打开文件失败: {}", e))?;
+    for_each_decoded_line_from_file(file, hint, on_line)
+}
+
+/// 与 [`for_each_decoded_line_from_file`] 相同，但 `head` 已由调用方从 `file` 读出且文件指针位于 `head` 之后（与 `read_file` 嗅探阶段一致）。
+pub fn for_each_decoded_line_from_file_with_head<F>(
+    mut file: File,
+    head: Vec<u8>,
+    hint: TextEncodingName,
     mut on_line: F,
 ) -> Result<(usize, DecodedFileNote), String>
 where
     F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
 {
-    let (mut file, head) = open_file_and_read_head(path, SNIFF_MAX_BYTES)?;
     let (resolved, note) = resolve_text_encoding(&head, hint)?;
 
     let ResolvedTextEncoding::Decoder { encoding, label } = resolved else {
@@ -397,6 +418,19 @@ where
     }
 
     Ok((line_no, note))
+}
+
+/// 与 [`for_each_decoded_line`] 相同，但复用已打开的 `File`（避免对路径二次 `open`）。
+pub fn for_each_decoded_line_from_file<F>(
+    file: File,
+    hint: TextEncodingName,
+    on_line: F,
+) -> Result<(usize, DecodedFileNote), String>
+where
+    F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
+{
+    let (file, head) = open_file_and_read_head_from(file, SNIFF_MAX_BYTES)?;
+    for_each_decoded_line_from_file_with_head(file, head, hint, on_line)
 }
 
 /// 解码后的总行数（与 `read_file` 行语义一致）。

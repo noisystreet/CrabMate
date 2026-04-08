@@ -60,7 +60,7 @@
 | `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | 是否并入 `AGENTS.md`。 |
 | `AGENT_CURSOR_RULES_MAX_CHARS` | 注入长度上限。 |
 
-**路径安全（与实现一致）**：`workspace_allowed_roots` 与每次请求对当前工作区根的重验可拒绝明显的 `..` 逃逸与**校验时刻**已指向根外的 symlink。**不能消除**「校验通过 → 随后 `open`」之间的 **TOCTOU**：恶意或并发替换路径仍可能导致打开与校验不一致的对象。更强保证需在打开时使用 **`O_NOFOLLOW`**、基于目录 fd 的 **`openat`** 等（见 **`src/path_workspace.rs`** 模块注释、**`docs/TODOLIST.md`** P0）。在不可信工作区或开放网络上须与 **Web 鉴权**（见该文档热重载与 P0 说明）一并评估。
+**路径安全（与实现一致）**：`workspace_allowed_roots` 与每次请求对当前工作区根的重验可拒绝明显的 `..` 逃逸与**校验时刻**已指向根外的 symlink。在 **Unix** 上，**`read_file`**（`resolve_for_read_open`）与 **Web** 工作区列表、读/写/删文件等经 **`src/workspace_fs.rs`**：Linux 上使用 **`openat2` + `RESOLVE_IN_ROOT`** 在已打开的工作区根 fd 上解析相对路径并打开，将「策略校验后的路径字符串」与「实际 `open`」之间的竞态窗口收窄；工作区内 symlink 仍可跟随，但解析不得越过该根。**残余风险**：校验阶段仍依赖该时刻的 `canonicalize`；非 Linux、或未走 `workspace_fs` 的代码路径仍可能存在 TOCTOU；**`create_dir_all`** 等与按路径打开的组合亦未完全原子化。不可等同于内核沙箱；开放网络须配 **Web 鉴权**等。详见 **`src/path_workspace.rs`** 模块注释。
 
 ### 规划与分阶段规划
 
