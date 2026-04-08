@@ -11,12 +11,15 @@ mod control_dispatch_mirror;
 pub mod line;
 mod mpsc_send;
 pub mod protocol;
+pub(crate) mod stream_hub;
 pub(crate) mod web_approval;
 
 pub(crate) use mpsc_send::{send_string_logged, send_string_logged_cooperative_cancel};
+pub(crate) use stream_hub::SseStreamHub;
 
 pub use protocol::{
-    CommandApprovalBody, ConversationSavedBody, SseErrorBody, SsePayload, StagedPlanFinishedBody,
-    StagedPlanStartedBody, StagedPlanStepFinishedBody, StagedPlanStepStartedBody, TimelineLogBody,
-    ToolCallSummary, ToolResultBody, encode_message,
+    CommandApprovalBody, ConversationSavedBody, SseCapabilitiesBody, SseErrorBody, SsePayload,
+    StagedPlanFinishedBody, StagedPlanStartedBody, StagedPlanStepFinishedBody,
+    StagedPlanStepStartedBody, StreamEndedBody, TimelineLogBody, ToolCallSummary, ToolResultBody,
+    encode_message,
 };

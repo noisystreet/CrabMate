@@ -78,6 +78,10 @@ pub fn App() -> impl IntoView {
     let conversation_id = RwSignal::new(None::<String>);
     // 最近一次 SSE `conversation_saved.revision`；`POST /chat/branch` 需要与服务端一致。
     let conversation_revision = RwSignal::new(None::<u64>);
+    // 当前 `/chat/stream` 任务 `job_id`（响应头与 `sse_capabilities`）；断线重连用。
+    let stream_job_id = RwSignal::new(None::<u64>);
+    // 已消费的最大 SSE `id:`；与 `stream_resume.after_seq` / `Last-Event-ID` 对齐。
+    let stream_last_event_seq = RwSignal::new(0u64);
     // 已完成长助手消息默认折叠；在此列表中的 id 表示已展开。
     let expanded_long_assistant_ids = RwSignal::new(Vec::<String>::new());
     // 连续工具输出分组：以组内首条消息 id 为键，表示该组处于展开态（默认折叠只显示最新一条）。
@@ -394,6 +398,8 @@ pub fn App() -> impl IntoView {
         draft,
         conversation_id,
         conversation_revision,
+        stream_job_id,
+        stream_last_event_seq,
         expanded_long_assistant_ids,
         bubble_md_selected_ids,
     );
@@ -432,6 +438,8 @@ pub fn App() -> impl IntoView {
         draft,
         conversation_id,
         conversation_revision,
+        stream_job_id,
+        stream_last_event_seq,
         selected_agent_role,
         status_busy,
         status_err,

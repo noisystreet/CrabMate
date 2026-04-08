@@ -22,6 +22,17 @@ pub(crate) struct ChatRequestBody {
     /// 可选：浏览器侧覆盖本回合 LLM 网关 `api_base` / `model` / `api_key`（不写服务端配置）。
     #[serde(default)]
     pub(crate) client_llm: Option<ClientLlmBody>,
+    /// 断线重连：挂接到进行中的 `job_id`；`after_seq` 与请求头 **`Last-Event-ID`** 取较大值后从环形缓冲重放。
+    #[serde(default)]
+    pub(crate) stream_resume: Option<StreamResumeBody>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct StreamResumeBody {
+    pub(crate) job_id: u64,
+    /// 已收到的最大 SSE `id`（无则 0）；可与 `Last-Event-ID` 合并取 max。
+    #[serde(default)]
+    pub(crate) after_seq: Option<u64>,
 }
 
 /// `ChatRequestBody::client_llm` 的 JSON 形状（与前端 `client_llm` 对象一致）。

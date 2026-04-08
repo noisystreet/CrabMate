@@ -56,6 +56,8 @@ pub(super) fn wire_session_switch_clears_chat_state(
     draft: RwSignal<String>,
     conversation_id: RwSignal<Option<String>>,
     conversation_revision: RwSignal<Option<u64>>,
+    stream_job_id: RwSignal<Option<u64>>,
+    stream_last_event_seq: RwSignal<u64>,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
     bubble_md_selected_ids: RwSignal<Vec<String>>,
 ) {
@@ -73,6 +75,8 @@ pub(super) fn wire_session_switch_clears_chat_state(
         draft.set(d);
         conversation_id.set(None);
         conversation_revision.set(None);
+        stream_job_id.set(None);
+        stream_last_event_seq.set(0);
         expanded_long_assistant_ids.set(Vec::new());
         bubble_md_selected_ids.set(Vec::new());
     });
@@ -113,6 +117,8 @@ pub(super) fn wire_chat_composer_streams(
     draft: RwSignal<String>,
     conversation_id: RwSignal<Option<String>>,
     conversation_revision: RwSignal<Option<u64>>,
+    stream_job_id: RwSignal<Option<u64>>,
+    stream_last_event_seq: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     status_busy: RwSignal<bool>,
     status_err: RwSignal<Option<String>>,
@@ -134,6 +140,8 @@ pub(super) fn wire_chat_composer_streams(
         let active_id = active_id;
         let conversation_id = conversation_id;
         let conversation_revision = conversation_revision;
+        let stream_job_id_sig = stream_job_id;
+        let stream_last_event_seq_sig = stream_last_event_seq;
         let selected_agent_role = selected_agent_role;
         let status_busy = status_busy;
         let status_err = status_err;
@@ -143,6 +151,11 @@ pub(super) fn wire_chat_composer_streams(
         let changelist_modal_open = changelist_modal_open;
         let changelist_fetch_nonce = changelist_fetch_nonce;
         move |user_text: String, asst_id: String| {
+            let conv = conversation_id.get();
+            let resume_job = stream_job_id_sig.get();
+            let resume_after = stream_last_event_seq_sig.get();
+            stream_job_id_sig.set(None);
+            stream_last_event_seq_sig.set(0);
             if let Some(prev) = abort_cell.lock().unwrap().take() {
                 prev.abort();
             }
@@ -150,8 +163,6 @@ pub(super) fn wire_chat_composer_streams(
             let ac = web_sys::AbortController::new().expect("AbortController");
             let signal = ac.signal();
             *abort_cell.lock().unwrap() = Some(ac);
-
-            let conv = conversation_id.get();
             let agent_role = selected_agent_role.get();
             let appr_for_stream = approval_session_id();
             let appr_store = appr_for_stream.clone();
@@ -301,6 +312,29 @@ pub(super) fn wire_chat_composer_streams(
                 })
             };
 
+            let on_stream_ended: Rc<dyn Fn(String)> = {
+                let stream_job_id_sig = stream_job_id_sig;
+                let stream_last_event_seq_sig = stream_last_event_seq_sig;
+                Rc::new(move |reason: String| {
+                    if reason == "completed" || reason == "cancelled" {
+                        stream_job_id_sig.set(None);
+                        stream_last_event_seq_sig.set(0);
+                    }
+                })
+            };
+            let on_stream_job_id: Rc<dyn Fn(u64)> = {
+                let stream_job_id_sig = stream_job_id_sig;
+                Rc::new(move |jid: u64| {
+                    stream_job_id_sig.set(Some(jid));
+                })
+            };
+            let on_last_sse_event_id: Rc<dyn Fn(u64)> = {
+                let stream_last_event_seq_sig = stream_last_event_seq_sig;
+                Rc::new(move |seq: u64| {
+                    stream_last_event_seq_sig.set(seq);
+                })
+            };
+
             let cbs = ChatStreamCallbacks {
                 on_delta,
                 on_done: on_done.clone(),
@@ -311,6 +345,9 @@ pub(super) fn wire_chat_composer_streams(
                 on_approval,
                 on_conversation_id: on_cid,
                 on_conversation_revision: on_conv_rev,
+                on_stream_ended,
+                on_stream_job_id,
+                on_last_sse_event_id,
             };
 
             spawn_local(async move {
@@ -319,6 +356,12 @@ pub(super) fn wire_chat_composer_streams(
                     conv,
                     agent_role,
                     Some(appr_for_stream),
+                    resume_job,
+                    if resume_after > 0 {
+                        Some(resume_after)
+                    } else {
+                        None
+                    },
                     &signal,
                     cbs.clone(),
                     locale_sig.get_untracked(),
