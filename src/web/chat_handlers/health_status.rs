@@ -66,8 +66,12 @@ struct StatusResponse {
     staged_plan_cli_show_planner_stream: bool,
     /// 首轮规划后是否再跑无工具「步骤优化」轮（默认 true）。
     staged_plan_optimizer_round: bool,
+    /// 无并行批处理内建工具时是否跳过优化轮（默认 true）。
+    staged_plan_optimizer_requires_parallel_tools: bool,
     /// 逻辑多规划员份数上限（1–3，默认 1 即关闭）。
     staged_plan_ensemble_count: u8,
+    /// 寒暄/极短用户输入时是否跳过逻辑多规划员（默认 true）。
+    staged_plan_skip_ensemble_on_casual_prompt: bool,
     /// SyncDefault 工具沙盒：`none` | `docker`。
     sync_default_tool_sandbox_mode: String,
     /// `docker` 模式下的镜像名（可能为空表示未启用或未配置）。
@@ -168,7 +172,10 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         staged_plan_execution: cfg.staged_plan_execution,
         staged_plan_cli_show_planner_stream: cfg.staged_plan_cli_show_planner_stream,
         staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
+        staged_plan_optimizer_requires_parallel_tools: cfg
+            .staged_plan_optimizer_requires_parallel_tools,
         staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
+        staged_plan_skip_ensemble_on_casual_prompt: cfg.staged_plan_skip_ensemble_on_casual_prompt,
         sync_default_tool_sandbox_mode: cfg.sync_default_tool_sandbox_mode.as_str().to_string(),
         sync_default_tool_sandbox_docker_image: cfg.sync_default_tool_sandbox_docker_image.clone(),
         sync_default_tool_sandbox_docker_user_effective: match cfg

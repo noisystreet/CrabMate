@@ -111,12 +111,21 @@ async fn maybe_run_staged_plan_ensemble_then_merge<F>(
     make_step_user_message: &F,
     planner_render_to_terminal: bool,
     plan: &mut AgentReplyPlanV1,
+    skip_for_casual_user_prompt: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     F: Fn(String) -> Message,
 {
     let extra = p.staged_plan_ensemble_count.saturating_sub(1);
     if extra == 0 {
+        return Ok(());
+    }
+    if skip_for_casual_user_prompt {
+        debug!(
+            target: "crabmate",
+            "分阶段规划·逻辑多规划员：用户输入偏短/寒暄启发式，跳过 ensemble（staged_plan_ensemble_count={}）以省 API",
+            p.staged_plan_ensemble_count
+        );
         return Ok(());
     }
 
@@ -750,6 +759,14 @@ where
     }
 
     let mut plan = plan;
+
+    let parallel_csv =
+        plan_optimizer::parallel_batchable_tool_names_csv_from_defs(p.tools_defs, p.cfg.as_ref());
+    let skip_ensemble_for_casual = p.staged_plan_ensemble_count > 1
+        && p.staged_plan_skip_ensemble_on_casual_prompt
+        && plan_optimizer::staged_plan_trigger_user_content(p.messages)
+            .is_some_and(plan_optimizer::staged_plan_user_prompt_looks_like_casual_or_trivial);
+
     maybe_run_staged_plan_ensemble_then_merge(
         p,
         per_coord,
@@ -757,15 +774,24 @@ where
         &make_step_user_message,
         planner_render_to_terminal,
         &mut plan,
+        skip_ensemble_for_casual,
     )
     .await?;
 
-    if plan.steps.len() >= 2 && p.staged_plan_optimizer_round {
-        let csv = plan_optimizer::parallel_batchable_tool_names_csv_from_defs(
-            p.tools_defs,
-            p.cfg.as_ref(),
+    let want_optimizer = plan.steps.len() >= 2 && p.staged_plan_optimizer_round;
+    let skip_optimizer_no_parallel_tools = want_optimizer
+        && p.staged_plan_optimizer_requires_parallel_tools
+        && parallel_csv.trim().is_empty();
+    if skip_optimizer_no_parallel_tools {
+        debug!(
+            target: "crabmate",
+            "分阶段规划优化轮：本会话无可同轮并行批处理的内建工具，跳过优化轮以省 API（步数={}）",
+            plan.steps.len()
         );
-        let opt_body = plan_optimizer::staged_plan_optimizer_user_body(&plan, csv.as_str());
+    }
+    if want_optimizer && !skip_optimizer_no_parallel_tools {
+        let opt_body =
+            plan_optimizer::staged_plan_optimizer_user_body(&plan, parallel_csv.as_str());
         p.messages.push(make_step_user_message(opt_body));
         let (mut opt_msg, opt_finish) = complete_one_staged_planner_assistant_round(
             p,

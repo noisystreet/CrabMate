@@ -48,8 +48,12 @@ pub(crate) struct RunLoopParams<'a> {
     pub workspace_changelist: Option<Arc<WorkspaceChangelist>>,
     /// 分阶段规划首轮成功后，是否再跑一轮无工具「步骤优化」（合并无依赖只读探查步等）。默认 true。
     pub staged_plan_optimizer_round: bool,
+    /// 无「可同轮并行批处理」内建工具时是否跳过优化轮。见 `AgentConfig::staged_plan_optimizer_requires_parallel_tools`。
+    pub staged_plan_optimizer_requires_parallel_tools: bool,
     /// 逻辑多规划员：首轮后的独立规划份数上限（1=关闭）。见 `AgentConfig::staged_plan_ensemble_count`。
     pub staged_plan_ensemble_count: u8,
+    /// 寒暄/极短用户输入时是否跳过 ensemble。见 `AgentConfig::staged_plan_skip_ensemble_on_casual_prompt`。
+    pub staged_plan_skip_ensemble_on_casual_prompt: bool,
     /// 整请求 Chrome trace（`CRABMATE_REQUEST_CHROME_TRACE_DIR`）；`None` 关闭。
     pub request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 }

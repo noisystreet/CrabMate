@@ -226,7 +226,10 @@ pub async fn run_agent_turn<'a>(
         read_file_turn_cache,
         workspace_changelist,
         staged_plan_optimizer_round: cfg.staged_plan_optimizer_round,
+        staged_plan_optimizer_requires_parallel_tools: cfg
+            .staged_plan_optimizer_requires_parallel_tools,
         staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
+        staged_plan_skip_ensemble_on_casual_prompt: cfg.staged_plan_skip_ensemble_on_casual_prompt,
         request_chrome_trace: request_chrome_trace.clone(),
     };
 

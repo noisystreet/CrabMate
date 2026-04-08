@@ -384,10 +384,20 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.staged_plan_optimizer_round = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.staged_plan_optimizer_requires_parallel_tools = Some(val);
+    }
     if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_ENSEMBLE_COUNT")
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.staged_plan_ensemble_count = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.staged_plan_skip_ensemble_on_casual_prompt = Some(val);
     }
     if let Ok(s) = std::env::var("AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE") {
         let s = s.trim().to_string();

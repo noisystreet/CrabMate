@@ -323,7 +323,11 @@ With **`planner_executor_mode = single_agent`**, each user message runs a no-too
 
 **`staged_plan_optimizer_round`** (default `true`): After first plan with ≥2 steps, optional no-tools round to merge read-only probes and parallelize per **`parallel_readonly_tools`** rules.
 
+**`staged_plan_optimizer_requires_parallel_tools`** (default `true`, **`AGENT_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`**)**: When `true`, skip the optimizer round if this turn’s tool list has **no** built-in names eligible for same-turn parallel readonly batching (the optimizer prompt centers on that CSV). When `false`, keep the legacy behavior: run the optimizer whenever step count and **`staged_plan_optimizer_round`** allow it.
+
 **`staged_plan_ensemble_count`** (default `1`, clamp 1–3, **`AGENT_STAGED_PLAN_ENSEMBLE_COUNT`**)**: **`1`** off. **`2`/`3`**: extra serial no-tools “planner B/C” rounds (aux assistants **not** in history), then merge round—**significantly more API cost**.
+
+**`staged_plan_skip_ensemble_on_casual_prompt`** (default `true`, **`AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`**)**: When **`staged_plan_ensemble_count` > 1**, skip ensemble + merge if the **current user message** (heuristic: very short or common small-talk) looks casual—saves planner API calls. Set `false` to always run ensemble when configured.
 
 ## SyncDefault Docker sandbox (`sync_default_tool_sandbox_mode`)
 
