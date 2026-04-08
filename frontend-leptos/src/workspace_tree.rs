@@ -143,18 +143,15 @@ fn WorkspaceTreeNodes(
                         class=row_class
                         style=format!("--list-stagger: {stagger}")
                     >
-                        <span class="workspace-tree-chevron-spacer" aria-hidden="true"></span>
-                        <span class="workspace-entry-icon" aria-hidden="true">
-                            {workspace_list_row_icon(false, name.as_str())}
-                        </span>
+                        {workspace_list_row_icon(false, name.as_str())}
                         <span class="workspace-entry-name">{name}</span>
                     </li>
                 }
                 .into_any()
             } else {
                 let rel_aria = rel.clone();
+                let rel_aria_label = rel.clone();
                 let rel_click = rel.clone();
-                let rel_label = rel.clone();
                 let rel_glyph = rel.clone();
                 let rel_show = rel.clone();
                 let rel_inner = StoredValue::new(rel);
@@ -169,6 +166,20 @@ fn WorkspaceTreeNodes(
                                 type="button"
                                 class="workspace-tree-chevron"
                                 aria-expanded=move || subtree_expanded.get().contains(&rel_aria)
+                                prop:aria-label=move || {
+                                    let loc = locale.get();
+                                    if subtree_expanded.get().contains(&rel_aria_label) {
+                                        i18n::workspace_tree_collapse_folder(
+                                            loc,
+                                            name_for_aria.as_str(),
+                                        )
+                                    } else {
+                                        i18n::workspace_tree_expand_folder(
+                                            loc,
+                                            name_for_aria.as_str(),
+                                        )
+                                    }
+                                }
                                 prop:title=move || i18n::workspace_tree_toggle_dir_title(locale.get())
                                 on:click=move |_| {
                                     toggle_workspace_dir(
@@ -179,80 +190,61 @@ fn WorkspaceTreeNodes(
                                     );
                                 }
                             >
-                                <span class="workspace-tree-chevron-label" class:sr-only=true>
-                                    {move || {
-                                        let loc = locale.get();
-                                        if subtree_expanded.get().contains(&rel_label) {
-                                            i18n::workspace_tree_collapse_folder(
-                                                loc,
-                                                name_for_aria.as_str(),
-                                            )
-                                        } else {
-                                            i18n::workspace_tree_expand_folder(
-                                                loc,
-                                                name_for_aria.as_str(),
-                                            )
-                                        }
-                                    }}
-                                </span>
-                                <span class="workspace-tree-chevron-glyph" aria-hidden="true">
-                                    {move || {
-                                        if subtree_expanded.get().contains(&rel_glyph) {
-                                            "▾"
-                                        } else {
-                                            "▸"
-                                        }
-                                    }}
-                                </span>
+                                {move || {
+                                    if subtree_expanded.get().contains(&rel_glyph) {
+                                        "▾"
+                                    } else {
+                                        "▸"
+                                    }
+                                }}
                             </button>
-                            <span class="workspace-entry-icon" aria-hidden="true">
-                                {workspace_list_row_icon(true, name.as_str())}
-                            </span>
+                            {workspace_list_row_icon(true, name.as_str())}
                             <span class="workspace-entry-name">{name}</span>
                         </div>
                         <Show when=move || subtree_expanded.get().contains(&rel_show)>
-                            <div class="workspace-dir-children" role="group">
-                                {move || {
-                                    let p = rel_inner.get_value();
-                                    let loading = subtree_loading.get().contains(&p);
-                                    let cached = subtree_cache.get().get(&p).cloned();
-                                    if loading && cached.is_none() {
+                            {move || {
+                                let p = rel_inner.get_value();
+                                let loading = subtree_loading.get().contains(&p);
+                                let cached = subtree_cache.get().get(&p).cloned();
+                                if loading && cached.is_none() {
+                                    view! {
+                                        <p class="workspace-tree-loading" role="status">
+                                            {move || i18n::changelist_loading(locale.get())}
+                                        </p>
+                                    }
+                                    .into_any()
+                                } else if let Some(d) = cached {
+                                    if let Some(err) = d.error.clone() {
                                         view! {
-                                            <p class="workspace-tree-loading" role="status">
-                                                {move || i18n::changelist_loading(locale.get())}
-                                            </p>
+                                            <p class="msg-error workspace-tree-err">{err}</p>
                                         }
                                         .into_any()
-                                    } else if let Some(d) = cached {
-                                        if let Some(err) = d.error.clone() {
-                                            view! {
-                                                <p class="msg-error workspace-tree-err">{err}</p>
-                                            }
-                                            .into_any()
-                                        } else {
-                                            let nested = d.entries.clone();
-                                            let rel_for_nested = p.clone();
-                                            view! {
-                                                <ul class="workspace-list workspace-list-nested">
-                                                    <WorkspaceTreeNodes
-                                                        parent_rel=rel_for_nested
-                                                        entries=nested
-                                                        base_stagger=0
-                                                        subtree_expanded=subtree_expanded
-                                                        subtree_cache=subtree_cache
-                                                        subtree_loading=subtree_loading
-                                                        locale=locale
-                                                    />
-                                                </ul>
-                                            }
-                                            .into_any()
-                                        }
                                     } else {
-                                        view! { <p class="workspace-tree-placeholder">" "</p> }
-                                            .into_any()
+                                        let nested = d.entries.clone();
+                                        let rel_for_nested = p.clone();
+                                        view! {
+                                            <ul
+                                                class="workspace-list workspace-list-nested"
+                                                role="group"
+                                            >
+                                                <WorkspaceTreeNodes
+                                                    parent_rel=rel_for_nested
+                                                    entries=nested
+                                                    base_stagger=0
+                                                    subtree_expanded=subtree_expanded
+                                                    subtree_cache=subtree_cache
+                                                    subtree_loading=subtree_loading
+                                                    locale=locale
+                                                />
+                                            </ul>
+                                        }
+                                        .into_any()
                                     }
-                                }}
-                            </div>
+                                } else {
+                                    view! { <p class="workspace-tree-placeholder">" "</p> }
+                                        .into_any()
+                                }
+                            }}
                         </Show>
                     </li>
                 }

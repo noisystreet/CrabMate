@@ -116,7 +116,7 @@ fn svg_common() -> (
     &'static str,
 ) {
     (
-        "workspace-entry-svg",
+        "workspace-entry-icon workspace-entry-svg",
         "0 0 24 24",
         "none",
         "http://www.w3.org/2000/svg",

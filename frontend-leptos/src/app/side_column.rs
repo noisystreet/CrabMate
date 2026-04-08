@@ -324,7 +324,7 @@ pub fn side_column_view(
                                                     .into_any()
                                                 } else {
                                                     view! {
-                                                        <div class="side-card-loaded">
+                                                        <>
                                                             <div class="workspace-set">
                                                                 <div class="workspace-set-label">{move || i18n::ws_root_label(locale.get())}</div>
                                                                 <div class="workspace-set-input-row">
@@ -468,7 +468,7 @@ pub fn side_column_view(
                                                                 subtree_loading=workspace_subtree_loading
                                                                 locale=locale
                                                             />
-                                                        </div>
+                                                        </>
                                                     }
                                                     .into_any()
                                                 }
