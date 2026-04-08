@@ -82,7 +82,6 @@
 **职责摘要**：`protocol` 编码控制面 JSON；`line` 供 Rust 侧行分类（与 `frontend-leptos/src/sse_dispatch.rs` / `api.rs` 消费语义对齐）。
 
 - [ ] **协议版本演进**：`SSE_PROTOCOL_VERSION` bump 时的双端兼容与特性协商（前端分支解析）。
-- [ ] **断线重连（可选）**：`Last-Event-ID` 或自定义游标，配合浏览器端重试。
 - [ ] **调试/运维事件**：不脱敏前提下可关闭的 `debug` 类 payload（阶段名、耗时等），仅开发模式启用。
 - [ ] **与 Leptos 前端契约同源**：减少 `frontend-leptos/src/api.rs` / `sse_dispatch.rs` 与 Rust 后端结构体漂移（生成或共享契约测试）。
 - [ ] **错误码全集文档化**：`error.code` 与 HTTP 状态在 `DEVELOPMENT`/`README` 可查。
@@ -96,7 +95,6 @@
 - [ ] **鉴权与多租户隔离**：API Key / Bearer / 反向代理信任头（与 P0 同向）。
 - [ ] **会话与消息 API**：`messages` 或 `conversation_id` + 存储，与 `run_agent_turn` 对齐（与 P1 同向）。
 - [ ] **上传配额与清理策略**：`/upload` 大小、类型、保留时间、按用户或 IP 限额。
-- [ ] **OpenAPI / 机器可读契约**：为前端与集成方提供可生成的路由与 body 说明（可选 `utoipa` 等）。
 
 ---
 

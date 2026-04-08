@@ -344,6 +344,12 @@ pub struct ChatStreamCallbacks {
     pub on_conversation_id: std::rc::Rc<dyn Fn(String)>,
     /// SSE `conversation_saved.revision`，供 `POST /chat/branch`。
     pub on_conversation_revision: std::rc::Rc<dyn Fn(u64)>,
+    /// 收到 `stream_ended` 控制面时调用（`reason` 如 `completed` / `cancelled`）。
+    pub on_stream_ended: std::rc::Rc<dyn Fn(String)>,
+    /// 响应头 **`x-stream-job-id`**（新流首包；用于断线重连）。
+    pub on_stream_job_id: std::rc::Rc<dyn Fn(u64)>,
+    /// 每条 SSE 事件的 **`id:`**（单调序号），供断线后 `stream_resume.after_seq` / `Last-Event-ID`。
+    pub on_last_sse_event_id: std::rc::Rc<dyn Fn(u64)>,
 }
 
 impl Clone for ChatStreamCallbacks {
@@ -358,150 +364,240 @@ impl Clone for ChatStreamCallbacks {
             on_approval: std::rc::Rc::clone(&self.on_approval),
             on_conversation_id: std::rc::Rc::clone(&self.on_conversation_id),
             on_conversation_revision: std::rc::Rc::clone(&self.on_conversation_revision),
+            on_stream_ended: std::rc::Rc::clone(&self.on_stream_ended),
+            on_stream_job_id: std::rc::Rc::clone(&self.on_stream_job_id),
+            on_last_sse_event_id: std::rc::Rc::clone(&self.on_last_sse_event_id),
         }
     }
 }
 
+/// `/chat/stream`：支持 **`Last-Event-ID`** 与 JSON **`stream_resume`** 断线重连（网络抖动时自动重试若干次）。
 pub async fn send_chat_stream(
     message: String,
     conversation_id: Option<String>,
     agent_role: Option<String>,
     approval_session_id: Option<String>,
+    mut stream_resume_job_id: Option<u64>,
+    stream_resume_after_seq: Option<u64>,
     signal: &web_sys::AbortSignal,
     cbs: ChatStreamCallbacks,
     loc: Locale,
 ) -> Result<(), String> {
     let w = window().ok_or_else(|| "no window".to_string())?;
-    let mut body = serde_json::json!({
-        "message": message,
-        "conversation_id": conversation_id,
-        "agent_role": agent_role,
-        "approval_session_id": approval_session_id,
-    });
-    if let Some(cl) = client_llm_json_for_chat_body() {
-        body["client_llm"] = cl;
-    }
-    let init = RequestInit::new();
-    init.set_method("POST");
-    init.set_mode(RequestMode::Cors);
-    init.set_signal(Some(signal));
-    let h = auth_headers();
-    let _ = h.set("Content-Type", "application/json");
-    init.set_headers(&h);
-    init.set_body(&wasm_bindgen::JsValue::from_str(
-        &serde_json::to_string(&body).map_err(|e| e.to_string())?,
-    ));
-    let req = Request::new_with_str_and_init("/chat/stream", &init)
-        .map_err(|e| format!("req: {:?}", e))?;
-    let resp_val = JsFuture::from(w.fetch_with_request(&req))
-        .await
-        .map_err(|e| format!("fetch: {:?}", e))?;
-    let resp: Response = resp_val.dyn_into().map_err(|_| "not Response")?;
-    if let Some(cid) = resp.headers().get("x-conversation-id").ok().flatten() {
-        let t = cid.trim();
-        if !t.is_empty() {
-            (cbs.on_conversation_id)(t.to_string());
+    let mut last_event_id: u64 = stream_resume_after_seq.unwrap_or(0);
+    let mut attempt: u32 = 0;
+    loop {
+        if signal.aborted() {
+            return Ok(());
         }
-    }
-    if !resp.ok() {
-        let msg = JsFuture::from(resp.text().map_err(|e| format!("text: {:?}", e))?)
-            .await
-            .ok()
-            .and_then(|v| v.as_string())
-            .unwrap_or_else(|| crate::i18n::api_err_request_failed(loc).to_string());
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg)
-            && let Some(m) = v.get("message").and_then(|x| x.as_str())
-            && !m.trim().is_empty()
-        {
-            return Err(m.to_string());
+        let mut body = serde_json::json!({
+            "message": message,
+            "conversation_id": conversation_id,
+            "agent_role": agent_role,
+            "approval_session_id": approval_session_id,
+        });
+        if let Some(jid) = stream_resume_job_id {
+            body["stream_resume"] = serde_json::json!({
+                "job_id": jid,
+                "after_seq": last_event_id,
+            });
         }
-        return Err(msg);
-    }
-    let Some(body) = resp.body() else {
-        return Err(crate::i18n::api_err_no_response_body(loc).to_string());
-    };
-    let reader: web_sys::ReadableStreamDefaultReader = body
-        .get_reader()
-        .dyn_into()
-        .map_err(|_| "stream reader".to_string())?;
-
-    // 块边界可能截断 UTF-8：只把从开头起「完整码点」前缀解码进 `text`，余字节留在 `raw`。
-    // 使用 `Utf8Error::valid_up_to` 一次确定合法前缀，避免对每个字节反复 `from_utf8`（原 while 递减为 O(n²)）。
-    // SSE 仍由下方 `process_sse_buffer` 按 `\n\n` 分帧；ReadableStream 块与 UTF-8/行边界无关，只能缓冲后解码。
-    fn append_chunk_to_text_buffer(raw: &mut Vec<u8>, chunk: &[u8], text: &mut String) {
-        raw.extend_from_slice(chunk);
-        loop {
-            if raw.is_empty() {
-                break;
+        if let Some(cl) = client_llm_json_for_chat_body() {
+            body["client_llm"] = cl;
+        }
+        let init = RequestInit::new();
+        init.set_method("POST");
+        init.set_mode(RequestMode::Cors);
+        init.set_signal(Some(signal));
+        let h = auth_headers();
+        let _ = h.set("Content-Type", "application/json");
+        if last_event_id > 0 {
+            let _ = h.set("Last-Event-ID", &last_event_id.to_string());
+        }
+        init.set_headers(&h);
+        init.set_body(&wasm_bindgen::JsValue::from_str(
+            &serde_json::to_string(&body).map_err(|e| e.to_string())?,
+        ));
+        let req = Request::new_with_str_and_init("/chat/stream", &init)
+            .map_err(|e| format!("req: {:?}", e))?;
+        let resp_val = match JsFuture::from(w.fetch_with_request(&req)).await {
+            Ok(v) => v,
+            Err(e) => {
+                if stream_resume_job_id.is_none() || attempt >= 6 {
+                    return Err(format!("fetch: {:?}", e));
+                }
+                attempt = attempt.saturating_add(1);
+                let ms = (200u64).saturating_mul(1u64 << attempt.min(5));
+                gloo_timers::future::TimeoutFuture::new(ms as u32).await;
+                continue;
             }
-            match std::str::from_utf8(raw) {
-                Ok(s) => {
-                    text.push_str(s);
-                    raw.clear();
+        };
+        let resp: Response = resp_val.dyn_into().map_err(|_| "not Response")?;
+        if let Some(cid) = resp.headers().get("x-conversation-id").ok().flatten() {
+            let t = cid.trim();
+            if !t.is_empty() {
+                (cbs.on_conversation_id)(t.to_string());
+            }
+        }
+        if let Some(jh) = resp.headers().get("x-stream-job-id").ok().flatten() {
+            if let Ok(jid) = jh.trim().parse::<u64>() {
+                stream_resume_job_id = Some(jid);
+                (cbs.on_stream_job_id)(jid);
+            }
+        }
+        if resp.status() == 410 {
+            return Err("流式任务已结束或不在服务端内存中，无法重连".to_string());
+        }
+        if !resp.ok() {
+            let msg = JsFuture::from(resp.text().map_err(|e| format!("text: {:?}", e))?)
+                .await
+                .ok()
+                .and_then(|v| v.as_string())
+                .unwrap_or_else(|| crate::i18n::api_err_request_failed(loc).to_string());
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg)
+                && let Some(m) = v.get("message").and_then(|x| x.as_str())
+                && !m.trim().is_empty()
+            {
+                return Err(m.to_string());
+            }
+            return Err(msg);
+        }
+        let Some(rb) = resp.body() else {
+            return Err(crate::i18n::api_err_no_response_body(loc).to_string());
+        };
+        let reader: web_sys::ReadableStreamDefaultReader = rb
+            .get_reader()
+            .dyn_into()
+            .map_err(|_| "stream reader".to_string())?;
+
+        // 块边界可能截断 UTF-8：只把从开头起「完整码点」前缀解码进 `text`，余字节留在 `raw`。
+        // 使用 `Utf8Error::valid_up_to` 一次确定合法前缀，避免对每个字节反复 `from_utf8`（原 while 递减为 O(n²)）。
+        // SSE 仍由下方 `process_sse_buffer` 按 `\n\n` 分帧；ReadableStream 块与 UTF-8/行边界无关，只能缓冲后解码。
+        fn append_chunk_to_text_buffer(raw: &mut Vec<u8>, chunk: &[u8], text: &mut String) {
+            raw.extend_from_slice(chunk);
+            loop {
+                if raw.is_empty() {
                     break;
                 }
-                Err(e) => {
-                    let n = e.valid_up_to();
-                    if n == 0 {
+                match std::str::from_utf8(raw) {
+                    Ok(s) => {
+                        text.push_str(s);
+                        raw.clear();
                         break;
                     }
-                    // `valid_up_to` 保证 `raw[..n]` 为合法 UTF-8 且落在码点边界上。
-                    text.push_str(std::str::from_utf8(&raw[..n]).expect("valid_up_to"));
-                    raw.drain(..n);
+                    Err(e) => {
+                        let n = e.valid_up_to();
+                        if n == 0 {
+                            break;
+                        }
+                        // `valid_up_to` 保证 `raw[..n]` 为合法 UTF-8 且落在码点边界上。
+                        text.push_str(std::str::from_utf8(&raw[..n]).expect("valid_up_to"));
+                        raw.drain(..n);
+                    }
                 }
             }
         }
-    }
 
-    let mut raw: Vec<u8> = Vec::new();
-    let mut buffer = String::new();
-    loop {
-        let read_promise = reader.read();
-        let chunk: wasm_bindgen::JsValue = JsFuture::from(read_promise)
-            .await
-            .map_err(|e| format!("read await: {:?}", e))?;
-        let done = js_sys::Reflect::get(&chunk, &JsValue::from_str("done"))
-            .ok()
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        if done {
-            break;
+        let mut raw: Vec<u8> = Vec::new();
+        let mut buffer = String::new();
+        let mut stream_finished_normally = false;
+        loop {
+            if signal.aborted() {
+                return Ok(());
+            }
+            let read_promise = reader.read();
+            let chunk: wasm_bindgen::JsValue = match JsFuture::from(read_promise).await {
+                Ok(c) => c,
+                Err(e) => {
+                    if stream_resume_job_id.is_none() {
+                        return Err(format!("read await: {:?}", e));
+                    }
+                    break;
+                }
+            };
+            let done = js_sys::Reflect::get(&chunk, &JsValue::from_str("done"))
+                .ok()
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            if done {
+                stream_finished_normally = true;
+                break;
+            }
+            let value =
+                js_sys::Reflect::get(&chunk, &JsValue::from_str("value")).unwrap_or(JsValue::NULL);
+            if let Some(u8) = value.dyn_ref::<js_sys::Uint8Array>() {
+                append_chunk_to_text_buffer(&mut raw, &u8.to_vec(), &mut buffer);
+            }
+            process_sse_buffer(&mut buffer, &mut last_event_id, &cbs)?;
         }
-        let value =
-            js_sys::Reflect::get(&chunk, &JsValue::from_str("value")).unwrap_or(JsValue::NULL);
-        if let Some(u8) = value.dyn_ref::<js_sys::Uint8Array>() {
-            append_chunk_to_text_buffer(&mut raw, &u8.to_vec(), &mut buffer);
+        if !raw.is_empty() {
+            buffer.push_str(&String::from_utf8_lossy(&raw));
+            raw.clear();
         }
-        process_sse_buffer(&mut buffer, &cbs)?;
+        flush_sse_tail(&mut buffer, &mut last_event_id, &cbs)?;
+        if stream_finished_normally {
+            (cbs.on_done)();
+            return Ok(());
+        }
+        if stream_resume_job_id.is_none() {
+            return Err(crate::i18n::api_err_no_response_body(loc).to_string());
+        }
+        attempt = attempt.saturating_add(1);
+        if attempt >= 6 {
+            return Err(crate::i18n::api_err_request_failed(loc).to_string());
+        }
+        let ms = (200u64).saturating_mul(1u64 << attempt.min(5));
+        gloo_timers::future::TimeoutFuture::new(ms as u32).await;
     }
-    if !raw.is_empty() {
-        buffer.push_str(&String::from_utf8_lossy(&raw));
-        raw.clear();
-    }
-    flush_sse_tail(&mut buffer, &cbs)?;
-    (cbs.on_done)();
-    Ok(())
 }
 
-fn process_sse_buffer(buffer: &mut String, cbs: &ChatStreamCallbacks) -> Result<(), String> {
+fn process_sse_buffer(
+    buffer: &mut String,
+    last_event_id: &mut u64,
+    cbs: &ChatStreamCallbacks,
+) -> Result<(), String> {
     while let Some(pos) = buffer.find("\n\n") {
         let block = buffer[..pos].to_string();
         *buffer = buffer[pos + 2..].to_string();
-        handle_sse_block(&block, cbs)?;
+        handle_sse_block(&block, last_event_id, cbs)?;
     }
     Ok(())
 }
 
-fn flush_sse_tail(buffer: &mut String, cbs: &ChatStreamCallbacks) -> Result<(), String> {
+fn flush_sse_tail(
+    buffer: &mut String,
+    last_event_id: &mut u64,
+    cbs: &ChatStreamCallbacks,
+) -> Result<(), String> {
     let t = buffer.trim();
     if !t.is_empty() {
-        handle_sse_block(t, cbs)?;
+        handle_sse_block(t, last_event_id, cbs)?;
     }
     buffer.clear();
     Ok(())
 }
 
-fn handle_sse_block(block: &str, cbs: &ChatStreamCallbacks) -> Result<(), String> {
+fn parse_sse_event_id_block(block: &str) -> Option<u64> {
+    for line in block.lines() {
+        let t = line.trim_start();
+        let rest = t.strip_prefix("id:")?;
+        let s = rest.trim();
+        if let Ok(n) = s.parse::<u64>() {
+            return Some(n);
+        }
+    }
+    None
+}
+
+fn handle_sse_block(
+    block: &str,
+    last_event_id: &mut u64,
+    cbs: &ChatStreamCallbacks,
+) -> Result<(), String> {
+    if let Some(id) = parse_sse_event_id_block(block) {
+        *last_event_id = id;
+        (cbs.on_last_sse_event_id)(id);
+    }
     let data_lines: Vec<&str> = block.lines().filter(|l| l.starts_with("data: ")).collect();
     if data_lines.is_empty() {
         return Ok(());
@@ -542,6 +638,14 @@ fn handle_sse_block(block: &str, cbs: &ChatStreamCallbacks) -> Result<(), String
     match try_dispatch_sse_control_payload(data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(()),
         crate::sse_dispatch::SseDispatch::Handled => {
+            if let Ok(v) = serde_json::from_str::<Value>(data)
+                && let Some(obj) = v.as_object()
+                && key_present_non_null_sse(obj, "stream_ended")
+                && let Some(Value::Object(ended)) = obj.get("stream_ended")
+                && let Some(Value::String(reason)) = ended.get("reason")
+            {
+                (cbs.on_stream_ended)(reason.clone());
+            }
             if stop {
                 Err("stream stopped".to_string())
             } else {
@@ -555,6 +659,13 @@ fn handle_sse_block(block: &str, cbs: &ChatStreamCallbacks) -> Result<(), String
             (cbs.on_delta)(data.to_string());
             Ok(())
         }
+    }
+}
+
+fn key_present_non_null_sse(obj: &serde_json::Map<String, Value>, key: &str) -> bool {
+    match obj.get(key) {
+        None | Some(Value::Null) => false,
+        Some(_) => true,
     }
 }
 

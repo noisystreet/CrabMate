@@ -126,7 +126,8 @@ pub struct StreamSubmitParams {
     pub seed_override: LlmSeedOverride,
     /// 可选：本任务覆盖 `api_base` / `model` / `api_key`（见 [`WebChatLlmOverride`]）。
     pub llm_override: Option<WebChatLlmOverride>,
-    pub sse_tx: mpsc::Sender<String>,
+    /// HTTP SSE 层：每条为 **`(Last-Event-ID 序号, data 负载)`**（与 hub 环形缓冲一致）。
+    pub stream_event_tx: mpsc::Sender<(u64, String)>,
     pub web_approval_session: Option<WebApprovalSession>,
 }
 
@@ -171,7 +172,7 @@ enum QueuedChatJob {
         temperature_override: Option<f32>,
         seed_override: LlmSeedOverride,
         llm_override: Option<WebChatLlmOverride>,
-        sse_tx: mpsc::Sender<String>,
+        stream_event_tx: mpsc::Sender<(u64, String)>,
         web_approval_session: Option<WebApprovalSession>,
     },
     Json {
@@ -335,7 +336,7 @@ impl ChatJobQueue {
             temperature_override,
             seed_override,
             llm_override,
-            sse_tx,
+            stream_event_tx,
             web_approval_session,
         } = p;
         let job = QueuedChatJob::Stream {
@@ -349,7 +350,7 @@ impl ChatJobQueue {
             temperature_override,
             seed_override,
             llm_override,
-            sse_tx,
+            stream_event_tx,
             web_approval_session,
         };
         self.inner
@@ -543,9 +544,21 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             temperature_override,
             seed_override,
             llm_override,
-            sse_tx,
+            stream_event_tx,
             web_approval_session,
         } => {
+            state.sse_stream_hub.register_job(job_id);
+            let hub_bridge = state.sse_stream_hub.clone();
+            let bridge_job = job_id;
+            let http_tx = stream_event_tx;
+            let (sse_tx, mut sse_rx) = mpsc::channel::<String>(1024);
+            tokio::spawn(async move {
+                while let Some(line) = sse_rx.recv().await {
+                    if let Some(pair) = hub_bridge.publish(bridge_job, line) {
+                        let _ = http_tx.send(pair).await;
+                    }
+                }
+            });
             info!(
                 target: "crabmate",
                 "chat stream 任务开始执行 job_id={}",
@@ -562,6 +575,19 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             let _per_guard = state
                 .chat_queue
                 .begin_per_flight_job(job_id, flight.clone());
+            let caps_line = crate::sse::encode_message(crate::sse::SsePayload::SseCapabilities {
+                caps: crate::sse::SseCapabilitiesBody {
+                    supported_sse_v: crate::sse::protocol::SSE_PROTOCOL_VERSION,
+                    resume_ring_cap: crate::sse::protocol::SSE_RESUME_RING_CAP,
+                    job_id,
+                },
+            });
+            let _ = crate::sse::send_string_logged(
+                &sse_tx,
+                caps_line,
+                "chat_job_queue::stream sse_capabilities",
+            )
+            .await;
             let out = Some(&sse_tx);
             let (web_tool_ctx, approval_session_id) = if let Some(session) = web_approval_session {
                 (
@@ -735,7 +761,21 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             if cancelled {
                 emit_stream_cancelled_terminal(&sse_tx, job_id).await;
             }
+            let end_reason = if cancelled { "cancelled" } else { "completed" };
+            let end_line = crate::sse::encode_message(crate::sse::SsePayload::StreamEnded {
+                ended: crate::sse::StreamEndedBody {
+                    job_id,
+                    reason: end_reason.to_string(),
+                },
+            });
+            let _ = crate::sse::send_string_logged(
+                &sse_tx,
+                end_line,
+                "chat_job_queue::stream stream_ended",
+            )
+            .await;
             drop(sse_tx);
+            state.sse_stream_hub.remove_job(job_id);
             JobOutcome::Stream { ok, cancelled, err }
         }
         QueuedChatJob::Json {
