@@ -24,9 +24,11 @@ use super::parse::{
 use crate::agent_memory::load_memory_snippet;
 use crate::chat_job_queue;
 use crate::conversation_store::SaveConversationOutcome;
-use crate::project_profile::build_first_turn_user_context_markdown;
+use crate::conversation_turn_bootstrap::{
+    compose_new_conversation_messages, first_turn_project_context_user_message,
+};
 use crate::redact;
-use crate::types::{CommandApprovalDecision, Message, messages_chat_seed};
+use crate::types::{CommandApprovalDecision, Message};
 use crate::web::http_types::chat::{
     ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
     ChatBranchResponseBody, ChatRequestBody, ChatResponseBody,
@@ -86,10 +88,11 @@ async fn build_messages_for_turn(
     // 先取工作区路径，再读 `cfg`，避免在持有 `cfg` 读锁时调用 `effective_workspace_path`（其内部再次 `cfg.read` 会死锁）。
     let root_str = state.effective_workspace_path().await;
     let cfg = state.cfg.read().await;
-    let base_system = cfg
-        .system_prompt_for_new_conversation(agent_role)?
+    let system_for_turn = cfg
+        .system_prompt_for_new_conversation(agent_role)
+        .map_err(|e| e.to_string())?
         .to_string();
-    let system_for_turn = crate::tool_stats::augment_system_prompt(&base_system, &cfg);
+    let system_for_turn = crate::tool_stats::augment_system_prompt(&system_for_turn, &cfg);
     let root = std::path::PathBuf::from(root_str);
     let memory_snippet = if cfg.agent_memory_file_enabled {
         load_memory_snippet(
@@ -101,36 +104,9 @@ async fn build_messages_for_turn(
         None
     };
 
-    let want_heavy_scan = (cfg.project_profile_inject_enabled
-        && cfg.project_profile_inject_max_chars > 0)
-        || (cfg.project_dependency_brief_inject_enabled
-            && cfg.project_dependency_brief_inject_max_chars > 0);
-    let combined = if want_heavy_scan {
-        let cfg_owned = cfg.clone();
-        let root_scan = root.clone();
-        match tokio::task::spawn_blocking(move || {
-            build_first_turn_user_context_markdown(&root_scan, &cfg_owned, memory_snippet)
-        })
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                debug!("first_turn_user_context spawn_blocking failed: {}", e);
-                None
-            }
-        }
-    } else {
-        build_first_turn_user_context_markdown(&root, &cfg, memory_snippet)
-    };
-
-    let messages = match combined {
-        Some(ctx) => vec![
-            Message::system_only(system_for_turn.clone()),
-            Message::user_only(ctx),
-            Message::user_only(user_msg.to_string()),
-        ],
-        None => messages_chat_seed(&system_for_turn, user_msg),
-    };
+    let combined =
+        first_turn_project_context_user_message(root.as_path(), &cfg, memory_snippet).await;
+    let messages = compose_new_conversation_messages(&system_for_turn, combined, Some(user_msg));
     Ok(ConversationTurnSeed {
         messages,
         expected_revision: None,

@@ -3,7 +3,10 @@
 #![allow(dead_code)]
 
 use crate::config::AgentConfig;
-use crate::project_profile::build_first_turn_user_context_markdown;
+use crate::conversation_turn_bootstrap::{
+    augmented_system_for_new_conversation_lenient, compose_new_conversation_messages,
+    first_turn_project_context_user_message_sync,
+};
 use crate::runtime::chat_export::{self, ChatSessionFile, session_to_json_pretty};
 use crate::types::{Message, normalize_messages_for_openai_compatible_request};
 use log::warn;
@@ -75,11 +78,7 @@ pub fn load_workspace_session(
 
 /// REPL 启动后**立刻**可用的消息列表（仅 `system`），不阻塞项目画像 / 会话恢复等耗时逻辑。
 pub fn repl_bootstrap_messages_fast(cfg: &AgentConfig, agent_role: Option<&str>) -> Vec<Message> {
-    let base = cfg
-        .system_prompt_for_new_conversation(agent_role)
-        .unwrap_or(cfg.system_prompt.as_str())
-        .to_string();
-    let system = crate::tool_stats::augment_system_prompt(&base, cfg);
+    let system = augmented_system_for_new_conversation_lenient(cfg, agent_role);
     vec![Message::system_only(system)]
 }
 
@@ -144,23 +143,15 @@ pub fn initial_workspace_messages(
         Err(_) => cfg.system_prompt.clone(),
     };
     if !load_from_disk {
-        let system_seed = crate::tool_stats::augment_system_prompt(&base_system, cfg);
-        if let Some(ctx) = build_first_turn_user_context_markdown(workspace, cfg, None) {
-            return vec![Message::system_only(system_seed), Message::user_only(ctx)];
-        }
-        return vec![Message::system_only(system_seed)];
+        let system_seed = augmented_system_for_new_conversation_lenient(cfg, agent_role);
+        let ctx = first_turn_project_context_user_message_sync(workspace, cfg, None);
+        return compose_new_conversation_messages(&system_seed, ctx, None);
     }
     load_workspace_session(workspace, &base_system, cfg.tui_session_max_messages).unwrap_or_else(
         || {
-            let system_seed = crate::tool_stats::augment_system_prompt(&base_system, cfg);
-            if let Some(ctx) = build_first_turn_user_context_markdown(workspace, cfg, None) {
-                vec![
-                    Message::system_only(system_seed.clone()),
-                    Message::user_only(ctx),
-                ]
-            } else {
-                vec![Message::system_only(system_seed)]
-            }
+            let system_seed = augmented_system_for_new_conversation_lenient(cfg, agent_role);
+            let ctx = first_turn_project_context_user_message_sync(workspace, cfg, None);
+            compose_new_conversation_messages(&system_seed, ctx, None)
         },
     )
 }
