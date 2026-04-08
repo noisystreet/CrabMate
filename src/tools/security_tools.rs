@@ -8,9 +8,9 @@ use super::output_util;
 const MAX_OUTPUT_LINES: usize = 800;
 
 pub fn cargo_audit(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if !workspace_root.join("Cargo.toml").is_file() {
         return "错误：当前工作目录未找到 Cargo.toml".to_string();
@@ -34,9 +34,9 @@ pub fn cargo_audit(args_json: &str, workspace_root: &Path, max_output_len: usize
 }
 
 pub fn cargo_deny(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if !workspace_root.join("Cargo.toml").is_file() {
         return "错误：当前工作目录未找到 Cargo.toml".to_string();

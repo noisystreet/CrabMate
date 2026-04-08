@@ -43,8 +43,7 @@ pub fn cargo_test_try(
     max_output_len: usize,
     ctx: Option<&ToolContext<'_>>,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let Some(c) = ctx else {
         return run_cargo_subcommand_value_try("test", &v, workspace_root, max_output_len);
     };
@@ -92,8 +91,7 @@ pub fn rust_test_one_try(
     max_output_len: usize,
     ctx: Option<&ToolContext<'_>>,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let filter = match v.get("test_name").and_then(|x| x.as_str()).map(str::trim) {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => {
@@ -159,8 +157,7 @@ pub fn cargo_metadata_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let no_deps = v.get("no_deps").and_then(|x| x.as_bool()).unwrap_or(true);
     let format_version = v
         .get("format_version")
@@ -187,8 +184,7 @@ pub fn cargo_tree_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
             "workspace_no_cargo_toml",
@@ -227,8 +223,7 @@ pub fn cargo_clean_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
             "workspace_no_cargo_toml",
@@ -267,8 +262,7 @@ pub fn cargo_doc_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
             "workspace_no_cargo_toml",
@@ -303,8 +297,7 @@ pub fn cargo_nextest_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
             "workspace_no_cargo_toml",
@@ -361,8 +354,7 @@ pub fn cargo_outdated_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
             "workspace_no_cargo_toml",
@@ -404,8 +396,7 @@ pub fn cargo_machete_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
             "workspace_no_cargo_toml",
@@ -474,8 +465,7 @@ pub fn cargo_udeps_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
             "workspace_no_cargo_toml",
@@ -515,8 +505,7 @@ pub fn cargo_publish_dry_run_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
             "workspace_no_cargo_toml",
@@ -582,8 +571,7 @@ pub fn cargo_fix_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
 
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
@@ -687,8 +675,7 @@ fn run_cargo_subcommand_str_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    let v: serde_json::Value = serde_json::from_str(args_json)
-        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     run_cargo_subcommand_value_try(subcmd, &v, workspace_root, max_output_len)
 }
 

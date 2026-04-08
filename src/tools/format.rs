@@ -20,9 +20,9 @@ use std::process::{Command, Stdio};
 use super::python_tools;
 
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim(),
@@ -59,9 +59,9 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
 
 /// 对单个文件做格式「检查」（不写入）。
 pub fn run_check(args_json: &str, workspace_root: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim(),

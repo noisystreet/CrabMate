@@ -3,9 +3,9 @@
 const MAX_INPUT_BYTES: usize = 512 * 1024;
 
 pub fn run(args_json: &str) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let text = match v.get("text").and_then(|x| x.as_str()) {
         Some(s) if !s.trim().is_empty() => s,

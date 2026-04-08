@@ -5,9 +5,9 @@ use std::path::Path;
 use super::{cargo_tools, frontend_tools, python_tools, security_tools};
 
 pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let run_fmt = v.get("run_fmt").and_then(|x| x.as_bool()).unwrap_or(true);
     let run_clippy = v
@@ -193,9 +193,9 @@ pub fn release_ready_check(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let run_ci = v.get("run_ci").and_then(|x| x.as_bool()).unwrap_or(true);
     let run_audit = v.get("run_audit").and_then(|x| x.as_bool()).unwrap_or(true);

@@ -7,9 +7,9 @@ use super::output_util;
 const MAX_OUTPUT_LINES: usize = 400;
 
 pub fn port_check(args_json: &str, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let port = match v.get("port").and_then(|x| x.as_u64()) {
         Some(p) if p > 0 && p <= 65535 => p as u16,
@@ -70,9 +70,9 @@ fn try_lsof_fallback(port: u16, max_output_len: usize, ss_err: &str) -> String {
 }
 
 pub fn process_list(args_json: &str, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let filter = v
         .get("filter")

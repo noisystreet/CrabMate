@@ -13,9 +13,9 @@ use crate::tools::ToolContext;
 use crate::workspace_changelist::record_file_state_after_write;
 
 pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -54,9 +54,9 @@ pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
 // ── delete_dir ──────────────────────────────────────────────
 
 pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -113,9 +113,9 @@ pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
 // ── append_file ─────────────────────────────────────────────
 
 pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -179,9 +179,9 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
 // ── create_dir ──────────────────────────────────────────────
 
 pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -222,9 +222,9 @@ pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
 // ── search_replace ──────────────────────────────────────────
 
 pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
         Some(s) if !s.is_empty() => s.to_string(),

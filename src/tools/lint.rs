@@ -12,9 +12,9 @@ use std::path::Path;
 ///   "run_python_ruff": bool   // 可选，默认 true（无 Python 项目标记时跳过）
 /// }
 pub fn run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let run_cargo = v.get("run_cargo").and_then(|b| b.as_bool()).unwrap_or(true);
     let run_frontend = v

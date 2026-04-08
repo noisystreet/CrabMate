@@ -1,9 +1,9 @@
 //! 环境变量批量检查工具（只读、脱敏）
 
 pub fn run(args_json: &str) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let names: Vec<&str> = match v.get("names").and_then(|x| x.as_array()) {
         Some(arr) => arr.iter().filter_map(|x| x.as_str()).collect(),

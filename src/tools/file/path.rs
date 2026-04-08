@@ -94,8 +94,7 @@ pub(super) fn path_for_tool_display(
     path_relative_to_workspace(working_dir, absolute)
 }
 pub(super) fn parse_path_content(args_json: &str) -> Result<(String, String), String> {
-    let v: serde_json::Value =
-        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {}", e))?;
+    let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
     let path = v
         .get("path")
         .and_then(|p| p.as_str())

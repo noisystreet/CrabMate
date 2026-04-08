@@ -41,9 +41,9 @@ struct TavilyResult {
 
 /// 执行 `web_search` 工具：参数 JSON 含 `query`，可选 `max_results`（1～20）。
 pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("错误：参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let query = match v.get("query").and_then(|q| q.as_str()).map(str::trim) {
         Some(s) if s.len() >= 2 => s.to_string(),

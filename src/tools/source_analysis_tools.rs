@@ -98,9 +98,9 @@ fn opt_str<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
 // ── ShellCheck ──────────────────────────────────────────────
 
 pub fn shellcheck_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{e}"),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -233,9 +233,9 @@ fn is_shell_script(path: &Path) -> bool {
 // ── cppcheck ────────────────────────────────────────────────
 
 pub fn cppcheck_analyze(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{e}"),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -298,9 +298,9 @@ pub fn cppcheck_analyze(args_json: &str, workspace_root: &Path, max_output_len: 
 // ── Semgrep ─────────────────────────────────────────────────
 
 pub fn semgrep_scan(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{e}"),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -361,9 +361,9 @@ pub fn semgrep_scan(args_json: &str, workspace_root: &Path, max_output_len: usiz
 // ── Hadolint ────────────────────────────────────────────────
 
 pub fn hadolint_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{e}"),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -422,9 +422,9 @@ pub fn hadolint_check(args_json: &str, workspace_root: &Path, max_output_len: us
 // ── Bandit ──────────────────────────────────────────────────
 
 pub fn bandit_scan(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{e}"),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -558,9 +558,9 @@ fn push_lizard_cli_args(
 }
 
 pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{e}"),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,

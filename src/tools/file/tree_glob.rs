@@ -79,9 +79,9 @@ fn walk_glob_collect_walkdir(
 /// 按 glob 模式递归查找工作区内文件路径（相对起始目录）。
 /// 参数：`pattern`（必填，如 `**/*.rs`）、`path`（可选起始子目录，默认 `.`）、`max_depth`、`max_results`、`include_hidden`
 pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let pattern_s = match v.get("pattern").and_then(|p| p.as_str()).map(str::trim) {
         Some(p) if !p.is_empty() => p,
@@ -232,9 +232,9 @@ fn walk_list_tree_walkdir(
 /// 自起始目录起递归列出子路径（先序、字典序），含 `dir:` / `file:` 前缀。
 /// 参数：`path`（可选，默认 `.`）、`max_depth`、`max_entries`、`include_hidden`
 pub fn list_tree(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let root = v
         .get("path")

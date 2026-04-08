@@ -57,9 +57,9 @@ fn run_git_stdout(working_dir: &Path, args: &[&str]) -> Result<String, String> {
 /// - `group_by`：`date`（按提交日聚合）| `flat`（单层列表）| `tag_ranges`（按相邻 tag 分段，tag 按 `-v:refname` 降序取最近若干）
 /// - `max_tag_sections`：`tag_ranges` 时最多展示几段（默认 25）
 pub fn changelog_draft(args_json: &str, working_dir: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     if let Err(e) = git::ensure_git_repo(working_dir) {
         return e;
@@ -263,9 +263,9 @@ fn changelog_by_tag_ranges(
 /// - `workspace_only`：仅工作区成员包（默认 false，含传递依赖）
 /// - `max_crates`：最多输出行数（默认 500，上限 3000）
 pub fn license_notice(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     if !workspace_root.join("Cargo.toml").is_file() {
         return "错误：当前工作目录未找到 Cargo.toml".to_string();

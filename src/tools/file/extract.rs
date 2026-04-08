@@ -13,9 +13,9 @@ use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_
 /// { "path": string, "pattern": string, "start_line"?: int, "end_line"?: int,
 ///   "max_matches"?: int, "case_insensitive"?: bool, "max_snippet_chars"?: int }
 pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
 
     let path = v

@@ -265,9 +265,9 @@ pub fn gh_pr_list(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let mut argv = vec!["pr".into(), "list".into()];
     if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
@@ -329,9 +329,9 @@ pub fn gh_pr_view(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let num = match v.get("number").and_then(|x| x.as_u64()) {
         Some(n) if n > 0 && n <= 999_999 => n.to_string(),
@@ -384,9 +384,9 @@ pub fn gh_issue_list(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let mut argv = vec!["issue".into(), "list".into()];
     if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
@@ -448,9 +448,9 @@ pub fn gh_issue_view(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let num = match v.get("number").and_then(|x| x.as_u64()) {
         Some(n) if n > 0 && n <= 9_999_999 => n.to_string(),
@@ -503,9 +503,9 @@ pub fn gh_run_list(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let mut argv = vec!["run".into(), "list".into()];
     if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
@@ -557,9 +557,9 @@ pub fn gh_pr_diff(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let num = match v.get("number").and_then(|x| x.as_u64()) {
         Some(n) if n > 0 && n <= 999_999 => n.to_string(),
@@ -599,9 +599,9 @@ pub fn gh_run_view(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let run_id = match v.get("run_id").and_then(|x| x.as_str()) {
         Some(s) => s.trim(),
@@ -667,9 +667,9 @@ pub fn gh_release_list(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let mut argv = vec!["release".into(), "list".into()];
     if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
@@ -721,9 +721,9 @@ pub fn gh_release_view(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let tag = match v.get("tag").and_then(|x| x.as_str()) {
         Some(s) => s.trim(),
@@ -779,9 +779,9 @@ pub fn gh_search(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let scope = match v.get("scope").and_then(|x| x.as_str()) {
         Some(s) => s.trim(),
@@ -848,9 +848,9 @@ pub fn gh_api(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(x) => x,
-        Err(e) => return format!("错误：JSON 解析失败：{e}"),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|x| x.as_str()) {
         Some(p) => p.trim(),

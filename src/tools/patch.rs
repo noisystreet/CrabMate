@@ -18,9 +18,9 @@ pub(crate) fn run_with_changelist(
     workspace_root: &Path,
     changelist: Option<&Arc<WorkspaceChangelist>>,
 ) -> String {
-    let args: serde_json::Value = match serde_json::from_str(args_json) {
+    let args = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
 
     let patch_text = match args.get("patch").and_then(|p| p.as_str()) {

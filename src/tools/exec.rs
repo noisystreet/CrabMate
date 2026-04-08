@@ -57,9 +57,9 @@ fn is_executable(meta: &std::fs::Metadata) -> bool {
 
 /// 在工作目录下执行指定可执行程序。args_json 中 path 为相对工作目录的路径，args 为参数列表。
 pub fn run(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let args: serde_json::Value = match serde_json::from_str(args_json) {
+    let args = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let exec_path = match args.get("path").and_then(|p| p.as_str()) {
         Some(s) => s,

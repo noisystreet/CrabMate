@@ -60,8 +60,7 @@ fn is_cross_device_rename(_: &std::io::Error) -> bool {
 }
 
 fn parse_from_to_overwrite(args_json: &str) -> Result<(String, String, bool), String> {
-    let v: serde_json::Value =
-        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {}", e))?;
+    let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
     let from = v
         .get("from")
         .and_then(|x| x.as_str())
@@ -193,9 +192,9 @@ pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
 /// - 默认 `mode`=`full`：整文件覆盖（`content` 为全文）。
 /// - `mode`=`replace_lines`：`start_line`..=`end_line`（1-based，含边界）替换为 `content`（流式读写，适合大文件）。
 pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v
         .get("path")

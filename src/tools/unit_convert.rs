@@ -2,7 +2,6 @@
 //!
 //! 支持长度、质量、温度、信息量（字节/比特及常见 SI/二进制前缀）、时间、面积、压强、速度。
 
-use serde_json::Value;
 use uom::si::area::{
     acre, hectare, square_centimeter, square_kilometer, square_meter, square_mile,
 };
@@ -27,9 +26,9 @@ fn norm_unit(s: &str) -> String {
 
 /// JSON：`category`（length|mass|temperature|data|time|area|pressure|speed）、`value`（数字）、`from`、`to`（单位符号或常用别名）。
 pub fn run(args_json: &str) -> String {
-    let v: Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("错误：参数不是合法 JSON：{e}"),
+        Err(e) => return e,
     };
     let category = match v.get("category").and_then(|c| c.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim(),

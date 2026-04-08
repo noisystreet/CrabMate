@@ -13,9 +13,9 @@ const DEFAULT_MAX_OUTLINE_ITEMS: usize = 200;
 
 /// 在工作区内搜索某标识符的「引用」（基于词边界；默认跳过疑似定义行）。
 pub fn find_references(args_json: &str, workspace_root: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let symbol = v
         .get("symbol")
@@ -119,9 +119,9 @@ pub fn find_references(args_json: &str, workspace_root: &Path) -> String {
 
 /// 列出单个 Rust 源文件中的模块级结构（fn/mod/struct/enum/trait/impl 等行摘要）。
 pub fn rust_file_outline(args_json: &str, workspace_root: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let path = v
         .get("path")

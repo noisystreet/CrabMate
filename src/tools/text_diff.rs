@@ -77,9 +77,9 @@ fn diff_unified(left: &str, right: &str, header_a: &str, header_b: &str, context
 
 /// 执行 `text_diff` 工具。
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let v: Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
 
     let mode = match parse_mode(&v) {

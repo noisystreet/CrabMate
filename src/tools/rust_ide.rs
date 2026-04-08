@@ -37,9 +37,9 @@ enum RaLspOp {
 
 /// 运行 `cargo check --message-format=json`，解析 `compiler-message` 行并汇总为可读文本（不整段原始 JSON 灌给模型）。
 pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     if !workspace_root.join("Cargo.toml").is_file() {
         return "错误：工作区根目录未找到 Cargo.toml".to_string();
@@ -257,10 +257,7 @@ fn lsp_rust_analyzer_request(
     workspace_root: &Path,
     op: RaLspOp,
 ) -> Result<String, String> {
-    let v: Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return Err(format!("参数 JSON 无效: {}", e)),
-    };
+    let v = crate::tools::parse_args_json(args_json)?;
     let path_rel = v
         .get("path")
         .and_then(|x| x.as_str())

@@ -22,9 +22,9 @@ pub fn ruff_check(args_json: &str, workspace_root: &Path, max_output_len: usize)
     if !workspace_has_python_project(workspace_root) {
         return "ruff check: 跳过（未找到 pyproject.toml / setup.py / setup.cfg / requirements.txt）".to_string();
     }
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let paths = match parse_rel_paths(&v, "paths", &["."]) {
         Ok(p) => p,
@@ -52,9 +52,9 @@ pub fn pytest_run(args_json: &str, workspace_root: &Path, max_output_len: usize)
         return "pytest: 跳过（未找到 pyproject.toml / setup.py / setup.cfg / requirements.txt）"
             .to_string();
     }
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -118,9 +118,9 @@ pub fn mypy_check(args_json: &str, workspace_root: &Path, max_output_len: usize)
         return "mypy: 跳过（未找到 pyproject.toml / setup.py / setup.cfg / requirements.txt）"
             .to_string();
     }
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let paths = match parse_rel_paths(&v, "paths", &["."]) {
         Ok(p) => p,
@@ -150,9 +150,9 @@ pub fn uv_sync(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
     if !workspace_root.join("pyproject.toml").is_file() {
         return "uv sync: 跳过（工作区根未找到 pyproject.toml）".to_string();
     }
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -185,9 +185,9 @@ pub fn uv_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> 
     if !workspace_root.join("pyproject.toml").is_file() {
         return "uv run: 跳过（工作区根未找到 pyproject.toml）".to_string();
     }
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let Some(arr) = v.get("args").and_then(|x| x.as_array()) else {
         return "错误：缺少 args 数组（至少一项，如 [\"pytest\",\"-q\"]）".to_string();
@@ -241,9 +241,9 @@ pub fn python_install_editable(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let backend = match v.get("backend").and_then(|x| x.as_str()).map(str::trim) {
         Some(s) if s == "uv" || s == "pip" => s,

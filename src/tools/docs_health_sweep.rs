@@ -34,9 +34,9 @@ fn markdown_links_failed(block: &str) -> bool {
 /// **外链探测**：`markdown_check_links` 在 `allowed_external_prefixes` 非空时使用内置 HTTP 客户端发 HEAD，
 /// **不经过** `http_fetch` / `http_request` 工具与 `http_fetch_allowed_prefixes`，也**无** Web/CLI 审批会话。
 pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
 
     let run_doc_preview = v

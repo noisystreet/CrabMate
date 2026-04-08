@@ -136,9 +136,9 @@ fn parse_rfc3339_utc(s: &str) -> Option<DateTime<Utc>> {
 // ---------------- Reminders ----------------
 
 pub fn add_reminder(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let title = match v.get("title").and_then(|x| x.as_str()).map(|s| s.trim()) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -250,9 +250,9 @@ pub fn list_reminders(args_json: &str, working_dir: &Path) -> String {
 }
 
 pub fn complete_reminder(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -283,9 +283,9 @@ pub fn complete_reminder(args_json: &str, working_dir: &Path) -> String {
 }
 
 pub fn update_reminder(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -344,9 +344,9 @@ pub fn update_reminder(args_json: &str, working_dir: &Path) -> String {
 }
 
 pub fn delete_reminder(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -371,9 +371,9 @@ pub fn delete_reminder(args_json: &str, working_dir: &Path) -> String {
 // ---------------- Events ----------------
 
 pub fn add_event(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let title = match v.get("title").and_then(|x| x.as_str()).map(|s| s.trim()) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -514,9 +514,9 @@ pub fn list_events(args_json: &str, working_dir: &Path) -> String {
 }
 
 pub fn delete_event(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -539,9 +539,9 @@ pub fn delete_event(args_json: &str, working_dir: &Path) -> String {
 }
 
 pub fn update_event(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效：{}", e),
+        Err(e) => return e,
     };
     let id = match v.get("id").and_then(|x| x.as_str()).map(|s| s.trim()) {
         Some(s) if !s.is_empty() => s.to_string(),

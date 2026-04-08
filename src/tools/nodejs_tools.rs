@@ -13,9 +13,9 @@ use super::test_result_cache::{
 const MAX_OUTPUT_LINES: usize = 800;
 
 pub fn npm_install(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let subdir = safe_subdir(&v);
     let ci = v.get("ci").and_then(|x| x.as_bool()).unwrap_or(false);
@@ -52,9 +52,9 @@ pub fn npm_run(
     max_output_len: usize,
     ctx: &ToolContext<'_>,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let subdir = safe_subdir(&v);
     let script = match v.get("script").and_then(|x| x.as_str()).map(str::trim) {
@@ -130,9 +130,9 @@ pub fn npm_run(
 }
 
 pub fn npx_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let subdir = safe_subdir(&v);
     let package = match v.get("package").and_then(|x| x.as_str()).map(str::trim) {
@@ -167,9 +167,9 @@ pub fn npx_run(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
 }
 
 pub fn tsc_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let subdir = safe_subdir(&v);
     let project = v

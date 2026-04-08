@@ -92,8 +92,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
 }
 
 fn parse_params(args_json: &str) -> Result<SymbolParams, String> {
-    let v: serde_json::Value =
-        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效：{}", e))?;
+    let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
 
     let symbol = v
         .get("symbol")

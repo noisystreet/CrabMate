@@ -155,6 +155,7 @@ flowchart TB
 | `command.rs` | `run_command`：`RunCommandError`（JSON/白名单/参数/限流/启动失败等可判别）、`run`（兼容字符串输出）、`run_checked`（`Result`）；可选 `cargo test …` 路径经 **`test_result_cache`**；**`error_playbook::playbook_run_commands`** 对校验失败打 **`warn`**（含 `kind`） |
 | `test_result_cache.rs` | 进程内 LRU：**`cargo_test` / `rust_test_one`**、**`npm_run` `script=test`**、**`run_command` `cargo`+`test`**（无 `--nocapture`/`--test-threads`）；指纹为工作区内 `.rs`/`.toml`/`Cargo.lock`（Rust）或 `package.json`/lock（npm）的 mtime+size |
 | `package_query.rs` | `package_query`：apt/rpm 只读包查询（安装状态/版本/来源统一抽象） |
+| `parse_args.rs` | **`parse_args_json`**：各 runner 的 `args_json` → [`serde_json::Value`]，统一「参数 JSON 无效」文案（`mod.rs` 再导出） |
 | `debug_tools.rs` | 调试辅助类工具 |
 | `diagnostics.rs` | `diagnostic_summary`：脱敏环境/工具链/工作区路径摘要 |
 | `error_playbook.rs` | `error_output_playbook`：对已脱敏错误输出做启发式归类，并给出经 `allowed_commands` 过滤的 `run_command` 建议字符串（不执行）；`playbook_run_commands`：同上启发式后依次执行建议命令（内部 `command::run`） |

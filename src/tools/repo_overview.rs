@@ -63,9 +63,9 @@ pub fn repo_overview_sweep(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
 
     let doc_paths: Vec<String> = v
