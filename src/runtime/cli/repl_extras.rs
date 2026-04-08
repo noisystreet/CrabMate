@@ -2,7 +2,10 @@
 
 use crate::config::cli::{SaveSessionCli, SaveSessionFormat};
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
-use crate::project_profile::build_first_turn_user_context_markdown;
+use crate::conversation_turn_bootstrap::{
+    augmented_system_for_new_conversation_lenient, compose_new_conversation_messages,
+    first_turn_project_context_user_message_sync,
+};
 use crate::runtime::cli::repl_parse::{
     ReplBuiltIn, classify_repl_slash_command, print_repl_version_line,
     repl_agent_role_set_is_default_pseudo,
@@ -41,33 +44,10 @@ pub(crate) async fn prepend_cli_first_turn_injection(
     work_dir: &Path,
     messages: &mut Vec<Message>,
 ) {
-    if messages.len() < 2 {
-        return;
-    }
-    if !messages[0].role.trim().eq_ignore_ascii_case("system")
-        || !messages[1].role.trim().eq_ignore_ascii_case("user")
-    {
-        return;
-    }
-    let cfg = cfg_holder.read().await.clone();
-    let want_heavy = (cfg.project_profile_inject_enabled
-        && cfg.project_profile_inject_max_chars > 0)
-        || (cfg.project_dependency_brief_inject_enabled
-            && cfg.project_dependency_brief_inject_max_chars > 0);
-    let ctx: Option<String> = if want_heavy {
-        let wd = work_dir.to_path_buf();
-        let cfg_c = cfg.clone();
-        tokio::task::spawn_blocking(move || {
-            build_first_turn_user_context_markdown(&wd, &cfg_c, None)
-        })
-        .await
-        .unwrap_or_default()
-    } else {
-        build_first_turn_user_context_markdown(work_dir, &cfg, None)
-    };
-    if let Some(body) = ctx {
-        messages.insert(1, Message::user_only(body));
-    }
+    crate::conversation_turn_bootstrap::prepend_first_turn_project_context_between_system_and_user(
+        cfg_holder, work_dir, messages,
+    )
+    .await;
 }
 
 /// 与启动时 [`crate::runtime::workspace_session::repl_bootstrap_messages_fast`] 同源：按当前 `agent_role` 重建首轮 `system`（及可选画像注入）。
@@ -76,38 +56,23 @@ pub(crate) async fn repl_rebuild_bootstrap_messages(
     work_dir: &Path,
     agent_role: Option<&str>,
 ) -> Vec<Message> {
-    let system_prompt = match cfg.system_prompt_for_new_conversation(agent_role) {
-        Ok(s) => s.to_string(),
-        Err(_) => cfg.system_prompt.clone(),
-    };
-    let system_prompt = crate::tool_stats::augment_system_prompt(&system_prompt, cfg);
+    let system_prompt = augmented_system_for_new_conversation_lenient(cfg, agent_role);
     let system_prompt_fb = system_prompt.clone();
-    let wd = work_dir.to_path_buf();
     let cfg = cfg.clone();
-    let want_heavy = (cfg.project_profile_inject_enabled
-        && cfg.project_profile_inject_max_chars > 0)
-        || (cfg.project_dependency_brief_inject_enabled
-            && cfg.project_dependency_brief_inject_max_chars > 0);
-    if want_heavy {
+    let wd = work_dir.to_path_buf();
+    if crate::conversation_turn_bootstrap::project_scan_needs_spawn_blocking(&cfg) {
         match tokio::task::spawn_blocking(move || {
-            if let Some(ctx) = build_first_turn_user_context_markdown(&wd, &cfg, None) {
-                vec![
-                    Message::system_only(system_prompt.clone()),
-                    Message::user_only(ctx),
-                ]
-            } else {
-                vec![Message::system_only(system_prompt)]
-            }
+            let ctx = first_turn_project_context_user_message_sync(wd.as_path(), &cfg, None);
+            compose_new_conversation_messages(&system_prompt, ctx, None)
         })
         .await
         {
             Ok(v) => v,
             Err(_) => vec![Message::system_only(system_prompt_fb)],
         }
-    } else if let Some(ctx) = build_first_turn_user_context_markdown(work_dir, &cfg, None) {
-        vec![Message::system_only(system_prompt), Message::user_only(ctx)]
     } else {
-        vec![Message::system_only(system_prompt)]
+        let ctx = first_turn_project_context_user_message_sync(work_dir, &cfg, None);
+        compose_new_conversation_messages(&system_prompt, ctx, None)
     }
 }
 

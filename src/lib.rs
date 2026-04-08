@@ -15,6 +15,8 @@ mod codebase_semantic_invalidation;
 mod config;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
 mod conversation_store;
+/// Web `/chat*` 与 CLI 首轮项目画像 / 依赖摘要注入的共用拼装。
+mod conversation_turn_bootstrap;
 mod health;
 mod http_client;
 mod llm;
