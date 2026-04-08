@@ -22,3 +22,14 @@ pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {
 
     finalize(b, system_prompt_search_bases)
 }
+
+/// CLI 子命令入口：加载失败时打印错误并映射为 `InvalidData`，与历史 `lib::run` 行为一致。
+pub fn load_config_for_cli(config_path: Option<&str>) -> Result<AgentConfig, std::io::Error> {
+    match load_config(config_path) {
+        Ok(c) => Ok(c),
+        Err(e) => {
+            eprintln!("{e}");
+            Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        }
+    }
+}

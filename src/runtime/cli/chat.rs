@@ -11,7 +11,7 @@ use crate::runtime::cli_exit::{
 };
 use crate::tool_registry::{CliCommandTurnStats, CliToolRuntime};
 use crate::types::{Message, messages_chat_seed, normalize_messages_for_openai_compatible_request};
-use crate::{LlmSeedOverride, RunAgentTurnParams, run_agent_turn};
+use crate::{RunAgentTurnParams, run_agent_turn};
 use log::debug;
 use std::collections::HashSet;
 use std::io::BufRead;
@@ -36,29 +36,18 @@ pub(crate) async fn run_agent_turn_for_cli(
     cli_tool_ctx: Option<&CliToolRuntime>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (ltm, scope) = cli_long_term_memory_handles(cfg);
-    run_agent_turn(RunAgentTurnParams {
+    run_agent_turn(RunAgentTurnParams::cli_terminal_chat(
         client,
         api_key,
         cfg,
         tools,
         messages,
-        out: None,
-        effective_working_dir: work_dir,
-        workspace_is_set: true,
-        render_to_terminal: true,
+        work_dir,
         no_stream,
-        cancel: None,
-        per_flight: None,
-        web_tool_ctx: None,
         cli_tool_ctx,
-        plain_terminal_stream: true,
-        llm_backend: None,
-        temperature_override: None,
-        seed_override: LlmSeedOverride::default(),
-        long_term_memory: ltm,
-        long_term_memory_scope_id: scope,
-        read_file_turn_cache: None,
-    })
+        ltm,
+        scope,
+    ))
     .await
 }
 

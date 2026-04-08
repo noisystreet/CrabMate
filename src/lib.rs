@@ -4,6 +4,7 @@
 //! 日志由 `log` + `env_logger` 处理；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
 
 pub mod agent;
+mod agent_errors;
 mod agent_memory;
 /// 工作区内 `cargo metadata` 子进程参数单一真源（工具与首轮注入等共用）。
 mod cargo_metadata;
@@ -30,6 +31,7 @@ mod runtime;
 mod sse;
 mod text_encoding;
 mod text_sanitize;
+mod text_util;
 mod tool_approval;
 mod tool_call_explain;
 mod tool_registry;
@@ -118,6 +120,167 @@ pub struct RunAgentTurnParams<'a> {
     pub long_term_memory_scope_id: Option<String>,
     /// 单轮 `run_agent_turn` 内 `read_file` 结果缓存；`None` 时由 `run_agent_turn` 按配置创建或关闭。
     pub read_file_turn_cache: Option<std::sync::Arc<ReadFileTurnCache>>,
+}
+
+impl<'a> RunAgentTurnParams<'a> {
+    /// Web `/chat/stream`：SSE 输出、可选工具审批、可取消。
+    #[allow(clippy::too_many_arguments)]
+    pub fn web_chat_stream(
+        client: &'a reqwest::Client,
+        api_key: &'a str,
+        cfg: &'a Arc<config::AgentConfig>,
+        tools: &'a [crate::types::Tool],
+        messages: &'a mut Vec<Message>,
+        effective_working_dir: &'a std::path::Path,
+        workspace_is_set: bool,
+        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        per_flight: std::sync::Arc<chat_job_queue::PerTurnFlight>,
+        web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
+        temperature_override: Option<f32>,
+        seed_override: types::LlmSeedOverride,
+        long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+        conversation_id: &str,
+        out: &'a mpsc::Sender<String>,
+    ) -> Self {
+        Self {
+            client,
+            api_key,
+            cfg,
+            tools,
+            messages,
+            out: Some(out),
+            effective_working_dir,
+            workspace_is_set,
+            render_to_terminal: false,
+            no_stream: false,
+            cancel: Some(cancel),
+            per_flight: Some(per_flight),
+            web_tool_ctx,
+            cli_tool_ctx: None,
+            plain_terminal_stream: false,
+            llm_backend: None,
+            temperature_override,
+            seed_override,
+            long_term_memory,
+            long_term_memory_scope_id: Some(conversation_id.to_string()),
+            read_file_turn_cache: None,
+        }
+    }
+
+    /// Web `POST /chat`（JSON）：无 SSE，终端渲染管线用于分步通知等。
+    #[allow(clippy::too_many_arguments)]
+    pub fn web_chat_json(
+        client: &'a reqwest::Client,
+        api_key: &'a str,
+        cfg: &'a Arc<config::AgentConfig>,
+        tools: &'a [crate::types::Tool],
+        messages: &'a mut Vec<Message>,
+        effective_working_dir: &'a std::path::Path,
+        workspace_is_set: bool,
+        per_flight: std::sync::Arc<chat_job_queue::PerTurnFlight>,
+        temperature_override: Option<f32>,
+        seed_override: types::LlmSeedOverride,
+        long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+        conversation_id: &str,
+    ) -> Self {
+        Self {
+            client,
+            api_key,
+            cfg,
+            tools,
+            messages,
+            out: None,
+            effective_working_dir,
+            workspace_is_set,
+            render_to_terminal: true,
+            no_stream: false,
+            cancel: None,
+            per_flight: Some(per_flight),
+            web_tool_ctx: None,
+            cli_tool_ctx: None,
+            plain_terminal_stream: false,
+            llm_backend: None,
+            temperature_override,
+            seed_override,
+            long_term_memory,
+            long_term_memory_scope_id: Some(conversation_id.to_string()),
+            read_file_turn_cache: None,
+        }
+    }
+
+    /// `chat` 子命令等：本机终端、纯文本流式、可选 `run_command` 交互。
+    #[allow(clippy::too_many_arguments)]
+    pub fn cli_terminal_chat(
+        client: &'a reqwest::Client,
+        api_key: &'a str,
+        cfg: &'a Arc<config::AgentConfig>,
+        tools: &'a [crate::types::Tool],
+        messages: &'a mut Vec<Message>,
+        effective_working_dir: &'a std::path::Path,
+        no_stream: bool,
+        cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
+        long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+        long_term_memory_scope_id: Option<String>,
+    ) -> Self {
+        Self {
+            client,
+            api_key,
+            cfg,
+            tools,
+            messages,
+            out: None,
+            effective_working_dir,
+            workspace_is_set: true,
+            render_to_terminal: true,
+            no_stream,
+            cancel: None,
+            per_flight: None,
+            web_tool_ctx: None,
+            cli_tool_ctx,
+            plain_terminal_stream: true,
+            llm_backend: None,
+            temperature_override: None,
+            seed_override: types::LlmSeedOverride::default(),
+            long_term_memory,
+            long_term_memory_scope_id,
+            read_file_turn_cache: None,
+        }
+    }
+
+    /// `bench` 批量任务：无终端渲染、非流式、可超时取消。
+    pub fn benchmark_batch(
+        client: &'a reqwest::Client,
+        api_key: &'a str,
+        cfg: &'a Arc<config::AgentConfig>,
+        tools: &'a [crate::types::Tool],
+        messages: &'a mut Vec<Message>,
+        effective_working_dir: &'a std::path::Path,
+        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
+        Self {
+            client,
+            api_key,
+            cfg,
+            tools,
+            messages,
+            out: None,
+            effective_working_dir,
+            workspace_is_set: true,
+            render_to_terminal: false,
+            no_stream: true,
+            cancel: Some(cancel),
+            per_flight: None,
+            web_tool_ctx: None,
+            cli_tool_ctx: None,
+            plain_terminal_stream: false,
+            llm_backend: None,
+            temperature_override: None,
+            seed_override: types::LlmSeedOverride::default(),
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            read_file_turn_cache: None,
+        }
+    }
 }
 
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
@@ -271,62 +434,32 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     if extra_cli == ExtraCliCommand::Doctor {
-        let cfg = match config::load_config(config_path.as_deref()) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{}", e);
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
-            }
-        };
+        let cfg = config::load_config_for_cli(config_path.as_deref())?;
         crate::runtime::cli_doctor::print_doctor_report(&cfg, workspace_cli.as_deref());
         return Ok(());
     }
 
     if let ExtraCliCommand::McpList { probe } = extra_cli {
-        let cfg = match config::load_config(config_path.as_deref()) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{}", e);
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
-            }
-        };
+        let cfg = config::load_config_for_cli(config_path.as_deref())?;
         crate::runtime::cli_mcp::run_mcp_list(&cfg, probe, false).await;
         return Ok(());
     }
 
     if let Some(ss) = save_session {
-        let cfg = match config::load_config(config_path.as_deref()) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{}", e);
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
-            }
-        };
+        let cfg = config::load_config_for_cli(config_path.as_deref())?;
         crate::runtime::cli::run_save_session_command(&cfg, &workspace_cli, ss)?;
         return Ok(());
     }
 
     if let Some(tr) = tool_replay {
-        let cfg = match config::load_config(config_path.as_deref()) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{}", e);
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
-            }
-        };
+        let cfg = config::load_config_for_cli(config_path.as_deref())?;
         crate::runtime::cli::run_tool_replay_command(&cfg, &workspace_cli, tr)?;
         return Ok(());
     }
 
     // `config` 子命令仅做 dry-run 自检，不要求 API_KEY（与 llm_http_auth_mode 一致）
     if dry_run {
-        let cfg = match config::load_config(config_path.as_deref()) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{}", e);
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
-            }
-        };
+        let cfg = config::load_config_for_cli(config_path.as_deref())?;
         let static_dir = web_static_dir::resolve_web_static_dir();
         if !static_dir.is_dir() {
             let msg = format!(
@@ -358,13 +491,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let cfg = match config::load_config(config_path.as_deref()) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("{}", e);
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into());
-        }
-    };
+    let cfg = config::load_config_for_cli(config_path.as_deref())?;
 
     if matches!(extra_cli, ExtraCliCommand::Models | ExtraCliCommand::Probe) {
         let api_key = require_api_key_for_cli_models_probe(&cfg)?;
@@ -627,7 +754,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     .await
 }
 
-pub use config::{AgentConfig, ExposeSecret, LlmHttpAuthMode, SharedAgentConfig, load_config};
+pub use config::{
+    AgentConfig, ExposeSecret, LlmHttpAuthMode, SharedAgentConfig, load_config, load_config_for_cli,
+};
 pub use llm::{
     ChatCompletionsBackend, CompleteChatRetryingParams, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
     StreamChatParams, default_chat_completions_backend,
