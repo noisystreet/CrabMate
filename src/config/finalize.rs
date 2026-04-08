@@ -279,6 +279,21 @@ pub(super) fn finalize(
         .unwrap_or(32768)
         .clamp(1024, 1_048_576) as usize;
     let tool_result_envelope_v1 = b.tool_result_envelope_v1.unwrap_or(true);
+    let agent_tool_stats_enabled = b.agent_tool_stats_enabled.unwrap_or(false);
+    let agent_tool_stats_window_events = b
+        .agent_tool_stats_window_events
+        .unwrap_or(200)
+        .clamp(16, 65_536) as usize;
+    let agent_tool_stats_min_samples =
+        b.agent_tool_stats_min_samples.unwrap_or(5).clamp(1, 10_000) as usize;
+    let agent_tool_stats_max_chars = b
+        .agent_tool_stats_max_chars
+        .unwrap_or(800)
+        .clamp(64, 32_768) as usize;
+    let agent_tool_stats_warn_below_success_ratio = b
+        .agent_tool_stats_warn_below_success_ratio
+        .unwrap_or(0.65)
+        .clamp(0.0, 1.0);
     let materialize_deepseek_dsml_tool_calls =
         b.materialize_deepseek_dsml_tool_calls.unwrap_or(true);
     let context_char_budget = b.context_char_budget.unwrap_or(0).min(50_000_000) as usize;
@@ -596,6 +611,11 @@ pub(super) fn finalize(
         cursor_rules_max_chars: cursor_rules_max_chars as usize,
         tool_message_max_chars,
         tool_result_envelope_v1,
+        agent_tool_stats_enabled,
+        agent_tool_stats_window_events,
+        agent_tool_stats_min_samples,
+        agent_tool_stats_max_chars,
+        agent_tool_stats_warn_below_success_ratio,
         materialize_deepseek_dsml_tool_calls,
         context_char_budget,
         context_min_messages_after_system,

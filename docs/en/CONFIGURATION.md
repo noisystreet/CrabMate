@@ -185,7 +185,14 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | `AGENT_MAX_MESSAGE_HISTORY` | Max messages kept. |
 | `AGENT_TOOL_MESSAGE_MAX_CHARS` | Compress `role: tool` before model if longer. |
 | `AGENT_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` envelope v1. |
+| `AGENT_TOOL_STATS_ENABLED` | When truthy, enable in-process tool-outcome stats and append a short hint to the **new** conversation’s first `system` (see below). |
+| `AGENT_TOOL_STATS_WINDOW_EVENTS` | Sliding-window event cap (16–65536); mirrors TOML `agent_tool_stats_window_events`. |
+| `AGENT_TOOL_STATS_MIN_SAMPLES` | Min total calls per tool in the window before it appears in the hint (1–10000). |
+| `AGENT_TOOL_STATS_MAX_CHARS` | Max Unicode scalars for the appendix (64–32768; truncated if longer). |
+| `AGENT_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO` | Hint if success rate is below this (0.0–1.0) and `min_samples` is met; failures always qualify. |
 | `AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | Materialize DeepSeek DSML tool calls. |
+
+**`[agent]` TOML keys**: `agent_tool_stats_enabled`, `agent_tool_stats_window_events`, `agent_tool_stats_min_samples`, `agent_tool_stats_max_chars`, `agent_tool_stats_warn_below_success_ratio`. Stats are **per-process**, **global** (not bucketed by `conversation_id`); **no** tool args or full outputs stored. Web attaches the appendix only for **new** chats (no stored seed). CLI `chat` / `repl` and `workspace_session::initial_workspace_messages` attach on fresh first-`system` paths; sessions loaded from disk keep base system alignment **without** this appendix.
 | `AGENT_CONTEXT_CHAR_BUDGET` | Character budget trim. |
 | `AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | Min messages after system post-summary. |
 | `AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS` | Trigger summary when over char threshold. |

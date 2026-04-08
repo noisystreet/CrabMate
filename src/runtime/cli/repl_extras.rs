@@ -80,6 +80,7 @@ pub(crate) async fn repl_rebuild_bootstrap_messages(
         Ok(s) => s.to_string(),
         Err(_) => cfg.system_prompt.clone(),
     };
+    let system_prompt = crate::tool_stats::augment_system_prompt(&system_prompt, cfg);
     let system_prompt_fb = system_prompt.clone();
     let wd = work_dir.to_path_buf();
     let cfg = cfg.clone();

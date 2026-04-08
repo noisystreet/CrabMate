@@ -105,6 +105,7 @@ flowchart TB
 | `redact.rs` | Log previews for long HTTP bodies. |
 | `text_encoding.rs` | Shared decoding for **`read_file`**, **`extract_in_file`**, **`GET /workspace/file`** (`encoding`, `auto`, strict UTF-8 errors). |
 | `text_sanitize.rs` | DSML materialization for DeepSeek-style tool calls (`materialize_deepseek_dsml_tool_calls_*`). |
+| `tool_stats.rs` | In-process global tool-outcome stats (`ok` / `error_code`); **`record_tool_outcome`** from **`execute_tools::emit_tool_result_sse_and_append`**; **`augment_system_prompt`** for new-chat first `system` (Web / CLI / REPL; disk-resumed sessions use base system only). Config **`agent_tool_stats_*`** / **`AGENT_TOOL_STATS_*`**. |
 | `health.rs` | **`build_health_report`** for **`GET /health`**; optional **`append_llm_models_endpoint_probe`** (**GET …/models** via **`llm::fetch_models_report`**, cached per **`health_llm_models_probe_cache_secs`** when **`health_llm_models_probe`** is enabled). Optional CLI checks include **`dep_gh`**. |
 | `llm/` | **`complete_chat_retrying`**, **`ChatCompletionsBackend`**, **`api::stream_chat`**, vendor quirks (reasoning_split, GLM thinking, Kimi temperature/thinking), CLI terminal rendering, **`openai_models`**. |
 | `path_workspace.rs` | Canonical workspace resolution, allowlist validation, web read/write path helpers. Works with **`workspace_fs.rs`** on **Unix** to open under a root fd (**`openat2` `RESOLVE_IN_ROOT`** on Linux). Residual risks: see module docs; **README** / **CONFIGURATION.md** (workspace). |

@@ -59,6 +59,7 @@ pub(crate) enum ExecuteToolsBatchOutcome {
 
 /// 单工具：SSE / 终端回显 + 追加 `tool` 与可选反思 `user`（与串行路径一致）的入参。
 struct EmitToolResultParams<'a> {
+    cfg: &'a Arc<AgentConfig>,
     out: Option<&'a mpsc::Sender<String>>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
@@ -147,6 +148,7 @@ async fn emit_tool_result_sse_and_append(
     p: EmitToolResultParams<'_>,
 ) {
     let EmitToolResultParams {
+        cfg,
         out,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
@@ -185,6 +187,14 @@ async fn emit_tool_result_sse_and_append(
         )
         .await;
     }
+
+    crate::tool_stats::record_tool_outcome(
+        cfg.as_ref(),
+        name,
+        result.as_str(),
+        tool_summary.clone(),
+        envelope_ctx.as_ref(),
+    );
 
     let content_for_model = if tool_result_envelope_v1 {
         let parsed = parse_legacy_output(name, &result);
@@ -464,6 +474,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
             messages,
             per_coord,
             EmitToolResultParams {
+                cfg,
                 out,
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
@@ -547,6 +558,7 @@ async fn execute_tools_serial(
                 messages,
                 per_coord,
                 EmitToolResultParams {
+                    cfg,
                     out,
                     echo_terminal_transcript,
                     terminal_tool_display_max_chars,
@@ -657,6 +669,7 @@ async fn execute_tools_serial(
             messages,
             per_coord,
             EmitToolResultParams {
+                cfg,
                 out,
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
