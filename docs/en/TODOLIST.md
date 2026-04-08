@@ -17,7 +17,6 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 - [ ] **Unauthenticated HTTP**: `/chat`, `/chat/stream`, workspace, files, upload, tasks do not verify caller identity; `API_KEY` is only for the LLM, not for protecting APIs or quota abuse.
 - [ ] **Multi-role / persona switching**: Support multiple **roles** (system prompt, tool visibility, temperature, etc.); **CLI** and **Web** should expose commands or UI to switch the active role per session, with boundaries documented for persistence, export, and `POST /config/reload`; multi-tenant use must align with authentication above.
-- [ ] **Workspace path TOCTOU / open race**: After `canonicalize` passes, the path may be swapped before `open` to a symlink outside allowed roots (or no longer the same dentry). Current checks are best-effort, **not** a non-escape guarantee. Stronger mitigations: Unix **`O_NOFOLLOW`**, **`openat`** from a verified root fd, Linux **`openat2` `RESOLVE_*`**, wired through Web and `file` tools. See **`src/path_workspace.rs`** module docs, **`README.md`**, and **`docs/CONFIGURATION.md`** (workspace).
 
 ### P3 — Architecture (PER) and docs
 

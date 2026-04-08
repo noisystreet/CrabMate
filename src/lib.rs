@@ -38,6 +38,7 @@ mod types;
 mod web;
 mod web_static_dir;
 mod workspace_changelist;
+mod workspace_fs;
 
 use config::cli::init_logging;
 pub use config::cli::{

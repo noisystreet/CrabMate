@@ -97,6 +97,9 @@ clap_mangen = { version = "0.2", default-features = false }
 # `pipe`：Unix 套接字 `connect_with_local_defaults`；`ssl`：`DOCKER_HOST` https/tcp TLS。
 bollard = { version = "0.18", default-features = false, features = ["ssl", "pipe"] }
 
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", default-features = false, features = ["fs", "dir"] }
+
 [[bin]]
 name = "crabmate-gen-man"
 path = "src/bin/crabmate_gen_man.rs"

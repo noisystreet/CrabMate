@@ -17,7 +17,6 @@
 
 - [ ] **HTTP 无鉴权**：`/chat`、`/chat/stream`、工作区、文件、上传、任务等均未校验调用方身份；`API_KEY` 仅用于调模型，不能防止他人滥用接口与配额。
 - [ ] **多角色与人设切换**：支持创建/配置多种**角色**（各角色可绑定不同系统提示、工具可见性、温度等策略）；**CLI**（如 `repl` 的 `/` 命令）与 **Web** 提供**内建命令或等价控件**切换当前会话生效角色，且与会话持久化、导出、`POST /config/reload` 可重载字段的边界在 `README` / `docs/DEVELOPMENT.md` 中写清；若对多租户开放须与上条鉴权同盘。
-- [ ] **工作区路径 TOCTOU / 打开竞态**：`path_workspace` 与 `resolve_for_read` 等在 `canonicalize` 通过后，实际 `open` 前路径仍可能被替换为指向允许根外的 symlink（或与校验时非同一对象）。当前为尽力校验，**非**不可逃逸保证。更强方案需在打开路径上采用 Unix **`O_NOFOLLOW`**、基于目录 fd 的 **`openat`**、Linux **`openat2` `RESOLVE_*`** 等，并贯通 Web 与 `file` 工具；风险与缓解路线见 **`src/path_workspace.rs`** 模块注释及 **`README.md`** / **`docs/CONFIGURATION.md`**（工作区）。
 
 ### P3 — 架构（PER）与文档澄清
 

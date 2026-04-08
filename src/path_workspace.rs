@@ -9,15 +9,11 @@
 //!
 //! 在**信任工作区**的典型开发场景下，本模块在访问前对路径做 `canonicalize` 与 `starts_with` 检查，可拒绝在**检查时刻**已指向根外的符号链接等情形。
 //!
-//! **已知局限**：从「完成校验」到进程实际 `open` / `read_dir` 之间，同一路径字符串可能被并发替换为指向工作区外的符号链接（或父目录被重组），按路径重新打开时**不保证**仍与校验时观察到的是同一 dentry。本仓库**尚未**在全路径上采用「打开时禁止跟随」策略，因此**不要**将当前实现等同于「不可逃逸」保证；多租户或不可信工作区须与 **P0 鉴权**等一并评估。
+//! **已落地缓解**（见 [`crate::workspace_fs`]）：在 **Unix** 上，`read_file` 等经 **`resolve_for_read_open`** 在已打开的工作区根 fd 上使用 **`openat2` + `RESOLVE_IN_ROOT`（Linux）** 或单次 `File::open`（其它 Unix）打开目标，将「策略校验 ↔ 业务打开」之间的窗口收窄；**Web** 工作区列表/读文件/写文件/删文件在 Unix 上同样经该模块做目录或文件打开。工作区内 symlink 仍可被跟随，但解析不得越过该根。
 //!
-//! **更强缓解方向**（需在 `file` / Web 等调用链贯通，并处理可移植性与 API 语义）：
+//! **残余风险**：策略校验仍依赖校验时刻的 `canonicalize`；**非 Linux** 或未走 `workspace_fs` 的路径（例如部分工具仍直接 `File::open(已解析路径)`、写路径上 `create_dir_all` 与按路径写入的组合）仍可能存在竞态。**不要**将当前实现等同于内核级「不可逃逸」保证；多租户或不可信工作区须与 **HTTP 鉴权**等一并评估。进一步可在写路径贯通 **`mkdirat` / `openat2`**、末级 **`O_NOFOLLOW`** 等。
 //!
-//! - Unix：对末级或关键分量使用 **`O_NOFOLLOW`**（[`std::os::unix::fs::OpenOptionsExt::custom_flags`]）；
-//! - 在已校验的**工作区根目录 fd** 上用相对分量的 **`openat`** 逐级打开，缩短窗口；
-//! - Linux：评估 **`openat2`** 与 **`RESOLVE_NO_SYMLINKS`** / **`RESOLVE_IN_ROOT`** 等（内核与 MSRV 约束单独评估）。
-//!
-//! 用户可见说明见 **`README.md`**、**`docs/CONFIGURATION.md`**（工作区）；跟踪项见 **`docs/TODOLIST.md`** 全局安全相关条目。工具侧解析实现见 **`src/tools/file/path.rs`**。
+//! 用户可见说明见 **`README.md`**、**`docs/CONFIGURATION.md`**（工作区）。工具侧解析与打开入口见 **`src/tools/file/path.rs`**。
 
 use path_absolutize::Absolutize;
 use std::path::{Path, PathBuf};
