@@ -388,7 +388,11 @@ model = "deepseek-reasoner"
 
 **规划步骤优化轮（`staged_plan_optimizer_round`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_OPTIMIZER_ROUND`）**：在首轮 `agent_reply_plan` v1 解析成功且 `steps` 不少于 2 时，再追加一轮无工具请求，请模型合并**无数据依赖**的只读探查步，并提示在同一执行步内对「可同轮并行批处理」的内建工具（与执行层 `parallel_readonly_tools` 判定一致，不限于 `read_file`）发起多次调用。解析失败或用户取消优化轮时沿用首轮规划；成功则追加优化轮 assistant 并采用新 `steps`（多一次 API）。
 
+**优化轮门控（`staged_plan_optimizer_requires_parallel_tools`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`）**：为 `true` 时，仅当本会话 `tools_defs` 中经服务端判定**至少有一个**可同轮并行批处理的内建工具名时，才在 `steps.len() >= 2` 且开启优化轮时发起上述优化请求；若 CSV 为空则跳过该轮以省 API（优化提示主要围绕并行工具列表）。设为 `false` 可恢复旧行为：只要步数与 `staged_plan_optimizer_round` 满足即始终调用优化轮。
+
 **逻辑多规划员与合并（`staged_plan_ensemble_count`，默认 `1`，环境变量 `AGENT_STAGED_PLAN_ENSEMBLE_COUNT`，合法值钳制为 1–3）**：`1` 表示关闭。为 `2` 或 `3` 时，在首轮规划写入历史后，再**串行**发起 1 或 2 次无工具「独立规划员」请求（通过服务端注入的 user 正文区分角色；**辅助规划员的 assistant 不写入会话历史**，仅合并轮的 user+assistant 会保留），最后追加一轮「合并多份草案」的无工具请求，产出单一 `steps` 后再进入上述步骤优化轮（若启用）。仍为**同一进程、同一模型与密钥**；不保证质量更优，且 **API 次数与费用明显增加**（例如 `3` + 优化轮 ≈ 首轮外再多 3 次规划类调用）。某辅助轮解析失败时停止追加规划员；若最终有效草案不足 2 份则不跑合并轮。
+
+**Ensemble 门控（`staged_plan_skip_ensemble_on_casual_prompt`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`）**：在 `staged_plan_ensemble_count > 1` 时，若从消息历史回溯到的**本轮用户正文**经简单启发式判定为寒暄或极短输入，则跳过逻辑多规划员与合并轮，直接沿用首轮规划（省多次规划 API）。设为 `false` 则始终按 `staged_plan_ensemble_count` 跑满（在解析成功的前提下）。
 
 ## SyncDefault 工具 Docker 沙盒（`sync_default_tool_sandbox_mode`）
 

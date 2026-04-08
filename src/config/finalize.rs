@@ -363,7 +363,12 @@ pub(super) fn finalize(
         b.staged_plan_patch_max_attempts.unwrap_or(2).clamp(1, 16) as usize;
     let staged_plan_cli_show_planner_stream = b.staged_plan_cli_show_planner_stream.unwrap_or(true);
     let staged_plan_optimizer_round = b.staged_plan_optimizer_round.unwrap_or(true);
+    let staged_plan_optimizer_requires_parallel_tools = b
+        .staged_plan_optimizer_requires_parallel_tools
+        .unwrap_or(true);
     let staged_plan_ensemble_count = b.staged_plan_ensemble_count.unwrap_or(1).clamp(1, 3) as u8;
+    let staged_plan_skip_ensemble_on_casual_prompt =
+        b.staged_plan_skip_ensemble_on_casual_prompt.unwrap_or(true);
     let sync_default_tool_sandbox_mode = match b.sync_default_tool_sandbox_mode_str.as_deref() {
         Some(s) => types::SyncDefaultToolSandboxMode::parse(s)?,
         None => types::SyncDefaultToolSandboxMode::default(),
@@ -643,7 +648,9 @@ pub(super) fn finalize(
         staged_plan_patch_max_attempts,
         staged_plan_cli_show_planner_stream,
         staged_plan_optimizer_round,
+        staged_plan_optimizer_requires_parallel_tools,
         staged_plan_ensemble_count,
+        staged_plan_skip_ensemble_on_casual_prompt,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,

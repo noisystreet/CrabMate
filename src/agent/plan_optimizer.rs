@@ -4,7 +4,10 @@ use std::collections::BTreeSet;
 
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::config::AgentConfig;
-use crate::types::Tool;
+use crate::types::{
+    Message, Tool, is_long_term_memory_injection,
+    is_message_excluded_from_llm_context_except_memory, is_workspace_changelist_injection,
+};
 
 /// 步骤优化轮注入的 user 正文标记（取消/失败时弹出临时 user）。
 pub(crate) const STAGED_PLAN_OPTIMIZER_COACH_MARK: &str = "### 分阶段规划 · 步骤优化（服务端注入）";
@@ -22,6 +25,71 @@ pub(crate) fn parallel_batchable_tool_names_csv_from_defs(
         }
     }
     names.into_iter().collect::<Vec<_>>().join(", ")
+}
+
+/// 在规划轮 assistant 尚未入史时，从 `messages` 末尾回溯，取**触发本轮分阶段规划**的用户正文（跳过注入类 user）。
+pub(crate) fn staged_plan_trigger_user_content(messages: &[Message]) -> Option<&str> {
+    for m in messages.iter().rev() {
+        if m.role != "user" {
+            continue;
+        }
+        if is_message_excluded_from_llm_context_except_memory(m)
+            || is_long_term_memory_injection(m)
+            || is_workspace_changelist_injection(m)
+        {
+            continue;
+        }
+        let t = m.content.as_deref()?.trim();
+        if t.is_empty() {
+            continue;
+        }
+        return Some(t);
+    }
+    None
+}
+
+/// 启发式：是否像闲聊/极短输入，适合跳过逻辑多规划员（ensemble）以省 API。
+pub(crate) fn staged_plan_user_prompt_looks_like_casual_or_trivial(s: &str) -> bool {
+    let t = s.trim();
+    if t.is_empty() {
+        return true;
+    }
+    let n_chars = t.chars().count();
+    if n_chars <= 12 {
+        return true;
+    }
+    let lower = t.to_lowercase();
+    const CASUAL: &[&str] = &[
+        "谢谢",
+        "感谢",
+        "多谢",
+        "好的",
+        "好",
+        "嗯",
+        "嗯嗯",
+        "ok",
+        "okay",
+        "hi",
+        "hello",
+        "hey",
+        "哈哈",
+        "呵呵",
+        "在吗",
+        "在么",
+        "早上好",
+        "下午好",
+        "晚上好",
+        "再见",
+        "拜拜",
+    ];
+    CASUAL.iter().any(|p| {
+        lower == *p
+            || lower.starts_with(&format!("{p}，"))
+            || lower.starts_with(&format!("{p},"))
+            || lower.starts_with(&format!("{p}。"))
+            || lower.starts_with(&format!("{p}！"))
+            || lower.starts_with(&format!("{p}!"))
+    })
 }
 
 /// 生成「规划优化轮」注入的 user 正文（中文）。
@@ -104,5 +172,40 @@ mod tests {
     fn try_parse_optimizer_rejects_no_task() {
         let body = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#;
         assert!(try_parse_optimizer_reply(body).is_none());
+    }
+
+    #[test]
+    fn casual_or_trivial_user_prompt_detection() {
+        assert!(staged_plan_user_prompt_looks_like_casual_or_trivial(
+            "谢谢！"
+        ));
+        assert!(staged_plan_user_prompt_looks_like_casual_or_trivial("ok"));
+        assert!(staged_plan_user_prompt_looks_like_casual_or_trivial(
+            "  hi  "
+        ));
+        assert!(staged_plan_user_prompt_looks_like_casual_or_trivial(
+            "好的，知道了"
+        ));
+        assert!(!staged_plan_user_prompt_looks_like_casual_or_trivial(
+            "请把 src/foo.rs 里的 bar 函数改成返回 Result"
+        ));
+    }
+
+    #[test]
+    fn trigger_user_skips_injections() {
+        use crate::types::Message;
+        let msgs = vec![
+            Message::user_only("plain ask"),
+            Message {
+                role: "user".into(),
+                content: Some("memo".into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some(crate::types::CRABMATE_LONG_TERM_MEMORY_NAME.into()),
+                tool_call_id: None,
+            },
+        ];
+        assert_eq!(staged_plan_trigger_user_content(&msgs), Some("plain ask"));
     }
 }

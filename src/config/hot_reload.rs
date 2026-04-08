@@ -93,7 +93,10 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.staged_plan_patch_max_attempts = src.staged_plan_patch_max_attempts;
     dst.staged_plan_cli_show_planner_stream = src.staged_plan_cli_show_planner_stream;
     dst.staged_plan_optimizer_round = src.staged_plan_optimizer_round;
+    dst.staged_plan_optimizer_requires_parallel_tools =
+        src.staged_plan_optimizer_requires_parallel_tools;
     dst.staged_plan_ensemble_count = src.staged_plan_ensemble_count;
+    dst.staged_plan_skip_ensemble_on_casual_prompt = src.staged_plan_skip_ensemble_on_casual_prompt;
     dst.sync_default_tool_sandbox_mode = src.sync_default_tool_sandbox_mode;
     dst.sync_default_tool_sandbox_docker_image
         .clone_from(&src.sync_default_tool_sandbox_docker_image);
