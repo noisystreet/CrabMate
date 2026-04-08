@@ -61,8 +61,7 @@ impl RequestMethod {
 
 /// 解析 `url` 与可选 `method`（`GET` / `HEAD`，默认 `GET`）。
 pub fn parse_http_fetch_args(args_json: &str) -> Result<(Url, FetchMethod), String> {
-    let v: serde_json::Value =
-        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {}", e))?;
+    let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
     let u = v
         .get("url")
         .and_then(|x| x.as_str())
@@ -96,8 +95,7 @@ pub fn parse_http_fetch_args(args_json: &str) -> Result<(Url, FetchMethod), Stri
 pub fn parse_http_request_args(
     args_json: &str,
 ) -> Result<(Url, RequestMethod, Option<serde_json::Value>), String> {
-    let v: serde_json::Value =
-        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {}", e))?;
+    let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
     let u = v
         .get("url")
         .and_then(|x| x.as_str())

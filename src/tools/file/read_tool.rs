@@ -156,9 +156,9 @@ pub fn read_file(
     working_dir: &Path,
     ctx: &super::super::ToolContext<'_>,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),

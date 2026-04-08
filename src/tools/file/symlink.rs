@@ -6,9 +6,9 @@ use std::path::Path;
 use super::path::{canonical_workspace_root, tool_user_error_from_workspace_path};
 
 pub fn symlink_info(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
         Some(s) if !s.is_empty() => s.to_string(),

@@ -18,9 +18,9 @@ const HASH_FILE_MAX_PREFIX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 /// 流式读缓冲区
 const HASH_FILE_BUF_SIZE: usize = 256 * 1024;
 pub fn file_exists(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v
         .get("path")
@@ -64,9 +64,9 @@ pub fn file_exists(args_json: &str, working_dir: &Path) -> String {
 ///
 /// 参数：`path`（必填）；`prefix_hash_bytes`（可选，默认 8192，0 表示不算哈希，上限 256KiB）。
 pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v
         .get("path")
@@ -152,9 +152,9 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
 ///
 /// 参数：`path`（必填）；`algorithm`：`sha256`（默认）、`blake3`、`sha512`；`max_bytes` 可选，若设置则只哈希文件前若干字节（上限 4GiB），省略则整文件。
 pub fn hash_file(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v
         .get("path")

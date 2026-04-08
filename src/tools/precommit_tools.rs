@@ -22,9 +22,9 @@ pub fn pre_commit_run(args_json: &str, workspace_root: &Path, max_output_len: us
         return "pre-commit run: 跳过（未找到 .pre-commit-config.yaml / .pre-commit-config.yml）"
             .to_string();
     }
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
 
     if let Some(h) = v.get("hook").and_then(|x| x.as_str()).map(str::trim)

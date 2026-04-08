@@ -344,9 +344,9 @@ fn playbook_prepare(
 
 /// 参数：`error_text`（必填）、`ecosystem`（可选，默认 auto）、`max_chars`（可选，默认 24000，上限 100000）
 pub fn error_output_playbook(args_json: &str, allowed_commands: &[String]) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let (truncated, eco, eco_req, cat) = match playbook_prepare(&v) {
         Ok(x) => x,
@@ -397,9 +397,9 @@ fn clamp_playbook_max_commands(n: u64) -> usize {
 ///
 /// 参数：与 `error_output_playbook` 相同的 `error_text` / `ecosystem` / `max_chars`，另可选 `max_commands`（默认 3，范围 1～3）。
 pub fn playbook_run_commands(args_json: &str, ctx: &ToolContext<'_>) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let max_run = v
         .get("max_commands")

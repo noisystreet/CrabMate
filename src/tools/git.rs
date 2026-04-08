@@ -13,7 +13,7 @@ use super::output_util;
 const MAX_OUTPUT_LINES: usize = 800;
 
 fn parse_args(args_json: &str) -> Result<serde_json::Value, String> {
-    serde_json::from_str(args_json).map_err(|e| format!("参数解析错误：{}", e))
+    crate::tools::parse_args_json(args_json)
 }
 
 fn extract_safe_path(v: &serde_json::Value) -> Result<Option<String>, String> {

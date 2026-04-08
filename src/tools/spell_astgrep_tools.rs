@@ -151,9 +151,9 @@ fn normalize_ast_lang(raw: &str) -> Result<&'static str, String> {
 
 /// `typos`：默认检查 `README.md` 与 `docs`（若存在）；可传 `paths` 覆盖。只读，不写回文件。
 pub fn typos_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -186,9 +186,9 @@ pub fn typos_check(args_json: &str, workspace_root: &Path, max_output_len: usize
 
 /// `codespell`：默认路径同 typos；**禁止**传入写回参数。使用 `-q 3` 减少噪音。
 pub fn codespell_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -242,9 +242,9 @@ pub fn codespell_check(args_json: &str, workspace_root: &Path, max_output_len: u
 
 /// `ast-grep run`：结构化搜索。默认路径 `["src"]`；内置排除 `target`、`node_modules` 等 glob。
 pub fn ast_grep_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let pattern = match v.get("pattern").and_then(|x| x.as_str()) {
         Some(s) if is_safe_ast_pattern(s) => s.to_string(),
@@ -315,9 +315,9 @@ pub fn ast_grep_run(args_json: &str, workspace_root: &Path, max_output_len: usiz
 
 /// `ast-grep run --rewrite`：结构化改写。默认 dry-run；写盘需 `confirm=true`。
 pub fn ast_grep_rewrite(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let pattern = match v.get("pattern").and_then(|x| x.as_str()) {
         Some(s) if is_safe_ast_pattern(s) => s.to_string(),

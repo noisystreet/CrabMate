@@ -11,9 +11,9 @@ use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_
 pub fn chmod_file(args_json: &str, working_dir: &Path) -> String {
     use std::os::unix::fs::PermissionsExt;
 
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|p| p.as_str()).map(str::trim) {
         Some(s) if !s.is_empty() => s.to_string(),

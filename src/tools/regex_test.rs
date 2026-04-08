@@ -3,9 +3,9 @@
 use regex::Regex;
 
 pub fn run(args_json: &str) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let pattern = match v.get("pattern").and_then(|x| x.as_str()) {
         Some(p) if !p.is_empty() => p,

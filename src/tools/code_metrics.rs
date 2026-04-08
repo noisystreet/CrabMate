@@ -12,9 +12,9 @@ const EXCLUDED_DIRS: &[&str] = &["target", "node_modules", "vendor", "dist", "bu
 // ── code_stats：代码行数统计 ────────────────────────────────
 
 pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let path = v
         .get("path")
@@ -119,9 +119,9 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
 // ── dependency_graph：依赖关系可视化 ────────────────────────
 
 pub fn dependency_graph(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let format = v
         .get("format")
@@ -428,9 +428,9 @@ fn sanitize_id(name: &str) -> String {
 // ── coverage_report：覆盖率报告解析 ────────────────────────
 
 pub fn coverage_report(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|x| x.as_str()).map(str::trim) {
         Some(p) if !p.is_empty() => p.to_string(),

@@ -25,9 +25,9 @@ pub fn frontend_prettier_check(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let subdir = v
         .get("subdir")
@@ -66,9 +66,9 @@ fn frontend_run_script(
     max_output_len: usize,
     default_script: &str,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     let subdir = v
         .get("subdir")

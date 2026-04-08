@@ -491,9 +491,9 @@ fn serialize_by_format(v: &JsonValue, fmt: DataFormat) -> Result<String, String>
 /// 校验并可选摘要顶层结构。
 /// 参数：`path`，`format?`（auto/json/yaml/toml/csv/tsv），`has_header?`（仅 CSV/TSV；默认 true），`summarize?` 默认 true
 pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|x| x.as_str()).map(str::trim) {
         Some(p) if !p.is_empty() => p,
@@ -535,9 +535,9 @@ pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
 /// 解析后按路径取值（JSON Pointer 或点号路径）。
 /// 参数：`path`，`query`（必填），`format?`，`has_header?`（仅 CSV/TSV；默认 true）
 pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|x| x.as_str()).map(str::trim) {
         Some(p) if !p.is_empty() => p,
@@ -598,9 +598,9 @@ fn json_type_name(v: &JsonValue) -> &'static str {
 /// 将两份文件解析为同一 JSON 模型后做键级差异（非文本 diff）。
 /// 参数：`path_a`，`path_b`，`format?`（对两边使用同一解释；若 auto 则分别按扩展名推断），`has_header?`（仅 CSV/TSV；默认 true），`max_diff_lines?` 默认 200，上限 2000
 pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path_a = match v.get("path_a").and_then(|x| x.as_str()).map(str::trim) {
         Some(p) if !p.is_empty() => p,
@@ -688,9 +688,9 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
 
 /// 结构化补丁：对 JSON/YAML/TOML 进行 set/remove（默认 dry-run，写入需 confirm=true）。
 pub fn structured_patch(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let v: JsonValue = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let path = match v.get("path").and_then(|x| x.as_str()).map(str::trim) {
         Some(p) if !p.is_empty() => p,

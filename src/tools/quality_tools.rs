@@ -6,9 +6,9 @@ use super::{cargo_tools, ci_tools, container_tools, frontend_tools, jvm_tools, p
 
 /// 按开关组合运行多项质量检查；默认仅 Rust 侧 fmt + clippy（轻量）。
 pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
 
     let run_cargo_fmt_check = v

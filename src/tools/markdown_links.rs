@@ -616,9 +616,9 @@ fn render_text_report(
 /// - `check_fragments`?: bool，默认 true；是否校验 `#fragment`（按目标 Markdown 标题锚点）
 /// - `output_format`?: string，默认 text；可选 text/json/sarif
 pub fn markdown_check_links(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
     let output_format = match parse_output_format(v.get("output_format").and_then(|x| x.as_str())) {
         Ok(fmt) => fmt,

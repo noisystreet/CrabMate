@@ -12,9 +12,9 @@ fn has_go_project(workspace_root: &Path) -> bool {
 }
 
 pub fn go_build(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if !has_go_project(workspace_root) {
         return "go build: 跳过（未找到 go.mod）".to_string();
@@ -53,9 +53,9 @@ pub fn go_build(args_json: &str, workspace_root: &Path, max_output_len: usize) -
 }
 
 pub fn go_test(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if !has_go_project(workspace_root) {
         return "go test: 跳过（未找到 go.mod）".to_string();
@@ -118,9 +118,9 @@ pub fn go_test(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
 }
 
 pub fn go_vet(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if !has_go_project(workspace_root) {
         return "go vet: 跳过（未找到 go.mod）".to_string();
@@ -151,9 +151,9 @@ pub fn go_vet(args_json: &str, workspace_root: &Path, max_output_len: usize) -> 
 }
 
 pub fn go_mod_tidy(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if !has_go_project(workspace_root) {
         return "go mod tidy: 跳过（未找到 go.mod）".to_string();
@@ -169,9 +169,9 @@ pub fn go_mod_tidy(args_json: &str, workspace_root: &Path, max_output_len: usize
 }
 
 pub fn go_fmt_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if !has_go_project(workspace_root) {
         return "gofmt: 跳过（未找到 go.mod）".to_string();
@@ -193,9 +193,9 @@ pub fn go_fmt_check(args_json: &str, workspace_root: &Path, max_output_len: usiz
 }
 
 pub fn golangci_lint(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
+        Err(e) => return e,
     };
     if !has_go_project(workspace_root) {
         return "golangci-lint: 跳过（未找到 go.mod）".to_string();

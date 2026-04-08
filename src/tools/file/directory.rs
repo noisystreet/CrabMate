@@ -7,9 +7,9 @@ use super::display_fmt::{format_size, format_unix_timestamp};
 use super::path::{path_for_tool_display, resolve_for_read};
 
 pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {}", e),
+        Err(e) => return e,
     };
 
     let path = v
