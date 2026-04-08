@@ -683,6 +683,8 @@ pub fn App() -> impl IntoView {
                     status_data,
                     client_llm_storage_tick,
                     selected_agent_role,
+                    stream_job_id,
+                    stream_last_event_seq,
                     conversation_id,
                     conversation_revision,
                     context_used_estimate,
