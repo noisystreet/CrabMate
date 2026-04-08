@@ -170,6 +170,33 @@ fn test_run_tool_run_command_disallowed() {
 }
 
 #[test]
+fn test_run_tool_try_run_command_disallowed_tool_error() {
+    use crate::tool_result::ToolFailureCategory;
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let e = run_tool_try("run_command", r#"{"command":"rm"}"#, &ctx).expect_err("disallowed");
+    assert_eq!(e.code, "command_not_allowed");
+    assert_eq!(e.category, ToolFailureCategory::PolicyDenied);
+    assert!(!e.retryable);
+}
+
+#[test]
+fn test_run_tool_try_cargo_check_workspace_no_cargo_toml() {
+    use crate::tool_result::ToolFailureCategory;
+    let allowed = test_allowed_commands();
+    let dir = std::env::temp_dir().join(format!("crabmate_cargo_empty_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir temp workspace");
+    let ctx = ToolContext {
+        working_dir: &dir,
+        ..test_ctx(&allowed)
+    };
+    let e = run_tool_try("cargo_check", "{}", &ctx).expect_err("no Cargo.toml");
+    assert_eq!(e.code, "workspace_no_cargo_toml");
+    assert_eq!(e.category, ToolFailureCategory::Workspace);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_run_tool_get_weather_missing_param() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);

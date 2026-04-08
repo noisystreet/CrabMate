@@ -69,7 +69,7 @@ use std::sync::Arc;
 
 use crate::config::{AgentConfig, ExposeSecret};
 use crate::path_workspace::{validate_effective_workspace_base, validate_workspace_set_path};
-use crate::tool_result::ToolResult;
+use crate::tool_result::{ToolError, ToolResult};
 use crate::types::{FunctionDef, Tool};
 use crate::workspace_changelist::WorkspaceChangelist;
 
@@ -1054,35 +1054,134 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     }
 }
 
-fn run_tool_parsed_legacy(
-    name: &str,
-    args_json: &str,
-    ctx: &ToolContext<'_>,
-) -> (String, crate::tool_result::ParsedLegacyOutput) {
-    let output = run_tool(name, args_json, ctx);
-    let parsed = crate::tool_result::parse_legacy_output(name, &output);
-    (output, parsed)
-}
-
-#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，刻意保持栈上完整语义
+/// `run_command` 与 `cargo_*` / `rust_test_one` 走显式 [`ToolError`]；其余工具仍经 [`run_tool`] + [`crate::tool_result::parse_legacy_output`]。
+#[allow(clippy::result_large_err)]
 fn run_tool_dispatch(
     name: &str,
     args_json: &str,
     ctx: &ToolContext<'_>,
-) -> Result<(String, crate::tool_result::ParsedLegacyOutput), crate::tool_result::ToolError> {
-    let (output, parsed) = run_tool_parsed_legacy(name, args_json, ctx);
-    if parsed.ok {
-        Ok((output, parsed))
-    } else {
-        Err(crate::tool_result::ToolError::from_parsed_legacy(
-            name, &parsed, output,
-        ))
+) -> Result<(String, crate::tool_result::ParsedLegacyOutput), ToolError> {
+    if find_spec(name).is_none() {
+        return Err(ToolError::unknown_tool(name));
+    }
+    match name {
+        "run_command" => {
+            let test_cache =
+                ctx.test_result_cache_enabled
+                    .then_some(command::RunCommandTestCacheOpts {
+                        enabled: true,
+                        max_entries: ctx.test_result_cache_max_entries,
+                        workspace_root: ctx.working_dir,
+                    });
+            match command::run_try(
+                args_json,
+                ctx.command_max_output_len,
+                ctx.allowed_commands,
+                ctx.working_dir,
+                test_cache,
+            ) {
+                Ok(output) => {
+                    let parsed = crate::tool_result::parse_legacy_output(name, &output);
+                    if parsed.ok {
+                        Ok((output, parsed))
+                    } else {
+                        Err(ToolError::from_parsed_legacy(name, &parsed, output))
+                    }
+                }
+                Err(e) => Err(e),
+            }
+        }
+        "cargo_check" => {
+            cargo_tools::cargo_check_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_test" => cargo_tools::cargo_test_try(
+            args_json,
+            ctx.working_dir,
+            ctx.command_max_output_len,
+            Some(ctx),
+        )
+        .map(|output| finish_dispatch_parsed(name, output)),
+        "cargo_clippy" => {
+            cargo_tools::cargo_clippy_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_metadata" => {
+            cargo_tools::cargo_metadata_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_tree" => {
+            cargo_tools::cargo_tree_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_clean" => {
+            cargo_tools::cargo_clean_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_doc" => {
+            cargo_tools::cargo_doc_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_nextest" => {
+            cargo_tools::cargo_nextest_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_outdated" => {
+            cargo_tools::cargo_outdated_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_machete" => {
+            cargo_tools::cargo_machete_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_udeps" => {
+            cargo_tools::cargo_udeps_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_publish_dry_run" => cargo_tools::cargo_publish_dry_run_try(
+            args_json,
+            ctx.working_dir,
+            ctx.command_max_output_len,
+        )
+        .map(|output| finish_dispatch_parsed(name, output)),
+        "cargo_fix" => {
+            cargo_tools::cargo_fix_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "cargo_run" => {
+            cargo_tools::cargo_run_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
+        "rust_test_one" => cargo_tools::rust_test_one_try(
+            args_json,
+            ctx.working_dir,
+            ctx.command_max_output_len,
+            Some(ctx),
+        )
+        .map(|output| finish_dispatch_parsed(name, output)),
+        _ => {
+            let output = run_tool(name, args_json, ctx);
+            let parsed = crate::tool_result::parse_legacy_output(name, &output);
+            if parsed.ok {
+                Ok((output, parsed))
+            } else {
+                Err(ToolError::from_parsed_legacy(name, &parsed, output))
+            }
+        }
     }
 }
 
-/// 与 [`run_tool`] 相同，但失败时返回 [`crate::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**），成功时返回完整输出字符串。
+fn finish_dispatch_parsed(
+    name: &str,
+    output: String,
+) -> (String, crate::tool_result::ParsedLegacyOutput) {
+    let parsed = crate::tool_result::parse_legacy_output(name, &output);
+    (output, parsed)
+}
+
+/// 与 [`run_tool`] 相同，但失败时返回 [`crate::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**）。
 ///
-/// 当前 runner 仍返回 `String`，语义由 [`crate::tool_result::parse_legacy_output`] 推断；后续可将各 runner 改为 `Result<String, ToolError>` 并在此直接传递。
+/// **`run_command`** 与 **`cargo_*` / `rust_test_one`** 在 [`run_tool_dispatch`] 中经 `*_try` 返回显式 [`ToolError`]；其余工具仍由 [`crate::tool_result::parse_legacy_output`] 从正文推断。
 #[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
 pub fn run_tool_try(
     name: &str,

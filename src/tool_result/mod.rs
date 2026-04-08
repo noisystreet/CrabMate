@@ -124,6 +124,7 @@ pub fn tool_error_retryable_heuristic(error_code: Option<&str>) -> bool {
         error_code,
         Some(
             "timeout"
+                | "rate_limited"
                 | "workflow_tool_join_error"
                 | "workflow_semaphore_closed"
                 | "workflow_node_missing_result"
