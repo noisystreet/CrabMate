@@ -71,10 +71,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 **Summary**: `protocol` encodes control JSON; `line` classifies lines (align with `frontend`).
 
-- [ ] Protocol version negotiation on `SSE_PROTOCOL_VERSION` bump.
 - [ ] Optional debug payloads (dev-only).
-- [ ] Share types with TypeScript (codegen or shared contract tests).
-- [ ] Document full `error.code` set in DEVELOPMENT/README.
 
 ---
 

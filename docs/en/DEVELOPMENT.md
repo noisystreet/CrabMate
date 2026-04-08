@@ -214,7 +214,7 @@ Shared client; separate connect vs request timeout; pool tuning for keep-alive.
 
 ### `src/sse/protocol.rs` / `line.rs`
 
-**`SsePayload`** encoding; consumer classification aligned with `frontend/src/api.ts` / `sse_control_dispatch.ts`.
+**`SsePayload`** encoding; **`SSE_PROTOCOL_VERSION`** from **`crates/crabmate-sse-protocol`** (re-exported in `protocol`); consumer classification aligned with **`frontend-leptos/src/sse_dispatch.rs`** / **`api.rs`**.
 
 ### `src/types.rs`
 
@@ -232,13 +232,11 @@ Aggregated in **`file/mod.rs`**; glob/tree limits; **`resolve_for_read`** for ot
 
 **`web`**: handlers matching UI. **`runtime`**: CLI session file (`.crabmate/tui_session.json`), optional background **`initial_workspace_messages`** gated by **`repl_initial_workspace_messages_enabled`**, benchmark runner, MCP list, config reload, tool replay exit code 6 on mismatch. Product differences vs Web: **`docs/en/CLI.md`** § CLI vs Web.
 
-## Frontend (`frontend/src/`)
+## Frontend (`frontend-leptos/`)
 
-- **`api.ts`**: HTTP helpers, **`SSE_PROTOCOL_VERSION`**, `sendChatStream`, `submitChatApproval`.
-- **`ChatPanel.tsx`**: messages, streaming, tool cards, export.
-- **`WorkspacePanel.tsx`**: workspace + bearer token from `localStorage`.
-- **`TasksPanel.tsx`**: `/tasks` (in-memory per workspace on server).
-- **`StatusBar.tsx`**: `/status` polling.
+- **`src/api.rs`**: `fetch` + **`send_chat_stream`**（**`client_sse_protocol`** 与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**）等。
+- **`src/sse_dispatch.rs`**: 控制面 JSON 分类（含 **`sse_capabilities`** 版本核对）。
+- 其余 UI 模块：`app/` 等（CSR WASM）。
 
 ## Persistence notes
 
@@ -254,4 +252,4 @@ Aggregated in **`file/mod.rs`**; glob/tree limits; **`resolve_for_read`** for ot
 - Workspace switch affects tool CWD—document UX implications.
 - Never log secrets; follow **`.cursor/rules/secrets-and-logging.mdc`**.
 - Open security/protocol debt: **`docs/TODOLIST.md`**.
-- SSE changes: update **`docs/en/SSE_PROTOCOL.md`**, frontend dispatch, `fixtures/sse_control_golden.jsonl`, run `cargo test golden_sse_control` and `npm run verify-sse-contract`.
+- SSE changes: update **`docs/en/SSE_PROTOCOL.md`**, **`crates/crabmate-sse-protocol`** if bumping **`SSE_PROTOCOL_VERSION`**, Leptos dispatch, `fixtures/sse_control_golden.jsonl`, run `cargo test golden_sse_control` and `cargo test -p crabmate-sse-protocol`.

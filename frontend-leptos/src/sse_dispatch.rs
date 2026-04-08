@@ -1,6 +1,7 @@
 //! 前端 SSE 控制面 JSON 的分类与分发（`serde_json::Value`）。
 //! 分支顺序须与 `src/sse/control_dispatch_mirror.rs` 与 `fixtures/sse_control_golden.jsonl` 一致。
 
+use crabmate_sse_protocol::SSE_PROTOCOL_VERSION;
 use serde_json::Value;
 
 fn key_present_non_null(obj: &serde_json::Map<String, Value>, key: &str) -> bool {
@@ -198,6 +199,27 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
     }
 
     if key_present_non_null(obj, "sse_capabilities") {
+        if let Some(Value::Object(caps)) = obj.get("sse_capabilities")
+            && let Some(sv_raw) = caps.get("supported_sse_v")
+        {
+            let sv = sv_raw
+                .as_u64()
+                .and_then(|n| u8::try_from(n).ok())
+                .or_else(|| sv_raw.as_i64().and_then(|n| u8::try_from(n).ok()));
+            if let Some(sv) = sv {
+                if sv != SSE_PROTOCOL_VERSION {
+                    let hint = if sv > SSE_PROTOCOL_VERSION {
+                        "SSE_SERVER_TOO_NEW"
+                    } else {
+                        "SSE_SERVER_TOO_OLD"
+                    };
+                    (cbs.on_error)(format!(
+                        "SSE 协议版本不匹配：服务端 supported_sse_v={sv}，本页 {SSE_PROTOCOL_VERSION} ({hint})"
+                    ));
+                    return SseDispatch::Stop;
+                }
+            }
+        }
         return SseDispatch::Handled;
     }
     if key_present_non_null(obj, "stream_ended") {

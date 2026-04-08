@@ -1,0 +1,9 @@
+[package]
+name = "crabmate-sse-protocol"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared SSE control-plane protocol version for CrabMate (Rust server + Leptos WASM)"
+
+[lib]
+path = "lib.rs"

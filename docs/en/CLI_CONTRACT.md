@@ -31,6 +31,8 @@ Control-plane JSON with **`error` + non-empty `code`** signals stream-level fail
 
 **`INTERNAL_ERROR`** appears only on **SSE**; it is **not** mapped to the numeric `chat` exit codes above; `chat` failures still use `classify_model_error_message` on error strings.
 
+**HTTP JSON (not SSE `data:`)**: full **`ApiError.code`** set for **`POST /chat`** / **`POST /chat/stream`** is defined by **`web/chat_handlers`** and OpenAPI; SSE version-related codes are summarized in **[`docs/en/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)** (`SSE_CLIENT_TOO_NEW`, `INVALID_SSE_CLIENT_PROTOCOL`, `STREAM_JOB_GONE`, etc.).
+
 ## `chat --output json` one JSON line per turn (stable shape)
 
 After each turn, **stdout** prints **one** UTF-8 JSON line for `jq` / scripts.
