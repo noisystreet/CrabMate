@@ -17,6 +17,7 @@ use crate::long_term_memory::LongTermMemoryRuntime;
 use crate::types::{CommandApprovalDecision, Message};
 
 use super::tasks_types::TasksData;
+use crate::sse::SseStreamHub;
 
 /// 与 `normalize_client_conversation_id`（`chat_handlers`）及存储上限对齐。
 pub(crate) const CONVERSATION_ID_MAX_LEN: usize = 128;
@@ -62,6 +63,8 @@ pub(crate) struct AppState {
     /// [`GET /health`](crate::web::chat_handlers::health_handler) 可选 **GET …/models** 探测结果缓存（见 `health_llm_models_probe_cache_secs`）。
     pub(crate) llm_models_health_cache:
         Arc<std::sync::Mutex<Option<crate::health::CachedLlmModelsHealthProbe>>>,
+    /// `/chat/stream` 断线重连：`Last-Event-ID` / `stream_resume` 与环形缓冲（进程内）。
+    pub(crate) sse_stream_hub: Arc<SseStreamHub>,
 }
 
 /// Web 会话存储后端。

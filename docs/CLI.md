@@ -179,7 +179,7 @@ cargo run -- serve
 | GET | `/` | 前端页面 |
 | POST | `/config/reload` | 热重载内存中的 `AgentConfig`（不含会话 SQLite 路径）；body 可为 `{}`；见 **`docs/CONFIGURATION.md`**「配置热重载」 |
 | POST | `/chat` | JSON 对话；可选 `conversation_id`、`agent_role`（仅新建服务端会话时）、`temperature`、`seed`、`seed_policy` |
-| POST | `/chat/stream` | SSE；可选 `approval_session_id`、`agent_role`（同上）；响应头 `x-conversation-id` |
+| POST | `/chat/stream` | SSE；每条事件含 **`id:`** 序号；响应头 **`x-conversation-id`**、**`x-stream-job-id`**；可选 JSON **`stream_resume`**（`job_id`、`after_seq`）与请求头 **`Last-Event-ID`** 断线重连；任务已结束则 **410** `STREAM_JOB_GONE`；可选 `approval_session_id`、`agent_role`（同上） |
 | POST | `/chat/approval` | 审批：`approval_session_id`、`decision` |
 | POST | `/chat/branch` | 会话分叉截断：JSON `conversation_id`、`before_user_ordinal`（0-based 普通用户消息序号）、`expected_revision`；服务端截断到该序号对应用户消息**之前**（与 Web「从此处重试」一致：随后由 `/chat/stream` 再发同一条用户文本）。须已持久化会话且 `revision` 匹配 |
 | GET | `/status` | 后台状态 |

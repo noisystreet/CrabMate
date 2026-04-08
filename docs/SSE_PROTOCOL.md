@@ -13,9 +13,10 @@
 ## 传输与分帧
 
 - 路由：**`POST /chat/stream`**；响应为 **`text/event-stream`**。（运维向 **`POST /config/reload`** 为 JSON、非 SSE，见 **`docs/CONFIGURATION.md`**「配置热重载」。）
+- **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：`{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，`code` **`STREAM_JOB_GONE`**。新流响应头另含 **`x-stream-job-id`**（与首帧 `sse_capabilities.caps.job_id` 一致）。
 - 事件块：以 **空行 `\n\n`** 分隔；块内可有若干 **`data: `** 行。前端将同一块内多行 `data:` **去掉前缀后按 `\n` 拼接**，再 `trim()` 得到一条待解析字符串（见 `sendChatStream`）。
 - **正文 delta**：拼接后的字符串若 **不是** 控制面 JSON（解析失败），或解析后判定为 **`plain`**，则作为助手正文片段交给 `onDelta`。
-- **流结束**：可能收到字面量 **`[DONE]`**（与 OpenAI 兼容习惯一致），前端忽略，不当作正文。
+- **流结束**：可能收到字面量 **`[DONE]`**（与 OpenAI 兼容习惯一致），前端忽略，不当作正文。另见控制面 **`stream_ended`**。
 
 ## 信封形状
 
@@ -54,6 +55,8 @@
 | `staged_plan_notice` / `staged_plan_notice_clear` | 规划进度文本（TUI 等）；Web **吞掉**不当下文 | `handled`，不 `onDelta` |
 | `chat_ui_separator` | 聊天区分隔线；`true` 短、`false` 长 | `onChatUiSeparator` |
 | `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测 | Leptos：`sse_dispatch` 解析后更新内存中的 `revision`；`onConversationSaved`（TS 等） |
+| `sse_capabilities` | 首帧能力：`supported_sse_v`、`resume_ring_cap`、`job_id`（与 `x-stream-job-id` 一致） | Web：**吞掉**（不当下文）；集成方可据此保存 `job_id` 做重连 |
+| `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `cancelled`） | Web：**吞掉**；客户端可据此停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
 ### `tool_result` 常用字段
@@ -89,6 +92,7 @@
 |--------|----------------|------|
 | `CONVERSATION_CONFLICT` | `web/chat_handlers`、`chat_job_queue` | 会话版本冲突 / 保存冲突 |
 | `INTERNAL_ERROR` | `chat_job_queue` | 队列或内部未预期错误 |
+| `STREAM_JOB_GONE` | `chat_stream_handler` | **`stream_resume`** 指向的任务已结束或不在本进程 hub（HTTP **410** + JSON，非 SSE） |
 | `STREAM_CANCELLED` | `chat_job_queue` | 流式任务被取消（如客户端断开导致协作取消，且 SSE 仍可投递时补发）；与 `llm::api::stream_chat` 在 **`out` 发送失败** 时置位的取消标志配合，减少静默空转 |
 | `staged_plan_tool_calls` | `agent_turn/staged` | （**保留/兼容**）旧版在规划轮因原生 `tool_calls` 报错；**当前**规划轮丢弃原生 `tool_calls` 并从正文 DSML 物化，**通常不再下发** |
 | `staged_plan_invalid` | （保留/兼容） | 旧版在规划 JSON 无效时下发；**当前服务端**对该情况已改为降级为常规循环，**通常不再出现** |

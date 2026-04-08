@@ -197,5 +197,12 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
 
+    if key_present_non_null(obj, "sse_capabilities") {
+        return SseDispatch::Handled;
+    }
+    if key_present_non_null(obj, "stream_ended") {
+        return SseDispatch::Handled;
+    }
+
     SseDispatch::Plain
 }

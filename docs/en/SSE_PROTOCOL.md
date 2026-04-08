@@ -13,9 +13,10 @@ This document describes **control-plane JSON** sent by the CrabMate server on SS
 ## Transport and framing
 
 - **Route**: **`POST /chat/stream`**; response **`text/event-stream`**. (Ops **`POST /config/reload`** is JSON, not SSE—see **CONFIGURATION.md** § hot reload.)
+- **Event `id:`**: Each logical block has monotonic **`id:`** (`u64`, in-process hub). Reconnect with header **`Last-Event-ID`** and JSON **`stream_resume`**: `{ "job_id": <u64>, "after_seq": <u64> }` (omit `after_seq` → 0). Server uses **`max(Last-Event-ID, after_seq)`**, replays from the ring buffer, then subscribes to live broadcast. **In-process only**: after the job ends or the process restarts, reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**. New streams also expose **`x-stream-job-id`** (same as first-frame `sse_capabilities.caps.job_id`).
 - **Event blocks**: Separated by **blank line `\n\n`**; each block may contain multiple **`data: `** lines. The frontend **joins** same-block `data:` lines with `\n`, then `trim()`, before parsing (see `sendChatStream`).
 - **Text delta**: If the joined string is **not** valid control JSON, or parses as **`plain`**, it is treated as assistant content for `onDelta`.
-- **Stream end**: Literal **`[DONE]`** may appear (OpenAI-style); frontend ignores it as content.
+- **Stream end**: Literal **`[DONE]`** may appear (OpenAI-style); frontend ignores it as content. See also **`stream_ended`**.
 
 ## Envelope shape
 
@@ -54,6 +55,8 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `staged_plan_notice` / `staged_plan_notice_clear` | Plan progress text; Web **swallows** | `handled`, not `onDelta` |
 | `chat_ui_separator` | UI separator; `true` short, `false` long | `onChatUiSeparator` |
 | `conversation_saved` | Session persisted; `revision` for branching/conflict | `onConversationSaved` |
+| `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Web: **swallow**; integrations can persist `job_id` for resume |
+| `stream_ended` | End of stream; `job_id`, `reason` (`completed` / `cancelled`) | Web: **swallow**; clients may stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
 ### `tool_result` common fields
@@ -89,6 +92,7 @@ SSE **stream** error codes (not HTTP JSON body). Update this table and `api.ts` 
 |--------|--------|---------|
 | `CONVERSATION_CONFLICT` | `web/chat_handlers`, `chat_job_queue` | Session revision / save conflict |
 | `INTERNAL_ERROR` | `chat_job_queue` | Queue or unexpected internal error |
+| `STREAM_JOB_GONE` | `chat_stream_handler` | **`stream_resume`** job not in hub (HTTP **410** + JSON, not SSE) |
 | `STREAM_CANCELLED` | `chat_job_queue` | Stream cancelled (e.g. client disconnect + cooperative cancel while SSE can still deliver) |
 | `staged_plan_tool_calls` | **Legacy/compat** | Rare today |
 | `staged_plan_invalid` | **Legacy/compat** | Rare today |

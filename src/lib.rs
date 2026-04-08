@@ -477,6 +477,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             long_term_memory,
             web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            sse_stream_hub: std::sync::Arc::new(crate::sse::SseStreamHub::new()),
         });
         let static_dir = web_static_dir::resolve_web_static_dir();
         let web_api_bearer_layer_enabled = {

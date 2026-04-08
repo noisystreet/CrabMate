@@ -1,16 +1,18 @@
 //! `POST /chat`、`/chat/stream`、`/chat/approval`、`/chat/branch`。
 
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::{HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use futures_util::StreamExt;
-use log::{debug, error, info};
+use futures_util::stream::{self, StreamExt};
+use log::{debug, error, info, warn};
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
 use super::super::app_state::{AppState, ConversationTurnSeed};
 use super::conflict::conversation_conflict_api_error;
@@ -29,6 +31,19 @@ use crate::conversation_store::SaveConversationOutcome;
 use crate::project_profile::build_first_turn_user_context_markdown;
 use crate::redact;
 use crate::types::{CommandApprovalDecision, Message, messages_chat_seed};
+
+fn sse_event_with_id(seq: u64, data: String) -> Result<Event, Infallible> {
+    Ok(Event::default().id(seq.to_string()).data(data))
+}
+
+fn parse_last_event_id(headers: &HeaderMap) -> Option<u64> {
+    let raw = headers.get(axum::http::HeaderName::from_static("last-event-id"))?;
+    let s = raw.to_str().ok()?.trim();
+    if s.is_empty() {
+        return None;
+    }
+    s.parse::<u64>().ok()
+}
 
 async fn build_messages_for_turn(
     state: &Arc<AppState>,
@@ -389,13 +404,15 @@ pub(crate) async fn chat_branch_handler(
     }))
 }
 
-/// 流式 chat：返回 SSE，每个 event 的 data 为一段 content delta（或结束时一条 error JSON）
+/// 流式 chat：返回 SSE，每个 event 的 **`id`** 为单调序号（断线重连与 **`Last-Event-ID`** / **`stream_resume`**），`data` 为控制面 JSON 或正文 delta。
 pub(crate) async fn chat_stream_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(body): Json<ChatRequestBody>,
 ) -> Result<Response, (StatusCode, Json<ApiError>)> {
+    let resume = body.stream_resume.as_ref();
     let msg = body.message.trim();
-    if msg.is_empty() {
+    if msg.is_empty() && resume.is_none() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
@@ -453,6 +470,71 @@ pub(crate) async fn chat_stream_handler(
         )
     })?;
     ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
+
+    if let Some(sr) = resume {
+        let job_id = sr.job_id;
+        if !state.sse_stream_hub.has_job(job_id) {
+            return Err((
+                StatusCode::GONE,
+                Json(ApiError {
+                    code: "STREAM_JOB_GONE",
+                    message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
+                }),
+            ));
+        }
+        let after_header = parse_last_event_id(&headers).unwrap_or(0);
+        let after_body = sr.after_seq.unwrap_or(0);
+        let after_seq = after_header.max(after_body);
+        let Some(sub) = state.sse_stream_hub.subscribe(job_id) else {
+            return Err((
+                StatusCode::GONE,
+                Json(ApiError {
+                    code: "STREAM_JOB_GONE",
+                    message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
+                }),
+            ));
+        };
+        let replay = state
+            .sse_stream_hub
+            .replay_after(job_id, after_seq)
+            .unwrap_or_default();
+        let max_replayed = replay.last().map(|(s, _)| *s).unwrap_or(after_seq);
+        info!(
+            target: "crabmate",
+            "chat stream 断线重连 job_id={} after_seq={} replayed={}",
+            job_id,
+            after_seq,
+            replay.len()
+        );
+        let replay_st = stream::iter(replay).map(|(seq, data)| sse_event_with_id(seq, data));
+        let live_st = BroadcastStream::new(sub).filter_map(move |item| {
+            std::future::ready(match item {
+                Ok((seq, data)) if seq > max_replayed => Some(sse_event_with_id(seq, data)),
+                Ok(_) => None,
+                Err(BroadcastStreamRecvError::Lagged(n)) => {
+                    warn!(
+                        target: "crabmate",
+                        "chat stream 重连 broadcast lag job_id={} skipped={}",
+                        job_id,
+                        n
+                    );
+                    None
+                }
+            })
+        });
+        let merged = replay_st.chain(live_st);
+        let mut resp = Sse::new(merged)
+            .keep_alive(KeepAlive::default())
+            .into_response();
+        if let Ok(v) = HeaderValue::from_str(&job_id.to_string()) {
+            resp.headers_mut().insert("x-stream-job-id", v);
+        }
+        if let Ok(v) = HeaderValue::from_str(&conversation_id) {
+            resp.headers_mut().insert("x-conversation-id", v);
+        }
+        return Ok(resp);
+    }
+
     let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
         .await
         .map_err(|e| {
@@ -490,7 +572,7 @@ pub(crate) async fn chat_stream_handler(
         });
     }
     let job_id = state.chat_queue.next_job_id();
-    let (tx, rx) = mpsc::channel::<String>(1024);
+    let (tx, rx) = mpsc::channel::<(u64, String)>(1024);
     debug!(
         target: "crabmate",
         "chat stream 请求摘要 job_id={} user_len={} user_preview={}",
@@ -512,7 +594,7 @@ pub(crate) async fn chat_stream_handler(
             temperature_override,
             seed_override,
             llm_override,
-            sse_tx: tx,
+            stream_event_tx: tx,
             web_approval_session,
         })
     {
@@ -530,13 +612,15 @@ pub(crate) async fn chat_stream_handler(
             }),
         ));
     }
-    let stream = ReceiverStream::new(rx)
-        .map(|s| Ok::<Event, std::convert::Infallible>(Event::default().data(s)));
+    let stream = ReceiverStream::new(rx).map(|(seq, data)| sse_event_with_id(seq, data));
     let mut resp = Sse::new(stream)
         .keep_alive(KeepAlive::default())
         .into_response();
     if let Ok(v) = HeaderValue::from_str(&conversation_id) {
         resp.headers_mut().insert("x-conversation-id", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&job_id.to_string()) {
+        resp.headers_mut().insert("x-stream-job-id", v);
     }
     Ok(resp)
 }

@@ -175,7 +175,7 @@ Static assets are served from `frontend-leptos/dist`.
 | GET | `/` | Frontend |
 | POST | `/config/reload` | Hot-reload in-memory `AgentConfig` (not SQLite path); body `{}` ok; see **`docs/CONFIGURATION.md`** |
 | POST | `/chat` | JSON chat; optional `conversation_id`, `agent_role` (new server-side session only), `temperature`, `seed`, `seed_policy` |
-| POST | `/chat/stream` | SSE; optional `approval_session_id`, `agent_role` (same); header `x-conversation-id` |
+| POST | `/chat/stream` | SSE; each event has **`id:`**; headers **`x-conversation-id`**, **`x-stream-job-id`**; optional JSON **`stream_resume`** (`job_id`, `after_seq`) and **`Last-Event-ID`** for reconnect; **410** `STREAM_JOB_GONE` if the job is gone; optional `approval_session_id`, `agent_role` (same) |
 | POST | `/chat/approval` | Approval: `approval_session_id`, `decision` |
 | POST | `/chat/branch` | Branch/truncate: JSON `conversation_id`, `before_user_ordinal` (0-based plain user index), `expected_revision`; server truncates **before** that user message (same as Web “regenerate from here”: resend the user text via `/chat/stream`). Requires persisted conversation and matching `revision` |
 | GET | `/status` | Backend status |

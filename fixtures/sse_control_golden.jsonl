@@ -21,4 +21,6 @@ staged_plan_notice_clear	{"v":1,"staged_plan_notice_clear":true}	handled
 chat_ui_separator	{"v":1,"chat_ui_separator":true}	handled
 未知键当正文	{"v":1,"unknown_future_key":true}	plain
 conversation_saved 前端消费并静默处理	{"v":1,"conversation_saved":{"revision":42}}	handled
+sse_capabilities	{"v":1,"sse_capabilities":{"supported_sse_v":1,"resume_ring_cap":256,"job_id":99}}	handled
+stream_ended	{"v":1,"stream_ended":{"job_id":99,"reason":"completed"}}	handled
 timeline_log 当前 Web 未分发	{"v":1,"timeline_log":{"kind":"k","title":"t"}}	plain
