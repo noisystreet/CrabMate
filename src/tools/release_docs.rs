@@ -4,6 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 use std::process::Command;
 
+use crate::cargo_metadata::cargo_metadata_command;
+
 use super::git;
 
 fn truncate_str(s: &str, max_bytes: usize) -> String {
@@ -279,12 +281,7 @@ pub fn license_notice(args_json: &str, workspace_root: &Path, max_output_len: us
         .unwrap_or(500)
         .clamp(1, 3000) as usize;
 
-    let output = match Command::new("cargo")
-        .arg("metadata")
-        .arg("--format-version=1")
-        .current_dir(workspace_root)
-        .output()
-    {
+    let output = match cargo_metadata_command(workspace_root, false, 1).output() {
         Ok(o) => o,
         Err(e) => return format!("无法执行 cargo metadata: {}", e),
     };
