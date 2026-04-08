@@ -134,6 +134,8 @@ fn StatusBarFooterBody(
     status_data: RwSignal<Option<StatusData>>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
+    stream_job_id: RwSignal<Option<u64>>,
+    stream_last_event_seq: RwSignal<u64>,
     conversation_id: RwSignal<Option<String>>,
     conversation_revision: RwSignal<Option<u64>>,
     context_used_estimate: RwSignal<usize>,
@@ -256,6 +258,8 @@ fn StatusBarFooterBody(
                                             } else {
                                                 selected_agent_role.set(Some(t.to_string()));
                                             }
+                                            stream_job_id.set(None);
+                                            stream_last_event_seq.set(0);
                                         }
                                     >
                                         <option value="__default__">{move || {
@@ -333,6 +337,8 @@ pub fn status_bar_footer_view(
     status_data: RwSignal<Option<StatusData>>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
+    stream_job_id: RwSignal<Option<u64>>,
+    stream_last_event_seq: RwSignal<u64>,
     conversation_id: RwSignal<Option<String>>,
     conversation_revision: RwSignal<Option<u64>>,
     context_used_estimate: RwSignal<usize>,
@@ -350,6 +356,8 @@ pub fn status_bar_footer_view(
                 status_data=status_data
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role
+                stream_job_id=stream_job_id
+                stream_last_event_seq=stream_last_event_seq
                 conversation_id=conversation_id
                 conversation_revision=conversation_revision
                 context_used_estimate=context_used_estimate

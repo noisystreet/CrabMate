@@ -152,8 +152,10 @@ pub(super) fn wire_chat_composer_streams(
         let changelist_fetch_nonce = changelist_fetch_nonce;
         move |user_text: String, asst_id: String| {
             let conv = conversation_id.get();
-            let resume_job = stream_job_id_sig.get();
-            let resume_after = stream_last_event_seq_sig.get();
+            // 新一次 attach 必须**不带** `stream_resume`：断线重连仅由 `send_chat_stream` 内部循环
+            // 用响应头里的 `x-stream-job-id` 与 `last_event_id` 完成。若此处读取 UI 上残留的
+            // `stream_job_id`（例如上轮 SSE 报错未收到 `stream_ended`），会误用已 `remove_job` 的
+            // id，首包即 410「无法重连」。
             stream_job_id_sig.set(None);
             stream_last_event_seq_sig.set(0);
             if let Some(prev) = abort_cell.lock().unwrap().take() {
@@ -229,11 +231,15 @@ pub(super) fn wire_chat_composer_streams(
             };
             let on_error: Rc<dyn Fn(String)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
+                let stream_job_id_sig = stream_job_id_sig;
+                let stream_last_event_seq_sig = stream_last_event_seq_sig;
                 Rc::new(move |msg: String| {
                     if *stream_ctx.user_cancelled_stream.lock().unwrap() {
                         *stream_ctx.abort_cell.lock().unwrap() = None;
                         return;
                     }
+                    stream_job_id_sig.set(None);
+                    stream_last_event_seq_sig.set(0);
                     let aid = stream_ctx.active_session_id.clone();
                     let mid = stream_ctx.assistant_message_id.clone();
                     stream_ctx.sessions.update(|list| {
@@ -356,12 +362,8 @@ pub(super) fn wire_chat_composer_streams(
                     conv,
                     agent_role,
                     Some(appr_for_stream),
-                    resume_job,
-                    if resume_after > 0 {
-                        Some(resume_after)
-                    } else {
-                        None
-                    },
+                    None,
+                    None,
                     &signal,
                     cbs.clone(),
                     locale_sig.get_untracked(),
