@@ -7,7 +7,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 
 use super::super::app_state::AppState;
-use super::types::{ApiError, ConfigReloadResponseBody};
+use crate::web::http_types::chat::{ApiError, ConfigReloadResponseBody};
 
 /// 热重载 [`AgentConfig`] 可更字段（不含会话 SQLite 路径）；清空 MCP 进程缓存。
 pub(crate) async fn config_reload_handler(

@@ -16,7 +16,7 @@ use crate::conversation_store::{
 use crate::long_term_memory::LongTermMemoryRuntime;
 use crate::types::{CommandApprovalDecision, Message};
 
-use super::tasks_types::TasksData;
+use super::http_types::tasks::TasksData;
 use crate::sse::SseStreamHub;
 
 /// 与 `normalize_client_conversation_id`（`chat_handlers`）及存储上限对齐。

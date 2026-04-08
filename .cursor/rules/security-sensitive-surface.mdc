@@ -9,7 +9,7 @@ alwaysApply: true
 
 | 区域 | 典型文件 / 入口 | 关注点 |
 |------|-----------------|--------|
-| 工作区切换与路径 | `src/web/workspace.rs`（如 `workspace_set`）、`src/path_workspace.rs`、`src/workspace_fs.rs`、`src/tools/file/path.rs` | 路径规范化、**禁止未授权任意目录**、`..` 与 symlink：**Unix** 上部分打开路径已用 **`openat2` `RESOLVE_IN_ROOT`（Linux）** 收窄窗口；**残余** TOCTOU（校验时刻 `canonicalize`、未贯通路径、`create_dir_all` 等）见 **`path_workspace`** / **`workspace_fs`** 与 **`README` / `docs/CONFIGURATION.md`（工作区）**；PR 须与之一致，勿弱化风险说明。 |
+| 工作区切换与路径 | `src/web/workspace/`（如 `workspace_set_handler`）、`src/path_workspace.rs`、`src/workspace_fs.rs`、`src/tools/file/path.rs` | 路径规范化、**禁止未授权任意目录**、`..` 与 symlink：**Unix** 上部分打开路径已用 **`openat2` `RESOLVE_IN_ROOT`（Linux）** 收窄窗口；**残余** TOCTOU（校验时刻 `canonicalize`、未贯通路径、`create_dir_all` 等）见 **`path_workspace`** / **`workspace_fs`** 与 **`README` / `docs/CONFIGURATION.md`（工作区）**；PR 须与之一致，勿弱化风险说明。 |
 | 命令执行 | `src/tools/command.rs`、白名单配置、`tool_registry` 中 `run_command` | 仅白名单命令、参数中 **`..` / 绝对路径** 等拒绝规则保持不变或有意变更时更新文档 |
 | HTTP 拉取 | `src/tools/http_fetch.rs`、`tool_registry` 中 `http_fetch` / `http_request`、`http_fetch_allowed_prefixes` | 前缀列表默认偏保守；Web 流式与 CLI 对未匹配 URL 的审批语义（含 `http_request` 的 METHOD 键）与文档一致 |
 | 文件读写工具 | `src/tools/file.rs` 等 | 工作区内解析、`resolve_for_read` / `resolve_for_write` 语义不被绕过 |
