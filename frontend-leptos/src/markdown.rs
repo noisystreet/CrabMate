@@ -1,8 +1,9 @@
 //! 聊天气泡内 Markdown → 安全 HTML（`ammonia` 白名单），供助手消息渲染。
 
-use pulldown_cmark::{Options, Parser, html};
+use pulldown_cmark::{Event, Options, Parser, html};
 
 /// 将 Markdown 转为经净化的 HTML 片段（不含外层 `<html>`）。
+/// 段落内单换行按硬换行输出 `<br />`，避免在 `white-space: normal` 下被收成空格。
 pub fn to_safe_html(md: &str) -> String {
     if md.trim().is_empty() {
         return String::new();
@@ -12,7 +13,10 @@ pub fn to_safe_html(md: &str) -> String {
     opts.insert(Options::ENABLE_STRIKETHROUGH);
     opts.insert(Options::ENABLE_TASKLISTS);
     opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
-    let parser = Parser::new_ext(md, opts);
+    let parser = Parser::new_ext(md, opts).map(|e| match e {
+        Event::SoftBreak => Event::HardBreak,
+        e => e,
+    });
     let mut body = String::new();
     html::push_html(&mut body, parser);
     ammonia::clean(&body)
@@ -54,6 +58,16 @@ mod tests {
     fn fenced_code_emits_pre_or_code() {
         let h = to_safe_html("```rust\nlet x = 1;\n```");
         assert!(h.contains("<pre") || h.contains("<code"));
+    }
+
+    #[test]
+    fn single_newline_in_paragraph_emits_line_break() {
+        let h = to_safe_html("不调用任何工具\n用 JSON 回复");
+        let lower = h.to_lowercase();
+        assert!(
+            lower.contains("<br") || lower.contains("br>"),
+            "expected hard line break in HTML, got {h:?}"
+        );
     }
 }
 
