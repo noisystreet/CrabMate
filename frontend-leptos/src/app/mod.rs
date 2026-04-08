@@ -57,7 +57,7 @@ use crate::app_prefs::{
     store_side_panel_view,
 };
 use crate::i18n::{self, load_locale_from_storage};
-use crate::session_ops::SessionContextAnchor;
+use crate::session_ops::{SessionContextAnchor, estimate_context_chars_for_active_session};
 use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
 use leptos::html::{Div, Textarea};
@@ -170,6 +170,8 @@ pub fn App() -> impl IntoView {
     // 递增后由 Effect 拉取 GET /workspace/changelog（避免在 view 中捕获非 Send 的 Rc<dyn Fn>）。
     let changelist_fetch_nonce = RwSignal::new(0_u64);
     let locale = RwSignal::new(load_locale_from_storage());
+    // 当前会话消息 + 草稿字符数（本地估算），对照 `/status.context_char_budget`。
+    let context_used_estimate = RwSignal::new(0_usize);
 
     Effect::new(move |_| {
         if initialized.get() {
@@ -204,6 +206,23 @@ pub fn App() -> impl IntoView {
             return;
         }
         save_sessions(&list, Some(&aid));
+    });
+
+    Effect::new({
+        let sessions = sessions;
+        let active_id = active_id;
+        let draft = draft;
+        move |_| {
+            if !initialized.get() {
+                return;
+            }
+            let n = estimate_context_chars_for_active_session(
+                &sessions.get(),
+                active_id.get().as_str(),
+                draft.get().as_str(),
+            );
+            context_used_estimate.set(n);
+        }
     });
 
     Effect::new(move |_| {
@@ -664,6 +683,9 @@ pub fn App() -> impl IntoView {
                     status_data,
                     client_llm_storage_tick,
                     selected_agent_role,
+                    conversation_id,
+                    conversation_revision,
+                    context_used_estimate,
                     Arc::clone(&refresh_status),
                     locale,
                 )}

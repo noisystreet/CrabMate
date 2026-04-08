@@ -457,6 +457,7 @@ flowchart LR
 - **`workspace_panel.rs`**：**`reload_workspace_panel`** 封装与切换到 Workspace 侧栏时自动拉取。
 - **`sidebar_nav.rs`**：左侧导航与会话列表；**`debounce_signal_to_effect`** 对会话标题筛选与跨会话消息搜索做 **`TimeoutFuture`** 防抖（规则见 **`debounce_schedule`**）。**`mobile_shell_header.rs`**：窄屏顶栏。
 - **`chat_column.rs`**：中部消息列表与输入区；**`chat_find_bar.rs`** / **`chat_export_menu.rs`**：查找条与导出上下文菜单。
+- **`status_bar.rs`**：底栏芯片含 **`StatusBarContextChip`**：本地估算当前会话消息 + 草稿字符数，对照 **`GET /status`** 的 **`context_char_budget`** 显示进度条；在存在 **`conversation_id`** 时并列展示 SSE 下发的 **`conversation_revision`**（`rev N`）。
 - **`side_column.rs`**：右列（工作区/任务、`SideColumnTasksCard` 等）；**`status_bar.rs`**：底栏状态。
 - **`approval_bar.rs`**：工具审批条；**`session_list_modal.rs`**、**`settings_modal.rs`**、**`changelist_modal.rs`**：各模态（含变更集 fetch 副作用）。
 - **`scroll_guard.rs`**：程序化滚底与 `on:scroll` 协调（**`MessagesScrollFromEffectGuard`**）。

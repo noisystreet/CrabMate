@@ -699,6 +699,13 @@
   width: 96px;
 }
 
+.skeleton-context-bar {
+  width: 100px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton {
     animation: none;

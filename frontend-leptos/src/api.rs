@@ -163,6 +163,9 @@ pub struct StatusData {
     pub agent_role_ids: Vec<String>,
     #[serde(default)]
     pub default_agent_role_id: Option<String>,
+    /// 与后端 `message_pipeline` 按字符删旧一致；`0` 表示未启用预算（进度条仅展示字符数）。
+    #[serde(default)]
+    pub context_char_budget: usize,
 }
 
 pub async fn fetch_workspace(path: Option<&str>) -> Result<WorkspaceData, String> {
