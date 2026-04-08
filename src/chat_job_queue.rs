@@ -13,8 +13,10 @@ use log::{debug, error, info, warn};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
 use crate::AppState;
+use crate::agent_errors::is_user_cancelled_run_agent_error;
 use crate::config::{AgentConfig, LlmHttpAuthMode};
-use crate::types::{CommandApprovalDecision, LLM_CANCELLED_ERROR, LlmSeedOverride, Message};
+use crate::text_util::truncate_chars_with_ellipsis;
+use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message};
 
 const RECENT_CAP: usize = 32;
 
@@ -497,8 +499,46 @@ enum JobOutcome {
     },
 }
 
-fn is_user_cancelled_error(s: &str) -> bool {
-    s.trim() == LLM_CANCELLED_ERROR
+/// Web 队列：`run_agent_turn` 成功后的 LTM 异步索引、剥离注入与会话按 revision 落盘。
+async fn post_turn_web_prepare_and_save(
+    state: &AppState,
+    cfg_snap: &Arc<AgentConfig>,
+    conversation_id: &str,
+    messages: &mut Vec<Message>,
+    expected_revision: Option<u64>,
+) -> crate::SaveConversationOutcome {
+    let scope = conversation_id.to_string();
+    let to_index = messages.clone();
+    if let (Some(ltm), true) = (
+        state.long_term_memory.as_ref(),
+        cfg_snap.long_term_memory_enabled,
+    ) {
+        ltm.clone()
+            .spawn_index_turn(Arc::clone(cfg_snap), scope, to_index);
+    }
+    crate::long_term_memory::strip_long_term_memory_injections(messages);
+    crate::workspace_changelist::strip_workspace_changelist_injections(messages);
+    state
+        .save_conversation_messages_if_revision(
+            conversation_id.to_string(),
+            messages.clone(),
+            expected_revision,
+        )
+        .await
+}
+
+fn web_json_job_error_short_detail(
+    e_text: &str,
+    cancelled: bool,
+    staged_invalid: bool,
+) -> Option<String> {
+    if cancelled {
+        None
+    } else if staged_invalid {
+        Some("staged_plan_invalid".to_string())
+    } else {
+        Some(truncate_chars_with_ellipsis(e_text, 120))
+    }
 }
 
 /// 流任务被取消且 **mpsc 仍有接收端** 时补发一条带 `code: STREAM_CANCELLED` 的控制面，便于前端与代理统一收尾（接收端已 drop 时仅 debug，避免误报）。
@@ -588,7 +628,6 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 "chat_job_queue::stream sse_capabilities",
             )
             .await;
-            let out = Some(&sse_tx);
             let (web_tool_ctx, approval_session_id) = if let Some(session) = web_approval_session {
                 (
                     Some(crate::tool_registry::WebToolRuntime {
@@ -625,29 +664,23 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             };
             let (cfg_turn, api_key_turn) =
                 resolve_web_llm_for_job(&state, cfg_snap.clone(), llm_override.as_ref());
-            let r = crate::run_agent_turn(crate::RunAgentTurnParams {
-                client: &state.client,
-                api_key: api_key_turn.as_str(),
-                cfg: &cfg_turn,
-                tools: &state.tools,
-                messages: &mut messages,
-                out,
-                effective_working_dir: &work_dir,
+            let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_stream(
+                &state.client,
+                api_key_turn.as_str(),
+                &cfg_turn,
+                &state.tools,
+                &mut messages,
+                &work_dir,
                 workspace_is_set,
-                render_to_terminal: false,
-                no_stream: false,
-                cancel: Some(Arc::clone(&cancel)),
-                per_flight: Some(flight),
-                web_tool_ctx: web_tool_ctx.as_ref(),
-                cli_tool_ctx: None,
-                plain_terminal_stream: false,
-                llm_backend: None,
+                Arc::clone(&cancel),
+                flight,
+                web_tool_ctx.as_ref(),
                 temperature_override,
                 seed_override,
-                long_term_memory: state.long_term_memory.clone(),
-                long_term_memory_scope_id: Some(conversation_id.clone()),
-                read_file_turn_cache: None,
-            })
+                state.long_term_memory.clone(),
+                &conversation_id,
+                &sse_tx,
+            ))
             .await;
             cancel_watcher.abort();
             if let Some(session_id) = approval_session_id.as_deref() {
@@ -660,26 +693,14 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     (false, true, None)
                 }
                 Ok(()) => {
-                    let scope = conversation_id.clone();
-                    let to_index = messages.clone();
-                    if let (Some(ltm), true) = (
-                        state.long_term_memory.as_ref(),
-                        cfg_snap.long_term_memory_enabled,
-                    ) {
-                        ltm.clone()
-                            .spawn_index_turn(Arc::clone(&cfg_snap), scope, to_index);
-                    }
-                    crate::long_term_memory::strip_long_term_memory_injections(&mut messages);
-                    crate::workspace_changelist::strip_workspace_changelist_injections(
+                    match post_turn_web_prepare_and_save(
+                        &state,
+                        &cfg_snap,
+                        &conversation_id,
                         &mut messages,
-                    );
-                    match state
-                        .save_conversation_messages_if_revision(
-                            conversation_id.clone(),
-                            messages,
-                            expected_revision,
-                        )
-                        .await
+                        expected_revision,
+                    )
+                    .await
                     {
                         crate::SaveConversationOutcome::Saved => {
                             if let Some(new_rev) = state
@@ -717,7 +738,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 }
                 Err(e) => {
                     let e_text = e.to_string();
-                    if cancelled_by_signal || is_user_cancelled_error(&e_text) {
+                    if cancelled_by_signal || is_user_cancelled_run_agent_error(&e_text) {
                         info!(
                             target: "crabmate",
                             "chat stream 任务已取消 job_id={} reason={}",
@@ -754,7 +775,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             "chat_job_queue::stream internal_error",
                         )
                         .await;
-                        (false, false, Some(truncate_chars(&e_text, 120)))
+                        (false, false, Some(truncate_chars_with_ellipsis(&e_text, 120)))
                     }
                 }
             };
@@ -813,52 +834,31 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             };
             let (cfg_turn, api_key_turn) =
                 resolve_web_llm_for_job(&state, cfg_snap.clone(), llm_override.as_ref());
-            let r = crate::run_agent_turn(crate::RunAgentTurnParams {
-                client: &state.client,
-                api_key: api_key_turn.as_str(),
-                cfg: &cfg_turn,
-                tools: &state.tools,
-                messages: &mut messages,
-                out: None,
-                effective_working_dir: &work_dir,
+            let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_json(
+                &state.client,
+                api_key_turn.as_str(),
+                &cfg_turn,
+                &state.tools,
+                &mut messages,
+                &work_dir,
                 workspace_is_set,
-                render_to_terminal: true,
-                no_stream: false,
-                cancel: None,
-                per_flight: Some(flight),
-                web_tool_ctx: None,
-                cli_tool_ctx: None,
-                plain_terminal_stream: false,
-                llm_backend: None,
+                flight,
                 temperature_override,
                 seed_override,
-                long_term_memory: state.long_term_memory.clone(),
-                long_term_memory_scope_id: Some(conversation_id.clone()),
-                read_file_turn_cache: None,
-            })
+                state.long_term_memory.clone(),
+                &conversation_id,
+            ))
             .await;
             let (ok, cancelled, err) = match r {
                 Ok(()) => {
-                    let scope = conversation_id.clone();
-                    let to_index = messages.clone();
-                    if let (Some(ltm), true) = (
-                        state.long_term_memory.as_ref(),
-                        cfg_snap.long_term_memory_enabled,
-                    ) {
-                        ltm.clone()
-                            .spawn_index_turn(Arc::clone(&cfg_snap), scope, to_index);
-                    }
-                    crate::long_term_memory::strip_long_term_memory_injections(&mut messages);
-                    crate::workspace_changelist::strip_workspace_changelist_injections(
+                    match post_turn_web_prepare_and_save(
+                        &state,
+                        &cfg_snap,
+                        &conversation_id,
                         &mut messages,
-                    );
-                    match state
-                        .save_conversation_messages_if_revision(
-                            conversation_id,
-                            messages.clone(),
-                            expected_revision,
-                        )
-                        .await
+                        expected_revision,
+                    )
+                    .await
                     {
                         crate::SaveConversationOutcome::Saved => {
                             if reply_tx.send(Ok(messages)).is_err() {
@@ -887,7 +887,11 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 }
                 Err(e) => {
                     let e_text = e.to_string();
-                    let cancelled = is_user_cancelled_error(&e_text);
+                    let cancelled = is_user_cancelled_run_agent_error(&e_text);
+                    let staged_invalid =
+                        crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
+                            &e_text,
+                        );
                     if cancelled {
                         info!(
                             target: "crabmate",
@@ -895,9 +899,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             job_id,
                             e_text
                         );
-                    } else if crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
-                        &e_text,
-                    ) {
+                    } else if staged_invalid {
                         warn!(
                             target: "crabmate",
                             "chat json 任务结束（分阶段规划解析失败） job_id={} detail={}",
@@ -912,15 +914,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             e_text
                         );
                     }
-                    let prev = if cancelled {
-                        None
-                    } else if crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
-                        &e_text,
-                    ) {
-                        Some("staged_plan_invalid".to_string())
-                    } else {
-                        Some(truncate_chars(&e_text, 120))
-                    };
+                    let prev = web_json_job_error_short_detail(&e_text, cancelled, staged_invalid);
                     if reply_tx.send(Err(e_text)).is_err() {
                         debug!(
                             target: "crabmate::sse_mpsc",
@@ -933,15 +927,6 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             };
             JobOutcome::Json { ok, cancelled, err }
         }
-    }
-}
-
-fn truncate_chars(s: &str, max: usize) -> String {
-    let t: String = s.chars().take(max).collect();
-    if t.len() < s.len() {
-        format!("{}…", t)
-    } else {
-        t
     }
 }
 

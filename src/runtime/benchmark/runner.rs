@@ -180,29 +180,15 @@ async fn run_single_task(
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let timeout_secs = batch_cfg.task_timeout_secs;
-    let run_fut = crate::run_agent_turn(crate::RunAgentTurnParams {
+    let run_fut = crate::run_agent_turn(crate::RunAgentTurnParams::benchmark_batch(
         client,
         api_key,
-        cfg: &task_cfg,
+        &task_cfg,
         tools,
-        messages: &mut messages,
-        out: None,
-        effective_working_dir: &work_dir,
-        workspace_is_set: true,
-        render_to_terminal: false,
-        no_stream: true, // batch 模式不需要流式输出
-        cancel: Some(cancel.clone()),
-        per_flight: None,
-        web_tool_ctx: None,
-        cli_tool_ctx: None,
-        plain_terminal_stream: false,
-        llm_backend: None,
-        temperature_override: None,
-        seed_override: crate::LlmSeedOverride::default(),
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
-        read_file_turn_cache: None,
-    });
+        &mut messages,
+        &work_dir,
+        cancel.clone(),
+    ));
 
     let (status, agent_error) = if timeout_secs > 0 {
         match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), run_fut).await {
