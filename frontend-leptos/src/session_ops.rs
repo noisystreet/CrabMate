@@ -16,6 +16,25 @@ pub fn make_message_id() -> String {
     make_session_id()
 }
 
+/// 本地估算：当前会话所有消息正文 Unicode 标量个数 + 输入框草稿（与服务端 `context_char_budget` 对照用，非精确 token）。
+pub fn estimate_context_chars_for_active_session(
+    sessions: &[ChatSession],
+    active_id: &str,
+    composer_draft: &str,
+) -> usize {
+    let from_msgs: usize = sessions
+        .iter()
+        .find(|s| s.id == active_id)
+        .map(|s| {
+            s.messages
+                .iter()
+                .map(|m| m.text.chars().count())
+                .sum::<usize>()
+        })
+        .unwrap_or(0);
+    from_msgs.saturating_add(composer_draft.chars().count())
+}
+
 /// 去掉失败助手泡及其后消息，挂上新的 loading 助手泡；返回本回合用户原文与新助手 id。
 /// 第 `idx` 条消息若为普通用户消息，返回其在本会话中的 **0-based 用户序号**（与 `POST /chat/branch` 的 `before_user_ordinal` 一致）。
 pub fn user_ordinal_for_message_index(messages: &[StoredMessage], idx: usize) -> Option<u64> {
