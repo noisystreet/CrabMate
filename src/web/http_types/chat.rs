@@ -1,4 +1,4 @@
-//! Web chat / upload / changelog / config 等 JSON 请求与响应体。
+//! `POST /chat*`、`/upload*`、`POST /config/reload` 等 JSON 体；路由表见 [`crate::web::routes::chat::router`]。
 
 #[derive(serde::Deserialize)]
 pub(crate) struct ChatRequestBody {
@@ -114,21 +114,6 @@ pub(crate) struct ApiError {
     pub code: &'static str,
     /// 面向用户展示的友好错误信息
     pub message: String,
-}
-
-/// `GET /workspace/changelog`：本会话工作区变更集 Markdown（与 **`session_workspace_changelist`** 注入正文同源）。
-#[derive(serde::Deserialize)]
-pub(crate) struct WorkspaceChangelogQuery {
-    #[serde(default)]
-    pub(crate) conversation_id: Option<String>,
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct WorkspaceChangelogResponse {
-    pub(crate) revision: u64,
-    pub(crate) markdown: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) error: Option<String>,
 }
 
 #[derive(serde::Serialize)]

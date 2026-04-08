@@ -21,16 +21,16 @@ use super::parse::{
     normalize_client_conversation_id, parse_client_llm_override, parse_optional_chat_temperature,
     parse_seed_override_from_body,
 };
-use super::types::{
-    ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
-    ChatBranchResponseBody, ChatRequestBody, ChatResponseBody,
-};
 use crate::agent_memory::load_memory_snippet;
 use crate::chat_job_queue;
 use crate::conversation_store::SaveConversationOutcome;
 use crate::project_profile::build_first_turn_user_context_markdown;
 use crate::redact;
 use crate::types::{CommandApprovalDecision, Message, messages_chat_seed};
+use crate::web::http_types::chat::{
+    ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
+    ChatBranchResponseBody, ChatRequestBody, ChatResponseBody,
+};
 
 fn sse_event_with_id(seq: u64, data: String) -> Result<Event, Infallible> {
     Ok(Event::default().id(seq.to_string()).data(data))

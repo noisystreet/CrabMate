@@ -9,8 +9,8 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
 use super::super::app_state::AppState;
-use super::types::ApiError;
 use crate::config::ExposeSecret;
+use crate::web::http_types::chat::ApiError;
 
 fn is_valid_bearer_header(
     auth_header: Option<&axum::http::header::HeaderValue>,

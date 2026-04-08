@@ -9,7 +9,7 @@ use log::error;
 use tokio::io::AsyncWriteExt;
 
 use super::super::app_state::AppState;
-use super::types::{
+use crate::web::http_types::chat::{
     ApiError, DeleteUploadsBody, DeleteUploadsResponseBody, UploadResponseBody, UploadedFileInfo,
 };
 

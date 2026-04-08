@@ -4,9 +4,9 @@ use axum::Json;
 use axum::http::StatusCode;
 
 use super::super::app_state::{AppState, CONVERSATION_ID_MAX_LEN};
-use super::types::{ApiError, ClientLlmBody};
 use crate::chat_job_queue;
 use crate::config::LlmHttpAuthMode;
+use crate::web::http_types::chat::{ApiError, ClientLlmBody};
 
 const CLIENT_LLM_API_BASE_MAX: usize = 2048;
 const CLIENT_LLM_MODEL_MAX: usize = 512;

@@ -3,7 +3,7 @@
 use axum::Json;
 use axum::http::StatusCode;
 
-use super::types::ApiError;
+use crate::web::http_types::chat::ApiError;
 
 /// 与 SSE `code`、JSON `ApiError.code` 一致。
 pub(crate) const CONVERSATION_CONFLICT_CODE: &str = "CONVERSATION_CONFLICT";

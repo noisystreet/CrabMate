@@ -1,4 +1,4 @@
-//! Web 任务清单 JSON 形状（`/tasks`）；数据仅存进程内存，见 [`crate::web::app_state::AppState::web_tasks_by_workspace`]。
+//! `GET` / `POST /tasks` JSON 形状；路由见 [`crate::web::routes::tasks::router`]；数据仅存进程内存，见 [`crate::web::app_state::AppState::web_tasks_by_workspace`]。
 
 use serde::{Deserialize, Serialize};
 
