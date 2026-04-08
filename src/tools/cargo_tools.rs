@@ -1,7 +1,10 @@
 //! Rust 开发工具：cargo check/test/clippy/metadata/run/tree/clean/doc/outdated/machete/udeps/publish dry-run
+#![allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 `run_tool_dispatch` 一致
 
 use std::path::Path;
 use std::process::Command;
+
+use crate::tool_result::ToolError;
 
 use super::ToolContext;
 use super::output_util;
@@ -13,7 +16,15 @@ use super::test_result_cache::{
 const MAX_OUTPUT_LINES: usize = 800;
 
 pub fn cargo_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    run_cargo_subcommand_str("check", args_json, workspace_root, max_output_len)
+    cargo_check_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_check_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    run_cargo_subcommand_str_try("check", args_json, workspace_root, max_output_len)
 }
 
 pub fn cargo_test(
@@ -22,24 +33,47 @@ pub fn cargo_test(
     max_output_len: usize,
     ctx: Option<&ToolContext<'_>>,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_test_try(args_json, workspace_root, max_output_len, ctx).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_test_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+    ctx: Option<&ToolContext<'_>>,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     let Some(c) = ctx else {
-        return run_cargo_subcommand_value("test", &v, workspace_root, max_output_len);
+        return run_cargo_subcommand_value_try("test", &v, workspace_root, max_output_len);
     };
-    maybe_cache_cargo_test(&v, workspace_root, c, || {
-        run_cargo_subcommand_value("test", &v, workspace_root, max_output_len)
+    maybe_cache_cargo_test_try(&v, workspace_root, c, || {
+        run_cargo_subcommand_value_try("test", &v, workspace_root, max_output_len)
     })
 }
 
 pub fn cargo_clippy(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    run_cargo_subcommand_str("clippy", args_json, workspace_root, max_output_len)
+    cargo_clippy_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_clippy_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    run_cargo_subcommand_str_try("clippy", args_json, workspace_root, max_output_len)
 }
 
 pub fn cargo_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    run_cargo_subcommand_str("run", args_json, workspace_root, max_output_len)
+    cargo_run_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_run_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    run_cargo_subcommand_str_try("run", args_json, workspace_root, max_output_len)
 }
 
 pub fn rust_test_one(
@@ -48,32 +82,43 @@ pub fn rust_test_one(
     max_output_len: usize,
     ctx: Option<&ToolContext<'_>>,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    rust_test_one_try(args_json, workspace_root, max_output_len, ctx).unwrap_or_else(|e| e.message)
+}
+
+pub fn rust_test_one_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+    ctx: Option<&ToolContext<'_>>,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     let filter = match v.get("test_name").and_then(|x| x.as_str()).map(str::trim) {
         Some(s) if !s.is_empty() => s.to_string(),
-        _ => return "错误：缺少 test_name 参数".to_string(),
+        _ => {
+            return Err(ToolError::invalid_args(
+                "错误：缺少 test_name 参数".to_string(),
+            ));
+        }
     };
     let mut merged = v;
     if let Some(obj) = merged.as_object_mut() {
         obj.insert("test_filter".to_string(), serde_json::Value::String(filter));
     }
     let Some(c) = ctx else {
-        return run_cargo_subcommand_value("test", &merged, workspace_root, max_output_len);
+        return run_cargo_subcommand_value_try("test", &merged, workspace_root, max_output_len);
     };
-    maybe_cache_cargo_test(&merged, workspace_root, c, || {
-        run_cargo_subcommand_value("test", &merged, workspace_root, max_output_len)
+    maybe_cache_cargo_test_try(&merged, workspace_root, c, || {
+        run_cargo_subcommand_value_try("test", &merged, workspace_root, max_output_len)
     })
 }
 
-fn maybe_cache_cargo_test(
+fn maybe_cache_cargo_test_try(
     v: &serde_json::Value,
     workspace_root: &Path,
     ctx: &ToolContext<'_>,
-    run: impl FnOnce() -> String,
-) -> String {
+    run: impl FnOnce() -> Result<String, ToolError>,
+) -> Result<String, ToolError> {
     if ctx.test_result_cache_enabled
         && let Some(inputs_fp) = fingerprint_rust_workspace_sources(workspace_root)
     {
@@ -90,25 +135,31 @@ fn maybe_cache_cargo_test(
             ctx.test_result_cache_max_entries,
             &key,
         ) {
-            return wrap_cache_hit(&inputs_fp, &hit);
+            return Ok(wrap_cache_hit(&inputs_fp, &hit));
         }
-        let out = run();
+        let out = run()?;
         store_cached(
             ctx.test_result_cache_enabled,
             ctx.test_result_cache_max_entries,
             key,
             out.clone(),
         );
-        return out;
+        return Ok(out);
     }
     run()
 }
 
 pub fn cargo_metadata(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_metadata_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_metadata_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     let no_deps = v.get("no_deps").and_then(|x| x.as_bool()).unwrap_or(true);
     let format_version = v
         .get("format_version")
@@ -116,7 +167,10 @@ pub fn cargo_metadata(args_json: &str, workspace_root: &Path, max_output_len: us
         .unwrap_or(1);
 
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
 
     let mut cmd = Command::new("cargo");
@@ -126,16 +180,25 @@ pub fn cargo_metadata(args_json: &str, workspace_root: &Path, max_output_len: us
         cmd.arg("--no-deps");
     }
     cmd.current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, "cargo metadata")
+    run_and_format_try(cmd, max_output_len, "cargo metadata", "cargo_metadata")
 }
 
 pub fn cargo_tree(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_tree_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_tree_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
     let package = v.get("package").and_then(|x| x.as_str()).map(str::trim);
     let invert = v.get("invert").and_then(|x| x.as_str()).map(str::trim);
@@ -157,16 +220,25 @@ pub fn cargo_tree(args_json: &str, workspace_root: &Path, max_output_len: usize)
         cmd.arg("--edges").arg(e);
     }
     cmd.current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, "cargo tree")
+    run_and_format_try(cmd, max_output_len, "cargo tree", "cargo_tree")
 }
 
 pub fn cargo_clean(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_clean_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_clean_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
     let package = v.get("package").and_then(|x| x.as_str()).map(str::trim);
     let release = v.get("release").and_then(|x| x.as_bool()).unwrap_or(false);
@@ -188,16 +260,25 @@ pub fn cargo_clean(args_json: &str, workspace_root: &Path, max_output_len: usize
         cmd.arg("--dry-run");
     }
     cmd.current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, "cargo clean")
+    run_and_format_try(cmd, max_output_len, "cargo clean", "cargo_clean")
 }
 
 pub fn cargo_doc(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_doc_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_doc_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
     let package = v.get("package").and_then(|x| x.as_str()).map(str::trim);
     let no_deps = v.get("no_deps").and_then(|x| x.as_bool()).unwrap_or(true);
@@ -215,16 +296,25 @@ pub fn cargo_doc(args_json: &str, workspace_root: &Path, max_output_len: usize) 
         cmd.arg("--open");
     }
     cmd.current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, "cargo doc")
+    run_and_format_try(cmd, max_output_len, "cargo doc", "cargo_doc")
 }
 
 pub fn cargo_nextest(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_nextest_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_nextest_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
     let test_filter = v
         .get("test_filter")
@@ -257,21 +347,32 @@ pub fn cargo_nextest(args_json: &str, workspace_root: &Path, max_output_len: usi
         cmd.arg("--").arg("--nocapture");
     }
     cmd.current_dir(workspace_root);
-    let out = run_and_format(cmd, max_output_len, "cargo nextest run");
+    let out = run_and_format_try(cmd, max_output_len, "cargo nextest run", "cargo_nextest")?;
     if out.contains("no such command: `nextest`") {
-        return "cargo nextest: 未安装 cargo-nextest，请先运行 `cargo install cargo-nextest`"
-            .to_string();
+        return Err(ToolError::invalid_args(
+            "cargo nextest: 未安装 cargo-nextest，请先运行 `cargo install cargo-nextest`"
+                .to_string(),
+        ));
     }
-    out
+    Ok(out)
 }
 
 pub fn cargo_outdated(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_outdated_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_outdated_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
     let workspace = v
         .get("workspace")
@@ -288,22 +389,33 @@ pub fn cargo_outdated(args_json: &str, workspace_root: &Path, max_output_len: us
         cmd.arg("--depth").arg(d.to_string());
     }
     cmd.current_dir(workspace_root);
-    let out = run_and_format(cmd, max_output_len, "cargo outdated");
+    let out = run_and_format_try(cmd, max_output_len, "cargo outdated", "cargo_outdated")?;
     if out.contains("no such command: `outdated`") || out.contains("no such command: outdated") {
-        return "cargo outdated: 未安装 cargo-outdated，请先运行 `cargo install cargo-outdated`"
-            .to_string();
+        return Err(ToolError::invalid_args(
+            "cargo outdated: 未安装 cargo-outdated，请先运行 `cargo install cargo-outdated`"
+                .to_string(),
+        ));
     }
-    out
+    Ok(out)
 }
 
 /// 运行 **cargo machete**（需已安装 `cargo-machete`）：启发式查找 **Cargo.toml 中声明但未在源码中引用** 的依赖；与 `cargo_outdated`（版本是否可升级）互补。误报可用 `with_metadata` 或 `package.metadata.cargo-machete` 缓解。
 pub fn cargo_machete(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_machete_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_machete_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
     let with_metadata = v
         .get("with_metadata")
@@ -314,7 +426,9 @@ pub fn cargo_machete(args_json: &str, workspace_root: &Path, max_output_len: usi
     if let Some(p) = path_rel
         && (p.is_empty() || p.contains(".."))
     {
-        return "错误：path 无效（不可为空或含 ..）".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：path 无效（不可为空或含 ..）".to_string(),
+        ));
     }
 
     let mut cmd = Command::new("cargo");
@@ -330,30 +444,48 @@ pub fn cargo_machete(args_json: &str, workspace_root: &Path, max_output_len: usi
         match joined.canonicalize() {
             Ok(abs) => {
                 if !abs.starts_with(&root_canon) {
-                    return "错误：path 必须位于工作区内".to_string();
+                    return Err(ToolError::invalid_args(
+                        "错误：path 必须位于工作区内".to_string(),
+                    ));
                 }
                 cmd.arg(abs);
             }
-            Err(e) => return format!("错误：无法解析 path（{}）", e),
+            Err(e) => {
+                return Err(ToolError::invalid_args(format!(
+                    "错误：无法解析 path（{}）",
+                    e
+                )));
+            }
         }
     }
     cmd.current_dir(workspace_root);
-    let out = run_and_format(cmd, max_output_len, "cargo machete");
+    let out = run_and_format_try(cmd, max_output_len, "cargo machete", "cargo_machete")?;
     if out.contains("no such command: `machete`") || out.contains("no such command: machete") {
-        return "cargo machete: 未安装 cargo-machete，请先运行 `cargo install cargo-machete`"
-            .to_string();
+        return Err(ToolError::invalid_args(
+            "cargo machete: 未安装 cargo-machete，请先运行 `cargo install cargo-machete`"
+                .to_string(),
+        ));
     }
-    out
+    Ok(out)
 }
 
 /// 运行 **cargo udeps**（需已安装 `cargo-udeps`）：基于构建信息查找未使用依赖，通常比 machete 更准但更重；**官方文档要求 nightly 工具链**，可用参数 `nightly: true` 调用 `cargo +nightly udeps`。
 pub fn cargo_udeps(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_udeps_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_udeps_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
     let nightly = v.get("nightly").and_then(|x| x.as_bool()).unwrap_or(false);
 
@@ -363,12 +495,14 @@ pub fn cargo_udeps(args_json: &str, workspace_root: &Path, max_output_len: usize
     }
     cmd.arg("udeps");
     cmd.current_dir(workspace_root);
-    let out = run_and_format(cmd, max_output_len, "cargo udeps");
+    let out = run_and_format_try(cmd, max_output_len, "cargo udeps", "cargo_udeps")?;
     if out.contains("no such command: `udeps`") || out.contains("no such command: udeps") {
-        return "cargo udeps: 未安装 cargo-udeps，请先运行 `cargo install cargo-udeps`（运行期通常需 nightly，可传 nightly: true）"
-            .to_string();
+        return Err(ToolError::invalid_args(
+            "cargo udeps: 未安装 cargo-udeps，请先运行 `cargo install cargo-udeps`（运行期通常需 nightly，可传 nightly: true）"
+                .to_string(),
+        ));
     }
-    out
+    Ok(out)
 }
 
 /// `cargo publish --dry-run`：仅验证打包与发布检查，**不会**上传 registry。
@@ -377,12 +511,22 @@ pub fn cargo_publish_dry_run(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_publish_dry_run_try(args_json, workspace_root, max_output_len)
+        .unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_publish_dry_run_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
 
     let package = v
@@ -426,23 +570,38 @@ pub fn cargo_publish_dry_run(
         cmd.arg("--all-features");
     }
     cmd.current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, "cargo publish --dry-run")
+    run_and_format_try(
+        cmd,
+        max_output_len,
+        "cargo publish --dry-run",
+        "cargo_publish_dry_run",
+    )
 }
 
 pub fn cargo_fix(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
+    cargo_fix_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn cargo_fix_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
 
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
 
     let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
     if !confirm {
-        return "拒绝执行：cargo_fix 需要 confirm=true 才会真正应用修复（避免误改代码）。"
-            .to_string();
+        return Err(ToolError::invalid_args(
+            "拒绝执行：cargo_fix 需要 confirm=true 才会真正应用修复（避免误改代码）。".to_string(),
+        ));
     }
 
     let broken_code = v
@@ -524,30 +683,31 @@ pub fn cargo_fix(args_json: &str, workspace_root: &Path, max_output_len: usize) 
     }
 
     cmd.current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, "cargo fix")
+    run_and_format_try(cmd, max_output_len, "cargo fix", "cargo_fix")
 }
 
-fn run_cargo_subcommand_str(
+fn run_cargo_subcommand_str_try(
     subcmd: &str,
     args_json: &str,
     workspace_root: &Path,
     max_output_len: usize,
-) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(e) => return format!("参数解析错误：{}", e),
-    };
-    run_cargo_subcommand_value(subcmd, &v, workspace_root, max_output_len)
+) -> Result<String, ToolError> {
+    let v: serde_json::Value = serde_json::from_str(args_json)
+        .map_err(|e| ToolError::invalid_args(format!("参数解析错误：{}", e)))?;
+    run_cargo_subcommand_value_try(subcmd, &v, workspace_root, max_output_len)
 }
 
-fn run_cargo_subcommand_value(
+fn run_cargo_subcommand_value_try(
     subcmd: &str,
     v: &serde_json::Value,
     workspace_root: &Path,
     max_output_len: usize,
-) -> String {
+) -> Result<String, ToolError> {
     if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：当前工作目录未找到 Cargo.toml".to_string();
+        return Err(ToolError::workspace(
+            "workspace_no_cargo_toml",
+            "错误：当前工作目录未找到 Cargo.toml".to_string(),
+        ));
     }
 
     let release = v.get("release").and_then(|x| x.as_bool()).unwrap_or(false);
@@ -580,12 +740,14 @@ fn run_cargo_subcommand_value(
     if let Some(p) = package
         && (p.is_empty() || p.contains(char::is_whitespace))
     {
-        return "错误：package 参数无效".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：package 参数无效".to_string(),
+        ));
     }
     if let Some(b) = bin
         && (b.is_empty() || b.contains(char::is_whitespace))
     {
-        return "错误：bin 参数无效".to_string();
+        return Err(ToolError::invalid_args("错误：bin 参数无效".to_string()));
     }
 
     let mut cmd = Command::new("cargo");
@@ -621,13 +783,24 @@ fn run_cargo_subcommand_value(
         }
     }
     cmd.current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, &format!("cargo {}", subcmd))
+    let tool_code = format!("cargo_{}", subcmd);
+    run_and_format_try(
+        cmd,
+        max_output_len,
+        &format!("cargo {}", subcmd),
+        &tool_code,
+    )
 }
 
-fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> String {
+fn run_and_format_try(
+    mut cmd: Command,
+    max_output_len: usize,
+    title: &str,
+    tool_code: &str,
+) -> Result<String, ToolError> {
     match cmd.output() {
         Ok(output) => {
-            let status = output.status.code().unwrap_or(-1);
+            let exit = output.status.code().unwrap_or(-1);
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
             let mut body = String::new();
@@ -643,13 +816,18 @@ fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> Strin
             if body.is_empty() {
                 body = "(无输出)".to_string();
             }
-            format!(
+            let message = format!(
                 "{} (exit={}):\n{}",
                 title,
-                status,
+                exit,
                 output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
-            )
+            );
+            if output.status.success() {
+                Ok(message)
+            } else {
+                Err(ToolError::cargo_subcommand_failed(tool_code, exit, message))
+            }
         }
-        Err(e) => format!("{}: 执行失败（{}）", title, e),
+        Err(e) => Err(ToolError::subprocess_spawn_error(title, e)),
     }
 }

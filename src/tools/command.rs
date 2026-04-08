@@ -13,6 +13,7 @@ use super::test_result_cache::{
     TestCacheKey, TestCacheKind, cargo_test_run_command_args_fingerprint,
     fingerprint_rust_workspace_sources, store_cached, try_get_cached, wrap_cache_hit,
 };
+use crate::tool_result::{ParsedLegacyOutput, ToolError, ToolFailureCategory};
 
 /// `run_command` 在参数校验、限流、启动进程前的失败原因（可判别；成功路径仍返回带退出码的 `String` 正文）。
 #[derive(Debug, Error)]
@@ -51,6 +52,72 @@ pub enum RunCommandError {
 }
 
 impl RunCommandError {
+    /// 转为 [`ToolError`]，供 `run_command` runner 显式返回（与信封 `error_code` 对齐）。
+    #[must_use]
+    pub fn into_tool_error(self) -> ToolError {
+        let msg = self.user_message();
+        match self {
+            RunCommandError::JsonParse(_) => ToolError::invalid_args(msg),
+            RunCommandError::MissingCommand => ToolError {
+                category: ToolFailureCategory::InvalidInput,
+                code: "missing_command".to_string(),
+                message: msg,
+                retryable: false,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("missing_command".to_string()),
+                },
+            },
+            RunCommandError::DisallowedCommand { .. } => ToolError::command_not_allowed(msg),
+            RunCommandError::ArgsNotArray | RunCommandError::UnsafeArg => {
+                ToolError::invalid_args(msg)
+            }
+            RunCommandError::RateLimited { .. } => ToolError::rate_limited(msg),
+            RunCommandError::CommandNotFound { .. } => ToolError {
+                category: ToolFailureCategory::External,
+                code: "command_not_found".to_string(),
+                message: msg,
+                retryable: false,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("command_not_found".to_string()),
+                },
+            },
+            RunCommandError::PermissionDenied { .. } => ToolError {
+                category: ToolFailureCategory::External,
+                code: "permission_denied".to_string(),
+                message: msg,
+                retryable: false,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("permission_denied".to_string()),
+                },
+            },
+            RunCommandError::SpawnOther { .. } => ToolError {
+                category: ToolFailureCategory::External,
+                code: "spawn_failed".to_string(),
+                message: msg,
+                retryable: false,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("spawn_failed".to_string()),
+                },
+            },
+        }
+    }
+
     /// 简短分类键，供 metrics / 结构化日志（不含命令名等细节时可只记此项）。
     #[must_use]
     pub fn kind(&self) -> &'static str {
@@ -142,16 +209,33 @@ pub fn run(
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
 ) -> String {
-    match run_impl(
+    run_try(
         args_json,
         max_output_len,
         allowed_commands,
         working_dir,
         test_cache,
-    ) {
-        Ok(s) => s,
-        Err(e) => e.user_message(),
-    }
+    )
+    .unwrap_or_else(|e| e.message)
+}
+
+/// 与 [`run`] 相同，失败时返回 [`ToolError`]（显式 `error_code` / 分类，不经字符串启发式）。
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 `run_tool_dispatch` 一致
+pub fn run_try(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+) -> Result<String, ToolError> {
+    run_impl(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+    )
+    .map_err(RunCommandError::into_tool_error)
 }
 
 /// 与 [`run`] 相同，失败时返回结构化错误（成功仍为格式化输出字符串）。

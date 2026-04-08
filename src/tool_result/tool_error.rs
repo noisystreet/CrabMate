@@ -77,11 +77,17 @@ impl std::error::Error for ToolError {}
 
 fn category_for_error_code(code: &str) -> ToolFailureCategory {
     match code {
-        "invalid_args" => ToolFailureCategory::InvalidInput,
+        "invalid_args" | "missing_command" => ToolFailureCategory::InvalidInput,
         "unknown_tool" => ToolFailureCategory::Unknown,
         "command_not_allowed" => ToolFailureCategory::PolicyDenied,
-        "workspace_not_set" => ToolFailureCategory::Workspace,
+        "workspace_not_set" | "workspace_no_cargo_toml" | "codebase_semantic_unconfigured" => {
+            ToolFailureCategory::Workspace
+        }
         "timeout" => ToolFailureCategory::Timeout,
+        "rate_limited" => ToolFailureCategory::PolicyDenied,
+        "command_not_found" | "permission_denied" | "spawn_failed" | "cargo_spawn_failed" => {
+            ToolFailureCategory::External
+        }
         c if c.ends_with("_failed") => ToolFailureCategory::External,
         _ => ToolFailureCategory::Unknown,
     }
@@ -106,6 +112,125 @@ impl ToolError {
             message: raw_output,
             retryable,
             legacy_parsed: parsed.clone(),
+        }
+    }
+
+    /// 参数 / JSON 校验失败（`error_code`：`invalid_args`）。
+    pub fn invalid_args(message: String) -> Self {
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some("invalid_args".to_string()),
+        };
+        Self {
+            category: ToolFailureCategory::InvalidInput,
+            code: "invalid_args".to_string(),
+            message,
+            retryable: false,
+            legacy_parsed: parsed,
+        }
+    }
+
+    /// 工作区布局或前置条件问题（如缺少 `Cargo.toml`）；`code` 须与 [`category_for_error_code`] 一致。
+    pub fn workspace(code: &'static str, message: String) -> Self {
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some(code.to_string()),
+        };
+        let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
+        Self {
+            category: category_for_error_code(code),
+            code: code.to_string(),
+            message,
+            retryable,
+            legacy_parsed: parsed,
+        }
+    }
+
+    /// 未知工具名（与历史「未知工具：…」正文一致）。
+    pub fn unknown_tool(name: &str) -> Self {
+        let message = format!("未知工具：{}", name);
+        let parsed = super::parse_legacy_output(name, &message);
+        Self::from_parsed_legacy(name, &parsed, message)
+    }
+
+    /// `run_command` 每秒限流等业务策略（`error_code`：`rate_limited`）。
+    pub fn rate_limited(message: String) -> Self {
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some("rate_limited".to_string()),
+        };
+        Self {
+            category: ToolFailureCategory::PolicyDenied,
+            code: "rate_limited".to_string(),
+            message,
+            retryable: true,
+            legacy_parsed: parsed,
+        }
+    }
+
+    /// 白名单拒绝等（`error_code`：`command_not_allowed`）；正文须使 [`super::parse_legacy_output`] 能识别为失败。
+    pub fn command_not_allowed(message: String) -> Self {
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some("command_not_allowed".to_string()),
+        };
+        Self {
+            category: ToolFailureCategory::PolicyDenied,
+            code: "command_not_allowed".to_string(),
+            message,
+            retryable: false,
+            legacy_parsed: parsed,
+        }
+    }
+
+    /// `cargo_*` 等子进程非零退出：`error_code` 为 `{tool_code}_failed`（如 `cargo_check_failed`）。
+    pub fn cargo_subcommand_failed(tool_code: &str, exit_code: i32, message: String) -> Self {
+        let code = format!("{tool_code}_failed");
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: Some(exit_code),
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some(code.clone()),
+        };
+        let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
+        Self {
+            category: ToolFailureCategory::External,
+            code,
+            message,
+            retryable,
+            legacy_parsed: parsed,
+        }
+    }
+
+    /// 无法启动子进程（如找不到 `cargo` 可执行文件）。
+    pub fn subprocess_spawn_error(title: &str, err: std::io::Error) -> Self {
+        let message = format!("{}: 执行失败（{}）", title, err);
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some("cargo_spawn_failed".to_string()),
+        };
+        Self {
+            category: ToolFailureCategory::External,
+            code: "cargo_spawn_failed".to_string(),
+            message,
+            retryable: false,
+            legacy_parsed: parsed,
         }
     }
 }
