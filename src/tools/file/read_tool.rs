@@ -7,11 +7,13 @@ use std::path::Path;
 
 use crate::text_encoding::{
     DecodedFileNote, ResolvedTextEncoding, SNIFF_MAX_BYTES, TextEncodingName, count_decoded_lines,
-    for_each_decoded_line, open_file_and_read_head, parse_text_encoding_name,
-    resolve_text_encoding,
+    for_each_decoded_line_from_file_with_head, open_file_and_read_head,
+    open_file_and_read_head_from, parse_text_encoding_name, resolve_text_encoding,
 };
 
-use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_workspace_path};
+use super::path::{
+    path_for_tool_display, resolve_for_read_open, tool_user_error_from_workspace_path,
+};
 
 fn read_file_logical_cache_key(canonical: &std::path::Path, v: &serde_json::Value) -> String {
     let start_line = v.get("start_line").and_then(|n| n.as_u64()).unwrap_or(1);
@@ -42,21 +44,34 @@ fn read_file_logical_cache_key(canonical: &std::path::Path, v: &serde_json::Valu
     )
 }
 
-fn sniff_head_bytes(path: &Path, enc_name: TextEncodingName) -> Result<Vec<u8>, String> {
+/// 自已打开文件读取嗅探前缀；返回 **未消费的** `File`（指针位于已读字节之后）与 `head`。
+fn sniff_head_bytes_from(
+    file: std::fs::File,
+    enc_name: TextEncodingName,
+) -> Result<(std::fs::File, Vec<u8>), String> {
     let cap = match enc_name {
         TextEncodingName::Utf8 => 0usize,
         TextEncodingName::Utf8Sig => 3,
         _ => SNIFF_MAX_BYTES,
     };
     if cap == 0 {
-        return Ok(Vec::new());
+        return Ok((file, Vec::new()));
     }
-    let (_f, head) = open_file_and_read_head(path, cap)?;
-    Ok(head)
+    open_file_and_read_head_from(file, cap)
 }
 
 fn count_lines_for_read(path: &Path, enc_name: TextEncodingName) -> Result<usize, String> {
-    let head = sniff_head_bytes(path, enc_name)?;
+    let cap = match enc_name {
+        TextEncodingName::Utf8 => 0usize,
+        TextEncodingName::Utf8Sig => 3,
+        _ => SNIFF_MAX_BYTES,
+    };
+    let head = if cap == 0 {
+        Vec::new()
+    } else {
+        let (_f, h) = open_file_and_read_head(path, cap)?;
+        h
+    };
     let (resolved, _) = resolve_text_encoding(&head, enc_name)?;
     match resolved {
         ResolvedTextEncoding::Utf8Strict => count_lines_utf8_strict(path, 0),
@@ -185,18 +200,16 @@ pub fn read_file(
         return "错误：end_line 不能小于 start_line".to_string();
     }
 
-    let target = match resolve_for_read(working_dir, &path) {
-        Ok(p) => p,
+    let opened = match resolve_for_read_open(working_dir, &path) {
+        Ok(o) => o,
         Err(e) => return tool_user_error_from_workspace_path(e),
     };
-    if !target.is_file() {
+    if !opened.metadata.is_file() {
         return "错误：路径不是文件或不存在，无法读取".to_string();
     }
 
-    let meta = match std::fs::metadata(&target) {
-        Ok(m) => m,
-        Err(e) => return format!("读取元数据失败: {}", e),
-    };
+    let target = opened.resolved_path;
+    let meta = opened.metadata;
     let cache_key = read_file_logical_cache_key(&target, &v);
     if let Some(cache) = ctx.read_file_turn_cache {
         let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
@@ -212,8 +225,8 @@ pub fn read_file(
         );
     }
 
-    let head = match sniff_head_bytes(&target, enc_name) {
-        Ok(h) => h,
+    let (file, head) = match sniff_head_bytes_from(opened.file, enc_name) {
+        Ok(x) => x,
         Err(e) => return e,
     };
     let (resolved, decode_note) = match resolve_text_encoding(&head, enc_name) {
@@ -251,9 +264,15 @@ pub fn read_file(
         truncated_by_max,
     };
     let body = match resolved {
-        ResolvedTextEncoding::Utf8Strict => {
-            read_file_utf8_lines(working_dir, &target, &path, &line_spec, 0, &enc_header)
-        }
+        ResolvedTextEncoding::Utf8Strict => read_file_utf8_lines(
+            working_dir,
+            &target,
+            &path,
+            &line_spec,
+            0,
+            &enc_header,
+            file,
+        ),
         ResolvedTextEncoding::Utf8Sig { skip_bom } => read_file_utf8_lines(
             working_dir,
             &target,
@@ -261,6 +280,7 @@ pub fn read_file(
             &line_spec,
             skip_bom,
             &enc_header,
+            file,
         ),
         ResolvedTextEncoding::Decoder { .. } => read_file_decoded_lines(
             working_dir,
@@ -269,6 +289,8 @@ pub fn read_file(
             enc_name,
             &line_spec,
             &enc_header,
+            file,
+            head,
         ),
     };
 
@@ -291,6 +313,7 @@ fn read_file_utf8_lines(
     spec: &ReadFileLinesSpec<'_>,
     skip_bom: usize,
     enc_header: &str,
+    mut f: File,
 ) -> Result<String, String> {
     let ReadFileLinesSpec {
         start_line,
@@ -299,11 +322,8 @@ fn read_file_utf8_lines(
         total_lines,
         truncated_by_max,
     } = *spec;
-    let mut f = File::open(target).map_err(|e| format!("打开文件失败: {}", e))?;
-    if skip_bom > 0 {
-        f.seek(SeekFrom::Start(skip_bom as u64))
-            .map_err(|e| format!("定位文件失败: {}", e))?;
-    }
+    f.seek(SeekFrom::Start(skip_bom as u64))
+        .map_err(|e| format!("定位文件失败: {}", e))?;
     let mut reader = BufReader::new(f);
     let mut buf = String::new();
     let mut line_no: usize = 0;
@@ -391,6 +411,7 @@ fn read_file_utf8_lines(
     }))
 }
 
+#[allow(clippy::too_many_arguments)] // 与 UTF-8 路径分支共享上层 `read_file` 管线，参数略多
 fn read_file_decoded_lines(
     working_dir: &Path,
     target: &Path,
@@ -398,6 +419,8 @@ fn read_file_decoded_lines(
     enc_name: TextEncodingName,
     spec: &ReadFileLinesSpec<'_>,
     enc_header: &str,
+    file: File,
+    head: Vec<u8>,
 ) -> Result<String, String> {
     let ReadFileLinesSpec {
         start_line,
@@ -410,7 +433,12 @@ fn read_file_decoded_lines(
     let mut last_line_no = 0usize;
     let mut eof_before_start = false;
     let mut has_more = false;
-    for_each_decoded_line(target, enc_name, |ln, line| {
+    // `head` 与 `file` 当前偏移与 `read_file` 嗅探阶段一致，避免再次按路径 `open`。
+    let (resolved, _) = resolve_text_encoding(&head, enc_name)?;
+    let ResolvedTextEncoding::Decoder { .. } = resolved else {
+        return Err("内部错误：read_file_decoded_lines 需要解码器路径".to_string());
+    };
+    for_each_decoded_line_from_file_with_head(file, head, enc_name, |ln, line| {
         last_line_no = ln;
         if ln < start_line {
             return std::ops::ControlFlow::Continue(());

@@ -1,6 +1,6 @@
 //! 工作区路径解析与校验（`file` 工具子模块）。
 //!
-//! 边界语义与 [`crate::path_workspace`] 一致。**`canonicalize` 校验通过之后**到 **`std::fs` 实际打开**之间仍存在 TOCTOU（路径可被替换为根外 symlink）；现状与 **`O_NOFOLLOW` / `openat`** 等强化路线见该模块文档。
+//! 边界语义与 [`crate::path_workspace`] 一致。读路径优先经 [`resolve_for_read_open`]：Linux 上在已打开的工作区根 fd 上使用 **`openat2` + `RESOLVE_IN_ROOT`** 打开，将解析约束在根内并避免「校验后再次按路径 `open`」的窗口。其余局限见 [`crate::path_workspace`] 与 [`crate::workspace_fs`]。
 #![allow(clippy::manual_string_new)]
 
 use std::path::{Path, PathBuf};
@@ -9,6 +9,7 @@ use crate::path_workspace::{
     WorkspacePathError, absolutize_relative_under_root, ensure_canonical_within_root,
     ensure_existing_ancestor_within_root,
 };
+use crate::workspace_fs::OpenedWorkspaceFile;
 
 pub(crate) use crate::path_workspace::canonical_workspace_root;
 
@@ -20,6 +21,14 @@ pub(crate) fn tool_user_error_from_workspace_path(e: WorkspacePathError) -> Stri
 
 /// 解析用于读取或修改的路径（目标必须存在；path 必须为相对工作目录的相对路径）
 pub(crate) fn resolve_for_read(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+    Ok(resolve_for_read_open(base, sub)?.resolved_path)
+}
+
+/// 与 [`resolve_for_read`] 相同策略校验，但用 **`openat2` / `RESOLVE_IN_ROOT`（Linux）** 或单次 `File::open` 打开，返回的 `metadata` 与 `file` 对应同一打开，缓解校验后二次按路径 `open` 的 TOCTOU。
+pub(crate) fn resolve_for_read_open(
+    base: &Path,
+    sub: &str,
+) -> Result<OpenedWorkspaceFile, WorkspacePathError> {
     let sub = sub.trim();
     if sub.is_empty() {
         return Err(WorkspacePathError::EmptyPath);
@@ -33,7 +42,12 @@ pub(crate) fn resolve_for_read(base: &Path, sub: &str) -> Result<PathBuf, Worksp
         .canonicalize()
         .map_err(WorkspacePathError::PathResolveFailed)?;
     ensure_canonical_within_root(&canonical, &base_canonical)?;
-    Ok(canonical)
+    crate::workspace_fs::open_existing_file_under_root(&base_canonical, &canonical).map_err(|e| {
+        WorkspacePathError::PathResolveFailed(std::io::Error::new(
+            e.kind(),
+            format!("open under workspace root: {e}"),
+        ))
+    })
 }
 
 /// 解析用于写入的路径（目标可不存在；path 必须为相对工作目录的相对路径，且不能通过 .. 超出工作目录）
