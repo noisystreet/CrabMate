@@ -161,6 +161,8 @@ codebase_semantic_top_k = 8
 # 单次 query 最多扫描的向量块数；0=不限制（大索引慎用）
 codebase_semantic_query_max_chunks = 50000
 codebase_semantic_rebuild_max_files = 2000
+# 整库 rebuild_index 默认按文件指纹跳过未改文件（加速大仓）；单次强制全量可在工具参数传 incremental:false
+codebase_semantic_rebuild_incremental = true
 
 # --- MCP（stdio 客户端，可选）---
 # mcp_enabled = false

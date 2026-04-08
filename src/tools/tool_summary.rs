@@ -3,7 +3,11 @@
 pub(super) fn summary_codebase_semantic_search(v: &serde_json::Value) -> Option<String> {
     if v.get("rebuild_index").and_then(|b| b.as_bool()) == Some(true) {
         let p = v.get("path").and_then(|x| x.as_str()).unwrap_or(".");
-        return Some(format!("semantic index rebuild ({})", p));
+        let inc = v.get("incremental").and_then(|b| b.as_bool());
+        return Some(match inc {
+            Some(false) => format!("semantic index rebuild full ({})", p),
+            _ => format!("semantic index rebuild ({})", p),
+        });
     }
     let q = v.get("query").and_then(|x| x.as_str()).unwrap_or("");
     let t = q.trim();

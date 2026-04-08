@@ -526,6 +526,8 @@ pub struct AgentConfig {
     pub codebase_semantic_query_max_chunks: usize,
     /// `rebuild_index` 时最多索引多少个文件（防超大仓拖死进程）。
     pub codebase_semantic_rebuild_max_files: usize,
+    /// 整库 `rebuild_index` 时是否按文件指纹跳过未改文件（默认 true）；`incremental:false` 可单次强制全量。
+    pub codebase_semantic_rebuild_incremental: bool,
     /// `http_fetch`：`spawn_blocking` 外圈 `tokio::time::timeout`（秒）；`None` 表示 `max(command_timeout_secs, http_fetch_timeout_secs)`。
     pub tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
     /// `http_request`：同上。

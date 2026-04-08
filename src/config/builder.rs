@@ -115,6 +115,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) codebase_semantic_top_k: Option<u64>,
     pub(crate) codebase_semantic_query_max_chunks: Option<u64>,
     pub(crate) codebase_semantic_rebuild_max_files: Option<u64>,
+    pub(crate) codebase_semantic_rebuild_incremental: Option<bool>,
     /// 见 `[tool_registry]`：`http_fetch` spawn 外圈超时秒数
     pub(crate) tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
     pub(crate) tool_registry_http_request_wall_timeout_secs: Option<u64>,
@@ -449,6 +450,9 @@ impl ConfigBuilder {
         self.codebase_semantic_rebuild_max_files = agent
             .codebase_semantic_rebuild_max_files
             .or(self.codebase_semantic_rebuild_max_files);
+        self.codebase_semantic_rebuild_incremental = agent
+            .codebase_semantic_rebuild_incremental
+            .or(self.codebase_semantic_rebuild_incremental);
     }
 
     pub(super) fn merge_agent_role_rows(&mut self, rows: &[AgentRoleRow]) {
