@@ -172,6 +172,7 @@ Static assets are served from `frontend-leptos/dist`.
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/openapi.json` | OpenAPI 3.0 spec (`application/json`); aligns with routes below; SSE line semantics in **`docs/SSE_PROTOCOL.md`** |
 | GET | `/` | Frontend |
 | POST | `/config/reload` | Hot-reload in-memory `AgentConfig` (not SQLite path); body `{}` ok; see **`docs/CONFIGURATION.md`** |
 | POST | `/chat` | JSON chat; optional `conversation_id`, `agent_role` (new server-side session only), `temperature`, `seed`, `seed_policy` |

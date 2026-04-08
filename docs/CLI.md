@@ -176,6 +176,7 @@ cargo run -- serve
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/openapi.json` | OpenAPI 3.0 机器可读契约（`application/json`）；与下列路由对齐；SSE 行级语义见 **`docs/SSE_PROTOCOL.md`** |
 | GET | `/` | 前端页面 |
 | POST | `/config/reload` | 热重载内存中的 `AgentConfig`（不含会话 SQLite 路径）；body 可为 `{}`；见 **`docs/CONFIGURATION.md`**「配置热重载」 |
 | POST | `/chat` | JSON 对话；可选 `conversation_id`、`agent_role`（仅新建服务端会话时）、`temperature`、`seed`、`seed_policy` |

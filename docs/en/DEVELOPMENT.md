@@ -124,7 +124,7 @@ flowchart TB
 | `agent_memory.rs` / `project_profile.rs` / `project_dependency_brief.rs` | Workspace memo + project profile + dependency brief for first-turn context. |
 | `read_file_turn_cache.rs` | Per-turn **`read_file`** cache. |
 | `workspace_changelist.rs` | Session write tracking + injected changelist user message; Web **`GET /workspace/changelog`** returns the same Markdown for UI preview. |
-| `web/` | Axum **`AppState`**, chat handlers (including **`GET /workspace/changelog`**), workspace, tasks (in-memory per workspace), static **`frontend-leptos/dist`**, config reload path alignment. |
+| `web/` | Axum **`AppState`**, chat handlers (including **`GET /workspace/changelog`**), **`GET /openapi.json`** (OpenAPI 3.0 spec), workspace, tasks (in-memory per workspace), static **`frontend-leptos/dist`**, config reload path alignment. |
 
 ### `lib.rs` responsibilities
 
