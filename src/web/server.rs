@@ -10,7 +10,7 @@ use tower::ServiceBuilder;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-/// `web_api_bearer_layer_enabled`：启动时是否对受保护 API 挂 Bearer 中间件（热重载改 token 后须重启 `serve` 才能切换该层）。
+/// `web_api_bearer_layer_enabled`：启动时是否对受保护 API 挂 Web API 鉴权中间件（`Authorization: Bearer` / `X-API-Key`；热重载改密钥后须重启 `serve` 才能切换该层）。
 pub(crate) fn build_app(
     state: std::sync::Arc<crate::AppState>,
     no_web: bool,

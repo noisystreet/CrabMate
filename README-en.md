@@ -111,7 +111,7 @@ cd frontend-leptos && trunk build && cd ..
 ## Deployment and security
 
 - **Listen address**: default **`127.0.0.1`**; **`0.0.0.0`** requires **`web_api_bearer_token`** or an explicit insecure flag ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
-- **Bearer**: API auth; frontend may read **`localStorage["crabmate-api-bearer-token"]`**.
+- **Web API secret**: same as **`web_api_bearer_token`**; send **`Authorization: Bearer …`** or **`X-API-Key: …`** (either). The frontend may read **`localStorage["crabmate-api-bearer-token"]`** and sends both headers for compatibility with scripts/gateways.
 - **Web Settings**: per-request **`client_llm`** (`api_base` / `model` / key) does not change server TOML; see [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) § Web chat queue.
 - **Workspace**: must stay under allowed roots; on Unix, **`openat2`** etc. reduce path risk—**not** a full sandbox. See [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [`src/path_workspace.rs`](src/path_workspace.rs).
 - **Other**: **`web_search_api_key`** separate from main **`API_KEY`**; optional **SyncDefault Docker sandbox**: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). Maintainers: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md), [.cursor/rules/security-sensitive-surface.mdc](.cursor/rules/security-sensitive-surface.mdc).

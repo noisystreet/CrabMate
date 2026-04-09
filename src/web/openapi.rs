@@ -12,7 +12,7 @@ pub fn build_openapi_spec() -> Value {
             "version": version,
             "description": concat!(
                 "CrabMate `serve` 模式的 HTTP 契约摘要。\n\n",
-                "- **鉴权**：若进程配置了 `AGENT_WEB_API_BEARER_TOKEN`（或等价 TOML），下列标记为需 Bearer 的路径须在请求头携带 `Authorization: Bearer <token>`；未配置时这些路径亦可匿名访问（部署时须自行评估风险）。\n",
+                "- **鉴权**：若进程配置了 `AGENT_WEB_API_BEARER_TOKEN`（或等价 TOML），下列标记为需鉴权的路径须在请求头携带 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**（与配置值为**同一密钥**，二选一即可）；未配置时这些路径亦可匿名访问（部署时须自行评估风险）。\n",
                 "- **SSE**：`POST /chat/stream` 返回 `text/event-stream`；控制面 JSON 与错误码见仓库 `docs/SSE_PROTOCOL.md`，本 OpenAPI 仅作入口说明。\n",
                 "- **上传**：`POST /upload` 使用 `multipart/form-data`。"
             )
@@ -66,7 +66,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["chat"],
                     "summary": "非流式对话",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -94,7 +94,7 @@ pub fn build_openapi_spec() -> Value {
                     "tags": ["chat"],
                     "summary": "SSE 流式对话",
                     "description": "响应 `Content-Type: text/event-stream`；成功时响应头可含 `x-conversation-id`。事件载荷见 `docs/SSE_PROTOCOL.md`。",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -117,7 +117,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["chat"],
                     "summary": "工具/HTTP 审批决策",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -142,7 +142,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["chat"],
                     "summary": "会话分叉截断（持久化会话）",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -167,7 +167,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["uploads"],
                     "summary": "multipart 文件上传",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -197,7 +197,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["uploads"],
                     "summary": "按 URL 删除已上传文件",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -222,7 +222,7 @@ pub fn build_openapi_spec() -> Value {
                 "get": {
                     "tags": ["workspace"],
                     "summary": "列出工作区目录项",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "parameters": [
                         {
                             "name": "path",
@@ -246,7 +246,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["workspace"],
                     "summary": "设置当前 Web 工作区根",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "content": {
                             "application/json": {
@@ -263,7 +263,7 @@ pub fn build_openapi_spec() -> Value {
                 "get": {
                     "tags": ["workspace"],
                     "summary": "服务端本机原生选目录（图形环境）",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "responses": {
                         "200": {
                             "description": "所选路径或 null",
@@ -280,7 +280,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["workspace"],
                     "summary": "工作区内搜索",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -305,7 +305,7 @@ pub fn build_openapi_spec() -> Value {
                 "get": {
                     "tags": ["workspace"],
                     "summary": "读取工作区内文本文件（有大小上限）",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "parameters": [
                         {
                             "name": "path",
@@ -329,7 +329,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["workspace"],
                     "summary": "写入工作区文件",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -352,7 +352,7 @@ pub fn build_openapi_spec() -> Value {
                 "delete": {
                     "tags": ["workspace"],
                     "summary": "删除工作区文件",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "parameters": [
                         {
                             "name": "path",
@@ -377,7 +377,7 @@ pub fn build_openapi_spec() -> Value {
                 "get": {
                     "tags": ["workspace"],
                     "summary": "项目画像 Markdown",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "responses": {
                         "200": {
                             "description": "画像",
@@ -394,7 +394,7 @@ pub fn build_openapi_spec() -> Value {
                 "get": {
                     "tags": ["workspace"],
                     "summary": "本会话工作区变更集 Markdown",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "parameters": [
                         {
                             "name": "conversation_id",
@@ -419,7 +419,7 @@ pub fn build_openapi_spec() -> Value {
                 "get": {
                     "tags": ["tasks"],
                     "summary": "读取当前工作区任务清单（进程内存）",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "responses": {
                         "200": {
                             "description": "任务数据",
@@ -434,7 +434,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["tasks"],
                     "summary": "保存当前工作区任务清单",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -459,7 +459,7 @@ pub fn build_openapi_spec() -> Value {
                 "post": {
                     "tags": ["config"],
                     "summary": "热重载 AgentConfig（不含部分字段，见 CONFIGURATION.md）",
-                    "security": [{ "bearerAuth": [] }],
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "requestBody": {
                         "content": {
                             "application/json": {
@@ -486,7 +486,13 @@ pub fn build_openapi_spec() -> Value {
                 "bearerAuth": {
                     "type": "http",
                     "scheme": "bearer",
-                    "description": "与 `AGENT_WEB_API_BEARER_TOKEN`（或配置中的 Web API Bearer）一致；未启用服务端 Bearer 时可为空。"
+                    "description": "与 `[agent].web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN` 一致；未启用服务端密钥时可为空。"
+                },
+                "apiKeyAuth": {
+                    "type": "apiKey",
+                    "in": "header",
+                    "name": "X-API-Key",
+                    "description": "与 `web_api_bearer_token` 相同密钥；与 Bearer 二选一即可（常见于 Dify / Open WebUI 类网关习惯）。"
                 }
             },
             "schemas": {
@@ -729,5 +735,6 @@ mod tests {
         assert!(paths.contains_key("/chat/stream"));
         assert!(paths.contains_key("/openapi.json"));
         assert!(v["components"]["securitySchemes"]["bearerAuth"].is_object());
+        assert!(v["components"]["securitySchemes"]["apiKeyAuth"].is_object());
     }
 }
