@@ -60,6 +60,7 @@ mod todo_scan;
 mod tool_params;
 mod tool_specs_registry;
 mod tool_summary;
+mod tool_summary_args;
 mod unit_convert;
 mod weather;
 mod web_search;
