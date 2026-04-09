@@ -6,118 +6,124 @@
   <img src="crabmate.svg" alt="CrabMate Logo" width="240" />
 </p>
 
-**CrabMate** is a Rust-based AI agent that talks to DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, local Ollama, and other backends through **OpenAI-compatible** `chat/completions`. It includes **function calling** plus workspace commands, files, and more tools, with both a **Web UI** and **CLI**.
+**CrabMate** is a Rust-based AI agent that uses **OpenAI-compatible** `chat/completions` against backends such as DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, and local Ollama.
+
+It ships **function calling**, workspace commands and file tools, plus a **Web UI** and **CLI**.
 
 ## Contents
 
-- [CrabMate](#crabmate)
-  - [Contents](#contents)
-  - [Features](#features)
-  - [Documentation index](#documentation-index)
-  - [Backend models](#backend-models)
-  - [Quick start](#quick-start)
-  - [Build and packaging](#build-and-packaging)
-  - [Deployment and security](#deployment-and-security)
-  - [Project layout](#project-layout)
-  - [References](#references)
+- [Overview](#overview)
+- [Documentation index](#documentation-index)
+- [Backend models](#backend-models)
+- [Environment and quick start](#environment-and-quick-start)
+- [Build and packaging](#build-and-packaging)
+- [Deployment and security](#deployment-and-security)
+- [Project structure](#project-structure)
+- [References](#references)
 
-## Features
+## Overview
 
-- **Chat and models**: OpenAI-compatible `chat/completions`; switch models via config.
-- **Built-in tools**: Files, commands, HTTP, web search, multi-language dev helpers (including **JVM**: Maven/Gradle; **containers**: minimal `docker` / `podman` / `docker compose` wrappers); **capabilities and JSON examples** in [docs/en/TOOLS.md](docs/en/TOOLS.md). Structured built-ins **`gh_pr_*` (incl. `gh_pr_diff`), `gh_issue_*`, `gh_run_*` (incl. `gh_run_view`), `gh_release_*`, `gh_search`, `gh_api`** are also available (see [docs/en/TOOLS.md](docs/en/TOOLS.md)). The default `run_command` allowlist includes **GitHub CLI `gh`** (install locally and authenticate; same arg rules as other allowlisted commands: no `..`, no `/`-prefixed args). If missing, **`GET /health`** shows **`dep_gh`** degraded; **`crabmate doctor`** reports it too. `cargo_test` / `npm run test` and some `run_command cargo test` paths reuse truncated output in-process by source fingerprint + args and mark **cache hits** (`test_result_cache_*`, see [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
-- **CLI**: Default `cargo run` / `crabmate repl` opens an **interactive CLI** (streaming chat, slash commands like `/config` / `/doctor` / `/probe` / `/models` including `/models choose` to pick the current model, optional `bash#:` one-line shell); `crabmate chat` for **one-shot** use in scripts/pipes; `crabmate serve` shares the same agent and tools as the Web UI. Also `doctor`, `config`, `bench`, `save-session` / `export-session`, `tool-replay`, `mcp list`, etc. Global options include `--config`, `--workspace`, `--agent-role` (multi-role first system; [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)), `--no-tools`, `--no-stream`. Full list, exit codes, and `man crabmate`: [docs/en/CLI.md](docs/en/CLI.md).
-- **Web UI**: Chat, workspace browse/edit (sidebar can **`GET /workspace/pick`** for a native folder picker on the server host, then auto **`POST /workspace`**; manually edited paths submit on **Enter**, subject to `workspace_allowed_roots`; `GET /workspace/file` optional `encoding` query, same semantics as `read_file` for legacy encodings), task list (in-process `/tasks`, cleared on restart), status bar (context chip: local char estimate vs **`GET /status`** **`context_char_budget`**; **`rev`** when the server session is persisted); workspace list refreshes after agent writes files; open **Changelog preview** to fetch **`GET /workspace/changelog`** (same Markdown as **`session_workspace_changelist`** model injection; refreshes while open when **`workspace_changed`** fires). After the **first user message** is sent, the session title is auto-set from a truncated summary of that text, unless you already renamed it from the default placeholder title. Optional **multi-role**: configure `[[agent_roles]]` or `config/agent_roles.toml`, then send `agent_role` on the first request (or set `default_agent_role` / `AGENT_DEFAULT_AGENT_ROLE`). The repo ships built-in **`companion`** (casual chat), **`scientist`** (rigorous, evidence-aware), **`engineer`** (delivery, tradeoffs, reliability), **`philosopher`** (concepts, arguments, traditions), **`literary`** (close reading, craft, context), and **`code_reviewer`** (structured code review) roles in `config/agent_roles.toml` and `config/prompts/*_system_prompt.md`. See [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) § Multi-role.
-- **Project profile**: Sidebar read-only summary (`Cargo.toml` / `package.json`, directories, tokei); can merge with workspace memo for first-turn injection (`project_profile_inject_*`). Optional **cargo metadata** workspace crate dependency graph (Mermaid + JSON) and dependency name excerpts from root `package.json` (`project_dependency_brief_inject_*`). The `repo_overview_sweep` tool can pull the same profile (`include_project_profile` / `project_profile_max_chars`, [docs/en/TOOLS.md](docs/en/TOOLS.md)).
-- **OpenAPI**: `serve` exposes **`GET /openapi.json`** (OpenAPI 3.0, `application/json`) for machine-readable HTTP shapes; **SSE line protocol** for `/chat/stream` remains in [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md). The official Web UI sends **`client_sse_protocol`** on **`POST /chat`** and **`POST /chat/stream`** and checks the first **`sse_capabilities`** frame (see that doc, “Protocol version `v` and negotiation”).
-- **Streaming and approval**: Web SSE; `run_command` and `http_fetch` / `http_request` without a matching prefix can use `POST /chat/approval`. On client disconnect or cooperative cancel you may get control-plane `error` + `code: STREAM_CANCELLED` when SSE can still deliver (see [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md)). CLI uses the same approval path for non-whitelist `run_command` and unmatched HTTP tools (TTY: dialoguer menu; pipe: line `y` / `a` / `n`; or `--yes` / `--approve-commands`). **Web vs CLI matrix**: [docs/en/CLI.md](docs/en/CLI.md) § CLI vs Web.
-- **Sessions and export**: Web optional `conversation_id` + `conversation_store_sqlite_path` (TTL/limits in config), export JSON/MD from the UI. CLI: `crabmate save-session` (alias `export-session`; reads `.crabmate/tui_session.json`, writes `.crabmate/exports/`, same shape as the frontend), `/save-session` or `/export` in interactive CLI. `crabmate tool-replay` extracts tool-call sequences from session JSON (see [docs/en/CLI.md](docs/en/CLI.md)). Optional restore from `tui_session.json` (`tui_load_session_on_start`); by default **no** background `initial_workspace_messages` unless `repl_initial_workspace_messages_enabled` (or `AGENT_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED`). Per-session **tool write paths + unified diff** injected before each model request (`session_workspace_changelist_*`, stripped before save). Memo `agent_memory_file`, long-term memory: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
-- **In-process tool stats (optional)**: With `agent_tool_stats_enabled` (or `AGENT_TOOL_STATS_ENABLED`), CrabMate records per-tool `ok` / `error_code` in a global sliding window and appends a short Markdown hint to the **first** `system` message of **new** conversations (Web, `crabmate chat`, REPL). Resumed disk sessions refresh base system only without that appendix. See [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
-- **Optional MCP (stdio)**: With `mcp_enabled` + `mcp_command`, remote tools merge as `mcp__{slug}__{tool}`; one stdio connection per process fingerprint (`serve` / `repl` / `chat` share it). `crabmate mcp list` shows cached sessions and merged tool names (**no** `API_KEY`); `mcp list --probe` tries one connection (starts `mcp_command`). Configure only in trusted environments.
+- **Chat and models**: OpenAI-compatible `chat/completions`; gateway and model wiring live in config and in **Backend models** below.
+
+- **Built-in tools** (**function calling**): workspace files, **`run_command`** (allowlist), HTTP/search, formatting, dependency graphs and coverage, container helpers; stacks include **Rust / Python / JS·TS / Go / JVM / C·C++** and **GitHub `gh_*`**. Full list and JSON examples: [docs/en/TOOLS.md](docs/en/TOOLS.md).
+
+- **CLI**: **`crabmate repl`** / **`chat`** / **`serve`** (same agent/tools as the Web UI). Details: **[CLI](#cli)** and [docs/en/CLI.md](docs/en/CLI.md).
+
+- **Web UI**: DeepSeek-style layout; assistant replies as **Markdown**; sidebar sessions (export, filter, search), workspace tree and change preview, tasks and context status, multi-select / retry / branch on messages; **multi-role** and more in [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+
+- **Project profile**: sidebar summary and optional first-turn injection; models can use **`repo_overview_sweep`** ([docs/en/TOOLS.md](docs/en/TOOLS.md)).
+
+- **OpenAPI**: **`GET /openapi.json`**; streaming control plane is defined in [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) (including **`client_sse_protocol`** negotiation).
+
+- **Streaming and approval**: Web **SSE** + **`POST /chat/approval`**; CLI terminal approval; cancel codes etc. in [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) and [docs/en/CLI.md](docs/en/CLI.md) § CLI vs Web.
+
+- **Sessions and export**: optional Web SQLite persistence, export JSON/Markdown; CLI **`save-session`** / **`tool-replay`**, etc. Workspace changelist injection and long-term memory: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+
+- **Optional**: in-process tool stats (**`agent_tool_stats_enabled`**); **MCP stdio** (**`mcp_enabled`** + **`mcp_command`**, `crabmate mcp list`). See [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 
 ## Documentation index
 
-| Doc | Contents |
-|-----|----------|
-| [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture, module index, protocols |
-| [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and call examples |
-| [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control-plane JSON |
-| [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `AGENT_*`, planning/context |
-| [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, `.deb` |
-| [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md) | `chat` exit codes, `--output json`, SSE codes |
-| [docs/en/TODOLIST.md](docs/en/TODOLIST.md) | Open work: P0–P5 + by-module |
-| [docs/en/CODEBASE_INDEX_PLAN.md](docs/en/CODEBASE_INDEX_PLAN.md) | Unified codebase index + incremental cache plan |
+| Document | Contents | 中文 |
+| --- | --- | --- |
+| [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture, module index, protocols | [zh](docs/DEVELOPMENT.md) |
+| [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and JSON examples | [zh](docs/TOOLS.md) |
+| [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control-plane JSON | [zh](docs/SSE_PROTOCOL.md) |
+| [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `AGENT_*`, planning/context | [zh](docs/CONFIGURATION.md) |
+| [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, `.deb` | [zh](docs/CLI.md) |
+| [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md) | `chat` exit codes, `--output json`, SSE cross-ref | [zh](docs/CLI_CONTRACT.md) |
+| [docs/en/TODOLIST.md](docs/en/TODOLIST.md) | Open work P0–P5 + by-module | [zh](docs/TODOLIST.md) |
+| [docs/en/CODEBASE_INDEX_PLAN.md](docs/en/CODEBASE_INDEX_PLAN.md) | Unified codebase index + incremental cache | [zh](docs/CODEBASE_INDEX_PLAN.md) |
 
-Maintenance: user-visible changes should update README / DEVELOPMENT / TOOLS as in [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) § TODOLIST conventions.
+**Maintenance**: user-visible changes should stay in sync with README and related docs; see [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) § TODOLIST and documentation conventions.
 
 ## Backend models
 
-CrabMate uses `POST {api_base}/chat/completions` (OpenAI shape, optional SSE, tools; exact behavior depends on the vendor). Set `api_base`, `model`, and `llm_http_auth_mode` under `[agent]`; put secrets only in env `API_KEY` when using `bearer`—**never** commit real keys in repo config.
-
+`POST {api_base}/chat/completions` (OpenAI-compatible). Under **`[agent]`** set **`api_base`**, **`model`**, **`llm_http_auth_mode`**; with **`bearer`**, use env **`API_KEY`**—**do not** commit real keys in repo config.
 
 | Scenario | Notes |
-|----------|--------|
-| **DeepSeek** | `api_base`: `https://api.deepseek.com/v1`; models such as `deepseek-chat`, `deepseek-reasoner`; see [DeepSeek](https://platform.deepseek.com/) and [API docs](https://api-docs.deepseek.com/api/create-chat-completion). |
-| **MiniMax** | `api_base`: `https://api.minimaxi.com/v1`; models such as `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`, `MiniMax-M2.5`. CrabMate **auto-folds** `system` into `user` when `model` / `api_base` identify MiniMax. If `llm_reasoning_split` is omitted, MiniMax gateways default to **on** (`reasoning_split`); set `false` / `AGENT_LLM_REASONING_SPLIT=0` to disable. See [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) § MiniMax. |
-| **Zhipu GLM** | `api_base`: `https://open.bigmodel.cn/api/paas/v4`; e.g. `glm-5`. Optional `llm_bigmodel_thinking`. See CONFIGURATION § GLM. |
-| **Moonshot Kimi** | `api_base`: `https://api.moonshot.cn/v1`; e.g. `kimi-k2.5`. Temperature coercion and optional `llm_kimi_thinking_disabled` for k2.5. See CONFIGURATION § Kimi. |
-| **Local Ollama** | e.g. `http://127.0.0.1:11434/v1`; `llm_http_auth_mode = "none"`; no `API_KEY` needed. Tool calling quality depends on model/Ollama version. |
+| --- | --- |
+| **DeepSeek** | `api_base`: `https://api.deepseek.com/v1`; `model` e.g. `deepseek-chat` / `deepseek-reasoner`. See [platform](https://platform.deepseek.com/) and [API docs](https://api-docs.deepseek.com/api/create-chat-completion). |
+| **MiniMax** | `api_base`: `https://api.minimaxi.com/v1`; `model` e.g. `MiniMax-M2.7`. System-role folding, `llm_reasoning_split` defaults, etc.: [CONFIGURATION § MiniMax](docs/en/CONFIGURATION.md) and [vendor OpenAI-compatible docs](https://platform.minimaxi.com/docs/api-reference/text-openai-api). |
+| **Zhipu GLM** | `api_base`: `https://open.bigmodel.cn/api/paas/v4`; `model` e.g. `glm-5`. Optional `llm_bigmodel_thinking`. [CONFIGURATION](docs/en/CONFIGURATION.md), [GLM-5](https://docs.bigmodel.cn/cn/guide/models/text/glm-5). |
+| **Moonshot Kimi** | `api_base`: `https://api.moonshot.cn/v1`; `model` e.g. `kimi-k2.5`. Temperature coercion, `llm_kimi_thinking_disabled`, etc.: [CONFIGURATION](docs/en/CONFIGURATION.md), [Kimi API](https://platform.moonshot.cn/docs/api/chat). |
+| **Local Ollama** | `llm_http_auth_mode = "none"`; `api_base` e.g. `http://127.0.0.1:11434/v1`; `API_KEY` optional. |
 
-Run `crabmate doctor` (**no** `API_KEY`), `crabmate probe`, `crabmate models` locally. Full `AGENT_*` table: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. Full **`AGENT_*`** and hot reload: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Vendor capabilities are defined by each provider’s API docs.**
 
-Vendor docs are authoritative for model IDs, limits, and vendor-specific fields; this repo only documents how to wire `api_base` / `model` in CrabMate.
-
-## Quick start
+## Environment and quick start
 
 - **Rust**: 1.85+ (edition 2024, see [AGENTS.md](AGENTS.md))
-- **Docker dev image** (optional): root [Dockerfile](Dockerfile) on **Ubuntu 24.04** with stable Rust, `wasm32-unknown-unknown`, `rustfmt` / `clippy`, `trunk`, `libssl-dev`, `libssh2-1-dev`, `g++` (matches `.cargo/config.toml` Linux linker notes). Example: `docker build -t crabmate-dev .` then `docker run --rm -it -v "$(pwd)":/workspace -w /workspace crabmate-dev`. If your host UID/GID ≠ 1000, pass `--build-arg DEV_UID=$(id -u) --build-arg DEV_GID=$(id -g)` on build. Does **not** include `pre-commit` or Node by default.
-- **Env**: `API_KEY` for cloud Bearer when `llm_http_auth_mode=bearer` (not required for `doctor` / `save-session`, etc.). `AGENT_API_BASE`, `AGENT_MODEL` override config. See CONFIGURATION for the full `AGENT_*` list.
+
+- **Docker dev image** (optional): root [Dockerfile](Dockerfile) (Ubuntu 24.04, Rust + trunk, etc.). `docker build -t crabmate-dev .` then `docker run --rm -it -v "$(pwd)":/workspace -w /workspace crabmate-dev`; UID/GID via `--build-arg DEV_UID` / `DEV_GID`. **No** pre-commit / Node inside.
+
+- **Environment**: **`API_KEY`** when using bearer (`serve` / `repl` / `chat` can start first; set the key in Web Settings or REPL **`/api-key set`** before chatting); **`models` / `probe`** usually still need `API_KEY` in the environment under bearer. **`AGENT_API_BASE`** / **`AGENT_MODEL`** override config. Full table: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 
 ```bash
-# export AGENT_API_BASE="https://api.deepseek.com/v1"
-# export AGENT_MODEL="deepseek-chat"
-
-export API_KEY="your-api-key"
+# Optional: export AGENT_API_BASE=… AGENT_MODEL=… API_KEY=… (or Web Settings / REPL /api-key set)
 cargo build
-cargo run              # default: interactive CLI
-
-cd frontend-leptos && trunk build   # dev: faster, no wasm-opt
-# For release-sized WASM: trunk build --release
-cargo run -- serve     # Web, default :8080 (serves frontend-leptos/dist)
+./target/debug/crabmate repl    # or crabmate repl when on PATH
+cd frontend-leptos && trunk build && cd ..
+./target/debug/crabmate serve   # default :8080; release WASM: trunk build --release
 ```
 
-**CLI**: Slash commands and `bash#:` are documented in [docs/en/CLI.md](docs/en/CLI.md).
+### CLI
 
-**Frontend**: run `cd frontend-leptos && trunk build` before `serve` (static assets from `frontend-leptos/dist`). Use **`trunk build --release`** for production-sized WASM (default `wasm-opt`); see **`frontend-leptos/README.md`** / **`docs/DEVELOPMENT.md`**.
+- **`crabmate repl`**: interactive chat; **`/`** commands and optional **`bash#:`**: [docs/en/CLI.md](docs/en/CLI.md). Under bearer without a key, use **`/api-key`**.
+- **`crabmate chat`**: one-shot non-interactive; **`serve`**: HTTP + Web UI (shared logic with Web).
+- **Common**: **`doctor`**, **`config`**, **`probe`** / **`models`**, **`bench`**, **`save-session`** / **`export-session`**, **`tool-replay`**, **`mcp list`**. Globals: **`--config`**, **`--workspace`**, **`--agent-role`**, **`--no-tools`**, **`--no-stream`**, etc.
+- Config keys: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md); full subcommand list, benchmark, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
 
-**Config**: Embedded defaults under `config/*.toml` plus optional `config.toml`; `system_prompt_file` can be edited without rebuild (path resolution in CONFIGURATION).
+**Frontend**: `cd frontend-leptos && trunk build` (dev; **`--release`** for production), then **`crabmate serve`**. UI language in Settings; see `frontend-leptos/README.md`, [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
+
+**Config**: default `config/*.toml` (embedded) + optional root **`config.toml`**; **`system_prompt_file`** → `config/prompts/default_system_prompt.md` (edit without rebuild). Advanced options: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Release / deb / man**: **[Build and packaging](#build-and-packaging)**.
+
+**Switching models / gateway** (DeepSeek, MiniMax, Ollama, …): see **[Backend models](#backend-models)** above.
 
 ## Build and packaging
 
-- **Debug**: `cargo build` → `target/debug/crabmate`
-- **Release**: `cargo build --release`; run `cd frontend-leptos && trunk build --release` before `serve` (WASM optimized)
-- **Maintainers**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`
-- **Web E2E (optional)**: after `cd frontend-leptos && trunk build`, run `cd e2e && npm ci && npx playwright install chromium && npm test` (see [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) “E2E”)
-- **Install**: `cargo install --path .`
-- **Man page**: `cargo run --bin crabmate-gen-man`
-- **Debian**: `cargo deb` after release build + frontend build; see [docs/en/CLI.md](docs/en/CLI.md)
+- **Toolchain**: **Rust 1.85+**, **Trunk** + **`wasm32-unknown-unknown`**; Linux / long-term memory notes: [AGENTS.md](AGENTS.md).
+- **Build**: `cargo build` → `target/debug/crabmate`; **`--release`** → `target/release/crabmate`. With Web: **`cd frontend-leptos && trunk build`** first (**`--release`** for production WASM).
+- **Checks**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`; or [.pre-commit-config.yaml](.pre-commit-config.yaml).
+- **E2E** (optional): after `frontend-leptos` build, **`cd e2e && npm ci && npx playwright install chromium && npm test`**. See [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
+- **Install**: `cargo install --path .` (**does not** install man; use `.deb` or [man/crabmate.1](man/crabmate.1)). Regenerate man: `cargo run --bin crabmate-gen-man`.
+- **`.deb`**: [cargo-deb](https://github.com/kornelski/cargo-deb), frontend release build + **`cargo deb`**, output **`target/debian/`**. Details: [docs/en/CLI.md](docs/en/CLI.md) § Debian `.deb` packaging.
 
 ## Deployment and security
 
-- **Bind**: `serve` defaults to `127.0.0.1`. For `0.0.0.0` set `web_api_bearer_token` or explicit insecure flag (see README security warnings).
-- **Bearer**: Frontend may use `localStorage["crabmate-api-bearer-token"]`.
-- **Workspace paths**: Must stay under allowed roots; revalidated per request. On **Unix**, built-in `read_file` and Web workspace APIs prefer **`openat2` + `RESOLVE_IN_ROOT` (Linux)** from an opened root fd to narrow TOCTOU; this is still **not** a kernel-level escape-proof sandbox—see [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) (workspace) and `src/path_workspace.rs`.
-- **Web search key**: Separate from main `API_KEY`; protect file permissions.
-- **Optional Docker tool sandbox**: See CONFIGURATION § SyncDefault Docker sandbox.
+- **Listen address**: default **`127.0.0.1`**; **`0.0.0.0`** requires **`web_api_bearer_token`** or an explicit insecure flag ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
+- **Bearer**: API auth; frontend may read **`localStorage["crabmate-api-bearer-token"]`**.
+- **Web Settings**: per-request **`client_llm`** (`api_base` / `model` / key) does not change server TOML; see [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) § Web chat queue.
+- **Workspace**: must stay under allowed roots; on Unix, **`openat2`** etc. reduce path risk—**not** a full sandbox. See [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [`src/path_workspace.rs`](src/path_workspace.rs).
+- **Other**: **`web_search_api_key`** separate from main **`API_KEY`**; optional **SyncDefault Docker sandbox**: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). Maintainers: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md), [.cursor/rules/security-sensitive-surface.mdc](.cursor/rules/security-sensitive-surface.mdc).
 
-More boundary notes: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) and `.cursor/rules/security-sensitive-surface.mdc`.
+## Project structure
 
-## Project layout
-
-See [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) for module map and Mermaid diagram. Message pipeline counters on `GET /status` are described there.
+Module map, call flow, **`GET /status`** observability, and **`src/`** index: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
 
 ## References
 
-- [DeepSeek API](https://api-docs.deepseek.com/api/create-chat-completion)
-- [MiniMax](https://platform.minimaxi.com)
-- [Zhipu GLM](https://open.bigmodel.cn/) · [GLM-5](https://docs.bigmodel.cn/cn/guide/models/text/glm-5)
-- [Moonshot Kimi](https://platform.moonshot.cn/docs/api/chat)
+- [DeepSeek API - Create Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion)
+- [DeepSeek platform](https://platform.deepseek.com/)
+- **MiniMax**: [Platform / docs](https://platform.minimaxi.com)
+- **Zhipu GLM**: [Open platform](https://open.bigmodel.cn/) · [GLM-5 guide](https://docs.bigmodel.cn/cn/guide/models/text/glm-5)
+- **Moonshot Kimi**: [Kimi API / Chat](https://platform.moonshot.cn/docs/api/chat)
