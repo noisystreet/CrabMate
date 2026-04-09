@@ -26,6 +26,7 @@ mod git;
 mod github_cli;
 mod go_tools;
 mod grep;
+mod grep_try;
 pub mod http_fetch;
 mod json_format;
 mod jvm_tools;
@@ -699,6 +700,14 @@ fn runner_read_file(args: &str, ctx: &ToolContext<'_>) -> String {
     file::read_file(args, ctx.working_dir, ctx)
 }
 
+#[allow(clippy::result_large_err)]
+fn read_file_try_dispatch(
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, crate::tool_result::ToolError> {
+    file::read_file_try(args_json, ctx.working_dir, ctx)
+}
+
 fn runner_read_dir(args: &str, ctx: &ToolContext<'_>) -> String {
     file::read_dir(args, ctx.working_dir)
 }
@@ -1162,6 +1171,10 @@ fn run_tool_dispatch(
             Some(ctx),
         )
         .map(|output| finish_dispatch_parsed(name, output)),
+        "read_file" => read_file_try_dispatch(args_json, ctx)
+            .map(|output| finish_dispatch_parsed(name, output)),
+        "search_in_files" => grep_try::search_in_files_try(args_json, ctx.working_dir)
+            .map(|output| finish_dispatch_parsed(name, output)),
         _ => {
             let output = run_tool(name, args_json, ctx);
             let parsed = crate::tool_result::parse_legacy_output(name, &output);
@@ -1184,7 +1197,7 @@ fn finish_dispatch_parsed(
 
 /// 与 [`run_tool`] 相同，但失败时返回 [`crate::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**）。
 ///
-/// **`run_command`** 与 **`cargo_*` / `rust_test_one`** 在 [`run_tool_dispatch`] 中经 `*_try` 返回显式 [`ToolError`]；其余工具仍由 [`crate::tool_result::parse_legacy_output`] 从正文推断。
+/// **`run_command`**、**`cargo_*` / `rust_test_one`**、**`read_file`**、**`search_in_files`** 在 [`run_tool_dispatch`] 中经 `*_try` 返回显式 [`ToolError`]；其余工具仍由 [`crate::tool_result::parse_legacy_output`] 从正文推断。
 #[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
 pub fn run_tool_try(
     name: &str,

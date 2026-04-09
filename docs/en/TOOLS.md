@@ -393,7 +393,7 @@ Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
   ```json
   {"path":"src/main.rs","start_line":1,"max_lines":200}
   ```
-  Use **`encoding`** for legacy/BOM/unknown: `gb18030`, `utf-8-sig`, `auto`, …. Default **UTF-8 strict** (errors on invalid bytes). Response hints next `start_line`. `"count_total_lines": true` rescans for totals. `start_line`+`end_line` still respect `max_lines`.
+  Use **`encoding`** for legacy/BOM/unknown: `gb18030`, `utf-8-sig`, `auto`, …. Default **UTF-8 strict** (errors on invalid bytes). Response hints next `start_line`. `"count_total_lines": true` rescans for totals. `start_line`+`end_line` still respect `max_lines`. On **success**, the **first line** is a single JSON object **`{"kind":"crabmate_tool_output","tool":"read_file","version":1,…}`** (machine-readable summary); the legacy human-readable block follows. Failures use stable **`error_code`** values (e.g. `read_file_workspace_*`, `read_file_invalid_range`) in the `crabmate_tool` envelope.
 - `modify_file` (large files, `replace_lines`):
   ```json
   {"path":"src/huge.rs","mode":"replace_lines","start_line":120,"end_line":135,"content":"// new chunk\n"}
@@ -438,6 +438,11 @@ Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
   ```json
   {"include_toolchain":true,"include_workspace_paths":true,"include_env":true,"extra_env_vars":["CI"]}
   ```
+- `search_in_files` (regex content search; `.gitignore`-aware walk):
+  ```json
+  {"pattern":"TODO|FIXME","path":"src","max_results":50,"case_insensitive":true}
+  ```
+  On success, line 1 is **`crabmate_tool_output` v1** (`pattern`, workspace-relative `root`, `match_count`, `files_visited`, `truncated`, …). Invalid regex → `search_in_files_invalid_regex`; bad glob → `search_in_files_invalid_glob`.
 - `codebase_semantic_search` (fastembed/ONNX; same stack as long-term memory):
   - Workspace-wide incremental rebuild (query optional):
   ```json
