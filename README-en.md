@@ -96,6 +96,7 @@ cargo run -- serve     # Web, default :8080 (serves frontend-leptos/dist)
 - **Debug**: `cargo build` → `target/debug/crabmate`
 - **Release**: `cargo build --release`; run `cd frontend-leptos && trunk build --release` before `serve` (WASM optimized)
 - **Maintainers**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`
+- **Web E2E (optional)**: after `cd frontend-leptos && trunk build`, run `cd e2e && npm ci && npx playwright install chromium && npm test` (see [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) “E2E”)
 - **Install**: `cargo install --path .`
 - **Man page**: `cargo run --bin crabmate-gen-man`
 - **Debian**: `cargo deb` after release build + frontend build; see [docs/en/CLI.md](docs/en/CLI.md)

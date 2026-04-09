@@ -423,6 +423,16 @@ flowchart LR
   - `CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --target wasm32-unknown-unknown -p crabmate-web-leptos`
 - **`lib.rs`**：crate 为 **`cdylib`** 时，测试 profile 下对 **`wasm32`** 启用 **`#![cfg_attr(all(test, target_arch = "wasm32"), no_main)]`**，避免与测试 harness 的入口符号冲突。
 
+### E2E（`e2e/`，Playwright）
+
+- **前置**：`cd frontend-leptos && trunk build`（须存在 **`frontend-leptos/dist/index.html`**）；本机需 **Node.js** 与浏览器引擎（Chromium）。
+- **安装与运行**（仓库根）：
+  - `cd e2e && npm ci`
+  - `npx playwright install chromium`
+  - `npm test`（默认 **`playwright.config.ts`** 会 **`cargo run -- serve --port 18081`** 并等待 **`GET /health`**；可用环境变量 **`E2E_PORT`** 换端口）
+- **范围**：**`e2e/tests/smoke.spec.ts`** 对 **`POST /chat/stream`** 与 **`GET/POST /workspace`** 做 **route 桩**，覆盖「发送消息 → 助手正文 + 工具卡片」「侧栏切到工作区 → 文件树」；不调用真实 LLM。关键 DOM 使用 **`data-testid`**（如 **`chat-composer-input`**、**`chat-tool-card`**、**`workspace-file-tree`**），与纯样式 class 解耦。
+- **Linux 构建**：若 **`cargo run`** 在 **`wayland-sys`** 处因缺少 **`wayland-client.pc`** 失败，请安装 **`libwayland-dev`**（与可选 **`rfd`** 原生依赖一致；仓库 **Dockerfile** 若用于 E2E 亦需包含该包）。
+
 ### `frontend-leptos/src/api.rs`
 
 - 浏览器 `fetch` 封装与 `/chat/stream` SSE 读取（UTF-8 分块安全拼接、`data:` 分发、`[DONE]` 处理）。
