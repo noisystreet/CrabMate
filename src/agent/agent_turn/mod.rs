@@ -59,11 +59,18 @@ pub(crate) async fn run_agent_turn_common(
     );
     insert_separator_after_last_user_for_turn(p.messages);
 
-    let mut per_coord = PerCoordinator::new(
-        p.cfg.reflection_default_max_rounds,
-        p.cfg.final_plan_requirement,
-        p.cfg.plan_rewrite_max_attempts,
-    );
+    let mut per_coord = PerCoordinator::new(crate::agent::per_coord::PerCoordinatorInit {
+        reflection_default_max_rounds: p.cfg.reflection_default_max_rounds,
+        final_plan_policy: p.cfg.final_plan_requirement,
+        plan_rewrite_max_attempts: p.cfg.plan_rewrite_max_attempts,
+        final_plan_require_strict_workflow_node_coverage: p
+            .cfg
+            .final_plan_require_strict_workflow_node_coverage,
+        final_plan_semantic_check_enabled: p.cfg.final_plan_semantic_check_enabled,
+        final_plan_semantic_check_max_non_readonly_tools: p
+            .cfg
+            .final_plan_semantic_check_max_non_readonly_tools,
+    });
 
     if p.cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent {
         run_logical_dual_agent_then_execute_steps(p, &mut per_coord).await

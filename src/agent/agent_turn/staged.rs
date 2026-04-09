@@ -502,7 +502,7 @@ where
     push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
 
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
-        match per_reflect_after_assistant(per_coord, &finish_reason, &msg, p.messages) {
+        match per_reflect_after_assistant(p, per_coord, &finish_reason, &msg).await {
             ReflectOnAssistantOutcome::ProceedToExecuteTools => {
                 let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
                 let echo_terminal_transcript = *render_to_terminal && p.out.is_none();
@@ -659,7 +659,7 @@ where
     // 规划轮若未产出可解析 JSON，但正文里写了 DSML 工具调用：物化后应先执行工具，再进入常规循环（否则历史中只有未执行的 XML）。
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
-        match per_reflect_after_assistant(per_coord, &finish_reason, &msg, p.messages) {
+        match per_reflect_after_assistant(p, per_coord, &finish_reason, &msg).await {
             ReflectOnAssistantOutcome::ProceedToExecuteTools => {
                 let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
                 let echo_terminal_transcript = render_to_terminal && p.out.is_none();
