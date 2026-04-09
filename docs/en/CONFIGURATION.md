@@ -305,6 +305,10 @@ When the model ends a turn **without** `tool_calls`, whether an embeddable **`ag
 
 With `workflow_validate_only` results, **`spec.layer_count`** constrains step count. Optional **`workflow_node_id`** must be a subset of **`nodes[].id`** from the latest **`workflow_execute`** result.
 
+**Strict node coverage (`final_plan_require_strict_workflow_node_coverage`, default `false`, `AGENT_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE`)**: when `true`, if **any** step sets `workflow_node_id`, the plan must reference **every** `nodes[].id` from the latest workflow tool result at least once. If no step sets `workflow_node_id`, this rule does not apply.
+
+**Optional semantic side-check LLM (default off)**: **`final_plan_semantic_check_enabled`** (`AGENT_FINAL_PLAN_SEMANTIC_CHECK_ENABLED`, default `false`) with **`final_plan_requirement = workflow_reflection`**: after static checks pass, if a tool digest can be built from history, one extra no-tools `chat/completions` asks whether the plan contradicts recent tool output; **`INCONSISTENT`** triggers the same rewrite path as other failures (counts against **`plan_rewrite_max_attempts`**). **`final_plan_semantic_check_max_non_readonly_tools`** (`AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS`, default `0`, range 0–32) caps extra non-readonly tool lines in the digest; at `0`, high-risk builtin names (e.g. `run_command`, `workflow_execute`) and readonly tools may still appear. **`final_plan_semantic_check_max_tokens`** (`AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS`, default `256`, clamp 32–1024) sets side-call `max_tokens`. Parse/API failures **fail open** (treat as consistent).
+
 ## Plan rewrite (`plan_rewrite_max_attempts`)
 
 Max “please rewrite” user injections when the plan is invalid; when exhausted, stream may emit **`code: plan_rewrite_exhausted`**.

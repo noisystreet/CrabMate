@@ -47,6 +47,12 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.reflection_default_max_rounds = src.reflection_default_max_rounds;
     dst.final_plan_requirement = src.final_plan_requirement;
     dst.plan_rewrite_max_attempts = src.plan_rewrite_max_attempts;
+    dst.final_plan_require_strict_workflow_node_coverage =
+        src.final_plan_require_strict_workflow_node_coverage;
+    dst.final_plan_semantic_check_enabled = src.final_plan_semantic_check_enabled;
+    dst.final_plan_semantic_check_max_non_readonly_tools =
+        src.final_plan_semantic_check_max_non_readonly_tools;
+    dst.final_plan_semantic_check_max_tokens = src.final_plan_semantic_check_max_tokens;
     dst.planner_executor_mode = src.planner_executor_mode;
     dst.system_prompt.clone_from(&src.system_prompt);
     dst.default_agent_role_id

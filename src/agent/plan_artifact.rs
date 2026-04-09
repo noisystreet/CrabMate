@@ -51,6 +51,10 @@ pub enum PlanArtifactError {
         index: usize,
         reason: &'static str,
     },
+    /// `workflow_node_id` 已出现但未能覆盖 `workflow_node_ids` 中的全部节点 id（严格 PER 模式）。
+    WorkflowNodesNotFullyCovered {
+        missing: Vec<String>,
+    },
 }
 
 /// [`staged_plan_invalid_run_agent_turn_error`] 返回串的固定前缀；供测试、`chat_job_queue` 历史分支识别（**勿**与用户输入拼接）。当前主路径在规划 JSON 无效时已降级为常规循环，一般不再产生该串。
@@ -70,6 +74,16 @@ pub(crate) fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
         PlanArtifactError::NoTaskWithNonEmptySteps => "no_task_with_steps".to_string(),
         PlanArtifactError::InvalidStep { index, reason } => {
             format!("invalid_step index={index} reason={reason}")
+        }
+        PlanArtifactError::WorkflowNodesNotFullyCovered { missing } => {
+            let n = missing.len();
+            let prev = missing
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("workflow_nodes_not_fully_covered missing_count={n} missing_preview={prev}")
         }
     }
 }
@@ -95,7 +109,7 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 可选布尔 \"no_task\"：为 true 时表示用户未提出需分步执行的具体任务，此时 \"steps\" 必须为 []（空数组）
 - 当 \"no_task\" 省略或为 false 时，\"steps\" 为非空数组；每项含非空字符串 \"id\" 与 \"description\"
 - 每项 \"id\" 须唯一；**首尾不得含空白**；语法为 ASCII 字母或数字开头，仅含 - _ . /，总长不超过 128（与 workflow 节点 id 常见字符集一致）
-- 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法，且在**同一条规划**中唯一；值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）";
+- 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法，且在**同一条规划**中唯一；值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）";
 
 /// Plan v1 的 JSON 示例。
 pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …","workflow_node_id":"fmt"}]}"#;
@@ -172,6 +186,38 @@ pub(crate) fn validate_plan_workflow_node_ids_subset(
         }
     }
     Ok(())
+}
+
+/// 若规划中**至少一步**含 `workflow_node_id`，则 `steps` 中出现的 `workflow_node_id` 须**覆盖** `workflow_node_ids` 全部节点（每 id 至少一步引用）。
+pub(crate) fn validate_plan_covers_all_workflow_node_ids(
+    plan: &AgentReplyPlanV1,
+    workflow_node_ids: &[String],
+) -> Result<(), PlanArtifactError> {
+    if workflow_node_ids.is_empty() {
+        return Ok(());
+    }
+    let any_linked = plan.steps.iter().any(|s| s.workflow_node_id.is_some());
+    if !any_linked {
+        return Ok(());
+    }
+    let mut covered: HashSet<&str> = HashSet::new();
+    for s in &plan.steps {
+        if let Some(ref w) = s.workflow_node_id {
+            covered.insert(w.trim());
+        }
+    }
+    let mut missing = Vec::new();
+    for id in workflow_node_ids {
+        let t = id.as_str();
+        if !covered.contains(t) {
+            missing.push(t.to_string());
+        }
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(PlanArtifactError::WorkflowNodesNotFullyCovered { missing })
+    }
 }
 
 fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifactError> {
@@ -575,6 +621,51 @@ mod tests {
         let s = plan_artifact_error_log_summary(&PlanArtifactError::WrongType(long.clone()));
         assert!(!s.contains(&long));
         assert!(s.contains("type_len=80"));
+    }
+
+    #[test]
+    fn validate_plan_covers_all_workflow_node_ids_gate() {
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let no_link = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![PlanStepV1 {
+                id: "s1".into(),
+                description: "x".into(),
+                workflow_node_id: None,
+            }],
+            no_task: false,
+        };
+        assert!(validate_plan_covers_all_workflow_node_ids(&no_link, &ids).is_ok());
+        let partial = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![PlanStepV1 {
+                id: "s1".into(),
+                description: "x".into(),
+                workflow_node_id: Some("a".into()),
+            }],
+            no_task: false,
+        };
+        assert!(validate_plan_covers_all_workflow_node_ids(&partial, &ids).is_err());
+        let full = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![
+                PlanStepV1 {
+                    id: "s1".into(),
+                    description: "x".into(),
+                    workflow_node_id: Some("a".into()),
+                },
+                PlanStepV1 {
+                    id: "s2".into(),
+                    description: "y".into(),
+                    workflow_node_id: Some("b".into()),
+                },
+            ],
+            no_task: false,
+        };
+        assert!(validate_plan_covers_all_workflow_node_ids(&full, &ids).is_ok());
     }
 
     #[test]

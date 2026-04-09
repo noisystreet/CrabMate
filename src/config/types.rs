@@ -374,6 +374,14 @@ pub struct AgentConfig {
     pub final_plan_requirement: FinalPlanRequirementMode,
     /// 终答缺合格规划时，最多追加多少次「请重写」user 消息（达到后结束本轮并发 SSE `plan_rewrite_exhausted`）
     pub plan_rewrite_max_attempts: usize,
+    /// 为 true 时：若 `agent_reply_plan` 中**任一步**填写 `workflow_node_id`，则须覆盖最近一次工作流工具结果中的**全部** `nodes[].id`。
+    pub final_plan_require_strict_workflow_node_coverage: bool,
+    /// 为 true 时（且 `final_plan_requirement = workflow_reflection` 且本轮已置位终答规划需求）：在静态规则通过后追加一次极短无工具 LLM，对比规划与最近工具摘要；默认 false。
+    pub final_plan_semantic_check_enabled: bool,
+    /// 语义侧向校验摘要中最多收录几条**非只读**工具（0 表示仅只读 + 内置高风险工具名）。
+    pub final_plan_semantic_check_max_non_readonly_tools: usize,
+    /// 侧向校验 `chat/completions` 请求的 `max_tokens`（钳制 32..=1024）。
+    pub final_plan_semantic_check_max_tokens: u32,
     /// 规划器/执行器运行模式（阶段 1：同进程逻辑双 agent）。
     pub planner_executor_mode: PlannerExecutorMode,
     /// 系统提示词：默认自 `system_prompt_file` 读盘；无文件路径时使用合并后的内联（见 `config::load_config` 与文档）

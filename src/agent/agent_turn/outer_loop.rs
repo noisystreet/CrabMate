@@ -80,7 +80,7 @@ pub(crate) async fn run_agent_outer_loop(
             break;
         }
 
-        match per_reflect_after_assistant(per_coord, &finish_reason, &msg, p.messages) {
+        match per_reflect_after_assistant(p, per_coord, &finish_reason, &msg).await {
             ReflectOnAssistantOutcome::StopTurn => {
                 if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);

@@ -184,6 +184,26 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.plan_rewrite_max_attempts = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.final_plan_require_strict_workflow_node_coverage = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_FINAL_PLAN_SEMANTIC_CHECK_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.final_plan_semantic_check_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.final_plan_semantic_check_max_non_readonly_tools = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.final_plan_semantic_check_max_tokens = Some(n);
+    }
     if let Ok(s) = std::env::var("AGENT_PLANNER_EXECUTOR_MODE") {
         let s = s.trim().to_string();
         if !s.is_empty() {

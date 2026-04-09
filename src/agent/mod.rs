@@ -7,6 +7,7 @@ pub mod evolution;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub mod message_pipeline;
 pub mod per_coord;
+mod per_plan_semantic_check;
 pub mod plan_artifact;
 mod plan_ensemble;
 mod plan_optimizer;

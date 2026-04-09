@@ -106,6 +106,18 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
         1,
         20,
     )?;
+    check_u64_inclusive(
+        "final_plan_semantic_check_max_non_readonly_tools",
+        b.final_plan_semantic_check_max_non_readonly_tools,
+        0,
+        32,
+    )?;
+    check_u64_inclusive(
+        "final_plan_semantic_check_max_tokens",
+        b.final_plan_semantic_check_max_tokens,
+        32,
+        1024,
+    )?;
 
     check_u64_inclusive(
         "cursor_rules_max_chars",
