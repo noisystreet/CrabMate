@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, Seek, SeekFrom};
 use std::path::Path;
 
+use crate::path_workspace::WorkspacePathError;
 use crate::text_encoding::{
     DecodedFileNote, ResolvedTextEncoding, SNIFF_MAX_BYTES, TextEncodingName, count_decoded_lines,
     for_each_decoded_line_from_file_with_head, open_file_and_read_head,
@@ -14,6 +15,60 @@ use crate::text_encoding::{
 use super::path::{
     path_for_tool_display, resolve_for_read_open, tool_user_error_from_workspace_path,
 };
+
+fn read_file_workspace_tool_error(e: WorkspacePathError) -> crate::tool_result::ToolError {
+    let code: &'static str = match e.kind() {
+        "empty_path" => "read_file_workspace_empty_path",
+        "absolute_path_not_allowed" => "read_file_workspace_absolute_path_not_allowed",
+        "workspace_set_path_empty" => "read_file_workspace_set_path_empty",
+        "current_dir_unavailable" => "read_file_workspace_current_dir_unavailable",
+        "workspace_path_invalid" => "read_file_workspace_path_invalid",
+        "path_resolve_failed" => "read_file_workspace_path_resolve_failed",
+        "workspace_resolve_failed" => "read_file_workspace_resolve_failed",
+        "not_a_directory" => "read_file_workspace_not_a_directory",
+        "sensitive_path_denied" => "read_file_workspace_sensitive_path_denied",
+        "effective_root_sensitive" => "read_file_workspace_effective_root_sensitive",
+        "outside_allowed_roots" => "read_file_workspace_outside_allowed_roots",
+        "effective_root_outside_allowed" => "read_file_workspace_effective_root_outside_allowed",
+        "outside_workspace_root" => "read_file_workspace_outside_workspace_root",
+        "path_normalize_failed" => "read_file_workspace_path_normalize_failed",
+        "no_existing_ancestor" => "read_file_workspace_no_existing_ancestor",
+        _ => "read_file_workspace_other",
+    };
+    crate::tool_result::ToolError::external_code(code, tool_user_error_from_workspace_path(e))
+}
+
+fn prepend_read_file_output_header(body: &str, meta: &ReadFileOutputMeta<'_>) -> String {
+    let path_disp = path_for_tool_display(meta.working_dir, meta.target, Some(meta.user_path));
+    let header = serde_json::json!({
+        "kind": "crabmate_tool_output",
+        "tool": "read_file",
+        "version": 1,
+        "path": path_disp,
+        "start_line": meta.start_line,
+        "end_line_shown": meta.end_line_shown,
+        "line_count_returned": meta.line_count_returned,
+        "total_lines": meta.total_lines,
+        "truncated_by_max_lines": meta.truncated_by_max_lines,
+        "has_more": meta.has_more,
+        "file_empty": meta.file_empty,
+    });
+    let line = header.to_string();
+    format!("{}\n{}", line, body)
+}
+
+struct ReadFileOutputMeta<'a> {
+    working_dir: &'a Path,
+    target: &'a Path,
+    user_path: &'a str,
+    start_line: usize,
+    end_line_shown: usize,
+    line_count_returned: usize,
+    total_lines: Option<usize>,
+    truncated_by_max_lines: bool,
+    has_more: bool,
+    file_empty: bool,
+}
 
 fn read_file_logical_cache_key(canonical: &std::path::Path, v: &serde_json::Value) -> String {
     let start_line = v.get("start_line").and_then(|n| n.as_u64()).unwrap_or(1);
@@ -151,34 +206,43 @@ const READ_FILE_ABS_MAX_LINES: usize = 8000;
 /// - 若同时指定 `end_line` 与 `max_lines`，实际返回行数不超过 `max_lines`；若区间更宽会截断并提示 `has_more`。
 /// - `count_total_lines=true` 时会再扫描一遍文件统计总行数（大文件较慢）。
 /// - `encoding`：可选 `utf-8`（默认，严格）、`utf-8-sig`、`gb18030`、`gbk`、`gb2312`、`big5`、`utf-16le`、`utf-16be`、`auto`（BOM 优先，否则嗅探）；非法序列返回明确错误。
-pub fn read_file(
+#[allow(clippy::result_large_err)]
+pub fn read_file_try(
     args_json: &str,
     working_dir: &Path,
     ctx: &super::super::ToolContext<'_>,
-) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+) -> Result<String, crate::tool_result::ToolError> {
+    let v = crate::tools::parse_args_json(args_json)
+        .map_err(crate::tool_result::ToolError::invalid_args)?;
     let path = match v.get("path").and_then(|p| p.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-        _ => return "缺少 path 参数".to_string(),
+        _ => {
+            return Err(crate::tool_result::ToolError::invalid_args(
+                "缺少 path 参数".to_string(),
+            ));
+        }
     };
-    let enc_name = match parse_text_encoding_name(v.get("encoding").and_then(|x| x.as_str())) {
-        Ok(n) => n,
-        Err(e) => return e,
-    };
+    let enc_name = parse_text_encoding_name(v.get("encoding").and_then(|x| x.as_str()))
+        .map_err(crate::tool_result::ToolError::invalid_args)?;
     let start_line = match v.get("start_line") {
         Some(n) => match n.as_u64() {
             Some(v) if v >= 1 => v as usize,
-            _ => return "错误：start_line 必须是大于等于 1 的整数".to_string(),
+            _ => {
+                return Err(crate::tool_result::ToolError::invalid_args(
+                    "错误：start_line 必须是大于等于 1 的整数".to_string(),
+                ));
+            }
         },
         None => 1usize,
     };
     let end_line_opt = match v.get("end_line") {
         Some(n) => match n.as_u64() {
             Some(v) if v >= 1 => Some(v as usize),
-            _ => return "错误：end_line 必须是大于等于 1 的整数".to_string(),
+            _ => {
+                return Err(crate::tool_result::ToolError::invalid_args(
+                    "错误：end_line 必须是大于等于 1 的整数".to_string(),
+                ));
+            }
         },
         None => None,
     };
@@ -197,15 +261,19 @@ pub fn read_file(
     if let Some(e) = end_line_opt
         && e < start_line
     {
-        return "错误：end_line 不能小于 start_line".to_string();
+        return Err(crate::tool_result::ToolError::external_code(
+            "read_file_invalid_range",
+            "错误：end_line 不能小于 start_line".to_string(),
+        ));
     }
 
-    let opened = match resolve_for_read_open(working_dir, &path) {
-        Ok(o) => o,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    let opened =
+        resolve_for_read_open(working_dir, &path).map_err(read_file_workspace_tool_error)?;
     if !opened.metadata.is_file() {
-        return "错误：路径不是文件或不存在，无法读取".to_string();
+        return Err(crate::tool_result::ToolError::external_code(
+            "read_file_not_file",
+            "错误：路径不是文件或不存在，无法读取".to_string(),
+        ));
     }
 
     let target = opened.resolved_path;
@@ -215,30 +283,49 @@ pub fn read_file(
         let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
         let len = meta.len();
         if let Some(hit) = cache.try_get(&cache_key, modified, len) {
-            return hit;
+            return Ok(hit);
         }
     }
     if meta.len() == 0 {
-        return format!(
+        let body = format!(
             "文件为空: {}",
             path_for_tool_display(working_dir, &target, Some(&path))
         );
+        let out = prepend_read_file_output_header(
+            &body,
+            &ReadFileOutputMeta {
+                working_dir,
+                target: &target,
+                user_path: path.as_str(),
+                start_line,
+                end_line_shown: 0,
+                line_count_returned: 0,
+                total_lines: Some(0),
+                truncated_by_max_lines: false,
+                has_more: false,
+                file_empty: true,
+            },
+        );
+        if let Some(cache) = ctx.read_file_turn_cache {
+            let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+            cache.insert(cache_key, modified, meta.len(), out.clone());
+        }
+        return Ok(out);
     }
 
-    let (file, head) = match sniff_head_bytes_from(opened.file, enc_name) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    let (resolved, decode_note) = match resolve_text_encoding(&head, enc_name) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+    let (file, head) = sniff_head_bytes_from(opened.file, enc_name)
+        .map_err(|e| crate::tool_result::ToolError::external_code("read_file_io", e))?;
+    let (resolved, decode_note) = resolve_text_encoding(&head, enc_name)
+        .map_err(|e| crate::tool_result::ToolError::external_code("read_file_encoding", e))?;
 
     let total_lines = if count_total {
-        match count_lines_for_read(&target, enc_name) {
-            Ok(n) => Some(n),
-            Err(e) => return e,
-        }
+        Some(count_lines_for_read(&target, enc_name).map_err(|e| {
+            if e.contains("UTF-8") || e.contains("非法") {
+                crate::tool_result::ToolError::external_code("read_file_utf8_decode", e)
+            } else {
+                crate::tool_result::ToolError::external_code("read_file_io", e)
+            }
+        })?)
     } else {
         None
     };
@@ -294,16 +381,94 @@ pub fn read_file(
         ),
     };
 
-    match body {
-        Ok(out) => {
-            if let Some(cache) = ctx.read_file_turn_cache {
-                let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-                cache.insert(cache_key, modified, meta.len(), out.clone());
+    let raw_body = match body {
+        Ok(out) => out,
+        Err(e) => {
+            if e.contains("UTF-8") || e.contains("非法字节") || e.contains("解码") {
+                return Err(crate::tool_result::ToolError::external_code(
+                    "read_file_utf8_decode",
+                    e,
+                ));
             }
-            out
+            if e.starts_with("错误：start_line=") || e.starts_with("错误：未读取到任何行")
+            {
+                return Err(crate::tool_result::ToolError::external_code(
+                    "read_file_invalid_range",
+                    e,
+                ));
+            }
+            if e.contains("内部错误") {
+                return Err(crate::tool_result::ToolError::internal_code(
+                    "read_file_internal",
+                    e,
+                ));
+            }
+            return Err(crate::tool_result::ToolError::external_code(
+                "read_file_io",
+                e,
+            ));
         }
-        Err(e) => e,
+    };
+
+    let content_line_numbers: Vec<usize> = raw_body
+        .lines()
+        .filter_map(|line| {
+            let t = line.trim();
+            let (left, right) = t.split_once('|')?;
+            if right.is_empty() {
+                return None;
+            }
+            let n: usize = left.trim().parse().ok()?;
+            Some(n)
+        })
+        .collect();
+    let end_line_shown = content_line_numbers.last().copied().unwrap_or(start_line);
+    let line_count_returned = content_line_numbers.len();
+
+    let has_more = raw_body.contains("仍有后续内容:");
+    let out = prepend_read_file_output_header(
+        &raw_body,
+        &ReadFileOutputMeta {
+            working_dir,
+            target: &target,
+            user_path: path.as_str(),
+            start_line,
+            end_line_shown,
+            line_count_returned,
+            total_lines,
+            truncated_by_max_lines: truncated_by_max,
+            has_more,
+            file_empty: false,
+        },
+    );
+
+    if let Some(cache) = ctx.read_file_turn_cache {
+        let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        cache.insert(cache_key, modified, meta.len(), out.clone());
     }
+    Ok(out)
+}
+
+pub fn read_file(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &super::super::ToolContext<'_>,
+) -> String {
+    match read_file_try(args_json, working_dir, ctx) {
+        Ok(s) => s,
+        Err(e) => e.message,
+    }
+}
+
+/// 单测断言用：剥离首行 `crabmate_tool_output` JSON（成功路径前缀）。
+#[cfg(test)]
+pub(crate) fn strip_read_file_output_header_for_tests(s: &str) -> &str {
+    if s.starts_with("{\"kind\":\"crabmate_tool_output\",\"tool\":\"read_file\"")
+        && let Some(idx) = s.find('\n')
+    {
+        return &s[idx + 1..];
+    }
+    s
 }
 
 fn read_file_utf8_lines(

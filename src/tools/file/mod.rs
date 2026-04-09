@@ -21,6 +21,9 @@ pub use mutate::{append_file, create_dir, delete_dir, delete_file, search_replac
 pub(crate) use path::{canonical_workspace_root, resolve_for_read};
 pub use perm::chmod_file;
 pub use read_tool::read_file;
+pub(crate) use read_tool::read_file_try;
+#[cfg(test)]
+pub(crate) use read_tool::strip_read_file_output_header_for_tests;
 pub use symlink::symlink_info;
 pub use tree_glob::{glob_files, list_tree};
 pub use write_ops::{copy_file, create_file, modify_file, move_file};

@@ -33,6 +33,7 @@ fn test_read_file_with_line_range() {
         &dir,
         &ctx,
     );
+    let out = strip_read_file_output_header_for_tests(&out);
     assert!(out.contains("2|b"), "应包含第 2 行: {}", out);
     assert!(out.contains("3|c"), "应包含第 3 行: {}", out);
     assert!(!out.contains("1|a"), "不应包含第 1 行: {}", out);
@@ -51,6 +52,7 @@ fn test_read_file_respects_max_lines_without_end_line() {
     let cfg = crate::config::load_config(None).expect("embedded default config");
     let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
     let out = read_file(r#"{"path":"big.txt","max_lines":100}"#, &dir, &ctx);
+    let out = strip_read_file_output_header_for_tests(&out);
     assert!(out.contains("仍有后续内容"), "应提示分段: {}", out);
     assert!(out.contains("下一段可将 start_line 设为 101"), "{}", out);
     assert!(out.contains("100|line100"), "{}", out);
@@ -145,6 +147,7 @@ fn test_read_file_reject_invalid_range() {
     let cfg = crate::config::load_config(None).expect("embedded default config");
     let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
     let out = read_file(r#"{"path":"a.txt","start_line":3}"#, &dir, &ctx);
+    let out = strip_read_file_output_header_for_tests(&out);
     assert!(out.contains("超出文件行数"), "应报越界错误: {}", out);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -210,6 +213,7 @@ fn test_read_file_gb18030_and_utf8_strict_error() {
         &dir,
         &ctx,
     );
+    let out = strip_read_file_output_header_for_tests(&out);
     assert!(out.contains("第一行"), "应解码中文: {}", out);
     assert!(out.contains("文本编码:"), "应标注编码: {}", out);
     let bad = read_file(
