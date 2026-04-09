@@ -10,7 +10,7 @@
 
 - **CLI**：输入 **`/config reload`**（或 Tab 补全 **`/config reload`**）。从与启动时相同的配置文件路径（**`--config`** 或默认探测 **`config.toml`** / **`.agent_demo.toml`**）再读 TOML，并与**当前进程环境变量**合并后，将可热更字段写入内存中的 [`AgentConfig`](DEVELOPMENT.md)；随后清空 MCP 进程内 stdio 缓存，下一轮对话使用新 MCP 指纹。
 - **Web**：**`POST /config/reload`**（JSON body 可为 `{}`；鉴权与 **`/chat`** 等受保护 API 一致——若启动时启用了 Bearer 中间件则须带 token）。成功时返回 **`{ "ok": true, "message": "…" }`**。
-- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_bigmodel_thinking`**、**`llm_kimi_thinking_disabled`**、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`[tool_registry]`**（HTTP 外圈超时、并行墙钟覆盖、并行拒绝/内联/写副作用名单）、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。**`system`→`user` 折叠**随 **`api_base` / `model`** 热更后由下一轮请求按 MiniMax 识别自动生效（非 `AgentConfig` 字段）。
+- **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_bigmodel_thinking`**、**`llm_kimi_thinking_disabled`**、**`thinking_avoid_echo_system_prompt`**、**`thinking_avoid_echo_appendix` / `thinking_avoid_echo_appendix_file`**（附录正文解析结果）、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`[tool_registry]`**（HTTP 外圈超时、并行墙钟覆盖、并行拒绝/内联/写副作用名单）、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。**`system`→`user` 折叠**随 **`api_base` / `model`** 热更后由下一轮请求按 MiniMax 识别自动生效（非 `AgentConfig` 字段）。
 - **刻意不热更**：**`conversation_store_sqlite_path`**（会话库连接在启动时打开，改路径须重启 **`serve`**）。**`reqwest::Client`** 不重建，**`api_timeout_secs` 等**对**新连接**的生效可能受连接池保留的空闲连接影响。
 - **`API_KEY`**：进程内 **`serve` / `repl` / `chat`** 启动时从**环境变量**读入并保存在 **`AppState.api_key`**（可为空）。**热重载不**重读环境里的 **`API_KEY`**。未 export 时：**Web** 须在侧栏「设置」随请求发送 **`client_llm.api_key`**；**REPL** 可用 **`/api-key set <密钥>`** 写入**本进程内存**（不写盘，**`/config reload` 不会清除**）。**`crabmate models` / `probe`** 在 **`bearer`** 下仍要求启动前环境变量 **`API_KEY`** 非空。
 - **Bearer 中间件层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权层；热重载**不会**拆除或新增该层——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的 token 字符串，用于已挂层时的校验。
@@ -71,7 +71,7 @@
 | `AGENT_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`。 |
 | `AGENT_STAGED_PLAN_EXECUTION` | 是否启用分阶段规划。 |
 | `AGENT_STAGED_PLAN_PHASE_INSTRUCTION` | 规划相说明/指令。 |
-| `AGENT_STAGED_PLAN_ALLOW_NO_TASK` | 是否允许无任务跳过执行。 |
+| `AGENT_STAGED_PLAN_ALLOW_NO_TASK` | 兼容旧变量，**已无效果**（`no_task` 约定见默认规划轮内嵌 schema）。 |
 | `AGENT_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner`。 |
 | `AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS` | `patch_planner` 补丁轮上限。 |
 | `AGENT_STAGED_PLAN_ENSEMBLE_COUNT` | 逻辑多规划员份数（1–3，默认 1）。 |
@@ -208,14 +208,17 @@ Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共
 | `AGENT_TOOL_STATS_MAX_CHARS` | 附录 Markdown 最大字符数（64–32768，超出截断）。 |
 | `AGENT_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO` | 成功率低于该阈值（0.0–1.0）且满足 `min_samples` 时提示；有失败时也会提示。 |
 | `AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | DeepSeek DSML 工具调用物化。 |
-
-**`[agent]` 对应 TOML 键**（可写入 `config.toml` / `.agent_demo.toml` 等）：`agent_tool_stats_enabled`、`agent_tool_stats_window_events`、`agent_tool_stats_min_samples`、`agent_tool_stats_max_chars`、`agent_tool_stats_warn_below_success_ratio`。统计为**单进程内存**、**全局**（不按 `conversation_id` 分桶）；**不**记录工具参数与完整输出。Web 侧**仅**在新建会话（无已存 `conversation_id` 种子）时拼入；CLI **`chat` / `repl`** 与 **`workspace_session::initial_workspace_messages`** 在「新起一轮首条 system」路径拼入，从磁盘恢复的会话仍以基底 system 对齐且不附加该段。
+| `AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT` | 是否在首条 `system` 末尾附思考纪律附录；默认等价 `true`。 |
+| `AGENT_THINKING_AVOID_ECHO_APPENDIX` | 附录内联正文（非空则清除文件路径；若再设 `…_FILE` 则**文件优先**）。 |
+| `AGENT_THINKING_AVOID_ECHO_APPENDIX_FILE` | 附录 Markdown 文件路径（与 `system_prompt_file` 相同解析规则）。 |
 | `AGENT_CONTEXT_CHAR_BUDGET` | 上下文字符预算。 |
 | `AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | 摘要后至少保留条数。 |
 | `AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS` | 触发摘要的字符阈值。 |
 | `AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES` | 摘要保留尾部消息数。 |
 | `AGENT_CONTEXT_SUMMARY_MAX_TOKENS` | 摘要请求 max_tokens。 |
 | `AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | 摘要转写最大字符。 |
+
+**`[agent]` 对应 TOML 键（工具统计）**（可写入 `config.toml` / `.agent_demo.toml` 等）：`agent_tool_stats_enabled`、`agent_tool_stats_window_events`、`agent_tool_stats_min_samples`、`agent_tool_stats_max_chars`、`agent_tool_stats_warn_below_success_ratio`。统计为**单进程内存**、**全局**（不按 `conversation_id` 分桶）；**不**记录工具参数与完整输出。Web 侧**仅**在新建会话（无已存 `conversation_id` 种子）时拼入；CLI **`chat` / `repl`** 与 **`workspace_session::initial_workspace_messages`** 在「新起一轮首条 system」路径拼入，从磁盘恢复的会话仍以基底 system 对齐且不附加该段。
 
 ### CLI
 
@@ -274,6 +277,10 @@ llm_http_auth_mode = "bearer"
 ```
 
 环境变量 **`API_KEY`** 填平台发放的密钥（与 DeepSeek 等一致，走 **`Authorization: Bearer`**）。**`llm_reasoning_split`** 为 **`true`**（含未写配置时 MiniMax 的默认值）时，请求体会包含 **`reasoning_split: true`**（与文档中 `extra_body={"reasoning_split": True}` 一致）；供应商若在流式 **`delta`** 中返回 **`reasoning_details`**（常见为带 **`text`** 的 JSON 数组），CrabMate 会将其**增量合并**进内部的 **`reasoning_content`** 流与终态消息，终端/Web 仍按现有「思考 / 正文」路径展示。非 MiniMax 网关未写该键时默认为 **`false`**；MiniMax 下不需要分离思维链时请显式 **`llm_reasoning_split = false`** 或 **`AGENT_LLM_REASONING_SPLIT=0`**。
+
+### 思维链中减少复述系统提示
+
+默认 **`thinking_avoid_echo_system_prompt = true`**（**`[agent]`** 键，嵌入默认见 **`config/default_config.toml`**，与 **`system_prompt_file`** 同节）：附录正文默认来自 **`thinking_avoid_echo_appendix_file`**（仓库内 **`config/prompts/thinking_avoid_echo_appendix.md`**，可**直接改该 Markdown** 无需重编）；亦可 **`thinking_avoid_echo_appendix`** 内联多行字符串。**优先级**：配置了非空 **`thinking_avoid_echo_appendix_file`** 时**读盘优先**于内联；均未配置时用编译嵌入的默认正文。经 **`tool_stats::augment_system_prompt`** 拼到新会话首条 **`system`** 末尾。仅为**软性约束**。关闭开关：**`thinking_avoid_echo_system_prompt = false`** 或 **`AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0`**。仍复述时可再收紧自有 **`system_prompt`** 或换模型。
 
 ## 智谱 GLM（OpenAI 兼容）
 

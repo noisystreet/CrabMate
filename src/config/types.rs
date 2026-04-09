@@ -415,6 +415,10 @@ pub struct AgentConfig {
     /// 为 true（默认）时：若 API 未给出**可用的**原生 `tool_calls`，从助手 `content`/`reasoning_content` 中的 DeepSeek DSML 解析并写入 `tool_calls`。
     /// 为 false 时：**不**做 DSML 物化，仅信任 API `tool_calls`（与「仅一段 JSON 约定工具调用」等结构化网关更一致）。
     pub materialize_deepseek_dsml_tool_calls: bool,
+    /// 为 true（默认）时：在经 `augment_system_prompt` 处理的首条 `system` 末尾附加「思考纪律」正文（见 [`Self::thinking_avoid_echo_appendix`]）。
+    pub thinking_avoid_echo_system_prompt: bool,
+    /// `finalize` 解析后的附录全文：来自内联、`thinking_avoid_echo_appendix_file` 读盘，或编译嵌入默认（见 `config/prompts/thinking_avoid_echo_appendix.md`）。
+    pub thinking_avoid_echo_appendix: String,
     /// 非 system 消息总字符预算（近似）；`0` 表示不启用按字符删旧消息
     pub context_char_budget: usize,
     /// 启用 `context_char_budget` 时，system 之后至少保留的消息条数
@@ -458,7 +462,8 @@ pub struct AgentConfig {
     pub staged_plan_execution: bool,
     /// 规划轮追加的 **system** 指令；空字符串则使用内置默认文案。
     pub staged_plan_phase_instruction: String,
-    /// 为 true 时：内置规划说明包含「无具体任务则 `no_task` + 空 `steps`」；为 false 时省略该段（模型仍可能返回 `no_task`，服务端仍会尊重）。
+    /// **兼容保留**：旧版曾用该键切换规划轮是否追加「无任务则 `no_task`」**硬提示**；现已移除硬提示，`no_task` 语义仅以 [`crate::agent::plan_artifact::PLAN_V1_SCHEMA_RULES`]（拼入默认规划 **system**）为准。配置项仍解析/热重载，**无运行时效果**。
+    #[allow(dead_code)]
     pub staged_plan_allow_no_task: bool,
     /// 分阶段单步失败或步内工具报错时的处理：`fail_fast`（默认）或 `patch_planner`（短规划补丁）。
     pub staged_plan_feedback_mode: StagedPlanFeedbackMode,

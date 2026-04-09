@@ -31,6 +31,11 @@
 # 工作流 Chrome Trace：export CRABMATE_WORKFLOW_CHROME_TRACE_DIR=/tmp/crabmate-traces
 # 或 AGENT_WORKFLOW_CHROME_TRACE_DIR；与上项同时设则工作流事件并入 turn-*.json
 # materialize_deepseek_dsml_tool_calls = true
+# 首条 system 末附思考纪律附录（默认 true）；正文默认文件 config/prompts/thinking_avoid_echo_appendix.md（与 system_prompt_file 同规则解析）
+# thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"
+# thinking_avoid_echo_appendix = """多行内联…"""   # 有非空文件路径时读盘优先于内联
+# thinking_avoid_echo_system_prompt = false   # AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0
+# AGENT_THINKING_AVOID_ECHO_APPENDIX / AGENT_THINKING_AVOID_ECHO_APPENDIX_FILE
 # context_char_budget = 200000
 # parallel_readonly_tools_max = 4
 # read_file_turn_cache_max_entries = 64   # 0 关闭单轮 read_file 缓存；AGENT_READ_FILE_TURN_CACHE_MAX_ENTRIES
@@ -112,7 +117,7 @@
 # final_plan_semantic_check_max_tokens = 256  # 侧向请求 max_tokens；AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS
 # planner_executor_mode = "single_agent"  # single_agent | logical_dual_agent（阶段1：同进程逻辑双agent）
 # staged_plan_execution = false   # true：先无工具产出 agent_reply_plan，再按步执行
-# staged_plan_allow_no_task = true   # 内置规划说明是否包含「无具体任务则 no_task + 空 steps」；AGENT_STAGED_PLAN_ALLOW_NO_TASK
+# staged_plan_allow_no_task = true   # 兼容旧键，已无效果；no_task 约定见内置 schema（plan_artifact::PLAN_V1_SCHEMA_RULES）
 # staged_plan_phase_instruction = """……"""  # 可选；空则用内置规划轮说明
 # staged_plan_feedback_mode = "fail_fast"   # fail_fast | patch_planner；AGENT_STAGED_PLAN_FEEDBACK_MODE
 # staged_plan_patch_max_attempts = 2        # patch_planner 下每步最多补丁规划轮次数；AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS

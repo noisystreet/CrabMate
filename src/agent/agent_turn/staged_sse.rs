@@ -12,21 +12,15 @@ use crate::sse::{
 
 pub(crate) static STAGED_PLAN_SEQ: AtomicU64 = AtomicU64::new(1);
 
-/// `allow_no_task`：为 true 时在说明中要求模型在「无具体任务」时输出 `no_task: true` + 空 `steps`，以跳过后续分步注入。
-pub(crate) fn staged_plan_phase_instruction_default(allow_no_task: bool) -> String {
-    let no_task_hint = if allow_no_task {
-        "\n若判断用户**未提出需要执行的具体任务**（如寒暄、致谢、泛泛聊天、仅确认理解等），JSON 中须设 \"no_task\": true，且 \"steps\" 为 []；系统将**不再**分步规划，直接按普通对话继续。"
-    } else {
-        ""
-    };
+/// 内置规划轮 **system** 文案：`no_task` / 空 `steps` 等约定**仅**通过内嵌的 [`crate::agent::plan_artifact::PLAN_V1_SCHEMA_RULES`] 描述，不再追加寒暄类硬提示段落。
+pub(crate) fn staged_plan_phase_instruction_default() -> String {
     format!(
         "### 分阶段规划 · 规划轮\n\
          请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。\n\
          在回复正文中必须用 Markdown 代码围栏（语言标记为 json）给出一个合法 JSON 对象，且满足：\n\
-         {}{}\n\
+         {}\n\
          可辅以简短自然语言说明；有具体任务时后续系统将按 steps 顺序逐步下发执行指令。",
         crate::agent::plan_artifact::PLAN_V1_SCHEMA_RULES,
-        no_task_hint
     )
 }
 

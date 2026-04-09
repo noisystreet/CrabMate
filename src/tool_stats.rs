@@ -50,13 +50,24 @@ pub(crate) fn record_tool_outcome(
 
 /// 在已解析好的首条 `system` 正文后附加统计提示（未启用或无内容则返回 `base` 克隆）。
 pub fn augment_system_prompt(base: &str, cfg: &AgentConfig) -> String {
+    let mut out = base.to_string();
+    if cfg.thinking_avoid_echo_system_prompt {
+        let app = cfg.thinking_avoid_echo_appendix.trim();
+        if !app.is_empty() {
+            if !out.is_empty() && !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push('\n');
+            out.push_str(app);
+        }
+    }
     let Some(app) = hints_markdown(cfg) else {
-        return base.to_string();
+        return out;
     };
     if app.is_empty() {
-        return base.to_string();
+        return out;
     }
-    format!("{base}\n\n{app}")
+    format!("{out}\n\n{app}")
 }
 
 fn hints_markdown(cfg: &AgentConfig) -> Option<String> {
@@ -157,11 +168,23 @@ mod tests {
         reset_ring();
         let mut c = test_cfg();
         c.agent_tool_stats_enabled = false;
+        c.thinking_avoid_echo_system_prompt = false;
         for _ in 0..5 {
             record_tool_outcome(&c, "read_file", fake_read_fail(), None, None);
         }
         let base = "BASE";
         assert_eq!(augment_system_prompt(base, &c), base);
+    }
+
+    #[test]
+    fn thinking_appendix_when_tool_stats_off() {
+        reset_ring();
+        let mut c = test_cfg();
+        c.agent_tool_stats_enabled = false;
+        c.thinking_avoid_echo_system_prompt = true;
+        let out = augment_system_prompt("P", &c);
+        assert!(out.starts_with("P"));
+        assert!(out.contains("思考过程纪律"));
     }
 
     #[test]

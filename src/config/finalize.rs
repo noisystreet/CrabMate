@@ -61,6 +61,56 @@ fn read_system_prompt_file_resolved(
     ))
 }
 
+/// 内置默认附录（与仓库 **`config/prompts/thinking_avoid_echo_appendix.md`** 一致；未配置路径或读盘失败时采用）。
+const EMBEDDED_THINKING_AVOID_ECHO_APPENDIX: &str =
+    include_str!("../../config/prompts/thinking_avoid_echo_appendix.md");
+
+fn resolve_thinking_avoid_echo_appendix(
+    enabled: bool,
+    inline: Option<&str>,
+    file: Option<&str>,
+    config_bases: &[PathBuf],
+    run_command_working_dir: &Path,
+) -> Result<String, String> {
+    const MAX_CHARS: usize = 32_768;
+    if !enabled {
+        return Ok(String::new());
+    }
+    let body = if let Some(path) = file.map(str::trim).filter(|s| !s.is_empty()) {
+        match read_system_prompt_file_resolved(path, config_bases, run_command_working_dir) {
+            Ok(raw) => {
+                let t = raw.trim().to_string();
+                if t.is_empty() {
+                    log::warn!(
+                        target: "crabmate",
+                        "thinking_avoid_echo_appendix_file 读盘为空，使用内置附录"
+                    );
+                    EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim().to_string()
+                } else {
+                    t
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    target: "crabmate",
+                    "{e}，使用内置 thinking_avoid_echo 附录"
+                );
+                EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim().to_string()
+            }
+        }
+    } else if let Some(s) = inline.map(str::trim).filter(|s| !s.is_empty()) {
+        s.to_string()
+    } else {
+        EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim().to_string()
+    };
+    if body.chars().count() > MAX_CHARS {
+        return Err(format!(
+            "配置错误：thinking_avoid_echo 附录正文超过 {MAX_CHARS} 字符"
+        ));
+    }
+    Ok(body)
+}
+
 /// `context_char_budget > 0` 且 `context_min_messages_after_system >= max_message_history` 时，按字符删旧消息往往难以生效（条数裁剪已收紧窗口）。
 pub(crate) fn context_budget_vs_history_suspicious(
     max_message_history: usize,
@@ -308,6 +358,14 @@ pub(super) fn finalize(
         .clamp(0.0, 1.0);
     let materialize_deepseek_dsml_tool_calls =
         b.materialize_deepseek_dsml_tool_calls.unwrap_or(true);
+    let thinking_avoid_echo_system_prompt = b.thinking_avoid_echo_system_prompt.unwrap_or(true);
+    let thinking_avoid_echo_appendix = resolve_thinking_avoid_echo_appendix(
+        thinking_avoid_echo_system_prompt,
+        b.thinking_avoid_echo_appendix.as_deref(),
+        b.thinking_avoid_echo_appendix_file.as_deref(),
+        &system_prompt_search_bases,
+        run_command_working_dir.as_path(),
+    )?;
     let context_char_budget = b.context_char_budget.unwrap_or(0).min(50_000_000) as usize;
     let context_min_messages_after_system = b
         .context_min_messages_after_system
@@ -638,6 +696,8 @@ pub(super) fn finalize(
         agent_tool_stats_max_chars,
         agent_tool_stats_warn_below_success_ratio,
         materialize_deepseek_dsml_tool_calls,
+        thinking_avoid_echo_system_prompt,
+        thinking_avoid_echo_appendix,
         context_char_budget,
         context_min_messages_after_system,
         context_summary_trigger_chars,

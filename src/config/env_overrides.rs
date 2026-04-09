@@ -290,6 +290,25 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.materialize_deepseek_dsml_tool_calls = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.thinking_avoid_echo_system_prompt = Some(val);
+    }
+    if let Ok(s) = std::env::var("AGENT_THINKING_AVOID_ECHO_APPENDIX") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.thinking_avoid_echo_appendix = Some(s);
+            b.thinking_avoid_echo_appendix_file = None;
+        }
+    }
+    // 与 AGENT_SYSTEM_PROMPT_FILE 一致：后处理覆盖，故同时设置时文件优先于内联。
+    if let Ok(p) = std::env::var("AGENT_THINKING_AVOID_ECHO_APPENDIX_FILE") {
+        let p = p.trim().to_string();
+        if !p.is_empty() {
+            b.thinking_avoid_echo_appendix_file = Some(p);
+        }
+    }
     if let Ok(v) = std::env::var("AGENT_CONTEXT_CHAR_BUDGET")
         && let Ok(n) = v.trim().parse::<u64>()
     {

@@ -8,7 +8,7 @@ Default settings are merged from seven embedded TOML fragments under **`config/`
 
 - **CLI**: Type **`/config reload`** (Tab completes). Re-reads the same config path as startup (**`--config`** or default **`config.toml`** / **`.agent_demo.toml`**), merges with **current process env**, writes hot fields into in-memory [`AgentConfig`](DEVELOPMENT.md); clears MCP stdio cache; next turn uses the new MCP fingerprint.
 - **Web**: **`POST /config/reload`** (JSON body may be `{}`; same auth as **`/chat`** and other protected APIs—Bearer if the layer is enabled). Success: **`{ "ok": true, "message": "…" }`**.
-- **Typically hot-reloaded**: **`api_base`**, **`model`**, **`llm_http_auth_mode`**, **`llm_reasoning_split`**, **`llm_bigmodel_thinking`**, **`llm_kimi_thinking_disabled`**, **`temperature` / `llm_seed`**, timeouts/retries, **`run_command`** allowlist, **`http_fetch_allowed_prefixes`**, **`workspace_allowed_roots`**, **`web_api_bearer_token`** (handler-side check only; see below), **`mcp_*`**, **`[tool_registry]`** fields (outer HTTP walls, parallel wall overrides, deny/inline/write-effect lists), **`system_prompt_file` re-read**, context/planning keys (implementation: **`apply_hot_reload_config_subset`**). **`system`→`user` folding** for MiniMax follows **`model` / `api_base`** on the next request after reload (not an `AgentConfig` field).
+- **Typically hot-reloaded**: **`api_base`**, **`model`**, **`llm_http_auth_mode`**, **`llm_reasoning_split`**, **`llm_bigmodel_thinking`**, **`llm_kimi_thinking_disabled`**, **`thinking_avoid_echo_system_prompt`**, **`thinking_avoid_echo_appendix` / `thinking_avoid_echo_appendix_file`** (resolved appendix text), **`temperature` / `llm_seed`**, timeouts/retries, **`run_command`** allowlist, **`http_fetch_allowed_prefixes`**, **`workspace_allowed_roots`**, **`web_api_bearer_token`** (handler-side check only; see below), **`mcp_*`**, **`[tool_registry]`** fields (outer HTTP walls, parallel wall overrides, deny/inline/write-effect lists), **`system_prompt_file` re-read**, context/planning keys (implementation: **`apply_hot_reload_config_subset`**). **`system`→`user` folding** for MiniMax follows **`model` / `api_base`** on the next request after reload (not an `AgentConfig` field).
 - **Not hot-reloaded**: **`conversation_store_sqlite_path`** (SQLite opened at startup—change path requires **`serve` restart**). **`reqwest::Client`** is not rebuilt; **`api_timeout_secs`** may lag on pooled idle connections.
 - **`API_KEY`**: Still **environment only**; hot reload does not read secret files. After changing **`API_KEY`**, re-**export** and **`/config reload`** (or restart) for **`llm_http_auth_mode=bearer`** consistency.
 - **Bearer Axum layer**: If **`serve`** started with non-empty **`web_api_bearer_token`**, the auth layer is mounted for the process lifetime; hot reload **does not** add/remove it—switching between “no token” and “token” requires **`serve` restart**. Hot reload still updates the token string used inside handlers when the layer exists.
@@ -69,7 +69,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`. |
 | `AGENT_STAGED_PLAN_EXECUTION` | Enable staged planning. |
 | `AGENT_STAGED_PLAN_PHASE_INSTRUCTION` | Planner phase instruction text. |
-| `AGENT_STAGED_PLAN_ALLOW_NO_TASK` | Allow no-task skip. |
+| `AGENT_STAGED_PLAN_ALLOW_NO_TASK` | Legacy; **no effect** (`no_task` rules come from embedded schema in the default planner system). |
 | `AGENT_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner`. |
 | `AGENT_STAGED_PLAN_PATCH_MAX_ATTEMPTS` | Max patch-planner rounds. |
 | `AGENT_STAGED_PLAN_ENSEMBLE_COUNT` | Logical multi-planner count (1–3, default 1). |
@@ -191,14 +191,17 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | `AGENT_TOOL_STATS_MAX_CHARS` | Max Unicode scalars for the appendix (64–32768; truncated if longer). |
 | `AGENT_TOOL_STATS_WARN_BELOW_SUCCESS_RATIO` | Hint if success rate is below this (0.0–1.0) and `min_samples` is met; failures always qualify. |
 | `AGENT_MATERIALIZE_DEEPSEEK_DSML_TOOL_CALLS` | Materialize DeepSeek DSML tool calls. |
-
-**`[agent]` TOML keys**: `agent_tool_stats_enabled`, `agent_tool_stats_window_events`, `agent_tool_stats_min_samples`, `agent_tool_stats_max_chars`, `agent_tool_stats_warn_below_success_ratio`. Stats are **per-process**, **global** (not bucketed by `conversation_id`); **no** tool args or full outputs stored. Web attaches the appendix only for **new** chats (no stored seed). CLI `chat` / `repl` and `workspace_session::initial_workspace_messages` attach on fresh first-`system` paths; sessions loaded from disk keep base system alignment **without** this appendix.
+| `AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT` | Append the thinking-discipline appendix to the first `system` message; defaults to on. |
+| `AGENT_THINKING_AVOID_ECHO_APPENDIX` | Inline appendix body (non-empty clears the file path; if **`…_FILE`** is set afterward, **file wins**). |
+| `AGENT_THINKING_AVOID_ECHO_APPENDIX_FILE` | Path to appendix Markdown (same resolution as **`system_prompt_file`**). |
 | `AGENT_CONTEXT_CHAR_BUDGET` | Character budget trim. |
 | `AGENT_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | Min messages after system post-summary. |
 | `AGENT_CONTEXT_SUMMARY_TRIGGER_CHARS` | Trigger summary when over char threshold. |
 | `AGENT_CONTEXT_SUMMARY_TAIL_MESSAGES` | Tail messages kept after summary. |
 | `AGENT_CONTEXT_SUMMARY_MAX_TOKENS` | Summary request max_tokens. |
 | `AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | Summary transcript max chars. |
+
+**`[agent]` TOML keys (tool stats)**: `agent_tool_stats_enabled`, `agent_tool_stats_window_events`, `agent_tool_stats_min_samples`, `agent_tool_stats_max_chars`, `agent_tool_stats_warn_below_success_ratio`. Stats are **per-process**, **global** (not bucketed by `conversation_id`); **no** tool args or full outputs stored. Web attaches the stats appendix only for **new** chats (no stored seed). CLI `chat` / `repl` and `workspace_session::initial_workspace_messages` attach on fresh first-`system` paths; sessions loaded from disk keep base system alignment **without** the stats appendix.
 
 ### CLI
 
@@ -254,6 +257,10 @@ llm_http_auth_mode = "bearer"
 ```
 
 **`API_KEY`** as Bearer. When **`llm_reasoning_split`** is true (including MiniMax default when omitted), the request includes **`reasoning_split: true`**; streaming **`delta.reasoning_details`** may fold into **`reasoning_content`**.
+
+### Less system-prompt echo in thinking/reasoning
+
+Default **`thinking_avoid_echo_system_prompt = true`** (**`[agent]`**, embedded default in **`config/default_config.toml`**, same section as **`system_prompt_file`**). Appendix text defaults from **`thinking_avoid_echo_appendix_file`** (shipped **`config/prompts/thinking_avoid_echo_appendix.md`** — edit on disk without rebuilding); optional **`thinking_avoid_echo_appendix`** inline string. **Precedence**: non-empty **`thinking_avoid_echo_appendix_file`** is read from disk **before** inline; if neither is set, a compile-time embedded default is used. **`tool_stats::augment_system_prompt`** appends the resolved body to the **first `system`** of **new** Web/CLI chats. **Soft** hint only. Disable with **`thinking_avoid_echo_system_prompt = false`** or **`AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT=0`**.
 
 ## Zhipu GLM (OpenAI-compatible)
 
