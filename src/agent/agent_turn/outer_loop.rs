@@ -99,7 +99,7 @@ pub(crate) async fn run_agent_outer_loop(
                     f.sync_from_per_coord(per_coord);
                 }
             }
-            ReflectOnAssistantOutcome::PlanRewriteExhausted => {
+            ReflectOnAssistantOutcome::PlanRewriteExhausted { reason } => {
                 if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);
                 }
@@ -109,6 +109,7 @@ pub(crate) async fn run_agent_outer_loop(
                         encode_message(SsePayload::Error(SseErrorBody {
                             error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
                             code: Some("plan_rewrite_exhausted".to_string()),
+                            reason_code: Some(reason.as_str().to_string()),
                         })),
                         "outer_loop::plan_rewrite_exhausted",
                     )

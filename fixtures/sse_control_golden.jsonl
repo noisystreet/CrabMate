@@ -2,6 +2,7 @@
 # 分类须与 frontend-leptos/src/sse_dispatch.rs 及 src/sse/control_dispatch_mirror.rs 同步。
 
 error+code 流错误	{"v":1,"error":"x","code":"E"}	stop
+error+code+reason_code 仍为 stop	{"v":1,"error":"x","code":"E","reason_code":"plan_missing"}	stop
 error 无 code 当正文	{"error":"division by zero"}	plain
 error+空白 code 当正文	{"error":"x","code":"  "}	plain
 plan_required	{"v":1,"plan_required":true}	handled

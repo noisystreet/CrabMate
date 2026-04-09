@@ -170,7 +170,7 @@ Entry: **`run_agent_turn`** → **`run_turn_common`** (`src/agent/agent_turn.rs`
 
 ### PER and `agent_reply_plan` enforcement
 
-**`PerCoordinator`** (from **`PerCoordinatorInit`**) ties workflow reflection to final-answer plan validation; caches **`workflow_validate_result` layer_count** scans; optional **`final_plan_require_strict_workflow_node_coverage`** and **`final_plan_semantic_check_*`** (side LLM via **`per_plan_semantic_check`**); **`plan_rewrite_max_attempts`**; SSE **`plan_rewrite_exhausted`**. Step **`id`** / optional **`workflow_node_id`** rules as in Chinese doc; **`per_reflect_after_assistant`** is **`async`**. CLI logging target **`crabmate::print`** for transcript-style debug.
+**`PerCoordinator`** (from **`PerCoordinatorInit`**) ties workflow reflection to final-answer plan validation; caches **`workflow_validate_result` layer_count** scans; optional **`final_plan_require_strict_workflow_node_coverage`** and **`final_plan_semantic_check_*`** (side LLM via **`per_plan_semantic_check`**); **`plan_rewrite_max_attempts`**; SSE **`plan_rewrite_exhausted`** with optional **`reason_code`** (**`PlanRewriteExhaustedReason`**, see **`docs/en/SSE_PROTOCOL.md`**). Step **`id`** / optional **`workflow_node_id`** rules as in Chinese doc; **`per_reflect_after_assistant`** is **`async`**. CLI logging target **`crabmate::print`** for transcript-style debug.
 
 ```mermaid
 flowchart LR

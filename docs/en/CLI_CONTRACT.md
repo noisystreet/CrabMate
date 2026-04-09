@@ -26,7 +26,7 @@ Control-plane JSON with **`error` + non-empty `code`** signals stream-level fail
 |--------|---------|
 | `INTERNAL_ERROR` | Queue or unexpected internal error |
 | `CONVERSATION_CONFLICT` | Conversation revision conflict |
-| `plan_rewrite_exhausted` | Final plan rewrite budget exhausted |
+| `plan_rewrite_exhausted` | Final plan rewrite budget exhausted (optional `reason_code`; see `docs/en/SSE_PROTOCOL.md`) |
 | `SSE_ENCODE` | Control JSON serialization failure (fallback) |
 
 **`INTERNAL_ERROR`** appears only on **SSE**; it is **not** mapped to the numeric `chat` exit codes above; `chat` failures still use `classify_model_error_message` on error strings.

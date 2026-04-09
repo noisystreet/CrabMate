@@ -555,6 +555,7 @@ async fn emit_stream_cancelled_terminal(sse_tx: &mpsc::Sender<String>, job_id: u
         crate::sse::encode_message(crate::sse::SsePayload::Error(crate::sse::SseErrorBody {
             error: "流已取消".to_string(),
             code: Some(crate::types::SSE_STREAM_CANCELLED_CODE.to_string()),
+            reason_code: None,
         }));
     if crate::sse::send_string_logged(
         sse_tx,
@@ -767,6 +768,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             crate::sse::SseErrorBody {
                                 error: "对话失败，请稍后重试".to_string(),
                                 code: Some("INTERNAL_ERROR".to_string()),
+                                reason_code: None,
                             },
                         ));
                         let _ = crate::sse::send_string_logged(

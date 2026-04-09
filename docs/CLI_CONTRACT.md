@@ -26,7 +26,7 @@
 |--------|----------------|
 | `INTERNAL_ERROR` | 队列或内部未预期错误 |
 | `CONVERSATION_CONFLICT` | 会话版本冲突 |
-| `plan_rewrite_exhausted` | 终答规划重写次数用尽 |
+| `plan_rewrite_exhausted` | 终答规划重写次数用尽（可选 `reason_code`，见 `docs/SSE_PROTOCOL.md`） |
 | `SSE_ENCODE` | 控制面 JSON 序列化失败（兜底） |
 
 **`INTERNAL_ERROR`** 仅出现在 **SSE 流** 场景，**不**映射为 `chat` 子进程的上述数字退出码；`chat` 失败仍由 `classify_model_error_message` 等对**错误字符串**归类。

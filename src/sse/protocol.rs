@@ -115,6 +115,9 @@ pub struct SseErrorBody {
     pub error: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    /// 与 `code` 配合的**细分子码**（如 `code=plan_rewrite_exhausted` 时的失败类别），供客户端分支处理；旧客户端忽略即可。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -298,9 +301,20 @@ mod tests {
         let s = encode_message(SsePayload::Error(SseErrorBody {
             error: "x".into(),
             code: Some("E".into()),
+            reason_code: None,
         }));
         assert!(s.contains("\"v\":1"));
         assert!(s.contains("\"code\":\"E\""));
+    }
+
+    #[test]
+    fn error_with_reason_code() {
+        let s = encode_message(SsePayload::Error(SseErrorBody {
+            error: "x".into(),
+            code: Some("plan_rewrite_exhausted".into()),
+            reason_code: Some("plan_missing".into()),
+        }));
+        assert!(s.contains("\"reason_code\":\"plan_missing\""));
     }
 
     #[test]

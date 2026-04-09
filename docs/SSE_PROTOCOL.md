@@ -98,6 +98,21 @@
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop`、`agent_turn/staged` | 终答规划重写次数用尽 |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` 序列化失败兜底 |
 
+**可选字段 `reason_code`**：与 `error` / `code` 同级的字符串子码，供客户端在**同一 `code`** 下做细粒度分支（当前主要用于 `plan_rewrite_exhausted`）；旧实现可忽略。
+
+#### `plan_rewrite_exhausted` 的 `reason_code`
+
+表示用尽重写次数时**最后一轮**终答仍不满足规划规则的大致类别。
+
+| `reason_code` | 含义 |
+|----------------|------|
+| `plan_missing` | 正文无可解析的 `agent_reply_plan` v1 |
+| `plan_layer_count_mismatch` | `steps` 条数低于 `workflow_validate` 的 `layer_count` 要求 |
+| `plan_workflow_node_ids_invalid` | `workflow_node_id` 与最近工作流节点 id 集合不一致 |
+| `plan_workflow_node_coverage_incomplete` | 严格模式下未覆盖全部工作流节点 id |
+| `plan_semantic_inconsistent` | 侧向语义校验判定与最近工具结果矛盾 |
+| `plan_rewrite_exhausted_other` | 防御性兜底（主路径不应出现） |
+
 **仅 HTTP、不经 SSE `data:`**（`POST /chat`、`POST /chat/stream` 的 JSON 体，`ApiError`）与流式相关的补充码：
 
 | `code` | HTTP | 说明 |

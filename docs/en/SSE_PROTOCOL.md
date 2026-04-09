@@ -98,6 +98,21 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop`, `agent_turn/staged` | Final plan rewrite budget exhausted |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` serialization fallback |
 
+**Optional `reason_code`**: sibling string sub-code for client branching under the same top-level `code` (currently used for `plan_rewrite_exhausted`); older clients may ignore it.
+
+#### `reason_code` for `plan_rewrite_exhausted`
+
+Approximate category of the **last** failed final answer when the rewrite budget is exhausted.
+
+| `reason_code` | Meaning |
+|----------------|---------|
+| `plan_missing` | No parseable `agent_reply_plan` v1 in content |
+| `plan_layer_count_mismatch` | Fewer `steps` than required `workflow_validate` `layer_count` |
+| `plan_workflow_node_ids_invalid` | `workflow_node_id` not consistent with latest workflow node ids |
+| `plan_workflow_node_coverage_incomplete` | Strict mode: not all workflow node ids covered |
+| `plan_semantic_inconsistent` | Side semantic check disagrees with recent tool output |
+| `plan_rewrite_exhausted_other` | Defensive fallback (should not occur on main paths) |
+
 **HTTP only** (JSON `ApiError`, not SSE `data:`), stream-related extras:
 
 | `code` | HTTP | Notes |

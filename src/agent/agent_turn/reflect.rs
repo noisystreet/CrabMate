@@ -1,6 +1,6 @@
 //! R 步：终答阶段（规划校验、是否继续外层循环等）。
 
-use crate::agent::per_coord::{AfterFinalAssistant, PerCoordinator};
+use crate::agent::per_coord::{AfterFinalAssistant, PerCoordinator, PlanRewriteExhaustedReason};
 use crate::agent::per_plan_semantic_check::{self, PlanSemanticLlmCtx};
 use crate::types::Message;
 
@@ -14,8 +14,8 @@ pub(crate) enum ReflectOnAssistantOutcome {
     ContinueOuterForPlanRewrite,
     /// 进入工具执行阶段
     ProceedToExecuteTools,
-    /// 规划重写次数用尽（已尝试发 SSE 错误码 `plan_rewrite_exhausted`）
-    PlanRewriteExhausted,
+    /// 规划重写次数用尽（已尝试发 SSE 错误码 `plan_rewrite_exhausted` + `reason_code`）
+    PlanRewriteExhausted { reason: PlanRewriteExhaustedReason },
 }
 
 /// 在已将 assistant 推入 `messages` 之后调用，决定是执行工具、终答结束还是规划重写。
@@ -44,8 +44,8 @@ pub(crate) async fn per_reflect_after_assistant(
             p.messages.push(m);
             ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
         }
-        AfterFinalAssistant::StopTurnPlanRewriteExhausted => {
-            ReflectOnAssistantOutcome::PlanRewriteExhausted
+        AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason } => {
+            ReflectOnAssistantOutcome::PlanRewriteExhausted { reason }
         }
         AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { plan, tool_digest } => {
             let plan_json = per_plan_semantic_check::agent_reply_plan_json_compact(&plan);
@@ -73,7 +73,9 @@ pub(crate) async fn per_reflect_after_assistant(
             } else if per_coord.plan_rewrite_attempts_snapshot()
                 >= per_coord.plan_rewrite_max_attempts_limit()
             {
-                ReflectOnAssistantOutcome::PlanRewriteExhausted
+                ReflectOnAssistantOutcome::PlanRewriteExhausted {
+                    reason: PlanRewriteExhaustedReason::PlanSemanticInconsistent,
+                }
             } else {
                 per_coord.increment_plan_rewrite_attempts();
                 p.messages
