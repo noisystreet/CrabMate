@@ -49,7 +49,7 @@ pub(crate) async fn per_reflect_after_assistant(
         }
         AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { plan, tool_digest } => {
             let plan_json = per_plan_semantic_check::agent_reply_plan_json_compact(&plan);
-            let ok = per_plan_semantic_check::plan_consistent_with_recent_tools_llm(
+            let outcome = per_plan_semantic_check::evaluate_plan_consistency_with_recent_tools_llm(
                 PlanSemanticLlmCtx {
                     llm_backend: p.llm_backend,
                     client: p.client,
@@ -68,7 +68,7 @@ pub(crate) async fn per_reflect_after_assistant(
                 tool_digest.as_deref(),
             )
             .await;
-            if ok {
+            if outcome.consistent {
                 ReflectOnAssistantOutcome::StopTurn
             } else if per_coord.plan_rewrite_attempts_snapshot()
                 >= per_coord.plan_rewrite_max_attempts_limit()
@@ -78,8 +78,13 @@ pub(crate) async fn per_reflect_after_assistant(
                 }
             } else {
                 per_coord.increment_plan_rewrite_attempts();
-                p.messages
-                    .push(PerCoordinator::plan_semantic_mismatch_rewrite_message());
+                let rationale = outcome.rationale.as_deref();
+                p.messages.push(
+                    PerCoordinator::plan_semantic_mismatch_rewrite_message_with_feedback(
+                        outcome.violation_codes.as_slice(),
+                        rationale,
+                    ),
+                );
                 ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite
             }
         }
