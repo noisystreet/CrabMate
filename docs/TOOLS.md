@@ -432,7 +432,7 @@
   ```json
   {"path":"src/main.rs","start_line":1,"max_lines":200}
   ```
-  非 UTF-8 或需去 BOM 时可设 **`encoding`**，例如 `{"path":"legacy.txt","encoding":"gb18030"}`、`{"path":"utf8bom.txt","encoding":"utf-8-sig"}`、`{"path":"unknown.bin","encoding":"auto"}`。默认 **`utf-8` 严格**：非法 UTF-8 字节会返回明确错误，而**不会**用替换字符静默乱码。响应中会提示「下一段可将 start_line 设为 N」。需要精确总行数时可设 `"count_total_lines": true`（大文件会多扫一遍）。也可用 `start_line` + `end_line` 精确区间（仍受 `max_lines` 上限截断）。
+  非 UTF-8 或需去 BOM 时可设 **`encoding`**，例如 `{"path":"legacy.txt","encoding":"gb18030"}`、`{"path":"utf8bom.txt","encoding":"utf-8-sig"}`、`{"path":"unknown.bin","encoding":"auto"}`。默认 **`utf-8` 严格**：非法 UTF-8 字节会返回明确错误，而**不会**用替换字符静默乱码。响应中会提示「下一段可将 start_line 设为 N」。需要精确总行数时可设 `"count_total_lines": true`（大文件会多扫一遍）。也可用 `start_line` + `end_line` 精确区间（仍受 `max_lines` 上限截断）。**成功**时正文**第一行**为单行 JSON **`{"kind":"crabmate_tool_output","tool":"read_file","version":1,…}`**（`path`、`start_line`、`line_count_returned`、`has_more` 等），其后为历史人类可读块；`role: tool` 信封的 **`error_code`** 在失败时另有稳定子码（如 `read_file_workspace_*`、`read_file_invalid_range`）。
 - `modify_file`（大文件局部改：`mode=replace_lines` + 行号区间 + `content`，流式改写不落整文件到内存）：
   ```json
   {"path":"src/huge.rs","mode":"replace_lines","start_line":120,"end_line":135,"content":"// 新片段\n"}
@@ -477,6 +477,11 @@
   ```json
   {"include_toolchain":true,"include_workspace_paths":true,"include_env":true,"extra_env_vars":["CI"]}
   ```
+- `search_in_files`（工作区内 **regex** 内容搜索；`.gitignore` 感知遍历）：
+  ```json
+  {"pattern":"TODO|FIXME","path":"src","max_results":50,"case_insensitive":true}
+  ```
+  成功时**第一行**为 **`crabmate_tool_output` v1**（`pattern`、`root` 相对工作区、`match_count`、`files_visited`、`truncated` 等），其后为匹配列表；无效正则为 `search_in_files_invalid_regex`，非法 glob 为 `search_in_files_invalid_glob`。
 - `codebase_semantic_search`（先建索引再查；依赖本机 **fastembed/ONNX**，与长期记忆相同栈）：
   - 整库增量重建（可省略 `query`；未改文件跳过嵌入）：
   ```json

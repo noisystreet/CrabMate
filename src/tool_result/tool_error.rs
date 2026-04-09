@@ -88,6 +88,20 @@ fn category_for_error_code(code: &str) -> ToolFailureCategory {
         "command_not_found" | "permission_denied" | "spawn_failed" | "cargo_spawn_failed" => {
             ToolFailureCategory::External
         }
+        "read_file_invalid_range" => ToolFailureCategory::InvalidInput,
+        "read_file_not_file"
+        | "read_file_io"
+        | "read_file_utf8_decode"
+        | "read_file_encoding"
+        | "read_file_internal" => ToolFailureCategory::External,
+        c if c.starts_with("read_file_workspace_") => ToolFailureCategory::Workspace,
+        "search_in_files_invalid_regex" | "search_in_files_invalid_glob" => {
+            ToolFailureCategory::InvalidInput
+        }
+        "search_in_files_workspace_base_resolve_failed"
+        | "search_in_files_workspace_subpath_resolve_failed"
+        | "search_in_files_workspace_outside_root"
+        | "search_in_files_path_absolute_not_allowed" => ToolFailureCategory::Workspace,
         c if c.ends_with("_failed") => ToolFailureCategory::External,
         _ => ToolFailureCategory::Unknown,
     }
@@ -228,6 +242,43 @@ impl ToolError {
         Self {
             category: ToolFailureCategory::External,
             code: "cargo_spawn_failed".to_string(),
+            message,
+            retryable: false,
+            legacy_parsed: parsed,
+        }
+    }
+
+    /// 外部工具/IO 类失败（`error_code` 由调用方指定，须与 [`category_for_error_code`] 一致）。
+    pub fn external_code(code: &'static str, message: String) -> Self {
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some(code.to_string()),
+        };
+        let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
+        Self {
+            category: category_for_error_code(code),
+            code: code.to_string(),
+            message,
+            retryable,
+            legacy_parsed: parsed,
+        }
+    }
+
+    /// 逻辑或内部不变量破坏（极少见）；`error_code` 建议 `*_internal`。
+    pub fn internal_code(code: &'static str, message: String) -> Self {
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some(code.to_string()),
+        };
+        Self {
+            category: ToolFailureCategory::Internal,
+            code: code.to_string(),
             message,
             retryable: false,
             legacy_parsed: parsed,

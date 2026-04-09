@@ -2,6 +2,8 @@ use super::*;
 
 use std::path::Path;
 
+use crate::tool_result::ToolFailureCategory;
+
 const TEST_COMMAND_MAX_OUTPUT_LEN: usize = 8192;
 const TEST_WEATHER_TIMEOUT_SECS: u64 = 15;
 fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
@@ -436,6 +438,37 @@ fn test_summarize_search_in_files_with_path_short() {
     let s = summarize_tool_call("search_in_files", r#"{"pattern":"fn main","path":"src"}"#)
         .expect("summary");
     assert_eq!(s, "search in files: fn main @ src");
+}
+
+#[test]
+fn test_read_file_try_workspace_error_has_stable_code() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let parent = dir.path().parent().expect("parent");
+    let outside_name = format!("crabmate_read_escape_{}.txt", std::process::id());
+    let outside_path = parent.join(&outside_name);
+    std::fs::write(&outside_path, "x\n").expect("write outside");
+    let args = serde_json::json!({ "path": format!("../{}", outside_name) }).to_string();
+    let allowed = test_allowed_commands();
+    let mut ctx = test_ctx(&allowed);
+    ctx.working_dir = dir.path();
+    let err = run_tool_try("read_file", &args, &ctx).expect_err("outside workspace");
+    assert!(
+        err.code.starts_with("read_file_workspace_"),
+        "expected read_file_workspace_* code, got {}",
+        err.code
+    );
+    assert_eq!(err.category, ToolFailureCategory::Workspace);
+    let _ = std::fs::remove_file(&outside_path);
+}
+
+#[test]
+fn test_search_in_files_try_invalid_regex_error_code() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let err =
+        run_tool_try("search_in_files", r#"{"pattern":"("}"#, &ctx).expect_err("invalid regex");
+    assert_eq!(err.code, "search_in_files_invalid_regex");
+    assert_eq!(err.category, ToolFailureCategory::InvalidInput);
 }
 
 #[test]
