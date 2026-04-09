@@ -15,6 +15,7 @@ use super::messages::push_assistant_merging_trailing_empty_placeholder;
 use super::params::RunLoopParams;
 use super::plan_call::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
+use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 
 pub(crate) async fn run_agent_outer_loop(
     p: &mut RunLoopParams<'_>,
@@ -47,12 +48,21 @@ pub(crate) async fn run_agent_outer_loop(
             p.workspace_changelist.as_ref().map(|a| a.as_ref()),
         )
         .await?;
+        let tools_for_call: Vec<crate::types::Tool> = match p.step_executor_constraint {
+            Some(k) => filter_tool_defs_for_executor_kind(p.tools_defs, p.cfg.as_ref(), k),
+            None => Vec::new(),
+        };
+        let tools_defs_slice: &[crate::types::Tool] = if p.step_executor_constraint.is_some() {
+            tools_for_call.as_slice()
+        } else {
+            p.tools_defs
+        };
         let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
             llm_backend: p.llm_backend,
             client: p.client,
             api_key: p.api_key,
             cfg: p.cfg.as_ref(),
-            tools_defs: p.tools_defs,
+            tools_defs: tools_defs_slice,
             messages: p.messages,
             out: p.out,
             render_to_terminal,
@@ -137,6 +147,7 @@ pub(crate) async fn run_agent_outer_loop(
                 mcp_session: p.mcp_session.as_ref(),
                 workspace_changelist: p.workspace_changelist.as_ref(),
                 request_chrome_trace: p.request_chrome_trace.clone(),
+                step_executor_constraint: p.step_executor_constraint,
             },
         )
         .await;

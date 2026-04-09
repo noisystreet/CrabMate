@@ -29,6 +29,19 @@ pub struct AgentReplyPlanV1 {
     pub no_task: bool,
 }
 
+/// 分阶段规划单步「子代理」角色：收窄该步内外层循环可见的 **OpenAI tools 列表**，并在执行层拒绝越权 `tool_calls`（与 `write_effect_tools` / 只读判定一致）。
+/// 省略或 `null` 表示不限制（与历史行为一致）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanStepExecutorKind {
+    /// 仅允许语义只读工具（`is_readonly_tool`）；禁止 MCP 代理工具。
+    ReviewReadonly,
+    /// 只读工具 + 受限写补丁类（`apply_patch` / `search_replace` / `structured_patch` / `create_file` / `modify_file` / `append_file` / `format_file` / `ast_grep_rewrite`）。
+    PatchWrite,
+    /// 只读工具 + 常见测试运行器（如 `cargo_test` / `pytest_run` / `go_test` 等）；**不含**任意 `run_command`。
+    TestRunner,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PlanStepV1 {
     pub id: String,
@@ -36,6 +49,9 @@ pub struct PlanStepV1 {
     /// 可选：对应最近一次 `workflow_validate_only` 结果中 `nodes[].id`，供机器校验与轨迹对齐。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_node_id: Option<String>,
+    /// 可选：本步执行子循环的工具角色（子代理）；省略则全量工具。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executor_kind: Option<PlanStepExecutorKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,10 +125,11 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 可选布尔 \"no_task\"：为 true 时表示用户未提出需分步执行的具体任务，此时 \"steps\" 必须为 []（空数组）
 - 当 \"no_task\" 省略或为 false 时，\"steps\" 为非空数组；每项含非空字符串 \"id\" 与 \"description\"
 - 每项 \"id\" 须唯一；**首尾不得含空白**；语法为 ASCII 字母或数字开头，仅含 - _ . /，总长不超过 128（与 workflow 节点 id 常见字符集一致）
-- 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法，且在**同一条规划**中唯一；值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）";
+- 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法，且在**同一条规划**中唯一；值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）
+- 可选 \"executor_kind\"（字符串，省略则本步不限制工具）：`review_readonly`（仅只读工具）、`patch_write`（只读 + 受限补丁写）、`test_runner`（只读 + 内置测试运行器）；越权调用会在工具层被拒绝并记入对话";
 
 /// Plan v1 的 JSON 示例。
-pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …","workflow_node_id":"fmt"}]}"#;
+pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …","workflow_node_id":"fmt","executor_kind":"review_readonly"}]}"#;
 
 /// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json / \`\`\`markdown / \`\`\`md 等带语言行的围栏，或整段即为单个 JSON 对象）。
 /// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
@@ -579,16 +596,19 @@ mod tests {
                 id: "s0".into(),
                 description: "done".into(),
                 workflow_node_id: None,
+                executor_kind: None,
             },
             PlanStepV1 {
                 id: "s1".into(),
                 description: "fail".into(),
                 workflow_node_id: None,
+                executor_kind: None,
             },
             PlanStepV1 {
                 id: "s2".into(),
                 description: "old tail".into(),
                 workflow_node_id: None,
+                executor_kind: None,
             },
         ];
         let patch = AgentReplyPlanV1 {
@@ -599,11 +619,13 @@ mod tests {
                     id: "s1b".into(),
                     description: "retry".into(),
                     workflow_node_id: None,
+                    executor_kind: None,
                 },
                 PlanStepV1 {
                     id: "s2b".into(),
                     description: "new tail".into(),
                     workflow_node_id: None,
+                    executor_kind: None,
                 },
             ],
             no_task: false,
@@ -633,6 +655,7 @@ mod tests {
                 id: "s1".into(),
                 description: "x".into(),
                 workflow_node_id: None,
+                executor_kind: None,
             }],
             no_task: false,
         };
@@ -644,6 +667,7 @@ mod tests {
                 id: "s1".into(),
                 description: "x".into(),
                 workflow_node_id: Some("a".into()),
+                executor_kind: None,
             }],
             no_task: false,
         };
@@ -656,11 +680,13 @@ mod tests {
                     id: "s1".into(),
                     description: "x".into(),
                     workflow_node_id: Some("a".into()),
+                    executor_kind: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
                     description: "y".into(),
                     workflow_node_id: Some("b".into()),
+                    executor_kind: None,
                 },
             ],
             no_task: false,
@@ -715,6 +741,7 @@ mod tests {
                 id: "s1".into(),
                 description: "do".into(),
                 workflow_node_id: Some("fmt".into()),
+                executor_kind: None,
             }],
             no_task: false,
         };
@@ -767,6 +794,24 @@ mod tests {
     fn parses_raw_json_only_message() {
         let p = parse_agent_reply_plan_v1(&sample_json()).unwrap();
         assert_eq!(p.plan_type, "agent_reply_plan");
+    }
+
+    #[test]
+    fn parses_executor_kind_on_step() {
+        let j = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"r","description":"审","executor_kind":"review_readonly"},{"id":"p","description":"改","executor_kind":"patch_write"},{"id":"t","description":"测","executor_kind":"test_runner"}]}"#;
+        let p = parse_agent_reply_plan_v1(j).unwrap();
+        assert_eq!(
+            p.steps[0].executor_kind,
+            Some(PlanStepExecutorKind::ReviewReadonly)
+        );
+        assert_eq!(
+            p.steps[1].executor_kind,
+            Some(PlanStepExecutorKind::PatchWrite)
+        );
+        assert_eq!(
+            p.steps[2].executor_kind,
+            Some(PlanStepExecutorKind::TestRunner)
+        );
     }
 
     #[test]

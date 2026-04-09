@@ -8,6 +8,7 @@ use crate::workspace_changelist::WorkspaceChangelist;
 
 use tokio::sync::mpsc;
 
+use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry;
@@ -56,4 +57,6 @@ pub(crate) struct RunLoopParams<'a> {
     pub staged_plan_skip_ensemble_on_casual_prompt: bool,
     /// 整请求 Chrome trace（`CRABMATE_REQUEST_CHROME_TRACE_DIR`）；`None` 关闭。
     pub request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    /// 分阶段规划当前步的「子代理」工具约束；`None` 表示不限制（常规循环）。
+    pub step_executor_constraint: Option<PlanStepExecutorKind>,
 }

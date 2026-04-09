@@ -329,6 +329,8 @@ No-tools planning round first, then executor loop; planner context strips `role:
 
 With **`planner_executor_mode = single_agent`**, each user message runs a no-tools plan round then **`steps`**. **`no_task` + empty `steps`** skips execution. Invalid plan JSON falls back to normal tool loop (more API calls than off).
 
+**Per-step sub-agent (`executor_kind` in plan JSON)**: Each **`steps[]`** entry in **`agent_reply_plan` v1** may set **`executor_kind`** to **`review_readonly`**, **`patch_write`**, or **`test_runner`** to narrow the tool list for that staged step and reject out-of-role **`tool_calls`** at execution time; omit the field for legacy behavior. Aligns with **`write_effect_tools`** / readonly classification; does **not** replace **`run_command`** allowlists or MCP approval.
+
 **`staged_plan_feedback_mode`**: Default **`fail_fast`**; **`patch_planner`** injects feedback and reruns planner without tools, merging patched **`steps`** (capped by **`staged_plan_patch_max_attempts`**).
 
 **`staged_plan_cli_show_planner_stream`** (default `true`, **`AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`**)**: For CLI/`chat` with **`out: None`**, whether no-tools planner (and patch planner) streams to stdout. **`false`** hides planner raw output but keeps notices and execution steps; Web SSE unchanged.
