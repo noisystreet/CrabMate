@@ -340,6 +340,8 @@ With **`planner_executor_mode = single_agent`**, each user message runs a no-too
 - **`none` (default)**: **`SyncDefault`** and **`run_command`** run on host **`spawn_blocking`**.
 - **`docker`**: After allowlist/approval on host, **SyncDefault**, **`run_command`**, **`run_executable`**, **`get_weather`**, **`web_search`**, **`http_fetch`**, **`http_request`** run in ephemeral containers via **bollard** (like `docker run --rm -i`): workspace at **`/workspace`**, read-only host **`crabmate`** at **`/crabmate`**, internal **`crabmate tool-runner-internal`**. **`workflow_execute`** and **`mcp__*`** stay on host.
 
+**bollard crate features (maintainers)**: Root **`Cargo.toml`** sets **`default-features = false`** on **bollard** and enables only **`http`** + **`pipe`** (local **`unix://`**, Windows named pipes, plain **`tcp://`** / **`http://`** **`DOCKER_HOST`**—smaller deps/binary). For **`https://`** **`DOCKER_HOST`** or **`DOCKER_TLS_VERIFY`**, add **`ssl`** to **bollard**’s **`features`** and rebuild (pulls **rustls**, etc.).
+
 ### Prerequisites
 
 1. Docker daemon reachable (`docker ps` or **`DOCKER_HOST`**).

@@ -12,7 +12,7 @@ description = "Rust AI agent: OpenAI-compatible chat/completions, function calli
 default-run = "crabmate"
 
 [package.metadata.deb]
-maintainer = "CrabMate <dev@example.com>"
+maintainer = "CrabMate <adustofsnow@163.com>"
 license-file = "README.md"
 extended-description = """\
 CrabMate is a Rust AI agent that uses OpenAI-compatible chat/completions to reach LLM backends \
@@ -94,8 +94,9 @@ dialoguer = { version = "0.12", default-features = false }
 encoding_rs = "0.8"
 chardetng = "0.1"
 clap_mangen = { version = "0.2", default-features = false }
-# `pipe`：Unix 套接字 `connect_with_local_defaults`；`ssl`：`DOCKER_HOST` https/tcp TLS。
-bollard = { version = "0.18", default-features = false, features = ["ssl", "pipe"] }
+# 关闭 bollard 默认 feature，仅启用本仓库用到的：`http`（hyper 客户端）、`pipe`（Unix 套接字 / Windows named pipe）。
+# 未启用 `ssl`：不支持 `DOCKER_HOST=https://` 与 `DOCKER_TLS_VERIFY`（本地 `unix://` / 明文 `tcp://` 不受影响）。需 TLS 时改为 `features = ["http", "pipe", "ssl"]`。
+bollard = { version = "0.18", default-features = false, features = ["http", "pipe"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["fs", "dir"] }
