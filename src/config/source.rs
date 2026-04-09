@@ -88,6 +88,10 @@ pub(super) struct AgentSection {
     /// `never` / `workflow_reflection` / `always`
     pub(super) final_plan_requirement: Option<String>,
     pub(super) plan_rewrite_max_attempts: Option<u64>,
+    pub(super) final_plan_require_strict_workflow_node_coverage: Option<bool>,
+    pub(super) final_plan_semantic_check_enabled: Option<bool>,
+    pub(super) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
+    pub(super) final_plan_semantic_check_max_tokens: Option<u64>,
     /// `single_agent` / `logical_dual_agent`
     pub(super) planner_executor_mode: Option<String>,
     pub(super) system_prompt: Option<String>,

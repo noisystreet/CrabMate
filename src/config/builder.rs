@@ -43,6 +43,10 @@ pub(crate) struct ConfigBuilder {
     pub(crate) reflection_default_max_rounds: Option<u64>,
     pub(crate) final_plan_requirement_str: Option<String>,
     pub(crate) plan_rewrite_max_attempts: Option<u64>,
+    pub(crate) final_plan_require_strict_workflow_node_coverage: Option<bool>,
+    pub(crate) final_plan_semantic_check_enabled: Option<bool>,
+    pub(crate) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
+    pub(crate) final_plan_semantic_check_max_tokens: Option<u64>,
     pub(crate) planner_executor_mode_str: Option<String>,
     pub(crate) cursor_rules_enabled: Option<bool>,
     pub(crate) cursor_rules_dir: Option<String>,
@@ -268,6 +272,18 @@ impl ConfigBuilder {
         self.plan_rewrite_max_attempts = agent
             .plan_rewrite_max_attempts
             .or(self.plan_rewrite_max_attempts);
+        self.final_plan_require_strict_workflow_node_coverage = agent
+            .final_plan_require_strict_workflow_node_coverage
+            .or(self.final_plan_require_strict_workflow_node_coverage);
+        self.final_plan_semantic_check_enabled = agent
+            .final_plan_semantic_check_enabled
+            .or(self.final_plan_semantic_check_enabled);
+        self.final_plan_semantic_check_max_non_readonly_tools = agent
+            .final_plan_semantic_check_max_non_readonly_tools
+            .or(self.final_plan_semantic_check_max_non_readonly_tools);
+        self.final_plan_semantic_check_max_tokens = agent
+            .final_plan_semantic_check_max_tokens
+            .or(self.final_plan_semantic_check_max_tokens);
         self.cursor_rules_enabled = agent.cursor_rules_enabled.or(self.cursor_rules_enabled);
         self.cursor_rules_include_agents_md = agent
             .cursor_rules_include_agents_md

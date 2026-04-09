@@ -106,6 +106,10 @@
 # reflection_default_max_rounds = 5
 # final_plan_requirement = "workflow_reflection"  # never | workflow_reflection | always（实验性，每轮终答均校验）
 # plan_rewrite_max_attempts = 2
+# final_plan_require_strict_workflow_node_coverage = false  # 任一步填 workflow_node_id 时须覆盖全部 nodes[].id；AGENT_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE
+# final_plan_semantic_check_enabled = false  # workflow_reflection 下可选侧向 LLM；AGENT_FINAL_PLAN_SEMANTIC_CHECK_ENABLED
+# final_plan_semantic_check_max_non_readonly_tools = 0  # 摘要中非只读工具条数上限；AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS
+# final_plan_semantic_check_max_tokens = 256  # 侧向请求 max_tokens；AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS
 # planner_executor_mode = "single_agent"  # single_agent | logical_dual_agent（阶段1：同进程逻辑双agent）
 # staged_plan_execution = false   # true：先无工具产出 agent_reply_plan，再按步执行
 # staged_plan_allow_no_task = true   # 内置规划说明是否包含「无具体任务则 no_task + 空 steps」；AGENT_STAGED_PLAN_ALLOW_NO_TASK

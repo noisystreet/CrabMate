@@ -160,15 +160,29 @@ mod dedup_tool_calls_tests {
 }
 
 mod per_reflect_tests {
-    use crate::agent::per_coord::{FinalPlanRequirementMode, PerCoordinator};
-    use crate::types::{FunctionCall, Message, ToolCall};
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use crate::agent::agent_turn::RunLoopParams;
+    use crate::agent::per_coord::{FinalPlanRequirementMode, PerCoordinator, PerCoordinatorInit};
+    use crate::llm::OPENAI_COMPAT_BACKEND;
+    use crate::types::{FunctionCall, LlmSeedOverride, Message, ToolCall};
 
     use super::super::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 
-    #[test]
-    fn proceed_to_tools_when_tool_calls_present_but_finish_reason_stop() {
-        let mut c = PerCoordinator::new(5, FinalPlanRequirementMode::Never, 3);
+    #[tokio::test]
+    async fn proceed_to_tools_when_tool_calls_present_but_finish_reason_stop() {
+        let cfg = Arc::new(crate::config::load_config(None).expect("embed default"));
+        let client = reqwest::Client::new();
         let mut messages = vec![Message::user_only("x")];
+        let mut c = PerCoordinator::new(PerCoordinatorInit {
+            reflection_default_max_rounds: 5,
+            final_plan_policy: FinalPlanRequirementMode::Never,
+            plan_rewrite_max_attempts: 3,
+            final_plan_require_strict_workflow_node_coverage: false,
+            final_plan_semantic_check_enabled: false,
+            final_plan_semantic_check_max_non_readonly_tools: 0,
+        });
         let msg = Message {
             role: "assistant".to_string(),
             content: Some("ok".to_string()),
@@ -185,7 +199,37 @@ mod per_reflect_tests {
             name: None,
             tool_call_id: None,
         };
-        let out = per_reflect_after_assistant(&mut c, "stop", &msg, &mut messages);
+        let mut p = RunLoopParams {
+            llm_backend: &OPENAI_COMPAT_BACKEND,
+            client: &client,
+            api_key: "",
+            cfg: &cfg,
+            tools_defs: &[],
+            messages: &mut messages,
+            out: None,
+            effective_working_dir: Path::new("."),
+            workspace_is_set: false,
+            no_stream: true,
+            cancel: None,
+            render_to_terminal: false,
+            plain_terminal_stream: false,
+            web_tool_ctx: None,
+            cli_tool_ctx: None,
+            per_flight: None,
+            temperature_override: None,
+            seed_override: LlmSeedOverride::FromConfig,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_session: None,
+            read_file_turn_cache: None,
+            workspace_changelist: None,
+            staged_plan_optimizer_round: false,
+            staged_plan_optimizer_requires_parallel_tools: true,
+            staged_plan_ensemble_count: 1,
+            staged_plan_skip_ensemble_on_casual_prompt: true,
+            request_chrome_trace: None,
+        };
+        let out = per_reflect_after_assistant(&mut p, &mut c, "stop", &msg).await;
         assert!(matches!(
             out,
             ReflectOnAssistantOutcome::ProceedToExecuteTools

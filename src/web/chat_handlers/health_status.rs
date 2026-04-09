@@ -58,6 +58,10 @@ struct StatusResponse {
     reflection_default_max_rounds: usize,
     final_plan_requirement: crate::agent::per_coord::FinalPlanRequirementMode,
     plan_rewrite_max_attempts: usize,
+    final_plan_require_strict_workflow_node_coverage: bool,
+    final_plan_semantic_check_enabled: bool,
+    final_plan_semantic_check_max_non_readonly_tools: usize,
+    final_plan_semantic_check_max_tokens: u32,
     /// 规划器/执行器模式：single_agent | logical_dual_agent。
     planner_executor_mode: &'static str,
     /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`）。
@@ -168,6 +172,12 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         reflection_default_max_rounds: cfg.reflection_default_max_rounds,
         final_plan_requirement: cfg.final_plan_requirement,
         plan_rewrite_max_attempts: cfg.plan_rewrite_max_attempts,
+        final_plan_require_strict_workflow_node_coverage: cfg
+            .final_plan_require_strict_workflow_node_coverage,
+        final_plan_semantic_check_enabled: cfg.final_plan_semantic_check_enabled,
+        final_plan_semantic_check_max_non_readonly_tools: cfg
+            .final_plan_semantic_check_max_non_readonly_tools,
+        final_plan_semantic_check_max_tokens: cfg.final_plan_semantic_check_max_tokens,
         planner_executor_mode: cfg.planner_executor_mode.as_str(),
         staged_plan_execution: cfg.staged_plan_execution,
         staged_plan_cli_show_planner_stream: cfg.staged_plan_cli_show_planner_stream,

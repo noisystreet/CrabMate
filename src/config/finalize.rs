@@ -270,6 +270,18 @@ pub(super) fn finalize(
         None => FinalPlanRequirementMode::default(),
     };
     let plan_rewrite_max_attempts = b.plan_rewrite_max_attempts.unwrap_or(2).clamp(1, 20) as usize;
+    let final_plan_require_strict_workflow_node_coverage = b
+        .final_plan_require_strict_workflow_node_coverage
+        .unwrap_or(false);
+    let final_plan_semantic_check_enabled = b.final_plan_semantic_check_enabled.unwrap_or(false);
+    let final_plan_semantic_check_max_non_readonly_tools = b
+        .final_plan_semantic_check_max_non_readonly_tools
+        .unwrap_or(0)
+        .min(32) as usize;
+    let final_plan_semantic_check_max_tokens = b
+        .final_plan_semantic_check_max_tokens
+        .unwrap_or(256)
+        .clamp(32, 1024) as u32;
     let planner_executor_mode = match b.planner_executor_mode_str.as_deref() {
         Some(s) => PlannerExecutorMode::parse(s)?,
         None => PlannerExecutorMode::default(),
@@ -606,6 +618,10 @@ pub(super) fn finalize(
         reflection_default_max_rounds,
         final_plan_requirement,
         plan_rewrite_max_attempts,
+        final_plan_require_strict_workflow_node_coverage,
+        final_plan_semantic_check_enabled,
+        final_plan_semantic_check_max_non_readonly_tools,
+        final_plan_semantic_check_max_tokens,
         planner_executor_mode,
         system_prompt,
         default_agent_role_id,

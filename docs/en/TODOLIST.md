@@ -18,10 +18,6 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 - [ ] **Unauthenticated HTTP**: `/chat`, `/chat/stream`, workspace, files, upload, tasks do not verify caller identity; `API_KEY` is only for the LLM, not for protecting APIs or quota abuse.
 - [ ] **Multi-role / persona switching**: Support multiple **roles** (system prompt, tool visibility, temperature, etc.); **CLI** and **Web** should expose commands or UI to switch the active role per session, with boundaries documented for persistence, export, and `POST /config/reload`; multi-tenant use must align with authentication above.
 
-### P3 — Architecture (PER) and docs
-
-- [ ] **Stronger final-answer reflection (optional)**: Beyond existing `layer_count` ↔ `steps` rules, optional second LLM or finer rules for semantic consistency (cost/product decision).
-
 ### P4 — Testing and quality
 
 - [ ] **Unified error types (incremental)**: Reduce plain `String` / `format!` on hot paths; structured enums for `run_command`, path resolution, etc.
