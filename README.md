@@ -111,7 +111,7 @@ cd frontend-leptos && trunk build && cd ..
 ## 部署与安全
 
 - **监听**：默认 **`127.0.0.1`**；`0.0.0.0` 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)）。
-- **Bearer**：API 鉴权；前端可读 **`localStorage["crabmate-api-bearer-token"]`**。
+- **Web API 密钥**：与 **`web_api_bearer_token`** 一致；请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（二选一）。前端可读 **`localStorage["crabmate-api-bearer-token"]`**（同时发送上述两头来兼容脚本/网关习惯）。
 - **Web「设置」**：本机 **`client_llm`**（`api_base` / `model` / 密钥）仅影响当次请求，详 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「Web 对话队列」。
 - **工作区**：须在允许根内；Unix 上尽力用 **`openat2`** 等收窄路径风险，**非**绝对沙箱。见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)、[`src/path_workspace.rs`](src/path_workspace.rs)。
 - **其它**：**`web_search_api_key`** 与主 **`API_KEY`** 分离；可选 **SyncDefault Docker 沙盒**见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。维护者另见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)、[.cursor/rules/security-sensitive-surface.mdc](.cursor/rules/security-sensitive-surface.mdc)。

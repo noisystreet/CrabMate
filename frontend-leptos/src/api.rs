@@ -125,6 +125,8 @@ fn auth_headers() -> Headers {
             let t = t.trim();
             if !t.is_empty() {
                 let _ = h.set("Authorization", &format!("Bearer {t}"));
+                // 与后端 `require_web_api_bearer_auth` 一致：亦接受 X-API-Key（网关/脚本常用）
+                let _ = h.set("X-API-Key", t);
             }
         }
     }

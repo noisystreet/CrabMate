@@ -73,6 +73,7 @@
 # allowed_commands：逗号分隔命令名，覆盖默认白名单（完整列表见 config/tools.toml；含 stat/grep/diff/git/gh/cargo、文本与压缩只读工具等）
 # AGENT_ALLOWED_COMMANDS=ls,pwd,git,grep
 # run_command_working_dir = "."
+# 受保护 Web API 共享密钥：Authorization: Bearer … 或 X-API-Key: …（值相同）
 # web_api_bearer_token = "YOUR_STRONG_RANDOM_TOKEN"
 # allow_insecure_no_auth_for_non_loopback = false
 # max_tokens = 2048

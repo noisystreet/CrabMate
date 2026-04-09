@@ -9,11 +9,11 @@
 ## 配置热重载（无需重启 `repl` / `serve` 主进程）
 
 - **CLI**：输入 **`/config reload`**（或 Tab 补全 **`/config reload`**）。从与启动时相同的配置文件路径（**`--config`** 或默认探测 **`config.toml`** / **`.agent_demo.toml`**）再读 TOML，并与**当前进程环境变量**合并后，将可热更字段写入内存中的 [`AgentConfig`](DEVELOPMENT.md)；随后清空 MCP 进程内 stdio 缓存，下一轮对话使用新 MCP 指纹。
-- **Web**：**`POST /config/reload`**（JSON body 可为 `{}`；鉴权与 **`/chat`** 等受保护 API 一致——若启动时启用了 Bearer 中间件则须带 token）。成功时返回 **`{ "ok": true, "message": "…" }`**。
+- **Web**：**`POST /config/reload`**（JSON body 可为 `{}`；鉴权与 **`/chat`** 等受保护 API 一致——若启动时启用了 Web API 鉴权层则须在请求头携带 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**）。成功时返回 **`{ "ok": true, "message": "…" }`**。
 - **会更新的典型项**：**`api_base`**、**`model`**、**`llm_http_auth_mode`**、**`llm_reasoning_split`**、**`llm_bigmodel_thinking`**、**`llm_kimi_thinking_disabled`**、**`thinking_avoid_echo_system_prompt`**、**`thinking_avoid_echo_appendix` / `thinking_avoid_echo_appendix_file`**（附录正文解析结果）、**`temperature` / `llm_seed`**、各类**超时与重试**、**`run_command` 白名单**、**`http_fetch_allowed_prefixes`**、**`workspace_allowed_roots`**、**`web_api_bearer_token`**（仅影响 handler 内校验；见下）、**`mcp_*`**、**`[tool_registry]`**（HTTP 外圈超时、并行墙钟覆盖、并行拒绝/内联/写副作用名单）、**`system_prompt_file` 重读**、上下文与规划相关键等（实现见源码 **`apply_hot_reload_config_subset`**）。**`system`→`user` 折叠**随 **`api_base` / `model`** 热更后由下一轮请求按 MiniMax 识别自动生效（非 `AgentConfig` 字段）。
 - **刻意不热更**：**`conversation_store_sqlite_path`**（会话库连接在启动时打开，改路径须重启 **`serve`**）。**`reqwest::Client`** 不重建，**`api_timeout_secs` 等**对**新连接**的生效可能受连接池保留的空闲连接影响。
 - **`API_KEY`**：进程内 **`serve` / `repl` / `chat`** 启动时从**环境变量**读入并保存在 **`AppState.api_key`**（可为空）。**热重载不**重读环境里的 **`API_KEY`**。未 export 时：**Web** 须在侧栏「设置」随请求发送 **`client_llm.api_key`**；**REPL** 可用 **`/api-key set <密钥>`** 写入**本进程内存**（不写盘，**`/config reload` 不会清除**）。**`crabmate models` / `probe`** 在 **`bearer`** 下仍要求启动前环境变量 **`API_KEY`** 非空。
-- **Bearer 中间件层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权层；热重载**不会**拆除或新增该层——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的 token 字符串，用于已挂层时的校验。
+- **Web API 鉴权层**：若启动 **`serve`** 时 **`web_api_bearer_token` 非空**，Axum 会在该进程生命周期内挂上鉴权中间件；请求须带 **`Authorization: Bearer <同一密钥>`** 或 **`X-API-Key: <同一密钥>`**（二选一，与 Dify / Open WebUI 等常见网关习惯对齐）。热重载**不会**拆除或新增该层——**从「无 token」变为「有 token」**或反向时，须**重启 `serve`**。热重载仍会更改 handler 内读取的密钥字符串，用于已挂层时的校验。
 - **敏感字段内存表示**：**`web_api_bearer_token`** 与 **`web_search_api_key`** 在 [`AgentConfig`](DEVELOPMENT.md) 内为 **secrecy `SecretString`**，**`Debug` / 结构化日志默认不打印明文**；源码中通过 **`ExposeSecret::expose_secret()`** 取用（`config` crate 再导出 **`ExposeSecret`**）。**`API_KEY`** 仍为仅环境变量，未并入 `AgentConfig`。
 
 ## 环境变量（`AGENT_*`）
@@ -47,7 +47,7 @@
 | 环境变量 | 说明 |
 | --- | --- |
 | `AGENT_HTTP_HOST` | 未传 `--host` 时作为绑定地址。 |
-| `AGENT_WEB_API_BEARER_TOKEN` | 受保护 API 的 Bearer token。 |
+| `AGENT_WEB_API_BEARER_TOKEN` | 受保护 Web API 的共享密钥；请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（值相同，任选其一）。 |
 | `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | 非回环监听时是否允许无鉴权启动（高风险，仅可信环境）。 |
 
 ### 工作区与 Cursor 式规则
