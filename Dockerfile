@@ -20,6 +20,7 @@ RUN apt-get update \
         g++ \
         libssl-dev \
         libssh2-1-dev \
+        libwayland-dev \
         cmake \
         clang-format \
         bc \

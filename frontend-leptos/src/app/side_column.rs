@@ -215,6 +215,7 @@ pub fn side_column_view(
                                 <button
                                     type="button"
                                     class="btn btn-secondary btn-sm toolbar-view-trigger"
+                                    data-testid="side-view-trigger"
                                     class:active=move || !matches!(side_panel_view.get(), SidePanelView::None)
                                     class:toolbar-view-trigger-open=move || view_menu_open.get()
                                     on:click=move |_| view_menu_open.update(|o| *o = !*o)
@@ -239,6 +240,7 @@ pub fn side_column_view(
                                         <button
                                             type="button"
                                             class="toolbar-view-menu-item"
+                                            data-testid="side-panel-workspace-menu"
                                             class:active=move || matches!(side_panel_view.get(), SidePanelView::Workspace)
                                             role="menuitem"
                                             on:click=move |_| {
@@ -305,7 +307,7 @@ pub fn side_column_view(
                                                 </div>
                                             </div>
                                         </Show>
-                                        <div class="side-card-body workspace-side-card-body">
+                                        <div class="side-card-body workspace-side-card-body" data-testid="workspace-panel">
                                             <div class="workspace-side-card-scroll">
                                             {move || {
                                                 if workspace_loading.get() {
@@ -331,6 +333,7 @@ pub fn side_column_view(
                                                                     <input
                                                                         type="text"
                                                                         class="workspace-set-input"
+                                                                        data-testid="workspace-root-input"
                                                                         prop:placeholder=move || i18n::ws_input_ph(locale.get())
                                                                         prop:title=move || i18n::ws_input_title(locale.get())
                                                                         prop:value=move || workspace_path_draft.get()

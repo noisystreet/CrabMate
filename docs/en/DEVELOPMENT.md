@@ -238,6 +238,7 @@ Aggregated in **`file/mod.rs`**; glob/tree limits; **`resolve_for_read`** for ot
 - **`src/api.rs`**: `fetch` + **`send_chat_stream`**（**`client_sse_protocol`** 与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**）等。
 - **`src/sse_dispatch.rs`**: 控制面 JSON 分类（含 **`sse_capabilities`** 版本核对）。
 - 其余 UI 模块：`app/` 等（CSR WASM）。
+- **E2E (`e2e/`)**: Playwright smoke tests with stubbed **`/chat/stream`** and **`/workspace`**; see the Chinese **[docs/DEVELOPMENT.md](DEVELOPMENT.md)** § “E2E” for commands (`npm ci`, `npx playwright install chromium`, `npm test`).
 
 ## Persistence notes
 

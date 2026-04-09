@@ -284,6 +284,7 @@ pub fn chat_column_view(
                         <div class="composer-inner-ds">
                         <textarea
                             class="composer-input"
+                            data-testid="chat-composer-input"
                             node_ref=composer_input_ref
                             on:input=move |ev| {
                                 let v = event_target_value(&ev);
@@ -314,6 +315,7 @@ pub fn chat_column_view(
                             <button
                                 type="button"
                                 class="btn btn-primary btn-send-icon"
+                                data-testid="chat-send-button"
                                 prop:disabled=move || status_busy.get() || !initialized.get()
                                 on:click={
                                     let r = Arc::clone(&run_send_message);

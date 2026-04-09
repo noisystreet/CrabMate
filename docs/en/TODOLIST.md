@@ -115,7 +115,6 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 - [ ] Browser session state vs backend API; optional encrypted local cache.
 - [ ] Virtualize long chat lists.
 - [ ] i18n, a11y, keyboard navigation.
-- [ ] E2E / contract tests (Playwright or stubs).
 - [ ] Future voice (STT/TTS) with P0 auth alignment.
 
 ---
