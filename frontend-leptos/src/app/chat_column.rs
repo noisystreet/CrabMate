@@ -16,6 +16,7 @@ use super::scroll_guard::MessagesScrollFromEffectGuard;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::i18n::{self, Locale};
 use crate::session_ops::{clamp_session_ctx_menu_pos, selected_text_in_messages_for_context_copy};
+use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 
 #[allow(clippy::too_many_arguments)]
@@ -43,8 +44,7 @@ pub fn chat_column_view(
     trigger_stop: Arc<dyn Fn() + Send + Sync>,
     status_busy: RwSignal<bool>,
     initialized: RwSignal<bool>,
-    conversation_id: RwSignal<Option<String>>,
-    conversation_revision: RwSignal<Option<u64>>,
+    session_sync: RwSignal<SessionSyncState>,
     regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
@@ -239,8 +239,7 @@ pub fn chat_column_view(
                                                     bubble_md_selected_ids,
                                                     auto_scroll_chat,
                                                     status_busy,
-                                                    conversation_id,
-                                                    conversation_revision,
+                                                    session_sync,
                                                     regen_stream_after_truncate,
                                                     retry_assistant_target,
                                                     status_err,
@@ -261,8 +260,7 @@ pub fn chat_column_view(
                                                         bubble_md_selected_ids,
                                                         chat_find_cursor,
                                                         status_busy,
-                                                        conversation_id,
-                                                        conversation_revision,
+                                                        session_sync,
                                                         regen_stream_after_truncate,
                                                         retry_assistant_target,
                                                         status_err,

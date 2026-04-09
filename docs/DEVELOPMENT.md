@@ -493,6 +493,10 @@ flowchart LR
 
 - 助手**非工具**消息：**`markdown::to_safe_html`** + **`assistant_markdown_body_view`**（`Effect` + 微任务延迟写入）；用户 / 工具 / 系统消息在 **`app/`（聊天列）** 中仍为纯文本 **`span.msg-body`**。
 
+### `frontend-leptos/src/session_sync.rs`
+
+- **`SessionSyncState`**：单一 `RwSignal` 聚合 `conversation_id`、`last_known_revision`（SSE `conversation_saved`）、`branch_conflict`（`POST /chat/branch` 失败后直至再次对齐）；**`SessionPersistence`** / **`SessionSyncKind`** 描述本地-only 与已绑定服务端等阶段。流式与分支 UI 经 **`branch_id_and_expected_revision`**、**`stream_conversation_id`**、**`changelog_conversation_id`** 读写，避免 `conversation_id` + `revision` 两信号隐含组合散落各处。
+
 ### `frontend-leptos/src/session_ops.rs`
 
 - 会话补丁、重试准备、标题 **`title_from_user_prompt`**（首条用户消息且标题仍为默认时改写侧栏名）、导出/删除、右键菜单锚点与 **`approval_session_id`**（单测：标题生成）。

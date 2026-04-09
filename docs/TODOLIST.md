@@ -116,7 +116,7 @@
 
 **职责摘要**：根入口 `frontend-leptos/src/lib.rs`；HTTP/SSE 与本地存储见 `api.rs`、`sse_dispatch.rs`、`storage.rs`、`app_prefs.rs`；主界面 `app/mod.rs`（`chat_column`、`chat_composer`、`chat_message_render`、`sidebar_nav`、`side_column`、`workspace_panel`、各 `*_modal` 等）；会话与导出见 `session_ops.rs`、`session_export.rs`、`session_search.rs`；Markdown 与展示见 `markdown.rs`、`assistant_body.rs`、`message_format.rs`；样式与打包见 `frontend-leptos/styles/*.css`、`index.html`、`Trunk.toml`。
 
-- [ ] **浏览器侧多轮状态**：与后端会话 API 同步，刷新不丢、可选加密本地缓存（与 P1 同向）。
+- [ ] **浏览器侧多轮状态**：**刷新/重载**后仍与后端同一会话对齐（持久化 `conversation_id` + `revision` 至 `localStorage` 等）、可选加密本地缓存（与 P1 同向）。当前标签页内已用 **`frontend-leptos/src/session_sync.rs`** 的 **`SessionSyncState`** 聚合「仅本地 / 已绑定服务端 / branch 失步」等语义。
 - [ ] **聊天列表虚拟化**：极长对话下减少 DOM 与重渲染。
 - [ ] **国际化与可访问性**：已集中 **`frontend-leptos/src/i18n.rs`**（设置内语言切换）与 **`a11y.rs`**（主要模态焦点 + Tab 陷阱、全局 Esc 关闭弹层）；待办：对比度审计、更多组件/审批条等文案入库、完整键盘菜单导航。
 - [ ] **语音交互（未来）**：浏览器侧麦克风采集、STT（可对接云端或本地引擎）、TTS 播放；与现有聊天/SSE 流衔接；权限、隐私与错误降级文案；若走后端代理需在 `web/` 增加路由并与鉴权（P0）同盘。

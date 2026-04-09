@@ -58,6 +58,7 @@ use crate::app_prefs::{
 };
 use crate::i18n::{self, load_locale_from_storage};
 use crate::session_ops::{SessionContextAnchor, estimate_context_chars_for_active_session};
+use crate::session_sync::SessionSyncState;
 use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
 use leptos::html::{Div, Textarea};
@@ -75,9 +76,8 @@ pub fn App() -> impl IntoView {
     // 输入草稿：仅写 Mutex，不在每键 `sessions.update`；发送 / 切会话时再写入 `ChatSession.draft`。
     let composer_draft_buffer: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
     let composer_input_ref: NodeRef<Textarea> = NodeRef::new();
-    let conversation_id = RwSignal::new(None::<String>);
-    // 最近一次 SSE `conversation_saved.revision`；`POST /chat/branch` 需要与服务端一致。
-    let conversation_revision = RwSignal::new(None::<u64>);
+    // 本地会话与后端 `conversation_id` / `revision` 的单一聚合状态（见 `session_sync.rs`）。
+    let session_sync = RwSignal::new(SessionSyncState::local_only());
     // 当前 `/chat/stream` 任务 `job_id`（响应头与 `sse_capabilities`）；断线重连用。
     let stream_job_id = RwSignal::new(None::<u64>);
     // 已消费的最大 SSE `id:`；与 `stream_resume.after_seq` / `Last-Event-ID` 对齐。
@@ -334,7 +334,7 @@ pub fn App() -> impl IntoView {
     );
 
     wire_changelist_fetch_effects(
-        conversation_id,
+        session_sync,
         changelist_fetch_nonce,
         changelist_modal_loading,
         changelist_modal_err,
@@ -415,8 +415,7 @@ pub fn App() -> impl IntoView {
         sessions,
         active_id,
         draft,
-        conversation_id,
-        conversation_revision,
+        session_sync,
         stream_job_id,
         stream_last_event_seq,
         expanded_long_assistant_ids,
@@ -455,8 +454,7 @@ pub fn App() -> impl IntoView {
         locale,
         active_id,
         draft,
-        conversation_id,
-        conversation_revision,
+        session_sync,
         stream_job_id,
         stream_last_event_seq,
         selected_agent_role,
@@ -569,8 +567,7 @@ pub fn App() -> impl IntoView {
                 sessions,
                 active_id,
                 draft,
-                conversation_id,
-                conversation_revision,
+                session_sync,
                 focus_message_id_after_nav,
                 session_context_menu,
                 composer_buf_nav.clone(),
@@ -635,8 +632,7 @@ pub fn App() -> impl IntoView {
                         Arc::clone(&chat_wires.cancel_stream),
                         status_busy,
                         initialized,
-                        conversation_id,
-                        conversation_revision,
+                        session_sync,
                         chat_wires.regen_stream_after_truncate,
                         chat_wires.retry_assistant_target,
                         status_err,
@@ -685,8 +681,7 @@ pub fn App() -> impl IntoView {
                     selected_agent_role,
                     stream_job_id,
                     stream_last_event_seq,
-                    conversation_id,
-                    conversation_revision,
+                    session_sync,
                     context_used_estimate,
                     Arc::clone(&refresh_status),
                     locale,
@@ -699,7 +694,7 @@ pub fn App() -> impl IntoView {
                 sessions,
                 active_id,
                 draft,
-                conversation_id,
+                session_sync,
                 composer_draft_buffer.clone(),
             )}
 

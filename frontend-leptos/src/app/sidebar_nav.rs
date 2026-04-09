@@ -22,6 +22,7 @@ use crate::session_search::{
     MESSAGE_SEARCH_MAX_HITS, collect_message_search_hits, normalize_search_query,
     session_title_matches,
 };
+use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 
 /// 会话标题筛选防抖（毫秒）。
@@ -59,8 +60,7 @@ pub fn sidebar_nav_view(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
-    conversation_id: RwSignal<Option<String>>,
-    conversation_revision: RwSignal<Option<u64>>,
+    session_sync: RwSignal<SessionSyncState>,
     focus_message_id_after_nav: RwSignal<Option<String>>,
     session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     composer_buf_nav: Arc<Mutex<String>>,
@@ -205,8 +205,7 @@ pub fn sidebar_nav_view(
                                                             .unwrap_or_default()
                                                     }),
                                                 );
-                                                conversation_id.set(None);
-                                                conversation_revision.set(None);
+                                                session_sync.set(SessionSyncState::local_only());
                                                 focus_message_id_after_nav.set(Some(mid.clone()));
                                                 mobile_nav_open.set(false);
                                             }
@@ -283,8 +282,7 @@ pub fn sidebar_nav_view(
                                                         .unwrap_or_default()
                                                 }),
                                             );
-                                            conversation_id.set(None);
-                                            conversation_revision.set(None);
+                                            session_sync.set(SessionSyncState::local_only());
                                             mobile_nav_open.set(false);
                                         }
                                     }
@@ -370,7 +368,7 @@ pub fn sidebar_nav_view(
                             sessions,
                             active_id,
                             draft,
-                            conversation_id,
+                            session_sync,
                             &id,
                             locale.get_untracked(),
                         );

@@ -351,7 +351,7 @@ pub fn delete_session_after_confirm(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
-    conversation_id: RwSignal<Option<String>>,
+    session_sync: RwSignal<crate::session_sync::SessionSyncState>,
     id: &str,
     locale: crate::i18n::Locale,
 ) {
@@ -379,7 +379,7 @@ pub fn delete_session_after_confirm(
                 .with(|l| l.iter().find(|s| s.id == def_id).map(|s| s.draft.clone()))
                 .unwrap_or_default(),
         );
-        conversation_id.set(None);
+        session_sync.set(crate::session_sync::SessionSyncState::local_only());
         return;
     }
     if was_active {
@@ -390,7 +390,7 @@ pub fn delete_session_after_confirm(
                 .with(|l| l.iter().find(|s| s.id == pick).map(|s| s.draft.clone()))
                 .unwrap_or_default(),
         );
-        conversation_id.set(None);
+        session_sync.set(crate::session_sync::SessionSyncState::local_only());
     }
 }
 
