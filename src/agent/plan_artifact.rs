@@ -1,6 +1,6 @@
 //! 最终回答中的结构化「规划」产物：从 assistant content 中解析 JSON，替代 `## 规划` 等子串匹配。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -71,6 +71,10 @@ pub enum PlanArtifactError {
     WorkflowNodesNotFullyCovered {
         missing: Vec<String>,
     },
+    /// `workflow_validate_only` 后要求规划与 **`nodes[].id` 一一对应**（步数、逐步 `workflow_node_id`、多重集合一致）未满足。
+    ValidateOnlyPlanNodeBindingMismatch {
+        detail: &'static str,
+    },
 }
 
 /// [`staged_plan_invalid_run_agent_turn_error`] 返回串的固定前缀；供测试、`chat_job_queue` 历史分支识别（**勿**与用户输入拼接）。当前主路径在规划 JSON 无效时已降级为常规循环，一般不再产生该串。
@@ -101,6 +105,9 @@ pub(crate) fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
                 .join(",");
             format!("workflow_nodes_not_fully_covered missing_count={n} missing_preview={prev}")
         }
+        PlanArtifactError::ValidateOnlyPlanNodeBindingMismatch { detail } => {
+            format!("validate_only_plan_node_binding_mismatch detail={detail}")
+        }
     }
 }
 
@@ -125,7 +132,8 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 可选布尔 \"no_task\"：为 true 时表示用户未提出需分步执行的具体任务，此时 \"steps\" 必须为 []（空数组）
 - 当 \"no_task\" 省略或为 false 时，\"steps\" 为非空数组；每项含非空字符串 \"id\" 与 \"description\"
 - 每项 \"id\" 须唯一；**首尾不得含空白**；语法为 ASCII 字母或数字开头，仅含 - _ . /，总长不超过 128（与 workflow 节点 id 常见字符集一致）
-- 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法，且在**同一条规划**中唯一；值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）
+- 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法；**允许在不同步骤中重复同一值**（当 `workflow_validate_only` 的 `nodes` 含重复 `id` 时，逐步绑定需要多重集一致）。值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）
+- **工作流反思 validate_only → Do**：当最近一次工具结果为 `workflow_validate_result` 且含非空 `nodes` 时，**每一步**均须设置 `workflow_node_id`，且 `steps.len()` 须**等于** `nodes` 个数；全部 `workflow_node_id` 构成的**多重集合**须与 `nodes[].id`（含重复）**完全一致**（顺序可与 DAG 不同）
 - 可选 \"executor_kind\"（字符串，省略则本步不限制工具）：`review_readonly`（仅只读工具）、`patch_write`（只读 + 受限补丁写）、`test_runner`（只读 + 内置测试运行器）；越权调用会在工具层被拒绝并记入对话";
 
 /// Plan v1 的 JSON 示例。
@@ -237,6 +245,49 @@ pub(crate) fn validate_plan_covers_all_workflow_node_ids(
     }
 }
 
+/// 在 **`workflow_validate_only`** 路径上强制规划与 **`nodes[].id` 绑定**：`steps.len() == nodes.len()`、每步均有 `workflow_node_id`、二者多重集合一致（顺序可不同）。
+///
+/// `validate_only_node_ids` 通常来自历史中最近一次 `report_type == workflow_validate_result` 的 `nodes[].id`；为空切片时不校验（无节点则不做绑定）。
+pub(crate) fn validate_plan_binds_workflow_validate_nodes(
+    plan: &AgentReplyPlanV1,
+    validate_only_node_ids: &[String],
+) -> Result<(), PlanArtifactError> {
+    if validate_only_node_ids.is_empty() {
+        return Ok(());
+    }
+    if plan.steps.len() != validate_only_node_ids.len() {
+        return Err(PlanArtifactError::ValidateOnlyPlanNodeBindingMismatch {
+            detail: "steps_len_must_equal_nodes_len",
+        });
+    }
+    let mut expected: HashMap<&str, usize> = HashMap::new();
+    for id in validate_only_node_ids {
+        *expected.entry(id.as_str()).or_insert(0) += 1;
+    }
+    let mut actual: HashMap<&str, usize> = HashMap::new();
+    for s in &plan.steps {
+        let Some(ref w) = s.workflow_node_id else {
+            return Err(PlanArtifactError::ValidateOnlyPlanNodeBindingMismatch {
+                detail: "each_step_requires_workflow_node_id",
+            });
+        };
+        let t = w.trim();
+        if t.is_empty() {
+            return Err(PlanArtifactError::ValidateOnlyPlanNodeBindingMismatch {
+                detail: "each_step_requires_workflow_node_id",
+            });
+        }
+        *actual.entry(t).or_insert(0) += 1;
+    }
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(PlanArtifactError::ValidateOnlyPlanNodeBindingMismatch {
+            detail: "workflow_node_id_multiset_must_match_nodes",
+        })
+    }
+}
+
 fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifactError> {
     if p.plan_type != "agent_reply_plan" {
         return Err(PlanArtifactError::WrongType(p.plan_type.clone()));
@@ -254,7 +305,6 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
         return Err(PlanArtifactError::EmptySteps);
     }
     let mut seen_step_ids = HashSet::<String>::new();
-    let mut seen_workflow_node_ids = HashSet::<String>::new();
     for (i, s) in p.steps.iter().enumerate() {
         let raw_id = s.id.as_str();
         if raw_id != raw_id.trim() {
@@ -307,12 +357,6 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
                 return Err(PlanArtifactError::InvalidStep {
                     index: i,
                     reason: "workflow_node_id 语法不合法",
-                });
-            }
-            if !seen_workflow_node_ids.insert(w.to_string()) {
-                return Err(PlanArtifactError::InvalidStep {
-                    index: i,
-                    reason: "workflow_node_id 重复",
                 });
             }
         }
@@ -747,6 +791,86 @@ mod tests {
         };
         assert!(validate_plan_workflow_node_ids_subset(&plan, &["fmt".into()]).is_ok());
         assert!(validate_plan_workflow_node_ids_subset(&plan, &["other".into()]).is_err());
+    }
+
+    #[test]
+    fn validate_only_binds_nodes_multiset_ok() {
+        let plan = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![
+                PlanStepV1 {
+                    id: "s2".into(),
+                    description: "b".into(),
+                    workflow_node_id: Some("b".into()),
+                    executor_kind: None,
+                },
+                PlanStepV1 {
+                    id: "s1".into(),
+                    description: "a".into(),
+                    workflow_node_id: Some("a".into()),
+                    executor_kind: None,
+                },
+            ],
+            no_task: false,
+        };
+        assert!(
+            validate_plan_binds_workflow_validate_nodes(&plan, &["a".into(), "b".into()]).is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_only_binds_duplicate_nodes() {
+        let plan = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![
+                PlanStepV1 {
+                    id: "s1".into(),
+                    description: "x".into(),
+                    workflow_node_id: Some("dup".into()),
+                    executor_kind: None,
+                },
+                PlanStepV1 {
+                    id: "s2".into(),
+                    description: "y".into(),
+                    workflow_node_id: Some("dup".into()),
+                    executor_kind: None,
+                },
+            ],
+            no_task: false,
+        };
+        assert!(
+            validate_plan_binds_workflow_validate_nodes(&plan, &["dup".into(), "dup".into()])
+                .is_ok()
+        );
+        assert!(validate_plan_binds_workflow_validate_nodes(&plan, &["dup".into()]).is_err());
+    }
+
+    #[test]
+    fn validate_only_requires_workflow_node_id_each_step() {
+        let plan = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![
+                PlanStepV1 {
+                    id: "s1".into(),
+                    description: "a".into(),
+                    workflow_node_id: Some("a".into()),
+                    executor_kind: None,
+                },
+                PlanStepV1 {
+                    id: "s2".into(),
+                    description: "b".into(),
+                    workflow_node_id: None,
+                    executor_kind: None,
+                },
+            ],
+            no_task: false,
+        };
+        assert!(
+            validate_plan_binds_workflow_validate_nodes(&plan, &["a".into(), "b".into()]).is_err()
+        );
     }
 
     #[test]
