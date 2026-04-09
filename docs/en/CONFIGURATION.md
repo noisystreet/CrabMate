@@ -75,6 +75,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_STAGED_PLAN_ENSEMBLE_COUNT` | Logical multi-planner count (1–3, default 1). |
 | `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | Print no-tools planner stream to stdout in CLI/`chat` (default `true`; see § Staged planning). |
 | `AGENT_STAGED_PLAN_OPTIMIZER_ROUND` | Enable post-plan optimizer round (default `true`). |
+| `AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY` | When `true`, suppress user-visible streaming for finalized no-tools plan JSON, then run a follow-up no-tools round for natural-language-only output (default `false`; see § Staged planning). |
 
 ### Queue, parallelism, cache
 
@@ -339,6 +340,8 @@ With **`planner_executor_mode = single_agent`**, each user message runs a no-too
 **`staged_plan_ensemble_count`** (default `1`, clamp 1–3, **`AGENT_STAGED_PLAN_ENSEMBLE_COUNT`**)**: **`1`** off. **`2`/`3`**: extra serial no-tools “planner B/C” rounds (aux assistants **not** in history), then merge round—**significantly more API cost**.
 
 **`staged_plan_skip_ensemble_on_casual_prompt`** (default `true`, **`AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`**)**: When **`staged_plan_ensemble_count` > 1**, skip ensemble + merge if the **current user message** (heuristic: very short or common small-talk) looks casual—saves planner API calls. Set `false` to always run ensemble when configured.
+
+**Two-phase display (`staged_plan_two_phase_nl_display`, default `false`, `AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`)**: When `true`, after a parsed **`agent_reply_plan` v1** is merged into history (including optional ensemble/merge + optimizer; **`no_task`** path also runs this before the regular loop), **no-tools planner-class rounds** call **`complete_chat_retrying`** with **no user-visible streaming** of the plan JSON (`out: None` and suppressed `render_to_terminal`, combined with **`staged_plan_cli_show_planner_stream`** for CLI). A bridging **user** (`staged_plan_nl_followup_user_body`: short colloquial follow-up plus the same kind of display-hidden prefix as staged step injections; **not** shown in chat, reducing “the user sent system instructions” narration) is appended, then another **no-tools** completion streams **natural language only**. History keeps JSON assistant + bridge user + NL assistant. There is **no** vendor **`response_format: json_object`** enforcement; the first round still relies on fence/body parsing. **`patch_planner`** replans mid-run **do not** automatically trigger this NL follow-up (only the initial finalize path does).
 
 ## SyncDefault Docker sandbox (`sync_default_tool_sandbox_mode`)
 

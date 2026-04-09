@@ -439,6 +439,7 @@ pub(super) fn finalize(
     let staged_plan_ensemble_count = b.staged_plan_ensemble_count.unwrap_or(1).clamp(1, 3) as u8;
     let staged_plan_skip_ensemble_on_casual_prompt =
         b.staged_plan_skip_ensemble_on_casual_prompt.unwrap_or(true);
+    let staged_plan_two_phase_nl_display = b.staged_plan_two_phase_nl_display.unwrap_or(false);
     let sync_default_tool_sandbox_mode = match b.sync_default_tool_sandbox_mode_str.as_deref() {
         Some(s) => types::SyncDefaultToolSandboxMode::parse(s)?,
         None => types::SyncDefaultToolSandboxMode::default(),
@@ -727,6 +728,7 @@ pub(super) fn finalize(
         staged_plan_optimizer_requires_parallel_tools,
         staged_plan_ensemble_count,
         staged_plan_skip_ensemble_on_casual_prompt,
+        staged_plan_two_phase_nl_display,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,

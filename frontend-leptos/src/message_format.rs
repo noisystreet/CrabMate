@@ -281,10 +281,25 @@ pub(crate) fn assistant_text_for_display(
     raw.to_string()
 }
 
+/// 须与主仓 `src/runtime/plan_section.rs` 中 `STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX` 同步。
+const STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX: &str = "### CrabMate·NL补全\n";
+
+fn user_text_for_chat_display(raw: &str) -> String {
+    if raw
+        .trim_start()
+        .starts_with(STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX)
+    {
+        return String::new();
+    }
+    raw.to_string()
+}
+
 pub fn message_text_for_display(m: &StoredMessage, loc: Locale) -> String {
     if m.role == "assistant" {
         let is_streaming_last_assistant = m.state.as_deref() == Some("loading");
         assistant_text_for_display(&m.text, is_streaming_last_assistant, loc)
+    } else if m.role == "user" {
+        user_text_for_chat_display(&m.text)
     } else {
         m.text.clone()
     }
@@ -292,8 +307,11 @@ pub fn message_text_for_display(m: &StoredMessage, loc: Locale) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX;
     use super::assistant_text_for_display;
+    use super::message_text_for_display;
     use crate::i18n::Locale;
+    use crate::storage::StoredMessage;
 
     #[test]
     fn hide_inline_agent_reply_plan_json_fence() {
@@ -345,5 +363,21 @@ mod tests {
             !out.contains("agent_reply_plan"),
             "raw plan json should be hidden: {out}"
         );
+    }
+
+    #[test]
+    fn user_hides_nl_followup_bridge() {
+        let m = StoredMessage {
+            id: "x".into(),
+            role: "user".into(),
+            text: format!(
+                "{}接下来你打算怎么帮我？简单用两三句说说就行。",
+                STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
+            ),
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        assert_eq!(message_text_for_display(&m, Locale::ZhHans), "");
     }
 }

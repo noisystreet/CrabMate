@@ -479,6 +479,8 @@ pub struct AgentConfig {
     pub staged_plan_ensemble_count: u8,
     /// 为 true（默认）且 `staged_plan_ensemble_count>1` 时：若触发本轮规划的用户正文经启发式判定为寒暄/极短，则跳过逻辑多规划员与合并轮以省 API。
     pub staged_plan_skip_ensemble_on_casual_prompt: bool,
+    /// 为 true 时：分阶段规划各 **JSON 规划轮**不向用户侧 SSE/终端流式输出；定稿后**再**追加一轮无工具补全，仅将自然语言流式给用户（历史仍保留 JSON 助手条 + 桥接 user + NL 助手条）。默认 false。
+    pub staged_plan_two_phase_nl_display: bool,
     /// `HandlerId::SyncDefault` 工具沙盒模式；`docker` 时依赖宿主 `docker` CLI 与镜像。
     pub sync_default_tool_sandbox_mode: SyncDefaultToolSandboxMode,
     /// `sync_default_tool_sandbox_mode = docker` 时使用的镜像（如 `crabmate-tools:dev`）。

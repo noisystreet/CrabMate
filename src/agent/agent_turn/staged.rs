@@ -11,13 +11,15 @@ use crate::agent::plan_ensemble;
 use crate::agent::plan_optimizer::{self, STAGED_PLAN_OPTIMIZER_COACH_MARK};
 use crate::config::StagedPlanFeedbackMode;
 use crate::llm::{
-    CompleteChatRetryingParams, complete_chat_retrying, no_tools_chat_request_from_messages,
+    CompleteChatRetryingParams, complete_chat_retrying,
+    kimi_k2_5_vendor_requires_tool_call_reasoning, no_tools_chat_request_from_messages,
 };
 use crate::sse::{SseErrorBody, SsePayload, encode_message};
 use crate::tool_result::tool_message_content_ok_for_model;
 use crate::types::{
     Message, USER_CANCELLED_FINISH_REASON, is_message_excluded_from_llm_context_except_memory,
     message_clone_stripping_reasoning_for_api,
+    messages_for_api_stripping_reasoning_skip_ui_separators,
 };
 
 use super::execute_tools::{
@@ -30,8 +32,8 @@ use super::reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 use super::staged_sse::{
     emit_chat_ui_separator_sse, next_staged_plan_id, send_staged_plan_finished,
     send_staged_plan_notice, send_staged_plan_started, send_staged_plan_step_finished,
-    send_staged_plan_step_started, staged_plan_phase_instruction_default,
-    staged_plan_queue_summary_text,
+    send_staged_plan_step_started, staged_plan_nl_followup_user_body,
+    staged_plan_phase_instruction_default, staged_plan_queue_summary_text,
 };
 
 /// 若最后一条为带「规划教练」标记的临时 user，则弹出（取消或解析失败时避免孤立上下文）。
@@ -47,6 +49,89 @@ fn pop_last_staged_planner_coach_user_if_present(messages: &mut Vec<Message>) {
     }
 }
 
+fn staged_two_phase_suppress_planner_stream(cfg: &crate::config::AgentConfig) -> bool {
+    cfg.staged_plan_two_phase_nl_display
+}
+
+/// `staged_plan_two_phase_nl_display` 开启时：在上下文中已有规划 JSON 助手条后，追加一轮仅自然语言的**用户可见**输出（SSE/终端）。
+async fn run_staged_plan_nl_followup_round<F>(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    make_step_user_message: &F,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    F: Fn(String) -> Message,
+{
+    let mark = p.messages.len();
+    p.messages
+        .push(make_step_user_message(staged_plan_nl_followup_user_body()));
+    let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = async {
+        crate::agent::context_window::prepare_messages_for_model(
+            p.llm_backend,
+            p.client,
+            p.api_key,
+            p.cfg.as_ref(),
+            p.messages,
+            Some(per_coord),
+            p.workspace_changelist.as_ref().map(|a| a.as_ref()),
+        )
+        .await?;
+        let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(
+            p.messages.as_slice(),
+            kimi_k2_5_vendor_requires_tool_call_reasoning(p.cfg.as_ref()),
+        );
+        let req = no_tools_chat_request_from_messages(
+            p.cfg.as_ref(),
+            stripped,
+            p.temperature_override,
+            p.seed_override,
+        );
+        let cc = CompleteChatRetryingParams {
+            llm_backend: p.llm_backend,
+            http: p.client,
+            api_key: p.api_key,
+            cfg: p.cfg.as_ref(),
+            out: p.out,
+            render_to_terminal: p.render_to_terminal,
+            no_stream: p.no_stream,
+            cancel: p.cancel,
+            plain_terminal_stream: p.plain_terminal_stream,
+            request_chrome_trace: p.request_chrome_trace.clone(),
+        };
+        let (mut msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
+        if finish_reason == USER_CANCELLED_FINISH_REASON {
+            p.messages.pop();
+            return Ok(());
+        }
+        if let Some(tc) = msg.tool_calls.as_ref().filter(|c| !c.is_empty()) {
+            debug!(
+                target: "crabmate",
+                "分阶段规划·自然语言补全轮：丢弃 API 返回的 {} 条原生 tool_calls",
+                tc.len()
+            );
+        }
+        msg.tool_calls = None;
+        crate::text_sanitize::materialize_deepseek_dsml_tool_calls_in_message(
+            &mut msg,
+            p.cfg.materialize_deepseek_dsml_tool_calls,
+        );
+        if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
+            warn!(
+                target: "crabmate",
+                "分阶段规划·自然语言补全轮：DSML 物化出 tool_calls，已忽略"
+            );
+            msg.tool_calls = None;
+        }
+        push_assistant_merging_trailing_empty_placeholder(p.messages, msg);
+        Ok(())
+    }
+    .await;
+    if result.is_err() && p.messages.len() > mark {
+        p.messages.truncate(mark);
+    }
+    result
+}
+
 /// 无工具规划补全：假定 `p.messages` 已含本轮所需的 user（若有）；与 `prepare_staged_planner_no_tools_request` + `complete_chat_retrying` 一致。
 async fn complete_one_staged_planner_assistant_round(
     p: &mut RunLoopParams<'_>,
@@ -56,13 +141,14 @@ async fn complete_one_staged_planner_assistant_round(
     log_label: &'static str,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let req = prepare_staged_planner_no_tools_request(p, per_coord, build_planner_messages).await?;
+    let suppress = staged_two_phase_suppress_planner_stream(p.cfg.as_ref());
     let cc = CompleteChatRetryingParams {
         llm_backend: p.llm_backend,
         http: p.client,
         api_key: p.api_key,
         cfg: p.cfg.as_ref(),
-        out: p.out,
-        render_to_terminal: planner_render_to_terminal,
+        out: if suppress { None } else { p.out },
+        render_to_terminal: planner_render_to_terminal && !suppress,
         no_stream: p.no_stream,
         cancel: p.cancel,
         plain_terminal_stream: p.plain_terminal_stream,
@@ -461,13 +547,14 @@ where
     p.messages.push(make_step_user_message(feedback_user_body));
     let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
         .await?;
+    let suppress = staged_two_phase_suppress_planner_stream(p.cfg.as_ref());
     let cc = CompleteChatRetryingParams {
         llm_backend: p.llm_backend,
         http: p.client,
         api_key: p.api_key,
         cfg: p.cfg.as_ref(),
-        out: p.out,
-        render_to_terminal: *planner_render_to_terminal,
+        out: if suppress { None } else { p.out },
+        render_to_terminal: *planner_render_to_terminal && !suppress,
         no_stream: p.no_stream,
         cancel: p.cancel,
         plain_terminal_stream: p.plain_terminal_stream,
@@ -614,13 +701,14 @@ where
 {
     let planner_render_to_terminal =
         render_to_terminal && (p.out.is_some() || p.cfg.staged_plan_cli_show_planner_stream);
+    let suppress = staged_two_phase_suppress_planner_stream(p.cfg.as_ref());
     let cc = CompleteChatRetryingParams {
         llm_backend: p.llm_backend,
         http: p.client,
         api_key: p.api_key,
         cfg: p.cfg.as_ref(),
-        out: p.out,
-        render_to_terminal: planner_render_to_terminal,
+        out: if suppress { None } else { p.out },
+        render_to_terminal: planner_render_to_terminal && !suppress,
         no_stream: p.no_stream,
         cancel: p.cancel,
         plain_terminal_stream: p.plain_terminal_stream,
@@ -746,6 +834,9 @@ where
     push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
 
     if plan.no_task {
+        if p.cfg.staged_plan_two_phase_nl_display {
+            run_staged_plan_nl_followup_round(p, per_coord, &make_step_user_message).await?;
+        }
         debug!(
             target: "crabmate",
             "分阶段规划：no_task=true，跳过分步注入，转入常规对话循环"
@@ -824,6 +915,10 @@ where
             );
             pop_last_staged_planner_coach_user_if_present(p.messages);
         }
+    }
+
+    if p.cfg.staged_plan_two_phase_nl_display {
+        run_staged_plan_nl_followup_round(p, per_coord, &make_step_user_message).await?;
     }
 
     let plan_id = next_staged_plan_id();

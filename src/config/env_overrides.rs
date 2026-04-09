@@ -438,6 +438,11 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.staged_plan_skip_ensemble_on_casual_prompt = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.staged_plan_two_phase_nl_display = Some(val);
+    }
     if let Ok(s) = std::env::var("AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE") {
         let s = s.trim().to_string();
         if !s.is_empty() {
