@@ -14,6 +14,7 @@ pub(crate) struct PerPlanCallModelParams<'a> {
     pub client: &'a reqwest::Client,
     pub api_key: &'a str,
     pub cfg: &'a AgentConfig,
+    /// 默认全量工具；分阶段步级子代理时传入收窄后的切片。
     pub tools_defs: &'a [crate::types::Tool],
     pub messages: &'a [Message],
     pub out: Option<&'a mpsc::Sender<String>>,

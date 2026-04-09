@@ -126,6 +126,7 @@ mod tests {
                 id: "a1".to_string(),
                 description: "x".to_string(),
                 workflow_node_id: None,
+                executor_kind: None,
             }],
             no_task: false,
         }];
@@ -143,6 +144,7 @@ mod tests {
                 id: "1".to_string(),
                 description: "d1".to_string(),
                 workflow_node_id: None,
+                executor_kind: None,
             }],
             no_task: false,
         };
@@ -153,6 +155,7 @@ mod tests {
                 id: "2".to_string(),
                 description: "d2".to_string(),
                 workflow_node_id: None,
+                executor_kind: None,
             }],
             no_task: false,
         };

@@ -21,6 +21,7 @@ mod plan_call;
 mod reflect;
 mod staged;
 mod staged_sse;
+mod sub_agent_policy;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
 #[allow(unused_imports)]
