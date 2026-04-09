@@ -36,6 +36,8 @@ pub enum PlanRewriteExhaustedReason {
     PlanWorkflowNodeIdsInvalid,
     /// 严格模式下未覆盖全部工作流节点 id。
     PlanWorkflowNodeCoverageIncomplete,
+    /// `workflow_validate_only` 后规划未与 **`nodes[].id` 一一绑定**（步数、`workflow_node_id` 必填或多重集合不一致）。
+    PlanValidateOnlyNodeBindingMismatch,
     /// 侧向语义校验判定与工具结果矛盾且重写次数已用尽。
     PlanSemanticInconsistent,
     /// 未归类的用尽路径（防御性；主路径不应出现）。
@@ -50,6 +52,7 @@ impl PlanRewriteExhaustedReason {
             Self::PlanLayerCountMismatch => "plan_layer_count_mismatch",
             Self::PlanWorkflowNodeIdsInvalid => "plan_workflow_node_ids_invalid",
             Self::PlanWorkflowNodeCoverageIncomplete => "plan_workflow_node_coverage_incomplete",
+            Self::PlanValidateOnlyNodeBindingMismatch => "plan_validate_only_node_binding_mismatch",
             Self::PlanSemanticInconsistent => "plan_semantic_inconsistent",
             Self::ExhaustedOther => "plan_rewrite_exhausted_other",
         }
@@ -94,6 +97,13 @@ fn classify_plan_rewrite_exhausted_reason(
     };
     if !workflow_cover_ok {
         return PlanRewriteExhaustedReason::PlanWorkflowNodeCoverageIncomplete;
+    }
+    if apply_layer_semantics
+        && let Some(ids) = last_workflow_validate_binding_plan_node_ids(messages)
+        && !ids.is_empty()
+        && plan_artifact::validate_plan_binds_workflow_validate_nodes(&plan, &ids).is_err()
+    {
+        return PlanRewriteExhaustedReason::PlanValidateOnlyNodeBindingMismatch;
     }
     PlanRewriteExhaustedReason::ExhaustedOther
 }
@@ -353,6 +363,7 @@ impl PerCoordinator {
             FinalPlanRequirementMode::Always => true,
         };
         let layer_need = self.workflow_validate_layer_need(messages);
+        let validate_only_binding_ids = last_workflow_validate_binding_plan_node_ids(messages);
 
         let content = msg.content.as_deref().unwrap_or("");
         if let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1(content) {
@@ -379,7 +390,18 @@ impl PerCoordinator {
                 true
             };
             let workflow_ids_ok = workflow_subset_ok && workflow_cover_ok;
-            if layers_ok && workflow_ids_ok {
+            let validate_only_binding_ok = if apply_layer_semantics {
+                match validate_only_binding_ids.as_ref() {
+                    Some(ids) if !ids.is_empty() => {
+                        plan_artifact::validate_plan_binds_workflow_validate_nodes(&plan, ids)
+                            .is_ok()
+                    }
+                    _ => true,
+                }
+            } else {
+                true
+            };
+            if layers_ok && workflow_ids_ok && validate_only_binding_ok {
                 let digest = summarize_messages_for_final_plan_semantic_check(
                     messages,
                     cfg,
@@ -415,10 +437,11 @@ impl PerCoordinator {
             }
             log::info!(
                 target: "crabmate::per",
-                "after_final_assistant outcome=plan_schema_ok_semantics_fail plan_steps={} layer_need={:?} workflow_node_ids_ok={}",
+                "after_final_assistant outcome=plan_schema_ok_semantics_fail plan_steps={} layer_need={:?} workflow_node_ids_ok={} validate_only_binding_ok={}",
                 plan.steps.len(),
                 layer_need,
-                workflow_ids_ok
+                workflow_ids_ok,
+                validate_only_binding_ok
             );
         }
 
@@ -439,6 +462,10 @@ impl PerCoordinator {
             return AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason };
         }
         self.plan_rewrite_attempts += 1;
+        let validate_only_bind_ids = validate_only_binding_ids.as_ref().filter(|v| !v.is_empty());
+        let bind_suffix = validate_only_bind_ids
+            .map(|ids| validate_only_plan_binding_rewrite_suffix(ids.as_slice()))
+            .unwrap_or_default();
         let rewrite_text = match (
             layer_need.filter(|&n| n > 0 && apply_layer_semantics),
             last_workflow_tool_node_ids(messages),
@@ -481,6 +508,7 @@ impl PerCoordinator {
             }
             (None, _) => plan_rewrite_user_text(),
         };
+        let rewrite_text = format!("{rewrite_text}{bind_suffix}");
         log::info!(
             target: "crabmate::per",
             "after_final_assistant outcome=request_plan_rewrite attempt={} layer_need={:?}",
@@ -685,6 +713,73 @@ fn last_workflow_validate_layer_count(messages: &[Message]) -> Option<usize> {
     None
 }
 
+/// 自历史中取最近一次 **`workflow_validate_result`** 的 `nodes[].id` 列表（含重复），供 **validate_only → Do** 路径上强制规划逐步绑定。
+fn last_workflow_validate_binding_plan_node_ids(messages: &[Message]) -> Option<Vec<String>> {
+    for i in (0..messages.len()).rev() {
+        let m = &messages[i];
+        if m.role != "tool" {
+            continue;
+        }
+        let Some(tid) = m.tool_call_id.as_deref() else {
+            continue;
+        };
+        let Some(aidx) = assistant_index_for_tool_call(messages, i, tid) else {
+            continue;
+        };
+        let assistant = &messages[aidx];
+        let Some(name) = assistant
+            .tool_calls
+            .as_ref()
+            .and_then(|tc| tc.iter().find(|c| c.id == tid))
+            .map(|c| c.function.name.as_str())
+        else {
+            continue;
+        };
+        if name != "workflow_execute" {
+            continue;
+        }
+        let Some(body) = m.content.as_deref() else {
+            continue;
+        };
+        let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
+        let Ok(v) = serde_json::from_str::<Value>(payload.as_ref()) else {
+            continue;
+        };
+        if v.get("report_type").and_then(|x| x.as_str()) != Some("workflow_validate_result") {
+            continue;
+        }
+        let Some(nodes) = v.get("nodes").and_then(|x| x.as_array()) else {
+            continue;
+        };
+        let mut ids = Vec::new();
+        for n in nodes {
+            let Some(id) = n.get("id").and_then(|x| x.as_str()) else {
+                continue;
+            };
+            ids.push(id.to_string());
+        }
+        if ids.is_empty() {
+            continue;
+        }
+        return Some(ids);
+    }
+    None
+}
+
+fn validate_only_plan_binding_rewrite_suffix(validate_only_node_ids: &[String]) -> String {
+    if validate_only_node_ids.is_empty() {
+        return String::new();
+    }
+    let n = validate_only_node_ids.len();
+    format!(
+        "\n\n**validate_only 绑定点（必守）**：最近一次 `workflow_validate_only` 的 `nodes` 共 **{n}** 个（DAG 顺序可异于下列列表，但绑定须一致）。你的 `agent_reply_plan` 须满足：\n\
+1. `steps.len()` **等于** **{n}**（与 `nodes` 个数相同）。\n\
+2. **每一步**均须设置 **`workflow_node_id`**（不得省略）。\n\
+3. 全部 `workflow_node_id` 构成的**多重集合**须与下列节点 id **完全一致**（含重复次数；`steps` 顺序可与下列不同）：`{}`。",
+        validate_only_node_ids.join(", ")
+    )
+}
+
 /// 内置工具名：出现则认为「高风险」，语义侧向校验可收录其摘要（仍受 `max_non_readonly` 条数限制）。
 const SEMANTIC_CHECK_HIGH_RISK_TOOLS: &[&str] = &[
     "run_command",
@@ -861,11 +956,41 @@ mod tests {
         let mut c = pc(FinalPlanRequirementMode::WorkflowReflection, 2);
         let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
         let _ = c.prepare_workflow_execute(wf_args);
+        let hist_one_node = vec![
+            Message {
+                role: "assistant".to_string(),
+                content: None,
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "tc0".to_string(),
+                    typ: "function".to_string(),
+                    function: FunctionCall {
+                        name: "workflow_execute".to_string(),
+                        arguments: "{}".to_string(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "tool".to_string(),
+                content: Some(
+                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":1},"nodes":[{"id":"only"}]}"#
+                        .to_string(),
+                ),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc0".to_string()),
+            },
+        ];
         let ok = Message {
             role: "assistant".to_string(),
             content: Some(
                 r#"```json
-{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"step"}]}
+{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"step","workflow_node_id":"only"}]}
 ```"#
                     .to_string(),
             ),
@@ -876,7 +1001,7 @@ mod tests {
             tool_call_id: None,
         };
         assert!(matches!(
-            c.after_final_assistant(&ok, &[], &cfg, false),
+            c.after_final_assistant(&ok, &hist_one_node, &cfg, false),
             AfterFinalAssistant::StopTurn
         ));
     }
@@ -907,7 +1032,7 @@ mod tests {
             Message {
                 role: "tool".to_string(),
                 content: Some(
-                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3}}"#
+                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3},"nodes":[{"id":"a"},{"id":"b"},{"id":"c"}]}"#
                         .to_string(),
                 ),
                 reasoning_content: None,
@@ -940,9 +1065,9 @@ mod tests {
             content: Some(
                 r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[
-  {"id":"a","description":"layer 0"},
-  {"id":"b","description":"layer 1"},
-  {"id":"c","description":"layer 2"}
+  {"id":"s0","description":"layer 0","workflow_node_id":"a"},
+  {"id":"s1","description":"layer 1","workflow_node_id":"b"},
+  {"id":"s2","description":"layer 2","workflow_node_id":"c"}
 ]}
 ```"#
                     .to_string(),
@@ -985,7 +1110,7 @@ mod tests {
             Message {
                 role: "tool".to_string(),
                 content: Some(
-                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3}}"#
+                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3},"nodes":[{"id":"a"},{"id":"b"},{"id":"c"}]}"#
                         .to_string(),
                 ),
                 reasoning_content: None,
@@ -1079,7 +1204,10 @@ mod tests {
             role: "assistant".to_string(),
             content: Some(
                 r#"```json
-{"type":"agent_reply_plan","version":1,"steps":[{"id":"step1","description":"run fmt","workflow_node_id":"fmt"}]}
+{"type":"agent_reply_plan","version":1,"steps":[
+  {"id":"step1","description":"run fmt","workflow_node_id":"fmt"},
+  {"id":"step2","description":"run test","workflow_node_id":"test"}
+]}
 ```"#
                     .to_string(),
             ),
@@ -1091,6 +1219,83 @@ mod tests {
         };
         assert!(matches!(
             c.after_final_assistant(&ok_link, &hist, &cfg, false),
+            AfterFinalAssistant::StopTurn
+        ));
+    }
+
+    #[test]
+    fn validate_only_duplicate_nodes_plan_must_repeat_workflow_node_id() {
+        let cfg = test_cfg();
+        let mut c = pc(FinalPlanRequirementMode::WorkflowReflection, 3);
+        let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
+        let _ = c.prepare_workflow_execute(wf_args);
+        let hist = vec![
+            Message {
+                role: "assistant".to_string(),
+                content: None,
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "tc1".to_string(),
+                    typ: "function".to_string(),
+                    function: FunctionCall {
+                        name: "workflow_execute".to_string(),
+                        arguments: "{}".to_string(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "tool".to_string(),
+                content: Some(
+                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":1},"nodes":[{"id":"dup"},{"id":"dup"}]}"#
+                        .to_string(),
+                ),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc1".to_string()),
+            },
+        ];
+        let one_step_dup = Message {
+            role: "assistant".to_string(),
+            content: Some(
+                r#"```json
+{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"both","workflow_node_id":"dup"}]}
+```"#
+                    .to_string(),
+            ),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&one_step_dup, &hist, &cfg, false),
+            AfterFinalAssistant::RequestPlanRewrite(_)
+        ));
+        let two_steps_dup = Message {
+            role: "assistant".to_string(),
+            content: Some(
+                r#"```json
+{"type":"agent_reply_plan","version":1,"steps":[
+  {"id":"s1","description":"first","workflow_node_id":"dup"},
+  {"id":"s2","description":"second","workflow_node_id":"dup"}
+]}
+```"#
+                    .to_string(),
+            ),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&two_steps_dup, &hist, &cfg, false),
             AfterFinalAssistant::StopTurn
         ));
     }
@@ -1472,7 +1677,7 @@ mod tests {
             Message {
                 role: "tool".to_string(),
                 content: Some(
-                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3}}"#
+                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3},"nodes":[{"id":"x"},{"id":"y"},{"id":"z"}]}"#
                         .to_string(),
                 ),
                 reasoning_content: None,
@@ -1505,7 +1710,7 @@ mod tests {
 
     #[test]
     fn workflow_validate_layer_from_crabmate_tool_envelope() {
-        let inner = r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3}}"#;
+        let inner = r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3},"nodes":[{"id":"x"},{"id":"y"},{"id":"z"}]}"#;
         let parsed = crate::tool_result::parse_legacy_output("workflow_execute", inner);
         let wrapped = crate::tool_result::encode_tool_message_envelope_v1(
             "workflow_execute",
