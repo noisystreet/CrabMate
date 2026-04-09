@@ -10,7 +10,7 @@ alwaysApply: false
 
 1. **`src/tools/tool_specs_registry.rs`**：在 **`tool_specs()`** 数组中加入 **`ToolSpec`** 条目，包含 `name`、`description`、`category`（**`ToolCategory`**）、`parameters`（引用 `tool_params` 中的 JSON Schema 构建函数）、`runner`（引用 `mod.rs` 中的 `runner_*` 函数）、`summary`（**`ToolSummaryKind`**：`None` / `Static("摘要")` / `Dynamic(ts::summary_fn)`）。
 2. **`src/tools/mod.rs`**：`mod` 子模块（若有新文件）；新增 `runner_*` 薄封装函数。工具入参 JSON 优先用 **`parse_args_json`**（`parse_args.rs`）而非各处手写 **`serde_json::from_str(args_json)`**。
-3. **`src/tools/tool_summary.rs`**（仅 `Dynamic` 摘要）：若需从参数动态生成摘要，在此文件新增 `pub(super) fn summary_xxx(v: &serde_json::Value) -> Option<String>`。
+3. **`src/tools/tool_summary_args.rs`** + **`tool_summary.rs`**（`Dynamic` 摘要）：在 `tool_summary_args` 中为该工具新增 `Deserialize` 结构体并实现 `ToolSummaryLine`，再在 `tool_summary.rs` 增加 `summary_xxx` 薄封装调用 `summarize_from_value::<…>`。
 4. **JSON Schema**：`tool_params` 中的 `parameters` 与运行时解析一致；`runner_*` 中对 `args` 的校验与错误信息对用户可读。
 5. **白名单 / 审批**：若工具会执行命令、访问网络或写盘，确认与 **`run_command` 白名单**、**`http_fetch` 前缀**、TUI **`CommandApproval`** 等策略一致，不扩大未意图的攻击面。
 6. **文档**：更新 **`docs/DEVELOPMENT.md`** 中 **`src/tools/` 子文件**表（若增删 `mod xxx`）；用户可见能力同步 **`README.md`** 与 **`docs/TOOLS.md`**（工具详述与示例，见 **`.cursor/rules/todolist-and-documentation.mdc`**）。
