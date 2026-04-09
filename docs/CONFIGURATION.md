@@ -406,6 +406,8 @@ model = "deepseek-reasoner"
 - **`docker`**：**SyncDefault** 以及 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成白名单与审批（若有）后，每次调用经 **[bollard](https://docs.rs/bollard)** 走 **Docker Engine HTTP API** 创建并运行一次性容器（等价于 `docker run --rm -i`）：挂载当前工作区到容器内 **`/workspace`**（读写），只读挂载**当前正在运行的宿主 `crabmate` 可执行文件**到 **`/crabmate`**，在容器内执行 **`crabmate tool-runner-internal`**（由服务端生成临时 JSON 配置并只读挂入容器）。**Linux/macOS** 默认连接本地 Unix 套接字（与 `docker` CLI 相同）；**`DOCKER_HOST`** 在部分环境下亦可由 bollard 解析。
 - **不进入沙盒**：**`workflow_execute`**、**MCP 代理工具**（`mcp__*`）仍只在宿主执行。
 
+**bollard 编译特性（维护者）**：根目录 **`Cargo.toml`** 对 **bollard** 使用 **`default-features = false`**，仅启用 **`http`**、**`pipe`**（本地 **`unix://`**、Windows named pipe、明文 **`tcp://`** / **`http://`** 的 **`DOCKER_HOST`**，可减小依赖与二进制体积）。若 **`DOCKER_HOST` 为 `https://`** 或设置 **`DOCKER_TLS_VERIFY`**，须在 **`bollard`** 的 **`features`** 中**追加 `ssl`** 并重新编译（会链接 **rustls** 等）。
+
 ### 使用前准备
 
 1. **Docker 守护进程可用**：本机能 `docker ps` 或等价 API 访问（与 CLI 同源套接字或 `DOCKER_HOST`）。
