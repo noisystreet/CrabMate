@@ -290,9 +290,18 @@ fn is_staged_step_injection_user_content(s: &str) -> bool {
     t.starts_with("### 分步 ") || t.starts_with("【分步执行")
 }
 
+/// 与 `staged_plan_nl_followup_user_body` 注入正文首行一致；整段在展示层隐藏。
+fn is_staged_nl_followup_bridge_user_content(s: &str) -> bool {
+    s.trim_start()
+        .starts_with(crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX)
+}
+
 /// `user` 气泡 / CLI 用户侧展示。
 pub(crate) fn user_message_for_chat_display(raw: &str) -> String {
     if !SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT && is_staged_step_injection_user_content(raw) {
+        return String::new();
+    }
+    if is_staged_nl_followup_bridge_user_content(raw) {
         return String::new();
     }
     latex_math_to_unicode(raw)
@@ -912,5 +921,14 @@ mod tests {
             crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE
         );
         assert_eq!(user_message_for_chat_display(&legacy), "");
+    }
+
+    #[test]
+    fn user_hides_staged_nl_followup_bridge() {
+        let raw = format!(
+            "{}接下来你打算怎么帮我？简单用两三句说说就行。",
+            crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
+        );
+        assert_eq!(user_message_for_chat_display(&raw), "");
     }
 }

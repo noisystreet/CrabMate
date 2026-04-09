@@ -151,6 +151,8 @@ pub(super) struct AgentSection {
     pub(super) staged_plan_ensemble_count: Option<u64>,
     /// 寒暄/极短用户输入时是否跳过 ensemble；默认 true。`AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`
     pub(super) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
+    /// 分阶段规划：先 JSON（对用户不可见流）再 NL 补全。`AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`
+    pub(super) staged_plan_two_phase_nl_display: Option<bool>,
     /// `none` | `docker`；`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`
     pub(super) sync_default_tool_sandbox_mode: Option<String>,
     /// Docker 沙盒镜像。`AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`

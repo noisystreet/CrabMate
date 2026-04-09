@@ -89,6 +89,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) staged_plan_optimizer_requires_parallel_tools: Option<bool>,
     pub(crate) staged_plan_ensemble_count: Option<u64>,
     pub(crate) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
+    pub(crate) staged_plan_two_phase_nl_display: Option<bool>,
     pub(crate) sync_default_tool_sandbox_mode_str: Option<String>,
     pub(crate) sync_default_tool_sandbox_docker_image: Option<String>,
     pub(crate) sync_default_tool_sandbox_docker_network: Option<String>,
@@ -405,6 +406,9 @@ impl ConfigBuilder {
         self.staged_plan_skip_ensemble_on_casual_prompt = agent
             .staged_plan_skip_ensemble_on_casual_prompt
             .or(self.staged_plan_skip_ensemble_on_casual_prompt);
+        self.staged_plan_two_phase_nl_display = agent
+            .staged_plan_two_phase_nl_display
+            .or(self.staged_plan_two_phase_nl_display);
         override_opt_string_non_empty(
             &mut self.sync_default_tool_sandbox_mode_str,
             agent.sync_default_tool_sandbox_mode,

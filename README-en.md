@@ -76,7 +76,7 @@ Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. 
 
 - **Docker dev image** (optional): root [Dockerfile](Dockerfile) (Ubuntu 24.04, Rust + trunk, etc.). `docker build -t crabmate-dev .` then `docker run --rm -it -v "$(pwd)":/workspace -w /workspace crabmate-dev`; UID/GID via `--build-arg DEV_UID` / `DEV_GID`. **No** pre-commit / Node inside.
 
-- **Environment**: **`API_KEY`** when using bearer (`serve` / `repl` / `chat` can start first; set the key in Web Settings or REPL **`/api-key set`** before chatting); **`models` / `probe`** usually still need `API_KEY` in the environment under bearer. **`AGENT_API_BASE`** / **`AGENT_MODEL`** override config. Full table: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+- **Environment**: **`API_KEY`** when using bearer (`serve` / `repl` / `chat` can start first; set the key in Web Settings or REPL **`/api-key set`** before chatting); **`models` / `probe`** usually still need `API_KEY` in the environment under bearer. **`AGENT_API_BASE`** / **`AGENT_MODEL`** override config. Staged planning: optional **`AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`** (or TOML **`staged_plan_two_phase_nl_display`**) suppresses user-visible streaming of finalized plan JSON and adds a natural-language-only follow-up round (default off). Full table: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md#staged-planning-staged_plan_execution).
 
 ```bash
 # Optional: export AGENT_API_BASE=… AGENT_MODEL=… API_KEY=… (or Web Settings / REPL /api-key set)

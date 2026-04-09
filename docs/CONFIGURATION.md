@@ -77,6 +77,7 @@
 | `AGENT_STAGED_PLAN_ENSEMBLE_COUNT` | 逻辑多规划员份数（1–3，默认 1）。 |
 | `AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | CLI / `chat` 无工具规划轮是否向 stdout 打印模型流（默认 `true`；见下文「分阶段规划」）。 |
 | `AGENT_STAGED_PLAN_OPTIMIZER_ROUND` | 是否启用规划步骤优化轮（默认 `true`）。 |
+| `AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY` | 为 `true` 时：无工具规划 JSON **定稿**后不向用户侧流式输出该 JSON，再追加一轮仅自然语言的补全请求（默认 `false`；见下文「分阶段规划」）。 |
 
 ### 整请求 Chrome Trace（`run_agent_turn`）
 
@@ -404,6 +405,8 @@ model = "deepseek-reasoner"
 **逻辑多规划员与合并（`staged_plan_ensemble_count`，默认 `1`，环境变量 `AGENT_STAGED_PLAN_ENSEMBLE_COUNT`，合法值钳制为 1–3）**：`1` 表示关闭。为 `2` 或 `3` 时，在首轮规划写入历史后，再**串行**发起 1 或 2 次无工具「独立规划员」请求（通过服务端注入的 user 正文区分角色；**辅助规划员的 assistant 不写入会话历史**，仅合并轮的 user+assistant 会保留），最后追加一轮「合并多份草案」的无工具请求，产出单一 `steps` 后再进入上述步骤优化轮（若启用）。仍为**同一进程、同一模型与密钥**；不保证质量更优，且 **API 次数与费用明显增加**（例如 `3` + 优化轮 ≈ 首轮外再多 3 次规划类调用）。某辅助轮解析失败时停止追加规划员；若最终有效草案不足 2 份则不跑合并轮。
 
 **Ensemble 门控（`staged_plan_skip_ensemble_on_casual_prompt`，默认 `true`，环境变量 `AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`）**：在 `staged_plan_ensemble_count > 1` 时，若从消息历史回溯到的**本轮用户正文**经简单启发式判定为寒暄或极短输入，则跳过逻辑多规划员与合并轮，直接沿用首轮规划（省多次规划 API）。设为 `false` 则始终按 `staged_plan_ensemble_count` 跑满（在解析成功的前提下）。
+
+**两轮展示（`staged_plan_two_phase_nl_display`，默认 `false`，环境变量 `AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`）**：为 `true` 时，在 `agent_reply_plan` v1 **已解析并入史**之后（含可选的逻辑多规划员与合并轮、步骤优化轮；`no_task` 路径在转入常规循环前亦同），对**上述无工具规划类轮次**在调用 `complete_chat_retrying` 时**不向用户侧流式输出**规划 JSON（`out: None` 且抑制 `render_to_terminal`，与 `staged_plan_cli_show_planner_stream` 相与后再决定是否打印终端）。随后追加一条桥接 **user**（`staged_sse::staged_plan_nl_followup_user_body`：口语续问 + 与分步注入同类的展示层隐藏前缀，聊天区**不**展示该条，避免被模型叙述成「用户下发了系统指令」），再发起一轮**无工具**补全：模型应答作为**用户可见**自然语言流式/整段下发；会话历史中保留 JSON 助手条 + 桥接 user + NL 助手条。**未**使用供应商 `response_format: json_object` 等 API 级强约束，首轮 JSON 仍依赖围栏/正文解析。**`patch_planner`** 在步内成功后再次产出的规划 JSON **不**自动触发上述 NL 补全轮（与首轮定稿路径区分）。
 
 ## SyncDefault 工具 Docker 沙盒（`sync_default_tool_sandbox_mode`）
 
