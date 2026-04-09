@@ -25,6 +25,7 @@ pub(crate) fn conversation_conflict_sse_line() -> String {
     crate::sse::encode_message(crate::sse::SsePayload::Error(crate::sse::SseErrorBody {
         error: CONVERSATION_CONFLICT_MESSAGE.to_string(),
         code: Some(CONVERSATION_CONFLICT_CODE.to_string()),
+        reason_code: None,
     }))
 }
 

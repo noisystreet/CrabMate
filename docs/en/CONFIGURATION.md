@@ -311,7 +311,7 @@ With `workflow_validate_only` results, **`spec.layer_count`** constrains step co
 
 ## Plan rewrite (`plan_rewrite_max_attempts`)
 
-Max “please rewrite” user injections when the plan is invalid; when exhausted, stream may emit **`code: plan_rewrite_exhausted`**.
+Max “please rewrite” user injections when the plan is invalid; when exhausted, stream may emit **`code: plan_rewrite_exhausted`** (optional sibling **`reason_code`**, see **`docs/en/SSE_PROTOCOL.md`**).
 
 ## Logical dual agent (`planner_executor_mode = logical_dual_agent`)
 

@@ -25,6 +25,79 @@ pub enum FinalPlanRequirementMode {
     Always,
 }
 
+/// 终答规划重写用尽时 SSE **`reason_code`** 的稳定子码（顶层 **`code`** 仍为 `plan_rewrite_exhausted`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanRewriteExhaustedReason {
+    /// 正文无可解析的 `agent_reply_plan` v1。
+    PlanMissing,
+    /// `steps` 条数低于最近一次 `workflow_validate` 的 `layer_count` 要求。
+    PlanLayerCountMismatch,
+    /// `workflow_node_id` 与最近工作流节点 id 集合不一致（子集校验失败）。
+    PlanWorkflowNodeIdsInvalid,
+    /// 严格模式下未覆盖全部工作流节点 id。
+    PlanWorkflowNodeCoverageIncomplete,
+    /// 侧向语义校验判定与工具结果矛盾且重写次数已用尽。
+    PlanSemanticInconsistent,
+    /// 未归类的用尽路径（防御性；主路径不应出现）。
+    ExhaustedOther,
+}
+
+impl PlanRewriteExhaustedReason {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PlanMissing => "plan_missing",
+            Self::PlanLayerCountMismatch => "plan_layer_count_mismatch",
+            Self::PlanWorkflowNodeIdsInvalid => "plan_workflow_node_ids_invalid",
+            Self::PlanWorkflowNodeCoverageIncomplete => "plan_workflow_node_coverage_incomplete",
+            Self::PlanSemanticInconsistent => "plan_semantic_inconsistent",
+            Self::ExhaustedOther => "plan_rewrite_exhausted_other",
+        }
+    }
+}
+
+fn classify_plan_rewrite_exhausted_reason(
+    msg: &Message,
+    messages: &[Message],
+    layer_need: Option<usize>,
+    apply_layer_semantics: bool,
+    strict_workflow_node_coverage: bool,
+) -> PlanRewriteExhaustedReason {
+    let content = msg.content.as_deref().unwrap_or("");
+    let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1(content) else {
+        return PlanRewriteExhaustedReason::PlanMissing;
+    };
+    let layers_ok = match layer_need {
+        Some(n) if n > 0 && apply_layer_semantics => plan.steps.len() >= n,
+        _ => true,
+    };
+    if !layers_ok {
+        return PlanRewriteExhaustedReason::PlanLayerCountMismatch;
+    }
+    let wf_ids = last_workflow_tool_node_ids(messages);
+    let workflow_subset_ok = match wf_ids.as_ref() {
+        Some(ids) => plan_artifact::validate_plan_workflow_node_ids_subset(&plan, ids).is_ok(),
+        None => true,
+    };
+    if !workflow_subset_ok {
+        return PlanRewriteExhaustedReason::PlanWorkflowNodeIdsInvalid;
+    }
+    let workflow_cover_ok = if strict_workflow_node_coverage {
+        match wf_ids.as_ref() {
+            Some(ids) => {
+                plan_artifact::validate_plan_covers_all_workflow_node_ids(&plan, ids).is_ok()
+            }
+            None => true,
+        }
+    } else {
+        true
+    };
+    if !workflow_cover_ok {
+        return PlanRewriteExhaustedReason::PlanWorkflowNodeCoverageIncomplete;
+    }
+    PlanRewriteExhaustedReason::ExhaustedOther
+}
+
 impl FinalPlanRequirementMode {
     pub fn parse(s: &str) -> Result<Self, String> {
         match s.trim().to_lowercase().as_str() {
@@ -87,7 +160,7 @@ pub enum AfterFinalAssistant {
     /// 追加一条 user 消息并继续请求模型
     RequestPlanRewrite(Message),
     /// 已达 `plan_rewrite_max_attempts` 且规划仍不合格；assistant 已在 `messages` 中，由运行时发 SSE 后结束。
-    StopTurnPlanRewriteExhausted,
+    StopTurnPlanRewriteExhausted { reason: PlanRewriteExhaustedReason },
     /// 静态规则已通过；需异步跑一次极短侧向 LLM 再决定结束或重写（不计入 `plan_rewrite_attempts` 直至判定不一致后追加重写）。
     StopTurnPendingPlanConsistencyLlm {
         plan: plan_artifact::AgentReplyPlanV1,
@@ -322,12 +395,20 @@ impl PerCoordinator {
         }
 
         if self.plan_rewrite_attempts >= self.plan_rewrite_max_attempts {
+            let reason = classify_plan_rewrite_exhausted_reason(
+                msg,
+                messages,
+                layer_need,
+                apply_layer_semantics,
+                self.final_plan_require_strict_workflow_node_coverage,
+            );
             log::warn!(
                 target: "crabmate::per",
-                "after_final_assistant outcome=plan_rewrite_exhausted layer_need={:?}",
-                layer_need
+                "after_final_assistant outcome=plan_rewrite_exhausted layer_need={:?} reason={:?}",
+                layer_need,
+                reason
             );
-            return AfterFinalAssistant::StopTurnPlanRewriteExhausted;
+            return AfterFinalAssistant::StopTurnPlanRewriteExhausted { reason };
         }
         self.plan_rewrite_attempts += 1;
         let rewrite_text = match (
@@ -740,7 +821,9 @@ mod tests {
         ));
         assert!(matches!(
             c.after_final_assistant(&empty, &hist, &cfg, false),
-            AfterFinalAssistant::StopTurnPlanRewriteExhausted
+            AfterFinalAssistant::StopTurnPlanRewriteExhausted {
+                reason: PlanRewriteExhaustedReason::PlanMissing
+            }
         ));
     }
 
@@ -845,6 +928,68 @@ mod tests {
         assert!(matches!(
             c.after_final_assistant(&three_steps, &hist, &cfg, false),
             AfterFinalAssistant::StopTurn
+        ));
+    }
+
+    #[test]
+    fn plan_rewrite_exhausted_reason_layer_mismatch() {
+        let cfg = test_cfg();
+        let mut c = pc(FinalPlanRequirementMode::WorkflowReflection, 1);
+        let wf_args = r#"{"workflow":{"reflection":{"enabled":true,"max_rounds":2},"done":false}}"#;
+        let _ = c.prepare_workflow_execute(wf_args);
+        let hist = vec![
+            Message {
+                role: "assistant".to_string(),
+                content: None,
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "tc1".to_string(),
+                    typ: "function".to_string(),
+                    function: FunctionCall {
+                        name: "workflow_execute".to_string(),
+                        arguments: "{}".to_string(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "tool".to_string(),
+                content: Some(
+                    r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3}}"#
+                        .to_string(),
+                ),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc1".to_string()),
+            },
+        ];
+        let one_step = Message {
+            role: "assistant".to_string(),
+            content: Some(
+                r#"```json
+{"type":"agent_reply_plan","version":1,"steps":[{"id":"only","description":"only one step here"}]}
+```"#
+                    .to_string(),
+            ),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        assert!(matches!(
+            c.after_final_assistant(&one_step, &hist, &cfg, false),
+            AfterFinalAssistant::RequestPlanRewrite(_)
+        ));
+        assert!(matches!(
+            c.after_final_assistant(&one_step, &hist, &cfg, false),
+            AfterFinalAssistant::StopTurnPlanRewriteExhausted {
+                reason: PlanRewriteExhaustedReason::PlanLayerCountMismatch
+            }
         ));
     }
 
@@ -1108,7 +1253,9 @@ mod tests {
         ));
         assert!(matches!(
             c.after_final_assistant(&empty, &[], &cfg, false),
-            AfterFinalAssistant::StopTurnPlanRewriteExhausted
+            AfterFinalAssistant::StopTurnPlanRewriteExhausted {
+                reason: PlanRewriteExhaustedReason::PlanMissing
+            }
         ));
     }
 
@@ -1177,7 +1324,9 @@ mod tests {
         assert_eq!(c.plan_rewrite_attempts_snapshot(), 3);
         assert!(matches!(
             c.after_final_assistant(&empty, &[], &cfg, false),
-            AfterFinalAssistant::StopTurnPlanRewriteExhausted
+            AfterFinalAssistant::StopTurnPlanRewriteExhausted {
+                reason: PlanRewriteExhaustedReason::PlanMissing
+            }
         ));
     }
 

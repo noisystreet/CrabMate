@@ -66,7 +66,17 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         && !code.trim().is_empty()
     {
         let msg = obj.get("error").and_then(|x| x.as_str()).unwrap_or("error");
-        (cbs.on_error)(format!("{} ({})", msg, code.trim()));
+        let code = code.trim();
+        let reason = obj
+            .get("reason_code")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let line = match reason {
+            Some(r) => format!("{msg} ({code}, reason_code={r})"),
+            None => format!("{msg} ({code})"),
+        };
+        (cbs.on_error)(line);
         return SseDispatch::Stop;
     }
 

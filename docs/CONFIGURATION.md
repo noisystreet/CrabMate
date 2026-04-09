@@ -376,7 +376,7 @@ model = "deepseek-reasoner"
 
 ## 规划重写（`plan_rewrite_max_attempts`）
 
-规划不合格时追加「请重写」的上限；超过后流式前端可能收到 `code: plan_rewrite_exhausted`。
+规划不合格时追加「请重写」的上限；超过后流式前端可能收到 `code: plan_rewrite_exhausted`（可选同级 `reason_code` 子码，见 `docs/SSE_PROTOCOL.md`）。
 
 ## 逻辑双 agent（`planner_executor_mode = logical_dual_agent`）
 
