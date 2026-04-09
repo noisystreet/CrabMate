@@ -613,34 +613,15 @@ fn section_failed(s: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> String {
-    match cmd.output() {
-        Ok(output) => {
-            let status = output.status.code().unwrap_or(-1);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let mut body = String::new();
-            if !stdout.trim().is_empty() {
-                body.push_str(stdout.trim_end());
-            }
-            if !stderr.trim().is_empty() {
-                if !body.is_empty() {
-                    body.push('\n');
-                }
-                body.push_str(stderr.trim_end());
-            }
-            if body.is_empty() {
-                body = "(无输出)".to_string();
-            }
-            format!(
-                "{} (exit={}):\n{}",
-                title,
-                status,
-                output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
-            )
-        }
-        Err(e) => format!("{}: 执行失败（{}）", title, e),
-    }
+fn run_and_format(cmd: Command, max_output_len: usize, title: &str) -> String {
+    output_util::run_command_output_formatted(
+        cmd,
+        title,
+        max_output_len,
+        MAX_OUTPUT_LINES,
+        output_util::ProcessOutputMerge::ConcatStdoutStderr,
+        output_util::CommandSpawnErrorStyle::ExecuteFailed,
+    )
 }
 
 pub fn checkout(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {

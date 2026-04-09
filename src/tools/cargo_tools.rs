@@ -783,26 +783,16 @@ fn run_and_format_try(
     match cmd.output() {
         Ok(output) => {
             let exit = output.status.code().unwrap_or(-1);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let mut body = String::new();
-            if !stdout.trim().is_empty() {
-                body.push_str(stdout.trim_end());
-            }
-            if !stderr.trim().is_empty() {
-                if !body.is_empty() {
-                    body.push('\n');
-                }
-                body.push_str(stderr.trim_end());
-            }
-            if body.is_empty() {
-                body = "(无输出)".to_string();
-            }
-            let message = format!(
-                "{} (exit={}):\n{}",
+            let body = output_util::merge_process_output(
+                &output,
+                output_util::ProcessOutputMerge::ConcatStdoutStderr,
+            );
+            let message = output_util::format_exited_command_output(
                 title,
                 exit,
-                output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
+                &body,
+                max_output_len,
+                MAX_OUTPUT_LINES,
             );
             if output.status.success() {
                 Ok(message)

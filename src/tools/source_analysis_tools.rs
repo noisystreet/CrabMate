@@ -55,37 +55,18 @@ fn filter_existing(base: &Path, paths: &[String]) -> Vec<String> {
     }
 }
 
-fn format_cmd_output(output: &std::process::Output, max_output_len: usize, title: &str) -> String {
-    let status = output.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let mut body = String::new();
-    if !stdout.trim().is_empty() {
-        body.push_str(stdout.trim_end());
-    }
-    if !stderr.trim().is_empty() {
-        if !body.is_empty() {
-            body.push('\n');
-        }
-        body.push_str(stderr.trim_end());
-    }
-    if body.is_empty() {
-        body.push_str("(无输出)");
-    }
-    format!(
-        "{title} (exit={status}):\n{}",
-        output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
-    )
-}
-
 fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> String {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    match cmd.output() {
-        Ok(output) => format_cmd_output(&output, max_output_len, title),
-        Err(e) => format!("{title}: 无法启动（{e}）。请确认已安装对应 CLI 且在 PATH 中。"),
-    }
+    output_util::run_command_output_formatted(
+        cmd,
+        title,
+        max_output_len,
+        MAX_OUTPUT_LINES,
+        output_util::ProcessOutputMerge::ConcatStdoutStderr,
+        output_util::CommandSpawnErrorStyle::CannotStartWithPathHint,
+    )
 }
 
 fn opt_str<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
@@ -610,7 +591,18 @@ pub fn lizard_complexity(args_json: &str, workspace_root: &Path, max_output_len:
             return format!("lizard: 无法启动（{e}）。请确认已安装对应 CLI 且在 PATH 中。");
         }
     };
-    format_cmd_output(&output, max_output_len, "lizard")
+    let code = output.status.code().unwrap_or(-1);
+    let body = output_util::merge_process_output(
+        &output,
+        output_util::ProcessOutputMerge::ConcatStdoutStderr,
+    );
+    output_util::format_exited_command_output(
+        "lizard",
+        code,
+        &body,
+        max_output_len,
+        MAX_OUTPUT_LINES,
+    )
 }
 
 #[cfg(test)]
