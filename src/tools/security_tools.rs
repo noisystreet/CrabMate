@@ -72,32 +72,26 @@ fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> Strin
     match cmd.output() {
         Ok(output) => {
             let status = output.status.code().unwrap_or(-1);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let mut body = String::new();
-            if !stdout.trim().is_empty() {
-                body.push_str(stdout.trim_end());
-            }
-            if !stderr.trim().is_empty() {
-                if !body.is_empty() {
-                    body.push('\n');
-                }
-                body.push_str(stderr.trim_end());
-            }
-            if body.is_empty() {
-                body = "(无输出)".to_string();
-            }
+            let body = output_util::merge_process_output(
+                &output,
+                output_util::ProcessOutputMerge::ConcatStdoutStderr,
+            );
             if status != 0 && body.contains("no such command: `audit`") {
                 return "cargo audit: 未安装 cargo-audit，请先运行 `cargo install cargo-audit`"
                     .to_string();
             }
-            format!(
-                "{} (exit={}):\n{}",
+            output_util::format_exited_command_output(
                 title,
                 status,
-                output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
+                &body,
+                max_output_len,
+                MAX_OUTPUT_LINES,
             )
         }
-        Err(e) => format!("{}: 执行失败（{}）", title, e),
+        Err(e) => output_util::format_spawn_error(
+            title,
+            &e,
+            output_util::CommandSpawnErrorStyle::ExecuteFailed,
+        ),
     }
 }

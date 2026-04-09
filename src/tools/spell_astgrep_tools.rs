@@ -91,31 +91,14 @@ fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> Strin
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    match cmd.output() {
-        Ok(output) => {
-            let status = output.status.code().unwrap_or(-1);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let mut body = String::new();
-            if !stderr.trim().is_empty() {
-                body.push_str(stderr.trim_end());
-            } else if !stdout.trim().is_empty() {
-                body.push_str(stdout.trim_end());
-            } else {
-                body.push_str("(无输出)");
-            }
-            format!(
-                "{} (exit={}):\n{}",
-                title,
-                status,
-                output_util::truncate_output_lines(&body, max_output_len, MAX_OUTPUT_LINES)
-            )
-        }
-        Err(e) => format!(
-            "{}: 无法启动（{}）。请确认已安装对应 CLI 且在 PATH 中。",
-            title, e
-        ),
-    }
+    output_util::run_command_output_formatted(
+        cmd,
+        title,
+        max_output_len,
+        MAX_OUTPUT_LINES,
+        output_util::ProcessOutputMerge::StderrElseStdout,
+        output_util::CommandSpawnErrorStyle::CannotStartWithPathHint,
+    )
 }
 
 fn is_safe_ast_pattern(s: &str) -> bool {
