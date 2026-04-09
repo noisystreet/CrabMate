@@ -7,11 +7,11 @@ Default settings are merged from seven embedded TOML fragments under **`config/`
 ## Hot reload (without restarting `repl` / `serve`)
 
 - **CLI**: Type **`/config reload`** (Tab completes). Re-reads the same config path as startup (**`--config`** or default **`config.toml`** / **`.agent_demo.toml`**), merges with **current process env**, writes hot fields into in-memory [`AgentConfig`](DEVELOPMENT.md); clears MCP stdio cache; next turn uses the new MCP fingerprint.
-- **Web**: **`POST /config/reload`** (JSON body may be `{}`; same auth as **`/chat`** and other protected APIs—Bearer if the layer is enabled). Success: **`{ "ok": true, "message": "…" }`**.
+- **Web**: **`POST /config/reload`** (JSON body may be `{}`; same auth as **`/chat`** and other protected APIs—**`Authorization: Bearer <token>`** or **`X-API-Key: <token>`** when the layer is enabled). Success: **`{ "ok": true, "message": "…" }`**.
 - **Typically hot-reloaded**: **`api_base`**, **`model`**, **`llm_http_auth_mode`**, **`llm_reasoning_split`**, **`llm_bigmodel_thinking`**, **`llm_kimi_thinking_disabled`**, **`thinking_avoid_echo_system_prompt`**, **`thinking_avoid_echo_appendix` / `thinking_avoid_echo_appendix_file`** (resolved appendix text), **`temperature` / `llm_seed`**, timeouts/retries, **`run_command`** allowlist, **`http_fetch_allowed_prefixes`**, **`workspace_allowed_roots`**, **`web_api_bearer_token`** (handler-side check only; see below), **`mcp_*`**, **`[tool_registry]`** fields (outer HTTP walls, parallel wall overrides, deny/inline/write-effect lists), **`system_prompt_file` re-read**, context/planning keys (implementation: **`apply_hot_reload_config_subset`**). **`system`→`user` folding** for MiniMax follows **`model` / `api_base`** on the next request after reload (not an `AgentConfig` field).
 - **Not hot-reloaded**: **`conversation_store_sqlite_path`** (SQLite opened at startup—change path requires **`serve` restart**). **`reqwest::Client`** is not rebuilt; **`api_timeout_secs`** may lag on pooled idle connections.
 - **`API_KEY`**: Still **environment only**; hot reload does not read secret files. After changing **`API_KEY`**, re-**export** and **`/config reload`** (or restart) for **`llm_http_auth_mode=bearer`** consistency.
-- **Bearer Axum layer**: If **`serve`** started with non-empty **`web_api_bearer_token`**, the auth layer is mounted for the process lifetime; hot reload **does not** add/remove it—switching between “no token” and “token” requires **`serve` restart**. Hot reload still updates the token string used inside handlers when the layer exists.
+- **Web API auth layer**: If **`serve`** started with non-empty **`web_api_bearer_token`**, the auth middleware is mounted for the process lifetime; clients send **`Authorization: Bearer <same secret>`** or **`X-API-Key: <same secret>`** (either). Hot reload **does not** add/remove the layer—switching between “no token” and “token” requires **`serve` restart**. Hot reload still updates the secret string used inside handlers when the layer exists.
 - **Secrets in memory**: **`web_api_bearer_token`** and **`web_search_api_key`** are **secrecy `SecretString`** in [`AgentConfig`](DEVELOPMENT.md); **`Debug` / structured logs** avoid plaintext; use **`ExposeSecret::expose_secret()`** (re-exported from `config`). **`API_KEY`** is not part of `AgentConfig`.
 
 ## Environment variables (`AGENT_*`)
@@ -45,7 +45,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | Variable | Description |
 | --- | --- |
 | `AGENT_HTTP_HOST` | Bind address when `--host` omitted. |
-| `AGENT_WEB_API_BEARER_TOKEN` | Bearer for protected APIs. |
+| `AGENT_WEB_API_BEARER_TOKEN` | Shared secret for protected Web APIs; send **`Authorization: Bearer …`** or **`X-API-Key: …`** (same value, pick one). |
 | `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | Allow unauthenticated non-loopback bind (**high risk**). |
 
 ### Workspace & Cursor-style rules

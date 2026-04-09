@@ -663,7 +663,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         if bind_ip.is_unspecified() && auth_enabled {
-            println!("  安全: 已启用 Bearer 鉴权（Authorization 头）");
+            println!("  安全: 已启用 Web API 鉴权（Authorization: Bearer 或 X-API-Key）");
         }
         info!(target: "crabmate", "Web 服务监听 addr={}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;

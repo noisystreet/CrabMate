@@ -73,6 +73,7 @@ thinking_avoid_echo_system_prompt = false
 
 # 8. Web 服务安全与会话持久（可选，默认注释）
 # conversation_store_sqlite_path = ".crabmate/conversations.db"
+# 受保护 API（/chat*、/workspace* 等）：非空时要求 Authorization: Bearer <本值> 或 X-API-Key: <本值>（二选一）
 # web_api_bearer_token = ""
 # allow_insecure_no_auth_for_non_loopback = false
 # workspace_allowed_roots = []
