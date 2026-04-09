@@ -10,10 +10,11 @@ use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::api::fetch_workspace_changelog;
 use crate::i18n::{self, Locale};
 use crate::markdown;
+use crate::session_sync::SessionSyncState;
 
 /// `changelist_fetch_nonce` 递增后拉取 `GET /workspace/changelog`；`nonce==0` 时不请求。
 pub(super) fn wire_changelist_fetch_effects(
-    conversation_id: RwSignal<Option<String>>,
+    session_sync: RwSignal<SessionSyncState>,
     changelist_fetch_nonce: RwSignal<u64>,
     changelist_modal_loading: RwSignal<bool>,
     changelist_modal_err: RwSignal<Option<String>>,
@@ -21,7 +22,7 @@ pub(super) fn wire_changelist_fetch_effects(
     changelist_modal_rev: RwSignal<u64>,
 ) {
     Effect::new({
-        let conversation_id = conversation_id;
+        let session_sync = session_sync;
         let changelist_fetch_nonce = changelist_fetch_nonce;
         let changelist_modal_loading = changelist_modal_loading;
         let changelist_modal_err = changelist_modal_err;
@@ -34,7 +35,7 @@ pub(super) fn wire_changelist_fetch_effects(
             }
             changelist_modal_loading.set(true);
             changelist_modal_err.set(None);
-            let cid = conversation_id.get();
+            let cid = session_sync.with(|s| s.changelog_conversation_id().map(str::to_string));
             spawn_local(async move {
                 match fetch_workspace_changelog(cid.as_deref()).await {
                     Ok(r) => {
