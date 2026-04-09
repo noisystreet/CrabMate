@@ -131,9 +131,31 @@ fn plan_rewrite_user_text() -> String {
     )
 }
 
-pub(crate) fn plan_rewrite_user_text_semantic_mismatch() -> String {
+/// 侧向语义校验失败时追加的 user 正文：自然语言说明 + 机器可读 `crabmate_plan_semantic_feedback` + 规划重写要求。
+pub(crate) fn plan_rewrite_user_text_semantic_mismatch_with_feedback(
+    violation_codes: &[String],
+    rationale: Option<&str>,
+) -> String {
+    let codes_json: Vec<&str> = if violation_codes.is_empty() {
+        vec!["semantic_mismatch_unspecified"]
+    } else {
+        violation_codes.iter().map(String::as_str).collect()
+    };
+    let rationale_json = rationale
+        .map(|s| Value::String(s.to_string()))
+        .unwrap_or(Value::Null);
+    let machine = serde_json::json!({
+        "kind": "crabmate_plan_semantic_feedback",
+        "version": 1,
+        "violation_codes": codes_json,
+        "rationale": rationale_json,
+    });
+    let machine_line = serde_json::to_string(&machine).unwrap_or_else(|_| {
+        "{\"kind\":\"crabmate_plan_semantic_feedback\",\"version\":1,\"violation_codes\":[\"semantic_mismatch_unspecified\"],\"rationale\":null}".to_string()
+    });
     format!(
-        "侧向校验认为你的 **agent_reply_plan** 与**最近工具执行结果**存在明显矛盾（例如工具失败却写成功、或步骤与工具输出冲突）。请根据**真实工具结果**修正规划 JSON 与说明文字。\n\n{}",
+        "侧向校验认为你的 **agent_reply_plan** 与**最近工具执行结果**存在明显矛盾。请根据下方 **violation_codes**（及可选 **rationale**）与**真实工具结果**修正规划 JSON 与说明文字。\n\n```json\n{}\n```\n\n{}",
+        machine_line,
         plan_rewrite_user_text()
     )
 }
@@ -215,10 +237,16 @@ impl PerCoordinator {
         self.plan_rewrite_attempts += 1;
     }
 
-    pub(crate) fn plan_semantic_mismatch_rewrite_message() -> Message {
+    pub(crate) fn plan_semantic_mismatch_rewrite_message_with_feedback(
+        violation_codes: &[String],
+        rationale: Option<&str>,
+    ) -> Message {
         Message {
             role: "user".to_string(),
-            content: Some(plan_rewrite_user_text_semantic_mismatch()),
+            content: Some(plan_rewrite_user_text_semantic_mismatch_with_feedback(
+                violation_codes,
+                rationale,
+            )),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
