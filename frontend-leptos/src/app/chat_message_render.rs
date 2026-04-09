@@ -403,6 +403,13 @@ pub(crate) fn chat_message_row(
                         c
                     }
                     id=format!("msg-{mid_dom}")
+                    data-testid=move || {
+                        if is_tool_bubble {
+                            "chat-tool-card"
+                        } else {
+                            "chat-message-row"
+                        }
+                    }
                 >
                     <div class="msg-meta" aria-hidden="true">
                         <span class="msg-meta-role">{role_lbl}</span>

@@ -77,7 +77,9 @@ pub fn WorkspaceFilesystemTree(
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
     view! {
-        <ul class=move || {
+        <ul
+            data-testid="workspace-file-tree"
+            class=move || {
             let entries = workspace_data
                 .get()
                 .map(|d| d.entries)
