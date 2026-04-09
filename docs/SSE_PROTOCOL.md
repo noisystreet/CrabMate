@@ -110,6 +110,7 @@
 | `plan_layer_count_mismatch` | `steps` 条数低于 `workflow_validate` 的 `layer_count` 要求 |
 | `plan_workflow_node_ids_invalid` | `workflow_node_id` 与最近工作流节点 id 集合不一致 |
 | `plan_workflow_node_coverage_incomplete` | 严格模式下未覆盖全部工作流节点 id |
+| `plan_validate_only_node_binding_mismatch` | `workflow_validate_only` 后规划未与 `nodes[].id` 一一绑定（步数、逐步 `workflow_node_id` 或多重集合不一致） |
 | `plan_semantic_inconsistent` | 侧向语义校验判定与最近工具结果矛盾 |
 | `plan_rewrite_exhausted_other` | 防御性兜底（主路径不应出现） |
 
