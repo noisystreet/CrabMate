@@ -70,6 +70,9 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.agent_tool_stats_max_chars = src.agent_tool_stats_max_chars;
     dst.agent_tool_stats_warn_below_success_ratio = src.agent_tool_stats_warn_below_success_ratio;
     dst.materialize_deepseek_dsml_tool_calls = src.materialize_deepseek_dsml_tool_calls;
+    dst.thinking_avoid_echo_system_prompt = src.thinking_avoid_echo_system_prompt;
+    dst.thinking_avoid_echo_appendix
+        .clone_from(&src.thinking_avoid_echo_appendix);
     dst.context_char_budget = src.context_char_budget;
     dst.context_min_messages_after_system = src.context_min_messages_after_system;
     dst.context_summary_trigger_chars = src.context_summary_trigger_chars;

@@ -110,6 +110,12 @@ pub(super) struct AgentSection {
     pub(super) agent_tool_stats_max_chars: Option<u64>,
     pub(super) agent_tool_stats_warn_below_success_ratio: Option<f64>,
     pub(super) materialize_deepseek_dsml_tool_calls: Option<bool>,
+    /// 默认 true：首条 system 末尾附思考纪律附录；`false` 关闭。
+    pub(super) thinking_avoid_echo_system_prompt: Option<bool>,
+    /// 附录内联正文（在 `finalize` 中：若 `thinking_avoid_echo_appendix_file` 非空则读盘优先，否则用内联）。
+    pub(super) thinking_avoid_echo_appendix: Option<String>,
+    /// 附录文件路径（与 `system_prompt_file` 相同解析规则）；均未设置时用编译嵌入默认。
+    pub(super) thinking_avoid_echo_appendix_file: Option<String>,
     pub(super) context_char_budget: Option<u64>,
     pub(super) context_min_messages_after_system: Option<u64>,
     pub(super) context_summary_trigger_chars: Option<u64>,
@@ -130,7 +136,7 @@ pub(super) struct AgentSection {
     pub(super) session_workspace_changelist_max_chars: Option<u64>,
     pub(super) staged_plan_execution: Option<bool>,
     pub(super) staged_plan_phase_instruction: Option<String>,
-    /// 为 true（默认）时：内置规划说明会要求模型在无具体任务时输出 `no_task` + 空 `steps`。
+    /// 兼容旧键；已无运行时语义（见 `AgentConfig::staged_plan_allow_no_task`）。
     pub(super) staged_plan_allow_no_task: Option<bool>,
     /// `fail_fast`（默认）或 `patch_planner`
     pub(super) staged_plan_feedback_mode: Option<String>,

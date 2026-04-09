@@ -241,7 +241,7 @@ async fn prepare_staged_planner_no_tools_request(
 
     let instr = p.cfg.staged_plan_phase_instruction.trim();
     let plan_system = if instr.is_empty() {
-        staged_plan_phase_instruction_default(p.cfg.staged_plan_allow_no_task)
+        staged_plan_phase_instruction_default()
     } else {
         instr.to_string()
     };
@@ -746,17 +746,10 @@ where
     push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
 
     if plan.no_task {
-        if p.cfg.staged_plan_allow_no_task {
-            debug!(
-                target: "crabmate",
-                "分阶段规划：no_task=true，用户消息无具体可拆任务，跳过分步注入"
-            );
-        } else {
-            warn!(
-                target: "crabmate",
-                "分阶段规划：模型返回 no_task=true（当前 staged_plan_allow_no_task=false，仍尊重该信号并转入常规循环）"
-            );
-        }
+        debug!(
+            target: "crabmate",
+            "分阶段规划：no_task=true，跳过分步注入，转入常规对话循环"
+        );
         return run_agent_outer_loop(p, per_coord).await;
     }
 

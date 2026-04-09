@@ -60,6 +60,9 @@ pub(crate) struct ConfigBuilder {
     pub(crate) agent_tool_stats_max_chars: Option<u64>,
     pub(crate) agent_tool_stats_warn_below_success_ratio: Option<f64>,
     pub(crate) materialize_deepseek_dsml_tool_calls: Option<bool>,
+    pub(crate) thinking_avoid_echo_system_prompt: Option<bool>,
+    pub(crate) thinking_avoid_echo_appendix: Option<String>,
+    pub(crate) thinking_avoid_echo_appendix_file: Option<String>,
     pub(crate) context_char_budget: Option<u64>,
     pub(crate) context_min_messages_after_system: Option<u64>,
     pub(crate) context_summary_trigger_chars: Option<u64>,
@@ -311,6 +314,27 @@ impl ConfigBuilder {
         self.materialize_deepseek_dsml_tool_calls = agent
             .materialize_deepseek_dsml_tool_calls
             .or(self.materialize_deepseek_dsml_tool_calls);
+        self.thinking_avoid_echo_system_prompt = agent
+            .thinking_avoid_echo_system_prompt
+            .or(self.thinking_avoid_echo_system_prompt);
+        let no_thinking_appendix_file_in_section =
+            agent.thinking_avoid_echo_appendix_file.is_none();
+        let inline_thinking_appendix_nonempty = agent
+            .thinking_avoid_echo_appendix
+            .as_ref()
+            .is_some_and(|s| !s.trim().is_empty());
+        override_opt_string_non_empty(
+            &mut self.thinking_avoid_echo_appendix_file,
+            agent.thinking_avoid_echo_appendix_file.clone(),
+        );
+        if let Some(ref s) = agent.thinking_avoid_echo_appendix
+            && !s.trim().is_empty()
+        {
+            self.thinking_avoid_echo_appendix = Some(s.clone());
+        }
+        if no_thinking_appendix_file_in_section && inline_thinking_appendix_nonempty {
+            self.thinking_avoid_echo_appendix_file = None;
+        }
         self.context_char_budget = agent.context_char_budget.or(self.context_char_budget);
         self.context_min_messages_after_system = agent
             .context_min_messages_after_system

@@ -95,7 +95,7 @@ cd frontend-leptos && trunk build && cd ..
 
 **Frontend**: `cd frontend-leptos && trunk build` (dev; **`--release`** for production), then **`crabmate serve`**. UI language in Settings; see `frontend-leptos/README.md`, [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
 
-**Config**: default `config/*.toml` (embedded) + optional root **`config.toml`**; **`system_prompt_file`** → `config/prompts/default_system_prompt.md` (edit without rebuild). Advanced options: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Release / deb / man**: **[Build and packaging](#build-and-packaging)**.
+**Config**: default `config/*.toml` (embedded) + optional root **`config.toml`**; **`system_prompt_file`** → `config/prompts/default_system_prompt.md` (edit without rebuild). By default a thinking-discipline appendix is appended to the first `system` (editable **`config/prompts/thinking_avoid_echo_appendix.md`**, see [CONFIGURATION](docs/en/CONFIGURATION.md)). **Release / deb / man**: **[Build and packaging](#build-and-packaging)**.
 
 **Switching models / gateway** (DeepSeek, MiniMax, Ollama, …): see **[Backend models](#backend-models)** above.
 

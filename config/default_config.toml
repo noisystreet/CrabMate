@@ -66,6 +66,10 @@ cursor_rules_max_chars = 48000
 # 系统提示词：默认正文在 **`config/prompts/default_system_prompt.md`**（改文件无需重编二进制）。相对路径依次尝试：进程当前目录、各覆盖配置文件所在目录（后加载的优先）、run_command_working_dir。
 # 覆盖：内联 system_prompt（低于文件）或改 system_prompt_file；环境变量 AGENT_SYSTEM_PROMPT、AGENT_SYSTEM_PROMPT_FILE（后者可为绝对路径）。
 system_prompt_file = "config/prompts/default_system_prompt.md"
+# 新会话首条 system 末附「思考纪律」附录（减轻模型在 thinking 中复述系统提示）；软性约束。AGENT_THINKING_AVOID_ECHO_SYSTEM_PROMPT
+thinking_avoid_echo_system_prompt = true
+# 附录正文默认文件（与 system_prompt_file 相同路径解析）；亦可 thinking_avoid_echo_appendix 内联。AGENT_THINKING_AVOID_ECHO_APPENDIX_FILE
+thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"
 
 # 8. Web 服务安全与会话持久（可选，默认注释）
 # conversation_store_sqlite_path = ".crabmate/conversations.db"
