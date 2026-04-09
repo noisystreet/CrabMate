@@ -609,6 +609,7 @@ where
                         mcp_session: p.mcp_session.as_ref(),
                         workspace_changelist: p.workspace_changelist.as_ref(),
                         request_chrome_trace: p.request_chrome_trace.clone(),
+                        step_executor_constraint: None,
                     },
                 )
                 .await;
@@ -768,6 +769,7 @@ where
                         mcp_session: p.mcp_session.as_ref(),
                         workspace_changelist: p.workspace_changelist.as_ref(),
                         request_chrome_trace: p.request_chrome_trace.clone(),
+                        step_executor_constraint: None,
                     },
                 )
                 .await;
@@ -979,12 +981,25 @@ where
         } else {
             String::new()
         };
+        let sub_agent_hint = match step.executor_kind {
+            Some(crate::agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly) => {
+                "\n- **子代理角色**：`review_readonly`（本步仅允许只读类工具；禁止 MCP 与写盘）\n"
+            }
+            Some(crate::agent::plan_artifact::PlanStepExecutorKind::PatchWrite) => {
+                "\n- **子代理角色**：`patch_write`（本步仅允许只读工具与受限补丁写：`apply_patch` / `search_replace` / `structured_patch` / `create_file` / `modify_file` / `append_file` / `format_file` / `ast_grep_rewrite`）\n"
+            }
+            Some(crate::agent::plan_artifact::PlanStepExecutorKind::TestRunner) => {
+                "\n- **子代理角色**：`test_runner`（本步仅允许只读工具与内置测试运行器，如 `cargo_test` / `pytest_run` / `go_test` 等；**不要**用 `run_command` 跑测试）\n"
+            }
+            None => "",
+        };
         let body = format!(
-            "### 分步 {}/{}\n{}{}\n- id: {}\n- 描述: {}",
+            "### 分步 {}/{}\n{}{}{}\n- id: {}\n- 描述: {}",
             step_index,
             n,
             crate::runtime::plan_section::STAGED_STEP_USER_BOILERPLATE,
             summary_hint,
+            sub_agent_hint,
             step.id,
             step.description
         );
@@ -1002,7 +1017,10 @@ where
         }
         let step_user_idx = patch_ctx.p.messages.len();
         patch_ctx.p.messages.push(make_step_user_message(body));
+        let prev_executor_constraint = patch_ctx.p.step_executor_constraint;
+        patch_ctx.p.step_executor_constraint = step.executor_kind;
         let run_step = run_agent_outer_loop(patch_ctx.p, patch_ctx.per_coord).await;
+        patch_ctx.p.step_executor_constraint = prev_executor_constraint;
         if let Err(e) = run_step {
             if patch_ctx.p.cfg.staged_plan_feedback_mode == StagedPlanFeedbackMode::PatchPlanner {
                 let mut recovered = false;

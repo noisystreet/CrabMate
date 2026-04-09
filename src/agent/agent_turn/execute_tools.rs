@@ -13,6 +13,7 @@ use tokio::sync::mpsc;
 static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
 
 use crate::agent::per_coord::PerCoordinator;
+use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::sse::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
@@ -20,6 +21,8 @@ use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, pars
 use crate::tools;
 use crate::types::{Message, ToolCall};
 use crate::workspace_changelist::WorkspaceChangelist;
+
+use super::sub_agent_policy::tool_allowed_for_step_executor_kind;
 
 /// 本模块 `tracing` / `log` 的 `target`，便于 `RUST_LOG=crabmate::execute_tools` 过滤。
 const LOG_TARGET: &str = "crabmate::execute_tools";
@@ -48,6 +51,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
     /// 整请求 Chrome trace；与 `workflow_execute` 合并写 `turn-*.json`。
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    /// 分阶段规划当前步子代理约束；与 `RunLoopParams::step_executor_constraint` 同步。
+    pub step_executor_constraint: Option<PlanStepExecutorKind>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -298,6 +303,7 @@ struct ExecuteToolsCommonCtx<'a> {
     cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     mcp_session: Option<&'a std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    step_executor_constraint: Option<PlanStepExecutorKind>,
 }
 
 /// 只读可并行批：去重后 `spawn_blocking` + 限并发，再按原 `tool_calls` 顺序回写 SSE / messages。
@@ -319,6 +325,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         cli_tool_ctx,
         mcp_session: _,
         request_chrome_trace: _,
+        step_executor_constraint,
     } = ctx;
 
     let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
@@ -368,9 +375,20 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         } else {
             ParallelToolKind::SyncDefault
         };
+        let constraint = step_executor_constraint;
         unique_futs.push(async move {
             if let Some(err) = prefetch_err {
                 return (name, args, err);
+            }
+            if let Some(k) = constraint
+                && !tool_allowed_for_step_executor_kind(cfg.as_ref(), name.as_str(), k)
+            {
+                let denied = format!(
+                    "工具「{}」不在本步子代理角色 {:?} 的允许列表内；请改用该步允许的只读/补丁/测试工具，或让规划器省略 executor_kind。",
+                    name.as_str(),
+                    k
+                );
+                return (name, args, denied);
             }
             let wall_secs =
                 crate::tool_registry::parallel_tool_wall_timeout_secs(cfg.as_ref(), name.as_str());
@@ -515,6 +533,7 @@ async fn execute_tools_serial(
         cli_tool_ctx,
         mcp_session,
         request_chrome_trace,
+        step_executor_constraint,
     } = ctx;
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
@@ -539,6 +558,40 @@ async fn execute_tools_serial(
             name,
             crate::redact::tool_arguments_preview_for_log(&args)
         );
+
+        if let Some(k) = step_executor_constraint
+            && !tool_allowed_for_step_executor_kind(cfg.as_ref(), name.as_str(), k)
+        {
+            let denied = format!(
+                "工具「{}」不在本步子代理角色 {:?} 的允许列表内；请改用该步允许的只读/补丁/测试工具，或让规划器省略 executor_kind。",
+                name, k
+            );
+            warn!(target: LOG_TARGET, "{}", denied);
+            let env = ToolEnvelopeContext {
+                tool_call_id: id.as_str(),
+                execution_mode: "serial",
+                parallel_batch_id: None,
+            };
+            emit_tool_result_sse_and_append(
+                messages,
+                per_coord,
+                EmitToolResultParams {
+                    cfg,
+                    out,
+                    echo_terminal_transcript,
+                    terminal_tool_display_max_chars,
+                    tool_result_envelope_v1,
+                    name: name.as_str(),
+                    args: args.as_str(),
+                    id: id.as_str(),
+                    result: denied,
+                    reflection_inject: None,
+                    envelope_ctx: Some(env),
+                },
+            )
+            .await;
+            continue;
+        }
 
         let is_readonly = tool_registry::is_readonly_tool(cfg.as_ref(), name.as_str());
         let cache_key = (name.clone(), args.clone());
@@ -745,6 +798,7 @@ pub(crate) async fn per_execute_tools_web(
         mcp_session,
         workspace_changelist,
         request_chrome_trace,
+        step_executor_constraint,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -768,6 +822,7 @@ pub(crate) async fn per_execute_tools_web(
         cli_tool_ctx,
         mcp_session,
         request_chrome_trace,
+        step_executor_constraint,
     })
     .await
 }

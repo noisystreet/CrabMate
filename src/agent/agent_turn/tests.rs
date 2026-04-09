@@ -228,6 +228,7 @@ mod per_reflect_tests {
             staged_plan_ensemble_count: 1,
             staged_plan_skip_ensemble_on_casual_prompt: true,
             request_chrome_trace: None,
+            step_executor_constraint: None,
         };
         let out = per_reflect_after_assistant(&mut p, &mut c, "stop", &msg).await;
         assert!(matches!(

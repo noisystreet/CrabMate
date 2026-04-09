@@ -396,6 +396,7 @@ pub async fn run_agent_turn<'a>(
         staged_plan_ensemble_count: cfg.staged_plan_ensemble_count,
         staged_plan_skip_ensemble_on_casual_prompt: cfg.staged_plan_skip_ensemble_on_casual_prompt,
         request_chrome_trace: request_chrome_trace.clone(),
+        step_executor_constraint: None,
     };
 
     if let Some(t) = request_chrome_trace {
