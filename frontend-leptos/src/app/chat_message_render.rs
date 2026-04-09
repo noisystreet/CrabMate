@@ -18,6 +18,7 @@ use crate::session_ops::{
 use crate::session_search::{
     normalize_search_query, scroll_message_into_view, split_for_find_highlight,
 };
+use crate::session_sync::SessionSyncState;
 use crate::storage::{ChatSession, StoredMessage};
 
 fn trigger_jump_to_user_prompt(uid: &str, auto_scroll_chat: RwSignal<bool>) {
@@ -85,8 +86,7 @@ pub(crate) fn tool_run_group_view(
     bubble_md_selected_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
     status_busy: RwSignal<bool>,
-    conversation_id: RwSignal<Option<String>>,
-    conversation_revision: RwSignal<Option<u64>>,
+    session_sync: RwSignal<SessionSyncState>,
     regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
@@ -157,8 +157,7 @@ pub(crate) fn tool_run_group_view(
                                         bubble_md_selected_ids,
                                         auto_scroll_chat,
                                         status_busy,
-                                        conversation_id,
-                                        conversation_revision,
+                                        session_sync,
                                         regen_stream_after_truncate,
                                         retry_assistant_target,
                                         status_err,
@@ -201,8 +200,7 @@ pub(crate) fn tool_run_group_view(
                             bubble_md_selected_ids,
                             auto_scroll_chat,
                             status_busy,
-                            conversation_id,
-                            conversation_revision,
+                            session_sync,
                             regen_stream_after_truncate,
                             retry_assistant_target,
                             status_err,
@@ -232,8 +230,7 @@ pub(crate) fn chat_message_row(
     bubble_md_selected_ids: RwSignal<Vec<String>>,
     auto_scroll_chat: RwSignal<bool>,
     status_busy: RwSignal<bool>,
-    conversation_id: RwSignal<Option<String>>,
-    conversation_revision: RwSignal<Option<u64>>,
+    session_sync: RwSignal<SessionSyncState>,
     regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
@@ -493,8 +490,10 @@ pub(crate) fn chat_message_row(
                                             if status_busy.get() {
                                                 return;
                                             }
-                                            let cid = conversation_id.get();
-                                            let rev = conversation_revision.get();
+                                            let (cid, rev) = session_sync.with(|s| {
+                                                let (a, b) = s.branch_id_and_expected_revision();
+                                                (a.map(|x| x.to_string()), b)
+                                            });
                                             let ord = sessions.with(|list| {
                                                 let aid = active_id.get_untracked();
                                                 list.iter()
@@ -524,8 +523,11 @@ pub(crate) fn chat_message_row(
                                                         .await
                                                         {
                                                             Ok(new_rev) => {
-                                                                conversation_revision
-                                                                    .set(Some(new_rev));
+                                                                session_sync.update(|s| {
+                                                                    s.set_revision_after_branch(
+                                                                        new_rev,
+                                                                    );
+                                                                });
                                                                 let mut prep: Option<
                                                                     (String, String),
                                                                 > = None;
@@ -544,6 +546,8 @@ pub(crate) fn chat_message_row(
                                                                 }
                                                             }
                                                             Err(e) => {
+                                                                session_sync
+                                                                    .update(|s| s.mark_branch_conflict());
                                                                 status_err.set(Some(e));
                                                             }
                                                         }
@@ -594,8 +598,10 @@ pub(crate) fn chat_message_row(
                                             if status_busy.get() {
                                                 return;
                                             }
-                                            let cid = conversation_id.get();
-                                            let rev = conversation_revision.get();
+                                            let (cid, rev) = session_sync.with(|s| {
+                                                let (a, b) = s.branch_id_and_expected_revision();
+                                                (a.map(|x| x.to_string()), b)
+                                            });
                                             let ord = sessions.with(|list| {
                                                 let aid = active_id.get_untracked();
                                                 list.iter()
@@ -625,8 +631,11 @@ pub(crate) fn chat_message_row(
                                                         .await
                                                         {
                                                             Ok(new_rev) => {
-                                                                conversation_revision
-                                                                    .set(Some(new_rev));
+                                                                session_sync.update(|s| {
+                                                                    s.set_revision_after_branch(
+                                                                        new_rev,
+                                                                    );
+                                                                });
                                                                 sessions.update(|list| {
                                                                     let aid = active_id
                                                                         .get_untracked();
@@ -638,6 +647,8 @@ pub(crate) fn chat_message_row(
                                                                 });
                                                             }
                                                             Err(e) => {
+                                                                session_sync
+                                                                    .update(|s| s.mark_branch_conflict());
                                                                 status_err.set(Some(e));
                                                             }
                                                         }

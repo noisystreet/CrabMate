@@ -10,6 +10,7 @@ use leptos::task::spawn_local;
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::i18n::{self, Locale};
 use crate::session_modal_row::SessionModalRow;
+use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 
 #[component]
@@ -19,7 +20,7 @@ fn SessionListModalPanel(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
-    conversation_id: RwSignal<Option<String>>,
+    session_sync: RwSignal<SessionSyncState>,
     composer_draft_buffer: Arc<Mutex<String>>,
 ) -> impl IntoView {
     let dialog_ref = NodeRef::<Div>::new();
@@ -90,7 +91,7 @@ fn SessionListModalPanel(
                                     active_id=active_id
                                     draft=draft
                                     composer_draft_buffer=row_buf
-                                    conversation_id=conversation_id
+                                    session_sync=session_sync
                                     session_modal=session_modal
                                 />
                             }
@@ -110,7 +111,7 @@ fn SessionListModalBackdrop(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
-    conversation_id: RwSignal<Option<String>>,
+    session_sync: RwSignal<SessionSyncState>,
     composer_draft_buffer: Arc<Mutex<String>>,
 ) -> impl IntoView {
     view! {
@@ -121,7 +122,7 @@ fn SessionListModalBackdrop(
                 sessions=sessions
                 active_id=active_id
                 draft=draft
-                conversation_id=conversation_id
+                session_sync=session_sync
                 composer_draft_buffer=composer_draft_buffer
             />
         </div>
@@ -134,7 +135,7 @@ pub fn session_list_modal_view(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
-    conversation_id: RwSignal<Option<String>>,
+    session_sync: RwSignal<SessionSyncState>,
     composer_draft_buffer: Arc<Mutex<String>>,
 ) -> impl IntoView {
     view! {
@@ -145,7 +146,7 @@ pub fn session_list_modal_view(
                 sessions=sessions
                 active_id=active_id
                 draft=draft
-                conversation_id=conversation_id
+                session_sync=session_sync
                 composer_draft_buffer=composer_draft_buffer.clone()
             />
         </Show>

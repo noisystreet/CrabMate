@@ -108,7 +108,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 **Summary**: `api.ts`, panels, `sessionStore`, `chatExport`.
 
-- [ ] Browser session state vs backend API; optional encrypted local cache.
+- [ ] Browser session state: persist `conversation_id` + `revision` across reloads (and optional encrypted cache); tab-local model is **`frontend-leptos/src/session_sync.rs`** (`SessionSyncState`).
 - [ ] Virtualize long chat lists.
 - [ ] i18n, a11y, keyboard navigation.
 - [ ] Future voice (STT/TTS) with P0 auth alignment.

@@ -23,7 +23,7 @@ pub fn SessionModalRow(
     draft: RwSignal<String>,
     /// 与主界面输入框共享；打开会话前把当前草稿写回上一活跃会话。
     composer_draft_buffer: Arc<Mutex<String>>,
-    conversation_id: RwSignal<Option<String>>,
+    session_sync: RwSignal<crate::session_sync::SessionSyncState>,
     session_modal: RwSignal<bool>,
 ) -> impl IntoView {
     let id_rename = id.clone();
@@ -58,7 +58,7 @@ pub fn SessionModalRow(
                                     .unwrap_or_default()
                             }),
                         );
-                        conversation_id.set(None);
+                        session_sync.set(crate::session_sync::SessionSyncState::local_only());
                         session_modal.set(false);
                     }
                 }
@@ -145,14 +145,14 @@ pub fn SessionModalRow(
                         let sessions = sessions;
                         let active_id = active_id;
                         let draft = draft;
-                        let conversation_id = conversation_id;
+                        let session_sync = session_sync;
                         let id = id_del.clone();
                         move |_| {
                             delete_session_after_confirm(
                                 sessions,
                                 active_id,
                                 draft,
-                                conversation_id,
+                                session_sync,
                                 &id,
                                 locale.get_untracked(),
                             );

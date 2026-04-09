@@ -16,6 +16,7 @@ use crate::session_ops::{
     approval_session_id, flush_composer_draft_to_session, make_message_id, message_created_ms,
     patch_active_session, prepare_retry_failed_assistant_turn, title_from_user_prompt,
 };
+use crate::session_sync::SessionSyncState;
 use crate::sse_dispatch::{CommandApprovalRequest, ToolResultInfo};
 use crate::storage::{ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, make_session_id};
 
@@ -32,8 +33,7 @@ struct ChatStreamCallbackCtx {
     tool_busy: RwSignal<bool>,
     pending_approval: RwSignal<Option<(String, String, String)>>,
     approval_session_store_id: String,
-    conversation_id: RwSignal<Option<String>>,
-    conversation_revision: RwSignal<Option<u64>>,
+    session_sync: RwSignal<SessionSyncState>,
     changelist_modal_open: RwSignal<bool>,
     changelist_fetch_nonce: RwSignal<u64>,
     refresh_workspace: Arc<dyn Fn() + Send + Sync>,
@@ -54,8 +54,7 @@ pub(super) fn wire_session_switch_clears_chat_state(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
-    conversation_id: RwSignal<Option<String>>,
-    conversation_revision: RwSignal<Option<u64>>,
+    session_sync: RwSignal<SessionSyncState>,
     stream_job_id: RwSignal<Option<u64>>,
     stream_last_event_seq: RwSignal<u64>,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
@@ -73,8 +72,7 @@ pub(super) fn wire_session_switch_clears_chat_state(
             .map(|s| s.draft.clone())
             .unwrap_or_default();
         draft.set(d);
-        conversation_id.set(None);
-        conversation_revision.set(None);
+        session_sync.set(SessionSyncState::local_only());
         stream_job_id.set(None);
         stream_last_event_seq.set(0);
         expanded_long_assistant_ids.set(Vec::new());
@@ -115,8 +113,7 @@ pub(super) fn wire_chat_composer_streams(
     locale: RwSignal<Locale>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
-    conversation_id: RwSignal<Option<String>>,
-    conversation_revision: RwSignal<Option<u64>>,
+    session_sync: RwSignal<SessionSyncState>,
     stream_job_id: RwSignal<Option<u64>>,
     stream_last_event_seq: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
@@ -138,8 +135,7 @@ pub(super) fn wire_chat_composer_streams(
         let sessions = sessions;
         let locale_sig = locale;
         let active_id = active_id;
-        let conversation_id = conversation_id;
-        let conversation_revision = conversation_revision;
+        let session_sync = session_sync;
         let stream_job_id_sig = stream_job_id;
         let stream_last_event_seq_sig = stream_last_event_seq;
         let selected_agent_role = selected_agent_role;
@@ -151,7 +147,7 @@ pub(super) fn wire_chat_composer_streams(
         let changelist_modal_open = changelist_modal_open;
         let changelist_fetch_nonce = changelist_fetch_nonce;
         move |user_text: String, asst_id: String| {
-            let conv = conversation_id.get();
+            let conv = session_sync.with(|s| s.stream_conversation_id());
             // 新一次 attach 必须**不带** `stream_resume`：断线重连仅由 `send_chat_stream` 内部循环
             // 用响应头里的 `x-stream-job-id` 与 `last_event_id` 完成。若此处读取 UI 上残留的
             // `stream_job_id`（例如上轮 SSE 报错未收到 `stream_ended`），会误用已 `remove_job` 的
@@ -182,8 +178,7 @@ pub(super) fn wire_chat_composer_streams(
                 tool_busy,
                 pending_approval,
                 approval_session_store_id: appr_store.clone(),
-                conversation_id,
-                conversation_revision,
+                session_sync,
                 changelist_modal_open,
                 changelist_fetch_nonce,
                 refresh_workspace: Arc::clone(&refresh_workspace),
@@ -307,14 +302,17 @@ pub(super) fn wire_chat_composer_streams(
             let on_cid: Rc<dyn Fn(String)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |id: String| {
-                    stream_ctx.conversation_id.set(Some(id));
-                    stream_ctx.conversation_revision.set(None);
+                    stream_ctx
+                        .session_sync
+                        .update(|s| s.apply_stream_conversation_id(id));
                 })
             };
             let on_conv_rev: Rc<dyn Fn(u64)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |rev: u64| {
-                    stream_ctx.conversation_revision.set(Some(rev));
+                    stream_ctx
+                        .session_sync
+                        .update(|s| s.apply_saved_revision(rev));
                 })
             };
 
@@ -515,6 +513,7 @@ pub(super) fn wire_chat_composer_streams(
 
     let new_session: Rc<dyn Fn()> = Rc::new({
         let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
+        let session_sync = session_sync;
         move || {
             let prev = active_id.get_untracked();
             if !prev.is_empty() {
@@ -535,8 +534,7 @@ pub(super) fn wire_chat_composer_streams(
             });
             active_id.set(id);
             draft.set(String::new());
-            conversation_id.set(None);
-            conversation_revision.set(None);
+            session_sync.set(SessionSyncState::local_only());
         }
     });
 
