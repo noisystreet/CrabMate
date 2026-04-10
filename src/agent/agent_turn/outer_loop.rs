@@ -164,6 +164,8 @@ pub(crate) async fn run_agent_outer_loop(
                 step_executor_constraint: p.step_executor_constraint,
                 tools_defs_full: p.tools_defs,
                 turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
+                long_term_memory: p.long_term_memory.clone(),
+                long_term_memory_scope_id: p.long_term_memory_scope_id.clone(),
             },
         )
         .await;

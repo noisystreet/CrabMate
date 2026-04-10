@@ -213,6 +213,68 @@ pub(in crate::tools) fn params_error_output_playbook() -> serde_json::Value {
     })
 }
 
+pub(in crate::tools) fn params_long_term_remember() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "要写入本会话长期记忆的短文本（勿含密钥）；受 long_term_memory_max_chars_per_chunk 截断"
+            },
+            "tags": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "可选标签（JSON 数组），便于筛选"
+            },
+            "ttl_secs": {
+                "type": "integer",
+                "description": "存活秒数；0 或省略表示永不过期（仍受 long_term_memory_max_entries 淘汰）",
+                "minimum": 0
+            }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+    })
+}
+
+pub(in crate::tools) fn params_long_term_forget() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "memory_id": {
+                "type": "integer",
+                "description": "long_term_memory_list 返回的 id；与 memory_text 二选一"
+            },
+            "memory_text": {
+                "type": "string",
+                "description": "与存储正文完全匹配时删除；与 memory_id 二选一"
+            },
+            "explicit_only": {
+                "type": "boolean",
+                "description": "为 true 时仅删除显式记忆（long_term_remember），默认 false"
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
+pub(in crate::tools) fn params_long_term_memory_list() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "description": "最多列出几条（从新到旧），默认 16，范围 1～64",
+                "minimum": 1,
+                "maximum": 64
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    })
+}
+
 pub(in crate::tools) fn params_playbook_run_commands() -> serde_json::Value {
     serde_json::json!({
         "type": "object",

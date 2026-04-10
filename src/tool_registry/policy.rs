@@ -97,6 +97,8 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "npm_install",
             "go_mod_tidy",
             "docker_build",
+            "long_term_remember",
+            "long_term_forget",
             "run_command",
             "playbook_run_commands",
             "python_snippet_run",

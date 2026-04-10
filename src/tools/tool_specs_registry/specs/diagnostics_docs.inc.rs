@@ -55,4 +55,28 @@
             runner: runner_repo_overview_sweep,
             summary: ToolSummaryKind::Static("repo docs + tree + build files sweep"),
         },
+        ToolSpec {
+            name: "long_term_remember",
+            description: "将短文本**显式**写入本会话长期记忆（SQLite，与自动回合索引分源）；可选 `tags` 与 `ttl_secs`（0=不过期）。须启用 `long_term_memory_enabled` 且本会话已挂载记忆库。勿写入密钥或隐私原文。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_long_term_remember,
+            runner: runner_long_term_remember,
+            summary: ToolSummaryKind::Static("Explicit long-term memory write"),
+        },
+        ToolSpec {
+            name: "long_term_forget",
+            description: "按 `memory_id` 或正文精确匹配删除长期记忆条目；可选 `explicit_only` 仅删显式记忆。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_long_term_forget,
+            runner: runner_long_term_forget,
+            summary: ToolSummaryKind::Static("Delete long-term memory entry"),
+        },
+        ToolSpec {
+            name: "long_term_memory_list",
+            description: "列出本会话最近若干条未过期记忆（含 id、来源、过期时间与标签摘要）。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_long_term_memory_list,
+            runner: runner_long_term_memory_list,
+            summary: ToolSummaryKind::Static("List recent long-term memory rows"),
+        },
 ]

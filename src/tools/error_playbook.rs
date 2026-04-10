@@ -492,6 +492,7 @@ mod tests {
 
     fn ctx_with_allow<'a>(allowed: &'a [String]) -> super::super::ToolContext<'a> {
         super::super::ToolContext {
+            cfg: None,
             codebase_semantic: None,
             command_max_output_len: 4096,
             weather_timeout_secs: 15,
@@ -509,6 +510,8 @@ mod tests {
             workspace_changelist: None,
             test_result_cache_enabled: false,
             test_result_cache_max_entries: 8,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
         }
     }
 

@@ -111,6 +111,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
     let provider =
         WebSearchProvider::parse(&snap.web_search_provider).map_err(|e| e.to_string())?;
     let ctx = ToolContext {
+        cfg: None,
         codebase_semantic: Some(snap.codebase_semantic),
         command_max_output_len: snap.command_max_output_len,
         weather_timeout_secs: snap.weather_timeout_secs,
@@ -128,6 +129,8 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         workspace_changelist: None,
         test_result_cache_enabled: snap.test_result_cache_enabled,
         test_result_cache_max_entries: snap.test_result_cache_max_entries,
+        long_term_memory: None,
+        long_term_memory_scope_id: None,
     };
     let k = inv.kind.trim();
     let out = match k {

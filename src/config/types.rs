@@ -500,6 +500,14 @@ pub struct AgentConfig {
     pub agent_memory_file: String,
     /// 注入备忘正文的最大字符数（超出截断）。
     pub agent_memory_file_max_chars: usize,
+    /// 首轮在备忘 / 项目画像之前注入 `.crabmate/living_docs/` 摘要（`SUMMARY.md`、`map.md` 等）；`0` 关闭。
+    pub living_docs_inject_enabled: bool,
+    /// 活文档目录（相对工作区根），默认 `.crabmate/living_docs`。
+    pub living_docs_relative_dir: String,
+    /// 活文档注入总字符上限。
+    pub living_docs_inject_max_chars: usize,
+    /// 每个活文档文件读入时的字符上限。
+    pub living_docs_file_max_each_chars: usize,
     /// Web 新会话首轮：在备忘（若有）之外注入**自动生成的项目画像**（只读扫描 + 可选 `cargo metadata --no-deps`）。
     pub project_profile_inject_enabled: bool,
     /// 项目画像注入正文的字符上限（与备忘合并后仍受此上限约束的片段各自在生成时截断）。
@@ -534,6 +542,10 @@ pub struct AgentConfig {
     pub long_term_memory_min_chars_to_index: usize,
     /// 回合结束后异步写入索引（不阻塞 SSE）。
     pub long_term_memory_async_index: bool,
+    /// 回合结束是否自动把 user/assistant 终答写入长期记忆；`false` 时仅 `long_term_remember` 等显式路径写入。
+    pub long_term_memory_auto_index_turns: bool,
+    /// 自动索引条目的默认存活秒数；`0` 表示不过期（仍受 `long_term_memory_max_entries` 淘汰）。
+    pub long_term_memory_default_ttl_secs: u64,
     /// 是否启用 MCP（stdio 子进程）；与 `mcp_command` 配合使用。
     pub mcp_enabled: bool,
     /// 启动 MCP server 的命令行（空格分词，无引号转义）；等效于允许执行任意子进程，须来自可信配置。

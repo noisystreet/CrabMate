@@ -486,6 +486,20 @@ pub(super) fn finalize(
         .agent_memory_file_max_chars
         .unwrap_or(8000)
         .clamp(256, 500_000) as usize;
+    let living_docs_inject_enabled = b.living_docs_inject_enabled.unwrap_or(false);
+    let living_docs_relative_dir = b
+        .living_docs_relative_dir
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| ".crabmate/living_docs".to_string());
+    let living_docs_inject_max_chars = b
+        .living_docs_inject_max_chars
+        .unwrap_or(4000)
+        .clamp(0, 500_000) as usize;
+    let living_docs_file_max_each_chars = b
+        .living_docs_file_max_each_chars
+        .unwrap_or(1200)
+        .clamp(0, 500_000) as usize;
     let project_profile_inject_enabled = b.project_profile_inject_enabled.unwrap_or(true);
     let project_profile_inject_max_chars = b
         .project_profile_inject_max_chars
@@ -543,6 +557,11 @@ pub(super) fn finalize(
         .unwrap_or(8)
         .clamp(0, 4096) as usize;
     let long_term_memory_async_index = b.long_term_memory_async_index.unwrap_or(true);
+    let long_term_memory_auto_index_turns = b.long_term_memory_auto_index_turns.unwrap_or(true);
+    let long_term_memory_default_ttl_secs = b
+        .long_term_memory_default_ttl_secs
+        .unwrap_or(0)
+        .clamp(0, 365 * 86400 * 10);
 
     let mcp_enabled = b.mcp_enabled.unwrap_or(false);
     let mcp_command = b.mcp_command.unwrap_or_default();
@@ -771,6 +790,10 @@ pub(super) fn finalize(
         agent_memory_file_enabled,
         agent_memory_file,
         agent_memory_file_max_chars,
+        living_docs_inject_enabled,
+        living_docs_relative_dir,
+        living_docs_inject_max_chars,
+        living_docs_file_max_each_chars,
         project_profile_inject_enabled,
         project_profile_inject_max_chars,
         project_dependency_brief_inject_enabled,
@@ -788,6 +811,8 @@ pub(super) fn finalize(
         long_term_memory_max_chars_per_chunk,
         long_term_memory_min_chars_to_index,
         long_term_memory_async_index,
+        long_term_memory_auto_index_turns,
+        long_term_memory_default_ttl_secs,
         mcp_enabled,
         mcp_command,
         mcp_tool_timeout_secs,
