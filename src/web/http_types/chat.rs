@@ -28,6 +28,9 @@ pub(crate) struct ChatRequestBody {
     /// 客户端实现的 SSE 控制面版本（与 `crabmate_sse_protocol::SSE_PROTOCOL_VERSION` 对齐）。省略表示不声明，服务端不据此拒绝；若 **大于** 服务端版本则 **400**（`SSE_CLIENT_TOO_NEW`）。
     #[serde(default, rename = "client_sse_protocol")]
     pub(crate) client_sse_protocol: Option<u8>,
+    /// 本回合附带的图片 URL 列表（须为先前 `POST /upload` 返回的 **`/uploads/...`** 相对路径）；服务端组装 OpenAI 兼容多模态 `user.content`。
+    #[serde(default)]
+    pub(crate) image_urls: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]

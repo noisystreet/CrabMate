@@ -39,7 +39,7 @@ pub(crate) fn staged_plan_trigger_user_content(messages: &[Message]) -> Option<&
         {
             continue;
         }
-        let t = m.content.as_deref()?.trim();
+        let t = crate::types::message_content_as_str(&m.content)?.trim();
         if t.is_empty() {
             continue;
         }

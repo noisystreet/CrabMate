@@ -12,6 +12,9 @@ pub struct StoredMessage {
     pub role: String,
     #[serde(default)]
     pub text: String,
+    /// 用户消息附带的图片（`/uploads/...`）；旧数据缺省为空。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub image_urls: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
     #[serde(default)]

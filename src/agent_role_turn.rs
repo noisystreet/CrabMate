@@ -64,7 +64,7 @@ pub(crate) fn apply_agent_role_switch_to_messages(
     let mut found_system = false;
     for m in messages.iter_mut() {
         if m.role == "system" {
-            m.content = Some(sys);
+            m.content = Some(sys.into());
             m.name = None;
             found_system = true;
             break;

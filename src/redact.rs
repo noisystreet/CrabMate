@@ -9,7 +9,7 @@
 //!
 //! 对话/助手消息预览用于 `log::debug!`：默认仅开启 `RUST_LOG=debug` 时输出，且始终截断。
 
-use crate::types::Message;
+use crate::types::{Message, message_content_as_str};
 
 /// 日志里展示的响应体预览最大字符数（Unicode 标量）。
 pub const HTTP_BODY_PREVIEW_LOG_CHARS: usize = 256;
@@ -66,7 +66,7 @@ pub fn chat_api_error_message_for_user(body: &str) -> Option<String> {
 pub fn last_user_message_preview_for_log(messages: &[Message]) -> String {
     for m in messages.iter().rev() {
         if m.role == "user" {
-            return match m.content.as_deref() {
+            return match message_content_as_str(&m.content).map(str::trim) {
                 None | Some("") => "<empty>".to_string(),
                 Some(s) => preview_chars(s, MESSAGE_LOG_PREVIEW_CHARS),
             };
@@ -77,7 +77,7 @@ pub fn last_user_message_preview_for_log(messages: &[Message]) -> String {
 
 /// 单条助手（或其它角色）消息摘要：正文截断 + 若有 `tool_calls` 则附工具名（参数不全文记录）。
 pub fn assistant_message_preview_for_log(msg: &Message) -> String {
-    let content_p = match msg.content.as_deref() {
+    let content_p = match message_content_as_str(&msg.content).map(str::trim) {
         None | Some("") => None,
         Some(s) => Some(preview_chars(s, MESSAGE_LOG_PREVIEW_CHARS)),
     };

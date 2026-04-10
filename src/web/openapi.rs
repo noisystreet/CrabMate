@@ -523,6 +523,11 @@ pub fn build_openapi_spec() -> Value {
                             "type": "integer",
                             "format": "int32",
                             "description": "可选；客户端 SSE 控制面版本，须 ≤ 服务端。大于服务端时 400（SSE_CLIENT_TOO_NEW）。见 docs/SSE_PROTOCOL.md"
+                        },
+                        "image_urls": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "可选；须为先前 POST /upload 返回的 /uploads/... 相对路径（最多 6 条）；与 message 一并组装多模态 user 消息"
                         }
                     }
                 },

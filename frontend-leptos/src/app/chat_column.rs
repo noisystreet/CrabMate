@@ -13,6 +13,7 @@ use super::chat_message_render::{
     ChatChunk, chat_message_row, chunk_messages, tool_run_group_view,
 };
 use super::scroll_guard::MessagesScrollFromEffectGuard;
+use crate::api::upload_files_multipart;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::i18n::{self, Locale};
 use crate::session_ops::{clamp_session_ctx_menu_pos, selected_text_in_messages_for_context_copy};
@@ -40,12 +41,13 @@ pub fn chat_column_view(
     chat_find_cursor: RwSignal<usize>,
     composer_input_ref: NodeRef<Textarea>,
     composer_buf_ta: Arc<Mutex<String>>,
+    pending_images: RwSignal<Vec<String>>,
     run_send_message: Arc<dyn Fn() + Send + Sync>,
     trigger_stop: Arc<dyn Fn() + Send + Sync>,
     status_busy: RwSignal<bool>,
     initialized: RwSignal<bool>,
     session_sync: RwSignal<SessionSyncState>,
-    regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
+    regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
 ) -> impl IntoView {
@@ -280,6 +282,86 @@ pub fn chat_column_view(
                     </div>
                     <div class="composer composer-ds">
                         <div class="composer-inner-ds">
+                        <input
+                            type="file"
+                            class="composer-file-input-hidden"
+                            id="composer-image-input"
+                            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                            multiple
+                            on:change=move |ev: web_sys::Event| {
+                                let Some(t) = ev.target() else {
+                                    return;
+                                };
+                                let Ok(input) = t.dyn_into::<web_sys::HtmlInputElement>() else {
+                                    return;
+                                };
+                                let files = input.files();
+                                let Some(list) = files else {
+                                    return;
+                                };
+                                let n = list.length();
+                                if n == 0 {
+                                    return;
+                                }
+                                let form = web_sys::FormData::new().expect("FormData");
+                                    for i in 0..n {
+                                    if let Some(f) = list.item(i) {
+                                        let name = f.name();
+                                        let _ = form.append_with_blob_and_filename("file", &f, &name);
+                                    }
+                                }
+                                spawn_local(async move {
+                                    match upload_files_multipart(&form).await {
+                                        Ok(urls) => {
+                                            pending_images.update(|v| {
+                                                for u in urls {
+                                                    if v.len() >= 6 {
+                                                        break;
+                                                    }
+                                                    if !v.contains(&u) {
+                                                        v.push(u);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                        Err(e) => {
+                                            status_err.set(Some(e));
+                                        }
+                                    }
+                                });
+                                input.set_value("");
+                            }
+                        />
+                        <div class="composer-pending-images" data-testid="composer-pending-images">
+                            {move || {
+                                let imgs = pending_images.get();
+                                if imgs.is_empty() {
+                                    return view! { <span></span> }.into_any();
+                                }
+                                imgs.iter()
+                                    .map(|url| {
+                                        let u = url.clone();
+                                        let u_rm = url.clone();
+                                        view! {
+                                            <div class="composer-pending-img-wrap">
+                                                <img class="composer-pending-img" src=u alt="" />
+                                                <button
+                                                    type="button"
+                                                    class="composer-pending-img-remove"
+                                                    prop:aria-label=move || i18n::composer_remove_image_aria(locale.get())
+                                                    on:click=move |_| {
+                                                        pending_images.update(|v| v.retain(|x| x != &u_rm));
+                                                    }
+                                                >"×"</button>
+                                            </div>
+                                        }
+                                        .into_any()
+                                    })
+                                    .collect_view()
+                                    .into_any()
+                            }}
+                        </div>
+                        <div class="composer-input-row">
                         <textarea
                             class="composer-input"
                             data-testid="chat-composer-input"
@@ -301,6 +383,27 @@ pub fn chat_column_view(
                             rows="3"
                         ></textarea>
                         <div class="composer-bar-actions">
+                            <label
+                                class="btn btn-muted btn-sm composer-attach-label"
+                                for="composer-image-input"
+                                prop:title=move || i18n::composer_attach_image_aria(locale.get())
+                                prop:aria-label=move || i18n::composer_attach_image_aria(locale.get())
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    class="composer-attach-icon"
+                                    aria-hidden="true"
+                                >
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                    <path d="m21 15-3.5-3.5a2 2 0 0 0-2.83 0L6 21" />
+                                </svg>
+                            </label>
                             <button
                                 type="button"
                                 class="btn btn-muted btn-sm"
@@ -337,6 +440,7 @@ pub fn chat_column_view(
                                     <path d="M22 2 15 22 11 13 2 9 22 2Z" />
                                 </svg>
                             </button>
+                        </div>
                         </div>
                         </div>
                     </div>

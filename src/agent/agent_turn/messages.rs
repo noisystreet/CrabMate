@@ -1,6 +1,6 @@
 //! 助手消息合并与「本轮用户后」UI 分隔线插入。
 
-use crate::types::{Message, is_chat_ui_separator};
+use crate::types::{Message, is_chat_ui_separator, message_content_as_str};
 
 pub(crate) fn push_assistant_merging_trailing_empty_placeholder(
     messages: &mut Vec<Message>,
@@ -13,9 +13,7 @@ pub(crate) fn push_assistant_merging_trailing_empty_placeholder(
     if let Some(last) = messages.last_mut()
         && last.role == "assistant"
         && last.tool_calls.is_none()
-        && last
-            .content
-            .as_deref()
+        && message_content_as_str(&last.content)
             .map(|s| s.trim())
             .unwrap_or("")
             .is_empty()

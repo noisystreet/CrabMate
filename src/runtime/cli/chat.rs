@@ -219,7 +219,7 @@ fn print_json_reply_line(cfg: &Arc<AgentConfig>, messages: &[Message], batch_lin
         .iter()
         .rev()
         .find(|m| m.role == "assistant")
-        .and_then(|m| m.content.clone())
+        .map(|m| crate::types::message_content_into_text_lossy(m.content.clone()))
         .unwrap_or_default();
     let mut obj = serde_json::json!({
         "type": "crabmate_chat_cli_result",

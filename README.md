@@ -29,7 +29,7 @@
 
 - **CLI**：**`crabmate repl`** / **`chat`** / **`serve`**（与 Web 共用 Agent/工具）。详 **[CLI](#cli)**、[docs/CLI.md](docs/CLI.md)。
 
-- **Web UI**：类 DeepSeek 布局；助手 **Markdown**；侧栏会话（导出、筛选、搜索）、工作区树与变更预览、任务与上下文状态、消息多选/重试/分支；聊天框可写 **`@相对路径`** 引用工作区文件（发送时由服务端按 **`read_file`** 规则展开），或在工作区树中**双击文件**插入 **`@路径`**；**多角色**等见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
+- **Web UI**：类 DeepSeek 布局；助手 **Markdown**；侧栏会话（导出、筛选、搜索）、工作区树与变更预览、任务与上下文状态、消息多选/重试/分支；聊天框可写 **`@相对路径`** 引用工作区文件（发送时由服务端按 **`read_file`** 规则展开），或在工作区树中**双击文件**插入 **`@路径`**；输入区可 **附加图片**（先 `POST /upload`，再在 `POST /chat/stream` 中带 `image_urls` 组装 OpenAI 兼容多模态 `user` 消息；**须使用支持视觉的模型**）。**多角色**等见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
 
 - **项目画像**：侧栏摘要与可选首轮注入；模型可用 **`repo_overview_sweep`**（[docs/TOOLS.md](docs/TOOLS.md)）。
 

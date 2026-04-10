@@ -54,11 +54,48 @@ mod llm_seed_tests {
 
 // ---------- 消息与请求 ----------
 
+/// `message.content`：OpenAI 兼容的 **字符串** 或 **多模态片段数组**。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    /// 如 `[{"type":"text","text":"…"},{"type":"image_url","image_url":{"url":"…"}}]`。
+    Parts(Vec<serde_json::Value>),
+}
+
+impl From<String> for MessageContent {
+    fn from(s: String) -> Self {
+        MessageContent::Text(s)
+    }
+}
+
+impl From<&str> for MessageContent {
+    fn from(s: &str) -> Self {
+        MessageContent::Text(s.to_string())
+    }
+}
+
+/// 保证 `content` 为 [`MessageContent::Text`]（`None` / `Parts` 会重置为空串）并返回可变引用。
+pub fn message_content_get_or_insert_empty_text(
+    content: &mut Option<MessageContent>,
+) -> &mut String {
+    match content {
+        Some(MessageContent::Text(s)) => s,
+        _ => {
+            *content = Some(MessageContent::Text(String::new()));
+            match content {
+                Some(MessageContent::Text(s)) => s,
+                _ => unreachable!("just assigned Text"),
+            }
+        }
+    }
+}
+
 /// 对话消息（OpenAI 兼容格式）
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub role: String,
-    pub content: Option<String>,
+    pub content: Option<MessageContent>,
     /// DeepSeek `deepseek-reasoner` 等非流式/流式响应中的思维链；出站默认**不**回传供应商（见 [`message_clone_stripping_reasoning_for_api`]）；Moonshot **kimi-k2.5** 在 **thinking** 启用时对含 **`tool_calls`** 的 assistant **须**回传（由同一函数在 `preserve_reasoning_on_assistant_tool_calls` 为真时处理）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
@@ -107,12 +144,127 @@ pub fn is_workspace_changelist_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_WORKSPACE_CHANGELIST_NAME)
 }
 
+/// `message.content` 为纯文本时的借用；多模态 [`MessageContent::Parts`] 返回 `None`。
+#[inline]
+pub fn message_content_as_str(content: &Option<MessageContent>) -> Option<&str> {
+    match content {
+        Some(MessageContent::Text(s)) => Some(s.as_str()),
+        Some(MessageContent::Parts(_)) | None => None,
+    }
+}
+
+/// 供字符预算等估算：字符串取其 `len()`；多模态数组累加各 `text` 段长度（近似）。
+pub fn message_content_byte_len_for_estimate(content: &Option<MessageContent>) -> usize {
+    match content {
+        None => 0,
+        Some(MessageContent::Text(s)) => s.len(),
+        Some(MessageContent::Parts(parts)) => parts
+            .iter()
+            .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+            .map(|t| t.len())
+            .sum(),
+    }
+}
+
+/// 从助手等非流式响应取纯文本正文；多模态 `Parts` 返回空串（摘要/日志路径不展开图片）。
+pub fn message_content_into_text_lossy(content: Option<MessageContent>) -> String {
+    match content {
+        None => String::new(),
+        Some(MessageContent::Text(s)) => s,
+        Some(MessageContent::Parts(_)) => String::new(),
+    }
+}
+
+/// 是否视为「无正文」（`None`、空白字符串、空片段数组）。
+pub fn message_content_is_effectively_empty(m: &Message) -> bool {
+    match &m.content {
+        None => true,
+        Some(MessageContent::Text(s)) => s.trim().is_empty(),
+        Some(MessageContent::Parts(a)) => a.is_empty(),
+    }
+}
+
+/// 将 `system` 折叠进 `user` 时合并正文：支持纯字符串与多模态数组（前缀写入首段 `text` 或新增 `text` 块）。
+pub fn merge_system_text_prefix_into_user_content(msg: &mut Message, prefix: &str) {
+    let prefix = prefix.trim();
+    if prefix.is_empty() {
+        return;
+    }
+    match std::mem::take(&mut msg.content) {
+        None => {
+            msg.content = Some(MessageContent::Text(prefix.to_string()));
+        }
+        Some(MessageContent::Text(s)) => {
+            let u = s.trim();
+            msg.content = Some(MessageContent::Text(if u.is_empty() {
+                prefix.to_string()
+            } else {
+                format!("{prefix}\n\n{u}")
+            }));
+        }
+        Some(MessageContent::Parts(mut parts)) => {
+            if let Some(serde_json::Value::Object(obj)) = parts.first_mut()
+                && obj.get("type").and_then(|t| t.as_str()) == Some("text")
+                && let Some(serde_json::Value::String(t)) = obj.get_mut("text")
+            {
+                let u = t.trim();
+                *t = if u.is_empty() {
+                    prefix.to_string()
+                } else {
+                    format!("{prefix}\n\n{u}")
+                };
+                msg.content = Some(MessageContent::Parts(parts));
+                return;
+            }
+            let mut new_parts = Vec::with_capacity(parts.len() + 1);
+            new_parts.push(serde_json::json!({"type": "text", "text": prefix}));
+            new_parts.extend(parts);
+            msg.content = Some(MessageContent::Parts(new_parts));
+        }
+    }
+}
+
+/// 构建带图片的 `user` 消息（OpenAI 兼容 `content` 数组）；`text` 可为空（仅图）。
+pub fn message_user_with_images(text: &str, image_urls: &[String]) -> Message {
+    let mut parts = Vec::new();
+    let t = text.trim();
+    if !t.is_empty() {
+        parts.push(serde_json::json!({"type": "text", "text": t}));
+    }
+    for url in image_urls {
+        let u = url.trim();
+        if u.is_empty() {
+            continue;
+        }
+        parts.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": {"url": u}
+        }));
+    }
+    let content = if parts.is_empty() {
+        None
+    } else {
+        Some(MessageContent::Parts(parts))
+    };
+    Message {
+        role: "user".to_string(),
+        content,
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: None,
+        tool_call_id: None,
+    }
+}
+
 impl Message {
     /// 分阶段规划：每步完成后的短分隔线。仅用于 UI 与同步，调用模型前须过滤。
     pub fn chat_ui_separator(short: bool) -> Self {
         Self {
             role: "system".to_string(),
-            content: Some(if short { "short" } else { "long" }.to_string()),
+            content: Some(MessageContent::Text(
+                if short { "short" } else { "long" }.to_string(),
+            )),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -125,7 +277,7 @@ impl Message {
     pub fn system_only(content: impl Into<String>) -> Self {
         Self {
             role: "system".to_string(),
-            content: Some(content.into()),
+            content: Some(MessageContent::Text(content.into())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -138,7 +290,7 @@ impl Message {
     pub fn user_only(content: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),
-            content: Some(content.into()),
+            content: Some(MessageContent::Text(content.into())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -151,7 +303,7 @@ impl Message {
     pub fn assistant_only(content: impl Into<String>) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: Some(content.into()),
+            content: Some(MessageContent::Text(content.into())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -263,8 +415,12 @@ fn is_assistant_role(role: &str) -> bool {
 }
 
 fn merge_adjacent_assistant_text(into: &mut Message, from: &Message) {
-    let a = into.content.as_deref().map(str::trim).unwrap_or("");
-    let b = from.content.as_deref().map(str::trim).unwrap_or("");
+    let a = message_content_as_str(&into.content)
+        .map(str::trim)
+        .unwrap_or("");
+    let b = message_content_as_str(&from.content)
+        .map(str::trim)
+        .unwrap_or("");
     into.content = match (a.is_empty(), b.is_empty()) {
         (true, true) => None,
         (false, true) => into.content.clone(),
@@ -275,7 +431,7 @@ fn merge_adjacent_assistant_text(into: &mut Message, from: &Message) {
             } else if a.starts_with(b) {
                 into.content.clone()
             } else {
-                Some(format!("{a}\n\n{b}"))
+                Some(MessageContent::Text(format!("{a}\n\n{b}")))
             }
         }
     };
@@ -287,11 +443,7 @@ fn merge_adjacent_assistant_text(into: &mut Message, from: &Message) {
 fn squash_consecutive_assistant_pair(into: &mut Message, from: Message) {
     let from_has_tc = assistant_has_non_empty_tool_calls(&from);
     let into_has_tc = assistant_has_non_empty_tool_calls(into);
-    let from_empty = from
-        .content
-        .as_deref()
-        .map(|s| s.trim().is_empty())
-        .unwrap_or(true);
+    let from_empty = message_content_is_effectively_empty(&from);
 
     if into_has_tc && !from_has_tc {
         if from_empty {
@@ -393,24 +545,14 @@ pub fn fold_system_messages_into_following_user(msgs: Vec<Message>) -> Vec<Messa
         }
         let prefix = pending.join("\n\n");
         pending.clear();
-        let merged = match msg.content.as_deref().map(str::trim) {
-            Some(u) if !u.is_empty() => format!("{prefix}\n\n{u}"),
-            _ => prefix,
-        };
-        msg.content = if merged.is_empty() {
-            None
-        } else {
-            Some(merged)
-        };
+        merge_system_text_prefix_into_user_content(&mut msg, &prefix);
         out.push(msg);
     };
 
     for m in msgs {
         if role_is_system_for_vendor(&m.role) {
-            if let Some(c) = m
-                .content
-                .as_ref()
-                .map(|s| s.trim())
+            if let Some(c) = message_content_as_str(&m.content)
+                .map(str::trim)
                 .filter(|s| !s.is_empty())
             {
                 pending.push(c.to_string());
@@ -440,10 +582,9 @@ fn pop_trailing_assistants_with_neither_content_nor_tool_calls(out: &mut Vec<Mes
     while out.last().is_some_and(|m| {
         is_assistant_role(&m.role)
             && !assistant_has_non_empty_tool_calls(m)
-            && m.content
-                .as_deref()
+            && message_content_as_str(&m.content)
                 .map(|s| s.trim().is_empty())
-                .unwrap_or(true)
+                .unwrap_or_else(|| message_content_is_effectively_empty(m))
     }) {
         out.pop();
     }
@@ -613,7 +754,7 @@ mod api_messages_strip_tests {
         let sep = Message::chat_ui_separator(true);
         let assistant = Message {
             role: "assistant".to_string(),
-            content: Some("body".to_string()),
+            content: Some(MessageContent::Text("body".to_string())),
             reasoning_content: Some("chain".to_string()),
             reasoning_details: None,
             tool_calls: None,
@@ -625,7 +766,7 @@ mod api_messages_strip_tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].role, "user");
         assert_eq!(out[1].role, "assistant");
-        assert_eq!(out[1].content.as_deref(), Some("body"));
+        assert_eq!(message_content_as_str(&out[1].content), Some("body"));
         assert!(out[1].reasoning_content.is_none());
     }
 
@@ -633,7 +774,7 @@ mod api_messages_strip_tests {
     fn strip_reasoning_only_matches_composing_without_separators() {
         let assistant = Message {
             role: "assistant".to_string(),
-            content: Some("x".to_string()),
+            content: Some(MessageContent::Text("x".to_string())),
             reasoning_content: Some("r".to_string()),
             reasoning_details: None,
             tool_calls: None,
@@ -703,7 +844,7 @@ mod normalize_messages_tests {
     fn asst(content: &str) -> Message {
         Message {
             role: "assistant".to_string(),
-            content: Some(content.to_string()),
+            content: Some(MessageContent::Text(content.to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -715,7 +856,7 @@ mod normalize_messages_tests {
     fn asst_with_tc(content: &str) -> Message {
         Message {
             role: "assistant".to_string(),
-            content: Some(content.to_string()),
+            content: Some(MessageContent::Text(content.to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: Some(vec![ToolCall {
@@ -742,7 +883,7 @@ mod normalize_messages_tests {
         let n = normalize_messages_for_openai_compatible_request(v);
         assert_eq!(n.len(), 3);
         assert_eq!(n[2].role, "assistant");
-        assert_eq!(n[2].content.as_deref(), Some("prior"));
+        assert_eq!(message_content_as_str(&n[2].content), Some("prior"));
     }
 
     #[test]
@@ -763,7 +904,7 @@ mod normalize_messages_tests {
         ];
         let n = normalize_messages_for_openai_compatible_request(v);
         assert_eq!(n.len(), 3);
-        assert_eq!(n[2].content.as_deref(), Some("hello"));
+        assert_eq!(message_content_as_str(&n[2].content), Some("hello"));
     }
 
     /// 裁剪掉 tool 后常见：带 tool_calls 的 assistant 紧挨下一条助手正文。
@@ -779,8 +920,16 @@ mod normalize_messages_tests {
         assert_eq!(n.len(), 3);
         assert_eq!(n[2].role, "assistant");
         assert!(n[2].tool_calls.is_none());
-        assert!(n[2].content.as_deref().unwrap().contains("calling tool"));
-        assert!(n[2].content.as_deref().unwrap().contains("final answer"));
+        assert!(
+            message_content_as_str(&n[2].content)
+                .unwrap()
+                .contains("calling tool")
+        );
+        assert!(
+            message_content_as_str(&n[2].content)
+                .unwrap()
+                .contains("final answer")
+        );
     }
 
     #[test]
@@ -793,7 +942,7 @@ mod normalize_messages_tests {
         ];
         let n = normalize_messages_for_openai_compatible_request(v);
         assert_eq!(n.len(), 3);
-        assert_eq!(n[2].content.as_deref(), Some("x"));
+        assert_eq!(message_content_as_str(&n[2].content), Some("x"));
         assert!(n[2].tool_calls.is_none());
     }
 
@@ -802,7 +951,7 @@ mod normalize_messages_tests {
     fn preserves_merged_tool_calls_when_tool_follows() {
         let tool = Message {
             role: "tool".to_string(),
-            content: Some(r#"{"ok":true}"#.to_string()),
+            content: Some(MessageContent::Text(r#"{"ok":true}"#.to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -835,7 +984,7 @@ mod normalize_messages_tests {
         let n = normalize_messages_for_openai_compatible_request(v);
         assert_eq!(n.len(), 3);
         assert_eq!(n[2].role, "assistant");
-        let c = n[2].content.as_deref().unwrap();
+        let c = message_content_as_str(&n[2].content).unwrap();
         assert!(c.contains('a') && c.contains('c'));
     }
 
@@ -866,7 +1015,11 @@ mod normalize_messages_tests {
         let n = normalize_messages_for_openai_compatible_request(v);
         assert_eq!(n.len(), 3);
         assert!(n[2].tool_calls.is_none());
-        assert!(n[2].content.as_deref().unwrap().contains("partial"));
+        assert!(
+            message_content_as_str(&n[2].content)
+                .unwrap()
+                .contains("partial")
+        );
     }
 
     /// 末尾仅 `tool_calls`、正文为空且无后续 `tool`：清空 `tool_calls` 后须整条删除，避免 API 400。
@@ -893,7 +1046,7 @@ mod fold_system_messages_tests {
         let o = fold_system_messages_into_following_user(v);
         assert_eq!(o.len(), 1);
         assert_eq!(o[0].role, "user");
-        assert_eq!(o[0].content.as_deref(), Some("sys\n\nhi"));
+        assert_eq!(message_content_as_str(&o[0].content), Some("sys\n\nhi"));
     }
 
     #[test]
@@ -905,14 +1058,14 @@ mod fold_system_messages_tests {
         ];
         let o = fold_system_messages_into_following_user(v);
         assert_eq!(o.len(), 1);
-        assert_eq!(o[0].content.as_deref(), Some("a\n\nb\n\nu"));
+        assert_eq!(message_content_as_str(&o[0].content), Some("a\n\nb\n\nu"));
     }
 
     #[test]
     fn system_before_assistant_inserts_user_carrier() {
         let a = Message {
             role: "assistant".to_string(),
-            content: Some("reply".to_string()),
+            content: Some(MessageContent::Text("reply".to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -923,7 +1076,7 @@ mod fold_system_messages_tests {
         let o = fold_system_messages_into_following_user(v);
         assert_eq!(o.len(), 2);
         assert_eq!(o[0].role, "user");
-        assert_eq!(o[0].content.as_deref(), Some("instr"));
+        assert_eq!(message_content_as_str(&o[0].content), Some("instr"));
         assert_eq!(o[1].role, "assistant");
     }
 
@@ -933,7 +1086,7 @@ mod fold_system_messages_tests {
         let o = fold_system_messages_into_following_user(v);
         assert_eq!(o.len(), 1);
         assert_eq!(o[0].role, "user");
-        assert_eq!(o[0].content.as_deref(), Some("orphan"));
+        assert_eq!(message_content_as_str(&o[0].content), Some("orphan"));
     }
 
     #[test]
@@ -943,7 +1096,11 @@ mod fold_system_messages_tests {
         let v = vec![s, Message::user_only("y")];
         let o = fold_system_messages_into_following_user(v);
         assert_eq!(o.len(), 1);
-        assert!(o[0].content.as_deref().unwrap().starts_with("x"));
+        assert!(
+            message_content_as_str(&o[0].content)
+                .unwrap()
+                .starts_with("x")
+        );
     }
 }
 

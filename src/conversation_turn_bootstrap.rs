@@ -9,7 +9,7 @@ use log::debug;
 
 use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::project_profile::build_first_turn_user_context_markdown;
-use crate::types::{Message, messages_chat_seed};
+use crate::types::Message;
 
 /// 项目画像 / `cargo metadata` 等重扫描是否应放到阻塞线程（与 Web `build_messages_for_turn`、CLI `prepend_cli_first_turn_injection` 对齐）。
 pub(crate) fn project_scan_needs_spawn_blocking(cfg: &AgentConfig) -> bool {
@@ -73,15 +73,15 @@ pub(crate) fn augmented_system_for_new_conversation_lenient(
 pub(crate) fn compose_new_conversation_messages(
     system_for_turn: &str,
     project_context: Option<String>,
-    user_message: Option<&str>,
+    last_user: Option<Message>,
 ) -> Vec<Message> {
-    match (project_context, user_message) {
+    match (project_context, last_user) {
         (Some(ctx), Some(u)) => vec![
             Message::system_only(system_for_turn.to_string()),
             Message::user_only(ctx),
-            Message::user_only(u.to_string()),
+            u,
         ],
-        (None, Some(u)) => messages_chat_seed(system_for_turn, u),
+        (None, Some(u)) => vec![Message::system_only(system_for_turn.to_string()), u],
         (Some(ctx), None) => vec![
             Message::system_only(system_for_turn.to_string()),
             Message::user_only(ctx),

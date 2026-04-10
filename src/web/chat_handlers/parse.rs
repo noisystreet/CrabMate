@@ -8,6 +8,33 @@ use crate::chat_job_queue;
 use crate::config::LlmHttpAuthMode;
 use crate::web::http_types::chat::{ApiError, ClientLlmBody};
 
+/// Web 聊天附带的图片 URL：仅允许同源 **`/uploads/<文件名>`**（与 `upload_handler` 一致），防目录穿越与外链滥用。
+pub(super) fn normalize_chat_image_urls(raw: &[String]) -> Result<Vec<String>, String> {
+    const MAX_IMAGES: usize = 6;
+    if raw.len() > MAX_IMAGES {
+        return Err(format!("图片数量过多（上限 {MAX_IMAGES} 张）"));
+    }
+    let mut out: Vec<String> = Vec::with_capacity(raw.len());
+    for u in raw {
+        let t = u.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if t.contains("..") || t.contains('\\') || t.starts_with("//") {
+            return Err("图片 URL 非法".to_string());
+        }
+        if !t.starts_with("/uploads/") {
+            return Err("图片 URL 须为 /uploads/ 下的相对路径".to_string());
+        }
+        let name = t.trim_start_matches("/uploads/");
+        if name.is_empty() || name.contains('/') {
+            return Err("图片 URL 非法".to_string());
+        }
+        out.push(format!("/uploads/{name}"));
+    }
+    Ok(out)
+}
+
 const CLIENT_LLM_API_BASE_MAX: usize = 2048;
 const CLIENT_LLM_MODEL_MAX: usize = 512;
 const CLIENT_LLM_API_KEY_MAX: usize = 16384;

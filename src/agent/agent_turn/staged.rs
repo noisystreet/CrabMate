@@ -40,7 +40,7 @@ use super::staged_sse::{
 fn pop_last_staged_planner_coach_user_if_present(messages: &mut Vec<Message>) {
     if let Some(last) = messages.last()
         && last.role == "user"
-        && last.content.as_deref().is_some_and(|c| {
+        && crate::types::message_content_as_str(&last.content).is_some_and(|c| {
             c.contains(STAGED_PLAN_OPTIMIZER_COACH_MARK)
                 || plan_ensemble::is_ensemble_injected_user_content(c)
         })
@@ -235,7 +235,7 @@ where
             return Ok(());
         }
         strip_staged_planner_message_tool_calls(&mut sec_msg, "·逻辑多规划员", dsml);
-        let content = sec_msg.content.as_deref().unwrap_or("");
+        let content = crate::types::message_content_as_str(&sec_msg.content).unwrap_or("");
         match plan_artifact::parse_agent_reply_plan_v1(content) {
             Ok(p2) if !p2.no_task && !p2.steps.is_empty() => {
                 pop_last_staged_planner_coach_user_if_present(p.messages);
@@ -273,7 +273,7 @@ where
         return Ok(());
     }
     strip_staged_planner_message_tool_calls(&mut merge_msg, "·多规划合并", dsml);
-    let merge_content = merge_msg.content.as_deref().unwrap_or("");
+    let merge_content = crate::types::message_content_as_str(&merge_msg.content).unwrap_or("");
     if let Some(steps) = plan_ensemble::try_parse_ensemble_planner_reply(merge_content) {
         debug!(
             target: "crabmate",
@@ -364,7 +364,7 @@ pub(super) async fn run_staged_plan_then_execute_steps(
         labels,
         |body| Message {
             role: "user".to_string(),
-            content: Some(body),
+            content: Some(body.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -406,8 +406,7 @@ pub(crate) fn build_logical_dual_planner_messages(
             if m.role != "assistant" {
                 return true;
             }
-            m.content
-                .as_deref()
+            crate::types::message_content_as_str(&m.content)
                 .map(|s| !s.trim().is_empty())
                 .unwrap_or(false)
         })
@@ -484,7 +483,7 @@ fn staged_step_tool_messages_all_ok(messages: &[Message], step_user_index: usize
             break;
         }
         if m.role == "tool" {
-            let content = m.content.as_deref().unwrap_or("");
+            let content = crate::types::message_content_as_str(&m.content).unwrap_or("");
             if !tool_message_content_ok_for_model(content, "") {
                 return false;
             }
@@ -674,7 +673,7 @@ where
         return Ok(None);
     }
 
-    let content = msg.content.as_deref().unwrap_or("");
+    let content = crate::types::message_content_as_str(&msg.content).unwrap_or("");
     let patch_plan = match plan_artifact::parse_agent_reply_plan_v1(content) {
         Ok(p) => p,
         Err(e) => {
@@ -833,7 +832,7 @@ where
         return run_agent_outer_loop(p, per_coord).await;
     }
 
-    let content = msg.content.as_deref().unwrap_or("");
+    let content = crate::types::message_content_as_str(&msg.content).unwrap_or("");
     let plan = match crate::agent::plan_artifact::parse_agent_reply_plan_v1(content) {
         Ok(plan_v1) => plan_v1,
         Err(parse_err) => {
@@ -916,7 +915,7 @@ where
             "优化轮",
             p.cfg.materialize_deepseek_dsml_tool_calls,
         );
-        let opt_content = opt_msg.content.as_deref().unwrap_or("");
+        let opt_content = crate::types::message_content_as_str(&opt_msg.content).unwrap_or("");
         if let Some(merged_steps) = plan_optimizer::try_parse_optimizer_reply(opt_content) {
             if merged_steps.len() < plan.steps.len() {
                 debug!(

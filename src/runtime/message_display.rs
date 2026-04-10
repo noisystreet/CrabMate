@@ -580,7 +580,7 @@ pub(crate) fn assistant_streaming_plain_concat(m: &Message) -> String {
     if let Some(r) = m.reasoning_content.as_deref() {
         s.push_str(r);
     }
-    if let Some(c) = m.content.as_deref() {
+    if let Some(c) = crate::types::message_content_as_str(&m.content) {
         s.push_str(c);
     }
     s
@@ -590,7 +590,7 @@ pub(crate) fn assistant_streaming_plain_concat(m: &Message) -> String {
 pub(crate) fn assistant_markdown_source_for_message(m: &Message) -> String {
     let raw = assistant_raw_markdown_body_from_parts(
         m.reasoning_content.as_deref().unwrap_or(""),
-        m.content.as_deref().unwrap_or(""),
+        crate::types::message_content_as_str(&m.content).unwrap_or(""),
     );
     assistant_markdown_source_for_display(&raw)
 }
@@ -611,7 +611,7 @@ pub(crate) fn assistant_raw_markdown_body_from_parts(reasoning: &str, content: &
 pub(crate) fn assistant_raw_markdown_body_for_message(m: &Message) -> String {
     assistant_raw_markdown_body_from_parts(
         m.reasoning_content.as_deref().unwrap_or(""),
-        m.content.as_deref().unwrap_or(""),
+        crate::types::message_content_as_str(&m.content).unwrap_or(""),
     )
 }
 
@@ -731,7 +731,7 @@ mod tests {
                 tool_call_id: Some("c1".into()),
             },
         ];
-        let raw = messages[2].content.as_deref().unwrap();
+        let raw = crate::types::message_content_as_str(&messages[2].content).unwrap();
         let out = tool_content_for_display_for_message(raw, &messages, 2);
         assert_eq!(out, "ls");
         assert!(!out.contains(TOOL_OUTPUT_SECTION_HEADLINE));

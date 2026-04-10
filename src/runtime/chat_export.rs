@@ -55,7 +55,9 @@ pub fn messages_to_markdown(messages: &[Message]) -> String {
         let body = if m.role == "assistant" {
             crate::runtime::message_display::assistant_raw_markdown_body_for_message(m)
         } else {
-            m.content.as_deref().unwrap_or("").to_string()
+            crate::types::message_content_as_str(&m.content)
+                .unwrap_or("")
+                .to_string()
         };
         md.push_str(&body);
         md.push_str("\n\n");
@@ -104,7 +106,7 @@ mod tests {
     fn msg(role: &str, content: &str) -> Message {
         Message {
             role: role.to_string(),
-            content: Some(content.to_string()),
+            content: Some(content.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,

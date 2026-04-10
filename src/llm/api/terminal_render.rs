@@ -108,7 +108,9 @@ pub(super) fn render_non_stream_assistant_terminal(
                 &mut reasoning_style_active,
             )?;
         }
-        if let Some(c) = msg.content.as_deref().filter(|s| !s.is_empty()) {
+        if let Some(c) =
+            crate::types::message_content_as_str(&msg.content).filter(|s| !s.is_empty())
+        {
             cli_terminal_write_plain_fragment(
                 c,
                 &mut prefix_emitted,
@@ -121,9 +123,7 @@ pub(super) fn render_non_stream_assistant_terminal(
             if reasoning_style_active {
                 crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut lock)?;
             }
-            let ends_nl = msg
-                .content
-                .as_deref()
+            let ends_nl = crate::types::message_content_as_str(&msg.content)
                 .map(|s| s.ends_with('\n'))
                 .unwrap_or(false)
                 || msg
