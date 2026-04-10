@@ -13,7 +13,7 @@
 | 环境变量 | 响应 JSON 字段 | 效果 |
 | --- | --- | --- |
 | **`AGENT_WEB_DISABLE_MARKDOWN`** | **`markdown_render`** 为 `false` | **助手气泡**与**工作区变更集模态**以 **HTML 转义纯文本**展示（换行转为 `<br />`）。**聊天气泡内**思维链与终答均为同一正文色与等宽字体，**不再**使用 Markdown 模式下的次要色/左边线/背景卡区分思维链 |
-| **`AGENT_WEB_RAW_ASSISTANT_OUTPUT`** | **`apply_assistant_display_filters`** 为 `false` | **不对助手返回内容做 UI 侧改写**：不剥 `agent_reply_plan` 围栏/前缀 JSON、不按内联 `</redacted_thinking>` 等标记拆分思维链与正文；与侧栏跨会话搜索、会话内查找、复制、浏览器内 JSON/Markdown 导出使用同一套展示文本。与上一行 **Markdown 开关**相互独立 |
+| **`AGENT_WEB_RAW_ASSISTANT_OUTPUT`** | **`apply_assistant_display_filters`** 为 `false` | **不对助手返回内容做 UI 侧改写**：不剥 `agent_reply_plan` 围栏/前缀 JSON、不按内联 `</redacted_thinking>` 等标记拆分思维链与正文；与侧栏跨会话搜索、会话内查找、复制、浏览器内 JSON/Markdown 导出使用同一套展示文本。**未**开启本变量时（默认），分阶段规划下**无工具规划轮**经 SSE 到浏览器时：若解析规划 JSON 为 **`no_task: true`** 则**整轮**不落 SSE；否则**仅**丢弃该轮在 CrabMate 信封 `assistant_answer_phase` **之前**的流式增量（规划轮「思考」路径），信封与之后正文仍下发（`staged_plan_two_phase_nl_display` 开启时整轮规划仍由 NL 补全轮承担可见输出，与此前一致）。与上一行 **Markdown 开关**相互独立 |
 
 **手动验证**：`curl -s http://127.0.0.1:8080/web-ui`（端口按实际；若启用了 Web API 鉴权，与其它系统路由一致处理）。
 

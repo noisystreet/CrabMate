@@ -49,8 +49,57 @@ fn pop_last_staged_planner_coach_user_if_present(messages: &mut Vec<Message>) {
     }
 }
 
-fn staged_two_phase_suppress_planner_stream(cfg: &crate::config::AgentConfig) -> bool {
+/// 两阶段 NL 开启时：无工具规划轮不向 Web/终端流式下发（由 NL 补全轮承担用户可见输出）。
+fn staged_planner_sse_fully_suppressed(cfg: &crate::config::AgentConfig) -> bool {
     cfg.staged_plan_two_phase_nl_display
+}
+
+/// 无工具规划轮 `complete_chat_retrying`：
+/// - **两阶段 NL**：`out: None`（整段抑制）；
+/// - **Web + 未** `AGENT_WEB_RAW_ASSISTANT_OUTPUT`：经 [`super::planner_sse_gate::PlannerSseGate`] — `no_task` 则整轮不落 SSE，否则仅落 `assistant_answer_phase` 之后的正文增量；
+/// - **RAW** 或 **非 Web**：`out: p.out`（整段原样下发）。
+async fn complete_planner_no_tools_chat_retrying(
+    p: &RunLoopParams<'_>,
+    req: &crate::types::ChatRequest,
+    planner_render_to_terminal: bool,
+) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+    let suppress_full = staged_planner_sse_fully_suppressed(p.cfg.as_ref());
+    let use_gate = p.out.is_some()
+        && !crate::web::web_ui_env::web_raw_assistant_output_env()
+        && !suppress_full;
+
+    let gate_opt = match (use_gate, p.out.as_ref()) {
+        (true, Some(out)) => Some(super::planner_sse_gate::PlannerSseGate::spawn(
+            (*out).clone(),
+        )),
+        _ => None,
+    };
+
+    let out_ref: Option<&mpsc::Sender<String>> = if suppress_full {
+        None
+    } else if let Some(ref g) = gate_opt {
+        Some(&g.inner_tx)
+    } else {
+        p.out
+    };
+
+    let cc = CompleteChatRetryingParams {
+        llm_backend: p.llm_backend,
+        http: p.client,
+        api_key: p.api_key,
+        cfg: p.cfg.as_ref(),
+        out: out_ref,
+        render_to_terminal: planner_render_to_terminal && !suppress_full,
+        no_stream: p.no_stream,
+        cancel: p.cancel,
+        plain_terminal_stream: p.plain_terminal_stream,
+        request_chrome_trace: p.request_chrome_trace.clone(),
+    };
+    let res = complete_chat_retrying(&cc, req).await?;
+    if let Some(gate) = gate_opt {
+        gate.finish(&res.0).await;
+    }
+    Ok(res)
 }
 
 /// `staged_plan_two_phase_nl_display` 开启时：在上下文中已有规划 JSON 助手条后，追加一轮仅自然语言的**用户可见**输出（SSE/终端）。
@@ -132,7 +181,7 @@ where
     result
 }
 
-/// 无工具规划补全：假定 `p.messages` 已含本轮所需的 user（若有）；与 `prepare_staged_planner_no_tools_request` + `complete_chat_retrying` 一致。
+/// 无工具规划补全：假定 `p.messages` 已含本轮所需的 user（若有）；与 `prepare_staged_planner_no_tools_request` + `complete_planner_no_tools_chat_retrying` 一致。
 async fn complete_one_staged_planner_assistant_round(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
@@ -141,20 +190,8 @@ async fn complete_one_staged_planner_assistant_round(
     log_label: &'static str,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let req = prepare_staged_planner_no_tools_request(p, per_coord, build_planner_messages).await?;
-    let suppress = staged_two_phase_suppress_planner_stream(p.cfg.as_ref());
-    let cc = CompleteChatRetryingParams {
-        llm_backend: p.llm_backend,
-        http: p.client,
-        api_key: p.api_key,
-        cfg: p.cfg.as_ref(),
-        out: if suppress { None } else { p.out },
-        render_to_terminal: planner_render_to_terminal && !suppress,
-        no_stream: p.no_stream,
-        cancel: p.cancel,
-        plain_terminal_stream: p.plain_terminal_stream,
-        request_chrome_trace: p.request_chrome_trace.clone(),
-    };
-    let (msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
+    let (msg, finish_reason) =
+        complete_planner_no_tools_chat_retrying(p, &req, planner_render_to_terminal).await?;
     debug!(
         target: "crabmate",
         "{} finish_reason={} assistant_preview={}",
@@ -560,20 +597,8 @@ where
     p.messages.push(make_step_user_message(feedback_user_body));
     let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
         .await?;
-    let suppress = staged_two_phase_suppress_planner_stream(p.cfg.as_ref());
-    let cc = CompleteChatRetryingParams {
-        llm_backend: p.llm_backend,
-        http: p.client,
-        api_key: p.api_key,
-        cfg: p.cfg.as_ref(),
-        out: if suppress { None } else { p.out },
-        render_to_terminal: *planner_render_to_terminal && !suppress,
-        no_stream: p.no_stream,
-        cancel: p.cancel,
-        plain_terminal_stream: p.plain_terminal_stream,
-        request_chrome_trace: p.request_chrome_trace.clone(),
-    };
-    let (mut msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
+    let (mut msg, finish_reason) =
+        complete_planner_no_tools_chat_retrying(p, &req, *planner_render_to_terminal).await?;
 
     debug!(
         target: "crabmate",
@@ -719,20 +744,8 @@ where
 {
     let planner_render_to_terminal =
         render_to_terminal && (p.out.is_some() || p.cfg.staged_plan_cli_show_planner_stream);
-    let suppress = staged_two_phase_suppress_planner_stream(p.cfg.as_ref());
-    let cc = CompleteChatRetryingParams {
-        llm_backend: p.llm_backend,
-        http: p.client,
-        api_key: p.api_key,
-        cfg: p.cfg.as_ref(),
-        out: if suppress { None } else { p.out },
-        render_to_terminal: planner_render_to_terminal && !suppress,
-        no_stream: p.no_stream,
-        cancel: p.cancel,
-        plain_terminal_stream: p.plain_terminal_stream,
-        request_chrome_trace: p.request_chrome_trace.clone(),
-    };
-    let (mut msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
+    let (mut msg, finish_reason) =
+        complete_planner_no_tools_chat_retrying(p, &req, planner_render_to_terminal).await?;
 
     debug!(
         target: "crabmate",

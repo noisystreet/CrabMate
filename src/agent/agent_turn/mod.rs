@@ -18,6 +18,7 @@ mod messages;
 mod outer_loop;
 mod params;
 mod plan_call;
+mod planner_sse_gate;
 mod reflect;
 mod staged;
 mod staged_sse;

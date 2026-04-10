@@ -137,6 +137,7 @@ fn SessionListModalBackdrop(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn session_list_modal_view(
     session_modal: RwSignal<bool>,
     locale: RwSignal<Locale>,

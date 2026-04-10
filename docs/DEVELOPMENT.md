@@ -502,7 +502,7 @@ flowchart LR
 
 ### `frontend-leptos/src/message_format.rs`
 
-- 工具卡摘要去重、**`agent_reply_plan`** 围栏/流式缓冲与 **`assistant_text_for_display`**（单测在此模块）；**`message_text_for_display_ex`** 供气泡、搜索、导出路径复用（**`apply_assistant_display_filters`** 与 **`GET /web-ui`** 对齐）。
+- 工具卡摘要去重、**`agent_reply_plan`** 围栏/流式缓冲与 **`assistant_text_for_display`**（单测在此模块）；**`filter_redacted_thinking_for_display`** 在默认过滤开启时对 **`reasoning_text`** 与 **`text`** 成对去掉 redacted_thinking（plain、反引号包裹、开闭标签 ASCII 大小写不敏感；流式未闭合与尾部半段开标签）；**`assistant_text_for_display`** 末尾再滤一道以防规划/围栏路径漏网；**`message_text_for_display_ex`** 供气泡、搜索、导出复用（**`apply_assistant_display_filters`** 与 **`GET /web-ui`** 对齐）。
 
 ### `frontend-leptos/src/assistant_body.rs`
 
