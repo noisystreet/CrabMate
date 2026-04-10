@@ -24,6 +24,9 @@ use super::parse::{
 use crate::agent_memory::load_memory_snippet;
 use crate::agent_role_turn::maybe_apply_mid_session_agent_role_switch;
 use crate::chat_job_queue;
+use crate::clarification_questionnaire::{
+    merge_user_text_with_clarification_answers, normalize_clarify_questionnaire_answers_raw,
+};
 use crate::conversation_store::SaveConversationOutcome;
 use crate::conversation_turn_bootstrap::{
     compose_new_conversation_messages, first_turn_project_context_user_message,
@@ -149,13 +152,28 @@ pub(crate) async fn chat_handler(
             }),
         )
     })?;
+    let clarify = if let Some(ref c) = body.clarify_questionnaire_answers {
+        normalize_clarify_questionnaire_answers_raw(c.questionnaire_id.clone(), c.answers.clone())
+            .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
+                    message: e,
+                }),
+            )
+        })?
+    } else {
+        None
+    };
     let user_trim = body.message.trim();
-    if user_trim.is_empty() && image_urls.is_empty() {
+    if user_trim.is_empty() && image_urls.is_empty() && clarify.is_none() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
                 code: "EMPTY_MESSAGE",
-                message: "提问内容不能为空（若仅发图须至少附带一张图片）".to_string(),
+                message: "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）"
+                    .to_string(),
             }),
         ));
     }
@@ -224,6 +242,7 @@ pub(crate) async fn chat_handler(
             },
         )?
     };
+    let msg = merge_user_text_with_clarification_answers(msg, clarify);
     let turn_seed = build_messages_for_turn(
         &state,
         &conversation_id,
@@ -481,13 +500,28 @@ pub(crate) async fn chat_stream_handler(
             }),
         )
     })?;
+    let clarify = if let Some(ref c) = body.clarify_questionnaire_answers {
+        normalize_clarify_questionnaire_answers_raw(c.questionnaire_id.clone(), c.answers.clone())
+            .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS",
+                    message: e,
+                }),
+            )
+        })?
+    } else {
+        None
+    };
     let user_trim = body.message.trim();
-    if user_trim.is_empty() && resume.is_none() && image_urls.is_empty() {
+    if user_trim.is_empty() && resume.is_none() && image_urls.is_empty() && clarify.is_none() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
                 code: "EMPTY_MESSAGE",
-                message: "提问内容不能为空（若仅发图须至少附带一张图片）".to_string(),
+                message: "提问内容不能为空（若仅发图须至少附带一张图片；澄清问卷作答可单独提交）"
+                    .to_string(),
             }),
         ));
     }
@@ -619,6 +653,7 @@ pub(crate) async fn chat_stream_handler(
             )
         })?
     };
+    let msg = merge_user_text_with_clarification_answers(msg, clarify);
     let turn_seed = build_messages_for_turn(
         &state,
         &conversation_id,

@@ -412,6 +412,9 @@ pub struct ChatStreamCallbacks {
     pub on_last_sse_event_id: std::rc::Rc<dyn Fn(u64)>,
     pub on_staged_plan_step_started: std::rc::Rc<dyn Fn(StagedPlanStepStartInfo)>,
     pub on_staged_plan_step_finished: std::rc::Rc<dyn Fn(StagedPlanStepEndInfo)>,
+    /// SSE `clarification_questionnaire`（模型经工具触发）。
+    pub on_clarification_questionnaire:
+        std::rc::Rc<dyn Fn(crate::sse_dispatch::ClarificationQuestionnaireInfo)>,
 }
 
 impl Clone for ChatStreamCallbacks {
@@ -431,6 +434,9 @@ impl Clone for ChatStreamCallbacks {
             on_last_sse_event_id: std::rc::Rc::clone(&self.on_last_sse_event_id),
             on_staged_plan_step_started: std::rc::Rc::clone(&self.on_staged_plan_step_started),
             on_staged_plan_step_finished: std::rc::Rc::clone(&self.on_staged_plan_step_finished),
+            on_clarification_questionnaire: std::rc::Rc::clone(
+                &self.on_clarification_questionnaire,
+            ),
         }
     }
 }
@@ -448,6 +454,8 @@ pub async fn send_chat_stream(
     signal: &web_sys::AbortSignal,
     cbs: ChatStreamCallbacks,
     loc: Locale,
+    // 可选：`POST /chat/stream` 的 `clarify_questionnaire_answers`（`questionnaire_id` + `answers`）。
+    clarify_questionnaire_answers: Option<serde_json::Value>,
 ) -> Result<(), String> {
     let w = window().ok_or_else(|| "no window".to_string())?;
     let mut last_event_id: u64 = stream_resume_after_seq.unwrap_or(0);
@@ -465,6 +473,9 @@ pub async fn send_chat_stream(
         });
         if !image_urls.is_empty() {
             body["image_urls"] = serde_json::json!(image_urls);
+        }
+        if let Some(ref cq) = clarify_questionnaire_answers {
+            body["clarify_questionnaire_answers"] = cq.clone();
         }
         if let Some(jid) = stream_resume_job_id {
             body["stream_resume"] = serde_json::json!({
@@ -697,6 +708,9 @@ fn handle_sse_block(
     let mut on_staged_start =
         |info: StagedPlanStepStartInfo| (cbs.on_staged_plan_step_started)(info);
     let mut on_staged_end = |info: StagedPlanStepEndInfo| (cbs.on_staged_plan_step_finished)(info);
+    let mut on_clar = |info: crate::sse_dispatch::ClarificationQuestionnaireInfo| {
+        (cbs.on_clarification_questionnaire)(info)
+    };
 
     let mut cbs2 = SseCallbacks {
         on_error: &mut on_err,
@@ -709,6 +723,7 @@ fn handle_sse_block(
         on_conversation_saved_revision: Some(&mut on_conv_rev),
         on_staged_plan_step_started: Some(&mut on_staged_start),
         on_staged_plan_step_finished: Some(&mut on_staged_end),
+        on_clarification_questionnaire: Some(&mut on_clar),
     };
     match try_dispatch_sse_control_payload(data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(()),

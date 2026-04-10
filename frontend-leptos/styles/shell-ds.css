@@ -568,6 +568,68 @@
   cursor: pointer;
 }
 
+.composer-clarification-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--surface) 92%, var(--accent));
+}
+
+.composer-clarification-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.composer-clarification-intro {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.composer-clarification-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composer-clarification-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.88rem;
+}
+
+.composer-clarification-label {
+  font-weight: 500;
+}
+
+.composer-clarification-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.composer-clarification-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.composer-clarification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .composer-input-row {
   display: flex;
   align-items: flex-end;

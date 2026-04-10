@@ -1,5 +1,14 @@
 //! `POST /chat*`、`/upload*`、`POST /config/reload` 等 JSON 体；路由表见 [`crate::web::routes::chat::router`]。
 
+/// 用户对澄清问卷的作答；与 SSE `clarification_questionnaire.questionnaire_id` 及题目 `id` 对齐。
+#[derive(serde::Deserialize, Clone)]
+pub(crate) struct ClarifyQuestionnaireAnswersBody {
+    pub(crate) questionnaire_id: String,
+    /// 键为题目的 `id`，值为字符串（或 JSON 数字/布尔，服务端会规范为字符串）。
+    #[serde(default)]
+    pub(crate) answers: serde_json::Value,
+}
+
 #[derive(serde::Deserialize)]
 pub(crate) struct ChatRequestBody {
     pub(crate) message: String,
@@ -31,6 +40,9 @@ pub(crate) struct ChatRequestBody {
     /// 本回合附带的图片 URL 列表（须为先前 `POST /upload` 返回的 **`/uploads/...`** 相对路径）；服务端组装 OpenAI 兼容多模态 `user.content`。
     #[serde(default)]
     pub(crate) image_urls: Vec<String>,
+    /// 可选：回应上一轮 SSE **`clarification_questionnaire`**；合并进本回合 user 正文（在 `@` 文件引用展开之后）。
+    #[serde(default)]
+    pub(crate) clarify_questionnaire_answers: Option<ClarifyQuestionnaireAnswersBody>,
 }
 
 #[derive(serde::Deserialize)]

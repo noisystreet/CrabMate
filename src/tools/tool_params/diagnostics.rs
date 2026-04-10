@@ -55,6 +55,45 @@ pub(in crate::tools) fn params_license_notice() -> serde_json::Value {
     })
 }
 
+pub(in crate::tools) fn params_present_clarification_questionnaire() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "questionnaire_id": {
+                "type": "string",
+                "description": "问卷实例 id（字母数字与 -_，≤128）；须与用户下一条 POST /chat* 中 clarify_questionnaire_answers.questionnaire_id 一致"
+            },
+            "intro": {
+                "type": "string",
+                "description": "向用户展示的简短说明（≤2000 字符）"
+            },
+            "questions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": {
+                    "type": "object",
+                    "required": ["id", "label"],
+                    "properties": {
+                        "id": { "type": "string", "description": "题目键（字母数字与 -_，≤64），须唯一" },
+                        "label": { "type": "string", "description": "题面（≤512 字符）" },
+                        "hint": { "type": "string", "description": "可选提示（≤512 字符）" },
+                        "required": { "type": "boolean", "description": "是否必填；前端可标星" },
+                        "kind": {
+                            "type": "string",
+                            "enum": ["text", "choice"],
+                            "description": "text=单行文本；choice 预留（当前仍文本提交）"
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": ["questionnaire_id", "intro", "questions"],
+        "additionalProperties": false
+    })
+}
+
 pub(in crate::tools) fn params_diagnostic_summary() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
