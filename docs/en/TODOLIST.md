@@ -65,7 +65,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ## `sse/`
 
-**Summary**: `protocol` encodes control JSON; `line` classifies lines (align with `frontend`).
+**Summary**: `protocol` encodes control JSON; `line` classifies lines (align with `frontend-leptos`).
 
 - [ ] Optional debug payloads (dev-only).
 
@@ -104,9 +104,9 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ---
 
-## `frontend/`
+## `frontend-leptos/`
 
-**Summary**: `api.ts`, panels, `sessionStore`, `chatExport`.
+**Summary**: `api.rs`, `sse_dispatch.rs`, panels, session state, `session_export`.
 
 - [ ] Browser session state: persist `conversation_id` + `revision` across reloads (and optional encrypted cache); tab-local model is **`frontend-leptos/src/session_sync.rs`** (`SessionSyncState`).
 - [ ] Virtualize long chat lists.

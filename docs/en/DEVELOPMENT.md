@@ -9,7 +9,7 @@ End-user features: **`README.md`**; env/config: **`docs/en/CONFIGURATION.md`**; 
 
 - **`docs/TODOLIST.md`**: **Open items only**; global P0–P5 plus per-module sections. **Delete** a line when done (no permanent `[x]`); drop empty section headers. History lives in Git.
 - **User-visible changes** (new CLI flags, HTTP routes, config keys, tool names, Web/CLI behavior): update **`README.md`** and/or this file; **built-in tools** live in **`docs/en/TOOLS.md`**. Pure refactors: `DEVELOPMENT` and/or comments may suffice.
-- **Cursor rules**: `.cursor/rules/todolist-and-documentation.mdc`; architecture/module moves: `.cursor/rules/architecture-docs-sync.mdc` (keep § Architecture + module index + Mermaid in sync). Frontend: `frontend-typescript-react.mdc`; tools: `tools-registry.mdc`; SSE/chat: `api-sse-chat-protocol.mdc`; security surfaces: `security-sensitive-surface.mdc`; deps/licenses: `dependencies-licenses.mdc`.
+- **Cursor rules**: `.cursor/rules/todolist-and-documentation.mdc`; architecture/module moves: `.cursor/rules/architecture-docs-sync.mdc` (keep § Architecture + module index + Mermaid in sync). Web UI (Leptos): `frontend-leptos.mdc`; tools: `tools-registry.mdc`; SSE/chat: `api-sse-chat-protocol.mdc`; security surfaces: `security-sensitive-surface.mdc`; deps/licenses: `dependencies-licenses.mdc`.
 - **PR/Issue templates**: `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/`.
 - **Pre-commit**: `.pre-commit-config.yaml` (`cargo fmt`, `cargo clippy -D warnings`, Conventional Commits on `commit-msg`). Install: `pip install pre-commit && pre-commit install` (add `--hook-type commit-msg` if needed). Agent rule: `.cursor/rules/pre-commit-before-commit.mdc`. Rust tests/error handling: `rust-clippy-and-tests.mdc`, `rust-error-handling.mdc`.
 - **Commits**: Conventional Commits (`.cursor/rules/conventional-commits.mdc`).
@@ -18,7 +18,7 @@ End-user features: **`README.md`**; env/config: **`docs/en/CONFIGURATION.md`**; 
 ## System overview
 
 - **Rust backend (`src/`)**: OpenAI-compatible **`chat/completions`** to configured **`api_base`**; agent loop, HTTP + SSE, tools, workspace/tasks/upload.
-- **Web frontend (`frontend/`)**: Vite + React + TS + Tailwind; chat UI, workspace browser/editor, tasks, status bar, SSE consumer.
+- **Web frontend (`frontend-leptos/`)**: Leptos (CSR) + WASM, **Trunk** build; static assets served from **`frontend-leptos/dist`**. Chat UI, workspace browser/editor, tasks, status bar, SSE consumer.
 
 ## Architecture
 

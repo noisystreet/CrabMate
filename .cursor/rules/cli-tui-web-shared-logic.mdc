@@ -9,7 +9,7 @@ alwaysApply: true
 
 **新增一项能力时**，先判断是否为**某一侧界面特有**（例如仅 Web 路由、仅 TUI 快捷键、仅 CLI 子命令形态）：
 
-- **若不是特有**：尽量在 **CLI（`runtime/cli`）**、**TUI（`runtime/tui`）**、**Web（`lib` HTTP + `frontend/`）** 中**都**提供可用实现——至少让用户在任一入口能完成同类任务；差异只应是交互与展示，而不是「只有 Web 能某、终端完全不能」。
+- **若不是特有**：尽量在 **CLI（`runtime/cli`）**、**TUI（`runtime/tui`）**、**Web（`lib` HTTP + `frontend-leptos/`）** 中**都**提供可用实现——至少让用户在任一入口能完成同类任务；差异只应是交互与展示，而不是「只有 Web 能某、终端完全不能」。
 - **若是特有**：可只实现该侧，但**数据模型、工具执行、配置键**仍应落在共享层，便于日后扩展到其他入口。
 
 在此基础上，再与下文「共用后端」原则配合：避免三端各写一套互不等价的业务规则。
@@ -21,7 +21,7 @@ alwaysApply: true
 - **Rust 后端**：把「与 UI 无关」的规则放在可复用模块（如 **`agent/`**、**`types`**、**`sse::protocol`**、**`tool_registry`**、**`runtime/`** 下与 UI 无关的子模块），由 `runtime/cli`、`runtime/tui`、`lib` 的 HTTP handler 分别薄封装调用。
 - **会话与导出**：工作区会话文件、导出形状等已在 **`runtime/workspace_session`** 与 **`runtime/chat_export`**；同类能力扩展时延续同一契约，而不是再开 TUI 专用路径。
 - **HTTP 与 SSE**：Web 与 TUI 若消费同一事件流，优先对齐 **`sse` 协议**与 **`run_agent_turn`** 的编排，避免在 `agent_turn` 里写死「仅某一侧」的分支（除非用配置/上下文显式区分）。
-- **前端**：展示与状态在 `frontend/`，但**请求体、SSE 事件、错误码**应与后端契约一致；可复用的校验/转换尽量与后端字段语义对齐（见 **`api-sse-chat-protocol.mdc`**）。
+- **前端**：展示与状态在 **`frontend-leptos/`**，但**请求体、SSE 事件、错误码**应与后端契约一致；可复用的校验/转换尽量与后端字段语义对齐（见 **`api-sse-chat-protocol.mdc`**）。
 
 ## 不必强行共用的情形
 
