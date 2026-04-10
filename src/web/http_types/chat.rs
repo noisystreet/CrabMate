@@ -5,7 +5,7 @@ pub(crate) struct ChatRequestBody {
     pub(crate) message: String,
     #[serde(default)]
     pub(crate) conversation_id: Option<String>,
-    /// 新建会话（无 `conversation_id` 或服务端尚无该 id）时选用命名角色；须与配置中角色 id 一致。已有会话时忽略。
+    /// 命名角色 id（须与配置一致）。**新会话**建立首条 `system`；**已有会话**若与上次不同则刷新首条 `system` 并更新持久化 `active_agent_role`。
     #[serde(default, rename = "agent_role")]
     pub(crate) agent_role: Option<String>,
     #[serde(default)]

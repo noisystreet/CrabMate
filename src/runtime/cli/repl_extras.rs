@@ -1,5 +1,6 @@
 //! REPL `/…` 命令处理、首轮注入、内存导出。
 
+use crate::agent_role_turn::apply_agent_role_switch_to_messages;
 use crate::config::cli::{SaveSessionCli, SaveSessionFormat};
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
 use crate::conversation_turn_bootstrap::{
@@ -321,16 +322,14 @@ pub(crate) async fn try_handle_repl_slash_command(
                 drop(cfg);
                 *agent_role = None;
                 let cfg = cfg_holder.read().await.clone();
-                *messages = repl_rebuild_bootstrap_messages(
-                    &cfg,
-                    work_dir.as_path(),
-                    agent_role.as_deref(),
-                )
-                .await;
-                let _ = style.print_success(&format!(
-                    "已设回 default（清除显式命名角色），并已按新 system 重建首轮消息（共 {} 条）。",
-                    messages.len()
-                ));
+                if let Err(e) = apply_agent_role_switch_to_messages(&cfg, messages, None) {
+                    let _ = style.eprint_error(&e);
+                } else {
+                    let _ = style.print_success(&format!(
+                        "已设回 default（清除显式命名角色），已更新首条 system（保留对话 {} 条）。",
+                        messages.len()
+                    ));
+                }
             } else if let Err(e) = cfg.system_prompt_for_new_conversation(Some(id.as_str())) {
                 let _ = style.eprint_error(&e);
             } else {
@@ -338,16 +337,16 @@ pub(crate) async fn try_handle_repl_slash_command(
                 drop(cfg);
                 *agent_role = Some(id);
                 let cfg = cfg_holder.read().await.clone();
-                *messages = repl_rebuild_bootstrap_messages(
-                    &cfg,
-                    work_dir.as_path(),
-                    agent_role.as_deref(),
-                )
-                .await;
-                let _ = style.print_success(&format!(
-                    "已设当前角色为 \"{role_label}\"，并已按新 system 重建首轮消息（共 {} 条）。",
-                    messages.len()
-                ));
+                if let Err(e) =
+                    apply_agent_role_switch_to_messages(&cfg, messages, Some(role_label.as_str()))
+                {
+                    let _ = style.eprint_error(&e);
+                } else {
+                    let _ = style.print_success(&format!(
+                        "已设当前角色为 \"{role_label}\"，已更新首条 system（保留对话 {} 条）。",
+                        messages.len()
+                    ));
+                }
             }
         }
         ReplBuiltIn::AgentUsage => {

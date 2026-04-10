@@ -22,6 +22,7 @@ use super::parse::{
     parse_seed_override_from_body,
 };
 use crate::agent_memory::load_memory_snippet;
+use crate::agent_role_turn::maybe_apply_mid_session_agent_role_switch;
 use crate::chat_job_queue;
 use crate::conversation_store::SaveConversationOutcome;
 use crate::conversation_turn_bootstrap::{
@@ -82,6 +83,20 @@ async fn build_messages_for_turn(
     agent_role: Option<&str>,
 ) -> Result<ConversationTurnSeed, String> {
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
+        let persisted = seed.persisted_active_agent_role.clone();
+        {
+            let cfg = state.cfg.read().await;
+            if let Some(id) = agent_role.map(str::trim).filter(|s| !s.is_empty()) {
+                cfg.system_prompt_for_new_conversation(Some(id))
+                    .map_err(|e| e.to_string())?;
+            }
+            maybe_apply_mid_session_agent_role_switch(
+                &cfg,
+                &mut seed.messages,
+                persisted.as_deref(),
+                agent_role,
+            )?;
+        }
         seed.messages.push(Message::user_only(user_msg.to_string()));
         return Ok(seed);
     }
@@ -110,6 +125,7 @@ async fn build_messages_for_turn(
     Ok(ConversationTurnSeed {
         messages,
         expected_revision: None,
+        persisted_active_agent_role: None,
     })
 }
 
@@ -209,6 +225,8 @@ pub(crate) async fn chat_handler(
             conversation_id: conversation_id.clone(),
             messages: turn_seed.messages,
             expected_revision: turn_seed.expected_revision,
+            request_agent_role: agent_role.clone(),
+            persisted_active_agent_role: turn_seed.persisted_active_agent_role.clone(),
             work_dir: std::path::PathBuf::from(work_dir),
             workspace_is_set,
             temperature_override,
@@ -596,6 +614,8 @@ pub(crate) async fn chat_stream_handler(
             conversation_id: conversation_id.clone(),
             messages: turn_seed.messages,
             expected_revision: turn_seed.expected_revision,
+            request_agent_role: agent_role.clone(),
+            persisted_active_agent_role: turn_seed.persisted_active_agent_role.clone(),
             work_dir,
             workspace_is_set,
             temperature_override,

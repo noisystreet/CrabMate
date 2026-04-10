@@ -52,6 +52,8 @@ pub(super) struct AgentRoleRow {
     pub(super) id: String,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
+    #[serde(default)]
+    pub(super) allowed_tools: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

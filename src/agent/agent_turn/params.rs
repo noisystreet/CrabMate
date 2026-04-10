@@ -1,5 +1,6 @@
 //! Web/CLI 共用：外层循环与分阶段规划的运行期参数。
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -59,4 +60,6 @@ pub(crate) struct RunLoopParams<'a> {
     pub request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     /// 分阶段规划当前步的「子代理」工具约束；`None` 表示不限制（常规循环）。
     pub step_executor_constraint: Option<PlanStepExecutorKind>,
+    /// 多角色工作台：本回合工具白名单；`None` 不限制。
+    pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
 }

@@ -49,7 +49,21 @@ pub(crate) async fn run_agent_outer_loop(
         )
         .await?;
         let tools_for_call: Vec<crate::types::Tool> = match p.step_executor_constraint {
-            Some(k) => filter_tool_defs_for_executor_kind(p.tools_defs, p.cfg.as_ref(), k),
+            Some(k) => {
+                let mut v = filter_tool_defs_for_executor_kind(p.tools_defs, p.cfg.as_ref(), k);
+                if let Some(ref allow) = p.turn_allowed_tool_names {
+                    let mcp_ok = allow.contains("mcp");
+                    v.retain(|t| {
+                        let n = t.function.name.as_str();
+                        if n.starts_with("mcp__") {
+                            mcp_ok
+                        } else {
+                            allow.contains(n)
+                        }
+                    });
+                }
+                v
+            }
             None => Vec::new(),
         };
         let tools_defs_slice: &[crate::types::Tool] = if p.step_executor_constraint.is_some() {
@@ -149,6 +163,7 @@ pub(crate) async fn run_agent_outer_loop(
                 request_chrome_trace: p.request_chrome_trace.clone(),
                 step_executor_constraint: p.step_executor_constraint,
                 tools_defs_full: p.tools_defs,
+                turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
             },
         )
         .await;

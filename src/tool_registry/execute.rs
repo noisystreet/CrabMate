@@ -56,6 +56,8 @@ pub struct DispatchToolParams<'a> {
     pub mcp_session: Option<&'a Arc<Mutex<crate::mcp::McpClientSession>>>,
     /// 并入整请求 `turn-*.json` 时传给 `workflow_execute`。
     pub request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    /// 多角色工具白名单；`None` 不限制。
+    pub turn_allow: Option<&'a HashSet<String>>,
 }
 
 /// `http_fetch` / `http_request` 共用：`Web` 带可选审批会话，`Cli` 带终端审批上下文（本路径不使用 `workspace_changed`）。
@@ -83,7 +85,11 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         workspace_changelist,
         mcp_session,
         request_chrome_merge,
+        turn_allow,
     } = p;
+    if !crate::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
+        return (crate::agent_role_turn::turn_tool_denied_message(name), None);
+    }
     if crate::mcp::is_mcp_proxy_tool(name) {
         let Some(remote) = crate::mcp::try_mcp_tool_name(cfg.as_ref(), name) else {
             return (

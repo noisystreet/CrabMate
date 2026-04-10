@@ -45,7 +45,7 @@ pub(crate) enum ReplBuiltIn<'a> {
     ApiKeySet(String),
     /// `/agent list`：列出内建 `default` 与配置中的命名角色 id
     AgentList,
-    /// `/agent set <id>`：校验 id 后更新 REPL 内存中的当前角色并重建首轮消息；**`default`** 为内建伪 id，表示清除显式角色
+    /// `/agent set <id>`：校验 id 后更新 REPL 当前角色并**仅刷新首条 system**（保留后续对话）；**`default`** 清除显式命名角色
     AgentSet(String),
     /// `/agent …` 用法错误
     AgentUsage,

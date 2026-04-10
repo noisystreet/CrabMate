@@ -307,7 +307,8 @@ impl LongTermMemoryVectorBackend {
 }
 
 /// 角色 id → 已合并 cursor rules 的 system 正文（`Arc` 便于配置热更共享）
-pub type AgentRoleCatalog = std::sync::Arc<std::collections::HashMap<String, String>>;
+pub type AgentRoleCatalog =
+    std::sync::Arc<std::collections::HashMap<String, super::agent_role_spec::AgentRoleSpec>>;
 
 /// Agent 运行配置
 #[derive(Debug, Clone)]
@@ -598,7 +599,7 @@ impl AgentConfig {
             Some(id) => self
                 .agent_roles
                 .get(id)
-                .map(|s| s.as_str())
+                .map(|s| s.system_prompt.as_str())
                 .ok_or_else(|| format!("未知的 agent_role: {id}（请在配置中定义该 id）")),
             None => Ok(self
                 .default_agent_role_id
@@ -606,7 +607,7 @@ impl AgentConfig {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .and_then(|id| self.agent_roles.get(id))
-                .map(|s| s.as_str())
+                .map(|s| s.system_prompt.as_str())
                 .unwrap_or(self.system_prompt.as_str())),
         }
     }

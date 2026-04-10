@@ -65,6 +65,11 @@ fn read_system_prompt_file_resolved(
 const EMBEDDED_THINKING_AVOID_ECHO_APPENDIX: &str =
     include_str!("../../config/prompts/thinking_avoid_echo_appendix.md");
 
+/// 与 [`resolve_thinking_avoid_echo_appendix`] 使用的内置正文一致；供 `augment_system_prompt` 等在运行时附录字段为空时回退。
+pub(crate) fn embedded_thinking_avoid_echo_appendix() -> &'static str {
+    EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim()
+}
+
 fn resolve_thinking_avoid_echo_appendix(
     enabled: bool,
     inline: Option<&str>,

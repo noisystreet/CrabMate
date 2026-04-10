@@ -625,6 +625,7 @@ where
                         request_chrome_trace: p.request_chrome_trace.clone(),
                         step_executor_constraint: None,
                         tools_defs_full: p.tools_defs,
+                        turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
                     },
                 )
                 .await;
@@ -786,6 +787,7 @@ where
                         request_chrome_trace: p.request_chrome_trace.clone(),
                         step_executor_constraint: None,
                         tools_defs_full: p.tools_defs,
+                        turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
                     },
                 )
                 .await;
