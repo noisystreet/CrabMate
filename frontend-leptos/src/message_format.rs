@@ -1,5 +1,7 @@
 //! 消息与工具摘要的展示用字符串处理（含 `agent_reply_plan` 围栏与流式缓冲语义）。
 
+use std::borrow::Cow;
+
 use serde_json::Value;
 
 use crate::i18n::Locale;
@@ -22,6 +24,28 @@ pub fn collapse_duplicate_summary_lines(text: &str) -> String {
         kept.push(t);
     }
     kept.join("\n")
+}
+
+/// 将连续的空行（仅含空白字符的行）压缩为至多一行空段，减轻剥 tag / 围栏后产生的 `\n\n\n+`。
+pub fn collapse_consecutive_blank_lines(text: &str) -> String {
+    let mut out = String::new();
+    let mut in_blank_run = true;
+    for line in text.lines() {
+        let blank = line.trim().is_empty();
+        if blank {
+            if !in_blank_run && !out.is_empty() {
+                out.push('\n');
+            }
+            in_blank_run = true;
+        } else {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(line);
+            in_blank_run = false;
+        }
+    }
+    out
 }
 
 pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
@@ -205,22 +229,45 @@ fn fence_inner_should_hide_agent_reply_plan_json(inner: &str) -> bool {
     serde_json::from_str::<Value>(body).is_ok()
 }
 
+/// 首段围栏前文本是否可视为「仅规划说明」从而省略，避免误删「大段正文 + 文末 plan 围栏」。
+fn drop_first_segment_before_hidden_agent_reply_plan_fence(segment: &str) -> bool {
+    let t = segment.trim();
+    if t.is_empty() {
+        return true;
+    }
+    if t.contains("\n## ") || t.contains("\n### ") || t.starts_with("## ") || t.starts_with("### ")
+    {
+        return false;
+    }
+    true
+}
+
 fn strip_agent_reply_plan_fence_blocks_for_display(content: &str) -> String {
     let parts: Vec<&str> = content.split("```").collect();
     let unclosed_trailing_fence = parts.len().is_multiple_of(2);
     let mut out = String::new();
     let mut i = 0usize;
+    let mut is_first_code_fence = true;
     while i < parts.len() {
-        out.push_str(parts[i]);
+        let segment = parts[i];
         i += 1;
         if i >= parts.len() {
+            out.push_str(segment);
             break;
         }
         let inner = parts[i];
         i += 1;
         if fence_inner_should_hide_agent_reply_plan_json(inner) {
+            let skip_segment = is_first_code_fence
+                && drop_first_segment_before_hidden_agent_reply_plan_fence(segment);
+            if !skip_segment {
+                out.push_str(segment);
+            }
+            is_first_code_fence = false;
             continue;
         }
+        is_first_code_fence = false;
+        out.push_str(segment);
         if unclosed_trailing_fence && i >= parts.len() && inner.trim().is_empty() {
             break;
         }
@@ -240,10 +287,23 @@ pub(crate) fn assistant_text_for_display(
     if !apply_filters {
         return raw.to_string();
     }
+    let inner = assistant_text_for_display_inner(raw, is_streaming_last_assistant, loc);
+    filter_assistant_thinking_markers_for_display(&inner, is_streaming_last_assistant)
+}
+
+fn assistant_text_for_display_inner(
+    raw: &str,
+    is_streaming_last_assistant: bool,
+    loc: Locale,
+) -> String {
     let trimmed = raw.trim();
 
     if is_streaming_last_assistant && should_buffer_agent_reply_plan_stream(trimmed) {
-        return prose_before_first_fence(trimmed);
+        // 须与 `assistant_text_for_display` 外套的 `filter_assistant_thinking_markers_for_display` 一致。
+        return filter_assistant_thinking_markers_for_display(
+            &prose_before_first_fence(trimmed),
+            true,
+        );
     }
 
     if let Some(display) = format_agent_reply_plan_json_for_display(trimmed, "", loc)
@@ -303,6 +363,448 @@ fn user_text_for_chat_display(raw: &str) -> String {
         return String::new();
     }
     raw.to_string()
+}
+
+/// Plain 与行内代码形态（反引号包裹）的 redacted_thinking 开闭标签；与下行 `INLINE_THINKING_OPEN_PREFIXES` 中 redacted 变体对齐。
+const REDACTED_LIKE_PAIRS: &[(&str, &str)] = &[
+    (
+        concat!("<", "redacted", "_", "thinking", ">"),
+        concat!("</", "redacted", "_", "thinking", ">"),
+    ),
+    (
+        concat!("`", "<", "redacted", "_", "thinking", ">", "`"),
+        concat!("`", "</", "redacted", "_", "thinking", ">", "`"),
+    ),
+];
+
+/// `<` 或 `</` 之后、大小写不敏感的 `redacted_thinking>`（ASCII）。
+const REDACTED_TAG_INNER_ASCII_LOWER: &[u8] = b"redacted_thinking>";
+
+fn bytes_slice_ci_eq_lower(hay: &[u8], i: usize, lower_ascii: &[u8]) -> bool {
+    if i + lower_ascii.len() > hay.len() {
+        return false;
+    }
+    for (k, &lb) in lower_ascii.iter().enumerate() {
+        if hay[i + k].to_ascii_lowercase() != lb {
+            return false;
+        }
+    }
+    true
+}
+
+/// 在 `rest` 内找下一处大小写不敏感的 `</redacted_thinking>`，返回相对 `rest` 的字节区间 `[start, end)`。
+fn find_ci_plain_redacted_close_span(rest: &str) -> Option<(usize, usize)> {
+    let b = rest.as_bytes();
+    let mut i = 0usize;
+    while i + 2 + REDACTED_TAG_INNER_ASCII_LOWER.len() <= b.len() {
+        if b[i] == b'<'
+            && b[i + 1] == b'/'
+            && bytes_slice_ci_eq_lower(b, i + 2, REDACTED_TAG_INNER_ASCII_LOWER)
+        {
+            let end = i + 2 + REDACTED_TAG_INNER_ASCII_LOWER.len();
+            return Some((i, end));
+        }
+        i += 1;
+    }
+    None
+}
+
+/// `` ` `<` + 大小写不敏感 `redacted_thinking>` + `` ` ``（与 `REDACTED_LIKE_PAIRS` 中反引号形态对齐，但标签名任意大小写）。
+fn find_ci_backtick_redacted_open_span(rest: &str) -> Option<(usize, usize)> {
+    let b = rest.as_bytes();
+    let inner_len = REDACTED_TAG_INNER_ASCII_LOWER.len();
+    let mut i = 0usize;
+    while i + 2 + inner_len < b.len() {
+        if b[i] == b'`'
+            && b[i + 1] == b'<'
+            && bytes_slice_ci_eq_lower(b, i + 2, REDACTED_TAG_INNER_ASCII_LOWER)
+            && b[i + 2 + inner_len] == b'`'
+        {
+            return Some((i, i + 2 + inner_len + 1));
+        }
+        i += 1;
+    }
+    None
+}
+
+/// `` ` `</` + 大小写不敏感 `redacted_thinking>` + `` ` ``。
+fn find_ci_backtick_redacted_close_span(rest: &str) -> Option<(usize, usize)> {
+    let b = rest.as_bytes();
+    let inner_len = REDACTED_TAG_INNER_ASCII_LOWER.len();
+    let mut i = 0usize;
+    while i + 3 + inner_len < b.len() {
+        if b[i] == b'`'
+            && b[i + 1] == b'<'
+            && b[i + 2] == b'/'
+            && bytes_slice_ci_eq_lower(b, i + 3, REDACTED_TAG_INNER_ASCII_LOWER)
+            && b[i + 3 + inner_len] == b'`'
+        {
+            return Some((i, i + 3 + inner_len + 1));
+        }
+        i += 1;
+    }
+    None
+}
+
+/// 在 `rest` 内找下一处大小写不敏感的 `<redacted_thinking>`，返回相对 `rest` 的字节区间 `[start, end)`。
+fn find_ci_plain_redacted_open_span(rest: &str) -> Option<(usize, usize)> {
+    let b = rest.as_bytes();
+    let mut i = 0usize;
+    while i + 1 + REDACTED_TAG_INNER_ASCII_LOWER.len() <= b.len() {
+        if b[i] == b'<' && bytes_slice_ci_eq_lower(b, i + 1, REDACTED_TAG_INNER_ASCII_LOWER) {
+            let end = i + 1 + REDACTED_TAG_INNER_ASCII_LOWER.len();
+            return Some((i, end));
+        }
+        i += 1;
+    }
+    None
+}
+
+fn find_earliest_redacted_open_span(rest: &str) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize)> = None;
+    for (open, _) in REDACTED_LIKE_PAIRS {
+        if let Some(rel) = rest.find(open) {
+            let end = rel + open.len();
+            best = match best {
+                None => Some((rel, end)),
+                Some((bs, _be)) if rel < bs => Some((rel, end)),
+                Some((bs, be)) if rel == bs && end > be => Some((rel, end)),
+                o => o,
+            };
+        }
+    }
+    if let Some((s, e)) = find_ci_plain_redacted_open_span(rest) {
+        best = match best {
+            None => Some((s, e)),
+            Some((bs, _)) if s < bs => Some((s, e)),
+            Some((bs, be)) if s == bs && e > be => Some((s, e)),
+            o => o,
+        };
+    }
+    if let Some((s, e)) = find_ci_backtick_redacted_open_span(rest) {
+        best = match best {
+            None => Some((s, e)),
+            Some((bs, _)) if s < bs => Some((s, e)),
+            Some((bs, be)) if s == bs && e > be => Some((s, e)),
+            o => o,
+        };
+    }
+    best
+}
+
+fn find_earliest_redacted_close_span(rest: &str) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize)> = None;
+    for (_, close) in REDACTED_LIKE_PAIRS {
+        if let Some(rel) = rest.find(close) {
+            let end = rel + close.len();
+            best = match best {
+                None => Some((rel, end)),
+                Some((bs, _be)) if rel < bs => Some((rel, end)),
+                Some((bs, be)) if rel == bs && end > be => Some((rel, end)),
+                o => o,
+            };
+        }
+    }
+    if let Some((s, e)) = find_ci_plain_redacted_close_span(rest) {
+        best = match best {
+            None => Some((s, e)),
+            Some((bs, _)) if s < bs => Some((s, e)),
+            Some((bs, be)) if s == bs && e > be => Some((s, e)),
+            o => o,
+        };
+    }
+    if let Some((s, e)) = find_ci_backtick_redacted_close_span(rest) {
+        best = match best {
+            None => Some((s, e)),
+            Some((bs, _)) if s < bs => Some((s, e)),
+            Some((bs, be)) if s == bs && e > be => Some((s, e)),
+            o => o,
+        };
+    }
+    best
+}
+
+/// `streaming == true` 时，去掉 `s` 末尾可能为任一已知开标签前缀的片段，避免半段标签闪烁。
+fn strip_trailing_partial_redacted_open(s: &str, streaming: bool) -> &str {
+    if !streaming || s.is_empty() {
+        return s;
+    }
+    let b = s.as_bytes();
+    let mut longest = 0usize;
+    for (open, _) in REDACTED_LIKE_PAIRS {
+        let ob = open.as_bytes();
+        for k in 1..=ob.len().min(b.len()) {
+            if b[b.len() - k..] == ob[..k] {
+                longest = longest.max(k);
+            }
+        }
+    }
+    // `<` 起头的 CI 开标签前缀：`<`、` <r` … 等
+    for k in 1..=(1 + REDACTED_TAG_INNER_ASCII_LOWER.len()).min(b.len()) {
+        let start = b.len() - k;
+        if b[start] != b'<' {
+            continue;
+        }
+        let after_lt = start + 1;
+        let inner_len = b.len() - after_lt;
+        if inner_len == 0 {
+            longest = longest.max(k);
+            continue;
+        }
+        if bytes_slice_ci_eq_lower(b, after_lt, &REDACTED_TAG_INNER_ASCII_LOWER[..inner_len]) {
+            longest = longest.max(k);
+        }
+    }
+    if longest > 0 {
+        &s[..s.len() - longest]
+    } else {
+        s
+    }
+}
+
+/// 移除 redacted_thinking 块（plain / 反引号包裹 / 开闭标签 ASCII 大小写不敏感）；流式时未闭合开标签之后截断。
+pub(crate) fn filter_redacted_thinking_for_display(raw: &str, streaming: bool) -> String {
+    let mut out = String::new();
+    let mut i = 0usize;
+    while i < raw.len() {
+        let rest = &raw[i..];
+        let Some((o_start, o_end)) = find_earliest_redacted_open_span(rest) else {
+            let tail = strip_trailing_partial_redacted_open(rest, streaming);
+            out.push_str(tail);
+            break;
+        };
+        let open_start = i + o_start;
+        out.push_str(&raw[i..open_start]);
+        let after_open = i + o_end;
+        if after_open > raw.len() {
+            break;
+        }
+        let close_rest = &raw[after_open..];
+        if let Some((_, c_end)) = find_earliest_redacted_close_span(close_rest) {
+            i = after_open + c_end;
+            continue;
+        }
+        if streaming {
+            return out;
+        }
+        return out;
+    }
+    out
+}
+
+/// Qwen / vLLM 等使用的 think 开闭标签（plain 与反引号包裹，标签名大小写不敏感）；与 `INLINE_THINKING_OPEN_PREFIXES` 对齐。
+const THINK_LIKE_PAIRS: &[(&str, &str)] = &[
+    (concat!("<", "think", ">"), concat!("</", "think", ">")),
+    (
+        concat!("`", "<", "think", ">", "`"),
+        concat!("`", "</", "think", ">", "`"),
+    ),
+];
+
+/// `<` 或 `</` 之后、大小写不敏感的 `think>`（ASCII）。
+const THINK_TAG_INNER_ASCII_LOWER: &[u8] = b"think>";
+
+fn find_ci_plain_think_close_span(rest: &str) -> Option<(usize, usize)> {
+    let b = rest.as_bytes();
+    let mut i = 0usize;
+    while i + 2 + THINK_TAG_INNER_ASCII_LOWER.len() <= b.len() {
+        if b[i] == b'<'
+            && b[i + 1] == b'/'
+            && bytes_slice_ci_eq_lower(b, i + 2, THINK_TAG_INNER_ASCII_LOWER)
+        {
+            let end = i + 2 + THINK_TAG_INNER_ASCII_LOWER.len();
+            return Some((i, end));
+        }
+        i += 1;
+    }
+    None
+}
+
+fn find_ci_backtick_think_open_span(rest: &str) -> Option<(usize, usize)> {
+    let b = rest.as_bytes();
+    let inner_len = THINK_TAG_INNER_ASCII_LOWER.len();
+    let mut i = 0usize;
+    while i + 2 + inner_len < b.len() {
+        if b[i] == b'`'
+            && b[i + 1] == b'<'
+            && bytes_slice_ci_eq_lower(b, i + 2, THINK_TAG_INNER_ASCII_LOWER)
+            && b[i + 2 + inner_len] == b'`'
+        {
+            return Some((i, i + 2 + inner_len + 1));
+        }
+        i += 1;
+    }
+    None
+}
+
+fn find_ci_backtick_think_close_span(rest: &str) -> Option<(usize, usize)> {
+    let b = rest.as_bytes();
+    let inner_len = THINK_TAG_INNER_ASCII_LOWER.len();
+    let mut i = 0usize;
+    while i + 3 + inner_len < b.len() {
+        if b[i] == b'`'
+            && b[i + 1] == b'<'
+            && b[i + 2] == b'/'
+            && bytes_slice_ci_eq_lower(b, i + 3, THINK_TAG_INNER_ASCII_LOWER)
+            && b[i + 3 + inner_len] == b'`'
+        {
+            return Some((i, i + 3 + inner_len + 1));
+        }
+        i += 1;
+    }
+    None
+}
+
+fn find_ci_plain_think_open_span(rest: &str) -> Option<(usize, usize)> {
+    let b = rest.as_bytes();
+    let mut i = 0usize;
+    while i + 1 + THINK_TAG_INNER_ASCII_LOWER.len() <= b.len() {
+        if b[i] == b'<' && bytes_slice_ci_eq_lower(b, i + 1, THINK_TAG_INNER_ASCII_LOWER) {
+            let end = i + 1 + THINK_TAG_INNER_ASCII_LOWER.len();
+            return Some((i, end));
+        }
+        i += 1;
+    }
+    None
+}
+
+fn find_earliest_think_open_span(rest: &str) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize)> = None;
+    for (open, _) in THINK_LIKE_PAIRS {
+        if let Some(rel) = rest.find(open) {
+            let end = rel + open.len();
+            best = match best {
+                None => Some((rel, end)),
+                Some((bs, _be)) if rel < bs => Some((rel, end)),
+                Some((bs, be)) if rel == bs && end > be => Some((rel, end)),
+                o => o,
+            };
+        }
+    }
+    if let Some((s, e)) = find_ci_plain_think_open_span(rest) {
+        best = match best {
+            None => Some((s, e)),
+            Some((bs, _)) if s < bs => Some((s, e)),
+            Some((bs, be)) if s == bs && e > be => Some((s, e)),
+            o => o,
+        };
+    }
+    if let Some((s, e)) = find_ci_backtick_think_open_span(rest) {
+        best = match best {
+            None => Some((s, e)),
+            Some((bs, _)) if s < bs => Some((s, e)),
+            Some((bs, be)) if s == bs && e > be => Some((s, e)),
+            o => o,
+        };
+    }
+    best
+}
+
+fn find_earliest_think_close_span(rest: &str) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize)> = None;
+    for (_, close) in THINK_LIKE_PAIRS {
+        if let Some(rel) = rest.find(close) {
+            let end = rel + close.len();
+            best = match best {
+                None => Some((rel, end)),
+                Some((bs, _be)) if rel < bs => Some((rel, end)),
+                Some((bs, be)) if rel == bs && end > be => Some((rel, end)),
+                o => o,
+            };
+        }
+    }
+    if let Some((s, e)) = find_ci_plain_think_close_span(rest) {
+        best = match best {
+            None => Some((s, e)),
+            Some((bs, _)) if s < bs => Some((s, e)),
+            Some((bs, be)) if s == bs && e > be => Some((s, e)),
+            o => o,
+        };
+    }
+    if let Some((s, e)) = find_ci_backtick_think_close_span(rest) {
+        best = match best {
+            None => Some((s, e)),
+            Some((bs, _)) if s < bs => Some((s, e)),
+            Some((bs, be)) if s == bs && e > be => Some((s, e)),
+            o => o,
+        };
+    }
+    best
+}
+
+fn strip_trailing_partial_think_open(s: &str, streaming: bool) -> &str {
+    if !streaming || s.is_empty() {
+        return s;
+    }
+    let b = s.as_bytes();
+    let mut longest = 0usize;
+    for (open, _) in THINK_LIKE_PAIRS {
+        let ob = open.as_bytes();
+        for k in 1..=ob.len().min(b.len()) {
+            if b[b.len() - k..] == ob[..k] {
+                longest = longest.max(k);
+            }
+        }
+    }
+    for k in 1..=(1 + THINK_TAG_INNER_ASCII_LOWER.len()).min(b.len()) {
+        let start = b.len() - k;
+        if b[start] != b'<' {
+            continue;
+        }
+        let after_lt = start + 1;
+        let inner_len = b.len() - after_lt;
+        if inner_len == 0 {
+            longest = longest.max(k);
+            continue;
+        }
+        if bytes_slice_ci_eq_lower(b, after_lt, &THINK_TAG_INNER_ASCII_LOWER[..inner_len]) {
+            longest = longest.max(k);
+        }
+    }
+    if longest > 0 {
+        &s[..s.len() - longest]
+    } else {
+        s
+    }
+}
+
+/// 移除 `think` 块（plain / 反引号 / 大小写不敏感）；与 `filter_redacted_thinking_for_display` 互补。
+fn filter_think_for_display(raw: &str, streaming: bool) -> String {
+    let mut out = String::new();
+    let mut i = 0usize;
+    while i < raw.len() {
+        let rest = &raw[i..];
+        let Some((o_start, o_end)) = find_earliest_think_open_span(rest) else {
+            let tail = strip_trailing_partial_think_open(rest, streaming);
+            out.push_str(tail);
+            break;
+        };
+        let open_start = i + o_start;
+        out.push_str(&raw[i..open_start]);
+        let after_open = i + o_end;
+        if after_open > raw.len() {
+            break;
+        }
+        let close_rest = &raw[after_open..];
+        if let Some((_, c_end)) = find_earliest_think_close_span(close_rest) {
+            i = after_open + c_end;
+            continue;
+        }
+        if streaming {
+            return out;
+        }
+        return out;
+    }
+    out
+}
+
+/// 助手正文展示：先剥 `redacted_thinking` 再剥 `think`（Qwen 等），二者均支持多段与流式半段前缀；最后压缩连续空行。
+pub(crate) fn filter_assistant_thinking_markers_for_display(raw: &str, streaming: bool) -> String {
+    let stripped = filter_think_for_display(
+        &filter_redacted_thinking_for_display(raw, streaming),
+        streaming,
+    );
+    collapse_consecutive_blank_lines(&stripped)
 }
 
 /// 部分网关把思维链塞进 **`content`**，用闭合标记与终答分隔（Qwen / vLLM 等）；与 SSE `reasoning_text` 分轨互补。
@@ -385,9 +887,25 @@ pub fn message_text_for_display_ex(
 ) -> String {
     if m.role == "assistant" {
         let is_streaming_last_assistant = m.state.as_deref() == Some("loading");
+        let reasoning_for_split: Cow<str> = if apply_assistant_display_filters {
+            Cow::Owned(filter_assistant_thinking_markers_for_display(
+                m.reasoning_text.as_str(),
+                is_streaming_last_assistant,
+            ))
+        } else {
+            Cow::Borrowed(m.reasoning_text.as_str())
+        };
+        let text_for_split: Cow<str> = if apply_assistant_display_filters {
+            Cow::Owned(filter_assistant_thinking_markers_for_display(
+                m.text.as_str(),
+                is_streaming_last_assistant,
+            ))
+        } else {
+            Cow::Borrowed(m.text.as_str())
+        };
         let (r_body, t_body) = assistant_thinking_body_and_answer_raw(
-            m.reasoning_text.as_str(),
-            m.text.as_str(),
+            reasoning_for_split.as_ref(),
+            text_for_split.as_ref(),
             apply_assistant_display_filters,
         );
         let answer = assistant_text_for_display(
@@ -433,9 +951,19 @@ mod tests {
     use super::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX;
     use super::assistant_text_for_display;
     use super::assistant_thinking_body_and_answer_raw;
+    use super::collapse_consecutive_blank_lines;
+    use super::filter_assistant_thinking_markers_for_display;
+    use super::filter_redacted_thinking_for_display;
     use super::message_text_for_display_ex;
     use crate::i18n::Locale;
     use crate::storage::StoredMessage;
+
+    #[test]
+    fn collapse_consecutive_blank_lines_merges_runs() {
+        assert_eq!(collapse_consecutive_blank_lines("a\n\n\nb"), "a\n\nb");
+        assert_eq!(collapse_consecutive_blank_lines("\n\nfoo"), "foo");
+        assert_eq!(collapse_consecutive_blank_lines("x\n  \n\t\ny"), "x\n\ny");
+    }
 
     #[test]
     fn hide_inline_agent_reply_plan_json_fence() {
@@ -490,6 +1018,113 @@ mod tests {
     }
 
     #[test]
+    fn drops_prose_before_first_agent_reply_plan_fence() {
+        let preamble = "模型规划说明（不应展示）\n\n";
+        let raw = format!(
+            r#"{preamble}```json{{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}}```最终结论：保留。"#,
+            preamble = preamble
+        );
+        let out = assistant_text_for_display(&raw, false, Locale::ZhHans, true);
+        assert!(
+            out.contains("最终结论"),
+            "tail after fence should be kept: {out}"
+        );
+        assert!(
+            !out.contains("模型规划说明"),
+            "preamble before first plan fence should be dropped: {out}"
+        );
+    }
+
+    #[test]
+    fn strips_qwen_think_block_in_combined_filter() {
+        let raw = concat!(
+            "你好",
+            "<",
+            "think",
+            ">",
+            "内省正文",
+            "</",
+            "think",
+            ">",
+            "尾",
+        );
+        let out = filter_assistant_thinking_markers_for_display(raw, false);
+        assert_eq!(out, "你好尾");
+    }
+
+    #[test]
+    fn strips_two_think_blocks_in_combined_filter() {
+        let o = concat!("<", "think", ">");
+        let c = concat!("</", "think", ">");
+        let raw = format!("a{o}1{c}m{o}2{c}z");
+        let out = filter_assistant_thinking_markers_for_display(&raw, false);
+        assert_eq!(out, "amz");
+    }
+
+    fn assert_filtered_redacted_plan_export_body(out: &str) {
+        let open = concat!("<", "redacted", "_", "thinking", ">");
+        let close = concat!("</", "redacted", "_", "thinking", ">");
+        assert!(
+            !out.contains(open),
+            "redacted open tag should be stripped:\n{out}"
+        );
+        assert!(
+            !out.contains(close),
+            "redacted close tag should be stripped:\n{out}"
+        );
+        assert!(
+            !out.contains("agent_reply_plan"),
+            "plan json should be hidden:\n{out}"
+        );
+        assert!(
+            !out.contains("用户问"),
+            "first redacted block body should be removed:\n{out}"
+        );
+        assert!(
+            !out.contains("用户发送了"),
+            "second redacted block body should be removed:\n{out}"
+        );
+        assert!(
+            out.contains("CrabMate"),
+            "visible prose should remain:\n{out}"
+        );
+        assert!(
+            out.contains("有具体代码任务"),
+            "tail prose before fence should remain:\n{out}"
+        );
+        assert!(
+            out.contains("好的，我可以帮你"),
+            "final answer line should remain:\n{out}"
+        );
+    }
+
+    /// 工作区根目录 `chat_selection_20260410_230651.md`（可选）：与 `chat_resp1` 同形，但带 `## 助手` 导出标题；文件不存在时跳过。
+    #[test]
+    fn filter_chat_selection_export_fixture_md() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../chat_selection_20260410_230651.md");
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            return;
+        };
+        let body = raw
+            .strip_prefix("## 助手\n\n")
+            .or_else(|| raw.strip_prefix("## 助手\r\n\r\n"))
+            .unwrap_or(raw.as_str());
+        let out = assistant_text_for_display(body, false, Locale::ZhHans, true);
+        assert_filtered_redacted_plan_export_body(&out);
+    }
+
+    /// `fixtures/chat_resp1.md`：助手原文示例（两段 `<redacted_thinking>` + 文末 `agent_reply_plan` 围栏），供 `assistant_text_for_display` 过滤回归。
+    #[test]
+    fn filter_chat_resp1_fixture_md() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/chat_resp1.md");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let out = assistant_text_for_display(raw.trim(), false, Locale::ZhHans, true);
+        assert_filtered_redacted_plan_export_body(&out);
+    }
+
+    #[test]
     fn no_inline_split_when_disabled() {
         let raw = concat!("<", "think", ">", "x", "</", "think", ">", "y",);
         let (think, ans) = assistant_thinking_body_and_answer_raw("", raw, false);
@@ -528,6 +1163,105 @@ mod tests {
         let (think, ans) = assistant_thinking_body_and_answer_raw("from_sse", inline, true);
         assert_eq!(think, "from_sse");
         assert_eq!(ans, inline);
+    }
+
+    #[test]
+    fn strips_redacted_thinking_pair_complete() {
+        let raw = concat!(
+            "pre ", "<", "redacted", "_", "thinking", ">", "hidden", "</", "redacted", "_",
+            "thinking", ">", " tail",
+        );
+        let out = filter_redacted_thinking_for_display(raw, false);
+        assert_eq!(out, "pre  tail");
+    }
+
+    #[test]
+    fn strips_two_redacted_thinking_pairs() {
+        let o = concat!("<", "redacted", "_", "thinking", ">");
+        let c = concat!("</", "redacted", "_", "thinking", ">");
+        let raw = format!("a{o}x{c} b{o}y{c} c");
+        let out = filter_redacted_thinking_for_display(&raw, false);
+        assert_eq!(out, "a b c");
+    }
+
+    #[test]
+    fn redacted_streaming_truncates_before_unclosed_block() {
+        let raw = concat!("ok", "<", "redacted", "_", "thinking", ">", "partial",);
+        let out = filter_redacted_thinking_for_display(raw, true);
+        assert_eq!(out, "ok");
+    }
+
+    #[test]
+    fn redacted_streaming_strips_suffix_matching_open_prefix() {
+        let raw = "visible<redacted_thin";
+        let out = filter_redacted_thinking_for_display(raw, true);
+        assert_eq!(out, "visible");
+    }
+
+    #[test]
+    fn strips_backtick_wrapped_redacted_pair() {
+        let raw = concat!(
+            "x", "`", "<", "redacted", "_", "thinking", ">", "`", "h", "`", "</", "redacted", "_",
+            "thinking", ">", "`", "y",
+        );
+        let out = filter_redacted_thinking_for_display(raw, false);
+        assert_eq!(out, "xy");
+    }
+
+    #[test]
+    fn strips_case_insensitive_redacted_tags() {
+        let raw = "<Redacted_Thinking>sec</redacted_THINKING>out";
+        let out = filter_redacted_thinking_for_display(raw, false);
+        assert_eq!(out, "out");
+    }
+
+    /// 反引号形态此前仅用 `find()` 精确匹配小写；上游若输出混合大小写，过滤器认不出开标签，Markdown 再剥掉裸标签后表现为「只剩正文」。
+    #[test]
+    fn strips_backtick_wrapped_redacted_when_tag_name_mixed_case() {
+        let raw = concat!(
+            "`", "<", "Redacted", "_", "Thinking", ">`", "SECRET", "`", "</", "REDACTED", "_",
+            "THINKING", ">`", "tail",
+        );
+        let out = filter_redacted_thinking_for_display(raw, false);
+        assert_eq!(out, "tail");
+        assert!(!out.contains("SECRET"));
+    }
+
+    #[test]
+    fn strips_mixed_backtick_open_and_plain_close_ci_redacted() {
+        let raw = concat!(
+            "`", "<", "Redacted", "_", "Thinking", ">`", "x", "</", "redacted", "_", "thinking",
+            ">z",
+        );
+        let out = filter_redacted_thinking_for_display(raw, false);
+        assert_eq!(out, "z");
+    }
+
+    #[test]
+    fn message_display_strips_redacted_in_reasoning_text_field() {
+        let m = StoredMessage {
+            id: "x".into(),
+            role: "assistant".into(),
+            text: "visible".into(),
+            reasoning_text: concat!(
+                "<", "redacted", "_", "thinking", ">", "r", "</", "redacted", "_", "thinking", ">",
+            )
+            .into(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+        assert_eq!(out, "visible");
+        assert!(!out.contains('r'));
+    }
+
+    #[test]
+    fn redacted_non_streaming_unclosed_drops_from_open() {
+        let raw = concat!("ok", "<", "redacted", "_", "thinking", ">", "no_close",);
+        let out = filter_redacted_thinking_for_display(raw, false);
+        assert_eq!(out, "ok");
     }
 
     #[test]

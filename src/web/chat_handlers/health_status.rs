@@ -236,20 +236,9 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
 
 /// 与 `GET /web-ui` 对应；**无** TOML 字段，仅读进程环境变量。
 const AGENT_WEB_DISABLE_MARKDOWN: &str = "AGENT_WEB_DISABLE_MARKDOWN";
-const AGENT_WEB_RAW_ASSISTANT_OUTPUT: &str = "AGENT_WEB_RAW_ASSISTANT_OUTPUT";
 
 fn web_disable_markdown_env() -> bool {
     match std::env::var(AGENT_WEB_DISABLE_MARKDOWN) {
-        Ok(s) => {
-            let t = s.trim().to_ascii_lowercase();
-            matches!(t.as_str(), "1" | "true" | "yes" | "on")
-        }
-        Err(_) => false,
-    }
-}
-
-fn web_raw_assistant_output_env() -> bool {
-    match std::env::var(AGENT_WEB_RAW_ASSISTANT_OUTPUT) {
         Ok(s) => {
             let t = s.trim().to_ascii_lowercase();
             matches!(t.as_str(), "1" | "true" | "yes" | "on")
@@ -269,6 +258,6 @@ pub(crate) struct WebUiConfigResponse {
 pub(crate) async fn web_ui_config_handler() -> Json<WebUiConfigResponse> {
     Json(WebUiConfigResponse {
         markdown_render: !web_disable_markdown_env(),
-        apply_assistant_display_filters: !web_raw_assistant_output_env(),
+        apply_assistant_display_filters: !crate::web::web_ui_env::web_raw_assistant_output_env(),
     })
 }

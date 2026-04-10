@@ -1,4 +1,4 @@
-//! 助手消息 Markdown 渲染（随会话信号刷新 DOM）；超长回复可折叠；思维链与终答分色。
+//! 助手消息 Markdown 渲染（随会话信号刷新 DOM）；超长回复可折叠。
 
 use std::sync::{Arc, Mutex};
 
@@ -10,7 +10,8 @@ use wasm_bindgen::JsCast;
 use crate::i18n::{self, Locale};
 use crate::markdown;
 use crate::message_format::{
-    assistant_text_for_display, assistant_thinking_body_and_answer_raw, message_text_for_display_ex,
+    assistant_text_for_display, assistant_thinking_body_and_answer_raw,
+    filter_assistant_thinking_markers_for_display, message_text_for_display_ex,
 };
 use crate::storage::ChatSession;
 
@@ -19,15 +20,24 @@ const LONG_ASSISTANT_COLLAPSE_THRESHOLD: usize = 2400;
 
 #[derive(Default)]
 struct AssistantMdPaint {
-    latest_reasoning_html: String,
-    latest_answer_html: String,
-    reasoning_nonempty: bool,
+    latest_html: String,
     raf_scheduled: bool,
     /// 本帧内是否曾出现「由空到有字」的流式首包（用于一次性淡入 class）。
     pending_first_chunk_anim: bool,
 }
 
-/// 助手非工具消息：Markdown → 净化 HTML；可选折叠长文；思维链（`reasoning_text`）与终答（`text`）分块着色。
+/// 与 `message_text_for_display_ex` 一致：思维链与终答拼成一段再渲染（无单独「思考过程」容器）。
+fn combined_assistant_display_plain(thinking_trimmed: &str, answer_display: &str) -> String {
+    if thinking_trimmed.is_empty() {
+        return answer_display.to_string();
+    }
+    if answer_display.trim().is_empty() {
+        return thinking_trimmed.to_string();
+    }
+    format!("{thinking_trimmed}\n\n{answer_display}")
+}
+
+/// 助手非工具消息：Markdown → 净化 HTML；可选折叠长文。
 pub fn assistant_markdown_collapsible_view(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
@@ -38,8 +48,7 @@ pub fn assistant_markdown_collapsible_view(
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     let split_ref = NodeRef::<Div>::new();
-    let reasoning_ref = NodeRef::<Div>::new();
-    let answer_ref = NodeRef::<Div>::new();
+    let body_ref = NodeRef::<Div>::new();
     let mid = message_id.clone();
     let mid_for_btn = message_id.clone();
     let prev_raw = StoredValue::new(Arc::new(Mutex::new(String::new())));
@@ -47,8 +56,7 @@ pub fn assistant_markdown_collapsible_view(
 
     Effect::new({
         let split_ref = split_ref.clone();
-        let reasoning_ref = reasoning_ref.clone();
-        let answer_ref = answer_ref.clone();
+        let body_ref = body_ref.clone();
         let mid = mid.clone();
         move |_| {
             let _ = sessions.get();
@@ -74,38 +82,44 @@ pub fn assistant_markdown_collapsible_view(
                     })
                     .unwrap_or_default()
             });
-            let (thinking_raw, answer_raw) =
-                assistant_thinking_body_and_answer_raw(&reasoning_src, &text_src, apply);
+            let filtered_reasoning_and_text = if apply {
+                Some((
+                    filter_assistant_thinking_markers_for_display(&reasoning_src, is_loading),
+                    filter_assistant_thinking_markers_for_display(&text_src, is_loading),
+                ))
+            } else {
+                None
+            };
+            let (thinking_raw, answer_raw) = match &filtered_reasoning_and_text {
+                Some((rs, tx)) => {
+                    assistant_thinking_body_and_answer_raw(rs.as_str(), tx.as_str(), true)
+                }
+                None => assistant_thinking_body_and_answer_raw(&reasoning_src, &text_src, false),
+            };
             let r_trim = thinking_raw.trim();
             let answer_display = assistant_text_for_display(answer_raw, is_loading, loc, apply);
-            let snapshot = format!("{r_trim}\x1e{answer_display}");
+            let combined = combined_assistant_display_plain(r_trim, answer_display.as_str());
+            let snapshot = combined.clone();
             let first_stream_chunk = {
                 let arc = prev_raw.get_value();
                 let mut g = arc.lock().expect("assistant prev_raw mutex poisoned");
                 let prev_empty = g.is_empty();
-                let now_nonempty = !r_trim.is_empty() || !answer_display.trim().is_empty();
+                let now_nonempty = !snapshot.trim().is_empty();
                 let first = prev_empty && now_nonempty && is_loading;
                 *g = snapshot;
                 first
             };
-            let html_r = if r_trim.is_empty() {
+            let html = if combined.trim().is_empty() {
                 String::new()
             } else if md_on {
-                markdown::to_safe_html(r_trim)
+                markdown::to_safe_html(&combined)
             } else {
-                markdown::plaintext_to_safe_html(r_trim)
-            };
-            let html_a = if md_on {
-                markdown::to_safe_html(&answer_display)
-            } else {
-                markdown::plaintext_to_safe_html(&answer_display)
+                markdown::plaintext_to_safe_html(&combined)
             };
             let paint_arc = paint.get_value();
             {
                 let mut g = paint_arc.lock().expect("assistant paint mutex poisoned");
-                g.latest_reasoning_html = html_r;
-                g.latest_answer_html = html_a;
-                g.reasoning_nonempty = !r_trim.is_empty();
+                g.latest_html = html;
                 if first_stream_chunk {
                     g.pending_first_chunk_anim = true;
                 }
@@ -116,18 +130,15 @@ pub fn assistant_markdown_collapsible_view(
             }
             let paint_run = Arc::clone(&paint_arc);
             let split_ref = split_ref.clone();
-            let reasoning_ref = reasoning_ref.clone();
-            let answer_ref = answer_ref.clone();
+            let body_ref = body_ref.clone();
             request_animation_frame(move || {
-                let (html_r, html_a, show_r, do_first) = {
+                let (html, do_first) = {
                     let mut g = paint_run.lock().expect("assistant paint mutex poisoned");
                     g.raf_scheduled = false;
-                    let html_r = g.latest_reasoning_html.clone();
-                    let html_a = g.latest_answer_html.clone();
-                    let show_r = g.reasoning_nonempty;
+                    let html = g.latest_html.clone();
                     let do_first = g.pending_first_chunk_anim;
                     g.pending_first_chunk_anim = false;
-                    (html_r, html_a, show_r, do_first)
+                    (html, do_first)
                 };
                 if let Some(n) = split_ref.get()
                     && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
@@ -137,21 +148,10 @@ pub fn assistant_markdown_collapsible_view(
                         let _ = he.class_list().add_1("msg-md-first-chunk");
                     }
                 }
-                if let Some(n) = reasoning_ref.get()
+                if let Some(n) = body_ref.get()
                     && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
                 {
-                    if show_r {
-                        let _ = he.remove_attribute("hidden");
-                        he.set_inner_html(&html_r);
-                    } else {
-                        he.set_inner_html("");
-                        let _ = he.set_attribute("hidden", "");
-                    }
-                }
-                if let Some(n) = answer_ref.get()
-                    && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
-                {
-                    he.set_inner_html(&html_a);
+                    he.set_inner_html(&html);
                 }
             });
         }
@@ -196,11 +196,9 @@ pub fn assistant_markdown_collapsible_view(
                 view! {
                     <div class=split_cls node_ref=split_ref>
                         <div
-                            class="msg-md-reasoning msg-body msg-md-prose"
-                            node_ref=reasoning_ref
-                            hidden
+                            class="msg-md-answer msg-body msg-md-prose"
+                            node_ref=body_ref
                         ></div>
-                        <div class="msg-md-answer msg-body msg-md-prose" node_ref=answer_ref></div>
                     </div>
                     {long.then(move || {
                         let b = btn_mid.clone();
