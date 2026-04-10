@@ -106,6 +106,17 @@
   margin-top: 2px;
 }
 
+.nav-rail-search-header {
+  display: flex;
+  justify-content: flex-end;
+  margin: -2px 0 2px;
+}
+
+.nav-rail-search-hide {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
 .nav-rail-search-label {
   font-size: 10px;
   font-weight: 650;

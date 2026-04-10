@@ -159,6 +159,9 @@ pub fn App() -> impl IntoView {
     let sidebar_session_query = RwSignal::new(String::new());
     // 侧栏：跨会话消息全文搜索（本地）。
     let global_message_query = RwSignal::new(String::new());
+    // 侧栏：筛选/跨会话搜索输入区默认收起，由会话列表空白处右键菜单打开。
+    let sidebar_search_panel_open = RwSignal::new(false);
+    let sidebar_rail_ctx_menu = RwSignal::new(None::<(f64, f64)>);
     // 主区：当前会话内查找。
     let chat_find_query = RwSignal::new(String::new());
     let chat_find_match_ids = RwSignal::new(Vec::<String>::new());
@@ -608,8 +611,16 @@ pub fn App() -> impl IntoView {
                 session_context_menu.set(None);
                 return;
             }
+            if sidebar_rail_ctx_menu.get_untracked().is_some() {
+                sidebar_rail_ctx_menu.set(None);
+                return;
+            }
             if chat_find_panel_open.get_untracked() {
                 chat_find_panel_open.set(false);
+                return;
+            }
+            if sidebar_search_panel_open.get_untracked() {
+                sidebar_search_panel_open.set(false);
                 return;
             }
             if view_menu_open.get_untracked() {
@@ -644,6 +655,9 @@ pub fn App() -> impl IntoView {
                 new_session.clone(),
                 sidebar_session_query,
                 global_message_query,
+                sidebar_search_panel_open,
+                sidebar_rail_ctx_menu,
+                chat_find_panel_open,
                 sessions,
                 active_id,
                 draft,
