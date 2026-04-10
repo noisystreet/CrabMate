@@ -14,10 +14,11 @@ pub(crate) static STAGED_PLAN_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// 分阶段规划在 **`staged_plan_two_phase_nl_display`** 开启时，于 JSON 规划定稿后追加的无工具 **user** 条正文。
 ///
-/// 使用口语化续问（避免写成「禁令清单」以免模型在答里复述为「用户下了系统指令」）；首行 [`crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX`] 与分步注入同理，聊天区不展示整段。
+/// 首行 [`crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX`] 与分步注入同理，聊天区不展示整段。
+/// 正文须**明确写清「非用户提问」**，避免模型在思维链里把口语续问误当成用户的原话（曾用「接下来你打算怎么帮我」类问句导致答非所问）。
 pub(crate) fn staged_plan_nl_followup_user_body() -> String {
     format!(
-        "{}接下来你打算怎么帮我？简单用两三句说说就行。",
+        "{}【系统桥接·非用户提问】请只回答对话里**先前真实用户消息**所提的问题（若有附图则含图片说明），并结合已定规划；用两三句自然语言说明你的协助思路即可。勿将本条任何句子当作用户提问来复述、引用或推理。",
         crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
     )
 }
