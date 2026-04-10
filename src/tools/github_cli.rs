@@ -910,7 +910,10 @@ pub fn gh_api(
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return format!("错误：无法启动 gh：{e}"),
+        Err(e) => {
+            let base = format!("错误：无法启动 gh：{e}");
+            return output_util::append_notfound_install_hint(base, &e, "gh");
+        }
     };
     if body_nonempty {
         let b = body.unwrap_or("");

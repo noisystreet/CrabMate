@@ -405,10 +405,12 @@ pub fn python_snippet_run(
     let child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            return output_util::format_spawn_error(
+            let prog = if use_uv { "uv" } else { "python3" };
+            return output_util::format_spawn_error_with_program(
                 &title,
                 &e,
                 output_util::CommandSpawnErrorStyle::CannotStartWithPathHint,
+                Some(prog),
             );
         }
     };
@@ -583,9 +585,10 @@ pub fn ruff_format_file(
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let output = cmd
-        .output()
-        .map_err(|e| format!("无法执行 ruff format：{}（请确认已安装 ruff）", e))?;
+    let output = cmd.output().map_err(|e| {
+        let b = format!("无法执行 ruff format：{}（请确认已安装 ruff）", e);
+        output_util::append_notfound_install_hint(b, &e, "ruff")
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);

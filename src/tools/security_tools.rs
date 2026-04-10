@@ -88,10 +88,11 @@ fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> Strin
                 MAX_OUTPUT_LINES,
             )
         }
-        Err(e) => output_util::format_spawn_error(
+        Err(e) => output_util::format_spawn_error_with_program(
             title,
             &e,
             output_util::CommandSpawnErrorStyle::ExecuteFailed,
+            Some("cargo"),
         ),
     }
 }

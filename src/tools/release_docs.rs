@@ -7,6 +7,7 @@ use std::process::Command;
 use crate::cargo_metadata::cargo_metadata_command;
 
 use super::git;
+use super::output_util;
 
 fn truncate_str(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
@@ -37,7 +38,10 @@ fn run_git_stdout(working_dir: &Path, args: &[&str]) -> Result<String, String> {
         cmd.arg(a);
     }
     cmd.current_dir(working_dir);
-    let out = cmd.output().map_err(|e| format!("无法执行 git: {}", e))?;
+    let out = cmd.output().map_err(|e| {
+        let b = format!("无法执行 git: {}", e);
+        output_util::append_notfound_install_hint(b, &e, "git")
+    })?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         return Err(format!(

@@ -581,7 +581,10 @@ pub(crate) fn ensure_git_repo(working_dir: &Path) -> Result<(), String> {
         .arg("--is-inside-work-tree")
         .current_dir(working_dir)
         .output()
-        .map_err(|e| format!("无法执行 git 命令: {}", e))?;
+        .map_err(|e| {
+            let b = format!("无法执行 git 命令: {}", e);
+            output_util::append_notfound_install_hint(b, &e, "git")
+        })?;
     if !out.status.success() {
         return Err("错误：当前工作目录不在 Git 仓库中".to_string());
     }
