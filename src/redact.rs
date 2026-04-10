@@ -96,9 +96,9 @@ pub fn assistant_message_preview_for_log(msg: &Message) -> String {
     }
 }
 
-/// 工具调用 `arguments` JSON 字符串的日志预览（防过长、防误打满屏）。
+/// 工具调用 `arguments` JSON 字符串的日志预览（防过长、防误打满屏；空白折叠为单行便于 grep）。
 pub fn tool_arguments_preview_for_log(args: &str) -> String {
-    preview_chars(args, 240)
+    single_line_preview(args, 240)
 }
 
 #[cfg(test)]
