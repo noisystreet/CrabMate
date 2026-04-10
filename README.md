@@ -109,7 +109,8 @@ cd frontend-leptos && trunk build && cd ..
 - **检查**：`cargo fmt --all`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test`；或 [.pre-commit-config.yaml](.pre-commit-config.yaml)。
 - **E2E**（可选）：`frontend-leptos` 构建后 **`cd e2e && npm ci && npx playwright install chromium && npm test`**。见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 - **安装**：`cargo install --path .`（**不**自动装 man；`.deb` 包或手动 [man/crabmate.1](man/crabmate.1)）。同步 clap 与 troff：`cargo run --bin crabmate-gen-man`。
-- **`.deb`**：[cargo-deb](https://github.com/kornelski/cargo-deb)，前端 release 构建 + **`cargo deb`**，产物 **`target/debian/`**。详 [docs/CLI.md](docs/CLI.md)「打包 Debian `.deb`」。
+- **一键打包**：**`./scripts/package-release.sh`** → **`dist/`** 下 **`crabmate_<version>_<os>_<arch>.tar.gz`**（含二进制、`config/`、`frontend-leptos/dist`、man）；Linux 且已安装 **`cargo-deb`** 时同时复制 **`target/debian/crabmate_*.deb`** 到 **`dist/`**。
+- **`.deb`**：[cargo-deb](https://github.com/kornelski/cargo-deb)，亦可手动：前端 release + **`cargo deb`**，默认产物 **`target/debian/`**。详 [docs/CLI.md](docs/CLI.md)「打包 Debian `.deb`」。
 
 ## 部署与安全
 

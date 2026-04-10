@@ -191,6 +191,14 @@ Static assets are served from `frontend-leptos/dist`.
 
 SSE control-plane fields: **`docs/SSE_PROTOCOL.md`**.
 
+## One-shot packaging (tar.gz + optional .deb)
+
+```bash
+./scripts/package-release.sh
+```
+
+Artifacts land in **`dist/`** at the repo root: a **`tar.gz`** is always produced (unless **`--skip-tar`**); **`.deb`** is copied from **`target/debian/`** only on **Linux** with **`cargo-deb`** installed (use **`--skip-deb`** to skip). Run **`--help`** for all flags.
+
 ## Debian `.deb` package
 
 ```bash

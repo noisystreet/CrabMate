@@ -106,7 +106,8 @@ cd frontend-leptos && trunk build && cd ..
 - **Checks**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`; or [.pre-commit-config.yaml](.pre-commit-config.yaml).
 - **E2E** (optional): after `frontend-leptos` build, **`cd e2e && npm ci && npx playwright install chromium && npm test`**. See [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
 - **Install**: `cargo install --path .` (**does not** install man; use `.deb` or [man/crabmate.1](man/crabmate.1)). Regenerate man: `cargo run --bin crabmate-gen-man`.
-- **`.deb`**: [cargo-deb](https://github.com/kornelski/cargo-deb), frontend release build + **`cargo deb`**, output **`target/debian/`**. Details: [docs/en/CLI.md](docs/en/CLI.md) § Debian `.deb` packaging.
+- **One-shot packaging**: **`./scripts/package-release.sh`** → **`dist/`** with **`crabmate_<version>_<os>_<arch>.tar.gz`** (binary, `config/`, `frontend-leptos/dist`, man); on Linux with **`cargo-deb`** installed, also copies **`target/debian/crabmate_*.deb`** into **`dist/`**.
+- **`.deb`**: [cargo-deb](https://github.com/kornelski/cargo-deb), or manually: frontend release + **`cargo deb`**, default output **`target/debian/`**. Details: [docs/en/CLI.md](docs/en/CLI.md) § Debian `.deb` packaging.
 
 ## Deployment and security
 
