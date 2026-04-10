@@ -26,6 +26,7 @@ mod workspace_changelog;
 pub(crate) use auth::require_web_api_bearer_auth;
 pub(crate) use chat::{
     chat_approval_handler, chat_branch_handler, chat_handler, chat_stream_handler,
+    conversation_messages_handler,
 };
 pub(crate) use config_reload::config_reload_handler;
 pub(crate) use conflict::conversation_conflict_sse_line;

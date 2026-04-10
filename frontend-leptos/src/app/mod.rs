@@ -49,8 +49,9 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::api::{
-    StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key, fetch_status,
-    fetch_tasks, fetch_web_ui_config, load_client_llm_text_fields_from_storage, save_tasks,
+    StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key,
+    fetch_conversation_messages, fetch_status, fetch_tasks, fetch_web_ui_config,
+    load_client_llm_text_fields_from_storage, save_tasks,
 };
 use crate::app_prefs::{
     AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, SidePanelView,
@@ -59,8 +60,11 @@ use crate::app_prefs::{
     store_side_panel_view,
 };
 use crate::clarification_form::PendingClarificationForm;
+use crate::conversation_hydrate::stored_messages_from_conversation_api;
 use crate::i18n::{self, load_locale_from_storage};
-use crate::session_ops::{SessionContextAnchor, estimate_context_chars_for_active_session};
+use crate::session_ops::{
+    SessionContextAnchor, estimate_context_chars_for_active_session, title_from_user_prompt,
+};
 use crate::session_sync::SessionSyncState;
 use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
@@ -84,6 +88,8 @@ pub fn App() -> impl IntoView {
     let composer_input_ref: NodeRef<Textarea> = NodeRef::new();
     // 本地会话与后端 `conversation_id` / `revision` 的单一聚合状态（见 `session_sync.rs`）。
     let session_sync = RwSignal::new(SessionSyncState::local_only());
+    // 递增后触发：从 `GET /conversation/messages` 水合当前会话（与 `server_conversation_id` 对齐）。
+    let session_hydrate_nonce = RwSignal::new(0_u64);
     // 当前 `/chat/stream` 任务 `job_id`（响应头与 `sse_capabilities`）；断线重连用。
     let stream_job_id = RwSignal::new(None::<u64>);
     // 已消费的最大 SSE `id:`；与 `stream_resume.after_seq` / `Last-Event-ID` 对齐。
@@ -227,6 +233,83 @@ pub fn App() -> impl IntoView {
                     markdown_render.set(c.markdown_render);
                     apply_assistant_display_filters.set(c.apply_assistant_display_filters);
                 }
+            });
+        }
+    });
+
+    Effect::new({
+        let sessions = sessions;
+        let active_id = active_id;
+        let locale = locale;
+        let initialized = initialized;
+        let web_ui_config_loaded = web_ui_config_loaded;
+        let selected_agent_role = selected_agent_role;
+        let session_sync = session_sync;
+        let session_hydrate_nonce = session_hydrate_nonce;
+        move |_| {
+            if !initialized.get() || !web_ui_config_loaded.get() {
+                return;
+            }
+            let _ = session_hydrate_nonce.get();
+            let aid = active_id.get();
+            if aid.is_empty() {
+                return;
+            }
+            let Some(cid) = sessions.with(|list| {
+                list.iter().find(|s| s.id == aid).and_then(|s| {
+                    let c = s
+                        .server_conversation_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())?;
+                    Some(c.to_string())
+                })
+            }) else {
+                return;
+            };
+            let loc = locale.get_untracked();
+            spawn_local(async move {
+                let Ok(resp) = fetch_conversation_messages(&cid, loc).await else {
+                    return;
+                };
+                let msgs = stored_messages_from_conversation_api(&resp.messages);
+                sessions.update(|list| {
+                    if active_id.get_untracked() != aid {
+                        return;
+                    }
+                    let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
+                        return;
+                    };
+                    let still = s
+                        .server_conversation_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty());
+                    if still != Some(cid.as_str()) {
+                        return;
+                    }
+                    s.messages = msgs;
+                    s.server_revision = Some(resp.revision);
+                    if let Some(role) = resp
+                        .active_agent_role
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|r| !r.is_empty())
+                    {
+                        selected_agent_role.set(Some(role.to_string()));
+                    }
+                    let user_count = s.messages.iter().filter(|m| m.role == "user").count();
+                    if user_count == 1 && i18n::is_default_session_title(&s.title) {
+                        if let Some(u) = s.messages.iter().find(|m| m.role == "user") {
+                            s.title = title_from_user_prompt(&u.text);
+                        }
+                    }
+                });
+                session_sync.update(|st| {
+                    if st.conversation_id.as_deref().map(str::trim) == Some(cid.as_str()) {
+                        st.apply_saved_revision(resp.revision);
+                    }
+                });
             });
         }
     });
@@ -535,6 +618,7 @@ pub fn App() -> impl IntoView {
         locale,
         active_id,
         draft,
+        session_hydrate_nonce,
         session_sync,
         stream_job_id,
         stream_last_event_seq,

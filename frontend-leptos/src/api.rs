@@ -808,6 +808,16 @@ pub struct ChatBranchResponse {
 }
 
 /// `POST /chat/branch`：服务端按 `before_user_ordinal` 截断持久化会话（须 `conversation_store_sqlite_path` 等已启用）。
+/// `GET /conversation/messages`：拉取服务端已持久化会话（与 `conversation_id` + `revision` 对齐）。
+pub async fn fetch_conversation_messages(
+    conversation_id: &str,
+    _loc: Locale,
+) -> Result<crate::conversation_hydrate::ConversationMessagesResponse, String> {
+    let enc = urlencoding::encode(conversation_id);
+    let url = format!("/conversation/messages?conversation_id={enc}");
+    fetch_json("GET", &url, None).await
+}
+
 pub async fn post_chat_branch(
     conversation_id: &str,
     before_user_ordinal: u64,

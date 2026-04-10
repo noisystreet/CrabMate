@@ -575,6 +575,8 @@ mod message_branch_tests {
             draft: String::new(),
             pinned: false,
             starred: false,
+            server_conversation_id: None,
+            server_revision: None,
             messages: vec![
                 StoredMessage {
                     id: "u0".into(),
