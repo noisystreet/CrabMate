@@ -206,6 +206,8 @@ mod tests {
                 msg("c", "user", "third", false),
             ],
             updated_at: 0,
+            pinned: false,
+            starred: false,
         };
         let md = stored_messages_by_ids_to_markdown(
             &session.messages,
@@ -236,6 +238,8 @@ mod tests {
                 msg("4", "assistant", "ok", false),
             ],
             updated_at: 0,
+            pinned: false,
+            starred: false,
         };
         let file = session_to_export_file(&session, Locale::ZhHans);
         assert_eq!(file.messages.len(), 3);

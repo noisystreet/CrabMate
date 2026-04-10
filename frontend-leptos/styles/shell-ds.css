@@ -244,12 +244,42 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+.nav-session-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.nav-session-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.nav-session-badge {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.92;
+}
+
+.nav-session-badge-star {
+  color: color-mix(in srgb, var(--accent) 72%, var(--warning, #f5a623));
+}
+
+.nav-session-badge-pin {
+  font-size: 10px;
+}
+
 .nav-session-title {
   font-weight: 550;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  flex: 1;
 }
 
 .nav-session-meta {

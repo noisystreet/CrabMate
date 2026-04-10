@@ -197,6 +197,8 @@ mod tests {
             draft: String::new(),
             messages,
             updated_at: 0,
+            pinned: false,
+            starred: false,
         }
     }
 

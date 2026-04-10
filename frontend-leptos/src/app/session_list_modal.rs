@@ -10,6 +10,7 @@ use leptos::task::spawn_local;
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::i18n::{self, Locale};
 use crate::session_modal_row::SessionModalRow;
+use crate::session_sort::sorted_sessions_clone;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 
@@ -72,19 +73,22 @@ fn SessionListModalPanel(
                 </p>
                 {move || {
                     let buf = composer_draft_buffer.clone();
-                    sessions
-                        .get()
+                    sorted_sessions_clone(&sessions.get())
                         .into_iter()
                         .map(|s| {
                             let id = s.id.clone();
                             let active = active_id.get() == id;
                             let row_buf = Arc::clone(&buf);
                             let row_title = s.title.clone();
+                            let pinned = s.pinned;
+                            let starred = s.starred;
                             view! {
                                 <SessionModalRow
                                     id=id.clone()
                                     title=row_title
                                     message_count=s.messages.len()
+                                    pinned=pinned
+                                    starred=starred
                                     active=active
                                     locale=locale
                                     sessions=sessions
