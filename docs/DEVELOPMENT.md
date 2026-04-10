@@ -459,7 +459,7 @@ flowchart LR
 
 ### `frontend-leptos/src/lib.rs`
 
-- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下（含 **`client_llm_presets`**、**`debounce_schedule`**、`i18n`、`a11y`）。
+- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下（含 **`client_llm_presets`**、**`debounce_schedule`**、**`session_sort`**、`i18n`、`a11y`）。
 
 ### `frontend-leptos/src/client_llm_presets.rs`
 
@@ -481,7 +481,7 @@ flowchart LR
 - **`chat_scroll.rs`**：消息列表指纹变化时的自动跟底、**`focus_message_id_after_nav`** 滚入视图。
 - **`chat_find.rs`**：主区查找匹配 id、光标与首条 **`scroll_message_into_view`**。
 - **`workspace_panel.rs`**：**`reload_workspace_panel`** 封装与切换到 Workspace 侧栏时自动拉取。
-- **`sidebar_nav.rs`**：左侧导航与会话列表；**`debounce_signal_to_effect`** 对会话标题筛选与跨会话消息搜索做 **`TimeoutFuture`** 防抖（规则见 **`debounce_schedule`**）。**`mobile_shell_header.rs`**：窄屏顶栏。
+- **`sidebar_nav.rs`**：左侧导航与会话列表；会话项 **右键菜单**含收藏/置顶切换；列表顺序见 **`session_sort`**。**`debounce_signal_to_effect`** 对会话标题筛选与跨会话消息搜索做 **`TimeoutFuture`** 防抖（规则见 **`debounce_schedule`**）。**`mobile_shell_header.rs`**：窄屏顶栏。
 - **`chat_column.rs`**：中部消息列表与输入区；**`chat_find_bar.rs`** / **`chat_export_menu.rs`**：查找条与导出上下文菜单。
 - **`status_bar.rs`**：底栏芯片含 **`StatusBarContextChip`**：本地估算当前会话消息 + 草稿字符数，对照 **`GET /status`** 的 **`context_char_budget`** 显示进度条；在存在 **`conversation_id`** 时并列展示 SSE 下发的 **`conversation_revision`**（`rev N`）。
 - **`side_column.rs`**：右列（工作区/任务、`SideColumnTasksCard` 等）；**`status_bar.rs`**：底栏状态。
@@ -508,7 +508,11 @@ flowchart LR
 
 ### `frontend-leptos/src/session_ops.rs`
 
-- 会话补丁、重试准备、标题 **`title_from_user_prompt`**（首条用户消息且标题仍为默认时改写侧栏名）、导出/删除、右键菜单锚点与 **`approval_session_id`**（单测：标题生成）。
+- 会话补丁、重试准备、标题 **`title_from_user_prompt`**（首条用户消息且标题仍为默认时改写侧栏名）、导出/删除、右键菜单锚点与 **`approval_session_id`**（单测：标题生成）。**`set_session_pinned` / `set_session_starred`**：仅改 **`ChatSession.pinned` / `starred`**，不刷新 **`updated_at`**。
+
+### `frontend-leptos/src/session_sort.rs`
+
+- **`sort_sessions_for_display`** / **`sorted_sessions_clone`**：侧栏与会话管理模态共用排序：**置顶**（`pinned`）> **收藏**（`starred`）> **`updated_at` 降序**（同刻按 `id` 稳定）。
 
 ### `frontend-leptos/src/session_modal_row.rs`
 
@@ -524,7 +528,7 @@ flowchart LR
 
 ### `frontend-leptos/src/storage.rs`
 
-- `localStorage` 会话持久化（会话列表、活动会话、草稿等）。
+- `localStorage` 会话持久化（会话列表、活动会话、草稿等）。**`ChatSession`** 含 **`pinned` / `starred`**（侧栏排序与展示；旧数据缺省为 `false`）。
 - **`DEFAULT_CHAT_SESSION_TITLE`**：新建会话默认标题，与 **`app/mod.rs`** 首条消息自动命名（**`session_ops::title_from_user_prompt`**）条件一致。
 - 与导出结构保持兼容，供 `runtime/chat_export` 与前端互通。
 

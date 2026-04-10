@@ -21,6 +21,7 @@ mod session_export;
 mod session_modal_row;
 mod session_ops;
 mod session_search;
+mod session_sort;
 mod session_sync;
 mod sse_dispatch;
 mod storage;

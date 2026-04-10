@@ -663,6 +663,8 @@ pub(super) fn wire_chat_composer_streams(
                 draft: String::new(),
                 messages: vec![],
                 updated_at: now,
+                pinned: false,
+                starred: false,
             };
             let id = s.id.clone();
             sessions.update(|list| {
