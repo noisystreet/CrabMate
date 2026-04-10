@@ -418,6 +418,27 @@
   max-width: 100%;
 }
 
+/* 关闭 Markdown（环境变量 AGENT_WEB_DISABLE_MARKDOWN）：等宽便于对照上游原文 */
+.msg-md-wrap--plaintext .msg-md-prose {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* 关闭 Markdown 时：思维链取消「次要色 + 左边线 + 背景卡」，与终答同为正文色与无装饰块（仅保留与终答之间的少量间距） */
+.msg-assistant .msg-md-wrap--plaintext .msg-md-reasoning.msg-md-prose {
+  color: var(--text);
+  border-left: none;
+  padding: 0;
+  margin-bottom: var(--space-2);
+  border-radius: 0;
+  background: transparent;
+}
+
+.msg-assistant .msg-md-wrap--plaintext .msg-md-reasoning.msg-md-prose :where(p, li, td, th, strong, b, em),
+.msg-assistant .msg-md-wrap--plaintext .msg-md-reasoning.msg-md-prose :where(h1, h2, h3, h4, h5, h6) {
+  color: inherit;
+}
+
 /* 思维链 + 终答：折叠高度作用于整块 */
 .msg-md-split {
   width: 100%;

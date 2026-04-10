@@ -22,9 +22,29 @@ pub fn to_safe_html(md: &str) -> String {
     ammonia::clean(&body)
 }
 
+/// 调试：不做 Markdown 解析，将纯文本转义为可安全写入 `innerHTML` 的片段（换行 → `<br />`）。
+pub fn plaintext_to_safe_html(text: &str) -> String {
+    if text.trim().is_empty() {
+        return String::new();
+    }
+    let mut out = String::with_capacity(text.len().saturating_mul(2));
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\n' => out.push_str("<br />"),
+            '\r' => {}
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
-    use super::to_safe_html;
+    use super::{plaintext_to_safe_html, to_safe_html};
 
     #[test]
     fn multi_level_headings_produce_h_tags() {
@@ -68,6 +88,14 @@ mod tests {
             lower.contains("<br") || lower.contains("br>"),
             "expected hard line break in HTML, got {h:?}"
         );
+    }
+
+    #[test]
+    fn plaintext_escapes_and_line_breaks() {
+        let h = plaintext_to_safe_html("a <b>\nc");
+        assert!(h.contains("&lt;"));
+        assert!(h.to_lowercase().contains("<br"));
+        assert!(!h.contains("<b>"));
     }
 }
 

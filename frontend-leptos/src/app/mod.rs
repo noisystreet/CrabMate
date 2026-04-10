@@ -50,7 +50,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::api::{
     StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key, fetch_status,
-    fetch_tasks, load_client_llm_text_fields_from_storage, save_tasks,
+    fetch_tasks, fetch_web_ui_config, load_client_llm_text_fields_from_storage, save_tasks,
 };
 use crate::app_prefs::{
     AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, SidePanelView,
@@ -180,6 +180,9 @@ pub fn App() -> impl IntoView {
     let locale = RwSignal::new(load_locale_from_storage());
     // 当前会话消息 + 草稿字符数（本地估算），对照 `/status.context_char_budget`。
     let context_used_estimate = RwSignal::new(0_usize);
+    // 与 GET /web-ui、环境变量 AGENT_WEB_DISABLE_MARKDOWN 对齐；拉取失败时保持 true（沿用 Markdown）。
+    let markdown_render = RwSignal::new(true);
+    let web_ui_config_loaded = RwSignal::new(false);
 
     Effect::new(move |_| {
         if initialized.get() {
@@ -202,6 +205,21 @@ pub fn App() -> impl IntoView {
         active_id.set(pick);
         draft.set(d);
         initialized.set(true);
+    });
+
+    Effect::new({
+        let markdown_render = markdown_render;
+        move |_| {
+            if !initialized.get() || web_ui_config_loaded.get() {
+                return;
+            }
+            web_ui_config_loaded.set(true);
+            spawn_local(async move {
+                if let Ok(c) = fetch_web_ui_config().await {
+                    markdown_render.set(c.markdown_render);
+                }
+            });
+        }
     });
 
     Effect::new(move |_| {
@@ -351,6 +369,7 @@ pub fn App() -> impl IntoView {
         changelist_modal_err,
         changelist_modal_html,
         changelist_modal_rev,
+        markdown_render,
     );
     wire_changelist_body_inner_html(changelist_modal_html, changelist_body_ref);
 
@@ -693,6 +712,7 @@ pub fn App() -> impl IntoView {
                         chat_wires.regen_stream_after_truncate,
                         chat_wires.retry_assistant_target,
                         status_err,
+                        markdown_render,
                     )}
 
                     {side_column_view(

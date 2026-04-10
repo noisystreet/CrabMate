@@ -55,6 +55,7 @@ pub fn chat_column_view(
     regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
+    markdown_render: RwSignal<bool>,
 ) -> impl IntoView {
     let run_send_clarify_sv = StoredValue::new(run_send_message.clone());
     view! {
@@ -259,6 +260,7 @@ pub fn chat_column_view(
                                                     retry_assistant_target,
                                                     status_err,
                                                     locale,
+                                                    markdown_render,
                                                 )
                                                 .into_any(),
                                                 ChatChunk::ToolGroup { head_id, items } => {
@@ -281,6 +283,7 @@ pub fn chat_column_view(
                                                         status_err,
                                                         auto_scroll_chat,
                                                         locale,
+                                                        markdown_render,
                                                     )
                                                     .into_any()
                                                 }
