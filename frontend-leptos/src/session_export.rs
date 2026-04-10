@@ -237,6 +237,8 @@ mod tests {
             updated_at: 0,
             pinned: false,
             starred: false,
+            server_conversation_id: None,
+            server_revision: None,
         };
         let md = stored_messages_by_ids_to_markdown(
             &session.messages,
@@ -270,6 +272,8 @@ mod tests {
             updated_at: 0,
             pinned: false,
             starred: false,
+            server_conversation_id: None,
+            server_revision: None,
         };
         let file = session_to_export_file(&session, Locale::ZhHans, true);
         assert_eq!(file.messages.len(), 3);

@@ -108,7 +108,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 **Summary**: `api.rs`, `sse_dispatch.rs`, panels, session state, `session_export`.
 
-- [ ] Browser session state: persist `conversation_id` + `revision` across reloads (and optional encrypted cache); tab-local model is **`frontend-leptos/src/session_sync.rs`** (`SessionSyncState`).
+- [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains **`frontend-leptos/src/session_sync.rs`** (`SessionSyncState`).
 - [ ] Virtualize long chat lists.
 - [ ] i18n, a11y, keyboard navigation.
 - [ ] Future voice (STT/TTS) with P0 auth alignment.

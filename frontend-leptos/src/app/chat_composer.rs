@@ -42,6 +42,7 @@ struct ChatStreamCallbackCtx {
     pending_approval: RwSignal<Option<(String, String, String)>>,
     approval_session_store_id: String,
     session_sync: RwSignal<SessionSyncState>,
+    session_hydrate_nonce: RwSignal<u64>,
     changelist_modal_open: RwSignal<bool>,
     changelist_fetch_nonce: RwSignal<u64>,
     refresh_workspace: Arc<dyn Fn() + Send + Sync>,
@@ -85,7 +86,22 @@ pub(super) fn wire_session_switch_clears_chat_state(
         draft.set(d);
         pending_images.set(Vec::new());
         pending_clarification.set(None);
-        session_sync.set(SessionSyncState::local_only());
+        let st = sessions.with(|list| {
+            list.iter().find(|s| s.id == id).map(|s| {
+                let mut st = SessionSyncState::local_only();
+                if let Some(ref cid) = s.server_conversation_id {
+                    let t = cid.trim();
+                    if !t.is_empty() {
+                        st.apply_stream_conversation_id(t.to_string());
+                        if let Some(rev) = s.server_revision {
+                            st.apply_saved_revision(rev);
+                        }
+                    }
+                }
+                st
+            })
+        });
+        session_sync.set(st.unwrap_or_else(SessionSyncState::local_only));
         stream_job_id.set(None);
         stream_last_event_seq.set(0);
         expanded_long_assistant_ids.set(Vec::new());
@@ -126,6 +142,7 @@ pub(super) fn wire_chat_composer_streams(
     locale: RwSignal<Locale>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
+    session_hydrate_nonce: RwSignal<u64>,
     session_sync: RwSignal<SessionSyncState>,
     stream_job_id: RwSignal<Option<u64>>,
     stream_last_event_seq: RwSignal<u64>,
@@ -152,6 +169,7 @@ pub(super) fn wire_chat_composer_streams(
         let sessions = sessions;
         let locale_sig = locale;
         let active_id = active_id;
+        let session_hydrate_nonce = session_hydrate_nonce;
         let session_sync = session_sync;
         let stream_job_id_sig = stream_job_id;
         let stream_last_event_seq_sig = stream_last_event_seq;
@@ -200,6 +218,7 @@ pub(super) fn wire_chat_composer_streams(
                 pending_approval,
                 approval_session_store_id: appr_store.clone(),
                 session_sync,
+                session_hydrate_nonce,
                 changelist_modal_open,
                 changelist_fetch_nonce,
                 refresh_workspace: Arc::clone(&refresh_workspace),
@@ -337,7 +356,17 @@ pub(super) fn wire_chat_composer_streams(
                 Rc::new(move |id: String| {
                     stream_ctx
                         .session_sync
-                        .update(|s| s.apply_stream_conversation_id(id));
+                        .update(|s| s.apply_stream_conversation_id(id.clone()));
+                    let aid = stream_ctx.active_session_id.clone();
+                    stream_ctx.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
+                            s.server_conversation_id = Some(id);
+                            s.server_revision = None;
+                        }
+                    });
+                    stream_ctx
+                        .session_hydrate_nonce
+                        .update(|n| *n = n.wrapping_add(1));
                 })
             };
             let on_conv_rev: Rc<dyn Fn(u64)> = {
@@ -346,6 +375,15 @@ pub(super) fn wire_chat_composer_streams(
                     stream_ctx
                         .session_sync
                         .update(|s| s.apply_saved_revision(rev));
+                    let aid = stream_ctx.active_session_id.clone();
+                    stream_ctx.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
+                            s.server_revision = Some(rev);
+                        }
+                    });
+                    stream_ctx
+                        .session_hydrate_nonce
+                        .update(|n| *n = n.wrapping_add(1));
                 })
             };
 
@@ -695,6 +733,8 @@ pub(super) fn wire_chat_composer_streams(
                 updated_at: now,
                 pinned: false,
                 starred: false,
+                server_conversation_id: None,
+                server_revision: None,
             };
             let id = s.id.clone();
             sessions.update(|list| {

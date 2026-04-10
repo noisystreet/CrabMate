@@ -179,6 +179,34 @@ pub fn build_openapi_spec() -> Value {
                     }
                 }
             },
+            "/conversation/messages": {
+                "get": {
+                    "tags": ["chat"],
+                    "summary": "只读拉取已持久化会话消息与 revision",
+                    "description": "供 Web 刷新后与 `conversation_id` 对齐；不含长期记忆/变更集注入；404 表示不存在或已过期。",
+                    "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                    "parameters": [
+                        {
+                            "name": "conversation_id",
+                            "in": "query",
+                            "required": true,
+                            "schema": { "type": "string" }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "会话快照",
+                            "content": {
+                                "application/json": {
+                                    "schema": { "$ref": "#/components/schemas/ConversationMessagesResponseBody" }
+                                }
+                            }
+                        },
+                        "400": { "description": "参数错误" },
+                        "404": { "description": "会话不存在或已过期" }
+                    }
+                }
+            },
             "/upload": {
                 "post": {
                     "tags": ["uploads"],
@@ -614,6 +642,20 @@ pub fn build_openapi_spec() -> Value {
                         "revision": { "type": "integer", "format": "int64" }
                     }
                 },
+                "ConversationMessagesResponseBody": {
+                    "type": "object",
+                    "required": ["conversation_id", "revision", "messages"],
+                    "properties": {
+                        "conversation_id": { "type": "string" },
+                        "revision": { "type": "integer", "format": "int64" },
+                        "active_agent_role": { "type": "string", "description": "非空时与配置中 agent_roles 对齐" },
+                        "messages": {
+                            "type": "array",
+                            "description": "OpenAI 兼容 Message 数组（已剔除长期记忆/变更集注入）",
+                            "items": { "type": "object", "additionalProperties": true }
+                        }
+                    }
+                },
                 "UploadedFileInfo": {
                     "type": "object",
                     "properties": {
@@ -787,6 +829,7 @@ mod tests {
         assert!(paths.contains_key("/health"));
         assert!(paths.contains_key("/web-ui"));
         assert!(paths.contains_key("/chat/stream"));
+        assert!(paths.contains_key("/conversation/messages"));
         assert!(paths.contains_key("/openapi.json"));
         assert!(v["components"]["securitySchemes"]["bearerAuth"].is_object());
         assert!(v["components"]["securitySchemes"]["apiKeyAuth"].is_object());

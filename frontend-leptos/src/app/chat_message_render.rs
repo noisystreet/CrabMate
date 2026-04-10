@@ -750,6 +750,12 @@ pub(crate) fn chat_message_row(
                                                                 sessions.update(|list| {
                                                                     let aid = active_id
                                                                         .get_untracked();
+                                                                    if let Some(s) =
+                                                                        list.iter_mut().find(|x| x.id == aid)
+                                                                    {
+                                                                        s.server_revision =
+                                                                            Some(new_rev);
+                                                                    }
                                                                     prep = truncate_at_user_message_and_prepare_regenerate(
                                                                         list,
                                                                         &aid,
@@ -855,6 +861,12 @@ pub(crate) fn chat_message_row(
                                                                 sessions.update(|list| {
                                                                     let aid = active_id
                                                                         .get_untracked();
+                                                                    if let Some(s) =
+                                                                        list.iter_mut().find(|x| x.id == aid)
+                                                                    {
+                                                                        s.server_revision =
+                                                                            Some(new_rev);
+                                                                    }
                                                                     let _ = truncate_at_user_message_branch_local(
                                                                         list,
                                                                         &aid,

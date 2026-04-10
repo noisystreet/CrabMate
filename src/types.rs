@@ -129,6 +129,15 @@ pub fn is_message_excluded_from_llm_context_except_memory(m: &Message) -> bool {
     is_chat_ui_separator(m) || is_chat_timeline_marker(m)
 }
 
+/// 供 **`GET /conversation/messages`** 等客户端只读视图：去掉不应展示的会话内注入（与落盘前 `strip_*` 一致）。
+pub fn filter_messages_for_web_client_snapshot(messages: &[Message]) -> Vec<Message> {
+    messages
+        .iter()
+        .filter(|m| !is_long_term_memory_injection(m) && !is_workspace_changelist_injection(m))
+        .cloned()
+        .collect()
+}
+
 /// 长期记忆注入条目的 `user.name`；仅供模型上下文使用，**不得**发往供应商 API。
 pub const CRABMATE_LONG_TERM_MEMORY_NAME: &str = "crabmate_long_term_memory";
 
@@ -749,6 +758,33 @@ pub const SSE_STREAM_CANCELLED_CODE: &str = "STREAM_CANCELLED";
 #[cfg(test)]
 mod api_messages_strip_tests {
     use super::*;
+
+    #[test]
+    fn filter_web_client_snapshot_drops_injections() {
+        let inj_mem = Message {
+            role: "user".to_string(),
+            content: Some(MessageContent::Text("mem".to_string())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some(CRABMATE_LONG_TERM_MEMORY_NAME.to_string()),
+            tool_call_id: None,
+        };
+        let inj_cl = Message {
+            role: "user".to_string(),
+            content: Some(MessageContent::Text("cl".to_string())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some(CRABMATE_WORKSPACE_CHANGELIST_NAME.to_string()),
+            tool_call_id: None,
+        };
+        let plain = Message::user_only("hi");
+        let v = vec![inj_mem, inj_cl, plain.clone()];
+        let out = filter_messages_for_web_client_snapshot(&v);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], plain);
+    }
 
     #[test]
     fn skip_ui_separator_and_strip_reasoning_one_pass() {

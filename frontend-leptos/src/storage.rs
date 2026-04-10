@@ -45,6 +45,12 @@ pub struct ChatSession {
     /// 收藏：侧栏排序次于置顶、优于仅按时间。
     #[serde(default)]
     pub starred: bool,
+    /// 与服务端 `conversation_id` 对齐（`POST /chat/stream` 响应头或 `GET /conversation/messages`）；无则纯本地会话。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_conversation_id: Option<String>,
+    /// 最近一次已知的 `conversation_saved.revision` 或服务端 `GET /conversation/messages` 的 revision。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_revision: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -117,6 +123,8 @@ pub fn ensure_at_least_one(
         updated_at: now,
         pinned: false,
         starred: false,
+        server_conversation_id: None,
+        server_revision: None,
     };
     let id = s.id.clone();
     sessions.push(s);
