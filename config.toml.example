@@ -25,6 +25,8 @@
 # system_prompt_file = "config/prompts/code_system.md"
 # tool_message_max_chars = 32768
 # tool_result_envelope_v1 = true
+# SSE `tool_call` 是否额外下发脱敏后的 `arguments`（默认 false）；AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS
+# sse_tool_call_include_arguments = false
 # 进程内工具统计 → 新会话 system 附录（默认关）：agent_tool_stats_enabled = true ；AGENT_TOOL_STATS_* 见 docs/CONFIGURATION.md
 # agent_tool_stats_enabled = false
 # 整请求 Chrome Trace：export CRABMATE_REQUEST_CHROME_TRACE_DIR=/tmp/crabmate-turns（见 docs/CONFIGURATION.md）

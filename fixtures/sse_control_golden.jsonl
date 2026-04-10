@@ -13,6 +13,8 @@ staged_plan_finished	{"v":1,"staged_plan_finished":{"plan_id":"p1","total_steps"
 clarification_questionnaire	{"v":1,"clarification_questionnaire":{"questionnaire_id":"q1","intro":"请补充","questions":[{"id":"a","label":"A?","required":true}]}}	handled
 workspace_changed	{"v":1,"workspace_changed":true}	handled
 tool_call 有 summary	{"v":1,"tool_call":{"name":"read_file","summary":"读：a.rs"}}	handled
+tool_call 仅有 arguments_preview	{"v":1,"tool_call":{"name":"read_file","summary":"","arguments_preview":"{\"path\":\"a.rs\"}"}}	handled
+tool_call 仅有 arguments（脱敏后）	{"v":1,"tool_call":{"name":"http_fetch","summary":"","arguments":"{\"url\":\"https://x\"}"}}	handled
 tool_call 无 summary 当正文	{"v":1,"tool_call":{"name":"read_file"}}	plain
 parsing_tool_calls	{"v":1,"parsing_tool_calls":true}	handled
 tool_running	{"v":1,"tool_running":false}	handled

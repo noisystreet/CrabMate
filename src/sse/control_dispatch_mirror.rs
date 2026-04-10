@@ -50,11 +50,22 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
         return "handled";
     }
 
-    if let Some(Value::Object(tc)) = obj.get("tool_call")
-        && let Some(Value::String(s)) = tc.get("summary")
-        && !s.is_empty()
-    {
-        return "handled";
+    if let Some(Value::Object(tc)) = obj.get("tool_call") {
+        let summary_ok = tc
+            .get("summary")
+            .and_then(|x| x.as_str())
+            .is_some_and(|s| !s.is_empty());
+        let preview_ok = tc
+            .get("arguments_preview")
+            .and_then(|x| x.as_str())
+            .is_some_and(|s| !s.is_empty());
+        let args_ok = tc
+            .get("arguments")
+            .and_then(|x| x.as_str())
+            .is_some_and(|s| !s.is_empty());
+        if summary_ok || preview_ok || args_ok {
+            return "handled";
+        }
     }
 
     if let Some(Value::Bool(_)) = obj.get("parsing_tool_calls") {

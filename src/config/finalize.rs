@@ -346,6 +346,7 @@ pub(super) fn finalize(
         .unwrap_or(32768)
         .clamp(1024, 1_048_576) as usize;
     let tool_result_envelope_v1 = b.tool_result_envelope_v1.unwrap_or(true);
+    let sse_tool_call_include_arguments = b.sse_tool_call_include_arguments.unwrap_or(false);
     let agent_tool_stats_enabled = b.agent_tool_stats_enabled.unwrap_or(false);
     let agent_tool_stats_window_events = b
         .agent_tool_stats_window_events
@@ -743,6 +744,7 @@ pub(super) fn finalize(
         cursor_rules_max_chars: cursor_rules_max_chars as usize,
         tool_message_max_chars,
         tool_result_envelope_v1,
+        sse_tool_call_include_arguments,
         agent_tool_stats_enabled,
         agent_tool_stats_window_events,
         agent_tool_stats_min_samples,
