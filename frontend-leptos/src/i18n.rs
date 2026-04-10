@@ -502,6 +502,41 @@ pub fn nav_search_hits_region(l: Locale) -> &'static str {
     }
 }
 
+/// 侧栏会话列表空白处右键菜单：打开筛选 + 跨会话搜索。
+pub fn nav_rail_ctx_filter_and_search(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "筛选会话与搜索消息…",
+        Locale::En => "Filter sessions & search messages…",
+    }
+}
+
+/// 侧栏会话列表空白处右键菜单：打开主区当前会话查找条。
+pub fn nav_rail_ctx_find_in_chat(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "当前会话内查找…",
+        Locale::En => "Find in current chat…",
+    }
+}
+
+pub fn nav_hide_search_panel(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "收起筛选与搜索",
+        Locale::En => "Hide filter & search",
+    }
+}
+
+pub fn nav_hide_search_panel_aria(l: Locale) -> &'static str {
+    nav_hide_search_panel(l)
+}
+
+/// 悬停于会话列表区时的提示：如何打开筛选/搜索。
+pub fn nav_rail_scroll_search_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "在列表空白处右键可打开筛选与搜索",
+        Locale::En => "Right-click empty area here for filter & search",
+    }
+}
+
 pub fn ctx_export_json(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "导出 JSON",
@@ -989,14 +1024,6 @@ pub fn bubble_md_toggle_aria(l: Locale) -> &'static str {
         Locale::ZhHans => "多选导出 Markdown",
         Locale::En => "Select for Markdown export",
     }
-}
-
-pub fn chat_find_toggle_title(l: Locale) -> &'static str {
-    chat_find_region(l)
-}
-
-pub fn chat_find_toggle_aria(l: Locale) -> &'static str {
-    chat_find_region(l)
 }
 
 pub fn timeline_panel_toggle_label(l: Locale) -> &'static str {

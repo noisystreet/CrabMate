@@ -1,7 +1,8 @@
 //! 左侧导航：品牌、新对话、会话筛选与列表、全文搜索命中、会话右键菜单。
 //!
-//! 「筛选会话」「搜索消息」输入框仍即时写入 `sidebar_session_query` / `global_message_query`；
-//! 列表与 `collect_message_search_hits` 使用防抖后的副本，避免每次 `input` 全量遍历。
+//! 「筛选会话」「搜索消息」输入区默认收起，在会话列表空白处右键打开；展开后输入仍即时写入
+//! `sidebar_session_query` / `global_message_query`；列表与 `collect_message_search_hits` 使用防抖后的副本，
+//! 避免每次 `input` 全量遍历。收起时列表不按搜索条件过滤。
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -11,6 +12,7 @@ use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
+use wasm_bindgen::JsCast;
 
 use crate::debounce_schedule;
 use crate::i18n::{self, Locale};
@@ -51,6 +53,17 @@ fn debounce_signal_to_effect(source: RwSignal<String>, target: RwSignal<String>,
     });
 }
 
+fn rail_context_menu_target_is_session_row_or_hit(ev: &web_sys::MouseEvent) -> bool {
+    let Some(t) = ev.target() else {
+        return false;
+    };
+    let Ok(el) = t.dyn_into::<web_sys::Element>() else {
+        return false;
+    };
+    el.closest(".nav-session-item").ok().flatten().is_some()
+        || el.closest(".nav-search-hit").ok().flatten().is_some()
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn sidebar_nav_view(
     locale: RwSignal<Locale>,
@@ -59,6 +72,9 @@ pub fn sidebar_nav_view(
     new_session: impl Fn() + Clone + 'static,
     sidebar_session_query: RwSignal<String>,
     global_message_query: RwSignal<String>,
+    sidebar_search_panel_open: RwSignal<bool>,
+    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
+    chat_find_panel_open: RwSignal<bool>,
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
@@ -120,35 +136,69 @@ pub fn sidebar_nav_view(
             >
                 {move || i18n::nav_manage_sessions(locale.get())}
             </button>
-            <div class="nav-rail-search">
-                <label class="nav-rail-search-label" for="nav-session-filter">{move || i18n::nav_filter_sessions(locale.get())}</label>
-                <input
-                    id="nav-session-filter"
-                    type="search"
-                    class="nav-session-search-input"
-                    prop:placeholder=move || i18n::nav_ph_filter(locale.get())
-                    prop:value=move || sidebar_session_query.get()
-                    on:input=move |ev| {
-                        sidebar_session_query.set(event_target_value(&ev));
+            <Show when=move || sidebar_search_panel_open.get()>
+                <div class="nav-rail-search">
+                    <div class="nav-rail-search-header">
+                        <button
+                            type="button"
+                            class="btn btn-nav-ghost-ds nav-rail-search-hide"
+                            prop:aria-label=move || i18n::nav_hide_search_panel_aria(locale.get())
+                            on:click=move |_| sidebar_search_panel_open.set(false)
+                        >
+                            {move || i18n::nav_hide_search_panel(locale.get())}
+                        </button>
+                    </div>
+                    <label class="nav-rail-search-label" for="nav-session-filter">{move || i18n::nav_filter_sessions(locale.get())}</label>
+                    <input
+                        id="nav-session-filter"
+                        type="search"
+                        class="nav-session-search-input"
+                        prop:placeholder=move || i18n::nav_ph_filter(locale.get())
+                        prop:value=move || sidebar_session_query.get()
+                        on:input=move |ev| {
+                            sidebar_session_query.set(event_target_value(&ev));
+                        }
+                    />
+                    <label class="nav-rail-search-label" for="nav-msg-search">{move || i18n::nav_search_messages(locale.get())}</label>
+                    <input
+                        id="nav-msg-search"
+                        type="search"
+                        class="nav-global-search-input"
+                        prop:placeholder=move || i18n::nav_ph_global_search(locale.get())
+                        prop:value=move || global_message_query.get()
+                        on:input=move |ev| {
+                            global_message_query.set(event_target_value(&ev));
+                        }
+                    />
+                </div>
+            </Show>
+            <div
+                class="nav-rail-scroll"
+                prop:title=move || i18n::nav_rail_scroll_search_hint(locale.get())
+                on:contextmenu=move |ev: web_sys::MouseEvent| {
+                    if rail_context_menu_target_is_session_row_or_hit(&ev) {
+                        return;
                     }
-                />
-                <label class="nav-rail-search-label" for="nav-msg-search">{move || i18n::nav_search_messages(locale.get())}</label>
-                <input
-                    id="nav-msg-search"
-                    type="search"
-                    class="nav-global-search-input"
-                    prop:placeholder=move || i18n::nav_ph_global_search(locale.get())
-                    prop:value=move || global_message_query.get()
-                    on:input=move |ev| {
-                        global_message_query.set(event_target_value(&ev));
-                    }
-                />
-            </div>
-            <div class="nav-rail-scroll">
+                    ev.prevent_default();
+                    ev.stop_propagation();
+                    session_context_menu.set(None);
+                    let (x, y) = clamp_session_ctx_menu_pos(ev.client_x(), ev.client_y());
+                    sidebar_rail_ctx_menu.set(Some((x, y)));
+                }
+            >
                 <div class="nav-rail-scroll-label">{move || i18n::nav_recent(locale.get())}</div>
                 {move || {
-                    let needle = normalize_search_query(&sidebar_filter_debounced.get());
-                    let msg_needle = normalize_search_query(&global_message_filter_debounced.get());
+                    let search_ui_open = sidebar_search_panel_open.get();
+                    let needle = if search_ui_open {
+                        normalize_search_query(&sidebar_filter_debounced.get())
+                    } else {
+                        String::new()
+                    };
+                    let msg_needle = if search_ui_open {
+                        normalize_search_query(&global_message_filter_debounced.get())
+                    } else {
+                        String::new()
+                    };
                     let v: Vec<ChatSession> = sorted_sessions_clone(&sessions.get())
                         .into_iter()
                         .filter(|s| session_title_matches(s, &needle))
@@ -198,6 +248,7 @@ pub fn sidebar_nav_view(
                                                     );
                                                 }
                                                 session_context_menu.set(None);
+                                                sidebar_rail_ctx_menu.set(None);
                                                 active_id.set(sid.clone());
                                                 draft.set(
                                                     sessions.with(|list| {
@@ -260,6 +311,7 @@ pub fn sidebar_nav_view(
                                     on:contextmenu=move |ev: web_sys::MouseEvent| {
                                         ev.prevent_default();
                                         ev.stop_propagation();
+                                        sidebar_rail_ctx_menu.set(None);
                                         let (x, y) = clamp_session_ctx_menu_pos(
                                             ev.client_x(),
                                             ev.client_y(),
@@ -283,6 +335,7 @@ pub fn sidebar_nav_view(
                                                 );
                                             }
                                             session_context_menu.set(None);
+                                            sidebar_rail_ctx_menu.set(None);
                                             active_id.set(id.clone());
                                             draft.set(
                                                 sessions.with(|list| {
@@ -497,6 +550,50 @@ pub fn sidebar_nav_view(
                     }
                 >
                     {move || i18n::ctx_delete_session(locale.get())}
+                </button>
+            </div>
+            </div>
+        </Show>
+
+        <Show when=move || sidebar_rail_ctx_menu.get().is_some()>
+            <div class="session-ctx-layer">
+            <div
+                class="session-ctx-backdrop"
+                aria-hidden="true"
+                on:click=move |_| sidebar_rail_ctx_menu.set(None)
+            ></div>
+            <div
+                class="session-ctx-menu"
+                role="menu"
+                on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation()
+                style=move || {
+                    sidebar_rail_ctx_menu
+                        .get()
+                        .map(|(x, y)| format!("left:{}px;top:{}px;", x, y))
+                        .unwrap_or_default()
+                }
+            >
+                <button
+                    type="button"
+                    class="session-ctx-item"
+                    role="menuitem"
+                    on:click=move |_| {
+                        sidebar_rail_ctx_menu.set(None);
+                        sidebar_search_panel_open.set(true);
+                    }
+                >
+                    {move || i18n::nav_rail_ctx_filter_and_search(locale.get())}
+                </button>
+                <button
+                    type="button"
+                    class="session-ctx-item"
+                    role="menuitem"
+                    on:click=move |_| {
+                        sidebar_rail_ctx_menu.set(None);
+                        chat_find_panel_open.set(true);
+                    }
+                >
+                    {move || i18n::nav_rail_ctx_find_in_chat(locale.get())}
                 </button>
             </div>
             </div>
