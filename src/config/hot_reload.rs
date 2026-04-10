@@ -162,4 +162,11 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.tool_registry_sync_default_inline_tools =
         src.tool_registry_sync_default_inline_tools.clone();
     dst.tool_registry_write_effect_tools = src.tool_registry_write_effect_tools.clone();
+    dst.tool_registry_sub_agent_patch_write_extra_tools =
+        src.tool_registry_sub_agent_patch_write_extra_tools.clone();
+    dst.tool_registry_sub_agent_test_runner_extra_tools =
+        src.tool_registry_sub_agent_test_runner_extra_tools.clone();
+    dst.tool_registry_sub_agent_review_readonly_deny_tools = src
+        .tool_registry_sub_agent_review_readonly_deny_tools
+        .clone();
 }

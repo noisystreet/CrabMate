@@ -34,6 +34,15 @@ pub(super) struct ToolRegistrySection {
     pub(super) sync_default_inline_tools: Option<Vec<String>>,
     /// 视为「有写副作用」的工具名（`is_readonly_tool` 为假）；省略则用内建默认表。
     pub(super) write_effect_tools: Option<Vec<String>>,
+    /// 分阶段 `executor_kind: patch_write` 在默认补丁名之外额外允许的写类工具名。
+    #[serde(default)]
+    pub(super) sub_agent_patch_write_extra_tools: Option<Vec<String>>,
+    /// 分阶段 `executor_kind: test_runner` 在默认测试运行器名之外额外允许的测试类工具名。
+    #[serde(default)]
+    pub(super) sub_agent_test_runner_extra_tools: Option<Vec<String>>,
+    /// 分阶段 `executor_kind: review_readonly` 下显式禁止的工具名（精确匹配，优先于只读判定）。
+    #[serde(default)]
+    pub(super) sub_agent_review_readonly_deny_tools: Option<Vec<String>>,
 }
 
 /// 与 `config/agent_roles.toml` 中 `[[agent_roles]]` 一行对应

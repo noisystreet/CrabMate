@@ -114,6 +114,7 @@ pub(crate) fn staged_plan_optimizer_user_body(
          - 将**连续、彼此无数据依赖**且主要为**只读探查**的子目标合并为更少的大步（一步内可安排**多次**工具调用）。\n\
          {batch_tools_line}\n\
          - **不要**把「必须先读后写」或「必须先分析再改」的强依赖硬塞进同一步；写盘、`run_command`、网络变更类步骤保持独立或放在只读探查之后。\n\
+         - 若各步带有 `executor_kind`（`review_readonly` / `patch_write` / `test_runner`），优化后**应保留**其分步工具边界，除非合并步在语义上仍满足同一角色。\n\
          - 若原规划已足够紧凑，可原样返回（`steps` 与下列列表等价即可）。\n\n\
          **输出要求**：仅输出一段可解析的 `agent_reply_plan` v1 JSON（可用 ```json 围栏），`type`/`version`/`steps` 与既有 schema 一致；`no_task` 须为 false 且 `steps` 非空。\n\n\
          Schema：{}\n\

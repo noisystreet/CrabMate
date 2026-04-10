@@ -29,7 +29,8 @@ pub(crate) fn staged_plan_phase_instruction_default() -> String {
          请仅根据用户消息做任务拆解，不要调用任何工具，不要执行命令或读写文件。\n\
          在回复正文中必须用 Markdown 代码围栏（语言标记为 json）给出一个合法 JSON 对象，且满足：\n\
          {}\n\
-         可辅以简短自然语言说明；有具体任务时后续系统将按 steps 顺序逐步下发执行指令。",
+         可辅以简短自然语言说明；有具体任务时后续系统将按 steps 顺序逐步下发执行指令。\n\
+         涉及「先审读、再改代码、再跑测」时，请为相应步设置 `executor_kind`（`review_readonly` → `patch_write` → `test_runner`），以收窄每步可见工具。",
         crate::agent::plan_artifact::PLAN_V1_SCHEMA_RULES,
     )
 }
@@ -128,6 +129,7 @@ pub(crate) async fn send_staged_plan_step_started(
     step_index: usize,
     total_steps: usize,
     description: &str,
+    executor_kind: Option<&str>,
 ) {
     let Some(tx) = out else {
         return;
@@ -141,6 +143,7 @@ pub(crate) async fn send_staged_plan_step_started(
                 step_index,
                 total_steps,
                 description: description.to_string(),
+                executor_kind: executor_kind.map(|s| s.to_string()),
             },
         }),
         "staged_sse::staged_plan_step_started",

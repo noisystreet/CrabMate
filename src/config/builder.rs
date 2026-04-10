@@ -139,6 +139,9 @@ pub(crate) struct ConfigBuilder {
     pub(crate) tool_registry_parallel_sync_denied_prefixes: Option<Vec<String>>,
     pub(crate) tool_registry_sync_default_inline_tools: Option<Vec<String>>,
     pub(crate) tool_registry_write_effect_tools: Option<Vec<String>>,
+    pub(crate) tool_registry_sub_agent_patch_write_extra_tools: Option<Vec<String>>,
+    pub(crate) tool_registry_sub_agent_test_runner_extra_tools: Option<Vec<String>>,
+    pub(crate) tool_registry_sub_agent_review_readonly_deny_tools: Option<Vec<String>>,
     /// Web/CLI 未指定 `agent_role` 时使用的默认角色 id（须存在于角色表；与 `agent_roles.toml` / `AGENT_DEFAULT_AGENT_ROLE` 一致）
     pub(crate) default_agent_role_id: Option<String>,
     /// `id -> 未合并条目`；在 [`finalize`] 中与全局 cursor rules 设置一并落成 `AgentConfig.agent_roles`。
@@ -570,6 +573,15 @@ impl ConfigBuilder {
         }
         if let Some(v) = tr.write_effect_tools {
             self.tool_registry_write_effect_tools = Some(v);
+        }
+        if let Some(v) = tr.sub_agent_patch_write_extra_tools {
+            self.tool_registry_sub_agent_patch_write_extra_tools = Some(v);
+        }
+        if let Some(v) = tr.sub_agent_test_runner_extra_tools {
+            self.tool_registry_sub_agent_test_runner_extra_tools = Some(v);
+        }
+        if let Some(v) = tr.sub_agent_review_readonly_deny_tools {
+            self.tool_registry_sub_agent_review_readonly_deny_tools = Some(v);
         }
     }
 }
