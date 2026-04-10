@@ -7,7 +7,7 @@ use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-use crate::types::{FunctionCall, Message, ToolCall};
+use crate::types::{FunctionCall, Message, MessageContent, ToolCall};
 
 /// 流式聚合等场景下 API 可能留下 **`function.name` 全空** 的占位 `tool_calls`，与「无 tool_calls」等价，不应阻止从正文 DSML 物化。
 fn has_usable_native_tool_calls(tcs: &[ToolCall]) -> bool {
@@ -262,7 +262,7 @@ pub fn materialize_deepseek_dsml_tool_calls_in_message(msg: &mut Message, enable
     {
         return;
     }
-    let c = msg.content.as_deref().unwrap_or("");
+    let c = crate::types::message_content_as_str(&msg.content).unwrap_or("");
     let r = msg.reasoning_content.as_deref().unwrap_or("");
     if c.is_empty() && r.is_empty() {
         return;
@@ -314,7 +314,15 @@ pub fn materialize_deepseek_dsml_tool_calls_in_message(msg: &mut Message, enable
             *s = Some(u.to_string());
         }
     }
-    trim_stripped_field(&mut msg.content);
+    if let Some(MessageContent::Text(ref mut s)) = msg.content {
+        let stripped = strip_deepseek_dsml_for_display(s);
+        let u = stripped.trim();
+        if u.is_empty() {
+            msg.content = None;
+        } else {
+            *s = u.to_string();
+        }
+    }
     trim_stripped_field(&mut msg.reasoning_content);
 }
 
@@ -642,7 +650,7 @@ mod tests {
 </|DSML|function_calls>"#;
         let mut msg = Message {
             role: "assistant".to_string(),
-            content: Some(dsml.to_string()),
+            content: Some(dsml.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -656,7 +664,7 @@ mod tests {
         let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
         assert_eq!(v.get("path").and_then(|x| x.as_str()), Some("1.md"));
         assert_eq!(v.get("content").and_then(|x| x.as_str()), Some("# 标题"));
-        let prose = msg.content.as_deref().unwrap_or("");
+        let prose = crate::types::message_content_as_str(&msg.content).unwrap_or("");
         assert!(prose.contains("将更新"));
         assert!(!prose.contains("DSML"));
     }
@@ -668,7 +676,7 @@ mod tests {
 </|DSML|invoke>"#;
         let mut msg = Message {
             role: "assistant".to_string(),
-            content: Some(dsml.to_string()),
+            content: Some(dsml.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -677,7 +685,11 @@ mod tests {
         };
         materialize_deepseek_dsml_tool_calls_in_message(&mut msg, false);
         assert!(msg.tool_calls.is_none());
-        assert!(msg.content.as_deref().unwrap_or("").contains("DSML"));
+        assert!(
+            crate::types::message_content_as_str(&msg.content)
+                .unwrap_or("")
+                .contains("DSML")
+        );
     }
 
     #[test]
@@ -690,7 +702,7 @@ mod tests {
 </|DSML|invoke>"#;
         let mut msg = Message {
             role: "assistant".to_string(),
-            content: Some(dsml.to_string()),
+            content: Some(dsml.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -717,7 +729,7 @@ mod tests {
 </|DSML|invoke>"#;
         let mut msg = Message {
             role: "assistant".to_string(),
-            content: Some(dsml.to_string()),
+            content: Some(dsml.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -740,7 +752,7 @@ mod tests {
 </|DSML|function_calls>"#;
         let mut msg = Message {
             role: "assistant".to_string(),
-            content: Some(dsml.to_string()),
+            content: Some(dsml.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -799,7 +811,7 @@ Line2</|DSML|parameter>
 </|DSML|function_calls>"#;
         let mut msg = Message {
             role: "assistant".to_string(),
-            content: Some(dsml.to_string()),
+            content: Some(dsml.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: Some(vec![ToolCall {
@@ -837,7 +849,7 @@ Line2</|DSML|parameter>
 </｜DSML｜function_calls>";
         let mut msg = Message {
             role: "assistant".to_string(),
-            content: Some(dsml.to_string()),
+            content: Some(dsml.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -851,7 +863,11 @@ Line2</|DSML|parameter>
         let v: Value = serde_json::from_str(&tcs[0].function.arguments).unwrap();
         assert_eq!(v.get("path").and_then(|x| x.as_str()), Some("1.md"));
         assert_eq!(v.get("content").and_then(|x| x.as_str()), Some(""));
-        assert!(!msg.content.as_deref().unwrap_or("").contains("DSML"));
+        assert!(
+            !crate::types::message_content_as_str(&msg.content)
+                .unwrap_or("")
+                .contains("DSML")
+        );
     }
 
     #[test]
@@ -861,7 +877,7 @@ Line2</|DSML|parameter>
 </|DSML|invoke>"#;
         let mut msg = Message {
             role: "assistant".to_string(),
-            content: Some(dsml.to_string()),
+            content: Some(dsml.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: Some(vec![ToolCall {

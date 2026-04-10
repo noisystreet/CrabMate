@@ -811,6 +811,20 @@ pub fn composer_send_aria(l: Locale) -> &'static str {
     }
 }
 
+pub fn composer_attach_image_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "附加图片",
+        Locale::En => "Attach image",
+    }
+}
+
+pub fn composer_remove_image_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "移除图片",
+        Locale::En => "Remove image",
+    }
+}
+
 pub fn bubble_md_toggle_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "多选消息导出 Markdown（聊天区亦可右键）",

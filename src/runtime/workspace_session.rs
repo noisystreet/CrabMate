@@ -69,7 +69,9 @@ pub fn load_workspace_session(
     }
     let mut msgs = parsed.messages;
     if msgs.first().is_some_and(|m| m.role == "system") {
-        msgs[0].content = Some(system_prompt.to_string());
+        msgs[0].content = Some(crate::types::MessageContent::Text(
+            system_prompt.to_string(),
+        ));
     } else {
         msgs.insert(0, Message::system_only(system_prompt.to_string()));
     }
@@ -180,7 +182,7 @@ mod tests {
     fn msg(role: &str, content: &str) -> Message {
         Message {
             role: role.to_string(),
-            content: Some(content.to_string()),
+            content: Some(content.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -201,8 +203,14 @@ mod tests {
         let t = truncate_loaded_messages(v, 3);
         assert_eq!(t.len(), 3);
         assert_eq!(t[0].role, "system");
-        assert_eq!(t[1].content.as_deref(), Some("c"));
-        assert_eq!(t[2].content.as_deref(), Some("d"));
+        assert_eq!(
+            crate::types::message_content_as_str(&t[1].content),
+            Some("c")
+        );
+        assert_eq!(
+            crate::types::message_content_as_str(&t[2].content),
+            Some("d")
+        );
     }
 
     #[test]
@@ -224,7 +232,10 @@ mod tests {
         assert_eq!(t.len(), 3);
         assert_eq!(t[0].role, "system");
         assert_eq!(t[1].role, "user");
-        assert_eq!(t[1].content.as_deref(), Some("old_u"));
+        assert_eq!(
+            crate::types::message_content_as_str(&t[1].content),
+            Some("old_u")
+        );
         assert_eq!(t[2].role, "assistant");
     }
 
@@ -234,7 +245,10 @@ mod tests {
         let full = vec![msg("system", "b"), msg("user", "ctx")];
         super::merge_initial_workspace_into(&mut m, full);
         assert_eq!(m.len(), 2);
-        assert_eq!(m[1].content.as_deref(), Some("ctx"));
+        assert_eq!(
+            crate::types::message_content_as_str(&m[1].content),
+            Some("ctx")
+        );
     }
 
     #[test]
@@ -243,8 +257,14 @@ mod tests {
         let full = vec![msg("system", "s2"), msg("user", "ctx")];
         super::merge_initial_workspace_into(&mut m, full);
         assert_eq!(m.len(), 3);
-        assert_eq!(m[1].content.as_deref(), Some("ctx"));
-        assert_eq!(m[2].content.as_deref(), Some("hi"));
+        assert_eq!(
+            crate::types::message_content_as_str(&m[1].content),
+            Some("ctx")
+        );
+        assert_eq!(
+            crate::types::message_content_as_str(&m[2].content),
+            Some("hi")
+        );
     }
 
     #[test]
@@ -257,7 +277,10 @@ mod tests {
         ];
         super::merge_initial_workspace_into(&mut m, full);
         assert_eq!(m.len(), 2);
-        assert_eq!(m[1].content.as_deref(), Some("hi"));
+        assert_eq!(
+            crate::types::message_content_as_str(&m[1].content),
+            Some("hi")
+        );
     }
 
     #[test]

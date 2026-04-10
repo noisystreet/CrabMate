@@ -1,5 +1,5 @@
 mod push_assistant_merge_tests {
-    use crate::types::Message;
+    use crate::types::{Message, MessageContent, message_content_as_str};
 
     use super::super::messages::push_assistant_merging_trailing_empty_placeholder;
     use super::super::staged::{
@@ -9,7 +9,7 @@ mod push_assistant_merge_tests {
     fn empty_assistant() -> Message {
         Message {
             role: "assistant".to_string(),
-            content: Some(String::new()),
+            content: Some(MessageContent::Text(String::new())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -21,7 +21,7 @@ mod push_assistant_merge_tests {
     fn assistant_body(s: &str) -> Message {
         Message {
             role: "assistant".to_string(),
-            content: Some(s.to_string()),
+            content: Some(MessageContent::Text(s.to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -35,7 +35,7 @@ mod push_assistant_merge_tests {
         let mut m = vec![Message::user_only("hi"), empty_assistant()];
         push_assistant_merging_trailing_empty_placeholder(&mut m, assistant_body("plan"));
         assert_eq!(m.len(), 2);
-        assert_eq!(m[1].content.as_deref(), Some("plan"));
+        assert_eq!(message_content_as_str(&m[1].content), Some("plan"));
     }
 
     #[test]
@@ -43,7 +43,7 @@ mod push_assistant_merge_tests {
         let mut m = vec![Message::user_only("hi"), assistant_body("first")];
         push_assistant_merging_trailing_empty_placeholder(&mut m, assistant_body("second"));
         assert_eq!(m.len(), 3);
-        assert_eq!(m[2].content.as_deref(), Some("second"));
+        assert_eq!(message_content_as_str(&m[2].content), Some("second"));
     }
 
     #[test]
@@ -54,7 +54,7 @@ mod push_assistant_merge_tests {
             assistant_body("a1"),
             Message {
                 role: "tool".to_string(),
-                content: Some("tool out".to_string()),
+                content: Some(MessageContent::Text("tool out".to_string())),
                 reasoning_content: None,
                 reasoning_details: None,
                 tool_calls: None,
@@ -66,7 +66,7 @@ mod push_assistant_merge_tests {
         assert_eq!(out.len(), 5);
         assert_eq!(out[3].role, "tool");
         assert_eq!(out[4].role, "system");
-        assert_eq!(out[4].content.as_deref(), Some("plan sys"));
+        assert_eq!(message_content_as_str(&out[4].content), Some("plan sys"));
     }
 
     #[test]
@@ -78,7 +78,7 @@ mod push_assistant_merge_tests {
             empty_assistant(),
             Message {
                 role: "tool".to_string(),
-                content: Some("tool out".to_string()),
+                content: Some(MessageContent::Text("tool out".to_string())),
                 reasoning_content: None,
                 reasoning_details: None,
                 tool_calls: None,
@@ -92,7 +92,7 @@ mod push_assistant_merge_tests {
         assert_eq!(out[1].role, "user");
         assert_eq!(out[2].role, "assistant");
         assert_eq!(out[3].role, "system");
-        assert_eq!(out[3].content.as_deref(), Some("plan sys"));
+        assert_eq!(message_content_as_str(&out[3].content), Some("plan sys"));
         assert!(!out.iter().any(|m| m.role == "tool"));
     }
 }
@@ -166,7 +166,7 @@ mod per_reflect_tests {
     use crate::agent::agent_turn::RunLoopParams;
     use crate::agent::per_coord::{FinalPlanRequirementMode, PerCoordinator, PerCoordinatorInit};
     use crate::llm::OPENAI_COMPAT_BACKEND;
-    use crate::types::{FunctionCall, LlmSeedOverride, Message, ToolCall};
+    use crate::types::{FunctionCall, LlmSeedOverride, Message, MessageContent, ToolCall};
 
     use super::super::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 
@@ -185,7 +185,7 @@ mod per_reflect_tests {
         });
         let msg = Message {
             role: "assistant".to_string(),
-            content: Some("ok".to_string()),
+            content: Some(MessageContent::Text("ok".to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: Some(vec![ToolCall {

@@ -77,7 +77,7 @@ pub fn truncate_at_user_message_and_prepare_regenerate(
     sessions: &mut [ChatSession],
     active_id: &str,
     user_msg_id: &str,
-) -> Option<(String, String)> {
+) -> Option<(String, Vec<String>, String)> {
     let s = sessions.iter_mut().find(|sess| sess.id == active_id)?;
     let idx = s.messages.iter().position(|m| m.id == user_msg_id)?;
     let um = s.messages.get(idx)?;
@@ -86,6 +86,7 @@ pub fn truncate_at_user_message_and_prepare_regenerate(
     }
     let user_msg = um.clone();
     let user_text = user_msg.text.clone();
+    let user_images = user_msg.image_urls.clone();
     s.messages.truncate(idx);
     s.messages.push(user_msg);
     let new_asst_id = make_message_id();
@@ -94,11 +95,12 @@ pub fn truncate_at_user_message_and_prepare_regenerate(
         id: new_asst_id.clone(),
         role: "assistant".to_string(),
         text: String::new(),
+        image_urls: vec![],
         state: Some("loading".to_string()),
         is_tool: false,
         created_at: now,
     });
-    Some((user_text, new_asst_id))
+    Some((user_text, user_images, new_asst_id))
 }
 
 /// 截断到指定用户消息之前（含该条及之后全部移除），不追加助手泡。
@@ -128,7 +130,7 @@ pub fn prepare_retry_failed_assistant_turn(
     sessions: &mut [ChatSession],
     active_id: &str,
     failed_asst_id: &str,
-) -> Option<(String, String)> {
+) -> Option<(String, Vec<String>, String)> {
     let s = sessions.iter_mut().find(|sess| sess.id == active_id)?;
     let idx = s.messages.iter().position(|m| {
         m.id == failed_asst_id
@@ -143,6 +145,7 @@ pub fn prepare_retry_failed_assistant_turn(
         return None;
     }
     let user_text = s.messages[idx - 1].text.clone();
+    let user_images = s.messages[idx - 1].image_urls.clone();
     s.messages.truncate(idx);
     let new_asst_id = make_message_id();
     let now = message_created_ms();
@@ -150,11 +153,12 @@ pub fn prepare_retry_failed_assistant_turn(
         id: new_asst_id.clone(),
         role: "assistant".to_string(),
         text: String::new(),
+        image_urls: vec![],
         state: Some("loading".to_string()),
         is_tool: false,
         created_at: now,
     });
-    Some((user_text, new_asst_id))
+    Some((user_text, user_images, new_asst_id))
 }
 
 pub fn message_created_ms() -> i64 {
@@ -413,6 +417,7 @@ mod message_branch_tests {
                 id: "1".into(),
                 role: "user".into(),
                 text: "a".into(),
+                image_urls: vec![],
                 state: None,
                 is_tool: false,
                 created_at: 0,
@@ -421,6 +426,7 @@ mod message_branch_tests {
                 id: "2".into(),
                 role: "assistant".into(),
                 text: "b".into(),
+                image_urls: vec![],
                 state: None,
                 is_tool: false,
                 created_at: 0,
@@ -429,6 +435,7 @@ mod message_branch_tests {
                 id: "3".into(),
                 role: "user".into(),
                 text: "c".into(),
+                image_urls: vec![],
                 state: None,
                 is_tool: false,
                 created_at: 0,
@@ -446,6 +453,7 @@ mod message_branch_tests {
                 id: "u0".into(),
                 role: "user".into(),
                 text: "first".into(),
+                image_urls: vec![],
                 state: None,
                 is_tool: false,
                 created_at: 0,
@@ -454,6 +462,7 @@ mod message_branch_tests {
                 id: "a0".into(),
                 role: "assistant".into(),
                 text: "ok".into(),
+                image_urls: vec![],
                 state: None,
                 is_tool: false,
                 created_at: 0,
@@ -462,6 +471,7 @@ mod message_branch_tests {
                 id: "t0".into(),
                 role: "system".into(),
                 text: "tool".into(),
+                image_urls: vec![],
                 state: None,
                 is_tool: true,
                 created_at: 0,
@@ -480,6 +490,7 @@ mod message_branch_tests {
                 id: "u0".into(),
                 role: "user".into(),
                 text: "q".into(),
+                image_urls: vec![],
                 state: None,
                 is_tool: false,
                 created_at: 0,
@@ -488,6 +499,7 @@ mod message_branch_tests {
                 id: "t0".into(),
                 role: "user".into(),
                 text: "tool card".into(),
+                image_urls: vec![],
                 state: None,
                 is_tool: true,
                 created_at: 0,
@@ -496,6 +508,7 @@ mod message_branch_tests {
                 id: "t1".into(),
                 role: "system".into(),
                 text: "tool".into(),
+                image_urls: vec![],
                 state: None,
                 is_tool: true,
                 created_at: 0,
@@ -513,6 +526,7 @@ mod message_branch_tests {
             id: "t0".into(),
             role: "system".into(),
             text: "tool".into(),
+            image_urls: vec![],
             state: None,
             is_tool: true,
             created_at: 0,
@@ -531,6 +545,7 @@ mod message_branch_tests {
                     id: "u0".into(),
                     role: "user".into(),
                     text: "first".into(),
+                    image_urls: vec![],
                     state: None,
                     is_tool: false,
                     created_at: 0,
@@ -539,6 +554,7 @@ mod message_branch_tests {
                     id: "a0".into(),
                     role: "assistant".into(),
                     text: "ok".into(),
+                    image_urls: vec![],
                     state: None,
                     is_tool: false,
                     created_at: 0,
@@ -547,6 +563,7 @@ mod message_branch_tests {
                     id: "u1".into(),
                     role: "user".into(),
                     text: "retry me".into(),
+                    image_urls: vec![],
                     state: None,
                     is_tool: false,
                     created_at: 0,

@@ -29,7 +29,7 @@ use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::config::AgentConfig;
-use crate::types::Message;
+use crate::types::{Message, message_content_byte_len_for_estimate};
 
 /// 进程内累计：每次 `prepare_messages_for_model` 内同步管道实际发生裁剪/剔除时递增（供 `GET /status` 排障）。
 #[derive(Debug, Default)]
@@ -94,11 +94,7 @@ fn estimate_chars_from_bytes(s: &str) -> usize {
 /// 估算单条消息占用的「约等于字符数」（用于预算；非精确 token）。
 /// 使用字节长度近似，避免对大内容做 O(n) 的 `chars().count()`。
 pub fn estimate_message_chars(m: &Message) -> usize {
-    let mut n = m
-        .content
-        .as_deref()
-        .map(estimate_chars_from_bytes)
-        .unwrap_or(0);
+    let mut n = message_content_byte_len_for_estimate(&m.content).div_ceil(2);
     n = n.saturating_add(
         m.reasoning_content
             .as_deref()
@@ -132,13 +128,14 @@ pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize
         if m.role != "tool" {
             continue;
         }
-        let Some(ref c) = m.content else {
+        let Some(c) = &mut m.content else {
             continue;
         };
-        if let Some(compressed) =
-            crate::tool_result::maybe_compress_tool_message_content(c, max_chars)
+        if let crate::types::MessageContent::Text(s) = c
+            && let Some(compressed) =
+                crate::tool_result::maybe_compress_tool_message_content(s, max_chars)
         {
-            m.content = Some(compressed);
+            *s = compressed;
             n += 1;
         }
     }
@@ -535,7 +532,7 @@ mod tests {
     fn tool_msg(s: &str) -> Message {
         Message {
             role: "tool".to_string(),
-            content: Some(s.to_string()),
+            content: Some(s.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -549,7 +546,7 @@ mod tests {
         let long = "x".repeat(2000);
         let mut v = vec![tool_msg(&long)];
         compress_tool_message_contents(&mut v, 256);
-        let c = v[0].content.as_deref().unwrap();
+        let c = crate::types::message_content_as_str(&v[0].content).unwrap();
         assert!(c.starts_with(&"x".repeat(256)));
         assert!(c.contains("截断"));
         assert!(c.chars().count() < long.chars().count());
@@ -598,8 +595,14 @@ mod tests {
         trim_messages_by_count(&mut v, 2);
         assert_eq!(v.len(), 3);
         assert_eq!(v[0].role, "system");
-        assert_eq!(v[1].content.as_deref(), Some("b"));
-        assert_eq!(v[2].content.as_deref(), Some("c"));
+        assert_eq!(
+            crate::types::message_content_as_str(&v[1].content),
+            Some("b")
+        );
+        assert_eq!(
+            crate::types::message_content_as_str(&v[2].content),
+            Some("c")
+        );
     }
 
     #[test]
@@ -629,7 +632,10 @@ mod tests {
         trim_messages_by_count(&mut v, 2);
         assert_eq!(v.len(), 3);
         assert_eq!(v[1].role, "user");
-        assert_eq!(v[1].content.as_deref(), Some("old_u"));
+        assert_eq!(
+            crate::types::message_content_as_str(&v[1].content),
+            Some("old_u")
+        );
         assert_eq!(v[2].role, "assistant");
     }
 
@@ -666,7 +672,10 @@ mod tests {
         ];
         trim_messages_by_char_budget(&mut v, 6, 1);
         assert_eq!(v.len(), 2);
-        assert_eq!(v[1].content.as_deref(), Some("bbbbbbbbbbbbbbbb"));
+        assert_eq!(
+            crate::types::message_content_as_str(&v[1].content),
+            Some("bbbbbbbbbbbbbbbb")
+        );
     }
 
     fn assistant_with_tool_calls() -> Message {
@@ -715,7 +724,10 @@ mod tests {
         drop_orphan_tool_messages(&mut v);
         assert_eq!(v.len(), 2);
         assert_eq!(v[1].role, "user");
-        assert_eq!(v[1].content.as_deref(), Some("last"));
+        assert_eq!(
+            crate::types::message_content_as_str(&v[1].content),
+            Some("last")
+        );
     }
 
     #[test]
@@ -779,7 +791,7 @@ mod tests {
         let sep = Message::chat_ui_separator(true);
         let a = Message {
             role: "assistant".to_string(),
-            content: Some("c".to_string()),
+            content: Some("c".into()),
             reasoning_content: Some("r".to_string()),
             reasoning_details: None,
             tool_calls: None,
@@ -881,8 +893,8 @@ mod tests {
             v.iter().map(|m| m.role.as_str()).collect::<Vec<_>>()
         );
         assert!(
-            v.iter()
-                .any(|m| m.role == "user" && m.content.as_deref() == Some("last")),
+            v.iter().any(|m| m.role == "user"
+                && crate::types::message_content_as_str(&m.content) == Some("last")),
             "应保留尾部 user: {:?}",
             v
         );

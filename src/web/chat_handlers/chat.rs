@@ -18,8 +18,8 @@ use super::super::app_state::{AppState, ConversationTurnSeed};
 use super::conflict::conversation_conflict_api_error;
 use super::parse::{
     ensure_bearer_api_key_for_chat, normalize_agent_role, normalize_approval_session_id,
-    normalize_client_conversation_id, parse_client_llm_override, parse_optional_chat_temperature,
-    parse_seed_override_from_body,
+    normalize_chat_image_urls, normalize_client_conversation_id, parse_client_llm_override,
+    parse_optional_chat_temperature, parse_seed_override_from_body,
 };
 use crate::agent_memory::load_memory_snippet;
 use crate::agent_role_turn::maybe_apply_mid_session_agent_role_switch;
@@ -29,7 +29,7 @@ use crate::conversation_turn_bootstrap::{
     compose_new_conversation_messages, first_turn_project_context_user_message,
 };
 use crate::redact;
-use crate::types::{CommandApprovalDecision, Message};
+use crate::types::{CommandApprovalDecision, Message, message_user_with_images};
 use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use crate::web::http_types::chat::{
     ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
@@ -81,8 +81,14 @@ async fn build_messages_for_turn(
     state: &Arc<AppState>,
     conversation_id: &str,
     user_msg: &str,
+    image_urls: &[String],
     agent_role: Option<&str>,
 ) -> Result<ConversationTurnSeed, String> {
+    let last_user = if image_urls.is_empty() {
+        Message::user_only(user_msg.to_string())
+    } else {
+        message_user_with_images(user_msg, image_urls)
+    };
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
         let persisted = seed.persisted_active_agent_role.clone();
         {
@@ -98,7 +104,7 @@ async fn build_messages_for_turn(
                 agent_role,
             )?;
         }
-        seed.messages.push(Message::user_only(user_msg.to_string()));
+        seed.messages.push(last_user);
         return Ok(seed);
     }
     // 先取工作区路径，再读 `cfg`，避免在持有 `cfg` 读锁时调用 `effective_workspace_path`（其内部再次 `cfg.read` 会死锁）。
@@ -122,7 +128,7 @@ async fn build_messages_for_turn(
 
     let combined =
         first_turn_project_context_user_message(root.as_path(), &cfg, memory_snippet).await;
-    let messages = compose_new_conversation_messages(&system_for_turn, combined, Some(user_msg));
+    let messages = compose_new_conversation_messages(&system_for_turn, combined, Some(last_user));
     Ok(ConversationTurnSeed {
         messages,
         expected_revision: None,
@@ -134,13 +140,22 @@ pub(crate) async fn chat_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ChatRequestBody>,
 ) -> Result<Json<ChatResponseBody>, (StatusCode, Json<ApiError>)> {
+    let image_urls = normalize_chat_image_urls(&body.image_urls).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_IMAGE_URLS",
+                message: e,
+            }),
+        )
+    })?;
     let user_trim = body.message.trim();
-    if user_trim.is_empty() {
+    if user_trim.is_empty() && image_urls.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
                 code: "EMPTY_MESSAGE",
-                message: "提问内容不能为空".to_string(),
+                message: "提问内容不能为空（若仅发图须至少附带一张图片）".to_string(),
             }),
         ));
     }
@@ -209,17 +224,23 @@ pub(crate) async fn chat_handler(
             },
         )?
     };
-    let turn_seed = build_messages_for_turn(&state, &conversation_id, &msg, agent_role.as_deref())
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_AGENT_ROLE",
-                    message: e,
-                }),
-            )
-        })?;
+    let turn_seed = build_messages_for_turn(
+        &state,
+        &conversation_id,
+        &msg,
+        &image_urls,
+        agent_role.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_AGENT_ROLE",
+                message: e,
+            }),
+        )
+    })?;
     let work_dir_str = work_dir_pb.to_string_lossy().to_string();
     let work_dir = work_dir_str.clone();
     let workspace_is_set = state.workspace_is_set().await;
@@ -293,7 +314,7 @@ pub(crate) async fn chat_handler(
         })?;
     let reply = messages
         .last()
-        .and_then(|m| m.content.as_deref())
+        .and_then(|m| crate::types::message_content_as_str(&m.content))
         .unwrap_or("")
         .to_string();
     let conversation_revision = state
@@ -451,13 +472,22 @@ pub(crate) async fn chat_stream_handler(
     Json(body): Json<ChatRequestBody>,
 ) -> Result<Response, (StatusCode, Json<ApiError>)> {
     let resume = body.stream_resume.as_ref();
+    let image_urls = normalize_chat_image_urls(&body.image_urls).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_IMAGE_URLS",
+                message: e,
+            }),
+        )
+    })?;
     let user_trim = body.message.trim();
-    if user_trim.is_empty() && resume.is_none() {
+    if user_trim.is_empty() && resume.is_none() && image_urls.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
                 code: "EMPTY_MESSAGE",
-                message: "提问内容不能为空".to_string(),
+                message: "提问内容不能为空（若仅发图须至少附带一张图片）".to_string(),
             }),
         ));
     }
@@ -589,17 +619,23 @@ pub(crate) async fn chat_stream_handler(
             )
         })?
     };
-    let turn_seed = build_messages_for_turn(&state, &conversation_id, &msg, agent_role.as_deref())
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_AGENT_ROLE",
-                    message: e,
-                }),
-            )
-        })?;
+    let turn_seed = build_messages_for_turn(
+        &state,
+        &conversation_id,
+        &msg,
+        &image_urls,
+        agent_role.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_AGENT_ROLE",
+                message: e,
+            }),
+        )
+    })?;
     let workspace_is_set = state.workspace_is_set().await;
     let approval_session_id = match body.approval_session_id.as_deref() {
         Some(v) => Some(normalize_approval_session_id(v).ok_or((

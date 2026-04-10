@@ -43,7 +43,7 @@ struct ChatStreamCallbackCtx {
 
 pub(super) struct ChatComposerWires {
     pub retry_assistant_target: RwSignal<Option<String>>,
-    pub regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
+    pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub cancel_stream: Arc<dyn Fn() + Send + Sync>,
     pub new_session: Rc<dyn Fn()>,
@@ -56,6 +56,7 @@ pub(super) fn wire_session_switch_clears_chat_state(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
+    pending_images: RwSignal<Vec<String>>,
     session_sync: RwSignal<SessionSyncState>,
     stream_job_id: RwSignal<Option<u64>>,
     stream_last_event_seq: RwSignal<u64>,
@@ -74,6 +75,7 @@ pub(super) fn wire_session_switch_clears_chat_state(
             .map(|s| s.draft.clone())
             .unwrap_or_default();
         draft.set(d);
+        pending_images.set(Vec::new());
         session_sync.set(SessionSyncState::local_only());
         stream_job_id.set(None);
         stream_last_event_seq.set(0);
@@ -130,8 +132,9 @@ pub(super) fn wire_chat_composer_streams(
     refresh_workspace: Arc<dyn Fn() + Send + Sync>,
     changelist_modal_open: RwSignal<bool>,
     changelist_fetch_nonce: RwSignal<u64>,
+    pending_images: RwSignal<Vec<String>>,
 ) -> ChatComposerWires {
-    let attach_chat_stream: Arc<dyn Fn(String, String) + Send + Sync> = Arc::new({
+    let attach_chat_stream: Arc<dyn Fn(String, Vec<String>, String) + Send + Sync> = Arc::new({
         let abort_cell = Arc::clone(&abort_cell);
         let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
         let sessions = sessions;
@@ -148,7 +151,7 @@ pub(super) fn wire_chat_composer_streams(
         let refresh_workspace = Arc::clone(&refresh_workspace);
         let changelist_modal_open = changelist_modal_open;
         let changelist_fetch_nonce = changelist_fetch_nonce;
-        move |user_text: String, asst_id: String| {
+        move |user_text: String, image_urls: Vec<String>, asst_id: String| {
             let conv = session_sync.with(|s| s.stream_conversation_id());
             // 新一次 attach 必须**不带** `stream_resume`：断线重连仅由 `send_chat_stream` 内部循环
             // 用响应头里的 `x-stream-job-id` 与 `last_event_id` 完成。若此处读取 UI 上残留的
@@ -283,6 +286,7 @@ pub(super) fn wire_chat_composer_streams(
                                 id,
                                 role: "system".to_string(),
                                 text: t,
+                                image_urls: vec![],
                                 state: None,
                                 is_tool: true,
                                 created_at: message_created_ms(),
@@ -419,6 +423,7 @@ pub(super) fn wire_chat_composer_streams(
             spawn_local(async move {
                 let stream_result = send_chat_stream(
                     user_text,
+                    image_urls,
                     conv,
                     agent_role,
                     Some(appr_for_stream),
@@ -450,12 +455,14 @@ pub(super) fn wire_chat_composer_streams(
         let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
         move || {
             let text = composer_draft_buffer.lock().unwrap().trim().to_string();
-            if text.is_empty() || !initialized.get() || status_busy.get() {
+            let imgs = pending_images.get();
+            if (text.is_empty() && imgs.is_empty()) || !initialized.get() || status_busy.get() {
                 return;
             }
             auto_scroll_chat.set(true);
             let uid = make_message_id();
             let asst_id = make_message_id();
+            let imgs_send = imgs.clone();
             patch_active_session(sessions, &active_id.get(), |s| {
                 let now = message_created_ms();
                 let is_first_user_turn =
@@ -464,6 +471,7 @@ pub(super) fn wire_chat_composer_streams(
                     id: uid.clone(),
                     role: "user".to_string(),
                     text: text.clone(),
+                    image_urls: imgs_send.clone(),
                     state: None,
                     is_tool: false,
                     created_at: now,
@@ -472,6 +480,7 @@ pub(super) fn wire_chat_composer_streams(
                     id: asst_id.clone(),
                     role: "assistant".to_string(),
                     text: String::new(),
+                    image_urls: vec![],
                     state: Some("loading".to_string()),
                     is_tool: false,
                     created_at: now,
@@ -482,15 +491,16 @@ pub(super) fn wire_chat_composer_streams(
                 s.draft.clear();
             });
             draft.set(String::new());
+            pending_images.set(Vec::new());
             status_busy.set(true);
             status_err.set(None);
             pending_approval.set(None);
-            attach(text, asst_id);
+            attach(text, imgs_send, asst_id);
         }
     });
 
     let retry_assistant_target = RwSignal::new(None::<String>);
-    let regen_stream_after_truncate = RwSignal::new(None::<(String, String)>);
+    let regen_stream_after_truncate = RwSignal::new(None::<(String, Vec<String>, String)>);
 
     Effect::new({
         let attach = Arc::clone(&attach_chat_stream);
@@ -505,18 +515,18 @@ pub(super) fn wire_chat_composer_streams(
                 return;
             }
             let aid = active_id.get();
-            let mut prepared: Option<(String, String)> = None;
+            let mut prepared: Option<(String, Vec<String>, String)> = None;
             sessions.update(|list| {
                 prepared = prepare_retry_failed_assistant_turn(list, &aid, &failed_asst_id);
             });
-            let Some((user_text, asst_id)) = prepared else {
+            let Some((user_text, user_imgs, asst_id)) = prepared else {
                 return;
             };
             auto_scroll_chat.set(true);
             status_busy.set(true);
             status_err.set(None);
             pending_approval.set(None);
-            attach(user_text, asst_id);
+            attach(user_text, user_imgs, asst_id);
         }
     });
 
@@ -524,7 +534,7 @@ pub(super) fn wire_chat_composer_streams(
         let attach = Arc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
         move |_| {
-            let Some((user_text, asst_id)) = regen_stream_after_truncate.get() else {
+            let Some((user_text, user_imgs, asst_id)) = regen_stream_after_truncate.get() else {
                 return;
             };
             regen_stream_after_truncate.set(None);
@@ -535,7 +545,7 @@ pub(super) fn wire_chat_composer_streams(
             status_busy.set(true);
             status_err.set(None);
             pending_approval.set(None);
-            attach(user_text, asst_id);
+            attach(user_text, user_imgs, asst_id);
         }
     });
 

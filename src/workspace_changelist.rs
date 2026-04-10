@@ -174,7 +174,7 @@ pub fn sync_changelist_user_message(
     }
     messages.push(crate::types::Message {
         role: "user".to_string(),
-        content: Some(body),
+        content: Some(body.into()),
         reasoning_content: None,
         reasoning_details: None,
         tool_calls: None,
@@ -248,15 +248,16 @@ mod tests {
         sync_changelist_user_message(&mut msgs, Some(&cl), true, 50_000);
         assert_eq!(msgs.len(), 3);
         assert_eq!(msgs[0].role, "system");
-        assert_eq!(msgs[1].content.as_deref(), Some("hi"));
+        assert_eq!(
+            crate::types::message_content_as_str(&msgs[1].content),
+            Some("hi")
+        );
         assert_eq!(
             msgs[2].name.as_deref(),
             Some(CRABMATE_WORKSPACE_CHANGELIST_NAME)
         );
         assert!(
-            msgs[2]
-                .content
-                .as_deref()
+            crate::types::message_content_as_str(&msgs[2].content)
                 .is_some_and(|c| c.contains("a.txt"))
         );
     }

@@ -187,6 +187,7 @@ mod tests {
             id: id.to_string(),
             role: role.to_string(),
             text: text.to_string(),
+            image_urls: vec![],
             state: None,
             is_tool,
             created_at: 0,

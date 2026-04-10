@@ -66,7 +66,7 @@ fn classify_plan_rewrite_exhausted_reason(
     apply_layer_semantics: bool,
     strict_workflow_node_coverage: bool,
 ) -> PlanRewriteExhaustedReason {
-    let content = msg.content.as_deref().unwrap_or("");
+    let content = crate::types::message_content_as_str(&msg.content).unwrap_or("");
     let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1(content) else {
         return PlanRewriteExhaustedReason::PlanMissing;
     };
@@ -253,10 +253,10 @@ impl PerCoordinator {
     ) -> Message {
         Message {
             role: "user".to_string(),
-            content: Some(plan_rewrite_user_text_semantic_mismatch_with_feedback(
-                violation_codes,
-                rationale,
-            )),
+            content: Some(
+                plan_rewrite_user_text_semantic_mismatch_with_feedback(violation_codes, rationale)
+                    .into(),
+            ),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -365,7 +365,7 @@ impl PerCoordinator {
         let layer_need = self.workflow_validate_layer_need(messages);
         let validate_only_binding_ids = last_workflow_validate_binding_plan_node_ids(messages);
 
-        let content = msg.content.as_deref().unwrap_or("");
+        let content = crate::types::message_content_as_str(&msg.content).unwrap_or("");
         if let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1(content) {
             let layers_ok = match layer_need {
                 Some(n) if n > 0 && apply_layer_semantics => plan.steps.len() >= n,
@@ -517,7 +517,7 @@ impl PerCoordinator {
         );
         AfterFinalAssistant::RequestPlanRewrite(Message {
             role: "user".to_string(),
-            content: Some(rewrite_text),
+            content: Some(rewrite_text.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -571,7 +571,7 @@ impl PerCoordinator {
     ) {
         messages.push(Message {
             role: "tool".to_string(),
-            content: Some(result),
+            content: Some(result.into()),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -608,7 +608,7 @@ impl PerCoordinator {
             }
             messages.push(Message {
                 role: "user".to_string(),
-                content: Some(instruction_str),
+                content: Some(instruction_str.into()),
                 reasoning_content: None,
                 reasoning_details: None,
                 tool_calls: None,
@@ -655,7 +655,7 @@ fn last_workflow_tool_node_ids(messages: &[Message]) -> Option<Vec<String>> {
         if name != "workflow_execute" {
             continue;
         }
-        let body = m.content.as_deref()?;
+        let body = crate::types::message_content_as_str(&m.content)?;
         let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
         let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
         let rt = v.get("report_type").and_then(|x| x.as_str());
@@ -698,7 +698,7 @@ fn last_workflow_validate_layer_count(messages: &[Message]) -> Option<usize> {
         if name != "workflow_execute" {
             continue;
         }
-        let body = m.content.as_deref()?;
+        let body = crate::types::message_content_as_str(&m.content)?;
         let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
         let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
         if v.get("report_type").and_then(|x| x.as_str()) != Some("workflow_validate_result") {
@@ -738,7 +738,7 @@ fn last_workflow_validate_binding_plan_node_ids(messages: &[Message]) -> Option<
         if name != "workflow_execute" {
             continue;
         }
-        let Some(body) = m.content.as_deref() else {
+        let Some(body) = crate::types::message_content_as_str(&m.content) else {
             continue;
         };
         let payload = crate::tool_result::tool_message_payload_for_inner_parse(body);
@@ -824,7 +824,7 @@ fn summarize_messages_for_final_plan_semantic_check(
             .iter()
             .find(|c| c.id == tid)?;
         let name = tc.function.name.as_str();
-        let body = m.content.as_deref().unwrap_or("");
+        let body = crate::types::message_content_as_str(&m.content).unwrap_or("");
 
         let is_ro = tool_registry::is_readonly_tool(cfg, name);
         let is_risky = tool_name_is_high_risk(name);
@@ -901,7 +901,7 @@ fn stop_output_to_string(stop_output: Option<Value>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{FunctionCall, ToolCall};
+    use crate::types::{FunctionCall, MessageContent, ToolCall};
 
     fn test_cfg() -> AgentConfig {
         crate::config::load_config(None).expect("embed default config")
@@ -926,7 +926,7 @@ mod tests {
         let _ = c.prepare_workflow_execute(wf_args);
         let empty = Message {
             role: "assistant".to_string(),
-            content: Some("no plan here".to_string()),
+            content: Some(MessageContent::Text("no plan here".to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -977,7 +977,7 @@ mod tests {
                 role: "tool".to_string(),
                 content: Some(
                     r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":1},"nodes":[{"id":"only"}]}"#
-                        .to_string(),
+                        .into(),
                 ),
                 reasoning_content: None,
                 reasoning_details: None,
@@ -992,7 +992,7 @@ mod tests {
                 r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"step","workflow_node_id":"only"}]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1033,7 +1033,7 @@ mod tests {
                 role: "tool".to_string(),
                 content: Some(
                     r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3},"nodes":[{"id":"a"},{"id":"b"},{"id":"c"}]}"#
-                        .to_string(),
+                        .into(),
                 ),
                 reasoning_content: None,
                 reasoning_details: None,
@@ -1048,7 +1048,7 @@ mod tests {
                 r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"only","description":"only one step here"}]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1070,7 +1070,7 @@ mod tests {
   {"id":"s2","description":"layer 2","workflow_node_id":"c"}
 ]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1111,7 +1111,7 @@ mod tests {
                 role: "tool".to_string(),
                 content: Some(
                     r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3},"nodes":[{"id":"a"},{"id":"b"},{"id":"c"}]}"#
-                        .to_string(),
+                        .into(),
                 ),
                 reasoning_content: None,
                 reasoning_details: None,
@@ -1126,7 +1126,7 @@ mod tests {
                 r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"only","description":"only one step here"}]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1173,7 +1173,7 @@ mod tests {
                 role: "tool".to_string(),
                 content: Some(
                     r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":1},"nodes":[{"id":"fmt"},{"id":"test"}]}"#
-                        .to_string(),
+                        .into(),
                 ),
                 reasoning_content: None,
                 reasoning_details: None,
@@ -1188,7 +1188,7 @@ mod tests {
                 r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"step1","description":"run fmt","workflow_node_id":"no-such-node"}]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1209,7 +1209,7 @@ mod tests {
   {"id":"step2","description":"run test","workflow_node_id":"test"}
 ]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1250,7 +1250,7 @@ mod tests {
                 role: "tool".to_string(),
                 content: Some(
                     r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":1},"nodes":[{"id":"dup"},{"id":"dup"}]}"#
-                        .to_string(),
+                        .into(),
                 ),
                 reasoning_content: None,
                 reasoning_details: None,
@@ -1265,7 +1265,7 @@ mod tests {
                 r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"both","workflow_node_id":"dup"}]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1286,7 +1286,7 @@ mod tests {
   {"id":"s2","description":"second","workflow_node_id":"dup"}
 ]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1334,7 +1334,7 @@ mod tests {
                 role: "tool".to_string(),
                 content: Some(
                     r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":1},"nodes":[{"id":"fmt"},{"id":"test"}]}"#
-                        .to_string(),
+                        .into(),
                 ),
                 reasoning_content: None,
                 reasoning_details: None,
@@ -1349,7 +1349,7 @@ mod tests {
                 r#"```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"only fmt","workflow_node_id":"fmt"}]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1370,7 +1370,7 @@ mod tests {
   {"id":"s2","description":"test","workflow_node_id":"test"}
 ]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1410,7 +1410,7 @@ mod tests {
         let _ = c.prepare_workflow_execute(wf_args);
         let empty = Message {
             role: "assistant".to_string(),
-            content: Some("no plan here".to_string()),
+            content: Some(MessageContent::Text("no plan here".to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -1429,7 +1429,7 @@ mod tests {
         let mut c = pc(FinalPlanRequirementMode::Always, 2);
         let empty = Message {
             role: "assistant".to_string(),
-            content: Some("no plan".to_string()),
+            content: Some(MessageContent::Text("no plan".to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -1453,7 +1453,7 @@ mod tests {
 ```json
 {"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"do the thing"}]}
 ```"#
-                    .to_string(),
+                    .into(),
             ),
             reasoning_content: None,
             reasoning_details: None,
@@ -1473,7 +1473,7 @@ mod tests {
         let mut c = pc(FinalPlanRequirementMode::Always, 1);
         let empty = Message {
             role: "assistant".to_string(),
-            content: Some("no plan at all".to_string()),
+            content: Some(MessageContent::Text("no plan at all".to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -1498,7 +1498,7 @@ mod tests {
         let mut c = pc(FinalPlanRequirementMode::WorkflowReflection, 2);
         let empty = Message {
             role: "assistant".to_string(),
-            content: Some("no plan".to_string()),
+            content: Some(MessageContent::Text("no plan".to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -1541,7 +1541,7 @@ mod tests {
         let mut c = pc(FinalPlanRequirementMode::Always, 3);
         let empty = Message {
             role: "assistant".to_string(),
-            content: Some("no plan".to_string()),
+            content: Some(MessageContent::Text("no plan".to_string())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
@@ -1580,13 +1580,14 @@ mod tests {
         );
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0].role, "tool");
-        assert_eq!(msgs[0].content.as_deref(), Some("tool output"));
+        assert_eq!(
+            crate::types::message_content_as_str(&msgs[0].content),
+            Some("tool output")
+        );
         assert_eq!(msgs[0].tool_call_id.as_deref(), Some("tc-99"));
         assert_eq!(msgs[1].role, "user");
         assert!(
-            msgs[1]
-                .content
-                .as_deref()
+            crate::types::message_content_as_str(&msgs[1].content)
                 .unwrap()
                 .contains("test_instruction")
         );
@@ -1636,7 +1637,7 @@ mod tests {
         let msgs = vec![
             Message {
                 role: "user".to_string(),
-                content: Some("hello".to_string()),
+                content: Some(MessageContent::Text("hello".to_string())),
                 reasoning_content: None,
                 reasoning_details: None,
                 tool_calls: None,
@@ -1645,7 +1646,7 @@ mod tests {
             },
             Message {
                 role: "assistant".to_string(),
-                content: Some("hi".to_string()),
+                content: Some(MessageContent::Text("hi".to_string())),
                 reasoning_content: None,
                 reasoning_details: None,
                 tool_calls: None,
@@ -1678,7 +1679,7 @@ mod tests {
                 role: "tool".to_string(),
                 content: Some(
                     r#"{"report_type":"workflow_validate_result","status":"planned","spec":{"layer_count":3},"nodes":[{"id":"x"},{"id":"y"},{"id":"z"}]}"#
-                        .to_string(),
+                        .into(),
                 ),
                 reasoning_content: None,
                 reasoning_details: None,
@@ -1720,7 +1721,7 @@ mod tests {
             None,
         );
         let mut hist = hist_with_validate_layer_3();
-        hist[1].content = Some(wrapped);
+        hist[1].content = Some(wrapped.into());
         assert_eq!(last_workflow_validate_layer_count(&hist), Some(3));
     }
 }
