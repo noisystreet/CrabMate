@@ -94,6 +94,7 @@ pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len:
         http_fetch_allowed_prefixes: &[],
         http_fetch_timeout_secs: 0,
         http_fetch_max_response_bytes: 0,
+        command_timeout_secs: 30,
         read_file_turn_cache: None,
         workspace_changelist: None,
         test_result_cache_enabled: false,

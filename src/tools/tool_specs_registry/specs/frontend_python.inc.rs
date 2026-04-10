@@ -47,4 +47,12 @@ ToolSpec {
             runner: runner_uv_run,
             summary: ToolSummaryKind::Dynamic(ts::summary_uv_run),
         },
+        ToolSpec {
+            name: "python_snippet_run",
+            description: "在工作区根目录写入临时 .py 并执行（结束后删除）。可 import 已安装的第三方包；默认 python3 + PYTHONPATH 含工作区根；可选 use_uv 用 uv 项目环境。等同任意代码执行，仅用于可信工作区。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_python_snippet_run,
+            runner: runner_python_snippet_run,
+            summary: ToolSummaryKind::Dynamic(ts::summary_python_snippet_run),
+        },
 ]

@@ -1,13 +1,27 @@
-//! Python 生态工具：ruff、pytest、mypy、uv sync/run、可编辑安装（uv / pip）。
+//! Python 生态工具：ruff、pytest、mypy、uv sync/run、可编辑安装（uv / pip）、临时脚本执行（`python_snippet_run`）。
 
+use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use super::output_util;
+
+#[cfg(unix)]
+use nix::sys::signal::{self, Signal};
+#[cfg(unix)]
+use nix::unistd::Pid;
 
 const MAX_OUTPUT_LINES: usize = 800;
 const MAX_UV_RUN_ARGS: usize = 48;
 const MAX_UV_RUN_ARG_LEN: usize = 512;
+
+/// 单次 `python_snippet_run` 源码上限（UTF-8 字节）。
+const MAX_PYTHON_SNIPPET_BYTES: usize = 256 * 1024;
+const MIN_PYTHON_SNIPPET_TIMEOUT_SECS: u64 = 1;
+const MAX_PYTHON_SNIPPET_TIMEOUT_SECS: u64 = 600;
 
 /// 工作区根下是否存在常见 Python 项目标记。
 pub fn workspace_has_python_project(root: &Path) -> bool {
@@ -282,6 +296,202 @@ pub fn python_install_editable(
     run_and_format(cmd, max_output_len, title)
 }
 
+/// 在工作区根目录写入**临时** `.py` 并执行（结束后删除）。允许 `import` 任意已安装的第三方包。
+///
+/// - 默认：`python3 <脚本>`，`PYTHONPATH` 含工作区根（可 `import` 工作区内包）。
+/// - `use_uv: true` 且存在 `pyproject.toml`：`uv run python <脚本>`，使用项目/锁文件环境。
+/// - 墙上时钟超时：默认 `command_timeout_secs`，可用 `timeout_secs` 覆盖（1～600 秒）。
+pub fn python_snippet_run(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+    command_timeout_secs: u64,
+) -> String {
+    let v = match crate::tools::parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let code = match v.get("code").and_then(|x| x.as_str()) {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => return "错误：缺少非空字符串参数 code（Python 源码）".to_string(),
+    };
+    if code.len() > MAX_PYTHON_SNIPPET_BYTES {
+        return format!(
+            "错误：code 过长（上限 {} 字节，当前 {} 字节）",
+            MAX_PYTHON_SNIPPET_BYTES,
+            code.len()
+        );
+    }
+
+    let use_uv = v.get("use_uv").and_then(|x| x.as_bool()).unwrap_or(false);
+    let wall_secs = v
+        .get("timeout_secs")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(command_timeout_secs)
+        .clamp(
+            MIN_PYTHON_SNIPPET_TIMEOUT_SECS,
+            MAX_PYTHON_SNIPPET_TIMEOUT_SECS,
+        );
+
+    let base = match workspace_root.canonicalize() {
+        Ok(p) => p,
+        Err(e) => return format!("工作区根目录无法解析: {}", e),
+    };
+
+    if use_uv && !base.join("pyproject.toml").is_file() {
+        return "错误：use_uv 为 true 时需要工作区根存在 pyproject.toml（与 uv_run 一致）"
+            .to_string();
+    }
+
+    let tmp = match tempfile::Builder::new()
+        .prefix(".crabmate_snippet_")
+        .suffix(".py")
+        .tempfile_in(&base)
+    {
+        Ok(t) => t,
+        Err(e) => return format!("无法在工作区创建临时脚本: {}", e),
+    };
+
+    let script_path = match tmp.path().canonicalize() {
+        Ok(p) => p,
+        Err(e) => return format!("临时脚本路径无法解析: {}", e),
+    };
+    if !script_path.starts_with(&base) {
+        return "错误：临时脚本路径超出工作区根（安全拒绝）".to_string();
+    }
+
+    let mut file = match tmp.reopen() {
+        Ok(f) => f,
+        Err(e) => return format!("无法写入临时脚本: {}", e),
+    };
+    if let Err(e) = file.write_all(code.as_bytes()) {
+        return format!("无法写入临时脚本: {}", e);
+    }
+    if let Err(e) = file.sync_all() {
+        return format!("无法落盘临时脚本: {}", e);
+    }
+    drop(file);
+
+    let rel_display = script_path
+        .strip_prefix(&base)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| script_path.to_string_lossy().into_owned());
+
+    let mut cmd = if use_uv {
+        let mut c = Command::new("uv");
+        c.args(["run", "python"]);
+        c.arg(&script_path);
+        c
+    } else {
+        let mut c = Command::new("python3");
+        c.arg(&script_path);
+        c
+    };
+    let mut cmd = cmd.current_dir(&base);
+    if !use_uv {
+        cmd = cmd.env("PYTHONPATH", pythonpath_with_workspace(&base));
+    }
+    let cmd = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let title = if use_uv {
+        format!("uv run python ({})", rel_display)
+    } else {
+        format!("python3 ({})", rel_display)
+    };
+
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            return output_util::format_spawn_error(
+                &title,
+                &e,
+                output_util::CommandSpawnErrorStyle::CannotStartWithPathHint,
+            );
+        }
+    };
+
+    let child_pid = child.id();
+    let (tx, rx) = mpsc::channel::<std::io::Result<std::process::Output>>();
+    let join = thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(wall_secs);
+    let output = loop {
+        let now = Instant::now();
+        if now >= deadline {
+            python_snippet_hard_kill(child_pid);
+            let _ = join.join();
+            let body = format!(
+                "已超出墙上时钟上限（{} 秒）；子进程已发送终止信号。请在更小数据集上重试或调大 timeout_secs（上限 {}）。",
+                wall_secs, MAX_PYTHON_SNIPPET_TIMEOUT_SECS
+            );
+            return output_util::format_exited_command_output(
+                &title,
+                -1,
+                &body,
+                max_output_len,
+                MAX_OUTPUT_LINES,
+            );
+        }
+        let step = deadline
+            .saturating_duration_since(now)
+            .min(Duration::from_millis(200));
+        match rx.recv_timeout(step) {
+            Ok(Ok(out)) => {
+                let _ = join.join();
+                break out;
+            }
+            Ok(Err(e)) => {
+                let _ = join.join();
+                return format!("{}: 收集子进程输出失败（{}）", title, e);
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = join.join();
+                return format!("{}: 等待子进程输出的线程已结束但未返回结果", title);
+            }
+        }
+    };
+
+    let code = output.status.code().unwrap_or(-1);
+    let body = output_util::merge_process_output(
+        &output,
+        output_util::ProcessOutputMerge::StderrElseStdout,
+    );
+    output_util::format_exited_command_output(&title, code, &body, max_output_len, MAX_OUTPUT_LINES)
+}
+
+#[cfg(unix)]
+fn python_snippet_hard_kill(pid: u32) {
+    let _ = signal::kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
+}
+
+#[cfg(windows)]
+fn python_snippet_hard_kill(pid: u32) {
+    let _ = Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+#[cfg(all(not(unix), not(windows)))]
+fn python_snippet_hard_kill(_pid: u32) {}
+
+/// 在已有 `PYTHONPATH` 前追加工作区根，便于 `import` 本地包（仅 `python3` 路径使用）。
+fn pythonpath_with_workspace(workspace_root: &Path) -> String {
+    let root = workspace_root.to_string_lossy();
+    match std::env::var("PYTHONPATH") {
+        Ok(prev) if !prev.trim().is_empty() => format!("{}:{}", root, prev),
+        _ => root.into_owned(),
+    }
+}
+
 fn is_safe_rel_path(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('/') && !s.contains("..")
 }
@@ -428,5 +638,16 @@ mod tests {
     fn uv_run_arg_accepts_pytest_node_id() {
         assert!(is_safe_uv_run_arg("tests/test_x.py::test_foo[case1]"));
         assert!(!is_safe_uv_run_arg("pytest;rm"));
+    }
+
+    #[test]
+    fn python_snippet_run_executes_trivial_print() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = python_snippet_run(r#"{"code":"print(21 * 2)"}"#, dir.path(), 4096, 30);
+        assert!(
+            out.contains("42"),
+            "expected stdout 42 in output, got: {out:?}"
+        );
+        let _ = std::fs::remove_dir_all(dir.path());
     }
 }
