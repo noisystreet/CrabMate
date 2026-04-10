@@ -73,6 +73,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `ok` | bool? | Success |
 | `exit_code` | number? | For command-like tools |
 | `error_code` | string? | Machine-readable (see below) |
+| `failure_category` | string? | Coarse bucket aligned with Rust **`tool_result::ToolFailureCategory::as_str`** and history **`crabmate_tool.failure_category`**; derived from **`error_code`** (omitted on success). Stable values: **`failure_category` enum** below |
 | `stdout` / `stderr` | string? | Split streams if present |
 | `retryable` | bool? | Heuristic on failure (e.g. timeout) |
 | `tool_call_id` | string? | OpenAI `tool_calls[].id` |
@@ -148,7 +149,23 @@ Machine-readable failure classification (separate from stream `code`). Common va
 | `workflow_tool_join_error` | Workflow tool task join failed |
 | `{tool_name}_failed` | Generic tool failure (e.g. `run_command_failed`) |
 
-Full heuristics: `src/tool_result/` (`classify_error_code`); workflow: `src/agent/workflow/execute.rs`.
+Full heuristics: `src/tool_result/mod.rs` (`classify_error_code`); **`error_code` → `failure_category`**: `src/tool_result/tool_error.rs` (**`failure_category_for_error_code`**, matches **`ToolFailureCategory`**). Workflow-specific: `src/agent/workflow/execute.rs`.
+
+### `tool_result.failure_category` (and `crabmate_tool.failure_category`)
+
+Same strings as Rust **`tool_result::ToolFailureCategory::as_str()`** so clients can **`match`** without overfitting **`error_code`** free-form strings:
+
+| `failure_category` | Meaning |
+|--------------------|---------|
+| `invalid_input` | Args / JSON / required fields |
+| `policy_denied` | Allowlist, rate limits, policy |
+| `workspace` | Workspace not set, path outside allowed roots |
+| `timeout` | Tool or subprocess timeout |
+| `external` | Non-zero exit, IO, HTTP business failure |
+| `internal` | Rare internal invariant |
+| `unknown` | Unclassified or unknown tool |
+
+New **`error_code`** values may map to **`unknown`** or fall through the `_failed` suffix rule to **`external`** until **`failure_category_for_error_code`** is extended.
 
 ## vs `POST /chat` HTTP errors
 

@@ -75,11 +75,17 @@ impl fmt::Display for ToolError {
 
 impl std::error::Error for ToolError {}
 
-fn category_for_error_code(code: &str) -> ToolFailureCategory {
+/// 由 `error_code` 推导粗粒度 **`failure_category`**（与 SSE / `crabmate_tool` 同源；启发式，新增码可能落入 `unknown`）。
+pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
     match code {
         "invalid_args" | "missing_command" => ToolFailureCategory::InvalidInput,
         "unknown_tool" => ToolFailureCategory::Unknown,
-        "command_not_allowed" => ToolFailureCategory::PolicyDenied,
+        "command_not_allowed" | "command_denied" | "approval_denied" | "approval_required" => {
+            ToolFailureCategory::PolicyDenied
+        }
+        "workflow_semaphore_closed"
+        | "workflow_node_missing_result"
+        | "workflow_tool_join_error" => ToolFailureCategory::External,
         "workspace_not_set" | "workspace_no_cargo_toml" | "codebase_semantic_unconfigured" => {
             ToolFailureCategory::Workspace
         }
@@ -119,7 +125,7 @@ impl ToolError {
             .clone()
             .unwrap_or_else(|| format!("{tool_name}_failed"));
         let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
-        let category = category_for_error_code(code.as_str());
+        let category = failure_category_for_error_code(code.as_str());
         Self {
             category,
             code,
@@ -147,7 +153,7 @@ impl ToolError {
         }
     }
 
-    /// 工作区布局或前置条件问题（如缺少 `Cargo.toml`）；`code` 须与 [`category_for_error_code`] 一致。
+    /// 工作区布局或前置条件问题（如缺少 `Cargo.toml`）；`code` 须与 [`failure_category_for_error_code`] 一致。
     pub fn workspace(code: &'static str, message: String) -> Self {
         let parsed = ParsedLegacyOutput {
             ok: false,
@@ -158,7 +164,7 @@ impl ToolError {
         };
         let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
         Self {
-            category: category_for_error_code(code),
+            category: failure_category_for_error_code(code),
             code: code.to_string(),
             message,
             retryable,
@@ -248,7 +254,7 @@ impl ToolError {
         }
     }
 
-    /// 外部工具/IO 类失败（`error_code` 由调用方指定，须与 [`category_for_error_code`] 一致）。
+    /// 外部工具/IO 类失败（`error_code` 由调用方指定，须与 [`failure_category_for_error_code`] 一致）。
     pub fn external_code(code: &'static str, message: String) -> Self {
         let parsed = ParsedLegacyOutput {
             ok: false,
@@ -259,7 +265,7 @@ impl ToolError {
         };
         let retryable = tool_error_retryable_heuristic(parsed.error_code.as_deref());
         Self {
-            category: category_for_error_code(code),
+            category: failure_category_for_error_code(code),
             code: code.to_string(),
             message,
             retryable,
@@ -311,5 +317,17 @@ mod tests {
         assert_eq!(e.code, "timeout");
         assert!(e.retryable);
         assert_eq!(e.category, ToolFailureCategory::Timeout);
+    }
+
+    #[test]
+    fn failure_category_maps_workflow_and_approval_codes() {
+        assert_eq!(
+            failure_category_for_error_code("workflow_tool_join_error"),
+            ToolFailureCategory::External
+        );
+        assert_eq!(
+            failure_category_for_error_code("approval_required"),
+            ToolFailureCategory::PolicyDenied
+        );
     }
 }

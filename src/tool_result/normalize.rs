@@ -5,6 +5,7 @@
 
 use serde_json::{Map, Value};
 
+use super::tool_error::failure_category_for_error_code;
 use super::{
     ParsedLegacyOutput, ToolEnvelopeContext, parse_legacy_output, tool_error_retryable_heuristic,
 };
@@ -22,6 +23,8 @@ pub struct NormalizedToolEnvelope {
     pub ok: bool,
     pub exit_code: Option<i32>,
     pub error_code: Option<String>,
+    /// 与 `tool_error::ToolFailureCategory::as_str` 一致；失败时由 `error_code` 推导，供客户端粗粒度分支。
+    pub failure_category: Option<String>,
     pub retryable: Option<bool>,
     pub tool_call_id: Option<String>,
     pub execution_mode: Option<String>,
@@ -54,6 +57,15 @@ impl NormalizedToolEnvelope {
             ),
             None => (None, None, None),
         };
+        let failure_category = if parsed.ok {
+            None
+        } else {
+            parsed
+                .error_code
+                .as_deref()
+                .map(failure_category_for_error_code)
+                .map(|c| c.as_str().to_string())
+        };
         Self {
             envelope_version: CRABMATE_TOOL_ENVELOPE_VERSION_V1,
             name: tool_name.to_string(),
@@ -62,6 +74,7 @@ impl NormalizedToolEnvelope {
             ok: parsed.ok,
             exit_code: parsed.exit_code,
             error_code: parsed.error_code.clone(),
+            failure_category,
             retryable,
             tool_call_id,
             execution_mode,
@@ -98,6 +111,10 @@ impl NormalizedToolEnvelope {
             .get("error_code")
             .and_then(|x| x.as_str())
             .map(String::from);
+        let failure_category_stored = ct
+            .get("failure_category")
+            .and_then(|x| x.as_str())
+            .map(String::from);
         let retryable = ct.get("retryable").and_then(|x| x.as_bool());
         let tool_call_id = ct
             .get("tool_call_id")
@@ -115,6 +132,15 @@ impl NormalizedToolEnvelope {
         let output_original_chars = ct.get("output_original_chars").and_then(|x| x.as_u64());
         let output_kept_head_chars = ct.get("output_kept_head_chars").and_then(|x| x.as_u64());
         let output_kept_tail_chars = ct.get("output_kept_tail_chars").and_then(|x| x.as_u64());
+        let failure_category = failure_category_stored.or_else(|| {
+            if ok {
+                return None;
+            }
+            error_code
+                .as_deref()
+                .map(failure_category_for_error_code)
+                .map(|c| c.as_str().to_string())
+        });
         Some(Self {
             envelope_version,
             name,
@@ -123,6 +149,7 @@ impl NormalizedToolEnvelope {
             ok,
             exit_code,
             error_code,
+            failure_category,
             retryable,
             tool_call_id,
             execution_mode,
@@ -154,6 +181,9 @@ impl NormalizedToolEnvelope {
         }
         if let Some(ref e) = self.error_code {
             ct.insert("error_code".into(), Value::String(e.clone()));
+        }
+        if let Some(ref fc) = self.failure_category {
+            ct.insert("failure_category".into(), Value::String(fc.clone()));
         }
         if let Some(r) = self.retryable {
             ct.insert("retryable".into(), Value::Bool(r));
