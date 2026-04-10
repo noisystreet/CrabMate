@@ -129,6 +129,7 @@ async fn emit_sse_tool_result(
                 ok: Some(norm.ok),
                 exit_code: norm.exit_code,
                 error_code: norm.error_code.clone(),
+                failure_category: norm.failure_category.clone(),
                 retryable: norm.retryable,
                 tool_call_id: norm.tool_call_id,
                 execution_mode: norm.execution_mode,

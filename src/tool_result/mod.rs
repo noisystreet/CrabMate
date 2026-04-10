@@ -6,7 +6,7 @@
 //! `ok`、`exit_code`、`error_code`、`output`（工具原始返回正文，供模型阅读或再解析）。
 //! SSE `tool_result` 对象另含 **`result_version`**，与 `crabmate_tool.v` 对齐，便于客户端区分「控制面版本」与「工具结果载荷版本」。
 //! 可选扩展（见 [`ToolEnvelopeContext`]）：**`tool_call_id`**、**`execution_mode`**（`serial` / `parallel_readonly_batch`）、
-//! **`parallel_batch_id`**（同批并行只读工具共享）、失败时的 **`retryable`**（与 `error_code` 配套的启发式，非保证）。
+//! **`parallel_batch_id`**（同批并行只读工具共享）、失败时的 **`failure_category`**（与 [`tool_error::ToolFailureCategory`] 蛇形字符串同源，由 **`error_code`** 推导）、**`retryable`**（与 `error_code` 配套的启发式，非保证）。
 //! 经 [`maybe_compress_tool_message_content`] 截断时，会保留 **`output` 的首尾采样**（便于 grep/构建日志等仍见上下文），并写入
 //! **`output_truncated`**、**`output_original_chars`**、**`output_kept_head_chars`**、**`output_kept_tail_chars`** 供模型与 UI 引用。
 //!
@@ -19,7 +19,7 @@ pub use normalize::{
     CRABMATE_TOOL_ENVELOPE_VERSION_V1, NormalizedToolEnvelope, normalize_tool_message_content,
 };
 #[allow(unused_imports)] // `pub use` 再导出供外部使用，本文件不直接引用
-pub use tool_error::{ToolError, ToolFailureCategory};
+pub use tool_error::{ToolError, ToolFailureCategory, failure_category_for_error_code};
 
 use std::borrow::Cow;
 
@@ -377,6 +377,10 @@ mod tests {
         let v: Value = serde_json::from_str(&s).unwrap();
         let ct = v.get("crabmate_tool").unwrap();
         assert_eq!(ct.get("retryable").and_then(|x| x.as_bool()), Some(true));
+        assert_eq!(
+            ct.get("failure_category").and_then(|x| x.as_str()),
+            Some("timeout")
+        );
     }
 
     #[test]
