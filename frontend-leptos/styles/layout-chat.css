@@ -413,6 +413,7 @@
 
 /* 助手 Markdown（.msg-md-prose）：块级排版，避免 pre-wrap 与标题/列表冲突 */
 .msg-md-wrap {
+  width: 100%;
   min-width: 0;
   max-width: 100%;
 }
@@ -421,6 +422,12 @@
   white-space: normal;
   /* 流式全量替换 innerHTML 时缩小重排影响范围 */
   contain: layout style;
+}
+
+/* 助手正文：在已定宽的父级内优先按词/语义断行，避免继承 .msg-body 的 overflow-wrap:anywhere 在窄容器外仍过碎 */
+.msg-assistant .msg-body.msg-md-prose {
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 /* 长助手回复默认折叠高度，避免单条占满屏 */
@@ -647,9 +654,10 @@
 }
 
 /* 助手气泡：中性灰阶渐变 + 轮廓，避免与用户侧 accent 渐变同色同质 */
+/* 勿用 width:fit-content；且勿 align-self:flex-start（在 .msg-stack 纵 flex 下会按内容收宽 → 流式首字极窄 + anywhere 似竖排） */
 .msg-assistant {
-  align-self: flex-start;
-  width: fit-content;
+  align-self: stretch;
+  width: 100%;
   max-width: min(92%, 100%);
   box-sizing: border-box;
   background: linear-gradient(
@@ -1091,8 +1099,11 @@
   align-items: flex-end;
 }
 
+/* stretch：纵轴 flex 下让 .msg 在横向上拉满栈宽；flex-start 会使子项宽度=内容宽（流式初期塌条） */
 .msg-with-select:has(.msg-assistant) > .msg-stack {
-  align-items: flex-start;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
 }
 
 .msg-with-select:has(.msg-user) > .msg-stack > .msg {
@@ -1101,9 +1112,10 @@
   max-width: 100%;
 }
 
+/* 助手整行占满聊天列，避免外包层 fit-content 与气泡同塌；用户行仍 fit-content 右对齐 */
 .msg-with-select:has(.msg-assistant) {
-  align-self: flex-start;
-  width: fit-content;
+  align-self: stretch;
+  width: 100%;
   max-width: 100%;
 }
 
