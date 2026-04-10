@@ -14,6 +14,9 @@ use tokio::sync::{Semaphore, mpsc, oneshot};
 
 use crate::AppState;
 use crate::agent_errors::is_user_cancelled_run_agent_error;
+use crate::agent_role_turn::{
+    filter_tools_for_agent_role, persisted_agent_role_after_turn, turn_allow_for_web_or_cli_job,
+};
 use crate::config::{AgentConfig, LlmHttpAuthMode};
 use crate::text_util::truncate_chars_with_ellipsis;
 use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message};
@@ -106,6 +109,10 @@ pub struct JsonSubmitParams {
     pub conversation_id: String,
     pub messages: Vec<Message>,
     pub expected_revision: Option<u64>,
+    /// 本请求 JSON 中的 `agent_role`（若有）；用于中途切换与落盘 `active_agent_role`。
+    pub request_agent_role: Option<String>,
+    /// 回合开始前服务端已持久化的当前角色（仅已有会话；新会话为 `None`）。
+    pub persisted_active_agent_role: Option<String>,
     pub work_dir: PathBuf,
     pub workspace_is_set: bool,
     pub temperature_override: Option<f32>,
@@ -122,6 +129,8 @@ pub struct StreamSubmitParams {
     pub conversation_id: String,
     pub messages: Vec<Message>,
     pub expected_revision: Option<u64>,
+    pub request_agent_role: Option<String>,
+    pub persisted_active_agent_role: Option<String>,
     pub work_dir: PathBuf,
     pub workspace_is_set: bool,
     pub temperature_override: Option<f32>,
@@ -169,6 +178,8 @@ enum QueuedChatJob {
         conversation_id: String,
         messages: Vec<Message>,
         expected_revision: Option<u64>,
+        request_agent_role: Option<String>,
+        persisted_active_agent_role: Option<String>,
         work_dir: PathBuf,
         workspace_is_set: bool,
         temperature_override: Option<f32>,
@@ -183,6 +194,8 @@ enum QueuedChatJob {
         conversation_id: String,
         messages: Vec<Message>,
         expected_revision: Option<u64>,
+        request_agent_role: Option<String>,
+        persisted_active_agent_role: Option<String>,
         work_dir: PathBuf,
         workspace_is_set: bool,
         temperature_override: Option<f32>,
@@ -333,6 +346,8 @@ impl ChatJobQueue {
             conversation_id,
             messages,
             expected_revision,
+            request_agent_role,
+            persisted_active_agent_role,
             work_dir,
             workspace_is_set,
             temperature_override,
@@ -347,6 +362,8 @@ impl ChatJobQueue {
             conversation_id,
             messages,
             expected_revision,
+            request_agent_role,
+            persisted_active_agent_role,
             work_dir,
             workspace_is_set,
             temperature_override,
@@ -370,6 +387,8 @@ impl ChatJobQueue {
             conversation_id,
             messages,
             expected_revision,
+            request_agent_role,
+            persisted_active_agent_role,
             work_dir,
             workspace_is_set,
             temperature_override,
@@ -383,6 +402,8 @@ impl ChatJobQueue {
             conversation_id,
             messages,
             expected_revision,
+            request_agent_role,
+            persisted_active_agent_role,
             work_dir,
             workspace_is_set,
             temperature_override,
@@ -506,6 +527,8 @@ async fn post_turn_web_prepare_and_save(
     conversation_id: &str,
     messages: &mut Vec<Message>,
     expected_revision: Option<u64>,
+    request_agent_role: Option<&str>,
+    persisted_active_agent_role: Option<&str>,
 ) -> crate::SaveConversationOutcome {
     let scope = conversation_id.to_string();
     let to_index = messages.clone();
@@ -518,10 +541,24 @@ async fn post_turn_web_prepare_and_save(
     }
     crate::long_term_memory::strip_long_term_memory_injections(messages);
     crate::workspace_changelist::strip_workspace_changelist_injections(messages);
+    let mut active_save =
+        persisted_agent_role_after_turn(persisted_active_agent_role, request_agent_role);
+    if active_save.is_none()
+        && expected_revision.is_none()
+        && let Some(id) = cfg_snap
+            .default_agent_role_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        && cfg_snap.agent_roles.contains_key(id)
+    {
+        active_save = Some(id.to_string());
+    }
     state
         .save_conversation_messages_if_revision(
             conversation_id.to_string(),
             messages.clone(),
+            active_save.as_deref(),
             expected_revision,
         )
         .await
@@ -580,6 +617,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             conversation_id,
             mut messages,
             expected_revision,
+            request_agent_role,
+            persisted_active_agent_role,
             work_dir,
             workspace_is_set,
             temperature_override,
@@ -665,11 +704,18 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             };
             let (cfg_turn, api_key_turn) =
                 resolve_web_llm_for_job(&state, cfg_snap.clone(), llm_override.as_ref());
+            let turn_allow = turn_allow_for_web_or_cli_job(
+                &cfg_turn,
+                persisted_active_agent_role.as_deref(),
+                request_agent_role.as_deref(),
+            );
+            let tools_for_job =
+                filter_tools_for_agent_role(&state.tools, turn_allow.as_ref().map(|a| a.as_ref()));
             let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_stream(
                 &state.client,
                 api_key_turn.as_str(),
                 &cfg_turn,
-                &state.tools,
+                tools_for_job.as_slice(),
                 &mut messages,
                 &work_dir,
                 workspace_is_set,
@@ -681,6 +727,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 state.long_term_memory.clone(),
                 &conversation_id,
                 &sse_tx,
+                turn_allow,
             ))
             .await;
             cancel_watcher.abort();
@@ -700,6 +747,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                         &conversation_id,
                         &mut messages,
                         expected_revision,
+                        request_agent_role.as_deref(),
+                        persisted_active_agent_role.as_deref(),
                     )
                     .await
                     {
@@ -807,6 +856,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             conversation_id,
             mut messages,
             expected_revision,
+            request_agent_role,
+            persisted_active_agent_role,
             work_dir,
             workspace_is_set,
             temperature_override,
@@ -836,11 +887,18 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             };
             let (cfg_turn, api_key_turn) =
                 resolve_web_llm_for_job(&state, cfg_snap.clone(), llm_override.as_ref());
+            let turn_allow = turn_allow_for_web_or_cli_job(
+                &cfg_turn,
+                persisted_active_agent_role.as_deref(),
+                request_agent_role.as_deref(),
+            );
+            let tools_for_job =
+                filter_tools_for_agent_role(&state.tools, turn_allow.as_ref().map(|a| a.as_ref()));
             let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_json(
                 &state.client,
                 api_key_turn.as_str(),
                 &cfg_turn,
-                &state.tools,
+                tools_for_job.as_slice(),
                 &mut messages,
                 &work_dir,
                 workspace_is_set,
@@ -849,6 +907,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 seed_override,
                 state.long_term_memory.clone(),
                 &conversation_id,
+                turn_allow,
             ))
             .await;
             let (ok, cancelled, err) = match r {
@@ -859,6 +918,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                         &conversation_id,
                         &mut messages,
                         expected_revision,
+                        request_agent_role.as_deref(),
+                        persisted_active_agent_role.as_deref(),
                     )
                     .await
                     {

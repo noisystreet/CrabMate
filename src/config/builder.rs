@@ -549,6 +549,9 @@ impl ConfigBuilder {
                     slot.system_prompt_file = Some(f);
                 }
             }
+            if let Some(list) = row.allowed_tools.clone() {
+                slot.allowed_tools = Some(list);
+            }
         }
     }
 

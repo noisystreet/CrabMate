@@ -41,6 +41,27 @@ pub fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_{TABLE}_updated ON {TABLE}(updated_at_unix);
         "#
     ))?;
+    ensure_active_agent_role_column(conn)?;
+    Ok(())
+}
+
+fn ensure_active_agent_role_column(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({TABLE})"))?;
+    let mut has = false;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "active_agent_role" {
+            has = true;
+            break;
+        }
+    }
+    if !has {
+        conn.execute(
+            &format!("ALTER TABLE {TABLE} ADD COLUMN active_agent_role TEXT NOT NULL DEFAULT ''"),
+            [],
+        )?;
+    }
     Ok(())
 }
 
@@ -77,20 +98,23 @@ fn messages_from_json(s: &str) -> Result<Vec<Message>, String> {
 }
 
 /// 读取会话；不存在、或超过 TTL 视为无（并删除过期行）。
+/// 第三元组为持久化的当前多角色 id（空串视为未设置）。
 pub fn load(
     conn: &Connection,
     id: &str,
     ttl_secs: u64,
-) -> Result<Option<(Vec<Message>, u64)>, rusqlite::Error> {
+) -> Result<Option<(Vec<Message>, u64, String)>, rusqlite::Error> {
     let now = now_unix();
-    let row: Option<(String, i64, i64)> = conn
+    let row: Option<(String, i64, i64, String)> = conn
         .query_row(
-            &format!("SELECT messages_json, revision, updated_at_unix FROM {TABLE} WHERE id = ?1"),
+            &format!(
+                "SELECT messages_json, revision, updated_at_unix, active_agent_role FROM {TABLE} WHERE id = ?1"
+            ),
             params![id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
-    let Some((json, revision, updated)) = row else {
+    let Some((json, revision, updated, active_role)) = row else {
         return Ok(None);
     };
     if ttl_secs > 0 && now.saturating_sub(updated) > ttl_secs as i64 {
@@ -116,7 +140,7 @@ pub fn load(
         &format!("UPDATE {TABLE} SET updated_at_unix = ?1 WHERE id = ?2"),
         params![now, id],
     )?;
-    Ok(Some((messages, rev)))
+    Ok(Some((messages, rev, active_role)))
 }
 
 /// 与 `AppState::save_conversation_messages_if_revision` 语义一致。
@@ -124,9 +148,14 @@ pub fn save_if_revision(
     conn: &Connection,
     id: &str,
     messages: Vec<Message>,
+    active_agent_role: Option<&str>,
     expected_revision: Option<u64>,
 ) -> Result<SaveConversationOutcome, rusqlite::Error> {
     let now = now_unix();
+    let active_col = active_agent_role
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
     let json = match messages_to_json(&messages) {
         Ok(j) => j,
         Err(e) => {
@@ -143,9 +172,9 @@ pub fn save_if_revision(
     if let Some(exp) = expected_revision {
         let n = conn.execute(
             &format!(
-                "UPDATE {TABLE} SET messages_json = ?1, revision = revision + 1, updated_at_unix = ?2 WHERE id = ?3 AND revision = ?4"
+                "UPDATE {TABLE} SET messages_json = ?1, active_agent_role = ?2, revision = revision + 1, updated_at_unix = ?3 WHERE id = ?4 AND revision = ?5"
             ),
-            params![json, now, id, exp as i64],
+            params![json, active_col, now, id, exp as i64],
         )?;
         if n == 0 {
             return Ok(SaveConversationOutcome::Conflict);
@@ -161,9 +190,9 @@ pub fn save_if_revision(
         }
         conn.execute(
             &format!(
-                "INSERT INTO {TABLE} (id, messages_json, revision, updated_at_unix) VALUES (?1, ?2, 1, ?3)"
+                "INSERT INTO {TABLE} (id, messages_json, active_agent_role, revision, updated_at_unix) VALUES (?1, ?2, ?3, 1, ?4)"
             ),
-            params![id, json, now],
+            params![id, json, active_col, now],
         )?;
     }
     prune(
@@ -325,17 +354,44 @@ mod tests {
             Message::user_only("hi".to_string()),
         ];
         assert_eq!(
-            save_if_revision(&conn, "c1", msgs.clone(), None).unwrap(),
+            save_if_revision(&conn, "c1", msgs.clone(), None, None).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded.1, 1);
         assert_eq!(loaded.0.len(), 2);
         assert_eq!(
-            save_if_revision(&conn, "c1", msgs.clone(), Some(1)).unwrap(),
+            save_if_revision(&conn, "c1", msgs.clone(), None, Some(1)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded2.1, 2);
+    }
+
+    #[test]
+    fn save_load_active_agent_role_roundtrip() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let msgs = vec![Message::system_only("s".to_string())];
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs.clone(), None, None).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(loaded.2, "");
+
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs.clone(), Some("reviewer"), Some(1)).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(loaded2.2, "reviewer");
+
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs.clone(), None, Some(2)).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(loaded3.2, "");
     }
 }

@@ -1,5 +1,6 @@
 //! 运行配置：API 地址、模型等，从 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 嵌入默认 + 可选覆盖
 
+pub mod agent_role_spec;
 mod agent_roles;
 mod assembly;
 mod builder;
@@ -17,7 +18,11 @@ mod workspace_roots;
 pub use hot_reload::apply_hot_reload_config_subset;
 pub use load::{load_config, load_config_for_cli};
 
+pub(crate) use finalize::embedded_thinking_avoid_echo_appendix;
+
 #[allow(unused_imports)] // 部分类型仅对外再导出，本文件内不直接使用
+pub use agent_role_spec::AgentRoleSpec;
+#[allow(unused_imports)]
 pub use types::{
     AgentConfig, ExposeSecret, LlmHttpAuthMode, LongTermMemoryScopeMode,
     LongTermMemoryVectorBackend, PlannerExecutorMode, StagedPlanFeedbackMode,
