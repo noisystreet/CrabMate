@@ -1,6 +1,7 @@
 //! 工作区侧栏：可展开/折叠的子目录树（默认折叠，按需 `GET /workspace?path=` 拉取）。
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -75,10 +76,13 @@ pub fn WorkspaceFilesystemTree(
     subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
     subtree_loading: RwSignal<HashSet<String>>,
     locale: RwSignal<Locale>,
+    /// 双击工作区树中的**文件**行时回调相对路径（POSIX）；目录行不触发。
+    on_file_double_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     view! {
         <ul
             data-testid="workspace-file-tree"
+            prop:title=move || i18n::workspace_tree_insert_file_title(locale.get())
             class=move || {
             let entries = workspace_data
                 .get()
@@ -110,6 +114,7 @@ pub fn WorkspaceFilesystemTree(
                             subtree_cache=subtree_cache
                             subtree_loading=subtree_loading
                             locale=locale
+                            on_file_double_click=on_file_double_click
                         />
                     }
                     .into_any()
@@ -129,6 +134,7 @@ fn WorkspaceTreeNodes(
     subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
     subtree_loading: RwSignal<HashSet<String>>,
     locale: RwSignal<Locale>,
+    on_file_double_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     entries
         .into_iter()
@@ -140,10 +146,15 @@ fn WorkspaceTreeNodes(
             let row_class = workspace_list_row_class(is_dir, name.as_str());
             let rel = workspace_child_rel(&parent_rel, &name);
             if !is_dir {
+                let rel_dbl = rel.clone();
+                let on_ins = on_file_double_click;
                 view! {
                     <li
                         class=row_class
                         style=format!("--list-stagger: {stagger}")
+                        on:dblclick=move |_| {
+                            (on_ins.get_value())(rel_dbl.clone());
+                        }
                     >
                         {workspace_list_row_icon(false, name.as_str())}
                         <span class="workspace-entry-name">{name}</span>
@@ -237,6 +248,7 @@ fn WorkspaceTreeNodes(
                                                     subtree_cache=subtree_cache
                                                     subtree_loading=subtree_loading
                                                     locale=locale
+                                                    on_file_double_click=on_file_double_click
                                                 />
                                             </ul>
                                         }

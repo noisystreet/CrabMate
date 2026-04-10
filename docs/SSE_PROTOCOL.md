@@ -121,6 +121,7 @@
 | `STREAM_JOB_GONE` | 410 | **`stream_resume`** 任务不在 hub（见 `chat_stream_handler`） |
 | `SSE_CLIENT_TOO_NEW` | 400 | 请求体 **`client_sse_protocol`** 大于服务端 **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
+| `INVALID_AT_FILE_REF` | 400 | 用户消息含非法 **`@…`** 文件引用（如绝对路径或 **`/`** 开头的「伪相对」）；须为相对当前工作区根的相对路径，语义与 **`read_file`** 一致 |
 
 **客户端仅日志/文案用（非服务端下发的 SSE `code`）**：官方 Leptos 在 **`sse_capabilities`** 与本地版本不一致时，`onError` 字符串中含 **`SSE_SERVER_TOO_NEW`** 或 **`SSE_SERVER_TOO_OLD`**。
 

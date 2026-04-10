@@ -768,8 +768,32 @@ pub fn chat_empty_tip2(l: Locale) -> &'static str {
 
 pub fn composer_ph(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "输入消息，Enter 发送 / Shift+Enter 换行…",
-        Locale::En => "Message: Enter to send / Shift+Enter newline…",
+        Locale::ZhHans => {
+            "输入消息，Enter 发送 / Shift+Enter 换行；@相对路径 可展开文件（与 read_file 一致）…"
+        }
+        Locale::En => {
+            "Message: Enter send / Shift+Enter newline; @rel/path expands file (read_file rules)…"
+        }
+    }
+}
+
+/// 工作区树双击插入 `@路径` 时路径含空白。
+pub fn composer_ws_path_whitespace_err(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "该文件路径含空格，无法自动生成 @引用，请手动输入相对路径。",
+        Locale::En => {
+            "This path contains spaces; cannot auto-insert @ ref — type the relative path manually."
+        }
+    }
+}
+
+/// 侧栏工作区文件行：双击插入到输入框的提示。
+pub fn workspace_tree_insert_file_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "双击将 @相对路径 插入到聊天输入框（发送时由服务端展开）",
+        Locale::En => {
+            "Double-click to insert @relative-path into chat (expanded server-side on send)"
+        }
     }
 }
 

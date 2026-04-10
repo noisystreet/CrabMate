@@ -161,6 +161,7 @@ pub fn side_column_view(
     toggle_task: Arc<dyn Fn(String) + Send + Sync>,
     changelist_modal_open: RwSignal<bool>,
     changelist_fetch_nonce: RwSignal<u64>,
+    insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
     view! {
                 <div
@@ -470,6 +471,7 @@ pub fn side_column_view(
                                                                 subtree_cache=workspace_subtree_cache
                                                                 subtree_loading=workspace_subtree_loading
                                                                 locale=locale
+                                                                on_file_double_click=insert_workspace_file_ref
                                                             />
                                                         </>
                                                     }

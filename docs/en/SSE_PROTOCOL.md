@@ -121,6 +121,7 @@ Approximate category of the **last** failed final answer when the rewrite budget
 | `STREAM_JOB_GONE` | 410 | **`stream_resume`** job not in hub |
 | `SSE_CLIENT_TOO_NEW` | 400 | **`client_sse_protocol`** greater than server **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
+| `INVALID_AT_FILE_REF` | 400 | User message contains an invalid **`@…`** file reference (e.g. absolute path or **`/`**-prefixed “pseudo-relative”); must be relative to the workspace root, same rules as **`read_file`** |
 
 **Client-only hints** (in `onError` text from official Leptos when **`sse_capabilities`** disagrees): **`SSE_SERVER_TOO_NEW`**, **`SSE_SERVER_TOO_OLD`**.
 
