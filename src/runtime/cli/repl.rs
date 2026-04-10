@@ -12,6 +12,7 @@ use crate::runtime::cli_repl_ui::CliReplStyle;
 use crate::runtime::repl_reedline::{ReplLineEditor, ReplReadLine, read_repl_line_with_editor};
 use crate::tool_registry::CliToolRuntime;
 use crate::types::Message;
+use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use log::debug;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -293,7 +294,21 @@ pub async fn run_repl(
                         }
                     }
                 }
-                messages.push(Message::user_only(input.to_string()));
+                let user_body = {
+                    let g = cfg_holder.read().await;
+                    match expand_at_file_refs_in_user_message(
+                        input.as_str(),
+                        work_dir.as_path(),
+                        &g,
+                    ) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            let _ = style.eprint_error(&e);
+                            continue;
+                        }
+                    }
+                };
+                messages.push(Message::user_only(user_body));
                 debug!(
                     target: "crabmate::print",
                     "REPL 用户输入已入队 history_len={} input_preview={}",

@@ -42,6 +42,7 @@ pub mod tool_sandbox;
 mod tool_stats;
 mod tools;
 mod types;
+mod user_message_file_refs;
 mod web;
 mod web_static_dir;
 mod workspace_changelist;

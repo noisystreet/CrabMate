@@ -720,6 +720,16 @@ fn read_file_try_dispatch(
     file::read_file_try(args_json, ctx.working_dir, ctx)
 }
 
+/// 用户消息 `@路径` 展开等：与 `read_file` 工具同源校验与读取。
+#[allow(clippy::result_large_err)]
+pub(crate) fn read_file_try_at_paths(
+    args_json: &str,
+    working_dir: &std::path::Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, crate::tool_result::ToolError> {
+    file::read_file_try(args_json, working_dir, ctx)
+}
+
 fn runner_read_dir(args: &str, ctx: &ToolContext<'_>) -> String {
     file::read_dir(args, ctx.working_dir)
 }
