@@ -358,6 +358,24 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
         1,
         100_000,
     )?;
+    check_f64_inclusive(
+        "codebase_semantic_hybrid_alpha",
+        b.codebase_semantic_hybrid_alpha,
+        0.0,
+        1.0,
+    )?;
+    check_u64_inclusive(
+        "codebase_semantic_fts_top_n",
+        b.codebase_semantic_fts_top_n,
+        1,
+        10_000,
+    )?;
+    check_u64_inclusive(
+        "codebase_semantic_hybrid_semantic_pool",
+        b.codebase_semantic_hybrid_semantic_pool,
+        1,
+        10_000,
+    )?;
 
     check_u64_inclusive(
         "tool_registry_http_fetch_wall_timeout_secs",

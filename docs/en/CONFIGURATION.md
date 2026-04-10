@@ -112,6 +112,10 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_CODEBASE_SEMANTIC_TOP_K` | Default Top-K. |
 | `AGENT_CODEBASE_SEMANTIC_REBUILD_MAX_FILES` | Max files **re-embedded** per **`rebuild_index`** (large-repo guard; unchanged files are skipped in incremental mode). |
 | `AGENT_CODEBASE_SEMANTIC_REBUILD_INCREMENTAL` | Workspace-wide **`rebuild_index`** defaults to **incremental** (**`mtime` + `size` + SHA256**); **`false`** clears chunk + file-catalog rows then full re-embed. Subtree **`path`** still replaces that prefix only. |
+| `AGENT_CODEBASE_SEMANTIC_QUERY_MAX_CHUNKS` | Max vector chunks scanned per **`query`** (default **50000**; **0** = unlimited). |
+| `AGENT_CODEBASE_SEMANTIC_HYBRID_ALPHA` | Default **`retrieve_mode: hybrid`** vector weight **α** (0–1): **α×cosine + (1-α)×fts_norm** (SQLite **FTS5** BM25 normalized). |
+| `AGENT_CODEBASE_SEMANTIC_FTS_TOP_N` | Max FTS rows for hybrid / **`fts_only`** (BM25); **1–10000**, default **400**. |
+| `AGENT_CODEBASE_SEMANTIC_HYBRID_SEMANTIC_POOL` | Hybrid: vector candidate pool size (≥ **`top_k`**); **1–10000**, default **256**. |
 | `AGENT_CONVERSATION_STORE_SQLITE_PATH` | Conversation SQLite path. |
 
 ### First-turn injection

@@ -220,6 +220,9 @@ pub(super) struct AgentSection {
     pub(super) codebase_semantic_query_max_chunks: Option<u64>,
     pub(super) codebase_semantic_rebuild_max_files: Option<u64>,
     pub(super) codebase_semantic_rebuild_incremental: Option<bool>,
+    pub(super) codebase_semantic_hybrid_alpha: Option<f64>,
+    pub(super) codebase_semantic_fts_top_n: Option<u64>,
+    pub(super) codebase_semantic_hybrid_semantic_pool: Option<u64>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None。

@@ -685,4 +685,19 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.codebase_semantic_rebuild_incremental = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_HYBRID_ALPHA")
+        && let Ok(a) = v.trim().parse::<f64>()
+    {
+        b.codebase_semantic_hybrid_alpha = Some(a);
+    }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_FTS_TOP_N")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.codebase_semantic_fts_top_n = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_CODEBASE_SEMANTIC_HYBRID_SEMANTIC_POOL")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.codebase_semantic_hybrid_semantic_pool = Some(n);
+    }
 }
