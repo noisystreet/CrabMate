@@ -233,3 +233,28 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         default_agent_role_id: cfg.default_agent_role_id.clone(),
     })
 }
+
+/// 与 `GET /web-ui` 对应；**无** TOML 字段，仅读进程环境变量。
+const AGENT_WEB_DISABLE_MARKDOWN: &str = "AGENT_WEB_DISABLE_MARKDOWN";
+
+fn web_disable_markdown_env() -> bool {
+    match std::env::var(AGENT_WEB_DISABLE_MARKDOWN) {
+        Ok(s) => {
+            let t = s.trim().to_ascii_lowercase();
+            matches!(t.as_str(), "1" | "true" | "yes" | "on")
+        }
+        Err(_) => false,
+    }
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct WebUiConfigResponse {
+    /// 为 `false` 时 Web CSR 应以纯文本（HTML 转义）展示聊天气泡，跳过 Markdown 解析。
+    pub markdown_render: bool,
+}
+
+pub(crate) async fn web_ui_config_handler() -> Json<WebUiConfigResponse> {
+    Json(WebUiConfigResponse {
+        markdown_render: !web_disable_markdown_env(),
+    })
+}

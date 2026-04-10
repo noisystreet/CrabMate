@@ -92,6 +92,7 @@ pub(crate) fn tool_run_group_view(
     status_err: RwSignal<Option<String>>,
     auto_scroll_chat: RwSignal<bool>,
     locale: RwSignal<Locale>,
+    markdown_render: RwSignal<bool>,
 ) -> impl IntoView {
     let items_sv = StoredValue::new(items);
     let group_ids: Vec<String> = items_sv
@@ -162,6 +163,7 @@ pub(crate) fn tool_run_group_view(
                                         retry_assistant_target,
                                         status_err,
                                         locale,
+                                        markdown_render,
                                     )
                                 })
                                 .collect_view()
@@ -205,6 +207,7 @@ pub(crate) fn tool_run_group_view(
                             retry_assistant_target,
                             status_err,
                             locale,
+                            markdown_render,
                         )}
                     }
                     .into_any()
@@ -235,6 +238,7 @@ pub(crate) fn chat_message_row(
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
     locale: RwSignal<Locale>,
+    markdown_render: RwSignal<bool>,
 ) -> impl IntoView {
     let is_staged_timeline = m.role == "system"
         && m.text
@@ -288,6 +292,7 @@ pub(crate) fn chat_message_row(
             m.id.clone(),
             expanded_long_assistant_ids,
             locale,
+            markdown_render,
         )
         .into_any()
     } else {

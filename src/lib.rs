@@ -3,6 +3,9 @@
 //!
 //! 日志由 `log` + `env_logger` 处理；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
 
+// `web/openapi.rs` 中 `serde_json::json!` 体量较大，默认递归深度不足会无法编译。
+#![recursion_limit = "512"]
+
 pub mod agent;
 mod agent_errors;
 mod agent_memory;

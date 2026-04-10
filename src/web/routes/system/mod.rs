@@ -5,10 +5,11 @@ use std::sync::Arc;
 use axum::{Router, routing::get};
 
 use crate::AppState;
-use crate::web::chat_handlers::{health_handler, status_handler};
+use crate::web::chat_handlers::{health_handler, status_handler, web_ui_config_handler};
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/health", get(health_handler))
         .route("/status", get(status_handler))
+        .route("/web-ui", get(web_ui_config_handler))
 }

@@ -20,6 +20,7 @@ pub(super) fn wire_changelist_fetch_effects(
     changelist_modal_err: RwSignal<Option<String>>,
     changelist_modal_html: RwSignal<String>,
     changelist_modal_rev: RwSignal<u64>,
+    markdown_render: RwSignal<bool>,
 ) {
     Effect::new({
         let session_sync = session_sync;
@@ -28,6 +29,7 @@ pub(super) fn wire_changelist_fetch_effects(
         let changelist_modal_err = changelist_modal_err;
         let changelist_modal_html = changelist_modal_html;
         let changelist_modal_rev = changelist_modal_rev;
+        let markdown_render = markdown_render;
         move |_| {
             let n = changelist_fetch_nonce.get();
             if n == 0 {
@@ -36,6 +38,7 @@ pub(super) fn wire_changelist_fetch_effects(
             changelist_modal_loading.set(true);
             changelist_modal_err.set(None);
             let cid = session_sync.with(|s| s.changelog_conversation_id().map(str::to_string));
+            let md_on = markdown_render.get_untracked();
             spawn_local(async move {
                 match fetch_workspace_changelog(cid.as_deref()).await {
                     Ok(r) => {
@@ -45,7 +48,11 @@ pub(super) fn wire_changelist_fetch_effects(
                             changelist_modal_rev.set(0);
                         } else {
                             changelist_modal_rev.set(r.revision);
-                            changelist_modal_html.set(markdown::to_safe_html(&r.markdown));
+                            changelist_modal_html.set(if md_on {
+                                markdown::to_safe_html(&r.markdown)
+                            } else {
+                                markdown::plaintext_to_safe_html(&r.markdown)
+                            });
                         }
                     }
                     Err(e) => {

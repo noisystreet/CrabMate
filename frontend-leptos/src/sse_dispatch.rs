@@ -18,6 +18,7 @@ pub enum SseDispatch {
     Plain,
 }
 
+#[allow(clippy::type_complexity)]
 pub struct SseCallbacks<'a> {
     pub on_error: &'a mut dyn FnMut(String),
     pub on_workspace_changed: Option<&'a mut dyn FnMut()>,

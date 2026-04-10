@@ -231,7 +231,7 @@ pub fn settings_api_base_preset_label(id: &str, l: Locale) -> &'static str {
         "minimax" => settings_api_base_preset_minimax(l),
         "zhipu" => settings_api_base_preset_zhipu(l),
         "moonshot" => settings_api_base_preset_moonshot(l),
-        "custom" | _ => settings_api_base_preset_custom(l),
+        _ => settings_api_base_preset_custom(l),
     }
 }
 

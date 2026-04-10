@@ -1,0 +1,111 @@
+**语言 / Languages:** 中文（本页）· [English](en/DEBUG.md)
+
+# 调试与排障指南
+
+本文汇总 CrabMate 常用的**调试手段**（环境变量、日志、HTTP 探针、内置工具、协议与测试），与 [docs/CONFIGURATION.md](CONFIGURATION.md)（配置与 `AGENT_*` 全表）、[docs/CLI.md](CLI.md)（子命令与路由）、[docs/DEVELOPMENT.md](DEVELOPMENT.md)（架构与可观测性细节）互补。
+
+---
+
+## 1. Web UI：关闭 Markdown 渲染（环境变量）
+
+| 项 | 说明 |
+| --- | --- |
+| **变量** | **`AGENT_WEB_DISABLE_MARKDOWN`**（**无**对应 TOML 字段） |
+| **真值** | 设为 **`1`** / **`true`** / **`yes`** / **`on`**（大小写不敏感）即启用「关闭 Markdown」 |
+| **效果** | 浏览器 CSR 启动后请求 **`GET /web-ui`**，若 `markdown_render` 为 `false`，则**助手气泡**与**工作区变更集模态**以 **HTML 转义纯文本**展示（换行转为 `<br />`），便于对照上游原文、区分思维链/正文是否被 Markdown 改写。**聊天气泡内**思维链与终答均为同一正文色与等宽字体，**不再**使用 Markdown 模式下的次要色/左边线/背景卡区分思维链 |
+| **注意** | 修改后须**重启 `serve`**；请求失败时前端默认仍走 Markdown |
+
+**手动验证**：`curl -s http://127.0.0.1:8080/web-ui`（端口按实际；若启用了 Web API 鉴权，与其它系统路由一致处理）。
+
+---
+
+## 2. 服务端日志（`RUST_LOG` 与 `--log`）
+
+- **默认**：未设置 `RUST_LOG` 时，`serve` 为 **info**；`repl` / `chat` / `bench` / `config` / `save-session` / `tool-replay` 等为 **warn**。见 [docs/CLI.md](CLI.md)。
+- **全局文件 + 镜像 stderr**：根级 **`--log /path/to.log`**（须写在子命令**之前**，如 `crabmate --log /tmp/cm.log serve`）。
+- **上下文管道（每轮进模型前）**  
+  - `RUST_LOG=crabmate=debug`：打印 **`message_pipeline session_sync`** 汇总一行。  
+  - `RUST_LOG=crabmate::message_pipeline=trace`：每阶段一行 **`session_sync_step`**（阶段名、消息条数、字符估计等）。  
+  计数与含义见 [docs/DEVELOPMENT.md](DEVELOPMENT.md)「架构设计 → 上下文管道（观测）」；与 **`GET /status`** 中相关字段对照。
+- **规划 / 反思（`per`）**：`RUST_LOG=crabmate::per=info` 或更宽级别，可看 `after_final_assistant`、重写次数等（见 DEVELOPMENT）。
+- **CLI 终端打印路径**：`RUST_LOG=crabmate::print=debug` 可在终端打印前对将输出内容做**截断预览**（便于对照实际气泡/工具块），见 DEVELOPMENT 中 `terminal_cli_transcript` 等说明。
+
+**勿在日志或 issue 中粘贴**完整 **`API_KEY`**、Bearer 头或带真实 token 的 URL；见仓库 **`.cursor/rules/secrets-and-logging.mdc`**。
+
+---
+
+## 3. 本地诊断子命令（无需对话模型即可使用）
+
+| 命令 | 用途 |
+| --- | --- |
+| **`crabmate doctor`** | 一页式本机诊断（Rust/路径/可选依赖等）；**不要**求 `API_KEY` |
+| **`crabmate probe`** / **`crabmate models`** | 探测 `GET {api_base}/models`；**bearer** 模式下通常需要环境变量 **`API_KEY`**（输出脱敏） |
+| **`crabmate save-session`**（别名 **`export-session`**） | 导出会话 JSON/Markdown，便于离线对照消息与工具结果 |
+| **`crabmate tool-replay`** | 从会话提取工具步骤 fixture 并重放，便于隔离工具层问题 |
+
+REPL 内等价：**`/doctor`**、**`/probe`**、**`/models`** 等，见 [docs/CLI.md](CLI.md)。
+
+---
+
+## 4. HTTP 探针（`serve` 运行时）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | **`/health`** | 依赖与健康项（含可选 LLM models 探活等） |
+| GET | **`/status`** | 模型、工具数、规划/队列/上下文管道计数等运行态摘要 |
+| GET | **`/web-ui`** | CSR 展示开关 JSON（**`markdown_render`**，见 §1） |
+| GET | **`/openapi.json`** | OpenAPI 3.0，与当前路由表对齐 |
+
+完整路由表见 [docs/CLI.md](CLI.md)「主要 HTTP 路由」。若进程启用了 Web API 鉴权，受保护路径须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**；**`/health`**、**`/status`**、**`/web-ui`**、**`/openapi.json`** 与静态页所在层以当前 `src/web/server.rs` 为准。
+
+---
+
+## 5. 内置工具 `diagnostic_summary`
+
+模型可调用 **`diagnostic_summary`**（参数均可选）收集**只读、脱敏**信息：Rust 工具链版本、工作区常见路径是否存在、若干环境变量**是否已设置**（**永不输出变量值**；与 `API_KEY` 同类变量**亦不报告长度**）。
+
+**不要**把真实密钥粘贴进对话或工具入参。参数与行为见 [docs/TOOLS.md](TOOLS.md)。
+
+---
+
+## 6. SSE 与前后端协议对齐
+
+- **权威说明与错误码**：[docs/SSE_PROTOCOL.md](SSE_PROTOCOL.md)。
+- **后端**：`src/sse/protocol.rs`、`crates/crabmate-sse-protocol`（版本号 **`SSE_PROTOCOL_VERSION`**）。
+- **前端**：`frontend-leptos/src/sse_dispatch.rs`、`frontend-leptos/src/api.rs`。
+- **修改控制面 JSON 分支顺序**时：同步 **`src/sse/control_dispatch_mirror.rs`** 与 **`fixtures/sse_control_golden.jsonl`**，并执行：**`cargo test golden_sse_control`**。
+
+---
+
+## 7. CLI 流式与规划输出（可选环境变量）
+
+| 变量 | 说明 |
+| --- | --- |
+| **`AGENT_CLI_WAIT_SPINNER=1`** | 在等待模型首包流式输出（或非流式整段 body）时，于 **TTY stderr** 显示等待动效（默认关；见 [docs/CONFIGURATION.md](CONFIGURATION.md)） |
+| **`AGENT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM=0`** | 关闭交互式 CLI 下无工具规划轮的模型原文打印（仍保留步骤摘要等） |
+
+---
+
+## 8. 工作流 / 请求 Chrome Trace（可选）
+
+将工作流或 HTTP 请求轨迹导出为 Chrome Trace JSON 时，可使用环境变量 **`CRABMATE_WORKFLOW_CHROME_TRACE_DIR`** / **`AGENT_WORKFLOW_CHROME_TRACE_DIR`** 等（与 **`CRABMATE_REQUEST_CHROME_TRACE_DIR`** 的合并行为见 [docs/CONFIGURATION.md](CONFIGURATION.md) 与 [docs/DEVELOPMENT.md](DEVELOPMENT.md)）。
+
+---
+
+## 9. 前端（Leptos / WASM）本地构建
+
+- 静态资源：**`cd frontend-leptos && trunk build`**（发布用 **`trunk build --release`**），再由 **`crabmate serve`** 从 **`frontend-leptos/dist`** 提供。
+- 维护者快速类型检查：**`cd frontend-leptos && cargo check --target wasm32-unknown-unknown`**。
+- 浏览器侧：开发者工具 **Network**（`POST /chat/stream`、`GET /web-ui` 等）、**Console**（WASM  panic 由 `console_error_panic_hook` 辅助）。
+
+---
+
+## 10. 相关文档索引
+
+| 文档 | 内容 |
+| --- | --- |
+| [CONFIGURATION.md](CONFIGURATION.md) | `AGENT_*`、热重载、Web 鉴权与安全开关 |
+| [CLI.md](CLI.md) | 子命令、HTTP 路由、`RUST_LOG` 默认 |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | 模块索引、`message_pipeline` 日志与 `/status` 计数 |
+| [SSE_PROTOCOL.md](SSE_PROTOCOL.md) | SSE 行协议与错误码 |
+| [TOOLS.md](TOOLS.md) | `diagnostic_summary` 等工具说明 |

@@ -173,6 +173,18 @@ pub struct StatusData {
     pub context_char_budget: usize,
 }
 
+fn default_markdown_render_true() -> bool {
+    true
+}
+
+/// `GET /web-ui`：服务端由环境变量导出的 CSR 展示开关（无 TOML 字段）。
+#[derive(Debug, Clone, Deserialize)]
+pub struct WebUiConfig {
+    /// 为 `false` 时关闭聊天气泡与变更集模态的 Markdown 渲染（纯文本 HTML 转义）。
+    #[serde(default = "default_markdown_render_true")]
+    pub markdown_render: bool,
+}
+
 pub async fn fetch_workspace(path: Option<&str>) -> Result<WorkspaceData, String> {
     let url = match path {
         Some(p) if !p.trim().is_empty() => format!("/workspace?path={}", urlencoding::encode(p)),
@@ -278,6 +290,10 @@ pub async fn fetch_tasks() -> Result<TasksData, String> {
 
 pub async fn fetch_status() -> Result<StatusData, String> {
     fetch_json("GET", "/status", None).await
+}
+
+pub async fn fetch_web_ui_config() -> Result<WebUiConfig, String> {
+    fetch_json("GET", "/web-ui", None).await
 }
 
 pub async fn save_tasks(data: &TasksData) -> Result<TasksData, String> {

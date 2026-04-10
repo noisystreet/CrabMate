@@ -34,6 +34,7 @@ pub fn assistant_markdown_collapsible_view(
     message_id: String,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
     locale: RwSignal<Locale>,
+    markdown_render: RwSignal<bool>,
 ) -> impl IntoView {
     let split_ref = NodeRef::<Div>::new();
     let reasoning_ref = NodeRef::<Div>::new();
@@ -53,7 +54,9 @@ pub fn assistant_markdown_collapsible_view(
             let _ = active_id.get();
             let _ = expanded_long_assistant_ids.get();
             let _ = locale.get();
+            let _ = markdown_render.get();
             let loc = locale.get_untracked();
+            let md_on = markdown_render.get_untracked();
             let (reasoning_src, text_src, is_loading) = sessions.with(|list| {
                 let aid = active_id.get_untracked();
                 list.iter()
@@ -84,10 +87,16 @@ pub fn assistant_markdown_collapsible_view(
             };
             let html_r = if r_trim.is_empty() {
                 String::new()
-            } else {
+            } else if md_on {
                 markdown::to_safe_html(r_trim)
+            } else {
+                markdown::plaintext_to_safe_html(r_trim)
             };
-            let html_a = markdown::to_safe_html(&answer_display);
+            let html_a = if md_on {
+                markdown::to_safe_html(&answer_display)
+            } else {
+                markdown::plaintext_to_safe_html(&answer_display)
+            };
             let paint_arc = paint.get_value();
             {
                 let mut g = paint_arc.lock().expect("assistant paint mutex poisoned");
@@ -146,7 +155,13 @@ pub fn assistant_markdown_collapsible_view(
     });
 
     view! {
-        <div class="msg-md-wrap">
+        <div class=move || {
+            if markdown_render.get() {
+                "msg-md-wrap"
+            } else {
+                "msg-md-wrap msg-md-wrap--plaintext"
+            }
+        }>
             {move || {
                 let loc = locale.get();
                 let (is_loading, raw_len) = sessions.with(|list| {

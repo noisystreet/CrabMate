@@ -447,10 +447,12 @@ flowchart LR
 - **`fetch_workspace_pick`**：`GET /workspace/pick` 触发服务端 `rfd` 选目录，返回路径后前端立即 `POST /workspace` 并刷新列表；手动改输入框后按 **Enter** 同样提交。
 - 纯文本 `data:` 作为 delta；JSON `data:` 经 `sse_dispatch.rs` 分类为控制面并消费（工具状态、审批请求、工作区刷新、分阶段规划通知等）。
 - 审批决策通过 `submit_chat_approval` 发送到 `POST /chat/approval`。
+- **`fetch_web_ui_config`**：`GET /web-ui`（与 **`AGENT_WEB_DISABLE_MARKDOWN`** 环境变量对应，**无** TOML 字段）；启动后拉取一次，控制聊天气泡与变更集模态是否走 Markdown。
 
 ### `frontend-leptos/src/markdown.rs`
 
 - **`pulldown-cmark`** 将 Markdown 转为 HTML 片段，**`ammonia::clean`** 白名单净化后供助手气泡 **`innerHTML`** 注入（含多级标题、列表、代码块、表格、任务列表等）。
+- **`plaintext_to_safe_html`**：调试路径下不做 Markdown 解析，仅 HTML 转义并以 `<br />` 保留换行。
 - 单测：宿主目标下 **`#[test]`** 校验表格、脚本剔除、围栏代码等；**`wasm32`** 下另有 **`#[wasm_bindgen_test]`** 烟测（与生产同路径调用 **`to_safe_html`**）。
 
 ### `frontend-leptos/src/debounce_schedule.rs`

@@ -62,6 +62,22 @@ pub fn build_openapi_spec() -> Value {
                     }
                 }
             },
+            "/web-ui": {
+                "get": {
+                    "tags": ["system"],
+                    "summary": "CSR 展示开关（如是否启用聊天气泡 Markdown；受环境变量影响）",
+                    "responses": {
+                        "200": {
+                            "description": "Web UI 配置 JSON",
+                            "content": {
+                                "application/json": {
+                                    "schema": { "$ref": "#/components/schemas/WebUiConfigResponse" }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             "/chat": {
                 "post": {
                     "tags": ["chat"],
@@ -504,6 +520,16 @@ pub fn build_openapi_spec() -> Value {
                         "api_key": { "type": "string", "description": "浏览器侧覆盖，勿记录到服务端日志" }
                     }
                 },
+                "WebUiConfigResponse": {
+                    "type": "object",
+                    "required": ["markdown_render"],
+                    "properties": {
+                        "markdown_render": {
+                            "type": "boolean",
+                            "description": "为 false 时 CSR 跳过聊天气泡 Markdown（纯文本 HTML 转义）；由环境变量 AGENT_WEB_DISABLE_MARKDOWN 控制"
+                        }
+                    }
+                },
                 "ChatRequestBody": {
                     "type": "object",
                     "required": ["message"],
@@ -755,6 +781,7 @@ mod tests {
         assert_eq!(v["openapi"], "3.0.3");
         let paths = v["paths"].as_object().expect("paths object");
         assert!(paths.contains_key("/health"));
+        assert!(paths.contains_key("/web-ui"));
         assert!(paths.contains_key("/chat/stream"));
         assert!(paths.contains_key("/openapi.json"));
         assert!(v["components"]["securitySchemes"]["bearerAuth"].is_object());
