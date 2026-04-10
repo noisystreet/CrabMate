@@ -11,6 +11,7 @@ mod api;
 mod app;
 mod app_prefs;
 mod assistant_body;
+mod clarification_form;
 mod debounce_schedule;
 mod i18n;
 mod markdown;

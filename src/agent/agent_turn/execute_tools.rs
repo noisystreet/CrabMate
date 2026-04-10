@@ -16,6 +16,7 @@ static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
+use crate::clarification_questionnaire::maybe_emit_clarification_questionnaire_sse;
 use crate::config::AgentConfig;
 use crate::sse::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
@@ -199,6 +200,7 @@ async fn emit_tool_result_sse_and_append(
             envelope_ctx,
         )
         .await;
+        maybe_emit_clarification_questionnaire_sse(Some(tx), name, args, result.as_str()).await;
     }
 
     crate::tool_stats::record_tool_outcome(

@@ -31,6 +31,11 @@ pub enum SsePayload {
     CommandApproval {
         command_approval_request: CommandApprovalBody,
     },
+    /// Web 澄清问卷：模型经工具 `present_clarification_questionnaire` 成功后由 `execute_tools` 补发；用户下一条 `POST /chat*` 带 `clarify_questionnaire_answers`。
+    ClarificationQuestionnaire {
+        #[serde(rename = "clarification_questionnaire")]
+        clarification_questionnaire: ClarificationQuestionnaireBody,
+    },
     /// 工具调用摘要（执行前）
     ToolCall {
         tool_call: ToolCallSummary,
@@ -127,6 +132,27 @@ pub struct CommandApprovalBody {
     /// 永久允许时写入进程内白名单的键；缺省则使用 `command` 小写（与 `run_command` 行为一致）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowlist_key: Option<String>,
+}
+
+/// 澄清问卷单题字段（与 `present_clarification_questionnaire` 工具参数对齐）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClarificationQuestionField {
+    pub id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+    /// `text` 或 `choice`（预留；Web 当前均以文本提交）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClarificationQuestionnaireBody {
+    pub questionnaire_id: String,
+    pub intro: String,
+    pub questions: Vec<ClarificationQuestionField>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -264,6 +290,28 @@ pub fn encode_message(payload: SsePayload) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn roundtrip_clarification_questionnaire() {
+        let s = encode_message(SsePayload::ClarificationQuestionnaire {
+            clarification_questionnaire: ClarificationQuestionnaireBody {
+                questionnaire_id: "q1".into(),
+                intro: "请补充".into(),
+                questions: vec![ClarificationQuestionField {
+                    id: "scope".into(),
+                    label: "范围？".into(),
+                    hint: Some("可选".into()),
+                    required: Some(true),
+                    kind: Some("text".into()),
+                }],
+            },
+        });
+        let m: SseMessage = serde_json::from_str(&s).unwrap();
+        assert!(matches!(
+            m.payload,
+            SsePayload::ClarificationQuestionnaire { .. }
+        ));
+    }
 
     #[test]
     fn roundtrip_parsing_tool_calls() {

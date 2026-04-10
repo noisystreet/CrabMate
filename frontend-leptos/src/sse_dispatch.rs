@@ -30,6 +30,7 @@ pub struct SseCallbacks<'a> {
     pub on_conversation_saved_revision: Option<&'a mut dyn FnMut(u64)>,
     pub on_staged_plan_step_started: Option<&'a mut dyn FnMut(StagedPlanStepStartInfo)>,
     pub on_staged_plan_step_finished: Option<&'a mut dyn FnMut(StagedPlanStepEndInfo)>,
+    pub on_clarification_questionnaire: Option<&'a mut dyn FnMut(ClarificationQuestionnaireInfo)>,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +70,22 @@ pub struct StagedPlanStepEndInfo {
     pub total_steps: usize,
     pub status: String,
     pub executor_kind: Option<String>,
+}
+
+/// `clarification_questionnaire`：Web 表单用字段子集。
+#[derive(Debug, Clone)]
+pub struct ClarificationQuestionnaireInfo {
+    pub questionnaire_id: String,
+    pub intro: String,
+    pub fields: Vec<ClarificationFormField>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClarificationFormField {
+    pub id: String,
+    pub label: String,
+    pub hint: Option<String>,
+    pub required: bool,
 }
 
 fn parse_staged_plan_step_started(
@@ -175,6 +192,72 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
     if key_present_non_null(obj, "staged_plan_finished") {
+        return SseDispatch::Handled;
+    }
+
+    if key_present_non_null(obj, "clarification_questionnaire") {
+        if let Some(Value::Object(inner)) = obj.get("clarification_questionnaire")
+            && let Some(qid) = inner
+                .get("questionnaire_id")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+            && let Some(intro) = inner
+                .get("intro")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+            && let Some(Value::Array(qarr)) = inner.get("questions")
+        {
+            let mut fields: Vec<ClarificationFormField> = Vec::new();
+            for q in qarr {
+                let Some(qo) = q.as_object() else {
+                    continue;
+                };
+                let id = qo
+                    .get("id")
+                    .and_then(|x| x.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let label = qo
+                    .get("label")
+                    .and_then(|x| x.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let (Some(id), Some(label)) = (id, label) else {
+                    continue;
+                };
+                let hint = qo
+                    .get("hint")
+                    .and_then(|x| x.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let required = qo
+                    .get("required")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false);
+                fields.push(ClarificationFormField {
+                    id,
+                    label,
+                    hint,
+                    required,
+                });
+            }
+            if !fields.is_empty()
+                && let Some(f) = cbs.on_clarification_questionnaire.as_mut()
+            {
+                f(ClarificationQuestionnaireInfo {
+                    questionnaire_id: qid,
+                    intro,
+                    fields,
+                });
+            }
+        }
         return SseDispatch::Handled;
     }
 

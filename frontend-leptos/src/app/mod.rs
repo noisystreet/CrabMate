@@ -56,6 +56,7 @@ use crate::app_prefs::{
     load_f64_key, load_side_panel_view, local_storage, store_bool_key, store_f64_key,
     store_side_panel_view,
 };
+use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::{self, load_locale_from_storage};
 use crate::session_ops::{SessionContextAnchor, estimate_context_chars_for_active_session};
 use crate::session_sync::SessionSyncState;
@@ -75,6 +76,7 @@ pub fn App() -> impl IntoView {
     let initialized = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
     let pending_images = RwSignal::new(Vec::<String>::new());
+    let pending_clarification = RwSignal::new(None::<PendingClarificationForm>);
     // 输入草稿：仅写 Mutex，不在每键 `sessions.update`；发送 / 切会话时再写入 `ChatSession.draft`。
     let composer_draft_buffer: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
     let composer_input_ref: NodeRef<Textarea> = NodeRef::new();
@@ -418,6 +420,7 @@ pub fn App() -> impl IntoView {
         active_id,
         draft,
         pending_images,
+        pending_clarification,
         session_sync,
         stream_job_id,
         stream_last_event_seq,
@@ -512,6 +515,7 @@ pub fn App() -> impl IntoView {
         changelist_modal_open,
         changelist_fetch_nonce,
         pending_images,
+        pending_clarification,
     );
 
     let toggle_task: Arc<dyn Fn(String) + Send + Sync> = Arc::new({
@@ -672,6 +676,7 @@ pub fn App() -> impl IntoView {
                         composer_input_ref,
                         composer_buf_ta.clone(),
                         pending_images,
+                        pending_clarification,
                         chat_wires.run_send_message.clone(),
                         Arc::clone(&chat_wires.cancel_stream),
                         status_busy,
