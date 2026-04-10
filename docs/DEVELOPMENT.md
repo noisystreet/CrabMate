@@ -447,7 +447,7 @@ flowchart LR
 - **`fetch_workspace_pick`**：`GET /workspace/pick` 触发服务端 `rfd` 选目录，返回路径后前端立即 `POST /workspace` 并刷新列表；手动改输入框后按 **Enter** 同样提交。
 - 纯文本 `data:` 作为 delta；JSON `data:` 经 `sse_dispatch.rs` 分类为控制面并消费（工具状态、审批请求、工作区刷新、分阶段规划通知等）。
 - 审批决策通过 `submit_chat_approval` 发送到 `POST /chat/approval`。
-- **`fetch_web_ui_config`**：`GET /web-ui`（与 **`AGENT_WEB_DISABLE_MARKDOWN`** 环境变量对应，**无** TOML 字段）；启动后拉取一次，控制聊天气泡与变更集模态是否走 Markdown。
+- **`fetch_web_ui_config`**：`GET /web-ui`（**`markdown_render`** 与 **`AGENT_WEB_DISABLE_MARKDOWN`**；**`apply_assistant_display_filters`** 与 **`AGENT_WEB_RAW_ASSISTANT_OUTPUT`**；均**无** TOML 字段）；启动后拉取一次，分别控制 Markdown 与助手展示层过滤。
 
 ### `frontend-leptos/src/markdown.rs`
 
@@ -502,7 +502,7 @@ flowchart LR
 
 ### `frontend-leptos/src/message_format.rs`
 
-- 工具卡摘要去重、**`agent_reply_plan`** 围栏/流式缓冲与 **`assistant_text_for_display`**（单测在此模块）；**`message_text_for_display`** 供气泡与导出路径复用。
+- 工具卡摘要去重、**`agent_reply_plan`** 围栏/流式缓冲与 **`assistant_text_for_display`**（单测在此模块）；**`message_text_for_display_ex`** 供气泡、搜索、导出路径复用（**`apply_assistant_display_filters`** 与 **`GET /web-ui`** 对齐）。
 
 ### `frontend-leptos/src/assistant_body.rs`
 

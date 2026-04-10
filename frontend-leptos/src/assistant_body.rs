@@ -10,11 +10,11 @@ use wasm_bindgen::JsCast;
 use crate::i18n::{self, Locale};
 use crate::markdown;
 use crate::message_format::{
-    assistant_text_for_display, assistant_thinking_body_and_answer_raw, message_text_for_display,
+    assistant_text_for_display, assistant_thinking_body_and_answer_raw, message_text_for_display_ex,
 };
 use crate::storage::ChatSession;
 
-/// 超过该字符数（按展示用 `message_text_for_display` 计）的已完成助手消息默认折叠。
+/// 超过该字符数（按展示用 `message_text_for_display_ex` 与当前 `apply_assistant_display_filters` 计）的已完成助手消息默认折叠。
 const LONG_ASSISTANT_COLLAPSE_THRESHOLD: usize = 2400;
 
 #[derive(Default)]
@@ -35,6 +35,7 @@ pub fn assistant_markdown_collapsible_view(
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
     locale: RwSignal<Locale>,
     markdown_render: RwSignal<bool>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     let split_ref = NodeRef::<Div>::new();
     let reasoning_ref = NodeRef::<Div>::new();
@@ -55,8 +56,10 @@ pub fn assistant_markdown_collapsible_view(
             let _ = expanded_long_assistant_ids.get();
             let _ = locale.get();
             let _ = markdown_render.get();
+            let _ = apply_assistant_display_filters.get();
             let loc = locale.get_untracked();
             let md_on = markdown_render.get_untracked();
+            let apply = apply_assistant_display_filters.get_untracked();
             let (reasoning_src, text_src, is_loading) = sessions.with(|list| {
                 let aid = active_id.get_untracked();
                 list.iter()
@@ -72,9 +75,9 @@ pub fn assistant_markdown_collapsible_view(
                     .unwrap_or_default()
             });
             let (thinking_raw, answer_raw) =
-                assistant_thinking_body_and_answer_raw(&reasoning_src, &text_src);
+                assistant_thinking_body_and_answer_raw(&reasoning_src, &text_src, apply);
             let r_trim = thinking_raw.trim();
-            let answer_display = assistant_text_for_display(answer_raw, is_loading, loc);
+            let answer_display = assistant_text_for_display(answer_raw, is_loading, loc, apply);
             let snapshot = format!("{r_trim}\x1e{answer_display}");
             let first_stream_chunk = {
                 let arc = prev_raw.get_value();
@@ -164,6 +167,7 @@ pub fn assistant_markdown_collapsible_view(
         }>
             {move || {
                 let loc = locale.get();
+                let apply = apply_assistant_display_filters.get();
                 let (is_loading, raw_len) = sessions.with(|list| {
                     let aid = active_id.get();
                     let m = list
@@ -173,7 +177,7 @@ pub fn assistant_markdown_collapsible_view(
                     match m {
                         Some(msg) => (
                             msg.state.as_deref() == Some("loading"),
-                            message_text_for_display(msg, loc).chars().count(),
+                            message_text_for_display_ex(msg, loc, apply).chars().count(),
                         ),
                         None => (false, 0),
                     }

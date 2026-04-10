@@ -6,7 +6,7 @@ This page mirrors [docs/DEBUG.md](../DEBUG.md) in English. For the full, authori
 
 ## Highlights
 
-- **`AGENT_WEB_DISABLE_MARKDOWN`**: When set to a truthy value (`1`, `true`, `yes`, `on`), the CSR loads **`GET /web-ui`** and turns off Markdown for assistant bubbles and the workspace changelog modal (escaped plain text). **No TOML key**; **restart `serve`** after changing.
+- **Web UI env vars (`GET /web-ui`)**: **`AGENT_WEB_DISABLE_MARKDOWN`** sets **`markdown_render: false`** (plain-text bubbles + changelog modal). **`AGENT_WEB_RAW_ASSISTANT_OUTPUT`** sets **`apply_assistant_display_filters: false`** (no assistant display rewriting; same text for search/copy/export). **No TOML keys**; truthy = `1`/`true`/`yes`/`on`; **restart `serve`**; on fetch failure the CSR keeps defaults (Markdown on, filters on). Details in [docs/DEBUG.md](../DEBUG.md) §1.
 - **Logging**: `RUST_LOG` defaults differ by subcommand; use `crabmate=debug` or `crabmate::message_pipeline=trace` for context pipeline lines. Global **`--log <FILE>`** mirrors to stderr. See [docs/en/CLI.md](CLI.md) and [docs/en/DEVELOPMENT.md](DEVELOPMENT.md).
 - **CLI**: **`crabmate doctor`** needs no `API_KEY`; **`probe`** / **`models`** usually do under bearer auth. **`save-session`**, **`tool-replay`** help offline inspection.
 - **HTTP**: **`/health`**, **`/status`**, **`/web-ui`**, **`/openapi.json`** — see [docs/en/CLI.md](CLI.md) for the route table.

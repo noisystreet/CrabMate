@@ -6,7 +6,7 @@ use leptos::task::spawn_local;
 use gloo_timers::future::TimeoutFuture;
 
 use crate::i18n::Locale;
-use crate::message_format::message_text_for_display;
+use crate::message_format::message_text_for_display_ex;
 use crate::session_search::{normalize_search_query, scroll_message_into_view};
 use crate::storage::ChatSession;
 
@@ -18,6 +18,7 @@ pub(super) fn wire_chat_find_matches(
     chat_find_cursor: RwSignal<usize>,
     auto_scroll_chat: RwSignal<bool>,
     locale: RwSignal<Locale>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) {
     // 上一次用于生成匹配列表的 `(规范化查询, 活动会话 id)`；非响应式，仅避免同键重复重置光标。
     let chat_find_prev_key = StoredValue::new((String::new(), String::new()));
@@ -29,9 +30,11 @@ pub(super) fn wire_chat_find_matches(
         let chat_find_cursor = chat_find_cursor;
         let auto_scroll_chat = auto_scroll_chat;
         let locale = locale;
+        let apply_assistant_display_filters = apply_assistant_display_filters;
         move |_| {
             let aid = active_id.get();
             let loc = locale.get();
+            let apply = apply_assistant_display_filters.get();
             let q = normalize_search_query(&chat_find_query.get());
             let ids = if q.is_empty() {
                 Vec::new()
@@ -43,7 +46,9 @@ pub(super) fn wire_chat_find_matches(
                             s.messages
                                 .iter()
                                 .filter(|m| {
-                                    message_text_for_display(m, loc).to_lowercase().contains(&q)
+                                    message_text_for_display_ex(m, loc, apply)
+                                        .to_lowercase()
+                                        .contains(&q)
                                 })
                                 .map(|m| m.id.clone())
                                 .collect::<Vec<_>>()

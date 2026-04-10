@@ -276,12 +276,13 @@ pub fn export_session_json_for_id(
     sessions: RwSignal<Vec<ChatSession>>,
     id: &str,
     loc: crate::i18n::Locale,
+    apply_assistant_display_filters: bool,
 ) {
     let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
     let Some(s) = session else {
         return;
     };
-    let file = session_to_export_file(&s, loc);
+    let file = session_to_export_file(&s, loc, apply_assistant_display_filters);
     let Ok(json) = serde_json::to_string_pretty(&file) else {
         return;
     };
@@ -357,12 +358,13 @@ pub fn export_session_markdown_for_id(
     sessions: RwSignal<Vec<ChatSession>>,
     id: &str,
     loc: crate::i18n::Locale,
+    apply_assistant_display_filters: bool,
 ) {
     let session = sessions.with(|list| list.iter().find(|s| s.id == id).cloned());
     let Some(s) = session else {
         return;
     };
-    let md = session_to_markdown(&s, loc);
+    let md = session_to_markdown(&s, loc, apply_assistant_display_filters);
     let stem = export_filename_stem("chat_export");
     let name = format!("{stem}.md");
     if let Err(e) = trigger_download(&name, "text/markdown;charset=utf-8", &md) {

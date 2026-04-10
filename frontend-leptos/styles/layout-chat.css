@@ -956,7 +956,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 装饰性提示符；复制仍走原文（不含 $，见 message_text_for_display） */
+/* 装饰性提示符；复制仍走展示串（不含 $，见 message_text_for_display_ex） */
 .msg-tool:not(.msg-loading) .msg-body::before {
   content: "$ ";
   color: color-mix(in srgb, var(--success) 72%, var(--muted));

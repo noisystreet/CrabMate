@@ -6,14 +6,14 @@
 
 ---
 
-## 1. Web UI：关闭 Markdown 渲染（环境变量）
+## 1. Web UI：CSR 展示相关环境变量
 
-| 项 | 说明 |
-| --- | --- |
-| **变量** | **`AGENT_WEB_DISABLE_MARKDOWN`**（**无**对应 TOML 字段） |
-| **真值** | 设为 **`1`** / **`true`** / **`yes`** / **`on`**（大小写不敏感）即启用「关闭 Markdown」 |
-| **效果** | 浏览器 CSR 启动后请求 **`GET /web-ui`**，若 `markdown_render` 为 `false`，则**助手气泡**与**工作区变更集模态**以 **HTML 转义纯文本**展示（换行转为 `<br />`），便于对照上游原文、区分思维链/正文是否被 Markdown 改写。**聊天气泡内**思维链与终答均为同一正文色与等宽字体，**不再**使用 Markdown 模式下的次要色/左边线/背景卡区分思维链 |
-| **注意** | 修改后须**重启 `serve`**；请求失败时前端默认仍走 Markdown |
+以下变量均**无**对应 TOML 字段；设为真值（**`1`** / **`true`** / **`yes`** / **`on`**，大小写不敏感）即生效；修改后须**重启 `serve`**。浏览器 CSR 启动后会请求 **`GET /web-ui`**；若请求失败，前端默认仍**开启** Markdown（`markdown_render` 视为真）并**开启**助手展示过滤（`apply_assistant_display_filters` 视为真）。
+
+| 环境变量 | 响应 JSON 字段 | 效果 |
+| --- | --- | --- |
+| **`AGENT_WEB_DISABLE_MARKDOWN`** | **`markdown_render`** 为 `false` | **助手气泡**与**工作区变更集模态**以 **HTML 转义纯文本**展示（换行转为 `<br />`）。**聊天气泡内**思维链与终答均为同一正文色与等宽字体，**不再**使用 Markdown 模式下的次要色/左边线/背景卡区分思维链 |
+| **`AGENT_WEB_RAW_ASSISTANT_OUTPUT`** | **`apply_assistant_display_filters`** 为 `false` | **不对助手返回内容做 UI 侧改写**：不剥 `agent_reply_plan` 围栏/前缀 JSON、不按内联 `</redacted_thinking>` 等标记拆分思维链与正文；与侧栏跨会话搜索、会话内查找、复制、浏览器内 JSON/Markdown 导出使用同一套展示文本。与上一行 **Markdown 开关**相互独立 |
 
 **手动验证**：`curl -s http://127.0.0.1:8080/web-ui`（端口按实际；若启用了 Web API 鉴权，与其它系统路由一致处理）。
 
@@ -53,7 +53,7 @@ REPL 内等价：**`/doctor`**、**`/probe`**、**`/models`** 等，见 [docs/CL
 | --- | --- | --- |
 | GET | **`/health`** | 依赖与健康项（含可选 LLM models 探活等） |
 | GET | **`/status`** | 模型、工具数、规划/队列/上下文管道计数等运行态摘要 |
-| GET | **`/web-ui`** | CSR 展示开关 JSON（**`markdown_render`**，见 §1） |
+| GET | **`/web-ui`** | CSR 展示开关 JSON（**`markdown_render`**、**`apply_assistant_display_filters`**，见 §1） |
 | GET | **`/openapi.json`** | OpenAPI 3.0，与当前路由表对齐 |
 
 完整路由表见 [docs/CLI.md](CLI.md)「主要 HTTP 路由」。若进程启用了 Web API 鉴权，受保护路径须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**；**`/health`**、**`/status`**、**`/web-ui`**、**`/openapi.json`** 与静态页所在层以当前 `src/web/server.rs` 为准。

@@ -9,7 +9,7 @@ use leptos::task::spawn_local;
 use crate::api::post_chat_branch;
 use crate::assistant_body::assistant_markdown_collapsible_view;
 use crate::i18n::{self, Locale};
-use crate::message_format::message_text_for_display;
+use crate::message_format::message_text_for_display_ex;
 use crate::session_ops::{
     format_msg_time_label, message_role_label, preceding_plain_user_message_id,
     truncate_at_user_message_and_prepare_regenerate, truncate_at_user_message_branch_local,
@@ -93,6 +93,7 @@ pub(crate) fn tool_run_group_view(
     auto_scroll_chat: RwSignal<bool>,
     locale: RwSignal<Locale>,
     markdown_render: RwSignal<bool>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     let items_sv = StoredValue::new(items);
     let group_ids: Vec<String> = items_sv
@@ -164,6 +165,7 @@ pub(crate) fn tool_run_group_view(
                                         status_err,
                                         locale,
                                         markdown_render,
+                                        apply_assistant_display_filters,
                                     )
                                 })
                                 .collect_view()
@@ -208,6 +210,7 @@ pub(crate) fn tool_run_group_view(
                             status_err,
                             locale,
                             markdown_render,
+                            apply_assistant_display_filters,
                         )}
                     }
                     .into_any()
@@ -239,6 +242,7 @@ pub(crate) fn chat_message_row(
     status_err: RwSignal<Option<String>>,
     locale: RwSignal<Locale>,
     markdown_render: RwSignal<bool>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     let is_staged_timeline = m.role == "system"
         && m.text
@@ -293,10 +297,11 @@ pub(crate) fn chat_message_row(
             expanded_long_assistant_ids,
             locale,
             markdown_render,
+            apply_assistant_display_filters,
         )
         .into_any()
     } else {
-        let display_for_find = message_text_for_display(&m, locale.get_untracked());
+        let m_for_body = m.clone();
         let asc = auto_scroll_chat;
         let body_inner = match jump_uid {
             Some(uid) => {
@@ -321,8 +326,12 @@ pub(crate) fn chat_message_row(
                         }
                     >
                         {move || {
+                            let apply = apply_assistant_display_filters.get();
+                            let loc = locale.get();
                             let q = normalize_search_query(&chat_find_query.get());
-                            let segs = split_for_find_highlight(&display_for_find, &q);
+                            let disp =
+                                message_text_for_display_ex(&m_for_body, loc, apply);
+                            let segs = split_for_find_highlight(&disp, &q);
                             segs
                                 .into_iter()
                                 .map(|(s, hl)| {
@@ -341,8 +350,12 @@ pub(crate) fn chat_message_row(
             None => view! {
                 <span class="msg-body">
                     {move || {
+                        let apply = apply_assistant_display_filters.get();
+                        let loc = locale.get();
                         let q = normalize_search_query(&chat_find_query.get());
-                        let segs = split_for_find_highlight(&display_for_find, &q);
+                        let disp =
+                            message_text_for_display_ex(&m_for_body, loc, apply);
+                        let segs = split_for_find_highlight(&disp, &q);
                         segs
                             .into_iter()
                             .map(|(s, hl)| {
@@ -466,6 +479,8 @@ pub(crate) fn chat_message_row(
                                         prop:aria-label=move || i18n::msg_copy_aria(locale.get())
                                         on:click=move |_| {
                                             let loc = locale.get_untracked();
+                                            let apply =
+                                                apply_assistant_display_filters.get_untracked();
                                             let t = sessions.with(|list| {
                                                 let aid = active_id.get_untracked();
                                                 list.iter()
@@ -475,7 +490,9 @@ pub(crate) fn chat_message_row(
                                                             .iter()
                                                             .find(|msg| msg.id == copy_id)
                                                     })
-                                                    .map(|msg| message_text_for_display(msg, loc))
+                                                    .map(|msg| {
+                                                        message_text_for_display_ex(msg, loc, apply)
+                                                    })
                                                     .unwrap_or_default()
                                             });
                                             write_clipboard_text(&t, loc);

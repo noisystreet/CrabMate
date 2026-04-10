@@ -177,12 +177,19 @@ fn default_markdown_render_true() -> bool {
     true
 }
 
+fn default_apply_assistant_display_filters_true() -> bool {
+    true
+}
+
 /// `GET /web-ui`：服务端由环境变量导出的 CSR 展示开关（无 TOML 字段）。
 #[derive(Debug, Clone, Deserialize)]
 pub struct WebUiConfig {
     /// 为 `false` 时关闭聊天气泡与变更集模态的 Markdown 渲染（纯文本 HTML 转义）。
     #[serde(default = "default_markdown_render_true")]
     pub markdown_render: bool,
+    /// 为 `false` 时助手消息按存储原文展示（不剥 `agent_reply_plan`、不拆内联思维链标记）；与导出、搜索一致。
+    #[serde(default = "default_apply_assistant_display_filters_true")]
+    pub apply_assistant_display_filters: bool,
 }
 
 pub async fn fetch_workspace(path: Option<&str>) -> Result<WorkspaceData, String> {

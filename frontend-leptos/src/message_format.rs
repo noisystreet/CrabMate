@@ -235,7 +235,11 @@ pub(crate) fn assistant_text_for_display(
     raw: &str,
     is_streaming_last_assistant: bool,
     loc: Locale,
+    apply_filters: bool,
 ) -> String {
+    if !apply_filters {
+        return raw.to_string();
+    }
     let trimmed = raw.trim();
 
     if is_streaming_last_assistant && should_buffer_agent_reply_plan_stream(trimmed) {
@@ -353,10 +357,14 @@ fn trim_inline_thinking_openers(mut s: &str) -> &str {
 pub(crate) fn assistant_thinking_body_and_answer_raw<'a>(
     reasoning_text_stored: &'a str,
     text_stored: &'a str,
+    split_inline_thinking: bool,
 ) -> (&'a str, &'a str) {
     let rs = reasoning_text_stored.trim();
     if !rs.is_empty() {
         return (rs, text_stored);
+    }
+    if !split_inline_thinking {
+        return ("", text_stored);
     }
     let Some((idx, tag)) = first_inline_thinking_close(text_stored) else {
         return ("", text_stored);
@@ -369,19 +377,44 @@ pub(crate) fn assistant_thinking_body_and_answer_raw<'a>(
     (thinking, after)
 }
 
-pub fn message_text_for_display(m: &StoredMessage, loc: Locale) -> String {
+/// `apply_assistant_display_filters == false` 时助手消息按存储原文输出（不剥 `agent_reply_plan`、不拆内联思维链标记）。
+pub fn message_text_for_display_ex(
+    m: &StoredMessage,
+    loc: Locale,
+    apply_assistant_display_filters: bool,
+) -> String {
     if m.role == "assistant" {
         let is_streaming_last_assistant = m.state.as_deref() == Some("loading");
-        let (r_body, t_body) =
-            assistant_thinking_body_and_answer_raw(m.reasoning_text.as_str(), m.text.as_str());
-        let answer = assistant_text_for_display(t_body, is_streaming_last_assistant, loc);
-        let r = r_body.trim();
-        if r.is_empty() {
-            answer
-        } else if answer.trim().is_empty() {
-            r.to_string()
+        let (r_body, t_body) = assistant_thinking_body_and_answer_raw(
+            m.reasoning_text.as_str(),
+            m.text.as_str(),
+            apply_assistant_display_filters,
+        );
+        let answer = assistant_text_for_display(
+            t_body,
+            is_streaming_last_assistant,
+            loc,
+            apply_assistant_display_filters,
+        );
+        if apply_assistant_display_filters {
+            let r = r_body.trim();
+            if r.is_empty() {
+                answer
+            } else if answer.trim().is_empty() {
+                r.to_string()
+            } else {
+                format!("{r}\n\n{answer}")
+            }
         } else {
-            format!("{r}\n\n{answer}")
+            let r_empty = r_body.trim().is_empty();
+            let a_empty = answer.trim().is_empty();
+            if r_empty {
+                answer
+            } else if a_empty {
+                r_body.to_string()
+            } else {
+                format!("{r_body}\n\n{answer}")
+            }
         }
     } else if m.role == "user" {
         user_text_for_chat_display(&m.text)
@@ -400,14 +433,14 @@ mod tests {
     use super::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX;
     use super::assistant_text_for_display;
     use super::assistant_thinking_body_and_answer_raw;
-    use super::message_text_for_display;
+    use super::message_text_for_display_ex;
     use crate::i18n::Locale;
     use crate::storage::StoredMessage;
 
     #[test]
     fn hide_inline_agent_reply_plan_json_fence() {
         let raw = r#"```json{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}```"#;
-        let out = assistant_text_for_display(raw, true, Locale::ZhHans);
+        let out = assistant_text_for_display(raw, true, Locale::ZhHans, true);
         assert!(
             !out.contains("agent_reply_plan"),
             "raw agent_reply_plan json should be filtered: {out}"
@@ -421,7 +454,7 @@ mod tests {
     #[test]
     fn no_task_empty_plan_has_non_empty_fallback() {
         let raw = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#;
-        let out = assistant_text_for_display(raw, false, Locale::ZhHans);
+        let out = assistant_text_for_display(raw, false, Locale::ZhHans, true);
         assert!(
             !out.trim().is_empty(),
             "filtered plan text should not become empty"
@@ -431,7 +464,7 @@ mod tests {
     #[test]
     fn keep_answer_after_fenced_plan_json() {
         let raw = r#"```json{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}```最终结论：已完成。"#;
-        let out = assistant_text_for_display(raw, false, Locale::ZhHans);
+        let out = assistant_text_for_display(raw, false, Locale::ZhHans, true);
         assert!(
             out.contains("最终结论"),
             "tail answer should be kept: {out}"
@@ -445,7 +478,7 @@ mod tests {
     #[test]
     fn keep_answer_after_unfenced_plan_json_prefix() {
         let raw = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}最终结论：继续执行。"#;
-        let out = assistant_text_for_display(raw, false, Locale::ZhHans);
+        let out = assistant_text_for_display(raw, false, Locale::ZhHans, true);
         assert!(
             out.contains("最终结论"),
             "tail answer should be kept: {out}"
@@ -454,6 +487,21 @@ mod tests {
             !out.contains("agent_reply_plan"),
             "raw plan json should be hidden: {out}"
         );
+    }
+
+    #[test]
+    fn no_inline_split_when_disabled() {
+        let raw = concat!("<", "think", ">", "x", "</", "think", ">", "y",);
+        let (think, ans) = assistant_thinking_body_and_answer_raw("", raw, false);
+        assert!(think.is_empty());
+        assert_eq!(ans, raw);
+    }
+
+    #[test]
+    fn assistant_text_passthrough_when_filters_off() {
+        let raw = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#;
+        let out = assistant_text_for_display(raw, false, Locale::ZhHans, false);
+        assert_eq!(out, raw);
     }
 
     #[test]
@@ -468,7 +516,7 @@ mod tests {
             ">",
             "\n\n**Answer** tail.",
         );
-        let (think, ans) = assistant_thinking_body_and_answer_raw("", raw);
+        let (think, ans) = assistant_thinking_body_and_answer_raw("", raw, true);
         assert_eq!(think.trim(), "plan here");
         assert!(ans.contains("Answer"));
         assert!(!ans.contains("plan here"));
@@ -477,7 +525,7 @@ mod tests {
     #[test]
     fn stored_reasoning_text_wins_over_inline_tags() {
         let inline = concat!("`<", "think", ">`x`</", "think", ">`y");
-        let (think, ans) = assistant_thinking_body_and_answer_raw("from_sse", inline);
+        let (think, ans) = assistant_thinking_body_and_answer_raw("from_sse", inline, true);
         assert_eq!(think, "from_sse");
         assert_eq!(ans, inline);
     }
@@ -497,6 +545,6 @@ mod tests {
             is_tool: false,
             created_at: 0,
         };
-        assert_eq!(message_text_for_display(&m, Locale::ZhHans), "");
+        assert_eq!(message_text_for_display_ex(&m, Locale::ZhHans, true), "");
     }
 }

@@ -66,6 +66,7 @@ pub fn sidebar_nav_view(
     focus_message_id_after_nav: RwSignal<Option<String>>,
     session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     composer_buf_nav: Arc<Mutex<String>>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     let sidebar_filter_debounced = RwSignal::new(String::new());
     let global_message_filter_debounced = RwSignal::new(String::new());
@@ -161,6 +162,7 @@ pub fn sidebar_nav_view(
                                 &msg_needle,
                                 MESSAGE_SEARCH_MAX_HITS,
                                 locale.get(),
+                                apply_assistant_display_filters.get(),
                             )
                         })
                     };
@@ -442,7 +444,12 @@ pub fn sidebar_nav_view(
                         };
                         let id = a.session_id;
                         session_context_menu.set(None);
-                        export_session_json_for_id(sessions, &id, locale.get_untracked());
+                        export_session_json_for_id(
+                            sessions,
+                            &id,
+                            locale.get_untracked(),
+                            apply_assistant_display_filters.get_untracked(),
+                        );
                     }
                 >
                     {move || i18n::ctx_export_json(locale.get())}
@@ -458,7 +465,12 @@ pub fn sidebar_nav_view(
                         };
                         let id = a.session_id;
                         session_context_menu.set(None);
-                        export_session_markdown_for_id(sessions, &id, locale.get_untracked());
+                        export_session_markdown_for_id(
+                            sessions,
+                            &id,
+                            locale.get_untracked(),
+                            apply_assistant_display_filters.get_untracked(),
+                        );
                     }
                 >
                     {move || i18n::ctx_export_md(locale.get())}

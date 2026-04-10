@@ -187,7 +187,7 @@ cargo run -- serve
 | POST | `/chat/approval` | 审批：`approval_session_id`、`decision` |
 | POST | `/chat/branch` | 会话分叉截断：JSON `conversation_id`、`before_user_ordinal`（0-based 普通用户消息序号）、`expected_revision`；服务端截断到该序号对应用户消息**之前**（与 Web「从此处重试」一致：随后由 `/chat/stream` 再发同一条用户文本）。须已持久化会话且 `revision` 匹配 |
 | GET | `/status` | 后台状态 |
-| GET | `/web-ui` | CSR 展示开关 JSON（如 **`markdown_render`**；进程环境变量 **`AGENT_WEB_DISABLE_MARKDOWN`** 为真时关闭 Markdown，**无** TOML 字段） |
+| GET | `/web-ui` | CSR 展示开关 JSON（**`markdown_render`** / **`AGENT_WEB_DISABLE_MARKDOWN`**；**`apply_assistant_display_filters`** / **`AGENT_WEB_RAW_ASSISTANT_OUTPUT`**；**无** TOML 字段） |
 | GET | `/workspace` | 工作区列表 |
 | POST | `/workspace` | 设置当前 Web 工作区根：JSON `{"path":"/abs/dir"}`；省略 `path` 或空串恢复为默认（`run_command_working_dir`）；须为已存在目录且在 `workspace_allowed_roots` 内 |
 | GET | `/workspace/pick` | 在**服务端进程所在机器**上弹出原生选目录对话框（`rfd`），返回 JSON `{"path":null}` 或 `{"path":"/chosen"}`；无图形/取消时多为 `null`；Web 侧栏「浏览…」取到路径后会紧接着 **`POST /workspace`** 自动生效 |
