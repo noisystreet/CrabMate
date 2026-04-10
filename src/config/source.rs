@@ -37,7 +37,7 @@ pub(super) struct ToolRegistrySection {
     /// 分阶段 `executor_kind: patch_write` 在默认补丁名之外额外允许的写类工具名。
     #[serde(default)]
     pub(super) sub_agent_patch_write_extra_tools: Option<Vec<String>>,
-    /// 分阶段 `executor_kind: test_runner` 在默认测试运行器名之外额外允许的测试类工具名。
+    /// 分阶段 `executor_kind: test_runner` 在默认测试运行器与 `run_command` 之外额外允许的工具名。
     #[serde(default)]
     pub(super) sub_agent_test_runner_extra_tools: Option<Vec<String>>,
     /// 分阶段 `executor_kind: review_readonly` 下显式禁止的工具名（精确匹配，优先于只读判定）。
