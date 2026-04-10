@@ -8,7 +8,7 @@ alwaysApply: true
 ## 何时触发
 
 - 修改根目录 **`Cargo.toml`** / **`Cargo.lock`**（新增 crate、升级 major、启用新 feature）。
-- 修改 **`frontend/package.json`** / **`package-lock.json`**（新 npm 包、大版本升级）。
+- 修改 **`e2e/package.json`** / **`package-lock.json`**（E2E / Playwright；新 npm 包、大版本升级）。
 
 ## 建议动作
 
