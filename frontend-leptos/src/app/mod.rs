@@ -61,6 +61,7 @@ use crate::session_ops::{SessionContextAnchor, estimate_context_chars_for_active
 use crate::session_sync::SessionSyncState;
 use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
+use gloo_timers::future::TimeoutFuture;
 use leptos::html::{Div, Textarea};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -448,6 +449,45 @@ pub fn App() -> impl IntoView {
 
     wire_focus_message_after_nav(focus_message_id_after_nav);
 
+    let insert_workspace_file_ref: Arc<dyn Fn(String) + Send + Sync> = Arc::new({
+        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
+        let draft = draft;
+        let status_err = status_err;
+        let locale = locale;
+        let composer_input_ref = composer_input_ref.clone();
+        move |rel: String| {
+            if rel.chars().any(|c| c.is_whitespace()) {
+                status_err.set(Some(
+                    i18n::composer_ws_path_whitespace_err(locale.get_untracked()).to_string(),
+                ));
+                return;
+            }
+            let token = format!("@{rel}");
+            let mut guard = composer_draft_buffer.lock().unwrap();
+            let needs_space = guard
+                .chars()
+                .next_back()
+                .is_some_and(|c| !c.is_whitespace());
+            if needs_space {
+                guard.push(' ');
+            }
+            guard.push_str(&token);
+            guard.push(' ');
+            let next = guard.clone();
+            drop(guard);
+            draft.set(next.clone());
+            status_err.set(None);
+            let cref = composer_input_ref.clone();
+            spawn_local(async move {
+                TimeoutFuture::new(0).await;
+                if let Some(el) = cref.get() {
+                    let _ = el.focus();
+                }
+            });
+        }
+    });
+    let insert_workspace_file_ref_sv = StoredValue::new(Arc::clone(&insert_workspace_file_ref));
+
     let chat_wires = wire_chat_composer_streams(
         initialized,
         sessions,
@@ -666,6 +706,7 @@ pub fn App() -> impl IntoView {
                         Arc::clone(&toggle_task),
                         changelist_modal_open,
                         changelist_fetch_nonce,
+                        insert_workspace_file_ref_sv,
                     )}
                 </div>
 

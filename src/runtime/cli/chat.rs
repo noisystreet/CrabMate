@@ -11,6 +11,7 @@ use crate::runtime::cli_exit::{
 };
 use crate::tool_registry::{CliCommandTurnStats, CliToolRuntime};
 use crate::types::{Message, messages_chat_seed, normalize_messages_for_openai_compatible_request};
+use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use crate::{RunAgentTurnParams, run_agent_turn};
 use log::debug;
 use std::collections::HashSet;
@@ -335,10 +336,22 @@ async fn run_chat_batch_jsonl(
                 .into());
             }
             if messages.is_empty() {
-                messages = messages_chat_seed(&system_seed, u);
+                let cfg_snap = {
+                    let g = cfg_holder.read().await;
+                    Arc::new(g.clone())
+                };
+                let u_exp = expand_at_file_refs_in_user_message(u, work_dir, cfg_snap.as_ref())
+                    .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
+                messages = messages_chat_seed(&system_seed, &u_exp);
                 prepend_cli_first_turn_injection(cfg_holder, work_dir, &mut messages).await;
             } else {
-                messages.push(Message::user_only(u.to_string()));
+                let cfg_snap = {
+                    let g = cfg_holder.read().await;
+                    Arc::new(g.clone())
+                };
+                let u_exp = expand_at_file_refs_in_user_message(u, work_dir, cfg_snap.as_ref())
+                    .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
+                messages.push(Message::user_only(u_exp));
             }
         } else if let Some(m) = v.get("messages") {
             let parsed: Vec<Message> = serde_json::from_value(m.clone()).map_err(|e| {
@@ -472,6 +485,13 @@ pub async fn run_chat_invocation(
         resolve_system_prompt_for_chat(&Arc::new(g.clone()), chat, agent_role)?
     };
     let user = resolve_user_body(chat)?;
+    let cfg_for_expand = {
+        let g = cfg_holder.read().await;
+        Arc::new(g.clone())
+    };
+    let user =
+        expand_at_file_refs_in_user_message(&user, work_dir.as_path(), cfg_for_expand.as_ref())
+            .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
     let mut messages = messages_chat_seed(&system, &user);
     prepend_cli_first_turn_injection(cfg_holder, work_dir.as_path(), &mut messages).await;
     debug!(

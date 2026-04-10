@@ -29,6 +29,7 @@ use crate::conversation_turn_bootstrap::{
 };
 use crate::redact;
 use crate::types::{CommandApprovalDecision, Message};
+use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use crate::web::http_types::chat::{
     ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
     ChatBranchResponseBody, ChatRequestBody, ChatResponseBody,
@@ -117,8 +118,8 @@ pub(crate) async fn chat_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ChatRequestBody>,
 ) -> Result<Json<ChatResponseBody>, (StatusCode, Json<ApiError>)> {
-    let msg = body.message.trim();
-    if msg.is_empty() {
+    let user_trim = body.message.trim();
+    if user_trim.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
@@ -177,7 +178,22 @@ pub(crate) async fn chat_handler(
         )
     })?;
     ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
-    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
+    let work_dir_pb = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let msg = {
+        let cfg = state.cfg.read().await;
+        expand_at_file_refs_in_user_message(user_trim, work_dir_pb.as_path(), &cfg).map_err(
+            |e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiError {
+                        code: "INVALID_AT_FILE_REF",
+                        message: e,
+                    }),
+                )
+            },
+        )?
+    };
+    let turn_seed = build_messages_for_turn(&state, &conversation_id, &msg, agent_role.as_deref())
         .await
         .map_err(|e| {
             (
@@ -188,7 +204,7 @@ pub(crate) async fn chat_handler(
                 }),
             )
         })?;
-    let work_dir_str = state.effective_workspace_path().await;
+    let work_dir_str = work_dir_pb.to_string_lossy().to_string();
     let work_dir = work_dir_str.clone();
     let workspace_is_set = state.workspace_is_set().await;
     let job_id = state.chat_queue.next_job_id();
@@ -198,7 +214,7 @@ pub(crate) async fn chat_handler(
         "chat json 请求摘要 job_id={} user_len={} user_preview={}",
         job_id,
         msg.len(),
-        redact::preview_chars(msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
+        redact::preview_chars(&msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     info!(target: "crabmate", "chat json 任务入队 job_id={}", job_id);
     state
@@ -417,8 +433,8 @@ pub(crate) async fn chat_stream_handler(
     Json(body): Json<ChatRequestBody>,
 ) -> Result<Response, (StatusCode, Json<ApiError>)> {
     let resume = body.stream_resume.as_ref();
-    let msg = body.message.trim();
-    if msg.is_empty() && resume.is_none() {
+    let user_trim = body.message.trim();
+    if user_trim.is_empty() && resume.is_none() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
@@ -542,7 +558,20 @@ pub(crate) async fn chat_stream_handler(
         return Ok(resp);
     }
 
-    let turn_seed = build_messages_for_turn(&state, &conversation_id, msg, agent_role.as_deref())
+    let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let msg = {
+        let cfg = state.cfg.read().await;
+        expand_at_file_refs_in_user_message(user_trim, work_dir.as_path(), &cfg).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_AT_FILE_REF",
+                    message: e,
+                }),
+            )
+        })?
+    };
+    let turn_seed = build_messages_for_turn(&state, &conversation_id, &msg, agent_role.as_deref())
         .await
         .map_err(|e| {
             (
@@ -553,7 +582,6 @@ pub(crate) async fn chat_stream_handler(
                 }),
             )
         })?;
-    let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
     let workspace_is_set = state.workspace_is_set().await;
     let approval_session_id = match body.approval_session_id.as_deref() {
         Some(v) => Some(normalize_approval_session_id(v).ok_or((
@@ -585,7 +613,7 @@ pub(crate) async fn chat_stream_handler(
         "chat stream 请求摘要 job_id={} user_len={} user_preview={}",
         job_id,
         msg.len(),
-        redact::preview_chars(msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
+        redact::preview_chars(&msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     info!(target: "crabmate", "chat stream 任务入队 job_id={}", job_id);
     if let Err(e) = state
