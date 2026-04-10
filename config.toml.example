@@ -139,7 +139,7 @@
 # staged_plan_optimizer_requires_parallel_tools = true   # 无「可同轮并行批处理」内建工具时跳过优化轮；false=始终尝试；AGENT_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS
 # staged_plan_ensemble_count = 1     # 1–3；>1 时首轮后再跑独立规划并合并；AGENT_STAGED_PLAN_ENSEMBLE_COUNT
 # staged_plan_skip_ensemble_on_casual_prompt = true   # 寒暄/极短用户输入时跳过 ensemble；false=不跳过；AGENT_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT
-# staged_plan_two_phase_nl_display = false   # true：JSON 定稿轮不向用户侧流式输出，再追加一轮仅自然语言；AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
+# staged_plan_two_phase_nl_display = false   # true：JSON 定稿后不向用户流式输出，再追加一轮 NL；桥接 user 在源码中标明「非用户提问」；AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
 # Docker 工具沙盒：嵌入默认注释示例见 config/sandbox.toml；完整说明见 docs/CONFIGURATION.md「SyncDefault 工具 Docker 沙盒」
 # sync_default_tool_sandbox_mode = "none"   # none | docker；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE
 # sync_default_tool_sandbox_docker_image = ""   # docker 模式必填：自建镜像名；AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE

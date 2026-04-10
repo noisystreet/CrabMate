@@ -21,4 +21,5 @@ staged_plan_optimizer_round = true
 staged_plan_optimizer_requires_parallel_tools = true
 staged_plan_ensemble_count = 1
 staged_plan_skip_ensemble_on_casual_prompt = true
-staged_plan_two_phase_nl_display = true   # true：无工具规划 JSON 定稿后不向用户侧流式输出，再追加一轮仅自然语言；AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY
+# 默认关：与 finalize 缺省及文档一致；若开 true，桥接 user 已标明「非用户提问」，避免模型把续问句误当用户原话。
+staged_plan_two_phase_nl_display = false   # AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY

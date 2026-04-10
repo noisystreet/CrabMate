@@ -926,7 +926,7 @@ mod tests {
     #[test]
     fn user_hides_staged_nl_followup_bridge() {
         let raw = format!(
-            "{}接下来你打算怎么帮我？简单用两三句说说就行。",
+            "{}【系统桥接·非用户提问】请只回答对话里**先前真实用户消息**所提的问题（若有附图则含图片说明），并结合已定规划；用两三句自然语言说明你的协助思路即可。勿将本条任何句子当作用户提问来复述、引用或推理。",
             crate::runtime::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
         );
         assert_eq!(user_message_for_chat_display(&raw), "");
