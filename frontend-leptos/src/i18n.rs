@@ -999,6 +999,118 @@ pub fn chat_find_toggle_aria(l: Locale) -> &'static str {
     chat_find_region(l)
 }
 
+pub fn timeline_panel_toggle_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "规划 / 工具时间线",
+        Locale::En => "Plan / tool timeline",
+    }
+}
+
+pub fn timeline_panel_toggle_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "展开或折叠规划与工具步骤索引",
+        Locale::En => "Expand or collapse plan and tool step index",
+    }
+}
+
+pub fn timeline_panel_toggle_aria(l: Locale) -> &'static str {
+    timeline_panel_toggle_label(l)
+}
+
+pub fn timeline_panel_region_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "当前会话的规划与工具时间线",
+        Locale::En => "Plan and tool timeline for this chat",
+    }
+}
+
+pub fn timeline_panel_empty(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "本对话尚无分阶段步骤或工具摘要。",
+        Locale::En => "No staged steps or tool summaries in this chat yet.",
+    }
+}
+
+pub fn timeline_panel_jump_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "跳转到对应消息",
+        Locale::En => "Jump to message",
+    }
+}
+
+pub fn timeline_panel_jump_aria(l: Locale, label: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("跳转到：{label}"),
+        Locale::En => format!("Jump to: {label}"),
+    }
+}
+
+pub fn timeline_panel_staged_start(l: Locale, step: usize, total: usize) -> String {
+    match l {
+        Locale::ZhHans => format!("分阶段 · 第 {step}/{total} 步（开始）"),
+        Locale::En => format!("Staged · step {step}/{total} (start)"),
+    }
+}
+
+fn timeline_panel_status_word(l: Locale, status: &str) -> String {
+    match status {
+        "ok" => match l {
+            Locale::ZhHans => "完成".to_string(),
+            Locale::En => "done".to_string(),
+        },
+        "failed" => match l {
+            Locale::ZhHans => "失败".to_string(),
+            Locale::En => "failed".to_string(),
+        },
+        "cancelled" => match l {
+            Locale::ZhHans => "已取消".to_string(),
+            Locale::En => "cancelled".to_string(),
+        },
+        _ => status.to_string(),
+    }
+}
+
+pub fn timeline_panel_staged_end(l: Locale, step: usize, total: usize, status: &str) -> String {
+    let st = timeline_panel_status_word(l, status);
+    match l {
+        Locale::ZhHans => format!("分阶段 · 第 {step}/{total} 步（{st}）"),
+        Locale::En => format!("Staged · step {step}/{total} ({st})"),
+    }
+}
+
+pub fn timeline_panel_tool(l: Locale, ok: bool) -> String {
+    match l {
+        Locale::ZhHans => {
+            if ok {
+                "工具 · 完成".to_string()
+            } else {
+                "工具 · 失败".to_string()
+            }
+        }
+        Locale::En => {
+            if ok {
+                "Tool · ok".to_string()
+            } else {
+                "Tool · failed".to_string()
+            }
+        }
+    }
+}
+
+pub fn timeline_panel_legacy_staged(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "分阶段（历史）",
+        Locale::En => "Staged (legacy)",
+    }
+}
+
+pub fn timeline_panel_legacy_tool(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "工具（历史）",
+        Locale::En => "Tool (legacy)",
+    }
+}
+
 // --- 聊天区右键菜单 ---
 
 pub fn chat_ctx_menu_aria(l: Locale) -> &'static str {

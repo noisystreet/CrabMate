@@ -14,6 +14,7 @@ use super::chat_message_render::{
     ChatChunk, chat_message_row, chunk_messages, tool_run_group_view,
 };
 use super::scroll_guard::MessagesScrollFromEffectGuard;
+use super::timeline_panel::timeline_panel_view;
 use crate::api::upload_files_multipart;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::clarification_form::PendingClarificationForm;
@@ -32,6 +33,7 @@ pub fn chat_column_view(
     session_context_menu: RwSignal<Option<crate::session_ops::SessionContextAnchor>>,
     chat_export_ctx_menu: RwSignal<Option<(f64, f64, Option<String>)>>,
     chat_find_panel_open: RwSignal<bool>,
+    timeline_panel_expanded: RwSignal<bool>,
     bubble_md_select_mode: RwSignal<bool>,
     bubble_md_selected_ids: RwSignal<Vec<String>>,
     sessions: RwSignal<Vec<ChatSession>>,
@@ -201,6 +203,13 @@ pub fn chat_column_view(
                         }
                     >
                         <div class="chat-thread">
+                        {timeline_panel_view(
+                            locale,
+                            sessions,
+                            active_id,
+                            timeline_panel_expanded,
+                            auto_scroll_chat,
+                        )}
                         <div class="messages-inner">
                             {move || {
                                 let id = active_id.get();
