@@ -182,6 +182,8 @@ pub fn App() -> impl IntoView {
     let context_used_estimate = RwSignal::new(0_usize);
     // 与 GET /web-ui、环境变量 AGENT_WEB_DISABLE_MARKDOWN 对齐；拉取失败时保持 true（沿用 Markdown）。
     let markdown_render = RwSignal::new(true);
+    // 与 AGENT_WEB_RAW_ASSISTANT_OUTPUT 对齐；为 false 时助手展示/搜索/导出均不过滤原文。
+    let apply_assistant_display_filters = RwSignal::new(true);
     let web_ui_config_loaded = RwSignal::new(false);
 
     Effect::new(move |_| {
@@ -209,6 +211,7 @@ pub fn App() -> impl IntoView {
 
     Effect::new({
         let markdown_render = markdown_render;
+        let apply_assistant_display_filters = apply_assistant_display_filters;
         move |_| {
             if !initialized.get() || web_ui_config_loaded.get() {
                 return;
@@ -217,6 +220,7 @@ pub fn App() -> impl IntoView {
             spawn_local(async move {
                 if let Ok(c) = fetch_web_ui_config().await {
                     markdown_render.set(c.markdown_render);
+                    apply_assistant_display_filters.set(c.apply_assistant_display_filters);
                 }
             });
         }
@@ -476,6 +480,7 @@ pub fn App() -> impl IntoView {
         chat_find_cursor,
         auto_scroll_chat,
         locale,
+        apply_assistant_display_filters,
     );
 
     wire_focus_message_after_nav(focus_message_id_after_nav);
@@ -644,6 +649,7 @@ pub fn App() -> impl IntoView {
                 focus_message_id_after_nav,
                 session_context_menu,
                 composer_buf_nav.clone(),
+                apply_assistant_display_filters,
             )}
 
             <div class="shell-main">
@@ -674,6 +680,7 @@ pub fn App() -> impl IntoView {
                         bubble_md_selected_ids=bubble_md_selected_ids
                         sessions=sessions
                         active_id=active_id
+                        apply_assistant_display_filters=apply_assistant_display_filters
                     />
                 </Show>
 
@@ -713,6 +720,7 @@ pub fn App() -> impl IntoView {
                         chat_wires.retry_assistant_target,
                         status_err,
                         markdown_render,
+                        apply_assistant_display_filters,
                     )}
 
                     {side_column_view(
@@ -774,6 +782,7 @@ pub fn App() -> impl IntoView {
                 draft,
                 session_sync,
                 composer_draft_buffer.clone(),
+                apply_assistant_display_filters,
             )}
 
             {settings_modal_view(

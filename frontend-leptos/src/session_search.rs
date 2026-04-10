@@ -6,7 +6,7 @@ use wasm_bindgen::JsCast;
 use std::mem;
 
 use crate::i18n::Locale;
-use crate::message_format::message_text_for_display;
+use crate::message_format::message_text_for_display_ex;
 use crate::storage::ChatSession;
 
 /// 规范化查询：小写、折叠空白。
@@ -97,6 +97,7 @@ pub fn collect_message_search_hits(
     needle_lower: &str,
     max_hits: usize,
     loc: Locale,
+    apply_assistant_display_filters: bool,
 ) -> Vec<MessageSearchHit> {
     if needle_lower.is_empty() || max_hits == 0 {
         return Vec::new();
@@ -104,7 +105,7 @@ pub fn collect_message_search_hits(
     let mut out = Vec::new();
     for s in sessions {
         for m in &s.messages {
-            let display = message_text_for_display(m, loc);
+            let display = message_text_for_display_ex(m, loc, apply_assistant_display_filters);
             let lower = display.to_lowercase();
             if lower.contains(needle_lower) {
                 out.push(MessageSearchHit {
@@ -270,7 +271,7 @@ mod tests {
                 }],
             ),
         ];
-        let hits = collect_message_search_hits(&sessions, "beta", 10, Locale::ZhHans);
+        let hits = collect_message_search_hits(&sessions, "beta", 10, Locale::ZhHans, true);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].session_id, "s1");
         assert_eq!(hits[0].message_id, "m1");

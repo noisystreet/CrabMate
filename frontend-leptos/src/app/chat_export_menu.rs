@@ -17,6 +17,7 @@ pub fn ChatExportContextMenu(
     bubble_md_selected_ids: RwSignal<Vec<String>>,
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     view! {
         <div class="session-ctx-layer">
@@ -125,6 +126,7 @@ pub fn ChatExportContextMenu(
                                             &s.messages,
                                             &ids,
                                             loc,
+                                            apply_assistant_display_filters.get_untracked(),
                                         )
                                     })
                                     .unwrap_or_default()

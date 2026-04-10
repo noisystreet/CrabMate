@@ -27,6 +27,7 @@ pub fn SessionModalRow(
     composer_draft_buffer: Arc<Mutex<String>>,
     session_sync: RwSignal<crate::session_sync::SessionSyncState>,
     session_modal: RwSignal<bool>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     let id_rename = id.clone();
     let id_star = id.clone();
@@ -159,7 +160,12 @@ pub fn SessionModalRow(
                         let sessions = sessions;
                         let id = id_json.clone();
                         move |_| {
-                            export_session_json_for_id(sessions, &id, locale.get_untracked())
+                            export_session_json_for_id(
+                                sessions,
+                                &id,
+                                locale.get_untracked(),
+                                apply_assistant_display_filters.get_untracked(),
+                            )
                         }
                     }
                 >
@@ -173,7 +179,12 @@ pub fn SessionModalRow(
                         let sessions = sessions;
                         let id = id_md.clone();
                         move |_| {
-                            export_session_markdown_for_id(sessions, &id, locale.get_untracked())
+                            export_session_markdown_for_id(
+                                sessions,
+                                &id,
+                                locale.get_untracked(),
+                                apply_assistant_display_filters.get_untracked(),
+                            )
                         }
                     }
                 >

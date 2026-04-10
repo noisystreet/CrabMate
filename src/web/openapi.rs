@@ -65,7 +65,7 @@ pub fn build_openapi_spec() -> Value {
             "/web-ui": {
                 "get": {
                     "tags": ["system"],
-                    "summary": "CSR 展示开关（如是否启用聊天气泡 Markdown；受环境变量影响）",
+                    "summary": "CSR 展示开关（Markdown、助手展示过滤；受 AGENT_WEB_* 环境变量影响）",
                     "responses": {
                         "200": {
                             "description": "Web UI 配置 JSON",
@@ -522,11 +522,15 @@ pub fn build_openapi_spec() -> Value {
                 },
                 "WebUiConfigResponse": {
                     "type": "object",
-                    "required": ["markdown_render"],
+                    "required": ["markdown_render", "apply_assistant_display_filters"],
                     "properties": {
                         "markdown_render": {
                             "type": "boolean",
                             "description": "为 false 时 CSR 跳过聊天气泡 Markdown（纯文本 HTML 转义）；由环境变量 AGENT_WEB_DISABLE_MARKDOWN 控制"
+                        },
+                        "apply_assistant_display_filters": {
+                            "type": "boolean",
+                            "description": "为 false 时不对助手消息做展示过滤（agent_reply_plan 剥离、内联思维链拆分等）；由环境变量 AGENT_WEB_RAW_ASSISTANT_OUTPUT 控制"
                         }
                     }
                 },

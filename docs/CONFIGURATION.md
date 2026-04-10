@@ -50,6 +50,7 @@
 | `AGENT_WEB_API_BEARER_TOKEN` | 受保护 Web API 的共享密钥；请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（值相同，任选其一）。 |
 | `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | 非回环监听时是否允许无鉴权启动（高风险，仅可信环境）。 |
 | `AGENT_WEB_DISABLE_MARKDOWN` | 设为 **`1`** / **`true`** / **`yes`** / **`on`** 时，CSR 通过 **`GET /web-ui`** 获知并**关闭**聊天气泡与变更集模态的 Markdown 渲染（纯文本 HTML 转义，便于调试）；**无**对应 TOML 字段，**须重启 `serve`** 生效。其它调试手段见 **`docs/DEBUG.md`**。 |
+| `AGENT_WEB_RAW_ASSISTANT_OUTPUT` | 设为真值时，CSR 通过 **`GET /web-ui`** 获知 **`apply_assistant_display_filters: false`**，助手消息按存储**原文**展示与导出（不剥 `agent_reply_plan`、不拆内联思维链标记等）；**无** TOML 字段，**须重启 `serve`**。与上项独立；详见 **`docs/DEBUG.md`** §1。 |
 
 ### 工作区与 Cursor 式规则
 

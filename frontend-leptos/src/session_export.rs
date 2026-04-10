@@ -5,7 +5,7 @@ use serde::Serialize;
 use wasm_bindgen::JsCast;
 
 use crate::i18n::Locale;
-use crate::message_format::{STAGED_TIMELINE_SYSTEM_PREFIX, assistant_text_for_display};
+use crate::message_format::{STAGED_TIMELINE_SYSTEM_PREFIX, message_text_for_display_ex};
 use crate::storage::{ChatSession, StoredMessage};
 
 /// 须与 `src/runtime/chat_export.rs` 中 `CHAT_SESSION_FILE_VERSION` 一致。
@@ -26,20 +26,36 @@ pub struct ChatSessionFile {
     pub messages: Vec<ExportMessage>,
 }
 
-pub fn session_to_export_file(session: &ChatSession, loc: Locale) -> ChatSessionFile {
+pub fn session_to_export_file(
+    session: &ChatSession,
+    loc: Locale,
+    apply_assistant_display_filters: bool,
+) -> ChatSessionFile {
     ChatSessionFile {
         version: CHAT_SESSION_FILE_VERSION,
-        messages: stored_messages_to_export(&session.messages, loc),
+        messages: stored_messages_to_export(
+            &session.messages,
+            loc,
+            apply_assistant_display_filters,
+        ),
     }
 }
 
-fn stored_messages_to_export(messages: &[StoredMessage], loc: Locale) -> Vec<ExportMessage> {
+fn stored_messages_to_export(
+    messages: &[StoredMessage],
+    loc: Locale,
+    apply_assistant_display_filters: bool,
+) -> Vec<ExportMessage> {
     let mut out = Vec::new();
     for m in messages {
         if m.role == "system" && m.is_tool {
             out.push(ExportMessage {
                 role: "tool".to_string(),
-                content: Some(message_text_for_export(m, loc)),
+                content: Some(message_text_for_export(
+                    m,
+                    loc,
+                    apply_assistant_display_filters,
+                )),
                 name: Some("tool".to_string()),
             });
             continue;
@@ -48,7 +64,11 @@ fn stored_messages_to_export(messages: &[StoredMessage], loc: Locale) -> Vec<Exp
             if m.text.starts_with(STAGED_TIMELINE_SYSTEM_PREFIX) {
                 out.push(ExportMessage {
                     role: "system".to_string(),
-                    content: Some(message_text_for_export(m, loc)),
+                    content: Some(message_text_for_export(
+                        m,
+                        loc,
+                        apply_assistant_display_filters,
+                    )),
                     name: None,
                 });
             }
@@ -56,21 +76,23 @@ fn stored_messages_to_export(messages: &[StoredMessage], loc: Locale) -> Vec<Exp
         }
         out.push(ExportMessage {
             role: m.role.clone(),
-            content: Some(message_text_for_export(m, loc)),
+            content: Some(message_text_for_export(
+                m,
+                loc,
+                apply_assistant_display_filters,
+            )),
             name: None,
         });
     }
     out
 }
 
-fn message_text_for_export(m: &StoredMessage, loc: Locale) -> String {
-    if m.role == "assistant" {
-        assistant_text_for_display(&m.text, m.state.as_deref() == Some("loading"), loc)
-    } else if m.role == "system" {
-        crate::message_format::message_text_for_display(m, loc)
-    } else {
-        m.text.clone()
-    }
+fn message_text_for_export(
+    m: &StoredMessage,
+    loc: Locale,
+    apply_assistant_display_filters: bool,
+) -> String {
+    message_text_for_display_ex(m, loc, apply_assistant_display_filters)
 }
 
 fn markdown_sections_for_export(messages: &[ExportMessage], loc: Locale) -> String {
@@ -96,8 +118,13 @@ fn markdown_sections_for_export(messages: &[ExportMessage], loc: Locale) -> Stri
 }
 
 /// 与 `chat_export::messages_to_markdown` 一致：跳过 `system`；`tool` 与 `user`/`assistant` 分段。
-pub fn session_to_markdown(session: &ChatSession, loc: Locale) -> String {
-    let messages = stored_messages_to_export(&session.messages, loc);
+pub fn session_to_markdown(
+    session: &ChatSession,
+    loc: Locale,
+    apply_assistant_display_filters: bool,
+) -> String {
+    let messages =
+        stored_messages_to_export(&session.messages, loc, apply_assistant_display_filters);
     let mut md = String::from(crate::i18n::export_md_title_full(loc));
     md.push_str(&markdown_sections_for_export(&messages, loc));
     md
@@ -108,6 +135,7 @@ pub fn stored_messages_by_ids_to_markdown(
     all_messages: &[StoredMessage],
     selected_ids: &[String],
     loc: Locale,
+    apply_assistant_display_filters: bool,
 ) -> String {
     use std::collections::HashSet;
 
@@ -117,7 +145,7 @@ pub fn stored_messages_by_ids_to_markdown(
         .filter(|m| set.contains(m.id.as_str()))
         .cloned()
         .collect();
-    let messages = stored_messages_to_export(&subset, loc);
+    let messages = stored_messages_to_export(&subset, loc, apply_assistant_display_filters);
     let mut md = String::from(crate::i18n::export_md_title_selection(loc));
     md.push_str(&markdown_sections_for_export(&messages, loc));
     md
@@ -214,6 +242,7 @@ mod tests {
             &session.messages,
             &["c".into(), "a".into()],
             Locale::ZhHans,
+            true,
         );
         assert!(md.contains("first"));
         assert!(!md.contains("second"));
@@ -242,7 +271,7 @@ mod tests {
             pinned: false,
             starred: false,
         };
-        let file = session_to_export_file(&session, Locale::ZhHans);
+        let file = session_to_export_file(&session, Locale::ZhHans, true);
         assert_eq!(file.messages.len(), 3);
         assert_eq!(file.messages[0].role, "user");
         assert_eq!(file.messages[1].role, "tool");

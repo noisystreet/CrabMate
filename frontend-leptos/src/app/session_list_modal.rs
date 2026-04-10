@@ -23,6 +23,7 @@ fn SessionListModalPanel(
     draft: RwSignal<String>,
     session_sync: RwSignal<SessionSyncState>,
     composer_draft_buffer: Arc<Mutex<String>>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     let dialog_ref = NodeRef::<Div>::new();
 
@@ -97,6 +98,7 @@ fn SessionListModalPanel(
                                     composer_draft_buffer=row_buf
                                     session_sync=session_sync
                                     session_modal=session_modal
+                                    apply_assistant_display_filters=apply_assistant_display_filters
                                 />
                             }
                         })
@@ -117,6 +119,7 @@ fn SessionListModalBackdrop(
     draft: RwSignal<String>,
     session_sync: RwSignal<SessionSyncState>,
     composer_draft_buffer: Arc<Mutex<String>>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     view! {
         <div class="modal-backdrop" on:click=move |_| session_modal.set(false)>
@@ -128,6 +131,7 @@ fn SessionListModalBackdrop(
                 draft=draft
                 session_sync=session_sync
                 composer_draft_buffer=composer_draft_buffer
+                apply_assistant_display_filters=apply_assistant_display_filters
             />
         </div>
     }
@@ -141,6 +145,7 @@ pub fn session_list_modal_view(
     draft: RwSignal<String>,
     session_sync: RwSignal<SessionSyncState>,
     composer_draft_buffer: Arc<Mutex<String>>,
+    apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
     view! {
         <Show when=move || session_modal.get()>
@@ -152,6 +157,7 @@ pub fn session_list_modal_view(
                 draft=draft
                 session_sync=session_sync
                 composer_draft_buffer=composer_draft_buffer.clone()
+                apply_assistant_display_filters=apply_assistant_display_filters
             />
         </Show>
     }
