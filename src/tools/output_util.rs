@@ -5,7 +5,12 @@
 //!
 //! 另含 **`Command::output()`** 后合并流、拼 **`title (exit=…):`** 块的共用逻辑（原分散在
 //! `jvm_tools` / `go_tools` / `cargo_tools` 等多处）。
+//!
+//! 子进程 **`ErrorKind::NotFound`** 时，若可知程序名且命中内置表，在错误文末追加**简短安装提示**
+//!（不猜测用户发行版，仅给常见包管理器与文档入口）。
 
+use std::io::ErrorKind;
+use std::path::Path;
 use std::process::Output;
 
 /// 合并 **stdout / stderr** 的策略（不同 CLI 习惯不同）。
@@ -87,7 +92,19 @@ pub(crate) fn format_spawn_error(
     err: &std::io::Error,
     style: CommandSpawnErrorStyle,
 ) -> String {
-    match style {
+    format_spawn_error_with_program(title, err, style, None)
+}
+
+/// 与 [`format_spawn_error`] 相同，但若 `err` 为 **`NotFound`** 且 `program_for_hint` 命中内置表，
+/// 在文末追加一行安装/验证建议（供模型与用户直接执行下一步）。
+#[must_use]
+pub(crate) fn format_spawn_error_with_program(
+    title: &str,
+    err: &std::io::Error,
+    style: CommandSpawnErrorStyle,
+    program_for_hint: Option<&str>,
+) -> String {
+    let mut base = match style {
         CommandSpawnErrorStyle::CannotStartCommand => {
             format!("{title}: 无法启动命令（{err}）")
         }
@@ -97,7 +114,135 @@ pub(crate) fn format_spawn_error(
         CommandSpawnErrorStyle::ExecuteFailed => {
             format!("{title}: 执行失败（{err}）")
         }
+    };
+    if err.kind() == ErrorKind::NotFound
+        && let Some(name) = program_for_hint
+        && let Some(hint) = cli_missing_install_hint(name)
+    {
+        base.push_str("\n\n");
+        base.push_str(hint);
     }
+    base
+}
+
+/// 从 `Command` 取出用于提示的可执行文件名（去路径，仅展示名）。
+fn spawn_program_display_name(cmd: &std::process::Command) -> Option<String> {
+    let p = cmd.get_program();
+    let s = p.to_str()?;
+    if s.is_empty() {
+        return None;
+    }
+    Path::new(s)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(str::to_string)
+        .or_else(|| Some(s.to_string()))
+}
+
+/// 已知外部 CLI 的「未找到」安装提示；未收录则 `None`（避免对 `cargo`/`sh` 等泛名误提示）。
+fn cli_missing_install_hint(program: &str) -> Option<&'static str> {
+    let key = Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program);
+    if key.eq_ignore_ascii_case("cargo")
+        || key.eq_ignore_ascii_case("sh")
+        || key.eq_ignore_ascii_case("bash")
+    {
+        return None;
+    }
+    if key.eq_ignore_ascii_case("shellcheck") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install shellcheck`；macOS `brew install shellcheck`；文档 https://github.com/koalaman/shellcheck#installing 。验证：`shellcheck --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("cppcheck") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install cppcheck`；macOS `brew install cppcheck`；文档 https://cppcheck.sourceforge.io/ 。验证：`cppcheck --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("semgrep") {
+        return Some(
+            "安装提示：`pip install semgrep` 或 `pipx install semgrep`；官方说明见 https://semgrep.dev/docs/getting-started/ 。验证：`semgrep --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("hadolint") {
+        return Some(
+            "安装提示：macOS `brew install hadolint`；或从 https://github.com/hadolint/hadolint/releases 下载二进制并加入 PATH。验证：`hadolint --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("bandit") {
+        return Some(
+            "安装提示：`pip install bandit` 或 `pipx install bandit`。验证：`bandit --version` 或 `python3 -m bandit --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("lizard") {
+        return Some(
+            "安装提示：`pip install lizard`；确保 `lizard` 或 `python3 -m lizard` 在 PATH 中。验证：`lizard --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("typos") {
+        return Some(
+            "安装提示：`cargo install typos-cli` 或从 https://github.com/crate-ci/typos/releases 获取二进制。验证：`typos --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("codespell") {
+        return Some(
+            "安装提示：`pip install codespell` 或发行版包 `codespell`。验证：`codespell --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("ast-grep") || key.eq_ignore_ascii_case("sg") {
+        return Some(
+            "安装提示：`cargo install ast-grep --locked` 或见 https://ast-grep.github.io/guide/quick-start.html 。验证：`ast-grep --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("pre-commit") {
+        return Some(
+            "安装提示：`pip install pre-commit` 或 `pipx install pre-commit`。验证：`pre-commit --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("ruff") {
+        return Some(
+            "安装提示：`pip install ruff` 或 `cargo install ruff`（任选其一）。验证：`ruff --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("mypy") {
+        return Some(
+            "安装提示：`pip install mypy`。验证：`mypy --version` 或 `python3 -m mypy --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("uv") {
+        return Some(
+            "安装提示：见 https://docs.astral.sh/uv/getting-started/installation/ （官方安装脚本或包管理器）。验证：`uv --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("npm") || key.eq_ignore_ascii_case("npx") {
+        return Some(
+            "安装提示：安装 Node.js（含 npm/npx），见 https://nodejs.org/ 或发行版包 `nodejs`。验证：`node --version` 与 `npm --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("mvn") || key.eq_ignore_ascii_case("maven") {
+        return Some(
+            "安装提示：安装 Apache Maven（`mvn`），见 https://maven.apache.org/install.html 。验证：`mvn --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("gradle") {
+        return Some("安装提示：安装 Gradle 或使用项目自带 `gradlew`。验证：`gradle --version`。");
+    }
+    if key.eq_ignore_ascii_case("docker") {
+        return Some(
+            "安装提示：安装 Docker Engine / Docker CLI，见 https://docs.docker.com/get-docker/ 。验证：`docker version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("podman") {
+        return Some(
+            "安装提示：安装 Podman（发行版包或 https://podman.io/docs/installation ）。验证：`podman --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("go") {
+        return Some("安装提示：安装 Go 工具链，见 https://go.dev/dl/ 。验证：`go version`。");
+    }
+    None
 }
 
 /// 执行 **`cmd.output()`**，合并输出并格式化为工具返回字符串；启动失败时按 **`spawn_style`** 生成说明。
@@ -110,13 +255,14 @@ pub(crate) fn run_command_output_formatted(
     merge: ProcessOutputMerge,
     spawn_style: CommandSpawnErrorStyle,
 ) -> String {
+    let program_hint = spawn_program_display_name(&cmd);
     match cmd.output() {
         Ok(output) => {
             let code = output.status.code().unwrap_or(-1);
             let body = merge_process_output(&output, merge);
             format_exited_command_output(title, code, &body, max_bytes, max_lines)
         }
-        Err(e) => format_spawn_error(title, &e, spawn_style),
+        Err(e) => format_spawn_error_with_program(title, &e, spawn_style, program_hint.as_deref()),
     }
 }
 
@@ -247,5 +393,46 @@ mod tests {
             merge_process_output(&out, ProcessOutputMerge::ConcatStdoutStderr),
             "(无输出)"
         );
+    }
+
+    #[test]
+    fn spawn_notfound_appends_shellcheck_install_hint() {
+        let e = std::io::Error::new(ErrorKind::NotFound, "no such file");
+        let s = format_spawn_error_with_program(
+            "shellcheck",
+            &e,
+            CommandSpawnErrorStyle::CannotStartWithPathHint,
+            Some("shellcheck"),
+        );
+        assert!(s.contains("PATH"), "{s}");
+        assert!(
+            s.contains("apt install shellcheck") || s.contains("brew install shellcheck"),
+            "{s}"
+        );
+        assert!(s.contains("shellcheck --version"), "{s}");
+    }
+
+    #[test]
+    fn spawn_notfound_no_hint_for_cargo() {
+        let e = std::io::Error::new(ErrorKind::NotFound, "no such file");
+        let s = format_spawn_error_with_program(
+            "cargo test",
+            &e,
+            CommandSpawnErrorStyle::CannotStartCommand,
+            Some("cargo"),
+        );
+        assert!(!s.contains("安装提示"), "{s}");
+    }
+
+    #[test]
+    fn spawn_other_io_error_no_install_hint() {
+        let e = std::io::Error::new(ErrorKind::PermissionDenied, "permission denied");
+        let s = format_spawn_error_with_program(
+            "semgrep scan",
+            &e,
+            CommandSpawnErrorStyle::CannotStartWithPathHint,
+            Some("semgrep"),
+        );
+        assert!(!s.contains("安装提示"), "{s}");
     }
 }
