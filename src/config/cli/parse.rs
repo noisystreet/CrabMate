@@ -327,8 +327,14 @@ fn build_parsed_cli_args(
             }
         }
         Some(Commands::Mcp(m)) => {
-            let probe = match m.sub {
-                McpSubCmd::List(l) => l.probe,
+            let (extra_cli, no_tools_mcp) = match m.sub {
+                McpSubCmd::List(l) => (ExtraCliCommand::McpList { probe: l.probe }, no_tools),
+                McpSubCmd::Serve(s) => (
+                    ExtraCliCommand::McpServe {
+                        no_tools: s.no_tools,
+                    },
+                    no_tools,
+                ),
             };
             ParsedCliArgs {
                 config_path: config,
@@ -337,13 +343,13 @@ fn build_parsed_cli_args(
                 serve_port: None,
                 http_bind_host: http_bind_host(None),
                 workspace_cli: workspace,
-                no_tools,
+                no_tools: no_tools_mcp,
                 no_web: false,
                 dry_run: false,
                 no_stream: false,
                 log_file: log_path,
                 bench_args: BenchmarkCliArgs::default(),
-                extra_cli: ExtraCliCommand::McpList { probe },
+                extra_cli,
                 save_session: None,
                 tool_replay: None,
             }
