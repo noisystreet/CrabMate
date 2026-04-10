@@ -73,6 +73,7 @@
 | `ok` | bool? | 是否成功 |
 | `exit_code` | number? | 如命令工具 |
 | `error_code` | string? | 机器可读，见下表 |
+| `failure_category` | string? | 粗粒度失败分类，与 Rust **`tool_result::ToolFailureCategory::as_str`** 及历史 **`crabmate_tool.failure_category`** 同源；由 **`error_code`** 推导（成功帧省略）。稳定取值见下文 **`failure_category` 枚举** |
 | `stdout` / `stderr` | string? | 分流输出（若有） |
 | `retryable` | bool? | 失败时可选；与 `crabmate_tool.retryable` 一致，**启发式**（如超时、工作流汇合类），**非**执行保证 |
 | `tool_call_id` | string? | 与 OpenAI 兼容的本次 `tool_calls[].id`，便于与助手消息对齐 |
@@ -148,7 +149,23 @@
 | `workflow_tool_join_error` | 工作流工具任务 join 失败 |
 | `{tool_name}_failed` | 通用：某工具失败（如 `run_command_failed`） |
 
-完整启发式见 `src/tool_result/`（`classify_error_code`）；工作流专用见 `src/agent/workflow/execute.rs`。
+完整启发式见 `src/tool_result/mod.rs`（`classify_error_code`）；**`error_code` → `failure_category`** 映射见 **`src/tool_result/tool_error.rs`**（**`failure_category_for_error_code`**，与 **`ToolFailureCategory`** 一致）。工作流专用见 `src/agent/workflow/execute.rs`。
+
+### `tool_result.failure_category`（与 `crabmate_tool.failure_category`）
+
+与 Rust 枚举 **`tool_result::ToolFailureCategory`** 的 **`as_str()`** 一致，便于客户端 **`match`** 而不过度依赖自由字符串 **`error_code`**：
+
+| `failure_category` | 含义 |
+|--------------------|------|
+| `invalid_input` | 参数 / JSON / 必填字段等 |
+| `policy_denied` | 白名单、限流、策略拒绝等 |
+| `workspace` | 工作区未设置、路径不在允许根内等 |
+| `timeout` | 工具或子进程超时 |
+| `external` | 外部命令非零退出、IO、HTTP 业务失败等 |
+| `internal` | 工具内部不变量（少见） |
+| `unknown` | 无法归类或未知工具 |
+
+**说明**：新出现的 **`error_code`** 可能暂时落入 **`unknown`** 或经 `_failed` 后缀规则归入 **`external`**；细化映射时在 **`failure_category_for_error_code`** 中扩展。
 
 ## 与 `POST /chat` HTTP 错误的区别
 

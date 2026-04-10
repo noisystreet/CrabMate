@@ -181,6 +181,9 @@ pub struct ToolResultBody {
     pub exit_code: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
+    /// 与 `tool_error::ToolFailureCategory::as_str` / `crabmate_tool.failure_category` 一致；失败时由 `error_code` 推导。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_category: Option<String>,
     /// 与 `crabmate_tool.retryable` 一致：启发式，非保证。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retryable: Option<bool>,
@@ -382,6 +385,7 @@ mod tests {
                 ok: Some(false),
                 exit_code: Some(1),
                 error_code: Some("command_failed".into()),
+                failure_category: Some("external".into()),
                 retryable: Some(false),
                 tool_call_id: Some("tc1".into()),
                 execution_mode: Some("serial".into()),
@@ -398,6 +402,7 @@ mod tests {
                 assert_eq!(tool_result.ok, Some(false));
                 assert_eq!(tool_result.exit_code, Some(1));
                 assert_eq!(tool_result.error_code.as_deref(), Some("command_failed"));
+                assert_eq!(tool_result.failure_category.as_deref(), Some("external"));
                 assert_eq!(tool_result.retryable, Some(false));
                 assert_eq!(tool_result.tool_call_id.as_deref(), Some("tc1"));
                 assert_eq!(tool_result.execution_mode.as_deref(), Some("serial"));

@@ -44,6 +44,8 @@ pub struct ToolResultInfo {
     pub ok: Option<bool>,
     pub exit_code: Option<i64>,
     pub error_code: Option<String>,
+    /// 与 Rust `tool_error::ToolFailureCategory` 蛇形字符串同源（`invalid_input` 等）。
+    pub failure_category: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -320,6 +322,10 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
             exit_code: tr.get("exit_code").and_then(|x| x.as_i64()),
             error_code: tr
                 .get("error_code")
+                .and_then(|x| x.as_str())
+                .map(String::from),
+            failure_category: tr
+                .get("failure_category")
                 .and_then(|x| x.as_str())
                 .map(String::from),
         };
