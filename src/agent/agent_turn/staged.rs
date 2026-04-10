@@ -1024,7 +1024,7 @@ where
                 "\n- **子代理角色**：`patch_write`（本步仅允许只读工具与受限补丁写：`apply_patch` / `search_replace` / `structured_patch` / `create_file` / `modify_file` / `append_file` / `format_file` / `ast_grep_rewrite`）\n"
             }
             Some(crate::agent::plan_artifact::PlanStepExecutorKind::TestRunner) => {
-                "\n- **子代理角色**：`test_runner`（本步仅允许只读工具与内置测试运行器，如 `cargo_test` / `pytest_run` / `go_test` 等；**不要**用 `run_command` 跑测试）\n"
+                "\n- **子代理角色**：`test_runner`（本步允许只读工具、内置测试运行器如 `cargo_test` / `pytest_run` / `go_test`，以及 **`run_command`** 执行配置白名单内的编译/检查命令，例如 `cargo build`、`cargo check`）\n"
             }
             None => "",
         };

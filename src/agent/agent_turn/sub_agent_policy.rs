@@ -1,6 +1,6 @@
 //! 分阶段规划「子代理」步级工具约束：规划 JSON 可选 `executor_kind`，执行层收窄可见工具并拒绝越权调用。
 //!
-//! `patch_write` 的补丁类工具集与 **`[tool_registry] write_effect_tools`** 对齐思路：只读性由 `is_readonly_tool` 判定；补丁名来自内建默认并可由 **`sub_agent_patch_write_extra_tools`** 扩充。`test_runner` 同理有内建集与 **`sub_agent_test_runner_extra_tools`**。
+//! `patch_write` 的补丁类工具集与 **`[tool_registry] write_effect_tools`** 对齐思路：只读性由 `is_readonly_tool` 判定；补丁名来自内建默认并可由 **`sub_agent_patch_write_extra_tools`** 扩充。`test_runner` 有内建测试工具集、默认包含 **`run_command`**（具体命令仍仅能为配置白名单所允许），并可由 **`sub_agent_test_runner_extra_tools`** 扩充。
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -41,6 +41,8 @@ fn default_test_runner_tool_names() -> &'static HashSet<&'static str> {
             "maven_test",
             "gradle_test",
             "frontend_test",
+            // 编译 / 检查等仍走白名单，与全局 `run_command` 一致
+            "run_command",
         ]
         .into_iter()
         .collect()
@@ -113,7 +115,9 @@ pub(crate) fn executor_kind_user_label(kind: PlanStepExecutorKind) -> &'static s
     match kind {
         PlanStepExecutorKind::ReviewReadonly => "review_readonly（只读审阅）",
         PlanStepExecutorKind::PatchWrite => "patch_write（只读 + 受限补丁写）",
-        PlanStepExecutorKind::TestRunner => "test_runner（只读 + 内置测试运行器）",
+        PlanStepExecutorKind::TestRunner => {
+            "test_runner（只读 + 测试/构建工具 + run_command 白名单）"
+        }
     }
 }
 
@@ -216,6 +220,16 @@ mod tests {
             &cfg,
             "read_file",
             PlanStepExecutorKind::ReviewReadonly
+        ));
+    }
+
+    #[test]
+    fn test_runner_allows_run_command_under_allowlist_semantics() {
+        let cfg = crate::config::load_config(None).expect("embed default");
+        assert!(tool_allowed_for_step_executor_kind(
+            &cfg,
+            "run_command",
+            PlanStepExecutorKind::TestRunner
         ));
     }
 
