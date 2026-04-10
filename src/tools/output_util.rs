@@ -86,13 +86,20 @@ pub(crate) fn format_exited_command_output(
     )
 }
 
+/// 在 `err` 为 **`NotFound`** 且 `program_for_hint` 命中内置表时，于 `base` 文末追加安装提示；否则原样返回。
 #[must_use]
-pub(crate) fn format_spawn_error(
-    title: &str,
+pub(crate) fn append_notfound_install_hint(
+    mut base: String,
     err: &std::io::Error,
-    style: CommandSpawnErrorStyle,
+    program_for_hint: &str,
 ) -> String {
-    format_spawn_error_with_program(title, err, style, None)
+    if err.kind() == ErrorKind::NotFound
+        && let Some(h) = cli_missing_install_hint(program_for_hint)
+    {
+        base.push_str("\n\n");
+        base.push_str(h);
+    }
+    base
 }
 
 /// 与 [`format_spawn_error`] 相同，但若 `err` 为 **`NotFound`** 且 `program_for_hint` 命中内置表，
@@ -140,16 +147,18 @@ fn spawn_program_display_name(cmd: &std::process::Command) -> Option<String> {
 }
 
 /// 已知外部 CLI 的「未找到」安装提示；未收录则 `None`（避免对 `cargo`/`sh` 等泛名误提示）。
-fn cli_missing_install_hint(program: &str) -> Option<&'static str> {
+pub(crate) fn cli_missing_install_hint(program: &str) -> Option<&'static str> {
     let key = Path::new(program)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(program);
-    if key.eq_ignore_ascii_case("cargo")
-        || key.eq_ignore_ascii_case("sh")
-        || key.eq_ignore_ascii_case("bash")
-    {
+    if key.eq_ignore_ascii_case("sh") || key.eq_ignore_ascii_case("bash") {
         return None;
+    }
+    if key.eq_ignore_ascii_case("cargo") {
+        return Some(
+            "安装提示：安装 Rust 工具链（含 cargo），见 https://rustup.rs/ 。验证：`cargo --version`。",
+        );
     }
     if key.eq_ignore_ascii_case("shellcheck") {
         return Some(
@@ -241,6 +250,89 @@ fn cli_missing_install_hint(program: &str) -> Option<&'static str> {
     }
     if key.eq_ignore_ascii_case("go") {
         return Some("安装提示：安装 Go 工具链，见 https://go.dev/dl/ 。验证：`go version`。");
+    }
+    if key.eq_ignore_ascii_case("gofmt") {
+        return Some("安装提示：`gofmt` 随 Go 发行，见 https://go.dev/dl/ 。验证：`gofmt -h`。");
+    }
+    if key.eq_ignore_ascii_case("golangci-lint") {
+        return Some(
+            "安装提示：见 https://golangci-lint.run/welcome/install/ （官方安装脚本或包管理器）。验证：`golangci-lint --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("python3") || key.eq_ignore_ascii_case("python") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install python3`；macOS 可用 `brew install python` 或 https://www.python.org/downloads/ 。验证：`python3 --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("pytest") {
+        return Some(
+            "安装提示：`pip install pytest` 或 `python3 -m pip install pytest`。验证：`pytest --version` 或 `python3 -m pytest --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("git") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install git`；macOS `brew install git`；文档 https://git-scm.com/downloads 。验证：`git --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("gh") {
+        return Some(
+            "安装提示：macOS `brew install gh`；Debian/Ubuntu 见 https://github.com/cli/cli/blob/trunk/docs/install_linux.md 。验证：`gh --version`；认证：`gh auth login`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("bc") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install bc`；macOS `brew install bc`；验证：`bc --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("rustfmt") {
+        return Some(
+            "安装提示：`rustup component add rustfmt`（推荐）或 `cargo install rustfmt`。验证：`rustfmt --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("clang-format") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install clang-format`；macOS `brew install clang-format`。验证：`clang-format --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("shfmt") {
+        return Some(
+            "安装提示：macOS `brew install shfmt`；或 `go install mvdan.cc/sh/v3/cmd/shfmt@latest`（需 Go）。文档 https://github.com/mvdan/sh 。验证：`shfmt --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("xmllint") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install libxml2-utils`；macOS `brew install libxml2`（通常含 xmllint）。验证：`xmllint --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("sqlfluff") {
+        return Some(
+            "安装提示：`pip install sqlfluff` 或 `pipx install sqlfluff`。验证：`sqlfluff --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("pg_format") {
+        return Some(
+            "安装提示：安装 [pgFormatter](https://github.com/darold/pgFormatter)（发行版包名因系统而异，可搜索 `pgformatter`）。验证：`pg_format --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("tsc") {
+        return Some(
+            "安装提示：在工作区 `npm install -D typescript` 后使用 `npx tsc`，或全局 `npm install -g typescript`。验证：`npx tsc --version`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("ss") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install iproute2`（提供 `ss`）；多数精简容器需手动安装。验证：`ss -V`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("lsof") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install lsof`；macOS 通常已内置。验证：`lsof -v`。",
+        );
+    }
+    if key.eq_ignore_ascii_case("ps") {
+        return Some(
+            "安装提示：Debian/Ubuntu `sudo apt install procps`（提供 `ps`）。验证：`ps --version`。",
+        );
     }
     None
 }
@@ -413,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn spawn_notfound_no_hint_for_cargo() {
+    fn spawn_notfound_appends_cargo_install_hint() {
         let e = std::io::Error::new(ErrorKind::NotFound, "no such file");
         let s = format_spawn_error_with_program(
             "cargo test",
@@ -421,7 +513,8 @@ mod tests {
             CommandSpawnErrorStyle::CannotStartCommand,
             Some("cargo"),
         );
-        assert!(!s.contains("安装提示"), "{s}");
+        assert!(s.contains("安装提示"), "{s}");
+        assert!(s.contains("rustup"), "{s}");
     }
 
     #[test]

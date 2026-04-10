@@ -41,7 +41,10 @@ pub fn port_check(args_json: &str, max_output_len: usize) -> String {
                 )
             }
         }
-        Err(_) => try_lsof_fallback(port, max_output_len, "ss 不可用"),
+        Err(e) => {
+            let reason = output_util::append_notfound_install_hint(format!("ss: {}", e), &e, "ss");
+            try_lsof_fallback(port, max_output_len, &reason)
+        }
     }
 }
 
@@ -65,7 +68,11 @@ fn try_lsof_fallback(port: u16, max_output_len: usize, ss_err: &str) -> String {
                 )
             }
         }
-        Err(e) => format!("端口 {} 查询失败（ss: {}; lsof: {}）", port, ss_err, e),
+        Err(e) => output_util::append_notfound_install_hint(
+            format!("端口 {} 查询失败（ss: {}; lsof: {}）", port, ss_err, e),
+            &e,
+            "lsof",
+        ),
     }
 }
 
@@ -120,6 +127,8 @@ pub fn process_list(args_json: &str, max_output_len: usize) -> String {
                 )
             }
         }
-        Err(e) => format!("ps: 无法执行（{}）", e),
+        Err(e) => {
+            output_util::append_notfound_install_hint(format!("ps: 无法执行（{}）", e), &e, "ps")
+        }
     }
 }

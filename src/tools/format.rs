@@ -17,6 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use super::output_util;
 use super::python_tools;
 
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
@@ -214,9 +215,10 @@ fn run_rustfmt(target: &Path, workspace_root: &Path, check_only: bool) -> Result
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let output = cmd
-        .output()
-        .map_err(|e| format!("无法执行 rustfmt：{}（请确认已安装 rustfmt）", e))?;
+    let output = cmd.output().map_err(|e| {
+        let b = format!("无法执行 rustfmt：{}（请确认已安装 rustfmt）", e);
+        output_util::append_notfound_install_hint(b, &e, "rustfmt")
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -272,10 +274,11 @@ fn run_prettier(target: &Path, workspace_root: &Path, check_only: bool) -> Resul
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let output = cmd.output().map_err(|e| {
-        format!(
+        let b = format!(
             "无法执行 prettier：{}（请确认已在工作区内安装 prettier 或可通过 npx 调用）",
             e
-        )
+        );
+        output_util::append_notfound_install_hint(b, &e, "npx")
     })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -326,10 +329,11 @@ fn run_clang_format(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let output = cmd.output().map_err(|e| {
-        format!(
+        let b = format!(
             "无法执行 clang-format：{}（请确认已安装 LLVM/Clang 的 clang-format，且检查模式需支持 --dry-run --Werror）",
             e
-        )
+        );
+        output_util::append_notfound_install_hint(b, &e, "clang-format")
     })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -373,7 +377,10 @@ fn run_gofmt(target: &Path, workspace_root: &Path, check_only: bool) -> Result<S
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(|e| format!("无法执行 gofmt：{}（请确认已安装 Go）", e))?;
+            .map_err(|e| {
+                let b = format!("无法执行 gofmt：{}（请确认已安装 Go）", e);
+                output_util::append_notfound_install_hint(b, &e, "gofmt")
+            })?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         if stdout.trim().is_empty() {
             Ok(format!(
@@ -394,7 +401,10 @@ fn run_gofmt(target: &Path, workspace_root: &Path, check_only: bool) -> Result<S
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(|e| format!("无法执行 gofmt：{}（请确认已安装 Go）", e))?;
+            .map_err(|e| {
+                let b = format!("无法执行 gofmt：{}（请确认已安装 Go）", e);
+                output_util::append_notfound_install_hint(b, &e, "gofmt")
+            })?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("gofmt 格式化失败：{}", stderr.trim_end()));
@@ -415,10 +425,11 @@ fn run_shfmt(target: &Path, workspace_root: &Path, check_only: bool) -> Result<S
         .stderr(Stdio::piped())
         .output()
         .map_err(|e| {
-            format!(
+            let b = format!(
                 "无法执行 shfmt：{}（请安装 shfmt: https://github.com/mvdan/sh）",
                 e
-            )
+            );
+            output_util::append_notfound_install_hint(b, &e, "shfmt")
         })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -455,7 +466,10 @@ fn run_xmllint(target: &Path, workspace_root: &Path, check_only: bool) -> Result
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(|e| format!("无法执行 xmllint：{}（请安装 libxml2-utils）", e))?;
+            .map_err(|e| {
+                let b = format!("无法执行 xmllint：{}（请安装 libxml2-utils）", e);
+                output_util::append_notfound_install_hint(b, &e, "xmllint")
+            })?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("xmllint 检查失败：{}", stderr.trim_end()));
@@ -472,7 +486,10 @@ fn run_xmllint(target: &Path, workspace_root: &Path, check_only: bool) -> Result
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(|e| format!("无法执行 xmllint：{}（请安装 libxml2-utils）", e))?;
+            .map_err(|e| {
+                let b = format!("无法执行 xmllint：{}（请安装 libxml2-utils）", e);
+                output_util::append_notfound_install_hint(b, &e, "xmllint")
+            })?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("xmllint 格式化失败：{}", stderr.trim_end()));

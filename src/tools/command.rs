@@ -55,7 +55,10 @@ impl RunCommandError {
     /// 转为 [`ToolError`]，供 `run_command` runner 显式返回（与信封 `error_code` 对齐）。
     #[must_use]
     pub fn into_tool_error(self) -> ToolError {
-        let msg = self.user_message();
+        let msg = match &self {
+            RunCommandError::CommandNotFound { .. } => self.extended_user_message(),
+            _ => self.user_message(),
+        };
         match self {
             RunCommandError::JsonParse(_) => ToolError::invalid_args(msg),
             RunCommandError::MissingCommand => ToolError {
@@ -139,6 +142,19 @@ impl RunCommandError {
     pub fn user_message(&self) -> String {
         self.to_string()
     }
+
+    /// 与 [`user_message`] 相同；若为本变体为 [`RunCommandError::CommandNotFound`] 且命中内置表，文末追加 CLI 安装提示。
+    #[must_use]
+    pub fn extended_user_message(&self) -> String {
+        let mut s = self.user_message();
+        if let RunCommandError::CommandNotFound { cmd, .. } = self
+            && let Some(h) = output_util::cli_missing_install_hint(cmd)
+        {
+            s.push_str("\n\n");
+            s.push_str(h);
+        }
+        s
+    }
 }
 
 fn map_spawn_error(cmd: &str, working_dir: &Path, e: io::Error) -> RunCommandError {
@@ -209,14 +225,14 @@ pub fn run(
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
 ) -> String {
-    run_try(
+    run_impl(
         args_json,
         max_output_len,
         allowed_commands,
         working_dir,
         test_cache,
     )
-    .unwrap_or_else(|e| e.message)
+    .unwrap_or_else(|e| e.extended_user_message())
 }
 
 /// 与 [`run`] 相同，失败时返回 [`ToolError`]（显式 `error_code` / 分类，不经字符串启发式）。
@@ -513,5 +529,28 @@ mod tests {
             None,
         );
         assert!(out.contains("参数不允许"));
+    }
+
+    #[test]
+    fn command_not_found_extended_appends_install_hint() {
+        let e = RunCommandError::CommandNotFound {
+            cmd: "python3".to_string(),
+            work_dir: "/tmp".to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "x"),
+        };
+        let s = e.extended_user_message();
+        assert!(s.contains("安装提示"), "{s}");
+        assert!(s.contains("python3 --version"), "{s}");
+    }
+
+    #[test]
+    fn command_not_found_extended_skips_hint_for_unknown_cmd() {
+        let e = RunCommandError::CommandNotFound {
+            cmd: "crabmate_nonexistent_cli_9f3a".to_string(),
+            work_dir: "/tmp".to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "x"),
+        };
+        let s = e.extended_user_message();
+        assert!(!s.contains("安装提示"), "{s}");
     }
 }
