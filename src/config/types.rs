@@ -391,7 +391,7 @@ pub struct AgentConfig {
     pub default_agent_role_id: Option<String>,
     /// 命名角色表（`config/agent_roles.toml` 等）；空表表示未启用多角色
     pub agent_roles: AgentRoleCatalog,
-    /// 启用后：读取 `cursor_rules_dir` 下的 `*.mdc` 并附加到系统提示词
+    /// 为 true（默认）时：读取 `cursor_rules_dir` 下的 `*.mdc` 并附加到系统提示词
     pub cursor_rules_enabled: bool,
     /// Cursor-like 规则目录（相对路径相对进程当前目录）
     pub cursor_rules_dir: String,

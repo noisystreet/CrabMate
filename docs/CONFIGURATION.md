@@ -55,7 +55,7 @@
 | 环境变量 | 说明 |
 | --- | --- |
 | `AGENT_WORKSPACE_ALLOWED_ROOTS` | 逗号分隔，等价 `[agent] workspace_allowed_roots`。 |
-| `AGENT_CURSOR_RULES_ENABLED` | 是否启用规则注入。 |
+| `AGENT_CURSOR_RULES_ENABLED` | 是否启用规则注入（默认 **true**；设为 `0`/`false` 等可关闭）。 |
 | `AGENT_CURSOR_RULES_DIR` | 规则目录（`*.mdc`）。 |
 | `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | 是否并入 `AGENTS.md`。 |
 | `AGENT_CURSOR_RULES_MAX_CHARS` | 注入长度上限。 |
@@ -375,7 +375,7 @@ api_base = "https://api.deepseek.com/v1"
 model = "deepseek-reasoner"
 # system_prompt = "…"   # 仅写此项时会取消默认的 system_prompt_file，改为内联
 # system_prompt_file = "my_prompt.txt"   # 相对路径按「系统提示词」一节解析
-# cursor_rules_enabled = true
+# cursor_rules_enabled = false   # 默认 true；无 `.cursor/rules` 或 `*.mdc` 时行为与关闭相同
 # cursor_rules_dir = ".cursor/rules"
 ```
 
@@ -512,7 +512,7 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 
 ## Cursor-like 规则注入
 
-`cursor_rules_enabled` 为真时读取 `cursor_rules_dir` 下 `*.mdc`（可附加 `AGENTS.md`），拼到系统提示词末尾，长度受 `cursor_rules_max_chars` 限制。
+`cursor_rules_enabled` 为真（**默认 true**）时读取 `cursor_rules_dir` 下 `*.mdc`（可附加 `AGENTS.md`），拼到系统提示词末尾，长度受 `cursor_rules_max_chars` 限制；目录不存在或无可读规则文件时不追加、与关闭效果相同。
 
 ## 上下文窗口
 
