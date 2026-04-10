@@ -52,7 +52,10 @@ pub(crate) fn record_tool_outcome(
 pub fn augment_system_prompt(base: &str, cfg: &AgentConfig) -> String {
     let mut out = base.to_string();
     if cfg.thinking_avoid_echo_system_prompt {
-        let app = cfg.thinking_avoid_echo_appendix.trim();
+        let mut app = cfg.thinking_avoid_echo_appendix.trim();
+        if app.is_empty() {
+            app = crate::config::embedded_thinking_avoid_echo_appendix();
+        }
         if !app.is_empty() {
             if !out.is_empty() && !out.ends_with('\n') {
                 out.push('\n');

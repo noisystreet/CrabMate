@@ -1,6 +1,8 @@
 //! E 步：执行 tool_calls（SSE/终端、并行只读批、串行带缓存）。
 
 use std::collections::{HashMap, HashSet};
+
+use crate::agent_role_turn::{tool_allowed_for_turn, turn_tool_denied_message};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -57,6 +59,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub step_executor_constraint: Option<PlanStepExecutorKind>,
     /// 本会话完整工具定义（未按步收窄）；用于子代理越权提示中的允许工具名列表。
     pub tools_defs_full: &'a [Tool],
+    /// 多角色工具白名单；`None` 不限制。
+    pub turn_allow: Option<&'a HashSet<String>>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -309,6 +313,7 @@ struct ExecuteToolsCommonCtx<'a> {
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<PlanStepExecutorKind>,
     tools_defs_full: &'a [Tool],
+    turn_allow: Option<&'a HashSet<String>>,
 }
 
 /// 只读可并行批：去重后 `spawn_blocking` + 限并发，再按原 `tool_calls` 顺序回写 SSE / messages。
@@ -332,6 +337,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         request_chrome_trace: _,
         step_executor_constraint,
         tools_defs_full,
+        turn_allow,
     } = ctx;
 
     let tools_defs_hint = Arc::new(tools_defs_full.to_vec());
@@ -398,6 +404,10 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
                     name.as_str(),
                     k,
                 );
+                return (name, args, denied);
+            }
+            if !tool_allowed_for_turn(name.as_str(), turn_allow) {
+                let denied = turn_tool_denied_message(name.as_str());
                 return (name, args, denied);
             }
             let wall_secs =
@@ -545,6 +555,7 @@ async fn execute_tools_serial(
         request_chrome_trace,
         step_executor_constraint,
         tools_defs_full,
+        turn_allow,
     } = ctx;
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
@@ -575,6 +586,35 @@ async fn execute_tools_serial(
         {
             let denied =
                 executor_kind_tool_denied_body(cfg.as_ref(), tools_defs_full, name.as_str(), k);
+            warn!(target: LOG_TARGET, "{}", denied);
+            let env = ToolEnvelopeContext {
+                tool_call_id: id.as_str(),
+                execution_mode: "serial",
+                parallel_batch_id: None,
+            };
+            emit_tool_result_sse_and_append(
+                messages,
+                per_coord,
+                EmitToolResultParams {
+                    cfg,
+                    out,
+                    echo_terminal_transcript,
+                    terminal_tool_display_max_chars,
+                    tool_result_envelope_v1,
+                    name: name.as_str(),
+                    args: args.as_str(),
+                    id: id.as_str(),
+                    result: denied,
+                    reflection_inject: None,
+                    envelope_ctx: Some(env),
+                },
+            )
+            .await;
+            continue;
+        }
+
+        if !tool_allowed_for_turn(name.as_str(), turn_allow) {
+            let denied = turn_tool_denied_message(name.as_str());
             warn!(target: LOG_TARGET, "{}", denied);
             let env = ToolEnvelopeContext {
                 tool_call_id: id.as_str(),
@@ -663,6 +703,7 @@ async fn execute_tools_serial(
                 workspace_changelist: workspace_changelist.cloned(),
                 mcp_session,
                 request_chrome_merge: request_chrome_trace.clone(),
+                turn_allow,
             })
             .await;
 
@@ -755,21 +796,24 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
 
     emit_sse_tool_running(out, true, "execute_tools::batch tool_running true").await;
 
-    let workspace_changed =
-        if tool_registry::tool_calls_allow_parallel_sync_batch(ctx.cfg.as_ref(), ctx.tool_calls) {
-            let outcome = execute_tools_parallel(ctx).await;
-            if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-                return outcome;
-            }
-            false
-        } else {
-            let mut workspace_changed = false;
-            let outcome = execute_tools_serial(ctx, &mut workspace_changed).await;
-            if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-                return outcome;
-            }
-            workspace_changed
-        };
+    let workspace_changed = if crate::agent_role_turn::tool_calls_allow_parallel_for_role(
+        ctx.cfg.as_ref(),
+        ctx.tool_calls,
+        ctx.turn_allow,
+    ) {
+        let outcome = execute_tools_parallel(ctx).await;
+        if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+            return outcome;
+        }
+        false
+    } else {
+        let mut workspace_changed = false;
+        let outcome = execute_tools_serial(ctx, &mut workspace_changed).await;
+        if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
+            return outcome;
+        }
+        workspace_changed
+    };
 
     if let Some(tx) = out
         && workspace_changed
@@ -809,6 +853,7 @@ pub(crate) async fn per_execute_tools_web(
         request_chrome_trace,
         step_executor_constraint,
         tools_defs_full,
+        turn_allow,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -834,6 +879,7 @@ pub(crate) async fn per_execute_tools_web(
         request_chrome_trace,
         step_executor_constraint,
         tools_defs_full,
+        turn_allow,
     })
     .await
 }

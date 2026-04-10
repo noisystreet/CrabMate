@@ -1,5 +1,6 @@
 //! `chat` 子命令：`--query` / JSONL / `--messages-json-file` 等。
 
+use crate::agent_role_turn::{filter_tools_for_agent_role, turn_allow_for_web_or_cli_job};
 use crate::config::cli::ChatCliArgs;
 use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::redact;
@@ -35,19 +36,23 @@ pub(crate) async fn run_agent_turn_for_cli(
     work_dir: &std::path::Path,
     no_stream: bool,
     cli_tool_ctx: Option<&CliToolRuntime>,
+    active_agent_role: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (ltm, scope) = cli_long_term_memory_handles(cfg);
+    let turn_allow = turn_allow_for_web_or_cli_job(cfg, active_agent_role, None);
+    let tools_for_job = filter_tools_for_agent_role(tools, turn_allow.as_ref().map(|a| a.as_ref()));
     run_agent_turn(RunAgentTurnParams::cli_terminal_chat(
         client,
         api_key,
         cfg,
-        tools,
+        tools_for_job.as_slice(),
         messages,
         work_dir,
         no_stream,
         cli_tool_ctx,
         ltm,
         scope,
+        turn_allow,
     ))
     .await
 }
@@ -250,6 +255,7 @@ async fn run_one_cli_turn(
     work_dir: &Path,
     no_stream: bool,
     cli_rt: &CliToolRuntime,
+    active_agent_role: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     run_agent_turn_for_cli(
         client,
@@ -260,6 +266,7 @@ async fn run_one_cli_turn(
         work_dir,
         no_stream,
         Some(cli_rt),
+        active_agent_role,
     )
     .await
     .map_err(map_turn_err)?;
@@ -389,6 +396,7 @@ async fn run_chat_batch_jsonl(
             work_dir,
             no_stream,
             cli_rt,
+            agent_role,
         )
         .await?;
         ensure_all_run_commands_not_denied(cli_rt)?;
@@ -471,6 +479,7 @@ pub async fn run_chat_invocation(
             work_dir.as_path(),
             chat.no_stream,
             &cli_rt,
+            agent_role,
         )
         .await?;
         ensure_all_run_commands_not_denied(&cli_rt)?;
@@ -513,6 +522,7 @@ pub async fn run_chat_invocation(
         work_dir.as_path(),
         chat.no_stream,
         &cli_rt,
+        agent_role,
     )
     .await?;
     ensure_all_run_commands_not_denied(&cli_rt)?;

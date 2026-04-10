@@ -333,6 +333,7 @@ pub async fn run_repl(
                     work_dir.as_path(),
                     no_stream,
                     Some(&cli_rt),
+                    agent_role_owned.as_deref(),
                 )
                 .await
                 {

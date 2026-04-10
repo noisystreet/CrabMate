@@ -510,7 +510,10 @@ pub fn build_openapi_spec() -> Value {
                     "properties": {
                         "message": { "type": "string" },
                         "conversation_id": { "type": "string" },
-                        "agent_role": { "type": "string" },
+                        "agent_role": {
+                            "type": "string",
+                            "description": "Named role id; new session seeds first system; existing session refreshes first system if changed. See docs/CONFIGURATION.md § multi-role."
+                        },
                         "approval_session_id": { "type": "string" },
                         "temperature": { "type": "number", "format": "double" },
                         "seed": { "type": "integer", "format": "int64" },

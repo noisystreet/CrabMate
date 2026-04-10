@@ -6,14 +6,17 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+use super::agent_role_spec::AgentRoleSpec;
 use super::cursor_rules;
 
-pub(super) type AgentRoleCatalogBuilt = Arc<HashMap<String, String>>;
+pub(super) type AgentRoleCatalogBuilt = Arc<HashMap<String, AgentRoleSpec>>;
 
 #[derive(Debug, Default, Clone)]
 pub(super) struct AgentRoleEntryBuilder {
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
+    /// 非空：仅允许列出的工具；含字面量 **`mcp`** 表示允许所有 `mcp__*`。空数组表示不允许任何内置工具（仍可按上条规则放行 MCP）。
+    pub(super) allowed_tools: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +37,7 @@ struct AgentRolesSection {
 struct AgentRoleEntryToml {
     system_prompt: Option<String>,
     system_prompt_file: Option<String>,
+    allowed_tools: Option<Vec<String>>,
 }
 
 /// 将 `config/agent_roles.toml` 合并进 [`super::builder::ConfigBuilder`]（多文件时后加载的覆盖同 id 字段）。
@@ -72,9 +76,31 @@ pub(super) fn merge_agent_roles_file_into_builder(
                     slot.system_prompt_file = Some(f);
                 }
             }
+            if let Some(list) = row.allowed_tools {
+                slot.allowed_tools = Some(list);
+            }
         }
     }
     Ok(())
+}
+
+fn normalize_allowed_tools(
+    raw: Option<Vec<String>>,
+) -> Option<std::sync::Arc<std::collections::HashSet<String>>> {
+    let list = raw?;
+    let mut set = std::collections::HashSet::new();
+    for s in list {
+        let t = s.trim();
+        if t.is_empty() {
+            continue;
+        }
+        set.insert(t.to_string());
+    }
+    if set.is_empty() {
+        None
+    } else {
+        Some(std::sync::Arc::new(set))
+    }
 }
 
 fn read_system_prompt_file_resolved(
@@ -139,8 +165,9 @@ pub(super) fn finalize_agent_role_catalog(
     cursor_rules_include_agents_md: bool,
     cursor_rules_max_chars: usize,
 ) -> Result<(Option<String>, AgentRoleCatalogBuilt), String> {
-    let mut out: HashMap<String, String> = HashMap::with_capacity(entries.len());
+    let mut out: HashMap<String, AgentRoleSpec> = HashMap::with_capacity(entries.len());
     for (id, b) in entries {
+        let allowed_tools = normalize_allowed_tools(b.allowed_tools);
         let merged = if let Some(ref path) = b.system_prompt_file {
             let raw = read_system_prompt_file_resolved(
                 path,
@@ -177,7 +204,13 @@ pub(super) fn finalize_agent_role_catalog(
         if merged.trim().is_empty() {
             return Err(format!("配置错误：角色 \"{id}\" 合并后 system 为空"));
         }
-        out.insert(id, merged);
+        out.insert(
+            id,
+            AgentRoleSpec {
+                system_prompt: merged,
+                allowed_tools,
+            },
+        );
     }
 
     let default_role_id = default_role_id

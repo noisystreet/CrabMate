@@ -6,6 +6,8 @@
 pub mod agent;
 mod agent_errors;
 mod agent_memory;
+/// Web/CLI 多角色工作台：中途切换 system、按角色裁剪工具列表。
+mod agent_role_turn;
 /// 工作区内 `cargo metadata` 子进程参数单一真源（工具与首轮注入等共用）。
 mod cargo_metadata;
 mod chat_job_queue;
@@ -55,7 +57,7 @@ pub use config::cli::{
 };
 use log::info;
 pub use read_file_turn_cache::{ReadFileTurnCache, ReadFileTurnCacheHandle, new_turn_cache_handle};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -123,6 +125,8 @@ pub struct RunAgentTurnParams<'a> {
     pub long_term_memory_scope_id: Option<String>,
     /// 单轮 `run_agent_turn` 内 `read_file` 结果缓存；`None` 时由 `run_agent_turn` 按配置创建或关闭。
     pub read_file_turn_cache: Option<std::sync::Arc<ReadFileTurnCache>>,
+    /// 多角色工作台：本回合允许的工具名；`None` 表示不额外限制。
+    pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
 }
 
 impl<'a> RunAgentTurnParams<'a> {
@@ -144,6 +148,7 @@ impl<'a> RunAgentTurnParams<'a> {
         long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
         conversation_id: &str,
         out: &'a mpsc::Sender<String>,
+        turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     ) -> Self {
         Self {
             client,
@@ -167,6 +172,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             long_term_memory_scope_id: Some(conversation_id.to_string()),
             read_file_turn_cache: None,
+            turn_allowed_tool_names,
         }
     }
 
@@ -185,6 +191,7 @@ impl<'a> RunAgentTurnParams<'a> {
         seed_override: types::LlmSeedOverride,
         long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
         conversation_id: &str,
+        turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     ) -> Self {
         Self {
             client,
@@ -208,6 +215,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             long_term_memory_scope_id: Some(conversation_id.to_string()),
             read_file_turn_cache: None,
+            turn_allowed_tool_names,
         }
     }
 
@@ -224,6 +232,7 @@ impl<'a> RunAgentTurnParams<'a> {
         cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
         long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
         long_term_memory_scope_id: Option<String>,
+        turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     ) -> Self {
         Self {
             client,
@@ -247,6 +256,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             long_term_memory_scope_id,
             read_file_turn_cache: None,
+            turn_allowed_tool_names,
         }
     }
 
@@ -282,6 +292,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory: None,
             long_term_memory_scope_id: None,
             read_file_turn_cache: None,
+            turn_allowed_tool_names: None,
         }
     }
 }
@@ -323,6 +334,7 @@ pub async fn run_agent_turn<'a>(
         long_term_memory,
         long_term_memory_scope_id,
         read_file_turn_cache,
+        turn_allowed_tool_names,
     } = p;
     let llm_backend: &(dyn llm::ChatCompletionsBackend + 'static) = match llm_backend {
         Some(b) => b,
@@ -358,6 +370,16 @@ pub async fn run_agent_turn<'a>(
     };
     if !cfg.codebase_semantic_search_enabled {
         tools_for_turn.retain(|t| t.function.name != "codebase_semantic_search");
+    }
+    if let Some(ref allow) = turn_allowed_tool_names {
+        let mcp_ok = allow.contains("mcp");
+        tools_for_turn.retain(|t| {
+            let n = t.function.name.as_str();
+            if n.starts_with("mcp__") {
+                return mcp_ok;
+            }
+            allow.contains(n)
+        });
     }
 
     let request_chrome_trace = crate::request_chrome_trace::request_trace_dir_from_env()
@@ -398,6 +420,7 @@ pub async fn run_agent_turn<'a>(
         staged_plan_skip_ensemble_on_casual_prompt: cfg.staged_plan_skip_ensemble_on_casual_prompt,
         request_chrome_trace: request_chrome_trace.clone(),
         step_executor_constraint: None,
+        turn_allowed_tool_names: turn_allowed_tool_names.clone(),
     };
 
     if let Some(t) = request_chrome_trace {
