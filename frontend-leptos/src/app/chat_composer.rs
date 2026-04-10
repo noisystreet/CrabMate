@@ -10,6 +10,7 @@ use leptos::task::spawn_local;
 use gloo_timers::future::TimeoutFuture;
 
 use crate::api::{ChatStreamCallbacks, send_chat_stream};
+use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::{self, Locale};
 use crate::message_format::{staged_timeline_system_message_body, tool_card_text};
 use crate::session_ops::{
@@ -18,7 +19,8 @@ use crate::session_ops::{
 };
 use crate::session_sync::SessionSyncState;
 use crate::sse_dispatch::{
-    CommandApprovalRequest, StagedPlanStepEndInfo, StagedPlanStepStartInfo, ToolResultInfo,
+    ClarificationQuestionnaireInfo, CommandApprovalRequest, StagedPlanStepEndInfo,
+    StagedPlanStepStartInfo, ToolResultInfo,
 };
 use crate::storage::{ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, make_session_id};
 
@@ -39,6 +41,7 @@ struct ChatStreamCallbackCtx {
     changelist_modal_open: RwSignal<bool>,
     changelist_fetch_nonce: RwSignal<u64>,
     refresh_workspace: Arc<dyn Fn() + Send + Sync>,
+    pending_clarification: RwSignal<Option<PendingClarificationForm>>,
 }
 
 pub(super) struct ChatComposerWires {
@@ -57,6 +60,7 @@ pub(super) fn wire_session_switch_clears_chat_state(
     active_id: RwSignal<String>,
     draft: RwSignal<String>,
     pending_images: RwSignal<Vec<String>>,
+    pending_clarification: RwSignal<Option<PendingClarificationForm>>,
     session_sync: RwSignal<SessionSyncState>,
     stream_job_id: RwSignal<Option<u64>>,
     stream_last_event_seq: RwSignal<u64>,
@@ -76,6 +80,7 @@ pub(super) fn wire_session_switch_clears_chat_state(
             .unwrap_or_default();
         draft.set(d);
         pending_images.set(Vec::new());
+        pending_clarification.set(None);
         session_sync.set(SessionSyncState::local_only());
         stream_job_id.set(None);
         stream_last_event_seq.set(0);
@@ -133,8 +138,11 @@ pub(super) fn wire_chat_composer_streams(
     changelist_modal_open: RwSignal<bool>,
     changelist_fetch_nonce: RwSignal<u64>,
     pending_images: RwSignal<Vec<String>>,
+    pending_clarification: RwSignal<Option<PendingClarificationForm>>,
 ) -> ChatComposerWires {
-    let attach_chat_stream: Arc<dyn Fn(String, Vec<String>, String) + Send + Sync> = Arc::new({
+    type AttachChatStreamFn =
+        dyn Fn(String, Vec<String>, String, Option<serde_json::Value>) + Send + Sync;
+    let attach_chat_stream: Arc<AttachChatStreamFn> = Arc::new({
         let abort_cell = Arc::clone(&abort_cell);
         let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
         let sessions = sessions;
@@ -151,7 +159,11 @@ pub(super) fn wire_chat_composer_streams(
         let refresh_workspace = Arc::clone(&refresh_workspace);
         let changelist_modal_open = changelist_modal_open;
         let changelist_fetch_nonce = changelist_fetch_nonce;
-        move |user_text: String, image_urls: Vec<String>, asst_id: String| {
+        let pending_clarification_sig = pending_clarification;
+        move |user_text: String,
+              image_urls: Vec<String>,
+              asst_id: String,
+              clarify_json: Option<serde_json::Value>| {
             let conv = session_sync.with(|s| s.stream_conversation_id());
             // 新一次 attach 必须**不带** `stream_resume`：断线重连仅由 `send_chat_stream` 内部循环
             // 用响应头里的 `x-stream-job-id` 与 `last_event_id` 完成。若此处读取 UI 上残留的
@@ -187,6 +199,7 @@ pub(super) fn wire_chat_composer_streams(
                 changelist_modal_open,
                 changelist_fetch_nonce,
                 refresh_workspace: Arc::clone(&refresh_workspace),
+                pending_clarification: pending_clarification_sig,
             });
 
             let on_delta: Rc<dyn Fn(String)> = {
@@ -365,12 +378,21 @@ pub(super) fn wire_chat_composer_streams(
                                 id,
                                 role: "system".to_string(),
                                 text,
+                                image_urls: vec![],
                                 state: None,
                                 is_tool: false,
                                 created_at: now,
                             });
                         }
                     });
+                })
+            };
+            let on_clarification: Rc<dyn Fn(ClarificationQuestionnaireInfo)> = {
+                let stream_ctx = Rc::clone(&stream_ctx);
+                Rc::new(move |info: ClarificationQuestionnaireInfo| {
+                    stream_ctx
+                        .pending_clarification
+                        .set(Some(PendingClarificationForm::from_sse(info)));
                 })
             };
             let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
@@ -394,6 +416,7 @@ pub(super) fn wire_chat_composer_streams(
                                 id,
                                 role: "system".to_string(),
                                 text,
+                                image_urls: vec![],
                                 state: None,
                                 is_tool: false,
                                 created_at: now,
@@ -418,6 +441,7 @@ pub(super) fn wire_chat_composer_streams(
                 on_last_sse_event_id,
                 on_staged_plan_step_started: on_staged_step_started,
                 on_staged_plan_step_finished: on_staged_step_finished,
+                on_clarification_questionnaire: on_clarification,
             };
 
             spawn_local(async move {
@@ -432,6 +456,7 @@ pub(super) fn wire_chat_composer_streams(
                     &signal,
                     cbs.clone(),
                     locale_sig.get_untracked(),
+                    clarify_json,
                 )
                 .await;
                 if let Err(e) = stream_result {
@@ -453,10 +478,48 @@ pub(super) fn wire_chat_composer_streams(
         let attach = Arc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
         let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
+        let pending_clarification_sig = pending_clarification;
+        let locale_sig = locale;
         move || {
             let text = composer_draft_buffer.lock().unwrap().trim().to_string();
             let imgs = pending_images.get();
-            if (text.is_empty() && imgs.is_empty()) || !initialized.get() || status_busy.get() {
+            let loc = locale_sig.get();
+            let (user_line, clarify_json) = if let Some(form) = pending_clarification_sig.get() {
+                let mut answers = serde_json::Map::new();
+                let mut ok = true;
+                for (i, f) in form.fields.iter().enumerate() {
+                    let v = form
+                        .values
+                        .get(i)
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_default();
+                    if f.required && v.is_empty() {
+                        ok = false;
+                        break;
+                    }
+                    answers.insert(f.id.clone(), serde_json::Value::String(v));
+                }
+                if !ok {
+                    status_err.set(Some(i18n::clarification_missing_required(loc).to_string()));
+                    return;
+                }
+                let qid = form.questionnaire_id.clone();
+                pending_clarification_sig.set(None);
+                let cq = serde_json::json!({
+                    "questionnaire_id": qid,
+                    "answers": serde_json::Value::Object(answers),
+                });
+                (
+                    i18n::clarification_user_bubble_stub(loc).to_string(),
+                    Some(cq),
+                )
+            } else {
+                (text, None)
+            };
+            if (user_line.is_empty() && imgs.is_empty() && clarify_json.is_none())
+                || !initialized.get()
+                || status_busy.get()
+            {
                 return;
             }
             auto_scroll_chat.set(true);
@@ -470,7 +533,7 @@ pub(super) fn wire_chat_composer_streams(
                 s.messages.push(StoredMessage {
                     id: uid.clone(),
                     role: "user".to_string(),
-                    text: text.clone(),
+                    text: user_line.clone(),
                     image_urls: imgs_send.clone(),
                     state: None,
                     is_tool: false,
@@ -486,16 +549,17 @@ pub(super) fn wire_chat_composer_streams(
                     created_at: now,
                 });
                 if is_first_user_turn && i18n::is_default_session_title(&s.title) {
-                    s.title = title_from_user_prompt(&text);
+                    s.title = title_from_user_prompt(&user_line);
                 }
                 s.draft.clear();
             });
             draft.set(String::new());
+            *composer_draft_buffer.lock().unwrap() = String::new();
             pending_images.set(Vec::new());
             status_busy.set(true);
             status_err.set(None);
             pending_approval.set(None);
-            attach(text, imgs_send, asst_id);
+            attach(user_line, imgs_send, asst_id, clarify_json);
         }
     });
 
@@ -526,7 +590,7 @@ pub(super) fn wire_chat_composer_streams(
             status_busy.set(true);
             status_err.set(None);
             pending_approval.set(None);
-            attach(user_text, user_imgs, asst_id);
+            attach(user_text, user_imgs, asst_id, None);
         }
     });
 
@@ -545,7 +609,7 @@ pub(super) fn wire_chat_composer_streams(
             status_busy.set(true);
             status_err.set(None);
             pending_approval.set(None);
-            attach(user_text, user_imgs, asst_id);
+            attach(user_text, user_imgs, asst_id, None);
         }
     });
 

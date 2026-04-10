@@ -48,6 +48,7 @@
 | `staged_plan_step_started` | 单步开始；负载含 `plan_id`、`step_id`、`step_index`、`total_steps`、`description`，可选 `executor_kind`（`review_readonly` / `patch_write` / `test_runner`，与规划 JSON 一致） | `onStagedPlanStepStarted` |
 | `staged_plan_step_finished` | 单步结束；`status`: `ok` / `cancelled` / `failed`；可选 `executor_kind`（与 `staged_plan_step_started` 对齐） | `onStagedPlanStepFinished` |
 | `staged_plan_finished` | 整轮计划结束；`status` 同上 | `onStagedPlanFinished` |
+| `clarification_questionnaire` | 澄清问卷：模型调用工具 **`present_clarification_questionnaire`** 且成功后，在 **`tool_result` SSE** 之后补发；体含 **`questionnaire_id`**、**`intro`**、**`questions[]`**（`id` / `label` / 可选 `hint` / `required` / `kind`：`text` \| `choice`） | Web：展示表单；用户提交时下一请求体带 **`clarify_questionnaire_answers`**（见 README / OpenAPI）；TUI：`line` 分类为 **ignore** |
 | `workspace_changed`: `true` | 工作区已被工具更新 | `onWorkspaceChanged` |
 | `tool_call` | 工具调用摘要（执行前） | `onToolCall`（需 `summary`） |
 | `parsing_tool_calls` | 模型正在流式输出 tool_calls | `onParsingToolCallsChange` |
@@ -122,6 +123,7 @@
 | `SSE_CLIENT_TOO_NEW` | 400 | 请求体 **`client_sse_protocol`** 大于服务端 **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
 | `INVALID_AT_FILE_REF` | 400 | 用户消息含非法 **`@…`** 文件引用（如绝对路径或 **`/`** 开头的「伪相对」）；须为相对当前工作区根的相对路径，语义与 **`read_file`** 一致 |
+| `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | **`clarify_questionnaire_answers`** 形状非法（`questionnaire_id` / `answers` 键值与长度限制）；见 `clarification_questionnaire` 模块 |
 
 **客户端仅日志/文案用（非服务端下发的 SSE `code`）**：官方 Leptos 在 **`sse_capabilities`** 与本地版本不一致时，`onError` 字符串中含 **`SSE_SERVER_TOO_NEW`** 或 **`SSE_SERVER_TOO_OLD`**。
 

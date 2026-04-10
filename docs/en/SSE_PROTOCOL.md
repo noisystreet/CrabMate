@@ -48,6 +48,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `staged_plan_step_started` | Step start; body has `plan_id`, `step_id`, `step_index`, `total_steps`, `description`, optional `executor_kind` (`review_readonly` / `patch_write` / `test_runner`) | `onStagedPlanStepStarted` |
 | `staged_plan_step_finished` | Step end; `status`: `ok` / `cancelled` / `failed`; optional `executor_kind` (mirrors `staged_plan_step_started`) | `onStagedPlanStepFinished` |
 | `staged_plan_finished` | Whole plan end | `onStagedPlanFinished` |
+| `clarification_questionnaire` | Clarification form: after a successful **`present_clarification_questionnaire`** tool run, emitted **after** the `tool_result` SSE; body has **`questionnaire_id`**, **`intro`**, **`questions[]`** (`id` / `label` / optional `hint` / `required` / `kind`: `text` \| `choice`) | Web: show form; next request includes **`clarify_questionnaire_answers`**; TUI: `line` treats as **ignore** |
 | `workspace_changed`: `true` | Tools updated workspace | `onWorkspaceChanged` |
 | `tool_call` | Tool call summary (before run) | `onToolCall` (needs `summary`) |
 | `parsing_tool_calls` | Model streaming tool_calls | `onParsingToolCallsChange` |
@@ -122,6 +123,7 @@ Approximate category of the **last** failed final answer when the rewrite budget
 | `SSE_CLIENT_TOO_NEW` | 400 | **`client_sse_protocol`** greater than server **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
 | `INVALID_AT_FILE_REF` | 400 | User message contains an invalid **`@…`** file reference (e.g. absolute path or **`/`**-prefixed “pseudo-relative”); must be relative to the workspace root, same rules as **`read_file`** |
+| `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | Invalid **`clarify_questionnaire_answers`** payload (`questionnaire_id` / `answers` keys and size limits); see `clarification_questionnaire` module |
 
 **Client-only hints** (in `onError` text from official Leptos when **`sse_capabilities`** disagrees): **`SSE_SERVER_TOO_NEW`**, **`SSE_SERVER_TOO_OLD`**.
 

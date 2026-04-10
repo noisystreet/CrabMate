@@ -1,5 +1,13 @@
 [
         ToolSpec {
+            name: "present_clarification_questionnaire",
+            description: "向 Web 客户端下发**澄清问卷**控制面（SSE `clarification_questionnaire`）：当信息不足需用户逐项回答时调用。须提供稳定 `questionnaire_id` 与 1～12 道题目（`id`/`label`/可选 `hint`/`required`/`kind`）。**仅 Web 流式**会弹出问卷 UI；CLI/TUI 仍收到工具正文。用户下一条 `POST /chat` 或 `/chat/stream` 须在 JSON 中带 `clarify_questionnaire_answers`（与 `questionnaire_id` 及题目 `id` 对齐）。**禁止**在 `intro`/`label` 中要求用户粘贴密钥或隐私原文。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_present_clarification_questionnaire,
+            runner: runner_present_clarification_questionnaire,
+            summary: ToolSummaryKind::Static("Present clarification questionnaire (Web SSE)"),
+        },
+        ToolSpec {
             name: "diagnostic_summary",
             description: "只读排障摘要：**Rust 工具链**（rustc/cargo -V、rustc -vV 的 host/release、rustup default、bc 是否可用）、**工作区**（根路径、`target/` 是否存在、`Cargo.toml` / `frontend-leptos/Trunk.toml` / `frontend-leptos/dist` 是否存在）、**环境变量仅状态**（`API_KEY`、常见 `AGENT_*`、`RUST_LOG` 等：未设置/空/非空；**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。与 AGENTS.md 排障场景一致。",
             category: ToolCategory::Development,

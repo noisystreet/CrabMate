@@ -42,6 +42,10 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
         return "handled";
     }
 
+    if key_present_non_null(obj, "clarification_questionnaire") {
+        return "handled";
+    }
+
     if obj.get("workspace_changed") == Some(&Value::Bool(true)) {
         return "handled";
     }

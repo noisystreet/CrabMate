@@ -825,6 +825,48 @@ pub fn composer_remove_image_aria(l: Locale) -> &'static str {
     }
 }
 
+pub fn clarification_panel_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "需要补充信息",
+        Locale::En => "More information needed",
+    }
+}
+
+pub fn clarification_submit(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "提交澄清",
+        Locale::En => "Submit answers",
+    }
+}
+
+pub fn clarification_dismiss(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "关闭",
+        Locale::En => "Dismiss",
+    }
+}
+
+pub fn clarification_required_suffix(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "（必填）",
+        Locale::En => " (required)",
+    }
+}
+
+pub fn clarification_missing_required(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "请填写所有必填项",
+        Locale::En => "Please fill all required fields",
+    }
+}
+
+pub fn clarification_user_bubble_stub(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "（已提交澄清问卷）",
+        Locale::En => "(Clarification submitted)",
+    }
+}
+
 pub fn bubble_md_toggle_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "多选消息导出 Markdown（聊天区亦可右键）",

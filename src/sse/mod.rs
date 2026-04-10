@@ -18,8 +18,8 @@ pub(crate) use mpsc_send::{send_string_logged, send_string_logged_cooperative_ca
 pub(crate) use stream_hub::SseStreamHub;
 
 pub use protocol::{
-    CommandApprovalBody, ConversationSavedBody, SseCapabilitiesBody, SseErrorBody, SsePayload,
-    StagedPlanFinishedBody, StagedPlanStartedBody, StagedPlanStepFinishedBody,
-    StagedPlanStepStartedBody, StreamEndedBody, TimelineLogBody, ToolCallSummary, ToolResultBody,
-    encode_message,
+    ClarificationQuestionField, ClarificationQuestionnaireBody, CommandApprovalBody,
+    ConversationSavedBody, SseCapabilitiesBody, SseErrorBody, SsePayload, StagedPlanFinishedBody,
+    StagedPlanStartedBody, StagedPlanStepFinishedBody, StagedPlanStepStartedBody, StreamEndedBody,
+    TimelineLogBody, ToolCallSummary, ToolResultBody, encode_message,
 };

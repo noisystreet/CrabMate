@@ -528,6 +528,21 @@ pub fn build_openapi_spec() -> Value {
                             "type": "array",
                             "items": { "type": "string" },
                             "description": "可选；须为先前 POST /upload 返回的 /uploads/... 相对路径（最多 6 条）；与 message 一并组装多模态 user 消息"
+                        },
+                        "clarify_questionnaire_answers": {
+                            "type": "object",
+                            "description": "可选；回应 SSE clarification_questionnaire；可与空 message 单独提交",
+                            "properties": {
+                                "questionnaire_id": {
+                                    "type": "string",
+                                    "description": "与 SSE 中 questionnaire_id 一致"
+                                },
+                                "answers": {
+                                    "type": "object",
+                                    "additionalProperties": true,
+                                    "description": "键为题 id；值多为字符串"
+                                }
+                            }
                         }
                     }
                 },

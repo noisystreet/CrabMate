@@ -609,6 +609,10 @@ fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
     diagnostics::diagnostic_summary(args, ctx.working_dir)
 }
 
+fn runner_present_clarification_questionnaire(args: &str, _ctx: &ToolContext<'_>) -> String {
+    crate::clarification_questionnaire::run_present_clarification_questionnaire(args)
+}
+
 fn runner_error_output_playbook(args: &str, ctx: &ToolContext<'_>) -> String {
     error_playbook::error_output_playbook(args, ctx.allowed_commands)
 }

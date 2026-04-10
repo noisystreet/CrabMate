@@ -11,6 +11,7 @@ mod agent_role_turn;
 /// 工作区内 `cargo metadata` 子进程参数单一真源（工具与首轮注入等共用）。
 mod cargo_metadata;
 mod chat_job_queue;
+mod clarification_questionnaire;
 /// 工作区代码语义索引与 `codebase_semantic_search` 工具（SQLite + fastembed）。
 mod codebase_semantic_index;
 mod codebase_semantic_invalidation;
