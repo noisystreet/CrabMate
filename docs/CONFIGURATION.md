@@ -141,7 +141,7 @@
 | `AGENT_PROJECT_PROFILE_INJECT_ENABLED` | 项目画像注入。 |
 | `AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS` | 画像最大字符。 |
 | `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | 依赖结构摘要（与画像/备忘合并为一条 `user`）。 |
-| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | 由 `cargo metadata`（workspace resolve 边 + Mermaid）与根/`frontend` 的 `package.json` 依赖名节选组成；不含版本与 lockfile 全文；`0` 关闭该段。 |
+| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | 由 `cargo metadata`（workspace resolve 边 + Mermaid）与**工作区根或 `frontend/` 子目录**（常见 npm 子项目路径，与 CrabMate 自带 `frontend-leptos` 无必然关系）的 `package.json` 依赖名节选组成；不含版本与 lockfile 全文；`0` 关闭该段。 |
 
 ### 工具解释卡
 

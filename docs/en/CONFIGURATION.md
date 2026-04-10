@@ -124,7 +124,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_PROJECT_PROFILE_INJECT_ENABLED` | Project profile injection. |
 | `AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS` | Profile max chars. |
 | `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | Dependency brief (merged with profile/memo). |
-| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | From `cargo metadata` edges + Mermaid + root/`frontend` `package.json` name excerpts; `0` disables segment. |
+| `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | From `cargo metadata` edges + Mermaid + **workspace root or `frontend/`** `package.json` name excerpts (common npm subfolder layout; unrelated to CrabMate’s bundled `frontend-leptos`); `0` disables segment. |
 
 ### Tool explain card
 
