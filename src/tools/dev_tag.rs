@@ -35,7 +35,10 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "error_output_playbook"
         | "playbook_run_commands"
         | "changelog_draft"
-        | "license_notice" => &[GENERAL],
+        | "license_notice"
+        | "long_term_remember"
+        | "long_term_forget"
+        | "long_term_memory_list" => &[GENERAL],
         "rust_backtrace_analyze" => &[GENERAL, RUST],
         "create_file"
         | "modify_file"

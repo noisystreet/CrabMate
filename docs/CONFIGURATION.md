@@ -2,7 +2,7 @@
 
 # 配置说明
 
-默认配置由仓库 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`** 七段嵌入（各段主体为 **`[agent]`** 扁平键；**`config/tools.toml`** 还可选 **`[tool_registry]`** 表，见下文「`tool_registry` 策略」；**`session`** 为 CLI 会话相关 **`tui_*`** 与 **`repl_initial_workspace_messages_enabled`**；**`context_inject`** 为首轮 **`agent_memory_file_*`**、**`project_profile_inject_*`**、**`project_dependency_brief_inject_*`**；**`tools`** 的 **`[agent]`** 含 **`run_command`** 白名单/超时/工作目录、**`tool_message_*`** / **`tool_result_envelope_v1`**、**`read_file_turn_cache_*`**、**`test_result_cache_*`**、**`session_workspace_changelist_*`**、**`codebase_semantic_*`**（**`codebase_semantic_search`** 与写后失效 **`codebase_semantic_invalidate_on_workspace_change`**）、天气/搜索/**`http_fetch_*`**、**`tool_call_explain_*`**、**`mcp_*`** 等；**`sandbox`** 为 **SyncDefault Docker 沙盒** **`sync_default_tool_sandbox_*`**；**`planning`** 为规划 / 反思 / 编排；**`memory`** 为 **`long_term_memory_*`**）。`load_config` 按 **主默认 → session → context_inject → tools → sandbox → planning → memory** 顺序合并，再被 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，最后由环境变量覆盖。示例片段见 **`config.toml.example`**。
+默认配置由仓库 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`** 七段嵌入（各段主体为 **`[agent]`** 扁平键；**`config/tools.toml`** 还可选 **`[tool_registry]`** 表，见下文「`tool_registry` 策略」；**`session`** 为 CLI 会话相关 **`tui_*`** 与 **`repl_initial_workspace_messages_enabled`**；**`context_inject`** 为首轮 **`living_docs_*`**、**`agent_memory_file_*`**、**`project_profile_inject_*`**、**`project_dependency_brief_inject_*`**；**`tools`** 的 **`[agent]`** 含 **`run_command`** 白名单/超时/工作目录、**`tool_message_*`** / **`tool_result_envelope_v1`**、**`read_file_turn_cache_*`**、**`test_result_cache_*`**、**`session_workspace_changelist_*`**、**`codebase_semantic_*`**（**`codebase_semantic_search`** 与写后失效 **`codebase_semantic_invalidate_on_workspace_change`**）、天气/搜索/**`http_fetch_*`**、**`tool_call_explain_*`**、**`mcp_*`** 等；**`sandbox`** 为 **SyncDefault Docker 沙盒** **`sync_default_tool_sandbox_*`**；**`planning`** 为规划 / 反思 / 编排；**`memory`** 为 **`long_term_memory_*`**）。`load_config` 按 **主默认 → session → context_inject → tools → sandbox → planning → memory** 顺序合并，再被 **`config.toml`** 或 **`.agent_demo.toml`** 覆盖，最后由环境变量覆盖。示例片段见 **`config.toml.example`**。
 
 **未知键与越界数值**：用户 **`config.toml`** / **`agent_roles.toml`** 中 **`[agent]`**、**`[tool_registry]`**、**`[[agent_roles]]`** 等已声明表内若出现**未在 CrabMate 中定义的键**，TOML 解析会失败（serde **拒绝未知字段**），避免拼写错误被静默忽略。对 **`finalize` 中有上下限的数值项**（如 **`temperature`**、**`max_message_history`**、**`chat_queue_max_concurrent`** 等），若在 TOML 或 **`AGENT_*`** 中写出**超出允许范围**的值，启动（及热重载路径上的 **`load_config`**）会返回明确错误，而**不再**仅做静默截断（`clamp`）；详见源码 **`src/config/validate.rs`** 与 **`finalize`** 中的默认值说明。
 
@@ -138,6 +138,10 @@
 | `AGENT_MEMORY_FILE_ENABLED` | 工作区备忘文件注入。 |
 | `AGENT_MEMORY_FILE` | 备忘文件路径。 |
 | `AGENT_MEMORY_FILE_MAX_CHARS` | 备忘最大字符。 |
+| `AGENT_LIVING_DOCS_INJECT_ENABLED` | 是否在首轮合并 `user` 条最前注入 **`.crabmate/living_docs/`** 摘要（`SUMMARY.md`、`map.md`、`pitfalls.md`、`build.md` 等；详见 `living_docs_relative_dir`）。 |
+| `AGENT_LIVING_DOCS_RELATIVE_DIR` | 活文档目录（相对工作区根），默认 `.crabmate/living_docs`。 |
+| `AGENT_LIVING_DOCS_INJECT_MAX_CHARS` | 活文档注入总字符上限；`0` 关闭。 |
+| `AGENT_LIVING_DOCS_FILE_MAX_EACH_CHARS` | 每个活文档文件读入时的字符上限。 |
 | `AGENT_PROJECT_PROFILE_INJECT_ENABLED` | 项目画像注入。 |
 | `AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS` | 画像最大字符。 |
 | `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | 依赖结构摘要（与画像/备忘合并为一条 `user`）。 |
@@ -163,8 +167,12 @@
 | `AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK` | 分块最大字符。 |
 | `AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX` | 索引最小字符阈值。 |
 | `AGENT_LONG_TERM_MEMORY_ASYNC_INDEX` | 是否异步索引。 |
+| `AGENT_LONG_TERM_MEMORY_AUTO_INDEX_TURNS` | 回合结束是否自动把 user/assistant 终答写入记忆；`false` 时仅 **`long_term_remember`** 等显式路径写入。 |
+| `AGENT_LONG_TERM_MEMORY_DEFAULT_TTL_SECS` | **自动**索引条目的默认存活秒数；`0` 永不过期（仍受 `max_entries` 淘汰）。显式 **`long_term_remember`** 可用参数 `ttl_secs` 单独指定。 |
 | `AGENT_LONG_TERM_MEMORY_MAX_ENTRIES` | 条目上限。 |
 | `AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS` | 注入模型上下文的最大字符。 |
+
+过期行在读取/写入前清理；**`long_term_forget`** / **`long_term_memory_list`** 为内置工具（`long_term_memory_enabled=true` 时注册），用于显式删除与浏览条目（勿写入密钥）。
 
 Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共用同一 SQLite；纯内存会话须单独配置 `long_term_memory_store_sqlite_path` 才能持久化。CLI 默认路径为 `run_command_working_dir/.crabmate/long_term_memory.db`。若在 **repl / chat** 下启用但打开库失败，进程会向 **stderr** 打印一次性警告并继续运行（本进程内不注入记忆）；另有 `crabmate` 目标下的 `warn` 日志。
 

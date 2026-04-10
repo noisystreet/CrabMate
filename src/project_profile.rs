@@ -362,11 +362,21 @@ pub fn build_first_turn_user_context_markdown(
             None
         }
     });
+    let living_snippet = if cfg.living_docs_inject_enabled && cfg.living_docs_inject_max_chars > 0 {
+        crate::living_docs::load_living_docs_snippet(
+            workspace_root,
+            cfg.living_docs_relative_dir.as_str(),
+            cfg.living_docs_inject_max_chars,
+            cfg.living_docs_file_max_each_chars,
+        )
+    } else {
+        None
+    };
     let want_profile =
         cfg.project_profile_inject_enabled && cfg.project_profile_inject_max_chars > 0;
     let want_dep = cfg.project_dependency_brief_inject_enabled
         && cfg.project_dependency_brief_inject_max_chars > 0;
-    if !want_profile && !want_dep && memory_snippet.is_none() {
+    if !want_profile && !want_dep && memory_snippet.is_none() && living_snippet.is_none() {
         return None;
     }
     let profile_md = if want_profile {
@@ -383,22 +393,28 @@ pub fn build_first_turn_user_context_markdown(
         String::new()
     };
     merge_first_turn_injections(
+        living_snippet.as_deref(),
         memory_snippet.as_deref(),
         profile_md.as_str(),
         dep_md.as_str(),
     )
 }
 
-/// 合并备忘、项目画像、依赖结构摘要为一条首轮 `user` 正文；任一段为空则跳过。
+/// 合并活文档摘要、备忘、项目画像、依赖结构摘要为一条首轮 `user` 正文；任一段为空则跳过。
 pub fn merge_first_turn_injections(
+    living_docs_snippet: Option<&str>,
     memory_snippet: Option<&str>,
     profile_markdown: &str,
     dependency_brief_markdown: &str,
 ) -> Option<String> {
+    let living = living_docs_snippet.map(str::trim).filter(|s| !s.is_empty());
     let mem = memory_snippet.map(str::trim).filter(|s| !s.is_empty());
     let prof = profile_markdown.trim();
     let dep = dependency_brief_markdown.trim();
     let mut parts: Vec<String> = Vec::new();
+    if let Some(m) = living {
+        parts.push(m.to_string());
+    }
     if let Some(m) = mem {
         parts.push(m.to_string());
     }
@@ -456,8 +472,9 @@ edition = "2021"
 
     #[test]
     fn merge_first_turn_three_parts() {
-        let got = merge_first_turn_injections(Some("memo line"), "# Title\nbody", "## Dep\nx")
-            .expect("some");
+        let got =
+            merge_first_turn_injections(None, Some("memo line"), "# Title\nbody", "## Dep\nx")
+                .expect("some");
         assert!(got.contains("memo line"));
         assert!(got.contains("项目画像"));
         assert!(got.contains("依赖与结构摘要"));

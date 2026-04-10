@@ -157,6 +157,7 @@ pub fn repo_overview_sweep(
         .clamp(0, 50_000);
 
     let ctx = ToolContext {
+        cfg: None,
         codebase_semantic: None,
         command_max_output_len: max_output_len,
         weather_timeout_secs: 0,
@@ -174,6 +175,8 @@ pub fn repo_overview_sweep(
         workspace_changelist: None,
         test_result_cache_enabled: false,
         test_result_cache_max_entries: 8,
+        long_term_memory: None,
+        long_term_memory_scope_id: None,
     };
 
     let mut out = String::new();

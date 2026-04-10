@@ -6,6 +6,11 @@
 agent_memory_file_enabled = false
 agent_memory_file = ".crabmate/agent_memory.md"
 agent_memory_file_max_chars = 8000
+# 首轮在备忘之前注入 `.crabmate/living_docs/` 下 SUMMARY.md、map.md 等摘要（0 关闭总预算）。AGENT_LIVING_DOCS_*
+living_docs_inject_enabled = false
+living_docs_relative_dir = ".crabmate/living_docs"
+living_docs_inject_max_chars = 4000
+living_docs_file_max_each_chars = 1200
 project_profile_inject_enabled = true
 project_profile_inject_max_chars = 6000
 project_dependency_brief_inject_enabled = true

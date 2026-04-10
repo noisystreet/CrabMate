@@ -32,6 +32,7 @@ pub mod http_fetch;
 mod json_format;
 mod jvm_tools;
 mod lint;
+mod long_term_memory_tools;
 mod markdown_links;
 mod nodejs_tools;
 pub(crate) mod output_util;
@@ -88,6 +89,8 @@ pub enum ToolCategory {
 }
 
 pub struct ToolContext<'a> {
+    /// 主 Agent / `tool_context_for*` 路径填充；工作流节点等自建上下文可为 `None`（部分工具将报错）。
+    pub cfg: Option<&'a AgentConfig>,
     /// 代码语义检索参数；主 Agent 路径由 `tool_context_for*` 从 [`AgentConfig`] 填充，其它路径为 `None` 时该工具不可用。
     pub codebase_semantic: Option<crate::codebase_semantic_index::CodebaseSemanticToolParams>,
     pub command_max_output_len: usize,
@@ -110,6 +113,9 @@ pub struct ToolContext<'a> {
     /// `cargo_test` / `npm run test` / 部分 `run_command cargo test` 的进程内输出缓存。
     pub test_result_cache_enabled: bool,
     pub test_result_cache_max_entries: usize,
+    /// 长期记忆运行时与会话作用域（供 `long_term_*` 工具）；缺省为 `None`。
+    pub long_term_memory: Option<std::sync::Arc<crate::long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory_scope_id: Option<String>,
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
@@ -165,6 +171,7 @@ pub fn tool_context_for<'a>(
     working_dir: &'a std::path::Path,
 ) -> ToolContext<'a> {
     ToolContext {
+        cfg: Some(cfg),
         codebase_semantic: Some(
             crate::codebase_semantic_index::CodebaseSemanticToolParams::from_agent_config(cfg),
         ),
@@ -184,20 +191,26 @@ pub fn tool_context_for<'a>(
         workspace_changelist: None,
         test_result_cache_enabled: cfg.test_result_cache_enabled,
         test_result_cache_max_entries: cfg.test_result_cache_max_entries,
+        long_term_memory: None,
+        long_term_memory_scope_id: None,
     }
 }
 
-/// 与 [`tool_context_for`] 相同，但可挂载单轮 `read_file` 缓存与会话变更集（供 `dispatch_tool` / `execute_tools`）。
-pub fn tool_context_for_with_read_cache<'a>(
+/// 在 [`tool_context_for`] 基础上挂载单轮 `read_file` 缓存、会话变更集与可选长期记忆（供 `dispatch_tool` / `execute_tools`）。
+pub fn tool_context_for_with_read_cache_and_memory<'a>(
     cfg: &'a AgentConfig,
     allowed_commands: &'a [String],
     working_dir: &'a std::path::Path,
     read_file_turn_cache: Option<&'a crate::read_file_turn_cache::ReadFileTurnCache>,
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
+    long_term_memory: Option<std::sync::Arc<crate::long_term_memory::LongTermMemoryRuntime>>,
+    long_term_memory_scope_id: Option<String>,
 ) -> ToolContext<'a> {
     ToolContext {
         read_file_turn_cache,
         workspace_changelist,
+        long_term_memory,
+        long_term_memory_scope_id,
         ..tool_context_for(cfg, allowed_commands, working_dir)
     }
 }
@@ -611,6 +624,18 @@ fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_present_clarification_questionnaire(args: &str, _ctx: &ToolContext<'_>) -> String {
     crate::clarification_questionnaire::run_present_clarification_questionnaire(args)
+}
+
+fn runner_long_term_remember(args: &str, ctx: &ToolContext<'_>) -> String {
+    long_term_memory_tools::long_term_remember(args, ctx)
+}
+
+fn runner_long_term_forget(args: &str, ctx: &ToolContext<'_>) -> String {
+    long_term_memory_tools::long_term_forget(args, ctx)
+}
+
+fn runner_long_term_memory_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    long_term_memory_tools::long_term_memory_list(args, ctx)
 }
 
 fn runner_error_output_playbook(args: &str, ctx: &ToolContext<'_>) -> String {

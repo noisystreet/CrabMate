@@ -8,6 +8,7 @@ const TEST_COMMAND_MAX_OUTPUT_LEN: usize = 8192;
 const TEST_WEATHER_TIMEOUT_SECS: u64 = 15;
 fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
     ToolContext {
+        cfg: None,
         codebase_semantic: None,
         command_max_output_len: TEST_COMMAND_MAX_OUTPUT_LEN,
         weather_timeout_secs: TEST_WEATHER_TIMEOUT_SECS,
@@ -25,6 +26,8 @@ fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
         workspace_changelist: None,
         test_result_cache_enabled: false,
         test_result_cache_max_entries: 8,
+        long_term_memory: None,
+        long_term_memory_scope_id: None,
     }
 }
 fn test_allowed_commands() -> Vec<String> {

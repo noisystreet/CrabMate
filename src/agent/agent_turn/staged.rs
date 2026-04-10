@@ -625,6 +625,8 @@ where
                         step_executor_constraint: None,
                         tools_defs_full: p.tools_defs,
                         turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
+                        long_term_memory: p.long_term_memory.clone(),
+                        long_term_memory_scope_id: p.long_term_memory_scope_id.clone(),
                     },
                 )
                 .await;
@@ -787,6 +789,8 @@ where
                         step_executor_constraint: None,
                         tools_defs_full: p.tools_defs,
                         turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
+                        long_term_memory: p.long_term_memory.clone(),
+                        long_term_memory_scope_id: p.long_term_memory_scope_id.clone(),
                     },
                 )
                 .await;

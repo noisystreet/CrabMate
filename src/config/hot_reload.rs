@@ -118,6 +118,11 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.agent_memory_file_enabled = src.agent_memory_file_enabled;
     dst.agent_memory_file.clone_from(&src.agent_memory_file);
     dst.agent_memory_file_max_chars = src.agent_memory_file_max_chars;
+    dst.living_docs_inject_enabled = src.living_docs_inject_enabled;
+    dst.living_docs_relative_dir
+        .clone_from(&src.living_docs_relative_dir);
+    dst.living_docs_inject_max_chars = src.living_docs_inject_max_chars;
+    dst.living_docs_file_max_each_chars = src.living_docs_file_max_each_chars;
     dst.project_profile_inject_enabled = src.project_profile_inject_enabled;
     dst.project_profile_inject_max_chars = src.project_profile_inject_max_chars;
     dst.project_dependency_brief_inject_enabled = src.project_dependency_brief_inject_enabled;
@@ -136,6 +141,8 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.long_term_memory_max_chars_per_chunk = src.long_term_memory_max_chars_per_chunk;
     dst.long_term_memory_min_chars_to_index = src.long_term_memory_min_chars_to_index;
     dst.long_term_memory_async_index = src.long_term_memory_async_index;
+    dst.long_term_memory_auto_index_turns = src.long_term_memory_auto_index_turns;
+    dst.long_term_memory_default_ttl_secs = src.long_term_memory_default_ttl_secs;
     dst.mcp_enabled = src.mcp_enabled;
     dst.mcp_command.clone_from(&src.mcp_command);
     dst.mcp_tool_timeout_secs = src.mcp_tool_timeout_secs;

@@ -13,3 +13,7 @@ long_term_memory_top_k = 8
 long_term_memory_max_chars_per_chunk = 1024
 long_term_memory_min_chars_to_index = 8
 long_term_memory_async_index = true
+# 回合结束是否自动索引 user/assistant 终答；false 时仅 long_term_remember 等显式写入。AGENT_LONG_TERM_MEMORY_AUTO_INDEX_TURNS
+long_term_memory_auto_index_turns = true
+# 自动索引条默认存活秒数；0 永不过期（仍受 max_entries 淘汰）。AGENT_LONG_TERM_MEMORY_DEFAULT_TTL_SECS
+long_term_memory_default_ttl_secs = 0

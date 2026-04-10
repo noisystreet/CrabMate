@@ -33,6 +33,8 @@
 
 - **项目画像**：侧栏摘要与可选首轮注入；模型可用 **`repo_overview_sweep`**（[docs/TOOLS.md](docs/TOOLS.md)）。
 
+- **活文档与长期记忆**：可在工作区 **`.crabmate/living_docs/`** 维护模块地图、常见坑、构建命令等 Markdown，首轮可选注入短摘要；长期记忆支持 TTL、显式 **`long_term_remember` / `long_term_forget`** 等（见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)、[docs/TOOLS.md](docs/TOOLS.md)）。
+
 - **OpenAPI**：**`GET /openapi.json`**；流式控制面以 [docs/SSE_PROTOCOL.md](docs/SSE_PROTOCOL.md) 为准（含 **`client_sse_protocol`** 协商）。
 
 - **流式与审批**：Web **SSE** + **`POST /chat/approval`**；CLI 终端审批；取消码等与 [docs/SSE_PROTOCOL.md](docs/SSE_PROTOCOL.md)、[docs/CLI.md](docs/CLI.md)「CLI 与 Web 能力对照」。

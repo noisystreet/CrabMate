@@ -201,8 +201,8 @@ impl LongTermMemoryRuntime {
             LongTermMemoryVectorBackend::Fastembed => {
                 if let Err(e) = Self::ensure_embedder(&self.embedder) {
                     warn!(target: "crabmate", "长期记忆嵌入不可用，跳过向量检索: {}", e);
-                    for (_, text, _, _, _) in rows.iter().take(cfg.long_term_memory_top_k) {
-                        picked.push((0.0, text.clone()));
+                    for row in rows.iter().take(cfg.long_term_memory_top_k) {
+                        picked.push((0.0, row.chunk_text.clone()));
                     }
                 } else {
                     let q_emb = {
@@ -225,15 +225,15 @@ impl LongTermMemoryRuntime {
                     let Some(qv) = q_emb else {
                         return;
                     };
-                    for (_id, text, _role, _ts, emb_blob) in rows {
-                        let score = if let Some(ref b) = emb_blob {
+                    for row in rows {
+                        let score = if let Some(ref b) = row.embedding {
                             bytes_to_f32_slice(b)
                                 .map(|ev| cosine_sim(&qv, &ev))
                                 .unwrap_or(0.0)
                         } else {
                             0.0
                         };
-                        picked.push((score, text));
+                        picked.push((score, row.chunk_text));
                     }
                     picked
                         .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -249,8 +249,8 @@ impl LongTermMemoryRuntime {
                 ) {
                     debug!(target: "crabmate", "长期记忆向量后端 {:?} 未接外部服务，按时间倒序取用", cfg.long_term_memory_vector_backend);
                 }
-                for (_, text, _, _, _) in rows.iter().take(cfg.long_term_memory_top_k) {
-                    picked.push((0.0, text.clone()));
+                for row in rows.iter().take(cfg.long_term_memory_top_k) {
+                    picked.push((0.0, row.chunk_text.clone()));
                 }
             }
         }
@@ -330,6 +330,9 @@ impl LongTermMemoryRuntime {
         scope_id: &str,
         messages: &[Message],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if !cfg.long_term_memory_auto_index_turns {
+            return Ok(());
+        }
         let Some((user_t, asst_t)) = last_user_assistant_final_pair(messages) else {
             return Ok(());
         };
@@ -362,6 +365,13 @@ impl LongTermMemoryRuntime {
             .lock()
             .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
 
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let auto_expires = (cfg.long_term_memory_default_ttl_secs > 0)
+            .then_some(now + cfg.long_term_memory_default_ttl_secs as i64);
+
         for (text, role) in to_store {
             if long_term_memory_store::has_duplicate_text(&conn, scope_id, &text)? {
                 continue;
@@ -385,7 +395,14 @@ impl LongTermMemoryRuntime {
             } else {
                 None
             };
-            long_term_memory_store::insert_chunk(&conn, scope_id, &text, role, emb.as_deref())?;
+            long_term_memory_store::insert_chunk(
+                &conn,
+                scope_id,
+                &text,
+                role,
+                auto_expires,
+                emb.as_deref(),
+            )?;
             long_term_memory_store::delete_oldest_beyond(
                 &conn,
                 scope_id,
@@ -393,6 +410,157 @@ impl LongTermMemoryRuntime {
             )?;
         }
         Ok(())
+    }
+
+    /// 显式写入长期记忆（工具 `long_term_remember`）；`ttl_secs` 为 `None` 表示永不过期（仍受条数上限淘汰）。
+    pub fn explicit_remember_blocking(
+        self: &Arc<Self>,
+        cfg: &AgentConfig,
+        scope_id: &str,
+        text: &str,
+        tags: &[String],
+        ttl_secs: Option<u64>,
+    ) -> Result<i64, String> {
+        if !cfg.long_term_memory_enabled {
+            return Err("长期记忆未启用（long_term_memory_enabled = false）".to_string());
+        }
+        let scope = scope_id.trim();
+        if scope.is_empty() {
+            return Err("长期记忆作用域为空（无会话 id）".to_string());
+        }
+        let text = clamp_text(text, cfg.long_term_memory_max_chars_per_chunk);
+        if text.is_empty() {
+            return Err("记忆正文为空".to_string());
+        }
+        let tags_json = serde_json::to_string(tags).map_err(|e| format!("tags 序列化失败: {e}"))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let expires_at = ttl_secs.map(|s| now + s as i64);
+
+        let need_embed = matches!(
+            cfg.long_term_memory_vector_backend,
+            LongTermMemoryVectorBackend::Fastembed
+        );
+        if need_embed {
+            Self::ensure_embedder(&self.embedder).map_err(|e| e.to_string())?;
+        }
+
+        let emb = if need_embed {
+            let mut g = self
+                .embedder
+                .lock()
+                .map_err(|e| format!("embedder 锁失败: {e}"))?;
+            let model = g.as_mut().ok_or_else(|| "embedder 未初始化".to_string())?;
+            let prefixed = format!("passage: {}", text);
+            let v = model
+                .embed(vec![prefixed], None)
+                .map_err(|e| format!("嵌入失败: {e}"))?;
+            let vec = v
+                .into_iter()
+                .next()
+                .ok_or_else(|| "嵌入结果为空".to_string())?;
+            Some(f32_slice_to_bytes(&vec))
+        } else {
+            None
+        };
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
+        let id = long_term_memory_store::insert_explicit_chunk(
+            &conn,
+            scope,
+            &text,
+            &tags_json,
+            expires_at,
+            emb.as_deref(),
+        )
+        .map_err(|e| format!("写入长期记忆失败: {e}"))?;
+        long_term_memory_store::delete_oldest_beyond(
+            &conn,
+            scope,
+            cfg.long_term_memory_max_entries,
+        )
+        .map_err(|e| format!("长期记忆淘汰失败: {e}"))?;
+        Ok(id)
+    }
+
+    /// 按 id 或正文删除（工具 `long_term_forget`）。
+    pub fn explicit_forget_blocking(
+        &self,
+        cfg: &AgentConfig,
+        scope_id: &str,
+        id: Option<i64>,
+        text: Option<&str>,
+        explicit_only: bool,
+    ) -> Result<usize, String> {
+        if !cfg.long_term_memory_enabled {
+            return Err("长期记忆未启用".to_string());
+        }
+        let scope = scope_id.trim();
+        if scope.is_empty() {
+            return Err("长期记忆作用域为空".to_string());
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
+        if let Some(i) = id {
+            return long_term_memory_store::delete_by_id_for_scope(&conn, scope, i)
+                .map_err(|e| format!("删除失败: {e}"));
+        }
+        let Some(t) = text.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Err("须提供 memory_id 或 memory_text 之一".to_string());
+        };
+        long_term_memory_store::delete_matching_text(&conn, scope, t, explicit_only)
+            .map_err(|e| format!("删除失败: {e}"))
+    }
+
+    /// 列出最近记忆条目（工具 `long_term_memory_list`）。
+    pub fn list_recent_blocking(
+        &self,
+        cfg: &AgentConfig,
+        scope_id: &str,
+        limit: usize,
+    ) -> Result<String, String> {
+        if !cfg.long_term_memory_enabled {
+            return Err("长期记忆未启用".to_string());
+        }
+        let scope = scope_id.trim();
+        if scope.is_empty() {
+            return Err("长期记忆作用域为空".to_string());
+        }
+        let lim = limit.clamp(1, 64);
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
+        let rows = long_term_memory_store::list_recent_for_scope(&conn, scope, lim)
+            .map_err(|e| format!("读取失败: {e}"))?;
+        if rows.is_empty() {
+            return Ok("（当前作用域无未过期记忆条目）".to_string());
+        }
+        let mut out =
+            String::from("以下为长期记忆条目（从新到旧；expires 为 Unix 秒，空表示不过期）：\n\n");
+        for (i, (id, text, kind, exp, tags)) in rows.iter().enumerate() {
+            let exp_s = exp
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| "—".to_string());
+            let preview = preview_chars(text, 200);
+            out.push_str(&format!(
+                "{}. id={} kind={} expires={} tags={}\n   {}\n\n",
+                i + 1,
+                id,
+                kind,
+                exp_s,
+                tags,
+                preview
+            ));
+        }
+        Ok(out)
     }
 }
 
@@ -464,6 +632,25 @@ fn last_user_assistant_final_pair(messages: &[Message]) -> Option<(&str, &str)> 
 }
 
 static CLI_MEMORY_RUNTIME: OnceLock<Arc<LongTermMemoryRuntime>> = OnceLock::new();
+
+/// 为 `ToolContext` 准备长期记忆运行时与会话 id；未启用或缺运行时返回 `(None, None)`。
+pub(crate) fn tool_context_memory_extras(
+    cfg: &AgentConfig,
+    ltm: Option<Arc<LongTermMemoryRuntime>>,
+    scope_id: Option<&str>,
+) -> (Option<Arc<LongTermMemoryRuntime>>, Option<String>) {
+    if !cfg.long_term_memory_enabled {
+        return (None, None);
+    }
+    let Some(rt) = ltm else {
+        return (None, None);
+    };
+    let scope = scope_id
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(std::string::ToString::to_string);
+    (Some(rt), scope)
+}
 
 /// CLI / 单进程：在首次需要时打开 `path` 并缓存。
 pub fn cli_runtime_lazy(

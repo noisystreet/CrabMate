@@ -50,6 +50,7 @@ async fn execute_node_tool_phase(
         let allowed = effective_allowed_arc;
         let handle = tokio::task::spawn_blocking(move || {
             let ctx = crate::tools::ToolContext {
+                cfg: None,
                 codebase_semantic: Some(codebase_semantic),
                 command_max_output_len,
                 weather_timeout_secs,
@@ -67,6 +68,8 @@ async fn execute_node_tool_phase(
                 workspace_changelist: None,
                 test_result_cache_enabled,
                 test_result_cache_max_entries,
+                long_term_memory: None,
+                long_term_memory_scope_id: None,
             };
             crate::tools::run_tool_result(&tool_name_owned, &exec_args, &ctx)
         });
