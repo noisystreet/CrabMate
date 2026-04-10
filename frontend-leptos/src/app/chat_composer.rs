@@ -23,6 +23,9 @@ use crate::sse_dispatch::{
     StagedPlanStepStartInfo, ToolResultInfo,
 };
 use crate::storage::{ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, make_session_id};
+use crate::timeline_scan::{
+    timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
+};
 
 /// 单次 `/chat/stream` 的 SSE 回调共享状态：各 `Rc<dyn Fn>` 只再包一层 `Rc<ChatStreamCallbackCtx>`，避免重复 `Arc::clone` 与多字段捕获。
 struct ChatStreamCallbackCtx {
@@ -293,6 +296,8 @@ pub(super) fn wire_chat_composer_streams(
                     let t = tool_card_text(&info, stream_ctx.locale.get_untracked());
                     let id = make_message_id();
                     let aid = stream_ctx.active_session_id.as_str();
+                    let tl_ok = info.ok.unwrap_or(true);
+                    let state = timeline_state_tool(&id, tl_ok);
                     stream_ctx.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             s.messages.push(StoredMessage {
@@ -300,7 +305,7 @@ pub(super) fn wire_chat_composer_streams(
                                 role: "system".to_string(),
                                 text: t,
                                 image_urls: vec![],
-                                state: None,
+                                state: Some(state),
                                 is_tool: true,
                                 created_at: message_created_ms(),
                             });
@@ -372,6 +377,7 @@ pub(super) fn wire_chat_composer_streams(
                     let id = make_message_id();
                     let aid = stream_ctx.active_session_id.as_str();
                     let now = message_created_ms();
+                    let state = timeline_state_staged_start(&id, info.step_index, info.total_steps);
                     stream_ctx.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             s.messages.push(StoredMessage {
@@ -379,7 +385,7 @@ pub(super) fn wire_chat_composer_streams(
                                 role: "system".to_string(),
                                 text,
                                 image_urls: vec![],
-                                state: None,
+                                state: Some(state),
                                 is_tool: false,
                                 created_at: now,
                             });
@@ -410,6 +416,12 @@ pub(super) fn wire_chat_composer_streams(
                     let id = make_message_id();
                     let aid = stream_ctx.active_session_id.as_str();
                     let now = message_created_ms();
+                    let state = timeline_state_staged_end(
+                        &id,
+                        info.step_index,
+                        info.total_steps,
+                        &info.status,
+                    );
                     stream_ctx.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             s.messages.push(StoredMessage {
@@ -417,7 +429,7 @@ pub(super) fn wire_chat_composer_streams(
                                 role: "system".to_string(),
                                 text,
                                 image_urls: vec![],
-                                state: None,
+                                state: Some(state),
                                 is_tool: false,
                                 created_at: now,
                             });

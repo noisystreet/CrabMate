@@ -25,6 +25,7 @@ mod session_sort;
 mod session_sync;
 mod sse_dispatch;
 mod storage;
+mod timeline_scan;
 mod workspace_shell;
 mod workspace_tree;
 

@@ -14,6 +14,8 @@ pub const LOCALE_KEY: &str = "crabmate-locale";
 /// 为 `true` 时显示页面径向渐变光晕；`false` 时仅纯色背景（`data-bg-decor="plain"`）。
 pub const BG_DECOR_KEY: &str = "crabmate-bg-decor";
 pub const AGENT_ROLE_KEY: &str = "agent-demo-agent-role";
+/// 聊天列「规划 / 工具时间线」面板是否展开（`localStorage` bool）。
+pub const TIMELINE_PANEL_EXPANDED_KEY: &str = "crabmate-timeline-panel-expanded";
 pub const DEFAULT_SIDE_WIDTH: f64 = 280.0;
 pub const MIN_SIDE_WIDTH: f64 = 200.0;
 pub const MAX_SIDE_WIDTH: f64 = 560.0;

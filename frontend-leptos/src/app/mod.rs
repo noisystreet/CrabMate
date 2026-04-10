@@ -18,6 +18,7 @@ mod settings_modal;
 mod side_column;
 mod sidebar_nav;
 mod status_bar;
+mod timeline_panel;
 mod workspace_panel;
 
 use approval_bar::ApprovalBar;
@@ -39,6 +40,7 @@ use settings_modal::settings_modal_view;
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
+use timeline_panel::load_timeline_panel_expanded_default;
 use workspace_panel::{make_refresh_workspace, wire_workspace_refresh_when_visible};
 
 use std::cell::RefCell;
@@ -160,6 +162,7 @@ pub fn App() -> impl IntoView {
     let chat_find_match_ids = RwSignal::new(Vec::<String>::new());
     let chat_find_cursor = RwSignal::new(0_usize);
     let chat_find_panel_open = RwSignal::new(false);
+    let timeline_panel_expanded = RwSignal::new(load_timeline_panel_expanded_default());
     // 主区：多选聊天气泡导出 Markdown（由聊天区右键菜单进入）。
     let bubble_md_select_mode = RwSignal::new(false);
     let bubble_md_selected_ids = RwSignal::new(Vec::<String>::new());
@@ -668,6 +671,7 @@ pub fn App() -> impl IntoView {
                         session_context_menu,
                         chat_export_ctx_menu,
                         chat_find_panel_open,
+                        timeline_panel_expanded,
                         bubble_md_select_mode,
                         bubble_md_selected_ids,
                         sessions,
