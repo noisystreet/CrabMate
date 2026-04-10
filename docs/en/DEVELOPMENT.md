@@ -164,7 +164,7 @@ Entry: **`run_agent_turn`** → **`run_turn_common`** (`src/agent/agent_turn.rs`
 - **`planner_executor_mode`**: `single_agent` vs `logical_dual_agent` (dual planner context stripping).
 - **P/R/E matrix**: see Chinese **`docs/DEVELOPMENT.md`** table *配置与 P/R/E 路径对照* for exact routing (`run_logical_dual_agent_then_execute_steps` vs `run_staged_plan_then_execute_steps` vs `run_agent_outer_loop`).
 - **Context window**: **`apply_session_sync_pipeline`** then optional LLM summarization; tool compression, **`tool_result_envelope_v1`**, **`session_workspace_changelist`** injection after summary; vendor message normalization via **`conversation_messages_to_vendor_body`**.
-- **Cursor rules injection**: optional `.cursor/rules/*.mdc` + `AGENTS.md` append to system prompt.
+- **Cursor rules injection** (on by default): `.cursor/rules/*.mdc` + optional `AGENTS.md` append to system prompt; disable with `cursor_rules_enabled = false` / `AGENT_CURSOR_RULES_ENABLED=0`.
 - **Long-term memory**: SQLite + optional fastembed; injection tag filtered from upstream requests.
 - **Finish reasons**: tool_calls → execute tools and continue; else final assistant text.
 - **SSE** (`/chat/stream`): deltas + control JSON (`tool_running`, `tool_result`, `workspace_changed`, `error`+`code`, approvals, staged plan events). Protocol version **`v`** in **`sse::protocol`**.

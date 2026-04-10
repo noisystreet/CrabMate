@@ -53,7 +53,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | Variable | Description |
 | --- | --- |
 | `AGENT_WORKSPACE_ALLOWED_ROOTS` | Comma-separated; same as `[agent] workspace_allowed_roots`. |
-| `AGENT_CURSOR_RULES_ENABLED` | Enable rule file injection. |
+| `AGENT_CURSOR_RULES_ENABLED` | Enable rule file injection (default **true**; set `0`/`false` to disable). |
 | `AGENT_CURSOR_RULES_DIR` | Directory of `*.mdc`. |
 | `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | Append `AGENTS.md`. |
 | `AGENT_CURSOR_RULES_MAX_CHARS` | Max injected chars. |
@@ -310,7 +310,7 @@ api_base = "https://api.deepseek.com/v1"
 model = "deepseek-reasoner"
 # system_prompt = "…"
 # system_prompt_file = "my_prompt.txt"
-# cursor_rules_enabled = true
+# cursor_rules_enabled = false   # default true; if `.cursor/rules` or `*.mdc` are absent, behavior matches off
 # cursor_rules_dir = ".cursor/rules"
 ```
 
@@ -433,7 +433,7 @@ Besides the global `system_prompt`, you can define **named ids** with their own 
 
 ## Cursor-like rules
 
-When **`cursor_rules_enabled`**, append sorted **`cursor_rules_dir`/*.mdc** (optional **`AGENTS.md`**) to system prompt, capped by **`cursor_rules_max_chars`**.
+When **`cursor_rules_enabled`** (**default `true`**), append sorted **`cursor_rules_dir`/*.mdc** (optional **`AGENTS.md`**) to system prompt, capped by **`cursor_rules_max_chars`**. If the directory is missing or no rule files load, nothing is appended (same effect as disabled).
 
 ## Context window
 
