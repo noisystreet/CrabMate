@@ -284,6 +284,13 @@ pub(crate) fn assistant_text_for_display(
 /// 须与主仓 `src/runtime/plan_section.rs` 中 `STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX` 同步。
 const STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX: &str = "### CrabMate·NL补全\n";
 
+/// `role: system` 时间线旁注（分阶段步进）；前缀仅供 UI 分类，展示时剥去。
+pub const STAGED_TIMELINE_SYSTEM_PREFIX: &str = "### CrabMate·staged_timeline\n";
+
+pub fn staged_timeline_system_message_body(body: &str) -> String {
+    format!("{STAGED_TIMELINE_SYSTEM_PREFIX}{body}")
+}
+
 fn user_text_for_chat_display(raw: &str) -> String {
     if raw
         .trim_start()
@@ -300,6 +307,11 @@ pub fn message_text_for_display(m: &StoredMessage, loc: Locale) -> String {
         assistant_text_for_display(&m.text, is_streaming_last_assistant, loc)
     } else if m.role == "user" {
         user_text_for_chat_display(&m.text)
+    } else if m.role == "system" {
+        m.text
+            .strip_prefix(STAGED_TIMELINE_SYSTEM_PREFIX)
+            .unwrap_or(m.text.as_str())
+            .to_string()
     } else {
         m.text.clone()
     }

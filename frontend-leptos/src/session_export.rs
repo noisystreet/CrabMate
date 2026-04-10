@@ -5,7 +5,7 @@ use serde::Serialize;
 use wasm_bindgen::JsCast;
 
 use crate::i18n::Locale;
-use crate::message_format::assistant_text_for_display;
+use crate::message_format::{STAGED_TIMELINE_SYSTEM_PREFIX, assistant_text_for_display};
 use crate::storage::{ChatSession, StoredMessage};
 
 /// 须与 `src/runtime/chat_export.rs` 中 `CHAT_SESSION_FILE_VERSION` 一致。
@@ -45,6 +45,13 @@ fn stored_messages_to_export(messages: &[StoredMessage], loc: Locale) -> Vec<Exp
             continue;
         }
         if m.role == "system" {
+            if m.text.starts_with(STAGED_TIMELINE_SYSTEM_PREFIX) {
+                out.push(ExportMessage {
+                    role: "system".to_string(),
+                    content: Some(message_text_for_export(m, loc)),
+                    name: None,
+                });
+            }
             continue;
         }
         out.push(ExportMessage {
@@ -59,6 +66,8 @@ fn stored_messages_to_export(messages: &[StoredMessage], loc: Locale) -> Vec<Exp
 fn message_text_for_export(m: &StoredMessage, loc: Locale) -> String {
     if m.role == "assistant" {
         assistant_text_for_display(&m.text, m.state.as_deref() == Some("loading"), loc)
+    } else if m.role == "system" {
+        crate::message_format::message_text_for_display(m, loc)
     } else {
         m.text.clone()
     }
@@ -75,6 +84,7 @@ fn markdown_sections_for_export(messages: &[ExportMessage], loc: Locale) -> Stri
             "user" => crate::i18n::export_md_heading_user(loc),
             "assistant" => crate::i18n::export_md_heading_assistant(loc),
             "tool" => crate::i18n::export_md_heading_tool(loc),
+            "system" => crate::i18n::export_md_heading_timeline(loc),
             _ => crate::i18n::export_md_heading_other(loc),
         };
         md.push_str(heading);

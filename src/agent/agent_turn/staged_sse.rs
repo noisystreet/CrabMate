@@ -158,6 +158,7 @@ pub(crate) async fn send_staged_plan_step_finished(
     step_index: usize,
     total_steps: usize,
     status: &str,
+    executor_kind: Option<&str>,
 ) {
     let Some(tx) = out else {
         return;
@@ -171,6 +172,7 @@ pub(crate) async fn send_staged_plan_step_finished(
                 step_index,
                 total_steps,
                 status: status.to_string(),
+                executor_kind: executor_kind.map(|s| s.to_string()),
             },
         }),
         "staged_sse::staged_plan_step_finished",

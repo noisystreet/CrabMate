@@ -199,6 +199,9 @@ pub struct StagedPlanStepFinishedBody {
     pub total_steps: usize,
     /// `ok` / `cancelled` / `failed`
     pub status: String,
+    /// 与 `staged_plan_step_started` 对齐；无则省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executor_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -434,6 +437,7 @@ mod tests {
                 step_index: 1,
                 total_steps: 3,
                 status: "failed".into(),
+                executor_kind: Some("review_readonly".into()),
             },
         });
         let msg_step_finished: SseMessage = serde_json::from_str(&step_finished).unwrap();
@@ -441,6 +445,7 @@ mod tests {
             SsePayload::StagedPlanStepFinished { finished } => {
                 assert_eq!(finished.status, "failed");
                 assert_eq!(finished.step_index, 1);
+                assert_eq!(finished.executor_kind.as_deref(), Some("review_readonly"));
             }
             _ => panic!("expected staged_plan_step_finished payload"),
         }

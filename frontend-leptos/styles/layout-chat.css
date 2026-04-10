@@ -676,6 +676,11 @@
   box-shadow: none;
 }
 
+.msg-staged-timeline {
+  border-left-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--bg-elevated) 92%, var(--accent) 8%);
+}
+
 /* 连续多条工具输出：默认折叠为一条，可展开查看全部 */
 .msg-tool-run {
   align-self: stretch;

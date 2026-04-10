@@ -245,7 +245,7 @@ flowchart TB
     - `tool_running`、`tool_result`（可选 `summary`：与 `summarize_tool_call` 同源，与 `output` 同帧；**不再**在工具执行前单独下发 `tool_call`，避免 Web 在工具未完成时先插入摘要）、`workspace_changed`
     - `error`（+ 可选 `code`）、`command_approval_request`（Web / 工作流审批）
     - `staged_plan_notice`（+ 可选 `staged_plan_notice_clear`）：分阶段规划进度；Leptos **`sse_dispatch`** 识别为控制面并吞掉，避免当作正文 delta
-    - `staged_plan_started` / `staged_plan_step_started`（可选 `executor_kind`）/ `staged_plan_step_finished` / `staged_plan_finished`：分阶段规划结构化进度事件（含 `plan_id`、`step_id`、`step_index`、`status: ok|cancelled|failed` 等），用于前端按状态机消费，避免解析自然语言文案
+    - `staged_plan_started` / `staged_plan_step_started`（可选 `executor_kind`）/ `staged_plan_step_finished`（可选 `executor_kind`，与 started 对齐）/ `staged_plan_finished`：分阶段规划结构化进度事件（含 `plan_id`、`step_id`、`step_index`、`status: ok|cancelled|failed` 等），用于前端按状态机消费，避免解析自然语言文案；**Leptos** 在收到 step started/finished 时向本地会话追加带前缀的 `role: system` 时间线旁注（**不**上送模型）
     - 预留 `plan_required` 等扩展键
 - **协议版本 `v`**：演进时递增 **`crates/crabmate-sse-protocol`** 的 **`SSE_PROTOCOL_VERSION`**；**`POST /chat`** / **`/chat/stream`** 可选 **`client_sse_protocol`**；首帧 **`sse_capabilities.supported_sse_v`** 与官方 Web 本地常量核对。Leptos **`send_chat_stream`** 已按字段形状解析（`tool_call` / `tool_result` / `plan_required` / `error.code` 等），新事件需在前后端同步扩展。
 

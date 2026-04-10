@@ -11,13 +11,15 @@ use gloo_timers::future::TimeoutFuture;
 
 use crate::api::{ChatStreamCallbacks, send_chat_stream};
 use crate::i18n::{self, Locale};
-use crate::message_format::tool_card_text;
+use crate::message_format::{staged_timeline_system_message_body, tool_card_text};
 use crate::session_ops::{
     approval_session_id, flush_composer_draft_to_session, make_message_id, message_created_ms,
     patch_active_session, prepare_retry_failed_assistant_turn, title_from_user_prompt,
 };
 use crate::session_sync::SessionSyncState;
-use crate::sse_dispatch::{CommandApprovalRequest, ToolResultInfo};
+use crate::sse_dispatch::{
+    CommandApprovalRequest, StagedPlanStepEndInfo, StagedPlanStepStartInfo, ToolResultInfo,
+};
 use crate::storage::{ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, make_session_id};
 
 /// 单次 `/chat/stream` 的 SSE 回调共享状态：各 `Rc<dyn Fn>` 只再包一层 `Rc<ChatStreamCallbackCtx>`，避免重复 `Arc::clone` 与多字段捕获。
@@ -338,6 +340,64 @@ pub(super) fn wire_chat_composer_streams(
                     stream_last_event_seq_sig.set(seq);
                 })
             };
+            let on_staged_step_started: Rc<dyn Fn(StagedPlanStepStartInfo)> = {
+                let stream_ctx = Rc::clone(&stream_ctx);
+                Rc::new(move |info: StagedPlanStepStartInfo| {
+                    let loc = stream_ctx.locale.get_untracked();
+                    let text =
+                        staged_timeline_system_message_body(&i18n::timeline_staged_step_started(
+                            loc,
+                            info.step_index,
+                            info.total_steps,
+                            &info.description,
+                            info.executor_kind.as_deref(),
+                        ));
+                    let id = make_message_id();
+                    let aid = stream_ctx.active_session_id.as_str();
+                    let now = message_created_ms();
+                    stream_ctx.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                            s.messages.push(StoredMessage {
+                                id,
+                                role: "system".to_string(),
+                                text,
+                                state: None,
+                                is_tool: false,
+                                created_at: now,
+                            });
+                        }
+                    });
+                })
+            };
+            let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
+                let stream_ctx = Rc::clone(&stream_ctx);
+                Rc::new(move |info: StagedPlanStepEndInfo| {
+                    let loc = stream_ctx.locale.get_untracked();
+                    let text =
+                        staged_timeline_system_message_body(&i18n::timeline_staged_step_finished(
+                            loc,
+                            info.step_index,
+                            info.total_steps,
+                            &info.status,
+                            info.executor_kind.as_deref(),
+                        ));
+                    let id = make_message_id();
+                    let aid = stream_ctx.active_session_id.as_str();
+                    let now = message_created_ms();
+                    stream_ctx.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                            s.messages.push(StoredMessage {
+                                id,
+                                role: "system".to_string(),
+                                text,
+                                state: None,
+                                is_tool: false,
+                                created_at: now,
+                            });
+                        }
+                    });
+                })
+            };
 
             let cbs = ChatStreamCallbacks {
                 on_delta,
@@ -352,6 +412,8 @@ pub(super) fn wire_chat_composer_streams(
                 on_stream_ended,
                 on_stream_job_id,
                 on_last_sse_event_id,
+                on_staged_plan_step_started: on_staged_step_started,
+                on_staged_plan_step_finished: on_staged_step_finished,
             };
 
             spawn_local(async move {
