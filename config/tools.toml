@@ -165,6 +165,12 @@ codebase_semantic_query_max_chunks = 50000
 codebase_semantic_rebuild_max_files = 2000
 # 整库 rebuild_index 默认按文件指纹跳过未改文件（加速大仓）；单次强制全量可在工具参数传 incremental:false
 codebase_semantic_rebuild_incremental = true
+# hybrid 检索：向量权重 α（0=纯全文，1=纯向量）
+codebase_semantic_hybrid_alpha = 0.55
+# FTS 分支最多取多少条（BM25）
+codebase_semantic_fts_top_n = 400
+# hybrid 时向量侧候选池大小（≥ top_k）
+codebase_semantic_hybrid_semantic_pool = 256
 
 # --- MCP（stdio 客户端，可选）---
 # mcp_enabled = false

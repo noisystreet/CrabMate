@@ -25,7 +25,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 
 - **Chat and models**: OpenAI-compatible `chat/completions`; gateway and model wiring live in config and in **Backend models** below.
 
-- **Built-in tools** (**function calling**): workspace files, **`run_command`** (allowlist), HTTP/search, formatting, dependency graphs and coverage, container helpers; stacks include **Rust / Python / JS·TS / Go / JVM / C·C++** and **GitHub `gh_*`**. Full list and JSON examples: [docs/en/TOOLS.md](docs/en/TOOLS.md).
+- **Built-in tools** (**function calling**): workspace files, **`run_command`** (allowlist), HTTP/search, **`codebase_semantic_search`** (SQLite **FTS5** + local embeddings, hybrid by default), formatting, dependency graphs and coverage, container helpers; stacks include **Rust / Python / JS·TS / Go / JVM / C·C++** and **GitHub `gh_*`**. Full list and JSON examples: [docs/en/TOOLS.md](docs/en/TOOLS.md).
 
 - **CLI**: **`crabmate repl`** / **`chat`** / **`serve`** (same agent/tools as the Web UI). Details: **[CLI](#cli)** and [docs/en/CLI.md](docs/en/CLI.md).
 

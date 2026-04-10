@@ -572,6 +572,12 @@ pub struct AgentConfig {
     pub codebase_semantic_rebuild_max_files: usize,
     /// 整库 `rebuild_index` 时是否按文件指纹跳过未改文件（默认 true）；`incremental:false` 可单次强制全量。
     pub codebase_semantic_rebuild_incremental: bool,
+    /// `hybrid` 检索：向量余弦权重 α（综合分 = α×cosine + (1-α)×fts_norm）。
+    pub codebase_semantic_hybrid_alpha: f32,
+    /// 混合 / `fts_only` 时 FTS 分支最多取多少条（BM25）。
+    pub codebase_semantic_fts_top_n: usize,
+    /// `hybrid` 时向量扫描保留的候选块数（≥ top_k，与 FTS 并集后重排）。
+    pub codebase_semantic_hybrid_semantic_pool: usize,
     /// `http_fetch`：`spawn_blocking` 外圈 `tokio::time::timeout`（秒）；`None` 表示 `max(command_timeout_secs, http_fetch_timeout_secs)`。
     pub tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
     /// `http_request`：同上。

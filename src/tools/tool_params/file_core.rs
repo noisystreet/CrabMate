@@ -308,6 +308,26 @@ pub(in crate::tools) fn params_codebase_semantic_search() -> serde_json::Value {
                 "type": "array",
                 "items": { "type": "string" },
                 "description": "可选：覆盖默认源码扩展名列表（不含点，如 rs、ts）；省略时使用内置常见代码/文档扩展名"
+            },
+            "retrieve_mode": {
+                "type": "string",
+                "description": "检索模式（仅 query 时）：`hybrid`（默认）= SQLite FTS5 BM25 + 向量余弦加权；`semantic_only` 仅向量；`fts_only` 仅全文（需关键词能分词命中）。重建索引后 FTS 与块表由触发器同步。"
+            },
+            "hybrid_alpha": {
+                "type": "number",
+                "description": "hybrid 时向量权重 α∈[0,1]，综合分 = α×cosine + (1-α)×fts_norm；默认取配置 codebase_semantic_hybrid_alpha"
+            },
+            "fts_top_n": {
+                "type": "integer",
+                "description": "hybrid / fts_only 时 FTS 分支最多取多少条（BM25）；默认 codebase_semantic_fts_top_n，1～10000",
+                "minimum": 1,
+                "maximum": 10000
+            },
+            "hybrid_semantic_pool": {
+                "type": "integer",
+                "description": "hybrid 时向量扫描保留的候选块数（≥ top_k），再与 FTS 并集重排；默认 codebase_semantic_hybrid_semantic_pool，1～10000",
+                "minimum": 1,
+                "maximum": 10000
             }
         }
     })

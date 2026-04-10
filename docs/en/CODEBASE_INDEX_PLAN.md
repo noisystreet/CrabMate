@@ -2,7 +2,7 @@
 
 # Workspace-wide code index and incremental cache — product plan
 
-**Revision (implemented)**: the `codebase_semantic_search` SQLite store now includes a **`crabmate_codebase_files`** catalog (`size` / `mtime_ns` / `content_sha256`). **Workspace-wide** `rebuild_index` is **incremental** by default; a **subtree** `path` still replaces that subtree. Rust chunks add lightweight **symbol hints** in the embed text. See `docs/en/DEVELOPMENT.md` and `docs/en/TOOLS.md`.
+**Revision (implemented)**: the `codebase_semantic_search` SQLite store includes **`crabmate_codebase_files`** (`size` / `mtime_ns` / `content_sha256`), **workspace-wide** incremental `rebuild_index`, subtree **`path`** replacement, Rust **symbol hints**, and (schema **v4**+) **FTS5** **`crabmate_codebase_chunks_fts`** with **hybrid** query (BM25 + vector). See `docs/en/DEVELOPMENT.md` and `docs/en/TOOLS.md`.
 
 Directional plan for a **persistent, incrementally updated** unified index of repository source + metadata to speed browsing and search. Implementation must align with **workspace path safety** (`resolve_for_read`, allowed roots, `..` and symlink policy), **secrets and log redaction**, and **P0 Web authentication** (multi-tenant isolation). See `.cursor/rules/security-sensitive-surface.mdc` and [TODOLIST.md](TODOLIST.md) global P0.
 

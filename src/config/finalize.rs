@@ -596,6 +596,20 @@ pub(super) fn finalize(
         .clamp(1, 100_000) as usize;
     let codebase_semantic_rebuild_incremental =
         b.codebase_semantic_rebuild_incremental.unwrap_or(true);
+    let mut codebase_semantic_hybrid_alpha =
+        b.codebase_semantic_hybrid_alpha.unwrap_or(0.55_f64) as f32;
+    if !codebase_semantic_hybrid_alpha.is_finite() {
+        codebase_semantic_hybrid_alpha = 0.55;
+    }
+    codebase_semantic_hybrid_alpha = codebase_semantic_hybrid_alpha.clamp(0.0, 1.0);
+    let codebase_semantic_fts_top_n = b
+        .codebase_semantic_fts_top_n
+        .unwrap_or(400)
+        .clamp(1, 10_000) as usize;
+    let codebase_semantic_hybrid_semantic_pool = b
+        .codebase_semantic_hybrid_semantic_pool
+        .unwrap_or(256)
+        .clamp(1, 10_000) as usize;
 
     let web_search_provider = match b.web_search_provider_str.as_deref() {
         Some(s) => WebSearchProvider::parse(s)?,
@@ -827,6 +841,9 @@ pub(super) fn finalize(
         codebase_semantic_query_max_chunks,
         codebase_semantic_rebuild_max_files,
         codebase_semantic_rebuild_incremental,
+        codebase_semantic_hybrid_alpha,
+        codebase_semantic_fts_top_n,
+        codebase_semantic_hybrid_semantic_pool,
         tool_registry_http_fetch_wall_timeout_secs,
         tool_registry_http_request_wall_timeout_secs,
         tool_registry_parallel_wall_timeout_secs,

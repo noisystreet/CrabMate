@@ -30,6 +30,8 @@ pub(super) struct CodebaseSemanticSearchSummaryArgs {
     incremental: Option<bool>,
     #[serde(default)]
     query: Option<String>,
+    #[serde(default)]
+    retrieve_mode: Option<String>,
 }
 
 impl ToolSummaryLine for CodebaseSemanticSearchSummaryArgs {
@@ -44,14 +46,19 @@ impl ToolSummaryLine for CodebaseSemanticSearchSummaryArgs {
         }
         let q = self.query.as_deref().unwrap_or("").trim();
         if q.is_empty() {
-            Some("semantic code search".to_string())
-        } else {
-            let mut s: String = q.chars().take(48).collect();
-            if q.chars().count() > 48 {
-                s.push('…');
-            }
-            Some(format!("semantic search: {}", s))
+            return Some("semantic code search".to_string());
         }
+        let mut s: String = q.chars().take(48).collect();
+        if q.chars().count() > 48 {
+            s.push('…');
+        }
+        let mode = self
+            .retrieve_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .unwrap_or("hybrid");
+        Some(format!("code search [{}]: {}", mode, s))
     }
 }
 

@@ -23,7 +23,7 @@
   - `calc`：使用 Linux 的 `bc -l` 执行数学表达式（四则、乘方 ^、sqrt/sin/cos/tan/ln/exp、pi/e 等）。
   - `convert_units`：物理量与数据量**单位换算**（Rust [`uom`](https://crates.io/crates/uom) 库，不调用外部程序）。`category` 含 length / mass / temperature / data / time / area / pressure / speed（或中文别名），`value` + `from` + `to` 指定数值与单位；数据量区分十进制 KB/MB/GB 与二进制 KiB/MiB/GiB。
   - `get_weather`：获取指定城市/地区当前天气（[Open-Meteo](https://open-meteo.com/) API，无需 Key）。
-  - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内**精确**字符串/正则匹配优先用 `search_in_files`；**语义**相近片段用 `codebase_semantic_search`（须先 `rebuild_index`，见下文与 **`docs/CONFIGURATION.md`**）。
+  - `web_search`：**联网网页搜索**（[Brave Search API](https://brave.com/search/api/) 或 [Tavily](https://tavily.com/)），需在配置中填写 `web_search_api_key` 并设置 `web_search_provider`（`brave` / `tavily`）；未配置 Key 时工具会返回说明性错误。仓库内**精确**字符串/正则匹配优先用 `search_in_files`；**混合全文+语义**检索用 `codebase_semantic_search`（SQLite **FTS5** + 向量，默认 `retrieve_mode: hybrid`；须先 `rebuild_index`，见下文与 **`docs/CONFIGURATION.md`**）。
   - `http_fetch`：对给定 URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（有超时与体长上限）；**HEAD** 不下载 body，仅状态码、Content-Type、Content-Length 与重定向链。URL 匹配 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**规则时直接执行；不匹配时，Web（`/chat/stream` 携带 `approval_session_id`）或 **CLI** 可人工审批 **拒绝 / 本次允许 / 永久允许**（GET/HEAD 共用同一归一化白名单键；CLI 见 `tool_approval::cli_terminal`）。
   - `http_request`：对给定 URL 发起 **POST / PUT / PATCH / DELETE**（可选 `json_body`）。受 `http_fetch_allowed_prefixes` 约束（同源 + 路径前缀边界）；匹配则直接执行，**未匹配**时 Web（`/chat/stream` + `approval_session_id`）与 **CLI** 可与 `http_fetch` 一样走 **拒绝 / 本次允许 / 永久允许**（永久键为 `http_request:<METHOD>:<URL>`，与 `http_fetch:` 键区分）。**`workflow_execute` 节点**内仍仅白名单前缀（同步路径无审批）。返回状态、Content-Type、重定向链与正文预览（默认建议先 dry-run，不在 body 中放真实密钥）。
   - **GitHub CLI 封装**（须本机 **`gh`** 且 **`allowed_commands` 含 `gh`**）：`gh_pr_list` / `gh_pr_view` / **`gh_pr_diff`**、`gh_issue_*`、`gh_run_list` / **`gh_run_view`**（`log`+`job` 拉日志，受输出长度截断）、**`gh_release_list` / `gh_release_view`**、**`gh_search`**（**`scope` 仅 `issues`|`prs`|`repos`**，`query` 长度与字符受限；`repos` 时勿传 `repo`）、`gh_api` 等。**退出码 0** 且 **stdout 整段为合法 JSON** 时，输出末尾附加**缩进 JSON**（不必依赖是否传入 `fields`）。`gh_api` 写方法为非只读。通用 `run_command` 仍可拼其它 `gh` 子命令。
@@ -37,7 +37,7 @@
   - `create_file` / `modify_file`：创建或修改文件；`read_file` 支持分段与行上限及 **`encoding`**（`utf-8` 严格、`utf-8-sig`、`gb18030`/`gbk`/`big5`、`utf-16le`/`be`、`auto` 等；非法序列报错而非静默替换）；`modify_file` 支持按行区间替换（大文件友好）。**单轮** `run_agent_turn` 内，服务端可对相同文件+相同读取参数缓存 `read_file` 正文（比对磁盘 **mtime+size**；执行写类工具或工作区变更后缓存清空），键含 **encoding**，见配置 **`read_file_turn_cache_max_entries`**。Web `GET /workspace/file` 默认仅读取不超过 **1 MiB** 的文件，正文解码规则与 `read_file` 一致，可选查询参数 **`encoding`**；超出大小返回错误（避免大文件导致内存放大）。上述及 `hash_file`、`read_binary_meta`、`format_file` 等返回说明中的路径均为**相对工作区根**（POSIX 风格），不输出本机绝对路径。
   - `copy_file` / `move_file`：在工作区内复制或移动**文件**（相对路径、防目录穿越与 symlink 逃逸与 `create_file` 一致）；目标已存在时默认不覆盖，需 `overwrite: true`；`move_file` 跨盘时会自动复制后删源。
   - `read_dir` / `glob_files` / `list_tree`：列单层目录；按 glob（如 `**/*.rs`）递归匹配文件路径；递归列树（`max_depth` / `max_entries` 有上限，路径不出工作区）。
-  - `codebase_semantic_search`：工作区**语义**代码检索（本地 **fastembed** + SQLite，与**会话长期记忆**分库；库内另有 **`crabmate_codebase_files`** 记录每文件指纹）。**`rebuild_index: true`** 扫描 `.gitignore` 感知的源码树并写入默认 **`.crabmate/codebase_semantic.sqlite`**。**整库**（未指定 **`path`** 或 **`.`**）默认**增量**：**`mtime`+`size`+内容 SHA256** 未变的文件跳过嵌入；传 **`incremental:false`** 或配置 **`codebase_semantic_rebuild_incremental=false`** 则清空向量块与文件表后全量重嵌入。指定子目录 **`path`** 时仍**仅替换该子树**（清空子树后全量重嵌入该范围）。**`.rs`** 分块在嵌入前附带轻量 **`fn`/`struct` 等符号行**，便于按标识符语义召回。再用 **`query`** 做余弦 Top-K（流式扫描 + 最小堆）；**`query_max_chunks`** 限制扫描块数。单文件大小、默认 Top-K、**`codebase_semantic_rebuild_max_files`**（单趟最多**重新嵌入**的文件数）等见 **`codebase_semantic_*`** / **`AGENT_CODEBASE_SEMANTIC_*`**。不设为只读：`rebuild_index` 会写索引库。关闭工具：`codebase_semantic_search_enabled = false`。**与写工具联动**（默认 **`codebase_semantic_invalidate_on_workspace_change`**）：按路径删块并同步删文件表行；目录类工具按前缀删；`run_command` / `git_*` 等仍可能整表清空。
+  - `codebase_semantic_search`：工作区**混合**代码检索（SQLite **FTS5** 全文索引 + **fastembed** 向量，与**会话长期记忆**分库；**`crabmate_codebase_chunks`** 外挂 **`crabmate_codebase_chunks_fts`**，触发器同步；库内另有 **`crabmate_codebase_files`** 记录每文件指纹）。**`rebuild_index: true`** 扫描 `.gitignore` 感知的源码树并写入默认 **`.crabmate/codebase_semantic.sqlite`**（schema **v4** 起含 FTS）。**整库**默认**增量**（**`mtime`+`size`+SHA256**；**`incremental:false`** 或 **`codebase_semantic_rebuild_incremental=false`** 全量）；子目录 **`path`** 仍为子树全量替换。**`.rs`** 分块嵌入前有符号提示行。**`query`** 默认 **`retrieve_mode: hybrid`**：**BM25** 与余弦按 **`hybrid_alpha`**（配置 **`codebase_semantic_hybrid_alpha`**）加权；可选 **`semantic_only`** / **`fts_only`**。**`fts_top_n`**、**`hybrid_semantic_pool`** 见配置或工具参数。**`query_max_chunks`** 仍限制向量扫描量。单文件大小、**`codebase_semantic_rebuild_max_files`** 等同上。不设为只读。关闭：`codebase_semantic_search_enabled = false`。**写工具联动**（**`codebase_semantic_invalidate_on_workspace_change`**）：删块时 FTS 由触发器同步；`run_command` / `git_*` 等仍可能整表清空。
   - `markdown_check_links`：扫描 Markdown（默认 `README.md` 与 `docs/`），校验**相对路径**链接与 `#fragment` 锚点；支持 `output_format=text|json|sarif`。`http(s)://` 外链默认不联网，可选 `allowed_external_prefixes` 对匹配 URL 做 HEAD 探测（同 URL 去重缓存）。
   - `typos_check` / `codespell_check`：文档拼写检查（**只读**，需本机安装 [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)）；默认优先检查存在的 `README.md` 与 `docs/`，可用 `paths` 收窄；`typos_check` 支持 `config_path`（项目词典通常在 `.typos.toml`），`codespell_check` 支持 `dictionary_paths`（`-I` 词典文件）与 `ignore_words_list`（`-L`）。
   - `ast_grep_run`：用 [ast-grep](https://ast-grep.github.io/) 做**语法树级**搜索（需本机安装 `ast-grep`，如 `cargo install ast-grep`）；必填 `pattern` 与 `lang`，默认在存在的 `src` 下搜索，并内置排除 `target`、`node_modules`、`.git` 等；可用 `paths` / `globs` 进一步限制范围。
@@ -517,9 +517,16 @@
   ```json
   {"rebuild_index": true, "path": "src"}
   ```
-  - 查询（可选 **`query_max_chunks`** 限制扫描量，避免超大索引 CPU 过长）：
+  - 默认 **hybrid** 查询（关键词 + 语义；可选 **`query_max_chunks`** 限制向量扫描量）：
   ```json
-  {"query": "Where is chat job queue concurrency configured?", "top_k": 6, "query_max_chunks": 20000}
+  {"query": "chat job queue concurrency", "top_k": 6, "query_max_chunks": 20000}
+  ```
+  - 仅向量 / 仅全文：
+  ```json
+  {"query": "How does SSE approval work?", "retrieve_mode": "semantic_only", "top_k": 8}
+  ```
+  ```json
+  {"query": "hybrid_alpha", "retrieve_mode": "fts_only", "top_k": 10, "fts_top_n": 200}
   ```
 - `apply_patch`（**统一 unified diff**，先 dry-run 再应用；强调 **小步、可回滚、带上下文**）：
   - **格式**：与 `git diff` 相同：`---` / `+++` 文件头、`@@ -旧起始,行数 +新起始,行数 @@`，变更行 `-`/`+`，**上下文行必须以单个空格开头**。
