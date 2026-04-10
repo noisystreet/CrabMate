@@ -167,6 +167,74 @@ pub fn settings_ph_api_base(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_label_api_base_preset(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "常用网关",
+        Locale::En => "Common providers",
+    }
+}
+
+pub fn settings_api_base_preset_server(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "使用服务端配置（不覆盖）",
+        Locale::En => "Use server default (no override)",
+    }
+}
+
+pub fn settings_api_base_preset_ollama(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Ollama（本机）",
+        Locale::En => "Ollama (local)",
+    }
+}
+
+pub fn settings_api_base_preset_deepseek(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "DeepSeek",
+        Locale::En => "DeepSeek",
+    }
+}
+
+pub fn settings_api_base_preset_minimax(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "MiniMax",
+        Locale::En => "MiniMax",
+    }
+}
+
+pub fn settings_api_base_preset_zhipu(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "智谱 GLM",
+        Locale::En => "Zhipu GLM",
+    }
+}
+
+pub fn settings_api_base_preset_moonshot(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Moonshot（Kimi）",
+        Locale::En => "Moonshot (Kimi)",
+    }
+}
+
+pub fn settings_api_base_preset_custom(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "自定义 URL…",
+        Locale::En => "Custom URL…",
+    }
+}
+
+pub fn settings_api_base_preset_label(id: &str, l: Locale) -> &'static str {
+    match id {
+        "server" => settings_api_base_preset_server(l),
+        "ollama" => settings_api_base_preset_ollama(l),
+        "deepseek" => settings_api_base_preset_deepseek(l),
+        "minimax" => settings_api_base_preset_minimax(l),
+        "zhipu" => settings_api_base_preset_zhipu(l),
+        "moonshot" => settings_api_base_preset_moonshot(l),
+        "custom" | _ => settings_api_base_preset_custom(l),
+    }
+}
+
 pub fn settings_label_model(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "模型名称（model）",

@@ -130,6 +130,7 @@ pub fn App() -> impl IntoView {
     let session_modal = RwSignal::new(false);
     let settings_modal = RwSignal::new(false);
     let llm_api_base_draft = RwSignal::new(String::new());
+    let llm_api_base_preset_select = RwSignal::new(String::from("server"));
     let llm_model_draft = RwSignal::new(String::new());
     let llm_api_key_draft = RwSignal::new(String::new());
     let llm_has_saved_key = RwSignal::new(false);
@@ -320,7 +321,10 @@ pub fn App() -> impl IntoView {
         } else {
             stored_model
         };
-        llm_api_base_draft.set(base);
+        llm_api_base_draft.set(base.clone());
+        llm_api_base_preset_select.set(
+            crate::client_llm_presets::api_base_select_value_for_draft(base.as_str()).to_string(),
+        );
         llm_model_draft.set(model);
         llm_api_key_draft.set(String::new());
         llm_has_saved_key.set(client_llm_storage_has_api_key());
@@ -755,6 +759,7 @@ pub fn App() -> impl IntoView {
                 bg_decor,
                 status_data,
                 llm_api_base_draft,
+                llm_api_base_preset_select,
                 llm_model_draft,
                 llm_api_key_draft,
                 llm_has_saved_key,

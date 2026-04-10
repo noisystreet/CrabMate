@@ -12,6 +12,7 @@ mod app;
 mod app_prefs;
 mod assistant_body;
 mod clarification_form;
+mod client_llm_presets;
 mod debounce_schedule;
 mod i18n;
 mod markdown;
