@@ -257,6 +257,18 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
         500_000,
     )?;
     check_u64_inclusive(
+        "living_docs_inject_max_chars",
+        b.living_docs_inject_max_chars,
+        0,
+        500_000,
+    )?;
+    check_u64_inclusive(
+        "living_docs_file_max_each_chars",
+        b.living_docs_file_max_each_chars,
+        0,
+        500_000,
+    )?;
+    check_u64_inclusive(
         "project_profile_inject_max_chars",
         b.project_profile_inject_max_chars,
         0,
@@ -306,6 +318,12 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
         b.long_term_memory_min_chars_to_index,
         0,
         4096,
+    )?;
+    check_u64_inclusive(
+        "long_term_memory_default_ttl_secs",
+        b.long_term_memory_default_ttl_secs,
+        0,
+        365 * 86400 * 10,
     )?;
 
     check_u64_inclusive(

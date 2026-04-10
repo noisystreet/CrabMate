@@ -499,6 +499,27 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.agent_memory_file_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_LIVING_DOCS_INJECT_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.living_docs_inject_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_LIVING_DOCS_RELATIVE_DIR") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            b.living_docs_relative_dir = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_LIVING_DOCS_INJECT_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.living_docs_inject_max_chars = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_LIVING_DOCS_FILE_MAX_EACH_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.living_docs_file_max_each_chars = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_PROJECT_PROFILE_INJECT_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {
@@ -586,6 +607,16 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
         && let Some(val) = parse_bool_like(&v)
     {
         b.long_term_memory_async_index = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_AUTO_INDEX_TURNS")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.long_term_memory_auto_index_turns = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_LONG_TERM_MEMORY_DEFAULT_TTL_SECS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.long_term_memory_default_ttl_secs = Some(n);
     }
     if let Ok(v) = std::env::var("AGENT_MCP_ENABLED")
         && let Some(val) = parse_bool_like(&v)

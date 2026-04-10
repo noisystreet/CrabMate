@@ -102,6 +102,10 @@ pub(crate) struct ConfigBuilder {
     pub(crate) agent_memory_file_enabled: Option<bool>,
     pub(crate) agent_memory_file: Option<String>,
     pub(crate) agent_memory_file_max_chars: Option<u64>,
+    pub(crate) living_docs_inject_enabled: Option<bool>,
+    pub(crate) living_docs_relative_dir: Option<String>,
+    pub(crate) living_docs_inject_max_chars: Option<u64>,
+    pub(crate) living_docs_file_max_each_chars: Option<u64>,
     pub(crate) project_profile_inject_enabled: Option<bool>,
     pub(crate) project_profile_inject_max_chars: Option<u64>,
     pub(crate) project_dependency_brief_inject_enabled: Option<bool>,
@@ -119,6 +123,8 @@ pub(crate) struct ConfigBuilder {
     pub(crate) long_term_memory_max_chars_per_chunk: Option<u64>,
     pub(crate) long_term_memory_min_chars_to_index: Option<u64>,
     pub(crate) long_term_memory_async_index: Option<bool>,
+    pub(crate) long_term_memory_auto_index_turns: Option<bool>,
+    pub(crate) long_term_memory_default_ttl_secs: Option<u64>,
     pub(crate) mcp_enabled: Option<bool>,
     pub(crate) mcp_command: Option<String>,
     pub(crate) mcp_tool_timeout_secs: Option<u64>,
@@ -445,6 +451,19 @@ impl ConfigBuilder {
         self.agent_memory_file_max_chars = agent
             .agent_memory_file_max_chars
             .or(self.agent_memory_file_max_chars);
+        self.living_docs_inject_enabled = agent
+            .living_docs_inject_enabled
+            .or(self.living_docs_inject_enabled);
+        override_opt_string_non_empty(
+            &mut self.living_docs_relative_dir,
+            agent.living_docs_relative_dir,
+        );
+        self.living_docs_inject_max_chars = agent
+            .living_docs_inject_max_chars
+            .or(self.living_docs_inject_max_chars);
+        self.living_docs_file_max_each_chars = agent
+            .living_docs_file_max_each_chars
+            .or(self.living_docs_file_max_each_chars);
         self.project_profile_inject_enabled = agent
             .project_profile_inject_enabled
             .or(self.project_profile_inject_enabled);
@@ -497,6 +516,12 @@ impl ConfigBuilder {
         self.long_term_memory_async_index = agent
             .long_term_memory_async_index
             .or(self.long_term_memory_async_index);
+        self.long_term_memory_auto_index_turns = agent
+            .long_term_memory_auto_index_turns
+            .or(self.long_term_memory_auto_index_turns);
+        self.long_term_memory_default_ttl_secs = agent
+            .long_term_memory_default_ttl_secs
+            .or(self.long_term_memory_default_ttl_secs);
         self.mcp_enabled = agent.mcp_enabled.or(self.mcp_enabled);
         override_opt_string_non_empty(&mut self.mcp_command, agent.mcp_command);
         self.mcp_tool_timeout_secs = agent.mcp_tool_timeout_secs.or(self.mcp_tool_timeout_secs);

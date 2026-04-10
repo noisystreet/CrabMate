@@ -18,6 +18,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::clarification_questionnaire::maybe_emit_clarification_questionnaire_sse;
 use crate::config::AgentConfig;
+use crate::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
@@ -62,6 +63,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub tools_defs_full: &'a [Tool],
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
+    pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
+    pub long_term_memory_scope_id: Option<String>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -316,6 +319,8 @@ struct ExecuteToolsCommonCtx<'a> {
     step_executor_constraint: Option<PlanStepExecutorKind>,
     tools_defs_full: &'a [Tool],
     turn_allow: Option<&'a HashSet<String>>,
+    long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
+    long_term_memory_scope_id: Option<String>,
 }
 
 /// 只读可并行批：去重后 `spawn_blocking` + 限并发，再按原 `tool_calls` 顺序回写 SSE / messages。
@@ -340,6 +345,8 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         step_executor_constraint,
         tools_defs_full,
         turn_allow,
+        long_term_memory,
+        long_term_memory_scope_id,
     } = ctx;
 
     let tools_defs_hint = Arc::new(tools_defs_full.to_vec());
@@ -385,6 +392,8 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         let wd = effective_working_dir.to_path_buf();
         let rfc = read_file_turn_cache.clone();
         let wcl = workspace_changelist.cloned();
+        let ltm = long_term_memory.clone();
+        let ltm_scope = long_term_memory_scope_id.clone();
         let name = tc.function.name.clone();
         let args = tc.function.arguments.clone();
         let kind = if name == "http_fetch" {
@@ -431,24 +440,40 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
                 let t_tool = Instant::now();
                 let result = match kind {
                     ParallelToolKind::HttpFetch => tokio::task::spawn_blocking(move || {
-                        let ctx = tools::tool_context_for_with_read_cache(
+                        let (mem_rt, mem_scope) =
+                            crate::long_term_memory::tool_context_memory_extras(
+                                cfg.as_ref(),
+                                ltm.clone(),
+                                ltm_scope.as_deref(),
+                            );
+                        let ctx = tools::tool_context_for_with_read_cache_and_memory(
                             cfg.as_ref(),
                             cfg.allowed_commands.as_ref(),
                             wd.as_path(),
                             rfc.as_ref().map(|a| a.as_ref()),
                             wcl.as_ref(),
+                            mem_rt,
+                            mem_scope,
                         );
                         tools::http_fetch::run_direct(&args, &ctx)
                     })
                     .await
                     .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
                     ParallelToolKind::SyncDefault => tokio::task::spawn_blocking(move || {
-                        let ctx = tools::tool_context_for_with_read_cache(
+                        let (mem_rt, mem_scope) =
+                            crate::long_term_memory::tool_context_memory_extras(
+                                cfg.as_ref(),
+                                ltm.clone(),
+                                ltm_scope.as_deref(),
+                            );
+                        let ctx = tools::tool_context_for_with_read_cache_and_memory(
                             cfg.as_ref(),
                             cfg.allowed_commands.as_ref(),
                             wd.as_path(),
                             rfc.as_ref().map(|a| a.as_ref()),
                             wcl.as_ref(),
+                            mem_rt,
+                            mem_scope,
                         );
                         tools::run_tool(&name, &args, &ctx)
                     })
@@ -558,6 +583,8 @@ async fn execute_tools_serial(
         step_executor_constraint,
         tools_defs_full,
         turn_allow,
+        long_term_memory,
+        long_term_memory_scope_id,
     } = ctx;
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
@@ -706,6 +733,8 @@ async fn execute_tools_serial(
                 mcp_session,
                 request_chrome_merge: request_chrome_trace.clone(),
                 turn_allow,
+                long_term_memory: long_term_memory.clone(),
+                long_term_memory_scope_id: long_term_memory_scope_id.clone(),
             })
             .await;
 
@@ -856,6 +885,8 @@ pub(crate) async fn per_execute_tools_web(
         step_executor_constraint,
         tools_defs_full,
         turn_allow,
+        long_term_memory,
+        long_term_memory_scope_id,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -882,6 +913,8 @@ pub(crate) async fn per_execute_tools_web(
         step_executor_constraint,
         tools_defs_full,
         turn_allow,
+        long_term_memory,
+        long_term_memory_scope_id,
     })
     .await
 }

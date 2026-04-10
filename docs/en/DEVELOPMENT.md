@@ -120,9 +120,10 @@ flowchart TB
 | `tools/` | All tool specs, **`run_tool`**, **`ToolContext`**, summaries (see sub-table below). |
 | `types.rs` | OpenAI-shaped messages/tools/chunks; normalization for vendor requests. |
 | `conversation_store.rs` | Optional SQLite conversations + revision updates. |
-| `long_term_memory_store.rs` / `long_term_memory.rs` | Long-term memory table + injection (filtered from upstream). |
+| `long_term_memory_store.rs` / `long_term_memory.rs` | Long-term memory SQLite (`expires_at_unix`, `tags_json`, `source_kind`) + injection (`crabmate_long_term_memory`, filtered upstream) + optional auto-index TTL; explicit tools **`long_term_remember` / `long_term_forget` / `long_term_memory_list`**. |
+| `living_docs.rs` | Optional first-turn summary from **`.crabmate/living_docs/`** Markdown files. |
 | `mcp/mod.rs` | MCP: **client** (stdio child, `mcp__` prefix, session reuse by fingerprint); **server** (`mcp/server.rs`, **`crabmate mcp serve`**, stdio `serve_server` → `tools::run_tool`, no transport auth). |
-| `agent_memory.rs` / `project_profile.rs` / `project_dependency_brief.rs` | Workspace memo + project profile + dependency brief for first-turn context. |
+| `agent_memory.rs` / `project_profile.rs` / `project_dependency_brief.rs` | Workspace memo + living-docs snippet + project profile + dependency brief for first-turn context. |
 | `read_file_turn_cache.rs` | Per-turn **`read_file`** cache. |
 | `workspace_changelist.rs` | Session write tracking + injected changelist user message; Web **`GET /workspace/changelog`** returns the same Markdown for UI preview. |
 | `web/` | Axum **`AppState`**, chat handlers (including **`GET /workspace/changelog`**), **`GET /openapi.json`** (OpenAPI 3.0 spec), workspace, tasks (in-memory per workspace), static **`frontend-leptos/dist`**, config reload path alignment. |

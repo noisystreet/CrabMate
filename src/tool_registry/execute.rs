@@ -58,6 +58,8 @@ pub struct DispatchToolParams<'a> {
     pub request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
+    pub long_term_memory: Option<Arc<crate::long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory_scope_id: Option<String>,
 }
 
 /// `http_fetch` / `http_request` 共用：`Web` 带可选审批会话，`Cli` 带终端审批上下文（本路径不使用 `workspace_changed`）。
@@ -86,6 +88,8 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         mcp_session,
         request_chrome_merge,
         turn_allow,
+        long_term_memory,
+        long_term_memory_scope_id,
     } = p;
     if !crate::agent_role_turn::tool_allowed_for_turn(name, turn_allow) {
         return (crate::agent_role_turn::turn_tool_denied_message(name), None);
@@ -245,12 +249,19 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 };
             }
             if sync_default_runs_inline(cfg.as_ref(), name) {
-                let ctx = tools::tool_context_for_with_read_cache(
+                let (mem_rt, mem_scope) = crate::long_term_memory::tool_context_memory_extras(
+                    cfg.as_ref(),
+                    long_term_memory.clone(),
+                    long_term_memory_scope_id.as_deref(),
+                );
+                let ctx = tools::tool_context_for_with_read_cache_and_memory(
                     cfg.as_ref(),
                     cfg.allowed_commands.as_ref(),
                     effective_working_dir,
                     read_file_turn_cache.as_ref().map(|a| a.as_ref()),
                     workspace_changelist.as_ref(),
+                    mem_rt,
+                    mem_scope,
                 );
                 return (tools::run_tool(name, args, &ctx), None);
             }
@@ -260,14 +271,23 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             let work_dir = effective_working_dir.to_path_buf();
             let rfc = read_file_turn_cache.clone();
             let wcl = workspace_changelist.clone();
+            let ltm2 = long_term_memory.clone();
+            let ltm_scope2 = long_term_memory_scope_id.clone();
             let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), name);
             let handle = tokio::task::spawn_blocking(move || {
-                let ctx = tools::tool_context_for_with_read_cache(
+                let (mem_rt, mem_scope) = crate::long_term_memory::tool_context_memory_extras(
+                    cfg2.as_ref(),
+                    ltm2,
+                    ltm_scope2.as_deref(),
+                );
+                let ctx = tools::tool_context_for_with_read_cache_and_memory(
                     cfg2.as_ref(),
                     cfg2.allowed_commands.as_ref(),
                     work_dir.as_path(),
                     rfc.as_ref().map(|a| a.as_ref()),
                     wcl.as_ref(),
+                    mem_rt,
+                    mem_scope,
                 );
                 tools::run_tool(&tool_name, &tool_args, &ctx)
             });

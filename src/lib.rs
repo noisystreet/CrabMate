@@ -22,6 +22,7 @@ mod conversation_store;
 mod conversation_turn_bootstrap;
 mod health;
 mod http_client;
+mod living_docs;
 mod llm;
 mod long_term_memory;
 mod long_term_memory_store;
@@ -371,6 +372,14 @@ pub async fn run_agent_turn<'a>(
     };
     if !cfg.codebase_semantic_search_enabled {
         tools_for_turn.retain(|t| t.function.name != "codebase_semantic_search");
+    }
+    if !cfg.long_term_memory_enabled {
+        tools_for_turn.retain(|t| {
+            !matches!(
+                t.function.name.as_str(),
+                "long_term_remember" | "long_term_forget" | "long_term_memory_list"
+            )
+        });
     }
     if let Some(ref allow) = turn_allowed_tool_names {
         let mcp_ok = allow.contains("mcp");

@@ -2,7 +2,7 @@
 
 # Configuration
 
-Default settings are merged from seven embedded TOML fragments under **`config/`**: **`default_config.toml`**, **`session.toml`**, **`context_inject.toml`**, **`tools.toml`**, **`sandbox.toml`**, **`planning.toml`**, **`memory.toml`** (each fragment is mostly flattened under **`[agent]`**; **`config/tools.toml`** may also define optional **`[tool_registry]`**—see “`tool_registry` policy” below). **`session`** covers CLI session **`tui_*`** and **`repl_initial_workspace_messages_enabled`**; **`context_inject`** covers first-turn **`agent_memory_file_*`**, **`project_profile_inject_*`**, **`project_dependency_brief_inject_*`**; **`tools`** **`[agent]`** covers **`run_command`** allowlist/timeouts/working dir, **`tool_message_*`** / **`tool_result_envelope_v1`**, **`read_file_turn_cache_*`**, **`test_result_cache_*`**, **`session_workspace_changelist_*`**, **`codebase_semantic_*`** (the **`codebase_semantic_search`** tool), weather/search/**`http_fetch_*`**, **`tool_call_explain_*`**, **`mcp_*`**, etc.; **`sandbox`** is **SyncDefault Docker** **`sync_default_tool_sandbox_*`**; **`planning`** is planning/reflection/orchestration; **`memory`** is **`long_term_memory_*`**. `load_config` merges in order **defaults → session → context_inject → tools → sandbox → planning → memory**, then **`config.toml`** or **`.agent_demo.toml`**, then environment variables. See **`config.toml.example`** for snippets.
+Default settings are merged from seven embedded TOML fragments under **`config/`**: **`default_config.toml`**, **`session.toml`**, **`context_inject.toml`**, **`tools.toml`**, **`sandbox.toml`**, **`planning.toml`**, **`memory.toml`** (each fragment is mostly flattened under **`[agent]`**; **`config/tools.toml`** may also define optional **`[tool_registry]`**—see “`tool_registry` policy” below). **`session`** covers CLI session **`tui_*`** and **`repl_initial_workspace_messages_enabled`**; **`context_inject`** covers first-turn **`living_docs_*`**, **`agent_memory_file_*`**, **`project_profile_inject_*`**, **`project_dependency_brief_inject_*`**; **`tools`** **`[agent]`** covers **`run_command`** allowlist/timeouts/working dir, **`tool_message_*`** / **`tool_result_envelope_v1`**, **`read_file_turn_cache_*`**, **`test_result_cache_*`**, **`session_workspace_changelist_*`**, **`codebase_semantic_*`** (the **`codebase_semantic_search`** tool), weather/search/**`http_fetch_*`**, **`tool_call_explain_*`**, **`mcp_*`**, etc.; **`sandbox`** is **SyncDefault Docker** **`sync_default_tool_sandbox_*`**; **`planning`** is planning/reflection/orchestration; **`memory`** is **`long_term_memory_*`**. `load_config` merges in order **defaults → session → context_inject → tools → sandbox → planning → memory**, then **`config.toml`** or **`.agent_demo.toml`**, then environment variables. See **`config.toml.example`** for snippets.
 
 ## Hot reload (without restarting `repl` / `serve`)
 
@@ -121,6 +121,10 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_MEMORY_FILE_ENABLED` | Workspace memo file injection. |
 | `AGENT_MEMORY_FILE` | Memo path. |
 | `AGENT_MEMORY_FILE_MAX_CHARS` | Memo max chars. |
+| `AGENT_LIVING_DOCS_INJECT_ENABLED` | Prepend a short summary from **`.crabmate/living_docs/`** (`SUMMARY.md`, `map.md`, …) to the first-turn merged `user` block. |
+| `AGENT_LIVING_DOCS_RELATIVE_DIR` | Living-docs directory relative to workspace root (default `.crabmate/living_docs`). |
+| `AGENT_LIVING_DOCS_INJECT_MAX_CHARS` | Total char budget for living-docs injection; `0` disables. |
+| `AGENT_LIVING_DOCS_FILE_MAX_EACH_CHARS` | Per-file read budget under that directory. |
 | `AGENT_PROJECT_PROFILE_INJECT_ENABLED` | Project profile injection. |
 | `AGENT_PROJECT_PROFILE_INJECT_MAX_CHARS` | Profile max chars. |
 | `AGENT_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | Dependency brief (merged with profile/memo). |
@@ -146,8 +150,12 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `AGENT_LONG_TERM_MEMORY_MAX_CHARS_PER_CHUNK` | Max chars per chunk. |
 | `AGENT_LONG_TERM_MEMORY_MIN_CHARS_TO_INDEX` | Min chars to index. |
 | `AGENT_LONG_TERM_MEMORY_ASYNC_INDEX` | Async indexing. |
+| `AGENT_LONG_TERM_MEMORY_AUTO_INDEX_TURNS` | After each turn, auto-index last user/assistant pair; `false` keeps only explicit **`long_term_remember`** writes. |
+| `AGENT_LONG_TERM_MEMORY_DEFAULT_TTL_SECS` | Default TTL seconds for **auto**-indexed rows; `0` = no expiry (still capped by **`max_entries`**). Explicit **`long_term_remember`** can set `ttl_secs` per call. |
 | `AGENT_LONG_TERM_MEMORY_MAX_ENTRIES` | Max entries. |
 | `AGENT_LONG_TERM_MEMORY_INJECT_MAX_CHARS` | Max chars injected into model context. |
+
+Expired rows are purged on read/write. Built-in tools **`long_term_remember`**, **`long_term_forget`**, **`long_term_memory_list`** are registered when **`long_term_memory_enabled`** (do not store secrets).
 
 With Web `conversation_store_sqlite_path`, session and memory may share one SQLite; pure in-memory sessions need **`long_term_memory_store_sqlite_path`** for persistence. CLI default: `run_command_working_dir/.crabmate/long_term_memory.db`. If enabled but DB open fails: one **stderr** warning, process continues without injection.
 
