@@ -521,6 +521,10 @@
   border-radius: var(--radius-md);
 }
 
+.app-shell-ds .msg.msg-staged-timeline {
+  border-radius: 0;
+}
+
 /* —— 底部一体输入条 —— */
 .composer-ds {
   border-top: 1px solid var(--border-subtle);

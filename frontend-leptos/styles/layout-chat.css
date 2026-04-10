@@ -713,6 +713,8 @@
 .msg-staged-timeline {
   border-left-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   background: color-mix(in srgb, var(--bg-elevated) 92%, var(--accent) 8%);
+  /* 分阶段系统旁注：与常规聊天气泡区分，不使用圆角卡片 */
+  border-radius: 0;
 }
 
 /* 规划 / 工具：聊天列顶部可折叠索引 */
@@ -891,6 +893,44 @@
 }
 
 .msg-tool-run-empty {
+  display: none;
+}
+
+/* 连续多条分阶段时间线旁注：默认只显示最新一条，可展开（语义对齐 .msg-tool-run） */
+.msg-staged-timeline-run {
+  align-self: stretch;
+  width: 100%;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.msg-staged-timeline-run-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-self: flex-start;
+  width: auto;
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 0 6px 2px;
+  box-sizing: border-box;
+}
+
+.msg-staged-timeline-run-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.msg-staged-timeline-run-toggle {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.msg-staged-timeline-run-empty {
   display: none;
 }
 

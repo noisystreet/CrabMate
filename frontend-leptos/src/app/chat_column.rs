@@ -11,7 +11,7 @@ use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
 use super::chat_message_render::{
-    ChatChunk, chat_message_row, chunk_messages, tool_run_group_view,
+    ChatChunk, chat_message_row, chunk_messages, staged_timeline_group_view, tool_run_group_view,
 };
 use super::scroll_guard::MessagesScrollFromEffectGuard;
 use super::timeline_panel::timeline_panel_view;
@@ -40,6 +40,7 @@ pub fn chat_column_view(
     active_id: RwSignal<String>,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
     expanded_tool_run_heads: RwSignal<HashSet<String>>,
+    expanded_staged_timeline_heads: RwSignal<HashSet<String>>,
     chat_find_query: RwSignal<String>,
     chat_find_match_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
@@ -270,6 +271,31 @@ pub fn chat_column_view(
                                                         head_id,
                                                         items,
                                                         expanded_tool_run_heads,
+                                                        chat_find_query,
+                                                        chat_find_match_ids,
+                                                        sessions,
+                                                        active_id,
+                                                        expanded_long_assistant_ids,
+                                                        bubble_md_select_mode,
+                                                        bubble_md_selected_ids,
+                                                        chat_find_cursor,
+                                                        status_busy,
+                                                        session_sync,
+                                                        regen_stream_after_truncate,
+                                                        retry_assistant_target,
+                                                        status_err,
+                                                        auto_scroll_chat,
+                                                        locale,
+                                                        markdown_render,
+                                                        apply_assistant_display_filters,
+                                                    )
+                                                    .into_any()
+                                                }
+                                                ChatChunk::StagedTimelineGroup { head_id, items } => {
+                                                    staged_timeline_group_view(
+                                                        head_id,
+                                                        items,
+                                                        expanded_staged_timeline_heads,
                                                         chat_find_query,
                                                         chat_find_match_ids,
                                                         sessions,
