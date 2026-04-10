@@ -185,6 +185,9 @@ pub struct StagedPlanStepStartedBody {
     pub step_index: usize,
     pub total_steps: usize,
     pub description: String,
+    /// 分阶段 `steps[].executor_kind`（蛇形）；无则省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executor_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -410,6 +413,7 @@ mod tests {
                 step_index: 1,
                 total_steps: 3,
                 description: "收集上下文".into(),
+                executor_kind: Some("review_readonly".into()),
             },
         });
         let msg_step_started: SseMessage = serde_json::from_str(&step_started).unwrap();
@@ -418,6 +422,7 @@ mod tests {
                 assert_eq!(started.step_id, "collect-context");
                 assert_eq!(started.step_index, 1);
                 assert_eq!(started.total_steps, 3);
+                assert_eq!(started.executor_kind.as_deref(), Some("review_readonly"));
             }
             _ => panic!("expected staged_plan_step_started payload"),
         }

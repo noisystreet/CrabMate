@@ -19,10 +19,12 @@ use crate::sse::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, ToolRuntime};
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
 use crate::tools;
-use crate::types::{Message, ToolCall};
+use crate::types::{Message, Tool, ToolCall};
 use crate::workspace_changelist::WorkspaceChangelist;
 
-use super::sub_agent_policy::tool_allowed_for_step_executor_kind;
+use super::sub_agent_policy::{
+    executor_kind_tool_denied_body, tool_allowed_for_step_executor_kind,
+};
 
 /// 本模块 `tracing` / `log` 的 `target`，便于 `RUST_LOG=crabmate::execute_tools` 过滤。
 const LOG_TARGET: &str = "crabmate::execute_tools";
@@ -53,6 +55,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     /// 分阶段规划当前步子代理约束；与 `RunLoopParams::step_executor_constraint` 同步。
     pub step_executor_constraint: Option<PlanStepExecutorKind>,
+    /// 本会话完整工具定义（未按步收窄）；用于子代理越权提示中的允许工具名列表。
+    pub tools_defs_full: &'a [Tool],
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -304,6 +308,7 @@ struct ExecuteToolsCommonCtx<'a> {
     mcp_session: Option<&'a std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpClientSession>>>,
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<PlanStepExecutorKind>,
+    tools_defs_full: &'a [Tool],
 }
 
 /// 只读可并行批：去重后 `spawn_blocking` + 限并发，再按原 `tool_calls` 顺序回写 SSE / messages。
@@ -326,7 +331,10 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         mcp_session: _,
         request_chrome_trace: _,
         step_executor_constraint,
+        tools_defs_full,
     } = ctx;
+
+    let tools_defs_hint = Arc::new(tools_defs_full.to_vec());
 
     let dedup_count = dedup_readonly_tool_calls_count(tool_calls);
     let parallel_max = cfg.parallel_readonly_tools_max.max(1);
@@ -365,6 +373,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         }
         let prefetch_err = prefetch_failures.get(&key).cloned();
         let cfg = Arc::clone(cfg);
+        let tools_defs_hint = Arc::clone(&tools_defs_hint);
         let wd = effective_working_dir.to_path_buf();
         let rfc = read_file_turn_cache.clone();
         let wcl = workspace_changelist.cloned();
@@ -383,10 +392,11 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
             if let Some(k) = constraint
                 && !tool_allowed_for_step_executor_kind(cfg.as_ref(), name.as_str(), k)
             {
-                let denied = format!(
-                    "工具「{}」不在本步子代理角色 {:?} 的允许列表内；请改用该步允许的只读/补丁/测试工具，或让规划器省略 executor_kind。",
+                let denied = executor_kind_tool_denied_body(
+                    cfg.as_ref(),
+                    tools_defs_hint.as_slice(),
                     name.as_str(),
-                    k
+                    k,
                 );
                 return (name, args, denied);
             }
@@ -534,6 +544,7 @@ async fn execute_tools_serial(
         mcp_session,
         request_chrome_trace,
         step_executor_constraint,
+        tools_defs_full,
     } = ctx;
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
@@ -562,10 +573,8 @@ async fn execute_tools_serial(
         if let Some(k) = step_executor_constraint
             && !tool_allowed_for_step_executor_kind(cfg.as_ref(), name.as_str(), k)
         {
-            let denied = format!(
-                "工具「{}」不在本步子代理角色 {:?} 的允许列表内；请改用该步允许的只读/补丁/测试工具，或让规划器省略 executor_kind。",
-                name, k
-            );
+            let denied =
+                executor_kind_tool_denied_body(cfg.as_ref(), tools_defs_full, name.as_str(), k);
             warn!(target: LOG_TARGET, "{}", denied);
             let env = ToolEnvelopeContext {
                 tool_call_id: id.as_str(),
@@ -799,6 +808,7 @@ pub(crate) async fn per_execute_tools_web(
         workspace_changelist,
         request_chrome_trace,
         step_executor_constraint,
+        tools_defs_full,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -823,6 +833,7 @@ pub(crate) async fn per_execute_tools_web(
         mcp_session,
         request_chrome_trace,
         step_executor_constraint,
+        tools_defs_full,
     })
     .await
 }

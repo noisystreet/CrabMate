@@ -610,6 +610,7 @@ where
                         workspace_changelist: p.workspace_changelist.as_ref(),
                         request_chrome_trace: p.request_chrome_trace.clone(),
                         step_executor_constraint: None,
+                        tools_defs_full: p.tools_defs,
                     },
                 )
                 .await;
@@ -770,6 +771,7 @@ where
                         workspace_changelist: p.workspace_changelist.as_ref(),
                         request_chrome_trace: p.request_chrome_trace.clone(),
                         step_executor_constraint: None,
+                        tools_defs_full: p.tools_defs,
                     },
                 )
                 .await;
@@ -970,6 +972,7 @@ where
             step_index,
             n,
             step.description.trim(),
+            step.executor_kind.map(|k| k.as_snake_case_str()),
         )
         .await;
 

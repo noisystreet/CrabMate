@@ -574,6 +574,15 @@ pub struct AgentConfig {
         Option<std::sync::Arc<std::collections::HashSet<String>>>,
     /// 视为写副作用的工具集合；`None` 用内建默认（`is_readonly_tool`）。
     pub tool_registry_write_effect_tools: Option<std::sync::Arc<std::collections::HashSet<String>>>,
+    /// `executor_kind: patch_write` 在默认补丁工具名之外额外允许的工具（须仍在会话 `tools` 中注册）。
+    pub tool_registry_sub_agent_patch_write_extra_tools:
+        Option<std::sync::Arc<std::collections::HashSet<String>>>,
+    /// `executor_kind: test_runner` 在默认测试运行器名之外额外允许的工具。
+    pub tool_registry_sub_agent_test_runner_extra_tools:
+        Option<std::sync::Arc<std::collections::HashSet<String>>>,
+    /// `executor_kind: review_readonly` 下显式拒绝的工具名（精确匹配）。
+    pub tool_registry_sub_agent_review_readonly_deny_tools:
+        Option<std::sync::Arc<std::collections::HashSet<String>>>,
 }
 
 impl AgentConfig {

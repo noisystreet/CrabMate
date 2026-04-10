@@ -148,6 +148,7 @@ pub(crate) async fn run_agent_outer_loop(
                 workspace_changelist: p.workspace_changelist.as_ref(),
                 request_chrome_trace: p.request_chrome_trace.clone(),
                 step_executor_constraint: p.step_executor_constraint,
+                tools_defs_full: p.tools_defs,
             },
         )
         .await;
