@@ -59,7 +59,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 - [ ] Extend sensitive-operation tiers and `tool_approval::SensitiveCapability` for disk writes if needed.
 - [ ] More stacks under `dev_tag` as needed (whitelist and path safety).
-- [ ] MCP: optional expose this agent as MCP server; Streamable HTTP/SSE clients; document boundaries vs `run_command`.
+- [ ] MCP (continued): Streamable HTTP/SSE clients, multi-server, auth; optional HTTP (streamable) server aligned with Web auth. Stdio server: **`crabmate mcp serve`** (see **`docs/en/CLI.md`**). Keep documenting boundaries vs `run_command` / workspace policy.
 
 ---
 

@@ -27,6 +27,7 @@
 | `save-session` | 从会话文件导出 JSON/Markdown 到工作区 **`.crabmate/exports/`**（与 Web 导出同形；**不要**求 `API_KEY`）。`--format json|markdown|both`（默认 `both`），`--session-file` 可选。兼容别名 **`export-session`**。 |
 | `tool-replay` | 从会话 JSON 提取**工具调用时间线**为 fixture，或按 fixture **重放工具**（与对话相同走 `run_tool`，**不调用大模型**；**不要**求 `API_KEY`）。见下文「工具重放 fixture」。 |
 | `mcp list` | 只读列出**本进程**内与当前 `mcp_enabled` + `mcp_command` 指纹一致的已缓存 MCP stdio 会话及合并后的 OpenAI 工具名（**不要**求 `API_KEY`）。若尚未在本进程跑过对话，可先 **`mcp list --probe`** 尝试连接一次（会启动配置中的 MCP 子进程，与正常对话路径相同）。 |
+| `mcp serve` | 在 **stdin/stdout** 上运行 **MCP server**，将 CrabMate **内置工具**暴露给外部客户端（`tools/list` / `tools/call` → **`tools::run_tool`**；**不要**求 `API_KEY`）。工作目录与全局 **`--workspace`** / 配置 **`run_command_working_dir`** 一致。协议 JSON-RPC 走 **stdout**；启动提示与日志请用 **stderr**，避免污染 MCP 流。**`--no-tools`**：不向客户端列出工具（调用未知名仍走 `run_tool` 并得「未知工具」）。**无传输层鉴权**：仅用于本机可信父进程集成；能力面与 `run_command` 白名单、工作区路径策略及（若启用）**`tool_call_explain_enabled`** 一致。 |
 
 ## 日志级别
 

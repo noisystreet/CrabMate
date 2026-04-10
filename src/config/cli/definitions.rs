@@ -177,6 +177,8 @@ pub struct McpCmd {
 pub enum McpSubCmd {
     /// 列出与当前配置指纹一致的已缓存 MCP 会话及合并后的 OpenAI 工具名
     List(McpListCmd),
+    /// 在本进程 stdin/stdout 上运行 MCP server，暴露内置工具（**不要**求 API_KEY；无传输鉴权）
+    Serve(McpServeCmd),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -184,6 +186,13 @@ pub struct McpListCmd {
     /// 按配置尝试建立一次 stdio 连接并刷新进程内缓存（排障用；会启动 mcp_command 子进程）
     #[arg(long)]
     pub probe: bool,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct McpServeCmd {
+    /// 不向客户端列出任何工具（仍接受 `tools/call`，将返回未知工具）
+    #[arg(long)]
+    pub no_tools: bool,
 }
 
 /// 配置检查（不发起对话）
@@ -293,6 +302,10 @@ pub enum ExtraCliCommand {
     /// `mcp list`（`probe` 见子命令 `--probe`）
     McpList {
         probe: bool,
+    },
+    /// `mcp serve`（`--no-tools` 见子命令）
+    McpServe {
+        no_tools: bool,
     },
 }
 

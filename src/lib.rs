@@ -475,6 +475,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    if let ExtraCliCommand::McpServe { no_tools } = extra_cli {
+        let cfg = config::load_config_for_cli(config_path.as_deref())?;
+        crate::runtime::cli_mcp::run_mcp_serve(&cfg, &workspace_cli, no_tools).await?;
+        return Ok(());
+    }
+
     if let Some(ss) = save_session {
         let cfg = config::load_config_for_cli(config_path.as_deref())?;
         crate::runtime::cli::run_save_session_command(&cfg, &workspace_cli, ss)?;

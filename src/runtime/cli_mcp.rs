@@ -1,6 +1,9 @@
-//! `crabmate mcp` 子命令：只读查看本进程内 MCP stdio 缓存（与 `serve` / `repl` / `chat` 共用）。
+//! `crabmate mcp` 子命令：客户端缓存列表与 **stdio MCP server**。
+
+use std::path::PathBuf;
 
 use crate::config::AgentConfig;
+use crate::runtime::cli::cli_effective_work_dir;
 
 /// 执行 `mcp list`（`probe` 为 true 时按配置尝试建立/刷新进程内 MCP 缓存）。
 ///
@@ -47,4 +50,14 @@ pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool, repl_context: bool) {
     for name in &st.openai_tool_names {
         println!("  {name}");
     }
+}
+
+/// `crabmate mcp serve`：在 stdin/stdout 上运行 MCP server（**不要**求 `API_KEY`）。
+pub async fn run_mcp_serve(
+    cfg: &AgentConfig,
+    workspace_cli: &Option<String>,
+    no_tools: bool,
+) -> Result<(), String> {
+    let workspace: PathBuf = cli_effective_work_dir(workspace_cli, &cfg.run_command_working_dir);
+    crate::mcp::server::run_stdio_mcp_server(cfg.clone(), workspace, no_tools).await
 }
