@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
+use log::debug;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -184,7 +185,30 @@ pub(crate) fn merge_staged_plan_steps_after_step_failure(
     let mut out = Vec::with_capacity(failed_step_index + patch.steps.len());
     out.extend_from_slice(&base[..failed_step_index]);
     out.extend(patch.steps.iter().cloned());
+    backfill_executor_kinds_after_staged_patch(base, &mut out, failed_step_index);
     Ok(out)
+}
+
+/// 补丁规划若省略 `executor_kind`，从**同下标**原步继承（仅覆盖被替换后缀及可能对齐的前缀位），避免 `patch_planner` 合并后子代理边界静默丢失。
+fn backfill_executor_kinds_after_staged_patch(
+    base: &[PlanStepV1],
+    merged: &mut [PlanStepV1],
+    failed_step_index: usize,
+) {
+    for (i, step) in merged.iter_mut().enumerate().skip(failed_step_index) {
+        if step.executor_kind.is_none()
+            && let Some(b) = base.get(i)
+            && b.executor_kind.is_some()
+        {
+            step.executor_kind = b.executor_kind;
+            debug!(
+                target: "crabmate",
+                "staged_plan_patch_backfill_executor_kind step_index={} kind={:?}",
+                i,
+                step.executor_kind
+            );
+        }
+    }
 }
 
 pub fn parse_agent_reply_plan_v1(content: &str) -> Result<AgentReplyPlanV1, PlanArtifactError> {
@@ -695,6 +719,41 @@ mod tests {
         assert_eq!(merged[0].id, "s0");
         assert_eq!(merged[1].id, "s1b");
         assert_eq!(merged[2].id, "s2b");
+    }
+
+    #[test]
+    fn merge_staged_plan_backfills_executor_kind_from_base_suffix() {
+        let base = vec![
+            PlanStepV1 {
+                id: "a".into(),
+                description: "x".into(),
+                workflow_node_id: None,
+                executor_kind: Some(PlanStepExecutorKind::ReviewReadonly),
+            },
+            PlanStepV1 {
+                id: "b".into(),
+                description: "y".into(),
+                workflow_node_id: None,
+                executor_kind: Some(PlanStepExecutorKind::PatchWrite),
+            },
+        ];
+        let patch = AgentReplyPlanV1 {
+            plan_type: "agent_reply_plan".into(),
+            version: 1,
+            steps: vec![PlanStepV1 {
+                id: "b2".into(),
+                description: "retry".into(),
+                workflow_node_id: None,
+                executor_kind: None,
+            }],
+            no_task: false,
+        };
+        let merged = merge_staged_plan_steps_after_step_failure(&base, &patch, 1).unwrap();
+        assert_eq!(merged.len(), 2);
+        assert_eq!(
+            merged[1].executor_kind,
+            Some(PlanStepExecutorKind::PatchWrite)
+        );
     }
 
     #[test]
