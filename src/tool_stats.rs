@@ -185,6 +185,8 @@ mod tests {
         let mut c = test_cfg();
         c.agent_tool_stats_enabled = false;
         c.thinking_avoid_echo_system_prompt = true;
+        // 不依赖默认附录或环境变量覆盖：只验证「工具统计关闭时仍附加思维链纪律」分支
+        c.thinking_avoid_echo_appendix = "## 思考过程纪律\n\n（单元测试占位）".to_string();
         let out = augment_system_prompt("P", &c);
         assert!(out.starts_with("P"));
         assert!(out.contains("思考过程纪律"));

@@ -228,7 +228,7 @@ async fn run_single_task(
         .iter()
         .rev()
         .find(|m| m.role == "assistant")
-        .and_then(|m| m.content.clone());
+        .and_then(|m| crate::types::message_content_as_str(&m.content));
 
     let tool_calls_count = messages
         .iter()
@@ -246,7 +246,7 @@ async fn run_single_task(
 
     adapter.extract_result(
         task,
-        raw_reply.as_deref(),
+        raw_reply,
         &work_dir,
         status,
         metrics,

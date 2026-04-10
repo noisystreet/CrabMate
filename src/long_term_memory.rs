@@ -284,7 +284,7 @@ impl LongTermMemoryRuntime {
             insert_at,
             Message {
                 role: "user".to_string(),
-                content: Some(body),
+                content: Some(body.into()),
                 reasoning_content: None,
                 reasoning_details: None,
                 tool_calls: None,
@@ -417,7 +417,7 @@ fn last_user_query_for_memory(messages: &[Message]) -> Option<&str> {
         if is_long_term_memory_injection(m) || is_workspace_changelist_injection(m) {
             continue;
         }
-        let c = m.content.as_deref()?.trim();
+        let c = crate::types::message_content_as_str(&m.content)?.trim();
         if c.is_empty() {
             continue;
         }
@@ -438,7 +438,7 @@ fn last_user_assistant_final_pair(messages: &[Message]) -> Option<(&str, &str)> 
         if is_chat_ui_separator(m) {
             continue;
         }
-        let ac = m.content.as_deref()?.trim();
+        let ac = crate::types::message_content_as_str(&m.content)?.trim();
         if ac.is_empty() {
             continue;
         }
@@ -452,7 +452,7 @@ fn last_user_assistant_final_pair(messages: &[Message]) -> Option<(&str, &str)> 
             if is_long_term_memory_injection(u) {
                 continue;
             }
-            let uc = u.content.as_deref()?.trim();
+            let uc = crate::types::message_content_as_str(&u.content)?.trim();
             if uc.is_empty() {
                 continue;
             }

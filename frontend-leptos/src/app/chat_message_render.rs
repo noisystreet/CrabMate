@@ -87,7 +87,7 @@ pub(crate) fn tool_run_group_view(
     chat_find_cursor: RwSignal<usize>,
     status_busy: RwSignal<bool>,
     session_sync: RwSignal<SessionSyncState>,
-    regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
+    regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
     auto_scroll_chat: RwSignal<bool>,
@@ -231,7 +231,7 @@ pub(crate) fn chat_message_row(
     auto_scroll_chat: RwSignal<bool>,
     status_busy: RwSignal<bool>,
     session_sync: RwSignal<SessionSyncState>,
-    regen_stream_after_truncate: RwSignal<Option<(String, String)>>,
+    regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
     locale: RwSignal<Locale>,
@@ -293,7 +293,7 @@ pub(crate) fn chat_message_row(
     } else {
         let display_for_find = message_text_for_display(&m, locale.get_untracked());
         let asc = auto_scroll_chat;
-        match jump_uid {
+        let body_inner = match jump_uid {
             Some(uid) => {
                 let uid_click = uid.clone();
                 let uid_key = uid.clone();
@@ -352,6 +352,25 @@ pub(crate) fn chat_message_row(
                 </span>
             }
             .into_any(),
+        };
+        if is_user_plain && !m.image_urls.is_empty() {
+            let imgs: Vec<String> = m.image_urls.clone();
+            view! {
+                <div class="msg-user-with-images">
+                    <div class="msg-user-images">
+                        {imgs
+                            .into_iter()
+                            .map(|u| {
+                                view! { <img class="msg-user-img" src=u alt="" /> }.into_any()
+                            })
+                            .collect_view()}
+                    </div>
+                    {body_inner}
+                </div>
+            }
+            .into_any()
+        } else {
+            body_inner
         }
     };
     let mid_for_select = StoredValue::new(m.id.clone());
@@ -536,7 +555,7 @@ pub(crate) fn chat_message_row(
                                                                     );
                                                                 });
                                                                 let mut prep: Option<
-                                                                    (String, String),
+                                                                    (String, Vec<String>, String),
                                                                 > = None;
                                                                 sessions.update(|list| {
                                                                     let aid = active_id
@@ -547,9 +566,9 @@ pub(crate) fn chat_message_row(
                                                                         &uid,
                                                                     );
                                                                 });
-                                                                if let Some((ut, aid)) = prep {
+                                                                if let Some((ut, uimg, aid)) = prep {
                                                                     regen_stream_after_truncate
-                                                                        .set(Some((ut, aid)));
+                                                                        .set(Some((ut, uimg, aid)));
                                                                 }
                                                             }
                                                             Err(e) => {
@@ -561,7 +580,7 @@ pub(crate) fn chat_message_row(
                                                     });
                                                 }
                                                 _ => {
-                                                    let mut prep: Option<(String, String)> = None;
+                                                    let mut prep: Option<(String, Vec<String>, String)> = None;
                                                     sessions.update(|list| {
                                                         let aid = active_id.get_untracked();
                                                         prep = truncate_at_user_message_and_prepare_regenerate(
@@ -570,9 +589,9 @@ pub(crate) fn chat_message_row(
                                                             &uid,
                                                         );
                                                     });
-                                                    if let Some((ut, aid)) = prep {
+                                                    if let Some((ut, uimg, aid)) = prep {
                                                         regen_stream_after_truncate
-                                                            .set(Some((ut, aid)));
+                                                            .set(Some((ut, uimg, aid)));
                                                     }
                                                 }
                                             }

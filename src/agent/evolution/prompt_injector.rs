@@ -1,7 +1,10 @@
 //! System Prompt 动态注入器：将策略建议转为模型可理解的指令。
 
 use super::strategy_analyzer::StrategyHint;
-use crate::types::Message;
+use crate::types::{Message, message_content_get_or_insert_empty_text};
+
+#[cfg(test)]
+use crate::types::{MessageContent, message_content_as_str};
 
 /// System Prompt 注入器
 pub struct PromptInjector {
@@ -54,8 +57,8 @@ impl PromptInjector {
 
         if let Some(msg) = system_msg {
             // 追加到现有 system 消息
-            let current = msg.content.get_or_insert_with(String::new);
-            *current += &injection;
+            let current = message_content_get_or_insert_empty_text(&mut msg.content);
+            current.push_str(&injection);
             true
         } else {
             // 创建新的 system 消息并插入开头
@@ -63,7 +66,7 @@ impl PromptInjector {
                 0,
                 Message {
                     role: "system".to_string(),
-                    content: Some(injection),
+                    content: Some(injection.into()),
                     reasoning_content: None,
                     reasoning_details: None,
                     tool_calls: None,
@@ -134,7 +137,7 @@ mod tests {
         let mut messages = vec![
             Message {
                 role: "user".to_string(),
-                content: Some("Hello".to_string()),
+                content: Some(MessageContent::Text("Hello".to_string())),
                 reasoning_content: None,
                 reasoning_details: None,
                 tool_calls: None,
@@ -143,7 +146,7 @@ mod tests {
             },
             Message {
                 role: "assistant".to_string(),
-                content: Some("Hi".to_string()),
+                content: Some(MessageContent::Text("Hi".to_string())),
                 reasoning_content: None,
                 reasoning_details: None,
                 tool_calls: None,
@@ -157,7 +160,9 @@ mod tests {
 
         // 应该有新的 system 消息在开头
         assert_eq!(messages[0].role, "system");
-        assert!(messages[0].content.as_ref().unwrap().contains("语义搜索"));
+        assert!(
+            message_content_as_str(&messages[0].content).is_some_and(|s| s.contains("语义搜索"))
+        );
     }
 
     #[test]

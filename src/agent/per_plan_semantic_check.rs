@@ -251,7 +251,9 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
             rationale: None,
         };
     }
-    let text = reply.content.as_deref().unwrap_or("").trim();
+    let text = crate::types::message_content_as_str(&reply.content)
+        .unwrap_or("")
+        .trim();
     let outcome = parse_plan_semantic_side_reply(text);
     if outcome.consistent {
         log::debug!(target: "crabmate::per", "final_plan_semantic_check outcome=consistent");

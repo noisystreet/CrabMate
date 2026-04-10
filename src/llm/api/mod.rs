@@ -14,7 +14,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::config::LlmHttpAuthMode;
 use crate::redact;
-use crate::types::{ChatRequest, FunctionCall, Message, ToolCall, USER_CANCELLED_FINISH_REASON};
+use crate::types::{
+    ChatRequest, FunctionCall, Message, MessageContent, ToolCall, USER_CANCELLED_FINISH_REASON,
+    message_content_byte_len_for_estimate,
+};
 
 use super::call_error::LlmCallError;
 use error_handler::{
@@ -61,7 +64,7 @@ fn message_from_sse_accum(acc: SseStreamAccum) -> Message {
         content: if content_acc.is_empty() {
             None
         } else {
-            Some(content_acc)
+            Some(MessageContent::Text(content_acc))
         },
         reasoning_content: if reasoning_acc.is_empty() {
             None
@@ -136,7 +139,7 @@ async fn non_stream_chat_response(
         target: "crabmate",
         "chat completions 非流式响应 finish_reason={} content_len={} tool_calls={} assistant_preview={}",
         finish_reason,
-        msg.content.as_ref().map(|s| s.len()).unwrap_or(0),
+        message_content_byte_len_for_estimate(&msg.content),
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
         redact::assistant_message_preview_for_log(&msg)
     );
@@ -184,7 +187,7 @@ async fn streaming_chat_response(
         target: "crabmate",
         "chat completions 流式响应拼装完成 finish_reason={} content_len={} tool_calls={} assistant_preview={}",
         finish,
-        msg.content.as_ref().map(|s| s.len()).unwrap_or(0),
+        message_content_byte_len_for_estimate(&msg.content),
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
         redact::assistant_message_preview_for_log(&msg)
     );

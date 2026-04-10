@@ -74,6 +74,7 @@ pub fn App() -> impl IntoView {
     let active_id = RwSignal::new(String::new());
     let initialized = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
+    let pending_images = RwSignal::new(Vec::<String>::new());
     // 输入草稿：仅写 Mutex，不在每键 `sessions.update`；发送 / 切会话时再写入 `ChatSession.draft`。
     let composer_draft_buffer: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
     let composer_input_ref: NodeRef<Textarea> = NodeRef::new();
@@ -416,6 +417,7 @@ pub fn App() -> impl IntoView {
         sessions,
         active_id,
         draft,
+        pending_images,
         session_sync,
         stream_job_id,
         stream_last_event_seq,
@@ -509,6 +511,7 @@ pub fn App() -> impl IntoView {
         Arc::clone(&refresh_workspace),
         changelist_modal_open,
         changelist_fetch_nonce,
+        pending_images,
     );
 
     let toggle_task: Arc<dyn Fn(String) + Send + Sync> = Arc::new({
@@ -668,6 +671,7 @@ pub fn App() -> impl IntoView {
                         chat_find_cursor,
                         composer_input_ref,
                         composer_buf_ta.clone(),
+                        pending_images,
                         chat_wires.run_send_message.clone(),
                         Arc::clone(&chat_wires.cancel_stream),
                         status_busy,

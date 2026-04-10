@@ -12,7 +12,10 @@ use crate::llm::{
     ChatCompletionsBackend, CompleteChatRetryingParams, chat_request_thinking_from_cfg,
     complete_chat_retrying, vendor_temperature_for_config,
 };
-use crate::types::{ChatRequest, Message, is_message_excluded_from_llm_context_except_memory};
+use crate::types::{
+    ChatRequest, Message, is_message_excluded_from_llm_context_except_memory,
+    message_content_as_str, message_content_into_text_lossy,
+};
 
 const SUMMARY_SYSTEM: &str = "你只负责压缩对话历史。使用简洁中文要点列表，保留：用户目标、关键路径/命令、错误信息、未决问题。不要编造事实。";
 
@@ -24,16 +27,14 @@ fn format_message_for_transcript(m: &Message) -> String {
             .is_some_and(|r| !r.trim().is_empty())
     {
         let r = m.reasoning_content.as_deref().unwrap_or("").trim();
-        match m
-            .content
-            .as_deref()
+        match message_content_as_str(&m.content)
             .map(str::trim)
             .filter(|c| !c.is_empty())
         {
             Some(c) => format!("[reasoning]\n{r}\n\n[answer]\n{c}"),
             None => format!("[reasoning]\n{r}"),
         }
-    } else if let Some(c) = m.content.as_deref() {
+    } else if let Some(c) = crate::types::message_content_as_str(&m.content) {
         c.to_string()
     } else if let Some(ref tcs) = m.tool_calls {
         let args: Vec<String> = tcs
@@ -118,27 +119,11 @@ pub async fn maybe_summarize_with_llm(
     };
 
     let sum_messages = vec![
-        Message {
-            role: "system".to_string(),
-            content: Some(SUMMARY_SYSTEM.to_string()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
-        Message {
-            role: "user".to_string(),
-            content: Some(format!(
-                "请将下列对话压缩为要点（不超过约 {} 字）。保留技术细节与待办：\n\n{}",
-                cfg.context_summary_max_tokens, transcript
-            )),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
+        Message::system_only(SUMMARY_SYSTEM.to_string()),
+        Message::user_only(format!(
+            "请将下列对话压缩为要点（不超过约 {} 字）。保留技术细节与待办：\n\n{}",
+            cfg.context_summary_max_tokens, transcript
+        )),
     ];
     let req = ChatRequest {
         model: cfg.model.clone(),
@@ -167,7 +152,7 @@ pub async fn maybe_summarize_with_llm(
     };
     match complete_chat_retrying(&cc, &req).await {
         Ok((msg, _)) => {
-            let summary_text = msg.content.unwrap_or_default();
+            let summary_text = message_content_into_text_lossy(msg.content);
             if summary_text.trim().is_empty() {
                 warn!(target: "crabmate", "上下文摘要模型返回空正文，跳过替换");
                 return Ok(());
@@ -182,18 +167,10 @@ pub async fn maybe_summarize_with_llm(
             let tail_start = messages.len() - tail;
             let tail_part: Vec<Message> = messages[tail_start..].to_vec();
             messages.truncate(1);
-            messages.push(Message {
-                role: "user".to_string(),
-                content: Some(format!(
-                    "[较早对话已摘要，以下为压缩要点]\n{}",
-                    summary_text.trim()
-                )),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: None,
-            });
+            messages.push(Message::user_only(format!(
+                "[较早对话已摘要，以下为压缩要点]\n{}",
+                summary_text.trim()
+            )));
             messages.extend(tail_part);
             info!(
                 target: "crabmate",

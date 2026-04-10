@@ -75,7 +75,8 @@ pub fn extract_tool_replay_steps(messages: &[Message]) -> Vec<ToolReplayStep> {
         let mut j = i + 1;
         while j < messages.len() && role_is_tool(&messages[j].role) {
             if let Some(id) = messages[j].tool_call_id.as_deref() {
-                let body = messages[j].content.clone().unwrap_or_default();
+                let body =
+                    crate::types::message_content_into_text_lossy(messages[j].content.clone());
                 results.insert(id.to_string(), body);
             }
             j += 1;

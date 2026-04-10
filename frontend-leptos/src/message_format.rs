@@ -386,6 +386,7 @@ mod tests {
                 "{}接下来你打算怎么帮我？简单用两三句说说就行。",
                 STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
             ),
+            image_urls: vec![],
             state: None,
             is_tool: false,
             created_at: 0,

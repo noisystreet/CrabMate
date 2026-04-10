@@ -244,7 +244,7 @@ mod tests {
         let sep = Message::chat_ui_separator(true);
         let assistant = Message {
             role: "assistant".to_string(),
-            content: Some("c".to_string()),
+            content: Some("c".into()),
             reasoning_content: Some("r".to_string()),
             reasoning_details: None,
             tool_calls: None,
