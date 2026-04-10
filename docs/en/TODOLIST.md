@@ -38,7 +38,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 **Summary**: `agent_turn` main loop; `context_window` trim/summarize; `per_coord` / `plan_artifact` / `workflow_reflection_controller`; `workflow` DAG execution.
 
-(Items mirror the Chinese [TODOLIST.md](../TODOLIST.md): agent_turn/llm boundaries, planner/executor phases, PER plug-in, long-term memory external vector DB, hybrid retrieval, TTL/dedup, compliance APIs; codebase index follow-ups—FTS/hybrid beyond incremental `codebase_semantic_search`—per [CODEBASE_INDEX_PLAN.md](CODEBASE_INDEX_PLAN.md).)
+(Items mirror the Chinese [TODOLIST.md](../TODOLIST.md): agent_turn/llm boundaries, planner/executor phases, PER plug-in, long-term memory external vector DB, TTL/dedup, compliance APIs; large-repo index ops per [CODEBASE_INDEX_PLAN.md](CODEBASE_INDEX_PLAN.md).)
 
 ---
 

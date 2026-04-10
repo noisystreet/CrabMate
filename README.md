@@ -25,7 +25,7 @@
 
 - **对话与多模型**：OpenAI 兼容 `chat/completions`；网关与模型见配置及下文「后端模型支持」。
 
-- **内置工具**（**Function Calling**）：文件与工作区、**`run_command`**（白名单）、HTTP/搜索、格式化、依赖图与覆盖率、容器封装等；覆盖 **Rust / Python / JS·TS / Go / JVM / C·C++** 等栈及 **GitHub `gh_*`**。全表与 JSON 示例：[docs/TOOLS.md](docs/TOOLS.md)。
+- **内置工具**（**Function Calling**）：文件与工作区、**`run_command`**（白名单）、HTTP/搜索、**`codebase_semantic_search`**（SQLite **FTS5** + 本地向量，默认混合检索）、格式化、依赖图与覆盖率、容器封装等；覆盖 **Rust / Python / JS·TS / Go / JVM / C·C++** 等栈及 **GitHub `gh_*`**。全表与 JSON 示例：[docs/TOOLS.md](docs/TOOLS.md)。
 
 - **CLI**：**`crabmate repl`** / **`chat`** / **`serve`**（与 Web 共用 Agent/工具）。详 **[CLI](#cli)**、[docs/CLI.md](docs/CLI.md)。
 

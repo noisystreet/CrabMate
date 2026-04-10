@@ -2,7 +2,7 @@
 
 # 工作区统一代码索引与增量缓存 — 产品化支持计划
 
-**修订（实现进展）**：`codebase_semantic_search` 所用 SQLite 已增加 **`crabmate_codebase_files`** 文件目录表（`size` / `mtime_ns` / `content_sha256`）；**整库** `rebuild_index` 默认**增量**跳过未改文件，**子目录** `path` 仍为子树替换；`.rs` 嵌入文本附带轻量符号提示以改善按符号检索的召回。详见 `docs/DEVELOPMENT.md` 与 `docs/TOOLS.md`。
+**修订（实现进展）**：`codebase_semantic_search` 所用 SQLite 已增加 **`crabmate_codebase_files`** 文件目录表（`size` / `mtime_ns` / `content_sha256`）；**整库** `rebuild_index` 默认**增量**跳过未改文件，**子目录** `path` 仍为子树替换；`.rs` 嵌入文本附带轻量符号提示。schema **v4** 起增加 **FTS5**（**`crabmate_codebase_chunks_fts`** 外挂块表），**`query`** 默认 **hybrid**（BM25 + 向量加权，见 **`codebase_semantic_hybrid_alpha`** 等）。详见 `docs/DEVELOPMENT.md` 与 `docs/TOOLS.md`。
 
 本文描述「把整个仓库源码 + 元数据做成**持久、可增量更新**的统一索引，以加速代码浏览与检索」的方向性规划。实现时须与 **工作区路径安全**（`resolve_for_read` / 白名单根、`..` 与符号链接策略）、**密钥与日志脱敏**、以及 **P0 Web 鉴权**（多租户隔离）对齐；详见 `.cursor/rules/security-sensitive-surface.mdc` 与 `docs/TODOLIST.md` 全局 P0。
 

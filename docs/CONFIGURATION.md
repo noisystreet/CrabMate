@@ -131,6 +131,9 @@
 | `AGENT_CODEBASE_SEMANTIC_QUERY_MAX_CHUNKS` | 单次 **`query`** 最多扫描多少个向量块（默认 **50000**；**0** 表示不限制，大索引慎用）；工具参数 **`query_max_chunks`** 可覆盖。 |
 | `AGENT_CODEBASE_SEMANTIC_REBUILD_MAX_FILES` | **`rebuild_index`** 时最多**重新嵌入**的文件数（防超大仓；未改文件在增量模式下不计入）。 |
 | `AGENT_CODEBASE_SEMANTIC_REBUILD_INCREMENTAL` | 整库 **`rebuild_index`** 是否默认**增量**（按 **`mtime`+`size`+内容 SHA256** 跳过未改文件）；**`false`** 则每次清空向量块与文件目录表后全量重嵌入。子目录 **`path`** 仍为子树全量替换。 |
+| `AGENT_CODEBASE_SEMANTIC_HYBRID_ALPHA` | **`codebase_semantic_search`** 默认 **`retrieve_mode: hybrid`** 时向量余弦权重 **α**（0～1）；综合分 **α×cosine + (1-α)×fts_norm**（FTS 为 SQLite **FTS5** BM25 归一化分）。 |
+| `AGENT_CODEBASE_SEMANTIC_FTS_TOP_N` | hybrid / **`fts_only`** 时全文分支最多取多少条（BM25）；**1～10000**，默认 **400**。 |
+| `AGENT_CODEBASE_SEMANTIC_HYBRID_SEMANTIC_POOL` | hybrid 时向量扫描保留的候选块数（≥ **`top_k`**），再与 FTS 并集重排；**1～10000**，默认 **256**。 |
 | `AGENT_CONVERSATION_STORE_SQLITE_PATH` | 会话 SQLite 路径。 |
 
 ### 首轮注入（备忘、画像、依赖摘要）

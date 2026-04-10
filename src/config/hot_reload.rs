@@ -158,6 +158,9 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.codebase_semantic_query_max_chunks = src.codebase_semantic_query_max_chunks;
     dst.codebase_semantic_rebuild_max_files = src.codebase_semantic_rebuild_max_files;
     dst.codebase_semantic_rebuild_incremental = src.codebase_semantic_rebuild_incremental;
+    dst.codebase_semantic_hybrid_alpha = src.codebase_semantic_hybrid_alpha;
+    dst.codebase_semantic_fts_top_n = src.codebase_semantic_fts_top_n;
+    dst.codebase_semantic_hybrid_semantic_pool = src.codebase_semantic_hybrid_semantic_pool;
     dst.tool_registry_http_fetch_wall_timeout_secs = src.tool_registry_http_fetch_wall_timeout_secs;
     dst.tool_registry_http_request_wall_timeout_secs =
         src.tool_registry_http_request_wall_timeout_secs;

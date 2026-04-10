@@ -21,7 +21,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `calc`: Math via Linux `bc -l` (arithmetic, `^`, sqrt/sin/cos/tan/ln/exp, pi/e, …).
   - `convert_units`: Physical/data **unit conversion** ([`uom`](https://crates.io/crates/uom), no external process). `category`: length / mass / temperature / data / time / area / pressure / speed (or Chinese aliases); `value` + `from` + `to`; decimal KB/MB/GB vs binary KiB/MiB/GiB for data.
   - `get_weather`: Weather by city/region ([Open-Meteo](https://open-meteo.com/), no key).
-  - `web_search`: **Web search** ([Brave](https://brave.com/search/api/) or [Tavily](https://tavily.com/)); set `web_search_api_key` and `web_search_provider` (`brave` / `tavily`). Without a key the tool returns an explanatory error. Prefer `search_in_files` for exact string/regex; use `codebase_semantic_search` for semantic matches (needs `rebuild_index`; see below and **`docs/en/CONFIGURATION.md`**).
+  - `web_search`: **Web search** ([Brave](https://brave.com/search/api/) or [Tavily](https://tavily.com/)); set `web_search_api_key` and `web_search_provider` (`brave` / `tavily`). Without a key the tool returns an explanatory error. Prefer `search_in_files` for exact string/regex; use `codebase_semantic_search` for **hybrid FTS + vector** retrieval (default `retrieve_mode: hybrid`; needs `rebuild_index`; see below and **`docs/en/CONFIGURATION.md`**).
   - `http_fetch`: **GET** (default) or **HEAD**. GET returns status, Content-Type, **redirect chain**, body (timeouts/size caps); **HEAD** skips body. URLs matching `http_fetch_allowed_prefixes` (**same origin + path prefix boundary**) run immediately; otherwise Web (`/chat/stream` + `approval_session_id`) or **CLI** can approve **deny / once / always** (GET/HEAD share normalized whitelist key; CLI: `tool_approval::cli_terminal`).
   - `http_request`: **POST / PUT / PATCH / DELETE** (optional `json_body`). Same prefix rules; unmatched URLs use the same approval path (**permanent key** `http_request:<METHOD>:<URL>` vs `http_fetch:`). **`workflow_execute` nodes** still require whitelist match (no approval on sync path). Returns status, Content-Type, redirects, body preview (dry-run first; never put real secrets in bodies).
   - **GitHub CLI wrappers** (local **`gh`**, **`allowed_commands` must include `gh`**): `gh_pr_*` (incl. **`gh_pr_diff`**), `gh_issue_*`, `gh_run_*` (incl. **`gh_run_view`** with optional **`log`/`job`**, logs are truncated by output limits), **`gh_release_list` / `gh_release_view`**, **`gh_search`** (**`scope` ∈ {issues, prs, repos}**; **`query`** size/charset limited; no **`repo`** when `scope=repos`), **`gh_api`**. On **exit code 0**, if **stdout is a single JSON value**, output appends **pretty JSON** (not tied to passing `fields`). **`gh_api`** mutating methods are non-read-only. Raw `run_command` remains for other `gh` subcommands.
@@ -35,7 +35,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `create_file` / `modify_file`; `read_file` supports ranges, line caps, **`encoding`** (`utf-8` strict, `utf-8-sig`, `gb18030`/`gbk`/`big5`, `utf-16le`/`be`, `auto`, …; malformed → error). `modify_file` can replace line ranges. **Per-turn** `read_file` cache (mtime+size; cleared on writes / workspace change), key includes **encoding**, cap **`read_file_turn_cache_max_entries`**. Web `GET /workspace/file` caps **1 MiB**, same decoding, optional **`encoding`**. Paths in outputs are **relative to workspace** (POSIX), not host absolutes.
   - `copy_file` / `move_file`: Copy/move **files** inside workspace (path safety like `create_file`); default no overwrite unless `overwrite: true`; cross-device `move_file` copies then deletes source.
   - `read_dir` / `glob_files` / `list_tree`: List dir; glob recurse; tree with `max_depth` / `max_entries` caps, stay inside workspace.
-  - `codebase_semantic_search`: **Semantic** code search (local **fastembed** + SQLite, separate from long-term memory; **`crabmate_codebase_files`** stores per-file fingerprints). **`rebuild_index: true`** scans a `.gitignore`-aware tree into **`.crabmate/codebase_semantic.sqlite`**. **Workspace-wide** rebuild is **incremental** by default (**`mtime` + `size` + SHA256**); **`incremental: false`** or **`codebase_semantic_rebuild_incremental=false`** clears chunks + file rows then full re-embed. Subtree **`path`** still replaces only that prefix. **Rust** chunks add lightweight **symbol hint lines** before embed text. **`query`** cosine Top-K; **`query_max_chunks`** caps scan work. **`codebase_semantic_rebuild_max_files`** caps files **re-embedded** per run. Not read-only. Disable: `codebase_semantic_search_enabled = false`. Invalidation deletes matching chunk + catalog rows (or full clear when paths are unknown).
+  - `codebase_semantic_search`: **Hybrid** code search (SQLite **FTS5** + **fastembed** vectors, separate from long-term memory; **`crabmate_codebase_chunks_fts`** external-content table + triggers; **`crabmate_codebase_files`** fingerprints). **`rebuild_index: true`** → **`.crabmate/codebase_semantic.sqlite`** (schema **v4**+). **Incremental** workspace-wide rebuild by default; subtree **`path`** replaces that prefix only. **Rust** symbol hint lines before embed. **`query`** default **`retrieve_mode: hybrid`** (BM25 + cosine via **`hybrid_alpha`**); **`semantic_only`** / **`fts_only`**. **`fts_top_n`**, **`hybrid_semantic_pool`**, **`query_max_chunks`** tune cost. **`codebase_semantic_rebuild_max_files`** caps re-embeds. Not read-only. Disable: `codebase_semantic_search_enabled = false`. Invalidation: chunk deletes sync FTS via triggers; broad tools may full-clear.
   - `markdown_check_links`: Scan Markdown (default `README.md`, `docs/`) for relative links and `#fragment` anchors; `output_format=text|json|sarif`. External `http(s)://` default offline; optional `allowed_external_prefixes` enables HEAD probes (deduped cache).
   - `typos_check` / `codespell_check`: Spell check (read-only; needs [typos](https://github.com/crate-ci/typos) / [codespell](https://github.com/codespell-project/codespell)); default `README.md` + `docs/` if present; `paths` narrows; `typos_check` `config_path`; `codespell_check` `dictionary_paths` / `ignore_words_list`.
   - `ast_grep_run`: AST search with [ast-grep](https://ast-grep.github.io/) (install `ast-grep`); requires `pattern`, `lang`; default search under `src` excluding `target`, `node_modules`, `.git`; optional `paths` / `globs`.
@@ -457,9 +457,16 @@ Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
   ```json
   {"rebuild_index": true, "path": "src"}
   ```
-  - Query:
+  - Default **hybrid** query:
   ```json
-  {"query": "Where is chat job queue concurrency configured?", "top_k": 6, "query_max_chunks": 20000}
+  {"query": "chat job queue concurrency", "top_k": 6, "query_max_chunks": 20000}
+  ```
+  - Vector-only / FTS-only:
+  ```json
+  {"query": "How does SSE approval work?", "retrieve_mode": "semantic_only", "top_k": 8}
+  ```
+  ```json
+  {"query": "hybrid_alpha", "retrieve_mode": "fts_only", "top_k": 10, "fts_top_n": 200}
   ```
 - `apply_patch` (**unified diff**; dry-run then apply—small steps, rollback-friendly, context-rich):
   - Same format as `git diff`: `---`/`+++` headers, `@@` hunks, `-`/`+` lines, **context lines start with a single space**.
