@@ -32,3 +32,22 @@ pub(in crate::tools) fn params_find_references() -> serde_json::Value {
         "additionalProperties":false
     })
 }
+
+pub(in crate::tools) fn params_call_graph_sketch() -> serde_json::Value {
+    serde_json::json!({
+        "type":"object",
+        "properties":{
+            "symbols": {
+                "type":"array",
+                "items": { "type":"string" },
+                "description":"要评估影响面的标识符列表（至少一项；可与 symbol 二选一）"
+            },
+            "symbol": { "type":"string", "description":"单个标识符；与 symbols 二选一（若两者皆给则合并去重）" },
+            "path": { "type":"string", "description":"可选：仅扫描某子路径（相对工作区）" },
+            "max_edges": { "type":"integer", "description":"可选：最多记录的命中边数，默认 400，上限 3000", "minimum":1 },
+            "max_files": { "type":"integer", "description":"可选：最多遍历的 .rs 文件数，默认 12000，上限 50000", "minimum":1 },
+            "include_hidden": { "type":"boolean", "description":"可选：是否遍历隐藏目录（默认 false）" }
+        },
+        "additionalProperties":false
+    })
+}

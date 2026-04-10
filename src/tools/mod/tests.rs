@@ -224,6 +224,27 @@ fn test_run_tool_web_search_no_api_key() {
 }
 
 #[test]
+fn test_run_tool_call_graph_sketch_smoke() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool(
+        "call_graph_sketch",
+        r#"{"symbols":["run_tool"],"path":"src/tools","max_edges":80}"#,
+        &ctx,
+    );
+    assert!(
+        out.contains("变更影响面草图"),
+        "应输出 Markdown 标题，得到: {}",
+        out.chars().take(400).collect::<String>()
+    );
+    assert!(
+        out.contains("reference") || out.contains("use") || out.contains("run_tool"),
+        "应对 src/tools 下 run_tool 有命中或明细，得到: {}",
+        out.chars().take(400).collect::<String>()
+    );
+}
+
+#[test]
 fn test_run_tool_package_query_smoke() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
@@ -356,6 +377,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"table_text"));
     assert!(names.contains(&"find_symbol"));
     assert!(names.contains(&"find_references"));
+    assert!(names.contains(&"call_graph_sketch"));
     assert!(names.contains(&"rust_file_outline"));
     assert!(names.contains(&"format_file"));
     assert!(names.contains(&"format_check_file"));
