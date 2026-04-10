@@ -143,7 +143,7 @@ flowchart TB
 | `file/` | Workspace file ops (path safety in `path.rs`) |
 | `cargo_tools.rs`, `ci_tools.rs`, `rust_ide.rs`, `frontend_tools.rs` | Rust / CI / RA / npm |
 | `python_tools.rs`, `precommit_tools.rs`, `go_tools.rs`, `jvm_tools.rs`, `container_tools.rs`, `nodejs_tools.rs` | Language/ecosystem tools |
-| `git.rs`, `github_cli.rs`, `grep.rs`, `symbol.rs`, `code_nav.rs`, `code_metrics.rs` | VCS, GitHub CLI wrappers, search, metrics |
+| `git.rs`, `github_cli.rs`, `grep.rs`, `symbol.rs`, `code_nav.rs`, `call_graph_sketch.rs`, `code_metrics.rs` | VCS, GitHub CLI wrappers, search, metrics |
 | `format.rs`, `lint.rs`, `quality_tools.rs`, `security_tools.rs`, `source_analysis_tools.rs` | Format/lint/quality/security scanners |
 | `structured_data.rs`, `table_text.rs`, `text_diff.rs`, `text_transform.rs`, `patch.rs`, `markdown_links.rs` | Structured data + diffs + patches + links |
 | `spell_astgrep_tools.rs`, `repo_overview.rs`, `docs_health_sweep.rs`, `release_docs.rs` | Docs / overview / changelog / license |

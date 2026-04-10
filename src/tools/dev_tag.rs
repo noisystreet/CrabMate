@@ -97,7 +97,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "cargo_machete" | "cargo_udeps" | "rust_compiler_json" | "cargo_audit" | "cargo_deny" => {
             &[GENERAL, RUST, QUALITY]
         }
-        "find_symbol" | "find_references" | "rust_file_outline" => &[GENERAL, RUST],
+        "find_symbol" | "find_references" | "rust_file_outline" | "call_graph_sketch" => {
+            &[GENERAL, RUST]
+        }
 
         // --- 前端 / Node.js ---
         "frontend_build" | "frontend_test" => &[GENERAL, FRONTEND],

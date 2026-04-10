@@ -277,7 +277,7 @@ Structured function-calling JSON examples:
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `cargo_metadata`, `cargo_machete`, `cargo_udeps`, `cargo_publish_dry_run`, `rust_compiler_json`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`, `cargo_tree`, `cargo_clean`, `cargo_doc`.
+Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `cargo_metadata`, `cargo_machete`, `cargo_udeps`, `cargo_publish_dry_run`, `rust_compiler_json`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`, `cargo_tree`, `cargo_clean`, `cargo_doc`.
 
 **Python / uv / pre-commit**: `ruff_check`, `pytest_run`, `mypy_check`, `python_install_editable`, `uv_sync`, `uv_run`, `pre_commit_run`; aggregates `run_lints`, `quality_workspace` (optional ruff/pytest/mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
 
@@ -485,6 +485,10 @@ Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
 - `find_references`:
   ```json
   {"symbol":"run_tool","path":"src/tools","max_results":50,"case_sensitive":false,"exclude_definitions":true}
+  ```
+- `call_graph_sketch` (heuristic impact checklist before API changes: `use` + non-definition word-boundary hits, grouped by directory; not a real call graph):
+  ```json
+  {"symbols":["run_tool_dispatch","RunAgentTurnParams"],"path":"src","max_edges":600}
   ```
 - `rust_file_outline`:
   ```json
