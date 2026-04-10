@@ -186,6 +186,7 @@ cargo run -- serve
 | POST | `/chat/stream` | SSE；每条事件含 **`id:`** 序号；响应头 **`x-conversation-id`**、**`x-stream-job-id`**；可选 JSON **`stream_resume`**（`job_id`、`after_seq`）与请求头 **`Last-Event-ID`** 断线重连；任务已结束则 **410** `STREAM_JOB_GONE`；可选 `approval_session_id`、`agent_role`（同上） |
 | POST | `/chat/approval` | 审批：`approval_session_id`、`decision` |
 | POST | `/chat/branch` | 会话分叉截断：JSON `conversation_id`、`before_user_ordinal`（0-based 普通用户消息序号）、`expected_revision`；服务端截断到该序号对应用户消息**之前**（与 Web「从此处重试」一致：随后由 `/chat/stream` 再发同一条用户文本）。须已持久化会话且 `revision` 匹配 |
+| GET | `/conversation/messages` | 只读拉取已持久化会话：查询参数 **`conversation_id`**（必填）；响应含 **`revision`**、**`messages`**（OpenAI 兼容数组，已剔除长期记忆/变更集注入）、可选 **`active_agent_role`**；不存在或已过期则 **404**（`CONVERSATION_NOT_FOUND`）。供 Web 刷新后与 `localStorage` 中的绑定对齐 |
 | GET | `/status` | 后台状态 |
 | GET | `/web-ui` | CSR 展示开关 JSON（**`markdown_render`** / **`AGENT_WEB_DISABLE_MARKDOWN`**；**`apply_assistant_display_filters`** / **`AGENT_WEB_RAW_ASSISTANT_OUTPUT`**；**无** TOML 字段） |
 | GET | `/workspace` | 工作区列表 |

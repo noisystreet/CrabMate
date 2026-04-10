@@ -4,7 +4,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -32,11 +32,15 @@ use crate::conversation_turn_bootstrap::{
     compose_new_conversation_messages, first_turn_project_context_user_message,
 };
 use crate::redact;
-use crate::types::{CommandApprovalDecision, Message, message_user_with_images};
+use crate::types::{
+    CommandApprovalDecision, Message, filter_messages_for_web_client_snapshot,
+    message_user_with_images,
+};
 use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
 use crate::web::http_types::chat::{
     ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
-    ChatBranchResponseBody, ChatRequestBody, ChatResponseBody,
+    ChatBranchResponseBody, ChatRequestBody, ChatResponseBody, ConversationMessagesQuery,
+    ConversationMessagesResponseBody,
 };
 
 fn sse_event_with_id(seq: u64, data: String) -> Result<Event, Infallible> {
@@ -481,6 +485,63 @@ pub(crate) async fn chat_branch_handler(
     Ok(Json(ChatBranchResponseBody {
         ok: true,
         revision: new_rev,
+    }))
+}
+
+/// 只读拉取服务端已持久化的会话消息与 revision（Web 刷新后与 `conversation_id` 对齐）。
+pub(crate) async fn conversation_messages_handler(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<ConversationMessagesQuery>,
+) -> Result<Json<ConversationMessagesResponseBody>, (StatusCode, Json<ApiError>)> {
+    let conversation_id =
+        normalize_client_conversation_id(Some(&q.conversation_id)).map_err(|msg| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError {
+                    code: "INVALID_CONVERSATION_ID",
+                    message: msg,
+                }),
+            )
+        })?;
+    let Some(cid) = conversation_id else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_CONVERSATION_ID",
+                message: "conversation_id 不能为空".to_string(),
+            }),
+        ));
+    };
+    let Some(seed) = state.load_conversation_seed(&cid).await else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ApiError {
+                code: "CONVERSATION_NOT_FOUND",
+                message: "会话不存在或已过期".to_string(),
+            }),
+        ));
+    };
+    let Some(revision) = seed.expected_revision else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ApiError {
+                code: "CONVERSATION_NOT_FOUND",
+                message: "会话不存在或已过期".to_string(),
+            }),
+        ));
+    };
+    let messages = filter_messages_for_web_client_snapshot(&seed.messages);
+    let active_agent_role = seed
+        .persisted_active_agent_role
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    Ok(Json(ConversationMessagesResponseBody {
+        conversation_id: cid,
+        revision,
+        active_agent_role,
+        messages,
     }))
 }
 

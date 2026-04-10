@@ -125,6 +125,23 @@ pub(crate) struct ChatResponseBody {
     pub(crate) conversation_revision: Option<u64>,
 }
 
+/// `GET /conversation/messages` 查询串。
+#[derive(serde::Deserialize)]
+pub(crate) struct ConversationMessagesQuery {
+    pub(crate) conversation_id: String,
+}
+
+/// `GET /conversation/messages?conversation_id=`：只读拉取服务端已落盘会话（供 Web 刷新后与存储对齐）。
+#[derive(serde::Serialize)]
+pub(crate) struct ConversationMessagesResponseBody {
+    pub(crate) conversation_id: String,
+    pub(crate) revision: u64,
+    /// 与会话存储列 `active_agent_role` 一致；空串时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) active_agent_role: Option<String>,
+    pub(crate) messages: Vec<crate::types::Message>,
+}
+
 /// 统一的 API 错误结构：包含错误码与面向用户的友好提示
 #[derive(serde::Serialize)]
 pub(crate) struct ApiError {
