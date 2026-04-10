@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use futures_util::stream::{self, StreamExt};
-use log::{debug, info, warn};
+use log::{info, warn};
 use tokio::sync::mpsc;
 
 static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -430,10 +430,9 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
             let name_for_return = name.clone();
             let args_for_return = args.clone();
             let work = async move {
-                info!(target: LOG_TARGET, "并行工具开始 tool={}", name_for_log);
-                debug!(
+                info!(
                     target: LOG_TARGET,
-                    "工具调用参数摘要 tool={} args_preview={}",
+                    "并行工具开始 tool={} args_preview={}",
                     name_for_log,
                     crate::redact::tool_arguments_preview_for_log(&args_for_log)
                 );
@@ -482,8 +481,9 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
                 };
                 info!(
                     target: LOG_TARGET,
-                    "并行工具完成 tool={} elapsed_ms={}",
+                    "并行工具完成 tool={} args_preview={} elapsed_ms={}",
                     name_for_log,
+                    crate::redact::tool_arguments_preview_for_log(&args_for_return),
                     t_tool.elapsed().as_millis()
                 );
                 (name_for_return, args_for_return, result)
@@ -493,8 +493,9 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
                 Err(_) => {
                     warn!(
                         target: LOG_TARGET,
-                        "并行工具墙上时钟超时 tool={} wall_secs={}",
+                        "并行工具墙上时钟超时 tool={} args_preview={} wall_secs={}",
                         name_timeout,
+                        crate::redact::tool_arguments_preview_for_log(&args_timeout),
                         wall_secs
                     );
                     (
@@ -602,10 +603,9 @@ async fn execute_tools_serial(
         let args = tc.function.arguments.clone();
         let id = tc.id.clone();
         emit_tool_call_summary_sse(out, &name, &args).await;
-        info!(target: LOG_TARGET, "调用工具 tool={}", name);
-        debug!(
+        info!(
             target: LOG_TARGET,
-            "工具调用参数摘要 tool={} args_preview={}",
+            "调用工具 tool={} args_preview={}",
             name,
             crate::redact::tool_arguments_preview_for_log(&args)
         );
@@ -677,8 +677,9 @@ async fn execute_tools_serial(
         if is_readonly && let Some(cached) = readonly_cache.get(&cache_key) {
             info!(
                 target: LOG_TARGET,
-                "工具结果命中缓存（只读去重） tool={}",
-                name
+                "工具结果命中缓存（只读去重） tool={} args_preview={}",
+                name,
+                crate::redact::tool_arguments_preview_for_log(&args)
             );
             let env = ToolEnvelopeContext {
                 tool_call_id: id.as_str(),
@@ -740,8 +741,9 @@ async fn execute_tools_serial(
 
         info!(
             target: LOG_TARGET,
-            "工具调用完成 tool={} elapsed_ms={}",
+            "工具调用完成 tool={} args_preview={} elapsed_ms={}",
             name,
+            crate::redact::tool_arguments_preview_for_log(&args),
             t_tool.elapsed().as_millis()
         );
 
