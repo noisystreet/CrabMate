@@ -106,17 +106,49 @@ async fn non_stream_chat_response(
 
     crate::types::merge_reasoning_details_into_reasoning_content(&mut msg);
 
-    let sse_plain = crate::runtime::message_display::assistant_streaming_plain_concat(&msg);
-    if !sse_plain.is_empty()
-        && let Some(tx) = out
-    {
-        let _ = sse_out_send(
-            tx,
-            sse_plain,
-            "llm::stream_chat non-stream assistant plain",
-            cancel,
-        )
-        .await;
+    if let Some(tx) = out {
+        if plain_terminal_stream {
+            let sse_plain = crate::runtime::message_display::assistant_streaming_plain_concat(&msg);
+            if !sse_plain.is_empty() {
+                let _ = sse_out_send(
+                    tx,
+                    sse_plain,
+                    "llm::stream_chat non-stream assistant plain",
+                    cancel,
+                )
+                .await;
+            }
+        } else {
+            let r = msg.reasoning_content.as_deref().unwrap_or("");
+            let c = crate::types::message_content_as_str(&msg.content).unwrap_or("");
+            if !r.is_empty() {
+                let _ = sse_out_send(
+                    tx,
+                    r.to_string(),
+                    "llm::stream_chat non-stream assistant reasoning",
+                    cancel,
+                )
+                .await;
+            }
+            if !c.is_empty() {
+                let _ = sse_out_send(
+                    tx,
+                    crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+                        assistant_answer_phase: true,
+                    }),
+                    "llm::stream_chat non-stream assistant_answer_phase",
+                    cancel,
+                )
+                .await;
+                let _ = sse_out_send(
+                    tx,
+                    c.to_string(),
+                    "llm::stream_chat non-stream assistant content",
+                    cancel,
+                )
+                .await;
+            }
+        }
     }
     if render_to_terminal {
         render_non_stream_assistant_terminal(&msg, plain_terminal_stream, out.is_none())?;

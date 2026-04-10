@@ -242,6 +242,21 @@ pub(super) async fn ingest_sse_data_payload(
     if let Some(ref s) = delta.content
         && !s.is_empty()
     {
+        if content_acc.is_empty()
+            && let Some(tx) = out
+            && !cli_terminal_plain
+        {
+            flush_sse_delta_buffer(pending_sse_delta, Some(tx), coop_cancel).await;
+            let _ = sse_out_send(
+                tx,
+                crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+                    assistant_answer_phase: true,
+                }),
+                "llm::stream_chat assistant_answer_phase",
+                coop_cancel,
+            )
+            .await;
+        }
         content_acc.push_str(s);
         if cli_terminal_plain {
             cli_terminal_write_plain_fragment(

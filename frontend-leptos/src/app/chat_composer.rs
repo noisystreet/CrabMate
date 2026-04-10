@@ -1,5 +1,6 @@
 //! 输入区与流式对话：草稿缓冲、发送 / 停止、重试 / 截断再生、新会话。
 
+use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -205,15 +206,22 @@ pub(super) fn wire_chat_composer_streams(
                 pending_clarification: pending_clarification_sig,
             });
 
+            let in_answer_phase: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+
             let on_delta: Rc<dyn Fn(String)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
+                let in_answer_phase = Rc::clone(&in_answer_phase);
                 Rc::new(move |chunk: String| {
                     let aid = stream_ctx.active_session_id.as_str();
                     let mid = stream_ctx.assistant_message_id.as_str();
                     stream_ctx.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
-                                m.text.push_str(&chunk);
+                                if in_answer_phase.get() {
+                                    m.text.push_str(&chunk);
+                                } else {
+                                    m.reasoning_text.push_str(&chunk);
+                                }
                             }
                         }
                     });
@@ -236,7 +244,7 @@ pub(super) fn wire_chat_composer_streams(
                         {
                             // 仅收尾「仍在生成」的气泡；SSE 已 on_error 的勿覆盖 error 状态
                             m.state = None;
-                            if m.text.trim().is_empty() {
+                            if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
                                 m.text = i18n::stream_empty_reply(loc).to_string();
                             }
                         }
@@ -304,6 +312,7 @@ pub(super) fn wire_chat_composer_streams(
                                 id,
                                 role: "system".to_string(),
                                 text: t,
+                                reasoning_text: String::new(),
                                 image_urls: vec![],
                                 state: Some(state),
                                 is_tool: true,
@@ -362,6 +371,10 @@ pub(super) fn wire_chat_composer_streams(
                     stream_last_event_seq_sig.set(seq);
                 })
             };
+            let on_assistant_answer_phase: Rc<dyn Fn()> = {
+                let in_answer_phase = Rc::clone(&in_answer_phase);
+                Rc::new(move || in_answer_phase.set(true))
+            };
             let on_staged_step_started: Rc<dyn Fn(StagedPlanStepStartInfo)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |info: StagedPlanStepStartInfo| {
@@ -384,6 +397,7 @@ pub(super) fn wire_chat_composer_streams(
                                 id,
                                 role: "system".to_string(),
                                 text,
+                                reasoning_text: String::new(),
                                 image_urls: vec![],
                                 state: Some(state),
                                 is_tool: false,
@@ -428,6 +442,7 @@ pub(super) fn wire_chat_composer_streams(
                                 id,
                                 role: "system".to_string(),
                                 text,
+                                reasoning_text: String::new(),
                                 image_urls: vec![],
                                 state: Some(state),
                                 is_tool: false,
@@ -451,6 +466,7 @@ pub(super) fn wire_chat_composer_streams(
                 on_stream_ended,
                 on_stream_job_id,
                 on_last_sse_event_id,
+                on_assistant_answer_phase,
                 on_staged_plan_step_started: on_staged_step_started,
                 on_staged_plan_step_finished: on_staged_step_finished,
                 on_clarification_questionnaire: on_clarification,
@@ -546,6 +562,7 @@ pub(super) fn wire_chat_composer_streams(
                     id: uid.clone(),
                     role: "user".to_string(),
                     text: user_line.clone(),
+                    reasoning_text: String::new(),
                     image_urls: imgs_send.clone(),
                     state: None,
                     is_tool: false,
@@ -555,6 +572,7 @@ pub(super) fn wire_chat_composer_streams(
                     id: asst_id.clone(),
                     role: "assistant".to_string(),
                     text: String::new(),
+                    reasoning_text: String::new(),
                     image_urls: vec![],
                     state: Some("loading".to_string()),
                     is_tool: false,

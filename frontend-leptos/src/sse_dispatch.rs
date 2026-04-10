@@ -24,6 +24,8 @@ pub struct SseCallbacks<'a> {
     pub on_tool_call: Option<&'a mut dyn FnMut(String, String, Option<String>, Option<String>)>,
     pub on_tool_status_change: Option<&'a mut dyn FnMut(bool)>,
     pub on_parsing_tool_calls_change: Option<&'a mut dyn FnMut(bool)>,
+    /// 后续 `on_delta` 为终答正文（此前为思维链）；无链时也会在首段正文前下发。
+    pub on_assistant_answer_phase: Option<&'a mut dyn FnMut()>,
     pub on_tool_result: Option<&'a mut dyn FnMut(ToolResultInfo)>,
     pub on_command_approval_request: Option<&'a mut dyn FnMut(CommandApprovalRequest)>,
     /// `conversation_saved.revision`，供 `POST /chat/branch` 与冲突检测。
@@ -174,6 +176,14 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
     if obj.get("plan_required") == Some(&Value::Bool(true)) {
         return SseDispatch::Handled;
     }
+
+    if let Some(Value::Bool(b)) = obj.get("assistant_answer_phase") {
+        if *b && let Some(f) = cbs.on_assistant_answer_phase.as_mut() {
+            f();
+        }
+        return SseDispatch::Handled;
+    }
+
     if key_present_non_null(obj, "staged_plan_started") {
         return SseDispatch::Handled;
     }

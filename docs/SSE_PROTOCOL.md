@@ -44,6 +44,7 @@
 |---------------|------|----------|
 | `error` + **`code`** | 流级失败 | `onError`，**停止**读取 |
 | `plan_required` | 预留（如须补充结构化规划） | `onPlanRequired`，继续 |
+| `assistant_answer_phase`: `true` | 后续纯文本增量为助手 **终答** `content`（此前为思维链 `reasoning_*`）；无思维链时也会在首段正文前下发 | Web：**handled**；切换 `onDelta` 写入目标（思维链区 / 终答区），不当下文 |
 | `staged_plan_started` | 分阶段规划开始 | `onStagedPlanStarted` |
 | `staged_plan_step_started` | 单步开始；负载含 `plan_id`、`step_id`、`step_index`、`total_steps`、`description`，可选 `executor_kind`（`review_readonly` / `patch_write` / `test_runner`，与规划 JSON 一致） | `onStagedPlanStepStarted` |
 | `staged_plan_step_finished` | 单步结束；`status`: `ok` / `cancelled` / `failed`；可选 `executor_kind`（与 `staged_plan_step_started` 对齐） | `onStagedPlanStepFinished` |
