@@ -92,6 +92,8 @@ pub fn App() -> impl IntoView {
     let expanded_long_assistant_ids = RwSignal::new(Vec::<String>::new());
     // 连续工具输出分组：以组内首条消息 id 为键，表示该组处于展开态（默认折叠只显示最新一条）。
     let expanded_tool_run_heads = RwSignal::new(HashSet::<String>::new());
+    // 连续分阶段时间线旁注分组：键同工具分组。
+    let expanded_staged_timeline_heads = RwSignal::new(HashSet::<String>::new());
     let side_panel_view = RwSignal::new(load_side_panel_view());
     let view_menu_open = RwSignal::new(false);
     let status_bar_visible = RwSignal::new(load_bool_key(STATUS_BAR_VISIBLE_KEY, true));
@@ -704,6 +706,7 @@ pub fn App() -> impl IntoView {
                         active_id,
                         expanded_long_assistant_ids,
                         expanded_tool_run_heads,
+                        expanded_staged_timeline_heads,
                         chat_find_query,
                         chat_find_match_ids,
                         chat_find_cursor,

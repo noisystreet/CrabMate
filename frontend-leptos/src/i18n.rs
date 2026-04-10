@@ -1368,6 +1368,62 @@ pub fn msg_tool_expand_btn(l: Locale) -> &'static str {
     }
 }
 
+pub fn msg_staged_timeline_run_group_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "连续分阶段实施记录",
+        Locale::En => "Consecutive staged plan step records",
+    }
+}
+
+pub fn msg_staged_timeline_run_count(l: Locale, n: usize) -> String {
+    match l {
+        Locale::ZhHans => format!("{n} 条分阶段记录"),
+        Locale::En => {
+            if n == 1 {
+                "1 staged step record".to_string()
+            } else {
+                format!("{n} staged step records")
+            }
+        }
+    }
+}
+
+pub fn msg_staged_timeline_collapse_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "折叠分阶段记录",
+        Locale::En => "Collapse staged records",
+    }
+}
+
+pub fn msg_staged_timeline_collapse_aria(l: Locale) -> &'static str {
+    msg_staged_timeline_collapse_title(l)
+}
+
+pub fn msg_staged_timeline_collapse_btn(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "折叠",
+        Locale::En => "Collapse",
+    }
+}
+
+pub fn msg_staged_timeline_expand_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "展开分阶段记录",
+        Locale::En => "Expand staged records",
+    }
+}
+
+pub fn msg_staged_timeline_expand_aria(l: Locale) -> &'static str {
+    msg_staged_timeline_expand_title(l)
+}
+
+pub fn msg_staged_timeline_expand_btn(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "展开",
+        Locale::En => "Expand",
+    }
+}
+
 pub fn msg_jump_user_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "点击跳转到对应用户消息",
