@@ -286,7 +286,7 @@ pub(super) fn finalize(
     if system_prompt.trim().is_empty() {
         return Err("配置错误：system_prompt 从文件或内联加载后为空".to_string());
     }
-    let cursor_rules_enabled = b.cursor_rules_enabled.unwrap_or(false);
+    let cursor_rules_enabled = b.cursor_rules_enabled.unwrap_or(true);
     let cursor_rules_dir = b
         .cursor_rules_dir
         .unwrap_or_else(|| ".cursor/rules".to_string());

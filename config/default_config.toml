@@ -59,7 +59,7 @@ chat_queue_max_pending = 32
 # 默认见 **`config/planning.toml`**
 
 # 7. 系统提示词与 Cursor 式规则注入
-cursor_rules_enabled = false
+cursor_rules_enabled = true
 cursor_rules_dir = ".cursor/rules"
 cursor_rules_include_agents_md = true
 cursor_rules_max_chars = 48000
