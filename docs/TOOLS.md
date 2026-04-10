@@ -54,7 +54,7 @@
   - `diagnostic_summary`：只读排障摘要——Rust 工具链（`rustc`/`cargo`/`rustup`/`bc`）、工作区 `target/` 与 `Cargo.toml` / `frontend` 常见路径、关键环境变量**是否设置**（**永不输出变量值**；密钥类亦不输出长度）。可选 `extra_env_vars`（大写安全名）。
   - `error_output_playbook`：对**已脱敏**的 rustc/cargo/npm/pytest 等错误输出做启发式**归类**，并输出 **2～3 条**可经 **`run_command`** 执行的命令**建议**（**不执行**；仅含当前白名单内命令，如默认已含 `cargo`/`git`/`python3`/`npm` 等）。可选 `ecosystem`：`auto` / `rust` / `node` / `python` / `generic`；可选 `max_chars`。内置对 `API_KEY=` 等样式的轻度掩码；粘贴前仍须人工脱敏。
   - `playbook_run_commands`：与 `error_output_playbook` **同一启发式**，将 **1～3 条**建议命令**依次**经内部 **`run_command`** 在工作区**真实执行**（白名单与参数安全规则与 `run_command` 一致；可能占用 cargo/npm 等锁）。参数同 `error_output_playbook`，另可选 **`max_commands`**（默认 3，上限 3）。**须可信工作区**；CLI 下某工具失败时，终端会打印一行可复制的 JSON，便于模型直接调用本工具做「一键诊断包」。
-  - **Python / uv / pre-commit**（均在**工作区根**执行，需本机已安装对应 CLI；未安装时工具返回说明性错误）：`ruff_check`、`pytest_run`（`python3 -m pytest`）、`mypy_check`、`python_install_editable`（`uv` 或 `pip` 可编辑安装）、`uv_sync`、`uv_run`（`args` 为字符串数组，不经 shell）、`pre_commit_run`（需 `.pre-commit-config.yaml`）。**格式化**：`format_file` / `format_check_file` 按扩展名选用 **ruff format**（`.py`）、**clang-format**（`.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh`）、`rustfmt` / `prettier` 等。**标签裁剪**：集成方可通过库 API `build_tools_with_options` 与 `dev_tag` 子域标签（如 `python`、`cpp`、`go`、`jvm`、`docker`、`quality`）限制发给模型的工具列表，详见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。**模型调用后端**：库 API `run_agent_turn` 的 `RunAgentTurnParams` 可选字段 `llm_backend` 可传入自定义 `ChatCompletionsBackend`（默认 OpenAI 兼容 HTTP，与 `api_base` + `API_KEY` 行为一致）；上下文摘要等路径与主对话共用同一后端，详见 `DEVELOPMENT.md`。
+  - **Python / uv / pre-commit**（均在**工作区根**执行，需本机已安装对应 CLI；未安装时工具返回说明性错误）：`ruff_check`、`pytest_run`（`python3 -m pytest`）、`mypy_check`、`python_install_editable`（`uv` 或 `pip` 可编辑安装）、`uv_sync`、`uv_run`（`args` 为字符串数组，不经 shell）、**`python_snippet_run`**（将 `code` 写入工作区内临时 `.py` 后执行，可 `import` 已安装第三方包；默认 `python3` 且 `PYTHONPATH` 含工作区根，可选 `use_uv` 用 `uv run python`；**等同任意代码执行**，仅用于可信工作区；墙上时钟超时默认 `command_timeout_secs`，可用 `timeout_secs` 1～600 覆盖）、`pre_commit_run`（需 `.pre-commit-config.yaml`）。**格式化**：`format_file` / `format_check_file` 按扩展名选用 **ruff format**（`.py`）、**clang-format**（`.c` / `.h` / `.cpp` / `.cc` / `.cxx` / `.hpp` / `.hh`）、`rustfmt` / `prettier` 等。**标签裁剪**：集成方可通过库 API `build_tools_with_options` 与 `dev_tag` 子域标签（如 `python`、`cpp`、`go`、`jvm`、`docker`、`quality`）限制发给模型的工具列表，详见 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)。**模型调用后端**：库 API `run_agent_turn` 的 `RunAgentTurnParams` 可选字段 `llm_backend` 可传入自定义 `ChatCompletionsBackend`（默认 OpenAI 兼容 HTTP，与 `api_base` + `API_KEY` 行为一致）；上下文摘要等路径与主对话共用同一后端，详见 `DEVELOPMENT.md`。
   - **Node.js / npm**（须存在 `package.json`）：`npm_install`（支持 `npm ci`、`--production`）、`npm_run`（运行任意 npm script；**`script` 为 `test`** 时在 `test_result_cache_enabled` 下可走进程内 LRU，命中则首行 **`[CrabMate 测试输出缓存命中]`**）、`npx_run`（执行 npx 包命令）、`tsc_check`（TypeScript 类型检查 `tsc --noEmit`）。
   - **Go 工具链**（须存在 `go.mod`，需本机已安装 Go）：`go_build`、`go_test`（支持 `-run` / `-race` / `-timeout` 等）、`go_vet`、`go_mod_tidy`（受控写入需 `confirm`）、`go_fmt_check`（`gofmt -l` 列出未格式化文件）、`golangci_lint`。
   - **JVM（Maven / Gradle）**（需本机 `mvn` / `gradle` 或项目 `gradlew`；未安装时返回说明）：`maven_compile` / `maven_test`（须 `pom.xml`，`mvn -q …`，可选 `profile` / `test`）、`gradle_compile` / `gradle_test`（须 `build.gradle*` 或 `settings.gradle*`，默认任务 `classes` / `test`，任务名经保守校验）。与 `run_command` 相同：参数禁止 `..` 与绝对路径。
@@ -282,7 +282,7 @@
 另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`（与 `rust_test_one` 在 `test_result_cache_enabled` 下可对**相同指纹**复用上次截断输出）、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`rust_analyzer_hover`、`rust_analyzer_document_symbol`、`read_binary_meta`、`frontend_lint`、`find_references`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`structured_patch`、`table_text`、`text_diff`、`ast_grep_rewrite`、`diagnostic_summary`、`error_output_playbook`、`playbook_run_commands`、`package_query`。
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
 
-**Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`pre_commit_run`；聚合类还有 `run_lints`（可选 ruff）、`quality_workspace`（可选 ruff/pytest/mypy）。
+**Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`python_snippet_run`、`pre_commit_run`；聚合类还有 `run_lints`（可选 ruff）、`quality_workspace`（可选 ruff/pytest/mypy）。
 
 **Node.js / npm**：`npm_install`（含 `npm ci`）、`npm_run`（任意 npm script）、`npx_run`（npx 执行包命令）、`tsc_check`（TypeScript 类型检查）。
 
@@ -313,6 +313,14 @@
 - `uv_run`（`args` 逐项为子进程参数，不经 shell）：
   ```json
   {"args":["pytest","-q"]}
+  ```
+- `python_snippet_run`（临时脚本执行；第三方包须已在当前环境或 uv 项目中安装）：
+  ```json
+  {"code":"import json\nprint(json.dumps({\"ok\": True}))"}
+  ```
+  使用项目虚拟环境（须存在 `pyproject.toml`）：
+  ```json
+  {"code":"import numpy as np\nprint(np.__version__)","use_uv":true}
   ```
 - `pre_commit_run`（默认检查**暂存**文件；可与 `all_files` / `files` 组合，见工具说明）：
   ```json

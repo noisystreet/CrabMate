@@ -188,7 +188,7 @@ flowchart TB
 | `patch.rs` | unified diff 应用 |
 | `precommit_tools.rs` | `pre-commit run` 封装（依赖 `.pre-commit-config.yaml`） |
 | `process_tools.rs` | 进程与端口管理（只读）：`port_check`（ss/lsof）、`process_list`（ps 过滤） |
-| `python_tools.rs` | Python：`ruff check`、`python3 -m pytest`、`mypy`、`uv sync` / `uv run`、可编辑安装（uv / pip）；供 `format`（`.py` 的 ruff format）、`lint`、`quality_workspace`、`ci_pipeline_local` 调用 |
+| `python_tools.rs` | Python：`ruff check`、`python3 -m pytest`、`mypy`、`uv sync` / `uv run`、`python_snippet_run`（工作区内临时 `.py` 执行，可 `import` 第三方包）、可编辑安装（uv / pip）；供 `format`（`.py` 的 ruff format）、`lint`、`quality_workspace`、`ci_pipeline_local` 调用 |
 | `quality_tools.rs` | 工作区质量组合检查 |
 | `release_docs.rs` | `changelog_draft`（git log → Markdown 草稿）、`license_notice`（cargo metadata → 许可证表） |
 | `repo_overview.rs` | `repo_overview_sweep`：可选 **项目画像**（`project_profile::build_project_profile_markdown`，与 Web 首轮注入同源）+ 文档预览 + 源码树 + 构建/清单路径 glob 汇总（只读聚合；结论由模型撰写） |

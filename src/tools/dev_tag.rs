@@ -116,7 +116,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
 
         // --- Python ---
         "ruff_check" | "mypy_check" => &[GENERAL, PYTHON, QUALITY],
-        "pytest_run" | "python_install_editable" | "uv_sync" | "uv_run" => &[GENERAL, PYTHON],
+        "pytest_run" | "python_install_editable" | "uv_sync" | "uv_run" | "python_snippet_run" => {
+            &[GENERAL, PYTHON]
+        }
 
         // --- pre-commit（跨语言）---
         "pre_commit_run" => &[GENERAL, QUALITY],

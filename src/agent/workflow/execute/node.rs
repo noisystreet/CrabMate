@@ -43,6 +43,7 @@ async fn execute_node_tool_phase(
     let test_result_cache_enabled = tool_exec_ctx.test_result_cache_enabled;
     let test_result_cache_max_entries = tool_exec_ctx.test_result_cache_max_entries;
     let codebase_semantic = tool_exec_ctx.codebase_semantic.clone();
+    let command_timeout_secs = tool_exec_ctx.cfg_command_timeout_secs;
 
     let output_res = async move {
         let work_dir = run_command_working_dir;
@@ -61,6 +62,7 @@ async fn execute_node_tool_phase(
                 http_fetch_allowed_prefixes: hf_pfx.as_slice(),
                 http_fetch_timeout_secs: hf_to,
                 http_fetch_max_response_bytes: hf_mb,
+                command_timeout_secs,
                 read_file_turn_cache: None,
                 workspace_changelist: None,
                 test_result_cache_enabled,
@@ -394,7 +396,9 @@ fn resolve_workflow_node_timeout_secs(
     tool_exec_ctx: &WorkflowToolExecCtx,
 ) -> Option<u64> {
     node.timeout_secs.or(match node.tool_name.as_str() {
-        "run_command" | "run_executable" => Some(tool_exec_ctx.cfg_command_timeout_secs),
+        "run_command" | "run_executable" | "python_snippet_run" => {
+            Some(tool_exec_ctx.cfg_command_timeout_secs)
+        }
         "maven_compile" | "maven_test" | "gradle_compile" | "gradle_test" | "docker_build"
         | "docker_compose_ps" | "podman_images" => Some(tool_exec_ctx.cfg_command_timeout_secs),
         "get_weather" => Some(tool_exec_ctx.cfg_weather_timeout_secs),
