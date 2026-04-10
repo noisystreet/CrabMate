@@ -3,6 +3,8 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use super::output_util;
+
 /// 使用 bc -l 执行数学表达式，通过 stdin 传参，不经过 shell
 pub fn run(expr: &str) -> String {
     let expr = expr.trim();
@@ -37,7 +39,10 @@ pub fn run(expr: &str) -> String {
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return format!("无法执行 bc：{}（请确认已安装 bc）", e),
+        Err(e) => {
+            let base = format!("无法执行 bc：{}（请确认已安装 bc）", e);
+            return output_util::append_notfound_install_hint(base, &e, "bc");
+        }
     };
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(script.as_bytes());
