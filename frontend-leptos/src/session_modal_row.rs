@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use crate::i18n::{self, Locale};
 use crate::session_ops::{
     delete_session_after_confirm, export_session_json_for_id, export_session_markdown_for_id,
-    flush_composer_draft_to_session,
+    flush_composer_draft_to_session, set_session_pinned, set_session_starred,
 };
 use crate::storage::ChatSession;
 
@@ -16,6 +16,8 @@ pub fn SessionModalRow(
     id: String,
     title: String,
     message_count: usize,
+    pinned: bool,
+    starred: bool,
     active: bool,
     locale: RwSignal<Locale>,
     sessions: RwSignal<Vec<ChatSession>>,
@@ -27,6 +29,8 @@ pub fn SessionModalRow(
     session_modal: RwSignal<bool>,
 ) -> impl IntoView {
     let id_rename = id.clone();
+    let id_star = id.clone();
+    let id_pin = id.clone();
     let id_json = id.clone();
     let id_md = id.clone();
     let id_del = id.clone();
@@ -69,6 +73,44 @@ pub fn SessionModalRow(
                 <span class="session-meta">{move || i18n::session_row_msg_count(locale.get(), message_count)}</span>
             </button>
             <div class="session-row-actions">
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    prop:title=move || {
+                        if starred {
+                            i18n::ctx_unstar_session(locale.get())
+                        } else {
+                            i18n::ctx_star_session(locale.get())
+                        }
+                    }
+                    prop:aria-pressed=starred
+                    on:click={
+                        let sessions = sessions;
+                        let id = id_star.clone();
+                        move |_| set_session_starred(sessions, &id, !starred)
+                    }
+                >
+                    {if starred { "★" } else { "☆" }}
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    prop:title=move || {
+                        if pinned {
+                            i18n::ctx_unpin_session(locale.get())
+                        } else {
+                            i18n::ctx_pin_session(locale.get())
+                        }
+                    }
+                    prop:aria-pressed=pinned
+                    on:click={
+                        let sessions = sessions;
+                        let id = id_pin.clone();
+                        move |_| set_session_pinned(sessions, &id, !pinned)
+                    }
+                >
+                    "📌"
+                </button>
                 <button
                     type="button"
                     class="btn btn-ghost btn-sm"

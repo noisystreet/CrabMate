@@ -236,6 +236,25 @@ pub fn patch_active_session(
     });
 }
 
+/// 仅改置顶/收藏，**不**刷新 `updated_at`，避免打乱「按活动时间」排序。
+pub fn set_session_pinned(sessions: RwSignal<Vec<ChatSession>>, id: &str, pinned: bool) {
+    let id = id.to_string();
+    sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == id) {
+            s.pinned = pinned;
+        }
+    });
+}
+
+pub fn set_session_starred(sessions: RwSignal<Vec<ChatSession>>, id: &str, starred: bool) {
+    let id = id.to_string();
+    sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == id) {
+            s.starred = starred;
+        }
+    });
+}
+
 /// 将输入框草稿写入指定会话（切换会话、新建会话前调用），触发 `sessions` 更新与本地持久化。
 pub fn flush_composer_draft_to_session(
     sessions: RwSignal<Vec<ChatSession>>,
@@ -540,6 +559,8 @@ mod message_branch_tests {
             id: "s1".into(),
             title: "t".into(),
             draft: String::new(),
+            pinned: false,
+            starred: false,
             messages: vec![
                 StoredMessage {
                     id: "u0".into(),
@@ -586,7 +607,7 @@ mod message_branch_tests {
 pub fn clamp_session_ctx_menu_pos(cx: i32, cy: i32) -> (f64, f64) {
     const MENU_W: f64 = 190.0;
     // 上限略大，兼容聊天区多选菜单（多项）与侧栏会话菜单。
-    const MENU_H: f64 = 220.0;
+    const MENU_H: f64 = 360.0;
     let (ww, wh) = web_sys::window()
         .map(|w| {
             (

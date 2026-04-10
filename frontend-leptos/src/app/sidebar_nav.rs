@@ -17,11 +17,13 @@ use crate::i18n::{self, Locale};
 use crate::session_ops::{
     SessionContextAnchor, clamp_session_ctx_menu_pos, delete_session_after_confirm,
     export_session_json_for_id, export_session_markdown_for_id, flush_composer_draft_to_session,
+    set_session_pinned, set_session_starred,
 };
 use crate::session_search::{
     MESSAGE_SEARCH_MAX_HITS, collect_message_search_hits, normalize_search_query,
     session_title_matches,
 };
+use crate::session_sort::sorted_sessions_clone;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 
@@ -146,12 +148,10 @@ pub fn sidebar_nav_view(
                 {move || {
                     let needle = normalize_search_query(&sidebar_filter_debounced.get());
                     let msg_needle = normalize_search_query(&global_message_filter_debounced.get());
-                    let mut v: Vec<ChatSession> = sessions
-                        .get()
+                    let v: Vec<ChatSession> = sorted_sessions_clone(&sessions.get())
                         .into_iter()
                         .filter(|s| session_title_matches(s, &needle))
                         .collect();
-                    v.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
                     let hits = if msg_needle.is_empty() {
                         Vec::new()
                     } else {
@@ -236,16 +236,24 @@ pub fn sidebar_nav_view(
                             let session_id_ctx = s.id.clone();
                             let title = s.title.clone();
                             let n = s.messages.len();
+                            let is_pinned = s.pinned;
+                            let is_starred = s.starred;
                             let buf_sess = Arc::clone(&composer_buf_nav);
                             view! {
                                 <button
                                     type="button"
                                     class=move || {
+                                        let mut c = String::from("nav-session-item");
                                         if active_id.get() == session_id_class {
-                                            "nav-session-item is-active"
-                                        } else {
-                                            "nav-session-item"
+                                            c.push_str(" is-active");
                                         }
+                                        if is_pinned {
+                                            c.push_str(" is-pinned");
+                                        }
+                                        if is_starred {
+                                            c.push_str(" is-starred");
+                                        }
+                                        c
                                     }
                                     on:contextmenu=move |ev: web_sys::MouseEvent| {
                                         ev.prevent_default();
@@ -287,10 +295,32 @@ pub fn sidebar_nav_view(
                                         }
                                     }
                                 >
-                                    <span class="nav-session-title">
-                                        {move || {
-                                            i18n::session_title_for_display(&title, locale.get())
-                                        }}
+                                    <span class="nav-session-title-row">
+                                        <span class="nav-session-badges">
+                                            <Show when=move || is_pinned>
+                                                <span
+                                                    class="nav-session-badge nav-session-badge-pin"
+                                                    aria-hidden="true"
+                                                    prop:title=move || i18n::session_badge_pin_aria(locale.get())
+                                                >
+                                                    "📌"
+                                                </span>
+                                            </Show>
+                                            <Show when=move || is_starred>
+                                                <span
+                                                    class="nav-session-badge nav-session-badge-star"
+                                                    aria-hidden="true"
+                                                    prop:title=move || i18n::session_badge_star_aria(locale.get())
+                                                >
+                                                    "★"
+                                                </span>
+                                            </Show>
+                                        </span>
+                                        <span class="nav-session-title">
+                                            {move || {
+                                                i18n::session_title_for_display(&title, locale.get())
+                                            }}
+                                        </span>
                                     </span>
                                     <span class="nav-session-meta">{move || i18n::session_row_msg_count(locale.get(), n)}</span>
                                 </button>
@@ -321,6 +351,86 @@ pub fn sidebar_nav_view(
                         .unwrap_or_default()
                 }
             >
+                <button
+                    type="button"
+                    class="session-ctx-item"
+                    role="menuitem"
+                    on:click=move |_| {
+                        let anchor = session_context_menu.get();
+                        let Some(a) = anchor else {
+                            return;
+                        };
+                        let id = a.session_id.clone();
+                        let starred = sessions.with(|list| {
+                            list.iter()
+                                .find(|s| s.id == id)
+                                .map(|s| s.starred)
+                                .unwrap_or(false)
+                        });
+                        session_context_menu.set(None);
+                        set_session_starred(sessions, &id, !starred);
+                    }
+                >
+                    {move || {
+                        let _ = sessions.get();
+                        let loc = locale.get();
+                        let anchor = session_context_menu.get();
+                        let Some(a) = anchor else {
+                            return i18n::ctx_star_session(loc).to_string();
+                        };
+                        let starred = sessions.with(|list| {
+                            list.iter()
+                                .find(|s| s.id == a.session_id)
+                                .map(|s| s.starred)
+                                .unwrap_or(false)
+                        });
+                        if starred {
+                            i18n::ctx_unstar_session(loc).to_string()
+                        } else {
+                            i18n::ctx_star_session(loc).to_string()
+                        }
+                    }}
+                </button>
+                <button
+                    type="button"
+                    class="session-ctx-item"
+                    role="menuitem"
+                    on:click=move |_| {
+                        let anchor = session_context_menu.get();
+                        let Some(a) = anchor else {
+                            return;
+                        };
+                        let id = a.session_id.clone();
+                        let pinned = sessions.with(|list| {
+                            list.iter()
+                                .find(|s| s.id == id)
+                                .map(|s| s.pinned)
+                                .unwrap_or(false)
+                        });
+                        session_context_menu.set(None);
+                        set_session_pinned(sessions, &id, !pinned);
+                    }
+                >
+                    {move || {
+                        let _ = sessions.get();
+                        let loc = locale.get();
+                        let anchor = session_context_menu.get();
+                        let Some(a) = anchor else {
+                            return i18n::ctx_pin_session(loc).to_string();
+                        };
+                        let pinned = sessions.with(|list| {
+                            list.iter()
+                                .find(|s| s.id == a.session_id)
+                                .map(|s| s.pinned)
+                                .unwrap_or(false)
+                        });
+                        if pinned {
+                            i18n::ctx_unpin_session(loc).to_string()
+                        } else {
+                            i18n::ctx_pin_session(loc).to_string()
+                        }
+                    }}
+                </button>
                 <button
                     type="button"
                     class="session-ctx-item"

@@ -483,8 +483,8 @@ pub fn nav_ph_global_search(l: Locale) -> &'static str {
 
 pub fn nav_recent(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "最近",
-        Locale::En => "Recent",
+        Locale::ZhHans => "会话（置顶 · 收藏 · 活动时间）",
+        Locale::En => "Sessions (pinned · starred · activity)",
     }
 }
 
@@ -520,6 +520,48 @@ pub fn ctx_delete_session(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "删除会话",
         Locale::En => "Delete session",
+    }
+}
+
+pub fn ctx_star_session(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "收藏",
+        Locale::En => "Star",
+    }
+}
+
+pub fn ctx_unstar_session(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "取消收藏",
+        Locale::En => "Unstar",
+    }
+}
+
+pub fn ctx_pin_session(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "置顶",
+        Locale::En => "Pin to top",
+    }
+}
+
+pub fn ctx_unpin_session(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "取消置顶",
+        Locale::En => "Unpin",
+    }
+}
+
+pub fn session_badge_star_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已收藏",
+        Locale::En => "Starred",
+    }
+}
+
+pub fn session_badge_pin_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已置顶",
+        Locale::En => "Pinned",
     }
 }
 

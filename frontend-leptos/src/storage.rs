@@ -36,6 +36,12 @@ pub struct ChatSession {
     /// 旧版前端未存该字段时默认为 0。
     #[serde(default)]
     pub updated_at: i64,
+    /// 置顶：侧栏排序优先于收藏与普通会话。
+    #[serde(default)]
+    pub pinned: bool,
+    /// 收藏：侧栏排序次于置顶、优于仅按时间。
+    #[serde(default)]
+    pub starred: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -106,6 +112,8 @@ pub fn ensure_at_least_one(
         draft: String::new(),
         messages: Vec::new(),
         updated_at: now,
+        pinned: false,
+        starred: false,
     };
     let id = s.id.clone();
     sessions.push(s);
