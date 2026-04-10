@@ -27,6 +27,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 | `save-session` | Export JSON/Markdown from session file to workspace **`.crabmate/exports/`** (same shape as Web; **no** `API_KEY`). `--format json|markdown|both` (default `both`), optional `--session-file`. Alias **`export-session`**. |
 | `tool-replay` | Extract **tool-call timeline** from session JSON as fixture, or **replay tools** from fixture via `run_tool` (**no** LLM; **no** `API_KEY`). See “Tool replay fixture” below. |
 | `mcp list` | Read-only list of in-process MCP stdio sessions matching current `mcp_enabled` + `mcp_command` fingerprint and merged OpenAI tool names (**no** `API_KEY`). If no chat has run yet, **`mcp list --probe`** tries one connection (starts configured MCP child, same as normal chat). |
+| `mcp serve` | Run an **MCP server** on **stdin/stdout**, exposing CrabMate **built-in** tools (`tools/list` / `tools/call` → **`tools::run_tool`**; **no** `API_KEY`). Working directory follows global **`--workspace`** / config **`run_command_working_dir`**. JSON-RPC uses **stdout**; use **stderr** for human messages. **`--no-tools`**: advertise an empty tool list (unknown names still hit `run_tool` and return “unknown tool”). **No transport auth**: trusted local integration only; same capability surface as `run_command` allowlist, workspace path rules, and optional **`tool_call_explain_enabled`**. |
 
 ## Log levels
 

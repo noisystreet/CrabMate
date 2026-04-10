@@ -39,7 +39,7 @@
 
 - **会话与导出**：Web 可选 SQLite 持久化、导出 JSON/MD；CLI **`save-session`** / **`tool-replay`** 等。工作区变更注入、长期记忆等见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
 
-- **可选**：进程内工具统计（**`agent_tool_stats_enabled`**）；**MCP stdio**（**`mcp_enabled`** + **`mcp_command`**，`crabmate mcp list`）。见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
+- **可选**：进程内工具统计（**`agent_tool_stats_enabled`**）；**MCP stdio 客户端**（**`mcp_enabled`** + **`mcp_command`**，`crabmate mcp list`）；**MCP stdio 服务端**（**`crabmate mcp serve`**，将内置工具暴露给外部 MCP 客户端，无传输鉴权）。见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)、[docs/CLI.md](docs/CLI.md)。
 
 ## 文档索引
 
@@ -90,7 +90,7 @@ cd frontend-leptos && trunk build && cd ..
 
 - **`crabmate repl`**：交互式对话；**`/`** 内建命令与可选 **`bash#:`** 见 [docs/CLI.md](docs/CLI.md)。bearer 无密钥时提示 **`/api-key`**。
 - **`crabmate chat`**：单次非交互；**`serve`**：HTTP + Web UI（与 Web 共用逻辑）。
-- **常用**：**`doctor`**、**`config`**、**`probe`** / **`models`**、**`bench`**、**`save-session`** / **`export-session`**、**`tool-replay`**、**`mcp list`**。全局选项 **`--config`**、**`--workspace`**、**`--agent-role`**、**`--no-tools`**、**`--no-stream`** 等。
+- **常用**：**`doctor`**、**`config`**、**`probe`** / **`models`**、**`bench`**、**`save-session`** / **`export-session`**、**`tool-replay`**、**`mcp list`** / **`mcp serve`**。全局选项 **`--config`**、**`--workspace`**、**`--agent-role`**、**`--no-tools`**、**`--no-stream`** 等。
 - 配置键：[docs/CONFIGURATION.md](docs/CONFIGURATION.md)；子命令全表、Benchmark、**`man crabmate`**：[docs/CLI.md](docs/CLI.md)。
 
 **前端**：`cd frontend-leptos && trunk build`（开发；**`--release`** 用于发布），再 **`crabmate serve`**。界面语言在「设置」；详 `frontend-leptos/README.md`、`docs/DEVELOPMENT.md`。

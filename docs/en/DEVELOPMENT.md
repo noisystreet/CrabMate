@@ -121,7 +121,7 @@ flowchart TB
 | `types.rs` | OpenAI-shaped messages/tools/chunks; normalization for vendor requests. |
 | `conversation_store.rs` | Optional SQLite conversations + revision updates. |
 | `long_term_memory_store.rs` / `long_term_memory.rs` | Long-term memory table + injection (filtered from upstream). |
-| `mcp/mod.rs` | stdio MCP client, tool name prefix `mcp__`, session reuse by fingerprint. |
+| `mcp/mod.rs` | MCP: **client** (stdio child, `mcp__` prefix, session reuse by fingerprint); **server** (`mcp/server.rs`, **`crabmate mcp serve`**, stdio `serve_server` → `tools::run_tool`, no transport auth). |
 | `agent_memory.rs` / `project_profile.rs` / `project_dependency_brief.rs` | Workspace memo + project profile + dependency brief for first-turn context. |
 | `read_file_turn_cache.rs` | Per-turn **`read_file`** cache. |
 | `workspace_changelist.rs` | Session write tracking + injected changelist user message; Web **`GET /workspace/changelog`** returns the same Markdown for UI preview. |
