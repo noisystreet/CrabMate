@@ -10,6 +10,7 @@ use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::api::{
     clear_client_llm_api_key_storage, client_llm_storage_has_api_key, persist_client_llm_to_storage,
 };
+use crate::client_llm_presets::{CLIENT_LLM_API_BASE_PRESETS, preset_by_id};
 use crate::i18n::{self, Locale, store_locale_slug};
 
 #[allow(clippy::too_many_arguments)]
@@ -20,6 +21,7 @@ pub fn settings_modal_view(
     bg_decor: RwSignal<bool>,
     #[allow(unused_variables)] status_data: RwSignal<Option<crate::api::StatusData>>,
     llm_api_base_draft: RwSignal<String>,
+    llm_api_base_preset_select: RwSignal<String>,
     llm_model_draft: RwSignal<String>,
     llm_api_key_draft: RwSignal<String>,
     llm_has_saved_key: RwSignal<bool>,
@@ -138,20 +140,61 @@ pub fn settings_modal_view(
                                     {move || i18n::settings_llm_hint(locale.get())}
                                 </p>
                                 <div class="settings-field">
-                                    <label class="settings-field-label" for="settings-llm-api-base">
-                                        {move || i18n::settings_label_api_base(locale.get())}
+                                    <label class="settings-field-label" for="settings-llm-api-base-preset">
+                                        {move || i18n::settings_label_api_base_preset(locale.get())}
                                     </label>
-                                    <input
-                                        type="text"
-                                        id="settings-llm-api-base"
-                                        class="settings-text-input"
-                                        prop:placeholder=move || i18n::settings_ph_api_base(locale.get())
-                                        prop:value=move || llm_api_base_draft.get()
-                                        on:input=move |ev| {
-                                            llm_api_base_draft.set(event_target_value(&ev));
+                                    <select
+                                        id="settings-llm-api-base-preset"
+                                        class="settings-select"
+                                        prop:value=move || llm_api_base_preset_select.get()
+                                        on:change=move |ev| {
+                                            let id = event_target_value(&ev);
+                                            llm_api_base_preset_select.set(id.clone());
+                                            let Some(p) = preset_by_id(id.as_str()) else {
+                                                return;
+                                            };
+                                            if p.id == "custom" {
+                                                return;
+                                            }
+                                            llm_api_base_draft.set(p.url.to_string());
+                                            if let Some(m) = p.suggested_model {
+                                                if llm_model_draft.get_untracked().trim().is_empty() {
+                                                    llm_model_draft.set(m.to_string());
+                                                }
+                                            }
                                         }
-                                    />
+                                    >
+                                        {CLIENT_LLM_API_BASE_PRESETS.iter().filter(|p| p.id != "custom").map(|p| {
+                                            let id = p.id;
+                                            view! {
+                                                <option value=id>
+                                                    {move || i18n::settings_api_base_preset_label(id, locale.get())}
+                                                </option>
+                                            }
+                                        }).collect_view()}
+                                        <option value="custom">
+                                            {move || i18n::settings_api_base_preset_custom(locale.get())}
+                                        </option>
+                                    </select>
                                 </div>
+                                <Show when=move || llm_api_base_preset_select.get() == "custom">
+                                    <div class="settings-field">
+                                        <label class="settings-field-label" for="settings-llm-api-base">
+                                            {move || i18n::settings_label_api_base(locale.get())}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            id="settings-llm-api-base"
+                                            class="settings-text-input"
+                                            prop:placeholder=move || i18n::settings_ph_api_base(locale.get())
+                                            prop:value=move || llm_api_base_draft.get()
+                                            on:input=move |ev| {
+                                                llm_api_base_preset_select.set("custom".to_string());
+                                                llm_api_base_draft.set(event_target_value(&ev));
+                                            }
+                                        />
+                                    </div>
+                                </Show>
                                 <div class="settings-field">
                                     <label class="settings-field-label" for="settings-llm-model">
                                         {move || i18n::settings_label_model(locale.get())}
