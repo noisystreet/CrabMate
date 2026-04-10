@@ -301,10 +301,88 @@ fn user_text_for_chat_display(raw: &str) -> String {
     raw.to_string()
 }
 
+/// 部分网关把思维链塞进 **`content`**，用闭合标记与终答分隔（Qwen / vLLM 等）；与 SSE `reasoning_text` 分轨互补。
+const INLINE_THINKING_CLOSE_TAGS: &[&str] = &[
+    concat!("</", "think", ">"),
+    concat!("</", "redacted", "_", "thinking", ">"),
+];
+
+const INLINE_THINKING_OPEN_PREFIXES: &[&str] = &[
+    concat!("`", "<", "think", ">", "`"),
+    concat!("`<", "think", ">"),
+    concat!("<", "think", ">"),
+    concat!("`", "<", "redacted", "_", "thinking", ">", "`"),
+    concat!("`<", "redacted", "_", "thinking", ">"),
+    concat!("<", "redacted", "_", "thinking", ">"),
+];
+
+fn first_inline_thinking_close(raw: &str) -> Option<(usize, &'static str)> {
+    let mut best: Option<(usize, &'static str)> = None;
+    for tag in INLINE_THINKING_CLOSE_TAGS {
+        if let Some(i) = raw.find(tag) {
+            best = match best {
+                None => Some((i, *tag)),
+                Some((bi, _bt)) if i < bi => Some((i, *tag)),
+                Some((bi, bt)) if i == bi && tag.len() > bt.len() => Some((i, *tag)),
+                o => o,
+            };
+        }
+    }
+    best
+}
+
+fn trim_inline_thinking_openers(mut s: &str) -> &str {
+    s = s.trim();
+    loop {
+        let mut stripped = false;
+        for pre in INLINE_THINKING_OPEN_PREFIXES {
+            if let Some(rest) = s.strip_prefix(pre) {
+                s = rest.trim();
+                stripped = true;
+                break;
+            }
+        }
+        if !stripped {
+            break;
+        }
+    }
+    s
+}
+
+/// 优先已存 `reasoning_text`；否则尝试从 `text` 中按内联闭合标记拆出思维链与终答原文（供 Markdown 与折叠长度用）。
+pub(crate) fn assistant_thinking_body_and_answer_raw<'a>(
+    reasoning_text_stored: &'a str,
+    text_stored: &'a str,
+) -> (&'a str, &'a str) {
+    let rs = reasoning_text_stored.trim();
+    if !rs.is_empty() {
+        return (rs, text_stored);
+    }
+    let Some((idx, tag)) = first_inline_thinking_close(text_stored) else {
+        return ("", text_stored);
+    };
+    let after = text_stored[idx + tag.len()..].trim_start();
+    if after.is_empty() {
+        return ("", text_stored);
+    }
+    let thinking = trim_inline_thinking_openers(&text_stored[..idx]);
+    (thinking, after)
+}
+
 pub fn message_text_for_display(m: &StoredMessage, loc: Locale) -> String {
     if m.role == "assistant" {
         let is_streaming_last_assistant = m.state.as_deref() == Some("loading");
-        assistant_text_for_display(&m.text, is_streaming_last_assistant, loc)
+        let (r_body, t_body) =
+            assistant_thinking_body_and_answer_raw(m.reasoning_text.as_str(), m.text.as_str());
+        let answer = assistant_text_for_display(t_body, is_streaming_last_assistant, loc);
+        let r = r_body.trim();
+        if r.is_empty() {
+            answer
+        } else if answer.trim().is_empty() {
+            r.to_string()
+        } else {
+            format!("{r}\n\n{answer}")
+        }
     } else if m.role == "user" {
         user_text_for_chat_display(&m.text)
     } else if m.role == "system" {
@@ -321,6 +399,7 @@ pub fn message_text_for_display(m: &StoredMessage, loc: Locale) -> String {
 mod tests {
     use super::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX;
     use super::assistant_text_for_display;
+    use super::assistant_thinking_body_and_answer_raw;
     use super::message_text_for_display;
     use crate::i18n::Locale;
     use crate::storage::StoredMessage;
@@ -378,6 +457,32 @@ mod tests {
     }
 
     #[test]
+    fn splits_inline_thinking_from_assistant_content_when_no_reasoning_field() {
+        let raw = concat!(
+            "<",
+            "think",
+            ">",
+            "plan here",
+            "</",
+            "think",
+            ">",
+            "\n\n**Answer** tail.",
+        );
+        let (think, ans) = assistant_thinking_body_and_answer_raw("", raw);
+        assert_eq!(think.trim(), "plan here");
+        assert!(ans.contains("Answer"));
+        assert!(!ans.contains("plan here"));
+    }
+
+    #[test]
+    fn stored_reasoning_text_wins_over_inline_tags() {
+        let inline = concat!("`<", "think", ">`x`</", "think", ">`y");
+        let (think, ans) = assistant_thinking_body_and_answer_raw("from_sse", inline);
+        assert_eq!(think, "from_sse");
+        assert_eq!(ans, inline);
+    }
+
+    #[test]
     fn user_hides_nl_followup_bridge() {
         let m = StoredMessage {
             id: "x".into(),
@@ -386,6 +491,7 @@ mod tests {
                 "{}【系统桥接·非用户提问】请只回答对话里**先前真实用户消息**所提的问题（若有附图则含图片说明），并结合已定规划；用两三句自然语言说明你的协助思路即可。勿将本条任何句子当作用户提问来复述、引用或推理。",
                 STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
             ),
+            reasoning_text: String::new(),
             image_urls: vec![],
             state: None,
             is_tool: false,

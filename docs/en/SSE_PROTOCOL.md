@@ -44,6 +44,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 |-----------------|---------|-------------------|
 | `error` + **`code`** | Stream failure | `onError`, **stop** reading |
 | `plan_required` | Reserved | `onPlanRequired`, continue |
+| `assistant_answer_phase`: `true` | Following plain-text deltas are assistant **answer** `content` (previously reasoning); emitted before the first content chunk even when there is no reasoning chain | Web: **handled**; route `onDelta` to reasoning vs answer buffer, not as raw prose |
 | `staged_plan_started` | Staged plan start | `onStagedPlanStarted` |
 | `staged_plan_step_started` | Step start; body has `plan_id`, `step_id`, `step_index`, `total_steps`, `description`, optional `executor_kind` (`review_readonly` / `patch_write` / `test_runner`) | `onStagedPlanStepStarted` |
 | `staged_plan_step_finished` | Step end; `status`: `ok` / `cancelled` / `failed`; optional `executor_kind` (mirrors `staged_plan_step_started`) | `onStagedPlanStepFinished` |

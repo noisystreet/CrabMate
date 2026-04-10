@@ -12,6 +12,9 @@ pub struct StoredMessage {
     pub role: String,
     #[serde(default)]
     pub text: String,
+    /// 助手思维链（与 `text` 终答分隔；流式经 `assistant_answer_phase` 后写入 `text`）；旧数据缺省为空。
+    #[serde(default)]
+    pub reasoning_text: String,
     /// 用户消息附带的图片（`/uploads/...`）；旧数据缺省为空。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_urls: Vec<String>,

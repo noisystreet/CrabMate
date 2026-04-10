@@ -19,7 +19,8 @@
 /* 流式期间不再对整段 prose 做 opacity 过渡，避免与频繁 innerHTML 叠加产生「呼吸闪」 */
 
 /* 首段：仅保留 class 供将来扩展，不再做透明度动画（与 Markdown 全量替换冲突） */
-.msg-md-prose.msg-md-first-chunk {
+.msg-md-prose.msg-md-first-chunk,
+.msg-md-split.msg-md-first-chunk {
   animation: none;
 }
 
@@ -73,7 +74,8 @@
     transform: none;
   }
 
-  .msg-md-prose.msg-md-first-chunk {
+  .msg-md-prose.msg-md-first-chunk,
+  .msg-md-split.msg-md-first-chunk {
     animation: none;
   }
 

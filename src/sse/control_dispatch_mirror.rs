@@ -29,6 +29,10 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
         return "handled";
     }
 
+    if let Some(Value::Bool(_)) = obj.get("assistant_answer_phase") {
+        return "handled";
+    }
+
     if key_present_non_null(obj, "staged_plan_started") {
         return "handled";
     }

@@ -187,6 +187,7 @@ mod tests {
             id: id.to_string(),
             role: role.to_string(),
             text: text.to_string(),
+            reasoning_text: String::new(),
             image_urls: vec![],
             state: None,
             is_tool,

@@ -54,6 +54,11 @@ pub enum SsePayload {
     ParsingToolCalls {
         parsing_tool_calls: bool,
     },
+    /// 后续 SSE 纯文本增量为助手 **终答** `content`（此前为思维链 `reasoning_*`）；无思维链时也会在**首段**正文前下发，供 Web 分色。
+    AssistantAnswerPhase {
+        #[serde(rename = "assistant_answer_phase")]
+        assistant_answer_phase: bool,
+    },
     /// 预留：例如 PER 要求前端提示「须补充结构化规划」
     PlanRequired {
         plan_required: bool,
@@ -332,6 +337,21 @@ mod tests {
             m.payload,
             SsePayload::ParsingToolCalls {
                 parsing_tool_calls: true
+            }
+        ));
+    }
+
+    #[test]
+    fn roundtrip_assistant_answer_phase() {
+        let s = encode_message(SsePayload::AssistantAnswerPhase {
+            assistant_answer_phase: true,
+        });
+        assert!(s.contains("\"assistant_answer_phase\":true"));
+        let m: SseMessage = serde_json::from_str(&s).unwrap();
+        assert!(matches!(
+            m.payload,
+            SsePayload::AssistantAnswerPhase {
+                assistant_answer_phase: true
             }
         ));
     }

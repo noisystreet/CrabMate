@@ -410,6 +410,8 @@ pub struct ChatStreamCallbacks {
     pub on_stream_job_id: std::rc::Rc<dyn Fn(u64)>,
     /// 每条 SSE 事件的 **`id:`**（单调序号），供断线后 `stream_resume.after_seq` / `Last-Event-ID`。
     pub on_last_sse_event_id: std::rc::Rc<dyn Fn(u64)>,
+    /// 控制面 `assistant_answer_phase`：后续 `on_delta` 为终答（此前为思维链）。
+    pub on_assistant_answer_phase: std::rc::Rc<dyn Fn()>,
     pub on_staged_plan_step_started: std::rc::Rc<dyn Fn(StagedPlanStepStartInfo)>,
     pub on_staged_plan_step_finished: std::rc::Rc<dyn Fn(StagedPlanStepEndInfo)>,
     /// SSE `clarification_questionnaire`（模型经工具触发）。
@@ -432,6 +434,7 @@ impl Clone for ChatStreamCallbacks {
             on_stream_ended: std::rc::Rc::clone(&self.on_stream_ended),
             on_stream_job_id: std::rc::Rc::clone(&self.on_stream_job_id),
             on_last_sse_event_id: std::rc::Rc::clone(&self.on_last_sse_event_id),
+            on_assistant_answer_phase: std::rc::Rc::clone(&self.on_assistant_answer_phase),
             on_staged_plan_step_started: std::rc::Rc::clone(&self.on_staged_plan_step_started),
             on_staged_plan_step_finished: std::rc::Rc::clone(&self.on_staged_plan_step_finished),
             on_clarification_questionnaire: std::rc::Rc::clone(
@@ -711,6 +714,7 @@ fn handle_sse_block(
     let mut on_clar = |info: crate::sse_dispatch::ClarificationQuestionnaireInfo| {
         (cbs.on_clarification_questionnaire)(info)
     };
+    let mut on_phase = || (cbs.on_assistant_answer_phase)();
 
     let mut cbs2 = SseCallbacks {
         on_error: &mut on_err,
@@ -718,6 +722,7 @@ fn handle_sse_block(
         on_tool_call: Some(&mut on_tool_call),
         on_tool_status_change: Some(&mut on_tool_status),
         on_parsing_tool_calls_change: Some(&mut on_parse),
+        on_assistant_answer_phase: Some(&mut on_phase),
         on_tool_result: Some(&mut on_tool_res),
         on_command_approval_request: Some(&mut on_appr),
         on_conversation_saved_revision: Some(&mut on_conv_rev),

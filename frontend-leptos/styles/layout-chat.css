@@ -418,6 +418,44 @@
   max-width: 100%;
 }
 
+/* 思维链 + 终答：折叠高度作用于整块 */
+.msg-md-split {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.msg-md-split.msg-md-prose-collapsed {
+  max-height: 18rem;
+  overflow: hidden;
+  position: relative;
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+
+/* 思维链：背景 + 左边线 + 子节点统一用次要色（避免 h4–h6 / strong 等沿用终答的正文色） */
+.msg-assistant .msg-md-reasoning.msg-md-prose {
+  color: var(--muted);
+  border-left: 3px solid color-mix(in srgb, var(--muted) 40%, var(--border-subtle));
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-elevated) 50%, var(--surface));
+}
+
+.msg-assistant .msg-md-reasoning.msg-md-prose :where(p, li, td, th, strong, b, em) {
+  color: inherit;
+}
+
+.msg-assistant .msg-md-reasoning.msg-md-prose :where(h1, h2, h3, h4, h5, h6) {
+  color: color-mix(in srgb, var(--muted) 35%, var(--text));
+}
+
+/* 终答区：显式主色，避免与思维链块之间继承含糊 */
+.msg-assistant .msg-md-answer.msg-md-prose {
+  color: var(--text);
+}
+
 .msg-md-prose {
   white-space: normal;
   /* 流式全量替换 innerHTML 时缩小重排影响范围 */

@@ -185,6 +185,7 @@ mod tests {
             id: "m1".into(),
             role: "system".into(),
             text: "### x".into(),
+            reasoning_text: String::new(),
             image_urls: vec![],
             state: Some(
                 r#"{"k":"cm_tl","t":"staged_end","msg":"m1","i":2,"n":5,"st":"failed"}"#.into(),
@@ -202,6 +203,7 @@ mod tests {
             id: "t1".into(),
             role: "system".into(),
             text: "tool".into(),
+            reasoning_text: String::new(),
             image_urls: vec![],
             state: Some(r#"{"k":"cm_tl","t":"tool","msg":"t1","ok":false}"#.into()),
             is_tool: true,

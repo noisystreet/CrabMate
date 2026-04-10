@@ -97,7 +97,8 @@ pub struct Message {
     pub role: String,
     pub content: Option<MessageContent>,
     /// DeepSeek `deepseek-reasoner` 等非流式/流式响应中的思维链；出站默认**不**回传供应商（见 [`message_clone_stripping_reasoning_for_api`]）；Moonshot **kimi-k2.5** 在 **thinking** 启用时对含 **`tool_calls`** 的 assistant **须**回传（由同一函数在 `preserve_reasoning_on_assistant_tool_calls` 为真时处理）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// 部分网关（如 Ollama 对 Qwen3）流式/非流式使用键名 **`reasoning`**，与 **`reasoning_content`** 等价。
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "reasoning")]
     pub reasoning_content: Option<String>,
     /// MiniMax OpenAI 兼容在 **`reasoning_split: true`** 时，非流式响应可能在 `message` 上返回；解析后合并入 [`Self::reasoning_content`] 并清空本字段，**不**回传上游。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -686,8 +687,8 @@ pub struct Choice {
 #[derive(Debug, Default, Deserialize)]
 pub struct StreamDelta {
     pub content: Option<String>,
-    /// 推理模型流式思维链（如 DeepSeek reasoner）。
-    #[serde(default)]
+    /// 推理模型流式思维链（OpenAI/DeepSeek 多为 **`reasoning_content`**；Ollama 等对 Qwen 等常为 **`reasoning`**）。
+    #[serde(default, alias = "reasoning")]
     pub reasoning_content: Option<String>,
     /// MiniMax 在 **`reasoning_split: true`** 时流式返回；元素常为 `{"text": "…"}`，`text` 多为**累积**全文。
     #[serde(default)]
