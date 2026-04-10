@@ -198,6 +198,14 @@ cargo run -- serve
 
 SSE 控制面字段见 **`docs/SSE_PROTOCOL.md`**。
 
+## 一键打包（tar.gz + 可选 .deb）
+
+```bash
+./scripts/package-release.sh
+```
+
+产物在仓库根目录 **`dist/`**：**`tar.gz`** 始终生成（除非 **`--skip-tar`**）；**`.deb`** 仅在 **Linux** 且已安装 **`cargo-deb`** 时复制自 **`target/debian/`**（可用 **`--skip-deb`** 跳过）。**`--help`** 查看全部选项。
+
 ## 打包 Debian `.deb`
 
 ```bash
