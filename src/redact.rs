@@ -9,6 +9,10 @@
 //!
 //! 对话/助手消息预览用于 `log::debug!`：默认仅开启 `RUST_LOG=debug` 时输出，且始终截断。
 
+use std::sync::LazyLock;
+
+use regex::Regex;
+
 use crate::types::{Message, message_content_as_str};
 
 /// 日志里展示的响应体预览最大字符数（Unicode 标量）。
@@ -101,6 +105,55 @@ pub fn tool_arguments_preview_for_log(args: &str) -> String {
     single_line_preview(args, 240)
 }
 
+/// SSE `tool_call.arguments_preview` 与日志预览同源（单行 + 截断），便于前后端与 `execute_tools` 日志对齐。
+pub fn tool_arguments_preview_for_sse(args: &str) -> String {
+    tool_arguments_preview_for_log(args)
+}
+
+/// `tool_call.arguments` 在开启完整下发时的最大 Unicode 标量（经脱敏后再截断）。
+pub const TOOL_CALL_ARGUMENTS_SSE_REDACTED_MAX_CHARS: usize = 4096;
+
+static RE_SK_API_LIKE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\bsk-[a-zA-Z0-9]{12,}\b").expect("sk- token redact pattern"));
+
+static RE_BEARER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._\-+/=]{8,}\b").expect("bearer redact pattern")
+});
+
+/// JSON 字符串值脱敏：键名（不区分大小写）匹配常见凭证字段时替换值为 `<redacted>`。
+static RE_JSON_SECRET_STRING: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)("(api_key|apikey|token|access_token|refresh_token|password|secret|authorization|bearer)"\s*:\s*")((?:\\.|[^"\\])*)(")"#,
+    )
+    .expect("json secret string redact pattern")
+});
+
+static RE_URL_QUERY_SECRET: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"([?&])(?i)(key|token|access_token|api_key|apikey|secret|password)=([^&\s#]+)")
+        .expect("url query secret redact pattern")
+});
+
+/// 对工具 `arguments` 原始串做**启发式脱敏**（非保证），再折叠为单行并截断，供 SSE `tool_call.arguments` 使用。
+pub fn tool_arguments_redacted_for_sse(args: &str) -> String {
+    if args.is_empty() {
+        return String::new();
+    }
+    let mut s = args.to_string();
+    s = RE_SK_API_LIKE.replace_all(&s, "sk-<redacted>").to_string();
+    s = RE_BEARER.replace_all(&s, "Bearer <redacted>").to_string();
+    s = RE_JSON_SECRET_STRING
+        .replace_all(&s, |caps: &regex::Captures<'_>| {
+            format!("{}<redacted>{}", &caps[1], &caps[4])
+        })
+        .to_string();
+    s = RE_URL_QUERY_SECRET
+        .replace_all(&s, |caps: &regex::Captures<'_>| {
+            format!("{}{}=<redacted>", &caps[1], &caps[2])
+        })
+        .to_string();
+    single_line_preview(&s, TOOL_CALL_ARGUMENTS_SSE_REDACTED_MAX_CHARS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +195,16 @@ mod tests {
             Message::user_only("second"),
         ];
         assert!(last_user_message_preview_for_log(&msgs).contains("second"));
+    }
+
+    #[test]
+    fn tool_arguments_redacted_masks_json_secret_and_sk() {
+        let raw = r#"{"api_key":"supersecret","path":"a"}"#;
+        let r = tool_arguments_redacted_for_sse(raw);
+        assert!(r.contains("<redacted>"));
+        assert!(!r.contains("supersecret"));
+        let sk = r#"{"k":"sk-1234567890abcdef"}"#;
+        let r2 = tool_arguments_redacted_for_sse(sk);
+        assert!(r2.contains("sk-<redacted>"));
     }
 }

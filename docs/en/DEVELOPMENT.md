@@ -111,7 +111,7 @@ flowchart TB
 | `path_workspace.rs` | Canonical workspace resolution, allowlist validation, web read/write path helpers. Works with **`workspace_fs.rs`** on **Unix** to open under a root fd (**`openat2` `RESOLVE_IN_ROOT`** on Linux). Residual risks: see module docs; **README** / **CONFIGURATION.md** (workspace). |
 | `workspace_fs.rs` | Unix helpers to open files/directories for reads/writes/deletes under the workspace root (**nix** + **`openat2`** on Linux). |
 | `runtime/` | CLI: `chat`, interactive REPL, **`save-session`**, **`tool-replay`**, slash commands, doctor/probe/models, reedline completion, **`CliExitError`**, **`CliToolRuntime`**, transcripts, benchmark, export. |
-| `sse/` | **`protocol`**, **`line`**, test mirror + golden fixtures, **`web_approval`**. |
+| `sse/` | **`protocol`** (incl. **`ToolCallSummary`**: **`arguments_preview`** + optional redacted **`arguments`** when **`sse_tool_call_include_arguments`**), **`line`**, test mirror + golden fixtures, **`web_approval`**. |
 | `tool_approval/` | Single source for Web + CLI approval (`SensitiveCapability`, dialoguer / pipe fallback). |
 | `tool_registry.rs` | Macro-built dispatch map, readonly/parallel rules, Docker sandbox dispatch for selected tools, **`CliToolRuntime`**. |
 | `tool_sandbox/` | Docker runner config + bollard backend. |

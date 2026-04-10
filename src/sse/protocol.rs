@@ -159,6 +159,12 @@ pub struct ClarificationQuestionnaireBody {
 pub struct ToolCallSummary {
     pub name: String,
     pub summary: String,
+    /// 与 `redact::tool_arguments_preview_for_sse` 一致：单行截断的 `function.arguments` 预览；缺省省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arguments_preview: Option<String>,
+    /// 配置 `sse_tool_call_include_arguments` 为真时下发；经 `redact::tool_arguments_redacted_for_sse` 脱敏后截断。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<String>,
 }
 
 fn default_tool_result_payload_version() -> u32 {

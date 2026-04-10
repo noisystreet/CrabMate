@@ -21,7 +21,7 @@ pub enum SseDispatch {
 pub struct SseCallbacks<'a> {
     pub on_error: &'a mut dyn FnMut(String),
     pub on_workspace_changed: Option<&'a mut dyn FnMut()>,
-    pub on_tool_call: Option<&'a mut dyn FnMut(String, String)>,
+    pub on_tool_call: Option<&'a mut dyn FnMut(String, String, Option<String>, Option<String>)>,
     pub on_tool_status_change: Option<&'a mut dyn FnMut(bool)>,
     pub on_parsing_tool_calls_change: Option<&'a mut dyn FnMut(bool)>,
     pub on_tool_result: Option<&'a mut dyn FnMut(ToolResultInfo)>,
@@ -270,19 +270,32 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
 
-    if let Some(Value::Object(tc)) = obj.get("tool_call")
-        && let Some(Value::String(s)) = tc.get("summary")
-        && !s.is_empty()
-    {
-        let name = tc
-            .get("name")
+    if let Some(Value::Object(tc)) = obj.get("tool_call") {
+        let summary = tc.get("summary").and_then(|x| x.as_str()).unwrap_or("");
+        let preview = tc
+            .get("arguments_preview")
             .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string();
-        if let Some(f) = cbs.on_tool_call.as_mut() {
-            f(name, s.clone());
+            .filter(|s| !s.is_empty());
+        let args_full = tc
+            .get("arguments")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty());
+        if !summary.is_empty() || preview.is_some() || args_full.is_some() {
+            let name = tc
+                .get("name")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            if let Some(f) = cbs.on_tool_call.as_mut() {
+                f(
+                    name,
+                    summary.to_string(),
+                    preview.map(String::from),
+                    args_full.map(String::from),
+                );
+            }
+            return SseDispatch::Handled;
         }
-        return SseDispatch::Handled;
     }
 
     if let Some(Value::Bool(b)) = obj.get("parsing_tool_calls") {

@@ -50,7 +50,7 @@
 | `staged_plan_finished` | 整轮计划结束；`status` 同上 | `onStagedPlanFinished` |
 | `clarification_questionnaire` | 澄清问卷：模型调用工具 **`present_clarification_questionnaire`** 且成功后，在 **`tool_result` SSE** 之后补发；体含 **`questionnaire_id`**、**`intro`**、**`questions[]`**（`id` / `label` / 可选 `hint` / `required` / `kind`：`text` \| `choice`） | Web：展示表单；用户提交时下一请求体带 **`clarify_questionnaire_answers`**（见 README / OpenAPI）；TUI：`line` 分类为 **ignore** |
 | `workspace_changed`: `true` | 工作区已被工具更新 | `onWorkspaceChanged` |
-| `tool_call` | 工具调用摘要（执行前） | `onToolCall`（需 `summary`） |
+| `tool_call` | 工具调用摘要（执行前）；体含 **`name`**、**`summary`**（与 `summarize_tool_call` 同源）、可选 **`arguments_preview`**（单行截断，与 `execute_tools` 日志同源）、可选 **`arguments`**（配置 **`sse_tool_call_include_arguments`** / **`AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS`** 为真时：启发式脱敏后更长截断） | `onToolCall`（**`summary`**、**`arguments_preview`**、**`arguments`** 至少一项非空则 **handled**） |
 | `parsing_tool_calls` | 模型正在流式输出 tool_calls | `onParsingToolCallsChange` |
 | `tool_running` | 工具执行中状态 | `onToolStatusChange` |
 | `tool_result` | 工具结束；含 `output` 等 | `onToolResult` |

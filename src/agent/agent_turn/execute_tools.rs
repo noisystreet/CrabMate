@@ -245,7 +245,12 @@ pub(crate) fn sse_sender_closed(out: Option<&mpsc::Sender<String>>) -> bool {
     out.is_some_and(|tx| tx.is_closed())
 }
 
-async fn emit_tool_call_summary_sse(out: Option<&mpsc::Sender<String>>, name: &str, args: &str) {
+async fn emit_tool_call_summary_sse(
+    out: Option<&mpsc::Sender<String>>,
+    cfg: &AgentConfig,
+    name: &str,
+    args: &str,
+) {
     let Some(tx) = out else {
         return;
     };
@@ -256,12 +261,18 @@ async fn emit_tool_call_summary_sse(out: Option<&mpsc::Sender<String>>, name: &s
         tools::summarize_tool_call(name, args)
     }
     .unwrap_or_else(|| format!("tool: {name}"));
+    let arguments_preview = Some(crate::redact::tool_arguments_preview_for_sse(args));
+    let arguments = cfg
+        .sse_tool_call_include_arguments
+        .then(|| crate::redact::tool_arguments_redacted_for_sse(args));
     let _ = crate::sse::send_string_logged(
         tx,
         encode_message(SsePayload::ToolCall {
             tool_call: ToolCallSummary {
                 name: name.to_string(),
                 summary,
+                arguments_preview,
+                arguments,
             },
         }),
         "execute_tools::tool_call summary",
@@ -526,7 +537,8 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         {
             return ExecuteToolsBatchOutcome::AbortedSse;
         }
-        emit_tool_call_summary_sse(out, &tc.function.name, &tc.function.arguments).await;
+        emit_tool_call_summary_sse(out, cfg.as_ref(), &tc.function.name, &tc.function.arguments)
+            .await;
         let cached = result_map
             .get(&(tc.function.name.as_str(), tc.function.arguments.as_str()))
             .copied()
@@ -603,7 +615,7 @@ async fn execute_tools_serial(
         let name = tc.function.name.clone();
         let args = tc.function.arguments.clone();
         let id = tc.id.clone();
-        emit_tool_call_summary_sse(out, &name, &args).await;
+        emit_tool_call_summary_sse(out, cfg.as_ref(), &name, &args).await;
         info!(
             target: LOG_TARGET,
             "调用工具 tool={} args_preview={}",

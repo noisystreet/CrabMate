@@ -699,7 +699,7 @@ fn handle_sse_block(
         (cbs.on_error)(msg);
     };
     let mut on_ws = || (cbs.on_workspace_changed)();
-    let mut on_tool_call = |_n: String, _s: String| {};
+    let mut on_tool_call = |_n: String, _s: String, _p: Option<String>, _a: Option<String>| {};
     let mut on_tool_status = |b: bool| (cbs.on_tool_status)(b);
     let mut on_parse = |_b: bool| {};
     let mut on_tool_res = |info: ToolResultInfo| (cbs.on_tool_result)(info);

@@ -54,6 +54,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) cursor_rules_max_chars: Option<u64>,
     pub(crate) tool_message_max_chars: Option<u64>,
     pub(crate) tool_result_envelope_v1: Option<bool>,
+    pub(crate) sse_tool_call_include_arguments: Option<bool>,
     pub(crate) agent_tool_stats_enabled: Option<bool>,
     pub(crate) agent_tool_stats_window_events: Option<u64>,
     pub(crate) agent_tool_stats_min_samples: Option<u64>,
@@ -306,6 +307,9 @@ impl ConfigBuilder {
         self.tool_result_envelope_v1 = agent
             .tool_result_envelope_v1
             .or(self.tool_result_envelope_v1);
+        self.sse_tool_call_include_arguments = agent
+            .sse_tool_call_include_arguments
+            .or(self.sse_tool_call_include_arguments);
         self.agent_tool_stats_enabled = agent
             .agent_tool_stats_enabled
             .or(self.agent_tool_stats_enabled);
