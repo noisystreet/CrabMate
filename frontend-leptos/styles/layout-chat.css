@@ -681,6 +681,129 @@
   background: color-mix(in srgb, var(--bg-elevated) 92%, var(--accent) 8%);
 }
 
+/* 规划 / 工具：聊天列顶部可折叠索引 */
+.timeline-panel-wrap {
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  margin-bottom: 6px;
+}
+
+.timeline-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 100%;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+}
+
+.timeline-panel-toggle-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.timeline-panel-toggle-text {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.timeline-panel-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--muted);
+}
+
+.timeline-panel {
+  margin-top: 4px;
+  padding: 8px 10px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg));
+  max-height: min(40vh, 280px);
+  overflow: auto;
+}
+
+.timeline-panel-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.timeline-panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timeline-panel-item {
+  margin: 0;
+}
+
+.timeline-panel-item-failed .timeline-panel-dot {
+  background: color-mix(in srgb, var(--danger) 75%, var(--muted));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.timeline-panel-item-failed .timeline-panel-label {
+  color: color-mix(in srgb, var(--danger) 88%, var(--text));
+}
+
+.timeline-panel-jump {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  margin: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.timeline-panel-jump:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.timeline-panel-jump:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.timeline-panel-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 0.35em;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 55%, var(--muted));
+}
+
+.timeline-panel-label {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
 /* 连续多条工具输出：默认折叠为一条，可展开查看全部 */
 .msg-tool-run {
   align-self: stretch;
