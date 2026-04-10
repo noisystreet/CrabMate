@@ -195,6 +195,9 @@ Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共
 | **`parallel_sync_denied_prefixes`** | 同上，按工具名前缀拒绝并行批。 |
 | **`sync_default_inline_tools`** | 在当前 async 任务上**内联**执行的 SyncDefault 工具（跳过 **`spawn_blocking`**）；省略则仅内建轻量工具。 |
 | **`write_effect_tools`** | 视为非只读（写副作用）的工具名；影响 **`is_readonly_tool`**、解释卡、代码语义索引失效等；省略用内建写工具表。 |
+| **`sub_agent_patch_write_extra_tools`** | 分阶段规划 **`executor_kind: patch_write`** 在默认补丁工具名之外**额外允许**的工具名（仍须在本会话已注册的工具列表中）。 |
+| **`sub_agent_test_runner_extra_tools`** | 同上，针对 **`test_runner`** 角色。 |
+| **`sub_agent_review_readonly_deny_tools`** | **`review_readonly`** 步内**显式禁止**的工具名（精确匹配；优先于只读判定）。 |
 
 ### 上下文与工具消息
 
@@ -394,7 +397,7 @@ model = "deepseek-reasoner"
 
 在 `planner_executor_mode = single_agent` 且开启时，每条用户消息先走无工具规划轮，再按 `steps` 执行。`no_task` + 空 `steps` 可跳过执行。规划 JSON 无法解析时降级为常规工具循环。API 调用通常多于关闭时。
 
-**步级子代理（规划 JSON 可选字段）**：在 `agent_reply_plan` v1 的每个 `steps[]` 中可写 **`executor_kind`**：`review_readonly`（仅语义只读工具）、`patch_write`（只读 + 受限补丁写）、`test_runner`（只读 + 内置测试运行器如 `cargo_test` / `pytest_run` 等，不含任意 `run_command`）。该步内外层循环的 **OpenAI tools 列表**会相应收窄，越权调用在工具层被拒绝并写入对话；省略该字段则与本功能推出前行为一致。与 **`[tool_registry] write_effect_tools`** 覆盖的写工具判定一致；**不**改变 `run_command` 白名单或 MCP 审批。
+**步级子代理（规划 JSON 可选字段）**：在 `agent_reply_plan` v1 的每个 `steps[]` 中可写 **`executor_kind`**：`review_readonly`（仅语义只读工具）、`patch_write`（只读 + 受限补丁写）、`test_runner`（只读 + 内置测试运行器如 `cargo_test` / `pytest_run` 等，不含任意 `run_command`）。该步内外层循环的 **OpenAI tools 列表**会相应收窄，越权调用在工具层被拒绝并写入对话（拒绝正文会附带本步允许的工具名摘要）；省略该字段则与本功能推出前行为一致。只读/写判定与 **`[tool_registry] write_effect_tools`** 一致；补丁类与测试类在默认名单外可通过 **`sub_agent_patch_write_extra_tools`** / **`sub_agent_test_runner_extra_tools`** 扩充；**不**改变 `run_command` 白名单或 MCP 审批。SSE **`staged_plan_step_started`** 负载可选带 **`executor_kind`** 字符串（与 JSON 中蛇形值一致），便于前端展示当前子代理角色。
 
 **步级反馈（`staged_plan_feedback_mode`）**：默认 `fail_fast`（某步子循环 `Err` 或步内存在失败工具结果时，整轮计划按失败结束）。设为 `patch_planner` 时，会向规划器注入简短反馈并无工具重跑规划轮，将补丁 `steps` 与「当前步及之后」合并后继续执行（受 `staged_plan_patch_max_attempts` 限制，多耗 API）。
 

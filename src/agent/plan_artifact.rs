@@ -42,6 +42,17 @@ pub enum PlanStepExecutorKind {
     TestRunner,
 }
 
+impl PlanStepExecutorKind {
+    /// 与规划 JSON / SSE 中 `executor_kind` 字符串一致（蛇形）。
+    pub fn as_snake_case_str(self) -> &'static str {
+        match self {
+            PlanStepExecutorKind::ReviewReadonly => "review_readonly",
+            PlanStepExecutorKind::PatchWrite => "patch_write",
+            PlanStepExecutorKind::TestRunner => "test_runner",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PlanStepV1 {
     pub id: String,
@@ -134,10 +145,11 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 每项 \"id\" 须唯一；**首尾不得含空白**；语法为 ASCII 字母或数字开头，仅含 - _ . /，总长不超过 128（与 workflow 节点 id 常见字符集一致）
 - 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法；**允许在不同步骤中重复同一值**（当 `workflow_validate_only` 的 `nodes` 含重复 `id` 时，逐步绑定需要多重集一致）。值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）
 - **工作流反思 validate_only → Do**：当最近一次工具结果为 `workflow_validate_result` 且含非空 `nodes` 时，**每一步**均须设置 `workflow_node_id`，且 `steps.len()` 须**等于** `nodes` 个数；全部 `workflow_node_id` 构成的**多重集合**须与 `nodes[].id`（含重复）**完全一致**（顺序可与 DAG 不同）
-- 可选 \"executor_kind\"（字符串，省略则本步不限制工具）：`review_readonly`（仅只读工具）、`patch_write`（只读 + 受限补丁写）、`test_runner`（只读 + 内置测试运行器）；越权调用会在工具层被拒绝并记入对话";
+- 可选 \"executor_kind\"（字符串，省略则本步不限制工具）：`review_readonly`（仅只读工具）、`patch_write`（只读 + 受限补丁写）、`test_runner`（只读 + 内置测试运行器）；越权调用会在工具层被拒绝并记入对话
+- **推荐**：有「先读后写再测」类任务时，为相应步显式设置 `executor_kind`（审阅步 `review_readonly` → 改代码步 `patch_write` → 跑测步 `test_runner`），以便每步仅暴露必要工具；合并/优化规划时**须保留**各步的 `executor_kind` 意图（可改写 `description`/`id`，勿无故清空该字段）";
 
 /// Plan v1 的 JSON 示例。
-pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"layer-0","description":"先执行无依赖节点 …","workflow_node_id":"fmt","executor_kind":"review_readonly"}]}"#;
+pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"read-ctx","description":"只读浏览相关文件与依赖","executor_kind":"review_readonly"},{"id":"apply-fix","description":"按结论修改源码","executor_kind":"patch_write"},{"id":"verify","description":"运行项目测试验证","executor_kind":"test_runner"}]}"#;
 
 /// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json / \`\`\`markdown / \`\`\`md 等带语言行的围栏，或整段即为单个 JSON 对象）。
 /// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
@@ -406,7 +418,11 @@ pub fn format_plan_steps_markdown(plan: &AgentReplyPlanV1) -> String {
             continue;
         }
         let id_esc = id.replace('`', "'");
-        let _ = writeln!(&mut out, "{}. `{}`: {}", n, id_esc, desc.trim());
+        let role = st
+            .executor_kind
+            .map(|k| format!(" [`executor_kind={}`]", k.as_snake_case_str()))
+            .unwrap_or_default();
+        let _ = writeln!(&mut out, "{}. `{}`: {}{}", n, id_esc, desc.trim(), role);
         n += 1;
     }
     out.trim_end().to_string()

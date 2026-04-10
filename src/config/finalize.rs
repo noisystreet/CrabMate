@@ -635,6 +635,34 @@ pub(super) fn finalize(
                 .collect::<HashSet<_>>(),
         )
     });
+    let tool_registry_sub_agent_patch_write_extra_tools =
+        b.tool_registry_sub_agent_patch_write_extra_tools.map(|v| {
+            Arc::new(
+                v.into_iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<HashSet<_>>(),
+            )
+        });
+    let tool_registry_sub_agent_test_runner_extra_tools =
+        b.tool_registry_sub_agent_test_runner_extra_tools.map(|v| {
+            Arc::new(
+                v.into_iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<HashSet<_>>(),
+            )
+        });
+    let tool_registry_sub_agent_review_readonly_deny_tools = b
+        .tool_registry_sub_agent_review_readonly_deny_tools
+        .map(|v| {
+            Arc::new(
+                v.into_iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<HashSet<_>>(),
+            )
+        });
 
     let llm_http_auth_mode = match b.llm_http_auth_mode_str.as_deref() {
         Some(s) => types::LlmHttpAuthMode::parse(s)?,
@@ -774,5 +802,8 @@ pub(super) fn finalize(
         tool_registry_parallel_sync_denied_prefixes,
         tool_registry_sync_default_inline_tools,
         tool_registry_write_effect_tools,
+        tool_registry_sub_agent_patch_write_extra_tools,
+        tool_registry_sub_agent_test_runner_extra_tools,
+        tool_registry_sub_agent_review_readonly_deny_tools,
     })
 }

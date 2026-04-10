@@ -178,6 +178,9 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | **`parallel_sync_denied_prefixes`** | Same, by name prefix. |
 | **`sync_default_inline_tools`** | **`SyncDefault`** tools run inline on the async task (skip **`spawn_blocking`**); default small builtin set if omitted. |
 | **`write_effect_tools`** | Tools treated as mutating for **`is_readonly_tool`**, explain card, codebase semantic invalidation, etc.; default builtin set if omitted. |
+| **`sub_agent_patch_write_extra_tools`** | Extra tool names allowed for staged **`executor_kind: patch_write`** beyond the default patch set (must still be registered for the session). |
+| **`sub_agent_test_runner_extra_tools`** | Same for **`test_runner`**. |
+| **`sub_agent_review_readonly_deny_tools`** | Tool names explicitly denied in **`review_readonly`** steps (exact match; overrides readonly classification). |
 
 ### Context & tool messages
 
@@ -329,7 +332,7 @@ No-tools planning round first, then executor loop; planner context strips `role:
 
 With **`planner_executor_mode = single_agent`**, each user message runs a no-tools plan round then **`steps`**. **`no_task` + empty `steps`** skips execution. Invalid plan JSON falls back to normal tool loop (more API calls than off).
 
-**Per-step sub-agent (`executor_kind` in plan JSON)**: Each **`steps[]`** entry in **`agent_reply_plan` v1** may set **`executor_kind`** to **`review_readonly`**, **`patch_write`**, or **`test_runner`** to narrow the tool list for that staged step and reject out-of-role **`tool_calls`** at execution time; omit the field for legacy behavior. Aligns with **`write_effect_tools`** / readonly classification; does **not** replace **`run_command`** allowlists or MCP approval.
+**Per-step sub-agent (`executor_kind` in plan JSON)**: Each **`steps[]`** entry in **`agent_reply_plan` v1** may set **`executor_kind`** to **`review_readonly`**, **`patch_write`**, or **`test_runner`** to narrow the tool list for that staged step and reject out-of-role **`tool_calls`** at execution time (deny messages include a short CSV of allowed tool names for that step); omit the field for legacy behavior. Readonly/write semantics align with **`write_effect_tools`**; patch and test allowlists extend via **`sub_agent_patch_write_extra_tools`** / **`sub_agent_test_runner_extra_tools`**. Does **not** replace **`run_command`** allowlists or MCP approval. SSE **`staged_plan_step_started`** may include optional **`executor_kind`** for UI.
 
 **`staged_plan_feedback_mode`**: Default **`fail_fast`**; **`patch_planner`** injects feedback and reruns planner without tools, merging patched **`steps`** (capped by **`staged_plan_patch_max_attempts`**).
 
