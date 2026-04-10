@@ -100,6 +100,8 @@ pub struct ToolContext<'a> {
     pub http_fetch_allowed_prefixes: &'a [String],
     pub http_fetch_timeout_secs: u64,
     pub http_fetch_max_response_bytes: usize,
+    /// `run_command` / 部分子进程工具的墙上时钟上限（秒）；`python_snippet_run` 等复用。
+    pub command_timeout_secs: u64,
     /// 单轮 `run_agent_turn` 内 `read_file` 缓存；`None` 表示关闭。
     pub read_file_turn_cache: Option<&'a crate::read_file_turn_cache::ReadFileTurnCache>,
     /// 本会话工作区变更集（按 `long_term_memory_scope_id`）；`None` 时不记录。
@@ -176,6 +178,7 @@ pub fn tool_context_for<'a>(
         http_fetch_allowed_prefixes: cfg.http_fetch_allowed_prefixes.as_slice(),
         http_fetch_timeout_secs: cfg.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: cfg.http_fetch_max_response_bytes,
+        command_timeout_secs: cfg.command_timeout_secs,
         read_file_turn_cache: None,
         workspace_changelist: None,
         test_result_cache_enabled: cfg.test_result_cache_enabled,
@@ -500,6 +503,15 @@ fn runner_uv_sync(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_uv_run(args: &str, ctx: &ToolContext<'_>) -> String {
     python_tools::uv_run(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
+fn runner_python_snippet_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    python_tools::python_snippet_run(
+        args,
+        ctx.working_dir,
+        ctx.command_max_output_len,
+        ctx.command_timeout_secs,
+    )
 }
 
 fn runner_go_build(args: &str, ctx: &ToolContext<'_>) -> String {

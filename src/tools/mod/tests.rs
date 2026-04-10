@@ -20,6 +20,7 @@ fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
         http_fetch_allowed_prefixes: &[] as &[String],
         http_fetch_timeout_secs: 30,
         http_fetch_max_response_bytes: 8192,
+        command_timeout_secs: 30,
         read_file_turn_cache: None,
         workspace_changelist: None,
         test_result_cache_enabled: false,
@@ -291,6 +292,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"python_install_editable"));
     assert!(names.contains(&"uv_sync"));
     assert!(names.contains(&"uv_run"));
+    assert!(names.contains(&"python_snippet_run"));
     assert!(names.contains(&"pre_commit_run"));
     assert!(names.contains(&"typos_check"));
     assert!(names.contains(&"codespell_check"));

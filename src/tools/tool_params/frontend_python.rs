@@ -97,3 +97,24 @@ pub(in crate::tools) fn params_uv_run() -> serde_json::Value {
         "required": ["args"]
     })
 }
+
+pub(in crate::tools) fn params_python_snippet_run() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "code": {
+                "type": "string",
+                "description": "要执行的 Python 源码（可含 import 第三方包；依赖须已在当前环境或 uv 项目中安装）。上限约 256KiB"
+            },
+            "use_uv": {
+                "type": "boolean",
+                "description": "可选：为 true 且工作区根存在 pyproject.toml 时用 `uv run python` 执行（与项目锁文件环境一致）；默认 false 用系统 python3"
+            },
+            "timeout_secs": {
+                "type": "integer",
+                "description": "可选：墙上时钟超时秒数，默认与 command_timeout_secs 一致；范围 1～600"
+            }
+        },
+        "required": ["code"]
+    })
+}

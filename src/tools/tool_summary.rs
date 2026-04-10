@@ -39,6 +39,10 @@ pub(super) fn summary_uv_run(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<UvRunSummaryArgs>(v)
 }
 
+pub(super) fn summary_python_snippet_run(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<PythonSnippetRunSummaryArgs>(v)
+}
+
 pub(super) fn summary_error_output_playbook(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<ErrorOutputPlaybookSummaryArgs>(v)
 }

@@ -99,6 +99,7 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "docker_build",
             "run_command",
             "playbook_run_commands",
+            "python_snippet_run",
             "run_executable",
             "workflow_execute",
             "http_request",

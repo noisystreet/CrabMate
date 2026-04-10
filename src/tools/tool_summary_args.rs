@@ -270,6 +270,22 @@ impl ToolSummaryLine for UvRunSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct PythonSnippetRunSummaryArgs {
+    #[serde(default)]
+    use_uv: bool,
+}
+
+impl ToolSummaryLine for PythonSnippetRunSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        Some(if self.use_uv {
+            "python snippet (uv)".to_string()
+        } else {
+            "python snippet".to_string()
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct ErrorOutputPlaybookSummaryArgs {
     #[serde(default)]
     ecosystem: Option<String>,
