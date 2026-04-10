@@ -878,6 +878,43 @@ impl ToolSummaryLine for FindReferencesSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct CallGraphSketchSummaryArgs {
+    #[serde(default)]
+    symbols: Vec<String>,
+    #[serde(default)]
+    symbol: Option<String>,
+}
+
+impl ToolSummaryLine for CallGraphSketchSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let mut v: Vec<String> = self
+            .symbols
+            .into_iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if let Some(s) = self.symbol {
+            let t = s.trim().to_string();
+            if !t.is_empty() {
+                v.push(t);
+            }
+        }
+        v.sort();
+        v.dedup();
+        if v.is_empty() {
+            return None;
+        }
+        const MAX: usize = 3;
+        let head: Vec<_> = v.iter().take(MAX).cloned().collect();
+        let mut out = format!("impact sketch: {}", head.join(", "));
+        if v.len() > MAX {
+            out.push_str(&format!(" +{}", v.len() - MAX));
+        }
+        Some(out)
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct RustFileOutlineSummaryArgs {
     path: String,
 }

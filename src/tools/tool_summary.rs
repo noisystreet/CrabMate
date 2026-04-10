@@ -171,6 +171,10 @@ pub(super) fn summary_find_references(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<FindReferencesSummaryArgs>(v)
 }
 
+pub(super) fn summary_call_graph_sketch(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<CallGraphSketchSummaryArgs>(v)
+}
+
 pub(super) fn summary_rust_file_outline(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<RustFileOutlineSummaryArgs>(v)
 }

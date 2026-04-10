@@ -3,6 +3,7 @@
 //! 每个子模块对应一类工具，便于扩展新工具。
 
 mod calc;
+mod call_graph_sketch;
 mod cargo_tools;
 mod ci_tools;
 mod code_metrics;
@@ -816,6 +817,10 @@ fn runner_find_references(args: &str, ctx: &ToolContext<'_>) -> String {
 
 fn runner_rust_file_outline(args: &str, ctx: &ToolContext<'_>) -> String {
     code_nav::rust_file_outline(args, ctx.working_dir)
+}
+
+fn runner_call_graph_sketch(args: &str, ctx: &ToolContext<'_>) -> String {
+    call_graph_sketch::run(args, ctx.working_dir)
 }
 
 fn runner_format_file(args: &str, ctx: &ToolContext<'_>) -> String {

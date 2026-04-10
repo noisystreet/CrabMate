@@ -39,4 +39,12 @@ ToolSpec {
             runner: runner_rust_file_outline,
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_file_outline),
         },
+        ToolSpec {
+            name: "call_graph_sketch",
+            description: "在改 API / 重命名前生成**启发式**变更影响面草图：对工作区 `.rs` 扫描给定符号的 `use` 导入与非定义行词边界命中，按**目录**聚合为默认检查清单（附节选明细）。**非** rustc 真调用图；可与 `find_references` / `rust_analyzer_find_references` 互补。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_call_graph_sketch,
+            runner: runner_call_graph_sketch,
+            summary: ToolSummaryKind::Dynamic(ts::summary_call_graph_sketch),
+        },
 ]
