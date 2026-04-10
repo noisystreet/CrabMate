@@ -50,7 +50,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `staged_plan_finished` | Whole plan end | `onStagedPlanFinished` |
 | `clarification_questionnaire` | Clarification form: after a successful **`present_clarification_questionnaire`** tool run, emitted **after** the `tool_result` SSE; body has **`questionnaire_id`**, **`intro`**, **`questions[]`** (`id` / `label` / optional `hint` / `required` / `kind`: `text` \| `choice`) | Web: show form; next request includes **`clarify_questionnaire_answers`**; TUI: `line` treats as **ignore** |
 | `workspace_changed`: `true` | Tools updated workspace | `onWorkspaceChanged` |
-| `tool_call` | Tool call summary (before run) | `onToolCall` (needs `summary`) |
+| `tool_call` | Tool call summary (before run); body has **`name`**, **`summary`** (same source as `summarize_tool_call`), optional **`arguments_preview`** (single-line truncation, aligned with `execute_tools` logs), optional **`arguments`** when **`sse_tool_call_include_arguments`** / **`AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS`** is on (heuristically redacted, longer cap) | `onToolCall` (**handled** if any of **`summary`**, **`arguments_preview`**, **`arguments`** is non-empty) |
 | `parsing_tool_calls` | Model streaming tool_calls | `onParsingToolCallsChange` |
 | `tool_running` | Tool running | `onToolStatusChange` |
 | `tool_result` | Tool finished; includes `output` | `onToolResult` |

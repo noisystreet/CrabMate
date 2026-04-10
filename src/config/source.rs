@@ -115,6 +115,7 @@ pub(super) struct AgentSection {
     pub(super) cursor_rules_max_chars: Option<u64>,
     pub(super) tool_message_max_chars: Option<u64>,
     pub(super) tool_result_envelope_v1: Option<bool>,
+    pub(super) sse_tool_call_include_arguments: Option<bool>,
     pub(super) agent_tool_stats_enabled: Option<bool>,
     pub(super) agent_tool_stats_window_events: Option<u64>,
     pub(super) agent_tool_stats_min_samples: Option<u64>,

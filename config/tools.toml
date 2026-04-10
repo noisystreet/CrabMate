@@ -122,6 +122,8 @@ run_command_working_dir = "."
 # --- 工具消息形态与 DeepSeek DSML ---
 tool_message_max_chars = 32768
 tool_result_envelope_v1 = true
+# 为 true 时 SSE `tool_call` 另含脱敏后的 `arguments`（更长上限）；默认 false，防浏览器/共享屏泄露。
+# sse_tool_call_include_arguments = false
 materialize_deepseek_dsml_tool_calls = true
 
 # --- 单轮并行只读工具与 read_file 缓存（与 Web 队列协同；chat_queue 仍在 default_config）---

@@ -197,6 +197,7 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | `AGENT_MAX_MESSAGE_HISTORY` | Max messages kept. |
 | `AGENT_TOOL_MESSAGE_MAX_CHARS` | Compress `role: tool` before model if longer. |
 | `AGENT_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` envelope v1. |
+| `AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS` | When truthy, SSE **`tool_call`** includes redacted, length-capped **`arguments`** in addition to **`arguments_preview`** (default off; reduces accidental exposure in the browser). |
 | `AGENT_TOOL_STATS_ENABLED` | When truthy, enable in-process tool-outcome stats and append a short hint to the **new** conversation’s first `system` (see below). |
 | `AGENT_TOOL_STATS_WINDOW_EVENTS` | Sliding-window event cap (16–65536); mirrors TOML `agent_tool_stats_window_events`. |
 | `AGENT_TOOL_STATS_MIN_SAMPLES` | Min total calls per tool in the window before it appears in the hint (1–10000). |

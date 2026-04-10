@@ -403,6 +403,8 @@ pub struct AgentConfig {
     pub tool_message_max_chars: usize,
     /// 为 true（默认）时：写入历史的 `role: tool` 使用 `crabmate_tool` JSON 信封（含 `summary`/`ok`/`output` 等），便于聚合解析；为 false 时保持纯工具原文。
     pub tool_result_envelope_v1: bool,
+    /// 为 true 时：SSE **`tool_call`** 事件除 **`arguments_preview`** 外另含脱敏后的 **`arguments`**（更长上限，仍非全文保证）；默认 false，避免浏览器/共享屏泄露参数。
+    pub sse_tool_call_include_arguments: bool,
     /// 为 true 时：进程内记录各工具完结的 `ok`/`error_code`（滑动窗口），并在**新会话**首条 `system` 末尾可选附加短提示；不按会话分桶、不落盘。
     pub agent_tool_stats_enabled: bool,
     /// 上述统计滑动窗口最多保留的事件条数（单进程全局）。

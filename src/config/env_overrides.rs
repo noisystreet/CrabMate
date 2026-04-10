@@ -255,6 +255,11 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.tool_message_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.sse_tool_call_include_arguments = Some(val);
+    }
     if let Ok(v) = std::env::var("AGENT_TOOL_RESULT_ENVELOPE_V1")
         && let Some(val) = parse_bool_like(&v)
     {

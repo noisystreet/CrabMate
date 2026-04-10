@@ -214,6 +214,7 @@ Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共
 | `AGENT_MAX_MESSAGE_HISTORY` | 保留消息条数上限。 |
 | `AGENT_TOOL_MESSAGE_MAX_CHARS` | 单条 `role: tool` 发往模型前压缩阈值。 |
 | `AGENT_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` 信封 v1。 |
+| `AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS` | 为 `true`/`1`/`yes`/`on` 时，SSE **`tool_call`** 在 **`arguments_preview`** 外另含脱敏截断后的 **`arguments`**（默认关，防浏览器泄露）。 |
 | `AGENT_TOOL_STATS_ENABLED` | 为 `true`/`1`/`yes`/`on` 时启用进程内工具调用统计，并在**新会话**首条 `system` 末尾附加短提示（见下）。 |
 | `AGENT_TOOL_STATS_WINDOW_EVENTS` | 滑动窗口保留的调用事件条数（16–65536；与 TOML `agent_tool_stats_window_events` 一致）。 |
 | `AGENT_TOOL_STATS_MIN_SAMPLES` | 某工具在窗口内总次数 ≥ 该值才参与提示（1–10000）。 |
