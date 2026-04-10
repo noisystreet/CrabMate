@@ -459,7 +459,11 @@ flowchart LR
 
 ### `frontend-leptos/src/lib.rs`
 
-- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下（含 **`debounce_schedule`**、`i18n`、`a11y`）。
+- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下（含 **`client_llm_presets`**、**`debounce_schedule`**、`i18n`、`a11y`）。
+
+### `frontend-leptos/src/client_llm_presets.rs`
+
+- Web「设置」里 **`client_llm.api_base`** 的常用 OpenAI 兼容网关 URL 预设（与文档/README 供应商示例一致）；**`settings_modal`** 下拉选择与 **`api_base_select_value_for_draft`** 映射逻辑。
 
 ### `frontend-leptos/src/i18n.rs`
 
