@@ -28,6 +28,8 @@ pub struct SseCallbacks<'a> {
     pub on_command_approval_request: Option<&'a mut dyn FnMut(CommandApprovalRequest)>,
     /// `conversation_saved.revision`，供 `POST /chat/branch` 与冲突检测。
     pub on_conversation_saved_revision: Option<&'a mut dyn FnMut(u64)>,
+    pub on_staged_plan_step_started: Option<&'a mut dyn FnMut(StagedPlanStepStartInfo)>,
+    pub on_staged_plan_step_finished: Option<&'a mut dyn FnMut(StagedPlanStepEndInfo)>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +51,76 @@ pub struct CommandApprovalRequest {
     pub command: String,
     pub args: String,
     pub allowlist_key: Option<String>,
+}
+
+/// `staged_plan_step_started`：Web 时间线展示用字段子集。
+#[derive(Debug, Clone)]
+pub struct StagedPlanStepStartInfo {
+    pub step_index: usize,
+    pub total_steps: usize,
+    pub description: String,
+    pub executor_kind: Option<String>,
+}
+
+/// `staged_plan_step_finished`：Web 时间线展示用字段子集。
+#[derive(Debug, Clone)]
+pub struct StagedPlanStepEndInfo {
+    pub step_index: usize,
+    pub total_steps: usize,
+    pub status: String,
+    pub executor_kind: Option<String>,
+}
+
+fn parse_staged_plan_step_started(
+    obj: &serde_json::Map<String, Value>,
+) -> Option<StagedPlanStepStartInfo> {
+    let inner = obj.get("staged_plan_step_started")?.as_object()?;
+    Some(StagedPlanStepStartInfo {
+        step_index: inner
+            .get("step_index")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as usize,
+        total_steps: inner
+            .get("total_steps")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as usize,
+        description: inner
+            .get("description")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        executor_kind: inner
+            .get("executor_kind")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+    })
+}
+
+fn parse_staged_plan_step_finished(
+    obj: &serde_json::Map<String, Value>,
+) -> Option<StagedPlanStepEndInfo> {
+    let inner = obj.get("staged_plan_step_finished")?.as_object()?;
+    Some(StagedPlanStepEndInfo {
+        step_index: inner
+            .get("step_index")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as usize,
+        total_steps: inner
+            .get("total_steps")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as usize,
+        status: inner
+            .get("status")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        executor_kind: inner
+            .get("executor_kind")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+    })
 }
 
 /// 解析 `data:` 行内容（已去掉 `data: ` 前缀）；非 JSON 或解析失败时返回 `Plain`。
@@ -87,9 +159,19 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
     if key_present_non_null(obj, "staged_plan_step_started") {
+        if let Some(info) = parse_staged_plan_step_started(obj)
+            && let Some(f) = cbs.on_staged_plan_step_started.as_mut()
+        {
+            f(info);
+        }
         return SseDispatch::Handled;
     }
     if key_present_non_null(obj, "staged_plan_step_finished") {
+        if let Some(info) = parse_staged_plan_step_finished(obj)
+            && let Some(f) = cbs.on_staged_plan_step_finished.as_mut()
+        {
+            f(info);
+        }
         return SseDispatch::Handled;
     }
     if key_present_non_null(obj, "staged_plan_finished") {

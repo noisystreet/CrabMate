@@ -427,8 +427,18 @@ async fn finish_staged_plan_step_sse(
     step_index: usize,
     n: usize,
     status: &'static str,
+    executor_kind: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
 ) {
-    send_staged_plan_step_finished(out, plan_id, step_id_trim, step_index, n, status).await;
+    send_staged_plan_step_finished(
+        out,
+        plan_id,
+        step_id_trim,
+        step_index,
+        n,
+        status,
+        executor_kind.map(|k| k.as_snake_case_str()),
+    )
+    .await;
 }
 
 /// 执行步失败早退：`step_finished(failed)` + `plan_finished(failed)`，避免漏发 `staged_plan_finished`。
@@ -441,7 +451,10 @@ struct StagedPlanStepFailedExit<'a> {
     completed_steps_before_this: usize,
 }
 
-async fn finish_staged_plan_step_failed_and_plan_failed_sse(f: StagedPlanStepFailedExit<'_>) {
+async fn finish_staged_plan_step_failed_and_plan_failed_sse(
+    f: StagedPlanStepFailedExit<'_>,
+    executor_kind: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
+) {
     finish_staged_plan_step_sse(
         f.out,
         f.plan_id,
@@ -449,6 +462,7 @@ async fn finish_staged_plan_step_failed_and_plan_failed_sse(f: StagedPlanStepFai
         f.step_index,
         f.n,
         "failed",
+        executor_kind,
     )
     .await;
     send_staged_plan_finished(
@@ -1073,14 +1087,17 @@ where
                     continue;
                 }
             }
-            finish_staged_plan_step_failed_and_plan_failed_sse(StagedPlanStepFailedExit {
-                out: patch_ctx.p.out,
-                plan_id: &plan_id,
-                step_id_trim: step.id.trim(),
-                step_index,
-                n,
-                completed_steps_before_this: completed_steps,
-            })
+            finish_staged_plan_step_failed_and_plan_failed_sse(
+                StagedPlanStepFailedExit {
+                    out: patch_ctx.p.out,
+                    plan_id: &plan_id,
+                    step_id_trim: step.id.trim(),
+                    step_index,
+                    n,
+                    completed_steps_before_this: completed_steps,
+                },
+                step.executor_kind,
+            )
             .await;
             return Err(e);
         }
@@ -1094,6 +1111,7 @@ where
                 step_index,
                 n,
                 "cancelled",
+                step.executor_kind,
             )
             .await;
             staged_loop_cancelled = true;
@@ -1146,14 +1164,17 @@ where
             if recovered {
                 continue;
             }
-            finish_staged_plan_step_failed_and_plan_failed_sse(StagedPlanStepFailedExit {
-                out: patch_ctx.p.out,
-                plan_id: &plan_id,
-                step_id_trim: step.id.trim(),
-                step_index,
-                n,
-                completed_steps_before_this: completed_steps,
-            })
+            finish_staged_plan_step_failed_and_plan_failed_sse(
+                StagedPlanStepFailedExit {
+                    out: patch_ctx.p.out,
+                    plan_id: &plan_id,
+                    step_id_trim: step.id.trim(),
+                    step_index,
+                    n,
+                    completed_steps_before_this: completed_steps,
+                },
+                step.executor_kind,
+            )
             .await;
             return Ok(());
         }
@@ -1165,6 +1186,7 @@ where
             step_index,
             n,
             "ok",
+            step.executor_kind,
         )
         .await;
         completed_steps = step_index;

@@ -236,12 +236,19 @@ pub(crate) fn chat_message_row(
     status_err: RwSignal<Option<String>>,
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
-    let cls = match m.role.as_str() {
-        "user" => "msg msg-user",
-        "assistant" if m.is_tool => "msg msg-tool",
-        "assistant" => "msg msg-assistant",
-        _ if m.is_tool => "msg msg-tool",
-        _ => "msg msg-system",
+    let is_staged_timeline = m.role == "system"
+        && m.text
+            .starts_with(crate::message_format::STAGED_TIMELINE_SYSTEM_PREFIX);
+    let cls = if is_staged_timeline {
+        "msg msg-system msg-staged-timeline"
+    } else {
+        match m.role.as_str() {
+            "user" => "msg msg-user",
+            "assistant" if m.is_tool => "msg msg-tool",
+            "assistant" => "msg msg-assistant",
+            _ if m.is_tool => "msg msg-tool",
+            _ => "msg msg-system",
+        }
     };
     let loading = (m.role == "assistant" && m.state.as_deref() == Some("loading"))
         || (m.is_tool && m.state.as_deref() == Some("loading"));

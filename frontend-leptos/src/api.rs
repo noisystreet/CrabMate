@@ -13,7 +13,8 @@ use crabmate_sse_protocol::SSE_PROTOCOL_VERSION;
 
 use crate::i18n::Locale;
 use crate::sse_dispatch::{
-    CommandApprovalRequest, SseCallbacks, ToolResultInfo, try_dispatch_sse_control_payload,
+    CommandApprovalRequest, SseCallbacks, StagedPlanStepEndInfo, StagedPlanStepStartInfo,
+    ToolResultInfo, try_dispatch_sse_control_payload,
 };
 
 const WEB_API_BEARER_TOKEN_KEY: &str = "crabmate-api-bearer-token";
@@ -357,6 +358,8 @@ pub struct ChatStreamCallbacks {
     pub on_stream_job_id: std::rc::Rc<dyn Fn(u64)>,
     /// 每条 SSE 事件的 **`id:`**（单调序号），供断线后 `stream_resume.after_seq` / `Last-Event-ID`。
     pub on_last_sse_event_id: std::rc::Rc<dyn Fn(u64)>,
+    pub on_staged_plan_step_started: std::rc::Rc<dyn Fn(StagedPlanStepStartInfo)>,
+    pub on_staged_plan_step_finished: std::rc::Rc<dyn Fn(StagedPlanStepEndInfo)>,
 }
 
 impl Clone for ChatStreamCallbacks {
@@ -374,6 +377,8 @@ impl Clone for ChatStreamCallbacks {
             on_stream_ended: std::rc::Rc::clone(&self.on_stream_ended),
             on_stream_job_id: std::rc::Rc::clone(&self.on_stream_job_id),
             on_last_sse_event_id: std::rc::Rc::clone(&self.on_last_sse_event_id),
+            on_staged_plan_step_started: std::rc::Rc::clone(&self.on_staged_plan_step_started),
+            on_staged_plan_step_finished: std::rc::Rc::clone(&self.on_staged_plan_step_finished),
         }
     }
 }
@@ -632,6 +637,9 @@ fn handle_sse_block(
     let mut on_tool_res = |info: ToolResultInfo| (cbs.on_tool_result)(info);
     let mut on_appr = |req: CommandApprovalRequest| (cbs.on_approval)(req);
     let mut on_conv_rev = |rev: u64| (cbs.on_conversation_revision)(rev);
+    let mut on_staged_start =
+        |info: StagedPlanStepStartInfo| (cbs.on_staged_plan_step_started)(info);
+    let mut on_staged_end = |info: StagedPlanStepEndInfo| (cbs.on_staged_plan_step_finished)(info);
 
     let mut cbs2 = SseCallbacks {
         on_error: &mut on_err,
@@ -642,6 +650,8 @@ fn handle_sse_block(
         on_tool_result: Some(&mut on_tool_res),
         on_command_approval_request: Some(&mut on_appr),
         on_conversation_saved_revision: Some(&mut on_conv_rev),
+        on_staged_plan_step_started: Some(&mut on_staged_start),
+        on_staged_plan_step_finished: Some(&mut on_staged_end),
     };
     match try_dispatch_sse_control_payload(data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(()),
