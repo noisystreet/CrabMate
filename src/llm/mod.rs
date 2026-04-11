@@ -3,7 +3,7 @@
 //! - **`api`**：单次 HTTP + SSE/JSON 解析 + 可选终端 Markdown 渲染（传输与协议细节）。
 //! - **`backend`**：[`ChatCompletionsBackend`] 可插拔抽象，默认 [`OpenAiCompatBackend`]（即 `api::stream_chat`）。
 //! - **`vendor`**：按网关族调整出站 JSON（温度、`thinking`、是否保留 tool 轮 `reasoning_content`）；新增厂商见 [`vendor::LlmVendorAdapter`]。
-//! - **本模块**：`ChatRequest` 的惯用构造、带指数退避的**重试策略**（仅对 [`call_error::LlmCallError`] 标记为 `retryable` 的失败：如 **408/429/5xx** 与部分传输错误；**401/400** 等客户端错误不重试）、以及后续可扩展的调用入口（例如统一超时、观测字段）。
+//! - **本模块**：`ChatRequest` 的惯用构造、带指数退避的**重试策略**（仅对 [`call_error::LlmCallError`] 标记为 `retryable` 的失败：如 **408/429/5xx** 与部分传输错误；**401/400** 等客户端错误不重试）；[`complete_chat_retrying`] 失败为 [`LlmCompleteError`]（**无**「第几步规划」等编排语义）；以及后续可扩展的调用入口（例如统一超时、观测字段）。
 //!
 //! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent::agent_turn` 中散落重试与请求拼装逻辑。
 //! **维护约定**（唯一入口 / 禁止直接 `api::stream_chat`）见 **`docs/DEVELOPMENT.md`** 章节「`agent_turn` 与 `llm`：唯一入口与禁止事项」。
@@ -12,10 +12,12 @@ mod api;
 pub mod backend;
 mod call_error;
 mod chat_params;
+mod complete_error;
 mod openai_models;
 pub mod vendor;
 
 pub use chat_params::{CompleteChatRetryingParams, StreamChatParams};
+pub use complete_error::LlmCompleteError;
 pub use openai_models::fetch_models_report;
 
 use std::sync::atomic::Ordering;
@@ -147,7 +149,7 @@ pub fn no_tools_chat_request_from_messages(
 pub async fn complete_chat_retrying(
     p: &CompleteChatRetryingParams<'_>,
     request: &ChatRequest,
-) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Message, String), LlmCompleteError> {
     let _llm_trace = p
         .request_chrome_trace
         .as_ref()
@@ -159,7 +161,7 @@ pub async fn complete_chat_retrying(
     let stream = p.stream_params();
     for attempt in 0..max_attempts {
         if p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-            return Err(crate::types::LLM_CANCELLED_ERROR.into());
+            return Err(LlmCompleteError::Cancelled);
         }
         match p.llm_backend.stream_chat(&stream, &mut req).await {
             Ok(r) => {
@@ -210,15 +212,19 @@ pub async fn complete_chat_retrying(
                     );
                     tokio::time::sleep(Duration::from_secs(delay_secs)).await;
                     if p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-                        return Err(crate::types::LLM_CANCELLED_ERROR.into());
+                        return Err(LlmCompleteError::Cancelled);
                     }
                 } else {
-                    return Err(e);
+                    return Err(LlmCompleteError::from_boxed(e));
                 }
             }
         }
     }
-    last_ok.ok_or_else(|| std::io::Error::other("llm chat 成功分支未写入结果（逻辑错误）").into())
+    last_ok.ok_or_else(|| {
+        LlmCompleteError::Other(
+            std::io::Error::other("llm chat 成功分支未写入结果（逻辑错误）").into(),
+        )
+    })
 }
 
 #[cfg(test)]

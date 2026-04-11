@@ -128,6 +128,12 @@ pub struct SseErrorBody {
     /// 与 `code` 配合的**细分子码**（如 `code=plan_rewrite_exhausted` 时的失败类别），供客户端分支处理；旧客户端忽略即可。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason_code: Option<String>,
+    /// Web 流任务 id（与响应头 **`x-stream-job-id`** / `sse_capabilities.job_id` 一致）；非 Web 路径可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<u64>,
+    /// 失败时所处的编排子阶段：`planner` \| `executor` \| `reflect`（与 `agent_turn` PER 命名对齐）；旧客户端忽略即可。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_phase: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -385,6 +391,8 @@ mod tests {
             error: "x".into(),
             code: Some("E".into()),
             reason_code: None,
+            turn_id: None,
+            sub_phase: None,
         }));
         assert!(s.contains("\"v\":1"));
         assert!(s.contains("\"code\":\"E\""));
@@ -396,6 +404,8 @@ mod tests {
             error: "x".into(),
             code: Some("plan_rewrite_exhausted".into()),
             reason_code: Some("plan_missing".into()),
+            turn_id: None,
+            sub_phase: Some("reflect".into()),
         }));
         assert!(s.contains("\"reason_code\":\"plan_missing\""));
     }

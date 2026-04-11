@@ -5,7 +5,9 @@ use std::sync::atomic::AtomicBool;
 use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
-use crate::llm::{CompleteChatRetryingParams, complete_chat_retrying, tool_chat_request};
+use crate::llm::{
+    CompleteChatRetryingParams, LlmCompleteError, complete_chat_retrying, tool_chat_request,
+};
 use crate::types::{LlmSeedOverride, Message};
 
 /// P：构造请求并调用模型（`no_stream` 为 true 时走 `stream: false`），**不**修改 `messages`。
@@ -29,7 +31,7 @@ pub(crate) struct PerPlanCallModelParams<'a> {
 
 pub(crate) async fn per_plan_call_model_retrying(
     p: PerPlanCallModelParams<'_>,
-) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Message, String), LlmCompleteError> {
     let PerPlanCallModelParams {
         llm_backend,
         client,

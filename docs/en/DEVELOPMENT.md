@@ -99,6 +99,12 @@ This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one
 
 If we later introduce a thin **`AgentLlmCall`** helper to dedupe **`CompleteChatRetryingParams`**, it must still **delegate to `complete_chat_retrying`**—the table above stays the single HTTP entrypoint.
 
+#### Error and observability layering (`llm` → `agent_turn` → SSE)
+
+- **`llm::complete_chat_retrying`** surfaces **`llm::LlmCompleteError`**: wraps **`LlmCallError`** (**`retryable`**, **`http_status`**, redacted **`user_message`**), cancellation, and other **`Other`** cases—**without** orchestration text like “plan step N failed”.
+- **`agent_turn`** maps those failures (and orchestration early stops) to **`RunAgentTurnError`** (**`agent_turn::errors`**), tracking **`sub_phase`** (**`planner` / `executor` / `reflect`**, aligned with P/R/E). Web uses **`TracingChatTurn::job_id`** as **`turn_id`** (same as **`x-stream-job-id`**).
+- **`chat_job_queue`** encodes **`RunAgentTurnError`** into SSE **`SsePayload::Error`** (**`code`**, optional **`turn_id` / `sub_phase`**); see **`docs/en/SSE_PROTOCOL.md`** (e.g. **`LLM_RATE_LIMIT`**, **`turn_aborted`**).
+
 ### Web streaming flow (summary)
 
 1. `POST /chat/stream` → **`ChatJobQueue`**.
@@ -124,7 +130,7 @@ If we later introduce a thin **`AgentLlmCall`** helper to dedupe **`CompleteChat
 
 | Path | Responsibility (summary) |
 |------|---------------------------|
-| `agent/` | **`agent_turn/`**: main loop; **`message_pipeline`**, **`context_window`**, **`reflection/plan_rewrite`** (final-plan rewrite text + workflow history scans + semantic-check digest; no `complete_chat_retrying`), **`per_coord`**, **`per_plan_semantic_check`**, **`plan_artifact`**, **`workflow/`**, staged planning, tool execution (**E**), reflection (**R**), planner (**P**). |
+| `agent/` | **`agent_turn/`**: main loop; **`errors`** (**`RunAgentTurnError`**, **`AgentTurnSubPhase`**: map **`LlmCompleteError`** to SSE semantics + **`sub_phase`**); **`message_pipeline`**, **`context_window`**, **`reflection/plan_rewrite`** (final-plan rewrite text + workflow history scans + semantic-check digest; no `complete_chat_retrying`), **`per_coord`**, **`per_plan_semantic_check`**, **`plan_artifact`**, **`workflow/`**, staged planning, tool execution (**E**), reflection (**R**), planner (**P**). |
 | `chat_job_queue.rs` | Bounded queue for `/chat` + `/chat/stream`; **`per_active_jobs`** for `/status`. |
 | `codebase_semantic_index.rs` | **`codebase_semantic_search`**: **fastembed** + SQLite **FTS5** (**`crabmate_codebase_chunks_fts`** external content + triggers) per workspace; **`crabmate_codebase_files`** stores per-file **`size` / `mtime_ns` / `content_sha256`** for **workspace-wide** incremental rebuild (**`codebase_semantic_rebuild_incremental`**, tool **`incremental:false`** for full); subtree **`path`** replaces that prefix. Rust **symbol hints** before embed. **`query`** default **hybrid** (BM25 + cosine, **`codebase_semantic_hybrid_alpha`**); **`retrieve_mode`** **`semantic_only`** / **`fts_only`**. Schema **v4**; removed from tool list when disabled. |
 | `config/` | **`AgentConfig`**, embedded TOML shards + user file + optional **`config/agent_roles.toml`** (or sibling of **`--config`**) + env, CLI parsing (**`ParsedCliArgs::agent_role_cli`**), secrets as **`SecretString`**, cursor rules merge, **`agent_roles` / `default_agent_role_id`** (**`system_prompt_for_new_conversation`**), long-term memory keys (`finalize` rejects external vector backends not wired). |
@@ -135,7 +141,7 @@ If we later introduce a thin **`AgentLlmCall`** helper to dedupe **`CompleteChat
 | `text_sanitize.rs` | DSML materialization for DeepSeek-style tool calls (`materialize_deepseek_dsml_tool_calls_*`). |
 | `tool_stats.rs` | In-process global tool-outcome stats (`ok` / `error_code`); **`record_tool_outcome`** from **`execute_tools::emit_tool_result_sse_and_append`**; **`augment_system_prompt`** for new-chat first `system` (Web / CLI / REPL; disk-resumed sessions use base system only). Config **`agent_tool_stats_*`** / **`AGENT_TOOL_STATS_*`**. |
 | `health.rs` | **`build_health_report`** for **`GET /health`**; optional **`append_llm_models_endpoint_probe`** (**GET …/models** via **`llm::fetch_models_report`**, cached per **`health_llm_models_probe_cache_secs`** when **`health_llm_models_probe`** is enabled). Optional CLI checks include **`dep_gh`**. |
-| `llm/` | **`complete_chat_retrying`**, **`ChatCompletionsBackend`**, **`api::stream_chat`**, vendor quirks (reasoning_split, GLM thinking, Kimi temperature/thinking), CLI terminal rendering, **`openai_models`**. |
+| `llm/` | **`complete_chat_retrying`** (returns **`LlmCompleteError`**; aggregates **`LlmCallError`** **`retryable`/`http_status`**, no orchestration wording), **`ChatCompletionsBackend`**, **`api::stream_chat`**, vendor quirks (reasoning_split, GLM thinking, Kimi temperature/thinking), CLI terminal rendering, **`openai_models`**. |
 | `path_workspace.rs` | Canonical workspace resolution, allowlist validation, web read/write path helpers. Works with **`workspace_fs.rs`** on **Unix** to open under a root fd (**`openat2` `RESOLVE_IN_ROOT`** on Linux). Residual risks: see module docs; **README** / **CONFIGURATION.md** (workspace). |
 | `workspace_fs.rs` | Unix helpers to open files/directories for reads/writes/deletes under the workspace root (**nix** + **`openat2`** on Linux). |
 | `runtime/` | CLI: `chat`, interactive REPL, **`save-session`**, **`tool-replay`**, slash commands, doctor/probe/models, reedline completion, **`CliExitError`**, **`CliToolRuntime`**, transcripts, benchmark, export. |

@@ -593,6 +593,8 @@ async fn emit_stream_cancelled_terminal(sse_tx: &mpsc::Sender<String>, job_id: u
             error: "流已取消".to_string(),
             code: Some(crate::types::SSE_STREAM_CANCELLED_CODE.to_string()),
             reason_code: None,
+            turn_id: Some(job_id),
+            sub_phase: None,
         }));
     if crate::sse::send_string_logged(
         sse_tx,
@@ -789,7 +791,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 }
                 Err(e) => {
                     let e_text = e.to_string();
-                    if cancelled_by_signal || is_user_cancelled_run_agent_error(&e_text) {
+                    if cancelled_by_signal || e.is_user_flow_cancelled() {
                         info!(
                             target: "crabmate",
                             "chat stream 任务已取消 job_id={} reason={}",
@@ -814,20 +816,17 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                             job_id,
                             e_text
                         );
+                        let err_body = e.sse_error_payload(Some(job_id));
                         let err_line = crate::sse::encode_message(crate::sse::SsePayload::Error(
-                            crate::sse::SseErrorBody {
-                                error: "对话失败，请稍后重试".to_string(),
-                                code: Some("INTERNAL_ERROR".to_string()),
-                                reason_code: None,
-                            },
+                            err_body,
                         ));
                         let _ = crate::sse::send_string_logged(
                             &sse_tx,
                             err_line,
-                            "chat_job_queue::stream internal_error",
+                            "chat_job_queue::stream agent_turn_error",
                         )
                         .await;
-                        (false, false, Some(truncate_chars_with_ellipsis(&e_text, 120)))
+                        (false, false, e.short_detail_for_job_log())
                     }
                 }
             };
@@ -952,7 +951,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 }
                 Err(e) => {
                     let e_text = e.to_string();
-                    let cancelled = is_user_cancelled_run_agent_error(&e_text);
+                    let cancelled =
+                        e.is_user_flow_cancelled() || is_user_cancelled_run_agent_error(&e_text);
                     let staged_invalid =
                         crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(
                             &e_text,

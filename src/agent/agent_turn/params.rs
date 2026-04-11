@@ -9,6 +9,7 @@ use crate::workspace_changelist::WorkspaceChangelist;
 
 use tokio::sync::mpsc;
 
+use super::errors::AgentTurnSubPhase;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::long_term_memory::LongTermMemoryRuntime;
@@ -64,4 +65,6 @@ pub(crate) struct RunLoopParams<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     /// Web `/chat*`：结构化日志根 span（`job_id` / `conversation_id` / 外层轮次 / 当前工具）；CLI 等为 `None`。
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
+    /// 当前编排子阶段（供失败时 SSE `sub_phase` 与日志）；由 `outer_loop` / 分阶段路径在调用模型或执行工具前更新。
+    pub sub_phase: AgentTurnSubPhase,
 }

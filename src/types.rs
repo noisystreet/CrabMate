@@ -794,7 +794,7 @@ pub enum CommandApprovalDecision {
 /// 流式输出被用户中止时 `stream_chat` 返回的 `finish_reason` 占位（非上游 API 原义）。
 pub const USER_CANCELLED_FINISH_REASON: &str = "user_cancelled";
 
-/// `complete_chat_retrying` 在用户取消时返回的错误消息（与 `run_agent_turn_common` 识别一致）。
+/// 用户取消时协作路径使用的错误消息（与 `llm::LlmCompleteError::Cancelled` / `RunAgentTurnError` 识别一致）。
 pub const LLM_CANCELLED_ERROR: &str = "已取消";
 
 /// `/chat/stream` 任务被取消且 SSE 仍可投递时，控制面 `SsePayload::Error` 的 **`code`**（与 `docs/SSE_PROTOCOL.md` 一致）。
