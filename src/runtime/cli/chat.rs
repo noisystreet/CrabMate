@@ -55,6 +55,7 @@ pub(crate) async fn run_agent_turn_for_cli(
         turn_allow,
     ))
     .await
+    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
 }
 
 fn cli_long_term_memory_handles(

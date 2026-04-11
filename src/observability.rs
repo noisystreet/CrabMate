@@ -206,6 +206,8 @@ pub(crate) fn record_tool_call_id(span: &Span, tool_call_id: &str) {
 /// Web `/chat*` 单任务：`job_id` / `conversation_id` 根 span + 可递增的外层轮次；工具日志前更新 **`tool_call_id`**。
 #[derive(Debug)]
 pub struct TracingChatTurn {
+    /// 与 HTTP **`x-stream-job-id`**、SSE **`sse_capabilities.job_id`** 一致（CLI 等无 Web 任务时为占位，通常不用于观测）。
+    pub job_id: u64,
     pub span: Span,
     outer_iteration: AtomicU32,
 }
@@ -213,6 +215,7 @@ pub struct TracingChatTurn {
 impl TracingChatTurn {
     pub fn new(job_id: u64, conversation_id: &str) -> Arc<Self> {
         Arc::new(Self {
+            job_id,
             span: chat_turn_span(job_id, conversation_id),
             outer_iteration: AtomicU32::new(0),
         })

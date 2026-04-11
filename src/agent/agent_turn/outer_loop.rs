@@ -5,9 +5,12 @@ use std::sync::atomic::Ordering;
 use log::{debug, info};
 
 use crate::agent::per_coord::PerCoordinator;
-use crate::sse::{SseErrorBody, SsePayload, encode_message};
+use crate::sse::{SsePayload, encode_message};
 use crate::types::USER_CANCELLED_FINISH_REASON;
 
+use super::errors::{
+    AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason, sse_plan_rewrite_exhausted_body,
+};
 use super::execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
 };
@@ -20,17 +23,24 @@ use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 pub(crate) async fn run_agent_outer_loop(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), RunAgentTurnError> {
     'outer: loop {
+        p.sub_phase = AgentTurnSubPhase::Planner;
         if let Some(ref t) = p.tracing_chat_turn {
             t.on_outer_loop_iteration();
         }
         if sse_sender_closed(p.out) {
             info!(target: "crabmate", "SSE sender closed, aborting run_agent_turn loop early");
-            break;
+            return Err(RunAgentTurnError::TurnAborted {
+                phase: AgentTurnSubPhase::Planner,
+                reason: TurnAbortReason::SseDisconnected,
+            });
         }
         if p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-            break;
+            return Err(RunAgentTurnError::TurnAborted {
+                phase: AgentTurnSubPhase::Planner,
+                reason: TurnAbortReason::UserCancelled,
+            });
         }
 
         let render_to_terminal = p.render_to_terminal;
@@ -50,7 +60,11 @@ pub(crate) async fn run_agent_outer_loop(
             Some(per_coord),
             p.workspace_changelist.as_ref().map(|a| a.as_ref()),
         )
-        .await?;
+        .await
+        .map_err(|e| RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: e.to_string(),
+        })?;
         let tools_for_call: Vec<crate::types::Tool> = match p.step_executor_constraint {
             Some(k) => {
                 let mut v = filter_tool_defs_for_executor_kind(p.tools_defs, p.cfg.as_ref(), k);
@@ -90,7 +104,8 @@ pub(crate) async fn run_agent_outer_loop(
             seed_override: p.seed_override,
             request_chrome_trace: p.request_chrome_trace.clone(),
         })
-        .await?;
+        .await
+        .map_err(|e| RunAgentTurnError::from_llm(AgentTurnSubPhase::Planner, e))?;
         if let Some(f) = p.per_flight.as_ref() {
             f.awaiting_plan_rewrite_model
                 .store(false, Ordering::Relaxed);
@@ -133,11 +148,10 @@ pub(crate) async fn run_agent_outer_loop(
                 if let Some(tx) = p.out {
                     let _ = crate::sse::send_string_logged(
                         tx,
-                        encode_message(SsePayload::Error(SseErrorBody {
-                            error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
-                            code: Some("plan_rewrite_exhausted".to_string()),
-                            reason_code: Some(reason.as_str().to_string()),
-                        })),
+                        encode_message(SsePayload::Error(sse_plan_rewrite_exhausted_body(
+                            p.tracing_chat_turn.as_ref(),
+                            reason.as_str(),
+                        ))),
                         "outer_loop::plan_rewrite_exhausted",
                     )
                     .await;
@@ -146,7 +160,14 @@ pub(crate) async fn run_agent_outer_loop(
             }
         }
 
-        let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+        let tool_calls = msg
+            .tool_calls
+            .as_ref()
+            .ok_or_else(|| RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Executor,
+                message: "无 tool_calls".to_string(),
+            })?;
+        p.sub_phase = AgentTurnSubPhase::Executor;
         let echo_terminal_transcript = render_to_terminal && p.out.is_none();
         let exec_outcome = per_execute_tools_web(
             tool_calls,
@@ -174,7 +195,10 @@ pub(crate) async fn run_agent_outer_loop(
         )
         .await;
         if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-            break;
+            return Err(RunAgentTurnError::TurnAborted {
+                phase: AgentTurnSubPhase::Executor,
+                reason: TurnAbortReason::SseDisconnected,
+            });
         }
         if let Some(f) = p.per_flight.as_ref() {
             f.sync_from_per_coord(per_coord);

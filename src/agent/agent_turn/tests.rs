@@ -231,6 +231,7 @@ mod per_reflect_tests {
             step_executor_constraint: None,
             turn_allowed_tool_names: None,
             tracing_chat_turn: None,
+            sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
         };
         let out = per_reflect_after_assistant(&mut p, &mut c, "stop", &msg).await;
         assert!(matches!(

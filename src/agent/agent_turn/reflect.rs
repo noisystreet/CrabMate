@@ -30,6 +30,7 @@ pub(crate) async fn per_reflect_after_assistant(
     finish_reason: &str,
     msg: &Message,
 ) -> ReflectOnAssistantOutcome {
+    p.sub_phase = crate::agent::agent_turn::AgentTurnSubPhase::Reflect;
     if finish_reason == "tool_calls" || msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         return ReflectOnAssistantOutcome::ProceedToExecuteTools;
     }

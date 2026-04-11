@@ -96,12 +96,19 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `code` | Source | Meaning |
 |--------|--------|---------|
 | `CONVERSATION_CONFLICT` | `web/chat_handlers/conflict`, `chat_job_queue` | Session revision / save conflict |
-| `INTERNAL_ERROR` | `chat_job_queue` | `run_agent_turn` failure (non-cancel), user-facing fallback text |
+| `INTERNAL_ERROR` | `chat_job_queue` | `run_agent_turn` failure (non-cancel), user-facing fallback text; **`reason_code`** may carry a truncated internal summary |
+| `LLM_REQUEST_FAILED` | `chat_job_queue` (mapped from `agent_turn`) | Model HTTP/transport failure (**`error`** is the redacted gateway message; prefer **`LLM_RATE_LIMIT`** for **429** / quota heuristics) |
+| `LLM_RATE_LIMIT` | `chat_job_queue` (mapped from `agent_turn`) | Rate limit / quota class (**HTTP 429** or heuristic aligned with `agent_errors::is_quota_or_rate_limit_llm_message`) |
+| `turn_aborted` | `chat_job_queue` (mapped from `agent_turn`) | Orchestration early stop (e.g. SSE receiver closed while the turn continues); **`error`** is user-facing |
 | `STREAM_CANCELLED` | `chat_job_queue` | Cancelled stream, delivered when channel still open |
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop`, `agent_turn/staged` | Final plan rewrite budget exhausted |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` serialization fallback |
 
 **Optional `reason_code`**: sibling string sub-code for client branching under the same top-level `code` (currently used for `plan_rewrite_exhausted`); older clients may ignore it.
+
+**Optional `turn_id`**: matches **`x-stream-job-id`** and **`sse_capabilities.job_id`** (`u64`); omitted on non-Web paths or legacy frames.
+
+**Optional `sub_phase`**: orchestration sub-phase at failure, aligned with PER: `planner` \| `executor` \| `reflect`; older clients may ignore it.
 
 #### `reason_code` for `plan_rewrite_exhausted`
 
