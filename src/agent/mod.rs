@@ -11,5 +11,7 @@ mod per_plan_semantic_check;
 pub mod plan_artifact;
 mod plan_ensemble;
 mod plan_optimizer;
+/// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在 `per_plan_semantic_check`）。
+pub mod reflection;
 pub mod workflow;
 pub mod workflow_reflection_controller;
