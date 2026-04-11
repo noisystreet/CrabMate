@@ -63,8 +63,15 @@ use crate::i18n::{self, load_locale_from_storage};
 use crate::session_ops::{
     SessionContextAnchor, estimate_context_chars_for_active_session, title_from_user_prompt,
 };
+
+/// 用于水合时与服务端快照比对：仅统计「用户气泡」轮次（与分支截断语义一致）。
+fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
+    messages.iter().filter(|m| m.role == "user").count()
+}
 use crate::session_sync::SessionSyncState;
-use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
+use crate::storage::{
+    ChatSession, StoredMessage, ensure_at_least_one, load_sessions, save_sessions,
+};
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::html::{Div, Textarea};
@@ -244,12 +251,14 @@ pub fn App() -> impl IntoView {
             if !initialized.get() || !web_ui_config_loaded.get() {
                 return;
             }
-            let _ = session_hydrate_nonce.get();
             let aid = active_id.get();
             if aid.is_empty() {
                 return;
             }
-            let Some(cid) = sessions.with(|list| {
+            // 仅订阅 `session_hydrate_nonce`（下一行），勿用 `sessions.with`：否则水合写回 `messages` 会再次调度本 Effect，
+            // 以相同 nonce 并发多次 GET，末包覆盖可能导致历史消息异常消失。
+            let nonce_at_start = session_hydrate_nonce.get();
+            let Some(cid) = sessions.with_untracked(|list| {
                 list.iter().find(|s| s.id == aid).and_then(|s| {
                     // 如果当前会话有正在流式更新的消息，跳过水合，避免覆盖本地新消息
                     if s.messages
@@ -268,12 +277,21 @@ pub fn App() -> impl IntoView {
             }) else {
                 return;
             };
+            // 与 `on_done` 末尾递增的 nonce 对齐：仅应用**本次**水合对应的拉取结果。
             let loc = locale.get_untracked();
             spawn_local(async move {
                 let Ok(resp) = fetch_conversation_messages(&cid, loc).await else {
                     return;
                 };
+                if session_hydrate_nonce.get_untracked() != nonce_at_start {
+                    return;
+                }
                 let msgs = stored_messages_from_conversation_api(&resp.messages);
+                if msgs.is_empty() && !resp.messages.is_empty() {
+                    // 映射全部失败时不应清空本地列表（否则表现为「历史消息消失」）
+                    return;
+                }
+                let mut applied_hydration = false;
                 sessions.update(|list| {
                     if active_id.get_untracked() != aid {
                         return;
@@ -296,8 +314,23 @@ pub fn App() -> impl IntoView {
                     if still != Some(cid.as_str()) {
                         return;
                     }
+                    if session_hydrate_nonce.get_untracked() != nonce_at_start {
+                        return;
+                    }
+                    let local_users = count_user_role_bubbles(&s.messages);
+                    let hydrated_users = count_user_role_bubbles(&msgs);
+                    // 服务端返回空快照而本地仍有气泡：常见于 404/空库误命中，勿清空。
+                    if !s.messages.is_empty() && msgs.is_empty() {
+                        return;
+                    }
+                    // serve 重启后会话存储与浏览器 localStorage 脱节：服务端可能只持久化新轮次，
+                    // 用户轮次少于本地 —— 整表替换会抹掉重启前仅存在于客户端的历史气泡。
+                    if local_users > 0 && hydrated_users < local_users {
+                        return;
+                    }
                     s.messages = msgs;
                     s.server_revision = Some(resp.revision);
+                    applied_hydration = true;
                     if let Some(role) = resp
                         .active_agent_role
                         .as_deref()
@@ -313,6 +346,12 @@ pub fn App() -> impl IntoView {
                         }
                     }
                 });
+                if !applied_hydration {
+                    return;
+                }
+                if session_hydrate_nonce.get_untracked() != nonce_at_start {
+                    return;
+                }
                 session_sync.update(|st| {
                     if st.conversation_id.as_deref().map(str::trim) == Some(cid.as_str()) {
                         st.apply_saved_revision(resp.revision);
