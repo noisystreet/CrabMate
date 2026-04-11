@@ -420,6 +420,8 @@ Env: `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_MODE`, `AGENT_SYNC_DEFAULT_TOOL_SANDBOX_DO
 - **Relative path resolution**: process **cwd** → each overlay **config file directory** (later wins, e.g. `.agent_demo.toml` before `config.toml`) → **`run_command_working_dir`**. **Absolute** paths tried as-is.
 - **Overrides**: Inline **`system_prompt`** without **`system_prompt_file`** in a layer **drops** inherited file for that layer. Env: **`AGENT_SYSTEM_PROMPT`** clears merged file; **`AGENT_SYSTEM_PROMPT_FILE`** wins if both set.
 - **finalize**: Read file if **`system_prompt_file`** set; else non-empty inline; else error.
+- **Shipped default body** (`config/prompts/default_system_prompt.md`): **instruction precedence** (safety → explicit user instructions → verifiable facts → this prompt and role → Cursor-like rules), **no dev-tool fishing** on clearly non-code questions, **no workspace edits** unless the user clearly authorizes changes, tool discipline, and Chinese explanatory prose where applicable. If the merged rules appendix shows a **truncation notice**, do not assume unseen rules. Fully custom: replace the file or `system_prompt_file`.
+- **Embedded defaults** (`config/default_config.toml`): **`thinking_avoid_echo_system_prompt = true`** with **`thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"`** (override via inline **`thinking_avoid_echo_appendix`** or **`AGENT_THINKING_AVOID_ECHO_APPENDIX*`**); see § *Reduce system-prompt echo in thinking chains* above.
 
 ## Multi-role (agent_roles)
 
