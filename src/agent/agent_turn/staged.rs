@@ -56,7 +56,7 @@ fn staged_planner_sse_fully_suppressed(cfg: &crate::config::AgentConfig) -> bool
 
 /// 无工具规划轮 `complete_chat_retrying`：
 /// - **两阶段 NL**：`out: None`（整段抑制）；
-/// - **Web + 未** `AGENT_WEB_RAW_ASSISTANT_OUTPUT`：经 [`super::planner_sse_gate::PlannerSseGate`] — `no_task` 则整轮不落 SSE，否则仅落 `assistant_answer_phase` 之后的正文增量；
+/// - **Web + 未** `AGENT_WEB_RAW_ASSISTANT_OUTPUT`：经 [`super::planner_sse_gate::PlannerSseGate`] — 解析（正文+思维链）为 `no_task` 则整轮不落 SSE，且不将本条 assistant 写入会话；否则仅落 `assistant_answer_phase` 之后的正文增量；
 /// - **RAW** 或 **非 Web**：`out: p.out`（整段原样下发）。
 async fn complete_planner_no_tools_chat_retrying(
     p: &RunLoopParams<'_>,
@@ -272,8 +272,7 @@ where
             return Ok(());
         }
         strip_staged_planner_message_tool_calls(&mut sec_msg, "·逻辑多规划员", dsml);
-        let content = crate::types::message_content_as_str(&sec_msg.content).unwrap_or("");
-        match plan_artifact::parse_agent_reply_plan_v1(content) {
+        match plan_artifact::parse_agent_reply_plan_v1_from_assistant_message(&sec_msg) {
             Ok(p2) if !p2.no_task && !p2.steps.is_empty() => {
                 pop_last_staged_planner_coach_user_if_present(p.messages);
                 accepted.push(p2);
@@ -310,8 +309,8 @@ where
         return Ok(());
     }
     strip_staged_planner_message_tool_calls(&mut merge_msg, "·多规划合并", dsml);
-    let merge_content = crate::types::message_content_as_str(&merge_msg.content).unwrap_or("");
-    if let Some(steps) = plan_ensemble::try_parse_ensemble_planner_reply(merge_content) {
+    let merge_content = plan_artifact::assistant_merged_text_for_plan_artifact_parse(&merge_msg);
+    if let Some(steps) = plan_ensemble::try_parse_ensemble_planner_reply(&merge_content) {
         debug!(
             target: "crabmate",
             "分阶段规划·多规划合并：步数 {} -> {}（来自 {} 份草案）",
@@ -701,8 +700,7 @@ where
         return Ok(None);
     }
 
-    let content = crate::types::message_content_as_str(&msg.content).unwrap_or("");
-    let patch_plan = match plan_artifact::parse_agent_reply_plan_v1(content) {
+    let patch_plan = match plan_artifact::parse_agent_reply_plan_v1_from_assistant_message(&msg) {
         Ok(p) => p,
         Err(e) => {
             warn!(
@@ -851,17 +849,23 @@ where
         return run_agent_outer_loop(p, per_coord).await;
     }
 
-    let content = crate::types::message_content_as_str(&msg.content).unwrap_or("");
-    let plan = match crate::agent::plan_artifact::parse_agent_reply_plan_v1(content) {
+    let merged_for_log =
+        crate::agent::plan_artifact::assistant_merged_text_for_plan_artifact_parse(&msg);
+    let plan = match crate::agent::plan_artifact::parse_agent_reply_plan_v1_from_assistant_message(
+        &msg,
+    ) {
         Ok(plan_v1) => plan_v1,
         Err(parse_err) => {
             let detail = crate::agent::plan_artifact::plan_artifact_error_log_summary(&parse_err);
             warn!(
                 target: "crabmate",
-                "staged_plan_invalid parse_err={} content_len={} content_preview={}；降级为常规工具循环",
+                "staged_plan_invalid parse_err={} merged_len={} merged_preview={}；降级为常规工具循环",
                 detail,
-                content.chars().count(),
-                crate::redact::preview_chars(content, crate::redact::MESSAGE_LOG_PREVIEW_CHARS)
+                merged_for_log.chars().count(),
+                crate::redact::preview_chars(
+                    merged_for_log.as_str(),
+                    crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
+                )
             );
             // 保留规划轮正文，避免整轮失败退出（REPL/脚本/Web 均与关闭分阶段规划时的行为对齐）。
             push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
@@ -869,7 +873,11 @@ where
         }
     };
 
-    push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
+    let omit_no_task_planner_from_history =
+        p.out.is_some() && !crate::web::web_ui_env::web_raw_assistant_output_env() && plan.no_task;
+    if !omit_no_task_planner_from_history {
+        push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
+    }
 
     if plan.no_task {
         if p.cfg.staged_plan_two_phase_nl_display {
