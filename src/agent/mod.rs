@@ -15,3 +15,5 @@ mod plan_optimizer;
 pub mod reflection;
 pub mod workflow;
 pub mod workflow_reflection_controller;
+/// `workflow_execute` 与 PER 协调的接合点（从 `tool_registry` 拆出以降低 `tool_registry → agent` 耦合）。
+pub mod workflow_tool_dispatch;
