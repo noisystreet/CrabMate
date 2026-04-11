@@ -86,20 +86,20 @@ pub(super) fn wire_session_switch_clears_chat_state(
         draft.set(d);
         pending_images.set(Vec::new());
         pending_clarification.set(None);
-        let st = sessions.with(|list| {
-            list.iter().find(|s| s.id == id).map(|s| {
-                let mut st = SessionSyncState::local_only();
-                if let Some(ref cid) = s.server_conversation_id {
-                    let t = cid.trim();
-                    if !t.is_empty() {
-                        st.apply_stream_conversation_id(t.to_string());
-                        if let Some(rev) = s.server_revision {
-                            st.apply_saved_revision(rev);
-                        }
+        // 仅用上方 `list`（get_untracked）：勿再 `sessions.with`，否则 effect 会订阅流式
+        // `sessions` 更新，每次落盘消息都会清空多选勾选。
+        let st = list.iter().find(|s| s.id == id).map(|s| {
+            let mut st = SessionSyncState::local_only();
+            if let Some(ref cid) = s.server_conversation_id {
+                let t = cid.trim();
+                if !t.is_empty() {
+                    st.apply_stream_conversation_id(t.to_string());
+                    if let Some(rev) = s.server_revision {
+                        st.apply_saved_revision(rev);
                     }
                 }
-                st
-            })
+            }
+            st
         });
         session_sync.set(st.unwrap_or_else(SessionSyncState::local_only));
         stream_job_id.set(None);
