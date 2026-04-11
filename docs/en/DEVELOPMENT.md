@@ -3,7 +3,7 @@
 # Developer guide (architecture and modules)
 
 For **maintainers and contributors**: module responsibilities, key mechanisms, and extension points.  
-End-user features: **`README.md`**; env/config: **`docs/en/CONFIGURATION.md`**; CLI + HTTP: **`docs/en/CLI.md`**; `chat` exit codes and `--output json`: **`docs/en/CLI_CONTRACT.md`** (cross-ref **`docs/en/SSE_PROTOCOL.md`**).
+End-user features: **`README.md`**; env/config: **`docs/en/CONFIGURATION.md`**; CLI + HTTP: **`docs/en/CLI.md`**; `chat` exit codes and `--output json`: **`docs/en/CLI_CONTRACT.md`** (cross-ref **`docs/en/SSE_PROTOCOL.md`**). Testing commands: **`docs/en/TESTING.md`** (Chinese **`docs/TESTING.md`**).
 
 ## TODOLIST and documentation conventions
 
