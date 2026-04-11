@@ -11,10 +11,10 @@ use crate::agent::plan_ensemble;
 use crate::agent::plan_optimizer::{self, STAGED_PLAN_OPTIMIZER_COACH_MARK};
 use crate::config::StagedPlanFeedbackMode;
 use crate::llm::{
-    CompleteChatRetryingParams, complete_chat_retrying,
+    CompleteChatRetryingParams, LlmCompleteError, complete_chat_retrying,
     kimi_k2_5_vendor_requires_tool_call_reasoning, no_tools_chat_request_from_messages,
 };
-use crate::sse::{SseErrorBody, SsePayload, encode_message};
+use crate::sse::{SsePayload, encode_message};
 use crate::tool_result::tool_message_content_ok_for_model;
 use crate::types::{
     Message, USER_CANCELLED_FINISH_REASON, is_message_excluded_from_llm_context_except_memory,
@@ -22,6 +22,9 @@ use crate::types::{
     messages_for_api_stripping_reasoning_skip_ui_separators,
 };
 
+use super::errors::{
+    AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason, sse_plan_rewrite_exhausted_body,
+};
 use super::execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
 };
@@ -62,7 +65,7 @@ async fn complete_planner_no_tools_chat_retrying(
     p: &RunLoopParams<'_>,
     req: &crate::types::ChatRequest,
     planner_render_to_terminal: bool,
-) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Message, String), LlmCompleteError> {
     let suppress_full = staged_planner_sse_fully_suppressed(p.cfg.as_ref());
     let use_gate = p.out.is_some()
         && !crate::web::web_ui_env::web_raw_assistant_output_env()
@@ -107,14 +110,14 @@ async fn run_staged_plan_nl_followup_round<F>(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
     make_step_user_message: &F,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+) -> Result<(), RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
     let mark = p.messages.len();
     p.messages
         .push(make_step_user_message(staged_plan_nl_followup_user_body()));
-    let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = async {
+    let result: Result<(), RunAgentTurnError> = async {
         crate::agent::context_window::prepare_messages_for_model(
             p.llm_backend,
             p.client,
@@ -124,7 +127,11 @@ where
             Some(per_coord),
             p.workspace_changelist.as_ref().map(|a| a.as_ref()),
         )
-        .await?;
+        .await
+        .map_err(|e| RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: e.to_string(),
+        })?;
         let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(
             p.messages.as_slice(),
             kimi_k2_5_vendor_requires_tool_call_reasoning(p.cfg.as_ref()),
@@ -188,7 +195,7 @@ async fn complete_one_staged_planner_assistant_round(
     build_planner_messages: fn(&[Message], String, bool) -> Vec<Message>,
     planner_render_to_terminal: bool,
     log_label: &'static str,
-) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Message, String), RunAgentTurnError> {
     let req = prepare_staged_planner_no_tools_request(p, per_coord, build_planner_messages).await?;
     let (msg, finish_reason) =
         complete_planner_no_tools_chat_retrying(p, &req, planner_render_to_terminal).await?;
@@ -235,7 +242,7 @@ async fn maybe_run_staged_plan_ensemble_then_merge<F>(
     planner_render_to_terminal: bool,
     plan: &mut AgentReplyPlanV1,
     skip_for_casual_user_prompt: bool,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+) -> Result<(), RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
@@ -342,7 +349,7 @@ async fn prepare_staged_planner_no_tools_request(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
     build_planner_messages: fn(&[Message], String, bool) -> Vec<Message>,
-) -> Result<crate::types::ChatRequest, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<crate::types::ChatRequest, RunAgentTurnError> {
     if let Some(ref ltm) = p.long_term_memory {
         ltm.prepare_messages(
             p.cfg.as_ref(),
@@ -359,7 +366,11 @@ async fn prepare_staged_planner_no_tools_request(
         Some(per_coord),
         p.workspace_changelist.as_ref().map(|a| a.as_ref()),
     )
-    .await?;
+    .await
+    .map_err(|e| RunAgentTurnError::Other {
+        phase: AgentTurnSubPhase::Planner,
+        message: e.to_string(),
+    })?;
 
     let instr = p.cfg.staged_plan_phase_instruction.trim();
     let plan_system = if instr.is_empty() {
@@ -380,7 +391,7 @@ async fn prepare_staged_planner_no_tools_request(
 pub(super) async fn run_staged_plan_then_execute_steps(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), RunAgentTurnError> {
     let render_to_terminal = p.render_to_terminal;
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 
@@ -581,7 +592,7 @@ async fn run_staged_plan_patch_planner_round<F>(
     feedback_user_body: String,
     base_steps: &[PlanStepV1],
     failed_step_zero_based: usize,
-) -> Result<Option<Vec<PlanStepV1>>, Box<dyn std::error::Error + Send + Sync>>
+) -> Result<Option<Vec<PlanStepV1>>, RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
@@ -628,7 +639,13 @@ where
     if msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty()) {
         match per_reflect_after_assistant(p, per_coord, &finish_reason, &msg).await {
             ReflectOnAssistantOutcome::ProceedToExecuteTools => {
-                let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+                let tool_calls =
+                    msg.tool_calls
+                        .as_ref()
+                        .ok_or_else(|| RunAgentTurnError::Other {
+                            phase: AgentTurnSubPhase::Executor,
+                            message: "无 tool_calls".to_string(),
+                        })?;
                 let echo_terminal_transcript = *render_to_terminal && p.out.is_none();
                 let exec_outcome = per_execute_tools_web(
                     tool_calls,
@@ -656,7 +673,10 @@ where
                 )
                 .await;
                 if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-                    return Ok(None);
+                    return Err(RunAgentTurnError::TurnAborted {
+                        phase: AgentTurnSubPhase::Executor,
+                        reason: TurnAbortReason::SseDisconnected,
+                    });
                 }
                 if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);
@@ -685,11 +705,10 @@ where
                 if let Some(tx) = p.out {
                     let _ = crate::sse::send_string_logged(
                         tx,
-                        encode_message(SsePayload::Error(SseErrorBody {
-                            error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
-                            code: Some("plan_rewrite_exhausted".to_string()),
-                            reason_code: Some(reason.as_str().to_string()),
-                        })),
+                        encode_message(SsePayload::Error(sse_plan_rewrite_exhausted_body(
+                            p.tracing_chat_turn.as_ref(),
+                            reason.as_str(),
+                        ))),
                         "staged::patch_plan_rewrite_exhausted",
                     )
                     .await;
@@ -737,7 +756,7 @@ pub(crate) async fn run_staged_plan_with_prepared_request<F>(
     echo_terminal_staged: bool,
     labels: StagedPlanRunLabels,
     make_step_user_message: F,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+) -> Result<(), RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
@@ -780,7 +799,13 @@ where
         push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
         match per_reflect_after_assistant(p, per_coord, &finish_reason, &msg).await {
             ReflectOnAssistantOutcome::ProceedToExecuteTools => {
-                let tool_calls = msg.tool_calls.as_ref().ok_or("无 tool_calls")?;
+                let tool_calls =
+                    msg.tool_calls
+                        .as_ref()
+                        .ok_or_else(|| RunAgentTurnError::Other {
+                            phase: AgentTurnSubPhase::Executor,
+                            message: "无 tool_calls".to_string(),
+                        })?;
                 let echo_terminal_transcript = render_to_terminal && p.out.is_none();
                 let exec_outcome = per_execute_tools_web(
                     tool_calls,
@@ -808,7 +833,10 @@ where
                 )
                 .await;
                 if matches!(exec_outcome, ExecuteToolsBatchOutcome::AbortedSse) {
-                    return Ok(());
+                    return Err(RunAgentTurnError::TurnAborted {
+                        phase: AgentTurnSubPhase::Executor,
+                        reason: TurnAbortReason::SseDisconnected,
+                    });
                 }
                 if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);
@@ -834,11 +862,10 @@ where
                 if let Some(tx) = p.out {
                     let _ = crate::sse::send_string_logged(
                         tx,
-                        encode_message(SsePayload::Error(SseErrorBody {
-                            error: PerCoordinator::plan_rewrite_exhausted_sse_message().to_string(),
-                            code: Some("plan_rewrite_exhausted".to_string()),
-                            reason_code: Some(reason.as_str().to_string()),
-                        })),
+                        encode_message(SsePayload::Error(sse_plan_rewrite_exhausted_body(
+                            p.tracing_chat_turn.as_ref(),
+                            reason.as_str(),
+                        ))),
                         "staged::plan_rewrite_exhausted",
                     )
                     .await;
@@ -1095,7 +1122,10 @@ where
                             no_task: false,
                         };
                         let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan)
-                            .map_err(|e| e.to_string())?;
+                            .map_err(|e| RunAgentTurnError::Other {
+                                phase: AgentTurnSubPhase::Executor,
+                                message: e.to_string(),
+                            })?;
                         push_assistant_merging_trailing_empty_placeholder(
                             patch_ctx.p.messages,
                             Message::assistant_only(json),
@@ -1172,8 +1202,12 @@ where
                         steps: plan_steps.clone(),
                         no_task: false,
                     };
-                    let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan)
-                        .map_err(|e| e.to_string())?;
+                    let json = plan_artifact::agent_reply_plan_v1_to_json_string(&replan).map_err(
+                        |e| RunAgentTurnError::Other {
+                            phase: AgentTurnSubPhase::Executor,
+                            message: e.to_string(),
+                        },
+                    )?;
                     push_assistant_merging_trailing_empty_placeholder(
                         patch_ctx.p.messages,
                         Message::assistant_only(json),
@@ -1260,7 +1294,7 @@ where
 pub(super) async fn run_logical_dual_agent_then_execute_steps(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), RunAgentTurnError> {
     let render_to_terminal = p.render_to_terminal;
     let echo_terminal_staged = render_to_terminal && p.out.is_none();
 

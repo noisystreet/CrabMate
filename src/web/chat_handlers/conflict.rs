@@ -26,6 +26,8 @@ pub(crate) fn conversation_conflict_sse_line() -> String {
         error: CONVERSATION_CONFLICT_MESSAGE.to_string(),
         code: Some(CONVERSATION_CONFLICT_CODE.to_string()),
         reason_code: None,
+        turn_id: None,
+        sub_phase: None,
     }))
 }
 

@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt;
 
 /// 模型 HTTP 调用失败（含传输层）；与 `redact` 后的用户可见文案一致，并标记是否应指数退避重试。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LlmCallError {
     /// 已脱敏、可展示给 CLI/Web 的说明（与历史 `String` 错误串形状对齐）。
     pub user_message: String,

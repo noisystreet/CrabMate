@@ -15,6 +15,7 @@ use log::debug;
 use crate::agent::per_coord::PerCoordinator;
 use crate::config::PlannerExecutorMode;
 
+mod errors;
 mod execute_tools;
 mod messages;
 mod outer_loop;
@@ -27,6 +28,7 @@ mod staged_sse;
 mod sub_agent_policy;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
+pub(crate) use errors::{AgentTurnSubPhase, RunAgentTurnError};
 #[allow(unused_imports)]
 pub(crate) use execute_tools::{
     ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web, sse_sender_closed,
@@ -48,7 +50,7 @@ mod tests;
 
 pub(crate) async fn run_agent_turn_common(
     p: &mut RunLoopParams<'_>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), RunAgentTurnError> {
     if let Some(ctx) = p.cli_tool_ctx {
         ctx.reset_command_stats();
     }
