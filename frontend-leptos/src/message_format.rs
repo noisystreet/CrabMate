@@ -922,10 +922,28 @@ pub fn message_text_for_display_ex(
         );
         if apply_assistant_display_filters {
             let r = r_body.trim();
+            let a = answer.trim();
+            let t_trim = t_body.trim();
+            let text_looks_like_plan_json = t_trim.contains("\"agent_reply_plan\"")
+                || t_trim.contains("\"type\":\"agent_reply_plan\"");
+            let answer_is_plan_digest_only = text_looks_like_plan_json
+                && (a.is_empty() || a == crate::i18n::plan_generated(loc));
             if r.is_empty() {
                 answer
-            } else if answer.trim().is_empty() {
-                r.to_string()
+            } else if a.is_empty() || answer_is_plan_digest_only {
+                // Web SSE：`assistant_answer_phase` 之前的增量写入 `reasoning_text`，之后写入 `text`。
+                // 分阶段无工具规划轮（尤其 `no_task`）可能从未进入终答相，导致「规划前言 + ```json` 围栏」
+                // 全在 `reasoning_text` 而 `text` 为空（或仅剥出「已生成分阶段规划。」占位）；若此处仅回显 `r`，
+                // 会跳过对围栏内 `agent_reply_plan` 的剥离。
+                let merged = format!("{}\n\n{}", r_body.trim_end(), t_body.trim_start());
+                let merged_out =
+                    assistant_text_for_display(&merged, is_streaming_last_assistant, loc, true);
+                let mv = merged_out.trim();
+                if mv.is_empty() || mv != r {
+                    merged_out
+                } else {
+                    r.to_string()
+                }
             } else {
                 format!("{r}\n\n{answer}")
             }
@@ -963,6 +981,9 @@ mod tests {
     use super::message_text_for_display_ex;
     use crate::i18n::Locale;
     use crate::storage::StoredMessage;
+
+    /// Embedded copy of `fixtures/chat_resp1.md` (redacted blocks + `agent_reply_plan` fence).
+    const CHAT_RESP1_FIXTURE: &str = include_str!("../fixtures/chat_resp1.md");
 
     #[test]
     fn collapse_consecutive_blank_lines_merges_runs() {
@@ -1120,13 +1141,51 @@ mod tests {
         assert_filtered_redacted_plan_export_body(&out);
     }
 
-    /// `fixtures/chat_resp1.md`：助手原文示例（两段 `<redacted_thinking>` + 文末 `agent_reply_plan` 围栏），供 `assistant_text_for_display` 过滤回归。
     #[test]
     fn filter_chat_resp1_fixture_md() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/chat_resp1.md");
-        let raw = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        let out = assistant_text_for_display(raw.trim(), false, Locale::ZhHans, true);
+        let out =
+            assistant_text_for_display(CHAT_RESP1_FIXTURE.trim(), false, Locale::ZhHans, true);
+        assert_filtered_redacted_plan_export_body(&out);
+    }
+
+    #[test]
+    fn filter_chat_resp1_message_text_for_display_ex_all_in_text() {
+        let m = StoredMessage {
+            id: "chat_resp1".into(),
+            role: "assistant".into(),
+            text: CHAT_RESP1_FIXTURE.to_string(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+        assert_filtered_redacted_plan_export_body(&out);
+    }
+
+    #[test]
+    fn filter_chat_resp1_message_text_for_display_ex_split_after_first_redacted_block() {
+        let needle = "</think>";
+        let pos = CHAT_RESP1_FIXTURE
+            .find(needle)
+            .expect("chat_resp1.md must contain closing redacted_thinking");
+        let split = pos + needle.len();
+        let reasoning = &CHAT_RESP1_FIXTURE[..split];
+        let text = CHAT_RESP1_FIXTURE[split..]
+            .trim_start_matches(['\n', '\r'])
+            .to_string();
+        let m = StoredMessage {
+            id: "chat_resp1-split".into(),
+            role: "assistant".into(),
+            text,
+            reasoning_text: reasoning.to_string(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
         assert_filtered_redacted_plan_export_body(&out);
     }
 
@@ -1286,5 +1345,75 @@ mod tests {
             created_at: 0,
         };
         assert_eq!(message_text_for_display_ex(&m, Locale::ZhHans, true), "");
+    }
+
+    /// `fixtures/chat_ex2.md`：规划前言在 `assistant_answer_phase` 前落入 `reasoning_text`，JSON 围栏在 `text`。
+    #[test]
+    fn no_task_plan_split_across_reasoning_and_text_hides_planner_prose() {
+        let reasoning = concat!(
+            "用户问\"你是谁\"。这是一个简单的自我介绍问题，不需要调用任何工具。\n\n",
+            "根据规则，用户没有提出需要分步执行的具体任务，所以应该设置 `\"no_task\": true`，并且 `\"steps\"` 为空数组。\n\n",
+            "让我构建 JSON 对象：\n",
+            "- type: \"agent_reply_plan\"\n",
+            "- version: 1\n",
+            "- no_task: true\n",
+            "- steps: []\n\n\n\n",
+        );
+        let text = concat!(
+            "```json\n",
+            "{\n",
+            "  \"type\": \"agent_reply_plan\",\n",
+            "  \"version\": 1,\n",
+            "  \"no_task\": true,\n",
+            "  \"steps\": []\n",
+            "}\n",
+            "```\n",
+        );
+        let m = StoredMessage {
+            id: "x".into(),
+            role: "assistant".into(),
+            text: text.into(),
+            reasoning_text: reasoning.into(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+        assert!(
+            !out.contains("用户问"),
+            "planner preamble in reasoning_text should not leak: {out}"
+        );
+        assert!(
+            !out.contains("agent_reply_plan"),
+            "plan json should be stripped: {out}"
+        );
+    }
+
+    /// 整段规划（含围栏）均在 `reasoning_text`、`text` 为空（常见于未下发 `assistant_answer_phase` 的流式收尾）。
+    #[test]
+    fn no_task_plan_whole_in_reasoning_text_still_hidden() {
+        let body = concat!(
+            "用户问\"你是谁\"。\n\n",
+            "```json\n",
+            "{\"type\":\"agent_reply_plan\",\"version\":1,\"no_task\":true,\"steps\":[]}\n",
+            "```\n",
+        );
+        let m = StoredMessage {
+            id: "x".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: body.into(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+        assert!(!out.contains("用户问"), "preamble should not leak: {out}");
+        assert!(
+            !out.contains("agent_reply_plan"),
+            "json should not leak: {out}"
+        );
     }
 }
