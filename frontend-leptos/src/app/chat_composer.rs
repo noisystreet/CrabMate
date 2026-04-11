@@ -70,7 +70,6 @@ pub(super) fn wire_session_switch_clears_chat_state(
     stream_job_id: RwSignal<Option<u64>>,
     stream_last_event_seq: RwSignal<u64>,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
-    bubble_md_selected_ids: RwSignal<Vec<String>>,
 ) {
     Effect::new(move |_| {
         let id = active_id.get();
@@ -87,7 +86,7 @@ pub(super) fn wire_session_switch_clears_chat_state(
         pending_images.set(Vec::new());
         pending_clarification.set(None);
         // 仅用上方 `list`（get_untracked）：勿再 `sessions.with`，否则 effect 会订阅流式
-        // `sessions` 更新，每次落盘消息都会清空多选勾选。
+        // `sessions` 更新。
         let st = list.iter().find(|s| s.id == id).map(|s| {
             let mut st = SessionSyncState::local_only();
             if let Some(ref cid) = s.server_conversation_id {
@@ -105,7 +104,6 @@ pub(super) fn wire_session_switch_clears_chat_state(
         stream_job_id.set(None);
         stream_last_event_seq.set(0);
         expanded_long_assistant_ids.set(Vec::new());
-        bubble_md_selected_ids.set(Vec::new());
     });
 }
 

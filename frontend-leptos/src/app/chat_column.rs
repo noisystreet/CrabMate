@@ -1,4 +1,4 @@
-//! 中部聊天列：消息列表、输入框、查找/多选入口。
+//! 中部聊天列：消息列表、输入框、查找入口。
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -19,7 +19,6 @@ use crate::api::upload_files_multipart;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::{self, Locale};
-use crate::session_ops::{clamp_session_ctx_menu_pos, selected_text_in_messages_for_context_copy};
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 
@@ -30,12 +29,7 @@ pub fn chat_column_view(
     auto_scroll_chat: RwSignal<bool>,
     messages_scroll_from_effect: RwSignal<bool>,
     last_messages_scroll_top: RwSignal<i32>,
-    session_context_menu: RwSignal<Option<crate::session_ops::SessionContextAnchor>>,
-    chat_export_ctx_menu: RwSignal<Option<(f64, f64, Option<String>)>>,
-    chat_find_panel_open: RwSignal<bool>,
     timeline_panel_expanded: RwSignal<bool>,
-    bubble_md_select_mode: RwSignal<bool>,
-    bubble_md_selected_ids: RwSignal<Vec<String>>,
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
@@ -105,54 +99,9 @@ pub fn chat_column_view(
                         });
                     }
                 >
-                    <Show when=move || !chat_find_panel_open.get()>
-                        <button
-                            type="button"
-                            class="bubble-md-toggle"
-                            prop:title=move || i18n::bubble_md_toggle_title(locale.get())
-                            prop:aria-label=move || i18n::bubble_md_toggle_aria(locale.get())
-                            aria-pressed=move || bubble_md_select_mode.get()
-                            on:click=move |_| {
-                                let next = !bubble_md_select_mode.get();
-                                bubble_md_select_mode.set(next);
-                                if !next {
-                                    bubble_md_selected_ids.set(Vec::new());
-                                }
-                            }
-                        >
-                            <svg
-                                class="bubble-md-toggle-icon"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                aria-hidden="true"
-                            >
-                                <path d="M9 11l2 2 4-4" />
-                                <path d="M4 6h.01" />
-                                <path d="M4 12h.01" />
-                                <path d="M4 18h.01" />
-                                <path d="M8 6h13" />
-                                <path d="M8 12h13" />
-                                <path d="M8 18h9" />
-                            </svg>
-                        </button>
-                    </Show>
                     <div
                         class="messages"
                         node_ref=messages_scroller
-                        on:contextmenu=move |ev: web_sys::MouseEvent| {
-                            ev.prevent_default();
-                            session_context_menu.set(None);
-                            let (x, y) = clamp_session_ctx_menu_pos(ev.client_x(), ev.client_y());
-                            let selection = ev
-                                .current_target()
-                                .and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok())
-                                .and_then(|el| selected_text_in_messages_for_context_copy(&el));
-                            chat_export_ctx_menu.set(Some((x, y, selection)));
-                        }
                         on:wheel=move |ev: web_sys::WheelEvent| {
                             // 用户上滚查看历史时，立即关闭自动跟底，避免流式期间被强行拉回底部。
                             if ev.delta_y() < 0.0 {
@@ -229,8 +178,6 @@ pub fn chat_column_view(
                                                     chat_find_query,
                                                     chat_find_match_ids,
                                                     chat_find_cursor,
-                                                    bubble_md_select_mode,
-                                                    bubble_md_selected_ids,
                                                     auto_scroll_chat,
                                                     status_busy,
                                                     session_sync,
@@ -252,8 +199,6 @@ pub fn chat_column_view(
                                                         sessions,
                                                         active_id,
                                                         expanded_long_assistant_ids,
-                                                        bubble_md_select_mode,
-                                                        bubble_md_selected_ids,
                                                         chat_find_cursor,
                                                         status_busy,
                                                         session_sync,
@@ -277,8 +222,6 @@ pub fn chat_column_view(
                                                         sessions,
                                                         active_id,
                                                         expanded_long_assistant_ids,
-                                                        bubble_md_select_mode,
-                                                        bubble_md_selected_ids,
                                                         chat_find_cursor,
                                                         status_busy,
                                                         session_sync,

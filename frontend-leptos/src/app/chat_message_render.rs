@@ -105,8 +105,6 @@ pub(crate) fn tool_run_group_view(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
-    bubble_md_select_mode: RwSignal<bool>,
-    bubble_md_selected_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
     status_busy: RwSignal<bool>,
     session_sync: RwSignal<SessionSyncState>,
@@ -178,8 +176,6 @@ pub(crate) fn tool_run_group_view(
                                         chat_find_query,
                                         chat_find_match_ids,
                                         chat_find_cursor,
-                                        bubble_md_select_mode,
-                                        bubble_md_selected_ids,
                                         auto_scroll_chat,
                                         status_busy,
                                         session_sync,
@@ -223,8 +219,6 @@ pub(crate) fn tool_run_group_view(
                             chat_find_query,
                             chat_find_match_ids,
                             chat_find_cursor,
-                            bubble_md_select_mode,
-                            bubble_md_selected_ids,
                             auto_scroll_chat,
                             status_busy,
                             session_sync,
@@ -255,8 +249,6 @@ pub(crate) fn staged_timeline_group_view(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
-    bubble_md_select_mode: RwSignal<bool>,
-    bubble_md_selected_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
     status_busy: RwSignal<bool>,
     session_sync: RwSignal<SessionSyncState>,
@@ -328,8 +320,6 @@ pub(crate) fn staged_timeline_group_view(
                                         chat_find_query,
                                         chat_find_match_ids,
                                         chat_find_cursor,
-                                        bubble_md_select_mode,
-                                        bubble_md_selected_ids,
                                         auto_scroll_chat,
                                         status_busy,
                                         session_sync,
@@ -373,8 +363,6 @@ pub(crate) fn staged_timeline_group_view(
                             chat_find_query,
                             chat_find_match_ids,
                             chat_find_cursor,
-                            bubble_md_select_mode,
-                            bubble_md_selected_ids,
                             auto_scroll_chat,
                             status_busy,
                             session_sync,
@@ -405,8 +393,6 @@ pub(crate) fn chat_message_row(
     chat_find_query: RwSignal<String>,
     chat_find_match_ids: RwSignal<Vec<String>>,
     chat_find_cursor: RwSignal<usize>,
-    bubble_md_select_mode: RwSignal<bool>,
-    bubble_md_selected_ids: RwSignal<Vec<String>>,
     auto_scroll_chat: RwSignal<bool>,
     status_busy: RwSignal<bool>,
     session_sync: RwSignal<SessionSyncState>,
@@ -563,33 +549,9 @@ pub(crate) fn chat_message_row(
             body_inner
         }
     };
-    let mid_for_select = StoredValue::new(m.id.clone());
     let mid_dom = m.id.clone();
     view! {
         <div class="msg-with-select">
-            <Show when=move || bubble_md_select_mode.get()>
-                <label class="msg-select-label" prop:title=move || i18n::msg_select_label_title(locale.get())>
-                    <input
-                        type="checkbox"
-                        class="msg-select-cb"
-                        prop:aria-label=move || i18n::msg_select_cb_aria(locale.get())
-                        prop:checked=move || {
-                            let mid = mid_for_select.get_value();
-                            bubble_md_selected_ids.with(|v| v.contains(&mid))
-                        }
-                        on:change=move |_| {
-                            let mid = mid_for_select.get_value();
-                            bubble_md_selected_ids.update(|v| {
-                                if let Some(i) = v.iter().position(|x| x == &mid) {
-                                    v.remove(i);
-                                } else {
-                                    v.push(mid);
-                                }
-                            });
-                        }
-                    />
-                </label>
-            </Show>
             <div class="msg-stack">
                 <div
                     class=move || {

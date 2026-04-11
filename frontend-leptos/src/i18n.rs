@@ -1012,20 +1012,6 @@ pub fn clarification_user_bubble_stub(l: Locale) -> &'static str {
     }
 }
 
-pub fn bubble_md_toggle_title(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "多选消息导出 Markdown（聊天区亦可右键）",
-        Locale::En => "Select messages to export Markdown (or right-click in chat)",
-    }
-}
-
-pub fn bubble_md_toggle_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "多选导出 Markdown",
-        Locale::En => "Select for Markdown export",
-    }
-}
-
 pub fn timeline_panel_toggle_label(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "规划 / 工具时间线",
@@ -1135,64 +1121,6 @@ pub fn timeline_panel_legacy_tool(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "工具（历史）",
         Locale::En => "Tool (legacy)",
-    }
-}
-
-// --- 聊天区右键菜单 ---
-
-pub fn chat_ctx_menu_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "聊天区菜单",
-        Locale::En => "Chat menu",
-    }
-}
-
-pub fn chat_ctx_copy_selection(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "复制选中文字",
-        Locale::En => "Copy selection",
-    }
-}
-
-pub fn chat_ctx_md_multi(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "多选导出 Markdown…",
-        Locale::En => "Multi-select Markdown export…",
-    }
-}
-
-pub fn chat_ctx_select_all(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "全选消息",
-        Locale::En => "Select all messages",
-    }
-}
-
-pub fn chat_ctx_clear_sel(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "清除选择",
-        Locale::En => "Clear selection",
-    }
-}
-
-pub fn chat_ctx_export_md_empty(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "导出已选为 Markdown",
-        Locale::En => "Export selection as Markdown",
-    }
-}
-
-pub fn chat_ctx_export_md_n(l: Locale, n: usize) -> String {
-    match l {
-        Locale::ZhHans => format!("导出已选为 Markdown（{n} 条）"),
-        Locale::En => format!("Export {n} messages as Markdown"),
-    }
-}
-
-pub fn chat_ctx_exit_multi(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "退出多选",
-        Locale::En => "Exit multi-select",
     }
 }
 
@@ -1462,20 +1390,6 @@ pub fn msg_jump_user_aria(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "跳转到对应用户消息",
         Locale::En => "Jump to user message",
-    }
-}
-
-pub fn msg_select_label_title(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "选中以加入导出",
-        Locale::En => "Select for export",
-    }
-}
-
-pub fn msg_select_cb_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "选中此条以导出 Markdown",
-        Locale::En => "Select for Markdown export",
     }
 }
 
@@ -1925,6 +1839,7 @@ pub fn export_md_title_full(l: Locale) -> &'static str {
     }
 }
 
+#[allow(dead_code)] // 供 `session_export` 按 id 子集导出测试保留；Web UI 已移除多选导出。
 pub fn export_md_title_selection(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "# CrabMate 聊天记录（已选消息）\n\n",

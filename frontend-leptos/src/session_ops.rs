@@ -295,12 +295,6 @@ pub fn export_session_json_for_id(
     }
 }
 
-fn element_for_closest(n: &Node) -> Option<web_sys::Element> {
-    n.dyn_ref::<web_sys::Element>()
-        .cloned()
-        .or_else(|| n.parent_element())
-}
-
 /// 消息滚动容器内是否存在**非折叠**文本选区（用户正在拖动选中或已选中一段文字）。
 ///
 /// 此时对 `.messages` 做程序化 `scrollTop` 往往会导致选区异常或无法复制，流式跟底应跳过。
@@ -322,40 +316,6 @@ pub fn messages_scroller_has_non_collapsed_selection(scroller: &HtmlElement) -> 
     };
     let scroller_node: &Node = scroller.unchecked_ref();
     scroller_node.contains(Some(&anchor)) || scroller_node.contains(Some(&focus))
-}
-
-/// 当前选区为消息列表内**同一** `.msg` 气泡中的非空文本时，返回可复制字符串；否则 `None`。
-/// 用于聊天区自定义右键菜单中的「复制选中文字」。
-pub fn selected_text_in_messages_for_context_copy(messages: &HtmlElement) -> Option<String> {
-    let window = web_sys::window()?;
-    let sel = window.get_selection().ok().flatten()?;
-    if sel.is_collapsed() || sel.range_count() == 0 {
-        return None;
-    }
-    let anchor = sel.anchor_node()?;
-    let focus = sel.focus_node()?;
-    let messages_node: &Node = messages.unchecked_ref();
-    if !messages_node.contains(Some(&anchor)) || !messages_node.contains(Some(&focus)) {
-        return None;
-    }
-    let host_a = element_for_closest(&anchor)?;
-    let host_b = element_for_closest(&focus)?;
-    let msg_a = host_a.closest(".msg").ok().flatten()?;
-    let msg_b = host_b.closest(".msg").ok().flatten()?;
-    let na: &Node = msg_a.unchecked_ref();
-    let nb: &Node = msg_b.unchecked_ref();
-    if !na.is_same_node(Some(nb)) {
-        return None;
-    }
-    let range = sel.get_range_at(0).ok()?;
-    let frag = range.clone_contents().ok()?;
-    let text = frag.text_content()?;
-    let t = text.trim();
-    if t.is_empty() {
-        None
-    } else {
-        Some(t.to_string())
-    }
 }
 
 /// 将文本写入系统剪贴板；失败时 `window.alert` 简短提示。
@@ -648,7 +608,7 @@ mod message_branch_tests {
 
 pub fn clamp_session_ctx_menu_pos(cx: i32, cy: i32) -> (f64, f64) {
     const MENU_W: f64 = 190.0;
-    // 上限略大，兼容聊天区多选菜单（多项）与侧栏会话菜单。
+    // 上限略大，兼容侧栏会话右键菜单等。
     const MENU_H: f64 = 360.0;
     let (ww, wh) = web_sys::window()
         .map(|w| {
