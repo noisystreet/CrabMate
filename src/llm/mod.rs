@@ -6,6 +6,7 @@
 //! - **本模块**：`ChatRequest` 的惯用构造、带指数退避的**重试策略**（仅对 [`call_error::LlmCallError`] 标记为 `retryable` 的失败：如 **408/429/5xx** 与部分传输错误；**401/400** 等客户端错误不重试）、以及后续可扩展的调用入口（例如统一超时、观测字段）。
 //!
 //! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent::agent_turn` 中散落重试与请求拼装逻辑。
+//! **维护约定**（唯一入口 / 禁止直接 `api::stream_chat`）见 **`docs/DEVELOPMENT.md`** 章节「`agent_turn` 与 `llm`：唯一入口与禁止事项」。
 
 mod api;
 pub mod backend;
