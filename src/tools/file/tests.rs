@@ -41,6 +41,37 @@ fn test_read_file_with_line_range() {
 }
 
 #[test]
+fn test_read_file_swaps_inverted_start_end() {
+    let dir = make_test_dir();
+    let file = dir.join("big.txt");
+    let mut content = String::new();
+    for i in 1..=500 {
+        content.push_str(&format!("L{i}\n"));
+    }
+    std::fs::write(&file, &content).unwrap();
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let out = read_file(
+        r#"{"path":"big.txt","start_line":419,"end_line":150}"#,
+        &dir,
+        &ctx,
+    );
+    let out = strip_read_file_output_header_for_tests(&out);
+    assert!(
+        !out.contains("错误：end_line"),
+        "inverted range should swap, not error: {}",
+        out
+    );
+    assert!(
+        out.contains("150|L150"),
+        "should start at line 150: {}",
+        out
+    );
+    assert!(out.contains("419|L419"), "should include line 419: {}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_read_file_respects_max_lines_without_end_line() {
     let dir = make_test_dir();
     let file = dir.join("big.txt");
