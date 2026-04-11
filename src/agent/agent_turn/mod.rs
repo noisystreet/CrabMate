@@ -7,6 +7,8 @@
 //!
 //! 子模块：`messages`（助手合并/分隔线）、`staged_sse`（分阶段 SSE）、`params`（`RunLoopParams`）、`plan_call`（P）、`reflect`（R）、
 //! `execute_tools`（E）、`outer_loop`（默认主循环）、`staged`（分阶段与逻辑双 agent）。
+//!
+//! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/DEVELOPMENT.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 
 use log::debug;
 
