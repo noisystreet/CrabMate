@@ -22,6 +22,9 @@ pub(crate) async fn run_agent_outer_loop(
     per_coord: &mut PerCoordinator,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     'outer: loop {
+        if let Some(ref t) = p.tracing_chat_turn {
+            t.on_outer_loop_iteration();
+        }
         if sse_sender_closed(p.out) {
             info!(target: "crabmate", "SSE sender closed, aborting run_agent_turn loop early");
             break;
@@ -166,6 +169,7 @@ pub(crate) async fn run_agent_outer_loop(
                 turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
                 long_term_memory: p.long_term_memory.clone(),
                 long_term_memory_scope_id: p.long_term_memory_scope_id.clone(),
+                tracing_chat_turn: p.tracing_chat_turn.clone(),
             },
         )
         .await;

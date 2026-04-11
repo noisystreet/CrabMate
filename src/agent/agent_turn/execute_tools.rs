@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use futures_util::stream::{self, StreamExt};
 use log::{info, warn};
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
 
@@ -32,6 +33,24 @@ use super::sub_agent_policy::{
 
 /// 本模块 `tracing` / `log` 的 `target`，便于 `RUST_LOG=crabmate::execute_tools` 过滤。
 const LOG_TARGET: &str = "crabmate::execute_tools";
+
+fn trace_parallel_tool_child_span(
+    tracing_turn: Option<&Arc<crate::observability::TracingChatTurn>>,
+    tool_call_id: &str,
+) -> tracing::Span {
+    match tracing_turn {
+        Some(t) => {
+            t.record_tool_call_id_for_log(tool_call_id);
+            tracing::span!(
+                parent: t.span.id(),
+                tracing::Level::INFO,
+                "parallel_tool",
+                tool_call_id = %tool_call_id,
+            )
+        }
+        None => tracing::Span::none(),
+    }
+}
 
 /// 并行执行时工具的分类，用于在构建 fut 前预分类，消除 if/else if/else 字符串比较。
 #[derive(Clone, Copy)]
@@ -65,6 +84,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub turn_allow: Option<&'a HashSet<String>>,
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
+    pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
 }
 
 pub(crate) enum ExecuteToolsBatchOutcome {
@@ -333,6 +353,7 @@ struct ExecuteToolsCommonCtx<'a> {
     turn_allow: Option<&'a HashSet<String>>,
     long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
+    tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
 }
 
 /// 只读可并行批：去重后 `spawn_blocking` + 限并发，再按原 `tool_calls` 顺序回写 SSE / messages。
@@ -359,6 +380,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,
+        tracing_chat_turn,
     } = ctx;
 
     let tools_defs_hint = Arc::new(tools_defs_full.to_vec());
@@ -408,6 +430,8 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         let ltm_scope = long_term_memory_scope_id.clone();
         let name = tc.function.name.clone();
         let args = tc.function.arguments.clone();
+        let tool_call_id_for_trace = tc.id.clone();
+        let tracing_turn_parallel = tracing_chat_turn.clone();
         let kind = if name == "http_fetch" {
             ParallelToolKind::HttpFetch
         } else {
@@ -441,7 +465,13 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
             let args_for_log = args.clone();
             let name_for_return = name.clone();
             let args_for_return = args.clone();
+            let parallel_span = trace_parallel_tool_child_span(
+                tracing_turn_parallel.as_ref(),
+                &tool_call_id_for_trace,
+            );
+            let span_for_enter = parallel_span.clone();
             let work = async move {
+                let _parallel_guard = span_for_enter.enter();
                 info!(
                     target: LOG_TARGET,
                     "并行工具开始 tool={} args_preview={}",
@@ -450,46 +480,54 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
                 );
                 let t_tool = Instant::now();
                 let result = match kind {
-                    ParallelToolKind::HttpFetch => tokio::task::spawn_blocking(move || {
-                        let (mem_rt, mem_scope) =
-                            crate::long_term_memory::tool_context_memory_extras(
+                    ParallelToolKind::HttpFetch => {
+                        let span_http = tracing::Span::current();
+                        tokio::task::spawn_blocking(move || {
+                            let _g = span_http.enter();
+                            let (mem_rt, mem_scope) =
+                                crate::long_term_memory::tool_context_memory_extras(
+                                    cfg.as_ref(),
+                                    ltm.clone(),
+                                    ltm_scope.as_deref(),
+                                );
+                            let ctx = tools::tool_context_for_with_read_cache_and_memory(
                                 cfg.as_ref(),
-                                ltm.clone(),
-                                ltm_scope.as_deref(),
+                                cfg.allowed_commands.as_ref(),
+                                wd.as_path(),
+                                rfc.as_ref().map(|a| a.as_ref()),
+                                wcl.as_ref(),
+                                mem_rt,
+                                mem_scope,
                             );
-                        let ctx = tools::tool_context_for_with_read_cache_and_memory(
-                            cfg.as_ref(),
-                            cfg.allowed_commands.as_ref(),
-                            wd.as_path(),
-                            rfc.as_ref().map(|a| a.as_ref()),
-                            wcl.as_ref(),
-                            mem_rt,
-                            mem_scope,
-                        );
-                        tools::http_fetch::run_direct(&args, &ctx)
-                    })
-                    .await
-                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
-                    ParallelToolKind::SyncDefault => tokio::task::spawn_blocking(move || {
-                        let (mem_rt, mem_scope) =
-                            crate::long_term_memory::tool_context_memory_extras(
+                            tools::http_fetch::run_direct(&args, &ctx)
+                        })
+                        .await
+                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                    }
+                    ParallelToolKind::SyncDefault => {
+                        let span_sync = tracing::Span::current();
+                        tokio::task::spawn_blocking(move || {
+                            let _g = span_sync.enter();
+                            let (mem_rt, mem_scope) =
+                                crate::long_term_memory::tool_context_memory_extras(
+                                    cfg.as_ref(),
+                                    ltm.clone(),
+                                    ltm_scope.as_deref(),
+                                );
+                            let ctx = tools::tool_context_for_with_read_cache_and_memory(
                                 cfg.as_ref(),
-                                ltm.clone(),
-                                ltm_scope.as_deref(),
+                                cfg.allowed_commands.as_ref(),
+                                wd.as_path(),
+                                rfc.as_ref().map(|a| a.as_ref()),
+                                wcl.as_ref(),
+                                mem_rt,
+                                mem_scope,
                             );
-                        let ctx = tools::tool_context_for_with_read_cache_and_memory(
-                            cfg.as_ref(),
-                            cfg.allowed_commands.as_ref(),
-                            wd.as_path(),
-                            rfc.as_ref().map(|a| a.as_ref()),
-                            wcl.as_ref(),
-                            mem_rt,
-                            mem_scope,
-                        );
-                        tools::run_tool(&name, &args, &ctx)
-                    })
-                    .await
-                    .unwrap_or_else(|e| format!("工具执行 panic：{}", e)),
+                            tools::run_tool(&name, &args, &ctx)
+                        })
+                        .await
+                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                    }
                 };
                 info!(
                     target: LOG_TARGET,
@@ -499,7 +537,8 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
                     t_tool.elapsed().as_millis()
                 );
                 (name_for_return, args_for_return, result)
-            };
+            }
+            .instrument(parallel_span);
             match tokio::time::timeout(Duration::from_secs(wall_secs), work).await {
                 Ok(triple) => triple,
                 Err(_) => {
@@ -599,6 +638,7 @@ async fn execute_tools_serial(
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,
+        tracing_chat_turn,
     } = ctx;
 
     let mut readonly_cache: HashMap<(String, String), String> = HashMap::new();
@@ -615,6 +655,9 @@ async fn execute_tools_serial(
         let name = tc.function.name.clone();
         let args = tc.function.arguments.clone();
         let id = tc.id.clone();
+        if let Some(ref t) = tracing_chat_turn {
+            t.record_tool_call_id_for_log(id.as_str());
+        }
         emit_tool_call_summary_sse(out, cfg.as_ref(), &name, &args).await;
         info!(
             target: LOG_TARGET,
@@ -902,6 +945,7 @@ pub(crate) async fn per_execute_tools_web(
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,
+        tracing_chat_turn,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -930,6 +974,7 @@ pub(crate) async fn per_execute_tools_web(
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,
+        tracing_chat_turn,
     })
     .await
 }

@@ -21,6 +21,9 @@
 
 ## 2. 服务端日志（`RUST_LOG` 与 `--log`）
 
+- **实现**：进程使用 **`tracing`**（**`tracing-subscriber`**）输出；既有 **`log::`** 调用经 **`tracing-log`** 进入同一套 subscriber。**`RUST_LOG`** 语法与 **`env_logger`** 时代相同（见 [tracing-subscriber `EnvFilter`](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html)）。
+- **JSON 行**（便于 `jq` / 日志平台）：设 **`AGENT_LOG_JSON=1`**（或 **`true`** / **`yes`** / **`on`**）；与 **`--log`** 组合时 stderr 与文件均为 JSON。
+- **Web 排障关联**：流式任务日志可带根 span **`chat_turn`** 的字段 **`job_id` / `stream_job_id` / `request_id` / `conversation_id`**，以及 **`outer_loop_iteration`**、**`tool_call_id`**（与 HTTP **`x-stream-job-id`** / SSE **`sse_capabilities`** 对齐）。
 - **默认**：未设置 `RUST_LOG` 时，`serve` 为 **info**；`repl` / `chat` / `bench` / `config` / `save-session` / `tool-replay` 等为 **warn**。见 [docs/CLI.md](CLI.md)。
 - **全局文件 + 镜像 stderr**：根级 **`--log /path/to.log`**（须写在子命令**之前**，如 `crabmate --log /tmp/cm.log serve`）。
 - **上下文管道（每轮进模型前）**  

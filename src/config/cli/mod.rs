@@ -1,9 +1,8 @@
-//! Clap 派生 CLI、`parse_args`、历史 argv 归一化与日志初始化。
+//! Clap 派生 CLI、`parse_args`、历史 argv 归一化；进程日志初始化见 crate 根 **`observability::init_tracing_subscriber`**。
 
 pub mod definitions;
 
 mod legacy_argv;
-mod logging;
 pub(crate) mod parse;
 
 pub use definitions::{
@@ -11,5 +10,4 @@ pub use definitions::{
     root_clap_command_for_man_page,
 };
 pub use legacy_argv::normalize_legacy_argv;
-pub use logging::init_logging;
 pub use parse::{parse_args, parse_args_from_argv};

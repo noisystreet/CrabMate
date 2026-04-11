@@ -725,6 +725,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 temperature_override,
                 seed_override,
                 state.long_term_memory.clone(),
+                job_id,
                 &conversation_id,
                 &sse_tx,
                 turn_allow,
@@ -906,6 +907,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 temperature_override,
                 seed_override,
                 state.long_term_memory.clone(),
+                job_id,
                 &conversation_id,
                 turn_allow,
             ))
