@@ -144,7 +144,7 @@ Policy file: root **`deny.toml`**. These checks are **not** in pre-commit to avo
 
 ## Not automated
 
-- **Visual / layout smoke list**: [`frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`](../../frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md) (no screenshot diff pipeline in-repo).
+- **Visual / layout smoke list**: [`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`](../frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md) (no screenshot diff pipeline in-repo).
 
 ## See also
 
