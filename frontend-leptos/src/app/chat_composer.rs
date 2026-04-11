@@ -268,6 +268,11 @@ pub(super) fn wire_chat_composer_streams(
                     });
                     stream_ctx.status_busy.set(false);
                     *stream_ctx.abort_cell.lock().unwrap() = None;
+                    // 流完全结束后再触发水合：此时助手气泡已退出 loading，且须在 `sessions.with` 之外
+                    // 用 `session_hydrate_nonce` 单独驱动，避免「水合写回 messages → Effect 再拉取」的循环竞态。
+                    stream_ctx
+                        .session_hydrate_nonce
+                        .update(|n| *n = n.wrapping_add(1));
                 })
             };
             let on_error: Rc<dyn Fn(String)> = {
@@ -378,10 +383,8 @@ pub(super) fn wire_chat_composer_streams(
                             s.server_revision = Some(rev);
                         }
                     });
-                    // 消息已保存到服务器，触发水合以同步最新状态
-                    stream_ctx
-                        .session_hydrate_nonce
-                        .update(|n| *n = n.wrapping_add(1));
+                    // 水合由流结束时的 `on_done` 递增 `session_hydrate_nonce` 触发（见上），
+                    // 勿在此处递增：否则在助手仍为 loading 时会与 `sessions` 订阅叠加，造成重复拉取与覆盖。
                 })
             };
             let on_stream_ended: Rc<dyn Fn(String)> = {
