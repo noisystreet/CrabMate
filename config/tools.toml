@@ -41,6 +41,7 @@ allowed_commands = [
     "git",
     # GitHub CLI（需本机安装；与 git 相同须遵守 run_command 参数规则）
     "gh",
+    "pre-commit",
     "gradle",
     "mvn",
     "npm",
