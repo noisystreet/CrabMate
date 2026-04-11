@@ -2,20 +2,18 @@
 //!
 //! 同步变换的**步骤实现与编排**见 [`super::message_pipeline`]（[`apply_session_sync_pipeline`]）；本文件保留 **async 摘要**与对外的 `prepare_messages_for_model` 入口。
 
-use log::{info, warn};
-use reqwest::Client;
-use tokio::sync::mpsc::Sender;
-
 use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::llm::{
-    ChatCompletionsBackend, CompleteChatRetryingParams, chat_request_thinking_from_cfg,
-    complete_chat_retrying, vendor_temperature_for_config,
+    ChatCompletionsBackend, CompleteChatRetryingParams, LlmRetryingTransportOpts,
+    chat_request_thinking_from_cfg, complete_chat_retrying, vendor_temperature_for_config,
 };
 use crate::types::{
     ChatRequest, Message, is_message_excluded_from_llm_context_except_memory,
     message_content_as_str, message_content_into_text_lossy,
 };
+use log::{info, warn};
+use reqwest::Client;
 
 const SUMMARY_SYSTEM: &str = "你只负责压缩对话历史。使用简洁中文要点列表，保留：用户目标、关键路径/命令、错误信息、未决问题。不要编造事实。";
 
@@ -138,18 +136,14 @@ pub async fn maybe_summarize_with_llm(
         thinking: chat_request_thinking_from_cfg(cfg),
     };
 
-    let cc = CompleteChatRetryingParams {
+    let cc = CompleteChatRetryingParams::new(
         llm_backend,
-        http: client,
+        client,
         api_key,
         cfg,
-        out: None::<&Sender<String>>,
-        render_to_terminal: false,
-        no_stream: true,
-        cancel: None,
-        plain_terminal_stream: false,
-        request_chrome_trace: None,
-    };
+        LlmRetryingTransportOpts::headless_no_stream(),
+        None,
+    );
     match complete_chat_retrying(&cc, &req).await {
         Ok((msg, _)) => {
             let summary_text = message_content_into_text_lossy(msg.content);

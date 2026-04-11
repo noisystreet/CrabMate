@@ -15,6 +15,7 @@ use log::debug;
 use crate::agent::per_coord::PerCoordinator;
 use crate::config::PlannerExecutorMode;
 
+mod agent_llm_call;
 mod errors;
 mod execute_tools;
 mod messages;
