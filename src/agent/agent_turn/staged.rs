@@ -11,8 +11,8 @@ use crate::agent::plan_ensemble;
 use crate::agent::plan_optimizer::{self, STAGED_PLAN_OPTIMIZER_COACH_MARK};
 use crate::config::StagedPlanFeedbackMode;
 use crate::llm::{
-    CompleteChatRetryingParams, LlmCompleteError, complete_chat_retrying,
-    kimi_k2_5_vendor_requires_tool_call_reasoning, no_tools_chat_request_from_messages,
+    LlmCompleteError, LlmRetryingTransportOpts, kimi_k2_5_vendor_requires_tool_call_reasoning,
+    no_tools_chat_request_from_messages,
 };
 use crate::sse::{SsePayload, encode_message};
 use crate::tool_result::tool_message_content_ok_for_model;
@@ -22,6 +22,7 @@ use crate::types::{
     messages_for_api_stripping_reasoning_skip_ui_separators,
 };
 
+use super::agent_llm_call::AgentLlmCall;
 use super::errors::{
     AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason, sse_plan_rewrite_exhausted_body,
 };
@@ -86,19 +87,19 @@ async fn complete_planner_no_tools_chat_retrying(
         p.out
     };
 
-    let cc = CompleteChatRetryingParams {
-        llm_backend: p.llm_backend,
-        http: p.client,
-        api_key: p.api_key,
-        cfg: p.cfg.as_ref(),
-        out: out_ref,
-        render_to_terminal: planner_render_to_terminal && !suppress_full,
-        no_stream: p.no_stream,
-        cancel: p.cancel,
-        plain_terminal_stream: p.plain_terminal_stream,
-        request_chrome_trace: p.request_chrome_trace.clone(),
-    };
-    let res = complete_chat_retrying(&cc, req).await?;
+    let llm = AgentLlmCall::new(p);
+    let res = llm
+        .complete_retrying(
+            LlmRetryingTransportOpts {
+                out: out_ref,
+                render_to_terminal: planner_render_to_terminal && !suppress_full,
+                no_stream: p.no_stream,
+                cancel: p.cancel,
+                plain_terminal_stream: p.plain_terminal_stream,
+            },
+            req,
+        )
+        .await?;
     if let Some(gate) = gate_opt {
         gate.finish(&res.0).await;
     }
@@ -142,19 +143,8 @@ where
             p.temperature_override,
             p.seed_override,
         );
-        let cc = CompleteChatRetryingParams {
-            llm_backend: p.llm_backend,
-            http: p.client,
-            api_key: p.api_key,
-            cfg: p.cfg.as_ref(),
-            out: p.out,
-            render_to_terminal: p.render_to_terminal,
-            no_stream: p.no_stream,
-            cancel: p.cancel,
-            plain_terminal_stream: p.plain_terminal_stream,
-            request_chrome_trace: p.request_chrome_trace.clone(),
-        };
-        let (mut msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
+        let llm = AgentLlmCall::new(p);
+        let (mut msg, finish_reason) = llm.complete_retrying(p.llm_transport_opts(), &req).await?;
         if finish_reason == USER_CANCELLED_FINISH_REASON {
             p.messages.pop();
             return Ok(());

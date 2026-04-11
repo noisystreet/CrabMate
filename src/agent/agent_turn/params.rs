@@ -68,3 +68,17 @@ pub(crate) struct RunLoopParams<'a> {
     /// 当前编排子阶段（供失败时 SSE `sub_phase` 与日志）；由 `outer_loop` / 分阶段路径在调用模型或执行工具前更新。
     pub sub_phase: AgentTurnSubPhase,
 }
+
+impl RunLoopParams<'_> {
+    /// 当前回合的 SSE/终端/流式/取消开关，供 [`crate::llm::CompleteChatRetryingParams::new`] 与 [`super::agent_llm_call::AgentLlmCall`] 复用。
+    #[inline]
+    pub(crate) fn llm_transport_opts(&self) -> crate::llm::LlmRetryingTransportOpts<'_> {
+        crate::llm::LlmRetryingTransportOpts {
+            out: self.out,
+            render_to_terminal: self.render_to_terminal,
+            no_stream: self.no_stream,
+            cancel: self.cancel,
+            plain_terminal_stream: self.plain_terminal_stream,
+        }
+    }
+}

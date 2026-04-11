@@ -8,8 +8,8 @@ use tokio::sync::mpsc;
 use crate::agent::plan_artifact;
 use crate::config::AgentConfig;
 use crate::llm::{
-    ChatCompletionsBackend, CompleteChatRetryingParams, complete_chat_retrying,
-    no_tools_chat_request,
+    ChatCompletionsBackend, CompleteChatRetryingParams, LlmRetryingTransportOpts,
+    complete_chat_retrying, no_tools_chat_request,
 };
 use crate::types::{LlmSeedOverride, Message};
 
@@ -216,18 +216,20 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
     );
     req.max_tokens = ctx.max_tokens.clamp(32, 1024);
 
-    let cc = CompleteChatRetryingParams {
-        llm_backend: ctx.llm_backend,
-        http: ctx.client,
-        api_key: ctx.api_key,
-        cfg: ctx.cfg,
-        out: ctx.out,
-        render_to_terminal: false,
-        no_stream: ctx.no_stream,
-        cancel: ctx.cancel,
-        plain_terminal_stream: ctx.plain_terminal_stream,
-        request_chrome_trace: ctx.request_chrome_trace,
-    };
+    let cc = CompleteChatRetryingParams::new(
+        ctx.llm_backend,
+        ctx.client,
+        ctx.api_key,
+        ctx.cfg,
+        LlmRetryingTransportOpts {
+            out: ctx.out,
+            render_to_terminal: false,
+            no_stream: ctx.no_stream,
+            cancel: ctx.cancel,
+            plain_terminal_stream: ctx.plain_terminal_stream,
+        },
+        ctx.request_chrome_trace,
+    );
 
     let (reply, finish) = match complete_chat_retrying(&cc, &req).await {
         Ok(x) => x,

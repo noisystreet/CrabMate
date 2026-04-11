@@ -6,7 +6,8 @@ use tokio::sync::mpsc;
 
 use crate::config::AgentConfig;
 use crate::llm::{
-    CompleteChatRetryingParams, LlmCompleteError, complete_chat_retrying, tool_chat_request,
+    CompleteChatRetryingParams, LlmCompleteError, LlmRetryingTransportOpts, complete_chat_retrying,
+    tool_chat_request,
 };
 use crate::types::{LlmSeedOverride, Message};
 
@@ -55,18 +56,20 @@ pub(crate) async fn per_plan_call_model_retrying(
         temperature_override,
         seed_override,
     );
-    let cc = CompleteChatRetryingParams {
+    let cc = CompleteChatRetryingParams::new(
         llm_backend,
-        http: client,
+        client,
         api_key,
         cfg,
-        out,
-        render_to_terminal,
-        no_stream,
-        cancel,
-        plain_terminal_stream,
+        LlmRetryingTransportOpts {
+            out,
+            render_to_terminal,
+            no_stream,
+            cancel,
+            plain_terminal_stream,
+        },
         request_chrome_trace,
-    };
+    );
     let (msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
     Ok((msg, finish_reason))
 }

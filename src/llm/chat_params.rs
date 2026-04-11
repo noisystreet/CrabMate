@@ -10,6 +10,29 @@ use crate::config::{AgentConfig, LlmHttpAuthMode};
 
 use super::backend::ChatCompletionsBackend;
 
+/// 与 [`CompleteChatRetryingParams`] 配套的 **SSE / 终端 / 流式 / 取消** 开关（各调用点差异主要在此）。
+#[derive(Clone, Copy)]
+pub struct LlmRetryingTransportOpts<'a> {
+    pub out: Option<&'a Sender<String>>,
+    pub render_to_terminal: bool,
+    pub no_stream: bool,
+    pub cancel: Option<&'a AtomicBool>,
+    pub plain_terminal_stream: bool,
+}
+
+impl<'a> LlmRetryingTransportOpts<'a> {
+    /// 无 SSE、非流式、无取消（如上下文摘要等后台 `complete_chat_retrying`）。
+    pub fn headless_no_stream() -> Self {
+        Self {
+            out: None,
+            render_to_terminal: false,
+            no_stream: true,
+            cancel: None,
+            plain_terminal_stream: false,
+        }
+    }
+}
+
 /// 与 [`super::api::stream_chat`] 一致的传输与展示开关（不含可变请求体）。
 #[derive(Clone, Copy)]
 pub struct StreamChatParams<'a> {
@@ -41,7 +64,37 @@ pub struct CompleteChatRetryingParams<'a> {
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
 }
 
-impl CompleteChatRetryingParams<'_> {
+impl<'a> CompleteChatRetryingParams<'a> {
+    /// 拼装 [`CompleteChatRetryingParams`]，避免各 `agent` 调用点重复写字段。
+    pub fn new(
+        llm_backend: &'a dyn ChatCompletionsBackend,
+        http: &'a Client,
+        api_key: &'a str,
+        cfg: &'a AgentConfig,
+        transport: LlmRetryingTransportOpts<'a>,
+        request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    ) -> Self {
+        let LlmRetryingTransportOpts {
+            out,
+            render_to_terminal,
+            no_stream,
+            cancel,
+            plain_terminal_stream,
+        } = transport;
+        Self {
+            llm_backend,
+            http,
+            api_key,
+            cfg,
+            out,
+            render_to_terminal,
+            no_stream,
+            cancel,
+            plain_terminal_stream,
+            request_chrome_trace,
+        }
+    }
+
     pub(crate) fn stream_params(&self) -> StreamChatParams<'_> {
         StreamChatParams {
             client: self.http,
