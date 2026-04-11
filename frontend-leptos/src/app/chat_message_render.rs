@@ -9,7 +9,10 @@ use leptos::task::spawn_local;
 use crate::api::post_chat_branch;
 use crate::assistant_body::assistant_markdown_collapsible_view;
 use crate::i18n::{self, Locale};
-use crate::message_format::{is_staged_timeline_stored_message, message_text_for_display_ex};
+use crate::message_format::{
+    is_staged_timeline_stored_message, message_text_for_display_ex,
+    stored_message_is_staged_planner_round,
+};
 use crate::session_ops::{
     format_msg_time_label, message_role_label, preceding_plain_user_message_id,
     truncate_at_user_message_and_prepare_regenerate, truncate_at_user_message_branch_local,
@@ -457,6 +460,7 @@ pub(crate) fn chat_message_row(
         None
     };
     let show_msg_action_bar = !is_tool_bubble || is_user_plain || err;
+    let show_planner_round_badge = stored_message_is_staged_planner_round(&m);
     let msg_core = if m.role == "assistant" && !m.is_tool {
         assistant_markdown_collapsible_view(
             sessions,
@@ -621,7 +625,19 @@ pub(crate) fn chat_message_row(
                     }
                 >
                     <div class="msg-meta" aria-hidden="true">
-                        <span class="msg-meta-role">{role_lbl}</span>
+                        <span class="msg-meta-primary">
+                            <span class="msg-meta-role">{role_lbl}</span>
+                            <Show when=move || show_planner_round_badge>
+                                <span
+                                    class="msg-planner-round-badge"
+                                    prop:title=move || {
+                                        i18n::msg_planner_round_badge_title(locale.get())
+                                    }
+                                >
+                                    {move || i18n::msg_planner_round_badge(locale.get())}
+                                </span>
+                            </Show>
+                        </span>
                         <span class="msg-meta-time">{time_str}</span>
                     </div>
                     {msg_core}
