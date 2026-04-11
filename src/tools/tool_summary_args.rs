@@ -595,6 +595,8 @@ pub(super) struct HttpFetchSummaryArgs {
     url: String,
     #[serde(default)]
     method: Option<String>,
+    #[serde(default)]
+    text_format: Option<String>,
 }
 
 impl ToolSummaryLine for HttpFetchSummaryArgs {
@@ -609,7 +611,17 @@ impl ToolSummaryLine for HttpFetchSummaryArgs {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .unwrap_or("GET");
-        Some(format!("HTTP {} {}", m.to_ascii_uppercase(), u))
+        let tf = self
+            .text_format
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_ascii_lowercase().replace('-', "_"));
+        let suffix = match tf.as_deref() {
+            Some("html_text" | "htmltext" | "text") => " [html_text]",
+            _ => "",
+        };
+        Some(format!("HTTP {} {}{}", m.to_ascii_uppercase(), u, suffix))
     }
 }
 
@@ -617,6 +629,8 @@ impl ToolSummaryLine for HttpFetchSummaryArgs {
 pub(super) struct HttpRequestSummaryArgs {
     url: String,
     method: String,
+    #[serde(default)]
+    text_format: Option<String>,
 }
 
 impl ToolSummaryLine for HttpRequestSummaryArgs {
@@ -626,7 +640,17 @@ impl ToolSummaryLine for HttpRequestSummaryArgs {
         if u.is_empty() || m.is_empty() {
             return None;
         }
-        Some(format!("HTTP {} {}", m.to_ascii_uppercase(), u))
+        let tf = self
+            .text_format
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_ascii_lowercase().replace('-', "_"));
+        let suffix = match tf.as_deref() {
+            Some("html_text" | "htmltext" | "text") => " [html_text]",
+            _ => "",
+        };
+        Some(format!("HTTP {} {}{}", m.to_ascii_uppercase(), u, suffix))
     }
 }
 
