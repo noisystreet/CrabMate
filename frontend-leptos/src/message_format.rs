@@ -191,6 +191,18 @@ fn looks_like_incomplete_agent_reply_plan_whole_json(t: &str) -> bool {
     t.contains("\"type\"") && t.contains("\"version\"") && t.contains("\"steps\"")
 }
 
+/// Web 气泡眉「规划轮」标记：分阶段规划模型产出在 `text` / `reasoning_text` 中含 `agent_reply_plan` JSON（含流式不完整前缀）。
+pub(crate) fn stored_message_is_staged_planner_round(m: &StoredMessage) -> bool {
+    if m.role != "assistant" || m.is_tool {
+        return false;
+    }
+    let raw = format!("{}{}", m.reasoning_text, m.text);
+    if raw.contains("\"agent_reply_plan\"") || raw.contains("\"type\":\"agent_reply_plan\"") {
+        return true;
+    }
+    looks_like_incomplete_agent_reply_plan_whole_json(raw.trim())
+}
+
 fn should_buffer_agent_reply_plan_stream(stripped: &str) -> bool {
     if triple_backtick_fence_count(stripped) % 2 == 1
         && first_fence_inner_looks_like_json_object(stripped)
@@ -979,6 +991,7 @@ mod tests {
     use super::filter_assistant_thinking_markers_for_display;
     use super::filter_redacted_thinking_for_display;
     use super::message_text_for_display_ex;
+    use super::stored_message_is_staged_planner_round;
     use crate::i18n::Locale;
     use crate::storage::StoredMessage;
 
@@ -1202,6 +1215,78 @@ mod tests {
         let raw = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#;
         let out = assistant_text_for_display(raw, false, Locale::ZhHans, false);
         assert_eq!(out, raw);
+    }
+
+    #[test]
+    fn stored_message_is_staged_planner_round_detects_plan_in_text() {
+        let m = StoredMessage {
+            id: "1".into(),
+            role: "assistant".into(),
+            text: r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        assert!(stored_message_is_staged_planner_round(&m));
+    }
+
+    #[test]
+    fn stored_message_is_staged_planner_round_detects_plan_in_reasoning_only() {
+        let m = StoredMessage {
+            id: "2".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#
+                .into(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        assert!(stored_message_is_staged_planner_round(&m));
+    }
+
+    #[test]
+    fn stored_message_is_staged_planner_round_streaming_prefix() {
+        let m = StoredMessage {
+            id: "3".into(),
+            role: "assistant".into(),
+            text: r#"{"type":"agent_reply_plan","version":1"#.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some("loading".into()),
+            is_tool: false,
+            created_at: 0,
+        };
+        assert!(stored_message_is_staged_planner_round(&m));
+    }
+
+    #[test]
+    fn stored_message_is_staged_planner_round_false_for_user_and_tool() {
+        let user = StoredMessage {
+            id: "u".into(),
+            role: "user".into(),
+            text: r#"{"type":"agent_reply_plan","version":1}"#.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        assert!(!stored_message_is_staged_planner_round(&user));
+        let tool = StoredMessage {
+            id: "t".into(),
+            role: "assistant".into(),
+            text: r#"{"type":"agent_reply_plan","version":1}"#.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: true,
+            created_at: 0,
+        };
+        assert!(!stored_message_is_staged_planner_round(&tool));
     }
 
     #[test]

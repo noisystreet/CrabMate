@@ -1479,6 +1479,20 @@ pub fn msg_select_cb_aria(l: Locale) -> &'static str {
     }
 }
 
+pub fn msg_planner_round_badge(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "规划轮",
+        Locale::En => "Planner",
+    }
+}
+
+pub fn msg_planner_round_badge_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "本条为分阶段规划模型输出（含结构化 agent_reply_plan）",
+        Locale::En => "Staged planning turn (structured agent_reply_plan)",
+    }
+}
+
 pub fn msg_actions_group_aria(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "消息操作",
