@@ -506,7 +506,9 @@ sync_default_tool_sandbox_docker_image = "your-registry/crabmate-tools:dev"
 - **覆盖与优先级**：若某层 TOML **只写**内联 **`system_prompt`**、**不写**该层的 `system_prompt_file`，则会**取消**继承自更早层的 `system_prompt_file`，改为使用内联。环境变量阶段：**`AGENT_SYSTEM_PROMPT`** 会清除已合并的 `system_prompt_file`；随后若存在 **`AGENT_SYSTEM_PROMPT_FILE`** 则再设为文件路径（两者同时设置时以文件为准）。
 - **finalize 阶段**：若仍存在 `system_prompt_file` 则读文件；否则使用非空内联；二者皆无则报错。
 
-仓库内默认正文含工具与任务拆分等约定（例如**同一工作区路径在未被修改前不要重复 `read_file`**），并约定用户以中文为主时助手**解释性文字用简体中文、减少中英夹杂**（代码与专有名词等除外）。完全自定义时可改 `config/prompts/default_system_prompt.md` 或换用自有路径。
+仓库内默认正文含**指令优先级**（安全 → 用户当轮明确指令 → 可核对事实 → 本提示与角色 → Cursor 式规则）、**非代码问题勿强行使用开发工具**、**用户未授权则默认不擅自改代码**、工具与任务拆分等约定（例如**同一工作区路径在未被修改前不要重复 `read_file`**），并约定用户以中文为主时助手**解释性文字用简体中文、减少中英夹杂**（代码与专有名词等除外）。若规则合并段出现**截断提示**，不得假定未见条文。完全自定义时可改 `config/prompts/default_system_prompt.md` 或换用自有路径。
+
+嵌入默认 **`config/default_config.toml`** 中 **`thinking_avoid_echo_system_prompt = true`** 且 **`thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"`**（可用 **`thinking_avoid_echo_appendix`** 内联或 **`AGENT_THINKING_AVOID_ECHO_APPENDIX*`** 覆盖）；与上文「思维链中减少复述系统提示」一致。
 
 ## 多角色（agent_roles）
 

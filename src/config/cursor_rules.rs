@@ -85,7 +85,9 @@ fn render_cursor_rules_appendix(docs: &[(String, String)], max_chars: usize) -> 
         return body;
     }
     let mut truncated = super::super::text_util::truncate_str_to_max_chars(&body, max_chars);
-    truncated.push_str("\n\n[提示] 规则内容已按 cursor_rules_max_chars 截断。");
+    truncated.push_str(
+        "\n\n[提示] 规则内容已按 cursor_rules_max_chars 截断。后续不得假定未出现在本 system 中的规则条文；不得仅凭「应有某规则」下结论。",
+    );
     truncated
 }
 
