@@ -11,8 +11,8 @@
   }
 }
 
-/* 仅最后一条入场：避免整表重绘时每条都闪；新消息多在底部追加 */
-.messages-inner > .msg-with-select:last-child {
+/* 仅「最后一条且仍处流式 loading」时入场：避免去掉 msg-loading 后 :last-child 仍匹配、动画被引擎重算导致整条反复位移闪烁 */
+.messages-inner > .msg-with-select:last-child:has(.msg-loading) {
   animation: msg-row-enter var(--dur-msg-enter) var(--ease-out-soft) both;
 }
 
@@ -68,7 +68,7 @@
     transform: none;
   }
 
-  .messages-inner > .msg-with-select:last-child {
+  .messages-inner > .msg-with-select:last-child:has(.msg-loading) {
     animation: none;
     opacity: 1;
     transform: none;
