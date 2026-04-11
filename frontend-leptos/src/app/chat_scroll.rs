@@ -1,5 +1,7 @@
 //! 主聊天区滚动：流式跟底、侧栏「在消息中打开」后滚入视图。
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -10,6 +12,9 @@ use crate::session_search::scroll_message_into_view;
 use crate::storage::ChatSession;
 
 use super::scroll_guard;
+
+/// 合并同一短窗口内多次触发的跟底：仅保留「最新一次」effect 入队的滚动任务，避免尾包文本 + 收尾 state 连续更新导致多次 `set_scroll_top` 抖动。
+static MESSAGES_AUTO_SCROLL_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// 消息列表指纹变化且开启自动跟底时，将滚动条置底（多帧以覆盖流式换行后高度变化）。
 pub(super) fn wire_messages_auto_scroll(
@@ -37,6 +42,9 @@ pub(super) fn wire_messages_auto_scroll(
             return;
         }
 
+        let generation = MESSAGES_AUTO_SCROLL_GEN
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(1);
         let mref = messages_scroller;
         let follow = auto_scroll_chat;
         let scroll_from_effect = messages_scroll_from_effect;
@@ -47,6 +55,9 @@ pub(super) fn wire_messages_auto_scroll(
                 return;
             }
             TimeoutFuture::new(0).await;
+            if MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed) != generation {
+                return;
+            }
             if !follow.get_untracked() {
                 return;
             }
@@ -54,6 +65,9 @@ pub(super) fn wire_messages_auto_scroll(
                 el.set_scroll_top(el.scroll_height());
             }
             TimeoutFuture::new(0).await;
+            if MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed) != generation {
+                return;
+            }
             if !follow.get_untracked() {
                 return;
             }
@@ -62,6 +76,9 @@ pub(super) fn wire_messages_auto_scroll(
             }
             // 再等一帧：流式换行后布局高度可能在本轮 paint 后才稳定
             TimeoutFuture::new(16).await;
+            if MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed) != generation {
+                return;
+            }
             if !follow.get_untracked() {
                 return;
             }

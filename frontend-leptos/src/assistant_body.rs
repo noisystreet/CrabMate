@@ -157,6 +157,7 @@ pub fn assistant_markdown_collapsible_view(
         }
     });
 
+    let mid_stored = StoredValue::new(mid_for_btn.clone());
     view! {
         <div class=move || {
             if markdown_render.get() {
@@ -165,69 +166,94 @@ pub fn assistant_markdown_collapsible_view(
                 "msg-md-wrap msg-md-wrap--plaintext"
             }
         }>
-            {move || {
+            <div
+                class=move || {
+                    let loc = locale.get();
+                    let apply = apply_assistant_display_filters.get();
+                    let (is_loading, raw_len) = sessions.with(|list| {
+                        let aid = active_id.get();
+                        let m = list
+                            .iter()
+                            .find(|s| s.id == aid)
+                            .and_then(|s| {
+                                s.messages
+                                    .iter()
+                                    .find(|msg| msg.id == mid_stored.get_value())
+                            });
+                        match m {
+                            Some(msg) => (
+                                msg.state.as_deref() == Some("loading"),
+                                message_text_for_display_ex(msg, loc, apply).chars().count(),
+                            ),
+                            None => (false, 0),
+                        }
+                    });
+                    let long = !is_loading && raw_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD;
+                    let mid = mid_stored.get_value();
+                    let expanded =
+                        expanded_long_assistant_ids.with(|v| v.iter().any(|id| id == &mid));
+                    let collapsed = long && !expanded;
+                    if collapsed {
+                        "msg-md-split msg-md-prose-collapsed"
+                    } else {
+                        "msg-md-split"
+                    }
+                }
+                node_ref=split_ref
+            >
+                <div
+                    class="msg-md-answer msg-body msg-md-prose"
+                    node_ref=body_ref
+                ></div>
+            </div>
+            <Show when=move || {
                 let loc = locale.get();
                 let apply = apply_assistant_display_filters.get();
-                let (is_loading, raw_len) = sessions.with(|list| {
+                sessions.with(|list| {
                     let aid = active_id.get();
-                    let m = list
+                    let Some(msg) = list
                         .iter()
                         .find(|s| s.id == aid)
-                        .and_then(|s| s.messages.iter().find(|msg| msg.id == mid_for_btn));
-                    match m {
-                        Some(msg) => (
-                            msg.state.as_deref() == Some("loading"),
-                            message_text_for_display_ex(msg, loc, apply).chars().count(),
-                        ),
-                        None => (false, 0),
+                        .and_then(|s| {
+                            s.messages
+                                .iter()
+                                .find(|msg| msg.id == mid_stored.get_value())
+                        })
+                    else {
+                        return false;
+                    };
+                    let is_loading = msg.state.as_deref() == Some("loading");
+                    let raw_len = message_text_for_display_ex(msg, loc, apply).chars().count();
+                    !is_loading && raw_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD
+                })
+            }>
+                <button
+                    type="button"
+                    class="btn btn-muted btn-sm msg-md-toggle"
+                    on:click=move |_| {
+                        let b = mid_stored.get_value();
+                        expanded_long_assistant_ids.update(|v| {
+                            if v.iter().any(|id| id == &b) {
+                                v.retain(|id| id != &b);
+                            } else {
+                                v.push(b.clone());
+                            }
+                        });
                     }
-                });
-                let long = !is_loading && raw_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD;
-                let expanded =
-                    expanded_long_assistant_ids.with(|v| v.iter().any(|id| id == &mid_for_btn));
-                let collapsed = long && !expanded;
-                let split_cls = if collapsed {
-                    "msg-md-split msg-md-prose-collapsed"
-                } else {
-                    "msg-md-split"
-                };
-                let btn_mid = mid_for_btn.clone();
-                let exp_sig = expanded_long_assistant_ids;
-                view! {
-                    <div class=split_cls node_ref=split_ref>
-                        <div
-                            class="msg-md-answer msg-body msg-md-prose"
-                            node_ref=body_ref
-                        ></div>
-                    </div>
-                    {long.then(move || {
-                        let b = btn_mid.clone();
-                        view! {
-                            <button
-                                type="button"
-                                class="btn btn-muted btn-sm msg-md-toggle"
-                                on:click=move |_| {
-                                    exp_sig.update(|v| {
-                                        if v.iter().any(|id| id == &b) {
-                                            v.retain(|id| id != &b);
-                                        } else {
-                                            v.push(b.clone());
-                                        }
-                                    });
-                                }
-                            >
-                                {move || {
-                                    if expanded {
-                                        i18n::assistant_md_collapse(loc)
-                                    } else {
-                                        i18n::assistant_md_expand_full(loc)
-                                    }
-                                }}
-                            </button>
+                >
+                    {move || {
+                        let loc = locale.get();
+                        let mid = mid_stored.get_value();
+                        let expanded =
+                            expanded_long_assistant_ids.with(|v| v.iter().any(|id| id == &mid));
+                        if expanded {
+                            i18n::assistant_md_collapse(loc)
+                        } else {
+                            i18n::assistant_md_expand_full(loc)
                         }
-                    })}
-                }
-            }}
+                    }}
+                </button>
+            </Show>
         </div>
     }
 }
