@@ -130,12 +130,26 @@ pub fn is_message_excluded_from_llm_context_except_memory(m: &Message) -> bool {
 }
 
 /// 供 **`GET /conversation/messages`** 等客户端只读视图：去掉不应展示的会话内注入（与落盘前 `strip_*` 一致）。
+///
+/// 另：**不**返回普通 **`system`** 正文（[`Message::system_only`] 等），聊天 UI 与导出 Markdown 均不向用户展示系统提示词；仅保留 **`name == crabmate_timeline`** 的时间线旁注供前端还原步骤条。
+/// 亦不返回首轮工作区画像注入（[`is_first_turn_workspace_context_injection`]）：仍落盘并送模型，但不在聊天区展示。
 pub fn filter_messages_for_web_client_snapshot(messages: &[Message]) -> Vec<Message> {
     messages
         .iter()
-        .filter(|m| !is_long_term_memory_injection(m) && !is_workspace_changelist_injection(m))
+        .filter(|m| {
+            !is_long_term_memory_injection(m)
+                && !is_workspace_changelist_injection(m)
+                && !is_first_turn_workspace_context_injection(m)
+                && !is_system_role_hidden_from_web_transcript(m)
+        })
         .cloned()
         .collect()
+}
+
+/// Web 聊天区/水合列表是否应省略该条：**`system`** 且**非**时间线占位（[`is_chat_timeline_marker`]）。
+#[inline]
+fn is_system_role_hidden_from_web_transcript(m: &Message) -> bool {
+    m.role == "system" && !is_chat_timeline_marker(m)
 }
 
 /// 长期记忆注入条目的 `user.name`；仅供模型上下文使用，**不得**发往供应商 API。
@@ -143,6 +157,10 @@ pub const CRABMATE_LONG_TERM_MEMORY_NAME: &str = "crabmate_long_term_memory";
 
 /// 会话工作区变更集注入（`user.name`）；每次调模型前由运行时刷新，**不应**持久化到会话存储。
 pub const CRABMATE_WORKSPACE_CHANGELIST_NAME: &str = "crabmate_workspace_changelist";
+
+/// 新会话首轮「工作区 / 项目画像」等上下文注入（`user.name`）；供模型读取，**不向** Web 快照与聊天水合展示。
+pub const CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME: &str =
+    "crabmate_first_turn_workspace_context";
 
 #[inline]
 pub fn is_long_term_memory_injection(m: &Message) -> bool {
@@ -152,6 +170,20 @@ pub fn is_long_term_memory_injection(m: &Message) -> bool {
 #[inline]
 pub fn is_workspace_changelist_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_WORKSPACE_CHANGELIST_NAME)
+}
+
+#[inline]
+pub fn is_first_turn_workspace_context_injection(m: &Message) -> bool {
+    m.role == "user" && m.name.as_deref() == Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
+}
+
+/// `POST /chat/branch` 等按序截断时计入的「真实用户发言」：排除各类 `user.name` 注入条。
+#[inline]
+pub fn user_message_counts_for_branch_truncation(m: &Message) -> bool {
+    m.role == "user"
+        && !is_long_term_memory_injection(m)
+        && !is_workspace_changelist_injection(m)
+        && !is_first_turn_workspace_context_injection(m)
 }
 
 /// `message.content` 为纯文本时的借用；多模态 [`MessageContent::Parts`] 返回 `None`。
@@ -305,6 +337,19 @@ impl Message {
             reasoning_details: None,
             tool_calls: None,
             name: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// 首轮工作区 / 项目画像等上下文（`user` + [`CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME`]）；送模型，Web 快照过滤。
+    pub fn user_first_turn_workspace_context(content: impl Into<String>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: Some(MessageContent::Text(content.into())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME.to_string()),
             tool_call_id: None,
         }
     }
@@ -760,7 +805,7 @@ mod api_messages_strip_tests {
     use super::*;
 
     #[test]
-    fn filter_web_client_snapshot_drops_injections() {
+    fn filter_web_client_snapshot_drops_system_prompt_and_injections() {
         let inj_mem = Message {
             role: "user".to_string(),
             content: Some(MessageContent::Text("mem".to_string())),
@@ -779,11 +824,32 @@ mod api_messages_strip_tests {
             name: Some(CRABMATE_WORKSPACE_CHANGELIST_NAME.to_string()),
             tool_call_id: None,
         };
+        let inj_ctx = Message::user_first_turn_workspace_context("profile");
+        let sys = Message::system_only("do not leak to web list");
         let plain = Message::user_only("hi");
-        let v = vec![inj_mem, inj_cl, plain.clone()];
+        let v = vec![sys, inj_mem, inj_cl, inj_ctx, plain.clone()];
         let out = filter_messages_for_web_client_snapshot(&v);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], plain);
+    }
+
+    #[test]
+    fn filter_web_client_snapshot_keeps_timeline_system_markers() {
+        let tl = Message {
+            role: "system".to_string(),
+            content: Some(MessageContent::Text(r#"{"kind":"x"}"#.to_string())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some("crabmate_timeline".to_string()),
+            tool_call_id: None,
+        };
+        let u = Message::user_only("hi");
+        let v = vec![Message::system_only("sys"), tl.clone(), u.clone()];
+        let out = filter_messages_for_web_client_snapshot(&v);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0], tl);
+        assert_eq!(out[1], u);
     }
 
     #[test]

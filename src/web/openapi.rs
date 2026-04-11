@@ -183,7 +183,7 @@ pub fn build_openapi_spec() -> Value {
                 "get": {
                     "tags": ["chat"],
                     "summary": "只读拉取已持久化会话消息与 revision",
-                    "description": "供 Web 刷新后与 `conversation_id` 对齐；不含长期记忆/变更集注入；404 表示不存在或已过期。",
+                    "description": "供 Web 刷新后与 `conversation_id` 对齐；不含长期记忆/变更集/首轮工作区画像注入；404 表示不存在或已过期。",
                     "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                     "parameters": [
                         {
@@ -651,7 +651,7 @@ pub fn build_openapi_spec() -> Value {
                         "active_agent_role": { "type": "string", "description": "非空时与配置中 agent_roles 对齐" },
                         "messages": {
                             "type": "array",
-                            "description": "OpenAI 兼容 Message 数组（已剔除长期记忆/变更集注入）",
+                            "description": "OpenAI 兼容 Message 数组（已剔除长期记忆/变更集注入、普通 system 系统提示与 UI 分隔；保留 name=crabmate_timeline 时间线旁注）",
                             "items": { "type": "object", "additionalProperties": true }
                         }
                     }

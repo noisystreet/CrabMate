@@ -75,7 +75,7 @@ pub(crate) struct ChatApprovalResponseBody {
     pub(crate) ok: bool,
 }
 
-/// Web：将会话在服务端截断到第 `before_user_ordinal` 条**普通**用户消息之前（0-based，与前端用户气泡序号一致）。
+/// Web：将会话在服务端截断到第 `before_user_ordinal` 条**普通**用户消息之前（0-based，与前端用户气泡序号一致；不含未展示之注入类 `user`）。
 #[derive(serde::Deserialize)]
 pub(crate) struct ChatBranchRequestBody {
     pub(crate) conversation_id: String,
