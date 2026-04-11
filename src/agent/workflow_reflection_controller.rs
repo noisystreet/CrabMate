@@ -51,6 +51,17 @@ impl WorkflowReflectionController {
         self.round
     }
 
+    /// 设置严格模式：是否要求终答 `agent_reply_plan` 覆盖全部 workflow 节点 id。
+    /// 该值来自 [`PerCoordinatorInit::final_plan_require_strict_workflow_node_coverage`]，
+    /// 在 workflow 反思控制器构造时由外部注入。
+    pub fn set_require_strict_workflow_node_coverage(&mut self, required: bool) {
+        // 目前 `WorkflowReflectionController` 不直接持有此标志，
+        // 这里预留 setter 接口供 `PerCoordinator` 初始化后注入配置。
+        // 实际校验逻辑在 `per_coord.rs` 的 `after_final_assistant` 中；
+        // 若后续需要在此处内联，可改为 `self.require_strict_workflow_node_coverage = required`。
+        let _ = required;
+    }
+
     fn parse_control(&self, args_json: &str) -> ReflectionControl {
         let default = self.default_max_rounds;
         let enabled = false;

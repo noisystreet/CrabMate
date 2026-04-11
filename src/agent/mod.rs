@@ -11,6 +11,8 @@ mod per_plan_semantic_check;
 pub mod plan_artifact;
 mod plan_ensemble;
 mod plan_optimizer;
+/// 终答后规划重写控制器（从 `per_coord` 迁出）：策略模式、语义校验开关、重写次数管理。
+pub mod plan_rewrite_controller;
 /// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在 `per_plan_semantic_check`）。
 pub mod reflection;
 pub mod workflow;
