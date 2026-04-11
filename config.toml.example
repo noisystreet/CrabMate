@@ -121,9 +121,9 @@
 # [tool_registry]
 # http_fetch_wall_timeout_secs = 120
 # 分阶段 steps[].executor_kind 子代理：在默认补丁/测试名之外额外允许的工具名；review_readonly 步内显式拒绝（无 AGENT_*，见 docs/CONFIGURATION.md）
-# sub_agent_patch_write_extra_tools = ["my_custom_patch_tool"]
-# sub_agent_test_runner_extra_tools = ["custom_test_runner"]
-# sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
+sub_agent_patch_write_extra_tools = ["run_command"]
+sub_agent_test_runner_extra_tools = ["custom_test_runner"]
+sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # reflection_default_max_rounds = 5
 # final_plan_requirement = "workflow_reflection"  # never | workflow_reflection | always（实验性，每轮终答均校验）
 # plan_rewrite_max_attempts = 2

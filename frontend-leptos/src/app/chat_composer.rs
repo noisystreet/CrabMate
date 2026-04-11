@@ -364,9 +364,8 @@ pub(super) fn wire_chat_composer_streams(
                             s.server_revision = None;
                         }
                     });
-                    stream_ctx
-                        .session_hydrate_nonce
-                        .update(|n| *n = n.wrapping_add(1));
+                    // 不在此处触发水合：SSE conversation_id 事件表示会话已在服务器端创建，
+                    // 但消息尚未保存。水合应在 on_conversation_revision（收到 conversation_saved.revision）时触发。
                 })
             };
             let on_conv_rev: Rc<dyn Fn(u64)> = {
@@ -381,12 +380,12 @@ pub(super) fn wire_chat_composer_streams(
                             s.server_revision = Some(rev);
                         }
                     });
+                    // 消息已保存到服务器，触发水合以同步最新状态
                     stream_ctx
                         .session_hydrate_nonce
                         .update(|n| *n = n.wrapping_add(1));
                 })
             };
-
             let on_stream_ended: Rc<dyn Fn(String)> = {
                 let stream_job_id_sig = stream_job_id_sig;
                 let stream_last_event_seq_sig = stream_last_event_seq_sig;
