@@ -17,11 +17,27 @@ use crate::agent_errors::is_user_cancelled_run_agent_error;
 use crate::agent_role_turn::{
     filter_tools_for_agent_role, persisted_agent_role_after_turn, turn_allow_for_web_or_cli_job,
 };
-use crate::config::{AgentConfig, LlmHttpAuthMode};
+use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
+use crate::long_term_memory::LongTermMemoryRuntime;
+use crate::sse::SseStreamHub;
 use crate::text_util::truncate_chars_with_ellipsis;
-use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message};
+use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message, Tool};
 
 const RECENT_CAP: usize = 32;
+
+/// Web 队列任务执行所需的**运行时句柄**（与 [`AppState`] 中会话/上传等字段解耦，便于单测与依赖边界清晰）。
+///
+/// 会话落盘、审批会话表等仍经入队参数中的 [`Arc<AppState>`] 完成。
+#[derive(Clone)]
+pub struct WebChatQueueDeps {
+    pub cfg: SharedAgentConfig,
+    pub api_key: String,
+    pub client: reqwest::Client,
+    pub tools: Vec<Tool>,
+    pub chat_queue: ChatJobQueue,
+    pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
+    pub sse_stream_hub: Arc<SseStreamHub>,
+}
 
 /// Web `POST /chat` / `/chat/stream` 请求体中可选的 **`client_llm`**：仅作用于**该次入队任务**，不写盘。
 #[derive(Clone, Debug, Default)]
@@ -32,15 +48,15 @@ pub struct WebChatLlmOverride {
 }
 
 fn resolve_web_llm_for_job(
-    state: &AppState,
+    deps: &WebChatQueueDeps,
     cfg_snap: Arc<AgentConfig>,
     ov: Option<&WebChatLlmOverride>,
 ) -> (Arc<AgentConfig>, String) {
     match ov {
-        None => (cfg_snap, state.api_key.clone()),
+        None => (cfg_snap, deps.api_key.clone()),
         Some(o) => {
             let mut c = (*cfg_snap).clone();
-            let mut key = state.api_key.clone();
+            let mut key = deps.api_key.clone();
             if let Some(ref x) = o.api_base {
                 c.api_base.clone_from(x);
             }
@@ -105,7 +121,9 @@ pub struct ChatQueueFull {
 /// [`ChatJobQueue::try_submit_json`] 的入参（与 [`StreamSubmitParams`] 对称，不含 SSE / 审批）。
 pub struct JsonSubmitParams {
     pub job_id: u64,
-    pub state: Arc<AppState>,
+    /// 队列执行用 LLM/工具/hub 句柄（与 [`AppState`] 会话字段分离）。
+    pub queue_deps: Arc<WebChatQueueDeps>,
+    pub app: Arc<AppState>,
     pub conversation_id: String,
     pub messages: Vec<Message>,
     pub expected_revision: Option<u64>,
@@ -125,7 +143,8 @@ pub struct JsonSubmitParams {
 /// [`ChatJobQueue::try_submit_stream`] 的入参（避免长参数列表）。
 pub struct StreamSubmitParams {
     pub job_id: u64,
-    pub state: Arc<AppState>,
+    pub queue_deps: Arc<WebChatQueueDeps>,
+    pub app: Arc<AppState>,
     pub conversation_id: String,
     pub messages: Vec<Message>,
     pub expected_revision: Option<u64>,
@@ -174,7 +193,8 @@ impl Default for QueueMetrics {
 enum QueuedChatJob {
     Stream {
         job_id: u64,
-        state: Arc<AppState>,
+        queue_deps: Arc<WebChatQueueDeps>,
+        app: Arc<AppState>,
         conversation_id: String,
         messages: Vec<Message>,
         expected_revision: Option<u64>,
@@ -190,7 +210,8 @@ enum QueuedChatJob {
     },
     Json {
         job_id: u64,
-        state: Arc<AppState>,
+        queue_deps: Arc<WebChatQueueDeps>,
+        app: Arc<AppState>,
         conversation_id: String,
         messages: Vec<Message>,
         expected_revision: Option<u64>,
@@ -342,7 +363,8 @@ impl ChatJobQueue {
     pub fn try_submit_stream(&self, p: StreamSubmitParams) -> Result<(), ChatQueueFull> {
         let StreamSubmitParams {
             job_id,
-            state,
+            queue_deps,
+            app,
             conversation_id,
             messages,
             expected_revision,
@@ -358,7 +380,8 @@ impl ChatJobQueue {
         } = p;
         let job = QueuedChatJob::Stream {
             job_id,
-            state,
+            queue_deps,
+            app,
             conversation_id,
             messages,
             expected_revision,
@@ -383,7 +406,8 @@ impl ChatJobQueue {
     pub fn try_submit_json(&self, p: JsonSubmitParams) -> Result<(), ChatQueueFull> {
         let JsonSubmitParams {
             job_id,
-            state,
+            queue_deps,
+            app,
             conversation_id,
             messages,
             expected_revision,
@@ -398,7 +422,8 @@ impl ChatJobQueue {
         } = p;
         let job = QueuedChatJob::Json {
             job_id,
-            state,
+            queue_deps,
+            app,
             conversation_id,
             messages,
             expected_revision,
@@ -522,7 +547,7 @@ enum JobOutcome {
 
 /// Web 队列：`run_agent_turn` 成功后的 LTM 异步索引、剥离注入与会话按 revision 落盘。
 async fn post_turn_web_prepare_and_save(
-    state: &AppState,
+    app: &AppState,
     cfg_snap: &Arc<AgentConfig>,
     conversation_id: &str,
     messages: &mut Vec<Message>,
@@ -533,7 +558,7 @@ async fn post_turn_web_prepare_and_save(
     let scope = conversation_id.to_string();
     let to_index = messages.clone();
     if let (Some(ltm), true) = (
-        state.long_term_memory.as_ref(),
+        app.long_term_memory.as_ref(),
         cfg_snap.long_term_memory_enabled,
     ) {
         ltm.clone()
@@ -554,14 +579,13 @@ async fn post_turn_web_prepare_and_save(
     {
         active_save = Some(id.to_string());
     }
-    state
-        .save_conversation_messages_if_revision(
-            conversation_id.to_string(),
-            messages.clone(),
-            active_save.as_deref(),
-            expected_revision,
-        )
-        .await
+    app.save_conversation_messages_if_revision(
+        conversation_id.to_string(),
+        messages.clone(),
+        active_save.as_deref(),
+        expected_revision,
+    )
+    .await
 }
 
 fn web_json_job_error_short_detail(
@@ -615,7 +639,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
     match job {
         QueuedChatJob::Stream {
             job_id,
-            state,
+            queue_deps,
+            app,
             conversation_id,
             mut messages,
             expected_revision,
@@ -629,8 +654,8 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             stream_event_tx,
             web_approval_session,
         } => {
-            state.sse_stream_hub.register_job(job_id);
-            let hub_bridge = state.sse_stream_hub.clone();
+            queue_deps.sse_stream_hub.register_job(job_id);
+            let hub_bridge = queue_deps.sse_stream_hub.clone();
             let bridge_job = job_id;
             let http_tx = stream_event_tx;
             let (sse_tx, mut sse_rx) = mpsc::channel::<String>(1024);
@@ -654,7 +679,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 crate::redact::last_user_message_preview_for_log(&messages)
             );
             let flight = Arc::new(PerTurnFlight::default());
-            let _per_guard = state
+            let _per_guard = queue_deps
                 .chat_queue
                 .begin_per_flight_job(job_id, flight.clone());
             let caps_line = crate::sse::encode_message(crate::sse::SsePayload::SseCapabilities {
@@ -701,20 +726,25 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 })
             };
             let cfg_snap = {
-                let g = state.cfg.read().await;
+                let g = queue_deps.cfg.read().await;
                 std::sync::Arc::new(g.clone())
             };
-            let (cfg_turn, api_key_turn) =
-                resolve_web_llm_for_job(&state, cfg_snap.clone(), llm_override.as_ref());
+            let (cfg_turn, api_key_turn) = resolve_web_llm_for_job(
+                queue_deps.as_ref(),
+                cfg_snap.clone(),
+                llm_override.as_ref(),
+            );
             let turn_allow = turn_allow_for_web_or_cli_job(
                 &cfg_turn,
                 persisted_active_agent_role.as_deref(),
                 request_agent_role.as_deref(),
             );
-            let tools_for_job =
-                filter_tools_for_agent_role(&state.tools, turn_allow.as_ref().map(|a| a.as_ref()));
+            let tools_for_job = filter_tools_for_agent_role(
+                &queue_deps.tools,
+                turn_allow.as_ref().map(|a| a.as_ref()),
+            );
             let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_stream(
-                &state.client,
+                &queue_deps.client,
                 api_key_turn.as_str(),
                 &cfg_turn,
                 tools_for_job.as_slice(),
@@ -726,7 +756,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 web_tool_ctx.as_ref(),
                 temperature_override,
                 seed_override,
-                state.long_term_memory.clone(),
+                queue_deps.long_term_memory.clone(),
                 job_id,
                 &conversation_id,
                 &sse_tx,
@@ -735,7 +765,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             .await;
             cancel_watcher.abort();
             if let Some(session_id) = approval_session_id.as_deref() {
-                state.approval_sessions.write().await.remove(session_id);
+                app.approval_sessions.write().await.remove(session_id);
             }
             let cancelled_by_signal = cancel.load(Ordering::SeqCst);
             let (ok, cancelled, err) = match r {
@@ -745,7 +775,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 }
                 Ok(()) => {
                     match post_turn_web_prepare_and_save(
-                        &state,
+                        app.as_ref(),
                         &cfg_snap,
                         &conversation_id,
                         &mut messages,
@@ -756,7 +786,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     .await
                     {
                         crate::SaveConversationOutcome::Saved => {
-                            if let Some(new_rev) = state
+                            if let Some(new_rev) = app
                                 .load_conversation_seed(&conversation_id)
                                 .await
                                 .and_then(|s| s.expected_revision)
@@ -847,12 +877,13 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             )
             .await;
             drop(sse_tx);
-            state.sse_stream_hub.remove_job(job_id);
+            queue_deps.sse_stream_hub.remove_job(job_id);
             JobOutcome::Stream { ok, cancelled, err }
         }
         QueuedChatJob::Json {
             job_id,
-            state,
+            queue_deps,
+            app,
             conversation_id,
             mut messages,
             expected_revision,
@@ -878,24 +909,29 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 crate::redact::last_user_message_preview_for_log(&messages)
             );
             let flight = Arc::new(PerTurnFlight::default());
-            let _per_guard = state
+            let _per_guard = queue_deps
                 .chat_queue
                 .begin_per_flight_job(job_id, flight.clone());
             let cfg_snap = {
-                let g = state.cfg.read().await;
+                let g = queue_deps.cfg.read().await;
                 std::sync::Arc::new(g.clone())
             };
-            let (cfg_turn, api_key_turn) =
-                resolve_web_llm_for_job(&state, cfg_snap.clone(), llm_override.as_ref());
+            let (cfg_turn, api_key_turn) = resolve_web_llm_for_job(
+                queue_deps.as_ref(),
+                cfg_snap.clone(),
+                llm_override.as_ref(),
+            );
             let turn_allow = turn_allow_for_web_or_cli_job(
                 &cfg_turn,
                 persisted_active_agent_role.as_deref(),
                 request_agent_role.as_deref(),
             );
-            let tools_for_job =
-                filter_tools_for_agent_role(&state.tools, turn_allow.as_ref().map(|a| a.as_ref()));
+            let tools_for_job = filter_tools_for_agent_role(
+                &queue_deps.tools,
+                turn_allow.as_ref().map(|a| a.as_ref()),
+            );
             let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_json(
-                &state.client,
+                &queue_deps.client,
                 api_key_turn.as_str(),
                 &cfg_turn,
                 tools_for_job.as_slice(),
@@ -905,7 +941,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 flight,
                 temperature_override,
                 seed_override,
-                state.long_term_memory.clone(),
+                queue_deps.long_term_memory.clone(),
                 job_id,
                 &conversation_id,
                 turn_allow,
@@ -914,7 +950,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             let (ok, cancelled, err) = match r {
                 Ok(()) => {
                     match post_turn_web_prepare_and_save(
-                        &state,
+                        app.as_ref(),
                         &cfg_snap,
                         &conversation_id,
                         &mut messages,

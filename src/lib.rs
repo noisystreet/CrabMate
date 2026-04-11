@@ -661,6 +661,16 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             None
         };
+        let sse_stream_hub = std::sync::Arc::new(crate::sse::SseStreamHub::new());
+        let chat_queue_job_deps = std::sync::Arc::new(chat_job_queue::WebChatQueueDeps {
+            cfg: Arc::clone(&cfg_holder),
+            api_key: api_key.clone(),
+            client: client.clone(),
+            tools: tools.clone(),
+            chat_queue: chat_queue.clone(),
+            long_term_memory: long_term_memory.clone(),
+            sse_stream_hub: Arc::clone(&sse_stream_hub),
+        });
         let state = Arc::new(AppState {
             cfg: Arc::clone(&cfg_holder),
             config_path_for_reload: config_path.clone(),
@@ -670,13 +680,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
             uploads_dir: uploads_dir.clone(),
             chat_queue,
+            chat_queue_job_deps,
             conversation_backing,
             conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
             approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             long_term_memory,
             web_tasks_by_workspace: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            sse_stream_hub: std::sync::Arc::new(crate::sse::SseStreamHub::new()),
+            sse_stream_hub,
         });
         let static_dir = web_static_dir::resolve_web_static_dir();
         let web_api_bearer_layer_enabled = {
