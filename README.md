@@ -91,7 +91,7 @@ cd frontend-leptos && trunk build && cd ..
 
 ### CLI
 
-- **`crabmate repl`**：交互式对话；**`/`** 内建命令与可选 **`bash#:`** 见 [docs/CLI.md](docs/CLI.md)。bearer 无密钥时提示 **`/api-key`**。
+- **`crabmate repl`**：交互式对话；**`/`** 内建命令与可选 **`bash#:`** 见 [docs/CLI.md](docs/CLI.md)。启动后可 **`/api-key set`**、**`/model set`**、**`/api-base set`**（均仅本进程内存）；bearer 无密钥时提示 **`/api-key`**。
 - **`crabmate chat`**：单次非交互；**`serve`**：HTTP + Web UI（与 Web 共用逻辑）。
 - **常用**：**`doctor`**、**`config`**、**`probe`** / **`models`**、**`bench`**、**`save-session`** / **`export-session`**、**`tool-replay`**、**`mcp list`** / **`mcp serve`**。全局选项 **`--config`**、**`--workspace`**、**`--agent-role`**、**`--no-tools`**、**`--no-stream`** 等。
 - 配置键：[docs/CONFIGURATION.md](docs/CONFIGURATION.md)；子命令全表、Benchmark、**`man crabmate`**：[docs/CLI.md](docs/CLI.md)。

@@ -284,6 +284,7 @@ pub async fn run_models_choose_repl(
     let resolved = resolve_model_id_from_list(&r.model_ids, requested)?;
     let mut w = cfg_holder.write().await;
     w.model = resolved.clone();
+    crate::llm::vendor::refresh_llm_reasoning_split_for_gateway(&mut w);
     Ok(resolved)
 }
 

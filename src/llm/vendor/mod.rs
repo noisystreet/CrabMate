@@ -102,6 +102,12 @@ pub(crate) fn default_llm_reasoning_split_for_gateway(model: &str, api_base: &st
     is_minimax_family_model_id(model) || api_base_looks_minimax(api_base)
 }
 
+/// 运行时更新 **`model` / `api_base`** 后，将 **`llm_reasoning_split`** 同步为与当前网关一致的推断（与配置 **`finalize`** 中省略 **`llm_reasoning_split`** 时的行为一致）。
+#[inline]
+pub(crate) fn refresh_llm_reasoning_split_for_gateway(cfg: &mut AgentConfig) {
+    cfg.llm_reasoning_split = default_llm_reasoning_split_for_gateway(&cfg.model, &cfg.api_base);
+}
+
 /// 出站是否将独立 **`system`** 折叠进 **`user`**：**MiniMax**（按 `model` / `api_base` 与 [`llm_vendor_adapter`] 同源规则识别）为 **`true`**，其余为 **`false`**（不再由 TOML / 环境变量配置）。
 #[inline]
 pub fn fold_system_into_user_for_config(cfg: &AgentConfig) -> bool {

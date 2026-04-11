@@ -7,6 +7,7 @@ use crate::conversation_turn_bootstrap::{
     augmented_system_for_new_conversation_lenient, compose_new_conversation_messages,
     first_turn_project_context_user_message_sync,
 };
+use crate::llm::vendor::refresh_llm_reasoning_split_for_gateway;
 use crate::runtime::cli::repl_parse::{
     ReplBuiltIn, classify_repl_slash_command, print_repl_version_line,
     repl_agent_role_set_is_default_pseudo,
@@ -18,6 +19,10 @@ use std::io;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+
+/// 与 Web **`client_llm`** 校验上限对齐（仅本进程内存覆盖）。
+const REPL_LLM_API_BASE_MAX: usize = 2048;
+const REPL_LLM_MODEL_MAX: usize = 512;
 
 /// [`try_handle_repl_slash_command`] 的返回值：`RunProbe` / `RunModels` / `RunModelsChoose` 需在异步上下文中分别调用
 /// [`crate::runtime::cli_doctor::run_probe_cli`]、[`crate::runtime::cli_doctor::run_models_cli`]、
@@ -148,7 +153,7 @@ pub(crate) async fn try_handle_repl_slash_command(
                 messages.len()
             ));
         }
-        ReplBuiltIn::Model => {
+        ReplBuiltIn::ModelShow => {
             let cfg = cfg_holder.read().await;
             let _ = style.print_line(&format!("model: {}", cfg.model));
             let _ = style.print_line(&format!("api_base: {}", cfg.api_base));
@@ -161,6 +166,65 @@ pub(crate) async fn try_handle_repl_slash_command(
             } else {
                 let _ = style.print_line("llm_seed: （未设置，请求不带 seed）");
             }
+            let _ = style.print_line(
+                "提示: /model set <名称> 可直接改模型 id；/api-base set <url> 可改网关根地址（均仅内存，/config reload 会从磁盘覆盖）。",
+            );
+        }
+        ReplBuiltIn::ModelSet(name) => {
+            let t = name.trim();
+            if t.is_empty() {
+                let _ = style.eprint_error("用法: /model set <模型名或 id>（可与 /models list 列出的 id 不同，不校验列表）");
+            } else if t.len() > REPL_LLM_MODEL_MAX {
+                let _ =
+                    style.eprint_error(&format!("model 过长（上限 {REPL_LLM_MODEL_MAX} 字符）。"));
+            } else {
+                let label = t.to_string();
+                let mut w = cfg_holder.write().await;
+                w.model.clone_from(&label);
+                refresh_llm_reasoning_split_for_gateway(&mut w);
+                drop(w);
+                let _ = style.print_success(&format!(
+                    "已设 model = {label}（仅本进程；持久化请改配置；/config reload 会从磁盘覆盖；llm_reasoning_split 已按网关默认刷新）"
+                ));
+            }
+        }
+        ReplBuiltIn::ModelUsage => {
+            let _ = style.eprint_error(
+                "用法: /model（显示当前）· /model set <模型名或 id>（写内存；不校验 GET /models）",
+            );
+        }
+        ReplBuiltIn::ApiBaseShow => {
+            let cfg = cfg_holder.read().await;
+            let _ = style.print_line(&format!("api_base: {}", cfg.api_base));
+            let _ = style.print_line(
+                "提示: /api-base set <url> 可改 OpenAI 兼容网关根地址（仅内存；别名 /apibase）。",
+            );
+        }
+        ReplBuiltIn::ApiBaseSet(url) => {
+            let t = url.trim();
+            if t.is_empty() {
+                let _ = style
+                    .eprint_error("用法: /api-base set <url>（例如 https://api.openai.com/v1）");
+            } else if t.len() > REPL_LLM_API_BASE_MAX {
+                let _ = style.eprint_error(&format!(
+                    "api_base 过长（上限 {REPL_LLM_API_BASE_MAX} 字符）。"
+                ));
+            } else if t.contains('\0') || t.contains('\r') || t.contains('\n') {
+                let _ = style.eprint_error("api_base 含非法控制字符，已拒绝。");
+            } else {
+                let label = t.to_string();
+                let mut w = cfg_holder.write().await;
+                w.api_base.clone_from(&label);
+                refresh_llm_reasoning_split_for_gateway(&mut w);
+                drop(w);
+                let _ = style.print_success(&format!(
+                    "已设 api_base = {label}（仅本进程；持久化请改配置；/config reload 会从磁盘覆盖；llm_reasoning_split 已按网关默认刷新）"
+                ));
+            }
+        }
+        ReplBuiltIn::ApiBaseUsage => {
+            let _ =
+                style.eprint_error("用法: /api-base（显示当前）· /api-base set <url>（写内存）");
         }
         ReplBuiltIn::Config(extra) => {
             let e = extra.trim();

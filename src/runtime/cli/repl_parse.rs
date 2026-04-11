@@ -7,7 +7,18 @@ use std::process::{Command, Stdio};
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ReplBuiltIn<'a> {
     Clear,
-    Model,
+    /// `/model`：显示当前 model、api_base 等。
+    ModelShow,
+    /// `/model set <名称>`：直接写入内存中的 `model`（不校验 GET /models 列表）。
+    ModelSet(String),
+    /// `/model …` 用法错误（非 `set` 或 `set` 后为空）。
+    ModelUsage,
+    /// `/api-base`：显示当前 `api_base`。
+    ApiBaseShow,
+    /// `/api-base set <url>`：写入内存中的 `api_base`。
+    ApiBaseSet(String),
+    /// `/api-base …` 用法错误。
+    ApiBaseUsage,
     /// `arg` 为命令名后的剩余文本；非空表示用户传了多余参数，应提示用法。
     Config(&'a str),
     /// 与 `crabmate doctor` 一致；`arg` 非空则报错。
@@ -186,15 +197,52 @@ fn classify_mcp_slash_command(arg_tail: &str) -> ReplBuiltIn<'static> {
     ReplBuiltIn::McpUnknown(tail.to_string())
 }
 
-/// `/api-key set …`：`set` 与大小写无关，其后为完整密钥（单行）。
-fn repl_api_key_secret_after_set(arg_trim: &str) -> Option<&str> {
+/// `set …` 前缀（与大小写无关）：用于 **`/api-key`**、**`/model`**、**`/api-base`** 等。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReplSetTail<'a> {
+    /// 非 `set …` 形式。
+    NotSet,
+    /// `set` 后无值。
+    MissingValue,
+    /// `set` 后的内容（已 `trim`，可能仍含空格，如模型名中的空格）。
+    Value(&'a str),
+}
+
+/// 解析行内参数是否以 **`set `** 开头（`set` 大小写不敏感）。
+pub(crate) fn parse_repl_set_tail(arg_trim: &str) -> ReplSetTail<'_> {
     let t = arg_trim.trim_start();
     const PREF: &str = "set ";
     if t.len() >= PREF.len() && t[..PREF.len()].eq_ignore_ascii_case(PREF) {
         let rest = t[PREF.len()..].trim();
-        if rest.is_empty() { None } else { Some(rest) }
+        if rest.is_empty() {
+            ReplSetTail::MissingValue
+        } else {
+            ReplSetTail::Value(rest)
+        }
     } else {
-        None
+        ReplSetTail::NotSet
+    }
+}
+
+fn classify_model_slash_command(arg: &str) -> ReplBuiltIn<'static> {
+    let t = arg.trim();
+    if t.is_empty() {
+        return ReplBuiltIn::ModelShow;
+    }
+    match parse_repl_set_tail(t) {
+        ReplSetTail::Value(s) => ReplBuiltIn::ModelSet(s.to_string()),
+        ReplSetTail::MissingValue | ReplSetTail::NotSet => ReplBuiltIn::ModelUsage,
+    }
+}
+
+fn classify_api_base_slash_command(arg: &str) -> ReplBuiltIn<'static> {
+    let t = arg.trim();
+    if t.is_empty() {
+        return ReplBuiltIn::ApiBaseShow;
+    }
+    match parse_repl_set_tail(t) {
+        ReplSetTail::Value(s) => ReplBuiltIn::ApiBaseSet(s.to_string()),
+        ReplSetTail::MissingValue | ReplSetTail::NotSet => ReplBuiltIn::ApiBaseUsage,
     }
 }
 
@@ -213,7 +261,8 @@ pub(crate) fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>
     let arg = rest[head.len()..].trim();
     Some(match cmd.as_str() {
         "clear" => ReplBuiltIn::Clear,
-        "model" => ReplBuiltIn::Model,
+        "model" => classify_model_slash_command(arg),
+        "api-base" | "apibase" => classify_api_base_slash_command(arg),
         "config" => ReplBuiltIn::Config(arg),
         "doctor" => ReplBuiltIn::Doctor(arg),
         "probe" => ReplBuiltIn::Probe(arg),
@@ -238,10 +287,11 @@ pub(crate) fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>
                 ReplBuiltIn::ApiKeyStatus
             } else if a.eq_ignore_ascii_case("clear") {
                 ReplBuiltIn::ApiKeyClear
-            } else if let Some(secret) = repl_api_key_secret_after_set(a) {
-                ReplBuiltIn::ApiKeySet(secret.to_string())
             } else {
-                ReplBuiltIn::ApiKeyUsage
+                match parse_repl_set_tail(a) {
+                    ReplSetTail::Value(s) => ReplBuiltIn::ApiKeySet(s.to_string()),
+                    ReplSetTail::MissingValue | ReplSetTail::NotSet => ReplBuiltIn::ApiKeyUsage,
+                }
             }
         }
         "agent" => classify_agent_slash_command(arg),
@@ -304,7 +354,31 @@ mod repl_slash_tests {
         );
         assert_eq!(
             classify_repl_slash_command("/model"),
-            Some(ReplBuiltIn::Model)
+            Some(ReplBuiltIn::ModelShow)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/model SET gpt-4o"),
+            Some(ReplBuiltIn::ModelSet("gpt-4o".to_string()))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/model set"),
+            Some(ReplBuiltIn::ModelUsage)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/model bogus"),
+            Some(ReplBuiltIn::ModelUsage)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/api-base"),
+            Some(ReplBuiltIn::ApiBaseShow)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/apibase set https://x/v1"),
+            Some(ReplBuiltIn::ApiBaseSet("https://x/v1".to_string()))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/api-base set"),
+            Some(ReplBuiltIn::ApiBaseUsage)
         );
         assert_eq!(
             classify_repl_slash_command("/tools"),

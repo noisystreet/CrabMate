@@ -361,7 +361,7 @@ impl CliReplStyle {
         self.write_banner_subheading(&mut out, "内建命令")?;
         self.write_banner_note_line(
             &mut out,
-            "    /clear  /model  /models（list·choose） /api-key  /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
+            "    /clear  /model（·set） /api-base（·set） /models（list·choose） /api-key  /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
         )?;
         self.write_banner_note_line(
             &mut out,
@@ -683,7 +683,14 @@ impl CliReplStyle {
 
         let rows: &[(&str, &str)] = &[
             ("/clear", "清空对话，仅保留当前 system 提示词"),
-            ("/model", "显示 model、api_base、temperature、llm_seed"),
+            (
+                "/model · /model set <名称>",
+                "显示或写入内存中的 model（set 不校验 GET /models 列表；持久化请改配置）",
+            ),
+            (
+                "/api-base · /api-base set <url> · /apibase …",
+                "显示或写入内存中的 api_base（OpenAI 兼容网关根；持久化请改配置）",
+            ),
             (
                 "/api-key · /api-key status · /api-key set <密钥> · /api-key clear",
                 "本进程内存中的 LLM Bearer 密钥（不写盘；未 export API_KEY 时可用；/config reload 不清除）",
