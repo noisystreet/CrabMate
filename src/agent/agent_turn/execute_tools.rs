@@ -17,11 +17,12 @@ static PARALLEL_READONLY_TOOL_BATCH_SEQ: AtomicU64 = AtomicU64::new(1);
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
+use crate::agent::workflow_tool_dispatch;
 use crate::clarification_questionnaire::maybe_emit_clarification_questionnaire_sse;
 use crate::config::AgentConfig;
 use crate::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
-use crate::tool_registry::{self, ToolRuntime};
+use crate::tool_registry::{self, HandlerId, ToolRuntime, handler_id_for};
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
 use crate::tools;
 use crate::types::{Message, Tool, ToolCall};
@@ -775,10 +776,20 @@ async fn execute_tools_serial(
                 ctx: web_tool_ctx,
             }
         };
-        let (result, reflection_inject) =
-            tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
+        let (result, reflection_inject) = if handler_id_for(name.as_str()) == HandlerId::Workflow {
+            workflow_tool_dispatch::dispatch_workflow_execute_tool(
                 runtime,
                 per_coord,
+                cfg,
+                effective_working_dir,
+                workspace_is_set,
+                args.as_str(),
+                request_chrome_trace.clone(),
+            )
+            .await
+        } else {
+            tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
+                runtime,
                 cfg,
                 effective_working_dir,
                 workspace_is_set,
@@ -788,12 +799,12 @@ async fn execute_tools_serial(
                 read_file_turn_cache: read_file_turn_cache.clone(),
                 workspace_changelist: workspace_changelist.cloned(),
                 mcp_session,
-                request_chrome_merge: request_chrome_trace.clone(),
                 turn_allow,
                 long_term_memory: long_term_memory.clone(),
                 long_term_memory_scope_id: long_term_memory_scope_id.clone(),
             })
-            .await;
+            .await
+        };
 
         info!(
             target: LOG_TARGET,

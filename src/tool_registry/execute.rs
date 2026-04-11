@@ -10,9 +10,6 @@ use std::time::Duration;
 use log::error;
 use tokio::sync::Mutex;
 
-use crate::agent::per_coord::PerCoordinator;
-use crate::agent::workflow;
-use crate::agent::workflow_reflection_controller;
 use crate::config::{AgentConfig, SyncDefaultToolSandboxMode};
 use crate::tools;
 use crate::types::{CommandApprovalDecision, ToolCall};
@@ -42,7 +39,6 @@ fn extend_allowed_commands_arc(
 }
 pub struct DispatchToolParams<'a> {
     pub runtime: ToolRuntime<'a>,
-    pub per_coord: &'a mut PerCoordinator,
     pub cfg: &'a Arc<AgentConfig>,
     pub effective_working_dir: &'a Path,
     pub workspace_is_set: bool,
@@ -54,8 +50,6 @@ pub struct DispatchToolParams<'a> {
     pub workspace_changelist:
         Option<std::sync::Arc<crate::workspace_changelist::WorkspaceChangelist>>,
     pub mcp_session: Option<&'a Arc<Mutex<crate::mcp::McpClientSession>>>,
-    /// 并入整请求 `turn-*.json` 时传给 `workflow_execute`。
-    pub request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
     pub long_term_memory: Option<Arc<crate::long_term_memory::LongTermMemoryRuntime>>,
@@ -76,7 +70,6 @@ fn http_tool_approval_context<'a>(
 pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
     let DispatchToolParams {
         runtime,
-        per_coord,
         cfg,
         effective_working_dir,
         workspace_is_set,
@@ -86,7 +79,6 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
         read_file_turn_cache,
         workspace_changelist,
         mcp_session,
-        request_chrome_merge,
         turn_allow,
         long_term_memory,
         long_term_memory_scope_id,
@@ -131,31 +123,11 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
 
     match hid {
         HandlerId::Workflow => {
-            let runtime_web = match runtime {
-                ToolRuntime::Web {
-                    workspace_changed,
-                    ctx,
-                } => ToolRuntime::Web {
-                    workspace_changed,
-                    ctx,
-                },
-                ToolRuntime::Cli {
-                    workspace_changed, ..
-                } => ToolRuntime::Web {
-                    workspace_changed,
-                    ctx: None,
-                },
-            };
-            execute_workflow(
-                runtime_web,
-                per_coord,
-                cfg,
-                effective_working_dir,
-                workspace_is_set,
-                args,
-                request_chrome_merge,
+            // `workflow_execute` 由 `agent::workflow_tool_dispatch` 调度（避免本模块依赖 `PerCoordinator` / `workflow`）。
+            (
+                "内部错误：workflow_execute 须由 agent 层调度，不应进入 dispatch_tool".to_string(),
+                None,
             )
-            .await
         }
         HandlerId::RunCommand => match runtime {
             ToolRuntime::Web {
@@ -310,70 +282,6 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             (result, None)
         }
     }
-}
-
-async fn execute_workflow(
-    runtime: ToolRuntime<'_>,
-    per_coord: &mut PerCoordinator,
-    cfg: &Arc<AgentConfig>,
-    effective_working_dir: &Path,
-    workspace_is_set: bool,
-    args: &str,
-    request_chrome_merge: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
-) -> (String, Option<serde_json::Value>) {
-    let prep = per_coord.prepare_workflow_execute(args);
-    let reflection_inject = prep.reflection_inject.clone();
-
-    let result = if prep.execute {
-        if let Err(contract_err) =
-            workflow_reflection_controller::validate_workflow_execute_do_contract(
-                &prep.patched_args,
-            )
-        {
-            contract_err.to_string()
-        } else {
-            let (workspace_changed_ref, approval_mode) = match runtime {
-                ToolRuntime::Web {
-                    workspace_changed,
-                    ctx,
-                } => {
-                    let mode = if let Some(web_ctx) = ctx {
-                        workflow::WorkflowApprovalMode::Interactive {
-                            out_tx: web_ctx.out_tx.clone(),
-                            approval_rx: web_ctx.approval_rx_shared.clone(),
-                            approval_request_guard: web_ctx.approval_request_guard.clone(),
-                            persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
-                        }
-                    } else {
-                        workflow::WorkflowApprovalMode::NoApproval
-                    };
-                    (workspace_changed, mode)
-                }
-                ToolRuntime::Cli {
-                    workspace_changed, ..
-                } => (
-                    workspace_changed,
-                    workflow::WorkflowApprovalMode::NoApproval,
-                ),
-            };
-            let (wf_out, wf_ws_changed) = workflow::run_workflow_execute_tool(
-                &prep.patched_args,
-                cfg.as_ref(),
-                effective_working_dir,
-                workspace_is_set,
-                approval_mode,
-                cfg.command_max_output_len,
-                request_chrome_merge,
-            )
-            .await;
-            *workspace_changed_ref |= wf_ws_changed;
-            wf_out
-        }
-    } else {
-        prep.skipped_result.clone()
-    };
-
-    (result, reflection_inject)
 }
 
 /// `sync_default_tool_sandbox_mode = docker` 时，在宿主完成审批/白名单后把本类工具交给容器内 `tool-runner-internal`。
