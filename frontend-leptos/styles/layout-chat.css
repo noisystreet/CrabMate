@@ -431,12 +431,29 @@
   max-width: 100%;
 }
 
-.msg-md-split.msg-md-prose-collapsed {
+/* 勿用 mask-image 做淡出：部分引擎下会干扰气泡内文本拖动选区；用 pointer-events:none 的叠层近似底部渐隐 */
+.msg-md-split.msg-md-prose-collapsed,
+.msg-md-prose-collapsed {
   max-height: 18rem;
   overflow: hidden;
   position: relative;
-  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+
+.msg-md-split.msg-md-prose-collapsed::after,
+.msg-md-prose-collapsed::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5rem;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--surface) 88%, var(--border-subtle) 12%)
+  );
 }
 
 /* 助手正文区（含原思维链 + 终答合并渲染） */
@@ -446,23 +463,14 @@
 
 .msg-md-prose {
   white-space: normal;
-  /* 流式全量替换 innerHTML 时缩小重排影响范围 */
-  contain: layout style;
+  /* 勿用 contain：layout/style；部分环境下会恶化选区命中与复制体验 */
+  user-select: text;
 }
 
 /* 助手正文：在已定宽的父级内优先按词/语义断行，避免继承 .msg-body 的 overflow-wrap:anywhere 在窄容器外仍过碎 */
 .msg-assistant .msg-body.msg-md-prose {
   overflow-wrap: break-word;
   word-break: normal;
-}
-
-/* 长助手回复默认折叠高度，避免单条占满屏 */
-.msg-md-prose-collapsed {
-  max-height: 18rem;
-  overflow: hidden;
-  position: relative;
-  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
 }
 
 .msg-md-toggle {

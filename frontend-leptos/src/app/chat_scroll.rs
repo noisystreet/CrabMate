@@ -8,6 +8,7 @@ use leptos::task::spawn_local;
 
 use gloo_timers::future::TimeoutFuture;
 
+use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::session_search::scroll_message_into_view;
 use crate::storage::ChatSession;
 
@@ -62,7 +63,9 @@ pub(super) fn wire_messages_auto_scroll(
                 return;
             }
             if let Some(el) = mref.get() {
-                el.set_scroll_top(el.scroll_height());
+                if !messages_scroller_has_non_collapsed_selection(&el) {
+                    el.set_scroll_top(el.scroll_height());
+                }
             }
             TimeoutFuture::new(0).await;
             if MESSAGES_AUTO_SCROLL_GEN.load(Ordering::Relaxed) != generation {
@@ -72,7 +75,9 @@ pub(super) fn wire_messages_auto_scroll(
                 return;
             }
             if let Some(el) = mref.get() {
-                el.set_scroll_top(el.scroll_height());
+                if !messages_scroller_has_non_collapsed_selection(&el) {
+                    el.set_scroll_top(el.scroll_height());
+                }
             }
             // 再等一帧：流式换行后布局高度可能在本轮 paint 后才稳定
             TimeoutFuture::new(16).await;
@@ -83,7 +88,9 @@ pub(super) fn wire_messages_auto_scroll(
                 return;
             }
             if let Some(el) = mref.get() {
-                el.set_scroll_top(el.scroll_height());
+                if !messages_scroller_has_non_collapsed_selection(&el) {
+                    el.set_scroll_top(el.scroll_height());
+                }
             }
         });
     });
