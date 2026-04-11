@@ -17,7 +17,7 @@ license-file = "README.md"
 extended-description = """\
 CrabMate is a Rust AI agent that uses OpenAI-compatible chat/completions to reach LLM backends \
 (e.g. DeepSeek, MiniMax, local Ollama). It supports function calling, workspace-oriented command \
-and file tools, a Web UI (Axum + React), and a CLI (REPL, one-shot chat, and serve). Configuration \
+and file tools, a Web UI (Axum + Leptos), and a CLI (REPL, one-shot chat, and serve). Configuration \
 is TOML plus environment variables; see /usr/share/doc/crabmate/ after install."""
 depends = "libc6 (>= 2.31)"
 section = "utils"

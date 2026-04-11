@@ -146,7 +146,7 @@ cargo deny check licenses bans sources
 
 ## 非自动化项
 
-- **样式与布局手测清单**：[`frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`](../frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md)（仓库内无自动化截图对比流水线）。
+- **样式与布局手测清单**：[`docs/frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md`](frontend-leptos/VISUAL_REGRESSION_CHECKLIST.md)（仓库内无自动化截图对比流水线）。
 
 ## 另见
 
