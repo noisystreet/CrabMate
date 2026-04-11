@@ -12,7 +12,7 @@ use serde_json::Value;
 
 pub use plan_rewrite::PlanRewriteExhaustedReason;
 
-const PLAN_REWRITE_EXHAUSTED_SSE: &str =
+pub(crate) const PLAN_REWRITE_EXHAUSTED_SSE: &str =
     "结构化规划仍未满足要求（已达最大重写次数），已结束本轮；请调整需求后重试。";
 
 /// 何时要求模型在**最终** assistant 正文中嵌入可解析的 `agent_reply_plan` v1（见 `plan_artifact`）。
