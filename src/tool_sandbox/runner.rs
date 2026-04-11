@@ -147,19 +147,21 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         "run_command" => run_tool("run_command", &inv.args_json, &ctx),
         "run_executable" => run_tool("run_executable", &inv.args_json, &ctx),
         "http_fetch" => match http_fetch::parse_http_fetch_args(&inv.args_json) {
-            Ok((u, m)) => http_fetch::fetch_with_method(
+            Ok((u, m, fmt)) => http_fetch::fetch_with_method(
                 &u,
                 m,
+                fmt,
                 snap.http_fetch_timeout_secs.max(1),
                 snap.http_fetch_max_response_bytes,
             ),
             Err(e) => format!("错误：{}", e),
         },
         "http_request" => match http_fetch::parse_http_request_args(&inv.args_json) {
-            Ok((u, m, b)) => http_fetch::request_with_json_body(
+            Ok((u, m, b, fmt)) => http_fetch::request_with_json_body(
                 &u,
                 m,
                 b.as_ref(),
+                fmt,
                 snap.http_fetch_timeout_secs.max(1),
                 snap.http_fetch_max_response_bytes,
             ),

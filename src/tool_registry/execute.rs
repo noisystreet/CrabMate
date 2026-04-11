@@ -612,7 +612,7 @@ pub(crate) async fn prefetch_http_fetch_parallel_approvals(
             continue;
         }
         let args = tc.function.arguments.as_str();
-        let (url, method) = match tools::http_fetch::parse_http_fetch_args(args) {
+        let (url, method, _) = match tools::http_fetch::parse_http_fetch_args(args) {
             Ok(x) => x,
             Err(e) => {
                 failures.insert(key, format!("错误：{}", e));
@@ -695,7 +695,7 @@ async fn execute_http_fetch_impl(
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
-    let (url, method) = match tools::http_fetch::parse_http_fetch_args(args) {
+    let (url, method, text_format) = match tools::http_fetch::parse_http_fetch_args(args) {
         Ok(x) => x,
         Err(e) => return (format!("错误：{}", e), None),
     };
@@ -767,14 +767,16 @@ async fn execute_http_fetch_impl(
     let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch_max_response_bytes;
     let name_in = name.to_string();
-    let args_owned = args.to_string();
+    let url_owned = url.clone();
     let outer_wall = http_fetch_outer_wall_secs(cfg);
     let handle = tokio::task::spawn_blocking(move || {
-        let (u, m) = match tools::http_fetch::parse_http_fetch_args(&args_owned) {
-            Ok(x) => x,
-            Err(e) => return format!("错误：{}", e),
-        };
-        tools::http_fetch::fetch_with_method(&u, m, timeout_secs, max_body)
+        tools::http_fetch::fetch_with_method(
+            &url_owned,
+            method,
+            text_format,
+            timeout_secs,
+            max_body,
+        )
     });
     let s = match tokio::time::timeout(Duration::from_secs(outer_wall), handle).await {
         Ok(Ok(s)) => s,
@@ -801,10 +803,11 @@ async fn execute_http_request_impl(
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
-    let (url, method, json_body) = match tools::http_fetch::parse_http_request_args(args) {
-        Ok(x) => x,
-        Err(e) => return (format!("错误：{}", e), None),
-    };
+    let (url, method, json_body, text_format) =
+        match tools::http_fetch::parse_http_request_args(args) {
+            Ok(x) => x,
+            Err(e) => return (format!("错误：{}", e), None),
+        };
     let has_body = json_body.is_some();
     let key = tools::http_fetch::request_storage_key(method, &url);
     let approval_args = tools::http_fetch::approval_args_display_request(method, &url, has_body);
@@ -874,14 +877,17 @@ async fn execute_http_request_impl(
     let timeout_secs = cfg.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch_max_response_bytes;
     let name_in = name.to_string();
-    let args_owned = args.to_string();
+    let url_fetch = url.clone();
     let outer_wall = http_request_outer_wall_secs(cfg);
     let handle = tokio::task::spawn_blocking(move || {
-        let (u, m, b) = match tools::http_fetch::parse_http_request_args(&args_owned) {
-            Ok(x) => x,
-            Err(e) => return format!("错误：{}", e),
-        };
-        tools::http_fetch::request_with_json_body(&u, m, b.as_ref(), timeout_secs, max_body)
+        tools::http_fetch::request_with_json_body(
+            &url_fetch,
+            method,
+            json_body.as_ref(),
+            text_format,
+            timeout_secs,
+            max_body,
+        )
     });
     let s = match tokio::time::timeout(Duration::from_secs(outer_wall), handle).await {
         Ok(Ok(s)) => s,

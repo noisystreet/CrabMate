@@ -115,6 +115,11 @@ pub(in crate::tools) fn params_http_fetch() -> serde_json::Value {
                 "type": "string",
                 "description": "HTTP 方法：GET（默认，返回正文截断）或 HEAD（仅状态码、Content-Type、Content-Length、重定向链，不下载 body）",
                 "enum": ["GET", "HEAD", "get", "head"]
+            },
+            "text_format": {
+                "type": "string",
+                "description": "正文呈现：raw（默认，解码后原文，可能含 HTML 标签）或 html_text（HTML 文档页转为纯文本：去 script/style，优先 main/article，依赖 scraper/html5ever）。非 HTML 或 JSON/二进制时仍输出原文并在「正文解码」行说明。",
+                "enum": ["raw", "html_text", "html-text", "text"]
             }
         },
         "required": ["url"],
@@ -146,6 +151,11 @@ pub(in crate::tools) fn params_http_request() -> serde_json::Value {
                     {"type":"boolean"},
                     {"type":"null"}
                 ]
+            },
+            "text_format": {
+                "type": "string",
+                "description": "响应正文呈现：raw（默认）或 html_text（见 http_fetch 同名参数）。",
+                "enum": ["raw", "html_text", "html-text", "text"]
             }
         },
         "required": ["url", "method"],
