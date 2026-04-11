@@ -167,7 +167,7 @@ If we later introduce a thin **`AgentLlmCall`** helper to dedupe **`CompleteChat
 
 | File | Area |
 |------|------|
-| `calc.rs`, `unit_convert.rs`, `time.rs`, `weather.rs`, `web_search.rs`, `http_fetch.rs` | Basic utilities + HTTP tools |
+| `calc.rs`, `unit_convert.rs`, `time.rs`, `weather.rs`, `web_search.rs`, `http_fetch.rs` | Basic utilities + HTTP tools (`http_fetch` / `http_request`: `Content-Type` charset, HTML/XML encoding hints, **`chardetng`** fallback, **`User-Agent: crabmate/<version>`**) |
 | `command.rs`, `exec.rs`, `test_result_cache.rs`, `package_query.rs` | Process execution + package query |
 | `file/` | Workspace file ops (path safety in `path.rs`) |
 | `cargo_tools.rs`, `ci_tools.rs`, `rust_ide.rs`, `frontend_tools.rs` | Rust / CI / RA / npm |

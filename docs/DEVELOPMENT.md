@@ -231,7 +231,7 @@ flowchart TB
 | `security_tools.rs` | 安全审计类 |
 | `source_analysis_tools.rs` | 源码分析工具：`shellcheck_check`（Shell 脚本静态分析）、`cppcheck_analyze`（C/C++ 静态分析）、`semgrep_scan`（多语言 SAST）、`hadolint_check`（Dockerfile lint）、`bandit_scan`（Python 安全分析）、`lizard_complexity`（圈复杂度） |
 | `time.rs` / `weather.rs` / `web_search.rs` | 时间、天气（Open-Meteo）、联网搜索（Brave/Tavily） |
-| `http_fetch.rs` | `http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）；共享重定向记录、体长上限与 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**校验；**Web 流式 + 审批会话**与 **CLI** 下二者未匹配前缀均可审批（`http_request` 永久键含 **METHOD**）；**`workflow_execute` 同步节点**仍仅白名单 |
+| `http_fetch.rs` | `http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）；共享重定向记录、体长上限、`encoding_rs`+`chardetng` 正文解码（`Content-Type` charset、HTML/XML 声明、嗅探）、**`User-Agent: crabmate/<版本>`** 与 `http_fetch_allowed_prefixes` 的**同源 + 路径前缀边界**校验；**Web 流式 + 审批会话**与 **CLI** 下二者未匹配前缀均可审批（`http_request` 永久键含 **METHOD**）；**`workflow_execute` 同步节点**仍仅白名单 |
 
 ## 核心机制：Agent 主循环与工具调用
 
