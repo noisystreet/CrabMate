@@ -298,7 +298,7 @@ impl AppState {
         }
     }
 
-    /// 截断到第 `user_ordinal` 条**普通**用户消息之前（0-based，不含长期记忆注入），且仅当 `revision` 匹配时成功。
+    /// 截断到第 `user_ordinal` 条**普通**用户消息之前（0-based，不含长期记忆/变更集/首轮工作区画像等注入），且仅当 `revision` 匹配时成功。
     pub(crate) async fn truncate_conversation_before_user_ordinal_if_revision(
         &self,
         conversation_id: String,
@@ -321,7 +321,7 @@ impl AppState {
                 let mut u = 0usize;
                 let mut cut = entry.messages.len();
                 for (i, m) in entry.messages.iter().enumerate() {
-                    if m.role == "user" && !crate::types::is_long_term_memory_injection(m) {
+                    if crate::types::user_message_counts_for_branch_truncation(m) {
                         if u == user_ordinal {
                             cut = i;
                             break;

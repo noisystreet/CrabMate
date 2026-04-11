@@ -79,13 +79,13 @@ pub(crate) fn compose_new_conversation_messages(
     match (project_context, last_user) {
         (Some(ctx), Some(u)) => vec![
             Message::system_only(system_for_turn.to_string()),
-            Message::user_only(ctx),
+            Message::user_first_turn_workspace_context(ctx),
             u,
         ],
         (None, Some(u)) => vec![Message::system_only(system_for_turn.to_string()), u],
         (Some(ctx), None) => vec![
             Message::system_only(system_for_turn.to_string()),
-            Message::user_only(ctx),
+            Message::user_first_turn_workspace_context(ctx),
         ],
         (None, None) => vec![Message::system_only(system_for_turn.to_string())],
     }
@@ -107,6 +107,6 @@ pub(crate) async fn prepend_first_turn_project_context_between_system_and_user(
     }
     let cfg = cfg_holder.read().await.clone();
     if let Some(body) = first_turn_project_context_user_message(work_dir, &cfg, None).await {
-        messages.insert(1, Message::user_only(body));
+        messages.insert(1, Message::user_first_turn_workspace_context(body));
     }
 }

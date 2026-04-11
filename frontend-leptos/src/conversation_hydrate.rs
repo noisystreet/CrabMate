@@ -9,6 +9,9 @@ use crate::timeline_scan::{
     timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
 };
 
+/// 与后端 `src/types.rs` 中 `CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME` 一致。
+const CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME: &str = "crabmate_first_turn_workspace_context";
+
 #[derive(Debug, Deserialize)]
 pub struct ConversationMessagesResponse {
     #[allow(dead_code)]
@@ -118,6 +121,10 @@ pub fn stored_messages_from_conversation_api_with_base(
         let name = parsed.name.as_deref().unwrap_or("").trim();
 
         if role == "system" && name == "crabmate_ui_sep" {
+            continue;
+        }
+
+        if role == "user" && name == CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME {
             continue;
         }
 
@@ -303,5 +310,16 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].role, "user");
         assert_eq!(out[0].text, "hi");
+    }
+
+    #[test]
+    fn skips_first_turn_workspace_context_user() {
+        let msgs = vec![
+            json!({"role":"user","name":CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME,"content":"profile"}),
+            json!({"role":"user","content":"real"}),
+        ];
+        let out = stored_messages_from_conversation_api_with_base(&msgs, 0);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "real");
     }
 }

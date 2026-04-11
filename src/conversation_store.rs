@@ -306,7 +306,7 @@ fn update_messages_json_if_revision(
 }
 
 /// 截断到「第 `ordinal` 条用户消息」之前（`ordinal` 为 0-based：0 表示删掉从首条用户起的尾部，仅保留 system 等）。
-/// 用户消息不含长期记忆注入条（`is_long_term_memory_injection`）。
+/// 计数不含长期记忆 / 变更集 / 首轮工作区画像等注入条（见 [`crate::types::user_message_counts_for_branch_truncation`]）。
 pub fn truncate_before_user_ordinal_if_revision(
     conn: &Connection,
     id: &str,
@@ -323,7 +323,7 @@ pub fn truncate_before_user_ordinal_if_revision(
             let mut u = 0usize;
             let mut cut = messages.len();
             for (i, m) in messages.iter().enumerate() {
-                if m.role == "user" && !crate::types::is_long_term_memory_injection(m) {
+                if crate::types::user_message_counts_for_branch_truncation(m) {
                     if u == user_ordinal {
                         cut = i;
                         break;
@@ -343,7 +343,36 @@ pub fn truncate_before_user_ordinal_if_revision(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Message;
+    use crate::types::{Message, message_content_as_str};
+
+    #[test]
+    fn truncate_before_user_ordinal_skips_first_turn_workspace_injection() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let msgs = vec![
+            Message::system_only("s".to_string()),
+            Message::user_first_turn_workspace_context("ctx".to_string()),
+            Message::user_only("hi".to_string()),
+        ];
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs, None, None).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(loaded.0.len(), 3);
+        assert_eq!(
+            truncate_before_user_ordinal_if_revision(&conn, "c1", 0, loaded.1).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let after = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(after.0.len(), 2);
+        assert_eq!(after.0[0].role, "system");
+        assert_eq!(message_content_as_str(&after.0[1].content), Some("ctx"));
+        assert_eq!(
+            after.0[1].name.as_deref(),
+            Some(crate::types::CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
+        );
+    }
 
     #[test]
     fn save_load_roundtrip() {
