@@ -6,7 +6,6 @@ mod approval_bar;
 mod changelist_modal;
 mod chat_column;
 mod chat_composer;
-mod chat_export_menu;
 mod chat_find;
 mod chat_find_bar;
 mod chat_message_render;
@@ -30,7 +29,6 @@ use chat_composer::{
     wire_chat_composer_streams, wire_draft_sync_to_buffer_and_textarea,
     wire_session_switch_clears_chat_state,
 };
-use chat_export_menu::ChatExportContextMenu;
 use chat_find::wire_chat_find_matches;
 use chat_find_bar::ChatFindBar;
 use chat_scroll::{wire_focus_message_after_nav, wire_messages_auto_scroll};
@@ -174,10 +172,6 @@ pub fn App() -> impl IntoView {
     let chat_find_cursor = RwSignal::new(0_usize);
     let chat_find_panel_open = RwSignal::new(false);
     let timeline_panel_expanded = RwSignal::new(load_timeline_panel_expanded_default());
-    // 主区：多选聊天气泡导出 Markdown（由聊天区右键菜单进入）。
-    let bubble_md_select_mode = RwSignal::new(false);
-    let bubble_md_selected_ids = RwSignal::new(Vec::<String>::new());
-    let chat_export_ctx_menu = RwSignal::new(None::<(f64, f64, Option<String>)>);
     // 从侧栏跳转后滚动到该消息（DOM 就绪后消费）。
     let focus_message_id_after_nav = RwSignal::new(None::<String>);
     let changelist_modal_open = RwSignal::new(false);
@@ -557,7 +551,6 @@ pub fn App() -> impl IntoView {
         stream_job_id,
         stream_last_event_seq,
         expanded_long_assistant_ids,
-        bubble_md_selected_ids,
     );
 
     wire_draft_sync_to_buffer_and_textarea(
@@ -701,10 +694,6 @@ pub fn App() -> impl IntoView {
                 }
             }
             ev.prevent_default();
-            if chat_export_ctx_menu.get_untracked().is_some() {
-                chat_export_ctx_menu.set(None);
-                return;
-            }
             if session_context_menu.get_untracked().is_some() {
                 session_context_menu.set(None);
                 return;
@@ -786,18 +775,6 @@ pub fn App() -> impl IntoView {
                     />
                 </Show>
 
-                <Show when=move || chat_export_ctx_menu.get().is_some()>
-                    <ChatExportContextMenu
-                        chat_export_ctx_menu=chat_export_ctx_menu
-                        locale=locale
-                        bubble_md_select_mode=bubble_md_select_mode
-                        bubble_md_selected_ids=bubble_md_selected_ids
-                        sessions=sessions
-                        active_id=active_id
-                        apply_assistant_display_filters=apply_assistant_display_filters
-                    />
-                </Show>
-
                 <div
                     class:main-row-resizing=move || side_resize_dragging.get()
                     class="main-row"
@@ -808,12 +785,7 @@ pub fn App() -> impl IntoView {
                         auto_scroll_chat,
                         messages_scroll_from_effect,
                         last_messages_scroll_top,
-                        session_context_menu,
-                        chat_export_ctx_menu,
-                        chat_find_panel_open,
                         timeline_panel_expanded,
-                        bubble_md_select_mode,
-                        bubble_md_selected_ids,
                         sessions,
                         active_id,
                         expanded_long_assistant_ids,
