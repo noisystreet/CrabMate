@@ -257,6 +257,13 @@ pub fn App() -> impl IntoView {
             }
             let Some(cid) = sessions.with(|list| {
                 list.iter().find(|s| s.id == aid).and_then(|s| {
+                    // 如果当前会话有正在流式更新的消息，跳过水合，避免覆盖本地新消息
+                    if s.messages
+                        .iter()
+                        .any(|m| m.state.as_deref() == Some("loading"))
+                    {
+                        return None;
+                    }
                     let c = s
                         .server_conversation_id
                         .as_deref()
@@ -280,6 +287,13 @@ pub fn App() -> impl IntoView {
                     let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
                         return;
                     };
+                    // 再次检查：异步拉取期间可能已开始新的流式更新
+                    if s.messages
+                        .iter()
+                        .any(|m| m.state.as_deref() == Some("loading"))
+                    {
+                        return;
+                    }
                     let still = s
                         .server_conversation_id
                         .as_deref()

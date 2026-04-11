@@ -1,6 +1,6 @@
 //! 分阶段规划「子代理」步级工具约束：规划 JSON 可选 `executor_kind`，执行层收窄可见工具并拒绝越权调用。
 //!
-//! `patch_write` 的补丁类工具集与 **`[tool_registry] write_effect_tools`** 对齐思路：只读性由 `is_readonly_tool` 判定；补丁名来自内建默认并可由 **`sub_agent_patch_write_extra_tools`** 扩充。`test_runner` 有内建测试工具集、默认包含 **`run_command`**（具体命令仍仅能为配置白名单所允许），并可由 **`sub_agent_test_runner_extra_tools`** 扩充。
+//! `patch_write` 的补丁类工具集与 **`[tool_registry] write_effect_tools`** 对齐思路：只读性由 `is_readonly_tool` 判定；补丁名来自内建默认并可由 **`sub_agent_patch_write_extra_tools`** 扩充（默认配置已包含 **`run_command`**，便于在补丁步骤中使用 `git` 等版本控制命令）。`test_runner` 有内建测试工具集、默认包含 **`run_command`**（具体命令仍仅能为配置白名单所允许），并可由 **`sub_agent_test_runner_extra_tools`** 扩充。
 
 use std::collections::HashSet;
 use std::sync::OnceLock;

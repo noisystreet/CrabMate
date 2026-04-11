@@ -188,10 +188,10 @@ codebase_semantic_hybrid_semantic_pool = 256
 # sync_default_inline_tools = ["get_current_time"]
 # write_effect_tools = ["create_file", "modify_file"]
 # 分阶段 steps[].executor_kind 子代理：在默认补丁/测试名之外额外允许的工具名（须本会话已注册）
-# sub_agent_patch_write_extra_tools = ["my_custom_patch_tool"]
-# sub_agent_test_runner_extra_tools = ["custom_test_runner"]
+sub_agent_patch_write_extra_tools = ["run_command"]
+sub_agent_test_runner_extra_tools = ["custom_test_runner"]
 # review_readonly 步内显式拒绝（精确匹配）
-# sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
+sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # # 并行只读批与 SyncDefault+spawn_blocking 墙上时钟：键与 ToolExecutionClass 蛇形一致（workflow, command_spawn_timeout, …, blocking_sync）。
 # [tool_registry.parallel_wall_timeout_secs]
 # blocking_sync = 600
