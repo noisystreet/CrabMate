@@ -499,7 +499,7 @@ flowchart LR
 
 ### `frontend-leptos/src/lib.rs`
 
-- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下（含 **`client_llm_presets`**、**`debounce_schedule`**、**`session_sort`**、**`timeline_scan`**、`i18n`、`a11y`）。
+- **入口**：`#[wasm_bindgen(start)]` **`main`** → **`mount_to_body(<App />)`**；子模块见下（含 **`chat_session_state`**、**`client_llm_presets`**、**`debounce_schedule`**、**`session_sort`**、**`timeline_scan`**、`i18n`、`a11y`）。
 - **目标架构与分阶段重构方向**（页面分层、依赖规则、`wire_*` 约定）：[`docs/frontend-leptos/ARCHITECTURE.md`](frontend-leptos/ARCHITECTURE.md)。
 
 ### `frontend-leptos/src/client_llm_presets.rs`
@@ -517,8 +517,8 @@ flowchart LR
 
 ### `frontend-leptos/src/app/`
 
-- **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、持久化偏好 **`Effect`**、**`GET /status` / tasks** 刷新与主 `view!` 组合子视图；**全局 `Escape`**（在 **`input`/`textarea`/`contenteditable` 外**）按层级关闭侧栏会话菜单、查找栏、视图菜单、移动抽屉、变更集/设置/会话模态。与 **`GET /conversation/messages`** 对齐的会话水合见 **`session_hydrate::wire_session_hydration`**；会话列表、活动 id、**`SessionSyncState`**、水合 nonce、流式 job / SSE 序等句柄聚合为 **`ChatSessionSignals`**（**`chat_session_state`**），供 **`chat_composer`** 的 **`wire_*`** 少参数传递。流式发送、草稿同步、会话切换重置等见 **`chat_composer`**；跟底与侧栏跳转滚入见 **`chat_scroll`**；会话内查找匹配见 **`chat_find`**；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
-- **`chat_session_state.rs`**：**`ChatSessionSignals`**：上述与会话 + 流式/水合同步相关的 **`RwSignal`** 句柄聚合（**`Clone`/`Copy`**），降低 **`App`** 与 **`wire_chat_composer_streams`** / **`wire_session_switch_clears_chat_state`** 间逐项传参。
+- **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、持久化偏好 **`Effect`**、**`GET /status` / tasks** 刷新与主 `view!` 组合子视图；**全局 `Escape`**（在 **`input`/`textarea`/`contenteditable` 外**）按层级关闭侧栏会话菜单、查找栏、视图菜单、移动抽屉、变更集/设置/会话模态。与 **`GET /conversation/messages`** 对齐的会话水合见 **`session_hydrate::wire_session_hydration`**；**`ChatSessionSignals`**（见下 **`chat_session_state`**）在侧栏、聊天列、会话管理模态、状态栏等处**整包下传**，避免 **`sessions` / `active_id` / `session_sync` / 流式 id** 重复列参。流式发送、草稿同步、会话切换重置等见 **`chat_composer`**；跟底与侧栏跳转滚入见 **`chat_scroll`**；会话内查找匹配见 **`chat_find`**；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
+- **`chat_session_state.rs`**（`frontend-leptos/src/`，**非**仅 `app/`）：**`ChatSessionSignals`**——会话列表、活动 id、**`SessionSyncState`**、水合 nonce、流式 job / SSE 序等 **`RwSignal`** 聚合（**`Clone`/`Copy`**）。置于 crate 根以便 **`session_modal_row`** 与 **`app/`** 共用，避免 `app` ↔ 根模块循环依赖。
 - **`session_hydrate.rs`**：**`wire_session_hydration`**：订阅水合 nonce，拉取 **`GET /conversation/messages`** 并与本地 **`ChatSession`** 对齐（用户轮次保护、**`session_sync.apply_saved_revision`** 等），从 **`mod.rs`** 拆出以隔离同步语义。
 - **`chat_composer.rs`**：草稿缓冲与 textarea 同步、**`send_chat_stream`** 回调编排（**`ChatStreamCallbackCtx`** 持有 **`ChatSessionSignals`**）、发送 / 停止 / 重试 / 截断再生、新会话；**`staged_plan_step_*`** 与 **`tool_result`** 写入消息时附带 **`timeline_scan`** 的 **`cm_tl`** JSON（**`StoredMessage.state`**，仅本机 UI）；**`pending_images`** 与 **`chat_column`** 内隐藏 file input 上传附图（最多 6 张预览），发送时写入 **`StoredMessage.image_urls`**。
 - **`chat_scroll.rs`**：消息列表指纹变化时的自动跟底、**`focus_message_id_after_nav`** 滚入视图。
@@ -527,7 +527,7 @@ flowchart LR
 - **`workspace_panel.rs`**：**`make_refresh_workspace`**、**`make_insert_workspace_path_into_composer`**（树双击 **`@{path}`** 写入输入框）；**`wire_workspace_refresh_when_visible`**：切换到 Workspace 侧栏时自动拉取。
 - **`sidebar_nav.rs`**：左侧导航与会话列表；会话项 **右键菜单**含收藏/置顶切换；列表顺序见 **`session_sort`**。**`debounce_signal_to_effect`** 对会话标题筛选与跨会话消息搜索做 **`TimeoutFuture`** 防抖（规则见 **`debounce_schedule`**）。**`mobile_shell_header.rs`**：窄屏顶栏。
 - **`chat_column.rs`**：中部消息列表与输入区；**`timeline_panel.rs`**：可折叠的「规划 / 工具时间线」索引（**`timeline_scan`** 扫描消息；点击跳转到 **`#msg-{id}`**）；**`chat_find_bar.rs`**：查找条。
-- **`status_bar.rs`**：底栏芯片含 **`StatusBarContextChip`**：本地估算当前会话消息 + 草稿字符数，对照 **`GET /status`** 的 **`context_char_budget`** 显示进度条；在存在 **`conversation_id`** 时并列展示 SSE 下发的 **`conversation_revision`**（`rev N`）。
+- **`status_bar.rs`**：底栏芯片含 **`StatusBarContextChip`**：本地估算当前会话消息 + 草稿字符数，对照 **`GET /status`** 的 **`context_char_budget`** 显示进度条；在存在 **`conversation_id`** 时并列展示 SSE 下发的 **`conversation_revision`**（`rev N`）。**`ChatSessionSignals`** 整包传入，切换角色下拉时清空 **`stream_job_id` / `stream_last_event_seq`** 与 **`session_sync`** 展示一致。
 - **`side_column.rs`**：右列（工作区/任务、`SideColumnTasksCard` 等）；**`status_bar.rs`**：底栏状态。
 - **`approval_bar.rs`**：工具审批条；**`session_list_modal.rs`**、**`settings_modal.rs`**、**`changelist_modal.rs`**：各模态（含变更集 fetch 副作用）。
 - **`scroll_guard.rs`**：程序化滚底与 `on:scroll` 协调（**`MessagesScrollFromEffectGuard`**）。
@@ -564,7 +564,7 @@ flowchart LR
 
 ### `frontend-leptos/src/session_modal_row.rs`
 
-- 「管理会话」模态中单行 **`SessionModalRow`**。
+- 「管理会话」模态中单行 **`SessionModalRow`**；接收 **`ChatSessionSignals`**（与主界面共享会话/同步句柄），避免与 **`App`** 之间重复传递 **`sessions` / `active_id` / `session_sync`**。
 
 ### `frontend-leptos/src/workspace_shell.rs`
 

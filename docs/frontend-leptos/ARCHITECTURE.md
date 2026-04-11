@@ -53,7 +53,7 @@
 | 区域 | 职责 | 典型内容（现有或目标） |
 |------|------|------------------------|
 | **`app/`** | 应用壳：布局、路由级组合、全局快捷键、将子视图串起 | `mod.rs`、侧栏/主列/状态栏视图 |
-| **`app/chat_*`** | 聊天主路径：列表、输入、滚动、查找、流式接线 | `chat_column`、`chat_composer`、`chat_scroll`、`chat_find` |
+| **`app/chat_*`** | 聊天主路径：列表、输入、滚动、查找、流式接线 | `chat_column`、`chat_composer`、`chat_scroll`、`chat_find`；**`ChatSessionSignals`** 定义在 **`src/chat_session_state.rs`**（crate 根），供 **`app/`** 与 **`session_modal_row`** 共用 |
 | **`app/session_*` / 会话** | 会话列表 UI、列表模态、会话级水合 | `sidebar_nav`、`session_list_modal`、`session_hydrate` |
 | **`app/workspace_*`** | 工作区树与刷新 | **`workspace_panel_state`**（**`WorkspacePanelSignals`**）+ **`workspace_panel`**（**`make_refresh_workspace`** / **`make_insert_workspace_path_into_composer`**）；与根目录 **`workspace_shell`** 协同 |
 | **`app/*_modal`** | 模态与独立焦点陷阱 | `settings_modal`、`changelist_modal` 等 |

@@ -11,6 +11,7 @@ mod api;
 mod app;
 mod app_prefs;
 mod assistant_body;
+mod chat_session_state;
 mod clarification_form;
 mod client_llm_presets;
 mod conversation_hydrate;

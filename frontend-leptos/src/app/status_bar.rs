@@ -8,8 +8,8 @@ use leptos_dom::helpers::event_target_value;
 use crate::api::StatusData;
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{status_bar_effective_api_base, status_bar_effective_model};
+use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
-use crate::session_sync::SessionSyncState;
 
 /// 本地估算上下文用量（对照 `context_char_budget`）与 [`SessionSyncState::last_known_revision`]。
 #[component]
@@ -17,7 +17,7 @@ fn StatusBarContextChip(
     locale: RwSignal<Locale>,
     status_data: RwSignal<Option<StatusData>>,
     context_used_estimate: RwSignal<usize>,
-    session_sync: RwSignal<SessionSyncState>,
+    chat: ChatSessionSignals,
 ) -> impl IntoView {
     view! {
         <span
@@ -47,7 +47,7 @@ fn StatusBarContextChip(
                     .get()
                     .map(|d| d.context_char_budget)
                     .unwrap_or(0);
-                let rev_suffix: String = session_sync.with(|s| {
+                let rev_suffix: String = chat.session_sync.with(|s| {
                     match (
                         s.conversation_id.as_deref().map(str::trim).filter(|x| !x.is_empty()),
                         s.last_known_revision,
@@ -137,9 +137,7 @@ fn StatusBarFooterBody(
     status_data: RwSignal<Option<StatusData>>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
-    stream_job_id: RwSignal<Option<u64>>,
-    stream_last_event_seq: RwSignal<u64>,
-    session_sync: RwSignal<SessionSyncState>,
+    chat: ChatSessionSignals,
     context_used_estimate: RwSignal<usize>,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
     locale: RwSignal<Locale>,
@@ -235,7 +233,7 @@ fn StatusBarFooterBody(
                                     locale=locale
                                     status_data=status_data
                                     context_used_estimate=context_used_estimate
-                                    session_sync=session_sync
+                                    chat=chat
                                 />
                                 <label
                                     class="status-chip status-chip-role"
@@ -259,8 +257,8 @@ fn StatusBarFooterBody(
                                             } else {
                                                 selected_agent_role.set(Some(t.to_string()));
                                             }
-                                            stream_job_id.set(None);
-                                            stream_last_event_seq.set(0);
+                                            chat.stream_job_id.set(None);
+                                            chat.stream_last_event_seq.set(0);
                                         }
                                     >
                                         <option value="__default__">{move || {
@@ -338,9 +336,7 @@ pub fn status_bar_footer_view(
     status_data: RwSignal<Option<StatusData>>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
-    stream_job_id: RwSignal<Option<u64>>,
-    stream_last_event_seq: RwSignal<u64>,
-    session_sync: RwSignal<SessionSyncState>,
+    chat: ChatSessionSignals,
     context_used_estimate: RwSignal<usize>,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
     locale: RwSignal<Locale>,
@@ -356,9 +352,7 @@ pub fn status_bar_footer_view(
                 status_data=status_data
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role
-                stream_job_id=stream_job_id
-                stream_last_event_seq=stream_last_event_seq
-                session_sync=session_sync
+                chat=chat
                 context_used_estimate=context_used_estimate
                 refresh_status=refresh_status.clone()
                 locale=locale

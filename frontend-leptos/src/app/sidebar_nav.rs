@@ -14,6 +14,7 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
+use crate::chat_session_state::ChatSessionSignals;
 use crate::debounce_schedule;
 use crate::i18n::{self, Locale};
 use crate::session_ops::{
@@ -75,15 +76,16 @@ pub fn sidebar_nav_view(
     sidebar_search_panel_open: RwSignal<bool>,
     sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
     chat_find_panel_open: RwSignal<bool>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
     focus_message_id_after_nav: RwSignal<Option<String>>,
     session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     composer_buf_nav: Arc<Mutex<String>>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
+    let sessions = chat.sessions;
+    let active_id = chat.active_id;
+    let session_sync = chat.session_sync;
     let sidebar_filter_debounced = RwSignal::new(String::new());
     let global_message_filter_debounced = RwSignal::new(String::new());
     debounce_signal_to_effect(

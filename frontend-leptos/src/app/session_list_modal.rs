@@ -8,20 +8,16 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
+use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::session_modal_row::SessionModalRow;
 use crate::session_sort::sorted_sessions_clone;
-use crate::session_sync::SessionSyncState;
-use crate::storage::ChatSession;
-
 #[component]
 fn SessionListModalPanel(
     session_modal: RwSignal<bool>,
     locale: RwSignal<Locale>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
     composer_draft_buffer: Arc<Mutex<String>>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
@@ -74,11 +70,11 @@ fn SessionListModalPanel(
                 </p>
                 {move || {
                     let buf = composer_draft_buffer.clone();
-                    sorted_sessions_clone(&sessions.get())
+                    sorted_sessions_clone(&chat.sessions.get())
                         .into_iter()
                         .map(|s| {
                             let id = s.id.clone();
-                            let active = active_id.get() == id;
+                            let active = chat.active_id.get() == id;
                             let row_buf = Arc::clone(&buf);
                             let row_title = s.title.clone();
                             let pinned = s.pinned;
@@ -92,11 +88,9 @@ fn SessionListModalPanel(
                                     starred=starred
                                     active=active
                                     locale=locale
-                                    sessions=sessions
-                                    active_id=active_id
+                                    chat=chat
                                     draft=draft
                                     composer_draft_buffer=row_buf
-                                    session_sync=session_sync
                                     session_modal=session_modal
                                     apply_assistant_display_filters=apply_assistant_display_filters
                                 />
@@ -114,10 +108,8 @@ fn SessionListModalPanel(
 fn SessionListModalBackdrop(
     session_modal: RwSignal<bool>,
     locale: RwSignal<Locale>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
     composer_draft_buffer: Arc<Mutex<String>>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
@@ -126,10 +118,8 @@ fn SessionListModalBackdrop(
             <SessionListModalPanel
                 session_modal=session_modal
                 locale=locale
-                sessions=sessions
-                active_id=active_id
+                chat=chat
                 draft=draft
-                session_sync=session_sync
                 composer_draft_buffer=composer_draft_buffer
                 apply_assistant_display_filters=apply_assistant_display_filters
             />
@@ -141,10 +131,8 @@ fn SessionListModalBackdrop(
 pub fn session_list_modal_view(
     session_modal: RwSignal<bool>,
     locale: RwSignal<Locale>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     draft: RwSignal<String>,
-    session_sync: RwSignal<SessionSyncState>,
     composer_draft_buffer: Arc<Mutex<String>>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
@@ -153,10 +141,8 @@ pub fn session_list_modal_view(
             <SessionListModalBackdrop
                 session_modal=session_modal
                 locale=locale
-                sessions=sessions
-                active_id=active_id
+                chat=chat
                 draft=draft
-                session_sync=session_sync
                 composer_draft_buffer=composer_draft_buffer.clone()
                 apply_assistant_display_filters=apply_assistant_display_filters
             />

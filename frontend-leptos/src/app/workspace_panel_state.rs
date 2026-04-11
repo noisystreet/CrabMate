@@ -1,6 +1,6 @@
 //! 工作区侧栏：目录树、根路径草稿、设置/浏览忙状态等 **RwSignal** 聚合。
 //!
-//! 与 [`super::chat_session_state::ChatSessionSignals`] 类似，减少 `App` → `side_column_view` / `make_refresh_workspace` 的参数传递。
+//! 与 [`crate::chat_session_state::ChatSessionSignals`] 类似，减少 `App` → `side_column_view` / `make_refresh_workspace` 的参数传递。
 
 use std::collections::{HashMap, HashSet};
 

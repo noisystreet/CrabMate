@@ -11,7 +11,7 @@ use crate::i18n::{self, Locale};
 use crate::session_ops::title_from_user_prompt;
 use crate::storage::StoredMessage;
 
-use super::chat_session_state::ChatSessionSignals;
+use crate::chat_session_state::ChatSessionSignals;
 
 fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
     messages.iter().filter(|m| m.role == "user").count()

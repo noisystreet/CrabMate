@@ -10,7 +10,6 @@ mod chat_find;
 mod chat_find_bar;
 mod chat_message_render;
 mod chat_scroll;
-mod chat_session_state;
 mod mobile_shell_header;
 pub mod scroll_guard;
 mod session_hydrate;
@@ -48,7 +47,7 @@ use workspace_panel::{
 };
 use workspace_panel_state::WorkspacePanelSignals;
 
-use chat_session_state::ChatSessionSignals;
+use crate::chat_session_state::ChatSessionSignals;
 use session_hydrate::wire_session_hydration;
 
 use std::cell::RefCell;
@@ -641,10 +640,8 @@ pub fn App() -> impl IntoView {
                 sidebar_search_panel_open,
                 sidebar_rail_ctx_menu,
                 chat_find_panel_open,
-                sessions,
-                active_id,
+                chat_session,
                 draft,
-                session_sync,
                 focus_message_id_after_nav,
                 session_context_menu,
                 composer_buf_nav.clone(),
@@ -682,8 +679,7 @@ pub fn App() -> impl IntoView {
                         messages_scroll_from_effect,
                         last_messages_scroll_top,
                         timeline_panel_expanded,
-                        sessions,
-                        active_id,
+                        chat_session,
                         expanded_long_assistant_ids,
                         expanded_tool_run_heads,
                         expanded_staged_timeline_heads,
@@ -698,7 +694,6 @@ pub fn App() -> impl IntoView {
                         Arc::clone(&chat_wires.cancel_stream),
                         status_busy,
                         initialized,
-                        session_sync,
                         chat_wires.regen_stream_after_truncate,
                         chat_wires.retry_assistant_target,
                         status_err,
@@ -739,9 +734,7 @@ pub fn App() -> impl IntoView {
                     status_data,
                     client_llm_storage_tick,
                     selected_agent_role,
-                    stream_job_id,
-                    stream_last_event_seq,
-                    session_sync,
+                    chat_session,
                     context_used_estimate,
                     Arc::clone(&refresh_status),
                     locale,
@@ -751,10 +744,8 @@ pub fn App() -> impl IntoView {
             {session_list_modal_view(
                 session_modal,
                 locale,
-                sessions,
-                active_id,
+                chat_session,
                 draft,
-                session_sync,
                 composer_draft_buffer.clone(),
                 apply_assistant_display_filters,
             )}
