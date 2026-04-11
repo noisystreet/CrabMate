@@ -301,6 +301,29 @@ fn element_for_closest(n: &Node) -> Option<web_sys::Element> {
         .or_else(|| n.parent_element())
 }
 
+/// 消息滚动容器内是否存在**非折叠**文本选区（用户正在拖动选中或已选中一段文字）。
+///
+/// 此时对 `.messages` 做程序化 `scrollTop` 往往会导致选区异常或无法复制，流式跟底应跳过。
+pub fn messages_scroller_has_non_collapsed_selection(scroller: &HtmlElement) -> bool {
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let Some(sel) = window.get_selection().ok().flatten() else {
+        return false;
+    };
+    if sel.is_collapsed() || sel.range_count() == 0 {
+        return false;
+    }
+    let Some(anchor) = sel.anchor_node() else {
+        return false;
+    };
+    let Some(focus) = sel.focus_node() else {
+        return false;
+    };
+    let scroller_node: &Node = scroller.unchecked_ref();
+    scroller_node.contains(Some(&anchor)) || scroller_node.contains(Some(&focus))
+}
+
 /// 当前选区为消息列表内**同一** `.msg` 气泡中的非空文本时，返回可复制字符串；否则 `None`。
 /// 用于聊天区自定义右键菜单中的「复制选中文字」。
 pub fn selected_text_in_messages_for_context_copy(messages: &HtmlElement) -> Option<String> {
