@@ -4,16 +4,17 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 use web_sys::KeyboardEvent;
 
-use crate::api::{TaskItem, TasksData, WorkspaceData, fetch_workspace_pick, post_workspace_set};
+use crate::api::{TaskItem, TasksData, fetch_workspace_pick, post_workspace_set};
 use crate::app_prefs::SidePanelView;
 use crate::i18n::{self, Locale};
 use crate::workspace_shell::{begin_side_column_resize, reload_workspace_panel};
 use crate::workspace_tree::WorkspaceFilesystemTree;
+
+use super::workspace_panel_state::WorkspacePanelSignals;
 
 #[component]
 fn SideColumnTasksLoadedPane(
@@ -143,16 +144,7 @@ pub fn side_column_view(
     view_menu_open: RwSignal<bool>,
     status_bar_visible: RwSignal<bool>,
     settings_modal: RwSignal<bool>,
-    workspace_data: RwSignal<Option<WorkspaceData>>,
-    workspace_subtree_expanded: RwSignal<HashSet<String>>,
-    workspace_subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
-    workspace_subtree_loading: RwSignal<HashSet<String>>,
-    workspace_err: RwSignal<Option<String>>,
-    workspace_loading: RwSignal<bool>,
-    workspace_path_draft: RwSignal<String>,
-    workspace_set_err: RwSignal<Option<String>>,
-    workspace_set_busy: RwSignal<bool>,
-    workspace_pick_busy: RwSignal<bool>,
+    ws: WorkspacePanelSignals,
     tasks_data: RwSignal<TasksData>,
     tasks_err: RwSignal<Option<String>>,
     tasks_loading: RwSignal<bool>,
@@ -289,9 +281,9 @@ pub fn side_column_view(
                                 <div class="side-pane" style:flex="1" style:min-width="0">
                                     <div class="side-card">
                                         <Show when=move || {
-                                            workspace_loading.get()
-                                                || workspace_err.get().is_some()
-                                                || workspace_data
+                                            ws.workspace_loading.get()
+                                                || ws.workspace_err.get().is_some()
+                                                || ws.workspace_data
                                                     .get()
                                                     .and_then(|d| d.error.clone())
                                                     .is_some()
@@ -299,7 +291,7 @@ pub fn side_column_view(
                                             <div class="side-card-head">
                                                 <div class="side-head-main">
                                                     <span class="side-head-stat">{move || {
-                                                        if workspace_loading.get() {
+                                                        if ws.workspace_loading.get() {
                                                             i18n::changelist_loading(locale.get()).to_string()
                                                         } else {
                                                             i18n::tasks_error(locale.get()).to_string()
@@ -311,7 +303,7 @@ pub fn side_column_view(
                                         <div class="side-card-body workspace-side-card-body" data-testid="workspace-panel">
                                             <div class="workspace-side-card-scroll">
                                             {move || {
-                                                if workspace_loading.get() {
+                                                if ws.workspace_loading.get() {
                                                     view! {
                                                         <div class="skeleton-stack" aria-busy="true" prop:aria-label=move || i18n::ws_loading_aria(locale.get())>
                                                             <div class="skeleton skeleton-block skeleton-ws-path"></div>
@@ -337,9 +329,9 @@ pub fn side_column_view(
                                                                         data-testid="workspace-root-input"
                                                                         prop:placeholder=move || i18n::ws_input_ph(locale.get())
                                                                         prop:title=move || i18n::ws_input_title(locale.get())
-                                                                        prop:value=move || workspace_path_draft.get()
+                                                                        prop:value=move || ws.workspace_path_draft.get()
                                                                         on:input=move |ev| {
-                                                                            workspace_path_draft
+                                                                            ws.workspace_path_draft
                                                                                 .set(event_target_value(&ev));
                                                                         }
                                                                         on:keydown=move |ev: KeyboardEvent| {
@@ -347,44 +339,44 @@ pub fn side_column_view(
                                                                                 return;
                                                                             }
                                                                             ev.prevent_default();
-                                                                            workspace_set_err.set(None);
-                                                                            let p = workspace_path_draft
+                                                                            ws.workspace_set_err.set(None);
+                                                                            let p = ws.workspace_path_draft
                                                                                 .get()
                                                                                 .trim()
                                                                                 .to_string();
                                                                             if p.is_empty() {
-                                                                                workspace_set_err.set(Some(
+                                                                                ws.workspace_set_err.set(Some(
                                                                                     i18n::ws_path_required(locale.get()).to_string(),
                                                                                 ));
                                                                                 return;
                                                                             }
-                                                                            if workspace_set_busy.get()
-                                                                                || workspace_pick_busy.get()
-                                                                                || workspace_loading.get()
+                                                                            if ws.workspace_set_busy.get()
+                                                                                || ws.workspace_pick_busy.get()
+                                                                                || ws.workspace_loading.get()
                                                                             {
                                                                                 return;
                                                                             }
-                                                                            workspace_set_busy.set(true);
+                                                                            ws.workspace_set_busy.set(true);
                                                                             let loc = locale.get_untracked();
                                                                             spawn_local(async move {
                                                                                 match post_workspace_set(Some(p), loc).await {
                                                                                     Ok(_) => {
                                                                                         reload_workspace_panel(
-                                                                                            workspace_loading,
-                                                                                            workspace_err,
-                                                                                            workspace_path_draft,
-                                                                                            workspace_data,
-                                                                                            workspace_subtree_expanded,
-                                                                                            workspace_subtree_cache,
-                                                                                            workspace_subtree_loading,
+                                                                                            ws.workspace_loading,
+                                                                                            ws.workspace_err,
+                                                                                            ws.workspace_path_draft,
+                                                                                            ws.workspace_data,
+                                                                                            ws.workspace_subtree_expanded,
+                                                                                            ws.workspace_subtree_cache,
+                                                                                            ws.workspace_subtree_loading,
                                                                                         )
                                                                                         .await;
                                                                                     }
                                                                                     Err(e) => {
-                                                                                        workspace_set_err.set(Some(e));
+                                                                                        ws.workspace_set_err.set(Some(e));
                                                                                     }
                                                                                 }
-                                                                                workspace_set_busy.set(false);
+                                                                                ws.workspace_set_busy.set(false);
                                                                             });
                                                                         }
                                                                     />
@@ -393,52 +385,52 @@ pub fn side_column_view(
                                                                         class="btn btn-secondary btn-sm workspace-set-browse"
                                                                         prop:title=move || i18n::ws_browse_title(locale.get())
                                                                         prop:disabled=move || {
-                                                                            workspace_pick_busy.get()
-                                                                                || workspace_set_busy.get()
-                                                                                || workspace_loading.get()
+                                                                            ws.workspace_pick_busy.get()
+                                                                                || ws.workspace_set_busy.get()
+                                                                                || ws.workspace_loading.get()
                                                                         }
                                                                         on:click=move |_| {
-                                                                            workspace_set_err.set(None);
-                                                                            workspace_pick_busy.set(true);
+                                                                            ws.workspace_set_err.set(None);
+                                                                            ws.workspace_pick_busy.set(true);
                                                                             let loc_pick = locale.get_untracked();
                                                                             spawn_local(async move {
                                                                                 match fetch_workspace_pick().await {
                                                                                     Ok(Some(p)) => {
-                                                                                        workspace_path_draft.set(p.clone());
-                                                                                        workspace_set_err.set(None);
+                                                                                        ws.workspace_path_draft.set(p.clone());
+                                                                                        ws.workspace_set_err.set(None);
                                                                                         match post_workspace_set(Some(p), loc_pick).await {
                                                                                             Ok(_) => {
                                                                                                 reload_workspace_panel(
-                                                                                                    workspace_loading,
-                                                                                                    workspace_err,
-                                                                                                    workspace_path_draft,
-                                                                                                    workspace_data,
-                                                                                                    workspace_subtree_expanded,
-                                                                                                    workspace_subtree_cache,
-                                                                                                    workspace_subtree_loading,
+                                                                                                    ws.workspace_loading,
+                                                                                                    ws.workspace_err,
+                                                                                                    ws.workspace_path_draft,
+                                                                                                    ws.workspace_data,
+                                                                                                    ws.workspace_subtree_expanded,
+                                                                                                    ws.workspace_subtree_cache,
+                                                                                                    ws.workspace_subtree_loading,
                                                                                                 )
                                                                                                 .await;
                                                                                             }
                                                                                             Err(e) => {
-                                                                                                workspace_set_err.set(Some(e));
+                                                                                                ws.workspace_set_err.set(Some(e));
                                                                                             }
                                                                                         }
                                                                                     }
                                                                                     Ok(None) => {
-                                                                                        workspace_set_err.set(Some(
+                                                                                        ws.workspace_set_err.set(Some(
                                                                                             i18n::ws_pick_none(locale.get()).to_string(),
                                                                                         ));
                                                                                     }
                                                                                     Err(e) => {
-                                                                                        workspace_set_err.set(Some(e));
+                                                                                        ws.workspace_set_err.set(Some(e));
                                                                                     }
                                                                                 }
-                                                                                workspace_pick_busy.set(false);
+                                                                                ws.workspace_pick_busy.set(false);
                                                                             });
                                                                         }
                                                                     >
                                                                         {move || {
-                                                                            if workspace_pick_busy.get() {
+                                                                            if ws.workspace_pick_busy.get() {
                                                                                 i18n::ws_browse_busy(locale.get()).to_string()
                                                                             } else {
                                                                                 i18n::ws_browse_label(locale.get()).to_string()
@@ -446,30 +438,30 @@ pub fn side_column_view(
                                                                         }}
                                                                     </button>
                                                                 </div>
-                                                                <Show when=move || workspace_set_err.get().is_some()>
+                                                                <Show when=move || ws.workspace_set_err.get().is_some()>
                                                                     <div class="msg-error workspace-set-error">{move || {
-                                                                        workspace_set_err
+                                                                        ws.workspace_set_err
                                                                             .get()
                                                                             .unwrap_or_default()
                                                                     }}</div>
                                                                 </Show>
                                                             </div>
                                                             <Show when=move || {
-                                                                workspace_err.get().is_some()
-                                                                    || workspace_data.get().and_then(|d| d.error).is_some()
+                                                                ws.workspace_err.get().is_some()
+                                                                    || ws.workspace_data.get().and_then(|d| d.error).is_some()
                                                             }>
                                                                 <div class="msg-error">{move || {
-                                                                    workspace_err
+                                                                    ws.workspace_err
                                                                         .get()
-                                                                        .or_else(|| workspace_data.get().and_then(|d| d.error))
+                                                                        .or_else(|| ws.workspace_data.get().and_then(|d| d.error))
                                                                         .unwrap_or_default()
                                                                 }}</div>
                                                             </Show>
                                                             <WorkspaceFilesystemTree
-                                                                workspace_data=workspace_data
-                                                                subtree_expanded=workspace_subtree_expanded
-                                                                subtree_cache=workspace_subtree_cache
-                                                                subtree_loading=workspace_subtree_loading
+                                                                workspace_data=ws.workspace_data
+                                                                subtree_expanded=ws.workspace_subtree_expanded
+                                                                subtree_cache=ws.workspace_subtree_cache
+                                                                subtree_loading=ws.workspace_subtree_loading
                                                                 locale=locale
                                                                 on_file_double_click=insert_workspace_file_ref
                                                             />

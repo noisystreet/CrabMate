@@ -28,9 +28,11 @@ use crate::timeline_scan::{
     timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
 };
 
+use super::chat_session_state::ChatSessionSignals;
+
 /// 单次 `/chat/stream` 的 SSE 回调共享状态：各 `Rc<dyn Fn>` 只再包一层 `Rc<ChatStreamCallbackCtx>`，避免重复 `Arc::clone` 与多字段捕获。
 struct ChatStreamCallbackCtx {
-    sessions: RwSignal<Vec<ChatSession>>,
+    chat: ChatSessionSignals,
     locale: RwSignal<Locale>,
     active_session_id: String,
     assistant_message_id: String,
@@ -41,8 +43,6 @@ struct ChatStreamCallbackCtx {
     tool_busy: RwSignal<bool>,
     pending_approval: RwSignal<Option<(String, String, String)>>,
     approval_session_store_id: String,
-    session_sync: RwSignal<SessionSyncState>,
-    session_hydrate_nonce: RwSignal<u64>,
     changelist_modal_open: RwSignal<bool>,
     changelist_fetch_nonce: RwSignal<u64>,
     refresh_workspace: Arc<dyn Fn() + Send + Sync>,
@@ -58,25 +58,20 @@ pub(super) struct ChatComposerWires {
 }
 
 /// 切换会话时重置会话级 UI 状态并加载该会话草稿（勿订阅 `sessions`，避免流式更新覆盖缓冲）。
-#[allow(clippy::too_many_arguments)]
 pub(super) fn wire_session_switch_clears_chat_state(
     initialized: RwSignal<bool>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     draft: RwSignal<String>,
     pending_images: RwSignal<Vec<String>>,
     pending_clarification: RwSignal<Option<PendingClarificationForm>>,
-    session_sync: RwSignal<SessionSyncState>,
-    stream_job_id: RwSignal<Option<u64>>,
-    stream_last_event_seq: RwSignal<u64>,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
 ) {
     Effect::new(move |_| {
-        let id = active_id.get();
+        let id = chat.active_id.get();
         if !initialized.get() {
             return;
         }
-        let list = sessions.get_untracked();
+        let list = chat.sessions.get_untracked();
         let d = list
             .iter()
             .find(|s| s.id == id)
@@ -100,9 +95,10 @@ pub(super) fn wire_session_switch_clears_chat_state(
             }
             st
         });
-        session_sync.set(st.unwrap_or_else(SessionSyncState::local_only));
-        stream_job_id.set(None);
-        stream_last_event_seq.set(0);
+        chat.session_sync
+            .set(st.unwrap_or_else(SessionSyncState::local_only));
+        chat.stream_job_id.set(None);
+        chat.stream_last_event_seq.set(0);
         expanded_long_assistant_ids.set(Vec::new());
     });
 }
@@ -133,17 +129,11 @@ pub(super) fn wire_draft_sync_to_buffer_and_textarea(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn wire_chat_composer_streams(
     initialized: RwSignal<bool>,
-    sessions: RwSignal<Vec<ChatSession>>,
+    chat: ChatSessionSignals,
     locale: RwSignal<Locale>,
-    active_id: RwSignal<String>,
     draft: RwSignal<String>,
-    session_hydrate_nonce: RwSignal<u64>,
-    session_sync: RwSignal<SessionSyncState>,
-    stream_job_id: RwSignal<Option<u64>>,
-    stream_last_event_seq: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     status_busy: RwSignal<bool>,
     status_err: RwSignal<Option<String>>,
@@ -164,13 +154,8 @@ pub(super) fn wire_chat_composer_streams(
     let attach_chat_stream: Arc<AttachChatStreamFn> = Arc::new({
         let abort_cell = Arc::clone(&abort_cell);
         let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
-        let sessions = sessions;
+        let chat = chat;
         let locale_sig = locale;
-        let active_id = active_id;
-        let session_hydrate_nonce = session_hydrate_nonce;
-        let session_sync = session_sync;
-        let stream_job_id_sig = stream_job_id;
-        let stream_last_event_seq_sig = stream_last_event_seq;
         let selected_agent_role = selected_agent_role;
         let status_busy = status_busy;
         let status_err = status_err;
@@ -184,13 +169,13 @@ pub(super) fn wire_chat_composer_streams(
               image_urls: Vec<String>,
               asst_id: String,
               clarify_json: Option<serde_json::Value>| {
-            let conv = session_sync.with(|s| s.stream_conversation_id());
+            let conv = chat.session_sync.with(|s| s.stream_conversation_id());
             // 新一次 attach 必须**不带** `stream_resume`：断线重连仅由 `send_chat_stream` 内部循环
             // 用响应头里的 `x-stream-job-id` 与 `last_event_id` 完成。若此处读取 UI 上残留的
             // `stream_job_id`（例如上轮 SSE 报错未收到 `stream_ended`），会误用已 `remove_job` 的
             // id，首包即 410「无法重连」。
-            stream_job_id_sig.set(None);
-            stream_last_event_seq_sig.set(0);
+            chat.stream_job_id.set(None);
+            chat.stream_last_event_seq.set(0);
             if let Some(prev) = abort_cell.lock().unwrap().take() {
                 prev.abort();
             }
@@ -204,9 +189,9 @@ pub(super) fn wire_chat_composer_streams(
             let user_cancelled_for_spawn = Arc::clone(&user_cancelled_stream);
 
             let stream_ctx = Rc::new(ChatStreamCallbackCtx {
-                sessions,
+                chat,
                 locale: locale_sig,
-                active_session_id: active_id.get(),
+                active_session_id: chat.active_id.get(),
                 assistant_message_id: asst_id.clone(),
                 abort_cell: Arc::clone(&abort_cell),
                 user_cancelled_stream: Arc::clone(&user_cancelled_stream),
@@ -215,8 +200,6 @@ pub(super) fn wire_chat_composer_streams(
                 tool_busy,
                 pending_approval,
                 approval_session_store_id: appr_store.clone(),
-                session_sync,
-                session_hydrate_nonce,
                 changelist_modal_open,
                 changelist_fetch_nonce,
                 refresh_workspace: Arc::clone(&refresh_workspace),
@@ -231,7 +214,7 @@ pub(super) fn wire_chat_composer_streams(
                 Rc::new(move |chunk: String| {
                     let aid = stream_ctx.active_session_id.as_str();
                     let mid = stream_ctx.assistant_message_id.as_str();
-                    stream_ctx.sessions.update(|list| {
+                    stream_ctx.chat.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
                                 if in_answer_phase.get() {
@@ -254,7 +237,7 @@ pub(super) fn wire_chat_composer_streams(
                     let loc = stream_ctx.locale.get_untracked();
                     let aid = stream_ctx.active_session_id.clone();
                     let mid = stream_ctx.assistant_message_id.clone();
-                    stream_ctx.sessions.update(|list| {
+                    stream_ctx.chat.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid)
                             && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
                             && m.state.as_deref() == Some("loading")
@@ -271,24 +254,23 @@ pub(super) fn wire_chat_composer_streams(
                     // 流完全结束后再触发水合：此时助手气泡已退出 loading，且须在 `sessions.with` 之外
                     // 用 `session_hydrate_nonce` 单独驱动，避免「水合写回 messages → Effect 再拉取」的循环竞态。
                     stream_ctx
+                        .chat
                         .session_hydrate_nonce
                         .update(|n| *n = n.wrapping_add(1));
                 })
             };
             let on_error: Rc<dyn Fn(String)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
-                let stream_job_id_sig = stream_job_id_sig;
-                let stream_last_event_seq_sig = stream_last_event_seq_sig;
                 Rc::new(move |msg: String| {
                     if *stream_ctx.user_cancelled_stream.lock().unwrap() {
                         *stream_ctx.abort_cell.lock().unwrap() = None;
                         return;
                     }
-                    stream_job_id_sig.set(None);
-                    stream_last_event_seq_sig.set(0);
+                    stream_ctx.chat.stream_job_id.set(None);
+                    stream_ctx.chat.stream_last_event_seq.set(0);
                     let aid = stream_ctx.active_session_id.clone();
                     let mid = stream_ctx.assistant_message_id.clone();
-                    stream_ctx.sessions.update(|list| {
+                    stream_ctx.chat.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
                                 m.text = msg;
@@ -328,7 +310,7 @@ pub(super) fn wire_chat_composer_streams(
                     let aid = stream_ctx.active_session_id.as_str();
                     let tl_ok = info.ok.unwrap_or(true);
                     let state = timeline_state_tool(&id, tl_ok);
-                    stream_ctx.sessions.update(|list| {
+                    stream_ctx.chat.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             s.messages.push(StoredMessage {
                                 id,
@@ -358,10 +340,11 @@ pub(super) fn wire_chat_composer_streams(
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |id: String| {
                     stream_ctx
+                        .chat
                         .session_sync
                         .update(|s| s.apply_stream_conversation_id(id.clone()));
                     let aid = stream_ctx.active_session_id.clone();
-                    stream_ctx.sessions.update(|list| {
+                    stream_ctx.chat.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
                             s.server_conversation_id = Some(id);
                             s.server_revision = None;
@@ -375,10 +358,11 @@ pub(super) fn wire_chat_composer_streams(
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |rev: u64| {
                     stream_ctx
+                        .chat
                         .session_sync
                         .update(|s| s.apply_saved_revision(rev));
                     let aid = stream_ctx.active_session_id.clone();
-                    stream_ctx.sessions.update(|list| {
+                    stream_ctx.chat.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
                             s.server_revision = Some(rev);
                         }
@@ -388,25 +372,21 @@ pub(super) fn wire_chat_composer_streams(
                 })
             };
             let on_stream_ended: Rc<dyn Fn(String)> = {
-                let stream_job_id_sig = stream_job_id_sig;
-                let stream_last_event_seq_sig = stream_last_event_seq_sig;
                 Rc::new(move |reason: String| {
                     if reason == "completed" || reason == "cancelled" {
-                        stream_job_id_sig.set(None);
-                        stream_last_event_seq_sig.set(0);
+                        chat.stream_job_id.set(None);
+                        chat.stream_last_event_seq.set(0);
                     }
                 })
             };
             let on_stream_job_id: Rc<dyn Fn(u64)> = {
-                let stream_job_id_sig = stream_job_id_sig;
                 Rc::new(move |jid: u64| {
-                    stream_job_id_sig.set(Some(jid));
+                    chat.stream_job_id.set(Some(jid));
                 })
             };
             let on_last_sse_event_id: Rc<dyn Fn(u64)> = {
-                let stream_last_event_seq_sig = stream_last_event_seq_sig;
                 Rc::new(move |seq: u64| {
-                    stream_last_event_seq_sig.set(seq);
+                    chat.stream_last_event_seq.set(seq);
                 })
             };
             let on_assistant_answer_phase: Rc<dyn Fn()> = {
@@ -429,7 +409,7 @@ pub(super) fn wire_chat_composer_streams(
                     let aid = stream_ctx.active_session_id.as_str();
                     let now = message_created_ms();
                     let state = timeline_state_staged_start(&id, info.step_index, info.total_steps);
-                    stream_ctx.sessions.update(|list| {
+                    stream_ctx.chat.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             s.messages.push(StoredMessage {
                                 id,
@@ -474,7 +454,7 @@ pub(super) fn wire_chat_composer_streams(
                         info.total_steps,
                         &info.status,
                     );
-                    stream_ctx.sessions.update(|list| {
+                    stream_ctx.chat.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                             s.messages.push(StoredMessage {
                                 id,
@@ -541,6 +521,7 @@ pub(super) fn wire_chat_composer_streams(
     });
 
     let run_send_message: Arc<dyn Fn() + Send + Sync> = Arc::new({
+        let chat = chat;
         let attach = Arc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
         let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
@@ -592,7 +573,7 @@ pub(super) fn wire_chat_composer_streams(
             let uid = make_message_id();
             let asst_id = make_message_id();
             let imgs_send = imgs.clone();
-            patch_active_session(sessions, &active_id.get(), |s| {
+            patch_active_session(chat.sessions, &chat.active_id.get(), |s| {
                 let now = message_created_ms();
                 let is_first_user_turn =
                     s.messages.iter().filter(|m| m.role == "user").count() == 0;
@@ -635,6 +616,7 @@ pub(super) fn wire_chat_composer_streams(
     let regen_stream_after_truncate = RwSignal::new(None::<(String, Vec<String>, String)>);
 
     Effect::new({
+        let chat = chat;
         let attach = Arc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
         move |_| {
@@ -646,9 +628,9 @@ pub(super) fn wire_chat_composer_streams(
             if !initialized.get() || status_busy.get() {
                 return;
             }
-            let aid = active_id.get();
+            let aid = chat.active_id.get();
             let mut prepared: Option<(String, Vec<String>, String)> = None;
-            sessions.update(|list| {
+            chat.sessions.update(|list| {
                 prepared = prepare_retry_failed_assistant_turn(list, &aid, &failed_asst_id);
             });
             let Some((user_text, user_imgs, asst_id)) = prepared else {
@@ -683,6 +665,7 @@ pub(super) fn wire_chat_composer_streams(
 
     let cancel_stream: Arc<dyn Fn() + Send + Sync> =
         Arc::new({
+            let chat = chat;
             let abort_cell = Arc::clone(&abort_cell);
             let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
             let locale = locale;
@@ -695,8 +678,8 @@ pub(super) fn wire_chat_composer_streams(
                     ac.abort();
                 }
                 let loc = locale.get_untracked();
-                let aid = active_id.get();
-                sessions.update(|list| {
+                let aid = chat.active_id.get();
+                chat.sessions.update(|list| {
                     if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                         if let Some(m) = s.messages.iter_mut().rev().find(|m| {
                             m.role == "assistant" && m.state.as_deref() == Some("loading")
@@ -716,13 +699,13 @@ pub(super) fn wire_chat_composer_streams(
         });
 
     let new_session: Rc<dyn Fn()> = Rc::new({
+        let chat = chat;
         let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
-        let session_sync = session_sync;
         move || {
-            let prev = active_id.get_untracked();
+            let prev = chat.active_id.get_untracked();
             if !prev.is_empty() {
                 let buf = composer_draft_buffer.lock().unwrap().clone();
-                flush_composer_draft_to_session(sessions, &prev, &buf);
+                flush_composer_draft_to_session(chat.sessions, &prev, &buf);
             }
             let now = js_sys::Date::now() as i64;
             let s = ChatSession {
@@ -737,12 +720,12 @@ pub(super) fn wire_chat_composer_streams(
                 server_revision: None,
             };
             let id = s.id.clone();
-            sessions.update(|list| {
+            chat.sessions.update(|list| {
                 list.insert(0, s);
             });
-            active_id.set(id);
+            chat.active_id.set(id);
             draft.set(String::new());
-            session_sync.set(SessionSyncState::local_only());
+            chat.session_sync.set(SessionSyncState::local_only());
         }
     });
 
