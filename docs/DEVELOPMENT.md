@@ -409,14 +409,18 @@ flowchart LR
   - `run_tool(name, args_json, &ToolContext)`：按 name 分发执行。
   - `summarize_tool_call(...)`：生成 Web/SSE/TUI/CLI 共用的英文「工具调用摘要」。
   - `is_compile_command_success(...)`：识别编译命令成功以触发工作区刷新。
-- **扩展新工具的建议步骤**：
-  - 新增 `src/tools/<tool>.rs` 实现 runner
-  - 在 `src/tools/mod.rs`：
-    - `mod <tool>;`
-    - 增加参数 schema builder（`params_xxx`）
-    - 增加 runner（`runner_xxx`）
-    - 在 `tool_specs()` 中注册 `ToolSpec`
-  - 若为 **`Development`**：在 **`src/tools/dev_tag.rs`** 的 `tags_for_tool_name` 中增加该 `name` 的标签映射
+- **扩展内置工具的推荐顺序**（按依赖关系自上而下；多数工具落在 **`SyncDefault`**，无需改 **`tool_registry`**）：
+  1. **设计与安全**：是否子进程、出网、写盘；与 **`run_command` 白名单**、**`http_fetch_allowed_prefixes`** / **`http_request`** 审批、工作区路径策略、**`tool_call_explain_*`** / **`[tool_registry] write_effect_tools`**（只读判定）是否一致；见 **`.cursor/rules/security-sensitive-surface.mdc`**。
+  2. **实现逻辑**：在合适的 **`src/tools/*.rs`**（或子目录模块）中实现；参数解析优先 **`parse_args_json`**（**`tools/parse_args.rs`**）；需要可判别失败时走 **`run_tool_try` / `run_tool_result`** 路径并给出稳定 **`error_code`**。
+  3. **JSON Schema**：在 **`tools/tool_params*.rs`**（或既有 `params_*` 模块）中增加与运行时解析一致的 **`parameters_*`** 构建函数。
+  4. **规格表注册**：在 **`src/tools/tool_specs_registry/specs/*.inc.rs`** 中增加 **`ToolSpec`**（`name` / `description` / **`ToolCategory`** / `parameters` / `runner` / **`ToolSummaryKind`**）；若为**新** `include!` 文件，还要在 **`tool_specs_registry/mod.rs`** 中增加对应 **`static SPECS_*`**、**`extend_from_slice`** 与 **`cap` 累加**。
+  5. **`tools/mod.rs`**：若有新源文件则 **`mod xxx;`**，并保留 **`runner_*`** 薄封装供 **`ToolSpec`** 引用（与当前表驱动风格一致）。
+  6. **工具调用摘要**（Web/SSE/TUI 卡片）：若 `summary` 为 **`Dynamic`**，在 **`tool_summary_args.rs`** + **`tool_summary.rs`** 中补 **`Deserialize` 参数形状**与 **`summary_xxx`**。
+  7. **`tool_registry`（仅当需要「非默认」执行策略时）**：默认未在 **`src/tool_registry/meta.rs`** 的 **`tool_dispatch_registry!`** 中出现的工具名走 **`HandlerId::SyncDefault`**（同步 **`tools::run_tool`**）。若需与 **`run_command`** / **`web_search`** 等相同的 **`spawn_blocking` + 墙上时钟**、或其它专用分支，则在 **`tool_dispatch_registry!`** 中增一行，并在 **`src/tool_registry/execute.rs`** 的 **`match hid`** 中补 **`HandlerId::…`** 分支（与 **`tool_registry/mod.rs`** 模块注释一致）。
+  8. **`workflow_execute` 节点**：若要在 DAG 内调用且依赖 **`schema_check`** 的必填键粗校验，在 **`src/tools/schema_check.rs`** 中按工具名补规则。
+  9. **`Development` 分类**：在 **`src/tools/dev_tag.rs`** 的 **`tags_for_tool_name`** 中为该工具名增加标签映射（供 **`build_tools_with_options`** 裁剪）；**`Basic`** 可跳过。
+  10. **配置 / 环境变量**（若有新键）：**`config/`** 分片、**`config.toml.example`**、**`docs/CONFIGURATION.md`**，以及规则要求的 **README / DEVELOPMENT** 摘要。
+  11. **用户可见文档与索引**：**`docs/TOOLS.md`**（能力说明与 JSON 示例）；若增删 **`tools/mod.rs` 的 `mod`**，更新本节 **「`src/tools/` 子文件」**表（**`.cursor/rules/architecture-docs-sync.mdc`**）；**`README.md`** 仅在行为或能力对用户可见时同步。
 
 ### 典型工具实现说明（`src/tools/`）
 
