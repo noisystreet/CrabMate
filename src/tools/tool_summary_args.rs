@@ -549,7 +549,10 @@ impl ToolSummaryLine for ReadFileSummaryArgs {
             .map(str::trim)
             .filter(|s| !s.is_empty());
         let suffix = match (self.start_line, self.end_line, self.max_lines) {
-            (Some(s), Some(e), _) => format!(" [{}-{}]", s, e),
+            (Some(s), Some(e), _) => {
+                let (lo, hi) = if e < s { (e, s) } else { (s, e) };
+                format!(" [{}-{}]", lo, hi)
+            }
             (Some(s), None, Some(m)) => format!(" [{}~ max_lines={}]", s, m),
             (Some(s), None, None) => format!(" [{}~]", s),
             (None, Some(e), _) => format!(" [1-{}]", e),

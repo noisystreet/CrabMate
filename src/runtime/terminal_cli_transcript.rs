@@ -201,7 +201,7 @@ pub(crate) fn print_cli_playbook_healing_hint(
 ///
 /// 标题行为 `### 工具 · {name}`；有详情时统一为 **`### 工具 · {name} : …`**（摘要已以 `:` 开头时不再重复冒号），例：`run_command` + `ls -la` → `### 工具 · run_command : ls -la`，`create_file` + 去重后 `: a.cpp` → `### 工具 · create_file : a.cpp`。
 ///
-/// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（保留供其它调用方；当前 `echo_tool_result_transcript` 对 **`read_file` / `read_dir` / `list_tree`** 均传入摘要正文并传 **`omit_body = false`**）。
+/// `omit_body` 为 true 时只打印标题与一行说明，**不**打印 `raw_result` 正文（保留供其它调用方；当前 `echo_tool_result_transcript` 对 **`read_file` / `read_dir` / `list_tree` / `search_in_files` / `rust_file_outline`** 均传入经终端裁剪的正文并传 **`omit_body = false`**）。
 pub(crate) fn print_tool_result_terminal(
     name: &str,
     args: &str,
@@ -273,7 +273,7 @@ pub(crate) fn print_tool_result_terminal(
     w.flush()
 }
 
-/// CLI 下 `read_file` 终端展示：保留编码/行范围等元数据块，正文仅展示前若干行（与 `assemble_read_output` 的 `行号|内容` 格式对齐），避免刷屏；完整串仍写入对话历史。
+/// CLI 下 `read_file` 终端展示：仅保留编码/行范围等元数据块，**不**列出 `行号|正文`；完整串仍写入对话历史。
 #[must_use]
 pub(crate) fn read_file_result_terminal_summary(raw: &str) -> String {
     let raw = raw.trim_end();
@@ -290,8 +290,6 @@ pub(crate) fn read_file_result_terminal_summary(raw: &str) -> String {
     {
         return raw.to_string();
     }
-    const PREVIEW_LINES: usize = 16;
-    const MAX_LINE_CHARS: usize = 256;
     let lines: Vec<&str> = raw.lines().collect();
     let mut content_start: Option<usize> = None;
     for (i, line) in lines.iter().enumerate() {
@@ -308,28 +306,7 @@ pub(crate) fn read_file_result_terminal_summary(raw: &str) -> String {
         return truncate_tool_output_with_note(raw, TERMINAL_TOOL_SUMMARY_FALLBACK_CHARS);
     };
     let header = lines[..cs].join("\n");
-    let body_lines = &lines[cs..];
-    let n_preview = body_lines.len().min(PREVIEW_LINES);
-    let mut preview = String::new();
-    for line in body_lines.iter().take(n_preview) {
-        let line_len = line.chars().count();
-        let lim: String = line.chars().take(MAX_LINE_CHARS).collect();
-        preview.push_str(&lim);
-        if line_len > MAX_LINE_CHARS {
-            preview.push_str(" …(行内截断)");
-        }
-        preview.push('\n');
-    }
-    let more = body_lines.len().saturating_sub(n_preview);
-    let more_note = if more > 0 {
-        format!("尚有后续 {more} 行未在终端显示。")
-    } else {
-        "本段正文已在上方尽数展示。".to_string()
-    };
-    format!(
-        "{header}\n\n---\n终端摘要：以下为正文前 {n_preview} 行（本段共 {} 行）。{more_note}\n\n{preview}（完整输出已写入本轮对话上下文。）",
-        body_lines.len(),
-    )
+    format!("{header}\n\n（正文未在终端列出；完整内容在对话上下文。）")
 }
 
 const TERMINAL_TOOL_SUMMARY_FALLBACK_CHARS: usize = 1600;
@@ -342,6 +319,63 @@ fn truncate_tool_output_with_note(raw: &str, max_chars: usize) -> String {
     let mut s: String = raw.chars().take(max_chars.saturating_sub(80)).collect();
     s.push_str("\n…\n（输出过长已截断；完整内容在对话历史）");
     s
+}
+
+/// CLI 下 `search_in_files`：保留首行 `crabmate_tool_output` JSON，**不**列出 `path:line:` 逐行匹配，以缩短终端输出。
+#[must_use]
+pub(crate) fn search_in_files_result_terminal_short(raw: &str) -> String {
+    let raw = raw.trim_end();
+    if raw.is_empty() {
+        return String::new();
+    }
+    if raw.starts_with("错误：") {
+        return raw.to_string();
+    }
+    let Some((first_line, rest)) = raw.split_once('\n') else {
+        return truncate_tool_output_with_note(raw, TERMINAL_TOOL_SUMMARY_FALLBACK_CHARS);
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(first_line) else {
+        return truncate_tool_output_with_note(raw, TERMINAL_TOOL_SUMMARY_FALLBACK_CHARS);
+    };
+    let is_hdr = v.get("kind").and_then(|x| x.as_str()) == Some("crabmate_tool_output")
+        && v.get("tool").and_then(|x| x.as_str()) == Some("search_in_files");
+    if !is_hdr {
+        return truncate_tool_output_with_note(raw, TERMINAL_TOOL_SUMMARY_FALLBACK_CHARS);
+    }
+    let match_count = v.get("match_count").and_then(|x| x.as_u64()).unwrap_or(0);
+    let rest_trim = rest.trim();
+    if match_count == 0 {
+        if rest_trim.is_empty() {
+            first_line.to_string()
+        } else {
+            format!("{first_line}\n{rest_trim}")
+        }
+    } else {
+        format!("{first_line}\n\n（终端不列出逐行匹配；完整内容在对话上下文。）")
+    }
+}
+
+/// CLI 下 `rust_file_outline`：保留首行概览（路径与项数），**不**列出 `行号: 摘要` 明细行。
+#[must_use]
+pub(crate) fn rust_file_outline_result_terminal_short(raw: &str) -> String {
+    let raw = raw.trim_end();
+    if raw.is_empty() {
+        return String::new();
+    }
+    if raw.starts_with("错误：") || raw.starts_with("读取文件失败：") {
+        return raw.to_string();
+    }
+    if raw.contains("未匹配到常见顶层结构") {
+        return raw.to_string();
+    }
+    let Some(first_line) = raw.lines().next() else {
+        return raw.to_string();
+    };
+    if first_line.starts_with("Rust 文件大纲：") {
+        format!("{first_line}\n\n（项级明细未在终端列出；完整内容在对话上下文。）")
+    } else {
+        truncate_tool_output_with_note(raw, TERMINAL_TOOL_SUMMARY_FALLBACK_CHARS)
+    }
 }
 
 /// CLI 下 `read_dir`：保留「目录:」首行与「总计遍历」尾行，中间条目仅前若干行。
@@ -472,6 +506,8 @@ pub(crate) fn echo_tool_result_transcript(
         "read_file" => Cow::Owned(read_file_result_terminal_summary(result)),
         "read_dir" => Cow::Owned(read_dir_result_terminal_summary(result)),
         "list_tree" => Cow::Owned(list_tree_result_terminal_summary(result)),
+        "search_in_files" => Cow::Owned(search_in_files_result_terminal_short(result)),
+        "rust_file_outline" => Cow::Owned(rust_file_outline_result_terminal_short(result)),
         _ => Cow::Borrowed(result),
     };
     let _ = print_tool_result_terminal(
@@ -592,7 +628,7 @@ mod read_file_terminal_summary_tests {
     }
 
     #[test]
-    fn metadata_plus_preview_shows_all_when_short() {
+    fn metadata_only_no_line_content() {
         let raw = "文本编码: utf-8\n\
 文件: src/lib.rs\n\
 总行数: 100\n\
@@ -603,28 +639,23 @@ mod read_file_terminal_summary_tests {
 2|beta\n\
 3|gamma\n";
         let out = read_file_result_terminal_summary(raw);
-        assert!(out.contains("终端摘要"));
-        assert!(out.contains("1|alpha"));
-        assert!(out.contains("3|gamma"));
-        assert!(out.contains("本段共 3 行"));
-        assert!(
-            out.contains("本段正文已在上方尽数展示"),
-            "no '尚有后续' when all lines fit in preview"
-        );
+        assert!(out.contains("文件: src/lib.rs"));
+        assert!(out.contains("正文未在终端列出"));
+        assert!(!out.contains("1|alpha"));
+        assert!(!out.contains("gamma"));
     }
 
     #[test]
-    fn metadata_plus_preview_truncates_when_many_body_lines() {
+    fn many_body_lines_still_omits_content() {
         let mut raw = "文件: x\n总行数: 20\n本段行范围: 1-20\n\n".to_string();
         for i in 1..=20 {
             raw.push_str(&format!("{i}|line{i}\n"));
         }
         let out = read_file_result_terminal_summary(&raw);
-        assert!(out.contains("本段共 20 行"));
-        assert!(out.contains("尚有后续 4 行"));
-        assert!(out.contains("1|line1"));
-        assert!(out.contains("16|line16"));
-        assert!(!out.contains("20|line20"));
+        assert!(out.contains("文件: x"));
+        assert!(out.contains("正文未在终端列出"));
+        assert!(!out.contains("line1"));
+        assert!(!out.contains("|line"));
     }
 
     #[test]
@@ -633,6 +664,81 @@ mod read_file_terminal_summary_tests {
         let out = read_file_result_terminal_summary(&body);
         assert!(out.contains("…"));
         assert!(out.contains("对话历史"));
+    }
+}
+
+#[cfg(test)]
+mod search_in_files_terminal_short_tests {
+    use super::search_in_files_result_terminal_short;
+
+    #[test]
+    fn error_passthrough() {
+        let s = "错误：无效的正则表达式：unclosed group";
+        assert_eq!(search_in_files_result_terminal_short(s), s);
+    }
+
+    #[test]
+    fn no_matches_keeps_summary_line() {
+        let hdr = r#"{"kind":"crabmate_tool_output","tool":"search_in_files","version":1,"pattern":"foo","root":".","match_count":0,"files_visited":3,"max_results":200,"truncated":false}"#;
+        let body = r#"未找到匹配："foo"（共遍历 3 个文件，搜索根目录：/tmp/w）"#;
+        let raw = format!("{hdr}\n{body}");
+        let out = search_in_files_result_terminal_short(&raw);
+        assert!(out.contains("未找到匹配"));
+        assert!(out.starts_with(hdr));
+        assert!(!out.contains(":1:"));
+    }
+
+    #[test]
+    fn with_matches_omits_path_lines() {
+        let hdr = r#"{"kind":"crabmate_tool_output","tool":"search_in_files","version":1,"pattern":"fn","root":"src","match_count":2,"files_visited":10,"max_results":200,"truncated":false}"#;
+        let body = "搜索模式：\"fn\"，根目录：/x\n匹配结果（最多 200 条，实际 2 条）：\n\nsrc/main.rs:1: fn main() {}\n";
+        let raw = format!("{hdr}\n{body}");
+        let out = search_in_files_result_terminal_short(&raw);
+        assert!(out.starts_with(hdr));
+        assert!(out.contains("终端不列出逐行匹配"));
+        assert!(!out.contains("main.rs:1:"));
+        assert!(!out.contains("fn main"));
+    }
+
+    #[test]
+    fn non_json_body_falls_back() {
+        let raw = "plain text only without header";
+        let out = search_in_files_result_terminal_short(raw);
+        assert_eq!(out, raw);
+    }
+}
+
+#[cfg(test)]
+mod rust_file_outline_terminal_short_tests {
+    use super::rust_file_outline_result_terminal_short;
+
+    #[test]
+    fn error_passthrough() {
+        let s = "错误：缺少 path 参数";
+        assert_eq!(rust_file_outline_result_terminal_short(s), s);
+    }
+
+    #[test]
+    fn read_fail_passthrough() {
+        let s = "读取文件失败：no such file";
+        assert_eq!(rust_file_outline_result_terminal_short(s), s);
+    }
+
+    #[test]
+    fn no_outline_items_keeps_message() {
+        let s = "文件 src/x.rs 中未匹配到常见顶层结构（可尝试 include_use=true）";
+        assert_eq!(rust_file_outline_result_terminal_short(s), s);
+    }
+
+    #[test]
+    fn outline_omits_line_entries() {
+        let raw =
+            "Rust 文件大纲：src/lib.rs（3 项，最多 200）\n\n    1: mod a;\n   10: fn main();\n";
+        let out = rust_file_outline_result_terminal_short(raw);
+        assert!(out.starts_with("Rust 文件大纲："));
+        assert!(out.contains("项级明细未在终端列出"));
+        assert!(!out.contains("mod a"));
+        assert!(!out.contains("fn main"));
     }
 }
 

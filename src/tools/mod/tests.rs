@@ -447,6 +447,23 @@ fn test_summarize_tool_call_dynamic_run_command() {
 }
 
 #[test]
+fn test_summarize_read_file_range_normalizes_inverted_order() {
+    let s = summarize_tool_call(
+        "read_file",
+        r#"{"path":"frontend-leptos/src/api.rs","start_line":419,"end_line":150}"#,
+    )
+    .expect("summary");
+    assert!(
+        s.contains("[150-419]"),
+        "expected normalized range in summary: {s}"
+    );
+    assert!(
+        !s.contains("[419-150]"),
+        "should not echo inverted order: {s}"
+    );
+}
+
+#[test]
 fn test_summarize_search_in_files_truncates_long_pattern() {
     let pat = "x".repeat(80);
     let s = summarize_tool_call("search_in_files", &format!(r#"{{"pattern":"{pat}"}}"#))

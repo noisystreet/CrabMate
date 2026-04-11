@@ -71,10 +71,14 @@ struct ReadFileOutputMeta<'a> {
 }
 
 fn read_file_logical_cache_key(canonical: &std::path::Path, v: &serde_json::Value) -> String {
-    let start_line = v.get("start_line").and_then(|n| n.as_u64()).unwrap_or(1);
-    let end_line = v
-        .get("end_line")
-        .and_then(|n| n.as_u64())
+    let mut start_line = v.get("start_line").and_then(|n| n.as_u64()).unwrap_or(1);
+    let mut end_line_opt = v.get("end_line").and_then(|n| n.as_u64());
+    if let Some(e) = end_line_opt.as_mut()
+        && *e < start_line
+    {
+        std::mem::swap(&mut start_line, e);
+    }
+    let end_line = end_line_opt
         .map(|n| n.to_string())
         .unwrap_or_else(|| "none".to_string());
     let max_lines = v.get("max_lines").and_then(|n| n.as_u64()).unwrap_or(500);
@@ -206,6 +210,7 @@ const READ_FILE_ABS_MAX_LINES: usize = 8000;
 /// - 若同时指定 `end_line` 与 `max_lines`，实际返回行数不超过 `max_lines`；若区间更宽会截断并提示 `has_more`。
 /// - `count_total_lines=true` 时会再扫描一遍文件统计总行数（大文件较慢）。
 /// - `encoding`：可选 `utf-8`（默认，严格）、`utf-8-sig`、`gb18030`、`gbk`、`gb2312`、`big5`、`utf-16le`、`utf-16be`、`auto`（BOM 优先，否则嗅探）；非法序列返回明确错误。
+/// - 若同时指定 `end_line` 与 `start_line` 且 **end_line 小于 start_line**（模型偶发起止写反），**自动交换**后再读，与单轮缓存键一致。
 #[allow(clippy::result_large_err)]
 pub fn read_file_try(
     args_json: &str,
@@ -224,7 +229,7 @@ pub fn read_file_try(
     };
     let enc_name = parse_text_encoding_name(v.get("encoding").and_then(|x| x.as_str()))
         .map_err(crate::tool_result::ToolError::invalid_args)?;
-    let start_line = match v.get("start_line") {
+    let mut start_line = match v.get("start_line") {
         Some(n) => match n.as_u64() {
             Some(v) if v >= 1 => v as usize,
             _ => {
@@ -235,7 +240,7 @@ pub fn read_file_try(
         },
         None => 1usize,
     };
-    let end_line_opt = match v.get("end_line") {
+    let mut end_line_opt = match v.get("end_line") {
         Some(n) => match n.as_u64() {
             Some(v) if v >= 1 => Some(v as usize),
             _ => {
@@ -258,13 +263,10 @@ pub fn read_file_try(
         .and_then(|b| b.as_bool())
         .unwrap_or(false);
 
-    if let Some(e) = end_line_opt
-        && e < start_line
+    if let Some(e) = end_line_opt.as_mut()
+        && *e < start_line
     {
-        return Err(crate::tool_result::ToolError::external_code(
-            "read_file_invalid_range",
-            "错误：end_line 不能小于 start_line".to_string(),
-        ));
+        std::mem::swap(&mut start_line, e);
     }
 
     let opened =

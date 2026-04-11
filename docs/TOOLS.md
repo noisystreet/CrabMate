@@ -443,7 +443,7 @@
   ```json
   {"path":"src/main.rs","start_line":1,"max_lines":200}
   ```
-  非 UTF-8 或需去 BOM 时可设 **`encoding`**，例如 `{"path":"legacy.txt","encoding":"gb18030"}`、`{"path":"utf8bom.txt","encoding":"utf-8-sig"}`、`{"path":"unknown.bin","encoding":"auto"}`。默认 **`utf-8` 严格**：非法 UTF-8 字节会返回明确错误，而**不会**用替换字符静默乱码。响应中会提示「下一段可将 start_line 设为 N」。需要精确总行数时可设 `"count_total_lines": true`（大文件会多扫一遍）。也可用 `start_line` + `end_line` 精确区间（仍受 `max_lines` 上限截断）。**成功**时正文**第一行**为单行 JSON **`{"kind":"crabmate_tool_output","tool":"read_file","version":1,…}`**（`path`、`start_line`、`line_count_returned`、`has_more` 等），其后为历史人类可读块；`role: tool` 信封的 **`error_code`** 在失败时另有稳定子码（如 `read_file_workspace_*`、`read_file_invalid_range`）。
+  非 UTF-8 或需去 BOM 时可设 **`encoding`**，例如 `{"path":"legacy.txt","encoding":"gb18030"}`、`{"path":"utf8bom.txt","encoding":"utf-8-sig"}`、`{"path":"unknown.bin","encoding":"auto"}`。默认 **`utf-8` 严格**：非法 UTF-8 字节会返回明确错误，而**不会**用替换字符静默乱码。响应中会提示「下一段可将 start_line 设为 N」。需要精确总行数时可设 `"count_total_lines": true`（大文件会多扫一遍）。也可用 `start_line` + `end_line` 精确区间（仍受 `max_lines` 上限截断）；若两者同时给出且 **end_line 小于 start_line**（起止写反），会**自动交换**后再读，聊天摘要中的 `[a-b]` 也会按升序显示。**成功**时正文**第一行**为单行 JSON **`{"kind":"crabmate_tool_output","tool":"read_file","version":1,…}`**（`path`、`start_line`、`line_count_returned`、`has_more` 等），其后为历史人类可读块；`role: tool` 信封的 **`error_code`** 在失败时另有稳定子码（如 `read_file_workspace_*`、`read_file_invalid_range`）。
 - `modify_file`（大文件局部改：`mode=replace_lines` + 行号区间 + `content`，流式改写不落整文件到内存）：
   ```json
   {"path":"src/huge.rs","mode":"replace_lines","start_line":120,"end_line":135,"content":"// 新片段\n"}
