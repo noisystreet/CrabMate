@@ -46,6 +46,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 | Document | Contents | 中文 |
 | --- | --- | --- |
 | [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture, module index, protocols | [zh](docs/DEVELOPMENT.md) |
+| [docs/en/TESTING.md](docs/en/TESTING.md) | Test commands: Rust, Leptos, E2E, pre-commit, audits | [zh](docs/TESTING.md) |
 | [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and JSON examples | [zh](docs/TOOLS.md) |
 | [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control-plane JSON | [zh](docs/SSE_PROTOCOL.md) |
 | [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `AGENT_*`, planning/context | [zh](docs/CONFIGURATION.md) |
@@ -103,8 +104,8 @@ cd frontend-leptos && trunk build && cd ..
 
 - **Toolchain**: **Rust 1.85+**, **Trunk** + **`wasm32-unknown-unknown`**; Linux / long-term memory notes: [AGENTS.md](AGENTS.md).
 - **Build**: `cargo build` → `target/debug/crabmate`; **`--release`** → `target/release/crabmate`. With Web: **`cd frontend-leptos && trunk build`** first (**`--release`** for production WASM).
-- **Checks**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`; or [.pre-commit-config.yaml](.pre-commit-config.yaml).
-- **E2E** (optional): after `frontend-leptos` build, **`cd e2e && npm ci && npx playwright install chromium && npm test`**. See [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
+- **Checks**: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`; or [.pre-commit-config.yaml](.pre-commit-config.yaml). Full testing and quality checklist: **[docs/en/TESTING.md](docs/en/TESTING.md)**.
+- **E2E** (optional): after `frontend-leptos` build, **`cd e2e && npm ci && npx playwright install chromium && npm test`**. See [docs/en/TESTING.md](docs/en/TESTING.md) and [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
 - **Install**: `cargo install --path .` (**does not** install man; use `.deb` or [man/crabmate.1](man/crabmate.1)). Regenerate man: `cargo run --bin crabmate-gen-man`.
 - **One-shot packaging**: **`./scripts/package-release.sh`** → **`dist/`** with **`crabmate_<version>_<os>_<arch>.tar.gz`** (binary, `config/`, `frontend-leptos/dist`, man); on Linux with **`cargo-deb`** installed, also copies **`target/debian/crabmate_*.deb`** into **`dist/`**.
 - **`.deb`**: [cargo-deb](https://github.com/kornelski/cargo-deb), or manually: frontend release + **`cargo deb`**, default output **`target/debian/`**. Details: [docs/en/CLI.md](docs/en/CLI.md) § Debian `.deb` packaging.
