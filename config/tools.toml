@@ -188,6 +188,7 @@ codebase_semantic_hybrid_semantic_pool = 256
 # sync_default_inline_tools = ["get_current_time"]
 # write_effect_tools = ["create_file", "modify_file"]
 # 分阶段 steps[].executor_kind 子代理：在默认补丁/测试名之外额外允许的工具名（须本会话已注册）
+[tool_registry]
 sub_agent_patch_write_extra_tools = ["run_command"]
 sub_agent_test_runner_extra_tools = ["custom_test_runner"]
 # review_readonly 步内显式拒绝（精确匹配）
