@@ -1,8 +1,13 @@
 //! 受控 HTTP：`http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）。**CLI / Web 流式**下 URL 未匹配 `http_fetch_allowed_prefixes` 时走与 `run_command` 同类的审批（**`tool_approval`**：SSE + **`cli_terminal`**）；**`--yes`** 亦跳过 CLI 提示。`workflow_execute` 等 **`run_tool` 同步路径**仍仅白名单前缀。
+//!
+//! 响应正文解码：`Content-Type` 的 **`charset`**、HTML **`<meta charset>`** / **http-equiv**、**BOM**，否则 **`chardetng`** 嗅探；与异步 LLM 客户端一致使用 **`crabmate/<版本>`** `User-Agent`。
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
+use chardetng::EncodingDetector;
+use encoding_rs::Encoding;
+use regex::Regex;
 use reqwest::Url;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::redirect::Policy;
@@ -11,6 +16,196 @@ use super::ToolContext;
 
 /// 响应体硬上限（与配置 `http_fetch_max_response_bytes` 上界一致）
 pub const ABS_MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
+/// 扫描 HTML 声明编码的前缀长度（与常见文档头部一致即可）
+const HTML_CHARSET_SNIFF_MAX: usize = 16 * 1024;
+/// `chardetng` 嗅探用的最大前缀
+const CHARDET_SNIFF_MAX: usize = 64 * 1024;
+
+static RE_META_CHARSET: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)<meta\b[^>]{0,1024}?\bcharset\s*=\s*["']?([^"'>\s]+)"#)
+        .expect("http_fetch meta charset regex")
+});
+static RE_META_HTTP_EQUIV_CT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)<meta\b[^>]{0,1024}?\bhttp-equiv\s*=\s*["']?content-type["']?[^>]{0,1024}?\bcontent\s*=\s*["']([^"']+)["']"#,
+    )
+    .expect("http_fetch meta http-equiv regex")
+});
+static RE_XML_ENCODING: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)<\?xml\b[^>]*\bencoding\s*=\s*["']([^"']+)["']"#)
+        .expect("http_fetch xml encoding regex")
+});
+
+fn user_agent_blocking() -> String {
+    format!("crabmate/{}", env!("CARGO_PKG_VERSION"))
+}
+
+fn charset_from_content_type(content_type: &str) -> Option<String> {
+    for part in content_type.split(';').skip(1) {
+        let part = part.trim();
+        let (name, value) = part.split_once('=')?;
+        if !name.trim().eq_ignore_ascii_case("charset") {
+            continue;
+        }
+        let v = value.trim().trim_matches(|c| c == '"' || c == '\'');
+        if v.is_empty() {
+            continue;
+        }
+        return Some(v.to_string());
+    }
+    None
+}
+
+fn encoding_for_label(label: &str) -> Option<&'static Encoding> {
+    Encoding::for_label(label.as_bytes())
+}
+
+/// 自 HTML 前缀提取声明编码（`charset` 或 `http-equiv=content-type` 内的 charset）。
+fn xml_declared_encoding_prefix(bytes: &[u8]) -> Option<&'static Encoding> {
+    let take = bytes.len().min(4096);
+    if take == 0 {
+        return None;
+    }
+    let lossy = String::from_utf8_lossy(&bytes[..take]);
+    let c = RE_XML_ENCODING.captures(lossy.as_ref())?;
+    encoding_for_label(c.get(1)?.as_str())
+}
+
+fn html_declared_encoding_prefix(bytes: &[u8]) -> Option<&'static Encoding> {
+    let take = bytes.len().min(HTML_CHARSET_SNIFF_MAX);
+    if take == 0 {
+        return None;
+    }
+    let head = &bytes[..take];
+    let lossy = String::from_utf8_lossy(head);
+    if let Some(c) = RE_META_CHARSET.captures(lossy.as_ref())
+        && let Some(m) = c.get(1)
+        && let Some(enc) = encoding_for_label(m.as_str())
+    {
+        return Some(enc);
+    }
+    if let Some(c) = RE_META_HTTP_EQUIV_CT.captures(lossy.as_ref())
+        && let Some(m) = c.get(1)
+        && let Some(cs) = charset_from_content_type(m.as_str())
+    {
+        return encoding_for_label(&cs);
+    }
+    None
+}
+
+fn sniff_encoding_chardetng(bytes: &[u8]) -> &'static Encoding {
+    let take = bytes.len().min(CHARDET_SNIFF_MAX);
+    let slice = if take == 0 { bytes } else { &bytes[..take] };
+    let mut det = EncodingDetector::new();
+    det.feed(slice, true);
+    det.guess(None, true)
+}
+
+fn is_likely_binary_content_type(content_type: &str) -> bool {
+    let ct = content_type.trim();
+    let lower = ct.to_ascii_lowercase();
+    let essence = lower.split(';').next().unwrap_or("").trim();
+    essence.starts_with("image/")
+        || essence.starts_with("video/")
+        || essence.starts_with("audio/")
+        || essence == "application/octet-stream"
+        || essence == "application/pdf"
+        || essence == "application/zip"
+        || essence == "application/gzip"
+        || essence == "application/x-gzip"
+        || essence == "application/wasm"
+}
+
+fn is_json_content_type(content_type: &str) -> bool {
+    let lower = content_type.to_ascii_lowercase();
+    let essence = lower.split(';').next().unwrap_or("").trim();
+    essence == "application/json" || essence.ends_with("+json") || essence == "text/json"
+}
+
+fn is_xml_family_content_type(content_type: &str) -> bool {
+    let lower = content_type.to_ascii_lowercase();
+    let essence = lower.split(';').next().unwrap_or("").trim();
+    essence == "application/xml" || essence == "text/xml" || essence.ends_with("+xml")
+}
+
+fn should_sniff_html_meta(content_type: &str) -> bool {
+    let lower = content_type.to_ascii_lowercase();
+    let essence = lower.split(';').next().unwrap_or("").trim();
+    essence == "text/html" || essence == "application/xhtml+xml" || essence.is_empty()
+}
+
+/// 将响应体解码为工具输出用字符串，并返回一行「正文解码」说明（写入 `http_fetch` / `http_request` 输出）。
+fn decode_http_body_text_for_tool(content_type: &str, bytes: &[u8]) -> (String, String) {
+    if bytes.is_empty() {
+        return (String::new(), "正文解码: (空 body)".to_string());
+    }
+
+    if is_likely_binary_content_type(content_type) {
+        let lossy = String::from_utf8_lossy(bytes);
+        let label = "正文解码: 非文本 Content-Type，按 UTF-8 有损预览（可能含乱码或不可打印字符）"
+            .to_string();
+        return (lossy.into_owned(), label);
+    }
+
+    if is_json_content_type(content_type) {
+        match std::str::from_utf8(bytes) {
+            Ok(s) => {
+                return (
+                    s.to_string(),
+                    "正文解码: UTF-8（JSON Content-Type）".to_string(),
+                );
+            }
+            Err(_) => {
+                let lossy = String::from_utf8_lossy(bytes);
+                return (
+                    lossy.into_owned(),
+                    "正文解码: JSON 声明但字节非合法 UTF-8，已用 UTF-8 有损预览".to_string(),
+                );
+            }
+        }
+    }
+
+    // 1) Content-Type charset
+    if let Some(ref label_str) = charset_from_content_type(content_type)
+        && let Some(enc) = encoding_for_label(label_str)
+    {
+        let (cow, _) = enc.decode_with_bom_removal(bytes);
+        return (
+            cow.into_owned(),
+            format!("正文解码: {}（Content-Type charset）", enc.name()),
+        );
+    }
+
+    // 2) HTML / XHTML meta
+    if (should_sniff_html_meta(content_type) || content_type.trim().is_empty())
+        && let Some(enc) = html_declared_encoding_prefix(bytes)
+    {
+        let (cow, _) = enc.decode_with_bom_removal(bytes);
+        return (
+            cow.into_owned(),
+            format!("正文解码: {}（HTML meta 声明）", enc.name()),
+        );
+    }
+
+    // 3) XML 声明 encoding=
+    if is_xml_family_content_type(content_type)
+        && let Some(enc) = xml_declared_encoding_prefix(bytes)
+    {
+        let (cow, _) = enc.decode_with_bom_removal(bytes);
+        return (
+            cow.into_owned(),
+            format!("正文解码: {}（XML 声明 encoding）", enc.name()),
+        );
+    }
+
+    // 4) chardetng
+    let guessed = sniff_encoding_chardetng(bytes);
+    let (cow, _) = guessed.decode_with_bom_removal(bytes);
+    (
+        cow.into_owned(),
+        format!("正文解码: {}（chardetng 嗅探）", guessed.name()),
+    )
+}
 /// `http_request` JSON 请求体上限（字节，序列化后）
 const MAX_REQUEST_JSON_BODY_BYTES: usize = 256 * 1024;
 
@@ -242,6 +437,7 @@ fn build_client(
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
         .redirect(policy)
+        .user_agent(user_agent_blocking())
         .build()
         .map_err(|e| format!("HTTP 客户端构建失败: {}", e))
 }
@@ -325,13 +521,15 @@ pub fn fetch_with_method(
     } else {
         &bytes[..]
     };
-    let body_preview = String::from_utf8_lossy(slice);
+    let (body_preview, decode_note) = decode_http_body_text_for_tool(&ctype, slice);
     if truncated {
         out.push_str(&format!("\n正文已截断至前 {} 字节\n", max_body_bytes));
     } else {
         out.push('\n');
     }
-    out.push_str("正文(UTF-8 有损预览):\n");
+    out.push_str(&decode_note);
+    out.push('\n');
+    out.push_str("正文:\n");
     out.push_str(&body_preview);
     if truncated {
         out.push_str("\n…");
@@ -413,13 +611,15 @@ pub fn request_with_json_body(
     } else {
         &bytes[..]
     };
-    let body_preview = String::from_utf8_lossy(slice);
+    let (body_preview, decode_note) = decode_http_body_text_for_tool(&ctype, slice);
     if truncated {
         out.push_str(&format!("\n正文已截断至前 {} 字节\n", max_body_bytes));
     } else {
         out.push('\n');
     }
-    out.push_str("正文(UTF-8 有损预览):\n");
+    out.push_str(&decode_note);
+    out.push('\n');
+    out.push_str("正文:\n");
     out.push_str(&body_preview);
     if truncated {
         out.push_str("\n…");
@@ -546,5 +746,42 @@ mod tests {
         let err =
             parse_http_request_args(r#"{"url":"https://example.com","method":"GET"}"#).unwrap_err();
         assert!(err.contains("POST/PUT/PATCH/DELETE"));
+    }
+
+    #[test]
+    fn decode_body_uses_content_type_charset() {
+        let gbk = encoding_rs::GBK;
+        let bytes = gbk.encode("你好").0;
+        let (text, note) =
+            super::decode_http_body_text_for_tool("text/plain; charset=gbk", bytes.as_ref());
+        assert_eq!(text, "你好");
+        assert!(note.to_ascii_lowercase().contains("gbk"), "note={}", note);
+    }
+
+    #[test]
+    fn decode_body_html_meta_charset() {
+        let html = b"<!DOCTYPE html><html><head><meta charset=\"gbk\"></head><body>\xc4\xe3\xba\xc3</body>";
+        let (text, note) = super::decode_http_body_text_for_tool("text/html", html);
+        assert!(text.contains("你好"), "text={}", text);
+        assert!(
+            note.contains("meta") || note.to_ascii_lowercase().contains("gbk"),
+            "note={}",
+            note
+        );
+    }
+
+    #[test]
+    fn decode_body_json_utf8_strict() {
+        let (text, note) = super::decode_http_body_text_for_tool("application/json", br#"{"a":1}"#);
+        assert_eq!(text, r#"{"a":1}"#);
+        assert!(note.contains("UTF-8"), "note={}", note);
+    }
+
+    #[test]
+    fn decode_body_xml_declaration() {
+        let xml = b"<?xml version=\"1.0\" encoding=\"GBK\"?><r>\xc4\xe3\xba\xc3</r>";
+        let (text, note) = super::decode_http_body_text_for_tool("application/xml", xml);
+        assert!(text.contains("你好"), "text={}", text);
+        assert!(note.contains("XML"), "note={}", note);
     }
 }
