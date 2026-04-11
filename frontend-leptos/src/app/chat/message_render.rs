@@ -1,4 +1,4 @@
-//! 单条消息与「连续工具输出」分组的渲染（供 `chat_column` 使用）。
+//! 单条消息与「连续工具输出」分组的渲染（供 `chat::column` 使用）。
 
 use std::collections::HashSet;
 
