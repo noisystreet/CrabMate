@@ -1,16 +1,20 @@
 //! 受控 HTTP：`http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）。**CLI / Web 流式**下 URL 未匹配 `http_fetch_allowed_prefixes` 时走与 `run_command` 同类的审批（**`tool_approval`**：SSE + **`cli_terminal`**）；**`--yes`** 亦跳过 CLI 提示。`workflow_execute` 等 **`run_tool` 同步路径**仍仅白名单前缀。
 //!
 //! 响应正文解码：`Content-Type` 的 **`charset`**、HTML **`<meta charset>`** / **http-equiv**、**BOM**，否则 **`chardetng`** 嗅探；与异步 LLM 客户端一致使用 **`crabmate/<版本>`** `User-Agent`。
+//! 可选 **`text_format: html_text`**：用 **`scraper`（html5ever）** 将 HTML 转为可读纯文本（跳过 `script`/`style`/`noscript`，优先抽取 `main` / `article` / `[role=main]`，否则 `body`）。
 
+use std::ops::Deref;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use chardetng::EncodingDetector;
+use ego_tree::NodeRef;
 use encoding_rs::Encoding;
 use regex::Regex;
 use reqwest::Url;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::redirect::Policy;
+use scraper::{Html, Node, Selector};
 
 use super::ToolContext;
 
@@ -35,6 +39,135 @@ static RE_XML_ENCODING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?i)<\?xml\b[^>]*\bencoding\s*=\s*["']([^"']+)["']"#)
         .expect("http_fetch xml encoding regex")
 });
+
+static SEL_HTML_MAIN: LazyLock<Selector> = LazyLock::new(|| {
+    Selector::parse("main, article, [role='main']").expect("http_fetch selector main/article")
+});
+static SEL_HTML_BODY: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("body").expect("http_fetch selector body"));
+
+/// `http_fetch` / `http_request` 工具：正文呈现方式（默认保留解码后的原文）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum HttpBodyTextFormat {
+    /// 解码后的字符串原样输出（可能含 HTML 标签）。
+    #[default]
+    Raw,
+    /// 将 HTML 转为纯文本（非 HTML 或解析失败时保留原文并在说明中提示）。
+    HtmlText,
+}
+
+fn parse_text_format_field(v: &serde_json::Value) -> Result<HttpBodyTextFormat, String> {
+    let raw = v
+        .get("text_format")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("raw");
+    let n = raw.to_ascii_lowercase().replace('-', "_");
+    match n.as_str() {
+        "raw" => Ok(HttpBodyTextFormat::Raw),
+        "html_text" | "htmltext" | "text" => Ok(HttpBodyTextFormat::HtmlText),
+        _ => Err(format!(
+            "text_format 仅支持 raw（默认）或 html_text（收到 {:?}）",
+            raw
+        )),
+    }
+}
+
+fn walk_visible_text(node: NodeRef<'_, Node>, out: &mut String, in_skip: bool) {
+    match node.value() {
+        Node::Element(el) => {
+            let name = el.name();
+            let skip = in_skip
+                || name.eq_ignore_ascii_case("script")
+                || name.eq_ignore_ascii_case("style")
+                || name.eq_ignore_ascii_case("noscript")
+                || name.eq_ignore_ascii_case("template");
+            for child in node.children() {
+                walk_visible_text(child, out, skip);
+            }
+        }
+        Node::Text(t) => {
+            if !in_skip {
+                let s = t.trim();
+                if !s.is_empty() {
+                    if !out.is_empty() && !out.chars().last().is_some_and(|c| c.is_whitespace()) {
+                        out.push(' ');
+                    }
+                    out.push_str(s);
+                }
+            }
+        }
+        _ => {
+            for child in node.children() {
+                walk_visible_text(child, out, in_skip);
+            }
+        }
+    }
+}
+
+/// 将 HTML 文档转为单行间距可读的纯文本（供模型阅读；非完整排版还原）。
+pub fn html_to_readable_text(html: &str) -> Result<String, String> {
+    let doc = Html::parse_document(html);
+    let root = doc.root_element();
+    let scope = root
+        .select(&SEL_HTML_MAIN)
+        .next()
+        .or_else(|| root.select(&SEL_HTML_BODY).next())
+        .unwrap_or(root);
+    let node: NodeRef<'_, Node> = *scope.deref();
+    let mut out = String::new();
+    walk_visible_text(node, &mut out, false);
+    let collapsed = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return Err("HTML 解析后无可见文本".to_string());
+    }
+    Ok(collapsed)
+}
+
+fn looks_like_html_document(content_type: &str, decoded: &str) -> bool {
+    if should_sniff_html_meta(content_type) || content_type.trim().is_empty() {
+        return true;
+    }
+    let t = decoded.trim_start();
+    if !t.starts_with('<') {
+        return false;
+    }
+    let lower = t.chars().take(256).collect::<String>().to_ascii_lowercase();
+    lower.contains("<html") || lower.starts_with("<!doctype html")
+}
+
+fn apply_text_format_if_requested(
+    content_type: &str,
+    format: HttpBodyTextFormat,
+    decoded: String,
+    decode_note: String,
+) -> (String, String) {
+    if format != HttpBodyTextFormat::HtmlText {
+        return (decoded, decode_note);
+    }
+    if is_likely_binary_content_type(content_type) || is_json_content_type(content_type) {
+        let note = format!(
+            "{decode_note}；正文呈现: 已请求 html_text，但 Content-Type 非 HTML，保留解码原文"
+        );
+        return (decoded, note);
+    }
+    if !looks_like_html_document(content_type, &decoded) {
+        let note =
+            format!("{decode_note}；正文呈现: 已请求 html_text，但正文不像 HTML，保留解码原文");
+        return (decoded, note);
+    }
+    match html_to_readable_text(&decoded) {
+        Ok(t) => (
+            t,
+            format!("{decode_note}；正文呈现: HTML→纯文本（scraper/html5ever）"),
+        ),
+        Err(e) => (
+            decoded,
+            format!("{decode_note}；正文呈现: HTML→纯文本失败（{e}），以下为解码原文"),
+        ),
+    }
+}
 
 fn user_agent_blocking() -> String {
     format!("crabmate/{}", env!("CARGO_PKG_VERSION"))
@@ -254,8 +387,10 @@ impl RequestMethod {
     }
 }
 
-/// 解析 `url` 与可选 `method`（`GET` / `HEAD`，默认 `GET`）。
-pub fn parse_http_fetch_args(args_json: &str) -> Result<(Url, FetchMethod), String> {
+/// 解析 `url`、可选 `method`（`GET` / `HEAD`，默认 `GET`）与可选 **`text_format`**。
+pub fn parse_http_fetch_args(
+    args_json: &str,
+) -> Result<(Url, FetchMethod, HttpBodyTextFormat), String> {
     let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
     let u = v
         .get("url")
@@ -283,13 +418,22 @@ pub fn parse_http_fetch_args(args_json: &str) -> Result<(Url, FetchMethod), Stri
         }
     };
 
-    Ok((url, method))
+    let text_format = parse_text_format_field(&v)?;
+    Ok((url, method, text_format))
 }
 
-/// 解析 `http_request` 入参：`url` + `method`（POST/PUT/PATCH/DELETE）+ 可选 `json_body`。
+/// 解析 `http_request` 入参：`url` + `method`（POST/PUT/PATCH/DELETE）+ 可选 `json_body` + 可选 **`text_format`**。
 pub fn parse_http_request_args(
     args_json: &str,
-) -> Result<(Url, RequestMethod, Option<serde_json::Value>), String> {
+) -> Result<
+    (
+        Url,
+        RequestMethod,
+        Option<serde_json::Value>,
+        HttpBodyTextFormat,
+    ),
+    String,
+> {
     let v: serde_json::Value = crate::tools::parse_args_json(args_json)?;
     let u = v
         .get("url")
@@ -332,7 +476,8 @@ pub fn parse_http_request_args(
             ));
         }
     }
-    Ok((url, method, json_body))
+    let text_format = parse_text_format_field(&v)?;
+    Ok((url, method, json_body, text_format))
 }
 
 /// 永久允许列表与审批判定的键（小写、无 query/fragment）；**仅** `http_fetch`（GET/HEAD）使用。
@@ -457,6 +602,7 @@ fn format_redirect_section(hops: &[String]) -> String {
 pub fn fetch_with_method(
     url: &Url,
     method: FetchMethod,
+    text_format: HttpBodyTextFormat,
     timeout_secs: u64,
     max_body_bytes: usize,
 ) -> String {
@@ -521,7 +667,9 @@ pub fn fetch_with_method(
     } else {
         &bytes[..]
     };
-    let (body_preview, decode_note) = decode_http_body_text_for_tool(&ctype, slice);
+    let (decoded, decode_note) = decode_http_body_text_for_tool(&ctype, slice);
+    let (body_preview, decode_note) =
+        apply_text_format_if_requested(&ctype, text_format, decoded, decode_note);
     if truncated {
         out.push_str(&format!("\n正文已截断至前 {} 字节\n", max_body_bytes));
     } else {
@@ -542,6 +690,7 @@ pub fn request_with_json_body(
     url: &Url,
     method: RequestMethod,
     json_body: Option<&serde_json::Value>,
+    text_format: HttpBodyTextFormat,
     timeout_secs: u64,
     max_body_bytes: usize,
 ) -> String {
@@ -611,7 +760,9 @@ pub fn request_with_json_body(
     } else {
         &bytes[..]
     };
-    let (body_preview, decode_note) = decode_http_body_text_for_tool(&ctype, slice);
+    let (decoded, decode_note) = decode_http_body_text_for_tool(&ctype, slice);
+    let (body_preview, decode_note) =
+        apply_text_format_if_requested(&ctype, text_format, decoded, decode_note);
     if truncated {
         out.push_str(&format!("\n正文已截断至前 {} 字节\n", max_body_bytes));
     } else {
@@ -628,7 +779,7 @@ pub fn request_with_json_body(
 }
 /// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（同源 + 路径前缀边界）时才请求；未匹配时返回错误（**不**在此路径弹审批；CLI 经 `tool_registry` 异步路径可走 **`tool_approval`**）。
 pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
-    let (url, method) = match parse_http_fetch_args(args_json) {
+    let (url, method, text_format) = match parse_http_fetch_args(args_json) {
         Ok(x) => x,
         Err(e) => return format!("错误：{}", e),
     };
@@ -638,6 +789,7 @@ pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     fetch_with_method(
         &url,
         method,
+        text_format,
         ctx.http_fetch_timeout_secs,
         ctx.http_fetch_max_response_bytes,
     )
@@ -645,7 +797,7 @@ pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
 
 /// `http_request` 同步路径：仅匹配 `http_fetch_allowed_prefixes` 的 URL 才允许执行。
 pub fn run_request_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
-    let (url, method, json_body) = match parse_http_request_args(args_json) {
+    let (url, method, json_body, text_format) = match parse_http_request_args(args_json) {
         Ok(x) => x,
         Err(e) => return format!("错误：{}", e),
     };
@@ -656,6 +808,7 @@ pub fn run_request_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
         &url,
         method,
         json_body.as_ref(),
+        text_format,
         ctx.http_fetch_timeout_secs,
         ctx.http_fetch_max_response_bytes,
     )
@@ -667,17 +820,27 @@ mod tests {
 
     #[test]
     fn parse_defaults_to_get() {
-        let (u, m) = parse_http_fetch_args(r#"{"url":"https://example.com/a"}"#).unwrap();
+        let (u, m, fmt) = parse_http_fetch_args(r#"{"url":"https://example.com/a"}"#).unwrap();
         assert_eq!(m, FetchMethod::Get);
+        assert_eq!(fmt, HttpBodyTextFormat::Raw);
         assert_eq!(u.as_str(), "https://example.com/a");
     }
 
     #[test]
     fn parse_head() {
-        let (u, m) =
+        let (u, m, fmt) =
             parse_http_fetch_args(r#"{"url":"https://example.com/","method":"head"}"#).unwrap();
         assert_eq!(m, FetchMethod::Head);
+        assert_eq!(fmt, HttpBodyTextFormat::Raw);
         assert_eq!(u.host_str(), Some("example.com"));
+    }
+
+    #[test]
+    fn parse_html_text_format() {
+        let (_, _, fmt) =
+            parse_http_fetch_args(r#"{"url":"https://example.com/","text_format":"html_text"}"#)
+                .unwrap();
+        assert_eq!(fmt, HttpBodyTextFormat::HtmlText);
     }
 
     #[test]
@@ -731,12 +894,13 @@ mod tests {
     }
     #[test]
     fn parse_http_request_supports_patch_with_body() {
-        let (u, m, body) = parse_http_request_args(
+        let (u, m, body, fmt) = parse_http_request_args(
             r#"{"url":"https://example.com/api","method":"patch","json_body":{"x":1}}"#,
         )
         .unwrap();
         assert_eq!(u.as_str(), "https://example.com/api");
         assert_eq!(m, RequestMethod::Patch);
+        assert_eq!(fmt, HttpBodyTextFormat::Raw);
         let b = body.unwrap();
         assert_eq!(b.get("x").and_then(|x| x.as_i64()), Some(1));
     }
@@ -783,5 +947,32 @@ mod tests {
         let (text, note) = super::decode_http_body_text_for_tool("application/xml", xml);
         assert!(text.contains("你好"), "text={}", text);
         assert!(note.contains("XML"), "note={}", note);
+    }
+
+    #[test]
+    fn html_to_text_strips_script_and_collapses() {
+        let html = r#"<!DOCTYPE html><html><head><title>x</title></head><body>
+            <script>alert(1)</script>
+            <p>Hello <b>world</b></p>
+            <style>.x{}</style>
+        </body></html>"#;
+        let t = super::html_to_readable_text(html).unwrap();
+        assert!(t.contains("Hello"));
+        assert!(t.contains("world"));
+        assert!(!t.contains("script"));
+        assert!(!t.contains("alert"));
+    }
+
+    #[test]
+    fn apply_html_text_format_on_html() {
+        let html = "<html><body><p>Hi</p></body></html>";
+        let (body, note) = super::apply_text_format_if_requested(
+            "text/html",
+            super::HttpBodyTextFormat::HtmlText,
+            html.to_string(),
+            "正文解码: UTF-8（测试）".to_string(),
+        );
+        assert_eq!(body, "Hi");
+        assert!(note.contains("HTML→纯文本"), "note={}", note);
     }
 }

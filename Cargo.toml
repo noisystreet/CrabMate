@@ -110,6 +110,8 @@ clap_mangen = { version = "0.2", default-features = false }
 # 关闭 bollard 默认 feature，仅启用本仓库用到的：`http`（hyper 客户端）、`pipe`（Unix 套接字 / Windows named pipe）。
 # 未启用 `ssl`：不支持 `DOCKER_HOST=https://` 与 `DOCKER_TLS_VERIFY`（本地 `unix://` / 明文 `tcp://` 不受影响）。需 TLS 时改为 `features = ["http", "pipe", "ssl"]`。
 bollard = { version = "0.18", default-features = false, features = ["http", "pipe"] }
+scraper = "0.26.0"
+ego-tree = "0.11"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["fs", "dir", "signal"] }
