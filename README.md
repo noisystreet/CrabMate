@@ -48,6 +48,7 @@
 | 文档 | 内容 | English |
 | --- | --- | --- |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 架构、模块索引、协议与扩展点 | [en](docs/en/DEVELOPMENT.md) |
+| [docs/TESTING.md](docs/TESTING.md) | 前后端测试、E2E、pre-commit、依赖审计命令汇总 | [en](docs/en/TESTING.md) |
 | [docs/TOOLS.md](docs/TOOLS.md) | 内置工具说明与调用示例 | [en](docs/en/TOOLS.md) |
 | [docs/SSE_PROTOCOL.md](docs/SSE_PROTOCOL.md) | `/chat/stream` 控制面 JSON | [en](docs/en/SSE_PROTOCOL.md) |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | 环境变量、`AGENT_*`、规划/上下文等配置详解 | [en](docs/en/CONFIGURATION.md) |
@@ -106,8 +107,8 @@ cd frontend-leptos && trunk build && cd ..
 
 - **工具链**：**Rust 1.85+**、**Trunk** + **`wasm32-unknown-unknown`**；Linux / 长期记忆等见 [AGENTS.md](AGENTS.md)。
 - **构建**：`cargo build` → `target/debug/crabmate`；**`--release`** → `target/release/crabmate`。带 Web 时先 **`cd frontend-leptos && trunk build`**（发布用 **`--release`**）。
-- **检查**：`cargo fmt --all`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test`；或 [.pre-commit-config.yaml](.pre-commit-config.yaml)。
-- **E2E**（可选）：`frontend-leptos` 构建后 **`cd e2e && npm ci && npx playwright install chromium && npm test`**。见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+- **检查**：`cargo fmt --all`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo test`；或 [.pre-commit-config.yaml](.pre-commit-config.yaml)。完整测试与质量检查命令见 **[docs/TESTING.md](docs/TESTING.md)**。
+- **E2E**（可选）：`frontend-leptos` 构建后 **`cd e2e && npm ci && npx playwright install chromium && npm test`**。见 [docs/TESTING.md](docs/TESTING.md) 与 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 - **安装**：`cargo install --path .`（**不**自动装 man；`.deb` 包或手动 [man/crabmate.1](man/crabmate.1)）。同步 clap 与 troff：`cargo run --bin crabmate-gen-man`。
 - **一键打包**：**`./scripts/package-release.sh`** → **`dist/`** 下 **`crabmate_<version>_<os>_<arch>.tar.gz`**（含二进制、`config/`、`frontend-leptos/dist`、man）；Linux 且已安装 **`cargo-deb`** 时同时复制 **`target/debian/crabmate_*.deb`** 到 **`dist/`**。
 - **`.deb`**：[cargo-deb](https://github.com/kornelski/cargo-deb)，亦可手动：前端 release + **`cargo deb`**，默认产物 **`target/debian/`**。详 [docs/CLI.md](docs/CLI.md)「打包 Debian `.deb`」。
