@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use crate::chat_job_queue::ChatJobQueue;
+use crate::chat_job_queue::{ChatJobQueue, WebChatQueueDeps};
 use crate::config::SharedAgentConfig;
 use crate::conversation_store::{
     self, CONVERSATION_STORE_MAX_ENTRIES, CONVERSATION_STORE_TTL_SECS, SaveConversationOutcome,
@@ -52,6 +52,8 @@ pub(crate) struct AppState {
     pub(crate) uploads_dir: std::path::PathBuf,
     /// `/chat` / `/chat/stream` 进程内任务队列（有界排队 + 并发上限）
     pub(crate) chat_queue: ChatJobQueue,
+    /// 队列 worker 使用的 LLM/工具/hub 句柄（与会话存储等字段分离，见 [`WebChatQueueDeps`]）。
+    pub(crate) chat_queue_job_deps: Arc<WebChatQueueDeps>,
     /// `conversation_id` → 消息与 revision：内存或 SQLite（见配置 `conversation_store_sqlite_path`）
     pub(crate) conversation_backing: ConversationBacking,
     /// 新会话 ID 递增计数器（仅用于生成默认 conversation_id）。
