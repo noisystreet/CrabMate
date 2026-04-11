@@ -16,7 +16,7 @@ mod complete_error;
 mod openai_models;
 pub mod vendor;
 
-pub use chat_params::{CompleteChatRetryingParams, StreamChatParams};
+pub use chat_params::{CompleteChatRetryingParams, LlmRetryingTransportOpts, StreamChatParams};
 pub use complete_error::LlmCompleteError;
 pub use openai_models::fetch_models_report;
 
