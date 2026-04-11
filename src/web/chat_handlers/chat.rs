@@ -281,7 +281,8 @@ pub(crate) async fn chat_handler(
         .chat_queue
         .try_submit_json(chat_job_queue::JsonSubmitParams {
             job_id,
-            state: state.clone(),
+            queue_deps: state.chat_queue_job_deps.clone(),
+            app: state.clone(),
             conversation_id: conversation_id.clone(),
             messages: turn_seed.messages,
             expected_revision: turn_seed.expected_revision,
@@ -770,7 +771,8 @@ pub(crate) async fn chat_stream_handler(
         .chat_queue
         .try_submit_stream(chat_job_queue::StreamSubmitParams {
             job_id,
-            state: state.clone(),
+            queue_deps: state.chat_queue_job_deps.clone(),
+            app: state.clone(),
             conversation_id: conversation_id.clone(),
             messages: turn_seed.messages,
             expected_revision: turn_seed.expected_revision,
