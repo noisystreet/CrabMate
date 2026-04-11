@@ -56,13 +56,14 @@
 | **`app/chat_*`** | 聊天主路径：列表、输入、滚动、查找、流式接线 | `chat_column`、`chat_composer`、`chat_scroll`、`chat_find`；**`ChatSessionSignals`** 定义在 **`src/chat_session_state.rs`**（crate 根），供 **`app/`** 与 **`session_modal_row`** 共用 |
 | **`app/session_*` / 会话** | 会话列表 UI、列表模态、会话级水合 | `sidebar_nav`、`session_list_modal`、`session_hydrate` |
 | **`app/workspace_*`** | 工作区树与刷新 | **`workspace_panel_state`**（**`WorkspacePanelSignals`**）+ **`workspace_panel`**（**`make_refresh_workspace`** / **`make_insert_workspace_path_into_composer`**）；与根目录 **`workspace_shell`** 协同 |
+| **`app/status_tasks_*`** | `/status` 与侧栏任务 | **`status_tasks_state`**（**`StatusTasksSignals`**）+ **`status_tasks_wiring`**（拉取闭包与侧栏可见 **`Effect`**） |
 | **`app/*_modal`** | 模态与独立焦点陷阱 | `settings_modal`、`changelist_modal` 等 |
 | **根模块** | 跨功能复用、无 UI | `api`、`storage`、`session_sync`、`sse_dispatch`、`i18n` |
 
 **可选的下一步演进**（非必须一次完成）：
 
 - 将 **`chat`** 相关 `wire_*` 与聚合信号进一步收到 **`app/chat/`** 子目录（或 `features/chat` 命名空间），使 `app/mod.rs` 只做「注入句柄 + 布局」。
-- 将 **Workspace / Tasks** 的刷新 `Effect` 与 `RwSignal` 收成 **`WorkspaceSignals`** 一类聚合（与 `ChatSessionSignals` 对称），避免侧栏与 `App` 重复传参。
+- **任务 + `/status`**：已用 **`StatusTasksSignals`** + **`status_tasks_wiring`**；工作区侧仍为 **`WorkspacePanelSignals`**（与旧「对称聚合」目标一致，分文件承载）。
 
 ## 6. 状态与上下文策略
 

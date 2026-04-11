@@ -14,6 +14,7 @@ use crate::i18n::{self, Locale};
 use crate::workspace_shell::{begin_side_column_resize, reload_workspace_panel};
 use crate::workspace_tree::WorkspaceFilesystemTree;
 
+use super::status_tasks_state::StatusTasksSignals;
 use super::workspace_panel_state::WorkspacePanelSignals;
 
 #[component]
@@ -145,9 +146,7 @@ pub fn side_column_view(
     status_bar_visible: RwSignal<bool>,
     settings_modal: RwSignal<bool>,
     ws: WorkspacePanelSignals,
-    tasks_data: RwSignal<TasksData>,
-    tasks_err: RwSignal<Option<String>>,
-    tasks_loading: RwSignal<bool>,
+    status_tasks: StatusTasksSignals,
     refresh_workspace: Arc<dyn Fn() + Send + Sync>,
     refresh_tasks: Arc<dyn Fn() + Send + Sync>,
     toggle_task: Arc<dyn Fn(String) + Send + Sync>,
@@ -155,6 +154,9 @@ pub fn side_column_view(
     changelist_fetch_nonce: RwSignal<u64>,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 ) -> impl IntoView {
+    let tasks_data = status_tasks.tasks_data;
+    let tasks_err = status_tasks.tasks_err;
+    let tasks_loading = status_tasks.tasks_loading;
     view! {
                 <div
                     class="column-resize-handle"

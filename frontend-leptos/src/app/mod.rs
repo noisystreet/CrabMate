@@ -1,6 +1,6 @@
 //! 主界面：单根 `App`（导航、对话、侧栏、状态栏、模态框与偏好副作用）。
 //!
-//! 聊天滚动、查找、输入/流式、Workspace 刷新、变更集拉取等副作用拆至子模块，见 `chat_scroll`、`chat_find`、`chat_composer`、`workspace_panel`（含工作区树 → composer 插入）、`workspace_panel_state`、`changelist_modal`。
+//! 聊天滚动、查找、输入/流式、Workspace 刷新、`/status` 与任务拉取、变更集拉取等副作用拆至子模块，见 `chat_scroll`、`chat_find`、`chat_composer`、`workspace_panel`（含工作区树 → composer 插入）、`workspace_panel_state`、`status_tasks_wiring`、`changelist_modal`。
 
 mod approval_bar;
 mod changelist_modal;
@@ -18,6 +18,8 @@ mod settings_modal;
 mod side_column;
 mod sidebar_nav;
 mod status_bar;
+mod status_tasks_state;
+mod status_tasks_wiring;
 mod timeline_panel;
 mod workspace_panel;
 mod workspace_panel_state;
@@ -40,6 +42,11 @@ use settings_modal::settings_modal_view;
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
+use status_tasks_state::StatusTasksSignals;
+use status_tasks_wiring::{
+    make_refresh_status, make_refresh_tasks, make_toggle_task,
+    wire_status_fetch_if_missing_after_init, wire_tasks_refresh_when_tasks_panel_visible,
+};
 use timeline_panel::load_timeline_panel_expanded_default;
 use workspace_panel::{
     make_insert_workspace_path_into_composer, make_refresh_workspace,
@@ -56,8 +63,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::api::{
-    StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key, fetch_status,
-    fetch_tasks, fetch_web_ui_config, load_client_llm_text_fields_from_storage, save_tasks,
+    StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key, fetch_web_ui_config,
+    load_client_llm_text_fields_from_storage,
 };
 use crate::app_prefs::{
     AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, SidePanelView,
@@ -158,6 +165,14 @@ pub fn App() -> impl IntoView {
     let tasks_data = RwSignal::new(TasksData { items: vec![] });
     let tasks_err = RwSignal::new(None::<String>);
     let tasks_loading = RwSignal::new(false);
+    let status_tasks = StatusTasksSignals {
+        status_data,
+        status_loading,
+        status_fetch_err,
+        tasks_data,
+        tasks_err,
+        tasks_loading,
+    };
     let pending_approval = RwSignal::new(None::<(String, String, String)>);
     let session_modal = RwSignal::new(false);
     let settings_modal = RwSignal::new(false);
@@ -372,7 +387,7 @@ pub fn App() -> impl IntoView {
             return;
         }
         let (stored_base, stored_model) = load_client_llm_text_fields_from_storage();
-        let sd = status_data.get_untracked();
+        let sd = status_tasks.status_data.get_untracked();
         let base = if stored_base.trim().is_empty() {
             sd.as_ref().map(|d| d.api_base.clone()).unwrap_or_default()
         } else {
@@ -412,66 +427,16 @@ pub fn App() -> impl IntoView {
         Arc::clone(&refresh_workspace),
     );
 
-    let refresh_tasks: Arc<dyn Fn() + Send + Sync> = Arc::new({
-        move || {
-            tasks_loading.set(true);
-            spawn_local(async move {
-                match fetch_tasks().await {
-                    Ok(d) => {
-                        tasks_err.set(None);
-                        tasks_data.set(d);
-                    }
-                    Err(e) => {
-                        tasks_err.set(Some(e));
-                    }
-                }
-                tasks_loading.set(false);
-            });
-        }
-    });
+    let refresh_status = make_refresh_status(status_tasks, selected_agent_role);
+    let refresh_tasks = make_refresh_tasks(status_tasks);
+    let toggle_task = make_toggle_task(status_tasks);
 
-    let refresh_status: Arc<dyn Fn() + Send + Sync> = Arc::new({
-        move || {
-            status_loading.set(true);
-            status_fetch_err.set(None);
-            spawn_local(async move {
-                match fetch_status().await {
-                    Ok(d) => {
-                        status_fetch_err.set(None);
-                        if let Some(cur) = selected_agent_role.get_untracked()
-                            && !d.agent_role_ids.iter().any(|id| id == &cur)
-                        {
-                            selected_agent_role.set(None);
-                        }
-                        status_data.set(Some(d));
-                    }
-                    Err(e) => {
-                        status_data.set(None);
-                        status_fetch_err.set(Some(e));
-                    }
-                }
-                status_loading.set(false);
-            });
-        }
-    });
-
-    Effect::new({
-        let refresh_status = Arc::clone(&refresh_status);
-        move |_| {
-            if initialized.get() && status_data.get().is_none() {
-                refresh_status();
-            }
-        }
-    });
-
-    Effect::new({
-        let refresh_tasks = Arc::clone(&refresh_tasks);
-        move |_| {
-            if matches!(side_panel_view.get(), SidePanelView::Tasks) && initialized.get() {
-                refresh_tasks();
-            }
-        }
-    });
+    wire_status_fetch_if_missing_after_init(initialized, status_tasks, Arc::clone(&refresh_status));
+    wire_tasks_refresh_when_tasks_panel_visible(
+        side_panel_view,
+        initialized,
+        Arc::clone(&refresh_tasks),
+    );
 
     wire_session_switch_clears_chat_state(
         initialized,
@@ -539,21 +504,6 @@ pub fn App() -> impl IntoView {
         pending_images,
         pending_clarification,
     );
-
-    let toggle_task: Arc<dyn Fn(String) + Send + Sync> = Arc::new({
-        move |id: String| {
-            let mut next = tasks_data.get();
-            if let Some(i) = next.items.iter().position(|t| t.id == id) {
-                next.items[i].done = !next.items[i].done;
-                let n = next.clone();
-                spawn_local(async move {
-                    if let Ok(saved) = save_tasks(&n).await {
-                        tasks_data.set(saved);
-                    }
-                });
-            }
-        }
-    });
 
     let side_resize_session: Rc<RefCell<Option<(f64, f64)>>> = Rc::new(RefCell::new(None));
     let side_resize_handles: Rc<RefCell<Option<(WindowListenerHandle, WindowListenerHandle)>>> =
@@ -712,9 +662,7 @@ pub fn App() -> impl IntoView {
                         status_bar_visible,
                         settings_modal,
                         workspace_panel,
-                        tasks_data,
-                        tasks_err,
-                        tasks_loading,
+                        status_tasks,
                         Arc::clone(&refresh_workspace),
                         Arc::clone(&refresh_tasks),
                         Arc::clone(&toggle_task),
@@ -726,12 +674,10 @@ pub fn App() -> impl IntoView {
 
                 {status_bar_footer_view(
                     status_bar_visible,
-                    status_fetch_err,
+                    status_tasks,
                     status_err,
                     tool_busy,
                     status_busy,
-                    status_loading,
-                    status_data,
                     client_llm_storage_tick,
                     selected_agent_role,
                     chat_session,
@@ -755,7 +701,7 @@ pub fn App() -> impl IntoView {
                 locale,
                 theme,
                 bg_decor,
-                status_data,
+                status_tasks.status_data,
                 llm_api_base_draft,
                 llm_api_base_preset_select,
                 llm_model_draft,

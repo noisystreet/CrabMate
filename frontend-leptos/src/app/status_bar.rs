@@ -9,6 +9,8 @@ use crate::api::StatusData;
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{status_bar_effective_api_base, status_bar_effective_model};
 use crate::chat_session_state::ChatSessionSignals;
+
+use super::status_tasks_state::StatusTasksSignals;
 use crate::i18n::{self, Locale};
 
 /// 本地估算上下文用量（对照 `context_char_budget`）与 [`SessionSyncState::last_known_revision`]。
@@ -129,12 +131,10 @@ fn StatusFetchErrorPanel(
 #[component]
 #[allow(clippy::too_many_arguments)]
 fn StatusBarFooterBody(
-    status_fetch_err: RwSignal<Option<String>>,
+    st: StatusTasksSignals,
     status_err: RwSignal<Option<String>>,
     tool_busy: RwSignal<bool>,
     status_busy: RwSignal<bool>,
-    status_loading: RwSignal<bool>,
-    status_data: RwSignal<Option<StatusData>>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     chat: ChatSessionSignals,
@@ -144,7 +144,7 @@ fn StatusBarFooterBody(
 ) -> impl IntoView {
     view! {
         <footer class=move || {
-            if status_fetch_err.get().is_some() {
+            if st.status_fetch_err.get().is_some() {
                 "status-bar status-bar-fetch-error"
             } else {
                 "status-bar"
@@ -152,7 +152,7 @@ fn StatusBarFooterBody(
         }>
             <div class="status-chips">
                 {move || {
-                    if status_loading.get() {
+                    if st.status_loading.get() {
                         view! {
                             <div
                                 class="status-chips-skeleton"
@@ -178,7 +178,7 @@ fn StatusBarFooterBody(
                             </div>
                         }
                         .into_any()
-                    } else if let Some(fetch_err) = status_fetch_err.get() {
+                    } else if let Some(fetch_err) = st.status_fetch_err.get() {
                         view! {
                             <StatusFetchErrorPanel
                                 fetch_err=fetch_err
@@ -196,7 +196,7 @@ fn StatusBarFooterBody(
                                     </span>
                                     <span class="status-chip-value">{move || {
                                         let _tick = client_llm_storage_tick.get();
-                                        let sd = status_data.get();
+                                        let sd = st.status_data.get();
                                         let (_, stored_model) =
                                             load_client_llm_text_fields_from_storage();
                                         status_bar_effective_model(
@@ -207,7 +207,7 @@ fn StatusBarFooterBody(
                                 </span>
                                 <span class="status-chip status-chip-url" title=move || {
                                     let _tick = client_llm_storage_tick.get();
-                                    let sd = status_data.get();
+                                    let sd = st.status_data.get();
                                     let (stored_base, _) =
                                         load_client_llm_text_fields_from_storage();
                                     status_bar_effective_api_base(
@@ -220,7 +220,7 @@ fn StatusBarFooterBody(
                                     </span>
                                     <span class="status-chip-value">{move || {
                                         let _tick = client_llm_storage_tick.get();
-                                        let sd = status_data.get();
+                                        let sd = st.status_data.get();
                                         let (stored_base, _stored_model) =
                                             load_client_llm_text_fields_from_storage();
                                         status_bar_effective_api_base(
@@ -231,7 +231,7 @@ fn StatusBarFooterBody(
                                 </span>
                                 <StatusBarContextChip
                                     locale=locale
-                                    status_data=status_data
+                                    status_data=st.status_data
                                     context_used_estimate=context_used_estimate
                                     chat=chat
                                 />
@@ -263,7 +263,7 @@ fn StatusBarFooterBody(
                                     >
                                         <option value="__default__">{move || {
                                             let loc = locale.get();
-                                            match status_data
+                                            match st.status_data
                                                 .get()
                                                 .and_then(|d| d.default_agent_role_id.clone())
                                             {
@@ -274,7 +274,7 @@ fn StatusBarFooterBody(
                                             }
                                         }}</option>
                                         {move || {
-                                            status_data
+                                            st.status_data
                                                 .get()
                                                 .map(|d| d.agent_role_ids)
                                                 .unwrap_or_default()
@@ -294,7 +294,7 @@ fn StatusBarFooterBody(
                 }}
             </div>
             <span class=move || {
-                let kind = if status_fetch_err.get().is_some() || status_err.get().is_some() {
+                let kind = if st.status_fetch_err.get().is_some() || status_err.get().is_some() {
                     "error"
                 } else if tool_busy.get() {
                     "tool"
@@ -308,7 +308,7 @@ fn StatusBarFooterBody(
                 <span class="status-run-dot" aria-hidden="true"></span>
                 <span>{move || {
                     let loc = locale.get();
-                    if status_fetch_err.get().is_some() {
+                    if st.status_fetch_err.get().is_some() {
                         i18n::status_unavailable(loc).to_string()
                     } else if let Some(e) = status_err.get() {
                         format!("{}{e}", i18n::status_error_prefix(loc))
@@ -328,12 +328,10 @@ fn StatusBarFooterBody(
 #[allow(clippy::too_many_arguments)]
 pub fn status_bar_footer_view(
     status_bar_visible: RwSignal<bool>,
-    status_fetch_err: RwSignal<Option<String>>,
+    st: StatusTasksSignals,
     status_err: RwSignal<Option<String>>,
     tool_busy: RwSignal<bool>,
     status_busy: RwSignal<bool>,
-    status_loading: RwSignal<bool>,
-    status_data: RwSignal<Option<StatusData>>,
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     chat: ChatSessionSignals,
@@ -344,12 +342,10 @@ pub fn status_bar_footer_view(
     view! {
         <Show when=move || status_bar_visible.get()>
             <StatusBarFooterBody
-                status_fetch_err=status_fetch_err
+                st=st
                 status_err=status_err
                 tool_busy=tool_busy
                 status_busy=status_busy
-                status_loading=status_loading
-                status_data=status_data
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role
                 chat=chat
