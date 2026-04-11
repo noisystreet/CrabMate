@@ -31,8 +31,10 @@ const REPL_COMPLETION_MENU: &str = "completion_menu";
 const SLASH_COMMANDS: &[&str] = &[
     "?",
     "agent",
+    "api-base",
     "api-key",
     "apikey",
+    "apibase",
     "cd",
     "clear",
     "config",
@@ -186,6 +188,33 @@ impl Completer for ReplSlashCompleter {
                         })
                         .collect();
                 }
+                if tail.eq_ignore_ascii_case("model") {
+                    return ["set"]
+                        .iter()
+                        .map(|a| Suggestion {
+                            value: format!("/model {a} "),
+                            span,
+                            append_whitespace: false,
+                            ..Default::default()
+                        })
+                        .collect();
+                }
+                if tail.eq_ignore_ascii_case("api-base") || tail.eq_ignore_ascii_case("apibase") {
+                    let p = if tail.eq_ignore_ascii_case("apibase") {
+                        "/apibase"
+                    } else {
+                        "/api-base"
+                    };
+                    return ["set"]
+                        .iter()
+                        .map(|a| Suggestion {
+                            value: format!("{p} {a} "),
+                            span,
+                            append_whitespace: false,
+                            ..Default::default()
+                        })
+                        .collect();
+                }
                 if tail.eq_ignore_ascii_case("agent") {
                     return ["list", "set"]
                         .iter()
@@ -309,6 +338,69 @@ impl Completer for ReplSlashCompleter {
                                 format!("/agent {a} ")
                             } else {
                                 format!("/agent {a}")
+                            };
+                            Suggestion {
+                                value,
+                                span,
+                                append_whitespace: false,
+                                ..Default::default()
+                            }
+                        })
+                        .collect();
+                }
+                if cmd.eq_ignore_ascii_case("model") {
+                    let ap = after_ws.trim_start();
+                    let ap_l = ap.to_ascii_lowercase();
+                    let hits: Vec<&str> = if ap_l.is_empty() {
+                        vec!["set"]
+                    } else {
+                        ["set"]
+                            .iter()
+                            .copied()
+                            .filter(|s| s.starts_with(ap_l.as_str()))
+                            .collect()
+                    };
+                    return hits
+                        .into_iter()
+                        .map(|a| {
+                            let value = if a == "set" {
+                                format!("/model {a} ")
+                            } else {
+                                format!("/model {a}")
+                            };
+                            Suggestion {
+                                value,
+                                span,
+                                append_whitespace: false,
+                                ..Default::default()
+                            }
+                        })
+                        .collect();
+                }
+                if cmd.eq_ignore_ascii_case("api-base") || cmd.eq_ignore_ascii_case("apibase") {
+                    let slash = if cmd.eq_ignore_ascii_case("apibase") {
+                        "/apibase"
+                    } else {
+                        "/api-base"
+                    };
+                    let ap = after_ws.trim_start();
+                    let ap_l = ap.to_ascii_lowercase();
+                    let hits: Vec<&str> = if ap_l.is_empty() {
+                        vec!["set"]
+                    } else {
+                        ["set"]
+                            .iter()
+                            .copied()
+                            .filter(|s| s.starts_with(ap_l.as_str()))
+                            .collect()
+                    };
+                    return hits
+                        .into_iter()
+                        .map(|a| {
+                            let value = if a == "set" {
+                                format!("{slash} {a} ")
+                            } else {
+                                format!("{slash} {a}")
                             };
                             Suggestion {
                                 value,
@@ -791,6 +883,25 @@ mod slash_completion_tests {
         let s2 = c.complete(line, line.len());
         assert!(s2.iter().any(|x| x.value == "/models list"));
         assert!(s2.iter().any(|x| x.value == "/models choose "));
+    }
+
+    #[test]
+    fn model_set_completion() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        let s = c.complete("/model", 6);
+        assert!(s.iter().any(|x| x.value == "/model set "));
+        let line = "/model ";
+        let s2 = c.complete(line, line.len());
+        assert!(s2.iter().any(|x| x.value == "/model set "));
+    }
+
+    #[test]
+    fn api_base_set_completion() {
+        let mut c = ReplSlashCompleter::new(Arc::new(AtomicBool::new(false)));
+        let s = c.complete("/api-base", 9);
+        assert!(s.iter().any(|x| x.value == "/api-base set "));
+        let s2 = c.complete("/apibase", 8);
+        assert!(s2.iter().any(|x| x.value == "/apibase set "));
     }
 
     #[test]
