@@ -1,6 +1,6 @@
 //! 主界面：单根 `App`（导航、对话、侧栏、状态栏、模态框与偏好副作用）。
 //!
-//! 聊天滚动、查找、输入/流式、Workspace 刷新、变更集拉取等副作用拆至子模块，见 `chat_scroll`、`chat_find`、`chat_composer`、`workspace_panel`、`changelist_modal`。
+//! 聊天滚动、查找、输入/流式、Workspace 刷新、变更集拉取等副作用拆至子模块，见 `chat_scroll`、`chat_find`、`chat_composer`、`workspace_panel`（含工作区树 → composer 插入）、`workspace_panel_state`、`changelist_modal`。
 
 mod approval_bar;
 mod changelist_modal;
@@ -10,8 +10,10 @@ mod chat_find;
 mod chat_find_bar;
 mod chat_message_render;
 mod chat_scroll;
+mod chat_session_state;
 mod mobile_shell_header;
 pub mod scroll_guard;
+mod session_hydrate;
 mod session_list_modal;
 mod settings_modal;
 mod side_column;
@@ -19,6 +21,7 @@ mod sidebar_nav;
 mod status_bar;
 mod timeline_panel;
 mod workspace_panel;
+mod workspace_panel_state;
 
 use approval_bar::ApprovalBar;
 use changelist_modal::{
@@ -39,7 +42,14 @@ use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
 use timeline_panel::load_timeline_panel_expanded_default;
-use workspace_panel::{make_refresh_workspace, wire_workspace_refresh_when_visible};
+use workspace_panel::{
+    make_insert_workspace_path_into_composer, make_refresh_workspace,
+    wire_workspace_refresh_when_visible,
+};
+use workspace_panel_state::WorkspacePanelSignals;
+
+use chat_session_state::ChatSessionSignals;
+use session_hydrate::wire_session_hydration;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -47,9 +57,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::api::{
-    StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key,
-    fetch_conversation_messages, fetch_status, fetch_tasks, fetch_web_ui_config,
-    load_client_llm_text_fields_from_storage, save_tasks,
+    StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key, fetch_status,
+    fetch_tasks, fetch_web_ui_config, load_client_llm_text_fields_from_storage, save_tasks,
 };
 use crate::app_prefs::{
     AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, SidePanelView,
@@ -58,22 +67,11 @@ use crate::app_prefs::{
     store_side_panel_view,
 };
 use crate::clarification_form::PendingClarificationForm;
-use crate::conversation_hydrate::stored_messages_from_conversation_api;
 use crate::i18n::{self, load_locale_from_storage};
-use crate::session_ops::{
-    SessionContextAnchor, estimate_context_chars_for_active_session, title_from_user_prompt,
-};
-
-/// 用于水合时与服务端快照比对：仅统计「用户气泡」轮次（与分支截断语义一致）。
-fn count_user_role_bubbles(messages: &[StoredMessage]) -> usize {
-    messages.iter().filter(|m| m.role == "user").count()
-}
+use crate::session_ops::{SessionContextAnchor, estimate_context_chars_for_active_session};
 use crate::session_sync::SessionSyncState;
-use crate::storage::{
-    ChatSession, StoredMessage, ensure_at_least_one, load_sessions, save_sessions,
-};
+use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
-use gloo_timers::future::TimeoutFuture;
 use leptos::html::{Div, Textarea};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -99,6 +97,14 @@ pub fn App() -> impl IntoView {
     let stream_job_id = RwSignal::new(None::<u64>);
     // 已消费的最大 SSE `id:`；与 `stream_resume.after_seq` / `Last-Event-ID` 对齐。
     let stream_last_event_seq = RwSignal::new(0u64);
+    let chat_session = ChatSessionSignals {
+        sessions,
+        active_id,
+        session_sync,
+        session_hydrate_nonce,
+        stream_job_id,
+        stream_last_event_seq,
+    };
     // 已完成长助手消息默认折叠；在此列表中的 id 表示已展开。
     let expanded_long_assistant_ids = RwSignal::new(Vec::<String>::new());
     // 连续工具输出分组：以组内首条消息 id 为键，表示该组处于展开态（默认折叠只显示最新一条）。
@@ -128,6 +134,18 @@ pub fn App() -> impl IntoView {
     let workspace_set_err = RwSignal::new(None::<String>);
     let workspace_set_busy = RwSignal::new(false);
     let workspace_pick_busy = RwSignal::new(false);
+    let workspace_panel = WorkspacePanelSignals {
+        workspace_data,
+        workspace_subtree_expanded,
+        workspace_subtree_cache,
+        workspace_subtree_loading,
+        workspace_err,
+        workspace_loading,
+        workspace_path_draft,
+        workspace_set_err,
+        workspace_set_busy,
+        workspace_pick_busy,
+    };
     let status_data = RwSignal::new(None::<StatusData>);
     let status_loading = RwSignal::new(true);
     // `GET /status` 失败时的说明（与流式对话错误 `status_err` 区分）。
@@ -238,128 +256,13 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    Effect::new({
-        let sessions = sessions;
-        let active_id = active_id;
-        let locale = locale;
-        let initialized = initialized;
-        let web_ui_config_loaded = web_ui_config_loaded;
-        let selected_agent_role = selected_agent_role;
-        let session_sync = session_sync;
-        let session_hydrate_nonce = session_hydrate_nonce;
-        move |_| {
-            if !initialized.get() || !web_ui_config_loaded.get() {
-                return;
-            }
-            let aid = active_id.get();
-            if aid.is_empty() {
-                return;
-            }
-            // 仅订阅 `session_hydrate_nonce`（下一行），勿用 `sessions.with`：否则水合写回 `messages` 会再次调度本 Effect，
-            // 以相同 nonce 并发多次 GET，末包覆盖可能导致历史消息异常消失。
-            let nonce_at_start = session_hydrate_nonce.get();
-            let Some(cid) = sessions.with_untracked(|list| {
-                list.iter().find(|s| s.id == aid).and_then(|s| {
-                    // 如果当前会话有正在流式更新的消息，跳过水合，避免覆盖本地新消息
-                    if s.messages
-                        .iter()
-                        .any(|m| m.state.as_deref() == Some("loading"))
-                    {
-                        return None;
-                    }
-                    let c = s
-                        .server_conversation_id
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|x| !x.is_empty())?;
-                    Some(c.to_string())
-                })
-            }) else {
-                return;
-            };
-            // 与 `on_done` 末尾递增的 nonce 对齐：仅应用**本次**水合对应的拉取结果。
-            let loc = locale.get_untracked();
-            spawn_local(async move {
-                let Ok(resp) = fetch_conversation_messages(&cid, loc).await else {
-                    return;
-                };
-                if session_hydrate_nonce.get_untracked() != nonce_at_start {
-                    return;
-                }
-                let msgs = stored_messages_from_conversation_api(&resp.messages);
-                if msgs.is_empty() && !resp.messages.is_empty() {
-                    // 映射全部失败时不应清空本地列表（否则表现为「历史消息消失」）
-                    return;
-                }
-                let mut applied_hydration = false;
-                sessions.update(|list| {
-                    if active_id.get_untracked() != aid {
-                        return;
-                    }
-                    let Some(s) = list.iter_mut().find(|x| x.id == aid) else {
-                        return;
-                    };
-                    // 再次检查：异步拉取期间可能已开始新的流式更新
-                    if s.messages
-                        .iter()
-                        .any(|m| m.state.as_deref() == Some("loading"))
-                    {
-                        return;
-                    }
-                    let still = s
-                        .server_conversation_id
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|x| !x.is_empty());
-                    if still != Some(cid.as_str()) {
-                        return;
-                    }
-                    if session_hydrate_nonce.get_untracked() != nonce_at_start {
-                        return;
-                    }
-                    let local_users = count_user_role_bubbles(&s.messages);
-                    let hydrated_users = count_user_role_bubbles(&msgs);
-                    // 服务端返回空快照而本地仍有气泡：常见于 404/空库误命中，勿清空。
-                    if !s.messages.is_empty() && msgs.is_empty() {
-                        return;
-                    }
-                    // serve 重启后会话存储与浏览器 localStorage 脱节：服务端可能只持久化新轮次，
-                    // 用户轮次少于本地 —— 整表替换会抹掉重启前仅存在于客户端的历史气泡。
-                    if local_users > 0 && hydrated_users < local_users {
-                        return;
-                    }
-                    s.messages = msgs;
-                    s.server_revision = Some(resp.revision);
-                    applied_hydration = true;
-                    if let Some(role) = resp
-                        .active_agent_role
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|r| !r.is_empty())
-                    {
-                        selected_agent_role.set(Some(role.to_string()));
-                    }
-                    let user_count = s.messages.iter().filter(|m| m.role == "user").count();
-                    if user_count == 1 && i18n::is_default_session_title(&s.title) {
-                        if let Some(u) = s.messages.iter().find(|m| m.role == "user") {
-                            s.title = title_from_user_prompt(&u.text);
-                        }
-                    }
-                });
-                if !applied_hydration {
-                    return;
-                }
-                if session_hydrate_nonce.get_untracked() != nonce_at_start {
-                    return;
-                }
-                session_sync.update(|st| {
-                    if st.conversation_id.as_deref().map(str::trim) == Some(cid.as_str()) {
-                        st.apply_saved_revision(resp.revision);
-                    }
-                });
-            });
-        }
-    });
+    wire_session_hydration(
+        initialized,
+        web_ui_config_loaded,
+        chat_session,
+        locale,
+        selected_agent_role,
+    );
 
     Effect::new(move |_| {
         if !initialized.get() {
@@ -491,15 +394,7 @@ pub fn App() -> impl IntoView {
         llm_settings_feedback.set(None);
     });
 
-    let refresh_workspace = make_refresh_workspace(
-        workspace_loading,
-        workspace_err,
-        workspace_path_draft,
-        workspace_data,
-        workspace_subtree_expanded,
-        workspace_subtree_cache,
-        workspace_subtree_loading,
-    );
+    let refresh_workspace = make_refresh_workspace(workspace_panel);
 
     wire_changelist_fetch_effects(
         session_sync,
@@ -581,14 +476,10 @@ pub fn App() -> impl IntoView {
 
     wire_session_switch_clears_chat_state(
         initialized,
-        sessions,
-        active_id,
+        chat_session,
         draft,
         pending_images,
         pending_clarification,
-        session_sync,
-        stream_job_id,
-        stream_last_event_seq,
         expanded_long_assistant_ids,
     );
 
@@ -619,55 +510,21 @@ pub fn App() -> impl IntoView {
 
     wire_focus_message_after_nav(focus_message_id_after_nav);
 
-    let insert_workspace_file_ref: Arc<dyn Fn(String) + Send + Sync> = Arc::new({
-        let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
-        let draft = draft;
-        let status_err = status_err;
-        let locale = locale;
-        let composer_input_ref = composer_input_ref.clone();
-        move |rel: String| {
-            if rel.chars().any(|c| c.is_whitespace()) {
-                status_err.set(Some(
-                    i18n::composer_ws_path_whitespace_err(locale.get_untracked()).to_string(),
-                ));
-                return;
-            }
-            let token = format!("@{rel}");
-            let mut guard = composer_draft_buffer.lock().unwrap();
-            let needs_space = guard
-                .chars()
-                .next_back()
-                .is_some_and(|c| !c.is_whitespace());
-            if needs_space {
-                guard.push(' ');
-            }
-            guard.push_str(&token);
-            guard.push(' ');
-            let next = guard.clone();
-            drop(guard);
-            draft.set(next.clone());
-            status_err.set(None);
-            let cref = composer_input_ref.clone();
-            spawn_local(async move {
-                TimeoutFuture::new(0).await;
-                if let Some(el) = cref.get() {
-                    let _ = el.focus();
-                }
-            });
-        }
-    });
+    let insert_workspace_file_ref: Arc<dyn Fn(String) + Send + Sync> =
+        make_insert_workspace_path_into_composer(
+            Arc::clone(&composer_draft_buffer),
+            draft,
+            status_err,
+            locale,
+            composer_input_ref.clone(),
+        );
     let insert_workspace_file_ref_sv = StoredValue::new(Arc::clone(&insert_workspace_file_ref));
 
     let chat_wires = wire_chat_composer_streams(
         initialized,
-        sessions,
+        chat_session,
         locale,
-        active_id,
         draft,
-        session_hydrate_nonce,
-        session_sync,
-        stream_job_id,
-        stream_last_event_seq,
         selected_agent_role,
         status_busy,
         status_err,
@@ -859,16 +716,7 @@ pub fn App() -> impl IntoView {
                         view_menu_open,
                         status_bar_visible,
                         settings_modal,
-                        workspace_data,
-                        workspace_subtree_expanded,
-                        workspace_subtree_cache,
-                        workspace_subtree_loading,
-                        workspace_err,
-                        workspace_loading,
-                        workspace_path_draft,
-                        workspace_set_err,
-                        workspace_set_busy,
-                        workspace_pick_busy,
+                        workspace_panel,
                         tasks_data,
                         tasks_err,
                         tasks_loading,
