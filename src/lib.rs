@@ -1,7 +1,7 @@
 //! CrabMate 库：OpenAI 兼容多供应商 LLM、Agent 主循环、HTTP 服务、工具与工作流。
 //! 二进制入口见 `src/main.rs` 的 [`run`] 包装。
 //!
-//! 日志由 `log` + `env_logger` 处理；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。
+//! 日志由 **`tracing`** + **`tracing-subscriber`** 处理，**`tracing-log`** 桥接既有 `log::` 调用；`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。设 **`AGENT_LOG_JSON=1`** 时输出 JSON 行（便于 `jq` / 日志平台）。
 
 // `web/openapi.rs` 中 `serde_json::json!` 体量较大，默认递归深度不足会无法编译。
 #![recursion_limit = "512"]
@@ -30,6 +30,7 @@ mod llm;
 mod long_term_memory;
 mod long_term_memory_store;
 mod mcp;
+mod observability;
 mod path_workspace;
 mod project_dependency_brief;
 mod project_profile;
@@ -55,7 +56,6 @@ mod web_static_dir;
 mod workspace_changelist;
 mod workspace_fs;
 
-use config::cli::init_logging;
 pub use config::cli::{
     ChatCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli,
     normalize_legacy_argv, parse_args, parse_args_from_argv, root_clap_command_for_man_page,
@@ -68,6 +68,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tracing::Instrument;
 use types::Message;
 
 /// `crabmate models` / `crabmate probe`：`bearer` 时仍要求进程环境变量 **`API_KEY`** 非空。
@@ -132,6 +133,8 @@ pub struct RunAgentTurnParams<'a> {
     pub read_file_turn_cache: Option<std::sync::Arc<ReadFileTurnCache>>,
     /// 多角色工作台：本回合允许的工具名；`None` 表示不额外限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+    /// Web `/chat*`：与 **`x-stream-job-id`** / SSE **`sse_capabilities.job_id`** 对齐的结构化日志根 span；CLI 等为 `None`。
+    pub tracing_chat_turn: Option<Arc<observability::TracingChatTurn>>,
 }
 
 impl<'a> RunAgentTurnParams<'a> {
@@ -151,6 +154,7 @@ impl<'a> RunAgentTurnParams<'a> {
         temperature_override: Option<f32>,
         seed_override: types::LlmSeedOverride,
         long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+        job_id: u64,
         conversation_id: &str,
         out: &'a mpsc::Sender<String>,
         turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
@@ -178,6 +182,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory_scope_id: Some(conversation_id.to_string()),
             read_file_turn_cache: None,
             turn_allowed_tool_names,
+            tracing_chat_turn: Some(observability::TracingChatTurn::new(job_id, conversation_id)),
         }
     }
 
@@ -195,6 +200,7 @@ impl<'a> RunAgentTurnParams<'a> {
         temperature_override: Option<f32>,
         seed_override: types::LlmSeedOverride,
         long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
+        job_id: u64,
         conversation_id: &str,
         turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     ) -> Self {
@@ -221,6 +227,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory_scope_id: Some(conversation_id.to_string()),
             read_file_turn_cache: None,
             turn_allowed_tool_names,
+            tracing_chat_turn: Some(observability::TracingChatTurn::new(job_id, conversation_id)),
         }
     }
 
@@ -262,6 +269,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory_scope_id,
             read_file_turn_cache: None,
             turn_allowed_tool_names,
+            tracing_chat_turn: None,
         }
     }
 
@@ -298,6 +306,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory_scope_id: None,
             read_file_turn_cache: None,
             turn_allowed_tool_names: None,
+            tracing_chat_turn: None,
         }
     }
 }
@@ -340,6 +349,7 @@ pub async fn run_agent_turn<'a>(
         long_term_memory_scope_id,
         read_file_turn_cache,
         turn_allowed_tool_names,
+        tracing_chat_turn,
     } = p;
     let llm_backend: &(dyn llm::ChatCompletionsBackend + 'static) = match llm_backend {
         Some(b) => b,
@@ -434,15 +444,24 @@ pub async fn run_agent_turn<'a>(
         request_chrome_trace: request_chrome_trace.clone(),
         step_executor_constraint: None,
         turn_allowed_tool_names: turn_allowed_tool_names.clone(),
+        tracing_chat_turn: tracing_chat_turn.clone(),
     };
 
-    if let Some(t) = request_chrome_trace {
-        crate::request_chrome_trace::with_turn_trace(t, wall_ms, async {
-            agent::agent_turn::run_agent_turn_common(&mut loop_params).await
-        })
-        .await
-    } else {
-        agent::agent_turn::run_agent_turn_common(&mut loop_params).await
+    let trace_span = loop_params
+        .tracing_chat_turn
+        .as_ref()
+        .map(|t| t.span.clone());
+    let run_common = agent::agent_turn::run_agent_turn_common(&mut loop_params);
+    match (trace_span, request_chrome_trace) {
+        (Some(span), Some(t)) => {
+            crate::request_chrome_trace::with_turn_trace(t, wall_ms, run_common.instrument(span))
+                .await
+        }
+        (Some(span), None) => run_common.instrument(span).await,
+        (None, Some(t)) => {
+            crate::request_chrome_trace::with_turn_trace(t, wall_ms, run_common).await
+        }
+        (None, None) => run_common.await,
     }
 }
 
@@ -470,8 +489,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tool_replay,
     } = parse_args()?;
 
-    // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_logging`）
-    init_logging(
+    // 非 Web `--serve` 的 CLI 默认不输出 info（仅 warn+），除非设置 RUST_LOG 或 `--log` 文件（见 `init_tracing_subscriber`）
+    observability::init_tracing_subscriber(
         log_file.as_deref().map(std::path::Path::new),
         serve_port.is_none(),
     )?;

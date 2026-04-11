@@ -52,6 +52,13 @@
 | `AGENT_WEB_DISABLE_MARKDOWN` | 设为 **`1`** / **`true`** / **`yes`** / **`on`** 时，CSR 通过 **`GET /web-ui`** 获知并**关闭**聊天气泡与变更集模态的 Markdown 渲染（纯文本 HTML 转义，便于调试）；**无**对应 TOML 字段，**须重启 `serve`** 生效。其它调试手段见 **`docs/DEBUG.md`**。 |
 | `AGENT_WEB_RAW_ASSISTANT_OUTPUT` | 设为真值时，CSR 通过 **`GET /web-ui`** 获知 **`apply_assistant_display_filters: false`**，助手消息按存储**原文**展示与导出（不剥 `agent_reply_plan`、不拆内联思维链标记等）；**同时**允许分阶段规划的无工具规划轮向 Web **流式下发**原文。**未**设置时（默认）：该规划轮若解析为 **`no_task: true`** 则**整轮**不下发至浏览器 SSE，否则**仅**不下发信封 `assistant_answer_phase` 之前的流式增量（与 CSR 过滤语义对齐）。**无** TOML 字段，**须重启 `serve`**。与上项独立；详见 **`docs/DEBUG.md`** §1。 |
 
+### 日志与 tracing
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `RUST_LOG` | 标准 **`tracing-subscriber` `EnvFilter`** 语法；未设置时由 CLI 入口按子命令给默认过滤器（与历史 **`env_logger`** 默认一致），见 **`docs/DEBUG.md`**。 |
+| `AGENT_LOG_JSON` | 为 **`1`** / **`true`** / **`yes`** / **`on`** 时，进程日志输出 **JSON 行**（便于 `jq` 与日志平台）；默认人类可读紧凑格式。**须重启进程**生效。 |
+
 ### 工作区与 Cursor 式规则
 
 | 环境变量 | 说明 |

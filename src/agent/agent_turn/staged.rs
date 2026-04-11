@@ -652,6 +652,7 @@ where
                         turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
                         long_term_memory: p.long_term_memory.clone(),
                         long_term_memory_scope_id: p.long_term_memory_scope_id.clone(),
+                        tracing_chat_turn: p.tracing_chat_turn.clone(),
                     },
                 )
                 .await;
@@ -804,6 +805,7 @@ where
                         turn_allow: p.turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
                         long_term_memory: p.long_term_memory.clone(),
                         long_term_memory_scope_id: p.long_term_memory_scope_id.clone(),
+                        tracing_chat_turn: p.tracing_chat_turn.clone(),
                     },
                 )
                 .await;
