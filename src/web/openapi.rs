@@ -558,7 +558,7 @@ pub fn build_openapi_spec() -> Value {
                         },
                         "apply_assistant_display_filters": {
                             "type": "boolean",
-                            "description": "为 false 时不对助手消息做展示过滤（agent_reply_plan 剥离、内联思维链拆分等），且分阶段无工具规划轮可向浏览器 SSE 流式下发原文；为 true（默认）时对该轮做门控：规划 JSON 为 no_task 则整轮不下发，否则仅不下发 assistant_answer_phase 信封之前的流式增量。由环境变量 AGENT_WEB_RAW_ASSISTANT_OUTPUT 控制"
+                            "description": "为 false 时不对助手消息做展示过滤（agent_reply_plan 剥离、内联思维链拆分等），且分阶段无工具规划轮可向浏览器 SSE 流式下发原文；为 true（默认）时对该轮做门控：解析自正文+思维链的规划 JSON 为 no_task 则整轮 SSE 不下发且不写入会话 assistant 列表，否则仅不下发 assistant_answer_phase 信封之前的流式增量。由环境变量 AGENT_WEB_RAW_ASSISTANT_OUTPUT 控制"
                         }
                     }
                 },

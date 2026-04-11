@@ -191,7 +191,7 @@ fn looks_like_incomplete_agent_reply_plan_whole_json(t: &str) -> bool {
     t.contains("\"type\"") && t.contains("\"version\"") && t.contains("\"steps\"")
 }
 
-/// Web 气泡眉「规划轮」标记：分阶段规划模型产出在 `text` / `reasoning_text` 中含 `agent_reply_plan` JSON（含流式不完整前缀）。
+/// Web 气泡眉「规划轮」标记：分阶段规划模型产出在 `text` / `reasoning_text` 中含 `agent_reply_plan`（含流式不完整前缀）。
 pub(crate) fn stored_message_is_staged_planner_round(m: &StoredMessage) -> bool {
     if m.role != "assistant" || m.is_tool {
         return false;

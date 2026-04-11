@@ -223,6 +223,30 @@ pub fn parse_agent_reply_plan_v1(content: &str) -> Result<AgentReplyPlanV1, Plan
     Err(PlanArtifactError::NotFound)
 }
 
+/// 合并 `reasoning_details`→`reasoning_content` 后与正文拼接，供 [`parse_agent_reply_plan_v1`] 使用（网关常把 `agent_reply_plan` 放在思维链字段）。
+pub(crate) fn assistant_merged_text_for_plan_artifact_parse(msg: &crate::types::Message) -> String {
+    let mut m = msg.clone();
+    crate::types::merge_reasoning_details_into_reasoning_content(&mut m);
+    let c = crate::types::message_content_as_str(&m.content).unwrap_or("");
+    let r = m.reasoning_content.as_deref().unwrap_or("");
+    let c = c.trim();
+    let r = r.trim();
+    match (r.is_empty(), c.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => c.to_string(),
+        (false, true) => r.to_string(),
+        (false, false) => format!("{r}\n\n{c}"),
+    }
+}
+
+/// 从助手消息（正文 + 思维链）解析 `agent_reply_plan` v1。
+pub fn parse_agent_reply_plan_v1_from_assistant_message(
+    msg: &crate::types::Message,
+) -> Result<AgentReplyPlanV1, PlanArtifactError> {
+    let merged = assistant_merged_text_for_plan_artifact_parse(msg);
+    parse_agent_reply_plan_v1(&merged)
+}
+
 #[allow(dead_code)] // `per_coord::content_has_plan` 等封装使用
 pub fn content_has_valid_agent_reply_plan_v1(content: &str) -> bool {
     parse_agent_reply_plan_v1(content).is_ok()
@@ -1037,6 +1061,22 @@ mod tests {
         let p = parse_agent_reply_plan_v1(s).unwrap();
         assert!(p.no_task);
         assert!(p.steps.is_empty());
+    }
+
+    #[test]
+    fn parse_agent_reply_plan_v1_from_assistant_message_merges_reasoning_field() {
+        let j = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#;
+        let msg = crate::types::Message {
+            role: "assistant".into(),
+            content: Some(crate::types::MessageContent::Text(String::new())),
+            reasoning_content: Some(j.into()),
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        let p = parse_agent_reply_plan_v1_from_assistant_message(&msg).unwrap();
+        assert!(p.no_task);
     }
 
     #[test]
