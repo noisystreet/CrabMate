@@ -508,7 +508,7 @@ flowchart LR
 
 ### `frontend-leptos/src/i18n.rs`
 
-- **`Locale`**：**`zh-Hans`** / **`en`**；**`localStorage`** 键 **`crabmate-locale`**（与 **`app_prefs::LOCALE_KEY`** 一致）。设置弹窗可切换语言；**`<html lang>`** 由 **`App`** 内 **`Effect`** 同步。
+- **`Locale`**：**`zh-Hans`** / **`en`**；**`localStorage`** 键 **`crabmate-locale`**（与 **`app_prefs::LOCALE_KEY`** 一致）。设置弹窗可切换语言；**`<html lang>`** 由 **`app_shell_effects::wire_sync_locale_html_lang`** 同步。
 - 用户可见文案按模块集中为函数；新增/修改 UI 字符串时优先在此维护，便于后续接 ICU 或更多语言。
 
 ### `frontend-leptos/src/a11y.rs`
@@ -517,7 +517,8 @@ flowchart LR
 
 ### `frontend-leptos/src/app/`
 
-- **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、持久化偏好 **`Effect`**、主 `view!` 组合子视图；**`/status`、侧栏 `/tasks`** 的拉取闭包与「初始化后补拉 / 切到任务侧栏再拉」见 **`status_tasks_wiring`**。**全局 `Escape`**（在 **`input`/`textarea`/`contenteditable` 外**）按层级关闭侧栏会话菜单、查找栏、视图菜单、移动抽屉、变更集/设置/会话模态。与 **`GET /conversation/messages`** 对齐的会话水合见 **`session_hydrate::wire_session_hydration`**；**`ChatSessionSignals`**（见 **`chat_session_state`**）在侧栏、聊天列、会话管理模态、状态栏等处整包下传；**`StatusTasksSignals`**（见 **`status_tasks_state`**）供底栏与右栏任务区。流式发送、草稿同步、会话切换重置等见 **`chat_composer`**；跟底与侧栏跳转滚入见 **`chat_scroll`**；会话内查找匹配见 **`chat_find`**；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
+- **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、调用 **`app_shell_effects`** 与各子模块 **`wire_*`** 接线、主 `view!` 组合子视图；**`/status`、侧栏 `/tasks`** 的拉取闭包与「初始化后补拉 / 切到任务侧栏再拉」见 **`status_tasks_wiring`**。与 **`GET /conversation/messages`** 对齐的会话水合见 **`session_hydrate::wire_session_hydration`**；**`ChatSessionSignals`**（见 **`chat_session_state`**）在侧栏、聊天列、会话管理模态、状态栏等处整包下传；**`StatusTasksSignals`**（见 **`status_tasks_state`**）供底栏与右栏任务区。流式发送、草稿同步、会话切换重置等见 **`chat_composer`**；跟底与侧栏跳转滚入见 **`chat_scroll`**；会话内查找匹配见 **`chat_find`**；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
+- **`app_shell_effects.rs`**：**`ShellEscapeSignals`** 与壳级 **`wire_*`**：首启从 **`localStorage`** 加载会话、**`GET /web-ui`** 一次同步 Markdown / 助手过滤、会话列表写回、当前会话上下文字符估算、侧栏视图 / 底栏可见 / 代理角色 / 侧栏宽度、待审批会话切换时审批条展开态、主题与 **`data-theme`** / **`lang`** / **`data-bg-decor`**、打开设置时填充 LLM 草稿；**全局 `Escape`**（在 **`input`/`textarea`/`contenteditable` 外**）按层级关闭侧栏会话菜单、侧栏搜索、查找栏、视图菜单、移动抽屉、变更集/设置/会话模态（**`wire_escape_key_layered_dismiss`**）。
 - **`chat_session_state.rs`**（`frontend-leptos/src/`，**非**仅 `app/`）：**`ChatSessionSignals`**——会话列表、活动 id、**`SessionSyncState`**、水合 nonce、流式 job / SSE 序等 **`RwSignal`** 聚合（**`Clone`/`Copy`**）。置于 crate 根以便 **`session_modal_row`** 与 **`app/`** 共用，避免 `app` ↔ 根模块循环依赖。
 - **`session_hydrate.rs`**：**`wire_session_hydration`**：订阅水合 nonce，拉取 **`GET /conversation/messages`** 并与本地 **`ChatSession`** 对齐（用户轮次保护、**`session_sync.apply_saved_revision`** 等），从 **`mod.rs`** 拆出以隔离同步语义。
 - **`chat_composer.rs`**：草稿缓冲与 textarea 同步、**`send_chat_stream`** 回调编排（**`ChatStreamCallbackCtx`** 持有 **`ChatSessionSignals`**）、发送 / 停止 / 重试 / 截断再生、新会话；**`staged_plan_step_*`** 与 **`tool_result`** 写入消息时附带 **`timeline_scan`** 的 **`cm_tl`** JSON（**`StoredMessage.state`**，仅本机 UI）；**`pending_images`** 与 **`chat_column`** 内隐藏 file input 上传附图（最多 6 张预览），发送时写入 **`StoredMessage.image_urls`**。

@@ -52,7 +52,7 @@
 
 | 区域 | 职责 | 典型内容（现有或目标） |
 |------|------|------------------------|
-| **`app/`** | 应用壳：布局、路由级组合、全局快捷键、将子视图串起 | `mod.rs`、侧栏/主列/状态栏视图 |
+| **`app/`** | 应用壳：布局、路由级组合、全局快捷键、将子视图串起 | `mod.rs`、**`app_shell_effects`**（壳级 `wire_*` / `Escape`）、侧栏/主列/状态栏视图 |
 | **`app/chat_*`** | 聊天主路径：列表、输入、滚动、查找、流式接线 | `chat_column`、`chat_composer`、`chat_scroll`、`chat_find`；**`ChatSessionSignals`** 定义在 **`src/chat_session_state.rs`**（crate 根），供 **`app/`** 与 **`session_modal_row`** 共用 |
 | **`app/session_*` / 会话** | 会话列表 UI、列表模态、会话级水合 | `sidebar_nav`、`session_list_modal`、`session_hydrate` |
 | **`app/workspace_*`** | 工作区树与刷新 | **`workspace_panel_state`**（**`WorkspacePanelSignals`**）+ **`workspace_panel`**（**`make_refresh_workspace`** / **`make_insert_workspace_path_into_composer`**）；与根目录 **`workspace_shell`** 协同 |
@@ -69,7 +69,7 @@
 
 - **全局壳级**：主题、语言、侧栏宽度、`SidePanelView`、仅与「壳」相关的 `RwSignal` 可保留在 **`App`**。
 - **会话 + 流式**：已与 **`ChatSessionSignals`** 对齐；后续新增字段（如只读展示标志）应优先加在聚合体上，而非再增加平行的 6 个参数。
-- **模态与抽屉**：各自用独立 `RwSignal<bool>` 或小型结构；**关闭顺序**（Escape 层级）保持在 `App` 或单一 `shell` 模块中集中处理，避免多处重复监听。
+- **模态与抽屉**：各自用独立 `RwSignal<bool>` 或小型结构；**关闭顺序**（Escape 层级）由 **`app_shell_effects::wire_escape_key_layered_dismiss`**（或同类集中模块）处理，避免多处重复监听。
 - **Context**：若未来子树加深，可对「只读下传」的句柄使用 Leptos **Context** 减少 props 钻孔；**慎用**全局隐式 context，以免调试困难。
 
 ## 7. 副作用与 `wire_*` 约定

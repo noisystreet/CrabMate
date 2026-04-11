@@ -1,7 +1,8 @@
-//! 主界面：单根 `App`（导航、对话、侧栏、状态栏、模态框与偏好副作用）。
+//! 主界面：单根 `App`（导航、对话、侧栏、状态栏、模态框与偏好接线）。
 //!
-//! 聊天滚动、查找、输入/流式、Workspace 刷新、`/status` 与任务拉取、变更集拉取等副作用拆至子模块，见 `chat_scroll`、`chat_find`、`chat_composer`、`workspace_panel`（含工作区树 → composer 插入）、`workspace_panel_state`、`status_tasks_wiring`、`changelist_modal`。
+//! 首启会话加载、`localStorage` / DOM 偏好同步、全局 `Escape` 等壳级副作用见 `app_shell_effects`。聊天滚动、查找、输入/流式、Workspace 刷新、`/status` 与任务拉取、变更集拉取等见 `chat_scroll`、`chat_find`、`chat_composer`、`workspace_panel`（含工作区树 → composer 插入）、`workspace_panel_state`、`status_tasks_wiring`、`changelist_modal`。
 
+mod app_shell_effects;
 mod approval_bar;
 mod changelist_modal;
 mod chat_column;
@@ -54,6 +55,15 @@ use workspace_panel::{
 };
 use workspace_panel_state::WorkspacePanelSignals;
 
+use app_shell_effects::{
+    ShellEscapeSignals, wire_approval_expanded_follows_pending, wire_context_used_estimate,
+    wire_escape_key_layered_dismiss, wire_initial_sessions_from_storage, wire_persist_agent_role,
+    wire_persist_chat_sessions, wire_persist_side_panel_view_flags, wire_persist_side_width,
+    wire_persist_status_bar_visible, wire_settings_modal_llm_drafts_on_open,
+    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
+    wire_sync_theme_to_storage_and_dom, wire_web_ui_config_once_after_init,
+};
+
 use crate::chat_session_state::ChatSessionSignals;
 use session_hydrate::wire_session_hydration;
 
@@ -62,27 +72,20 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crate::api::{
-    StatusData, TasksData, WorkspaceData, client_llm_storage_has_api_key, fetch_web_ui_config,
-    load_client_llm_text_fields_from_storage,
-};
+use crate::api::{StatusData, TasksData, WorkspaceData};
 use crate::app_prefs::{
-    AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, SidePanelView,
-    TASKS_VISIBLE_KEY, THEME_KEY, WORKSPACE_VISIBLE_KEY, WORKSPACE_WIDTH_KEY, load_bool_key,
-    load_f64_key, load_side_panel_view, local_storage, store_bool_key, store_f64_key,
-    store_side_panel_view,
+    AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, THEME_KEY,
+    WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key, load_side_panel_view, local_storage,
 };
 use crate::clarification_form::PendingClarificationForm;
-use crate::i18n::{self, load_locale_from_storage};
-use crate::session_ops::{SessionContextAnchor, estimate_context_chars_for_active_session};
+use crate::i18n::load_locale_from_storage;
+use crate::session_ops::SessionContextAnchor;
 use crate::session_sync::SessionSyncState;
-use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
+use crate::storage::ChatSession;
 
 use leptos::html::{Div, Textarea};
 use leptos::prelude::*;
-use leptos::task::spawn_local;
-use leptos_dom::helpers::{WindowListenerHandle, window_event_listener};
-use wasm_bindgen::JsCast;
+use leptos_dom::helpers::WindowListenerHandle;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -230,45 +233,13 @@ pub fn App() -> impl IntoView {
     let apply_assistant_display_filters = RwSignal::new(true);
     let web_ui_config_loaded = RwSignal::new(false);
 
-    Effect::new(move |_| {
-        if initialized.get() {
-            return;
-        }
-        let (list, aid) = load_sessions();
-        let (list, def_id) = ensure_at_least_one(
-            list,
-            i18n::default_session_title(locale.get_untracked()).to_string(),
-        );
-        let pick = aid
-            .filter(|id| list.iter().any(|s| s.id == *id))
-            .unwrap_or(def_id);
-        let d = list
-            .iter()
-            .find(|s| s.id == pick)
-            .map(|s| s.draft.clone())
-            .unwrap_or_default();
-        sessions.set(list);
-        active_id.set(pick);
-        draft.set(d);
-        initialized.set(true);
-    });
-
-    Effect::new({
-        let markdown_render = markdown_render;
-        let apply_assistant_display_filters = apply_assistant_display_filters;
-        move |_| {
-            if !initialized.get() || web_ui_config_loaded.get() {
-                return;
-            }
-            web_ui_config_loaded.set(true);
-            spawn_local(async move {
-                if let Ok(c) = fetch_web_ui_config().await {
-                    markdown_render.set(c.markdown_render);
-                    apply_assistant_display_filters.set(c.apply_assistant_display_filters);
-                }
-            });
-        }
-    });
+    wire_initial_sessions_from_storage(initialized, sessions, active_id, draft, locale);
+    wire_web_ui_config_once_after_init(
+        initialized,
+        web_ui_config_loaded,
+        markdown_render,
+        apply_assistant_display_filters,
+    );
 
     wire_session_hydration(
         initialized,
@@ -278,135 +249,44 @@ pub fn App() -> impl IntoView {
         selected_agent_role,
     );
 
-    Effect::new(move |_| {
-        if !initialized.get() {
-            return;
-        }
-        let list = sessions.get();
-        let aid = active_id.get();
-        if aid.is_empty() {
-            return;
-        }
-        save_sessions(&list, Some(&aid));
-    });
-
-    Effect::new({
-        let sessions = sessions;
-        let active_id = active_id;
-        let draft = draft;
-        move |_| {
-            if !initialized.get() {
-                return;
-            }
-            let n = estimate_context_chars_for_active_session(
-                &sessions.get(),
-                active_id.get().as_str(),
-                draft.get().as_str(),
-            );
-            context_used_estimate.set(n);
-        }
-    });
-
-    Effect::new(move |_| {
-        let v = side_panel_view.get();
-        store_side_panel_view(v);
-        store_bool_key(WORKSPACE_VISIBLE_KEY, matches!(v, SidePanelView::Workspace));
-        store_bool_key(TASKS_VISIBLE_KEY, matches!(v, SidePanelView::Tasks));
-    });
-    Effect::new(move |_| {
-        store_bool_key(STATUS_BAR_VISIBLE_KEY, status_bar_visible.get());
-    });
-    Effect::new(move |_| {
-        if let Some(st) = local_storage() {
-            match selected_agent_role
-                .get()
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                Some(role) => {
-                    let _ = st.set_item(AGENT_ROLE_KEY, role);
-                }
-                None => {
-                    let _ = st.remove_item(AGENT_ROLE_KEY);
-                }
-            }
-        }
-    });
-    Effect::new(move |_| {
-        store_f64_key(WORKSPACE_WIDTH_KEY, side_width.get());
-    });
-
-    Effect::new(move |_| {
-        if let Some((sid, _, _)) = pending_approval.get() {
-            if last_approval_sid.get_untracked() != sid {
-                last_approval_sid.set(sid);
-                approval_expanded.set(false);
-            }
-        } else {
-            last_approval_sid.set(String::new());
-        }
-    });
-
-    Effect::new(move |_| {
-        let t = theme.get();
-        if let Some(st) = local_storage() {
-            let _ = st.set_item(THEME_KEY, &t);
-        }
-        if let Some(doc) = web_sys::window().and_then(|w| w.document())
-            && let Some(root) = doc.document_element()
-        {
-            let _ = root.set_attribute("data-theme", &t);
-        }
-    });
-
-    Effect::new(move |_| {
-        let lang = locale.get().html_lang();
-        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-            let _ = doc
-                .document_element()
-                .map(|root| root.set_attribute("lang", lang));
-        }
-    });
-
-    Effect::new(move |_| {
-        store_bool_key(BG_DECOR_KEY, bg_decor.get());
-        if let Some(doc) = web_sys::window().and_then(|w| w.document())
-            && let Some(root) = doc.document_element()
-        {
-            if bg_decor.get() {
-                let _ = root.remove_attribute("data-bg-decor");
-            } else {
-                let _ = root.set_attribute("data-bg-decor", "plain");
-            }
-        }
-    });
-
-    Effect::new(move |_| {
-        if !settings_modal.get() {
-            return;
-        }
-        let (stored_base, stored_model) = load_client_llm_text_fields_from_storage();
-        let sd = status_tasks.status_data.get_untracked();
-        let base = if stored_base.trim().is_empty() {
-            sd.as_ref().map(|d| d.api_base.clone()).unwrap_or_default()
-        } else {
-            stored_base
-        };
-        let model = if stored_model.trim().is_empty() {
-            sd.as_ref().map(|d| d.model.clone()).unwrap_or_default()
-        } else {
-            stored_model
-        };
-        llm_api_base_draft.set(base.clone());
-        llm_api_base_preset_select.set(
-            crate::client_llm_presets::api_base_select_value_for_draft(base.as_str()).to_string(),
-        );
-        llm_model_draft.set(model);
-        llm_api_key_draft.set(String::new());
-        llm_has_saved_key.set(client_llm_storage_has_api_key());
-        llm_settings_feedback.set(None);
-    });
+    wire_persist_chat_sessions(initialized, sessions, active_id);
+    wire_context_used_estimate(
+        initialized,
+        sessions,
+        active_id,
+        draft,
+        context_used_estimate,
+    );
+    wire_persist_side_panel_view_flags(side_panel_view);
+    wire_persist_status_bar_visible(status_bar_visible);
+    wire_persist_agent_role(selected_agent_role);
+    wire_persist_side_width(side_width);
+    wire_approval_expanded_follows_pending(pending_approval, last_approval_sid, approval_expanded);
+    wire_sync_theme_to_storage_and_dom(theme);
+    wire_sync_locale_html_lang(locale);
+    wire_sync_bg_decor_to_storage_and_dom(bg_decor);
+    wire_settings_modal_llm_drafts_on_open(
+        settings_modal,
+        status_tasks,
+        llm_api_base_draft,
+        llm_api_base_preset_select,
+        llm_model_draft,
+        llm_api_key_draft,
+        llm_has_saved_key,
+        llm_settings_feedback,
+    );
+    let shell_escape = ShellEscapeSignals {
+        session_context_menu,
+        sidebar_rail_ctx_menu,
+        chat_find_panel_open,
+        sidebar_search_panel_open,
+        view_menu_open,
+        mobile_nav_open,
+        changelist_modal_open,
+        settings_modal,
+        session_modal,
+    };
+    wire_escape_key_layered_dismiss(shell_escape);
 
     let refresh_workspace = make_refresh_workspace(workspace_panel);
 
@@ -517,66 +397,6 @@ pub fn App() -> impl IntoView {
         let inner = chat_wires.new_session.clone();
         move || inner()
     };
-
-    Effect::new(move |_| {
-        let h = window_event_listener(leptos::ev::keydown, move |ev: web_sys::KeyboardEvent| {
-            if ev.key() != "Escape" {
-                return;
-            }
-            if let Some(t) = ev.target() {
-                if let Ok(he) = t.dyn_into::<web_sys::HtmlElement>() {
-                    let tag = he.tag_name();
-                    if tag.eq_ignore_ascii_case("TEXTAREA")
-                        || tag.eq_ignore_ascii_case("INPUT")
-                        || tag.eq_ignore_ascii_case("SELECT")
-                        || tag.eq_ignore_ascii_case("OPTION")
-                    {
-                        return;
-                    }
-                    if he.is_content_editable() {
-                        return;
-                    }
-                }
-            }
-            ev.prevent_default();
-            if session_context_menu.get_untracked().is_some() {
-                session_context_menu.set(None);
-                return;
-            }
-            if sidebar_rail_ctx_menu.get_untracked().is_some() {
-                sidebar_rail_ctx_menu.set(None);
-                return;
-            }
-            if chat_find_panel_open.get_untracked() {
-                chat_find_panel_open.set(false);
-                return;
-            }
-            if sidebar_search_panel_open.get_untracked() {
-                sidebar_search_panel_open.set(false);
-                return;
-            }
-            if view_menu_open.get_untracked() {
-                view_menu_open.set(false);
-                return;
-            }
-            if mobile_nav_open.get_untracked() {
-                mobile_nav_open.set(false);
-                return;
-            }
-            if changelist_modal_open.get_untracked() {
-                changelist_modal_open.set(false);
-                return;
-            }
-            if settings_modal.get_untracked() {
-                settings_modal.set(false);
-                return;
-            }
-            if session_modal.get_untracked() {
-                session_modal.set(false);
-            }
-        });
-        on_cleanup(move || h.remove());
-    });
 
     view! {
         <div class="app-root app-shell-ds">
