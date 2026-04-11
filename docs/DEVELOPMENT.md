@@ -72,6 +72,33 @@ flowchart TB
   TR --> WF
 ```
 
+### `agent_turn` 与 `llm`：唯一入口与禁止事项
+
+本节固化**维护约定**（与 `src/llm/mod.rs` 模块注释一致）：**单次** OpenAI 兼容 **`chat/completions`** 的传输、解析与退避重试集中在 **`llm`**；**多步编排**（何时再调模型、消息如何变长、工具与 PER）在 **`agent`**。
+
+#### 调用模型的唯一入口（生产路径）
+
+| 入口 | 职责 |
+|------|------|
+| **`llm::complete_chat_retrying`** | **唯一**应对外发起一轮 `chat/completions` 并带 **`CompleteChatRetryingParams`**（含 **`ChatCompletionsBackend`**、`no_stream`、`plain_terminal_stream`、`out` 等）。内部经 **`ChatCompletionsBackend::stream_chat`** → 默认 **`llm::api::stream_chat`**；**指数退避重试**仅对 **`LlmCallError`** 中 **`retryable`** 为真者（如 **408/429/5xx** 及部分传输错误；**401/400** 等立即失败）。**DSML 物化**等在 **`complete_chat_retrying` 成功返回之后**（见 `materialize_deepseek_dsml_tool_calls`），不在 `stream_chat` 内。 |
+| **`llm::tool_chat_request` / `llm::no_tools_chat_request`**（及同类） | 拼装 **`ChatRequest`** 的**惯用构造**（`tools`、`tool_choice`、采样字段等）；**不**发起 HTTP；由 **`agent`** 填入 `messages` 后交给 **`complete_chat_retrying`**。 |
+
+**`agent` 侧当前直接调用 `complete_chat_retrying` 的文件**（新增调用点时应保持同一模式）：**`agent/context_window.rs`**（可选上下文摘要）、**`agent/agent_turn/plan_call.rs`**（主循环 **P** 步）、**`agent/agent_turn/staged.rs`**（分阶段 / 逻辑双 agent 等无工具或带工具轮次）、**`agent/per_plan_semantic_check.rs`**（终答规划侧向一致性 **LLM**）。其它子模块（如 **`per_coord`**、**`outer_loop`**）通过上述路径**间接**调模型，避免再开 HTTP。
+
+#### 禁止事项（应避免的反模式）
+
+- **`agent` 下任意模块**：**禁止**直接调用 **`llm::api::stream_chat`** 或 **`reqwest`** 自写 `POST …/chat/completions`（**测试**与 **`llm` 本模块**除外）。否则重试、错误分类、`out`/终端渲染会与 **`complete_chat_retrying`** 分叉。
+- **`llm`**：**不**持有「第几步规划 / 是否该重写 / 工具是否已执行」等 **Agent 回合状态**；**不**调度 **`tool_registry`**。供应商出站形状（温度、`thinking`、是否保留 tool 轮 **`reasoning_content`**）走 **`llm::vendor::LlmVendorAdapter`**（**`llm_vendor_adapter`** 等），由构造请求或兜底 normalize 路径统一应用。
+- **会话侧 `messages` 的语义变换**（压缩 tool、裁剪条数/字符、注入分隔线/长期记忆 strip 等）：在 **`agent::message_pipeline`** / **`agent::context_window`**，**不**塞进 **`llm::api`**（`stream_chat` 仅在 HTTP 前对请求体做 **`conversation_messages_to_vendor_body`** 等**出站兜底**，与管道对齐）。
+
+#### 与 P/R/E 的对应关系（只读心智模型）
+
+- **P**：一次 **`complete_chat_retrying`**（常见入口 **`per_plan_call_model_retrying`** → **`plan_call`**）。
+- **R**：**`per_reflect_after_assistant`**；其中 **`StopTurnPendingPlanConsistencyLlm`** 再进入 **`per_plan_semantic_check::evaluate_plan_consistency_with_recent_tools_llm`** → 又一次 **`complete_chat_retrying`**（无工具侧向调用）。
+- **E**：**`per_execute_tools_*`**，**不**经 **`llm`**。
+
+后续若将多处 **`CompleteChatRetryingParams` 拼装**收敛为单一 **`AgentLlmCall` 式封装**，仍须**经 **`complete_chat_retrying`** 出口**，不改变上表「唯一入口」。
+
 ### Web 流式对话数据流（概要）
 
 1. 客户端 `POST /chat/stream` → **`ChatJobQueue`** 限流排队。  

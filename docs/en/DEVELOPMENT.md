@@ -72,6 +72,33 @@ flowchart TB
   TR --> WF
 ```
 
+### `agent_turn` vs `llm`: single entrypoint and anti-patterns
+
+This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one** OpenAI-compatible **`chat/completions`** round-trip—transport, parsing, and backoff—lives in **`llm`**; **multi-step orchestration** (when to call the model again, how `messages` evolve, tools, PER) lives in **`agent`**.
+
+#### Single entrypoint for model calls (production)
+
+| Entry | Role |
+|-------|------|
+| **`llm::complete_chat_retrying`** | **Only** supported way to perform a `chat/completions` round with **`CompleteChatRetryingParams`** ( **`ChatCompletionsBackend`**, `no_stream`, `plain_terminal_stream`, `out`, …). Internally **`ChatCompletionsBackend::stream_chat`** → default **`llm::api::stream_chat`**. **Exponential backoff** applies only when **`LlmCallError`** is **`retryable`** (e.g. **408/429/5xx** and some transport errors; **401/400** fail fast). **DSML materialization** runs **after** a successful return from **`complete_chat_retrying`**, not inside `stream_chat`. |
+| **`llm::tool_chat_request` / `llm::no_tools_chat_request`** (and similar) | **Request builders** for **`ChatRequest`** (`tools`, `tool_choice`, sampling); they **do not** perform HTTP. **`agent`** fills `messages` then calls **`complete_chat_retrying`**. |
+
+**`agent` files that call `complete_chat_retrying` today** (keep this pattern when adding calls): **`agent/context_window.rs`** (optional context summary), **`agent/agent_turn/plan_call.rs`** (main-loop **P**), **`agent/agent_turn/staged.rs`** (staged / logical dual-agent rounds), **`agent/per_plan_semantic_check.rs`** (side LLM for final-plan consistency). Other modules (e.g. **`per_coord`**, **`outer_loop`**) reach the model **through** these paths—do not open a parallel HTTP stack.
+
+#### Anti-patterns (do not do)
+
+- Under **`agent/`**: **do not** call **`llm::api::stream_chat`** or **`reqwest`** for `chat/completions` directly (**tests** and **`llm` itself** excepted). You would fork retry semantics, error typing, and `out`/terminal rendering from **`complete_chat_retrying`**.
+- **`llm`**: **no** ownership of agent-round state (“which plan step”, “rewrite count”, “tools executed”); **no** **`tool_registry`** dispatch. Vendor shaping (temperature, `thinking`, preserving **`reasoning_content`** on tool rounds) stays in **`llm::vendor`** (**`llm_vendor_adapter`**, etc.) and request construction / normalize paths.
+- **Session-side `messages` transforms** (tool compression, trim, injection strip, …): **`agent::message_pipeline`** / **`agent::context_window`**—not **`llm::api`** (`stream_chat` may still run **`conversation_messages_to_vendor_body`** as a **last-mile** normalize before HTTP).
+
+#### P/R/E mapping (read-only mental model)
+
+- **P**: one **`complete_chat_retrying`** (usually **`per_plan_call_model_retrying`** → **`plan_call`**).
+- **R**: **`per_reflect_after_assistant`**; **`StopTurnPendingPlanConsistencyLlm`** → **`per_plan_semantic_check::evaluate_plan_consistency_with_recent_tools_llm`** → another **`complete_chat_retrying`** (no tools).
+- **E**: **`per_execute_tools_*`**, not **`llm`**.
+
+If we later introduce a thin **`AgentLlmCall`** helper to dedupe **`CompleteChatRetryingParams`**, it must still **delegate to `complete_chat_retrying`**—the table above stays the single HTTP entrypoint.
+
 ### Web streaming flow (summary)
 
 1. `POST /chat/stream` → **`ChatJobQueue`**.
