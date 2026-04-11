@@ -391,7 +391,8 @@ mod tests {
 
     #[test]
     fn fold_system_into_user_false_for_deepseek_default() {
-        let cfg = cfg_neutral_deepseek_base();
+        let mut cfg = cfg_neutral_deepseek_base();
+        cfg.model = "deepseek-chat".to_string();
         assert!(!super::fold_system_into_user_for_config(&cfg));
     }
 }
