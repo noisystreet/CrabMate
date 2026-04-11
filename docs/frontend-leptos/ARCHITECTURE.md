@@ -53,7 +53,7 @@
 | 区域 | 职责 | 典型内容（现有或目标） |
 |------|------|------------------------|
 | **`app/`** | 应用壳：布局、路由级组合、全局快捷键、将子视图串起 | `mod.rs`、**`app_shell_effects`**（壳级 `wire_*` / `Escape`）、侧栏/主列/状态栏视图 |
-| **`app/chat_*`** | 聊天主路径：列表、输入、滚动、查找、流式接线 | `chat_column`、`chat_composer`、`chat_scroll`、`chat_find`；**`ChatSessionSignals`** 定义在 **`src/chat_session_state.rs`**（crate 根），供 **`app/`** 与 **`session_modal_row`** 共用 |
+| **`app/chat/`** | 聊天主路径：列表、输入、滚动、查找、流式接线 | **`column`** / **`composer`** / **`scroll`** / **`find`** / **`find_bar`** / **`message_render`** / **`timeline`**（见 **`app/chat/mod.rs`** 再导出）；**`ChatSessionSignals`** 定义在 **`src/chat_session_state.rs`**（crate 根），供 **`app/`** 与 **`session_modal_row`** 共用 |
 | **`app/session_*` / 会话** | 会话列表 UI、列表模态、会话级水合 | `sidebar_nav`、`session_list_modal`、`session_hydrate` |
 | **`app/workspace_*`** | 工作区树与刷新 | **`workspace_panel_state`**（**`WorkspacePanelSignals`**）+ **`workspace_panel`**（**`make_refresh_workspace`** / **`make_insert_workspace_path_into_composer`**）；与根目录 **`workspace_shell`** 协同 |
 | **`app/status_tasks_*`** | `/status` 与侧栏任务 | **`status_tasks_state`**（**`StatusTasksSignals`**）+ **`status_tasks_wiring`**（拉取闭包与侧栏可见 **`Effect`**） |
@@ -62,7 +62,7 @@
 
 **可选的下一步演进**（非必须一次完成）：
 
-- 将 **`chat`** 相关 `wire_*` 与聚合信号进一步收到 **`app/chat/`** 子目录（或 `features/chat` 命名空间），使 `app/mod.rs` 只做「注入句柄 + 布局」。
+- 将 **`chat`** 相关 `wire_*` 与聚合信号进一步收到 **`app/chat/`** 子目录（或 `features/chat` 命名空间），使 `app/mod.rs` 只做「注入句柄 + 布局」。（**`app/chat/`** 已存在；后续可继续把 **`App`** 内聊天域 `RwSignal` 收到聚合类型以瘦身 `mod.rs`。）
 - **任务 + `/status`**：已用 **`StatusTasksSignals`** + **`status_tasks_wiring`**；工作区侧仍为 **`WorkspacePanelSignals`**（与旧「对称聚合」目标一致，分文件承载）。
 
 ## 6. 状态与上下文策略
@@ -90,7 +90,7 @@
 ------|------|------------------
 **A. 巩固聚合** | 新增长会话相关状态优先进入 **`ChatSessionSignals`**（或同类聚合），`App` 不再增加平行的会话 `RwSignal` | 新 PR 不扩大 `wire_chat_composer_streams` 参数列表
 **B. 壳与域分离** | `app/mod.rs` 仅保留布局组合 + 全局 `Effect`，会话/工作区/任务各自的 `Effect` 块可迁到对应子模块的 `wire_*` | `mod.rs` 行数持续下降或由脚本统计不再增长
-**C. 功能子目录** | `chat` 相关文件物理上归入 `app/chat/`（或等价命名），`mod` 再导出 | 目录与 `docs/DEVELOPMENT.md` 索引同步更新
+**C. 功能子目录** | `chat` 相关文件物理上归入 `app/chat/`（或等价命名），`mod` 再导出 | **已落地** `app/chat/`；`docs/DEVELOPMENT.md` 已同步 |
 **D. 端口清晰** | `api.rs` 保持最薄；如需 mock，对 `fetch_*` 层包一层 trait 或测试桩（按需） | 关键 `fetch` 在 `wasm-bindgen-test` 或集成测试可替换
 
 **注意**：每一阶段完成后应 **`cd frontend-leptos && cargo check --target wasm32-unknown-unknown`**，并与 [`docs/SSE_PROTOCOL.md`](../SSE_PROTOCOL.md) / 前端解析路径交叉检查。

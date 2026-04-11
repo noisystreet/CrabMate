@@ -11,7 +11,7 @@ use crate::session_search::{normalize_search_query, scroll_message_into_view};
 use crate::storage::ChatSession;
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn wire_chat_find_matches(
+pub(crate) fn wire_chat_find_matches(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     chat_find_query: RwSignal<String>,

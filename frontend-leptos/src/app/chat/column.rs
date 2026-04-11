@@ -10,12 +10,12 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
-use super::chat_message_render::{
+use super::message_render::{
     ChatChunk, chat_message_row, chunk_messages, staged_timeline_group_view, tool_run_group_view,
 };
-use super::scroll_guard::MessagesScrollFromEffectGuard;
-use super::timeline_panel::timeline_panel_view;
+use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
+use crate::app::scroll_guard::MessagesScrollFromEffectGuard;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::clarification_form::PendingClarificationForm;

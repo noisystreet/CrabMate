@@ -1,16 +1,11 @@
 //! 主界面：单根 `App`（导航、对话、侧栏、状态栏、模态框与偏好接线）。
 //!
-//! 首启会话加载、`localStorage` / DOM 偏好同步、全局 `Escape` 等壳级副作用见 `app_shell_effects`。聊天滚动、查找、输入/流式、Workspace 刷新、`/status` 与任务拉取、变更集拉取等见 `chat_scroll`、`chat_find`、`chat_composer`、`workspace_panel`（含工作区树 → composer 插入）、`workspace_panel_state`、`status_tasks_wiring`、`changelist_modal`。
+//! 首启会话加载、`localStorage` / DOM 偏好同步、全局 `Escape` 等壳级副作用见 `app_shell_effects`。聊天主路径（滚动、查找、输入/流式）见 `chat` 子模块；Workspace 刷新、`/status` 与任务拉取、变更集等见 `workspace_panel`、`workspace_panel_state`、`status_tasks_wiring`、`changelist_modal`。
 
 mod app_shell_effects;
 mod approval_bar;
 mod changelist_modal;
-mod chat_column;
-mod chat_composer;
-mod chat_find;
-mod chat_find_bar;
-mod chat_message_render;
-mod chat_scroll;
+mod chat;
 mod mobile_shell_header;
 pub mod scroll_guard;
 mod session_hydrate;
@@ -21,7 +16,6 @@ mod sidebar_nav;
 mod status_bar;
 mod status_tasks_state;
 mod status_tasks_wiring;
-mod timeline_panel;
 mod workspace_panel;
 mod workspace_panel_state;
 
@@ -29,14 +23,11 @@ use approval_bar::ApprovalBar;
 use changelist_modal::{
     changelist_modal_view, wire_changelist_body_inner_html, wire_changelist_fetch_effects,
 };
-use chat_column::chat_column_view;
-use chat_composer::{
-    wire_chat_composer_streams, wire_draft_sync_to_buffer_and_textarea,
-    wire_session_switch_clears_chat_state,
+use chat::{
+    ChatFindBar, chat_column_view, load_timeline_panel_expanded_default,
+    wire_chat_composer_streams, wire_chat_find_matches, wire_draft_sync_to_buffer_and_textarea,
+    wire_focus_message_after_nav, wire_messages_auto_scroll, wire_session_switch_clears_chat_state,
 };
-use chat_find::wire_chat_find_matches;
-use chat_find_bar::ChatFindBar;
-use chat_scroll::{wire_focus_message_after_nav, wire_messages_auto_scroll};
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
 use settings_modal::settings_modal_view;
@@ -48,7 +39,6 @@ use status_tasks_wiring::{
     make_refresh_status, make_refresh_tasks, make_toggle_task,
     wire_status_fetch_if_missing_after_init, wire_tasks_refresh_when_tasks_panel_visible,
 };
-use timeline_panel::load_timeline_panel_expanded_default;
 use workspace_panel::{
     make_insert_workspace_path_into_composer, make_refresh_workspace,
     wire_workspace_refresh_when_visible,

@@ -517,19 +517,15 @@ flowchart LR
 
 ### `frontend-leptos/src/app/`
 
-- **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、调用 **`app_shell_effects`** 与各子模块 **`wire_*`** 接线、主 `view!` 组合子视图；**`/status`、侧栏 `/tasks`** 的拉取闭包与「初始化后补拉 / 切到任务侧栏再拉」见 **`status_tasks_wiring`**。与 **`GET /conversation/messages`** 对齐的会话水合见 **`session_hydrate::wire_session_hydration`**；**`ChatSessionSignals`**（见 **`chat_session_state`**）在侧栏、聊天列、会话管理模态、状态栏等处整包下传；**`StatusTasksSignals`**（见 **`status_tasks_state`**）供底栏与右栏任务区。流式发送、草稿同步、会话切换重置等见 **`chat_composer`**；跟底与侧栏跳转滚入见 **`chat_scroll`**；会话内查找匹配见 **`chat_find`**；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
+- **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、调用 **`app_shell_effects`** 与各子模块 **`wire_*`** 接线、主 `view!` 组合子视图；**`/status`、侧栏 `/tasks`** 的拉取闭包与「初始化后补拉 / 切到任务侧栏再拉」见 **`status_tasks_wiring`**。与 **`GET /conversation/messages`** 对齐的会话水合见 **`session_hydrate::wire_session_hydration`**；**`ChatSessionSignals`**（见 **`chat_session_state`**）在侧栏、聊天列、会话管理模态、状态栏等处整包下传；**`StatusTasksSignals`**（见 **`status_tasks_state`**）供底栏与右栏任务区。聊天主路径（流式、滚动、查找、主列 UI）见 **`chat`** 子模块；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
 - **`app_shell_effects.rs`**：**`ShellEscapeSignals`** 与壳级 **`wire_*`**：首启从 **`localStorage`** 加载会话、**`GET /web-ui`** 一次同步 Markdown / 助手过滤、会话列表写回、当前会话上下文字符估算、侧栏视图 / 底栏可见 / 代理角色 / 侧栏宽度、待审批会话切换时审批条展开态、主题与 **`data-theme`** / **`lang`** / **`data-bg-decor`**、打开设置时填充 LLM 草稿；**全局 `Escape`**（在 **`input`/`textarea`/`contenteditable` 外**）按层级关闭侧栏会话菜单、侧栏搜索、查找栏、视图菜单、移动抽屉、变更集/设置/会话模态（**`wire_escape_key_layered_dismiss`**）。
 - **`chat_session_state.rs`**（`frontend-leptos/src/`，**非**仅 `app/`）：**`ChatSessionSignals`**——会话列表、活动 id、**`SessionSyncState`**、水合 nonce、流式 job / SSE 序等 **`RwSignal`** 聚合（**`Clone`/`Copy`**）。置于 crate 根以便 **`session_modal_row`** 与 **`app/`** 共用，避免 `app` ↔ 根模块循环依赖。
 - **`session_hydrate.rs`**：**`wire_session_hydration`**：订阅水合 nonce，拉取 **`GET /conversation/messages`** 并与本地 **`ChatSession`** 对齐（用户轮次保护、**`session_sync.apply_saved_revision`** 等），从 **`mod.rs`** 拆出以隔离同步语义。
-- **`chat_composer.rs`**：草稿缓冲与 textarea 同步、**`send_chat_stream`** 回调编排（**`ChatStreamCallbackCtx`** 持有 **`ChatSessionSignals`**）、发送 / 停止 / 重试 / 截断再生、新会话；**`staged_plan_step_*`** 与 **`tool_result`** 写入消息时附带 **`timeline_scan`** 的 **`cm_tl`** JSON（**`StoredMessage.state`**，仅本机 UI）；**`pending_images`** 与 **`chat_column`** 内隐藏 file input 上传附图（最多 6 张预览），发送时写入 **`StoredMessage.image_urls`**。
-- **`chat_scroll.rs`**：消息列表指纹变化时的自动跟底、**`focus_message_id_after_nav`** 滚入视图。
-- **`chat_find.rs`**：主区查找匹配 id、光标与首条 **`scroll_message_into_view`**。
 - **`workspace_panel_state.rs`**：**`WorkspacePanelSignals`**：工作区目录树、根路径草稿、设置/浏览忙状态等 **`RwSignal`** 聚合，供 **`make_refresh_workspace`**、**`side_column_view`** 传递。
 - **`workspace_panel.rs`**：**`make_refresh_workspace`**、**`make_insert_workspace_path_into_composer`**（树双击 **`@{path}`** 写入输入框）；**`wire_workspace_refresh_when_visible`**：切换到 Workspace 侧栏时自动拉取。
 - **`status_tasks_state.rs`**：**`StatusTasksSignals`**： **`GET /status`** 快照、加载态、拉取错误，以及 **`/tasks`** 列表与错误、加载态的 **`RwSignal`** 聚合。
 - **`status_tasks_wiring.rs`**：**`make_refresh_status`** / **`make_refresh_tasks`** / **`make_toggle_task`**；**`wire_status_fetch_if_missing_after_init`**、**`wire_tasks_refresh_when_tasks_panel_visible`**（与 **`workspace_panel`** 侧栏可见刷新模式一致）。
 - **`sidebar_nav.rs`**：左侧导航与会话列表；会话项 **右键菜单**含收藏/置顶切换；列表顺序见 **`session_sort`**。**`debounce_signal_to_effect`** 对会话标题筛选与跨会话消息搜索做 **`TimeoutFuture`** 防抖（规则见 **`debounce_schedule`**）。**`mobile_shell_header.rs`**：窄屏顶栏。
-- **`chat_column.rs`**：中部消息列表与输入区；**`timeline_panel.rs`**：可折叠的「规划 / 工具时间线」索引（**`timeline_scan`** 扫描消息；点击跳转到 **`#msg-{id}`**）；**`chat_find_bar.rs`**：查找条。
 - **`status_bar.rs`**：底栏芯片含 **`StatusBarContextChip`**：本地估算当前会话消息 + 草稿字符数，对照 **`GET /status`** 的 **`context_char_budget`** 显示进度条；在存在 **`conversation_id`** 时并列展示 SSE 下发的 **`conversation_revision`**（`rev N`）。**`ChatSessionSignals`** 整包传入，切换角色下拉时清空 **`stream_job_id` / `stream_last_event_seq`**；**`/status`** 相关 **`RwSignal`** 来自 **`StatusTasksSignals`**。
 - **`side_column.rs`**：右列（工作区/任务、`SideColumnTasksCard` 等）；任务区 **`RwSignal`** 由 **`StatusTasksSignals`** 解包。
 - **`approval_bar.rs`**：工具审批条；**`session_list_modal.rs`**、**`settings_modal.rs`**、**`changelist_modal.rs`**：各模态（含变更集 fetch 副作用）。
@@ -537,13 +533,24 @@ flowchart LR
 - 左栏「最近」会话 **`contextmenu`** 打开菜单；导出 JSON/Markdown 与删除与 **`SessionModalRow`** 共用 **`session_ops::export_session_*_for_id` / `delete_session_after_confirm`**。
 - 流式消息与自动跟底策略（用户上滚时禁用、回到底部附近恢复）。
 
+### `frontend-leptos/src/app/chat/`
+
+- **`mod.rs`**：聊天域 **`pub(crate)`** 再导出（供 **`app::App`**）；与 [`docs/frontend-leptos/ARCHITECTURE.md`](frontend-leptos/ARCHITECTURE.md) **「`app/chat_*`」** 对齐。
+- **`composer.rs`**：草稿缓冲与 textarea 同步、**`send_chat_stream`** 回调编排（**`ChatStreamCallbackCtx`** 持有 **`ChatSessionSignals`**）、发送 / 停止 / 重试 / 截断再生、新会话；**`staged_plan_step_*`** 与 **`tool_result`** 写入消息时附带 **`timeline_scan`** 的 **`cm_tl`** JSON（**`StoredMessage.state`**，仅本机 UI）；**`pending_images`** 与 **`column`** 内隐藏 file input 上传附图（最多 6 张预览），发送时写入 **`StoredMessage.image_urls`**。
+- **`scroll.rs`**：消息列表指纹变化时的自动跟底、**`focus_message_id_after_nav`** 滚入视图。
+- **`find.rs`**：主区查找匹配 id、光标与首条 **`scroll_message_into_view`**。
+- **`column.rs`**：中部消息列表与输入区。
+- **`find_bar.rs`**：主区内查找条。
+- **`message_render.rs`**：单条消息与连续工具分组渲染（供 **`column`**）。
+- **`timeline.rs`**：可折叠的「规划 / 工具时间线」索引（**`timeline_scan`** 扫描消息；点击跳转到 **`#msg-{id}`**）。
+
 ### `frontend-leptos/src/app_prefs.rs`
 
 - **`localStorage`** 键与侧栏视图枚举（**`SidePanelView`**）、**`crabmate-timeline-panel-expanded`**（时间线面板展开态）、状态栏用的本机/服务端 **`api_base` / `model`** 合并展示、侧栏宽度钳制与读写。
 
 ### `frontend-leptos/src/timeline_scan.rs`
 
-- 从 **`StoredMessage`** 抽取时间线条目：流式写入的 **`state`** JSON（键 **`cm_tl`**，**仅**本机 UI，**不**发往模型）与无前缀数据的**旧会话**回退（**`STAGED_TIMELINE_SYSTEM_PREFIX`** 旁注、`is_tool` 工具卡）。供 **`app/timeline_panel.rs`** 与 **`chat_composer`**（SSE 回调写入 `state`）共用。
+- 从 **`StoredMessage`** 抽取时间线条目：流式写入的 **`state`** JSON（键 **`cm_tl`**，**仅**本机 UI，**不**发往模型）与无前缀数据的**旧会话**回退（**`STAGED_TIMELINE_SYSTEM_PREFIX`** 旁注、`is_tool` 工具卡）。供 **`app/chat/timeline.rs`** 与 **`app/chat/composer.rs`**（SSE 回调写入 `state`）共用。
 
 ### `frontend-leptos/src/message_format.rs`
 

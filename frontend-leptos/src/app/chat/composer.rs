@@ -49,7 +49,7 @@ struct ChatStreamCallbackCtx {
     pending_clarification: RwSignal<Option<PendingClarificationForm>>,
 }
 
-pub(super) struct ChatComposerWires {
+pub(crate) struct ChatComposerWires {
     pub retry_assistant_target: RwSignal<Option<String>>,
     pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
@@ -58,7 +58,7 @@ pub(super) struct ChatComposerWires {
 }
 
 /// 切换会话时重置会话级 UI 状态并加载该会话草稿（勿订阅 `sessions`，避免流式更新覆盖缓冲）。
-pub(super) fn wire_session_switch_clears_chat_state(
+pub(crate) fn wire_session_switch_clears_chat_state(
     initialized: RwSignal<bool>,
     chat: ChatSessionSignals,
     draft: RwSignal<String>,
@@ -104,7 +104,7 @@ pub(super) fn wire_session_switch_clears_chat_state(
 }
 
 /// `draft` 程序化更新时同步 Mutex 与 textarea（输入过程不订阅 `draft`）。
-pub(super) fn wire_draft_sync_to_buffer_and_textarea(
+pub(crate) fn wire_draft_sync_to_buffer_and_textarea(
     draft: RwSignal<String>,
     composer_draft_buffer: Arc<Mutex<String>>,
     composer_input_ref: NodeRef<Textarea>,
@@ -129,7 +129,7 @@ pub(super) fn wire_draft_sync_to_buffer_and_textarea(
     });
 }
 
-pub(super) fn wire_chat_composer_streams(
+pub(crate) fn wire_chat_composer_streams(
     initialized: RwSignal<bool>,
     chat: ChatSessionSignals,
     locale: RwSignal<Locale>,

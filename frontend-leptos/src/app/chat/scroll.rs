@@ -12,13 +12,13 @@ use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::session_search::scroll_message_into_view;
 use crate::storage::ChatSession;
 
-use super::scroll_guard;
+use crate::app::scroll_guard;
 
 /// 合并同一短窗口内多次触发的跟底：仅保留「最新一次」effect 入队的滚动任务，避免尾包文本 + 收尾 state 连续更新导致多次 `set_scroll_top` 抖动。
 static MESSAGES_AUTO_SCROLL_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// 消息列表指纹变化且开启自动跟底时，将滚动条置底（多帧以覆盖流式换行后高度变化）。
-pub(super) fn wire_messages_auto_scroll(
+pub(crate) fn wire_messages_auto_scroll(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     messages_scroller: NodeRef<Div>,
@@ -97,7 +97,7 @@ pub(super) fn wire_messages_auto_scroll(
 }
 
 /// 侧栏「在消息中打开」后滚动到对应气泡。
-pub(super) fn wire_focus_message_after_nav(focus_message_id_after_nav: RwSignal<Option<String>>) {
+pub(crate) fn wire_focus_message_after_nav(focus_message_id_after_nav: RwSignal<Option<String>>) {
     Effect::new({
         let focus_message_id_after_nav = focus_message_id_after_nav;
         move |_| {
