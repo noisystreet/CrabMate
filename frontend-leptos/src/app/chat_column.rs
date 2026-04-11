@@ -17,11 +17,10 @@ use super::scroll_guard::MessagesScrollFromEffectGuard;
 use super::timeline_panel::timeline_panel_view;
 use crate::api::upload_files_multipart;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
+use crate::chat_session_state::ChatSessionSignals;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::{self, Locale};
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
-use crate::session_sync::SessionSyncState;
-use crate::storage::ChatSession;
 
 #[allow(clippy::too_many_arguments)]
 pub fn chat_column_view(
@@ -31,8 +30,7 @@ pub fn chat_column_view(
     messages_scroll_from_effect: RwSignal<bool>,
     last_messages_scroll_top: RwSignal<i32>,
     timeline_panel_expanded: RwSignal<bool>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     expanded_long_assistant_ids: RwSignal<Vec<String>>,
     expanded_tool_run_heads: RwSignal<HashSet<String>>,
     expanded_staged_timeline_heads: RwSignal<HashSet<String>>,
@@ -47,13 +45,15 @@ pub fn chat_column_view(
     trigger_stop: Arc<dyn Fn() + Send + Sync>,
     status_busy: RwSignal<bool>,
     initialized: RwSignal<bool>,
-    session_sync: RwSignal<SessionSyncState>,
     regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     retry_assistant_target: RwSignal<Option<String>>,
     status_err: RwSignal<Option<String>>,
     markdown_render: RwSignal<bool>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
+    let sessions = chat.sessions;
+    let active_id = chat.active_id;
+    let session_sync = chat.session_sync;
     let run_send_clarify_sv = StoredValue::new(run_send_message.clone());
     view! {
                 <div

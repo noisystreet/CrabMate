@@ -28,7 +28,7 @@ use crate::timeline_scan::{
     timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
 };
 
-use super::chat_session_state::ChatSessionSignals;
+use crate::chat_session_state::ChatSessionSignals;
 
 /// 单次 `/chat/stream` 的 SSE 回调共享状态：各 `Rc<dyn Fn>` 只再包一层 `Rc<ChatStreamCallbackCtx>`，避免重复 `Arc::clone` 与多字段捕获。
 struct ChatStreamCallbackCtx {

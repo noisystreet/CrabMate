@@ -4,13 +4,12 @@ use std::sync::{Arc, Mutex};
 
 use leptos::prelude::*;
 
+use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::session_ops::{
     delete_session_after_confirm, export_session_json_for_id, export_session_markdown_for_id,
     flush_composer_draft_to_session, set_session_pinned, set_session_starred,
 };
-use crate::storage::ChatSession;
-
 #[component]
 pub fn SessionModalRow(
     id: String,
@@ -20,12 +19,10 @@ pub fn SessionModalRow(
     starred: bool,
     active: bool,
     locale: RwSignal<Locale>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
+    chat: ChatSessionSignals,
     draft: RwSignal<String>,
     /// 与主界面输入框共享；打开会话前把当前草稿写回上一活跃会话。
     composer_draft_buffer: Arc<Mutex<String>>,
-    session_sync: RwSignal<crate::session_sync::SessionSyncState>,
     session_modal: RwSignal<bool>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
@@ -49,21 +46,22 @@ pub fn SessionModalRow(
                     let id = id.clone();
                     let buf = Arc::clone(&composer_draft_buffer);
                     move |_| {
-                        let prev = active_id.get_untracked();
+                        let prev = chat.active_id.get_untracked();
                         if !prev.is_empty() {
                             let t = buf.lock().unwrap().clone();
-                            flush_composer_draft_to_session(sessions, &prev, &t);
+                            flush_composer_draft_to_session(chat.sessions, &prev, &t);
                         }
-                        active_id.set(id.clone());
+                        chat.active_id.set(id.clone());
                         draft.set(
-                            sessions.with(|list| {
+                            chat.sessions.with(|list| {
                                 list.iter()
                                     .find(|s| s.id == id)
                                     .map(|s| s.draft.clone())
                                     .unwrap_or_default()
                             }),
                         );
-                        session_sync.set(crate::session_sync::SessionSyncState::local_only());
+                        chat.session_sync
+                            .set(crate::session_sync::SessionSyncState::local_only());
                         session_modal.set(false);
                     }
                 }
@@ -86,7 +84,7 @@ pub fn SessionModalRow(
                     }
                     prop:aria-pressed=starred
                     on:click={
-                        let sessions = sessions;
+                        let sessions = chat.sessions;
                         let id = id_star.clone();
                         move |_| set_session_starred(sessions, &id, !starred)
                     }
@@ -105,7 +103,7 @@ pub fn SessionModalRow(
                     }
                     prop:aria-pressed=pinned
                     on:click={
-                        let sessions = sessions;
+                        let sessions = chat.sessions;
                         let id = id_pin.clone();
                         move |_| set_session_pinned(sessions, &id, !pinned)
                     }
@@ -117,7 +115,7 @@ pub fn SessionModalRow(
                     class="btn btn-ghost btn-sm"
                     prop:title=move || i18n::session_row_rename_title_attr(locale.get())
                     on:click={
-                        let sessions = sessions;
+                        let sessions = chat.sessions;
                         let id = id_rename.clone();
                         move |_| {
                             let loc = locale.get_untracked();
@@ -157,7 +155,7 @@ pub fn SessionModalRow(
                     class="btn btn-secondary btn-sm"
                     prop:title=move || i18n::session_row_export_json_title(locale.get())
                     on:click={
-                        let sessions = sessions;
+                        let sessions = chat.sessions;
                         let id = id_json.clone();
                         move |_| {
                             export_session_json_for_id(
@@ -176,7 +174,7 @@ pub fn SessionModalRow(
                     class="btn btn-secondary btn-sm"
                     prop:title=move || i18n::session_row_export_md_title(locale.get())
                     on:click={
-                        let sessions = sessions;
+                        let sessions = chat.sessions;
                         let id = id_md.clone();
                         move |_| {
                             export_session_markdown_for_id(
@@ -195,10 +193,10 @@ pub fn SessionModalRow(
                     class="btn btn-danger btn-sm"
                     prop:title=move || i18n::session_row_delete_title(locale.get())
                     on:click={
-                        let sessions = sessions;
-                        let active_id = active_id;
+                        let sessions = chat.sessions;
+                        let active_id = chat.active_id;
                         let draft = draft;
-                        let session_sync = session_sync;
+                        let session_sync = chat.session_sync;
                         let id = id_del.clone();
                         move |_| {
                             delete_session_after_confirm(
