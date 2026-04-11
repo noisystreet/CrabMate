@@ -62,4 +62,6 @@ pub(crate) struct RunLoopParams<'a> {
     pub step_executor_constraint: Option<PlanStepExecutorKind>,
     /// 多角色工作台：本回合工具白名单；`None` 不限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+    /// Web `/chat*`：结构化日志根 span（`job_id` / `conversation_id` / 外层轮次 / 当前工具）；CLI 等为 `None`。
+    pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
 }
