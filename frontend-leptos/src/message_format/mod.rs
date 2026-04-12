@@ -3,7 +3,7 @@
 //! - [`plain`]：与角色无关的行级整理
 //! - [`tool_card`]：工具结果卡片单行摘要
 //! - [`staged_timeline`]：分阶段时间线 `system` 前缀
-//! - [`display`]：助手/用户/系统正文管道（思维链、`message_text_for_display_ex` 等）
+//! - [`display`]：助手/用户/系统正文管道（内分 `plan_fence` / `thinking_strip` / `message_ex`）
 
 mod display;
 mod plain;
