@@ -19,6 +19,7 @@ pub(crate) use parse_args::parse_args_json;
 mod env_var_check;
 mod error_playbook;
 mod exec;
+pub(crate) use exec::run_command_invocation_targets_workspace_script_or_executable;
 mod file;
 pub(crate) use file::canonical_workspace_root;
 mod format;

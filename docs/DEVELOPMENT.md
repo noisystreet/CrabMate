@@ -203,7 +203,7 @@ flowchart TB
 | `diagnostics.rs` | `diagnostic_summary`：脱敏环境/工具链/工作区路径摘要 |
 | `error_playbook.rs` | `error_output_playbook`：对已脱敏错误输出做启发式归类，并给出经 `allowed_commands` 过滤的 `run_command` 建议字符串（不执行）；`playbook_run_commands`：同上启发式后依次执行建议命令（内部 `command::run`） |
 | `dev_tag.rs` | Development 子域标签：`tags_for_tool_name`、`suggest_dev_tags_for_workspace`（供 `build_tools_with_options` 过滤）；标签含 `general`/`rust`/`frontend`/`python`/`cpp`/`vcs`/`quality`/`go`/`security`/`shell`/`docker` |
-| `exec.rs` | `run_executable` |
+| `exec.rs` | `run_executable`；**`run_command_invocation_targets_workspace_script_or_executable`**（工作区相对路径脚本/可执行：`run_command` 白名单外免检入参） |
 | `file/` | 工作区文件工具目录：`mod.rs` 再导出各 `pub fn`；`path`（`resolve_for_read`/`resolve_for_write` 等）、`write_ops`、**`read_tool`**（`read_file` / **`read_file_try`**；成功路径在正文前加一行 **`crabmate_tool_output` v1**）、`directory`、`tree_glob`、`inspect`、`extract`、`mutate`、`perm`、`symlink`、`display_fmt`；单元测试 `tests.rs` |
 | `format.rs` / `lint.rs` | 格式化（Rust/Python/C++/Go/Shell/JS·TS/Markdown/YAML/XML/SQL + `prettier`）与 lint 聚合 |
 | `frontend_tools.rs` | 前端 npm 脚本类 |
@@ -433,7 +433,7 @@ flowchart LR
 - **`command.rs`**：命令白名单 + 超时 + 输出截断；配合 `allowed_commands` 与工作区路径限制。
 - **`github_cli.rs`**：GitHub CLI 封装（`gh_pr_*` / `gh_issue_*` / `gh_run_*` / `gh_release_*` / `gh_search` / `gh_api`）：结构化参数；**退出码 0** 且 **stdout 整段为合法 JSON** 时附加格式化块（不限于传入 `fields`）。`gh_search` 将 **`scope` 限制为 issues/prs/repos** 并校验 **`query`**；`gh_run_view` 支持 **`log`/`job`**（日志受输出上限截断）；`gh_api` 限制 `path` 且 **`gh_api`** 列入写副作用工具。依赖 **`allowed_commands` 含 `gh`**，列表类命令复用 `command::run`。
 - **`package_query.rs`**：Linux 包查询（`dpkg-query` / `rpm`）只读封装，统一返回安装状态、版本与来源字段，不执行安装/卸载。
-- **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）。
+- **`exec.rs`**：仅允许在工作区内运行相对路径可执行文件（禁止绝对路径与 `..` 越界）；与 **`run_command`** 共享路径解析语义，供 **`run_command_invocation_targets_workspace_script_or_executable`** 判定是否跳过白名单外审批。
 - **`file/`**：工作区内创建/覆盖/复制/移动文件；`resolve_for_read` / `resolve_for_write` 与祖先 symlink 校验是安全边界的关键（见 **`file/path.rs`**）；`copy_file` / `move_file` 仅针对常规文件，`overwrite` 控制目标已存在时的覆盖策略；`hash_file` 仅对常规文件流式哈希（`sha256` / `sha512` / `blake3`），可选 `max_bytes` 前缀模式。
 - **`schedule.rs`**：提醒/日程；以 JSON 持久化到 `<working_dir>/.crabmate/reminders.json` 与 `events.json`。
 - **`spell_astgrep_tools.rs`**：`typos_check` / `codespell_check` 仅传相对路径、不写回；`typos_check` 支持 `config_path`（项目词典通常通过 typos 配置维护），`codespell_check` 支持 `dictionary_paths`（`-I`）与 `ignore_words_list`（`-L`）；`ast_grep_run` 调用 `ast-grep run` 做结构化搜索；`ast_grep_rewrite` 在此基础上增加 `--rewrite`，默认 dry-run，`dry_run=false` 时需 `confirm=true` 才执行 `--update-all` 写盘。
@@ -616,7 +616,7 @@ flowchart LR
 
 - **新增/调整工具**：优先在 `src/tools/mod.rs` 的表驱动体系里注册，保证 schema/runner/分类一致。
 - **安全边界**：
-  - `run_command` 必须受白名单控制，避免破坏性命令；**仅**用于白名单内的系统命令（编译器、make、ls 等）。运行工作区内可执行文件（如 `./main`、编译产物）须用 **`run_executable`**，不要用 `run_command`。
+  - `run_command` 以 **`allowed_commands`** 为主白名单；**工作区内**已存在的相对路径可执行文件或常见脚本（`command` 形如 `./…`、`subdir/…`，不含 `..`）在已设置工作区时**跳过**白名单外 Web/CLI 审批（与「本次允许」等效，见 **`tools/exec.rs`** / **`tool_registry::execute`**）。运行此类程序仍**优先**用 **`run_executable`**（专用工具、语义更清晰）；裸命令名仍须落在白名单或走审批。
   - 文件读写与 `run_executable` 必须做路径归一化与越界限制。
   - Web 模式下的工作区设置会影响“工具执行目录”，需要明确这一点避免误操作。
   - **密钥与日志**：勿将真实 API key、token、`.env` 内容写入代码、示例配置、commit message 或日志；日志与错误回显须脱敏。Cursor 规则见 **`.cursor/rules/secrets-and-logging.mdc`**。

@@ -339,12 +339,12 @@ async fn execute_run_command_impl(
         ctx.record_run_command_attempt();
     }
     let v: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
-    let cmd = v
+    let command_raw = v
         .get("command")
         .and_then(|x| x.as_str())
         .unwrap_or("")
-        .trim()
-        .to_lowercase();
+        .trim();
+    let cmd = command_raw.to_lowercase();
     let arg_preview = v
         .get("args")
         .and_then(|x| x.as_array())
@@ -362,85 +362,92 @@ async fn execute_run_command_impl(
             .iter()
             .any(|c| c.eq_ignore_ascii_case(&cmd))
     {
-        let already_allowed = match (web_ctx, cli_ctx) {
-            (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(&cmd),
-            (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(&cmd),
-            (None, None) => false,
-        };
-        if already_allowed {
+        if crate::tools::run_command_invocation_targets_workspace_script_or_executable(
+            effective_working_dir,
+            command_raw,
+        ) {
             effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, &cmd);
         } else {
-            let allow_handles = crate::tool_approval::SharedAllowlistHandles {
-                web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-                cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
+            let already_allowed = match (web_ctx, cli_ctx) {
+                (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(&cmd),
+                (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(&cmd),
+                (None, None) => false,
             };
-            let cmd_show = if arg_preview.is_empty() {
-                cmd.clone()
+            if already_allowed {
+                effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, &cmd);
             } else {
-                format!("{} {}", cmd, arg_preview)
-            };
-            let spec = crate::tool_approval::ApprovalRequestSpec {
-                capability: crate::tool_approval::SensitiveCapability::HostShell,
-                sse_command: cmd.clone(),
-                sse_args: arg_preview.clone(),
-                allowlist_key: None,
-                cli_title: "run_command 审批",
-                cli_detail: format!("命令不在白名单:\n{}", cmd_show.trim()),
-                web_timeline_prefix_zh: "命令审批：",
-            };
-            let decision_opt = if let Some(ctx) = cli_ctx {
-                if ctx.auto_approve_all_non_whitelist_run_command
-                    || ctx
-                        .extra_allowlist_commands
-                        .iter()
-                        .any(|e| e.eq_ignore_ascii_case(&cmd))
-                {
-                    Some(CommandApprovalDecision::AllowOnce)
+                let allow_handles = crate::tool_approval::SharedAllowlistHandles {
+                    web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+                    cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
+                };
+                let cmd_show = if arg_preview.is_empty() {
+                    cmd.clone()
                 } else {
-                    crate::tool_approval::request_tool_interactive_approval(
+                    format!("{} {}", cmd, arg_preview)
+                };
+                let spec = crate::tool_approval::ApprovalRequestSpec {
+                    capability: crate::tool_approval::SensitiveCapability::HostShell,
+                    sse_command: cmd.clone(),
+                    sse_args: arg_preview.clone(),
+                    allowlist_key: None,
+                    cli_title: "run_command 审批",
+                    cli_detail: format!("命令不在白名单:\n{}", cmd_show.trim()),
+                    web_timeline_prefix_zh: "命令审批：",
+                };
+                let decision_opt = if let Some(ctx) = cli_ctx {
+                    if ctx.auto_approve_all_non_whitelist_run_command
+                        || ctx
+                            .extra_allowlist_commands
+                            .iter()
+                            .any(|e| e.eq_ignore_ascii_case(&cmd))
+                    {
+                        Some(CommandApprovalDecision::AllowOnce)
+                    } else {
+                        crate::tool_approval::request_tool_interactive_approval(
+                            None,
+                            Some(crate::tool_approval::CliApprovalInput {
+                                auto_approve_all_sensitive: false,
+                            }),
+                            &spec,
+                            "tool_registry::run_command approval",
+                        )
+                        .await
+                        .ok()
+                    }
+                } else if web_ctx.is_some() {
+                    match crate::tool_approval::request_tool_interactive_approval(
+                        web_ctx.map(|w| w.approval_sink()),
                         None,
-                        Some(crate::tool_approval::CliApprovalInput {
-                            auto_approve_all_sensitive: false,
-                        }),
                         &spec,
                         "tool_registry::run_command approval",
                     )
                     .await
-                    .ok()
-                }
-            } else if web_ctx.is_some() {
-                match crate::tool_approval::request_tool_interactive_approval(
-                    web_ctx.map(|w| w.approval_sink()),
-                    None,
-                    &spec,
-                    "tool_registry::run_command approval",
-                )
-                .await
-                {
-                    Ok(d) => Some(d),
-                    Err(crate::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
-                        return ("错误：审批通道不可用，请重试。".to_string(), None);
-                    }
-                }
-            } else {
-                None
-            };
-            if let Some(decision) = decision_opt {
-                match decision {
-                    CommandApprovalDecision::Deny => {
-                        if let Some(c) = cli_ctx {
-                            c.record_run_command_denial();
+                    {
+                        Ok(d) => Some(d),
+                        Err(crate::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
+                            return ("错误：审批通道不可用，请重试。".to_string(), None);
                         }
-                        return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
                     }
-                    CommandApprovalDecision::AllowOnce => {
-                        effective_allowed_arc =
-                            extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
-                    }
-                    CommandApprovalDecision::AllowAlways => {
-                        crate::tool_approval::persist_allowlist_key(&allow_handles, &cmd).await;
-                        effective_allowed_arc =
-                            extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
+                } else {
+                    None
+                };
+                if let Some(decision) = decision_opt {
+                    match decision {
+                        CommandApprovalDecision::Deny => {
+                            if let Some(c) = cli_ctx {
+                                c.record_run_command_denial();
+                            }
+                            return (format!("用户拒绝执行命令：{}", cmd_show.trim()), None);
+                        }
+                        CommandApprovalDecision::AllowOnce => {
+                            effective_allowed_arc =
+                                extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
+                        }
+                        CommandApprovalDecision::AllowAlways => {
+                            crate::tool_approval::persist_allowlist_key(&allow_handles, &cmd).await;
+                            effective_allowed_arc =
+                                extend_allowed_commands_arc(&cfg.allowed_commands, &cmd);
+                        }
                     }
                 }
             }
