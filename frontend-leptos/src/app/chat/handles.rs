@@ -16,7 +16,7 @@ use crate::sse_dispatch::ThinkingTraceInfo;
 
 /// `/chat/stream` 与壳层共享的一组信号与句柄：状态栏错误、工具忙、审批、中止、工作区刷新、变更集拉取、澄清表单。
 ///
-/// 从 [`WireComposerStreamsArgs`] 与 `composer_stream::ComposerStreamHandles` 成组传入，
+/// 从 [`WireComposerStreamsArgs`] 与 `composer_stream` 子模块的 **`ComposerStreamHandles`** 成组传入，
 /// 避免 `composer_stream` 与 `App` 之间重复罗列同一批字段，并作为流式回调上下文的子聚合。
 #[derive(Clone)]
 pub struct ComposerStreamShell {
