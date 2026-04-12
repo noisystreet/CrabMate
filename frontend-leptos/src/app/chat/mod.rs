@@ -15,7 +15,7 @@ mod scroll;
 mod staged_plan_todo;
 mod timeline;
 
-pub use handles::{ChatColumnShell, WireComposerStreamsArgs};
+pub use handles::{ChatColumnShell, ComposerStreamShell, WireComposerStreamsArgs};
 
 pub(crate) use column::chat_column_view;
 pub(crate) use composer::{

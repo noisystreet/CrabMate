@@ -12,6 +12,24 @@ use crate::chat_session_state::ChatSessionSignals;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
 
+/// `/chat/stream` 与壳层共享的一组信号与句柄：状态栏错误、工具忙、审批、中止、工作区刷新、变更集拉取、澄清表单。
+///
+/// 从 [`WireComposerStreamsArgs`] 与 `composer_stream::ComposerStreamHandles` 成组传入，
+/// 避免 `composer_stream` 与 `App` 之间重复罗列同一批字段，并作为流式回调上下文的子聚合。
+#[derive(Clone)]
+pub struct ComposerStreamShell {
+    pub status_busy: RwSignal<bool>,
+    pub status_err: RwSignal<Option<String>>,
+    pub tool_busy: RwSignal<bool>,
+    pub pending_approval: RwSignal<Option<(String, String, String)>>,
+    pub abort_cell: Arc<Mutex<Option<web_sys::AbortController>>>,
+    pub user_cancelled_stream: Arc<Mutex<bool>>,
+    pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
+    pub changelist_modal_open: RwSignal<bool>,
+    pub changelist_fetch_nonce: RwSignal<u64>,
+    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+}
+
 /// 中部聊天列：`messages` 滚动区、时间线、消息列表与输入区所需的信号与闭包。
 pub struct ChatColumnShell {
     pub locale: RwSignal<Locale>,
@@ -48,17 +66,9 @@ pub struct WireComposerStreamsArgs {
     pub locale: RwSignal<Locale>,
     pub draft: RwSignal<String>,
     pub selected_agent_role: RwSignal<Option<String>>,
-    pub status_busy: RwSignal<bool>,
-    pub status_err: RwSignal<Option<String>>,
-    pub pending_approval: RwSignal<Option<(String, String, String)>>,
-    pub tool_busy: RwSignal<bool>,
+    /// 与 SSE 流式回调共享的壳层状态（见 [`ComposerStreamShell`]）。
+    pub stream_shell: ComposerStreamShell,
     pub composer_draft_buffer: Arc<Mutex<String>>,
     pub auto_scroll_chat: RwSignal<bool>,
-    pub abort_cell: Arc<Mutex<Option<web_sys::AbortController>>>,
-    pub user_cancelled_stream: Arc<Mutex<bool>>,
-    pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
-    pub changelist_modal_open: RwSignal<bool>,
-    pub changelist_fetch_nonce: RwSignal<u64>,
     pub pending_images: RwSignal<Vec<String>>,
-    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
 }
