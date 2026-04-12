@@ -36,17 +36,19 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
         composer_input_ref,
         composer_buf_ta,
         pending_images,
-        pending_clarification,
+        stream_shell,
         run_send_message,
         trigger_stop,
-        status_busy,
         initialized,
         regen_stream_after_truncate,
         retry_assistant_target,
-        status_err,
         markdown_render,
         apply_assistant_display_filters,
     } = shell;
+
+    let status_busy = stream_shell.status_busy;
+    let status_err = stream_shell.status_err;
+    let pending_clarification = stream_shell.pending_clarification;
 
     let sessions = chat.sessions;
     let active_id = chat.active_id;

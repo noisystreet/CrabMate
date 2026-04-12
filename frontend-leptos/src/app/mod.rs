@@ -358,24 +358,26 @@ pub fn App() -> impl IntoView {
         );
     let insert_workspace_file_ref_sv = StoredValue::new(Arc::clone(&insert_workspace_file_ref));
 
+    let chat_stream_shell = ComposerStreamShell {
+        status_busy,
+        status_err,
+        pending_approval,
+        tool_busy,
+        abort_cell: Arc::clone(&abort_cell),
+        user_cancelled_stream: Arc::clone(&user_cancelled_stream),
+        refresh_workspace: Arc::clone(&refresh_workspace),
+        changelist_modal_open,
+        changelist_fetch_nonce,
+        pending_clarification,
+    };
+
     let chat_wires = wire_chat_composer_streams(WireComposerStreamsArgs {
         initialized,
         chat: chat_session,
         locale,
         draft,
         selected_agent_role,
-        stream_shell: ComposerStreamShell {
-            status_busy,
-            status_err,
-            pending_approval,
-            tool_busy,
-            abort_cell: Arc::clone(&abort_cell),
-            user_cancelled_stream: Arc::clone(&user_cancelled_stream),
-            refresh_workspace: Arc::clone(&refresh_workspace),
-            changelist_modal_open,
-            changelist_fetch_nonce,
-            pending_clarification,
-        },
+        stream_shell: chat_stream_shell.clone(),
         composer_draft_buffer: Arc::clone(&composer_draft_buffer),
         auto_scroll_chat,
         pending_images,
@@ -469,14 +471,12 @@ pub fn App() -> impl IntoView {
                         composer_input_ref,
                         composer_buf_ta: composer_buf_ta.clone(),
                         pending_images,
-                        pending_clarification,
+                        stream_shell: chat_stream_shell.clone(),
                         run_send_message: chat_wires.run_send_message.clone(),
                         trigger_stop: Arc::clone(&chat_wires.cancel_stream),
-                        status_busy,
                         initialized,
                         regen_stream_after_truncate: chat_wires.regen_stream_after_truncate,
                         retry_assistant_target: chat_wires.retry_assistant_target,
-                        status_err,
                         markdown_render,
                         apply_assistant_display_filters,
                     })}
