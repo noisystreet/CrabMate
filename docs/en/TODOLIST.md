@@ -34,6 +34,21 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ---
 
+## Roadmap reference (vs mainstream open-source agents)
+
+Directional backlog distilled from comparisons with ecosystems such as AutoGen, CrewAI, LangGraph, and Open Interpreter; may overlap other chapters—remove items when done per repo rules.
+
+- [ ] **Multi-agent collaboration**: Multiple role instances, message routing, and supervisory orchestration; document how this coexists with today’s single `agent_turn` loop, sessions, and quotas (`docs/DEVELOPMENT.md`).
+- [ ] **Plan–execute–verify loop**: Explicit sub-task decomposition, result validation, reflection/retry, reducing reliance on one-shot model improvisation; align with `plan_artifact` / staged planning and clarify verification + auto-replan boundaries.
+- [ ] **Interactive code execution / controlled REPL**: Beyond `run_command` allowlists and sandbox policy, consider interpreted execution, session-scoped dependency install, and output checks (Open Interpreter–style); align security with `tool_approval` and Docker sandbox docs.
+- [ ] **Workflow productization**: On top of `workflow_execute` (DAG), add first-class UX—state-machine-friendly config, conditional/loop expressiveness, run visualization, troubleshooting—while documenting “chat turn (linear) vs workflow” in user-facing docs.
+- [ ] **Connectors ecosystem**: Beyond MCP and `dev_tag` stacks, curate high-frequency integrations (DBs, cloud APIs, office suites) or templates to reduce one-off wiring (see also MCP items under `tools/`).
+- [ ] **Short-horizon session & topic tracking**: Multi-turn topic coherence and per-turn summarization/injection (with `context_window` and long-term memory retrieval-quality work).
+- [ ] **Observability & run traces**: Above raw tracing, unified Web/CLI views for per-turn tool timelines, retries, and reasoning/thinking (with optional SSE debug events and request correlation IDs).
+- [ ] **Docs, cookbooks, and contribution paths**: Scenario templates and MCP/third-party extension guides to narrow the gap vs large community projects.
+
+---
+
 ## `agent/` (turn loop, context, PER, workflow)
 
 **Summary**: `agent_turn` main loop; `context_window` trim/summarize; `reflection/plan_rewrite` final-plan rewrite helpers; `per_coord` / `plan_artifact` / `workflow_reflection_controller`; `workflow` DAG execution.
