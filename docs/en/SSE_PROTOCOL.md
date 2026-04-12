@@ -192,11 +192,11 @@ When changing any of:
 
 ## Contract tests (control-plane classification)
 
-After parsing one merged `data:` string as JSON, the frontend applies a **fixed order** to decide `stop` / `handled` / `plain` (`frontend-leptos/src/sse_dispatch.rs`). Rust mirror: **`src/sse/control_dispatch_mirror.rs`** (`#[cfg(test)]`), same golden file:
+After parsing one merged `data:` string as JSON, the frontend applies a **fixed order** to decide `stop` / `handled` / `plain` (`frontend-leptos/src/sse_dispatch.rs`). The **single source of truth** is **`classify_sse_control_outcome`** in workspace crate **`crates/crabmate-sse-protocol`** (`control_classify.rs`), aligned with the same golden file; Leptos also runs **`golden_sse_control_leptos_dispatch_matches_shared_classify`** to catch drift.
 
 - **`fixtures/sse_control_golden.jsonl`**: each line `description<TAB>JSON<TAB>expected-class` (`#` lines are comments).
-- **Rust**: `cargo test golden_sse_control` or `cargo test control_dispatch_mirror`.
-When adding a new top-level key consumed by the Web UI: update `frontend-leptos/src/sse_dispatch.rs`, **`control_dispatch_mirror::classify_sse_control_outcome`**, and golden lines.
+- **Rust**: `cargo test golden_sse_control` (runs **`crabmate-sse-protocol`** golden tests plus **frontend-leptos** alignment).
+When adding a new top-level key consumed by the Web UI: update `frontend-leptos/src/sse_dispatch.rs`, **`crates/crabmate-sse-protocol/control_classify.rs`**, and golden lines.
 
 ## Contract tests (`crabmate_tool` history envelope)
 

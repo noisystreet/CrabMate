@@ -1,6 +1,11 @@
-//! CrabMate **`POST /chat/stream`** 控制面 JSON 的**协议版本**常量。
+//! CrabMate **`POST /chat/stream`** 控制面 JSON 的**协议版本**常量与 **`stop`/`handled`/`plain`** 分类。
 //!
-//! 与 `docs/SSE_PROTOCOL.md` 中的 **`v`** / `sse_capabilities.supported_sse_v` 一致；服务端 `src/sse/protocol.rs` 与 **Leptos** 均依赖本 crate，避免双端常量漂移。
+//! - **`SSE_PROTOCOL_VERSION`**：与 `docs/SSE_PROTOCOL.md` 中的 **`v`** / `sse_capabilities.supported_sse_v` 一致。
+//! - **[`classify_sse_control_outcome`]**：与 Leptos **`frontend-leptos/src/sse_dispatch.rs`** 同序；金样 **`fixtures/sse_control_golden.jsonl`**。
+
+mod control_classify;
+
+pub use control_classify::{classify_sse_control_outcome, key_present_non_null};
 
 /// 当前控制面版本：信封顶层 **`v`**，以及首帧 **`sse_capabilities.supported_sse_v`**。
 pub const SSE_PROTOCOL_VERSION: u8 = 1;

@@ -1,5 +1,6 @@
 # SSE 控制面契约金样：每行 `描述<TAB>JSON<TAB>期望分类`（stop|handled|plain）
-# 分类须与 frontend-leptos/src/sse_dispatch.rs 及 src/sse/control_dispatch_mirror.rs 同步。
+# 分类须与 crates/crabmate-sse-protocol/control_classify.rs（`classify_sse_control_outcome`）及
+# frontend-leptos/src/sse_dispatch.rs（`try_dispatch_sse_control_payload`）同序。
 
 error+code 流错误	{"v":1,"error":"x","code":"E"}	stop
 error+code+reason_code 仍为 stop	{"v":1,"error":"x","code":"E","reason_code":"plan_missing"}	stop

@@ -22,7 +22,7 @@ Includes (non-exhaustive):
 
 - **`cargo fmt --all`**
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
-- **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl` or `src/sse/control_dispatch_mirror.rs` change)
+- **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl`, `crates/crabmate-sse-protocol/control_classify.rs`, or `frontend-leptos/src/sse_dispatch.rs` change)
 
 Without pre-commit installed, run at least:
 
@@ -53,7 +53,7 @@ cargo test
 
 ```bash
 cargo test golden_sse_control
-cargo test control_dispatch_mirror
+cargo test -p crabmate-sse-protocol golden_sse_control
 cargo test tool_result_envelope_golden
 ```
 

@@ -11,6 +11,6 @@ This page mirrors [docs/DEBUG.md](../DEBUG.md) in English. For the full, authori
 - **CLI**: **`crabmate doctor`** needs no `API_KEY`; **`probe`** / **`models`** usually do under bearer auth. **`save-session`**, **`tool-replay`** help offline inspection.
 - **HTTP**: **`/health`**, **`/status`**, **`/web-ui`**, **`/openapi.json`** — see [docs/en/CLI.md](CLI.md) for the route table.
 - **Tool**: **`diagnostic_summary`** — redacted diagnostics only; **never** pastes env values. See [docs/en/TOOLS.md](TOOLS.md).
-- **SSE**: [docs/SSE_PROTOCOL.md](../SSE_PROTOCOL.md); keep **`control_dispatch_mirror`**, **`sse_dispatch`**, and **`fixtures/sse_control_golden.jsonl`** in sync when changing control JSON.
+- **SSE**: [docs/SSE_PROTOCOL.md](../SSE_PROTOCOL.md); keep **`crabmate-sse-protocol`** (`control_classify`), **`sse_dispatch`**, and **`fixtures/sse_control_golden.jsonl`** in sync when changing control JSON.
 
 **Secrets**: Do not paste real API keys or tokens into logs or issues; see project rules under **`.cursor/rules/secrets-and-logging.mdc`**.

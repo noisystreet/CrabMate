@@ -15,6 +15,6 @@ alwaysApply: true
 ## 清单
 
 - [ ] 字段增删改名 → **serde 类型**、**Leptos 前端解析**、**可选 README / DEVELOPMENT** 协议说明一致。（例：`staged_plan_notice` / `staged_plan_notice_clear` 须在 `frontend-leptos/src/sse_dispatch.rs` 中返回 `Handled`，避免进入正文 `on_delta`。）
-- [ ] 若改动 **Web 控制面分发分支顺序或新顶层键**：同步 **`src/sse/control_dispatch_mirror.rs`**（`#[cfg(test)]`）与 **`fixtures/sse_control_golden.jsonl`**；本地跑 **`cargo test golden_sse_control`**。
+- [ ] 若改动 **Web 控制面分发分支顺序或新顶层键**：同步 **`crates/crabmate-sse-protocol/control_classify.rs`**（`classify_sse_control_outcome`）、**`frontend-leptos/src/sse_dispatch.rs`** 与 **`fixtures/sse_control_golden.jsonl`**；本地跑 **`cargo test golden_sse_control`**。
 - [ ] 新错误码或 `code:` → 前端是否展示/重试；**勿**在响应体中泄露密钥或完整鉴权头（见 **`.cursor/rules/secrets-and-logging.mdc`**）。
 - [ ] 准备提交 → **`cd frontend-leptos && cargo check --target wasm32-unknown-unknown`**；大改时 **`cd frontend-leptos && trunk build`**（或与生产一致 **`trunk build --release`**）。
