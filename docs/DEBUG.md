@@ -23,7 +23,7 @@
 
 - **实现**：进程使用 **`tracing`**（**`tracing-subscriber`**）输出；既有 **`log::`** 调用经 **`tracing-log`** 进入同一套 subscriber。**`RUST_LOG`** 语法与 **`env_logger`** 时代相同（见 [tracing-subscriber `EnvFilter`](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html)）。
 - **JSON 行**（便于 `jq` / 日志平台）：设 **`AGENT_LOG_JSON=1`**（或 **`true`** / **`yes`** / **`on`**）；与 **`--log`** 组合时 stderr 与文件均为 JSON。
-- **Web 排障关联**：流式任务日志可带根 span **`chat_turn`** 的字段 **`job_id` / `stream_job_id` / `request_id` / `conversation_id`**，以及 **`outer_loop_iteration`**、**`tool_call_id`**（与 HTTP **`x-stream-job-id`** / SSE **`sse_capabilities`** 对齐）。
+- **Web 排障关联**：流式任务日志可带根 span **`chat_turn`** 的字段 **`job_id`**、**`conversation_id`**（截断预览 + **`conversation_id_len`**）、**`outer_loop_iteration`**、**`tool_call_id`**（截断预览；与 HTTP **`x-stream-job-id`** / SSE **`sse_capabilities.job_id`** 对齐的单调 id 为 **`job_id`**）。需要完整会话 id 或更长请求体预览时请查会话存储或开 **`RUST_LOG=crabmate=debug`**（见 **`AGENT_LOG_CHAT_REQUEST_JSON`** 与 [`src/redact.rs`](../src/redact.rs)）。
 - **默认**：未设置 `RUST_LOG` 时，`serve` 为 **info**；`repl` / `chat` / `bench` / `config` / `save-session` / `tool-replay` 等为 **warn**。见 [docs/CLI.md](CLI.md)。
 - **全局文件 + 镜像 stderr**：根级 **`--log /path/to.log`**（须写在子命令**之前**，如 `crabmate --log /tmp/cm.log serve`）。
 - **上下文管道（每轮进模型前）**  

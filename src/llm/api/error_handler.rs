@@ -2,7 +2,10 @@
 
 use log::{debug, error, info};
 
-use crate::redact::{self, CHAT_REQUEST_JSON_LOG_MAX_CHARS, HTTP_BODY_PREVIEW_LOG_CHARS};
+use crate::redact::{
+    self, CHAT_REQUEST_JSON_LOG_INFO_CHARS, CHAT_REQUEST_JSON_LOG_MAX_CHARS,
+    HTTP_BODY_PREVIEW_LOG_CHARS,
+};
 use crate::types::ChatRequest;
 
 use super::super::call_error::LlmCallError;
@@ -24,8 +27,8 @@ pub(super) fn log_chat_request_json_preview_if_enabled(req: &ChatRequest) {
     let as_debug = log::log_enabled!(log::Level::Debug);
     match serde_json::to_string(req) {
         Ok(body) => {
-            let preview = redact::preview_chars(&body, CHAT_REQUEST_JSON_LOG_MAX_CHARS);
             if as_debug {
+                let preview = redact::preview_chars(&body, CHAT_REQUEST_JSON_LOG_MAX_CHARS);
                 debug!(
                     target: "crabmate",
                     "chat 请求体 JSON len={} messages_count={} body_preview={}",
@@ -34,6 +37,7 @@ pub(super) fn log_chat_request_json_preview_if_enabled(req: &ChatRequest) {
                     preview
                 );
             } else {
+                let preview = redact::preview_chars(&body, CHAT_REQUEST_JSON_LOG_INFO_CHARS);
                 info!(
                     target: "crabmate",
                     "chat 请求体 JSON len={} messages_count={} body_preview={}",
