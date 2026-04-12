@@ -50,9 +50,10 @@ use app_shell_effects::{
     ShellEscapeSignals, wire_approval_expanded_follows_pending, wire_context_used_estimate,
     wire_escape_key_layered_dismiss, wire_initial_sessions_from_storage, wire_persist_agent_role,
     wire_persist_chat_sessions, wire_persist_side_panel_view_flags, wire_persist_side_width,
-    wire_persist_status_bar_visible, wire_settings_modal_llm_drafts_on_open,
-    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
-    wire_sync_theme_to_storage_and_dom, wire_web_ui_config_once_after_init,
+    wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
+    wire_settings_modal_llm_drafts_on_open, wire_sync_bg_decor_to_storage_and_dom,
+    wire_sync_locale_html_lang, wire_sync_theme_to_storage_and_dom,
+    wire_web_ui_config_once_after_init,
 };
 
 use crate::chat_session_state::ChatSessionSignals;
@@ -65,11 +66,12 @@ use std::sync::{Arc, Mutex};
 
 use crate::api::{StatusData, TasksData, WorkspaceData};
 use crate::app_prefs::{
-    AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, STATUS_BAR_VISIBLE_KEY, THEME_KEY,
-    WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key, load_side_panel_view, local_storage,
+    AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, SIDEBAR_RAIL_COLLAPSED_KEY,
+    STATUS_BAR_VISIBLE_KEY, THEME_KEY, WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key,
+    load_side_panel_view, local_storage,
 };
 use crate::clarification_form::PendingClarificationForm;
-use crate::i18n::load_locale_from_storage;
+use crate::i18n::{self, load_locale_from_storage};
 use crate::session_ops::SessionContextAnchor;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
@@ -178,6 +180,8 @@ pub fn App() -> impl IntoView {
     let client_llm_storage_tick = RwSignal::new(0_u64);
     let session_context_menu = RwSignal::new(None::<SessionContextAnchor>);
     let mobile_nav_open = RwSignal::new(false);
+    // 桌面端左侧会话栏是否收起（`localStorage` `SIDEBAR_RAIL_COLLAPSED_KEY`）。
+    let sidebar_rail_collapsed = RwSignal::new(load_bool_key(SIDEBAR_RAIL_COLLAPSED_KEY, false));
     let approval_expanded = RwSignal::new(false);
     let last_approval_sid = RwSignal::new(String::new());
     let abort_cell: Arc<Mutex<Option<web_sys::AbortController>>> = Arc::new(Mutex::new(None));
@@ -250,6 +254,7 @@ pub fn App() -> impl IntoView {
     wire_persist_status_bar_visible(status_bar_visible);
     wire_persist_agent_role(selected_agent_role);
     wire_persist_side_width(side_width);
+    wire_persist_sidebar_rail_collapsed(sidebar_rail_collapsed);
     wire_approval_expanded_follows_pending(pending_approval, last_approval_sid, approval_expanded);
     wire_sync_theme_to_storage_and_dom(theme);
     wire_sync_locale_html_lang(locale);
@@ -390,7 +395,10 @@ pub fn App() -> impl IntoView {
     };
 
     view! {
-        <div class="app-root app-shell-ds">
+        <div
+            class="app-root app-shell-ds"
+            class:sidebar-rail-collapsed=move || sidebar_rail_collapsed.get()
+        >
             {sidebar_nav_view(
                 locale,
                 mobile_nav_open,
@@ -407,7 +415,19 @@ pub fn App() -> impl IntoView {
                 session_context_menu,
                 composer_buf_nav.clone(),
                 apply_assistant_display_filters,
+                sidebar_rail_collapsed,
             )}
+
+            <Show when=move || sidebar_rail_collapsed.get()>
+                <button
+                    type="button"
+                    class="btn btn-secondary sidebar-rail-reveal-btn"
+                    prop:aria-label=move || i18n::nav_sidebar_expand_aria(locale.get())
+                    on:click=move |_| sidebar_rail_collapsed.set(false)
+                >
+                    "›"
+                </button>
+            </Show>
 
             <div class="shell-main">
                 {mobile_shell_header_view(mobile_nav_open, locale, new_session.clone())}

@@ -82,6 +82,7 @@ pub fn sidebar_nav_view(
     session_context_menu: RwSignal<Option<SessionContextAnchor>>,
     composer_buf_nav: Arc<Mutex<String>>,
     apply_assistant_display_filters: RwSignal<bool>,
+    sidebar_rail_collapsed: RwSignal<bool>,
 ) -> impl IntoView {
     let sessions = chat.sessions;
     let active_id = chat.active_id;
@@ -109,11 +110,22 @@ pub fn sidebar_nav_view(
             s
         }>
             <div class="nav-rail-brand">
-                <span class="brand-mark" aria-hidden="true"></span>
-                <div class="nav-rail-brand-text">
-                    <h1>"CrabMate"</h1>
-                    <span class="brand-sub">{move || i18n::brand_sub(locale.get())}</span>
+                <div class="nav-rail-brand-main">
+                    <span class="brand-mark" aria-hidden="true"></span>
+                    <div class="nav-rail-brand-text">
+                        <h1>"CrabMate"</h1>
+                        <span class="brand-sub">{move || i18n::brand_sub(locale.get())}</span>
+                    </div>
                 </div>
+                <button
+                    type="button"
+                    class="btn btn-icon btn-nav-rail-collapse"
+                    prop:aria-label=move || i18n::nav_sidebar_collapse_aria(locale.get())
+                    prop:aria-expanded=move || (!sidebar_rail_collapsed.get()).to_string()
+                    on:click=move |_| sidebar_rail_collapsed.set(true)
+                >
+                    "‹"
+                </button>
             </div>
             <button
                 type="button"

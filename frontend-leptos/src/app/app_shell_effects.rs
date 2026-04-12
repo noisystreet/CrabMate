@@ -11,9 +11,9 @@ use crate::api::{
     client_llm_storage_has_api_key, fetch_web_ui_config, load_client_llm_text_fields_from_storage,
 };
 use crate::app_prefs::{
-    AGENT_ROLE_KEY, BG_DECOR_KEY, STATUS_BAR_VISIBLE_KEY, SidePanelView, TASKS_VISIBLE_KEY,
-    THEME_KEY, WORKSPACE_VISIBLE_KEY, WORKSPACE_WIDTH_KEY, local_storage, store_bool_key,
-    store_f64_key, store_side_panel_view,
+    AGENT_ROLE_KEY, BG_DECOR_KEY, SIDEBAR_RAIL_COLLAPSED_KEY, STATUS_BAR_VISIBLE_KEY,
+    SidePanelView, TASKS_VISIBLE_KEY, THEME_KEY, WORKSPACE_VISIBLE_KEY, WORKSPACE_WIDTH_KEY,
+    local_storage, store_bool_key, store_f64_key, store_side_panel_view,
 };
 use crate::i18n::{self, Locale};
 use crate::session_ops::{SessionContextAnchor, estimate_context_chars_for_active_session};
@@ -175,6 +175,13 @@ pub fn wire_persist_agent_role(selected_agent_role: RwSignal<Option<String>>) {
 pub fn wire_persist_side_width(side_width: RwSignal<f64>) {
     Effect::new(move |_| {
         store_f64_key(WORKSPACE_WIDTH_KEY, side_width.get());
+    });
+}
+
+/// 桌面端左侧会话栏收起状态写入 `localStorage`。
+pub fn wire_persist_sidebar_rail_collapsed(sidebar_rail_collapsed: RwSignal<bool>) {
+    Effect::new(move |_| {
+        store_bool_key(SIDEBAR_RAIL_COLLAPSED_KEY, sidebar_rail_collapsed.get());
     });
 }
 
