@@ -14,6 +14,72 @@ use super::thinking_strip::{
 /// 须与主仓 `src/runtime/plan_section.rs` 中 `STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX` 同步。
 pub(crate) const STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX: &str = "### CrabMate·NL补全\n";
 
+/// 与 `src/agent/agent_turn/staged_sse.rs`、`plan_optimizer.rs`、`plan_ensemble.rs` 等注入的 **system** 首行对齐；聊天区展示时剥除，避免「分阶段 ·」原样进气泡。
+const STAGED_PLAN_SYSTEM_COACH_PREFIX: &str = "### 分阶段规划 ·";
+
+fn coach_ordinal_from_injection_header(first_line: &str) -> usize {
+    let s = first_line.trim();
+    if s.contains("步骤优化") {
+        2
+    } else if s.contains("逻辑规划员") || s.contains("合并多规划") || s.contains("追加规划员")
+    {
+        3
+    } else {
+        1
+    }
+}
+
+fn text_has_leading_ordinal_prefix(s: &str) -> bool {
+    let t = s.trim_start();
+    let mut end = 0usize;
+    for (i, c) in t.char_indices() {
+        if c.is_ascii_digit() {
+            end = i + c.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if end == 0 {
+        return false;
+    }
+    t[end..].trim_start().starts_with('.')
+}
+
+/// 剥除 `### 分阶段规划 · …` 首行；返回 `(展示用序号, 剩余正文)`；不匹配则 `None`。
+fn strip_staged_plan_system_coach_header(body_after_timeline: &str) -> Option<(usize, &str)> {
+    let trimmed = body_after_timeline.trim_start();
+    if !trimmed.starts_with(STAGED_PLAN_SYSTEM_COACH_PREFIX) {
+        return None;
+    }
+    let first_nl = trimmed.find('\n').unwrap_or(trimmed.len());
+    let first_line = trimmed[..first_nl].trim();
+    let ord = coach_ordinal_from_injection_header(first_line);
+    let rest = if first_nl < trimmed.len() {
+        &trimmed[first_nl + 1..]
+    } else {
+        ""
+    };
+    Some((ord, rest))
+}
+
+fn system_text_for_chat_display(raw: &str, loc: Locale) -> String {
+    let after_timeline = raw
+        .strip_prefix(STAGED_TIMELINE_SYSTEM_PREFIX)
+        .unwrap_or(raw);
+    if let Some((ord, rest)) = strip_staged_plan_system_coach_header(after_timeline) {
+        let rest = rest.trim_start();
+        if rest.is_empty() {
+            let hint = crate::i18n::staged_coach_injection_fallback(loc, ord);
+            return format!("{ord}. {hint}");
+        }
+        if text_has_leading_ordinal_prefix(rest) {
+            return rest.to_string();
+        }
+        return format!("{ord}. {rest}");
+    }
+    after_timeline.to_string()
+}
+
 fn user_text_for_chat_display(raw: &str) -> String {
     if raw
         .trim_start()
@@ -100,10 +166,7 @@ pub fn message_text_for_display_ex(
     } else if m.role == "user" {
         user_text_for_chat_display(&m.text)
     } else if m.role == "system" {
-        m.text
-            .strip_prefix(STAGED_TIMELINE_SYSTEM_PREFIX)
-            .unwrap_or(m.text.as_str())
-            .to_string()
+        system_text_for_chat_display(m.text.as_str(), loc)
     } else {
         m.text.clone()
     }

@@ -543,7 +543,7 @@ flowchart LR
 - **`find.rs`**：主区查找匹配 id、光标与首条 **`scroll_message_into_view`**。
 - **`column.rs`**：中部消息列表与输入区（接收 **`ChatColumnShell`**）。
 - **`find_bar.rs`**：主区内查找条。
-- **`message_chunks.rs`**：将 **`StoredMessage`** 列表折叠为 **`ChatChunk`**（单条 / 连续工具 / 分阶段时间线组），供 **`column`** 迭代。
+- **`message_chunks.rs`**：将 **`StoredMessage`** 列表折叠为 **`ChatChunk`**（单条 / 连续工具 / 分阶段时间线组），供 **`column`** 迭代；同一轮分阶段旁注若仅被**工具消息**隔开，会合并为**一条**待办卡片后再按序插入其间各工具块（避免多条分散「系统」气泡）。
 - **`message_row.rs`**：单条消息气泡与操作条（复制 / 重试 / 分支等）。
 - **`message_group_views.rs`**：连续工具输出与分阶段时间线分组折叠视图（供 **`column`**）。
 - **`timeline.rs`**：可折叠的「规划 / 工具时间线」索引（**`timeline_scan`** 扫描消息；点击跳转到 **`#msg-{id}`**）。
@@ -562,7 +562,7 @@ flowchart LR
 
 ### `frontend-leptos/src/assistant_body.rs`
 
-- 助手**非工具**消息：**`markdown::to_safe_html`** + **`assistant_markdown_body_view`**（`Effect` + 微任务延迟写入）；用户 / 工具 / 系统消息在 **`app/`（聊天列）** 中仍为纯文本 **`span.msg-body`**。
+- 助手**非工具**消息：**`assistant_markdown_collapsible_view`**：`Effect` + **`request_animation_frame`** 写入 **`innerHTML`**（**`markdown::to_safe_html`** / 纯文本路径）；超长（字符阈值 **`LONG_ASSISTANT_COLLAPSE_THRESHOLD`**）时**默认全文**，**`collapsed_long_assistant_ids`** 记录用户手动折叠；用户 / 工具 / 系统消息在 **`app/`（聊天列）** 中仍为纯文本 **`span.msg-body`**。
 
 ### `frontend-leptos/src/session_sync.rs`
 

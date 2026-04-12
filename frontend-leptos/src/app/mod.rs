@@ -105,12 +105,10 @@ pub fn App() -> impl IntoView {
         stream_job_id,
         stream_last_event_seq,
     };
-    // 已完成长助手消息默认折叠；在此列表中的 id 表示已展开。
-    let expanded_long_assistant_ids = RwSignal::new(Vec::<String>::new());
+    // 超长已完成助手消息默认全文展示；在此列表中的 id 表示用户手动折叠。
+    let collapsed_long_assistant_ids = RwSignal::new(Vec::<String>::new());
     // 连续工具输出分组：以组内首条消息 id 为键，表示该组处于展开态（默认折叠只显示最新一条）。
     let expanded_tool_run_heads = RwSignal::new(HashSet::<String>::new());
-    // 连续分阶段时间线旁注分组：键同工具分组。
-    let expanded_staged_timeline_heads = RwSignal::new(HashSet::<String>::new());
     let side_panel_view = RwSignal::new(load_side_panel_view());
     let view_menu_open = RwSignal::new(false);
     let status_bar_visible = RwSignal::new(load_bool_key(STATUS_BAR_VISIBLE_KEY, true));
@@ -315,7 +313,7 @@ pub fn App() -> impl IntoView {
         draft,
         pending_images,
         pending_clarification,
-        expanded_long_assistant_ids,
+        collapsed_long_assistant_ids,
     );
 
     wire_draft_sync_to_buffer_and_textarea(
@@ -441,9 +439,8 @@ pub fn App() -> impl IntoView {
                         last_messages_scroll_top,
                         timeline_panel_expanded,
                         chat: chat_session,
-                        expanded_long_assistant_ids,
+                        collapsed_long_assistant_ids,
                         expanded_tool_run_heads,
-                        expanded_staged_timeline_heads,
                         chat_find_query,
                         chat_find_match_ids,
                         chat_find_cursor,

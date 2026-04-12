@@ -890,7 +890,7 @@
   display: none;
 }
 
-/* 连续多条分阶段时间线旁注：默认只显示最新一条，可展开（语义对齐 .msg-tool-run） */
+/* 连续多条分阶段时间线旁注：聚合为单卡片内待办列表（与 .msg-tool-run 同宽拉伸） */
 .msg-staged-timeline-run {
   align-self: stretch;
   width: 100%;
@@ -898,6 +898,95 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* 分阶段规划：单条系统气泡内待办列表 */
+.msg-staged-todo-wrap {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 10px 10px;
+  box-sizing: border-box;
+}
+
+.msg-staged-todo-card-title {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.msg-staged-todo-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.msg-staged-todo-li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 2px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.msg-staged-todo-glyph {
+  flex-shrink: 0;
+  width: 1.1em;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.msg-staged-todo-li-done .msg-staged-todo-glyph {
+  color: color-mix(in srgb, var(--success) 82%, var(--muted));
+}
+
+.msg-staged-todo-li-progress .msg-staged-todo-glyph {
+  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+}
+
+.msg-staged-todo-li-failed .msg-staged-todo-glyph {
+  color: color-mix(in srgb, var(--danger) 78%, var(--muted));
+}
+
+.msg-staged-todo-li-cancelled .msg-staged-todo-glyph {
+  color: var(--muted);
+}
+
+.msg-staged-todo-label {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.msg-staged-todo-legacy {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-subtle);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.msg-staged-todo-legacy-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.msg-staged-todo-legacy-list {
+  list-style: disc;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.msg-staged-todo-legacy-li {
+  margin: 2px 0;
 }
 
 .msg-staged-timeline-run-head {
