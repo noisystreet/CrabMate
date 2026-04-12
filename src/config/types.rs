@@ -441,6 +441,8 @@ pub struct AgentConfig {
     pub workspace_allowed_roots: Vec<std::path::PathBuf>,
     /// Web API 的 Bearer 鉴权令牌（为空表示不启用鉴权）；勿 `Debug` 打印裸值。
     pub web_api_bearer_token: SecretString,
+    /// 为 `true` 时 **`serve` 启动**要求 **`web_api_bearer_token` 非空**，否则拒绝启动（含仅监听 `127.0.0.1`）；用于强制 `/chat*` 等受保护 API 带凭证。
+    pub web_api_require_bearer: bool,
     /// 当监听非 loopback 地址且 `web_api_bearer_token` 为空时，是否允许继续启动（不安全，默认 false）。
     pub allow_insecure_no_auth_for_non_loopback: bool,
     /// 为 `true` 时 `GET /health` 对当前 `api_base` 可选发起 **GET …/models**（仅列表 HTTP，无 chat/completions 计费）；默认 `false`，避免探活风暴。

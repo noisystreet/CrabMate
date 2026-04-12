@@ -178,6 +178,8 @@ pub(super) struct AgentSection {
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
     pub(super) web_api_bearer_token: Option<String>,
+    /// `AGENT_WEB_API_REQUIRE_BEARER`；为 true 时未配置 `web_api_bearer_token` 则 `serve` 拒绝启动。
+    pub(super) web_api_require_bearer: Option<bool>,
     pub(super) allow_insecure_no_auth_for_non_loopback: Option<bool>,
     pub(super) conversation_store_sqlite_path: Option<String>,
     pub(super) agent_memory_file_enabled: Option<bool>,

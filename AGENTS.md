@@ -61,3 +61,4 @@ Standard commands from `README.md`:
 - The `rfd` crate (file dialog) is a dependency but won't work headlessly; this doesn't affect the web server mode.
 - **pre-commit install** may fail with `core.hooksPath` set. Run `git config --unset-all core.hooksPath` first, then `pre-commit install && pre-commit install --hook-type commit-msg`.
 - When starting the server with `--host 0.0.0.0` (non-loopback), you must either set `AGENT_WEB_API_BEARER_TOKEN` or `AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`; otherwise the server refuses to start.
+- Optional hardening: set `web_api_require_bearer` / `AGENT_WEB_API_REQUIRE_BEARER=true` to refuse `serve` startup unless a non-empty `web_api_bearer_token` / `AGENT_WEB_API_BEARER_TOKEN` is configured (including loopback-only binds). The Web UI can send the same secret from `localStorage["crabmate-api-bearer-token"]` (see README).

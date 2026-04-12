@@ -482,6 +482,11 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("AGENT_WEB_API_BEARER_TOKEN") {
         b.web_api_bearer_token = Some(v.trim().to_string());
     }
+    if let Ok(v) = std::env::var("AGENT_WEB_API_REQUIRE_BEARER")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.web_api_require_bearer = Some(val);
+    }
     if let Ok(v) = std::env::var("AGENT_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK")
         && let Some(val) = parse_bool_like(&v)
     {

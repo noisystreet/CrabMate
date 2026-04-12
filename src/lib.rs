@@ -690,6 +690,20 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             sse_stream_hub,
         });
         let static_dir = web_static_dir::resolve_web_static_dir();
+        {
+            let g = cfg_holder.read().await;
+            if g.web_api_require_bearer
+                && crate::config::ExposeSecret::expose_secret(&g.web_api_bearer_token)
+                    .trim()
+                    .is_empty()
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "已启用 web_api_require_bearer（或 AGENT_WEB_API_REQUIRE_BEARER），但未配置非空的 web_api_bearer_token / AGENT_WEB_API_BEARER_TOKEN；请设置共享密钥后再启动 serve，或在配置中关闭 web_api_require_bearer。",
+                )
+                .into());
+            }
+        }
         let web_api_bearer_layer_enabled = {
             let g = cfg_holder.read().await;
             !crate::config::ExposeSecret::expose_secret(&g.web_api_bearer_token)
@@ -735,6 +749,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!(
                 "  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露",
                 addr
+            );
+        }
+        if bind_ip.is_loopback() && !auth_enabled {
+            eprintln!(
+                "  提示: 未配置 web_api_bearer_token，/chat、/workspace、/upload 等受保护 API 可被本机任意进程调用；生产或共享机器建议设置 AGENT_WEB_API_BEARER_TOKEN（及浏览器 localStorage「API」同源键 crabmate-api-bearer-token），或启用 web_api_require_bearer 强制非空密钥。"
             );
         }
         if bind_ip.is_unspecified() && auth_enabled {
