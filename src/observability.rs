@@ -12,8 +12,13 @@ use tracing_subscriber::fmt::time::SystemTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
-/// 与 HTTP **`x-stream-job-id`** / SSE **`sse_capabilities.job_id`** 对齐的 **`stream_job_id`**（进程内单调）。
+/// 与 HTTP **`x-stream-job-id`** / SSE **`sse_capabilities.job_id`** 对齐的单调 **`job_id`**（根 span 字段名）。
 pub(crate) const CHAT_TURN_SPAN_NAME: &str = "chat_turn";
+
+/// `chat_turn` span 内 `conversation_id` 字段最大 Unicode 标量（超出则 `…(truncated)`，避免每行 INFO 被会话 id 撑满）。
+pub(crate) const CHAT_TURN_CONVERSATION_ID_FIELD_MAX_CHARS: usize = 56;
+/// `tool_call_id` 写入 span / `parallel_tool` 子 span 时的上限（模型可能返回较长 id）。
+pub(crate) const CHAT_TURN_TOOL_CALL_ID_FIELD_MAX_CHARS: usize = 72;
 
 static LOGGING_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
@@ -182,14 +187,17 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
     }
 }
 
-/// Web 单条 `/chat*` 任务根 span：`job_id` 与 **`stream_job_id`** 同源，**`request_id`** 与之相同便于检索。
+/// Web 单条 `/chat*` 任务根 span：**`job_id`** 与 HTTP **`x-stream-job-id`** / SSE **`job_id`** 一致；**`conversation_id`** 为截断预览（完整 id 仍由业务层与会话存储持有）。
 pub(crate) fn chat_turn_span(job_id: u64, conversation_id: &str) -> Span {
+    let conversation_id_field = crate::redact::preview_chars(
+        conversation_id.trim(),
+        CHAT_TURN_CONVERSATION_ID_FIELD_MAX_CHARS,
+    );
     tracing::info_span!(
         CHAT_TURN_SPAN_NAME,
         job_id = job_id,
-        stream_job_id = job_id,
-        request_id = %job_id,
-        conversation_id = %conversation_id,
+        conversation_id = %conversation_id_field,
+        conversation_id_len = conversation_id.trim().chars().count(),
         outer_loop_iteration = tracing::field::Empty,
         tool_call_id = tracing::field::Empty,
     )
@@ -200,7 +208,9 @@ pub(crate) fn record_outer_loop_iteration(span: &Span, iteration: u32) {
 }
 
 pub(crate) fn record_tool_call_id(span: &Span, tool_call_id: &str) {
-    span.record("tool_call_id", tool_call_id);
+    let s =
+        crate::redact::preview_chars(tool_call_id.trim(), CHAT_TURN_TOOL_CALL_ID_FIELD_MAX_CHARS);
+    span.record("tool_call_id", s.as_str());
 }
 
 /// Web `/chat*` 单任务：`job_id` / `conversation_id` 根 span + 可递增的外层轮次；工具日志前更新 **`tool_call_id`**。

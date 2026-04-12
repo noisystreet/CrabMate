@@ -86,11 +86,15 @@ fn trace_parallel_tool_child_span(
     match tracing_turn {
         Some(t) => {
             t.record_tool_call_id_for_log(tool_call_id);
+            let id_short = crate::redact::preview_chars(
+                tool_call_id.trim(),
+                crate::observability::CHAT_TURN_TOOL_CALL_ID_FIELD_MAX_CHARS,
+            );
             tracing::span!(
                 parent: t.span.id(),
                 tracing::Level::INFO,
                 "parallel_tool",
-                tool_call_id = %tool_call_id,
+                tool_call_id = %id_short,
             )
         }
         None => tracing::Span::none(),
