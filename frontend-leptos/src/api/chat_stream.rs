@@ -11,7 +11,7 @@ use crabmate_sse_protocol::SSE_PROTOCOL_VERSION;
 use crate::i18n::Locale;
 use crate::sse_dispatch::{
     CommandApprovalRequest, SseCallbacks, StagedPlanStepEndInfo, StagedPlanStepStartInfo,
-    ToolResultInfo, try_dispatch_sse_control_payload,
+    ThinkingTraceInfo, ToolResultInfo, try_dispatch_sse_control_payload,
 };
 
 use super::browser::{auth_headers, window};
@@ -41,6 +41,7 @@ pub struct ChatStreamCallbacks {
     /// SSE `clarification_questionnaire`（模型经工具触发）。
     pub on_clarification_questionnaire:
         std::rc::Rc<dyn Fn(crate::sse_dispatch::ClarificationQuestionnaireInfo)>,
+    pub on_thinking_trace: std::rc::Rc<dyn Fn(ThinkingTraceInfo)>,
 }
 
 impl Clone for ChatStreamCallbacks {
@@ -64,6 +65,7 @@ impl Clone for ChatStreamCallbacks {
             on_clarification_questionnaire: std::rc::Rc::clone(
                 &self.on_clarification_questionnaire,
             ),
+            on_thinking_trace: std::rc::Rc::clone(&self.on_thinking_trace),
         }
     }
 }
@@ -339,6 +341,7 @@ fn handle_sse_block(
         (cbs.on_clarification_questionnaire)(info)
     };
     let mut on_phase = || (cbs.on_assistant_answer_phase)();
+    let mut on_thinking_trace = |info: ThinkingTraceInfo| (cbs.on_thinking_trace)(info);
 
     let mut cbs2 = SseCallbacks {
         on_error: &mut on_err,
@@ -353,6 +356,7 @@ fn handle_sse_block(
         on_staged_plan_step_started: Some(&mut on_staged_start),
         on_staged_plan_step_finished: Some(&mut on_staged_end),
         on_clarification_questionnaire: Some(&mut on_clar),
+        on_thinking_trace: Some(&mut on_thinking_trace),
     };
     match try_dispatch_sse_control_payload(data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(()),

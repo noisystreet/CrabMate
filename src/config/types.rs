@@ -405,6 +405,8 @@ pub struct AgentConfig {
     pub tool_result_envelope_v1: bool,
     /// 为 true 时：SSE **`tool_call`** 事件除 **`arguments_preview`** 外另含脱敏后的 **`arguments`**（更长上限，仍非全文保证）；默认 false，避免浏览器/共享屏泄露参数。
     pub sse_tool_call_include_arguments: bool,
+    /// 为 true 时：`POST /chat/stream` 经控制面下发结构化 **`thinking_trace`**（推理增量、终答阶段、工具前后上下文摘要等），供 Web「调试台」展示。**默认 true**；**不**从 `[agent]` TOML 读入，可用 **`AGENT_THINKING_TRACE_ENABLED=0`** 关闭。
+    pub agent_thinking_trace_enabled: bool,
     /// 为 true 时：进程内记录各工具完结的 `ok`/`error_code`（滑动窗口），并在**新会话**首条 `system` 末尾可选附加短提示；不按会话分桶、不落盘。
     pub agent_tool_stats_enabled: bool,
     /// 上述统计滑动窗口最多保留的事件条数（单进程全局）。

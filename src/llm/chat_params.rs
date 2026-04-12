@@ -48,6 +48,8 @@ pub struct StreamChatParams<'a> {
     pub fold_system_into_user: bool,
     /// Moonshot **kimi-k2.5** + 默认 thinking：含 **`tool_calls`** 的 assistant 须保留 **`reasoning_content`**（见 [`super::vendor::LlmVendorAdapter::preserve_assistant_tool_call_reasoning`]）。
     pub preserve_reasoning_on_assistant_tool_calls: bool,
+    /// 为 true 时经 SSE 下发结构化 **`thinking_trace`**（推理增量、终答阶段等），供 Web 调试台。
+    pub thinking_trace_enabled: bool,
 }
 
 /// [`super::complete_chat_retrying`] 入参（不含每次克隆前的 `ChatRequest`）。
@@ -109,6 +111,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
             fold_system_into_user: super::fold_system_into_user_for_config(self.cfg),
             preserve_reasoning_on_assistant_tool_calls: super::llm_vendor_adapter(self.cfg)
                 .preserve_assistant_tool_call_reasoning(self.cfg),
+            thinking_trace_enabled: self.cfg.agent_thinking_trace_enabled,
         }
     }
 }

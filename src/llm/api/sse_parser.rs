@@ -5,10 +5,46 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use futures_util::StreamExt;
 use tokio::sync::mpsc::Sender;
 
+use crate::sse::{SsePayload, ThinkingTraceBody, encode_message};
 use crate::types::StreamChunk;
 
 use super::super::call_error::LlmCallError;
 use super::terminal_render::cli_terminal_write_plain_fragment;
+
+const THINKING_TRACE_CHUNK_MAX: usize = 4096;
+
+#[inline]
+fn clip_thinking_trace_text(s: &str, max: usize) -> String {
+    let mut t = s.to_string();
+    if t.len() > max {
+        t.truncate(max);
+        t.push('…');
+    }
+    t
+}
+
+#[inline]
+async fn emit_thinking_trace_if(
+    enabled: bool,
+    out: Option<&Sender<String>>,
+    body: ThinkingTraceBody,
+    coop_cancel: Option<&AtomicBool>,
+) -> std::io::Result<()> {
+    if !enabled {
+        return Ok(());
+    }
+    let Some(tx) = out else {
+        return Ok(());
+    };
+    let _ = sse_out_send(
+        tx,
+        encode_message(SsePayload::ThinkingTrace { trace: body }),
+        "llm::stream_chat thinking_trace",
+        coop_cancel,
+    )
+    .await;
+    Ok(())
+}
 
 /// 将单次 `delta.reasoning_content` 转为应追加到 [`IngestSseState::reasoning_acc`] 的片段。
 ///
@@ -48,6 +84,7 @@ async fn accumulate_reasoning_stream_delta(
     cli_plain_prefix_emitted: &mut bool,
     cli_plain_reasoning_style_active: &mut bool,
     coop_cancel: Option<&AtomicBool>,
+    thinking_trace_enabled: bool,
 ) -> std::io::Result<()> {
     if fragment.is_empty() {
         return Ok(());
@@ -70,6 +107,20 @@ async fn accumulate_reasoning_stream_delta(
             coop_cancel,
         )
         .await;
+        emit_thinking_trace_if(
+            thinking_trace_enabled,
+            Some(tx),
+            ThinkingTraceBody {
+                op: "reasoning_delta".into(),
+                node_id: Some("stream_reasoning".into()),
+                parent_id: None,
+                title: None,
+                chunk: Some(clip_thinking_trace_text(fragment, THINKING_TRACE_CHUNK_MAX)),
+                context_snapshot: None,
+            },
+            coop_cancel,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -83,6 +134,7 @@ struct MinimaxReasoningDetailsCtx<'a> {
     cli_plain_prefix_emitted: &'a mut bool,
     cli_plain_reasoning_style_active: &'a mut bool,
     coop_cancel: Option<&'a AtomicBool>,
+    thinking_trace_enabled: bool,
 }
 
 async fn accumulate_minimax_reasoning_details_deltas(
@@ -97,6 +149,7 @@ async fn accumulate_minimax_reasoning_details_deltas(
         cli_plain_prefix_emitted,
         cli_plain_reasoning_style_active,
         coop_cancel,
+        thinking_trace_enabled,
     } = ctx;
     while snaps.len() < details.len() {
         snaps.push(String::new());
@@ -122,6 +175,7 @@ async fn accumulate_minimax_reasoning_details_deltas(
             cli_plain_prefix_emitted,
             cli_plain_reasoning_style_active,
             coop_cancel,
+            thinking_trace_enabled,
         )
         .await?;
         snap.clear();
@@ -163,6 +217,7 @@ pub(super) struct IngestSseState<'a> {
     pub(super) cli_plain_reasoning_style_active: &'a mut bool,
     pub(super) minimax_reasoning_snaps: &'a mut Vec<String>,
     pub(super) coop_cancel: Option<&'a AtomicBool>,
+    pub(super) thinking_trace_enabled: bool,
 }
 
 pub(super) async fn ingest_sse_data_payload(
@@ -185,6 +240,7 @@ pub(super) async fn ingest_sse_data_payload(
         cli_plain_reasoning_style_active,
         minimax_reasoning_snaps,
         coop_cancel,
+        thinking_trace_enabled,
     } = state;
     let Ok(chunk) = serde_json::from_slice::<StreamChunk>(payload.as_bytes()) else {
         return Ok(());
@@ -218,6 +274,7 @@ pub(super) async fn ingest_sse_data_payload(
                 cli_plain_prefix_emitted,
                 cli_plain_reasoning_style_active,
                 coop_cancel,
+                thinking_trace_enabled,
             )
             .await?;
         }
@@ -235,6 +292,7 @@ pub(super) async fn ingest_sse_data_payload(
                 cli_plain_prefix_emitted,
                 cli_plain_reasoning_style_active,
                 coop_cancel,
+                thinking_trace_enabled,
             },
         )
         .await?;
@@ -256,6 +314,20 @@ pub(super) async fn ingest_sse_data_payload(
                 coop_cancel,
             )
             .await;
+            emit_thinking_trace_if(
+                thinking_trace_enabled,
+                Some(tx),
+                ThinkingTraceBody {
+                    op: "answer_phase".into(),
+                    node_id: Some("stream_answer".into()),
+                    parent_id: Some("stream_reasoning".into()),
+                    title: Some("assistant_answer_phase".into()),
+                    chunk: None,
+                    context_snapshot: None,
+                },
+                coop_cancel,
+            )
+            .await?;
         }
         content_acc.push_str(s);
         if cli_terminal_plain {
@@ -337,6 +409,7 @@ pub(super) async fn consume_openai_sse_byte_stream<S, B>(
     cancel: Option<&AtomicBool>,
     out: Option<&Sender<String>>,
     cli_terminal_plain: bool,
+    thinking_trace_enabled: bool,
 ) -> Result<SseStreamAccum, Box<dyn std::error::Error + Send + Sync>>
 where
     S: futures_util::Stream<Item = Result<B, reqwest::Error>> + Unpin,
@@ -394,6 +467,7 @@ where
                         cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
                         minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
                         coop_cancel: cancel,
+                        thinking_trace_enabled,
                     },
                 )
                 .await?;
@@ -428,6 +502,7 @@ where
                         cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
                         minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
                         coop_cancel: cancel,
+                        thinking_trace_enabled,
                     },
                 )
                 .await?;

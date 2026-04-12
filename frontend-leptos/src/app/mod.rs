@@ -358,6 +358,7 @@ pub fn App() -> impl IntoView {
         );
     let insert_workspace_file_ref_sv = StoredValue::new(Arc::clone(&insert_workspace_file_ref));
 
+    let thinking_trace_log = RwSignal::new(Vec::<crate::sse_dispatch::ThinkingTraceInfo>::new());
     let chat_stream_shell = ComposerStreamShell {
         status_busy,
         status_err,
@@ -369,6 +370,7 @@ pub fn App() -> impl IntoView {
         changelist_modal_open,
         changelist_fetch_nonce,
         pending_clarification,
+        thinking_trace_log,
     };
 
     let chat_wires = wire_chat_composer_streams(WireComposerStreamsArgs {
@@ -499,6 +501,7 @@ pub fn App() -> impl IntoView {
                         changelist_modal_open,
                         changelist_fetch_nonce,
                         insert_workspace_file_ref_sv,
+                        chat_stream_shell.thinking_trace_log,
                     )}
                 </div>
 

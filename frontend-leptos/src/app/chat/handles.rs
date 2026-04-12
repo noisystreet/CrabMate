@@ -11,6 +11,7 @@ use leptos::prelude::*;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
+use crate::sse_dispatch::ThinkingTraceInfo;
 
 /// `/chat/stream` 与壳层共享的一组信号与句柄：状态栏错误、工具忙、审批、中止、工作区刷新、变更集拉取、澄清表单。
 ///
@@ -28,6 +29,8 @@ pub struct ComposerStreamShell {
     pub changelist_modal_open: RwSignal<bool>,
     pub changelist_fetch_nonce: RwSignal<u64>,
     pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+    /// 服务端 `thinking_trace` 事件累积（新流开始时清空）。
+    pub thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
 }
 
 /// 中部聊天列：`messages` 滚动区、时间线、消息列表与输入区所需的信号与闭包。

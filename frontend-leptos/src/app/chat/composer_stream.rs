@@ -15,7 +15,7 @@ use crate::message_format::{staged_timeline_system_message_body, tool_card_text}
 use crate::session_ops::{approval_session_id, make_message_id, message_created_ms};
 use crate::sse_dispatch::{
     ClarificationQuestionnaireInfo, CommandApprovalRequest, StagedPlanStepEndInfo,
-    StagedPlanStepStartInfo, ToolResultInfo,
+    StagedPlanStepStartInfo, ThinkingTraceInfo, ToolResultInfo,
 };
 use crate::storage::StoredMessage;
 use crate::timeline_scan::{
@@ -69,6 +69,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             // id，首包即 410「无法重连」。
             chat.stream_job_id.set(None);
             chat.stream_last_event_seq.set(0);
+            shell_outer.thinking_trace_log.set(Vec::new());
             if let Some(prev) = shell_outer.abort_cell.lock().unwrap().take() {
                 prev.abort();
             }
@@ -319,6 +320,12 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                         .set(Some(PendingClarificationForm::from_sse(info)));
                 })
             };
+            let on_thinking_trace: Rc<dyn Fn(ThinkingTraceInfo)> = {
+                let sh = shell_outer.clone();
+                Rc::new(move |info: ThinkingTraceInfo| {
+                    sh.thinking_trace_log.update(|v| v.push(info));
+                })
+            };
             let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |info: StagedPlanStepEndInfo| {
@@ -374,6 +381,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 on_staged_plan_step_started: on_staged_step_started,
                 on_staged_plan_step_finished: on_staged_step_finished,
                 on_clarification_questionnaire: on_clarification,
+                on_thinking_trace,
             };
 
             let shell_for_stream_err = shell_outer.clone();

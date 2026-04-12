@@ -11,6 +11,7 @@ use web_sys::KeyboardEvent;
 use crate::api::{TaskItem, TasksData, fetch_workspace_pick, post_workspace_set};
 use crate::app_prefs::SidePanelView;
 use crate::i18n::{self, Locale};
+use crate::sse_dispatch::ThinkingTraceInfo;
 use crate::workspace_shell::{begin_side_column_resize, reload_workspace_panel};
 use crate::workspace_tree::WorkspaceFilesystemTree;
 
@@ -127,6 +128,76 @@ fn SideColumnTasksCard(
     }
 }
 
+#[component]
+fn SideColumnDebugConsoleCard(
+    locale: RwSignal<Locale>,
+    thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
+) -> impl IntoView {
+    view! {
+        <div class="side-pane" style:flex="1" style:min-width="0">
+            <div
+                class="side-card"
+                role="region"
+                prop:aria-label=move || i18n::debug_console_region_aria(locale.get())
+            >
+                <div class="side-card-head">
+                    <div class="side-head-main">
+                        <div class="side-pane-title">{move || i18n::side_debug_console_btn(locale.get())}</div>
+                    </div>
+                </div>
+                <div class="side-card-body debug-console-body">
+                    {move || {
+                        let rows = thinking_trace_log.get();
+                        if rows.is_empty() {
+                            let hint = i18n::debug_console_empty_hint(locale.get());
+                            view! { <p class="debug-console-empty">{hint}</p> }.into_any()
+                        } else {
+                            rows.into_iter()
+                                .enumerate()
+                                .map(|(i, e)| {
+                                    let summary = {
+                                        let mut s = format!(
+                                            "{} {}",
+                                            e.op,
+                                            e.title.as_deref().unwrap_or("")
+                                        );
+                                        if let Some(ref nid) = e.node_id {
+                                            s.push_str(" · ");
+                                            s.push_str(nid);
+                                        }
+                                        if let Some(ref pid) = e.parent_id {
+                                            s.push_str(" ← ");
+                                            s.push_str(pid);
+                                        }
+                                        s
+                                    };
+                                    let chunk = e.chunk.clone().unwrap_or_default();
+                                    let snap = e.context_snapshot.clone().unwrap_or_default();
+                                    view! {
+                                        <details class="debug-trace-item">
+                                            <summary class="debug-trace-summary">{i + 1} " · " {summary}</summary>
+                                            <div class="debug-trace-block">
+                                                <div class="debug-trace-label">"chunk"</div>
+                                                <pre class="debug-trace-pre">{chunk}</pre>
+                                            </div>
+                                            <div class="debug-trace-block">
+                                                <div class="debug-trace-label">"context"</div>
+                                                <pre class="debug-trace-pre">{snap}</pre>
+                                            </div>
+                                        </details>
+                                    }
+                                    .into_any()
+                                })
+                                .collect_view()
+                                .into_any()
+                        }
+                    }}
+                </div>
+            </div>
+        </div>
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn side_column_view(
     locale: RwSignal<Locale>,
@@ -153,6 +224,7 @@ pub fn side_column_view(
     changelist_modal_open: RwSignal<bool>,
     changelist_fetch_nonce: RwSignal<u64>,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
 ) -> impl IntoView {
     let tasks_data = status_tasks.tasks_data;
     let tasks_err = status_tasks.tasks_err;
@@ -256,6 +328,19 @@ pub fn side_column_view(
                                             }
                                         >
                                             {move || i18n::side_panel_tasks(locale.get())}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="toolbar-view-menu-item"
+                                            class:active=move || matches!(side_panel_view.get(), SidePanelView::DebugConsole)
+                                            role="menuitem"
+                                            prop:title=move || i18n::side_debug_console_title(locale.get())
+                                            on:click=move |_| {
+                                                side_panel_view.set(SidePanelView::DebugConsole);
+                                                view_menu_open.set(false);
+                                            }
+                                        >
+                                            {move || i18n::side_debug_console_btn(locale.get())}
                                         </button>
                                     </div>
                                 </Show>
@@ -510,6 +595,9 @@ pub fn side_column_view(
                                     refresh_tasks=refresh_tasks.clone()
                                     toggle_task=toggle_task.clone()
                                 />
+                            </Show>
+                            <Show when=move || matches!(side_panel_view.get(), SidePanelView::DebugConsole)>
+                                <SideColumnDebugConsoleCard locale=locale thinking_trace_log=thinking_trace_log />
                             </Show>
                         </div>
                 </div>

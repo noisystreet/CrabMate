@@ -5,7 +5,7 @@ use crate::api::StatusData;
 pub const WORKSPACE_WIDTH_KEY: &str = "agent-demo-workspace-width";
 pub const WORKSPACE_VISIBLE_KEY: &str = "agent-demo-workspace-visible";
 pub const TASKS_VISIBLE_KEY: &str = "agent-demo-tasks-visible";
-/// 右列侧栏视图：`none` | `workspace` | `tasks`（与旧版双开关互斥，仅其一展示）。
+/// 右列侧栏视图：`none` | `workspace` | `tasks` | `debug`（与旧版双开关互斥，仅其一展示）。
 pub const SIDE_PANEL_VIEW_KEY: &str = "agent-demo-side-panel-view";
 pub const STATUS_BAR_VISIBLE_KEY: &str = "agent-demo-status-bar-visible";
 pub const THEME_KEY: &str = "crabmate-theme";
@@ -30,6 +30,8 @@ pub enum SidePanelView {
     None,
     Workspace,
     Tasks,
+    /// 思维与工具调试台（与工作区共用右列宽度与 `side-pane` 布局）。
+    DebugConsole,
 }
 
 pub fn load_side_panel_view() -> SidePanelView {
@@ -41,6 +43,7 @@ pub fn load_side_panel_view() -> SidePanelView {
             "none" => SidePanelView::None,
             "tasks" => SidePanelView::Tasks,
             "workspace" => SidePanelView::Workspace,
+            "debug" => SidePanelView::DebugConsole,
             _ => SidePanelView::Workspace,
         };
     }
@@ -57,6 +60,7 @@ pub fn load_side_panel_view() -> SidePanelView {
         SidePanelView::None => "none",
         SidePanelView::Workspace => "workspace",
         SidePanelView::Tasks => "tasks",
+        SidePanelView::DebugConsole => "debug",
     };
     let _ = st.set_item(SIDE_PANEL_VIEW_KEY, slug);
     migrated
@@ -68,6 +72,7 @@ pub fn store_side_panel_view(v: SidePanelView) {
             SidePanelView::None => "none",
             SidePanelView::Workspace => "workspace",
             SidePanelView::Tasks => "tasks",
+            SidePanelView::DebugConsole => "debug",
         };
         let _ = st.set_item(SIDE_PANEL_VIEW_KEY, slug);
     }

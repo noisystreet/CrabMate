@@ -19,5 +19,5 @@ pub use protocol::{
     ClarificationQuestionField, ClarificationQuestionnaireBody, CommandApprovalBody,
     ConversationSavedBody, SseCapabilitiesBody, SseErrorBody, SsePayload, StagedPlanFinishedBody,
     StagedPlanStartedBody, StagedPlanStepFinishedBody, StagedPlanStepStartedBody, StreamEndedBody,
-    TimelineLogBody, ToolCallSummary, ToolResultBody, encode_message,
+    ThinkingTraceBody, TimelineLogBody, ToolCallSummary, ToolResultBody, encode_message,
 };

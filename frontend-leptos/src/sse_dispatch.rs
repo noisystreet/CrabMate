@@ -30,6 +30,7 @@ pub struct SseCallbacks<'a> {
     pub on_staged_plan_step_started: Option<&'a mut dyn FnMut(StagedPlanStepStartInfo)>,
     pub on_staged_plan_step_finished: Option<&'a mut dyn FnMut(StagedPlanStepEndInfo)>,
     pub on_clarification_questionnaire: Option<&'a mut dyn FnMut(ClarificationQuestionnaireInfo)>,
+    pub on_thinking_trace: Option<&'a mut dyn FnMut(ThinkingTraceInfo)>,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +88,17 @@ pub struct ClarificationFormField {
     pub label: String,
     pub hint: Option<String>,
     pub required: bool,
+}
+
+/// `thinking_trace`：Web 调试台用（不进聊天正文）。
+#[derive(Debug, Clone)]
+pub struct ThinkingTraceInfo {
+    pub op: String,
+    pub node_id: Option<String>,
+    pub parent_id: Option<String>,
+    pub title: Option<String>,
+    pub chunk: Option<String>,
+    pub context_snapshot: Option<String>,
 }
 
 fn parse_staged_plan_step_started(
@@ -268,6 +280,47 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
             }
         }
         return SseDispatch::Handled;
+    }
+
+    if let Some(Value::Object(tt)) = obj.get("thinking_trace") {
+        let op = tt
+            .get("op")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .unwrap_or("");
+        if !op.is_empty() {
+            if let Some(f) = cbs.on_thinking_trace.as_mut() {
+                f(ThinkingTraceInfo {
+                    op: op.to_string(),
+                    node_id: tt
+                        .get("node_id")
+                        .and_then(|x| x.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(String::from),
+                    parent_id: tt
+                        .get("parent_id")
+                        .and_then(|x| x.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(String::from),
+                    title: tt
+                        .get("title")
+                        .and_then(|x| x.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(String::from),
+                    chunk: tt
+                        .get("chunk")
+                        .and_then(|x| x.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(String::from),
+                    context_snapshot: tt
+                        .get("context_snapshot")
+                        .and_then(|x| x.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(String::from),
+                });
+            }
+            return SseDispatch::Handled;
+        }
     }
 
     if obj.get("workspace_changed") == Some(&Value::Bool(true)) {
@@ -455,6 +508,7 @@ mod sse_control_order_tests {
             on_staged_plan_step_started: None,
             on_staged_plan_step_finished: None,
             on_clarification_questionnaire: None,
+            on_thinking_trace: None,
         };
         match try_dispatch_sse_control_payload(data, &mut cbs) {
             SseDispatch::Stop => "stop",
