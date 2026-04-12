@@ -153,6 +153,56 @@
   font: inherit;
 }
 
+/* 调试台内容在右列 side-card-body 内复用工作区窗格宽度 */
+.debug-console-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.debug-console-empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.debug-trace-item {
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2) var(--space-2);
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+}
+
+.debug-trace-summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.debug-trace-block {
+  margin-top: var(--space-2);
+}
+
+.debug-trace-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.debug-trace-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 12rem;
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.68rem;
+}
+
 .chat-column {
   position: relative;
   flex: 1;

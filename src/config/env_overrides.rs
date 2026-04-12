@@ -260,6 +260,11 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.sse_tool_call_include_arguments = Some(val);
     }
+    if let Ok(v) = std::env::var("AGENT_THINKING_TRACE_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.agent_thinking_trace_enabled = Some(val);
+    }
     if let Ok(v) = std::env::var("AGENT_TOOL_RESULT_ENVELOPE_V1")
         && let Some(val) = parse_bool_like(&v)
     {

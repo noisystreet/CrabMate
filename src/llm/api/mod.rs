@@ -184,13 +184,21 @@ async fn streaming_chat_response(
     render_to_terminal: bool,
     cancel: Option<&AtomicBool>,
     cli_terminal_plain: bool,
+    thinking_trace_enabled: bool,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     let _cli_wait_spinner =
         crate::runtime::cli_wait_spinner::CliWaitSpinnerGuard::try_start_for_cli_plain_stream(
             cli_terminal_plain,
         );
     let stream = res.bytes_stream();
-    let acc = consume_openai_sse_byte_stream(stream, cancel, out, cli_terminal_plain).await?;
+    let acc = consume_openai_sse_byte_stream(
+        stream,
+        cancel,
+        out,
+        cli_terminal_plain,
+        thinking_trace_enabled,
+    )
+    .await?;
 
     if render_to_terminal {
         let md = crate::runtime::message_display::assistant_raw_markdown_body_from_parts(
@@ -250,6 +258,7 @@ pub async fn stream_chat(
         plain_terminal_stream,
         fold_system_into_user,
         preserve_reasoning_on_assistant_tool_calls,
+        thinking_trace_enabled,
     } = *params;
 
     let url = format!(
@@ -296,6 +305,14 @@ pub async fn stream_chat(
         )
         .await
     } else {
-        streaming_chat_response(res, out, render_to_terminal, cancel, cli_terminal_plain).await
+        streaming_chat_response(
+            res,
+            out,
+            render_to_terminal,
+            cancel,
+            cli_terminal_plain,
+            thinking_trace_enabled,
+        )
+        .await
     }
 }

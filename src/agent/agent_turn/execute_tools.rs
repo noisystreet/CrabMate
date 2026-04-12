@@ -21,11 +21,11 @@ use crate::agent::workflow_tool_dispatch;
 use crate::clarification_questionnaire::maybe_emit_clarification_questionnaire_sse;
 use crate::config::AgentConfig;
 use crate::long_term_memory::LongTermMemoryRuntime;
-use crate::sse::{SsePayload, ToolCallSummary, ToolResultBody, encode_message};
+use crate::sse::{SsePayload, ThinkingTraceBody, ToolCallSummary, ToolResultBody, encode_message};
 use crate::tool_registry::{self, HandlerId, ToolRuntime, handler_id_for};
 use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
 use crate::tools;
-use crate::types::{Message, Tool, ToolCall};
+use crate::types::{Message, Tool, ToolCall, message_content_byte_len_for_estimate};
 use crate::workspace_changelist::WorkspaceChangelist;
 
 use super::sub_agent_policy::{
@@ -34,6 +34,50 @@ use super::sub_agent_policy::{
 
 /// 本模块 `tracing` / `log` 的 `target`，便于 `RUST_LOG=crabmate::execute_tools` 过滤。
 const LOG_TARGET: &str = "crabmate::execute_tools";
+
+fn context_snapshot_for_trace(messages: &[Message]) -> String {
+    const MAX: usize = 600;
+    let n = messages.len();
+    let parts: Vec<String> = messages
+        .iter()
+        .rev()
+        .take(6)
+        .rev()
+        .map(|m| {
+            let role = m.role.as_str();
+            let mut c = message_content_byte_len_for_estimate(&m.content);
+            if let Some(ref r) = m.reasoning_content {
+                c = c.saturating_add(r.len());
+            }
+            format!("{role}:~{c}b")
+        })
+        .collect();
+    let mut s = format!("messages={n} [{}]", parts.join(", "));
+    if s.len() > MAX {
+        s.truncate(MAX);
+        s.push('…');
+    }
+    s
+}
+
+async fn emit_thinking_trace_sse(
+    out: Option<&mpsc::Sender<String>>,
+    cfg: &AgentConfig,
+    body: ThinkingTraceBody,
+) {
+    if !cfg.agent_thinking_trace_enabled {
+        return;
+    }
+    let Some(tx) = out else {
+        return;
+    };
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::ThinkingTrace { trace: body }),
+        "execute_tools::thinking_trace",
+    )
+    .await;
+}
 
 fn trace_parallel_tool_child_span(
     tracing_turn: Option<&Arc<crate::observability::TracingChatTurn>>,
@@ -259,6 +303,20 @@ async fn emit_tool_result_sse_and_append(
         content_for_model,
         reflection_inject,
     );
+
+    emit_thinking_trace_sse(
+        out,
+        cfg.as_ref(),
+        ThinkingTraceBody {
+            op: "tool_done".into(),
+            node_id: Some(format!("tool:{name}")),
+            parent_id: None,
+            title: Some(name.to_string()),
+            chunk: None,
+            context_snapshot: Some(context_snapshot_for_trace(messages)),
+        },
+    )
+    .await;
 }
 
 /// SSE 发送端已关闭（与外层 `run_agent_turn` 早退判断一致）。
@@ -271,6 +329,7 @@ async fn emit_tool_call_summary_sse(
     cfg: &AgentConfig,
     name: &str,
     args: &str,
+    messages: &[Message],
 ) {
     let Some(tx) = out else {
         return;
@@ -297,6 +356,19 @@ async fn emit_tool_call_summary_sse(
             },
         }),
         "execute_tools::tool_call summary",
+    )
+    .await;
+    emit_thinking_trace_sse(
+        Some(tx),
+        cfg,
+        ThinkingTraceBody {
+            op: "tool_call".into(),
+            node_id: Some(format!("tool:{name}")),
+            parent_id: None,
+            title: Some(name.to_string()),
+            chunk: None,
+            context_snapshot: Some(context_snapshot_for_trace(messages)),
+        },
     )
     .await;
 }
@@ -577,8 +649,14 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         {
             return ExecuteToolsBatchOutcome::AbortedSse;
         }
-        emit_tool_call_summary_sse(out, cfg.as_ref(), &tc.function.name, &tc.function.arguments)
-            .await;
+        emit_tool_call_summary_sse(
+            out,
+            cfg.as_ref(),
+            &tc.function.name,
+            &tc.function.arguments,
+            messages,
+        )
+        .await;
         let cached = result_map
             .get(&(tc.function.name.as_str(), tc.function.arguments.as_str()))
             .copied()
@@ -659,7 +737,7 @@ async fn execute_tools_serial(
         if let Some(ref t) = tracing_chat_turn {
             t.record_tool_call_id_for_log(id.as_str());
         }
-        emit_tool_call_summary_sse(out, cfg.as_ref(), &name, &args).await;
+        emit_tool_call_summary_sse(out, cfg.as_ref(), &name, &args, messages).await;
         info!(
             target: LOG_TARGET,
             "调用工具 tool={} args_preview={}",

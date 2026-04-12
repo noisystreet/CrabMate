@@ -55,6 +55,8 @@ pub(crate) struct ConfigBuilder {
     pub(crate) tool_message_max_chars: Option<u64>,
     pub(crate) tool_result_envelope_v1: Option<bool>,
     pub(crate) sse_tool_call_include_arguments: Option<bool>,
+    /// 仅环境变量 `AGENT_THINKING_TRACE_ENABLED` 写入；**不**从 `[agent]` TOML 合并。
+    pub(crate) agent_thinking_trace_enabled: Option<bool>,
     pub(crate) agent_tool_stats_enabled: Option<bool>,
     pub(crate) agent_tool_stats_window_events: Option<u64>,
     pub(crate) agent_tool_stats_min_samples: Option<u64>,

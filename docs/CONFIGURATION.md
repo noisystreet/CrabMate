@@ -227,6 +227,7 @@ Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共
 | `AGENT_TOOL_MESSAGE_MAX_CHARS` | 单条 `role: tool` 发往模型前压缩阈值。 |
 | `AGENT_TOOL_RESULT_ENVELOPE_V1` | `crabmate_tool` 信封 v1。 |
 | `AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS` | 为 `true`/`1`/`yes`/`on` 时，SSE **`tool_call`** 在 **`arguments_preview`** 外另含脱敏截断后的 **`arguments`**（默认关，防浏览器泄露）。 |
+| `AGENT_THINKING_TRACE_ENABLED` | 设为 `false`/`0`/`no`/`off` 时**关闭** `POST /chat/stream` 的 **`thinking_trace`** SSE；**省略时默认开启**（不从 **`[agent]`** TOML 读入该开关）。 |
 | `AGENT_TOOL_STATS_ENABLED` | 为 `true`/`1`/`yes`/`on` 时启用进程内工具调用统计，并在**新会话**首条 `system` 末尾附加短提示（见下）。 |
 | `AGENT_TOOL_STATS_WINDOW_EVENTS` | 滑动窗口保留的调用事件条数（16–65536；与 TOML `agent_tool_stats_window_events` 一致）。 |
 | `AGENT_TOOL_STATS_MIN_SAMPLES` | 某工具在窗口内总次数 ≥ 该值才参与提示（1–10000）。 |
@@ -243,7 +244,7 @@ Web 已配置 `conversation_store_sqlite_path` 时会话库与长期记忆可共
 | `AGENT_CONTEXT_SUMMARY_MAX_TOKENS` | 摘要请求 max_tokens。 |
 | `AGENT_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | 摘要转写最大字符。 |
 
-**`[agent]` 对应 TOML 键（工具统计）**（可写入 `config.toml` / `.agent_demo.toml` 等）：`agent_tool_stats_enabled`、`agent_tool_stats_window_events`、`agent_tool_stats_min_samples`、`agent_tool_stats_max_chars`、`agent_tool_stats_warn_below_success_ratio`。统计为**单进程内存**、**全局**（不按 `conversation_id` 分桶）；**不**记录工具参数与完整输出。Web 侧**仅**在新建会话（无已存 `conversation_id` 种子）时拼入；CLI **`chat` / `repl`** 与 **`workspace_session::initial_workspace_messages`** 在「新起一轮首条 system」路径拼入，从磁盘恢复的会话仍以基底 system 对齐且不附加该段。
+**`[agent]` 对应 TOML 键（工具统计）**（可写入 `config.toml` / `.agent_demo.toml` 等）：`agent_tool_stats_enabled`、`agent_tool_stats_window_events`、`agent_tool_stats_min_samples`、`agent_tool_stats_max_chars`、`agent_tool_stats_warn_below_success_ratio`。**`thinking_trace`** 调试 SSE **不由 `[agent]` 配置**：运行时默认开启，仅 **`AGENT_THINKING_TRACE_ENABLED`** 可关闭（见上表）。统计为**单进程内存**、**全局**（不按 `conversation_id` 分桶）；**不**记录工具参数与完整输出。Web 侧**仅**在新建会话（无已存 `conversation_id` 种子）时拼入；CLI **`chat` / `repl`** 与 **`workspace_session::initial_workspace_messages`** 在「新起一轮首条 system」路径拼入，从磁盘恢复的会话仍以基底 system 对齐且不附加该段。
 
 ### CLI
 

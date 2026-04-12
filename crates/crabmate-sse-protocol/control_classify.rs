@@ -55,6 +55,15 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
         return "handled";
     }
 
+    if let Some(Value::Object(tt)) = obj.get("thinking_trace")
+        && tt
+            .get("op")
+            .and_then(|x| x.as_str())
+            .is_some_and(|s| !s.trim().is_empty())
+    {
+        return "handled";
+    }
+
     if obj.get("workspace_changed") == Some(&Value::Bool(true)) {
         return "handled";
     }

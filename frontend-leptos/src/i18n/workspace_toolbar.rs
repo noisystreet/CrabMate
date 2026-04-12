@@ -20,8 +20,8 @@ pub fn side_toolbar_aria(l: Locale) -> &'static str {
 
 pub fn side_view_menu_title(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "选择侧栏：隐藏 / 工作区 / 任务",
-        Locale::En => "Side panel: hide / workspace / tasks",
+        Locale::ZhHans => "选择侧栏：隐藏 / 工作区 / 任务 / 调试台",
+        Locale::En => "Side panel: hide / workspace / tasks / debug console",
     }
 }
 
@@ -91,6 +91,20 @@ pub fn side_settings_btn(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "设置",
         Locale::En => "Settings",
+    }
+}
+
+pub fn side_debug_console_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "展开或收起思维与工具调试台",
+        Locale::En => "Show or hide thinking / tool debug console",
+    }
+}
+
+pub fn side_debug_console_btn(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "调试台",
+        Locale::En => "Debug",
     }
 }
 

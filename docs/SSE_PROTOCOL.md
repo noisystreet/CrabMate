@@ -50,6 +50,7 @@
 | `staged_plan_step_finished` | 单步结束；`status`: `ok` / `cancelled` / `failed`；可选 `executor_kind`（与 `staged_plan_step_started` 对齐） | `onStagedPlanStepFinished` |
 | `staged_plan_finished` | 整轮计划结束；`status` 同上 | `onStagedPlanFinished` |
 | `clarification_questionnaire` | 澄清问卷：模型调用工具 **`present_clarification_questionnaire`** 且成功后，在 **`tool_result` SSE** 之后补发；体含 **`questionnaire_id`**、**`intro`**、**`questions[]`**（`id` / `label` / 可选 `hint` / `required` / `kind`：`text` \| `choice`） | Web：展示表单；用户提交时下一请求体带 **`clarify_questionnaire_answers`**（见 README / OpenAPI）；TUI：`line` 分类为 **ignore** |
+| `thinking_trace` | 调试：运行时**默认开启**下发；**`AGENT_THINKING_TRACE_ENABLED=0`** 时关闭。**不**从 **`[agent]`** TOML 读入。体须含非空 **`op`**（如 **`reasoning_delta`**、**`answer_phase`**、**`tool_call`**、**`tool_done`**）；可选 **`node_id`** / **`parent_id`** / **`title`**、**`chunk`**（推理片段）、**`context_snapshot`**（工具前后上下文摘要，非全文） | Web：「调试台」侧栏累积展示；TUI：`line` 分类为 **ignore** |
 | `workspace_changed`: `true` | 工作区已被工具更新 | `onWorkspaceChanged` |
 | `tool_call` | 工具调用摘要（执行前）；体含 **`name`**、**`summary`**（与 `summarize_tool_call` 同源）、可选 **`arguments_preview`**（单行截断，与 `execute_tools` 日志同源）、可选 **`arguments`**（配置 **`sse_tool_call_include_arguments`** / **`AGENT_SSE_TOOL_CALL_INCLUDE_ARGUMENTS`** 为真时：启发式脱敏后更长截断） | `onToolCall`（**`summary`**、**`arguments_preview`**、**`arguments`** 至少一项非空则 **handled**） |
 | `parsing_tool_calls` | 模型正在流式输出 tool_calls | `onParsingToolCallsChange` |

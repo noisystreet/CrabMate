@@ -108,6 +108,11 @@ pub enum SsePayload {
         #[serde(rename = "timeline_log")]
         log: TimelineLogBody,
     },
+    /// 思维过程调试：结构化 trace（默认下发；`AGENT_THINKING_TRACE_ENABLED=0` 关闭；不进模型上下文）。
+    ThinkingTrace {
+        #[serde(rename = "thinking_trace")]
+        trace: ThinkingTraceBody,
+    },
     /// 首帧能力协商：`supported_sse_v` 与 Rust `SSE_PROTOCOL_VERSION` 一致；`resume_ring_cap` 为环形缓冲条数。
     SseCapabilities {
         #[serde(rename = "sse_capabilities")]
@@ -286,6 +291,23 @@ pub struct TimelineLogBody {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+}
+
+/// `thinking_trace` 负载：`op` 区分语义；`chunk` 为推理流增量片段；`context_snapshot` 为工具前后上下文摘要（非全文）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ThinkingTraceBody {
+    /// `reasoning_delta` | `answer_phase` | `tool_call` | `tool_done`
+    pub op: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chunk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_snapshot: Option<String>,
 }
 
 /// 序列化为单行 JSON，供 `Event::data(...)` 使用。
