@@ -20,6 +20,7 @@ mod debounce_schedule;
 mod i18n;
 mod markdown;
 mod message_format;
+mod message_render;
 mod session_export;
 mod session_modal_row;
 mod session_ops;
