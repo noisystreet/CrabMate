@@ -154,13 +154,22 @@ pub fn stored_messages_from_conversation_api_with_base(
                         .and_then(|x| x.as_str())
                         .map(str::trim)
                         .filter(|s| !s.is_empty());
-                    let line1 = format!("步骤 {}/{}", step.saturating_add(1), total.max(1));
-                    let line2 = if let Some(e) = exec {
-                        format!("{desc}\n({e})")
+                    let ord = step.max(1);
+                    let inner = if let Some(e) = exec {
+                        if desc.is_empty() {
+                            format!("({e})")
+                        } else {
+                            format!("{desc}\n({e})")
+                        }
                     } else {
                         desc.to_string()
                     };
-                    let display = staged_timeline_system_message_body(&format!("{line1}\n{line2}"));
+                    let body = if inner.is_empty() {
+                        format!("{ord}.")
+                    } else {
+                        format!("{ord}. {inner}")
+                    };
+                    let display = staged_timeline_system_message_body(&body);
                     let state = timeline_state_staged_start(&id, step, total);
                     out.push(StoredMessage {
                         id,
@@ -188,13 +197,18 @@ pub fn stored_messages_from_conversation_api_with_base(
                         .and_then(|x| x.as_str())
                         .map(str::trim)
                         .filter(|s| !s.is_empty());
-                    let line1 = format!("步骤 {}/{} 完成", step.saturating_add(1), total.max(1));
-                    let line2 = if let Some(e) = exec {
-                        format!("状态：{status}\n({e})")
+                    let ord = step.max(1);
+                    let inner = if let Some(e) = exec {
+                        format!("{status}\n({e})")
                     } else {
-                        format!("状态：{status}")
+                        status.clone()
                     };
-                    let display = staged_timeline_system_message_body(&format!("{line1}\n{line2}"));
+                    let body = if inner.trim().is_empty() {
+                        format!("{ord}.")
+                    } else {
+                        format!("{ord}. {inner}")
+                    };
+                    let display = staged_timeline_system_message_body(&body);
                     let state = timeline_state_staged_end(&id, step, total, &status);
                     out.push(StoredMessage {
                         id,

@@ -1,4 +1,4 @@
-//! 助手消息 Markdown 渲染（随会话信号刷新 DOM）；超长回复可折叠。
+//! 助手消息 Markdown 渲染（随会话信号刷新 DOM）；超长回复默认全文，可由用户折叠。
 
 use std::sync::{Arc, Mutex};
 
@@ -15,7 +15,7 @@ use crate::message_format::{
 };
 use crate::storage::ChatSession;
 
-/// 超过该字符数（按展示用 `message_text_for_display_ex` 与当前 `apply_assistant_display_filters` 计）的已完成助手消息默认折叠。
+/// 超过该字符数（按展示用 `message_text_for_display_ex` 与当前 `apply_assistant_display_filters` 计）的已完成助手消息可手动折叠；默认展示全文。
 const LONG_ASSISTANT_COLLAPSE_THRESHOLD: usize = 2400;
 
 #[derive(Default)]
@@ -37,12 +37,12 @@ fn combined_assistant_display_plain(thinking_trimmed: &str, answer_display: &str
     format!("{thinking_trimmed}\n\n{answer_display}")
 }
 
-/// 助手非工具消息：Markdown → 净化 HTML；可选折叠长文。
+/// 助手非工具消息：Markdown → 净化 HTML；超长时默认全文，列表中的 id 表示用户已折叠。
 pub fn assistant_markdown_collapsible_view(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
     message_id: String,
-    expanded_long_assistant_ids: RwSignal<Vec<String>>,
+    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     locale: RwSignal<Locale>,
     markdown_render: RwSignal<bool>,
     apply_assistant_display_filters: RwSignal<bool>,
@@ -61,7 +61,7 @@ pub fn assistant_markdown_collapsible_view(
         move |_| {
             let _ = sessions.get();
             let _ = active_id.get();
-            let _ = expanded_long_assistant_ids.get();
+            let _ = collapsed_long_assistant_ids.get();
             let _ = locale.get();
             let _ = markdown_render.get();
             let _ = apply_assistant_display_filters.get();
@@ -190,9 +190,9 @@ pub fn assistant_markdown_collapsible_view(
                     });
                     let long = !is_loading && raw_len >= LONG_ASSISTANT_COLLAPSE_THRESHOLD;
                     let mid = mid_stored.get_value();
-                    let expanded =
-                        expanded_long_assistant_ids.with(|v| v.iter().any(|id| id == &mid));
-                    let collapsed = long && !expanded;
+                    let user_collapsed =
+                        collapsed_long_assistant_ids.with(|v| v.iter().any(|id| id == &mid));
+                    let collapsed = long && user_collapsed;
                     if collapsed {
                         "msg-md-split msg-md-prose-collapsed"
                     } else {
@@ -232,7 +232,7 @@ pub fn assistant_markdown_collapsible_view(
                     class="btn btn-muted btn-sm msg-md-toggle"
                     on:click=move |_| {
                         let b = mid_stored.get_value();
-                        expanded_long_assistant_ids.update(|v| {
+                        collapsed_long_assistant_ids.update(|v| {
                             if v.iter().any(|id| id == &b) {
                                 v.retain(|id| id != &b);
                             } else {
@@ -244,12 +244,12 @@ pub fn assistant_markdown_collapsible_view(
                     {move || {
                         let loc = locale.get();
                         let mid = mid_stored.get_value();
-                        let expanded =
-                            expanded_long_assistant_ids.with(|v| v.iter().any(|id| id == &mid));
-                        if expanded {
-                            i18n::assistant_md_collapse(loc)
-                        } else {
+                        let user_collapsed =
+                            collapsed_long_assistant_ids.with(|v| v.iter().any(|id| id == &mid));
+                        if user_collapsed {
                             i18n::assistant_md_expand_full(loc)
+                        } else {
+                            i18n::assistant_md_collapse(loc)
                         }
                     }}
                 </button>

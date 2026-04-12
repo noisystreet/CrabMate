@@ -14,13 +14,13 @@ fn label_for_entry(loc: Locale, kind: &TimelineKind) -> String {
     match kind {
         TimelineKind::StagedStart {
             step_index,
-            total_steps,
-        } => i18n::timeline_panel_staged_start(loc, *step_index, *total_steps),
+            total_steps: _,
+        } => i18n::timeline_panel_staged_start(loc, *step_index),
         TimelineKind::StagedEnd {
             step_index,
-            total_steps,
+            total_steps: _,
             status,
-        } => i18n::timeline_panel_staged_end(loc, *step_index, *total_steps, status),
+        } => i18n::timeline_panel_staged_end(loc, *step_index, status),
         TimelineKind::Tool { ok } => i18n::timeline_panel_tool(loc, *ok),
         TimelineKind::LegacyStaged => i18n::timeline_panel_legacy_staged(loc).to_string(),
         TimelineKind::LegacyTool => i18n::timeline_panel_legacy_tool(loc).to_string(),

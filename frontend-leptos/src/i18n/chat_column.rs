@@ -176,10 +176,11 @@ pub fn timeline_panel_jump_aria(l: Locale, label: &str) -> String {
     }
 }
 
-pub fn timeline_panel_staged_start(l: Locale, step: usize, total: usize) -> String {
+pub fn timeline_panel_staged_start(l: Locale, step_index: usize) -> String {
+    let ord = step_index.max(1);
     match l {
-        Locale::ZhHans => format!("分阶段 · 第 {step}/{total} 步（开始）"),
-        Locale::En => format!("Staged · step {step}/{total} (start)"),
+        Locale::ZhHans => format!("{ord}. 开始"),
+        Locale::En => format!("{ord}. start"),
     }
 }
 
@@ -201,12 +202,10 @@ fn timeline_panel_status_word(l: Locale, status: &str) -> String {
     }
 }
 
-pub fn timeline_panel_staged_end(l: Locale, step: usize, total: usize, status: &str) -> String {
+pub fn timeline_panel_staged_end(l: Locale, step_index: usize, status: &str) -> String {
+    let ord = step_index.max(1);
     let st = timeline_panel_status_word(l, status);
-    match l {
-        Locale::ZhHans => format!("分阶段 · 第 {step}/{total} 步（{st}）"),
-        Locale::En => format!("Staged · step {step}/{total} ({st})"),
-    }
+    format!("{ord}. {st}")
 }
 
 pub fn timeline_panel_tool(l: Locale, ok: bool) -> String {
@@ -230,8 +229,8 @@ pub fn timeline_panel_tool(l: Locale, ok: bool) -> String {
 
 pub fn timeline_panel_legacy_staged(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "分阶段（历史）",
-        Locale::En => "Staged (legacy)",
+        Locale::ZhHans => "历史步骤",
+        Locale::En => "Legacy steps",
     }
 }
 

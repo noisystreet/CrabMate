@@ -321,6 +321,39 @@ mod tests {
     }
 
     #[test]
+    fn system_display_strips_staged_plan_coach_header_and_prefixes_ordinal() {
+        let m = StoredMessage {
+            id: "s".into(),
+            role: "system".into(),
+            text: "### 分阶段规划 · 规划轮\n请仅根据用户消息.".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+        assert!(!out.contains("分阶段规划"), "out={out:?}");
+        assert!(out.starts_with("1. 请仅"), "out={out:?}");
+    }
+
+    #[test]
+    fn system_display_optimizer_coach_gets_ordinal_2() {
+        let m = StoredMessage {
+            id: "s2".into(),
+            role: "system".into(),
+            text: "### 分阶段规划 · 步骤优化（服务端注入）\nfoo".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            created_at: 0,
+        };
+        let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
+        assert!(out.starts_with("2. foo"), "out={out:?}");
+    }
+
+    #[test]
     fn splits_inline_thinking_from_assistant_content_when_no_reasoning_field() {
         let raw = concat!(
             "<",

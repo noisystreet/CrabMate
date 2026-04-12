@@ -12,6 +12,7 @@ mod message_chunks;
 mod message_group_views;
 mod message_row;
 mod scroll;
+mod staged_plan_todo;
 mod timeline;
 
 pub use handles::{ChatColumnShell, WireComposerStreamsArgs};

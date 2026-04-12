@@ -39,7 +39,7 @@ pub(crate) fn wire_session_switch_clears_chat_state(
     draft: RwSignal<String>,
     pending_images: RwSignal<Vec<String>>,
     pending_clarification: RwSignal<Option<PendingClarificationForm>>,
-    expanded_long_assistant_ids: RwSignal<Vec<String>>,
+    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
 ) {
     Effect::new(move |_| {
         let id = chat.active_id.get();
@@ -74,7 +74,7 @@ pub(crate) fn wire_session_switch_clears_chat_state(
             .set(st.unwrap_or_else(SessionSyncState::local_only));
         chat.stream_job_id.set(None);
         chat.stream_last_event_seq.set(0);
-        expanded_long_assistant_ids.set(Vec::new());
+        collapsed_long_assistant_ids.set(Vec::new());
     });
 }
 

@@ -71,11 +71,11 @@ fn staged_step_status_line(l: Locale, status: &str) -> String {
     }
 }
 
-/// 时间线旁注：分阶段单步开始（**不**进入模型上下文）。
+/// 时间线旁注：单步开始（**不**进入模型上下文；**无**「分阶段 ·」前缀，以 **`{step_index}.`** 编号开头）。
 pub fn timeline_staged_step_started(
     l: Locale,
     step_index: usize,
-    total_steps: usize,
+    _total_steps: usize,
     description: &str,
     executor_kind: Option<&str>,
 ) -> String {
@@ -92,37 +92,25 @@ pub fn timeline_staged_step_started(
         Locale::ZhHans => " · ",
         Locale::En => " · ",
     };
-    match l {
-        Locale::ZhHans => {
-            let mid = match &role {
-                Some(r) => format!("{role_sep}{r}"),
-                None => String::new(),
-            };
-            if d.is_empty() {
-                format!("分阶段 · 第 {step_index}/{total_steps} 步{mid}")
-            } else {
-                format!("分阶段 · 第 {step_index}/{total_steps} 步{mid} · {d}")
-            }
-        }
-        Locale::En => {
-            let mid = match &role {
-                Some(r) => format!("{role_sep}{r}"),
-                None => String::new(),
-            };
-            if d.is_empty() {
-                format!("Staged · step {step_index}/{total_steps}{mid}")
-            } else {
-                format!("Staged · step {step_index}/{total_steps}{mid} · {d}")
-            }
-        }
+    let ord = step_index.max(1);
+    let core = match (&role, d.is_empty()) {
+        (Some(r), false) => format!("{r}{role_sep}{d}"),
+        (Some(r), true) => r.to_string(),
+        (None, false) => d,
+        (None, true) => String::new(),
+    };
+    if core.is_empty() {
+        format!("{ord}.")
+    } else {
+        format!("{ord}. {core}")
     }
 }
 
-/// 时间线旁注：分阶段单步结束。
+/// 时间线旁注：单步结束（**无**「分阶段 ·」前缀，以 **`{step_index}.`** 编号开头）。
 pub fn timeline_staged_step_finished(
     l: Locale,
     step_index: usize,
-    total_steps: usize,
+    _total_steps: usize,
     status: &str,
     executor_kind: Option<&str>,
 ) -> String {
@@ -137,10 +125,8 @@ pub fn timeline_staged_step_finished(
         },
         None => String::new(),
     };
-    match l {
-        Locale::ZhHans => format!("分阶段 · 第 {step_index}/{total_steps} 步 {st}{tail}"),
-        Locale::En => format!("Staged · step {step_index}/{total_steps} {st}{tail}"),
-    }
+    let ord = step_index.max(1);
+    format!("{ord}. {st}{tail}")
 }
 
 pub fn msg_tool_run_group_aria(l: Locale) -> &'static str {
@@ -199,59 +185,69 @@ pub fn msg_tool_expand_btn(l: Locale) -> &'static str {
     }
 }
 
-pub fn msg_staged_timeline_run_group_aria(l: Locale) -> &'static str {
+/// 服务端注入的 `### 分阶段规划 · …` 首行剥除后正文为空时的短标签（与 [`crate::message_format::display::message_ex`] 序号配合）。
+pub fn staged_coach_injection_fallback(l: Locale, ordinal: usize) -> &'static str {
     match l {
-        Locale::ZhHans => "连续分阶段实施记录",
-        Locale::En => "Consecutive staged plan step records",
+        Locale::ZhHans => match ordinal {
+            2 => "步骤优化",
+            3 => "多规划合并",
+            _ => "规划轮",
+        },
+        Locale::En => match ordinal {
+            2 => "Step optimization",
+            3 => "Multi-planner merge",
+            _ => "Planning round",
+        },
     }
 }
 
-pub fn msg_staged_timeline_run_count(l: Locale, n: usize) -> String {
+/// 聚合待办卡片标题（**无**「分阶段」字样）。
+pub fn staged_plan_todo_title(l: Locale) -> String {
     match l {
-        Locale::ZhHans => format!("{n} 条分阶段记录"),
-        Locale::En => {
-            if n == 1 {
-                "1 staged step record".to_string()
-            } else {
-                format!("{n} staged step records")
-            }
-        }
+        Locale::ZhHans => "规划步骤".to_string(),
+        Locale::En => "Plan steps".to_string(),
     }
 }
 
-pub fn msg_staged_timeline_collapse_title(l: Locale) -> &'static str {
+pub fn staged_plan_todo_region_aria(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "折叠分阶段记录",
-        Locale::En => "Collapse staged records",
+        Locale::ZhHans => "规划步骤列表",
+        Locale::En => "Plan step list",
     }
 }
 
-pub fn msg_staged_timeline_collapse_aria(l: Locale) -> &'static str {
-    msg_staged_timeline_collapse_title(l)
-}
-
-pub fn msg_staged_timeline_collapse_btn(l: Locale) -> &'static str {
+pub fn staged_plan_todo_step_done_aria(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "折叠",
-        Locale::En => "Collapse",
+        Locale::ZhHans => "已完成",
+        Locale::En => "Completed",
     }
 }
 
-pub fn msg_staged_timeline_expand_title(l: Locale) -> &'static str {
+pub fn staged_plan_todo_step_in_progress_aria(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "展开分阶段记录",
-        Locale::En => "Expand staged records",
+        Locale::ZhHans => "进行中",
+        Locale::En => "In progress",
     }
 }
 
-pub fn msg_staged_timeline_expand_aria(l: Locale) -> &'static str {
-    msg_staged_timeline_expand_title(l)
+pub fn staged_plan_todo_step_failed_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "失败",
+        Locale::En => "Failed",
+    }
 }
 
-pub fn msg_staged_timeline_expand_btn(l: Locale) -> &'static str {
+pub fn staged_plan_todo_step_cancelled_aria(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "展开",
-        Locale::En => "Expand",
+        Locale::ZhHans => "已取消",
+        Locale::En => "Cancelled",
+    }
+}
+
+pub fn staged_plan_todo_legacy_note(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "历史旁注",
+        Locale::En => "Legacy notes",
     }
 }
 
