@@ -97,9 +97,8 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "rust_analyzer_hover"
         | "rust_analyzer_document_symbol" => &[GENERAL, RUST],
         "cargo_check" | "cargo_test" | "cargo_clippy" | "cargo_fmt_check" | "cargo_outdated"
-        | "cargo_machete" | "cargo_udeps" | "rust_compiler_json" | "cargo_audit" | "cargo_deny" => {
-            &[GENERAL, RUST, QUALITY]
-        }
+        | "cargo_machete" | "cargo_udeps" | "rust_compiler_json" | "rust_rustc" | "cargo_audit"
+        | "cargo_deny" => &[GENERAL, RUST, QUALITY],
         "find_symbol" | "find_references" | "rust_file_outline" | "call_graph_sketch" => {
             &[GENERAL, RUST]
         }
@@ -235,6 +234,12 @@ mod tests {
     #[test]
     fn cargo_check_is_rust_and_quality() {
         let t = tags_for_tool_name("cargo_check");
+        assert!(t.contains(&RUST) && t.contains(&QUALITY));
+    }
+
+    #[test]
+    fn rust_rustc_is_rust_and_quality() {
+        let t = tags_for_tool_name("rust_rustc");
         assert!(t.contains(&RUST) && t.contains(&QUALITY));
     }
 

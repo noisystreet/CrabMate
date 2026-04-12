@@ -467,6 +467,10 @@ fn runner_rust_compiler_json(args: &str, ctx: &ToolContext<'_>) -> String {
     rust_ide::rust_compiler_json(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
+fn runner_rust_rustc(args: &str, ctx: &ToolContext<'_>) -> String {
+    cargo_tools::rust_rustc(args, ctx.working_dir, ctx.command_max_output_len)
+}
+
 fn runner_rust_analyzer_goto_definition(args: &str, ctx: &ToolContext<'_>) -> String {
     rust_ide::rust_analyzer_goto_definition(args, ctx.working_dir)
 }
@@ -1122,7 +1126,7 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     }
 }
 
-/// `run_command` 与 `cargo_*` / `rust_test_one` 走显式 [`ToolError`]；其余工具仍经 [`run_tool`] + [`crate::tool_result::parse_legacy_output`]。
+/// `run_command` 与 `cargo_*` / `rust_test_one` / `rust_rustc` 走显式 [`ToolError`]；其余工具仍经 [`run_tool`] + [`crate::tool_result::parse_legacy_output`]。
 #[allow(clippy::result_large_err)]
 fn run_tool_dispatch(
     name: &str,
@@ -1227,6 +1231,10 @@ fn run_tool_dispatch(
             Some(ctx),
         )
         .map(|output| finish_dispatch_parsed(name, output)),
+        "rust_rustc" => {
+            cargo_tools::rust_rustc_try(args_json, ctx.working_dir, ctx.command_max_output_len)
+                .map(|output| finish_dispatch_parsed(name, output))
+        }
         "read_file" => read_file_try_dispatch(args_json, ctx)
             .map(|output| finish_dispatch_parsed(name, output)),
         "search_in_files" => grep_try::search_in_files_try(args_json, ctx.working_dir)
@@ -1253,7 +1261,7 @@ fn finish_dispatch_parsed(
 
 /// 与 [`run_tool`] 相同，但失败时返回 [`crate::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**）。
 ///
-/// **`run_command`**、**`cargo_*` / `rust_test_one`**、**`read_file`**、**`search_in_files`** 在 [`run_tool_dispatch`] 中经 `*_try` 返回显式 [`ToolError`]；其余工具仍由 [`crate::tool_result::parse_legacy_output`] 从正文推断。
+/// **`run_command`**、**`cargo_*` / `rust_test_one` / `rust_rustc`**、**`read_file`**、**`search_in_files`** 在 [`run_tool_dispatch`] 中经 `*_try` 返回显式 [`ToolError`]；其余工具仍由 [`crate::tool_result::parse_legacy_output`] 从正文推断。
 #[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
 pub fn run_tool_try(
     name: &str,
