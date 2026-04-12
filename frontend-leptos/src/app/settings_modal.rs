@@ -13,21 +13,23 @@ use crate::api::{
 use crate::client_llm_presets::{CLIENT_LLM_API_BASE_PRESETS, preset_by_id};
 use crate::i18n::{self, Locale, store_locale_slug};
 
-#[allow(clippy::too_many_arguments)]
-pub fn settings_modal_view(
-    settings_modal: RwSignal<bool>,
-    locale: RwSignal<Locale>,
-    theme: RwSignal<String>,
-    bg_decor: RwSignal<bool>,
-    #[allow(unused_variables)] status_data: RwSignal<Option<crate::api::StatusData>>,
-    llm_api_base_draft: RwSignal<String>,
-    llm_api_base_preset_select: RwSignal<String>,
-    llm_model_draft: RwSignal<String>,
-    llm_api_key_draft: RwSignal<String>,
-    llm_has_saved_key: RwSignal<bool>,
-    llm_settings_feedback: RwSignal<Option<String>>,
-    client_llm_storage_tick: RwSignal<u64>,
-) -> impl IntoView {
+use super::app_shell_ctx::AppShellCtx;
+
+pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
+    let AppShellCtx {
+        settings_modal,
+        locale,
+        theme,
+        bg_decor,
+        llm_api_base_draft,
+        llm_api_base_preset_select,
+        llm_model_draft,
+        llm_api_key_draft,
+        llm_has_saved_key,
+        llm_settings_feedback,
+        client_llm_storage_tick,
+        ..
+    } = ctx;
     let settings_dialog_ref = NodeRef::<Div>::new();
 
     Effect::new({

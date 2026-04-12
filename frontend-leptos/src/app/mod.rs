@@ -2,6 +2,7 @@
 //!
 //! 首启会话加载、`localStorage` / DOM 偏好同步、全局 `Escape` 等壳级副作用见 `app_shell_effects`。聊天主路径（滚动、查找、输入/流式）见 `chat` 子模块；Workspace 刷新、`/status` 与任务拉取、变更集等见 `workspace_panel`、`workspace_panel_state`、`status_tasks_wiring`、`changelist_modal`。
 
+mod app_shell_ctx;
 mod app_shell_effects;
 mod approval_bar;
 mod changelist_modal;
@@ -19,6 +20,7 @@ mod status_tasks_wiring;
 mod workspace_panel;
 mod workspace_panel_state;
 
+use app_shell_ctx::AppShellCtx;
 use approval_bar::ApprovalBar;
 use changelist_modal::{
     changelist_modal_view, wire_changelist_body_inner_html, wire_changelist_fetch_effects,
@@ -390,12 +392,86 @@ pub fn App() -> impl IntoView {
         Rc::new(RefCell::new(None));
     let side_resize_dragging = RwSignal::new(false);
 
-    let composer_buf_nav = Arc::clone(&composer_draft_buffer);
-    let composer_buf_ta = Arc::clone(&composer_draft_buffer);
+    let new_session = Rc::clone(&chat_wires.new_session);
 
-    let new_session = {
-        let inner = chat_wires.new_session.clone();
-        move || inner()
+    let app_ctx = AppShellCtx {
+        locale,
+        mobile_nav_open,
+        session_modal,
+        new_session,
+        sidebar_session_query,
+        global_message_query,
+        sidebar_search_panel_open,
+        sidebar_rail_ctx_menu,
+        chat_find_panel_open,
+        chat: chat_session,
+        draft,
+        focus_message_id_after_nav,
+        session_context_menu,
+        composer_draft_buffer: Arc::clone(&composer_draft_buffer),
+        apply_assistant_display_filters,
+        sidebar_rail_collapsed,
+        side_resize_dragging,
+        side_panel_view,
+        side_width,
+        side_resize_session: Rc::clone(&side_resize_session),
+        side_resize_handles: Rc::clone(&side_resize_handles),
+        view_menu_open,
+        status_bar_visible,
+        settings_modal,
+        workspace_panel,
+        status_tasks,
+        refresh_workspace: Arc::clone(&refresh_workspace),
+        refresh_tasks: Arc::clone(&refresh_tasks),
+        toggle_task: Arc::clone(&toggle_task),
+        changelist_modal_open,
+        changelist_fetch_nonce,
+        insert_workspace_file_ref: insert_workspace_file_ref_sv,
+        thinking_trace_log: chat_stream_shell.thinking_trace_log,
+        status_err,
+        tool_busy,
+        status_busy,
+        client_llm_storage_tick,
+        selected_agent_role,
+        context_used_estimate,
+        refresh_status: Arc::clone(&refresh_status),
+        theme,
+        bg_decor,
+        llm_api_base_draft,
+        llm_api_base_preset_select,
+        llm_model_draft,
+        llm_api_key_draft,
+        llm_has_saved_key,
+        llm_settings_feedback,
+        changelist_modal_loading,
+        changelist_modal_err,
+        changelist_modal_rev,
+        changelist_body_ref,
+        chat_column: ChatColumnShell {
+            locale,
+            messages_scroller,
+            auto_scroll_chat,
+            messages_scroll_from_effect,
+            last_messages_scroll_top,
+            timeline_panel_expanded,
+            chat: chat_session,
+            collapsed_long_assistant_ids,
+            expanded_tool_run_heads,
+            chat_find_query,
+            chat_find_match_ids,
+            chat_find_cursor,
+            composer_input_ref,
+            composer_buf_ta: Arc::clone(&composer_draft_buffer),
+            pending_images,
+            stream_shell: chat_stream_shell.clone(),
+            run_send_message: chat_wires.run_send_message.clone(),
+            trigger_stop: Arc::clone(&chat_wires.cancel_stream),
+            initialized,
+            regen_stream_after_truncate: chat_wires.regen_stream_after_truncate,
+            retry_assistant_target: chat_wires.retry_assistant_target,
+            markdown_render,
+            apply_assistant_display_filters,
+        },
     };
 
     view! {
@@ -403,24 +479,7 @@ pub fn App() -> impl IntoView {
             class="app-root app-shell-ds"
             class:sidebar-rail-collapsed=move || sidebar_rail_collapsed.get()
         >
-            {sidebar_nav_view(
-                locale,
-                mobile_nav_open,
-                session_modal,
-                new_session.clone(),
-                sidebar_session_query,
-                global_message_query,
-                sidebar_search_panel_open,
-                sidebar_rail_ctx_menu,
-                chat_find_panel_open,
-                chat_session,
-                draft,
-                focus_message_id_after_nav,
-                session_context_menu,
-                composer_buf_nav.clone(),
-                apply_assistant_display_filters,
-                sidebar_rail_collapsed,
-            )}
+            {sidebar_nav_view(app_ctx.clone())}
 
             <Show when=move || sidebar_rail_collapsed.get()>
                 <button
@@ -434,7 +493,7 @@ pub fn App() -> impl IntoView {
             </Show>
 
             <div class="shell-main">
-                {mobile_shell_header_view(mobile_nav_open, locale, new_session.clone())}
+                {mobile_shell_header_view(app_ctx.clone())}
 
                 <ApprovalBar
                     pending_approval=pending_approval
@@ -457,102 +516,19 @@ pub fn App() -> impl IntoView {
                     class:main-row-resizing=move || side_resize_dragging.get()
                     class="main-row"
                 >
-                    {chat_column_view(ChatColumnShell {
-                        locale,
-                        messages_scroller,
-                        auto_scroll_chat,
-                        messages_scroll_from_effect,
-                        last_messages_scroll_top,
-                        timeline_panel_expanded,
-                        chat: chat_session,
-                        collapsed_long_assistant_ids,
-                        expanded_tool_run_heads,
-                        chat_find_query,
-                        chat_find_match_ids,
-                        chat_find_cursor,
-                        composer_input_ref,
-                        composer_buf_ta: composer_buf_ta.clone(),
-                        pending_images,
-                        stream_shell: chat_stream_shell.clone(),
-                        run_send_message: chat_wires.run_send_message.clone(),
-                        trigger_stop: Arc::clone(&chat_wires.cancel_stream),
-                        initialized,
-                        regen_stream_after_truncate: chat_wires.regen_stream_after_truncate,
-                        retry_assistant_target: chat_wires.retry_assistant_target,
-                        markdown_render,
-                        apply_assistant_display_filters,
-                    })}
+                    {chat_column_view(app_ctx.chat_column.clone())}
 
-                    {side_column_view(
-                        locale,
-                        side_resize_dragging,
-                        side_panel_view,
-                        side_width,
-                        side_resize_session.clone(),
-                        side_resize_handles.clone(),
-                        view_menu_open,
-                        status_bar_visible,
-                        settings_modal,
-                        workspace_panel,
-                        status_tasks,
-                        Arc::clone(&refresh_workspace),
-                        Arc::clone(&refresh_tasks),
-                        Arc::clone(&toggle_task),
-                        changelist_modal_open,
-                        changelist_fetch_nonce,
-                        insert_workspace_file_ref_sv,
-                        chat_stream_shell.thinking_trace_log,
-                    )}
+                    {side_column_view(app_ctx.clone())}
                 </div>
 
-                {status_bar_footer_view(
-                    status_bar_visible,
-                    status_tasks,
-                    status_err,
-                    tool_busy,
-                    status_busy,
-                    client_llm_storage_tick,
-                    selected_agent_role,
-                    chat_session,
-                    context_used_estimate,
-                    Arc::clone(&refresh_status),
-                    locale,
-                )}
+                {status_bar_footer_view(app_ctx.clone())}
             </div>
 
-            {session_list_modal_view(
-                session_modal,
-                locale,
-                chat_session,
-                draft,
-                composer_draft_buffer.clone(),
-                apply_assistant_display_filters,
-            )}
+            {session_list_modal_view(app_ctx.clone())}
 
-            {settings_modal_view(
-                settings_modal,
-                locale,
-                theme,
-                bg_decor,
-                status_tasks.status_data,
-                llm_api_base_draft,
-                llm_api_base_preset_select,
-                llm_model_draft,
-                llm_api_key_draft,
-                llm_has_saved_key,
-                llm_settings_feedback,
-                client_llm_storage_tick,
-            )}
+            {settings_modal_view(app_ctx.clone())}
 
-            {changelist_modal_view(
-                changelist_modal_open,
-                locale,
-                changelist_modal_loading,
-                changelist_modal_err,
-                changelist_modal_rev,
-                changelist_fetch_nonce,
-                changelist_body_ref,
-            )}
+            {changelist_modal_view(app_ctx.clone())}
         </div>
     }
 }

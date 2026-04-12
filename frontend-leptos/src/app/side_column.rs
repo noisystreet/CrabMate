@@ -3,7 +3,6 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use web_sys::KeyboardEvent;
@@ -15,8 +14,7 @@ use crate::sse_dispatch::ThinkingTraceInfo;
 use crate::workspace_shell::{begin_side_column_resize, reload_workspace_panel};
 use crate::workspace_tree::WorkspaceFilesystemTree;
 
-use super::status_tasks_state::StatusTasksSignals;
-use super::workspace_panel_state::WorkspacePanelSignals;
+use super::app_shell_ctx::AppShellCtx;
 
 #[component]
 fn SideColumnTasksLoadedPane(
@@ -198,34 +196,28 @@ fn SideColumnDebugConsoleCard(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn side_column_view(
-    locale: RwSignal<Locale>,
-    side_resize_dragging: RwSignal<bool>,
-    side_panel_view: RwSignal<SidePanelView>,
-    side_width: RwSignal<f64>,
-    side_resize_session: Rc<RefCell<Option<(f64, f64)>>>,
-    side_resize_handles: Rc<
-        RefCell<
-            Option<(
-                leptos_dom::helpers::WindowListenerHandle,
-                leptos_dom::helpers::WindowListenerHandle,
-            )>,
-        >,
-    >,
-    view_menu_open: RwSignal<bool>,
-    status_bar_visible: RwSignal<bool>,
-    settings_modal: RwSignal<bool>,
-    ws: WorkspacePanelSignals,
-    status_tasks: StatusTasksSignals,
-    refresh_workspace: Arc<dyn Fn() + Send + Sync>,
-    refresh_tasks: Arc<dyn Fn() + Send + Sync>,
-    toggle_task: Arc<dyn Fn(String) + Send + Sync>,
-    changelist_modal_open: RwSignal<bool>,
-    changelist_fetch_nonce: RwSignal<u64>,
-    insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
-    thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
-) -> impl IntoView {
+pub fn side_column_view(ctx: AppShellCtx) -> impl IntoView {
+    let AppShellCtx {
+        locale,
+        side_resize_dragging,
+        side_panel_view,
+        side_width,
+        side_resize_session,
+        side_resize_handles,
+        view_menu_open,
+        status_bar_visible,
+        settings_modal,
+        workspace_panel: ws,
+        status_tasks,
+        refresh_workspace,
+        refresh_tasks,
+        toggle_task,
+        changelist_modal_open,
+        changelist_fetch_nonce,
+        insert_workspace_file_ref,
+        thinking_trace_log,
+        ..
+    } = ctx;
     let tasks_data = status_tasks.tasks_data;
     let tasks_err = status_tasks.tasks_err;
     let tasks_loading = status_tasks.tasks_loading;

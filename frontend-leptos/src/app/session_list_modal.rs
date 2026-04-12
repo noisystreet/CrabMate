@@ -12,6 +12,8 @@ use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::session_modal_row::SessionModalRow;
 use crate::session_sort::sorted_sessions_clone;
+
+use super::app_shell_ctx::AppShellCtx;
 #[component]
 fn SessionListModalPanel(
     session_modal: RwSignal<bool>,
@@ -127,15 +129,16 @@ fn SessionListModalBackdrop(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn session_list_modal_view(
-    session_modal: RwSignal<bool>,
-    locale: RwSignal<Locale>,
-    chat: ChatSessionSignals,
-    draft: RwSignal<String>,
-    composer_draft_buffer: Arc<Mutex<String>>,
-    apply_assistant_display_filters: RwSignal<bool>,
-) -> impl IntoView {
+pub fn session_list_modal_view(ctx: AppShellCtx) -> impl IntoView {
+    let AppShellCtx {
+        session_modal,
+        locale,
+        chat,
+        draft,
+        composer_draft_buffer,
+        apply_assistant_display_filters,
+        ..
+    } = ctx;
     view! {
         <Show when=move || session_modal.get()>
             <SessionListModalBackdrop
