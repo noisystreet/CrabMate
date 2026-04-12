@@ -33,6 +33,21 @@
 
 ---
 
+## 路线图参考（对标主流开源 Agent）
+
+以下由「与 AutoGen / CrewAI / LangGraph / Open Interpreter 等对照」整理为**方向性**待办，可与上文章节交叉推进；实现后按惯例删除条目。
+
+- [ ] **多 Agent 协作**：多角色实例、消息路由与监督式编排（对标 AutoGen / CrewAI / MetaGPT）；与当前单 `agent_turn`、会话与配额模型如何共存须在设计与 `docs/DEVELOPMENT.md` 中预案。
+- [ ] **结构化规划—执行—验证闭环**：显式子任务拆解、执行结果校验与反思/重试策略，降低对单次模型输出的隐式依赖（对标 AutoGPT / SWE-agent 类循环）；与已有 `plan_artifact`、分阶段规划能力衔接并补足「验证」与自动重规划边界。
+- [ ] **交互式代码执行与受控 REPL**：在 `run_command` 白名单与沙盒策略之上，评估解释执行、会话级依赖安装与输出校验（对标 Open Interpreter）；安全面与 `tool_approval`、Docker 沙盒文档对齐。
+- [ ] **工作流编排产品化**：在已有 `workflow_execute`（DAG）等能力上，补齐更接近 LangGraph 的**默认入口**——状态机式配置、条件/循环的可读表达、运行态可视化与排障故事；主聊天回合仍为线性时，在文档中写清「对话流 vs 工作流」边界。
+- [ ] **工具与连接器生态**：在 MCP 与 `dev_tag` 分栈工具之外，系统化高频集成（DB、云 API、办公等）或维护「推荐连接器」清单与接入模板，降低重复造轮子（与 `tools/` 章 MCP 扩展条同向）。
+- [ ] **短期会话与主题轨迹**：多轮主题一致性、轮次级摘要与注入策略（与 `context_window`、长期记忆「检索质量」条目协同），缩小与主流「时序记忆 + 压缩」体验的差距。
+- [ ] **可观测与执行轨迹**：在 tracing 之上，为 Web/CLI 提供回合内工具时间线、失败重试与推理/思维过程的统一可视化（与 `sse/` 调试类事件、横切 `request_id` 同向）。
+- [ ] **文档、示例与社区引导**：Cookbook、典型场景模板、第三方工具/MCP 贡献说明，便于对标主流社区的扩展路径。
+
+---
+
 ## `agent/`（回合编排、上下文、PER、工作流）
 
 **职责摘要**：`agent_turn` 主循环；`context_window` 裁剪/摘要；`reflection/plan_rewrite` 终答规划重写与历史扫描；`per_coord` / `plan_artifact` / `workflow_reflection_controller`；`workflow` DAG 执行。
