@@ -31,6 +31,9 @@ pub struct ComposerStreamShell {
 }
 
 /// 中部聊天列：`messages` 滚动区、时间线、消息列表与输入区所需的信号与闭包。
+///
+/// 与 [`ComposerStreamShell`] 共享 **`status_busy` / `status_err` / `pending_clarification`** 等句柄，
+/// 避免 `App` 在 `wire_chat_composer_streams` 与 `chat_column_view` 之间重复传入同一组 `RwSignal`。
 pub struct ChatColumnShell {
     pub locale: RwSignal<Locale>,
     pub messages_scroller: NodeRef<leptos::html::Div>,
@@ -47,14 +50,13 @@ pub struct ChatColumnShell {
     pub composer_input_ref: NodeRef<Textarea>,
     pub composer_buf_ta: Arc<Mutex<String>>,
     pub pending_images: RwSignal<Vec<String>>,
-    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+    /// 与 `wire_chat_composer_streams` / SSE 回调共用（含 `status_busy`、`status_err`、`pending_clarification`）。
+    pub stream_shell: ComposerStreamShell,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
-    pub status_busy: RwSignal<bool>,
     pub initialized: RwSignal<bool>,
     pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
     pub retry_assistant_target: RwSignal<Option<String>>,
-    pub status_err: RwSignal<Option<String>>,
     pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
 }

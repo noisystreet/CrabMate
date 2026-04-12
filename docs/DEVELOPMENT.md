@@ -536,7 +536,7 @@ flowchart LR
 ### `frontend-leptos/src/app/chat/`
 
 - **`mod.rs`**：聊天域 **`pub(crate)`** 再导出（供 **`app::App`**）；与 [`docs/frontend-leptos/ARCHITECTURE.md`](frontend-leptos/ARCHITECTURE.md) **「`app/chat_*`」** 对齐。
-- **`handles.rs`**：**`ChatColumnShell`**、**`WireComposerStreamsArgs`**、**`ComposerStreamShell`**（流式与壳层共享的 `RwSignal`/中止/工作区刷新等聚合）— 压缩 **`App` → `chat_column_view` / `wire_chat_composer_streams`** 的参数面，并由 **`composer_stream::ChatStreamCallbackCtx`** 复用。
+- **`handles.rs`**：**`ChatColumnShell`**（内嵌 **`ComposerStreamShell`**，与流式接线共用 `status_busy` / `status_err` / `pending_clarification` 等）、**`WireComposerStreamsArgs`**、**`ComposerStreamShell`**（流式与壳层共享的 `RwSignal`/中止/工作区刷新等聚合）— 压缩 **`App` → `chat_column_view` / `wire_chat_composer_streams`** 的参数面，并由 **`composer_stream::ChatStreamCallbackCtx`** 复用。
 - **`composer_stream.rs`**：**`/chat/stream`** 的 **`ChatStreamCallbacks`** 装配（**`ChatStreamCallbackCtx`**、**`make_attach_chat_stream`**）。
 - **`composer.rs`**：草稿缓冲与 textarea 同步、发送 / 停止 / 重试 / 截断再生、新会话（流式细节见上）；**`staged_plan_step_*`** 与 **`tool_result`** 写入消息时附带 **`timeline_scan`** 的 **`cm_tl`** JSON（**`StoredMessage.state`**，仅本机 UI）；**`pending_images`** 与 **`column`** 内隐藏 file input 上传附图（最多 6 张预览），发送时写入 **`StoredMessage.image_urls`**。
 - **`scroll.rs`**：消息列表指纹变化时的自动跟底、**`focus_message_id_after_nav`** 滚入视图。
