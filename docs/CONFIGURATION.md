@@ -69,6 +69,8 @@
 | `AGENT_CURSOR_RULES_INCLUDE_AGENTS_MD` | 是否并入 `AGENTS.md`。 |
 | `AGENT_CURSOR_RULES_MAX_CHARS` | 注入长度上限。 |
 
+**Web 工作区**：**`serve`** 启动后，在侧栏通过 **`POST /workspace`** 选择目录之前，服务端不把 **`run_command_working_dir`**（默认常为 `"."`）视为「已选工作区」：不注入依赖工作区根的首轮上下文，**`@路径`** 引用会返回 **`WORKSPACE_NOT_SET`**，**SyncDefault** 类内置工具亦不可用；对话任务入队时进程内工作目录仍会规范为 **`run_command_working_dir`**，**`GET /health`** 对该目录做可选依赖探测。显式将工作区设为与 **`run_command_working_dir`** 等价的目录后，行为与旧版「默认 cwd 即工作区」一致。
+
 **路径安全（与实现一致）**：`workspace_allowed_roots` 与每次请求对当前工作区根的重验可拒绝明显的 `..` 逃逸与**校验时刻**已指向根外的 symlink。在 **Unix** 上，**`read_file`**（`resolve_for_read_open`）与 **Web** 工作区列表、读/写/删文件等经 **`src/workspace_fs.rs`**：Linux 上使用 **`openat2` + `RESOLVE_IN_ROOT`** 在已打开的工作区根 fd 上解析相对路径并打开，将「策略校验后的路径字符串」与「实际 `open`」之间的竞态窗口收窄；工作区内 symlink 仍可跟随，但解析不得越过该根。**残余风险**：校验阶段仍依赖该时刻的 `canonicalize`；非 Linux、或未走 `workspace_fs` 的代码路径仍可能存在 TOCTOU；**`create_dir_all`** 等与按路径打开的组合亦未完全原子化。不可等同于内核沙箱；开放网络须配 **Web 鉴权**等。详见 **`src/path_workspace.rs`** 模块注释。
 
 ### 规划与分阶段规划

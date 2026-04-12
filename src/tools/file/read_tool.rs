@@ -25,6 +25,7 @@ fn read_file_workspace_tool_error(e: WorkspacePathError) -> crate::tool_result::
         "workspace_path_invalid" => "read_file_workspace_path_invalid",
         "path_resolve_failed" => "read_file_workspace_path_resolve_failed",
         "workspace_resolve_failed" => "read_file_workspace_resolve_failed",
+        "web_effective_workspace_unset" => "read_file_workspace_web_unset",
         "not_a_directory" => "read_file_workspace_not_a_directory",
         "sensitive_path_denied" => "read_file_workspace_sensitive_path_denied",
         "effective_root_sensitive" => "read_file_workspace_effective_root_sensitive",

@@ -351,6 +351,9 @@ pub fn build_first_turn_user_context_markdown(
     cfg: &AgentConfig,
     memory_preloaded: Option<String>,
 ) -> Option<String> {
+    if workspace_root.as_os_str().is_empty() {
+        return None;
+    }
     let memory_snippet = memory_preloaded.or_else(|| {
         if cfg.agent_memory_file_enabled {
             crate::agent_memory::load_memory_snippet(

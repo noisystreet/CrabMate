@@ -42,6 +42,9 @@ async fn effective_workspace_base_canonical(
     state: &Arc<AppState>,
 ) -> Result<std::path::PathBuf, WorkspacePathError> {
     let base_str = state.effective_workspace_path().await;
+    if base_str.trim().is_empty() {
+        return Err(WorkspacePathError::WebEffectiveWorkspaceUnset);
+    }
     let base = Path::new(&base_str);
     let base_canonical = base
         .canonicalize()
@@ -100,6 +103,13 @@ pub async fn workspace_handler(
 ) -> Json<WorkspaceResponse> {
     let base_canonical = match effective_workspace_base_canonical(&state).await {
         Ok(p) => p,
+        Err(WorkspacePathError::WebEffectiveWorkspaceUnset) => {
+            return Json(WorkspaceResponse {
+                path: String::new(),
+                entries: Vec::new(),
+                error: None,
+            });
+        }
         Err(e) => {
             log::warn!(
                 target: "crabmate",

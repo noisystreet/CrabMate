@@ -10,6 +10,9 @@ pub fn load_memory_snippet(
     rel_path: &str,
     max_chars: usize,
 ) -> Option<String> {
+    if workspace_root.as_os_str().is_empty() {
+        return None;
+    }
     let rel = rel_path.trim();
     if rel.is_empty() || max_chars == 0 {
         return None;

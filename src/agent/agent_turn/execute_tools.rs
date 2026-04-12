@@ -978,11 +978,12 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
 
     emit_sse_tool_running(out, true, "execute_tools::batch tool_running true").await;
 
-    let workspace_changed = if crate::agent_role_turn::tool_calls_allow_parallel_for_role(
-        ctx.cfg.as_ref(),
-        ctx.tool_calls,
-        ctx.turn_allow,
-    ) {
+    let workspace_changed = if ctx.workspace_is_set
+        && crate::agent_role_turn::tool_calls_allow_parallel_for_role(
+            ctx.cfg.as_ref(),
+            ctx.tool_calls,
+            ctx.turn_allow,
+        ) {
         let outcome = execute_tools_parallel(ctx).await;
         if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
             return outcome;
