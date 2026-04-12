@@ -15,6 +15,10 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         .get("run_cargo_fmt_check")
         .and_then(|x| x.as_bool())
         .unwrap_or(true);
+    let run_cargo_check = v
+        .get("run_cargo_check")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let run_cargo_clippy = v
         .get("run_cargo_clippy")
         .and_then(|x| x.as_bool())
@@ -25,6 +29,10 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         .unwrap_or(false);
     let run_frontend_lint = v
         .get("run_frontend_lint")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let run_frontend_build = v
+        .get("run_frontend_build")
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
     let run_frontend_prettier_check = v
@@ -71,9 +79,11 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         .unwrap_or(false);
 
     if !run_cargo_fmt_check
+        && !run_cargo_check
         && !run_cargo_clippy
         && !run_cargo_test
         && !run_frontend_lint
+        && !run_frontend_build
         && !run_frontend_prettier_check
         && !run_ruff_check
         && !run_pytest
@@ -102,9 +112,11 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         if fail_fast && failed {
             push_skipped(
                 &mut summary,
+                run_cargo_check,
                 run_cargo_clippy,
                 run_cargo_test,
                 run_frontend_lint,
+                run_frontend_build,
                 run_frontend_prettier_check,
             );
             skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
@@ -123,6 +135,41 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         summary.push(("cargo fmt --check", "skipped"));
     }
 
+    if run_cargo_check {
+        let r = if workspace_root.join("Cargo.toml").is_file() {
+            cargo_tools::cargo_check(r#"{"all_targets":true}"#, workspace_root, max_output_len)
+        } else {
+            "cargo check: 跳过（未找到 Cargo.toml）".to_string()
+        };
+        let failed = section_failed(&r);
+        summary.push(("cargo check", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+        if fail_fast && failed {
+            push_skipped(
+                &mut summary,
+                false,
+                run_cargo_clippy,
+                run_cargo_test,
+                run_frontend_lint,
+                run_frontend_build,
+                run_frontend_prettier_check,
+            );
+            skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
+            return build_output(&summary, &sections, summary_only);
+        }
+    } else {
+        summary.push(("cargo check", "skipped"));
+    }
+
     if run_cargo_clippy {
         let r = if workspace_root.join("Cargo.toml").is_file() {
             cargo_tools::cargo_clippy(r#"{"all_targets":true}"#, workspace_root, max_output_len)
@@ -136,8 +183,10 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
             push_skipped(
                 &mut summary,
                 false,
+                false,
                 run_cargo_test,
                 run_frontend_lint,
+                run_frontend_build,
                 run_frontend_prettier_check,
             );
             skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
@@ -170,7 +219,9 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 &mut summary,
                 false,
                 false,
+                false,
                 run_frontend_lint,
+                run_frontend_build,
                 run_frontend_prettier_check,
             );
             skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
@@ -190,11 +241,8 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
     }
 
     if run_frontend_lint {
-        let r = frontend_tools::frontend_lint(
-            r#"{"subdir":"frontend","script":"lint"}"#,
-            workspace_root,
-            max_output_len,
-        );
+        let r =
+            frontend_tools::frontend_lint(r#"{"script":"lint"}"#, workspace_root, max_output_len);
         let failed = section_failed(&r) && !r.contains("跳过（");
         summary.push(("frontend lint", if failed { "failed" } else { "passed" }));
         sections.push(r);
@@ -204,6 +252,8 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
                 false,
                 false,
                 false,
+                false,
+                run_frontend_build,
                 run_frontend_prettier_check,
             );
             skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
@@ -222,12 +272,40 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         summary.push(("frontend lint", "skipped"));
     }
 
+    if run_frontend_build {
+        let r =
+            frontend_tools::frontend_build(r#"{"script":"build"}"#, workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("frontend build", if failed { "failed" } else { "passed" }));
+        sections.push(r);
+        if fail_fast && failed {
+            push_skipped(
+                &mut summary,
+                false,
+                false,
+                false,
+                false,
+                false,
+                run_frontend_prettier_check,
+            );
+            skip_python_steps(&mut summary, run_ruff_check, run_pytest, run_mypy);
+            skip_jvm_container_steps(
+                &mut summary,
+                run_maven_compile,
+                run_maven_test,
+                run_gradle_compile,
+                run_gradle_test,
+                run_docker_compose_ps,
+                run_podman_images,
+            );
+            return build_output(&summary, &sections, summary_only);
+        }
+    } else {
+        summary.push(("frontend build", "skipped"));
+    }
+
     if run_frontend_prettier_check {
-        let r = frontend_tools::frontend_prettier_check(
-            r#"{"subdir":"frontend"}"#,
-            workspace_root,
-            max_output_len,
-        );
+        let r = frontend_tools::frontend_prettier_check("{}", workspace_root, max_output_len);
         let failed = section_failed(&r) && !r.contains("跳过（");
         summary.push((
             "frontend prettier --check",
@@ -503,7 +581,7 @@ fn section_failed(text: &str) -> bool {
         if let Some(rest) = line.strip_prefix("cargo fmt --check (exit=") {
             return parse_exit_nonzero(rest);
         }
-        if line.starts_with("cargo ")
+        if (line.starts_with("cargo ") || line.starts_with("rustc "))
             && line.contains("(exit=")
             && let Some(idx) = line.find("(exit=")
         {
@@ -556,11 +634,16 @@ fn parse_exit_nonzero(s: &str) -> bool {
 
 fn push_skipped(
     summary: &mut Vec<(&'static str, &'static str)>,
+    cargo_check: bool,
     clippy: bool,
     test: bool,
     fe_lint: bool,
+    fe_build: bool,
     fe_fmt: bool,
 ) {
+    if cargo_check {
+        summary.push(("cargo check", "skipped"));
+    }
     if clippy {
         summary.push(("cargo clippy", "skipped"));
     }
@@ -569,6 +652,9 @@ fn push_skipped(
     }
     if fe_lint {
         summary.push(("frontend lint", "skipped"));
+    }
+    if fe_build {
+        summary.push(("frontend build", "skipped"));
     }
     if fe_fmt {
         summary.push(("frontend prettier --check", "skipped"));

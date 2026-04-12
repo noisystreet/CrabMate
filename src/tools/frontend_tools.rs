@@ -1,4 +1,4 @@
-//! 前端开发工具：frontend lint（结构化参数）
+//! 前端开发工具：`npm run` 封装（lint / build / test）、prettier 检查。
 
 use std::path::Path;
 use std::process::Command;
@@ -6,6 +6,17 @@ use std::process::Command;
 use super::output_util;
 
 const MAX_OUTPUT_LINES: usize = 800;
+
+/// 未在 JSON 中指定 **`subdir`** 时：在 **`frontend/`**、**`frontend-leptos/`** 中选用**第一个**存在 **`package.json`** 的目录名；否则 **`frontend`**（与历史默认一致）。
+#[must_use]
+pub fn npm_package_subdir_default(workspace_root: &Path) -> String {
+    for d in ["frontend", "frontend-leptos"] {
+        if workspace_root.join(d).join("package.json").is_file() {
+            return d.to_string();
+        }
+    }
+    "frontend".to_string()
+}
 
 pub fn frontend_lint(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     frontend_run_script(args_json, workspace_root, max_output_len, "lint")
@@ -29,18 +40,21 @@ pub fn frontend_prettier_check(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let subdir = v
+    let subdir = match v
         .get("subdir")
         .and_then(|x| x.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .unwrap_or("frontend");
+    {
+        Some(s) => s.to_string(),
+        None => npm_package_subdir_default(workspace_root),
+    };
 
     if subdir.starts_with('/') || subdir.contains("..") {
         return "错误：subdir 必须是工作区内相对路径，且不能包含 ..".to_string();
     }
 
-    let dir = workspace_root.join(subdir);
+    let dir = workspace_root.join(&subdir);
     if !dir.is_dir() {
         return format!("prettier --check: 跳过（{} 目录不存在）", subdir);
     }
@@ -70,12 +84,15 @@ fn frontend_run_script(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let subdir = v
+    let subdir = match v
         .get("subdir")
         .and_then(|x| x.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .unwrap_or("frontend");
+    {
+        Some(s) => s.to_string(),
+        None => npm_package_subdir_default(workspace_root),
+    };
     let script = v
         .get("script")
         .and_then(|x| x.as_str())
@@ -90,7 +107,7 @@ fn frontend_run_script(
         return "错误：script 参数无效（不能包含空白字符）".to_string();
     }
 
-    let dir = workspace_root.join(subdir);
+    let dir = workspace_root.join(&subdir);
     if !dir.is_dir() {
         return format!("npm run {}: 跳过（{} 目录不存在）", script, subdir);
     }

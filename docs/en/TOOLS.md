@@ -128,9 +128,9 @@ Structured function-calling JSON examples:
   ```json
   {"deny_warnings":true}
   ```
-- `ci_pipeline_local` (local CI; optional Python `run_ruff_check` / `run_pytest` / `run_mypy`):
+- `ci_pipeline_local` (local CI; optional frontend `npm run build` via `run_frontend_build`; optional Python `run_ruff_check` / `run_pytest` / `run_mypy`):
   ```json
-  {"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"run_ruff_check":true,"run_pytest":false,"run_mypy":false,"fail_fast":true,"summary_only":false}
+  {"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"run_frontend_build":false,"run_ruff_check":true,"run_pytest":false,"run_mypy":false,"fail_fast":true,"summary_only":false}
   ```
 - `release_ready_check`:
   ```json
@@ -278,9 +278,9 @@ Structured function-calling JSON examples:
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `cargo_metadata`, `cargo_machete`, `cargo_udeps`, `cargo_publish_dry_run`, `rust_compiler_json`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`, `cargo_tree`, `cargo_clean`, `cargo_doc`.
+Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `cargo_metadata`, `cargo_machete`, `cargo_udeps`, `cargo_publish_dry_run`, `rust_compiler_json`, `rust_rustc` (invoke `rustc` at workspace root with the same arg safety rules as `run_command`), rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`, `cargo_tree`, `cargo_clean`, `cargo_doc`.
 
-**Python / uv / pre-commit**: `ruff_check`, `pytest_run`, `mypy_check`, `python_install_editable`, `uv_sync`, `uv_run`, `pre_commit_run`; aggregates `run_lints`, `quality_workspace` (optional ruff/pytest/mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
+**Python / uv / pre-commit**: `ruff_check`, `pytest_run`, `mypy_check`, `python_install_editable`, `uv_sync`, `uv_run`, `pre_commit_run`; aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff), `quality_workspace` (optional **`run_cargo_check`** / **`run_frontend_build`** / ruff / pytest / mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
 
 **Node.js / npm**: `npm_install`, `npm_run`, `npx_run`, `tsc_check`.
 
@@ -506,7 +506,11 @@ Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
   ```json
   {"path":"src/main.rs"}
   ```
-- `quality_workspace` (default fmt check + clippy; optional test / frontend lint / prettier):
+- `quality_workspace` (default fmt check + clippy; optional `run_cargo_check` for `cargo check --all-targets`; optional test / frontend lint / `run_frontend_build` / prettier):
   ```json
-  {"run_cargo_fmt_check":true,"run_cargo_clippy":true,"run_cargo_test":false,"run_frontend_lint":false,"run_frontend_prettier_check":false,"fail_fast":true,"summary_only":false}
+  {"run_cargo_fmt_check":true,"run_cargo_check":false,"run_cargo_clippy":true,"run_cargo_test":false,"run_frontend_lint":false,"run_frontend_build":false,"run_frontend_prettier_check":false,"fail_fast":true,"summary_only":false}
+  ```
+- `rust_rustc` (run `rustc` at workspace root; `args` string array; no `..` or absolute paths; **no** `Cargo.toml` required):
+  ```json
+  {"args":["--explain","E0382"]}
   ```
