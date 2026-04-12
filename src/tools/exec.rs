@@ -29,6 +29,59 @@ static RATE_LIMIT: Mutex<RateLimitState> = Mutex::new(RateLimitState {
     count: 0,
 });
 
+/// `run_command` 的 `command` 若为「明显相对路径」（`./…` 或含 `/`），且解析到工作区内**已存在**的普通文件，
+/// 且为可执行位（Unix）或常见脚本扩展名，则视为工作区脚本/可执行文件：**跳过**白名单外人工审批（与「本次允许」
+/// 等同，仅扩展当次有效允许表，不写入永久允许集合）。
+///
+/// 不包含裸命令名（如 `gcc`），避免与工作区内同名文件或 PATH 解析混淆。
+pub(crate) fn run_command_invocation_targets_workspace_script_or_executable(
+    working_dir: &Path,
+    command_raw: &str,
+) -> bool {
+    let t = command_raw.trim();
+    if t.is_empty() || t.contains("..") {
+        return false;
+    }
+    if !t.starts_with("./") && !t.contains('/') {
+        return false;
+    }
+    let target = match resolve_executable_path(working_dir, t) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    if !target.is_file() {
+        return false;
+    }
+    let meta = match std::fs::metadata(&target) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    if is_executable(&meta) {
+        return true;
+    }
+    target
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| {
+            matches!(
+                e.to_ascii_lowercase().as_str(),
+                "sh" | "bash"
+                    | "zsh"
+                    | "py"
+                    | "pl"
+                    | "rb"
+                    | "js"
+                    | "mjs"
+                    | "cjs"
+                    | "ts"
+                    | "ps1"
+                    | "fish"
+                    | "ksh"
+                    | "dash"
+            )
+        })
+}
+
 /// 解析相对工作目录的路径，且不允许超出工作目录
 fn resolve_executable_path(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();
@@ -209,5 +262,52 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_command_workspace_auto_approve_requires_path_shape() {
+        let dir = make_test_dir();
+        let script = dir.join("helper.sh");
+        std::fs::write(&script, "#!/bin/sh\necho ok\n").unwrap();
+        assert!(
+            run_command_invocation_targets_workspace_script_or_executable(&dir, "./helper.sh"),
+            ".sh under ./ should qualify"
+        );
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        let nested = dir.join("bin/wrap.sh");
+        std::fs::write(&nested, "#!/bin/sh\n").unwrap();
+        assert!(
+            run_command_invocation_targets_workspace_script_or_executable(&dir, "bin/wrap.sh"),
+            "subdir/ path should qualify"
+        );
+        assert!(
+            !run_command_invocation_targets_workspace_script_or_executable(&dir, "ls"),
+            "bare command name must not auto-approve"
+        );
+        assert!(
+            !run_command_invocation_targets_workspace_script_or_executable(&dir, "./nope.sh"),
+            "missing file must not auto-approve"
+        );
+        assert!(
+            !run_command_invocation_targets_workspace_script_or_executable(&dir, "../x"),
+            "path with .. rejected"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_command_workspace_auto_approve_executable_bit() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = make_test_dir();
+        let bin = dir.join("mytool");
+        std::fs::write(&bin, "#!/bin/sh\necho tool\n").unwrap();
+        let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&bin, perms).unwrap();
+        assert!(run_command_invocation_targets_workspace_script_or_executable(&dir, "./mytool"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
