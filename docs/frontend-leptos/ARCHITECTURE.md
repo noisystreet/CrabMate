@@ -21,7 +21,7 @@
 | **按功能域切分** | 聊天、工作区、任务、设置、模态等尽量各自成簇；避免「所有 `RwSignal` 堆在 `App`」长期化。 |
 | **显式接线** | 与时间、订阅、浏览器相关的副作用集中在 **`wire_*` 函数**或小型 `Effect` 模块，不在任意组件深处散落 `spawn_local`。 |
 | **状态聚合** | 同一业务横切面（如会话 + 流式 + 水合）用**单一聚合类型**持有相关 `RwSignal` 句柄（如已有 **`ChatSessionSignals`**），减少参数列表爆炸。 |
-| **纯逻辑外提** | 与 DOM 无关的格式化、扫描、防抖判定、消息展示过滤等留在 `message_format`、`timeline_scan`、`debounce_schedule` 等模块，**`app/` 以组合与接线为主**。 |
+| **纯逻辑外提** | 与 DOM 无关的格式化、扫描、防抖判定、消息展示过滤等留在 `message_format`、`message_render`（展示字符串 → 安全 HTML 单一路径）、`timeline_scan`、`debounce_schedule` 等模块，**`app/` 以组合与接线为主**。 |
 | **三端逻辑复用意识** | 会话存储、导出形状、SSE 语义以后端与 `runtime` 为准；前端仅负责展示与本地 `localStorage` 持久化，**不**复制一套互不等价的业务规则（见仓库 `cli-tui-web-shared-logic` 类规则）。 |
 
 ## 4. 目标分层（逻辑依赖自上而下）

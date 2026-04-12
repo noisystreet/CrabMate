@@ -462,7 +462,7 @@ flowchart LR
 
 ### 单元测试（`frontend-leptos`）
 
-- **宿主目标（默认）**：仓库根执行 **`cargo test -p crabmate-web-leptos`**（或 **`cd frontend-leptos && cargo test`**）。覆盖 `session_ops`、`session_search`、`markdown`（`#[test]`）、**`debounce_schedule`** 等纯逻辑与 HTML 净化断言。
+- **宿主目标（默认）**：仓库根执行 **`cargo test -p crabmate-web-leptos`**（或 **`cd frontend-leptos && cargo test`**）。覆盖 `session_ops`、`session_search`、`markdown`、`message_render`（`#[test]`）、**`debounce_schedule`** 等纯逻辑与 HTML 净化断言。
 - **WASM 目标（可选）**：`wasm-bindgen-test` 用例在 **`markdown.rs`** 的 **`wasm_bindgen_tests`** 子模块（`#[wasm_bindgen_test]`）。需已安装与依赖 **`wasm-bindgen`** 版本一致的 **`wasm-bindgen-cli`**（提供 **`wasm-bindgen-test-runner`**），且本机有 **Node** 等 runner 所需运行时。示例：
   - `cargo install wasm-bindgen-cli --version 0.2.114 --locked`（版本以 **`Cargo.lock`** 中 **`wasm-bindgen`** 为准）
   - `CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --target wasm32-unknown-unknown -p crabmate-web-leptos`
@@ -561,9 +561,13 @@ flowchart LR
 
 - 工具卡摘要去重、**`agent_reply_plan`** 围栏/流式缓冲与 **`assistant_text_for_display`**（单测在此模块）；**`filter_redacted_thinking_for_display`** 在默认过滤开启时对 **`reasoning_text`** 与 **`text`** 成对去掉 redacted_thinking（plain、反引号包裹、开闭标签 ASCII 大小写不敏感；流式未闭合与尾部半段开标签）；**`assistant_text_for_display`** 末尾再滤一道以防规划/围栏路径漏网；**`message_text_for_display_ex`** 供气泡、搜索、导出复用（**`apply_assistant_display_filters`** 与 **`GET /web-ui`** 对齐）。
 
+### `frontend-leptos/src/message_render.rs`
+
+- **消息渲染单一入口（HTML）**：**`fragment_to_chat_safe_html`** 按 **`markdown_render`** 统一走 **`markdown::to_safe_html`** 或 **`plaintext_to_safe_html`**（变更集模态、助手 **`innerHTML`** 等）；**`assistant_body_plain_for_stream`** 将 **`reasoning_text` + `text`** 经 **`message_format`** 助手链压成展示用纯文本，与 **`assistant_body`** 流式 **`Effect`** 同源。
+
 ### `frontend-leptos/src/assistant_body.rs`
 
-- 助手**非工具**消息：**`assistant_markdown_collapsible_view`**：`Effect` + **`request_animation_frame`** 写入 **`innerHTML`**（**`markdown::to_safe_html`** / 纯文本路径）；超长（字符阈值 **`LONG_ASSISTANT_COLLAPSE_THRESHOLD`**）时**默认全文**，**`collapsed_long_assistant_ids`** 记录用户手动折叠；用户 / 工具 / 系统消息在 **`app/`（聊天列）** 中仍为纯文本 **`span.msg-body`**。
+- 助手**非工具**消息：**`assistant_markdown_collapsible_view`**：`Effect` + **`request_animation_frame`** 写入 **`innerHTML`**（经 **`message_render`**：**`assistant_body_plain_for_stream`** + **`fragment_to_chat_safe_html`**）；超长（字符阈值 **`LONG_ASSISTANT_COLLAPSE_THRESHOLD`**）时**默认全文**，**`collapsed_long_assistant_ids`** 记录用户手动折叠；用户 / 工具 / 系统消息在 **`app/`（聊天列）** 中仍为纯文本 **`span.msg-body`**。
 
 ### `frontend-leptos/src/session_sync.rs`
 

@@ -1,4 +1,5 @@
 //! 助手消息 Markdown 渲染（随会话信号刷新 DOM）；超长回复默认全文，可由用户折叠。
+//! 展示链与 HTML 出口见 [`crate::message_render`]。
 
 use std::sync::{Arc, Mutex};
 
@@ -8,11 +9,8 @@ use leptos_dom::helpers::request_animation_frame;
 use wasm_bindgen::JsCast;
 
 use crate::i18n::{self, Locale};
-use crate::markdown;
-use crate::message_format::{
-    assistant_text_for_display, assistant_thinking_body_and_answer_raw,
-    filter_assistant_thinking_markers_for_display, message_text_for_display_ex,
-};
+use crate::message_format::message_text_for_display_ex;
+use crate::message_render::{assistant_body_plain_for_stream, fragment_to_chat_safe_html};
 use crate::storage::ChatSession;
 
 /// 超过该字符数（按展示用 `message_text_for_display_ex` 与当前 `apply_assistant_display_filters` 计）的已完成助手消息可手动折叠；默认展示全文。
@@ -24,17 +22,6 @@ struct AssistantMdPaint {
     raf_scheduled: bool,
     /// 本帧内是否曾出现「由空到有字」的流式首包（用于一次性淡入 class）。
     pending_first_chunk_anim: bool,
-}
-
-/// 与 `message_text_for_display_ex` 一致：思维链与终答拼成一段再渲染（无单独「思考过程」容器）。
-fn combined_assistant_display_plain(thinking_trimmed: &str, answer_display: &str) -> String {
-    if thinking_trimmed.is_empty() {
-        return answer_display.to_string();
-    }
-    if answer_display.trim().is_empty() {
-        return thinking_trimmed.to_string();
-    }
-    format!("{thinking_trimmed}\n\n{answer_display}")
 }
 
 /// 助手非工具消息：Markdown → 净化 HTML；超长时默认全文，列表中的 id 表示用户已折叠。
@@ -82,23 +69,8 @@ pub fn assistant_markdown_collapsible_view(
                     })
                     .unwrap_or_default()
             });
-            let filtered_reasoning_and_text = if apply {
-                Some((
-                    filter_assistant_thinking_markers_for_display(&reasoning_src, is_loading),
-                    filter_assistant_thinking_markers_for_display(&text_src, is_loading),
-                ))
-            } else {
-                None
-            };
-            let (thinking_raw, answer_raw) = match &filtered_reasoning_and_text {
-                Some((rs, tx)) => {
-                    assistant_thinking_body_and_answer_raw(rs.as_str(), tx.as_str(), true)
-                }
-                None => assistant_thinking_body_and_answer_raw(&reasoning_src, &text_src, false),
-            };
-            let r_trim = thinking_raw.trim();
-            let answer_display = assistant_text_for_display(answer_raw, is_loading, loc, apply);
-            let combined = combined_assistant_display_plain(r_trim, answer_display.as_str());
+            let combined =
+                assistant_body_plain_for_stream(&reasoning_src, &text_src, is_loading, loc, apply);
             let snapshot = combined.clone();
             let first_stream_chunk = {
                 let arc = prev_raw.get_value();
@@ -109,13 +81,7 @@ pub fn assistant_markdown_collapsible_view(
                 *g = snapshot;
                 first
             };
-            let html = if combined.trim().is_empty() {
-                String::new()
-            } else if md_on {
-                markdown::to_safe_html(&combined)
-            } else {
-                markdown::plaintext_to_safe_html(&combined)
-            };
+            let html = fragment_to_chat_safe_html(&combined, md_on);
             let paint_arc = paint.get_value();
             {
                 let mut g = paint_arc.lock().expect("assistant paint mutex poisoned");

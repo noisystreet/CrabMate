@@ -9,7 +9,7 @@ use wasm_bindgen::JsCast;
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::api::fetch_workspace_changelog;
 use crate::i18n::{self, Locale};
-use crate::markdown;
+use crate::message_render::fragment_to_chat_safe_html;
 use crate::session_sync::SessionSyncState;
 
 /// `changelist_fetch_nonce` 递增后拉取 `GET /workspace/changelog`；`nonce==0` 时不请求。
@@ -48,11 +48,8 @@ pub(super) fn wire_changelist_fetch_effects(
                             changelist_modal_rev.set(0);
                         } else {
                             changelist_modal_rev.set(r.revision);
-                            changelist_modal_html.set(if md_on {
-                                markdown::to_safe_html(&r.markdown)
-                            } else {
-                                markdown::plaintext_to_safe_html(&r.markdown)
-                            });
+                            changelist_modal_html
+                                .set(fragment_to_chat_safe_html(&r.markdown, md_on));
                         }
                     }
                     Err(e) => {
