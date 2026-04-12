@@ -1,4 +1,4 @@
-//! Rust 开发工具：cargo check/test/clippy/metadata/run/tree/clean/doc/outdated/machete/udeps/publish dry-run
+//! Rust 开发工具：cargo check/test/clippy/metadata/run/tree/clean/doc/outdated/machete/udeps/publish dry-run、工作区内 `rustc`。
 #![allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 `run_tool_dispatch` 一致
 
 use std::path::Path;
@@ -26,6 +26,63 @@ pub fn cargo_check_try(
     max_output_len: usize,
 ) -> Result<String, ToolError> {
     run_cargo_subcommand_str_try("check", args_json, workspace_root, max_output_len)
+}
+
+const RUST_RUSTC_MAX_ARGS: usize = 64;
+const RUST_RUSTC_MAX_ARG_BYTES: usize = 8192;
+
+fn rustc_arg_is_safe(arg: &str) -> bool {
+    let a = arg.trim();
+    !a.contains("..") && !a.starts_with('/')
+}
+
+/// 在工作区根目录执行 **`rustc`**（不经 shell），参数须与 `run_command` 相同：**不得**含 `..` 或以 `/` 开头的参数。
+/// 适用于 `rustc --explain E0xxx`、`rustc -vV`、`rustc --print=cfg` 等；**不要求**存在 `Cargo.toml`。
+pub fn rust_rustc(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    rust_rustc_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+}
+
+pub fn rust_rustc_try(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> Result<String, ToolError> {
+    let v = crate::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let args: Vec<String> = match v.get("args") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect(),
+        Some(_) => {
+            return Err(ToolError::invalid_args(
+                "错误：args 必须是字符串数组".to_string(),
+            ));
+        }
+        None => Vec::new(),
+    };
+    if args.len() > RUST_RUSTC_MAX_ARGS {
+        return Err(ToolError::invalid_args(format!(
+            "错误：rustc 参数个数超过上限 {}",
+            RUST_RUSTC_MAX_ARGS
+        )));
+    }
+    for a in &args {
+        if a.len() > RUST_RUSTC_MAX_ARG_BYTES {
+            return Err(ToolError::invalid_args(format!(
+                "错误：单参数长度超过 {} 字节",
+                RUST_RUSTC_MAX_ARG_BYTES
+            )));
+        }
+        if !rustc_arg_is_safe(a) {
+            return Err(ToolError::invalid_args(
+                "错误：参数不允许包含 \"..\" 或绝对路径（以 / 开头）".to_string(),
+            ));
+        }
+    }
+
+    let mut cmd = Command::new("rustc");
+    cmd.args(&args).current_dir(workspace_root);
+    run_and_format_try(cmd, max_output_len, "rustc", "rust_rustc")
 }
 
 pub fn cargo_test(

@@ -173,6 +173,21 @@ pub(in crate::tools) fn params_cargo_publish_dry_run() -> serde_json::Value {
     })
 }
 
+pub(in crate::tools) fn params_rust_rustc() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "传给 rustc 的参数（不含程序名）；在工作区根目录执行。与 run_command 相同：每项不得含 .. 或以 / 开头。例：[\"--explain\",\"E0382\"]、[\"-vV\"]、[\"--print\",\"cfg\"]"
+            }
+        },
+        "required": ["args"],
+        "additionalProperties": false
+    })
+}
+
 pub(in crate::tools) fn params_rust_compiler_json() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
