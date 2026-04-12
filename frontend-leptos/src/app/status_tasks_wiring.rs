@@ -103,3 +103,19 @@ pub fn wire_tasks_refresh_when_tasks_panel_visible(
         }
     });
 }
+
+/// 初始化后补拉 `/status`；任务侧栏可见时刷新任务列表（从 `app/mod.rs` 迁入，阶段 B）。
+pub fn wire_status_tasks_domain_effects(
+    initialized: RwSignal<bool>,
+    status_tasks: StatusTasksSignals,
+    refresh_status: Arc<dyn Fn() + Send + Sync>,
+    side_panel_view: RwSignal<SidePanelView>,
+    refresh_tasks: Arc<dyn Fn() + Send + Sync>,
+) {
+    wire_status_fetch_if_missing_after_init(initialized, status_tasks, Arc::clone(&refresh_status));
+    wire_tasks_refresh_when_tasks_panel_visible(
+        side_panel_view,
+        initialized,
+        Arc::clone(&refresh_tasks),
+    );
+}
