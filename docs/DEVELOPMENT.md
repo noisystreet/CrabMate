@@ -518,7 +518,7 @@ flowchart LR
 ### `frontend-leptos/src/app/`
 
 - **`mod.rs`**：单根 **`App`**；**`RwSignal`** 声明、调用 **`app_shell_effects`** 与各子模块 **`wire_*`** 接线、主 `view!` 组合子视图；**`/status`、侧栏 `/tasks`** 的拉取闭包与「初始化后补拉 / 切到任务侧栏再拉」见 **`status_tasks_wiring`**。与 **`GET /conversation/messages`** 对齐的会话水合见 **`session_hydrate::wire_session_hydration`**；**`ChatSessionSignals`**（见 **`chat_session_state`**）在侧栏、聊天列、会话管理模态、状态栏等处整包下传；**`StatusTasksSignals`**（见 **`status_tasks_state`**）供底栏与右栏任务区。聊天主路径（流式、滚动、查找、主列 UI）见 **`chat`** 子模块；Workspace 树刷新封装见 **`workspace_panel`**；变更集模态 fetch / `innerHTML` 见 **`changelist_modal`**。
-- **`app_shell_effects.rs`**：**`ShellEscapeSignals`** 与壳级 **`wire_*`**：首启从 **`localStorage`** 加载会话、**`GET /web-ui`** 一次同步 Markdown / 助手过滤、会话列表写回、当前会话上下文字符估算、侧栏视图 / 底栏可见 / 代理角色 / 侧栏宽度、待审批会话切换时审批条展开态、主题与 **`data-theme`** / **`lang`** / **`data-bg-decor`**、打开设置时填充 LLM 草稿；**全局 `Escape`**（在 **`input`/`textarea`/`contenteditable` 外**）按层级关闭侧栏会话菜单、侧栏搜索、查找栏、视图菜单、移动抽屉、变更集/设置/会话模态（**`wire_escape_key_layered_dismiss`**）。
+- **`app_shell_effects.rs`**：**`ShellEscapeSignals`** 与壳级 **`wire_*`**：首启从 **`localStorage`** 加载会话、**`GET /web-ui`** 一次同步 Markdown / 助手过滤、会话列表写回、当前会话上下文字符估算、侧栏视图 / 底栏可见 / 代理角色 / 侧栏宽度 / **桌面左侧会话栏收起**（**`SIDEBAR_RAIL_COLLAPSED_KEY`**）、待审批会话切换时审批条展开态、主题与 **`data-theme`** / **`lang`** / **`data-bg-decor`**、打开设置时填充 LLM 草稿；**全局 `Escape`**（在 **`input`/`textarea`/`contenteditable` 外**）按层级关闭侧栏会话菜单、侧栏搜索、查找栏、视图菜单、移动抽屉、变更集/设置/会话模态（**`wire_escape_key_layered_dismiss`**）。
 - **`chat_session_state.rs`**（`frontend-leptos/src/`，**非**仅 `app/`）：**`ChatSessionSignals`**——会话列表、活动 id、**`SessionSyncState`**、水合 nonce、流式 job / SSE 序等 **`RwSignal`** 聚合（**`Clone`/`Copy`**）。置于 crate 根以便 **`session_modal_row`** 与 **`app/`** 共用，避免 `app` ↔ 根模块循环依赖。
 - **`session_hydrate.rs`**：**`wire_session_hydration`**：订阅水合 nonce，拉取 **`GET /conversation/messages`** 并与本地 **`ChatSession`** 对齐（用户轮次保护、**`session_sync.apply_saved_revision`** 等），从 **`mod.rs`** 拆出以隔离同步语义。
 - **`workspace_panel_state.rs`**：**`WorkspacePanelSignals`**：工作区目录树、根路径草稿、设置/浏览忙状态等 **`RwSignal`** 聚合，供 **`make_refresh_workspace`**、**`side_column_view`** 传递。
@@ -551,7 +551,7 @@ flowchart LR
 
 ### `frontend-leptos/src/app_prefs.rs`
 
-- **`localStorage`** 键与侧栏视图枚举（**`SidePanelView`**）、**`crabmate-timeline-panel-expanded`**（时间线面板展开态）、状态栏用的本机/服务端 **`api_base` / `model`** 合并展示、侧栏宽度钳制与读写。
+- **`localStorage`** 键与侧栏视图枚举（**`SidePanelView`**）、**`crabmate-timeline-panel-expanded`**（时间线面板展开态）、**`crabmate-sidebar-rail-collapsed`**（桌面端左侧会话栏收起）、状态栏用的本机/服务端 **`api_base` / `model`** 合并展示、侧栏宽度钳制与读写。
 
 ### `frontend-leptos/src/timeline_scan.rs`
 

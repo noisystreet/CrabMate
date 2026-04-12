@@ -16,6 +16,20 @@ pub fn nav_new_chat(l: Locale) -> &'static str {
     }
 }
 
+pub fn nav_sidebar_collapse_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "收起会话栏",
+        Locale::En => "Collapse session sidebar",
+    }
+}
+
+pub fn nav_sidebar_expand_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "展开会话栏",
+        Locale::En => "Expand session sidebar",
+    }
+}
+
 pub fn nav_manage_sessions(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "管理会话…",

@@ -27,10 +27,85 @@
 
 .nav-rail-brand {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
   padding: 14px 12px 10px;
   flex-shrink: 0;
+}
+
+.nav-rail-brand-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* 桌面端收起会话栏；窄屏仍用顶栏 ☰ 抽屉，隐藏此钮 */
+.btn-nav-rail-collapse {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+@media (max-width: 768px) {
+  .btn-nav-rail-collapse {
+    display: none;
+  }
+}
+
+/* 桌面：会话栏收起后主区左侧展开条 */
+.sidebar-rail-reveal-btn {
+  display: none;
+}
+
+@media (min-width: 769px) {
+  .app-root.app-shell-ds .nav-rail {
+    transition:
+      width var(--dur-sidebar, 0.26s) var(--ease-out-soft, ease),
+      opacity 0.22s ease,
+      border-color 0.2s ease;
+  }
+
+  .app-root.app-shell-ds.sidebar-rail-collapsed .nav-rail {
+    width: 0 !important;
+    min-width: 0;
+    border-right-color: transparent;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .app-root.app-shell-ds.sidebar-rail-collapsed .sidebar-rail-reveal-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 30;
+    width: 28px;
+    min-height: 72px;
+    padding: 6px 0;
+    margin: 0;
+    border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+    border-left: none;
+    font-size: 18px;
+    font-weight: 650;
+    line-height: 1;
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+@media (max-width: 768px) {
+  /* 窄屏忽略「桌面收起」偏好，保持抽屉宽度与可点 */
+  .app-root.app-shell-ds.sidebar-rail-collapsed .nav-rail {
+    width: min(var(--nav-rail-w), 88vw);
+    opacity: 1;
+    pointer-events: auto;
+    border-right: 1px solid var(--border-subtle);
+  }
 }
 
 .nav-rail-brand .brand-mark {
