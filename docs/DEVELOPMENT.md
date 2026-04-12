@@ -72,6 +72,10 @@ flowchart TB
   TR --> WF
 ```
 
+### 工作流编排扩展（设计稿）
+
+状态机式配置、条件分支与有界循环等**能力边界与推荐演进方向**（与当前 **`workflow_execute` DAG**、**分阶段规划**、**`agent_reply_plan` / 工作流反思** 的关系）见 **`docs/WORKFLOW_ORCHESTRATION_ARCHITECTURE.md`**。若实现涉及 **`src/agent/workflow/`** 语义扩展或新执行路径，须同步更新该设计稿、**`docs/TOOLS.md`** 中 **`workflow_execute`** 契约与（若变更模块边界）本节「架构设计」/「代码模块索引」。
+
 ### `agent_turn` 与 `llm`：唯一入口与禁止事项
 
 本节固化**维护约定**（与 `src/llm/mod.rs` 模块注释一致）：**单次** OpenAI 兼容 **`chat/completions`** 的传输、解析与退避重试集中在 **`llm`**；**多步编排**（何时再调模型、消息如何变长、工具与 PER）在 **`agent`**。

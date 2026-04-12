@@ -72,6 +72,10 @@ flowchart TB
   TR --> WF
 ```
 
+### Workflow orchestration extensions (design)
+
+For **state-machine-style configuration**, **conditional branching**, and **bounded loops**—how they relate to today’s **`workflow_execute` DAG**, **staged planning**, and **`agent_reply_plan` / workflow reflection**—see **`docs/WORKFLOW_ORCHESTRATION_ARCHITECTURE.md`** (Chinese design doc). If you extend **`src/agent/workflow/`** semantics or add a parallel executor path, update that document, **`docs/TOOLS.md`** (`workflow_execute` contract), and (if module boundaries change) this chapter’s architecture/module index.
+
 ### `agent_turn` vs `llm`: single entrypoint and anti-patterns
 
 This section records **maintainer rules** (aligned with `src/llm/mod.rs`): **one** OpenAI-compatible **`chat/completions`** round-trip—transport, parsing, and backoff—lives in **`llm`**; **multi-step orchestration** (when to call the model again, how `messages` evolve, tools, PER) lives in **`agent`**.
