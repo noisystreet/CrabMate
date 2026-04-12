@@ -274,3 +274,66 @@ fn assistant_text_for_display_inner(
 
     raw.to_string()
 }
+
+fn parse_agent_reply_plan_step_descriptions_json(json: &str) -> Option<Vec<String>> {
+    let v: Value = serde_json::from_str(json).ok()?;
+    let obj = v.as_object()?;
+    if obj.get("type").and_then(|x| x.as_str()) != Some("agent_reply_plan") {
+        return None;
+    }
+    let steps = obj.get("steps").and_then(|x| x.as_array())?;
+    let mut out = Vec::with_capacity(steps.len());
+    for step in steps {
+        let d = step
+            .get("description")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        out.push(d);
+    }
+    Some(out)
+}
+
+/// 收集可能含 `agent_reply_plan` 的 JSON 文本块（围栏内优先，再尝试整段 trim）。
+fn collect_agent_reply_plan_json_blobs(raw: &str) -> Vec<String> {
+    let mut blobs = Vec::new();
+    let parts: Vec<&str> = raw.split("```").collect();
+    let mut i = 1usize;
+    while i < parts.len() {
+        let inner = parts[i];
+        if fence_inner_should_hide_agent_reply_plan_json(inner) {
+            let body = fenced_body_after_optional_jsonish_lang_label(inner.trim())
+                .unwrap_or(inner.trim())
+                .trim();
+            if body.starts_with('{') {
+                blobs.push(body.to_string());
+            }
+        }
+        i += 2;
+    }
+    let t = raw.trim();
+    if t.starts_with('{') && t.contains("\"agent_reply_plan\"") {
+        blobs.push(t.to_string());
+    }
+    blobs
+}
+
+/// 从助手消息（`text` / `reasoning_text`、含 ```json 围栏）解析 `agent_reply_plan.steps[].description`；**靠后者覆盖**（多围栏时取最后一次可解析结果）。
+pub(crate) fn agent_reply_plan_step_descriptions_from_assistant(
+    m: &StoredMessage,
+) -> Option<Vec<String>> {
+    if m.role != "assistant" || m.is_tool {
+        return None;
+    }
+    let raw = format!("{}\n{}", m.reasoning_text, m.text);
+    let blobs = collect_agent_reply_plan_json_blobs(&raw);
+    for blob in blobs.iter().rev() {
+        if let Some(v) = parse_agent_reply_plan_step_descriptions_json(blob) {
+            if !v.is_empty() {
+                return Some(v);
+            }
+        }
+    }
+    None
+}

@@ -155,6 +155,7 @@ pub(crate) fn tool_run_group_view(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn staged_timeline_group_view(
     head_key: String,
     items: Vec<(usize, StoredMessage)>,
@@ -163,6 +164,7 @@ pub(crate) fn staged_timeline_group_view(
     chat_find_cursor: RwSignal<usize>,
     locale: RwSignal<Locale>,
     apply_assistant_display_filters: RwSignal<bool>,
+    session_messages: StoredValue<Vec<StoredMessage>>,
 ) -> impl IntoView {
     let items_sv = StoredValue::new(items);
     let group_ids: Vec<String> = items_sv
@@ -210,8 +212,9 @@ pub(crate) fn staged_timeline_group_view(
                         let loc = locale.get();
                         let apply = apply_assistant_display_filters.get();
                         let entries = items_sv.get_value();
+                        let session = session_messages.get_value();
                         let (steps, legacy) =
-                            build_staged_plan_todo_steps(loc, apply, &entries);
+                            build_staged_plan_todo_steps(loc, apply, &entries, &session);
                         let title_bar = i18n::staged_plan_todo_title(loc);
                         view! {
                             <div class="msg-meta" aria-hidden="true">
@@ -231,12 +234,14 @@ pub(crate) fn staged_timeline_group_view(
                                         let li_phase = match s.phase {
                                             StagedStepPhase::Done => "msg-staged-todo-li-done",
                                             StagedStepPhase::InProgress => "msg-staged-todo-li-progress",
+                                            StagedStepPhase::Pending => "msg-staged-todo-li-pending",
                                             StagedStepPhase::Cancelled => "msg-staged-todo-li-cancelled",
                                             StagedStepPhase::Failed => "msg-staged-todo-li-failed",
                                         };
                                         let glyph = match s.phase {
                                             StagedStepPhase::Done => "✓",
                                             StagedStepPhase::InProgress => "◦",
+                                            StagedStepPhase::Pending => "☐",
                                             StagedStepPhase::Cancelled => "⊘",
                                             StagedStepPhase::Failed => "✗",
                                         };
@@ -246,6 +251,9 @@ pub(crate) fn staged_timeline_group_view(
                                             }
                                             StagedStepPhase::InProgress => {
                                                 i18n::staged_plan_todo_step_in_progress_aria(loc)
+                                            }
+                                            StagedStepPhase::Pending => {
+                                                i18n::staged_plan_todo_step_pending_aria(loc)
                                             }
                                             StagedStepPhase::Failed => {
                                                 i18n::staged_plan_todo_step_failed_aria(loc)
