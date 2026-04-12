@@ -111,7 +111,7 @@
 
 ## `frontend-leptos/`（Web UI，Leptos CSR + WASM）
 
-**职责摘要**：根入口 `frontend-leptos/src/lib.rs`；HTTP/SSE 与本地存储见 `api.rs`、`sse_dispatch.rs`、`storage.rs`、`app_prefs.rs`；主界面 `app/mod.rs`（`chat_column`、`chat_composer`、`chat_message_render`、`sidebar_nav`、`side_column`、`workspace_panel`、各 `*_modal` 等）；会话与导出见 `session_ops.rs`、`session_export.rs`、`session_search.rs`；Markdown 与展示见 `markdown.rs`、`assistant_body.rs`、`message_format.rs`；样式与打包见 `frontend-leptos/styles/*.css`、`index.html`、`Trunk.toml`。
+**职责摘要**：根入口 `frontend-leptos/src/lib.rs`；HTTP/SSE 与本地存储见 `api.rs`、`sse_dispatch.rs`、`storage.rs`、`app_prefs.rs`；主界面 `app/mod.rs`（`chat_column`、`chat_composer`、`message_row` / `message_group_views`、`sidebar_nav`、`side_column`、`workspace_panel`、各 `*_modal` 等）；会话与导出见 `session_ops.rs`、`session_export.rs`、`session_search.rs`；Markdown 与展示见 `markdown.rs`、`assistant_body.rs`、`message_format.rs`；样式与打包见 `frontend-leptos/styles/*.css`、`index.html`、`Trunk.toml`。
 
 - [ ] **浏览器侧多轮状态（续）**：可选**加密**本地缓存；与 P1 会话模型其它项同向。已实现：`ChatSession` 持久化 **`server_conversation_id` / `server_revision`**，流式回合写入后触发 **`GET /conversation/messages`** 水合；标签页内仍用 **`frontend-leptos/src/session_sync.rs`** 的 **`SessionSyncState`**。
 - [ ] **聊天列表虚拟化**：极长对话下减少 DOM 与重渲染。

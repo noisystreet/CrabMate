@@ -4,12 +4,17 @@
 
 mod column;
 mod composer;
+mod composer_stream;
 mod find;
 mod find_bar;
+mod handles;
 mod message_chunks;
-mod message_render;
+mod message_group_views;
+mod message_row;
 mod scroll;
 mod timeline;
+
+pub use handles::{ChatColumnShell, WireComposerStreamsArgs};
 
 pub(crate) use column::chat_column_view;
 pub(crate) use composer::{

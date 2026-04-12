@@ -536,13 +536,16 @@ flowchart LR
 ### `frontend-leptos/src/app/chat/`
 
 - **`mod.rs`**：聊天域 **`pub(crate)`** 再导出（供 **`app::App`**）；与 [`docs/frontend-leptos/ARCHITECTURE.md`](frontend-leptos/ARCHITECTURE.md) **「`app/chat_*`」** 对齐。
-- **`composer.rs`**：草稿缓冲与 textarea 同步、**`send_chat_stream`** 回调编排（**`ChatStreamCallbackCtx`** 持有 **`ChatSessionSignals`**）、发送 / 停止 / 重试 / 截断再生、新会话；**`staged_plan_step_*`** 与 **`tool_result`** 写入消息时附带 **`timeline_scan`** 的 **`cm_tl`** JSON（**`StoredMessage.state`**，仅本机 UI）；**`pending_images`** 与 **`column`** 内隐藏 file input 上传附图（最多 6 张预览），发送时写入 **`StoredMessage.image_urls`**。
+- **`handles.rs`**：**`ChatColumnShell`**、**`WireComposerStreamsArgs`** — 压缩 **`App` → `chat_column_view` / `wire_chat_composer_streams`** 的参数面。
+- **`composer_stream.rs`**：**`/chat/stream`** 的 **`ChatStreamCallbacks`** 装配（**`ChatStreamCallbackCtx`**、**`make_attach_chat_stream`**）。
+- **`composer.rs`**：草稿缓冲与 textarea 同步、发送 / 停止 / 重试 / 截断再生、新会话（流式细节见上）；**`staged_plan_step_*`** 与 **`tool_result`** 写入消息时附带 **`timeline_scan`** 的 **`cm_tl`** JSON（**`StoredMessage.state`**，仅本机 UI）；**`pending_images`** 与 **`column`** 内隐藏 file input 上传附图（最多 6 张预览），发送时写入 **`StoredMessage.image_urls`**。
 - **`scroll.rs`**：消息列表指纹变化时的自动跟底、**`focus_message_id_after_nav`** 滚入视图。
 - **`find.rs`**：主区查找匹配 id、光标与首条 **`scroll_message_into_view`**。
-- **`column.rs`**：中部消息列表与输入区。
+- **`column.rs`**：中部消息列表与输入区（接收 **`ChatColumnShell`**）。
 - **`find_bar.rs`**：主区内查找条。
 - **`message_chunks.rs`**：将 **`StoredMessage`** 列表折叠为 **`ChatChunk`**（单条 / 连续工具 / 分阶段时间线组），供 **`column`** 迭代。
-- **`message_render.rs`**：单条消息与连续工具分组视图（供 **`column`**）。
+- **`message_row.rs`**：单条消息气泡与操作条（复制 / 重试 / 分支等）。
+- **`message_group_views.rs`**：连续工具输出与分阶段时间线分组折叠视图（供 **`column`**）。
 - **`timeline.rs`**：可折叠的「规划 / 工具时间线」索引（**`timeline_scan`** 扫描消息；点击跳转到 **`#msg-{id}`**）。
 
 ### `frontend-leptos/src/app_prefs.rs`
@@ -551,7 +554,7 @@ flowchart LR
 
 ### `frontend-leptos/src/timeline_scan.rs`
 
-- 从 **`StoredMessage`** 抽取时间线条目：流式写入的 **`state`** JSON（键 **`cm_tl`**，**仅**本机 UI，**不**发往模型）与无前缀数据的**旧会话**回退（**`STAGED_TIMELINE_SYSTEM_PREFIX`** 旁注、`is_tool` 工具卡）。供 **`app/chat/timeline.rs`** 与 **`app/chat/composer.rs`**（SSE 回调写入 `state`）共用。
+- 从 **`StoredMessage`** 抽取时间线条目：流式写入的 **`state`** JSON（键 **`cm_tl`**，**仅**本机 UI，**不**发往模型）与无前缀数据的**旧会话**回退（**`STAGED_TIMELINE_SYSTEM_PREFIX`** 旁注、`is_tool` 工具卡）。供 **`app/chat/timeline.rs`** 与 **`app/chat/composer_stream.rs`**（SSE 回调写入 `state`）共用。
 
 ### `frontend-leptos/src/message_format.rs`
 

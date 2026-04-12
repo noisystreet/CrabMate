@@ -1,55 +1,54 @@
 //! 中部聊天列：消息列表、输入框、查找入口。
 
-use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use gloo_timers::future::TimeoutFuture;
-use leptos::html::Textarea;
 use leptos::prelude::{StoredValue, *};
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
+use super::handles::ChatColumnShell;
 use super::message_chunks::{ChatChunk, chunk_messages};
-use super::message_render::{chat_message_row, staged_timeline_group_view, tool_run_group_view};
+use super::message_group_views::{staged_timeline_group_view, tool_run_group_view};
+use super::message_row::chat_message_row;
 use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
 use crate::app::scroll_guard::MessagesScrollFromEffectGuard;
 use crate::app_prefs::AUTO_SCROLL_RESUME_GAP_PX;
-use crate::chat_session_state::ChatSessionSignals;
-use crate::clarification_form::PendingClarificationForm;
-use crate::i18n::{self, Locale};
+use crate::i18n;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 
-#[allow(clippy::too_many_arguments)]
-pub fn chat_column_view(
-    locale: RwSignal<Locale>,
-    messages_scroller: NodeRef<leptos::html::Div>,
-    auto_scroll_chat: RwSignal<bool>,
-    messages_scroll_from_effect: RwSignal<bool>,
-    last_messages_scroll_top: RwSignal<i32>,
-    timeline_panel_expanded: RwSignal<bool>,
-    chat: ChatSessionSignals,
-    expanded_long_assistant_ids: RwSignal<Vec<String>>,
-    expanded_tool_run_heads: RwSignal<HashSet<String>>,
-    expanded_staged_timeline_heads: RwSignal<HashSet<String>>,
-    chat_find_query: RwSignal<String>,
-    chat_find_match_ids: RwSignal<Vec<String>>,
-    chat_find_cursor: RwSignal<usize>,
-    composer_input_ref: NodeRef<Textarea>,
-    composer_buf_ta: Arc<Mutex<String>>,
-    pending_images: RwSignal<Vec<String>>,
-    pending_clarification: RwSignal<Option<PendingClarificationForm>>,
-    run_send_message: Arc<dyn Fn() + Send + Sync>,
-    trigger_stop: Arc<dyn Fn() + Send + Sync>,
-    status_busy: RwSignal<bool>,
-    initialized: RwSignal<bool>,
-    regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
-    retry_assistant_target: RwSignal<Option<String>>,
-    status_err: RwSignal<Option<String>>,
-    markdown_render: RwSignal<bool>,
-    apply_assistant_display_filters: RwSignal<bool>,
-) -> impl IntoView {
+pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
+    let ChatColumnShell {
+        locale,
+        messages_scroller,
+        auto_scroll_chat,
+        messages_scroll_from_effect,
+        last_messages_scroll_top,
+        timeline_panel_expanded,
+        chat,
+        expanded_long_assistant_ids,
+        expanded_tool_run_heads,
+        expanded_staged_timeline_heads,
+        chat_find_query,
+        chat_find_match_ids,
+        chat_find_cursor,
+        composer_input_ref,
+        composer_buf_ta,
+        pending_images,
+        pending_clarification,
+        run_send_message,
+        trigger_stop,
+        status_busy,
+        initialized,
+        regen_stream_after_truncate,
+        retry_assistant_target,
+        status_err,
+        markdown_render,
+        apply_assistant_display_filters,
+    } = shell;
+
     let sessions = chat.sessions;
     let active_id = chat.active_id;
     let session_sync = chat.session_sync;
