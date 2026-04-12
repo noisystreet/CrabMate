@@ -10,6 +10,7 @@ use pulldown_cmark::{Event, Options, Parser, html};
 /// 1. **行内围栏**：正文后紧贴 `` ```lang ``（如 `依赖：```rust`），拆成上一行 + 独立围栏行。
 /// 2. **信息串与注释粘连**：行首合法围栏后写成 `` ```rust// comment ``，拆成 `` ```rust `` 与 `// comment` 两行。
 /// 3. **行尾悬空围栏**：行首不是合法围栏行，但行尾仅剩一段 `` ``` `` 且无其它正文，去掉尾部 fence，避免误开空代码块。
+/// 4. **ATX 标题缺空格**：如 `###规范与安全`（`#` 与标题字之间无空格），在至多 6 个 `#` 后补一个空格，满足 CommonMark 标题语法。
 ///
 /// 无法覆盖所有非法 Markdown；极端正文若以 `` ``` `` 结尾仍可能被改写（极少见）。
 pub fn normalize_markdown_for_render(md: &str) -> String {
@@ -22,10 +23,50 @@ pub fn normalize_markdown_for_render(md: &str) -> String {
         .join("\n")
 }
 
-/// 去掉 `\r`，对单行应用围栏规范化（可能输出多行，以 `\n` 连接）。
+/// 去掉 `\r`，对单行应用围栏规范化（可能输出多行，以 `\n` 连接），再对**每一输出行**补 ATX 标题空格。
 fn normalize_one_input_line(line: &str) -> String {
     let line = line.strip_suffix('\r').unwrap_or(line);
-    normalize_line_recursive(line)
+    let n = normalize_line_recursive(line);
+    n.lines()
+        .map(fix_atx_heading_missing_space)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// CommonMark ATX 标题：`#`…`#`（1–6 个）后须有空格或行尾；模型常写成 `###标题`。
+fn fix_atx_heading_missing_space(line: &str) -> String {
+    let chars: Vec<(usize, char)> = line.char_indices().collect();
+    let mut idx = 0usize;
+    let mut indent = 0usize;
+    while idx < chars.len() && indent < 3 && chars[idx].1 == ' ' {
+        indent += 1;
+        idx += 1;
+    }
+    if idx >= chars.len() {
+        return line.to_string();
+    }
+    let hash_start = idx;
+    let mut hash_end = idx;
+    while hash_end < chars.len() && chars[hash_end].1 == '#' {
+        hash_end += 1;
+    }
+    let n = hash_end - hash_start;
+    if n == 0 || n > 6 {
+        return line.to_string();
+    }
+    if hash_end >= chars.len() {
+        return line.to_string();
+    }
+    match chars[hash_end].1 {
+        ' ' | '\t' | '#' => return line.to_string(),
+        _ => {}
+    }
+    let split_byte = chars[hash_end].0;
+    let mut out = String::with_capacity(line.len() + 1);
+    out.push_str(&line[..split_byte]);
+    out.push(' ');
+    out.push_str(&line[split_byte..]);
+    out
 }
 
 fn normalize_line_recursive(line: &str) -> String {
@@ -295,6 +336,20 @@ mod tests {
     fn normalize_preserves_valid_fence_line() {
         let line = "```rust\nlet x = 1;\n```";
         assert_eq!(normalize_markdown_for_render(line), line);
+    }
+
+    #[test]
+    fn normalize_inserts_space_after_atx_hashes() {
+        let raw = "###规范与安全\n\n正文。";
+        assert_eq!(
+            normalize_markdown_for_render(raw),
+            "### 规范与安全\n\n正文。"
+        );
+        let h = to_safe_html(raw);
+        assert!(
+            h.contains("<h3") && h.contains("规范与安全"),
+            "expected h3 heading, got {h:?}"
+        );
     }
 
     #[test]
