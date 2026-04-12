@@ -1,12 +1,10 @@
 //! 单条消息气泡与下方操作条（复制 / 重试 / 分支等）。
+//!
+//! 与 `POST /chat/branch`、本地截断再生相关的副作用见 [`super::message_row_actions`]。
 
-use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
-use leptos::task::spawn_local;
 
-use crate::api::post_chat_branch;
 use crate::assistant_body::assistant_markdown_collapsible_view;
-use crate::chat_actions::apply_branch_success_revision;
 use crate::i18n::{self, Locale};
 use crate::message_format::{
     is_staged_timeline_stored_message, message_text_for_display_ex,
@@ -14,21 +12,13 @@ use crate::message_format::{
 };
 use crate::session_ops::{
     format_msg_time_label, message_role_label, preceding_plain_user_message_id,
-    truncate_at_user_message_and_prepare_regenerate, truncate_at_user_message_branch_local,
-    user_ordinal_for_message_index, write_clipboard_text,
+    write_clipboard_text,
 };
 use crate::session_search::{normalize_search_query, split_for_find_highlight};
 use crate::session_sync::SessionSyncState;
 use crate::storage::{ChatSession, StoredMessage};
 
-fn trigger_jump_to_user_prompt(uid: &str, auto_scroll_chat: RwSignal<bool>) {
-    auto_scroll_chat.set(false);
-    let u = uid.to_string();
-    spawn_local(async move {
-        TimeoutFuture::new(32).await;
-        crate::session_search::scroll_message_into_view(&u);
-    });
-}
+use super::message_row_actions::{MessageRowActionSignals, spawn_scroll_to_linked_user_message};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn chat_message_row(
@@ -50,6 +40,14 @@ pub(crate) fn chat_message_row(
     markdown_render: RwSignal<bool>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
+    let row_actions = MessageRowActionSignals {
+        session_sync,
+        sessions,
+        active_id,
+        regen_stream_after_truncate,
+        status_err,
+        locale,
+    };
     let is_staged_timeline = is_staged_timeline_stored_message(&m);
     let cls = if is_staged_timeline {
         "msg msg-system msg-staged-timeline"
@@ -120,13 +118,13 @@ pub(crate) fn chat_message_row(
                         prop:title=move || i18n::msg_jump_user_title(locale.get())
                         prop:aria-label=move || i18n::msg_jump_user_aria(locale.get())
                         on:click=move |_| {
-                            trigger_jump_to_user_prompt(&uid_click, asc);
+                            spawn_scroll_to_linked_user_message(&uid_click, asc);
                         }
                         on:keydown=move |ev: web_sys::KeyboardEvent| {
                             let k = ev.key();
                             if k == "Enter" || k == " " {
                                 ev.prevent_default();
-                                trigger_jump_to_user_prompt(&uid_key, asc);
+                                spawn_scroll_to_linked_user_message(&uid_key, asc);
                             }
                         }
                     >
@@ -331,85 +329,10 @@ pub(crate) fn chat_message_row(
                                             if status_busy.get() {
                                                 return;
                                             }
-                                            let (cid, rev) = session_sync.with(|s| {
-                                                let (a, b) = s.branch_id_and_expected_revision();
-                                                (a.map(|x| x.to_string()), b)
-                                            });
-                                            let ord = sessions.with(|list| {
-                                                let aid = active_id.get_untracked();
-                                                list.iter()
-                                                    .find(|s| s.id == aid)
-                                                    .and_then(|s| {
-                                                        user_ordinal_for_message_index(
-                                                            &s.messages,
-                                                            idx,
-                                                        )
-                                                    })
-                                            });
-                                            let uid = uid_r.clone();
-                                            match (cid, rev, ord) {
-                                                (
-                                                    Some(conv),
-                                                    Some(exp_rev),
-                                                    Some(before_ord),
-                                                ) => {
-                                                    let loc = locale.get_untracked();
-                                                    spawn_local(async move {
-                                                        match post_chat_branch(
-                                                            &conv,
-                                                            before_ord,
-                                                            exp_rev,
-                                                            loc,
-                                                        )
-                                                        .await
-                                                        {
-                                                            Ok(new_rev) => {
-                                                                let aid = active_id.get_untracked();
-                                                                apply_branch_success_revision(
-                                                                    session_sync,
-                                                                    sessions,
-                                                                    &aid,
-                                                                    new_rev,
-                                                                );
-                                                                let mut prep: Option<
-                                                                    (String, Vec<String>, String),
-                                                                > = None;
-                                                                sessions.update(|list| {
-                                                                    prep = truncate_at_user_message_and_prepare_regenerate(
-                                                                        list,
-                                                                        &aid,
-                                                                        &uid,
-                                                                    );
-                                                                });
-                                                                if let Some((ut, uimg, aid)) = prep {
-                                                                    regen_stream_after_truncate
-                                                                        .set(Some((ut, uimg, aid)));
-                                                                }
-                                                            }
-                                                            Err(e) => {
-                                                                session_sync
-                                                                    .update(|s| s.mark_branch_conflict());
-                                                                status_err.set(Some(e));
-                                                            }
-                                                        }
-                                                    });
-                                                }
-                                                _ => {
-                                                    let mut prep: Option<(String, Vec<String>, String)> = None;
-                                                    sessions.update(|list| {
-                                                        let aid = active_id.get_untracked();
-                                                        prep = truncate_at_user_message_and_prepare_regenerate(
-                                                            list,
-                                                            &aid,
-                                                            &uid,
-                                                        );
-                                                    });
-                                                    if let Some((ut, uimg, aid)) = prep {
-                                                        regen_stream_after_truncate
-                                                            .set(Some((ut, uimg, aid)));
-                                                    }
-                                                }
-                                            }
+                                            row_actions.spawn_regenerate_from_user_line(
+                                                idx,
+                                                uid_r.clone(),
+                                            );
                                         }
                                     >
                                         <svg
@@ -439,73 +362,10 @@ pub(crate) fn chat_message_row(
                                             if status_busy.get() {
                                                 return;
                                             }
-                                            let (cid, rev) = session_sync.with(|s| {
-                                                let (a, b) = s.branch_id_and_expected_revision();
-                                                (a.map(|x| x.to_string()), b)
-                                            });
-                                            let ord = sessions.with(|list| {
-                                                let aid = active_id.get_untracked();
-                                                list.iter()
-                                                    .find(|s| s.id == aid)
-                                                    .and_then(|s| {
-                                                        user_ordinal_for_message_index(
-                                                            &s.messages,
-                                                            idx,
-                                                        )
-                                                    })
-                                            });
-                                            let uid = uid_b.clone();
-                                            match (cid, rev, ord) {
-                                                (
-                                                    Some(conv),
-                                                    Some(exp_rev),
-                                                    Some(before_ord),
-                                                ) => {
-                                                    let loc_b = locale.get_untracked();
-                                                    spawn_local(async move {
-                                                        match post_chat_branch(
-                                                            &conv,
-                                                            before_ord,
-                                                            exp_rev,
-                                                            loc_b,
-                                                        )
-                                                        .await
-                                                        {
-                                                            Ok(new_rev) => {
-                                                                let aid = active_id.get_untracked();
-                                                                apply_branch_success_revision(
-                                                                    session_sync,
-                                                                    sessions,
-                                                                    &aid,
-                                                                    new_rev,
-                                                                );
-                                                                sessions.update(|list| {
-                                                                    let _ = truncate_at_user_message_branch_local(
-                                                                        list,
-                                                                        &aid,
-                                                                        &uid,
-                                                                    );
-                                                                });
-                                                            }
-                                                            Err(e) => {
-                                                                session_sync
-                                                                    .update(|s| s.mark_branch_conflict());
-                                                                status_err.set(Some(e));
-                                                            }
-                                                        }
-                                                    });
-                                                }
-                                                _ => {
-                                                    sessions.update(|list| {
-                                                        let aid = active_id.get_untracked();
-                                                        let _ = truncate_at_user_message_branch_local(
-                                                            list,
-                                                            &aid,
-                                                            &uid,
-                                                        );
-                                                    });
-                                                }
-                                            }
+                                            row_actions.spawn_branch_at_user_line(
+                                                idx,
+                                                uid_b.clone(),
+                                            );
                                         }
                                     >
                                         <svg

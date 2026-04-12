@@ -545,7 +545,8 @@ flowchart LR
 - **`find_bar.rs`**：主区内查找条。
 - **`message_chunks.rs`**：将 **`StoredMessage`** 列表折叠为 **`ChatChunk`**（单条 / 连续工具 / 分阶段时间线组），供 **`column`** 迭代；同一轮分阶段旁注若仅被**工具消息**隔开，会合并为**一条**待办卡片后再按序插入其间各工具块（避免多条分散「系统」气泡）。
 - **`staged_plan_todo.rs`**：待办行优先用本簇前最近助手 **`agent_reply_plan.steps[].description`** 一次列出全部步骤（`Pending` / 进行中 / 完成等），时间线旁注只补状态与缺省标题。
-- **`message_row.rs`**：单条消息气泡与操作条（复制 / 重试 / 分支等）。
+- **`message_row.rs`**：单条消息气泡与操作条（复制 / 重试 / 分支等）；与 **`POST /chat/branch`** 及本地截断再生的副作用在 **`message_row_actions.rs`**。
+- **`message_row_actions.rs`**：**`MessageRowActionSignals`**（用户行「再生 / 分支」所需 `RwSignal` 子集）、**`spawn_scroll_to_linked_user_message`**、**`spawn_regenerate_from_user_line`** / **`spawn_branch_at_user_line`**（`post_chat_branch`、`apply_branch_success_revision`、**`session_ops`** 截断）。
 - **`message_group_views.rs`**：连续工具输出与分阶段时间线分组折叠视图（供 **`column`**）。
 - **`timeline.rs`**：可折叠的「规划 / 工具时间线」索引（**`timeline_scan`** 扫描消息；点击跳转到 **`#msg-{id}`**）。
 

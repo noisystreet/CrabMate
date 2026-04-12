@@ -11,6 +11,7 @@ mod handles;
 mod message_chunks;
 mod message_group_views;
 mod message_row;
+mod message_row_actions;
 mod scroll;
 mod staged_plan_todo;
 mod timeline;
