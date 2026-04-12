@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -22,23 +22,16 @@ use crate::timeline_scan::{
     timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
 };
 
+use super::handles::ComposerStreamShell;
+
 /// 单次 `/chat/stream` 的 SSE 回调共享状态：各 `Rc<dyn Fn>` 只再包一层 `Rc<ChatStreamCallbackCtx>`，避免重复 `Arc::clone` 与多字段捕获。
 pub(super) struct ChatStreamCallbackCtx {
     pub(super) chat: ChatSessionSignals,
     pub(super) locale: RwSignal<Locale>,
     pub(super) active_session_id: String,
     pub(super) assistant_message_id: String,
-    pub(super) abort_cell: Arc<Mutex<Option<web_sys::AbortController>>>,
-    pub(super) user_cancelled_stream: Arc<Mutex<bool>>,
-    pub(super) status_busy: RwSignal<bool>,
-    pub(super) status_err: RwSignal<Option<String>>,
-    pub(super) tool_busy: RwSignal<bool>,
-    pub(super) pending_approval: RwSignal<Option<(String, String, String)>>,
     pub(super) approval_session_store_id: String,
-    pub(super) changelist_modal_open: RwSignal<bool>,
-    pub(super) changelist_fetch_nonce: RwSignal<u64>,
-    pub(super) refresh_workspace: Arc<dyn Fn() + Send + Sync>,
-    pub(super) pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+    pub(super) shell: ComposerStreamShell,
 }
 
 /// 长生命周期句柄：`attach` 闭包捕获，供每次发起流式请求复用。
@@ -46,16 +39,7 @@ pub(super) struct ComposerStreamHandles {
     pub chat: ChatSessionSignals,
     pub locale: RwSignal<Locale>,
     pub selected_agent_role: RwSignal<Option<String>>,
-    pub status_busy: RwSignal<bool>,
-    pub status_err: RwSignal<Option<String>>,
-    pub pending_approval: RwSignal<Option<(String, String, String)>>,
-    pub tool_busy: RwSignal<bool>,
-    pub abort_cell: Arc<Mutex<Option<web_sys::AbortController>>>,
-    pub user_cancelled_stream: Arc<Mutex<bool>>,
-    pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
-    pub changelist_modal_open: RwSignal<bool>,
-    pub changelist_fetch_nonce: RwSignal<u64>,
-    pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
+    pub shell: ComposerStreamShell,
 }
 
 type AttachChatStreamFn =
@@ -66,32 +50,14 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
         chat,
         locale: locale_sig,
         selected_agent_role,
-        status_busy,
-        status_err,
-        pending_approval,
-        tool_busy,
-        abort_cell,
-        user_cancelled_stream,
-        refresh_workspace,
-        changelist_modal_open,
-        changelist_fetch_nonce,
-        pending_clarification: pending_clarification_sig,
+        shell,
     } = h;
 
     Arc::new({
-        let abort_cell = Arc::clone(&abort_cell);
-        let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
+        let shell_outer = shell.clone();
         let chat = chat;
         let locale_sig = locale_sig;
         let selected_agent_role = selected_agent_role;
-        let status_busy = status_busy;
-        let status_err = status_err;
-        let pending_approval = pending_approval;
-        let tool_busy = tool_busy;
-        let refresh_workspace = Arc::clone(&refresh_workspace);
-        let changelist_modal_open = changelist_modal_open;
-        let changelist_fetch_nonce = changelist_fetch_nonce;
-        let pending_clarification_sig = pending_clarification_sig;
         move |user_text: String,
               image_urls: Vec<String>,
               asst_id: String,
@@ -103,34 +69,25 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             // id，首包即 410「无法重连」。
             chat.stream_job_id.set(None);
             chat.stream_last_event_seq.set(0);
-            if let Some(prev) = abort_cell.lock().unwrap().take() {
+            if let Some(prev) = shell_outer.abort_cell.lock().unwrap().take() {
                 prev.abort();
             }
-            *user_cancelled_stream.lock().unwrap() = false;
+            *shell_outer.user_cancelled_stream.lock().unwrap() = false;
             let ac = web_sys::AbortController::new().expect("AbortController");
             let signal = ac.signal();
-            *abort_cell.lock().unwrap() = Some(ac);
+            *shell_outer.abort_cell.lock().unwrap() = Some(ac);
             let agent_role = selected_agent_role.get();
             let appr_for_stream = approval_session_id();
             let appr_store = appr_for_stream.clone();
-            let user_cancelled_for_spawn = Arc::clone(&user_cancelled_stream);
+            let user_cancelled_for_spawn = Arc::clone(&shell_outer.user_cancelled_stream);
 
             let stream_ctx = Rc::new(ChatStreamCallbackCtx {
                 chat,
                 locale: locale_sig,
                 active_session_id: chat.active_id.get(),
                 assistant_message_id: asst_id.clone(),
-                abort_cell: Arc::clone(&abort_cell),
-                user_cancelled_stream: Arc::clone(&user_cancelled_stream),
-                status_busy,
-                status_err,
-                tool_busy,
-                pending_approval,
                 approval_session_store_id: appr_store.clone(),
-                changelist_modal_open,
-                changelist_fetch_nonce,
-                refresh_workspace: Arc::clone(&refresh_workspace),
-                pending_clarification: pending_clarification_sig,
+                shell: shell_outer.clone(),
             });
 
             let in_answer_phase: Rc<Cell<bool>> = Rc::new(Cell::new(false));
@@ -157,8 +114,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let on_done: Rc<dyn Fn()> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move || {
-                    if *stream_ctx.user_cancelled_stream.lock().unwrap() {
-                        *stream_ctx.abort_cell.lock().unwrap() = None;
+                    if *stream_ctx.shell.user_cancelled_stream.lock().unwrap() {
+                        *stream_ctx.shell.abort_cell.lock().unwrap() = None;
                         return;
                     }
                     let loc = stream_ctx.locale.get_untracked();
@@ -176,8 +133,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                             }
                         }
                     });
-                    stream_ctx.status_busy.set(false);
-                    *stream_ctx.abort_cell.lock().unwrap() = None;
+                    stream_ctx.shell.status_busy.set(false);
+                    *stream_ctx.shell.abort_cell.lock().unwrap() = None;
                     // 流完全结束后再触发水合：此时助手气泡已退出 loading，且须在 `sessions.with` 之外
                     // 用 `session_hydrate_nonce` 单独驱动，避免「水合写回 messages → Effect 再拉取」的循环竞态。
                     stream_ctx
@@ -189,8 +146,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let on_error: Rc<dyn Fn(String)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |msg: String| {
-                    if *stream_ctx.user_cancelled_stream.lock().unwrap() {
-                        *stream_ctx.abort_cell.lock().unwrap() = None;
+                    if *stream_ctx.shell.user_cancelled_stream.lock().unwrap() {
+                        *stream_ctx.shell.abort_cell.lock().unwrap() = None;
                         return;
                     }
                     stream_ctx.chat.stream_job_id.set(None);
@@ -205,19 +162,20 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                             }
                         }
                     });
-                    stream_ctx.status_busy.set(false);
-                    stream_ctx.status_err.set(Some(
+                    stream_ctx.shell.status_busy.set(false);
+                    stream_ctx.shell.status_err.set(Some(
                         i18n::chat_failed_banner(stream_ctx.locale.get_untracked()).to_string(),
                     ));
-                    *stream_ctx.abort_cell.lock().unwrap() = None;
+                    *stream_ctx.shell.abort_cell.lock().unwrap() = None;
                 })
             };
             let on_ws: Rc<dyn Fn()> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move || {
-                    (stream_ctx.refresh_workspace)();
-                    if stream_ctx.changelist_modal_open.get_untracked() {
+                    (stream_ctx.shell.refresh_workspace)();
+                    if stream_ctx.shell.changelist_modal_open.get_untracked() {
                         stream_ctx
+                            .shell
                             .changelist_fetch_nonce
                             .update(|x| *x = x.wrapping_add(1));
                     }
@@ -226,7 +184,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let on_tool_status: Rc<dyn Fn(bool)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |b: bool| {
-                    stream_ctx.tool_busy.set(b);
+                    stream_ctx.shell.tool_busy.set(b);
                 })
             };
             let on_tool_result: Rc<dyn Fn(ToolResultInfo)> = {
@@ -256,7 +214,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let on_approval: Rc<dyn Fn(CommandApprovalRequest)> = {
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |req: CommandApprovalRequest| {
-                    stream_ctx.pending_approval.set(Some((
+                    stream_ctx.shell.pending_approval.set(Some((
                         stream_ctx.approval_session_store_id.clone(),
                         req.command,
                         req.args,
@@ -356,6 +314,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 let stream_ctx = Rc::clone(&stream_ctx);
                 Rc::new(move |info: ClarificationQuestionnaireInfo| {
                     stream_ctx
+                        .shell
                         .pending_clarification
                         .set(Some(PendingClarificationForm::from_sse(info)));
                 })
@@ -417,6 +376,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 on_clarification_questionnaire: on_clarification,
             };
 
+            let shell_for_stream_err = shell_outer.clone();
+            let on_error_spawn = on_error.clone();
             spawn_local(async move {
                 let stream_result = send_chat_stream(
                     user_text,
@@ -440,8 +401,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                     if e == "stream stopped" {
                         return;
                     }
-                    status_err.set(Some(e.clone()));
-                    on_error(e);
+                    shell_for_stream_err.status_err.set(Some(e.clone()));
+                    on_error_spawn(e);
                 }
             });
         }

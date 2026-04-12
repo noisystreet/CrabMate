@@ -111,35 +111,18 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         locale,
         draft,
         selected_agent_role,
-        status_busy,
-        status_err,
-        pending_approval,
-        tool_busy,
+        stream_shell,
         composer_draft_buffer,
         auto_scroll_chat,
-        abort_cell,
-        user_cancelled_stream,
-        refresh_workspace,
-        changelist_modal_open,
-        changelist_fetch_nonce,
         pending_images,
-        pending_clarification,
     } = args;
 
+    let stream_shell_for_attach = stream_shell.clone();
     let attach_chat_stream = make_attach_chat_stream(ComposerStreamHandles {
         chat,
         locale,
         selected_agent_role,
-        status_busy,
-        status_err,
-        pending_approval,
-        tool_busy,
-        abort_cell: Arc::clone(&abort_cell),
-        user_cancelled_stream: Arc::clone(&user_cancelled_stream),
-        refresh_workspace: Arc::clone(&refresh_workspace),
-        changelist_modal_open,
-        changelist_fetch_nonce,
-        pending_clarification,
+        shell: stream_shell_for_attach,
     });
 
     let run_send_message: Arc<dyn Fn() + Send + Sync> = Arc::new({
@@ -147,13 +130,13 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         let attach = Arc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
         let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
-        let pending_clarification_sig = pending_clarification;
+        let shell = stream_shell.clone();
         let locale_sig = locale;
         move || {
             let text = composer_draft_buffer.lock().unwrap().trim().to_string();
             let imgs = pending_images.get();
             let loc = locale_sig.get();
-            let (user_line, clarify_json) = if let Some(form) = pending_clarification_sig.get() {
+            let (user_line, clarify_json) = if let Some(form) = shell.pending_clarification.get() {
                 let mut answers = serde_json::Map::new();
                 let mut ok = true;
                 for (i, f) in form.fields.iter().enumerate() {
@@ -169,11 +152,13 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                     answers.insert(f.id.clone(), serde_json::Value::String(v));
                 }
                 if !ok {
-                    status_err.set(Some(i18n::clarification_missing_required(loc).to_string()));
+                    shell
+                        .status_err
+                        .set(Some(i18n::clarification_missing_required(loc).to_string()));
                     return;
                 }
                 let qid = form.questionnaire_id.clone();
-                pending_clarification_sig.set(None);
+                shell.pending_clarification.set(None);
                 let cq = serde_json::json!({
                     "questionnaire_id": qid,
                     "answers": serde_json::Value::Object(answers),
@@ -187,7 +172,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             };
             if (user_line.is_empty() && imgs.is_empty() && clarify_json.is_none())
                 || !initialized.get()
-                || status_busy.get()
+                || shell.status_busy.get()
             {
                 return;
             }
@@ -227,9 +212,9 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             draft.set(String::new());
             *composer_draft_buffer.lock().unwrap() = String::new();
             pending_images.set(Vec::new());
-            status_busy.set(true);
-            status_err.set(None);
-            pending_approval.set(None);
+            shell.status_busy.set(true);
+            shell.status_err.set(None);
+            shell.pending_approval.set(None);
             attach(user_line, imgs_send, asst_id, clarify_json);
         }
     });
@@ -241,13 +226,14 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         let chat = chat;
         let attach = Arc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
+        let shell = stream_shell.clone();
         move |_| {
             let Some(failed_asst_id) = retry_assistant_target.get() else {
                 return;
             };
             // 先消费信号，避免在 `status_busy` 等依赖触发下反复入队同一次重试。
             retry_assistant_target.set(None);
-            if !initialized.get() || status_busy.get() {
+            if !initialized.get() || shell.status_busy.get() {
                 return;
             }
             let aid = chat.active_id.get();
@@ -259,9 +245,9 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 return;
             };
             auto_scroll_chat.set(true);
-            status_busy.set(true);
-            status_err.set(None);
-            pending_approval.set(None);
+            shell.status_busy.set(true);
+            shell.status_err.set(None);
+            shell.pending_approval.set(None);
             attach(user_text, user_imgs, asst_id, None);
         }
     });
@@ -269,18 +255,19 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
     Effect::new({
         let attach = Arc::clone(&attach_chat_stream);
         let auto_scroll_chat = auto_scroll_chat;
+        let shell = stream_shell.clone();
         move |_| {
             let Some((user_text, user_imgs, asst_id)) = regen_stream_after_truncate.get() else {
                 return;
             };
             regen_stream_after_truncate.set(None);
-            if !initialized.get() || status_busy.get() {
+            if !initialized.get() || shell.status_busy.get() {
                 return;
             }
             auto_scroll_chat.set(true);
-            status_busy.set(true);
-            status_err.set(None);
-            pending_approval.set(None);
+            shell.status_busy.set(true);
+            shell.status_err.set(None);
+            shell.pending_approval.set(None);
             attach(user_text, user_imgs, asst_id, None);
         }
     });
@@ -288,15 +275,14 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
     let cancel_stream: Arc<dyn Fn() + Send + Sync> =
         Arc::new({
             let chat = chat;
-            let abort_cell = Arc::clone(&abort_cell);
-            let user_cancelled_stream = Arc::clone(&user_cancelled_stream);
+            let shell = stream_shell.clone();
             let locale = locale;
             move || {
-                if abort_cell.lock().unwrap().is_none() {
+                if shell.abort_cell.lock().unwrap().is_none() {
                     return;
                 }
-                *user_cancelled_stream.lock().unwrap() = true;
-                if let Some(ac) = abort_cell.lock().unwrap().take() {
+                *shell.user_cancelled_stream.lock().unwrap() = true;
+                if let Some(ac) = shell.abort_cell.lock().unwrap().take() {
                     ac.abort();
                 }
                 let loc = locale.get_untracked();
@@ -315,8 +301,8 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                         }
                     }
                 });
-                status_busy.set(false);
-                tool_busy.set(false);
+                shell.status_busy.set(false);
+                shell.tool_busy.set(false);
             }
         });
 

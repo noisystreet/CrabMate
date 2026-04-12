@@ -24,7 +24,7 @@ use changelist_modal::{
     changelist_modal_view, wire_changelist_body_inner_html, wire_changelist_fetch_effects,
 };
 use chat::{
-    ChatColumnShell, ChatFindBar, WireComposerStreamsArgs, chat_column_view,
+    ChatColumnShell, ChatFindBar, ComposerStreamShell, WireComposerStreamsArgs, chat_column_view,
     load_timeline_panel_expanded_default, wire_chat_composer_streams, wire_chat_find_matches,
     wire_draft_sync_to_buffer_and_textarea, wire_focus_message_after_nav,
     wire_messages_auto_scroll, wire_session_switch_clears_chat_state,
@@ -359,19 +359,21 @@ pub fn App() -> impl IntoView {
         locale,
         draft,
         selected_agent_role,
-        status_busy,
-        status_err,
-        pending_approval,
-        tool_busy,
+        stream_shell: ComposerStreamShell {
+            status_busy,
+            status_err,
+            pending_approval,
+            tool_busy,
+            abort_cell: Arc::clone(&abort_cell),
+            user_cancelled_stream: Arc::clone(&user_cancelled_stream),
+            refresh_workspace: Arc::clone(&refresh_workspace),
+            changelist_modal_open,
+            changelist_fetch_nonce,
+            pending_clarification,
+        },
         composer_draft_buffer: Arc::clone(&composer_draft_buffer),
         auto_scroll_chat,
-        abort_cell: Arc::clone(&abort_cell),
-        user_cancelled_stream: Arc::clone(&user_cancelled_stream),
-        refresh_workspace: Arc::clone(&refresh_workspace),
-        changelist_modal_open,
-        changelist_fetch_nonce,
         pending_images,
-        pending_clarification,
     });
 
     let side_resize_session: Rc<RefCell<Option<(f64, f64)>>> = Rc::new(RefCell::new(None));
