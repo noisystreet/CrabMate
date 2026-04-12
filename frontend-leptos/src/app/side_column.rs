@@ -281,14 +281,39 @@ pub fn side_column_view(
                                 </Show>
                                 <button
                                     type="button"
-                                    class="btn btn-secondary btn-sm toolbar-view-trigger"
+                                    class="btn btn-secondary btn-sm toolbar-view-trigger shell-toolbar-icon-btn"
                                     data-testid="side-view-trigger"
                                     class:active=move || !matches!(side_panel_view.get(), SidePanelView::None)
                                     class:toolbar-view-trigger-open=move || view_menu_open.get()
                                     on:click=move |_| view_menu_open.update(|o| *o = !*o)
                                     prop:title=move || i18n::side_view_menu_title(locale.get())
+                                    prop:aria-label=move || i18n::side_view_menu_aria(locale.get())
                                 >
-                                    {move || i18n::side_view_label(locale.get(), view_menu_open.get())}
+                                    <span class="toolbar-view-trigger-inner" aria-hidden="true">
+                                        <svg
+                                            class="shell-toolbar-icon"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <rect x="3" y="3" width="7" height="18" rx="1" ry="1" />
+                                            <rect x="14" y="3" width="7" height="18" rx="1" ry="1" />
+                                        </svg>
+                                        <svg
+                                            class="toolbar-view-chevron"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <polyline points="6 9 12 15 18 9" />
+                                        </svg>
+                                    </span>
                                 </button>
                                 <Show when=move || view_menu_open.get()>
                                     <div class="toolbar-view-menu" role="menu" prop:aria-label=move || i18n::side_view_menu_aria(locale.get())>
@@ -347,20 +372,45 @@ pub fn side_column_view(
                             </div>
                             <button
                                 type="button"
-                                class="btn btn-secondary btn-sm"
+                                class="btn btn-secondary btn-sm shell-toolbar-icon-btn"
                                 class:active=move || status_bar_visible.get()
                                 on:click=move |_| status_bar_visible.update(|v| *v = !*v)
                                 prop:title=move || i18n::side_status_btn_title(locale.get())
+                                prop:aria-label=move || i18n::side_status_btn_title(locale.get())
                             >
-                                {move || i18n::side_status_btn(locale.get())}
+                                <svg
+                                    class="shell-toolbar-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    aria-hidden="true"
+                                >
+                                    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                </svg>
                             </button>
                             <button
                                 type="button"
-                                class="btn btn-secondary btn-sm"
+                                class="btn btn-secondary btn-sm shell-toolbar-icon-btn"
                                 on:click=move |_| settings_modal.set(true)
                                 prop:title=move || i18n::side_settings_title(locale.get())
+                                prop:aria-label=move || i18n::side_settings_title(locale.get())
                             >
-                                {move || i18n::side_settings_btn(locale.get())}
+                                <svg
+                                    class="shell-toolbar-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    aria-hidden="true"
+                                >
+                                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                                    <circle cx="12" cy="12" r="3" />
+                                </svg>
                             </button>
                         </div>
                         <div class="side-body">

@@ -25,19 +25,6 @@ pub fn side_view_menu_title(l: Locale) -> &'static str {
     }
 }
 
-pub fn side_view_label(l: Locale, open: bool) -> String {
-    match l {
-        Locale::ZhHans => {
-            let s = if open { "▴" } else { "▾" };
-            format!("视图{s}")
-        }
-        Locale::En => {
-            let s = if open { "▴" } else { "▾" };
-            format!("View{s}")
-        }
-    }
-}
-
 pub fn side_view_menu_aria(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "侧栏视图",
@@ -73,24 +60,10 @@ pub fn side_status_btn_title(l: Locale) -> &'static str {
     }
 }
 
-pub fn side_status_btn(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "状态",
-        Locale::En => "Status",
-    }
-}
-
 pub fn side_settings_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "外观与背景",
         Locale::En => "Appearance",
-    }
-}
-
-pub fn side_settings_btn(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "设置",
-        Locale::En => "Settings",
     }
 }
 
