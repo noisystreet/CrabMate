@@ -4,7 +4,7 @@ pub(in crate::tools) fn params_frontend_lint() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
-            "subdir": { "type": "string", "description": "可选：前端目录相对路径，默认 frontend" },
+            "subdir": { "type": "string", "description": "可选：前端目录相对路径；省略时在 frontend / frontend-leptos 中选首个含 package.json 的目录，否则默认 frontend" },
             "script": { "type": "string", "description": "可选：npm script 名称，默认 lint" }
         },
         "required": []

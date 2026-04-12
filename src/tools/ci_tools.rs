@@ -1,4 +1,4 @@
-//! 本地 CI 流水线工具：fmt + clippy + test + frontend lint + 可选 Python（ruff/pytest/mypy）
+//! 本地 CI 流水线工具：fmt + clippy + test + frontend lint / build + 可选 Python（ruff/pytest/mypy）
 
 use std::path::Path;
 
@@ -19,6 +19,10 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         .get("run_frontend_lint")
         .and_then(|x| x.as_bool())
         .unwrap_or(true);
+    let run_frontend_build = v
+        .get("run_frontend_build")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let run_ruff_check = v
         .get("run_ruff_check")
         .and_then(|x| x.as_bool())
@@ -53,6 +57,7 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
                 run_clippy,
                 run_test,
                 run_frontend_lint,
+                run_frontend_build,
                 run_ruff_check,
                 run_pytest,
                 run_mypy,
@@ -77,6 +82,7 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
                 false,
                 run_test,
                 run_frontend_lint,
+                run_frontend_build,
                 run_ruff_check,
                 run_pytest,
                 run_mypy,
@@ -100,6 +106,7 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
                 false,
                 false,
                 run_frontend_lint,
+                run_frontend_build,
                 run_ruff_check,
                 run_pytest,
                 run_mypy,
@@ -110,11 +117,8 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         summary.push(("cargo test".to_string(), "skipped"));
     }
     if run_frontend_lint {
-        let r = frontend_tools::frontend_lint(
-            r#"{"subdir":"frontend","script":"lint"}"#,
-            workspace_root,
-            max_output_len,
-        );
+        let r =
+            frontend_tools::frontend_lint(r#"{"script":"lint"}"#, workspace_root, max_output_len);
         let failed = section_failed(&r) && !r.contains("跳过（");
         summary.push((
             "frontend lint".to_string(),
@@ -127,6 +131,7 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
                 false,
                 false,
                 false,
+                run_frontend_build,
                 run_ruff_check,
                 run_pytest,
                 run_mypy,
@@ -135,6 +140,32 @@ pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len:
         }
     } else {
         summary.push(("frontend lint".to_string(), "skipped"));
+    }
+
+    if run_frontend_build {
+        let r =
+            frontend_tools::frontend_build(r#"{"script":"build"}"#, workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push((
+            "frontend build".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if fail_fast && failed {
+            push_skipped(
+                &mut summary,
+                false,
+                false,
+                false,
+                false,
+                run_ruff_check,
+                run_pytest,
+                run_mypy,
+            );
+            return build_output(&summary, &sections, summary_only, true);
+        }
+    } else {
+        summary.push(("frontend build".to_string(), "skipped"));
     }
 
     if run_ruff_check {
@@ -379,11 +410,13 @@ fn truncate_simple(s: &str, max_output_len: usize) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // 本地 CI 汇总：各步骤是否仍待执行（用于 fail_fast 跳过列表）
 fn push_skipped(
     summary: &mut Vec<(String, &'static str)>,
     clippy: bool,
     test: bool,
-    frontend: bool,
+    frontend_lint: bool,
+    frontend_build: bool,
     ruff: bool,
     pytest: bool,
     mypy: bool,
@@ -394,8 +427,11 @@ fn push_skipped(
     if test {
         summary.push(("cargo test".to_string(), "skipped"));
     }
-    if frontend {
+    if frontend_lint {
         summary.push(("frontend lint".to_string(), "skipped"));
+    }
+    if frontend_build {
+        summary.push(("frontend build".to_string(), "skipped"));
     }
     if ruff {
         summary.push(("ruff check".to_string(), "skipped"));

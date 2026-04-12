@@ -19,6 +19,7 @@ pub(in crate::tools) fn params_ci_pipeline_local() -> serde_json::Value {
             "run_clippy": { "type": "boolean", "description": "是否运行 cargo clippy，默认 true" },
             "run_test": { "type": "boolean", "description": "是否运行 cargo test，默认 true" },
             "run_frontend_lint": { "type": "boolean", "description": "是否运行 frontend lint，默认 true" },
+            "run_frontend_build": { "type": "boolean", "description": "是否运行 npm run build（默认 false；目录启发式同 frontend_lint）" },
             "run_ruff_check": { "type": "boolean", "description": "是否运行 ruff check（无 Python 项目标记时跳过），默认 true" },
             "run_pytest": { "type": "boolean", "description": "是否运行 python3 -m pytest（较慢，默认 false）" },
             "run_mypy": { "type": "boolean", "description": "是否运行 mypy（默认 false）" },

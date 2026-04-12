@@ -130,9 +130,9 @@
   ```json
   {"deny_warnings":true}
   ```
-- `ci_pipeline_local`（本地 CI 关键检查；可选 Python：`run_ruff_check` / `run_pytest` / `run_mypy`）：
+- `ci_pipeline_local`（本地 CI 关键检查；可选前端 `npm run build`：`run_frontend_build`；可选 Python：`run_ruff_check` / `run_pytest` / `run_mypy`）：
   ```json
-  {"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"run_ruff_check":true,"run_pytest":false,"run_mypy":false,"fail_fast":true,"summary_only":false}
+  {"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"run_frontend_build":false,"run_ruff_check":true,"run_pytest":false,"run_mypy":false,"fail_fast":true,"summary_only":false}
   ```
 - `release_ready_check`（发布前一键检查）：
   ```json
@@ -280,10 +280,10 @@
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`（与 `rust_test_one` 在 `test_result_cache_enabled` 下可对**相同指纹**复用上次截断输出）、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`rust_analyzer_hover`、`rust_analyzer_document_symbol`、`read_binary_meta`、`frontend_lint`、`find_references`、`call_graph_sketch`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`structured_patch`、`table_text`、`text_diff`、`ast_grep_rewrite`、`present_clarification_questionnaire`、`diagnostic_summary`、`error_output_playbook`、`playbook_run_commands`、`package_query`。
+另外，已支持的 Rust/前端开发辅助工具还包括：`cargo_check`、`cargo_test`（与 `rust_test_one` 在 `test_result_cache_enabled` 下可对**相同指纹**复用上次截断输出）、`cargo_clippy`、`cargo_metadata`、`cargo_machete`、`cargo_udeps`、`cargo_publish_dry_run`、`rust_compiler_json`、`rust_rustc`（工作区根执行 `rustc`，参数同 `run_command` 安全规则）、`rust_analyzer_goto_definition`、`rust_analyzer_find_references`、`rust_analyzer_hover`、`rust_analyzer_document_symbol`、`read_binary_meta`、`frontend_lint`、`find_references`、`call_graph_sketch`、`rust_file_outline`、`format_check_file`、`quality_workspace`、`markdown_check_links`、`structured_validate`、`structured_query`、`structured_diff`、`structured_patch`、`table_text`、`text_diff`、`ast_grep_rewrite`、`present_clarification_questionnaire`、`diagnostic_summary`、`error_output_playbook`、`playbook_run_commands`、`package_query`。
 以及：`cargo_tree`、`cargo_clean`、`cargo_doc`。
 
-**Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`python_snippet_run`、`pre_commit_run`；聚合类还有 `run_lints`（可选 ruff）、`quality_workspace`（可选 ruff/pytest/mypy）。
+**Python / uv / pre-commit**：`ruff_check`、`pytest_run`、`mypy_check`、`python_install_editable`、`uv_sync`、`uv_run`、`python_snippet_run`、`pre_commit_run`；聚合类还有 `run_lints`（Rust 侧可选先 `cargo check` 再 `clippy`；可选 `npm run lint` / `run_frontend_build`；可选 ruff）、`quality_workspace`（可选 `run_cargo_check` / 前端 `run_frontend_build` / ruff / pytest / mypy 等）。
 
 **Node.js / npm**：`npm_install`（含 `npm ci`）、`npm_run`（任意 npm script）、`npx_run`（npx 执行包命令）、`tsc_check`（TypeScript 类型检查）。
 
@@ -571,7 +571,11 @@
   ```json
   {"path":"src/main.rs"}
   ```
-- `quality_workspace`（组合质量检查；默认 `fmt --check` + `clippy`，可按开关加 `test` / 前端 lint / prettier check）：
+- `quality_workspace`（组合质量检查；默认 `fmt --check` + `clippy`；可选 `run_cargo_check` 单独跑 `cargo check --all-targets`；可按开关加 `test` / 前端 lint / `run_frontend_build` / prettier check）：
   ```json
-  {"run_cargo_fmt_check":true,"run_cargo_clippy":true,"run_cargo_test":false,"run_frontend_lint":false,"run_frontend_prettier_check":false,"fail_fast":true,"summary_only":false}
+  {"run_cargo_fmt_check":true,"run_cargo_check":false,"run_cargo_clippy":true,"run_cargo_test":false,"run_frontend_lint":false,"run_frontend_build":false,"run_frontend_prettier_check":false,"fail_fast":true,"summary_only":false}
+  ```
+- `rust_rustc`（工作区根目录执行 `rustc`，不经 shell；`args` 为字符串数组，不得含 `..` 或绝对路径；**不要求** `Cargo.toml`）：
+  ```json
+  {"args":["--explain","E0382"]}
   ```
