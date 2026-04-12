@@ -6,6 +6,7 @@ mod column;
 mod composer;
 mod find;
 mod find_bar;
+mod message_chunks;
 mod message_render;
 mod scroll;
 mod timeline;

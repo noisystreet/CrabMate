@@ -10,9 +10,8 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
-use super::message_render::{
-    ChatChunk, chat_message_row, chunk_messages, staged_timeline_group_view, tool_run_group_view,
-};
+use super::message_chunks::{ChatChunk, chunk_messages};
+use super::message_render::{chat_message_row, staged_timeline_group_view, tool_run_group_view};
 use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
 use crate::app::scroll_guard::MessagesScrollFromEffectGuard;
