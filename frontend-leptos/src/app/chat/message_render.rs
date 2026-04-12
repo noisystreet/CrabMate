@@ -8,6 +8,7 @@ use leptos::task::spawn_local;
 
 use crate::api::post_chat_branch;
 use crate::assistant_body::assistant_markdown_collapsible_view;
+use crate::chat_actions::apply_branch_success_revision;
 use crate::i18n::{self, Locale};
 use crate::message_format::{
     is_staged_timeline_stored_message, message_text_for_display_ex,
@@ -717,23 +718,17 @@ pub(crate) fn chat_message_row(
                                                         .await
                                                         {
                                                             Ok(new_rev) => {
-                                                                session_sync.update(|s| {
-                                                                    s.set_revision_after_branch(
-                                                                        new_rev,
-                                                                    );
-                                                                });
+                                                                let aid = active_id.get_untracked();
+                                                                apply_branch_success_revision(
+                                                                    session_sync,
+                                                                    sessions,
+                                                                    &aid,
+                                                                    new_rev,
+                                                                );
                                                                 let mut prep: Option<
                                                                     (String, Vec<String>, String),
                                                                 > = None;
                                                                 sessions.update(|list| {
-                                                                    let aid = active_id
-                                                                        .get_untracked();
-                                                                    if let Some(s) =
-                                                                        list.iter_mut().find(|x| x.id == aid)
-                                                                    {
-                                                                        s.server_revision =
-                                                                            Some(new_rev);
-                                                                    }
                                                                     prep = truncate_at_user_message_and_prepare_regenerate(
                                                                         list,
                                                                         &aid,
@@ -831,20 +826,14 @@ pub(crate) fn chat_message_row(
                                                         .await
                                                         {
                                                             Ok(new_rev) => {
-                                                                session_sync.update(|s| {
-                                                                    s.set_revision_after_branch(
-                                                                        new_rev,
-                                                                    );
-                                                                });
+                                                                let aid = active_id.get_untracked();
+                                                                apply_branch_success_revision(
+                                                                    session_sync,
+                                                                    sessions,
+                                                                    &aid,
+                                                                    new_rev,
+                                                                );
                                                                 sessions.update(|list| {
-                                                                    let aid = active_id
-                                                                        .get_untracked();
-                                                                    if let Some(s) =
-                                                                        list.iter_mut().find(|x| x.id == aid)
-                                                                    {
-                                                                        s.server_revision =
-                                                                            Some(new_rev);
-                                                                    }
                                                                     let _ = truncate_at_user_message_branch_local(
                                                                         list,
                                                                         &aid,

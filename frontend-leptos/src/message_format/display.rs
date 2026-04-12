@@ -1,93 +1,16 @@
-//! 消息与工具摘要的展示用字符串处理（含 `agent_reply_plan` 围栏与流式缓冲语义）。
+//! 助手/用户/系统消息的展示管道（`agent_reply_plan`、思维链过滤等）。
+//!
+//! 与 [`super::plain`]、[`super::staged_timeline`] 等同属 `message_format` 展示层。
 
 use std::borrow::Cow;
 
 use serde_json::Value;
 
 use crate::i18n::Locale;
-use crate::sse_dispatch::ToolResultInfo;
 use crate::storage::StoredMessage;
 
-/// 去掉摘要里**连续重复**的非空行（服务端或上游偶发会下发两行相同摘要，如 `read file: 2.md`）。
-pub fn collapse_duplicate_summary_lines(text: &str) -> String {
-    let mut kept: Vec<&str> = Vec::new();
-    let mut last: Option<&str> = None;
-    for line in text.lines() {
-        let t = line.trim();
-        if t.is_empty() {
-            continue;
-        }
-        if last == Some(t) {
-            continue;
-        }
-        last = Some(t);
-        kept.push(t);
-    }
-    kept.join("\n")
-}
-
-/// 将连续的空行（仅含空白字符的行）压缩为至多一行空段，减轻剥 tag / 围栏后产生的 `\n\n\n+`。
-pub fn collapse_consecutive_blank_lines(text: &str) -> String {
-    let mut out = String::new();
-    let mut in_blank_run = true;
-    for line in text.lines() {
-        let blank = line.trim().is_empty();
-        if blank {
-            if !in_blank_run && !out.is_empty() {
-                out.push('\n');
-            }
-            in_blank_run = true;
-        } else {
-            if !out.is_empty() {
-                out.push('\n');
-            }
-            out.push_str(line);
-            in_blank_run = false;
-        }
-    }
-    out
-}
-
-pub fn tool_card_text(info: &ToolResultInfo, loc: Locale) -> String {
-    let sum = info.summary.as_deref().unwrap_or("").trim();
-    let name = info.name.trim();
-    if sum.is_empty() {
-        return if !name.is_empty() {
-            format!("{}{name}", crate::i18n::tool_card_prefix(loc))
-        } else {
-            crate::i18n::tool_card_fallback(loc).to_string()
-        };
-    }
-    let sum = collapse_duplicate_summary_lines(sum);
-    if sum.is_empty() {
-        return if !name.is_empty() {
-            format!("{}{name}", crate::i18n::tool_card_prefix(loc))
-        } else {
-            crate::i18n::tool_card_fallback(loc).to_string()
-        };
-    }
-    // 首行 + 其余行；其余行中再剔除与首行相同的行，避免「标题行 + 正文重复首行」。
-    let mut lines = sum.lines();
-    let first = lines.next().unwrap_or_default().trim().to_string();
-    if first.is_empty() {
-        return if !name.is_empty() {
-            format!("{}{name}", crate::i18n::tool_card_prefix(loc))
-        } else {
-            crate::i18n::tool_card_fallback(loc).to_string()
-        };
-    }
-    let rest: Vec<&str> = lines
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && *l != first.as_str())
-        .collect();
-    if rest.is_empty() {
-        return first;
-    }
-    let mut out = first;
-    out.push_str("\n\n");
-    out.push_str(&rest.join("\n"));
-    out
-}
+use super::plain::collapse_consecutive_blank_lines;
+use super::staged_timeline::STAGED_TIMELINE_SYSTEM_PREFIX;
 
 fn format_agent_reply_plan_json_for_display(
     json_text: &str,
@@ -359,20 +282,6 @@ fn assistant_text_for_display_inner(
 
 /// 须与主仓 `src/runtime/plan_section.rs` 中 `STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX` 同步。
 const STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX: &str = "### CrabMate·NL补全\n";
-
-/// `role: system` 时间线旁注（分阶段步进）；前缀仅供 UI 分类，展示时剥去。
-pub const STAGED_TIMELINE_SYSTEM_PREFIX: &str = "### CrabMate·staged_timeline\n";
-
-pub fn staged_timeline_system_message_body(body: &str) -> String {
-    format!("{STAGED_TIMELINE_SYSTEM_PREFIX}{body}")
-}
-
-/// Web 聊天列：是否为分阶段实施时间线旁注（`system` + 固定前缀），用于连续多条聚合展示。
-#[inline]
-pub fn is_staged_timeline_stored_message(m: &StoredMessage) -> bool {
-    m.role == "system" && m.text.starts_with(STAGED_TIMELINE_SYSTEM_PREFIX)
-}
-
 fn user_text_for_chat_display(raw: &str) -> String {
     if raw
         .trim_start()
@@ -981,13 +890,12 @@ pub fn message_text_for_display_ex(
         m.text.clone()
     }
 }
-
 #[cfg(test)]
 mod tests {
+    use super::super::plain::collapse_consecutive_blank_lines;
     use super::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX;
     use super::assistant_text_for_display;
     use super::assistant_thinking_body_and_answer_raw;
-    use super::collapse_consecutive_blank_lines;
     use super::filter_assistant_thinking_markers_for_display;
     use super::filter_redacted_thinking_for_display;
     use super::message_text_for_display_ex;
@@ -996,7 +904,7 @@ mod tests {
     use crate::storage::StoredMessage;
 
     /// Embedded copy of `fixtures/chat_resp1.md` (redacted blocks + `agent_reply_plan` fence).
-    const CHAT_RESP1_FIXTURE: &str = include_str!("../fixtures/chat_resp1.md");
+    const CHAT_RESP1_FIXTURE: &str = include_str!("../../fixtures/chat_resp1.md");
 
     #[test]
     fn collapse_consecutive_blank_lines_merges_runs() {
