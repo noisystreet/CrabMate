@@ -541,7 +541,8 @@ flowchart LR
 - **`find.rs`**：主区查找匹配 id、光标与首条 **`scroll_message_into_view`**。
 - **`column.rs`**：中部消息列表与输入区。
 - **`find_bar.rs`**：主区内查找条。
-- **`message_render.rs`**：单条消息与连续工具分组渲染（供 **`column`**）。
+- **`message_chunks.rs`**：将 **`StoredMessage`** 列表折叠为 **`ChatChunk`**（单条 / 连续工具 / 分阶段时间线组），供 **`column`** 迭代。
+- **`message_render.rs`**：单条消息与连续工具分组视图（供 **`column`**）。
 - **`timeline.rs`**：可折叠的「规划 / 工具时间线」索引（**`timeline_scan`** 扫描消息；点击跳转到 **`#msg-{id}`**）。
 
 ### `frontend-leptos/src/app_prefs.rs`

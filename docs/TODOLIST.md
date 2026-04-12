@@ -115,7 +115,7 @@
 
 - [ ] **浏览器侧多轮状态（续）**：可选**加密**本地缓存；与 P1 会话模型其它项同向。已实现：`ChatSession` 持久化 **`server_conversation_id` / `server_revision`**，流式回合写入后触发 **`GET /conversation/messages`** 水合；标签页内仍用 **`frontend-leptos/src/session_sync.rs`** 的 **`SessionSyncState`**。
 - [ ] **聊天列表虚拟化**：极长对话下减少 DOM 与重渲染。
-- [ ] **国际化与可访问性**：已集中 **`frontend-leptos/src/i18n.rs`**（设置内语言切换）与 **`a11y.rs`**（主要模态焦点 + Tab 陷阱、全局 Esc 关闭弹层）；本轮已完成 6 个组件（`settings_modal`、`session_list_modal`、`approval_bar`、`changelist_modal`、`chat_column`、`chat_composer`）的 i18n 审计，确认无硬编码中文；**剩余文件**：`app/mod.rs` 子组件（约 20+ 个）、`timeline.rs`、`find_bar.rs`、各 `*_modal.rs`（`model_switcher_modal`、`session_search_modal` 等）、`workspace_panel.rs`、`session_message_search.rs`；预估工作量：约 5～8 小时（逐文件提取硬编码字符串→i18n.rs 补充中英→替换调用）。
+- [ ] **国际化与可访问性**：已集中 **`frontend-leptos/src/i18n/`**（按域拆分子模块，设置内语言切换）与 **`a11y.rs`**（主要模态焦点 + Tab 陷阱、全局 Esc 关闭弹层）；本轮已完成 6 个组件（`settings_modal`、`session_list_modal`、`approval_bar`、`changelist_modal`、`chat_column`、`chat_composer`）的 i18n 审计，确认无硬编码中文；**剩余文件**：`app/mod.rs` 子组件（约 20+ 个）、`timeline.rs`、`find_bar.rs`、各 `*_modal.rs`（`model_switcher_modal`、`session_search_modal` 等）、`workspace_panel.rs`、`session_message_search.rs`；预估工作量：约 5～8 小时（逐文件提取硬编码字符串→`i18n` 补充中英→替换调用）。
 - [ ] **语音交互（未来）**：浏览器侧麦克风采集、STT（可对接云端或本地引擎）、TTS 播放；与现有聊天/SSE 流衔接；权限、隐私与错误降级文案；若走后端代理需在 `web/` 增加路由并与鉴权（P0）同盘。
 
 ---
