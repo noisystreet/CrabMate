@@ -53,7 +53,7 @@
 | 区域 | 职责 | 典型内容（现有或目标） |
 |------|------|------------------------|
 | **`app/`** | 应用壳：布局、路由级组合、全局快捷键、将子视图串起 | `mod.rs`、**`app_shell_effects`**（壳级 `wire_*` / `Escape`）、侧栏/主列/状态栏视图 |
-| **`app/chat/`** | 聊天主路径：列表、输入、滚动、查找、流式接线 | **`column`** / **`composer`** / **`scroll`** / **`find`** / **`find_bar`** / **`message_chunks`** / **`message_render`** / **`timeline`**（见 **`app/chat/mod.rs`** 再导出）；**`ChatSessionSignals`** 定义在 **`src/chat_session_state.rs`**（crate 根），供 **`app/`** 与 **`session_modal_row`** 共用 |
+| **`app/chat/`** | 聊天主路径：列表、输入、滚动、查找、流式接线 | **`column`** / **`composer`** / **`composer_stream`** / **`handles`** / **`scroll`** / **`find`** / **`find_bar`** / **`message_chunks`** / **`message_row`** / **`message_group_views`** / **`timeline`**（见 **`app/chat/mod.rs`** 再导出）；**`ChatSessionSignals`** 定义在 **`src/chat_session_state.rs`**（crate 根），供 **`app/`** 与 **`session_modal_row`** 共用 |
 | **`app/session_*` / 会话** | 会话列表 UI、列表模态、会话级水合 | `sidebar_nav`、`session_list_modal`、`session_hydrate` |
 | **`app/workspace_*`** | 工作区树与刷新 | **`workspace_panel_state`**（**`WorkspacePanelSignals`**）+ **`workspace_panel`**（**`make_refresh_workspace`** / **`make_insert_workspace_path_into_composer`**）；与根目录 **`workspace_shell`** 协同 |
 | **`app/status_tasks_*`** | `/status` 与侧栏任务 | **`status_tasks_state`**（**`StatusTasksSignals`**）+ **`status_tasks_wiring`**（拉取闭包与侧栏可见 **`Effect`**） |

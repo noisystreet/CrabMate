@@ -237,6 +237,7 @@ pub fn wire_sync_bg_decor_to_storage_and_dom(bg_decor: RwSignal<bool>) {
 }
 
 /// 打开设置弹窗时，用 **`localStorage`** 与 **`/status`** 快照填充 LLM 草稿区。
+#[allow(clippy::too_many_arguments)]
 pub fn wire_settings_modal_llm_drafts_on_open(
     settings_modal: RwSignal<bool>,
     status_tasks: StatusTasksSignals,

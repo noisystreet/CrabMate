@@ -24,9 +24,10 @@ use changelist_modal::{
     changelist_modal_view, wire_changelist_body_inner_html, wire_changelist_fetch_effects,
 };
 use chat::{
-    ChatFindBar, chat_column_view, load_timeline_panel_expanded_default,
-    wire_chat_composer_streams, wire_chat_find_matches, wire_draft_sync_to_buffer_and_textarea,
-    wire_focus_message_after_nav, wire_messages_auto_scroll, wire_session_switch_clears_chat_state,
+    ChatColumnShell, ChatFindBar, WireComposerStreamsArgs, chat_column_view,
+    load_timeline_panel_expanded_default, wire_chat_composer_streams, wire_chat_find_matches,
+    wire_draft_sync_to_buffer_and_textarea, wire_focus_message_after_nav,
+    wire_messages_auto_scroll, wire_session_switch_clears_chat_state,
 };
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
@@ -354,9 +355,9 @@ pub fn App() -> impl IntoView {
         );
     let insert_workspace_file_ref_sv = StoredValue::new(Arc::clone(&insert_workspace_file_ref));
 
-    let chat_wires = wire_chat_composer_streams(
+    let chat_wires = wire_chat_composer_streams(WireComposerStreamsArgs {
         initialized,
-        chat_session,
+        chat: chat_session,
         locale,
         draft,
         selected_agent_role,
@@ -364,16 +365,16 @@ pub fn App() -> impl IntoView {
         status_err,
         pending_approval,
         tool_busy,
-        Arc::clone(&composer_draft_buffer),
+        composer_draft_buffer: Arc::clone(&composer_draft_buffer),
         auto_scroll_chat,
-        Arc::clone(&abort_cell),
-        Arc::clone(&user_cancelled_stream),
-        Arc::clone(&refresh_workspace),
+        abort_cell: Arc::clone(&abort_cell),
+        user_cancelled_stream: Arc::clone(&user_cancelled_stream),
+        refresh_workspace: Arc::clone(&refresh_workspace),
         changelist_modal_open,
         changelist_fetch_nonce,
         pending_images,
         pending_clarification,
-    );
+    });
 
     let side_resize_session: Rc<RefCell<Option<(f64, f64)>>> = Rc::new(RefCell::new(None));
     let side_resize_handles: Rc<RefCell<Option<(WindowListenerHandle, WindowListenerHandle)>>> =
@@ -432,14 +433,14 @@ pub fn App() -> impl IntoView {
                     class:main-row-resizing=move || side_resize_dragging.get()
                     class="main-row"
                 >
-                    {chat_column_view(
+                    {chat_column_view(ChatColumnShell {
                         locale,
                         messages_scroller,
                         auto_scroll_chat,
                         messages_scroll_from_effect,
                         last_messages_scroll_top,
                         timeline_panel_expanded,
-                        chat_session,
+                        chat: chat_session,
                         expanded_long_assistant_ids,
                         expanded_tool_run_heads,
                         expanded_staged_timeline_heads,
@@ -447,19 +448,19 @@ pub fn App() -> impl IntoView {
                         chat_find_match_ids,
                         chat_find_cursor,
                         composer_input_ref,
-                        composer_buf_ta.clone(),
+                        composer_buf_ta: composer_buf_ta.clone(),
                         pending_images,
                         pending_clarification,
-                        chat_wires.run_send_message.clone(),
-                        Arc::clone(&chat_wires.cancel_stream),
+                        run_send_message: chat_wires.run_send_message.clone(),
+                        trigger_stop: Arc::clone(&chat_wires.cancel_stream),
                         status_busy,
                         initialized,
-                        chat_wires.regen_stream_after_truncate,
-                        chat_wires.retry_assistant_target,
+                        regen_stream_after_truncate: chat_wires.regen_stream_after_truncate,
+                        retry_assistant_target: chat_wires.retry_assistant_target,
                         status_err,
                         markdown_render,
                         apply_assistant_display_filters,
-                    )}
+                    })}
 
                     {side_column_view(
                         locale,
