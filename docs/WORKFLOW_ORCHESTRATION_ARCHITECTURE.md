@@ -2,7 +2,8 @@
 
 **状态**：设计稿（**未**承诺实现时间表）。**受众**：维护者与产品/协议设计者。  
 **语言**：中文（暂无独立英文全译本；**`docs/en/DEVELOPMENT.md`** 架构节有英文指针）。  
-**关联**：运行时行为以 **`docs/TOOLS.md`** 中 **`workflow_execute` / `workflow_validate`**、**`docs/DEVELOPMENT.md`** 中 **`agent::workflow`** 与 **`agent_turn` / 分阶段规划** 为准；本文定义**能力边界**与**推荐演进方向**，避免与现有 DAG 语义 silently 分叉。
+**关联**：运行时行为以 **`docs/TOOLS.md`** 中 **`workflow_execute` / `workflow_validate`**、**`docs/DEVELOPMENT.md`** 中 **`agent::workflow`** 与 **`agent_turn` / 分阶段规划** 为准；本文定义**能力边界**与**推荐演进方向**，避免与现有 DAG 语义 silently 分叉。  
+**与 P-E-V 闭环**：会话级「规划—执行—验证」、**`plan_rewrite` 与验收闸门正交**等见 **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**（本文侧重 **DAG / FSM**；彼文侧重 **`plan_artifact` + 分阶段 + PER**）。
 
 ---
 
@@ -156,4 +157,4 @@ CrabMate 已具备：
 
 | 日期 | 摘要 |
 |------|------|
-| 2026-04-12 | 初稿：分层（轮内 DAG / 会话级 / 规划）、FSM 编译优先、条件/循环边界与非目标。 |
+| 2026-04-12 | 初稿：分层（轮内 DAG / 会话级 / 规划）、FSM 编译优先、条件/循环边界与非目标；增补与 **`PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`** 的职责交叉引用。 |
