@@ -11,6 +11,7 @@ use pulldown_cmark::{Event, Options, Parser, html};
 /// 2. **信息串与注释粘连**：行首合法围栏后写成 `` ```rust// comment ``，拆成 `` ```rust `` 与 `// comment` 两行。
 /// 3. **行尾悬空围栏**：行首不是合法围栏行，但行尾仅剩一段 `` ``` `` 且无其它正文，去掉尾部 fence，避免误开空代码块。
 /// 4. **ATX 标题缺空格**：如 `###规范与安全`（`#` 与标题字之间无空格），在至多 6 个 `#` 后补一个空格，满足 CommonMark 标题语法。
+/// 5. **GFM 表头与分隔行粘连**：如 `| a | b ||---|---|`（模型常漏换行），拆成表头行 + 独立对齐行。
 ///
 /// 无法覆盖所有非法 Markdown；极端正文若以 `` ``` `` 结尾仍可能被改写（极少见）。
 pub fn normalize_markdown_for_render(md: &str) -> String {
@@ -70,6 +71,12 @@ fn fix_atx_heading_missing_space(line: &str) -> String {
 }
 
 fn normalize_line_recursive(line: &str) -> String {
+    if let Some((header, delim)) = split_merged_table_header_separator_line(line) {
+        let h = normalize_line_recursive(&header);
+        let d = normalize_line_recursive(&delim);
+        return format!("{h}\n{d}");
+    }
+
     if let Some((left, right)) = split_mid_line_fence_if_needed(line) {
         let left = left.trim_end();
         let right_trim = right.trim_start_matches(' ');
@@ -88,6 +95,80 @@ fn normalize_line_recursive(line: &str) -> String {
 
     let after_sticky = split_sticky_fence_lang_comment(line);
     normalize_trailing_orphan_fence(&after_sticky)
+}
+
+/// `| 列1 | 列2 ||------|------|` → 表头 + 对齐行（`pulldown_cmark` 要求分隔行独占一行）。
+fn split_merged_table_header_separator_line(line: &str) -> Option<(String, String)> {
+    if fence_starts_line(line) {
+        return None;
+    }
+    let sp = leading_space_width(line).min(3);
+    let body = line.get(sp..)?;
+    if !body.trim_start().starts_with('|') {
+        return None;
+    }
+    let indent = line.get(..sp).unwrap_or("");
+    let b = body.as_bytes();
+    let mut i = 0usize;
+    while i + 1 < b.len() {
+        if b[i] == b'|' && b[i + 1] == b'|' {
+            let header_body = body.get(..i)?;
+            let rest = body.get(i + 2..)?;
+            if table_row_looks_like_header(header_body) && looks_like_table_delimiter_row(rest) {
+                let header = format!("{indent}{}", header_body.trim_end());
+                let delim_trim = rest.trim_start();
+                let delim_body = if delim_trim.starts_with('|') {
+                    delim_trim.to_string()
+                } else {
+                    format!("|{delim_trim}")
+                };
+                let delim = format!("{indent}{delim_body}");
+                return Some((header, delim));
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn table_row_looks_like_header(row: &str) -> bool {
+    let t = row.trim();
+    if t.is_empty() || !t.starts_with('|') {
+        return false;
+    }
+    if t.matches('|').count() < 2 {
+        return false;
+    }
+    !looks_like_table_delimiter_row(t)
+}
+
+/// GFM 分隔行：由 `|` 分开的单元格，每格仅 `-` / `:` / 空白，且至少含三个 `-`。
+fn looks_like_table_delimiter_row(s: &str) -> bool {
+    let s = s.trim();
+    if s.is_empty() || !s.contains('-') {
+        return false;
+    }
+    let parts: Vec<&str> = s
+        .split('|')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    parts.iter().copied().all(is_delimiter_cell)
+}
+
+fn is_delimiter_cell(cell: &str) -> bool {
+    if cell.is_empty() {
+        return false;
+    }
+    let dash_count = cell.chars().filter(|&c| c == '-').count();
+    if dash_count < 3 {
+        return false;
+    }
+    cell.chars()
+        .all(|c| c == '-' || c == ':' || c.is_whitespace())
 }
 
 /// 行内第一个连续 `` ` `` 段：`(字节起点, 字节长度)`，长度 ≥3。
@@ -288,6 +369,22 @@ mod tests {
         let h = to_safe_html("|h1|h2|\n|---|---|\n|a|b|");
         assert!(h.contains("<table"));
         assert!(h.to_lowercase().contains("h1"));
+    }
+
+    /// 模型/导出常把表头与 GFM 分隔行写在同一行：`||` 后应为独立一行。
+    #[test]
+    fn normalize_splits_table_header_glued_to_delimiter_row() {
+        let raw = "| 类别 | 能力 ||------|------|";
+        let n = normalize_markdown_for_render(raw);
+        assert!(
+            n.contains("能力") && n.contains('\n') && n.contains("------"),
+            "expected two lines, got {n:?}"
+        );
+        let h = to_safe_html(raw);
+        assert!(
+            h.contains("<table"),
+            "glued header+delimiter should become a table, got {h:?}"
+        );
     }
 
     #[test]
