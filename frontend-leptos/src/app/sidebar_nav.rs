@@ -6,7 +6,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
@@ -14,9 +14,8 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
-use crate::chat_session_state::ChatSessionSignals;
 use crate::debounce_schedule;
-use crate::i18n::{self, Locale};
+use crate::i18n;
 use crate::session_ops::{
     SessionContextAnchor, clamp_session_ctx_menu_pos, delete_session_after_confirm,
     export_session_json_for_id, export_session_markdown_for_id, flush_composer_draft_to_session,
@@ -29,6 +28,8 @@ use crate::session_search::{
 use crate::session_sort::sorted_sessions_clone;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
+
+use super::app_shell_ctx::AppShellCtx;
 
 /// 会话标题筛选防抖（毫秒）。
 const SIDEBAR_SESSION_FILTER_DEBOUNCE_MS: u32 = 250;
@@ -65,25 +66,27 @@ fn rail_context_menu_target_is_session_row_or_hit(ev: &web_sys::MouseEvent) -> b
         || el.closest(".nav-search-hit").ok().flatten().is_some()
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn sidebar_nav_view(
-    locale: RwSignal<Locale>,
-    mobile_nav_open: RwSignal<bool>,
-    session_modal: RwSignal<bool>,
-    new_session: impl Fn() + Clone + 'static,
-    sidebar_session_query: RwSignal<String>,
-    global_message_query: RwSignal<String>,
-    sidebar_search_panel_open: RwSignal<bool>,
-    sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
-    chat_find_panel_open: RwSignal<bool>,
-    chat: ChatSessionSignals,
-    draft: RwSignal<String>,
-    focus_message_id_after_nav: RwSignal<Option<String>>,
-    session_context_menu: RwSignal<Option<SessionContextAnchor>>,
-    composer_buf_nav: Arc<Mutex<String>>,
-    apply_assistant_display_filters: RwSignal<bool>,
-    sidebar_rail_collapsed: RwSignal<bool>,
-) -> impl IntoView {
+pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
+    let AppShellCtx {
+        locale,
+        mobile_nav_open,
+        session_modal,
+        new_session,
+        sidebar_session_query,
+        global_message_query,
+        sidebar_search_panel_open,
+        sidebar_rail_ctx_menu,
+        chat_find_panel_open,
+        chat,
+        draft,
+        focus_message_id_after_nav,
+        session_context_menu,
+        composer_draft_buffer,
+        apply_assistant_display_filters,
+        sidebar_rail_collapsed,
+        ..
+    } = ctx;
+    let composer_buf_nav = composer_draft_buffer;
     let sessions = chat.sessions;
     let active_id = chat.active_id;
     let session_sync = chat.session_sync;

@@ -10,6 +10,7 @@ use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{status_bar_effective_api_base, status_bar_effective_model};
 use crate::chat_session_state::ChatSessionSignals;
 
+use super::app_shell_ctx::AppShellCtx;
 use super::status_tasks_state::StatusTasksSignals;
 use crate::i18n::{self, Locale};
 
@@ -325,20 +326,21 @@ fn StatusBarFooterBody(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn status_bar_footer_view(
-    status_bar_visible: RwSignal<bool>,
-    st: StatusTasksSignals,
-    status_err: RwSignal<Option<String>>,
-    tool_busy: RwSignal<bool>,
-    status_busy: RwSignal<bool>,
-    client_llm_storage_tick: RwSignal<u64>,
-    selected_agent_role: RwSignal<Option<String>>,
-    chat: ChatSessionSignals,
-    context_used_estimate: RwSignal<usize>,
-    refresh_status: Arc<dyn Fn() + Send + Sync>,
-    locale: RwSignal<Locale>,
-) -> impl IntoView {
+pub fn status_bar_footer_view(ctx: AppShellCtx) -> impl IntoView {
+    let AppShellCtx {
+        status_bar_visible,
+        status_tasks: st,
+        status_err,
+        tool_busy,
+        status_busy,
+        client_llm_storage_tick,
+        selected_agent_role,
+        chat,
+        context_used_estimate,
+        refresh_status,
+        locale,
+        ..
+    } = ctx;
     view! {
         <Show when=move || status_bar_visible.get()>
             <StatusBarFooterBody

@@ -8,9 +8,11 @@ use wasm_bindgen::JsCast;
 
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::api::fetch_workspace_changelog;
-use crate::i18n::{self, Locale};
+use crate::i18n;
 use crate::message_render::fragment_to_chat_safe_html;
 use crate::session_sync::SessionSyncState;
+
+use super::app_shell_ctx::AppShellCtx;
 
 /// `changelist_fetch_nonce` 递增后拉取 `GET /workspace/changelog`；`nonce==0` 时不请求。
 pub(super) fn wire_changelist_fetch_effects(
@@ -87,15 +89,17 @@ pub(super) fn wire_changelist_body_inner_html(
     });
 }
 
-pub fn changelist_modal_view(
-    changelist_modal_open: RwSignal<bool>,
-    locale: RwSignal<Locale>,
-    changelist_modal_loading: RwSignal<bool>,
-    changelist_modal_err: RwSignal<Option<String>>,
-    changelist_modal_rev: RwSignal<u64>,
-    changelist_fetch_nonce: RwSignal<u64>,
-    changelist_body_ref: NodeRef<Div>,
-) -> impl IntoView {
+pub fn changelist_modal_view(ctx: AppShellCtx) -> impl IntoView {
+    let AppShellCtx {
+        changelist_modal_open,
+        locale,
+        changelist_modal_loading,
+        changelist_modal_err,
+        changelist_modal_rev,
+        changelist_fetch_nonce,
+        changelist_body_ref,
+        ..
+    } = ctx;
     let dialog_ref = NodeRef::<Div>::new();
 
     Effect::new({

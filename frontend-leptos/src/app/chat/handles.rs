@@ -1,6 +1,7 @@
 //! 聊天域聚合句柄：压缩 `App` → `chat_column_view` / `wire_chat_composer_streams` 的参数面，避免继续加长形参列表。
 //!
-//! 不引入 Leptos Context；仍为显式结构体传递，便于跳转与类型检查。
+//! 不引入 Leptos Context；仍为显式结构体传递，便于跳转与类型检查。根壳层另有 [`super::app_shell_ctx::AppShellCtx`]
+//! 聚合侧栏 / 底栏 / 模态等 `*_view` 入参（同因 `Rc` 等未走 `provide_context`）。
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -37,6 +38,7 @@ pub struct ComposerStreamShell {
 ///
 /// 与 [`ComposerStreamShell`] 共享 **`status_busy` / `status_err` / `pending_clarification`** 等句柄，
 /// 避免 `App` 在 `wire_chat_composer_streams` 与 `chat_column_view` 之间重复传入同一组 `RwSignal`。
+#[derive(Clone)]
 pub struct ChatColumnShell {
     pub locale: RwSignal<Locale>,
     pub messages_scroller: NodeRef<leptos::html::Div>,
