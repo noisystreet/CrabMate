@@ -11,9 +11,9 @@ mod staged_timeline;
 mod tool_card;
 
 pub(crate) use display::{
-    assistant_text_for_display, assistant_thinking_body_and_answer_raw,
-    filter_assistant_thinking_markers_for_display, message_text_for_display_ex,
-    stored_message_is_staged_planner_round,
+    agent_reply_plan_step_descriptions_from_assistant, assistant_text_for_display,
+    assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
+    message_text_for_display_ex, stored_message_is_staged_planner_round,
 };
 pub(crate) use staged_timeline::{
     STAGED_TIMELINE_SYSTEM_PREFIX, is_staged_timeline_stored_message,

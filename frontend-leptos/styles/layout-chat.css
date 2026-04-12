@@ -951,6 +951,10 @@
   color: color-mix(in srgb, var(--accent) 70%, var(--muted));
 }
 
+.msg-staged-todo-li-pending .msg-staged-todo-glyph {
+  color: var(--muted);
+}
+
 .msg-staged-todo-li-failed .msg-staged-todo-glyph {
   color: color-mix(in srgb, var(--danger) 78%, var(--muted));
 }

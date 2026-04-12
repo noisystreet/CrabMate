@@ -230,6 +230,13 @@ pub fn staged_plan_todo_step_in_progress_aria(l: Locale) -> &'static str {
     }
 }
 
+pub fn staged_plan_todo_step_pending_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "待执行",
+        Locale::En => "Pending",
+    }
+}
+
 pub fn staged_plan_todo_step_failed_aria(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "失败",

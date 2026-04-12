@@ -171,6 +171,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                                         }
                                         .into_any()
                                     } else {
+                                        let msgs_for_staged = StoredValue::new(msgs.clone());
                                         chunk_messages(&msgs)
                                             .into_iter()
                                             .map(|chunk| match chunk {
@@ -226,6 +227,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                                                         chat_find_cursor,
                                                         locale,
                                                         apply_assistant_display_filters,
+                                                        msgs_for_staged,
                                                     )
                                                     .into_any()
                                                 }

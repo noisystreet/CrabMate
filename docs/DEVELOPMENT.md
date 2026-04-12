@@ -544,6 +544,7 @@ flowchart LR
 - **`column.rs`**：中部消息列表与输入区（接收 **`ChatColumnShell`**）。
 - **`find_bar.rs`**：主区内查找条。
 - **`message_chunks.rs`**：将 **`StoredMessage`** 列表折叠为 **`ChatChunk`**（单条 / 连续工具 / 分阶段时间线组），供 **`column`** 迭代；同一轮分阶段旁注若仅被**工具消息**隔开，会合并为**一条**待办卡片后再按序插入其间各工具块（避免多条分散「系统」气泡）。
+- **`staged_plan_todo.rs`**：待办行优先用本簇前最近助手 **`agent_reply_plan.steps[].description`** 一次列出全部步骤（`Pending` / 进行中 / 完成等），时间线旁注只补状态与缺省标题。
 - **`message_row.rs`**：单条消息气泡与操作条（复制 / 重试 / 分支等）。
 - **`message_group_views.rs`**：连续工具输出与分阶段时间线分组折叠视图（供 **`column`**）。
 - **`timeline.rs`**：可折叠的「规划 / 工具时间线」索引（**`timeline_scan`** 扫描消息；点击跳转到 **`#msg-{id}`**）。
