@@ -1,15 +1,11 @@
 //! 前端 SSE 控制面 JSON 的分类与分发（`serde_json::Value`）。
-//! 分支顺序须与 `src/sse/control_dispatch_mirror.rs` 与 `fixtures/sse_control_golden.jsonl` 一致。
+//!
+//! **`stop`/`handled`/`plain` 分支顺序**须与 workspace crate **`crabmate-sse-protocol`** 中
+//! [`classify_sse_control_outcome`](crabmate_sse_protocol::classify_sse_control_outcome) 及
+//! **`fixtures/sse_control_golden.jsonl`** 一致（见该 crate 的 `control_classify`）。
 
-use crabmate_sse_protocol::SSE_PROTOCOL_VERSION;
+use crabmate_sse_protocol::{SSE_PROTOCOL_VERSION, key_present_non_null};
 use serde_json::Value;
-
-fn key_present_non_null(obj: &serde_json::Map<String, Value>, key: &str) -> bool {
-    match obj.get(key) {
-        None | Some(Value::Null) => false,
-        Some(_) => true,
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SseDispatch {
@@ -432,4 +428,86 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
     }
 
     SseDispatch::Plain
+}
+
+#[cfg(test)]
+mod sse_control_order_tests {
+    use std::fs;
+    use std::path::PathBuf;
+
+    use crabmate_sse_protocol::classify_sse_control_outcome;
+    use serde_json::Value;
+
+    use super::{SseCallbacks, SseDispatch, try_dispatch_sse_control_payload};
+
+    fn dispatch_triage_string(data: &str) -> &'static str {
+        let mut on_err = |_msg: String| {};
+        let mut cbs = SseCallbacks {
+            on_error: &mut on_err,
+            on_workspace_changed: None,
+            on_tool_call: None,
+            on_tool_status_change: None,
+            on_parsing_tool_calls_change: None,
+            on_assistant_answer_phase: None,
+            on_tool_result: None,
+            on_command_approval_request: None,
+            on_conversation_saved_revision: None,
+            on_staged_plan_step_started: None,
+            on_staged_plan_step_finished: None,
+            on_clarification_questionnaire: None,
+        };
+        match try_dispatch_sse_control_payload(data, &mut cbs) {
+            SseDispatch::Stop => "stop",
+            SseDispatch::Handled => "handled",
+            SseDispatch::Plain => "plain",
+        }
+    }
+
+    /// 与共享 `classify_sse_control_outcome` 一致；与金样一致（`sse_capabilities` 版本不匹配时
+    /// `try_dispatch` 可能额外 `Stop`，金样不覆盖该情形）。
+    #[test]
+    fn golden_sse_control_leptos_dispatch_matches_shared_classify() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let path = root.join("../fixtures/sse_control_golden.jsonl");
+        let raw =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        for (line_no, line) in raw.lines().enumerate() {
+            let t = line.trim();
+            if t.is_empty() || t.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = t.splitn(3, '\t').collect();
+            assert!(
+                parts.len() == 3,
+                "{}:{}: expected 3 tab columns",
+                path.display(),
+                line_no + 1
+            );
+            let json_line = parts[1].trim();
+            let want = parts[2].trim();
+            let v: Value = serde_json::from_str(json_line).unwrap_or_else(|e| {
+                panic!(
+                    "{}:{}: invalid json: {e}\n{json_line}",
+                    path.display(),
+                    line_no + 1
+                )
+            });
+            let via_classify = classify_sse_control_outcome(&v);
+            let via_dispatch = dispatch_triage_string(json_line);
+            assert_eq!(
+                via_classify,
+                via_dispatch,
+                "{}:{}: Leptos `try_dispatch` triage must match `crabmate-sse-protocol::classify_sse_control_outcome`\n  json: {json_line}",
+                path.display(),
+                line_no + 1
+            );
+            assert_eq!(
+                via_dispatch,
+                want,
+                "{}:{}: dispatch triage must match golden fixture\n  json: {json_line}",
+                path.display(),
+                line_no + 1
+            );
+        }
+    }
 }

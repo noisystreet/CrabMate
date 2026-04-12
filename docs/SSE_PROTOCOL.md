@@ -190,11 +190,11 @@
 
 ## 契约测试（控制面分类）
 
-Web 将一条合并后的 `data:` 字符串解析为 JSON 后，按**固定顺序**判定 `stop` / `handled` / `plain`（见 `frontend-leptos/src/sse_dispatch.rs`）。Rust 侧镜像实现为 **`src/sse/control_dispatch_mirror.rs`**（仅 `cfg(test)`），与 **同一份金样**对齐：
+Web 将一条合并后的 `data:` 字符串解析为 JSON 后，按**固定顺序**判定 `stop` / `handled` / `plain`（见 `frontend-leptos/src/sse_dispatch.rs`）。**单一事实来源**为 workspace crate **`crates/crabmate-sse-protocol`** 中的 **`classify_sse_control_outcome`**（`control_classify.rs`），与 **同一份金样**对齐；Leptos 另含测试 **`golden_sse_control_leptos_dispatch_matches_shared_classify`**，防止 `try_dispatch` 与分类漂移。
 
 - **`fixtures/sse_control_golden.jsonl`**：每行 `描述<TAB>JSON<TAB>期望分类`（`#` 开头行为注释）。
-- **Rust**：`cargo test golden_sse_control`（或 `cargo test control_dispatch_mirror`）。
-若新增控制面顶层键且 Web 应消费：在 `frontend-leptos/src/sse_dispatch.rs` 增加分支后，同步 **`control_dispatch_mirror::classify_sse_control_outcome`** 与金样行。
+- **Rust**：`cargo test golden_sse_control`（会跑 **`crabmate-sse-protocol`** 金样与 **frontend-leptos** 对齐测试）。
+若新增控制面顶层键且 Web 应消费：在 `frontend-leptos/src/sse_dispatch.rs` 增加分支后，同步 **`crates/crabmate-sse-protocol/control_classify.rs`** 与金样行。
 
 ## 契约测试（`crabmate_tool` 历史信封）
 

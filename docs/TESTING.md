@@ -22,7 +22,7 @@ pre-commit run --all-files
 
 - **`cargo fmt --all`**
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
-- **`cargo test golden_sse_control`**（当改动 `fixtures/sse_control_golden.jsonl` 或 `src/sse/control_dispatch_mirror.rs` 时由钩子条件触发）
+- **`cargo test golden_sse_control`**（当改动 `fixtures/sse_control_golden.jsonl`、`crates/crabmate-sse-protocol/control_classify.rs` 或 `frontend-leptos/src/sse_dispatch.rs` 时由钩子条件触发）
 
 未安装 pre-commit 时，可至少执行：
 
@@ -53,7 +53,7 @@ cargo test
 
 ```bash
 cargo test golden_sse_control
-cargo test control_dispatch_mirror
+cargo test -p crabmate-sse-protocol golden_sse_control
 cargo test tool_result_envelope_golden
 ```
 

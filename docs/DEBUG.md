@@ -76,7 +76,7 @@ REPL 内等价：**`/doctor`**、**`/probe`**、**`/models`** 等，见 [docs/CL
 - **权威说明与错误码**：[docs/SSE_PROTOCOL.md](SSE_PROTOCOL.md)。
 - **后端**：`src/sse/protocol.rs`、`crates/crabmate-sse-protocol`（版本号 **`SSE_PROTOCOL_VERSION`**）。
 - **前端**：`frontend-leptos/src/sse_dispatch.rs`、`frontend-leptos/src/api.rs`。
-- **修改控制面 JSON 分支顺序**时：同步 **`src/sse/control_dispatch_mirror.rs`** 与 **`fixtures/sse_control_golden.jsonl`**，并执行：**`cargo test golden_sse_control`**。
+- **修改控制面 JSON 分支顺序**时：同步 **`crates/crabmate-sse-protocol/control_classify.rs`**、**`frontend-leptos/src/sse_dispatch.rs`** 与 **`fixtures/sse_control_golden.jsonl`**，并执行：**`cargo test golden_sse_control`**。
 
 ---
 

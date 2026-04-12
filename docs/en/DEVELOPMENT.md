@@ -289,4 +289,4 @@ Aggregated in **`file/mod.rs`**; glob/tree limits; **`resolve_for_read`** for ot
 - Workspace switch affects tool CWD—document UX implications.
 - Never log secrets; follow **`.cursor/rules/secrets-and-logging.mdc`**.
 - Open security/protocol debt: **`docs/TODOLIST.md`**.
-- SSE changes: update **`docs/en/SSE_PROTOCOL.md`**, **`crates/crabmate-sse-protocol`** if bumping **`SSE_PROTOCOL_VERSION`**, Leptos dispatch, `fixtures/sse_control_golden.jsonl`, run `cargo test golden_sse_control` and `cargo test -p crabmate-sse-protocol`.
+- SSE changes: update **`docs/en/SSE_PROTOCOL.md`**, **`crates/crabmate-sse-protocol`** (`SSE_PROTOCOL_VERSION` / **`control_classify`**), Leptos **`sse_dispatch`**, `fixtures/sse_control_golden.jsonl`, run **`cargo test golden_sse_control --workspace`**.

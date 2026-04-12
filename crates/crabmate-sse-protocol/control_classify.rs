@@ -1,16 +1,21 @@
-//! 与前端控制面分类逻辑 **同序**的控制面分类（不含 `JSON.parse`）。
-//! 用于 `fixtures/sse_control_golden.jsonl` 契约测试；修改分支顺序时须同步金样。
+//! 控制面 JSON 的 **`stop` / `handled` / `plain`** 分类（与 Leptos `try_dispatch_sse_control_payload` 分支顺序同源）。
+//!
+//! **单一事实来源**：修改分支顺序时须同步 **`frontend-leptos/src/sse_dispatch.rs`**、本模块与
+//! **`fixtures/sse_control_golden.jsonl`**；并跑 **`cargo test golden_sse_control`**。
+//! 前端在 `sse_capabilities` 上可能因协议版本不匹配额外返回 `Stop`（本分类仍视为 `handled`，见
+//! `try_dispatch` 内注释）；金样仅覆盖版本一致情形。
 
 use serde_json::Value;
 
-fn key_present_non_null(obj: &serde_json::Map<String, Value>, key: &str) -> bool {
+/// 顶层键存在且值非 `null`（与 Web / 镜像历史行为一致）。
+pub fn key_present_non_null(obj: &serde_json::Map<String, Value>, key: &str) -> bool {
     match obj.get(key) {
         None | Some(Value::Null) => false,
         Some(_) => true,
     }
 }
 
-/// 返回 `"stop"` | `"handled"` | `"plain"`，与 TS `classifySseControlPayloadParsed` 一致。
+/// 返回 `"stop"` | `"handled"` | `"plain"`。
 pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
     let Some(obj) = v.as_object() else {
         return "plain";
@@ -118,11 +123,11 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    /// 金样文件：每行 `描述<TAB>JSON<TAB>期望分类`（`stop`/`handled`/`plain`）。
+    /// 金样：每行 `描述<TAB>JSON<TAB>期望分类`（`stop`/`handled`/`plain`）。
     #[test]
     fn golden_sse_control_lines_match_typescript_contract() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let path = root.join("fixtures/sse_control_golden.jsonl");
+        let path = root.join("../../fixtures/sse_control_golden.jsonl");
         let raw =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         for (line_no, line) in raw.lines().enumerate() {

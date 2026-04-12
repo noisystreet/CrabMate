@@ -23,10 +23,10 @@ repos:
         always_run: true
       - id: sse-control-golden
         name: SSE control golden (Rust mirror)
-        entry: cargo test golden_sse_control
+        entry: cargo test golden_sse_control --workspace
         language: system
         pass_filenames: false
-        files: ^(fixtures/sse_control_golden\.jsonl|src/sse/control_dispatch_mirror\.rs)$
+        files: ^(fixtures/sse_control_golden\.jsonl|crates/crabmate-sse-protocol/control_classify\.rs|frontend-leptos/src/sse_dispatch\.rs)$
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
