@@ -16,6 +16,7 @@ mod scroll;
 mod staged_plan_todo;
 mod timeline;
 pub(crate) mod wire_chat_domain;
+pub(crate) mod wire_chat_session_lifecycle;
 
 pub use handles::{ChatColumnShell, ComposerStreamShell};
 

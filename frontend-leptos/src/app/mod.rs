@@ -1,6 +1,6 @@
 //! 主界面：单根 `App`（导航、对话、侧栏、状态栏、模态框与偏好接线）。
 //!
-//! 首启会话加载、`localStorage` / DOM 偏好同步、全局 `Escape` 等壳级副作用见 `app_shell_effects`。聊天主路径（滚动、查找、输入/流式）见 `chat` 子模块；Workspace 刷新、`/status` 与任务拉取、变更集等见 `workspace_panel`、`workspace_panel_state`、`status_tasks_wiring`、`changelist_modal`。
+//! 首启会话加载、`localStorage` / DOM 偏好同步、全局 `Escape` 等壳级副作用见 `app_shell_effects`。聊天主路径（滚动、查找、输入/流式）见 `chat` 子模块；Workspace / 变更集、`/status` 与任务等接线已部分迁至 **`wire_workspace_domain`**、**`status_tasks_wiring`**、**`chat::wire_chat_session_lifecycle`**（阶段 B）。
 
 mod app_shell_ctx;
 mod app_shell_effects;
@@ -17,17 +17,17 @@ mod sidebar_nav;
 mod status_bar;
 mod status_tasks_state;
 mod status_tasks_wiring;
+mod wire_workspace_domain;
 mod workspace_panel;
 mod workspace_panel_state;
 
 use app_shell_ctx::AppShellCtx;
 use approval_bar::ApprovalBar;
-use changelist_modal::{
-    changelist_modal_view, wire_changelist_body_inner_html, wire_changelist_fetch_effects,
-};
+use changelist_modal::changelist_modal_view;
 use chat::{
     ChatColumnShell, ChatFindBar, ComposerStreamShell, chat_column_view,
     load_timeline_panel_expanded_default, wire_chat_domain::wire_chat_domain_effects,
+    wire_chat_session_lifecycle::wire_chat_session_lifecycle_effects,
 };
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
@@ -37,27 +37,21 @@ use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
 use status_tasks_state::StatusTasksSignals;
 use status_tasks_wiring::{
-    make_refresh_status, make_refresh_tasks, make_toggle_task,
-    wire_status_fetch_if_missing_after_init, wire_tasks_refresh_when_tasks_panel_visible,
+    make_refresh_status, make_refresh_tasks, make_toggle_task, wire_status_tasks_domain_effects,
 };
-use workspace_panel::{
-    make_insert_workspace_path_into_composer, make_refresh_workspace,
-    wire_workspace_refresh_when_visible,
-};
+use wire_workspace_domain::wire_workspace_domain_effects;
+use workspace_panel::{make_insert_workspace_path_into_composer, make_refresh_workspace};
 use workspace_panel_state::WorkspacePanelSignals;
 
 use app_shell_effects::{
-    ShellEscapeSignals, wire_approval_expanded_follows_pending, wire_context_used_estimate,
-    wire_escape_key_layered_dismiss, wire_initial_sessions_from_storage, wire_persist_agent_role,
-    wire_persist_chat_sessions, wire_persist_side_panel_view_flags, wire_persist_side_width,
+    ShellEscapeSignals, wire_approval_expanded_follows_pending, wire_escape_key_layered_dismiss,
+    wire_persist_agent_role, wire_persist_side_panel_view_flags, wire_persist_side_width,
     wire_persist_sidebar_rail_collapsed, wire_persist_status_bar_visible,
     wire_settings_modal_llm_drafts_on_open, wire_sync_bg_decor_to_storage_and_dom,
     wire_sync_locale_html_lang, wire_sync_theme_to_storage_and_dom,
-    wire_web_ui_config_once_after_init,
 };
 
 use crate::chat_session_state::ChatSessionSignals;
-use session_hydrate::wire_session_hydration;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -226,28 +220,17 @@ pub fn App() -> impl IntoView {
     let apply_assistant_display_filters = RwSignal::new(true);
     let web_ui_config_loaded = RwSignal::new(false);
 
-    wire_initial_sessions_from_storage(initialized, sessions, active_id, draft, locale);
-    wire_web_ui_config_once_after_init(
-        initialized,
-        web_ui_config_loaded,
-        markdown_render,
-        apply_assistant_display_filters,
-    );
-
-    wire_session_hydration(
-        initialized,
-        web_ui_config_loaded,
-        chat_session,
-        locale,
-        selected_agent_role,
-    );
-
-    wire_persist_chat_sessions(initialized, sessions, active_id);
-    wire_context_used_estimate(
+    wire_chat_session_lifecycle_effects(
         initialized,
         sessions,
         active_id,
         draft,
+        locale,
+        web_ui_config_loaded,
+        markdown_render,
+        apply_assistant_display_filters,
+        chat_session,
+        selected_agent_role,
         context_used_estimate,
     );
     wire_persist_side_panel_view_flags(side_panel_view);
@@ -284,7 +267,7 @@ pub fn App() -> impl IntoView {
 
     let refresh_workspace = make_refresh_workspace(workspace_panel);
 
-    wire_changelist_fetch_effects(
+    wire_workspace_domain_effects(
         session_sync,
         changelist_fetch_nonce,
         changelist_modal_loading,
@@ -292,10 +275,7 @@ pub fn App() -> impl IntoView {
         changelist_modal_html,
         changelist_modal_rev,
         markdown_render,
-    );
-    wire_changelist_body_inner_html(changelist_modal_html, changelist_body_ref);
-
-    wire_workspace_refresh_when_visible(
+        changelist_body_ref,
         side_panel_view,
         initialized,
         Arc::clone(&refresh_workspace),
@@ -305,10 +285,11 @@ pub fn App() -> impl IntoView {
     let refresh_tasks = make_refresh_tasks(status_tasks);
     let toggle_task = make_toggle_task(status_tasks);
 
-    wire_status_fetch_if_missing_after_init(initialized, status_tasks, Arc::clone(&refresh_status));
-    wire_tasks_refresh_when_tasks_panel_visible(
-        side_panel_view,
+    wire_status_tasks_domain_effects(
         initialized,
+        status_tasks,
+        Arc::clone(&refresh_status),
+        side_panel_view,
         Arc::clone(&refresh_tasks),
     );
 
