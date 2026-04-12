@@ -126,13 +126,17 @@ async fn sqlite_conversation_store_op(
 }
 
 impl AppState {
-    /// 当前生效的工作区根路径（前端已设置则用其值，否则用配置）
+    /// 当前 Web 会话选中的工作区根路径（**未**调用 `POST /workspace` 成功设置前返回空串）。
+    ///
+    /// 与配置项 **`run_command_working_dir`** 分离：后者仍供 CLI、配置解析、`GET /health` 等使用；Web 侧栏在首次设置前不应默认等同于进程当前目录。
     pub(crate) async fn effective_workspace_path(&self) -> String {
         let guard = self.workspace_override.read().await;
-        let cfg = self.cfg.read().await;
         match guard.as_deref() {
-            None => cfg.run_command_working_dir.clone(),
-            Some(s) if s.trim().is_empty() => cfg.run_command_working_dir.clone(),
+            None => String::new(),
+            Some(s) if s.trim().is_empty() => {
+                let cfg = self.cfg.read().await;
+                cfg.run_command_working_dir.clone()
+            }
             Some(s) => s.to_string(),
         }
     }

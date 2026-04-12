@@ -46,6 +46,9 @@ pub enum WorkspacePathError {
     /// 工作区根或当前目录无法 canonicalize。
     #[error("工作目录无法解析: {0}")]
     WorkspaceResolveFailed(#[source] std::io::Error),
+    /// Web 尚未通过 `POST /workspace` 选择工作区（`effective_workspace_path` 为空，**不要**对空路径 `canonicalize`）。
+    #[error("请先设置工作区")]
+    WebEffectiveWorkspaceUnset,
     /// 路径存在但不是目录。
     #[error("工作区路径必须是已存在的目录")]
     NotADirectory,
@@ -84,6 +87,7 @@ impl WorkspacePathError {
             WorkspacePathError::WorkspacePathInvalid(_) => "workspace_path_invalid",
             WorkspacePathError::PathResolveFailed(_) => "path_resolve_failed",
             WorkspacePathError::WorkspaceResolveFailed(_) => "workspace_resolve_failed",
+            WorkspacePathError::WebEffectiveWorkspaceUnset => "web_effective_workspace_unset",
             WorkspacePathError::NotADirectory => "not_a_directory",
             WorkspacePathError::SensitivePathDenied => "sensitive_path_denied",
             WorkspacePathError::EffectiveRootSensitive => "effective_root_sensitive",

@@ -231,11 +231,23 @@ pub(crate) async fn chat_handler(
         )
     })?;
     ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
-    let work_dir_pb = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let eff_ws_raw = state.effective_workspace_path().await;
+    let eff_ws = eff_ws_raw.trim().to_string();
+    if eff_ws.is_empty() && user_trim.contains('@') {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "WORKSPACE_NOT_SET",
+                message: "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
+                    .to_string(),
+            }),
+        ));
+    }
+    let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
     let msg = {
         let cfg = state.cfg.read().await;
-        expand_at_file_refs_in_user_message(user_trim, work_dir_pb.as_path(), &cfg).map_err(
-            |e| {
+        expand_at_file_refs_in_user_message(user_trim, work_dir_for_expand.as_path(), &cfg)
+            .map_err(|e| {
                 (
                     StatusCode::BAD_REQUEST,
                     Json(ApiError {
@@ -243,8 +255,7 @@ pub(crate) async fn chat_handler(
                         message: e,
                     }),
                 )
-            },
-        )?
+            })?
     };
     let msg = merge_user_text_with_clarification_answers(msg, clarify);
     let turn_seed = build_messages_for_turn(
@@ -264,9 +275,13 @@ pub(crate) async fn chat_handler(
             }),
         )
     })?;
-    let work_dir_str = work_dir_pb.to_string_lossy().to_string();
-    let work_dir = work_dir_str.clone();
     let workspace_is_set = state.workspace_is_set().await;
+    let work_dir_for_job = if eff_ws.is_empty() {
+        let cfg = state.cfg.read().await;
+        std::path::PathBuf::from(cfg.run_command_working_dir.clone())
+    } else {
+        std::path::PathBuf::from(eff_ws.clone())
+    };
     let job_id = state.chat_queue.next_job_id();
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     debug!(
@@ -288,7 +303,7 @@ pub(crate) async fn chat_handler(
             expected_revision: turn_seed.expected_revision,
             request_agent_role: agent_role.clone(),
             persisted_active_agent_role: turn_seed.persisted_active_agent_role.clone(),
-            work_dir: std::path::PathBuf::from(work_dir),
+            work_dir: work_dir_for_job,
             workspace_is_set,
             temperature_override,
             seed_override,
@@ -702,18 +717,31 @@ pub(crate) async fn chat_stream_handler(
         return Ok(resp);
     }
 
-    let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let eff_ws_raw = state.effective_workspace_path().await;
+    let eff_ws = eff_ws_raw.trim().to_string();
+    if eff_ws.is_empty() && user_trim.contains('@') {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "WORKSPACE_NOT_SET",
+                message: "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
+                    .to_string(),
+            }),
+        ));
+    }
+    let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
     let msg = {
         let cfg = state.cfg.read().await;
-        expand_at_file_refs_in_user_message(user_trim, work_dir.as_path(), &cfg).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_AT_FILE_REF",
-                    message: e,
-                }),
-            )
-        })?
+        expand_at_file_refs_in_user_message(user_trim, work_dir_for_expand.as_path(), &cfg)
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiError {
+                        code: "INVALID_AT_FILE_REF",
+                        message: e,
+                    }),
+                )
+            })?
     };
     let msg = merge_user_text_with_clarification_answers(msg, clarify);
     let turn_seed = build_messages_for_turn(
@@ -734,6 +762,12 @@ pub(crate) async fn chat_stream_handler(
         )
     })?;
     let workspace_is_set = state.workspace_is_set().await;
+    let work_dir_for_job = if eff_ws.is_empty() {
+        let cfg = state.cfg.read().await;
+        std::path::PathBuf::from(cfg.run_command_working_dir.clone())
+    } else {
+        std::path::PathBuf::from(eff_ws.clone())
+    };
     let approval_session_id = match body.approval_session_id.as_deref() {
         Some(v) => Some(normalize_approval_session_id(v).ok_or((
             StatusCode::BAD_REQUEST,
@@ -778,7 +812,7 @@ pub(crate) async fn chat_stream_handler(
             expected_revision: turn_seed.expected_revision,
             request_agent_role: agent_role.clone(),
             persisted_active_agent_role: turn_seed.persisted_active_agent_role.clone(),
-            work_dir,
+            work_dir: work_dir_for_job,
             workspace_is_set,
             temperature_override,
             seed_override,

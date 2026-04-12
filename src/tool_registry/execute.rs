@@ -121,6 +121,14 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
 
     let hid = handler_id_for(name);
 
+    // Web 未设置工作区时：仍允许出网类工具；禁止所有 SyncDefault（否则 `working_dir` 会回落到配置目录，等效于未选工作区仍可读本地树）。
+    if !workspace_is_set && matches!(hid, HandlerId::SyncDefault) {
+        return (
+            web_tool_err_workspace_not_set("执行内置工具").to_string(),
+            None,
+        );
+    }
+
     match hid {
         HandlerId::Workflow => {
             // `workflow_execute` 由 `agent::workflow_tool_dispatch` 调度（避免本模块依赖 `PerCoordinator` / `workflow`）。

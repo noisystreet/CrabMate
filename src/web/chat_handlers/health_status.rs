@@ -13,10 +13,16 @@ use crate::health;
 use crate::tool_registry;
 
 pub(crate) async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let work_dir = std::path::PathBuf::from(state.effective_workspace_path().await);
-    let (auth_mode, probe, probe_cache_secs, api_base) = {
+    let eff = state.effective_workspace_path().await;
+    let (work_dir, auth_mode, probe, probe_cache_secs, api_base) = {
         let g = state.cfg.read().await;
+        let wd = if eff.trim().is_empty() {
+            std::path::PathBuf::from(g.run_command_working_dir.clone())
+        } else {
+            std::path::PathBuf::from(eff)
+        };
         (
+            wd,
             g.llm_http_auth_mode,
             g.health_llm_models_probe,
             g.health_llm_models_probe_cache_secs,
