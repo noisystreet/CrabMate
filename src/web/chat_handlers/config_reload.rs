@@ -17,7 +17,7 @@ pub(crate) async fn config_reload_handler(
     match crate::runtime::config_reload::reload_shared_agent_config(&state.cfg, path).await {
         Ok(()) => Ok(Json(ConfigReloadResponseBody {
             ok: true,
-            message: "配置已热重载。conversation_store_sqlite_path 与 reqwest Client 未重建；若变更 web_api_bearer_token 是否启用中间件，须重启 serve。".to_string(),
+            message: "配置已热重载。conversation_store_sqlite_path 与 reqwest Client 未重建；若变更 web_api_bearer_token 是否启用鉴权中间件，须重启 serve。web_api_require_bearer 与非空密钥的强制组合仅在下次启动 serve 时校验。".to_string(),
         })),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,

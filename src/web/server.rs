@@ -11,6 +11,7 @@ use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 /// `web_api_bearer_layer_enabled`：启动时是否对受保护 API 挂 Web API 鉴权中间件（`Authorization: Bearer` / `X-API-Key`；热重载改密钥后须重启 `serve` 才能切换该层）。
+/// 另见 **`AgentConfig::web_api_require_bearer`**：为 true 时 **`lib::run` 的 `serve` 分支**在启动前强制 **`web_api_bearer_token` 非空**，避免无意以匿名方式暴露 `/chat*` 等。
 pub(crate) fn build_app(
     state: std::sync::Arc<crate::AppState>,
     no_web: bool,

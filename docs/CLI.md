@@ -16,7 +16,7 @@
 
 | 子命令 | 说明 |
 |--------|------|
-| `serve [PORT]` | Web UI + HTTP API，默认 **8080**；**`bearer` 时可在未设 `API_KEY` 的情况下启动**，对话前须在侧栏「设置」填写密钥（`client_llm`）。 |
+| `serve [PORT]` | Web UI + HTTP API，默认 **8080**；**`bearer` 时可在未设 `API_KEY` 的情况下启动**，对话前须在侧栏「设置」填写密钥（`client_llm`）。HTTP 层可选 **`web_api_bearer_token`** / **`AGENT_WEB_API_BEARER_TOKEN`**（`Authorization: Bearer` 或 `X-API-Key`）；**`web_api_require_bearer`** 为真时未配该密钥则拒绝启动。 |
 | `repl` | 交互式对话；**不写子命令时默认进入 repl**。**`bearer` 且无环境变量 `API_KEY` 时**可用 **`/api-key set <密钥>`** 后再发消息。 |
 | `chat` | 单次/脚本对话：`--query` / `--stdin` / `--user-prompt-file`、`--system-prompt-file`、`--messages-json-file`、`--message-file`（JSONL）、`--yes` / `--approve-commands`、`--output json`、`--no-stream`。**`bearer` 且无 `API_KEY` 时**首轮会失败，须先 export 或使用 `repl`/`serve` 的上述方式。 |
 | `bench` | 批量测评：`--benchmark`、`--batch` 等。 |

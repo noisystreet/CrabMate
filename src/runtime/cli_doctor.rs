@@ -96,6 +96,14 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
             "已配置（值已隐藏）"
         }
     );
+    println!(
+        "  web_api_require_bearer: {}",
+        if cfg.web_api_require_bearer {
+            "true（serve 须配非空 web_api_bearer_token）"
+        } else {
+            "false"
+        }
+    );
     println!();
     println!("【密钥状态】");
     println!("  {}", api_key_line(cfg));

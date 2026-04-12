@@ -75,6 +75,8 @@ thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix
 # conversation_store_sqlite_path = ".crabmate/conversations.db"
 # 受保护 API（/chat*、/workspace* 等）：非空时要求 Authorization: Bearer <本值> 或 X-API-Key: <本值>（二选一）
 # web_api_bearer_token = ""
+# 为 true 时 serve 启动前必须配置非空的 web_api_bearer_token（含仅监听 127.0.0.1）。AGENT_WEB_API_REQUIRE_BEARER
+# web_api_require_bearer = false
 # allow_insecure_no_auth_for_non_loopback = false
 # workspace_allowed_roots = []
 

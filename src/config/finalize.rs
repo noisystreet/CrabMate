@@ -477,6 +477,7 @@ pub(super) fn finalize(
     }
     let web_api_bearer_token =
         types::SecretString::new(b.web_api_bearer_token.unwrap_or_default().into());
+    let web_api_require_bearer = b.web_api_require_bearer.unwrap_or(false);
     let allow_insecure_no_auth_for_non_loopback =
         b.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
 
@@ -778,6 +779,7 @@ pub(super) fn finalize(
         context_summary_transcript_max_chars,
         workspace_allowed_roots,
         web_api_bearer_token,
+        web_api_require_bearer,
         allow_insecure_no_auth_for_non_loopback,
         health_llm_models_probe,
         health_llm_models_probe_cache_secs,

@@ -100,6 +100,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) sync_default_tool_sandbox_docker_user: Option<String>,
     pub(crate) workspace_allowed_roots: Option<Vec<String>>,
     pub(crate) web_api_bearer_token: Option<String>,
+    pub(crate) web_api_require_bearer: Option<bool>,
     pub(crate) allow_insecure_no_auth_for_non_loopback: Option<bool>,
     pub(crate) conversation_store_sqlite_path: Option<String>,
     pub(crate) agent_memory_file_enabled: Option<bool>,
@@ -446,6 +447,7 @@ impl ConfigBuilder {
             &mut self.sync_default_tool_sandbox_docker_user,
             agent.sync_default_tool_sandbox_docker_user,
         );
+        self.web_api_require_bearer = agent.web_api_require_bearer.or(self.web_api_require_bearer);
         self.allow_insecure_no_auth_for_non_loopback = agent
             .allow_insecure_no_auth_for_non_loopback
             .or(self.allow_insecure_no_auth_for_non_loopback);
