@@ -420,6 +420,41 @@
   min-width: 0;
 }
 
+/* 侧栏顶栏：视图 / 状态 / 设置 — 图标按钮 */
+.shell-toolbar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.125rem;
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+}
+
+.shell-toolbar-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+}
+
+.toolbar-view-trigger-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.toolbar-view-chevron {
+  width: 0.625rem;
+  height: 0.625rem;
+  opacity: 0.75;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.toolbar-view-trigger-open .toolbar-view-chevron {
+  transform: rotate(180deg);
+}
+
 .toolbar-view-menu {
   position: absolute;
   top: 100%;
