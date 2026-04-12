@@ -26,10 +26,8 @@ use changelist_modal::{
     changelist_modal_view, wire_changelist_body_inner_html, wire_changelist_fetch_effects,
 };
 use chat::{
-    ChatColumnShell, ChatFindBar, ComposerStreamShell, WireComposerStreamsArgs, chat_column_view,
-    load_timeline_panel_expanded_default, wire_chat_composer_streams, wire_chat_find_matches,
-    wire_draft_sync_to_buffer_and_textarea, wire_focus_message_after_nav,
-    wire_messages_auto_scroll, wire_session_switch_clears_chat_state,
+    ChatColumnShell, ChatFindBar, ComposerStreamShell, chat_column_view,
+    load_timeline_panel_expanded_default, wire_chat_domain::wire_chat_domain_effects,
 };
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
@@ -314,42 +312,6 @@ pub fn App() -> impl IntoView {
         Arc::clone(&refresh_tasks),
     );
 
-    wire_session_switch_clears_chat_state(
-        initialized,
-        chat_session,
-        draft,
-        pending_images,
-        pending_clarification,
-        collapsed_long_assistant_ids,
-    );
-
-    wire_draft_sync_to_buffer_and_textarea(
-        draft,
-        Arc::clone(&composer_draft_buffer),
-        composer_input_ref.clone(),
-    );
-
-    wire_messages_auto_scroll(
-        sessions,
-        active_id,
-        messages_scroller,
-        auto_scroll_chat,
-        messages_scroll_from_effect,
-    );
-
-    wire_chat_find_matches(
-        sessions,
-        active_id,
-        chat_find_query,
-        chat_find_match_ids,
-        chat_find_cursor,
-        auto_scroll_chat,
-        locale,
-        apply_assistant_display_filters,
-    );
-
-    wire_focus_message_after_nav(focus_message_id_after_nav);
-
     let insert_workspace_file_ref: Arc<dyn Fn(String) + Send + Sync> =
         make_insert_workspace_path_into_composer(
             Arc::clone(&composer_draft_buffer),
@@ -375,17 +337,29 @@ pub fn App() -> impl IntoView {
         thinking_trace_log,
     };
 
-    let chat_wires = wire_chat_composer_streams(WireComposerStreamsArgs {
+    let chat_wires = wire_chat_domain_effects(
         initialized,
-        chat: chat_session,
-        locale,
+        chat_session,
         draft,
-        selected_agent_role,
-        stream_shell: chat_stream_shell.clone(),
-        composer_draft_buffer: Arc::clone(&composer_draft_buffer),
-        auto_scroll_chat,
         pending_images,
-    });
+        pending_clarification,
+        collapsed_long_assistant_ids,
+        Arc::clone(&composer_draft_buffer),
+        composer_input_ref.clone(),
+        sessions,
+        active_id,
+        messages_scroller,
+        auto_scroll_chat,
+        messages_scroll_from_effect,
+        chat_find_query,
+        chat_find_match_ids,
+        chat_find_cursor,
+        locale,
+        apply_assistant_display_filters,
+        focus_message_id_after_nav,
+        selected_agent_role,
+        chat_stream_shell.clone(),
+    );
 
     let side_resize_session: Rc<RefCell<Option<(f64, f64)>>> = Rc::new(RefCell::new(None));
     let side_resize_handles: Rc<RefCell<Option<(WindowListenerHandle, WindowListenerHandle)>>> =

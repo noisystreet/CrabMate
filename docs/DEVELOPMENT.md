@@ -535,7 +535,8 @@ flowchart LR
 
 ### `frontend-leptos/src/app/chat/`
 
-- **`mod.rs`**：聊天域 **`pub(crate)`** 再导出（供 **`app::App`**）；与 [`docs/frontend-leptos/ARCHITECTURE.md`](frontend-leptos/ARCHITECTURE.md) **「`app/chat_*`」** 对齐。
+- **`mod.rs`**：聊天域 **`pub`** 再导出（供 **`app::App`**）；与 [`docs/frontend-leptos/ARCHITECTURE.md`](frontend-leptos/ARCHITECTURE.md) **「`app/chat_*`」** 对齐。
+- **`wire_chat_domain.rs`**：**`wire_chat_domain_effects`**——在 **`App`** 组装好 **`ComposerStreamShell`** 后，集中调用 **`wire_session_switch_clears_chat_state`**、**`wire_draft_sync_to_buffer_and_textarea`**、**`wire_messages_auto_scroll`**、**`wire_chat_find_matches`**、**`wire_focus_message_after_nav`**、**`wire_chat_composer_streams`**（落实壳与域分离阶段 B）。
 - **`handles.rs`**：**`ChatColumnShell`**（内嵌 **`ComposerStreamShell`**，与流式接线共用 `status_busy` / `status_err` / `pending_clarification` 等）、**`WireComposerStreamsArgs`**、**`ComposerStreamShell`**（流式与壳层共享的 `RwSignal`/中止/工作区刷新等聚合）— 压缩 **`App` → `chat_column_view` / `wire_chat_composer_streams`** 的参数面，并与 **`composer_stream/context`**（**`ChatStreamCallbackCtx`**）成组使用。
 - **`composer_stream/`**：**`/chat/stream`** 接线拆分——**`mod.rs`**（**`ComposerStreamHandles`**、**`make_attach_chat_stream`** 与 **`spawn_local`**）、**`context.rs`**（**`ChatStreamCallbackCtx`**）、**`callbacks.rs`**（各 **`on_*`** 装配为 **`ChatStreamCallbacks`**，与 **`api::send_chat_stream`** 对齐）。
 - **`composer.rs`**：草稿缓冲与 textarea 同步、发送 / 停止 / 重试 / 截断再生、新会话（流式细节见上）；**`staged_plan_step_*`** 与 **`tool_result`** 写入消息时附带 **`timeline_scan`** 的 **`cm_tl`** JSON（**`StoredMessage.state`**，仅本机 UI）；**`pending_images`** 与 **`column`** 内隐藏 file input 上传附图（最多 6 张预览），发送时写入 **`StoredMessage.image_urls`**。
