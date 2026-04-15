@@ -12,6 +12,8 @@ use super::source::{AgentRoleRow, AgentSection, ToolRegistrySection};
 pub(crate) struct ConfigBuilder {
     pub(crate) api_base: String,
     pub(crate) model: String,
+    pub(crate) planner_model: Option<String>,
+    pub(crate) executor_model: Option<String>,
     pub(crate) llm_http_auth_mode_str: Option<String>,
     pub(crate) system_prompt: String,
     pub(crate) system_prompt_file: Option<String>,
@@ -202,6 +204,8 @@ impl ConfigBuilder {
     pub(super) fn apply_section(&mut self, agent: AgentSection) {
         override_string(&mut self.api_base, agent.api_base);
         override_string(&mut self.model, agent.model);
+        override_opt_string_non_empty(&mut self.planner_model, agent.planner_model);
+        override_opt_string_non_empty(&mut self.executor_model, agent.executor_model);
         override_opt_string_non_empty(&mut self.llm_http_auth_mode_str, agent.llm_http_auth_mode);
         let no_system_prompt_file_in_section = agent.system_prompt_file.is_none();
         let inline_system_prompt_nonempty = agent

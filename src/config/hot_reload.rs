@@ -16,6 +16,8 @@ use super::types::AgentConfig;
 pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) {
     dst.api_base.clone_from(&src.api_base);
     dst.model.clone_from(&src.model);
+    dst.planner_model.clone_from(&src.planner_model);
+    dst.executor_model.clone_from(&src.executor_model);
     dst.llm_http_auth_mode = src.llm_http_auth_mode;
 
     dst.max_message_history = src.max_message_history;

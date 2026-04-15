@@ -143,6 +143,7 @@ pub async fn maybe_summarize_with_llm(
         cfg,
         LlmRetryingTransportOpts::headless_no_stream(),
         None,
+        None,
     );
     match complete_chat_retrying(&cc, &req).await {
         Ok((msg, _)) => {

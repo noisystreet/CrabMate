@@ -61,6 +61,8 @@ pub(super) struct AgentRoleRow {
 pub(super) struct AgentSection {
     pub(super) api_base: Option<String>,
     pub(super) model: Option<String>,
+    pub(super) planner_model: Option<String>,
+    pub(super) executor_model: Option<String>,
     /// `bearer`（默认）| `none`（不向 chat/models 发 Authorization；可不设 API_KEY）
     pub(super) llm_http_auth_mode: Option<String>,
     pub(super) max_message_history: Option<u64>,

@@ -217,6 +217,7 @@ mod per_reflect_tests {
             cli_tool_ctx: None,
             per_flight: None,
             temperature_override: None,
+            model_override: None,
             seed_override: LlmSeedOverride::FromConfig,
             long_term_memory: None,
             long_term_memory_scope_id: None,

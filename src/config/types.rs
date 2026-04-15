@@ -317,6 +317,10 @@ pub struct AgentConfig {
     pub api_base: String,
     /// 模型 ID，如 deepseek-chat、deepseek-reasoner
     pub model: String,
+    /// Planner (规划层) 专用的独立模型 ID。若配置，则在分阶段规划 (P阶段) 及全局重规划时使用此模型。未配置则回退使用 `model`。
+    pub planner_model: Option<String>,
+    /// Executor (执行层) 专用的独立模型 ID。若配置，则在单步工具调用循环 (E阶段) 中使用此廉价快速模型。未配置则回退使用 `model`。
+    pub executor_model: Option<String>,
     /// 模型 HTTP 是否带 `Authorization: Bearer`（本地 Ollama 等可 `none`）。
     pub llm_http_auth_mode: LlmHttpAuthMode,
     /// 保留的最近对话轮数（user+assistant 算一轮）

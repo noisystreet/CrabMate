@@ -64,6 +64,7 @@ pub struct CompleteChatRetryingParams<'a> {
     pub cancel: Option<&'a AtomicBool>,
     pub plain_terminal_stream: bool,
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+    pub model_override: Option<&'a str>,
 }
 
 impl<'a> CompleteChatRetryingParams<'a> {
@@ -75,6 +76,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
         cfg: &'a AgentConfig,
         transport: LlmRetryingTransportOpts<'a>,
         request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
+        model_override: Option<&'a str>,
     ) -> Self {
         let LlmRetryingTransportOpts {
             out,
@@ -94,6 +96,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
             cancel,
             plain_terminal_stream,
             request_chrome_trace,
+            model_override,
         }
     }
 

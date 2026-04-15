@@ -718,6 +718,8 @@ pub(super) fn finalize(
     Ok(AgentConfig {
         api_base: b.api_base,
         model: b.model,
+        planner_model: b.planner_model,
+        executor_model: b.executor_model,
         llm_http_auth_mode,
         max_message_history,
         tui_load_session_on_start,
