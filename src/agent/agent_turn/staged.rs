@@ -1035,6 +1035,7 @@ where
 
     let plan_id = next_staged_plan_id();
     let mut plan_steps = plan.steps;
+    let original_steps = plan_steps.clone();
     let mut n = plan_steps.len();
     let mut patch_ctx = StagedPlanPatchPlannerCtx {
         p,
@@ -1064,6 +1065,8 @@ where
     let mut staged_loop_cancelled = false;
     let mut completed_steps = 0usize;
     let mut i = 0usize;
+    let mut transition_counters: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
     let start_time = std::time::Instant::now();
     while i < plan_steps.len() {
         if patch_ctx.p.cfg.max_turn_duration_seconds > 0
@@ -1159,6 +1162,100 @@ where
                 if let crate::agent::step_verifier::VerifyResult::Fail { reason } = verify_result {
                     step_verify_failed_reason = Some(reason);
                 }
+            }
+        }
+
+        let mut transition_triggered = None;
+        if run_step.is_err() || step_verify_failed_reason.is_some() {
+            #[allow(clippy::collapsible_if)]
+            if let Some(ref transitions) = step.transitions {
+                if let Some(t) = transitions
+                    .iter()
+                    .find(|t| t.condition == "on_verify_fail" || t.condition == "always")
+                {
+                    let key = format!("{}->{}", step.id, t.target_step_id);
+                    let count = transition_counters.entry(key).or_insert(0);
+                    if *count < t.max_loops.unwrap_or(3) {
+                        *count += 1;
+                        let r = step_verify_failed_reason
+                            .clone()
+                            .unwrap_or_else(|| "执行错误".to_string());
+                        transition_triggered = Some((t.target_step_id.clone(), r));
+                    }
+                }
+            }
+        } else {
+            #[allow(clippy::collapsible_if)]
+            if let Some(ref transitions) = step.transitions {
+                if let Some(t) = transitions
+                    .iter()
+                    .find(|t| t.condition == "on_verify_success" || t.condition == "always")
+                {
+                    let key = format!("{}->{}", step.id, t.target_step_id);
+                    let count = transition_counters.entry(key).or_insert(0);
+                    if *count < t.max_loops.unwrap_or(3) {
+                        *count += 1;
+                        transition_triggered =
+                            Some((t.target_step_id.clone(), "执行成功".to_string()));
+                    }
+                }
+            }
+        }
+
+        if let Some((target_id, reason)) = transition_triggered {
+            let target_idx_opt = original_steps.iter().position(|s| s.id == target_id);
+            if let Some(target_idx) = target_idx_opt {
+                let mut new_suffix = original_steps[target_idx..].to_vec();
+                let loop_suffix = format!("-loop{}", i);
+                for s in &mut new_suffix {
+                    s.id = format!("{}{}", s.id, loop_suffix);
+                }
+
+                plan_steps.truncate(i + 1);
+                plan_steps.extend(new_suffix);
+                n = plan_steps.len();
+
+                let fb = format!(
+                    "### 状态机流转：触发控制流跳转\n\
+                     根据规划设定的 transitions 规则，由于 [{}]，系统已追加回退或跳转到步骤 `{}` 的执行指令。\n\
+                     请注意调整接下来的工具调用。",
+                    reason, target_id
+                );
+                patch_ctx.p.messages.push(Message::user_only(fb));
+
+                let replan = AgentReplyPlanV1 {
+                    plan_type: "agent_reply_plan".to_string(),
+                    version: 1,
+                    steps: plan_steps.clone(),
+                    no_task: false,
+                };
+                send_staged_plan_notice(
+                    patch_ctx.p.out,
+                    echo_terminal_staged,
+                    true,
+                    staged_plan_queue_summary_text(&replan, completed_steps),
+                )
+                .await;
+
+                finish_staged_plan_step_sse(
+                    patch_ctx.p.out,
+                    &plan_id,
+                    step.id.trim(),
+                    step_index,
+                    n,
+                    if run_step.is_err() || step_verify_failed_reason.is_some() {
+                        "failed"
+                    } else {
+                        "ok"
+                    },
+                    step.executor_kind,
+                )
+                .await;
+                completed_steps = step_index;
+                patch_ctx.p.messages.push(Message::chat_ui_separator(true));
+                emit_chat_ui_separator_sse(patch_ctx.p.out, true).await;
+                i += 1;
+                continue;
             }
         }
 
