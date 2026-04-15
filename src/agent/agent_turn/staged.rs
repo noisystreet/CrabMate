@@ -394,6 +394,8 @@ pub(super) async fn run_staged_plan_then_execute_steps(
 
     let mut rewrite_attempts = 0;
     let max_rewrites = p.cfg.full_plan_rewrite_max_attempts;
+    let snapshot =
+        crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.effective_working_dir);
 
     loop {
         let req =
@@ -420,6 +422,14 @@ pub(super) async fn run_staged_plan_then_execute_steps(
 
         match res {
             Err(RunAgentTurnError::StepRetryExhausted { phase, message }) => {
+                if let Some(ref snap) = snapshot {
+                    if let Err(e) = snap.restore() {
+                        tracing::warn!(target: "crabmate", "工作区快照回滚失败: {}", e);
+                    } else {
+                        tracing::info!(target: "crabmate", "全局重规划触发，工作区已回滚到快照状态");
+                    }
+                }
+
                 if rewrite_attempts >= max_rewrites {
                     return Err(RunAgentTurnError::ReplanExhausted {
                         phase,
@@ -1502,6 +1512,8 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
 
     let mut rewrite_attempts = 0;
     let max_rewrites = p.cfg.full_plan_rewrite_max_attempts;
+    let snapshot =
+        crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.effective_working_dir);
 
     loop {
         let req =
@@ -1520,6 +1532,14 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
 
         match res {
             Err(RunAgentTurnError::StepRetryExhausted { phase, message }) => {
+                if let Some(ref snap) = snapshot {
+                    if let Err(e) = snap.restore() {
+                        tracing::warn!(target: "crabmate", "逻辑双Agent快照回滚失败: {}", e);
+                    } else {
+                        tracing::info!(target: "crabmate", "全局重规划触发，工作区已回滚到快照状态");
+                    }
+                }
+
                 if rewrite_attempts >= max_rewrites {
                     return Err(RunAgentTurnError::ReplanExhausted {
                         phase,
