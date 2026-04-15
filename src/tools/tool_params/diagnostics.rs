@@ -275,6 +275,31 @@ pub(in crate::tools) fn params_long_term_memory_list() -> serde_json::Value {
     })
 }
 
+pub(in crate::tools) fn params_summarize_experience() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "experience": {
+                "type": "string",
+                "description": "从本轮对话中提炼的核心经验（由模型生成）。应简洁、通用、可复用。避免复述原问题，聚焦解法和原理。长度至少 20 字符。"
+            },
+            "tags": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "经验分类标签，如 rust、debug、git、performance。用于后续检索过滤。",
+                "default": []
+            },
+            "ttl_secs": {
+                "type": "integer",
+                "description": "过期秒数；0 或省略表示永不过期（仍受 long_term_memory_max_entries 淘汰）。",
+                "default": 0
+            }
+        },
+        "required": ["experience"],
+        "additionalProperties": false
+    })
+}
+
 pub(in crate::tools) fn params_playbook_run_commands() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
