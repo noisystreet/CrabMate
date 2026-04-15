@@ -130,6 +130,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             }],
             no_task: false,
         }];
@@ -151,6 +152,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             }],
             no_task: false,
         };
@@ -165,6 +167,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             }],
             no_task: false,
         };

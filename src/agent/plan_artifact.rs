@@ -65,6 +65,14 @@ pub struct PlanStepAcceptance {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct PlanStepControlFlow {
+    pub condition: String,
+    pub target_step_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_loops: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PlanStepV1 {
     pub id: String,
     pub description: String,
@@ -83,6 +91,9 @@ pub struct PlanStepV1 {
     /// 可选：本步骤允许的最大重试次数。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_step_retries: Option<u32>,
+    /// 可选：状态机控制流，用于定义执行完毕后的跳转规则。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transitions: Option<Vec<PlanStepControlFlow>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,12 +178,13 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - **工作流反思 validate_only → Do**：当最近一次工具结果为 `workflow_validate_result` 且含非空 `nodes` 时，**每一步**均须设置 `workflow_node_id`，且 `steps.len()` 须**等于** `nodes` 个数；全部 `workflow_node_id` 构成的**多重集合**须与 `nodes[].id`（含重复）**完全一致**（顺序可与 DAG 不同）
 - 可选 \"executor_kind\"（字符串，省略则本步不限制工具）：`review_readonly`（仅只读工具）、`patch_write`（只读 + 受限补丁写）、`test_runner`（只读 + 内置测试运行器 + `run_command`，后者仅允许配置白名单内命令）；越权调用会在工具层被拒绝并记入对话
 - 可选 \"step_kind\"（字符串）：标识步骤类型，例如 `implement` 或 `verify`（当需要进行强校验时可使用 `verify`）。
-- 可选 \"acceptance\"（对象）：确定性验收条件，可包含 \"expect_exit_code\" (整数，期待的退出码) 和 \"expect_stdout_contains\" (字符串，期待输出包含的子串)。当设定该字段时，系统会硬断言工具执行结果，不满足条件直接判定失败打回。
-- 可选 \"max_step_retries\" (整数)：指定本步骤失败后允许的局部重试次数上限。
+- 可选 \"acceptance\"（对象）：确定性验收条件，可包含 \"expect_exit_code\" (整数，期待的退出码)、\"expect_stdout_contains\" (字符串) 和 \"expect_file_exists\" (字符串，期望存在的文件路径)。当设定该字段时，系统会硬断言工具执行结果，不满足条件直接判定失败。
+- 可选 \"max_step_retries\" (整数)：指定本步骤失败后允许的局部重试（打补丁）次数上限。
+- 可选 \"transitions\" (数组)：状态机控制流，用于循环重试。对象含 \"condition\" (如 \"on_verify_fail\" 或 \"always\"), \"target_step_id\" (跳转目标的步骤id), \"max_loops\" (整数，最大循环次数)。触发跳转时，系统会附加一段历史记录并在界面上动态追加回退的后续步骤。
 - **推荐**：有「先读后写再测」类任务时，为相应步显式设置 `executor_kind`（审阅步 `review_readonly` → 改代码步 `patch_write` → 跑测步 `test_runner`），以便每步仅暴露必要工具；合并/优化规划时**须保留**各步的 `executor_kind` 意图（可改写 `description`/`id`，勿无故清空该字段）";
 
 /// Plan v1 的 JSON 示例。
-pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"read-ctx","description":"只读浏览相关文件与依赖","executor_kind":"review_readonly"},{"id":"apply-fix","description":"按结论修改源码","executor_kind":"patch_write"},{"id":"verify","description":"运行项目测试验证","executor_kind":"test_runner","step_kind":"verify","acceptance":{"expect_exit_code":0},"max_step_retries":3}]}"#;
+pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"read-ctx","description":"只读浏览相关文件与依赖","executor_kind":"review_readonly"},{"id":"apply-fix","description":"按结论修改源码","executor_kind":"patch_write"},{"id":"verify","description":"运行项目测试验证","executor_kind":"test_runner","step_kind":"verify","acceptance":{"expect_exit_code":0},"max_step_retries":3,"transitions":[{"condition":"on_verify_fail","target_step_id":"apply-fix","max_loops":3}]}]}"#;
 
 /// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json / \`\`\`markdown / \`\`\`md 等带语言行的围栏，或整段即为单个 JSON 对象）。
 /// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
@@ -440,6 +452,28 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
                     index: i,
                     reason: "workflow_node_id 语法不合法",
                 });
+            }
+        }
+
+        if let Some(ref transitions) = s.transitions {
+            for t in transitions {
+                if !seen_step_ids.contains(t.target_step_id.as_str())
+                    && !p.steps.iter().any(|st| st.id == t.target_step_id)
+                {
+                    return Err(PlanArtifactError::InvalidStep {
+                        index: i,
+                        reason: "transitions 包含不存在的 target_step_id",
+                    });
+                }
+                #[allow(clippy::collapsible_if)]
+                if let Some(max) = t.max_loops {
+                    if max > 20 {
+                        return Err(PlanArtifactError::InvalidStep {
+                            index: i,
+                            reason: "transitions 中的 max_loops 不得超过 20",
+                        });
+                    }
+                }
             }
         }
     }
@@ -730,6 +764,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             },
             PlanStepV1 {
                 id: "s1".into(),
@@ -739,6 +774,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             },
             PlanStepV1 {
                 id: "s2".into(),
@@ -748,6 +784,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             },
         ];
         let patch = AgentReplyPlanV1 {
@@ -762,6 +799,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
                 PlanStepV1 {
                     id: "s2b".into(),
@@ -771,6 +809,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
             ],
             no_task: false,
@@ -793,6 +832,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             },
             PlanStepV1 {
                 id: "b".into(),
@@ -802,6 +842,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             },
         ];
         let patch = AgentReplyPlanV1 {
@@ -815,6 +856,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             }],
             no_task: false,
         };
@@ -848,6 +890,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             }],
             no_task: false,
         };
@@ -863,6 +906,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             }],
             no_task: false,
         };
@@ -879,6 +923,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
@@ -888,6 +933,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
             ],
             no_task: false,
@@ -946,6 +992,7 @@ mod tests {
                 step_kind: None,
                 acceptance: None,
                 max_step_retries: None,
+                transitions: None,
             }],
             no_task: false,
         };
@@ -967,6 +1014,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
                 PlanStepV1 {
                     id: "s1".into(),
@@ -976,6 +1024,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
             ],
             no_task: false,
@@ -999,6 +1048,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
@@ -1008,6 +1058,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
             ],
             no_task: false,
@@ -1033,6 +1084,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
@@ -1042,6 +1094,7 @@ mod tests {
                     step_kind: None,
                     acceptance: None,
                     max_step_retries: None,
+                    transitions: None,
                 },
             ],
             no_task: false,
