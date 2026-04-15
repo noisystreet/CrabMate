@@ -908,16 +908,31 @@ where
         Ok(plan_v1) => plan_v1,
         Err(parse_err) => {
             let detail = crate::agent::plan_artifact::plan_artifact_error_log_summary(&parse_err);
-            warn!(
-                target: "crabmate",
-                "staged_plan_invalid parse_err={} merged_len={} merged_preview={}；降级为常规工具循环",
-                detail,
-                merged_for_log.chars().count(),
-                crate::redact::preview_chars(
-                    merged_for_log.as_str(),
-                    crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
-                )
-            );
+            if matches!(
+                parse_err,
+                crate::agent::plan_artifact::PlanArtifactError::NotFound
+            ) {
+                debug!(
+                    target: "crabmate",
+                    "分阶段规划未产出结构化任务 (可能是通识问答或直接回复) merged_len={} merged_preview={}；降级为常规循环",
+                    merged_for_log.chars().count(),
+                    crate::redact::preview_chars(
+                        merged_for_log.as_str(),
+                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
+                    )
+                );
+            } else {
+                warn!(
+                    target: "crabmate",
+                    "staged_plan_invalid parse_err={} merged_len={} merged_preview={}；降级为常规工具循环",
+                    detail,
+                    merged_for_log.chars().count(),
+                    crate::redact::preview_chars(
+                        merged_for_log.as_str(),
+                        crate::redact::MESSAGE_LOG_PREVIEW_CHARS,
+                    )
+                );
+            }
             // 保留规划轮正文，避免整轮失败退出（REPL/脚本/Web 均与关闭分阶段规划时的行为对齐）。
             push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
             return run_agent_outer_loop(p, per_coord).await;
