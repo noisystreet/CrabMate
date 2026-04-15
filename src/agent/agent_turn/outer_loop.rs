@@ -24,7 +24,19 @@ pub(crate) async fn run_agent_outer_loop(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
+    let start_time = std::time::Instant::now();
     'outer: loop {
+        if p.cfg.max_turn_duration_seconds > 0
+            && start_time.elapsed().as_secs() > p.cfg.max_turn_duration_seconds
+        {
+            return Err(RunAgentTurnError::TimeLimitExhausted {
+                phase: AgentTurnSubPhase::Planner,
+                message: format!(
+                    "已达到单轮墙钟时间上限 ({}秒)",
+                    p.cfg.max_turn_duration_seconds
+                ),
+            });
+        }
         p.sub_phase = AgentTurnSubPhase::Planner;
         if let Some(ref t) = p.tracing_chat_turn {
             t.on_outer_loop_iteration();

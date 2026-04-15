@@ -329,6 +329,7 @@ where
 }
 
 /// 分阶段规划共享执行路径上的日志文案（避免 `run_staged_plan_with_prepared_request` 参数过长）。
+#[derive(Clone, Copy)]
 pub(crate) struct StagedPlanRunLabels {
     pub planning_log_label: &'static str,
     pub step_injection_log_label: &'static str,
@@ -390,26 +391,59 @@ pub(super) async fn run_staged_plan_then_execute_steps(
         step_injection_log_label: "分步注入 user（完整正文，供排障与日志）",
         build_planner_messages: build_single_agent_planner_messages,
     };
-    let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
-        .await?;
-    run_staged_plan_with_prepared_request(
-        p,
-        per_coord,
-        req,
-        render_to_terminal,
-        echo_terminal_staged,
-        labels,
-        |body| Message {
-            role: "user".to_string(),
-            content: Some(body.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        },
-    )
-    .await
+
+    let mut rewrite_attempts = 0;
+    let max_rewrites = p.cfg.full_plan_rewrite_max_attempts;
+
+    loop {
+        let req =
+            prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
+                .await?;
+        let res = run_staged_plan_with_prepared_request(
+            p,
+            per_coord,
+            req,
+            render_to_terminal,
+            echo_terminal_staged,
+            labels,
+            |body| Message {
+                role: "user".to_string(),
+                content: Some(body.into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: None,
+            },
+        )
+        .await;
+
+        match res {
+            Err(RunAgentTurnError::StepRetryExhausted { phase, message }) => {
+                if rewrite_attempts >= max_rewrites {
+                    return Err(RunAgentTurnError::ReplanExhausted {
+                        phase,
+                        message: format!(
+                            "全局重规划耗尽上限 ({} 次)。最后失败原因: {}",
+                            max_rewrites, message
+                        ),
+                    });
+                }
+                rewrite_attempts += 1;
+                let fb = format!(
+                    "### 全局重规划要求\n\
+                     由于前面的步骤执行多次修复后仍然彻底失败，失败原因摘要如下：\n\
+                     {}\n\n\
+                     请你结合上述失败经验，抛弃之前的旧计划，重新思考并给出一份**全新的**分阶段规划（agent_reply_plan v1）。\n\
+                     我们将从新计划的第一步重新开始执行。",
+                    message
+                );
+                p.messages.push(Message::user_only(fb));
+                continue;
+            }
+            other => return other,
+        }
+    }
 }
 
 pub(crate) fn build_single_agent_planner_messages(
@@ -1015,7 +1049,20 @@ where
     let mut staged_loop_cancelled = false;
     let mut completed_steps = 0usize;
     let mut i = 0usize;
+    let start_time = std::time::Instant::now();
     while i < plan_steps.len() {
+        if patch_ctx.p.cfg.max_turn_duration_seconds > 0
+            && start_time.elapsed().as_secs() > patch_ctx.p.cfg.max_turn_duration_seconds
+        {
+            return Err(RunAgentTurnError::TimeLimitExhausted {
+                phase: AgentTurnSubPhase::Executor,
+                message: format!(
+                    "已达到单轮墙钟时间上限 ({}秒)",
+                    patch_ctx.p.cfg.max_turn_duration_seconds
+                ),
+            });
+        }
+
         if sse_sender_closed(patch_ctx.p.out)
             || patch_ctx.p.cancel.is_some_and(|c| c.load(Ordering::SeqCst))
         {
@@ -1182,14 +1229,16 @@ where
                 step.executor_kind,
             )
             .await;
-            if let Err(e) = run_step {
-                return Err(e);
+
+            let reason = if let Err(e) = run_step {
+                e.to_string()
             } else {
-                return Err(RunAgentTurnError::Other {
-                    phase: AgentTurnSubPhase::Executor,
-                    message: step_verify_failed_reason.unwrap_or_default(),
-                });
-            }
+                step_verify_failed_reason.unwrap_or_else(|| "局部修复耗尽上限".to_string())
+            };
+            return Err(RunAgentTurnError::StepRetryExhausted {
+                phase: AgentTurnSubPhase::Executor,
+                message: reason,
+            });
         }
         if sse_sender_closed(patch_ctx.p.out)
             || patch_ctx.p.cancel.is_some_and(|c| c.load(Ordering::SeqCst))
@@ -1270,7 +1319,10 @@ where
                 step.executor_kind,
             )
             .await;
-            return Ok(());
+            return Err(RunAgentTurnError::StepRetryExhausted {
+                phase: AgentTurnSubPhase::Executor,
+                message: "局部修复耗尽上限 (工具执行失败)".to_string(),
+            });
         }
 
         finish_staged_plan_step_sse(
@@ -1335,16 +1387,49 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
         step_injection_log_label: "逻辑双agent注入执行器user",
         build_planner_messages: build_logical_dual_planner_messages,
     };
-    let req = prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
-        .await?;
-    run_staged_plan_with_prepared_request(
-        p,
-        per_coord,
-        req,
-        render_to_terminal,
-        echo_terminal_staged,
-        labels,
-        Message::user_only,
-    )
-    .await
+
+    let mut rewrite_attempts = 0;
+    let max_rewrites = p.cfg.full_plan_rewrite_max_attempts;
+
+    loop {
+        let req =
+            prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
+                .await?;
+        let res = run_staged_plan_with_prepared_request(
+            p,
+            per_coord,
+            req,
+            render_to_terminal,
+            echo_terminal_staged,
+            labels,
+            Message::user_only,
+        )
+        .await;
+
+        match res {
+            Err(RunAgentTurnError::StepRetryExhausted { phase, message }) => {
+                if rewrite_attempts >= max_rewrites {
+                    return Err(RunAgentTurnError::ReplanExhausted {
+                        phase,
+                        message: format!(
+                            "全局重规划耗尽上限 ({} 次)。最后失败原因: {}",
+                            max_rewrites, message
+                        ),
+                    });
+                }
+                rewrite_attempts += 1;
+                let fb = format!(
+                    "### 全局重规划要求\n\
+                     由于前面的步骤执行多次修复后仍然彻底失败，失败原因摘要如下：\n\
+                     {}\n\n\
+                     请你结合上述失败经验，抛弃之前的旧计划，重新思考并给出一份**全新的**分阶段规划（agent_reply_plan v1）。\n\
+                     我们将从新计划的第一步重新开始执行。",
+                    message
+                );
+                p.messages.push(Message::user_only(fb));
+                continue;
+            }
+            other => return other,
+        }
+    }
 }

@@ -859,5 +859,8 @@ pub(super) fn finalize(
         tool_registry_sub_agent_patch_write_extra_tools,
         tool_registry_sub_agent_test_runner_extra_tools,
         tool_registry_sub_agent_review_readonly_deny_tools,
+        max_turn_duration_seconds: 600,
+        max_turn_tokens: 100_000,
+        full_plan_rewrite_max_attempts: 2,
     })
 }

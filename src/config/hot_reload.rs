@@ -183,4 +183,7 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.tool_registry_sub_agent_review_readonly_deny_tools = src
         .tool_registry_sub_agent_review_readonly_deny_tools
         .clone();
+    dst.max_turn_duration_seconds = src.max_turn_duration_seconds;
+    dst.max_turn_tokens = src.max_turn_tokens;
+    dst.full_plan_rewrite_max_attempts = src.full_plan_rewrite_max_attempts;
 }
