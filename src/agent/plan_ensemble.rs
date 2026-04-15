@@ -127,6 +127,9 @@ mod tests {
                 description: "x".to_string(),
                 workflow_node_id: None,
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             }],
             no_task: false,
         }];
@@ -145,6 +148,9 @@ mod tests {
                 description: "d1".to_string(),
                 workflow_node_id: None,
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             }],
             no_task: false,
         };
@@ -156,6 +162,9 @@ mod tests {
                 description: "d2".to_string(),
                 workflow_node_id: None,
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             }],
             no_task: false,
         };

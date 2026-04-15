@@ -55,6 +55,16 @@ impl PlanStepExecutorKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct PlanStepAcceptance {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_exit_code: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_stdout_contains: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_file_exists: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PlanStepV1 {
     pub id: String,
     pub description: String,
@@ -64,6 +74,15 @@ pub struct PlanStepV1 {
     /// 可选：本步执行子循环的工具角色（子代理）；省略则全量工具。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executor_kind: Option<PlanStepExecutorKind>,
+    /// 可选：步骤类型，例如 `implement` 或 `verify`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_kind: Option<String>,
+    /// 可选：本步骤的确定性验收条件。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance: Option<PlanStepAcceptance>,
+    /// 可选：本步骤允许的最大重试次数。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_step_retries: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,10 +166,13 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法；**允许在不同步骤中重复同一值**（当 `workflow_validate_only` 的 `nodes` 含重复 `id` 时，逐步绑定需要多重集一致）。值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）
 - **工作流反思 validate_only → Do**：当最近一次工具结果为 `workflow_validate_result` 且含非空 `nodes` 时，**每一步**均须设置 `workflow_node_id`，且 `steps.len()` 须**等于** `nodes` 个数；全部 `workflow_node_id` 构成的**多重集合**须与 `nodes[].id`（含重复）**完全一致**（顺序可与 DAG 不同）
 - 可选 \"executor_kind\"（字符串，省略则本步不限制工具）：`review_readonly`（仅只读工具）、`patch_write`（只读 + 受限补丁写）、`test_runner`（只读 + 内置测试运行器 + `run_command`，后者仅允许配置白名单内命令）；越权调用会在工具层被拒绝并记入对话
+- 可选 \"step_kind\"（字符串）：标识步骤类型，例如 `implement` 或 `verify`（当需要进行强校验时可使用 `verify`）。
+- 可选 \"acceptance\"（对象）：确定性验收条件，可包含 \"expect_exit_code\" (整数，期待的退出码) 和 \"expect_stdout_contains\" (字符串，期待输出包含的子串)。当设定该字段时，系统会硬断言工具执行结果，不满足条件直接判定失败打回。
+- 可选 \"max_step_retries\" (整数)：指定本步骤失败后允许的局部重试次数上限。
 - **推荐**：有「先读后写再测」类任务时，为相应步显式设置 `executor_kind`（审阅步 `review_readonly` → 改代码步 `patch_write` → 跑测步 `test_runner`），以便每步仅暴露必要工具；合并/优化规划时**须保留**各步的 `executor_kind` 意图（可改写 `description`/`id`，勿无故清空该字段）";
 
 /// Plan v1 的 JSON 示例。
-pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"read-ctx","description":"只读浏览相关文件与依赖","executor_kind":"review_readonly"},{"id":"apply-fix","description":"按结论修改源码","executor_kind":"patch_write"},{"id":"verify","description":"运行项目测试验证","executor_kind":"test_runner"}]}"#;
+pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"read-ctx","description":"只读浏览相关文件与依赖","executor_kind":"review_readonly"},{"id":"apply-fix","description":"按结论修改源码","executor_kind":"patch_write"},{"id":"verify","description":"运行项目测试验证","executor_kind":"test_runner","step_kind":"verify","acceptance":{"expect_exit_code":0},"max_step_retries":3}]}"#;
 
 /// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json / \`\`\`markdown / \`\`\`md 等带语言行的围栏，或整段即为单个 JSON 对象）。
 /// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
@@ -702,21 +724,30 @@ mod tests {
         let base = vec![
             PlanStepV1 {
                 id: "s0".into(),
-                description: "done".into(),
+                description: "test".to_string(),
                 workflow_node_id: None,
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             },
             PlanStepV1 {
                 id: "s1".into(),
                 description: "fail".into(),
                 workflow_node_id: None,
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             },
             PlanStepV1 {
                 id: "s2".into(),
                 description: "old tail".into(),
                 workflow_node_id: None,
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             },
         ];
         let patch = AgentReplyPlanV1 {
@@ -728,12 +759,18 @@ mod tests {
                     description: "retry".into(),
                     workflow_node_id: None,
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
                 PlanStepV1 {
                     id: "s2b".into(),
                     description: "new tail".into(),
                     workflow_node_id: None,
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
             ],
             no_task: false,
@@ -753,12 +790,18 @@ mod tests {
                 description: "x".into(),
                 workflow_node_id: None,
                 executor_kind: Some(PlanStepExecutorKind::ReviewReadonly),
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             },
             PlanStepV1 {
                 id: "b".into(),
                 description: "y".into(),
                 workflow_node_id: None,
                 executor_kind: Some(PlanStepExecutorKind::PatchWrite),
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             },
         ];
         let patch = AgentReplyPlanV1 {
@@ -769,6 +812,9 @@ mod tests {
                 description: "retry".into(),
                 workflow_node_id: None,
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             }],
             no_task: false,
         };
@@ -799,6 +845,9 @@ mod tests {
                 description: "x".into(),
                 workflow_node_id: None,
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             }],
             no_task: false,
         };
@@ -811,6 +860,9 @@ mod tests {
                 description: "x".into(),
                 workflow_node_id: Some("a".into()),
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             }],
             no_task: false,
         };
@@ -824,12 +876,18 @@ mod tests {
                     description: "x".into(),
                     workflow_node_id: Some("a".into()),
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
                     description: "y".into(),
                     workflow_node_id: Some("b".into()),
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
             ],
             no_task: false,
@@ -885,6 +943,9 @@ mod tests {
                 description: "do".into(),
                 workflow_node_id: Some("fmt".into()),
                 executor_kind: None,
+                step_kind: None,
+                acceptance: None,
+                max_step_retries: None,
             }],
             no_task: false,
         };
@@ -903,12 +964,18 @@ mod tests {
                     description: "b".into(),
                     workflow_node_id: Some("b".into()),
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
                 PlanStepV1 {
                     id: "s1".into(),
                     description: "a".into(),
                     workflow_node_id: Some("a".into()),
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
             ],
             no_task: false,
@@ -929,12 +996,18 @@ mod tests {
                     description: "x".into(),
                     workflow_node_id: Some("dup".into()),
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
                     description: "y".into(),
                     workflow_node_id: Some("dup".into()),
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
             ],
             no_task: false,
@@ -957,12 +1030,18 @@ mod tests {
                     description: "a".into(),
                     workflow_node_id: Some("a".into()),
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
                 PlanStepV1 {
                     id: "s2".into(),
                     description: "b".into(),
                     workflow_node_id: None,
                     executor_kind: None,
+                    step_kind: None,
+                    acceptance: None,
+                    max_step_retries: None,
                 },
             ],
             no_task: false,

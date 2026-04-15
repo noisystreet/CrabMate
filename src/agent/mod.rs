@@ -15,6 +15,7 @@ mod plan_optimizer;
 pub mod plan_rewrite_controller;
 /// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在 `per_plan_semantic_check`）。
 pub mod reflection;
+pub mod step_verifier;
 pub mod workflow;
 pub mod workflow_reflection_controller;
 /// `workflow_execute` 与 PER 协调的接合点（从 `tool_registry` 拆出以降低 `tool_registry → agent` 耦合）。

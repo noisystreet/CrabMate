@@ -1083,18 +1083,53 @@ where
         patch_ctx.p.step_executor_constraint = step.executor_kind;
         let run_step = run_agent_outer_loop(patch_ctx.p, patch_ctx.per_coord).await;
         patch_ctx.p.step_executor_constraint = prev_executor_constraint;
-        if let Err(e) = run_step {
+
+        let mut step_verify_failed_reason: Option<String> = None;
+        if run_step.is_ok() {
+            #[allow(clippy::collapsible_if)]
+            if let Some(ref acceptance) = step.acceptance {
+                let verify_result = crate::agent::step_verifier::verify_step_execution(
+                    acceptance,
+                    patch_ctx.p.messages,
+                    patch_ctx.p.effective_working_dir,
+                );
+
+                if let crate::agent::step_verifier::VerifyResult::Fail { reason } = verify_result {
+                    step_verify_failed_reason = Some(reason);
+                }
+            }
+        }
+
+        if run_step.is_err() || step_verify_failed_reason.is_some() {
             if patch_ctx.p.cfg.staged_plan_feedback_mode == StagedPlanFeedbackMode::PatchPlanner {
                 let mut recovered = false;
-                for _ in 0..patch_ctx.p.cfg.staged_plan_patch_max_attempts {
-                    let feedback = staged_plan_step_failure_feedback_user_body(
-                        &plan_id,
-                        i,
-                        n,
-                        &step,
-                        "执行子循环返回错误",
-                        "请根据对话历史缩短或调整后续步骤；若属环境/权限问题请在补丁中显式增加修复步。",
-                    );
+                let max_retries = step
+                    .max_step_retries
+                    .unwrap_or(patch_ctx.p.cfg.staged_plan_patch_max_attempts as u32)
+                    as usize;
+                for _ in 0..max_retries {
+                    let feedback = if let Some(ref vr) = step_verify_failed_reason {
+                        staged_plan_step_failure_feedback_user_body(
+                            &plan_id,
+                            i,
+                            n,
+                            &step,
+                            "本步确定性验证失败 (Step Verification Failed)",
+                            &format!(
+                                "验证闸门报告失败: {}\n请根据对话历史缩短或调整后续步骤，并在补丁中修复此问题。",
+                                vr
+                            ),
+                        )
+                    } else {
+                        staged_plan_step_failure_feedback_user_body(
+                            &plan_id,
+                            i,
+                            n,
+                            &step,
+                            "执行子循环返回错误",
+                            "请根据对话历史缩短或调整后续步骤；若属环境/权限问题请在补丁中显式增加修复步。",
+                        )
+                    };
                     if let Some(merged) = run_staged_plan_patch_planner_round(
                         &mut patch_ctx,
                         feedback,
@@ -1147,7 +1182,14 @@ where
                 step.executor_kind,
             )
             .await;
-            return Err(e);
+            if let Err(e) = run_step {
+                return Err(e);
+            } else {
+                return Err(RunAgentTurnError::Other {
+                    phase: AgentTurnSubPhase::Executor,
+                    message: step_verify_failed_reason.unwrap_or_default(),
+                });
+            }
         }
         if sse_sender_closed(patch_ctx.p.out)
             || patch_ctx.p.cancel.is_some_and(|c| c.load(Ordering::SeqCst))
