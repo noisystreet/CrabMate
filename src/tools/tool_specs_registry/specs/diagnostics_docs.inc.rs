@@ -79,4 +79,12 @@
             runner: runner_long_term_memory_list,
             summary: ToolSummaryKind::Static("List recent long-term memory rows"),
         },
+        ToolSpec {
+            name: "summarize_experience",
+            description: "将本轮对话中提炼出的核心经验写入长期记忆。适用于：解决了一个有价值的问题、发现了一个通用模式、记录了一个重要踩坑。模型应自主判断何时调用，避免滥用。须启用 long_term_memory_enabled。经验文本应简洁（1-3 句话），聚焦\"怎么做\"和\"为什么有效\"，避免复述原问题。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_summarize_experience,
+            runner: runner_summarize_experience,
+            summary: ToolSummaryKind::Static("Summarize and save useful experience to long-term memory"),
+        },
 ]

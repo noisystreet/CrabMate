@@ -635,6 +635,10 @@ fn runner_long_term_remember(args: &str, ctx: &ToolContext<'_>) -> String {
     long_term_memory_tools::long_term_remember(args, ctx)
 }
 
+fn runner_summarize_experience(args: &str, ctx: &ToolContext<'_>) -> String {
+    long_term_memory_tools::summarize_experience(args, ctx)
+}
+
 fn runner_long_term_forget(args: &str, ctx: &ToolContext<'_>) -> String {
     long_term_memory_tools::long_term_forget(args, ctx)
 }
