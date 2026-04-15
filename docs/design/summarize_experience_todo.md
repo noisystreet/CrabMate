@@ -155,7 +155,169 @@
 
 ---
 
-## 四、已明确不在当前版本实现（拒绝项）
+## 四、经验层：从存储到知识体系
+
+以下方向在 `summarize_experience` 基础上，将记忆能力从"孤立点存储"升级为"有机关联的知识体系"。
+
+### 4.1 经验链（Experience Chain）
+
+**问题**：单条经验是孤立的，但真实认知往往是链式的——"踩坑 A → 尝试 B 失败 → 尝试 C 成功 → 提炼经验 E"。孤立存储丢失了过程上下文。
+
+**设计方向**：
+- 在 SQLite 增加 `chain_id INTEGER` 和 `chain_order INTEGER` 字段
+- 模型在记录经验时，可选择创建新链（`chain_id`）或追加到已有链（通过 `summarize_experience` 传入 `chain_id`）
+- 每条经验带 `role_in_chain: "problem" | "failed_attempt" | "success" | "insight"` 标记角色
+- 检索注入时，同一 chain 的经验可选择性展开（全部展开 / 仅头尾 / 仅最终 insight）
+- 新增工具 `start_experience_chain(experience, problem_description)` 创建链；`append_experience(chain_id, experience, role)` 追加节点
+
+**关联文件**：`src/long_term_memory_store.rs`、`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+
+---
+
+### 4.2 经验自检（Experience Self-Review）
+
+**问题**：经验写入后即被遗忘。随着时间推移，经验可能过时、与新方案冲突、或已被更好的解法替代，却无人清理。
+
+**设计方向**：
+- 新增工具 `review_experiences`，在每个会话开始、`prepare_messages` 注入记忆后触发
+- 模型对比当前对话上下文，判断已注入的每条经验是否：**仍然有效 / 已过时 / 与当前方案冲突**
+- 对过时或冲突的经验，返回修改建议：`[{"id": 42, "action": "shorten_ttl", "reason": "serde v0.4 deprecated the API"}, {"id": 87, "action": "supersede", "supersedes_id": 91}]`
+- 系统根据建议自动执行（缩短 TTL、写入替代关系）或交由用户确认
+- 可在 `AgentConfig` 中配置 `auto_review_on_session_start: bool`（默认开启）
+
+**关联文件**：`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+
+---
+
+### 4.3 置信度传播（Confidence-propagated Memory）
+
+**问题**：低置信度经验（如一次偶然成功的排查）与高置信度经验（如广泛验证的通用模式）平等占用 token 预算，可能误导模型。
+
+**设计方向**：
+- `SummarizeExperienceArgs` 增加 `confidence: "high" | "medium" | "low"`（默认 `"medium"`）
+- 踩坑类、首次解决类经验引导模型设置 `confidence: "low"`；有文档/多案例验证的设 `"high"`
+- 在 SQLite 增加 `confidence TEXT` 列
+- `prepare_messages` 注入时按置信度排序：high 经验优先、full budget；low 经验只给一句话摘要或低于 budget 阈值时跳过
+- 低置信度经验默认设置短 TTL，自动淘汰
+
+**关联文件**：`src/long_term_memory_store.rs`、`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`、`src/tools/tool_params/diagnostics.rs`
+
+---
+
+## 五、交互层：更智能的上下文感知
+
+### 5.1 工作区风格记忆（Workspace Style Memory）
+
+**问题**：当前经验以 `conversation_id` 为 scope，换一个会话经验就丢失。但一个项目特有的风格规范（如本仓库偏好 `cargo clippy -D warnings` 而非仅 `cargo check`）是跨会话通用的。
+
+**设计方向**：
+- 新增 `workspace_style_remember(experience, style_type)` 工具，写入 scope 为 `workspace:{workspace_root_hash}` 的经验池
+- `style_type` 如 `"formatting" | "git_convention" | "tool_preference" | "naming"` 用于分类
+- 在 `prepare_messages` 中，工作区改变时自动检索对应 style memory 并注入
+- 用户可通过 `workspace_style_list` 查看当前工作区的风格规范
+- 与普通经验分离：workspace style 永不自动淘汰（除非显式删除）
+
+**关联文件**：`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+
+---
+
+### 5.2 主动经验提示（Proactive Experience Hints）
+
+**问题**：当前经验只在 `prepare_messages` 时被动注入。模型需要主动回忆，而非被动等待。
+
+**设计方向**：
+- 在 `dispatch_tool` 执行工具后，比对工具名/参数与高置信度经验池
+- 若检测到强相关经验（如正在 `cargo build` 而经验池里有"大项目增量编译加速技巧"），在工具返回结果后附加非侵入式提示
+- 提示格式：`[💡 相关经验：{short_summary}]`，不打断工具结果流
+- 通过 `AgentConfig` 配置 `proactive_hint_enabled: bool` 和 `proactive_hint_max_per_turn: usize`
+- 注意：此功能为"附加建议"，不影响工具执行结果本身
+
+**关联文件**：`src/tool_registry/execute.rs`、`src/long_term_memory.rs`
+
+---
+
+### 5.3 失败模式库（Anti-Pattern Memory）
+
+**问题**：`summarize_experience` 只记录成功经验，但**失败教训往往比成功经验更有价值**——"此路不通"的信息密度极高。
+
+**设计方向**：
+- 新增独立工具 `remember_mistake`，接受 `anti_pattern: String, why_failed: String, attempts_made: Vec<String>, tags`
+- 标签中自动附加 `["anti-pattern"]` 水印
+- TTL 默认更短（建议 7 天），因为失败模式可能随技术演进失效更快
+- 检索时单独注入：`[⚠️ 反模式]` 标记，与普通经验区分显示
+- 模型在规划阶段（plan + execute 之前）可主动查询 anti-pattern 作为排除列表
+- 与 `summarize_experience` 共用 `explicit_remember_blocking` 写入路径，共用 embedding 检索，存储层完全复用
+
+**关联文件**：`src/tools/long_term_memory_tools.rs`、`src/tools/tool_params/diagnostics.rs`
+
+---
+
+## 六、系统层：工具体系的智能化
+
+### 6.1 工具使用成功率追踪（Tool Hit-Rate Tracker）
+
+**问题**：模型调用工具后，无法判断这个工具**是否真的解决了问题**。长期积累后可发现工具设计盲点。
+
+**设计方向**：
+- 在 `dispatch_tool` 返回后，轻量记录 `tool_name + session_id + turn_id + timestamp + execution_time_ms + outcome`
+- `outcome` 为 `ToolOutcome { helped: bool, confidence: high/medium/low, notes: Option<String> }`
+- 模型在每轮结束后可收到一个非侵入式的"本次工具效果反馈"提示（可选）
+- 新增工具 `get_tool_stats(tool_name)` 返回该工具的历史帮助率、平均执行时间、失败模式聚合
+- 数据存在独立 SQLite 表（与 long_term_memory 表分离）
+- 可用于：动态调整工具描述中的 `ToolSummaryKind` 权重、向用户推荐高频高置信度工具
+
+**关联文件**：`src/tool_registry/execute.rs`、新增 `src/tool_stats.rs`
+
+---
+
+### 6.2 动态工具推荐（Dynamic Tool Suggestion）
+
+**问题**：工具注册表是静态的，模型只能从已有工具中选择，无法根据当前问题场景动态获得工具使用顺序建议。
+
+**设计方向**：
+- 在 `AgentConfig` 中增加 `dynamic_tool_suggestion_enabled: bool`（默认 false）
+- 开启后，在每次 `prepare_messages` 注入时，额外附加"当前上下文推荐工具序列"（基于 embedding 相似度从历史成功案例中检索）
+- 不注册新工具，而是对已有工具做**重排序/加权提示**：`[推荐工具顺序：cargo clippy → cargo test → search_in_files]`
+- 依赖 `ToolHitRateTracker` 积累的成功率数据
+- 轻量实现：不走 LLM，用规则 + 历史命中率排序即可
+
+**关联文件**：`src/long_term_memory.rs`、`src/tool_registry/execute.rs`、`src/config/types.rs`
+
+---
+
+## 七、知识管理：跨会话与跨 Agent
+
+### 7.1 项目经验摘要（Project Memory Digest）
+
+**问题**：经验积累多了，单条经验太细碎，模型在新会话中无法快速建立对项目经验的全貌认知。
+
+**设计方向**：
+- 新增 cron 或手动触发的工具 `generate_project_memory_digest`
+- 扫描 workspace 级经验池（scope = `workspace:{hash}`），按主题聚类
+- 调用 LLM 提炼出"项目踩坑百科"：按主题分类，每类 3-5 条精华，每条 1-3 句话
+- 输出格式为 Markdown，存入 `config/project_memory_digest.md`
+- 新会话的 `prepare_messages` 自动注入该摘要（作为 system prompt 的一部分，而非普通工具注入）
+- 用户可随时 `regenerate_project_digest` 手动刷新
+
+**关联文件**：`src/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+
+---
+
+### 7.2 经验版本化（Experience Versioning）
+
+**问题**：库升级或架构重构后，经验从"正确"变"错误"，但 `forget` 只能删，无法保留历史轨迹。
+
+**设计方向**：
+- 与 2.2 "经验消解与替代关系"合并设计：`supersedes_id` 字段实现经验版本链
+- 新增工具 `deprecate_experience(id, reason, new_experience_id?)`，将旧经验标记为废弃（设置 `deprecated_at_unix` 字段）
+- 废弃经验在检索时默认不展示，但可通过 `long_term_memory_list(include_deprecated: true)` 查看历史
+- 自动触发：当 `prepare_messages` 检索时发现已注入经验与当前工具结果矛盾（如执行 `cargo build` 失败，提示旧经验可能过时），主动提示模型调用 `deprecate_experience`
+
+**关联文件**：`src/long_term_memory_store.rs`、`src/long_term_memory.rs`
+
+---
+
+## 八、已明确不在当前版本实现（拒绝项）
 
 以下条目在当前设计中**明确不实现**，仅作记录：
 
