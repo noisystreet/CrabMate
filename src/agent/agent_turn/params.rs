@@ -38,6 +38,8 @@ pub(crate) struct RunLoopParams<'a> {
     pub per_flight: Option<Arc<crate::chat_job_queue::PerTurnFlight>>,
     /// `None` 时使用 `cfg.temperature`。
     pub temperature_override: Option<f32>,
+    /// 覆盖本回合的 `model`（`None` 时使用 `cfg.model`）
+    pub model_override: Option<String>,
     pub seed_override: LlmSeedOverride,
     /// 长期记忆运行时（Web 或 CLI）；`None` 时不注入/不索引。
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,

@@ -62,6 +62,7 @@ pub(crate) async fn per_reflect_after_assistant(
                     plain_terminal_stream: p.plain_terminal_stream,
                     request_chrome_trace: p.request_chrome_trace.clone(),
                     temperature_override: p.temperature_override,
+                    model_override: p.model_override.clone(),
                     seed_override: p.seed_override,
                     max_tokens: p.cfg.final_plan_semantic_check_max_tokens,
                 },

@@ -123,7 +123,8 @@ pub struct RunAgentTurnParams<'a> {
     pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
     /// 覆盖本回合 `chat/completions` 的 **`temperature`**（`None` 则用 [`config::AgentConfig::temperature`]）。
     pub temperature_override: Option<f32>,
-    /// 覆盖本回合请求 JSON 中的 **`seed`**（默认 [`types::LlmSeedOverride::FromConfig`]）。
+    /// 覆盖本回合的 `model`
+    pub model_override: Option<String>,
     pub seed_override: types::LlmSeedOverride,
     /// 长期记忆（可选）；与 `long_term_memory_scope_id` 配对使用。
     pub long_term_memory: Option<std::sync::Arc<long_term_memory::LongTermMemoryRuntime>>,
@@ -177,6 +178,7 @@ impl<'a> RunAgentTurnParams<'a> {
             plain_terminal_stream: false,
             llm_backend: None,
             temperature_override,
+            model_override: None,
             seed_override,
             long_term_memory,
             long_term_memory_scope_id: Some(conversation_id.to_string()),
@@ -222,6 +224,7 @@ impl<'a> RunAgentTurnParams<'a> {
             plain_terminal_stream: false,
             llm_backend: None,
             temperature_override,
+            model_override: None,
             seed_override,
             long_term_memory,
             long_term_memory_scope_id: Some(conversation_id.to_string()),
@@ -264,6 +267,7 @@ impl<'a> RunAgentTurnParams<'a> {
             plain_terminal_stream: true,
             llm_backend: None,
             temperature_override: None,
+            model_override: None,
             seed_override: types::LlmSeedOverride::default(),
             long_term_memory,
             long_term_memory_scope_id,
@@ -301,6 +305,7 @@ impl<'a> RunAgentTurnParams<'a> {
             plain_terminal_stream: false,
             llm_backend: None,
             temperature_override: None,
+            model_override: None,
             seed_override: types::LlmSeedOverride::default(),
             long_term_memory: None,
             long_term_memory_scope_id: None,
@@ -344,6 +349,7 @@ pub async fn run_agent_turn<'a>(
         plain_terminal_stream,
         llm_backend,
         temperature_override,
+        model_override,
         seed_override,
         long_term_memory,
         long_term_memory_scope_id,
@@ -430,6 +436,7 @@ pub async fn run_agent_turn<'a>(
         cli_tool_ctx,
         per_flight,
         temperature_override,
+        model_override,
         seed_override,
         long_term_memory,
         long_term_memory_scope_id,

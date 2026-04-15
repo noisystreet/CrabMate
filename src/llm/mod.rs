@@ -55,7 +55,8 @@ pub(crate) fn vendor_temperature_for_model(model: &str, temperature: f32) -> f32
 /// 按 **`AgentConfig`**（**`model` + `api_base`**）钳制温度（摘要等路径与 [`llm_vendor_adapter`] 一致）。
 #[inline]
 pub(crate) fn vendor_temperature_for_config(cfg: &AgentConfig, temperature: f32) -> f32 {
-    llm_vendor_adapter(cfg).coerce_temperature(&cfg.model, temperature)
+    let effective_model = &cfg.model;
+    llm_vendor_adapter(cfg).coerce_temperature(effective_model, temperature)
 }
 
 /// 按配置生成请求体可选字段 **`thinking`**（由各厂商 [`LlmVendorAdapter::thinking_field`] 决定）。
@@ -70,11 +71,13 @@ pub fn tool_chat_request(
     messages: &[Message],
     tools: &[Tool],
     temperature_override: Option<f32>,
+    model_override: Option<&str>,
     seed_override: LlmSeedOverride,
 ) -> ChatRequest {
     let v = llm_vendor_adapter(cfg);
+    let effective_model = model_override.unwrap_or(&cfg.model);
     ChatRequest {
-        model: cfg.model.clone(),
+        model: effective_model.to_string(),
         messages: crate::agent::message_pipeline::conversation_messages_to_vendor_body(
             messages,
             fold_system_into_user_for_config(cfg),
@@ -83,8 +86,10 @@ pub fn tool_chat_request(
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
         max_tokens: cfg.max_tokens,
-        temperature: v
-            .coerce_temperature(&cfg.model, temperature_override.unwrap_or(cfg.temperature)),
+        temperature: v.coerce_temperature(
+            effective_model,
+            temperature_override.unwrap_or(cfg.temperature),
+        ),
         seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
@@ -100,6 +105,7 @@ pub fn no_tools_chat_request(
     cfg: &AgentConfig,
     messages: &[Message],
     temperature_override: Option<f32>,
+    model_override: Option<&str>,
     seed_override: LlmSeedOverride,
 ) -> ChatRequest {
     no_tools_chat_request_from_messages(
@@ -109,6 +115,7 @@ pub fn no_tools_chat_request(
             kimi_k2_5_vendor_requires_tool_call_reasoning(cfg),
         ),
         temperature_override,
+        model_override,
         seed_override,
     )
 }
@@ -118,6 +125,7 @@ pub fn no_tools_chat_request_from_messages(
     cfg: &AgentConfig,
     messages: Vec<Message>,
     temperature_override: Option<f32>,
+    model_override: Option<&str>,
     seed_override: LlmSeedOverride,
 ) -> ChatRequest {
     let messages: Vec<Message> = messages
@@ -125,8 +133,9 @@ pub fn no_tools_chat_request_from_messages(
         .filter(|m| !is_long_term_memory_injection(m))
         .collect();
     let v = llm_vendor_adapter(cfg);
+    let effective_model = model_override.unwrap_or(&cfg.model);
     ChatRequest {
-        model: cfg.model.clone(),
+        model: effective_model.to_string(),
         messages: crate::agent::message_pipeline::normalize_stripped_messages_for_vendor_body(
             messages,
             fold_system_into_user_for_config(cfg),
@@ -134,8 +143,10 @@ pub fn no_tools_chat_request_from_messages(
         tools: Some(vec![]),
         tool_choice: Some("none".to_string()),
         max_tokens: cfg.max_tokens,
-        temperature: v
-            .coerce_temperature(&cfg.model, temperature_override.unwrap_or(cfg.temperature)),
+        temperature: v.coerce_temperature(
+            effective_model,
+            temperature_override.unwrap_or(cfg.temperature),
+        ),
         seed: resolved_llm_seed(cfg.llm_seed, seed_override),
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
@@ -259,11 +270,13 @@ mod tests {
             tool_call_id: None,
         };
         let messages = vec![Message::user_only("u"), sep, assistant];
-        let a = super::no_tools_chat_request(&cfg, &messages, None, LlmSeedOverride::FromConfig);
+        let a =
+            super::no_tools_chat_request(&cfg, &messages, None, None, LlmSeedOverride::FromConfig);
         let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(&messages, false);
         let b = super::no_tools_chat_request_from_messages(
             &cfg,
             stripped,
+            None,
             None,
             LlmSeedOverride::FromConfig,
         );
@@ -282,6 +295,7 @@ mod tests {
             &[Message::user_only("hi")],
             &[],
             None,
+            None,
             LlmSeedOverride::FromConfig,
         );
         assert_eq!(req.temperature, 1.0);
@@ -290,6 +304,7 @@ mod tests {
             &[Message::user_only("hi")],
             &[],
             Some(0.7),
+            None,
             LlmSeedOverride::FromConfig,
         );
         assert_eq!(req.temperature, 1.0);

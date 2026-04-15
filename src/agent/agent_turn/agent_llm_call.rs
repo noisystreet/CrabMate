@@ -32,6 +32,10 @@ impl<'p> AgentLlmCall<'p> {
             self.p.cfg.as_ref(),
             transport,
             self.p.request_chrome_trace.clone(),
+            self.p
+                .model_override
+                .as_deref()
+                .or(self.p.cfg.planner_model.as_deref()),
         );
         complete_chat_retrying(&cc, req).await
     }

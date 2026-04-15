@@ -17,6 +17,18 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
             b.model = m;
         }
     }
+    if let Ok(s) = std::env::var("AGENT_PLANNER_MODEL") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.planner_model = Some(s);
+        }
+    }
+    if let Ok(s) = std::env::var("AGENT_EXECUTOR_MODEL") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.executor_model = Some(s);
+        }
+    }
     if let Ok(s) = std::env::var("AGENT_LLM_HTTP_AUTH_MODE") {
         let s = s.trim().to_string();
         if !s.is_empty() {

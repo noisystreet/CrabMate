@@ -172,6 +172,7 @@ pub(crate) struct PlanSemanticLlmCtx<'a> {
     pub plain_terminal_stream: bool,
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     pub temperature_override: Option<f32>,
+    pub model_override: Option<String>,
     pub seed_override: LlmSeedOverride,
     pub max_tokens: u32,
 }
@@ -208,10 +209,15 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
         Message::system_only(SIDE_SYSTEM),
         Message::user_only(user_body),
     ];
+    let model_override = ctx
+        .model_override
+        .as_deref()
+        .or(ctx.cfg.planner_model.as_deref());
     let mut req = no_tools_chat_request(
         ctx.cfg,
         &side_messages,
         ctx.temperature_override,
+        model_override,
         ctx.seed_override,
     );
     req.max_tokens = ctx.max_tokens.clamp(32, 1024);
@@ -229,6 +235,7 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
             plain_terminal_stream: ctx.plain_terminal_stream,
         },
         ctx.request_chrome_trace,
+        model_override,
     );
 
     let (reply, finish) = match complete_chat_retrying(&cc, &req).await {

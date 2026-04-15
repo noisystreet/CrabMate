@@ -115,6 +115,10 @@ pub(crate) async fn run_agent_outer_loop(
             temperature_override: p.temperature_override,
             seed_override: p.seed_override,
             request_chrome_trace: p.request_chrome_trace.clone(),
+            model_override: p
+                .model_override
+                .as_deref()
+                .or(p.cfg.executor_model.as_deref()),
         })
         .await
         .map_err(|e| RunAgentTurnError::from_llm(AgentTurnSubPhase::Planner, e))?;
