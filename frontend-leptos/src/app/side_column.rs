@@ -488,19 +488,20 @@ pub fn side_column_view(ctx: AppShellCtx) -> impl IntoView {
                                                                             ws.workspace_set_busy.set(true);
                                                                             let loc = locale.get_untracked();
                                                                             spawn_local(async move {
-                                                                                match post_workspace_set(Some(p), loc).await {
-                                                                                    Ok(_) => {
-                                                                                        reload_workspace_panel(
-                                                                                            ws.workspace_loading,
-                                                                                            ws.workspace_err,
-                                                                                            ws.workspace_path_draft,
-                                                                                            ws.workspace_data,
-                                                                                            ws.workspace_subtree_expanded,
-                                                                                            ws.workspace_subtree_cache,
-                                                                                            ws.workspace_subtree_loading,
-                                                                                        )
-                                                                                        .await;
-                                                                                    }
+                                                                                 match post_workspace_set(Some(p), loc).await {
+                                                                                     Ok(_) => {
+                                                                                         reload_workspace_panel(
+                                                                                             ws.workspace_loading,
+                                                                                             ws.workspace_err,
+                                                                                             ws.workspace_path_draft,
+                                                                                             ws.workspace_data,
+                                                                                             ws.workspace_subtree_expanded,
+                                                                                             ws.workspace_subtree_cache,
+                                                                                             ws.workspace_subtree_loading,
+                                                                                             loc,
+                                                                                         )
+                                                                                         .await;
+                                                                                     }
                                                                                     Err(e) => {
                                                                                         ws.workspace_set_err.set(Some(e));
                                                                                     }
@@ -523,23 +524,24 @@ pub fn side_column_view(ctx: AppShellCtx) -> impl IntoView {
                                                                             ws.workspace_pick_busy.set(true);
                                                                             let loc_pick = locale.get_untracked();
                                                                             spawn_local(async move {
-                                                                                match fetch_workspace_pick().await {
+                                                                                match fetch_workspace_pick(loc_pick).await {
                                                                                     Ok(Some(p)) => {
                                                                                         ws.workspace_path_draft.set(p.clone());
                                                                                         ws.workspace_set_err.set(None);
-                                                                                        match post_workspace_set(Some(p), loc_pick).await {
-                                                                                            Ok(_) => {
-                                                                                                reload_workspace_panel(
-                                                                                                    ws.workspace_loading,
-                                                                                                    ws.workspace_err,
-                                                                                                    ws.workspace_path_draft,
-                                                                                                    ws.workspace_data,
-                                                                                                    ws.workspace_subtree_expanded,
-                                                                                                    ws.workspace_subtree_cache,
-                                                                                                    ws.workspace_subtree_loading,
-                                                                                                )
-                                                                                                .await;
-                                                                                            }
+                                                                                         match post_workspace_set(Some(p), loc_pick).await {
+                                                                                             Ok(_) => {
+                                                                                                 reload_workspace_panel(
+                                                                                                     ws.workspace_loading,
+                                                                                                     ws.workspace_err,
+                                                                                                     ws.workspace_path_draft,
+                                                                                                     ws.workspace_data,
+                                                                                                     ws.workspace_subtree_expanded,
+                                                                                                     ws.workspace_subtree_cache,
+                                                                                                     ws.workspace_subtree_loading,
+                                                                                                     loc_pick,
+                                                                                                 )
+                                                                                                 .await;
+                                                                                             }
                                                                                             Err(e) => {
                                                                                                 ws.workspace_set_err.set(Some(e));
                                                                                             }

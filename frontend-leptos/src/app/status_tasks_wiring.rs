@@ -7,18 +7,20 @@ use leptos::task::spawn_local;
 
 use crate::api::{fetch_status, fetch_tasks, save_tasks};
 use crate::app_prefs::SidePanelView;
+use crate::i18n::Locale;
 
 use super::status_tasks_state::StatusTasksSignals;
 
 pub fn make_refresh_status(
     st: StatusTasksSignals,
     selected_agent_role: RwSignal<Option<String>>,
+    locale: Locale,
 ) -> Arc<dyn Fn() + Send + Sync> {
     Arc::new(move || {
         st.status_loading.set(true);
         st.status_fetch_err.set(None);
         spawn_local(async move {
-            match fetch_status().await {
+            match fetch_status(locale).await {
                 Ok(d) => {
                     st.status_fetch_err.set(None);
                     if let Some(cur) = selected_agent_role.get_untracked()
@@ -38,11 +40,11 @@ pub fn make_refresh_status(
     })
 }
 
-pub fn make_refresh_tasks(st: StatusTasksSignals) -> Arc<dyn Fn() + Send + Sync> {
+pub fn make_refresh_tasks(st: StatusTasksSignals, locale: Locale) -> Arc<dyn Fn() + Send + Sync> {
     Arc::new(move || {
         st.tasks_loading.set(true);
         spawn_local(async move {
-            match fetch_tasks().await {
+            match fetch_tasks(locale).await {
                 Ok(d) => {
                     st.tasks_err.set(None);
                     st.tasks_data.set(d);
@@ -56,7 +58,10 @@ pub fn make_refresh_tasks(st: StatusTasksSignals) -> Arc<dyn Fn() + Send + Sync>
     })
 }
 
-pub fn make_toggle_task(st: StatusTasksSignals) -> Arc<dyn Fn(String) + Send + Sync> {
+pub fn make_toggle_task(
+    st: StatusTasksSignals,
+    locale: Locale,
+) -> Arc<dyn Fn(String) + Send + Sync> {
     Arc::new(move |id: String| {
         let mut next = st.tasks_data.get();
         if let Some(i) = next.items.iter().position(|t| t.id == id) {
@@ -64,7 +69,7 @@ pub fn make_toggle_task(st: StatusTasksSignals) -> Arc<dyn Fn(String) + Send + S
             let n = next.clone();
             let td = st.tasks_data;
             spawn_local(async move {
-                if let Ok(saved) = save_tasks(&n).await {
+                if let Ok(saved) = save_tasks(&n, locale).await {
                     td.set(saved);
                 }
             });

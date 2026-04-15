@@ -64,3 +64,55 @@ pub fn api_err_approval_failed(l: Locale, status: u16) -> String {
         Locale::En => format!("Approval request failed ({status})"),
     }
 }
+
+// --- 流式 / SSE 错误 ---
+
+pub fn api_err_stream_gone(l: Locale) -> String {
+    match l {
+        Locale::ZhHans => "流式任务已结束或不在服务端内存中，无法重连".to_string(),
+        Locale::En => {
+            "Stream job has ended or is no longer in server memory; cannot resume".to_string()
+        }
+    }
+}
+
+pub fn api_err_stream_reader(l: Locale) -> String {
+    match l {
+        Locale::ZhHans => "流读取器初始化失败".to_string(),
+        Locale::En => "Failed to initialize stream reader".to_string(),
+    }
+}
+
+pub fn api_err_stream_stopped(l: Locale) -> String {
+    match l {
+        Locale::ZhHans => "流已停止".to_string(),
+        Locale::En => "Stream stopped".to_string(),
+    }
+}
+
+pub fn api_err_stream_read(e: &wasm_bindgen::JsValue) -> String {
+    format!("read await: {:?}", e)
+}
+
+// --- HTTP 通用错误 ---
+
+pub fn api_err_no_window(l: Locale) -> String {
+    match l {
+        Locale::ZhHans => "window 对象不可用".to_string(),
+        Locale::En => "window object unavailable".to_string(),
+    }
+}
+
+pub fn api_err_response_type(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "响应类型错误",
+        Locale::En => "Unexpected response type",
+    }
+}
+
+pub fn api_err_body_type(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "响应体类型错误",
+        Locale::En => "Unexpected body type",
+    }
+}

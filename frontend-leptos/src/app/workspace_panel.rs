@@ -14,7 +14,10 @@ use crate::workspace_shell::reload_workspace_panel;
 use super::workspace_panel_state::WorkspacePanelSignals;
 
 /// 返回与历史行为一致的 `reload_workspace_panel` 封装（供 SSE `on_workspace_changed`、侧栏等复用）。
-pub(super) fn make_refresh_workspace(ws: WorkspacePanelSignals) -> Arc<dyn Fn() + Send + Sync> {
+pub(super) fn make_refresh_workspace(
+    ws: WorkspacePanelSignals,
+    locale: Locale,
+) -> Arc<dyn Fn() + Send + Sync> {
     Arc::new(move || {
         spawn_local(async move {
             reload_workspace_panel(
@@ -25,6 +28,7 @@ pub(super) fn make_refresh_workspace(ws: WorkspacePanelSignals) -> Arc<dyn Fn() 
                 ws.workspace_subtree_expanded,
                 ws.workspace_subtree_cache,
                 ws.workspace_subtree_loading,
+                locale,
             )
             .await;
         });

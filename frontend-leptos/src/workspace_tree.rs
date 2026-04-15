@@ -24,6 +24,7 @@ fn toggle_workspace_dir(
     expanded: RwSignal<HashSet<String>>,
     subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
     loading_paths: RwSignal<HashSet<String>>,
+    locale: RwSignal<Locale>,
 ) {
     if expanded.with(|s| s.contains(&rel)) {
         expanded.update(|s| {
@@ -40,9 +41,10 @@ fn toggle_workspace_dir(
     loading_paths.update(|s| {
         s.insert(rel.clone());
     });
+    let loc = locale.get();
     spawn_local(async move {
         let path_key = rel.clone();
-        let res = fetch_workspace(Some(&path_key)).await;
+        let res = fetch_workspace(Some(&path_key), loc).await;
         loading_paths.update(|s| {
             s.remove(&path_key);
         });
@@ -200,6 +202,7 @@ fn WorkspaceTreeNodes(
                                         subtree_expanded,
                                         subtree_cache,
                                         subtree_loading,
+                                        locale,
                                     );
                                 }
                             >

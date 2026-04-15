@@ -35,6 +35,7 @@ pub(crate) fn wire_chat_session_lifecycle_effects(
         web_ui_config_loaded,
         markdown_render,
         apply_assistant_display_filters,
+        locale,
     );
 
     wire_session_hydration(

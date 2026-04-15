@@ -69,12 +69,12 @@ pub struct WebUiConfig {
     pub apply_assistant_display_filters: bool,
 }
 
-pub async fn fetch_workspace(path: Option<&str>) -> Result<WorkspaceData, String> {
+pub async fn fetch_workspace(path: Option<&str>, loc: Locale) -> Result<WorkspaceData, String> {
     let url = match path {
         Some(p) if !p.trim().is_empty() => format!("/workspace?path={}", urlencoding::encode(p)),
         _ => "/workspace".to_string(),
     };
-    fetch_json("GET", &url, None).await
+    fetch_json("GET", &url, None, loc).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,8 +84,8 @@ pub struct WorkspacePickResponse {
 
 /// `GET /workspace/pick`：在**运行 crabmate serve 的进程所在机器**上弹出原生「选择文件夹」对话框（`rfd`）。
 /// 无图形、无头或用户取消时 `path` 为 `None`。
-pub async fn fetch_workspace_pick() -> Result<Option<String>, String> {
-    let r: WorkspacePickResponse = fetch_json("GET", "/workspace/pick", None).await?;
+pub async fn fetch_workspace_pick(loc: Locale) -> Result<Option<String>, String> {
+    let r: WorkspacePickResponse = fetch_json("GET", "/workspace/pick", None, loc).await?;
     Ok(r.path
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty()))
@@ -104,6 +104,7 @@ pub struct WorkspaceChangelogResponse {
 /// `GET /workspace/changelog`：可选 `conversation_id` 与 Web 会话作用域对齐。
 pub async fn fetch_workspace_changelog(
     conversation_id: Option<&str>,
+    loc: Locale,
 ) -> Result<WorkspaceChangelogResponse, String> {
     let url = match conversation_id {
         Some(id) if !id.trim().is_empty() => format!(
@@ -112,7 +113,7 @@ pub async fn fetch_workspace_changelog(
         ),
         _ => "/workspace/changelog".to_string(),
     };
-    fetch_json("GET", &url, None).await
+    fetch_json("GET", &url, None, loc).await
 }
 
 #[derive(Serialize)]
@@ -135,18 +136,21 @@ pub async fn post_workspace_set(path: Option<String>, loc: Locale) -> Result<Str
     init.set_body(&JsValue::from_str(&body));
     let req = Request::new_with_str_and_init("/workspace", &init)
         .map_err(|e| format!("request: {:?}", e))?;
-    let w = window().ok_or_else(|| "no window".to_string())?;
+    let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await
         .map_err(|e| format!("fetch: {:?}", e))?;
-    let resp: Response = resp_val.dyn_into().map_err(|_| "not Response")?;
+    let resp: Response = resp_val
+        .dyn_into()
+        .map_err(|_| crate::i18n::api_err_response_type(loc))?;
     let text = JsFuture::from(resp.text().map_err(|e| format!("text: {:?}", e))?)
         .await
         .map_err(|e| format!("read body: {:?}", e))?;
     let s = text
         .as_string()
-        .ok_or_else(|| "body not string".to_string())?;
-    let v: Value = serde_json::from_str(&s).map_err(|_| format!("HTTP {} {}", resp.status(), s))?;
+        .ok_or_else(|| crate::i18n::api_err_body_type(loc).to_string())?;
+    let v: Value =
+        serde_json::from_str(&s).map_err(|_| crate::i18n::api_err_request_failed(loc))?;
     if resp.ok() {
         if v.get("ok").and_then(|x| x.as_bool()) != Some(true) {
             return Err(v
@@ -168,27 +172,28 @@ pub async fn post_workspace_set(path: Option<String>, loc: Locale) -> Result<Str
         .unwrap_or_else(|| format!("HTTP {}", resp.status())))
 }
 
-pub async fn fetch_tasks() -> Result<TasksData, String> {
-    fetch_json("GET", "/tasks", None).await
+pub async fn fetch_tasks(loc: Locale) -> Result<TasksData, String> {
+    fetch_json("GET", "/tasks", None, loc).await
 }
 
-pub async fn fetch_status() -> Result<StatusData, String> {
-    fetch_json("GET", "/status", None).await
+pub async fn fetch_status(loc: Locale) -> Result<StatusData, String> {
+    fetch_json("GET", "/status", None, loc).await
 }
 
-pub async fn fetch_web_ui_config() -> Result<WebUiConfig, String> {
-    fetch_json("GET", "/web-ui", None).await
+pub async fn fetch_web_ui_config(loc: Locale) -> Result<WebUiConfig, String> {
+    fetch_json("GET", "/web-ui", None, loc).await
 }
 
-pub async fn save_tasks(data: &TasksData) -> Result<TasksData, String> {
+pub async fn save_tasks(data: &TasksData, loc: Locale) -> Result<TasksData, String> {
     let body = serde_json::to_string(data).map_err(|e| e.to_string())?;
-    fetch_json_with_body("POST", "/tasks", &body).await
+    fetch_json_with_body("POST", "/tasks", &body, loc).await
 }
 
 async fn fetch_json<T: for<'de> Deserialize<'de>>(
     method: &str,
     url: &str,
     _body: Option<&str>,
+    loc: Locale,
 ) -> Result<T, String> {
     let init = RequestInit::new();
     init.set_method(method);
@@ -197,13 +202,14 @@ async fn fetch_json<T: for<'de> Deserialize<'de>>(
     init.set_headers(&h);
     let req =
         Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {:?}", e))?;
-    do_fetch_json(req).await
+    do_fetch_json(req, loc).await
 }
 
 async fn fetch_json_with_body<T: for<'de> Deserialize<'de>>(
     method: &str,
     url: &str,
     body: &str,
+    loc: Locale,
 ) -> Result<T, String> {
     let init = RequestInit::new();
     init.set_method(method);
@@ -214,30 +220,30 @@ async fn fetch_json_with_body<T: for<'de> Deserialize<'de>>(
     init.set_body(&wasm_bindgen::JsValue::from_str(body));
     let req =
         Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {:?}", e))?;
-    do_fetch_json(req).await
+    do_fetch_json(req, loc).await
 }
 
-async fn do_fetch_json<T: for<'de> Deserialize<'de>>(req: Request) -> Result<T, String> {
-    let w = window().ok_or_else(|| "no window".to_string())?;
+async fn do_fetch_json<T: for<'de> Deserialize<'de>>(
+    req: Request,
+    loc: Locale,
+) -> Result<T, String> {
+    let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let p = w.fetch_with_request(&req);
     let resp_val = JsFuture::from(p)
         .await
         .map_err(|e| format!("fetch: {:?}", e))?;
-    let resp: Response = resp_val.dyn_into().map_err(|_| "not Response")?;
+    let resp: Response = resp_val
+        .dyn_into()
+        .map_err(|_| crate::i18n::api_err_response_type(loc))?;
     if !resp.ok() {
-        let text = JsFuture::from(resp.text().map_err(|e| format!("text: {:?}", e))?)
-            .await
-            .ok()
-            .and_then(|v| v.as_string())
-            .unwrap_or_default();
-        return Err(format!("HTTP {} {}", resp.status(), text));
+        return Err(crate::i18n::api_err_request_failed(loc).to_string());
     }
     let text = JsFuture::from(resp.text().map_err(|e| format!("text: {:?}", e))?)
         .await
         .map_err(|e| format!("read body: {:?}", e))?;
     let s = text
         .as_string()
-        .ok_or_else(|| "body not string".to_string())?;
+        .ok_or_else(|| crate::i18n::api_err_body_type(loc).to_string())?;
     serde_json::from_str(&s).map_err(|e| e.to_string())
 }
 
@@ -261,8 +267,11 @@ pub struct UploadResponseBody {
 }
 
 /// `POST /upload`：`multipart/form-data`，字段名任意；返回的 `url` 为 `/uploads/...`。
-pub async fn upload_files_multipart(form: &web_sys::FormData) -> Result<Vec<String>, String> {
-    let w = window().ok_or_else(|| "no window".to_string())?;
+pub async fn upload_files_multipart(
+    form: &web_sys::FormData,
+    loc: Locale,
+) -> Result<Vec<String>, String> {
+    let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let init = RequestInit::new();
     init.set_method("POST");
     init.set_mode(RequestMode::Cors);
@@ -274,7 +283,9 @@ pub async fn upload_files_multipart(form: &web_sys::FormData) -> Result<Vec<Stri
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await
         .map_err(|e| format!("fetch: {:?}", e))?;
-    let resp: Response = resp_val.dyn_into().map_err(|_| "not Response")?;
+    let resp: Response = resp_val
+        .dyn_into()
+        .map_err(|_| crate::i18n::api_err_response_type(loc))?;
     if !resp.ok() {
         let text = JsFuture::from(resp.text().map_err(|e| format!("text: {:?}", e))?)
             .await
@@ -288,7 +299,7 @@ pub async fn upload_files_multipart(form: &web_sys::FormData) -> Result<Vec<Stri
         .map_err(|e| format!("read body: {:?}", e))?;
     let s = text
         .as_string()
-        .ok_or_else(|| "body not string".to_string())?;
+        .ok_or_else(|| crate::i18n::api_err_body_type(loc).to_string())?;
     let body: UploadResponseBody = serde_json::from_str(&s).map_err(|e| e.to_string())?;
     Ok(body.files.into_iter().map(|f| f.url).collect())
 }
@@ -317,11 +328,11 @@ pub struct ChatBranchResponse {
 /// `GET /conversation/messages`：拉取服务端已持久化会话（与 `conversation_id` + `revision` 对齐）。
 pub async fn fetch_conversation_messages(
     conversation_id: &str,
-    _loc: Locale,
+    loc: Locale,
 ) -> Result<crate::conversation_hydrate::ConversationMessagesResponse, String> {
     let enc = urlencoding::encode(conversation_id);
     let url = format!("/conversation/messages?conversation_id={enc}");
-    fetch_json("GET", &url, None).await
+    fetch_json("GET", &url, None, loc).await
 }
 
 pub async fn post_chat_branch(
@@ -336,7 +347,7 @@ pub async fn post_chat_branch(
         expected_revision,
     })
     .map_err(|e| e.to_string())?;
-    let r: ChatBranchResponse = fetch_json_with_body("POST", "/chat/branch", &body).await?;
+    let r: ChatBranchResponse = fetch_json_with_body("POST", "/chat/branch", &body, loc).await?;
     if !r.ok {
         return Err(crate::i18n::api_err_branch_failed(loc).to_string());
     }
@@ -362,11 +373,13 @@ pub async fn submit_chat_approval(
     init.set_body(&wasm_bindgen::JsValue::from_str(&body));
     let req = Request::new_with_str_and_init("/chat/approval", &init)
         .map_err(|e| format!("req: {:?}", e))?;
-    let w = window().ok_or_else(|| "no window".to_string())?;
+    let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await
         .map_err(|e| format!("fetch: {:?}", e))?;
-    let resp: Response = resp_val.dyn_into().map_err(|_| "not Response")?;
+    let resp: Response = resp_val
+        .dyn_into()
+        .map_err(|_| crate::i18n::api_err_response_type(loc))?;
     if !resp.ok() {
         return Err(crate::i18n::api_err_approval_failed(loc, resp.status()));
     }

@@ -73,17 +73,17 @@ pub fn wire_web_ui_config_once_after_init(
     web_ui_config_loaded: RwSignal<bool>,
     markdown_render: RwSignal<bool>,
     apply_assistant_display_filters: RwSignal<bool>,
+    locale: RwSignal<Locale>,
 ) {
     Effect::new({
-        let markdown_render = markdown_render;
-        let apply_assistant_display_filters = apply_assistant_display_filters;
         move |_| {
             if !initialized.get() || web_ui_config_loaded.get() {
                 return;
             }
             web_ui_config_loaded.set(true);
+            let locale_val = locale.get_untracked();
             spawn_local(async move {
-                if let Ok(c) = fetch_web_ui_config().await {
+                if let Ok(c) = fetch_web_ui_config(locale_val).await {
                     markdown_render.set(c.markdown_render);
                     apply_assistant_display_filters.set(c.apply_assistant_display_filters);
                 }

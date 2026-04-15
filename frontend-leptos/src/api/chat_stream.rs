@@ -156,7 +156,7 @@ pub async fn send_chat_stream(
             }
         }
         if resp.status() == 410 {
-            return Err("流式任务已结束或不在服务端内存中，无法重连".to_string());
+            return Err(crate::i18n::api_err_stream_gone(loc).to_string());
         }
         if !resp.ok() {
             let msg = JsFuture::from(resp.text().map_err(|e| format!("text: {:?}", e))?)
@@ -178,7 +178,7 @@ pub async fn send_chat_stream(
         let reader: web_sys::ReadableStreamDefaultReader = rb
             .get_reader()
             .dyn_into()
-            .map_err(|_| "stream reader".to_string())?;
+            .map_err(|_| crate::i18n::api_err_stream_reader(loc).to_string())?;
 
         // 块边界可能截断 UTF-8：只把从开头起「完整码点」前缀解码进 `text`，余字节留在 `raw`。
         // 使用 `Utf8Error::valid_up_to` 一次确定合法前缀，避免对每个字节反复 `from_utf8`（原 while 递减为 O(n²)）。
@@ -220,7 +220,7 @@ pub async fn send_chat_stream(
                 Ok(c) => c,
                 Err(e) => {
                     if stream_resume_job_id.is_none() {
-                        return Err(format!("read await: {:?}", e));
+                        return Err(crate::i18n::api_err_stream_read(&e));
                     }
                     break;
                 }
@@ -238,13 +238,13 @@ pub async fn send_chat_stream(
             if let Some(u8) = value.dyn_ref::<js_sys::Uint8Array>() {
                 append_chunk_to_text_buffer(&mut raw, &u8.to_vec(), &mut buffer);
             }
-            process_sse_buffer(&mut buffer, &mut last_event_id, &cbs)?;
+            process_sse_buffer(&mut buffer, &mut last_event_id, &cbs, loc)?;
         }
         if !raw.is_empty() {
             buffer.push_str(&String::from_utf8_lossy(&raw));
             raw.clear();
         }
-        flush_sse_tail(&mut buffer, &mut last_event_id, &cbs)?;
+        flush_sse_tail(&mut buffer, &mut last_event_id, &cbs, loc)?;
         if stream_finished_normally {
             (cbs.on_done)();
             return Ok(());
@@ -265,11 +265,12 @@ fn process_sse_buffer(
     buffer: &mut String,
     last_event_id: &mut u64,
     cbs: &ChatStreamCallbacks,
+    loc: Locale,
 ) -> Result<(), String> {
     while let Some(pos) = buffer.find("\n\n") {
         let block = buffer[..pos].to_string();
         *buffer = buffer[pos + 2..].to_string();
-        handle_sse_block(&block, last_event_id, cbs)?;
+        handle_sse_block(&block, last_event_id, cbs, loc)?;
     }
     Ok(())
 }
@@ -278,10 +279,11 @@ fn flush_sse_tail(
     buffer: &mut String,
     last_event_id: &mut u64,
     cbs: &ChatStreamCallbacks,
+    loc: Locale,
 ) -> Result<(), String> {
     let t = buffer.trim();
     if !t.is_empty() {
-        handle_sse_block(t, last_event_id, cbs)?;
+        handle_sse_block(t, last_event_id, cbs, loc)?;
     }
     buffer.clear();
     Ok(())
@@ -303,6 +305,7 @@ fn handle_sse_block(
     block: &str,
     last_event_id: &mut u64,
     cbs: &ChatStreamCallbacks,
+    loc: Locale,
 ) -> Result<(), String> {
     if let Some(id) = parse_sse_event_id_block(block) {
         *last_event_id = id;
@@ -370,14 +373,14 @@ fn handle_sse_block(
                 (cbs.on_stream_ended)(reason.clone());
             }
             if stop {
-                Err("stream stopped".to_string())
+                Err(crate::i18n::api_err_stream_stopped(loc).to_string())
             } else {
                 Ok(())
             }
         }
         crate::sse_dispatch::SseDispatch::Plain => {
             if stop {
-                return Err("stream stopped".to_string());
+                return Err(crate::i18n::api_err_stream_stopped(loc).to_string());
             }
             (cbs.on_delta)(data.to_string());
             Ok(())
