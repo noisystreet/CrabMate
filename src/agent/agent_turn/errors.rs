@@ -75,6 +75,26 @@ pub enum RunAgentTurnError {
         phase: AgentTurnSubPhase,
         message: String,
     },
+    /// 步骤内重试次数耗尽
+    StepRetryExhausted {
+        phase: AgentTurnSubPhase,
+        message: String,
+    },
+    /// 全局重规划次数耗尽
+    ReplanExhausted {
+        phase: AgentTurnSubPhase,
+        message: String,
+    },
+    /// 墙钟超时
+    TimeLimitExhausted {
+        phase: AgentTurnSubPhase,
+        message: String,
+    },
+    /// Token消耗上限达到
+    TokenLimitExhausted {
+        phase: AgentTurnSubPhase,
+        message: String,
+    },
 }
 
 impl RunAgentTurnError {
@@ -86,6 +106,10 @@ impl RunAgentTurnError {
         match self {
             Self::Llm { phase, .. }
             | Self::TurnAborted { phase, .. }
+            | Self::StepRetryExhausted { phase, .. }
+            | Self::ReplanExhausted { phase, .. }
+            | Self::TimeLimitExhausted { phase, .. }
+            | Self::TokenLimitExhausted { phase, .. }
             | Self::Other { phase, .. } => *phase,
         }
     }
@@ -157,6 +181,34 @@ impl RunAgentTurnError {
                 turn_id,
                 sub_phase,
             },
+            Self::StepRetryExhausted { message, .. } => SseErrorBody {
+                error: message.clone(),
+                code: Some("STEP_RETRY_EXHAUSTED".to_string()),
+                reason_code: Some("step_retry_exhausted".to_string()),
+                turn_id,
+                sub_phase,
+            },
+            Self::ReplanExhausted { message, .. } => SseErrorBody {
+                error: message.clone(),
+                code: Some("REPLAN_EXHAUSTED".to_string()),
+                reason_code: Some("replan_exhausted".to_string()),
+                turn_id,
+                sub_phase,
+            },
+            Self::TimeLimitExhausted { message, .. } => SseErrorBody {
+                error: message.clone(),
+                code: Some("TIME_LIMIT_EXHAUSTED".to_string()),
+                reason_code: Some("time_limit_exhausted".to_string()),
+                turn_id,
+                sub_phase,
+            },
+            Self::TokenLimitExhausted { message, .. } => SseErrorBody {
+                error: message.clone(),
+                code: Some("TOKEN_LIMIT_EXHAUSTED".to_string()),
+                reason_code: Some("token_limit_exhausted".to_string()),
+                turn_id,
+                sub_phase,
+            },
         }
     }
 
@@ -198,7 +250,11 @@ impl fmt::Display for RunAgentTurnError {
         match self {
             Self::Llm { kind, .. } => write!(f, "{kind}"),
             Self::TurnAborted { reason, .. } => write!(f, "{reason}"),
-            Self::Other { message, .. } => f.write_str(message),
+            Self::Other { message, .. }
+            | Self::StepRetryExhausted { message, .. }
+            | Self::ReplanExhausted { message, .. }
+            | Self::TimeLimitExhausted { message, .. }
+            | Self::TokenLimitExhausted { message, .. } => f.write_str(message),
         }
     }
 }
@@ -207,7 +263,12 @@ impl Error for RunAgentTurnError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Llm { kind, .. } => Some(kind),
-            Self::TurnAborted { .. } | Self::Other { .. } => None,
+            Self::TurnAborted { .. }
+            | Self::StepRetryExhausted { .. }
+            | Self::ReplanExhausted { .. }
+            | Self::TimeLimitExhausted { .. }
+            | Self::TokenLimitExhausted { .. }
+            | Self::Other { .. } => None,
         }
     }
 }

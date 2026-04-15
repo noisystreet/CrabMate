@@ -608,6 +608,12 @@ pub struct AgentConfig {
     /// `executor_kind: review_readonly` 下显式拒绝的工具名（精确匹配）。
     pub tool_registry_sub_agent_review_readonly_deny_tools:
         Option<std::sync::Arc<std::collections::HashSet<String>>>,
+    /// 单轮对话（外环）最大墙钟时间（秒），0 表示无界（默认 600）。
+    pub max_turn_duration_seconds: u64,
+    /// 单轮对话（外环）最大允许消耗的 `max_tokens`（默认 100000）。
+    pub max_turn_tokens: usize,
+    /// 单轮对话允许的全局重规划（Full Plan Rewrite）上限（默认 2）。
+    pub full_plan_rewrite_max_attempts: usize,
 }
 
 impl AgentConfig {
