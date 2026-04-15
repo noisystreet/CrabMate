@@ -273,7 +273,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                                     }
                                 }
                                 spawn_local(async move {
-                                    match upload_files_multipart(&form).await {
+                                    match upload_files_multipart(&form, locale.get_untracked()).await {
                                         Ok(urls) => {
                                             pending_images.update(|v| {
                                                 for u in urls {

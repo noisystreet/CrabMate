@@ -11,6 +11,7 @@ use leptos_dom::helpers::window_event_listener;
 
 use crate::api::{WorkspaceData, fetch_workspace};
 use crate::app_prefs::{SidePanelView, clamp_side_width_for_viewport};
+use crate::i18n::Locale;
 
 /// 工作区列表中「文件」行的图标类别（目录单独用文件夹图标）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -337,12 +338,13 @@ pub async fn reload_workspace_panel(
     workspace_subtree_expanded: RwSignal<HashSet<String>>,
     workspace_subtree_cache: RwSignal<HashMap<String, WorkspaceData>>,
     workspace_subtree_loading: RwSignal<HashSet<String>>,
+    locale: Locale,
 ) {
     workspace_subtree_expanded.set(HashSet::new());
     workspace_subtree_cache.set(HashMap::new());
     workspace_subtree_loading.set(HashSet::new());
     workspace_loading.set(true);
-    match fetch_workspace(None).await {
+    match fetch_workspace(None, locale).await {
         Ok(d) => {
             workspace_err.set(None);
             workspace_path_draft.set(d.path.clone());

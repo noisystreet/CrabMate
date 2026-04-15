@@ -265,7 +265,7 @@ pub fn App() -> impl IntoView {
     };
     wire_escape_key_layered_dismiss(shell_escape);
 
-    let refresh_workspace = make_refresh_workspace(workspace_panel);
+    let refresh_workspace = make_refresh_workspace(workspace_panel, locale.get_untracked());
 
     wire_workspace_domain_effects(
         session_sync,
@@ -281,9 +281,10 @@ pub fn App() -> impl IntoView {
         Arc::clone(&refresh_workspace),
     );
 
-    let refresh_status = make_refresh_status(status_tasks, selected_agent_role);
-    let refresh_tasks = make_refresh_tasks(status_tasks);
-    let toggle_task = make_toggle_task(status_tasks);
+    let refresh_status =
+        make_refresh_status(status_tasks, selected_agent_role, locale.get_untracked());
+    let refresh_tasks = make_refresh_tasks(status_tasks, locale.get_untracked());
+    let toggle_task = make_toggle_task(status_tasks, locale.get_untracked());
 
     wire_status_tasks_domain_effects(
         initialized,

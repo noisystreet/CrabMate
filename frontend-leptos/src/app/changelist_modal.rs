@@ -8,7 +8,7 @@ use wasm_bindgen::JsCast;
 
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::api::fetch_workspace_changelog;
-use crate::i18n;
+use crate::i18n::{self, load_locale_from_storage};
 use crate::message_render::fragment_to_chat_safe_html;
 use crate::session_sync::SessionSyncState;
 
@@ -42,7 +42,8 @@ pub(super) fn wire_changelist_fetch_effects(
             let cid = session_sync.with(|s| s.changelog_conversation_id().map(str::to_string));
             let md_on = markdown_render.get_untracked();
             spawn_local(async move {
-                match fetch_workspace_changelog(cid.as_deref()).await {
+                let loc = load_locale_from_storage();
+                match fetch_workspace_changelog(cid.as_deref(), loc).await {
                     Ok(r) => {
                         if let Some(e) = r.error {
                             changelist_modal_err.set(Some(e));
