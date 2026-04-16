@@ -254,6 +254,12 @@ pub fn wire_settings_modal_llm_drafts_on_open(
     llm_api_key_draft: RwSignal<String>,
     llm_has_saved_key: RwSignal<bool>,
     llm_settings_feedback: RwSignal<Option<String>>,
+    executor_llm_api_base_draft: RwSignal<String>,
+    executor_llm_api_base_preset_select: RwSignal<String>,
+    executor_llm_model_draft: RwSignal<String>,
+    executor_llm_api_key_draft: RwSignal<String>,
+    executor_llm_has_saved_key: RwSignal<bool>,
+    executor_llm_settings_feedback: RwSignal<Option<String>>,
 ) {
     Effect::new(move |_| {
         if !settings_modal.get() {
@@ -279,6 +285,32 @@ pub fn wire_settings_modal_llm_drafts_on_open(
         llm_api_key_draft.set(String::new());
         llm_has_saved_key.set(client_llm_storage_has_api_key());
         llm_settings_feedback.set(None);
+
+        let (executor_stored_base, executor_stored_model) =
+            crate::api::load_executor_llm_text_fields_from_storage();
+        let executor_base = if executor_stored_base.trim().is_empty() {
+            sd.as_ref()
+                .map(|d| d.executor_api_base.clone())
+                .unwrap_or_default()
+        } else {
+            executor_stored_base
+        };
+        let executor_model = if executor_stored_model.trim().is_empty() {
+            sd.as_ref()
+                .map(|d| d.executor_model.clone())
+                .unwrap_or_default()
+        } else {
+            executor_stored_model
+        };
+        executor_llm_api_base_draft.set(executor_base.clone());
+        executor_llm_api_base_preset_select.set(
+            crate::client_llm_presets::api_base_select_value_for_draft(executor_base.as_str())
+                .to_string(),
+        );
+        executor_llm_model_draft.set(executor_model);
+        executor_llm_api_key_draft.set(String::new());
+        executor_llm_has_saved_key.set(crate::api::executor_llm_storage_has_api_key());
+        executor_llm_settings_feedback.set(None);
     });
 }
 

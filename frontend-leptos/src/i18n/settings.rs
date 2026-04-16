@@ -97,6 +97,13 @@ pub fn settings_block_llm(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_block_executor_llm(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "执行器模型网关（可选覆盖）",
+        Locale::En => "Executor model endpoint (optional override)",
+    }
+}
+
 pub fn settings_llm_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
@@ -104,6 +111,15 @@ pub fn settings_llm_hint(l: Locale) -> &'static str {
         }
         Locale::En => {
             "Leave empty to use server config and the API_KEY environment variable. The API key field is masked."
+        }
+    }
+}
+
+pub fn settings_executor_llm_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "执行阶段使用的模型网关覆盖。留空则使用主模型设置或服务端默认配置。",
+        Locale::En => {
+            "Override for the model endpoint used during execution phase. Leave empty to use main model settings or server default."
         }
     }
 }
@@ -126,6 +142,13 @@ pub fn settings_label_api_base_preset(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "常用网关",
         Locale::En => "Common providers",
+    }
+}
+
+pub fn settings_label_executor_api_base(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "执行器 API 基址（api_base）",
+        Locale::En => "Executor API base (api_base)",
     }
 }
 
@@ -197,6 +220,13 @@ pub fn settings_label_model(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_label_executor_model(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "执行器模型名称（model）",
+        Locale::En => "Executor model name (model)",
+    }
+}
+
 pub fn settings_ph_model(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "例如 deepseek-chat",
@@ -211,7 +241,21 @@ pub fn settings_label_api_key(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_label_executor_api_key(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "执行器 API 密钥",
+        Locale::En => "Executor API key",
+    }
+}
+
 pub fn settings_ph_api_key(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "留空保留已存密钥；填写新密钥后点保存",
+        Locale::En => "Leave blank to keep saved key; enter new key and Save",
+    }
+}
+
+pub fn settings_ph_executor_api_key(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "留空保留已存密钥；填写新密钥后点保存",
         Locale::En => "Leave blank to keep saved key; enter new key and Save",
@@ -225,10 +269,24 @@ pub fn settings_key_saved_note(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_executor_key_saved_note(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "执行器密钥已在本机保存。",
+        Locale::En => "Executor key is saved locally.",
+    }
+}
+
 pub fn settings_save_llm(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "保存模型设置",
         Locale::En => "Save model settings",
+    }
+}
+
+pub fn settings_save_executor_llm(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "保存执行器设置",
+        Locale::En => "Save executor settings",
     }
 }
 
@@ -239,10 +297,24 @@ pub fn settings_clear_key(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_clear_executor_key(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "清除执行器密钥",
+        Locale::En => "Clear executor key",
+    }
+}
+
 pub fn settings_saved_browser(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "已保存到本机浏览器",
         Locale::En => "Saved in this browser",
+    }
+}
+
+pub fn settings_executor_saved_browser(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "执行器设置已保存到本机浏览器",
+        Locale::En => "Executor settings saved in this browser",
     }
 }
 
@@ -252,6 +324,15 @@ pub fn settings_cleared_key(l: Locale) -> &'static str {
         Locale::En => "Cleared locally saved key",
     }
 }
+
+pub fn settings_executor_cleared_key(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已清除本机保存的执行器密钥",
+        Locale::En => "Cleared locally saved executor key",
+    }
+}
+
+// --- 设置页面 ---
 
 pub fn settings_block_shortcuts(l: Locale) -> &'static str {
     match l {
