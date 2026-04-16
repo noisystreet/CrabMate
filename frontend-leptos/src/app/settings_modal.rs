@@ -8,7 +8,9 @@ use leptos_dom::helpers::event_target_value;
 
 use crate::a11y::{focus_first_in_modal_container, trap_tab_in_container};
 use crate::api::{
-    clear_client_llm_api_key_storage, client_llm_storage_has_api_key, persist_client_llm_to_storage,
+    clear_client_llm_api_key_storage, clear_executor_llm_api_key_storage,
+    client_llm_storage_has_api_key, executor_llm_storage_has_api_key,
+    persist_client_llm_to_storage, persist_executor_llm_to_storage,
 };
 use crate::client_llm_presets::{CLIENT_LLM_API_BASE_PRESETS, preset_by_id};
 use crate::i18n::{self, Locale, store_locale_slug};
@@ -27,6 +29,12 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
         llm_api_key_draft,
         llm_has_saved_key,
         llm_settings_feedback,
+        executor_llm_api_base_draft,
+        executor_llm_api_base_preset_select,
+        executor_llm_model_draft,
+        executor_llm_api_key_draft,
+        executor_llm_has_saved_key,
+        executor_llm_settings_feedback,
         client_llm_storage_tick,
         ..
     } = ctx;
@@ -290,6 +298,163 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
                                 <Show when=move || llm_settings_feedback.get().is_some()>
                                     <p class="settings-save-feedback">{move || {
                                         llm_settings_feedback.get().unwrap_or_default()
+                                    }}</p>
+                                </Show>
+                            </div>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">{move || i18n::settings_block_executor_llm(locale.get())}</h3>
+                                <p class="modal-hint settings-field-nested-hint">
+                                    {move || i18n::settings_executor_llm_hint(locale.get())}
+                                </p>
+                                <div class="settings-field">
+                                    <label class="settings-field-label" for="settings-executor-llm-api-base-preset">
+                                        {move || i18n::settings_label_api_base_preset(locale.get())}
+                                    </label>
+                                    <select
+                                        id="settings-executor-llm-api-base-preset"
+                                        class="settings-select"
+                                        prop:value=move || executor_llm_api_base_preset_select.get()
+                                        on:change=move |ev| {
+                                            let id = event_target_value(&ev);
+                                            executor_llm_api_base_preset_select.set(id.clone());
+                                            let Some(p) = preset_by_id(id.as_str()) else {
+                                                return;
+                                            };
+                                            if p.id == "custom" {
+                                                return;
+                                            }
+                                            executor_llm_api_base_draft.set(p.url.to_string());
+                                            if let Some(m) = p.suggested_model {
+                                                if executor_llm_model_draft.get_untracked().trim().is_empty() {
+                                                    executor_llm_model_draft.set(m.to_string());
+                                                }
+                                            }
+                                        }
+                                    >
+                                        {CLIENT_LLM_API_BASE_PRESETS.iter().filter(|p| p.id != "custom").map(|p| {
+                                            let id = p.id;
+                                            view! {
+                                                <option value=id>
+                                                    {move || i18n::settings_api_base_preset_label(id, locale.get())}
+                                                </option>
+                                            }
+                                        }).collect_view()}
+                                        <option value="custom">
+                                            {move || i18n::settings_api_base_preset_custom(locale.get())}
+                                        </option>
+                                    </select>
+                                </div>
+                                <Show when=move || executor_llm_api_base_preset_select.get() == "custom">
+                                    <div class="settings-field">
+                                        <label class="settings-field-label" for="settings-executor-llm-api-base">
+                                            {move || i18n::settings_label_executor_api_base(locale.get())}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            id="settings-executor-llm-api-base"
+                                            class="settings-text-input"
+                                            prop:placeholder=move || i18n::settings_ph_api_base(locale.get())
+                                            prop:value=move || executor_llm_api_base_draft.get()
+                                            on:input=move |ev| {
+                                                executor_llm_api_base_preset_select.set("custom".to_string());
+                                                executor_llm_api_base_draft.set(event_target_value(&ev));
+                                            }
+                                        />
+                                    </div>
+                                </Show>
+                                <div class="settings-field">
+                                    <label class="settings-field-label" for="settings-executor-llm-model">
+                                        {move || i18n::settings_label_executor_model(locale.get())}
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="settings-executor-llm-model"
+                                        class="settings-text-input"
+                                        prop:placeholder=move || i18n::settings_ph_model(locale.get())
+                                        prop:value=move || executor_llm_model_draft.get()
+                                        on:input=move |ev| {
+                                            executor_llm_model_draft.set(event_target_value(&ev));
+                                        }
+                                    />
+                                </div>
+                                <div class="settings-field">
+                                    <label class="settings-field-label" for="settings-executor-llm-api-key">
+                                        {move || i18n::settings_label_executor_api_key(locale.get())}
+                                    </label>
+                                    <input
+                                        type="password"
+                                        id="settings-executor-llm-api-key"
+                                        class="settings-text-input"
+                                        autocomplete="off"
+                                        prop:placeholder=move || i18n::settings_ph_executor_api_key(locale.get())
+                                        prop:value=move || executor_llm_api_key_draft.get()
+                                        on:input=move |ev| {
+                                            executor_llm_api_key_draft.set(event_target_value(&ev));
+                                        }
+                                    />
+                                </div>
+                                <Show when=move || executor_llm_has_saved_key.get()>
+                                    <p class="modal-hint settings-field-nested-hint">
+                                        {move || i18n::settings_executor_key_saved_note(locale.get())}
+                                    </p>
+                                </Show>
+                                <div class="settings-actions-row">
+                                    <button
+                                        type="button"
+                                        class="btn btn-primary btn-sm"
+                                        on:click=move |_| {
+                                            executor_llm_settings_feedback.set(None);
+                                            let loc = locale.get_untracked();
+                                            let key_raw = executor_llm_api_key_draft.get();
+                                            let api_key_upd = if key_raw.trim().is_empty() {
+                                                None
+                                            } else {
+                                                Some(key_raw)
+                                            };
+                                            let base = executor_llm_api_base_draft.get();
+                                            let model = executor_llm_model_draft.get();
+                                            match persist_executor_llm_to_storage(
+                                                &base,
+                                                &model,
+                                                api_key_upd.as_deref(),
+                                                loc,
+                                            ) {
+                                                Ok(()) => {
+                                                    executor_llm_api_key_draft.set(String::new());
+                                                    executor_llm_has_saved_key
+                                                        .set(executor_llm_storage_has_api_key());
+                                                    client_llm_storage_tick
+                                                        .update(|n| *n = n.wrapping_add(1));
+                                                    executor_llm_settings_feedback.set(Some(
+                                                        i18n::settings_executor_saved_browser(loc).to_string(),
+                                                    ));
+                                                }
+                                                Err(e) => executor_llm_settings_feedback.set(Some(e)),
+                                            }
+                                        }
+                                    >
+                                        {move || i18n::settings_save_executor_llm(locale.get())}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        prop:disabled=move || !executor_llm_has_saved_key.get()
+                                        on:click=move |_| {
+                                            executor_llm_settings_feedback.set(None);
+                                            let loc = locale.get_untracked();
+                                            let _ = clear_executor_llm_api_key_storage(loc);
+                                            executor_llm_has_saved_key.set(false);
+                                            executor_llm_settings_feedback.set(Some(
+                                                i18n::settings_executor_cleared_key(loc).to_string(),
+                                            ));
+                                        }
+                                    >
+                                        {move || i18n::settings_clear_executor_key(locale.get())}
+                                    </button>
+                                </div>
+                                <Show when=move || executor_llm_settings_feedback.get().is_some()>
+                                    <p class="settings-save-feedback">{move || {
+                                        executor_llm_settings_feedback.get().unwrap_or_default()
                                     }}</p>
                                 </Show>
                             </div>

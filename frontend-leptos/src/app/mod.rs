@@ -4,7 +4,7 @@
 
 mod app_shell_ctx;
 mod app_shell_effects;
-mod approval_bar;
+mod approval_modal;
 mod changelist_modal;
 mod chat;
 mod mobile_shell_header;
@@ -22,7 +22,7 @@ mod workspace_panel;
 mod workspace_panel_state;
 
 use app_shell_ctx::AppShellCtx;
-use approval_bar::ApprovalBar;
+use approval_modal::ApprovalModal;
 use changelist_modal::changelist_modal_view;
 use chat::{
     ChatColumnShell, ChatFindBar, ComposerStreamShell, chat_column_view,
@@ -170,6 +170,12 @@ pub fn App() -> impl IntoView {
     let llm_api_key_draft = RwSignal::new(String::new());
     let llm_has_saved_key = RwSignal::new(false);
     let llm_settings_feedback = RwSignal::new(None::<String>);
+    let executor_llm_api_base_draft = RwSignal::new(String::new());
+    let executor_llm_api_base_preset_select = RwSignal::new(String::from("server"));
+    let executor_llm_model_draft = RwSignal::new(String::new());
+    let executor_llm_api_key_draft = RwSignal::new(String::new());
+    let executor_llm_has_saved_key = RwSignal::new(false);
+    let executor_llm_settings_feedback = RwSignal::new(None::<String>);
     // 本机模型设置写入后递增，使状态栏订阅并重新读取 localStorage。
     let client_llm_storage_tick = RwSignal::new(0_u64);
     let session_context_menu = RwSignal::new(None::<SessionContextAnchor>);
@@ -251,6 +257,12 @@ pub fn App() -> impl IntoView {
         llm_api_key_draft,
         llm_has_saved_key,
         llm_settings_feedback,
+        executor_llm_api_base_draft,
+        executor_llm_api_base_preset_select,
+        executor_llm_model_draft,
+        executor_llm_api_key_draft,
+        executor_llm_has_saved_key,
+        executor_llm_settings_feedback,
     );
     let shell_escape = ShellEscapeSignals {
         session_context_menu,
@@ -399,6 +411,12 @@ pub fn App() -> impl IntoView {
         llm_api_key_draft,
         llm_has_saved_key,
         llm_settings_feedback,
+        executor_llm_api_base_draft,
+        executor_llm_api_base_preset_select,
+        executor_llm_model_draft,
+        executor_llm_api_key_draft,
+        executor_llm_has_saved_key,
+        executor_llm_settings_feedback,
         changelist_modal_loading,
         changelist_modal_err,
         changelist_modal_rev,
@@ -451,12 +469,6 @@ pub fn App() -> impl IntoView {
             <div class="shell-main">
                 {mobile_shell_header_view(app_ctx.clone())}
 
-                <ApprovalBar
-                    pending_approval=pending_approval
-                    approval_expanded=approval_expanded
-                    locale=locale
-                />
-
                 <Show when=move || chat_find_panel_open.get()>
                     <ChatFindBar
                         chat_find_panel_open=chat_find_panel_open
@@ -485,6 +497,11 @@ pub fn App() -> impl IntoView {
             {settings_modal_view(app_ctx.clone())}
 
             {changelist_modal_view(app_ctx.clone())}
+
+            <ApprovalModal
+                pending_approval=pending_approval
+                locale=locale
+            />
         </div>
     }
 }
