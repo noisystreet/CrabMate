@@ -25,6 +25,7 @@ pub(crate) async fn run_agent_outer_loop(
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
     let start_time = std::time::Instant::now();
+    let mut is_first_iteration = true;
     'outer: loop {
         if p.cfg.max_turn_duration_seconds > 0
             && start_time.elapsed().as_secs() > p.cfg.max_turn_duration_seconds
@@ -36,6 +37,11 @@ pub(crate) async fn run_agent_outer_loop(
                     p.cfg.max_turn_duration_seconds
                 ),
             });
+        }
+        // 第一轮使用 planner_model（use_executor_model=false），后续轮次使用 executor_model
+        p.use_executor_model = !is_first_iteration;
+        if is_first_iteration {
+            is_first_iteration = false;
         }
         p.sub_phase = AgentTurnSubPhase::Planner;
         if let Some(ref t) = p.tracing_chat_turn {
@@ -115,10 +121,17 @@ pub(crate) async fn run_agent_outer_loop(
             temperature_override: p.temperature_override,
             seed_override: p.seed_override,
             request_chrome_trace: p.request_chrome_trace.clone(),
-            model_override: p
-                .model_override
-                .as_deref()
-                .or(p.cfg.executor_model.as_deref()),
+            model_override: p.effective_model(),
+            executor_api_base: if p.use_executor_model {
+                p.executor_api_base.as_deref()
+            } else {
+                None
+            },
+            executor_api_key: if p.use_executor_model {
+                p.executor_api_key.as_deref()
+            } else {
+                None
+            },
         })
         .await
         .map_err(|e| RunAgentTurnError::from_llm(AgentTurnSubPhase::Planner, e))?;

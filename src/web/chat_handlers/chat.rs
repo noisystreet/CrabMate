@@ -19,7 +19,7 @@ use super::conflict::conversation_conflict_api_error;
 use super::parse::{
     ensure_bearer_api_key_for_chat, normalize_agent_role, normalize_approval_session_id,
     normalize_chat_image_urls, normalize_client_conversation_id, parse_client_llm_override,
-    parse_optional_chat_temperature, parse_seed_override_from_body,
+    parse_executor_llm_override, parse_optional_chat_temperature, parse_seed_override_from_body,
 };
 use crate::agent_memory::load_memory_snippet;
 use crate::agent_role_turn::maybe_apply_mid_session_agent_role_switch;
@@ -230,6 +230,15 @@ pub(crate) async fn chat_handler(
             }),
         )
     })?;
+    let executor_llm_override = parse_executor_llm_override(body.executor_llm).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_EXECUTOR_LLM",
+                message: e,
+            }),
+        )
+    })?;
     ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
     let eff_ws_raw = state.effective_workspace_path().await;
     let eff_ws = eff_ws_raw.trim().to_string();
@@ -308,6 +317,7 @@ pub(crate) async fn chat_handler(
             temperature_override,
             seed_override,
             llm_override,
+            executor_llm_override,
             reply_tx,
         })
         .map_err(|e| {
@@ -651,6 +661,15 @@ pub(crate) async fn chat_stream_handler(
             }),
         )
     })?;
+    let executor_llm_override = parse_executor_llm_override(body.executor_llm).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError {
+                code: "INVALID_EXECUTOR_LLM",
+                message: e,
+            }),
+        )
+    })?;
     ensure_bearer_api_key_for_chat(&state, &llm_override).await?;
 
     if let Some(sr) = resume {
@@ -817,6 +836,7 @@ pub(crate) async fn chat_stream_handler(
             temperature_override,
             seed_override,
             llm_override,
+            executor_llm_override,
             stream_event_tx: tx,
             web_approval_session,
         })

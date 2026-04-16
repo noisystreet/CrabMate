@@ -31,6 +31,9 @@ pub(crate) struct ChatRequestBody {
     /// 可选：浏览器侧覆盖本回合 LLM 网关 `api_base` / `model` / `api_key`（不写服务端配置）。
     #[serde(default)]
     pub(crate) client_llm: Option<ClientLlmBody>,
+    /// 可选：浏览器侧覆盖执行阶段 LLM 网关 `api_base` / `model` / `api_key`。
+    #[serde(default)]
+    pub(crate) executor_llm: Option<ExecutorLlmBody>,
     /// 断线重连：挂接到进行中的 `job_id`；`after_seq` 与请求头 **`Last-Event-ID`** 取较大值后从环形缓冲重放。
     #[serde(default)]
     pub(crate) stream_resume: Option<StreamResumeBody>,
@@ -56,6 +59,17 @@ pub(crate) struct StreamResumeBody {
 /// `ChatRequestBody::client_llm` 的 JSON 形状（与前端 `client_llm` 对象一致）。
 #[derive(serde::Deserialize, Default)]
 pub(crate) struct ClientLlmBody {
+    #[serde(default)]
+    pub(crate) api_base: Option<String>,
+    #[serde(default)]
+    pub(crate) model: Option<String>,
+    #[serde(default)]
+    pub(crate) api_key: Option<String>,
+}
+
+/// `ChatRequestBody::executor_llm` 的 JSON 形状（与前端 `executor_llm` 对象一致）。
+#[derive(serde::Deserialize, Default)]
+pub(crate) struct ExecutorLlmBody {
     #[serde(default)]
     pub(crate) api_base: Option<String>,
     #[serde(default)]

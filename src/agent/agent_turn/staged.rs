@@ -141,9 +141,7 @@ where
             p.cfg.as_ref(),
             stripped,
             p.temperature_override,
-            p.model_override
-                .as_deref()
-                .or(p.cfg.planner_model.as_deref()),
+            p.effective_model(),
             p.seed_override,
         );
         let llm = AgentLlmCall::new(p);
@@ -378,9 +376,7 @@ async fn prepare_staged_planner_no_tools_request(
         p.cfg.as_ref(),
         build_planner_messages(p.messages, plan_system, preserve),
         p.temperature_override,
-        p.model_override
-            .as_deref()
-            .or(p.cfg.planner_model.as_deref()),
+        p.effective_model(),
         p.seed_override,
     ))
 }
