@@ -206,7 +206,8 @@ pub fn side_column_view(ctx: AppShellCtx) -> impl IntoView {
         side_resize_handles,
         view_menu_open,
         status_bar_visible,
-        settings_modal,
+        settings_modal: _,
+        settings_page,
         workspace_panel: ws,
         status_tasks,
         refresh_workspace,
@@ -386,7 +387,7 @@ pub fn side_column_view(ctx: AppShellCtx) -> impl IntoView {
                             <button
                                 type="button"
                                 class="btn btn-secondary btn-sm shell-toolbar-icon-btn"
-                                on:click=move |_| settings_modal.set(true)
+                                on:click=move |_| settings_page.set(true)
                                 prop:title=move || i18n::side_settings_title(locale.get())
                                 prop:aria-label=move || i18n::side_settings_title(locale.get())
                             >

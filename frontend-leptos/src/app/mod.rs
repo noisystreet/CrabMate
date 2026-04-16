@@ -12,6 +12,7 @@ pub mod scroll_guard;
 mod session_hydrate;
 mod session_list_modal;
 mod settings_modal;
+mod settings_page;
 mod side_column;
 mod sidebar_nav;
 mod status_bar;
@@ -32,6 +33,7 @@ use chat::{
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
 use settings_modal::settings_modal_view;
+use settings_page::SettingsPageView;
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
@@ -164,6 +166,7 @@ pub fn App() -> impl IntoView {
     let pending_approval = RwSignal::new(None::<(String, String, String)>);
     let session_modal = RwSignal::new(false);
     let settings_modal = RwSignal::new(false);
+    let settings_page = RwSignal::new(false);
     let llm_api_base_draft = RwSignal::new(String::new());
     let llm_api_base_preset_select = RwSignal::new(String::from("server"));
     let llm_model_draft = RwSignal::new(String::new());
@@ -387,6 +390,7 @@ pub fn App() -> impl IntoView {
         view_menu_open,
         status_bar_visible,
         settings_modal,
+        settings_page,
         workspace_panel,
         status_tasks,
         refresh_workspace: Arc::clone(&refresh_workspace),
@@ -466,7 +470,7 @@ pub fn App() -> impl IntoView {
                 </button>
             </Show>
 
-            <div class="shell-main">
+            <div class="shell-main" class:settings-page-hidden=move || settings_page.get()>
                 {mobile_shell_header_view(app_ctx.clone())}
 
                 <Show when=move || chat_find_panel_open.get()>
@@ -501,6 +505,26 @@ pub fn App() -> impl IntoView {
             <ApprovalModal
                 pending_approval=pending_approval
                 locale=locale
+            />
+
+            <SettingsPageView
+                settings_page=settings_page
+                locale=locale
+                theme=theme
+                bg_decor=bg_decor
+                llm_api_base_draft=llm_api_base_draft
+                llm_api_base_preset_select=llm_api_base_preset_select
+                llm_model_draft=llm_model_draft
+                llm_api_key_draft=llm_api_key_draft
+                llm_has_saved_key=llm_has_saved_key
+                llm_settings_feedback=llm_settings_feedback
+                executor_llm_api_base_draft=executor_llm_api_base_draft
+                executor_llm_api_base_preset_select=executor_llm_api_base_preset_select
+                executor_llm_model_draft=executor_llm_model_draft
+                executor_llm_api_key_draft=executor_llm_api_key_draft
+                executor_llm_has_saved_key=executor_llm_has_saved_key
+                executor_llm_settings_feedback=executor_llm_settings_feedback
+                client_llm_storage_tick=client_llm_storage_tick
             />
         </div>
     }
