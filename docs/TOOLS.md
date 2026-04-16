@@ -14,6 +14,16 @@
 
 **终答 `agent_reply_plan` v1**（在工作流反思等路径下由服务端校验）：`steps[].id` 须唯一且符合稳定字符规则（见 **`docs/DEVELOPMENT.md`**）；可选 **`workflow_node_id`** 用于与最近一次 **`workflow_execute`** 工具结果里的 **`nodes[].id`** 对齐（子集校验），便于规划与 DAG 节点一一对应。分阶段规划下还可选 **`steps[].executor_kind`**（`review_readonly` / `patch_write` / `test_runner`）以步级收窄可见工具并拒绝越权调用（越权时工具结果含本步允许名摘要）；**`[tool_registry]`** 可用 **`sub_agent_*`** 键扩展默认补丁/测试名单或只读步拒绝表，详见 **`docs/CONFIGURATION.md`**（分阶段规划与 `tool_registry`）。**架构扩展**：显式「规划—执行—验证」闭环、与 **`plan_rewrite` / 工作流反思** 的边界及演进阶段见 **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**（设计稿，**不**改变本节字段约定）。
 
+**步级验收 `acceptance`**（分阶段规划路径下由 **`step_verifier.rs`** 强制校验）：可选 **`steps[].acceptance`** 对象支持以下确定性规则：
+- **`expect_exit_code`**：期望的退出码（如 `cargo test` → 0）
+- **`expect_stdout_contains`**：stdout 期望包含的字符串
+- **`expect_stderr_contains`**：stderr 期望包含的字符串
+- **`expect_file_exists`**：期望存在的文件路径（相对于工作区）
+- **`expect_json_path_equals`**：JSON path 验证（对象须含 `path` 与 `value` 字段），支持 `$.field.nested` 和 `$[0].field` 格式
+- **`expect_http_status`**：HTTP 状态码（对 `http_request`/`http_fetch` 类工具生效）
+
+验收失败时触发**补丁规划轮**（按 `staged_plan_feedback_mode` 配置），可通过 **`max_step_retries`** 控制本步重试次数，通过 **`transitions`** 定义 `on_verify_fail` 等条件跳转。详见 **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`** 附录示例。
+
 **可选 Docker 沙盒**（`sync_default_tool_sandbox_mode = docker`）：**SyncDefault** 与 **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** 在宿主完成审批/白名单后，在 **一次性 Docker 容器**内执行（经 **bollard** 调 Engine API）；**`workflow_execute`** 与 **MCP** 仍只在宿主。须本机 **Docker 守护进程可访问**，并设置非空的 **`sync_default_tool_sandbox_docker_image`**：镜像需含你实际会用到的 CLI（`git`、`rg`、`cargo` 等），且与**宿主 `crabmate` 二进制同 CPU 架构**（二进制由服务端只读挂入容器，仓库不附带固定镜像）。默认容器 **无网络**（`docker_network` 为空）；需天气/搜索/HTTP 出网时配置 **`sync_default_tool_sandbox_docker_network`**（如 `bridge`）。**启用步骤、示例 Dockerfile、环境变量与安全提示**见 [`docs/CONFIGURATION.md`](CONFIGURATION.md)「SyncDefault 工具 Docker 沙盒」。
 
 ## 内置工具（模型可调用）

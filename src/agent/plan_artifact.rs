@@ -56,12 +56,34 @@ impl PlanStepExecutorKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PlanStepAcceptance {
+    /// 期望的退出码（如 `cargo test` → 0）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_exit_code: Option<i32>,
+    /// 期望 stdout 包含的字符串。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_stdout_contains: Option<String>,
+    /// 期望 stderr 包含的字符串。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_stderr_contains: Option<String>,
+    /// 期望存在的文件路径（相对于工作区）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_file_exists: Option<String>,
+    /// JSON path 验证：期望该路径的值等于指定值。
+    /// 格式：`$.field.nested` 或 `$[0].field`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_json_path_equals: Option<JsonPathEqualsRule>,
+    /// HTTP 状态码验证：期望的 HTTP 状态码。
+    /// 仅对 `http_request` / `http_fetch` 类工具生效。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_http_status: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct JsonPathEqualsRule {
+    /// JSON path 表达式。
+    pub path: String,
+    /// 期望的 JSON 值（支持任意 JSON 标量/对象/数组）。
+    pub value: serde_json::Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
