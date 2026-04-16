@@ -25,6 +25,10 @@ pub enum TimelineKind {
         /// `tool_result.ok`，缺省按成功展示。
         ok: bool,
     },
+    ApprovalDecision {
+        /// `allow` | `deny`。
+        decision: String,
+    },
     /// 旧会话：仅有前缀与文案，无结构化 `state`。
     LegacyStaged,
     LegacyTool,
@@ -103,6 +107,12 @@ pub fn timeline_entry_for_message(m: &StoredMessage) -> Option<TimelineEntry> {
                         ok: u.ok.unwrap_or(true),
                     },
                 }),
+                "approval_decision" => Some(TimelineEntry {
+                    message_id: id,
+                    kind: TimelineKind::ApprovalDecision {
+                        decision: u.st.unwrap_or_else(|| "allow".to_string()),
+                    },
+                }),
                 _ => None,
             };
         }
@@ -170,6 +180,16 @@ pub fn timeline_state_tool(msg_id: &str, ok: bool) -> String {
         "t": "tool",
         "msg": msg_id,
         "ok": ok,
+    })
+    .to_string()
+}
+
+pub fn timeline_state_approval_decision(msg_id: &str, decision: &str) -> String {
+    json!({
+        "k": TIMELINE_UI_STATE_KEY,
+        "t": "approval_decision",
+        "msg": msg_id,
+        "st": decision,
     })
     .to_string()
 }

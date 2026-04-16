@@ -31,6 +31,8 @@ pub struct SseCallbacks<'a> {
     pub on_staged_plan_step_finished: Option<&'a mut dyn FnMut(StagedPlanStepEndInfo)>,
     pub on_clarification_questionnaire: Option<&'a mut dyn FnMut(ClarificationQuestionnaireInfo)>,
     pub on_thinking_trace: Option<&'a mut dyn FnMut(ThinkingTraceInfo)>,
+    /// `timeline_log` 事件：审批结果等旁注，写入时间线（不进聊天正文）。
+    pub on_timeline_log: Option<&'a mut dyn FnMut(TimelineLogInfo)>,
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +101,15 @@ pub struct ThinkingTraceInfo {
     pub title: Option<String>,
     pub chunk: Option<String>,
     pub context_snapshot: Option<String>,
+}
+
+/// `timeline_log`：Web 时间线旁注（审批结果等；不进聊天正文）。
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct TimelineLogInfo {
+    pub kind: String,
+    pub title: String,
+    pub detail: Option<String>,
 }
 
 fn parse_staged_plan_step_started(
@@ -452,6 +463,34 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
         return SseDispatch::Handled;
     }
 
+    if let Some(Value::Object(tl)) = obj.get("timeline_log") {
+        let kind = tl
+            .get("kind")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let title = tl
+            .get("title")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let detail = tl
+            .get("detail")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        if !kind.is_empty() || !title.is_empty() {
+            if let Some(f) = cbs.on_timeline_log.as_mut() {
+                f(TimelineLogInfo {
+                    kind,
+                    title,
+                    detail,
+                });
+            }
+        }
+        return SseDispatch::Handled;
+    }
+
     if key_present_non_null(obj, "sse_capabilities") {
         if let Some(Value::Object(caps)) = obj.get("sse_capabilities")
             && let Some(sv_raw) = caps.get("supported_sse_v")
@@ -509,6 +548,7 @@ mod sse_control_order_tests {
             on_staged_plan_step_finished: None,
             on_clarification_questionnaire: None,
             on_thinking_trace: None,
+            on_timeline_log: None,
         };
         match try_dispatch_sse_control_payload(data, &mut cbs) {
             SseDispatch::Stop => "stop",

@@ -48,6 +48,10 @@ pub struct StatusData {
     /// 与后端 `message_pipeline` 按字符删旧一致；`0` 表示未启用预算（进度条仅展示字符数）。
     #[serde(default)]
     pub context_char_budget: usize,
+    #[serde(default)]
+    pub executor_model: String,
+    #[serde(default)]
+    pub executor_api_base: String,
 }
 
 fn default_markdown_render_true() -> bool {

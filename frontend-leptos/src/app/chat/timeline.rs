@@ -22,6 +22,9 @@ fn label_for_entry(loc: Locale, kind: &TimelineKind) -> String {
             status,
         } => i18n::timeline_panel_staged_end(loc, *step_index, status),
         TimelineKind::Tool { ok } => i18n::timeline_panel_tool(loc, *ok),
+        TimelineKind::ApprovalDecision { decision } => {
+            i18n::timeline_panel_approval_decision(loc, decision)
+        }
         TimelineKind::LegacyStaged => i18n::timeline_panel_legacy_staged(loc).to_string(),
         TimelineKind::LegacyTool => i18n::timeline_panel_legacy_tool(loc).to_string(),
     }

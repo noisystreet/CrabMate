@@ -11,11 +11,11 @@ use crabmate_sse_protocol::SSE_PROTOCOL_VERSION;
 use crate::i18n::Locale;
 use crate::sse_dispatch::{
     CommandApprovalRequest, SseCallbacks, StagedPlanStepEndInfo, StagedPlanStepStartInfo,
-    ThinkingTraceInfo, ToolResultInfo, try_dispatch_sse_control_payload,
+    ThinkingTraceInfo, TimelineLogInfo, ToolResultInfo, try_dispatch_sse_control_payload,
 };
 
 use super::browser::{auth_headers, window};
-use super::client_llm_storage::client_llm_json_for_chat_body;
+use super::client_llm_storage::{client_llm_json_for_chat_body, executor_llm_json_for_chat_body};
 
 pub struct ChatStreamCallbacks {
     pub on_delta: std::rc::Rc<dyn Fn(String)>,
@@ -42,6 +42,7 @@ pub struct ChatStreamCallbacks {
     pub on_clarification_questionnaire:
         std::rc::Rc<dyn Fn(crate::sse_dispatch::ClarificationQuestionnaireInfo)>,
     pub on_thinking_trace: std::rc::Rc<dyn Fn(ThinkingTraceInfo)>,
+    pub on_timeline_log: std::rc::Rc<dyn Fn(TimelineLogInfo)>,
 }
 
 impl Clone for ChatStreamCallbacks {
@@ -66,6 +67,7 @@ impl Clone for ChatStreamCallbacks {
                 &self.on_clarification_questionnaire,
             ),
             on_thinking_trace: std::rc::Rc::clone(&self.on_thinking_trace),
+            on_timeline_log: std::rc::Rc::clone(&self.on_timeline_log),
         }
     }
 }
@@ -114,6 +116,9 @@ pub async fn send_chat_stream(
         }
         if let Some(cl) = client_llm_json_for_chat_body() {
             body["client_llm"] = cl;
+        }
+        if let Some(el) = executor_llm_json_for_chat_body() {
+            body["executor_llm"] = el;
         }
         let init = RequestInit::new();
         init.set_method("POST");
@@ -345,6 +350,7 @@ fn handle_sse_block(
     };
     let mut on_phase = || (cbs.on_assistant_answer_phase)();
     let mut on_thinking_trace = |info: ThinkingTraceInfo| (cbs.on_thinking_trace)(info);
+    let mut on_timeline_log = |info: TimelineLogInfo| (cbs.on_timeline_log)(info);
 
     let mut cbs2 = SseCallbacks {
         on_error: &mut on_err,
@@ -360,6 +366,7 @@ fn handle_sse_block(
         on_staged_plan_step_finished: Some(&mut on_staged_end),
         on_clarification_questionnaire: Some(&mut on_clar),
         on_thinking_trace: Some(&mut on_thinking_trace),
+        on_timeline_log: Some(&mut on_timeline_log),
     };
     match try_dispatch_sse_control_payload(data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(()),

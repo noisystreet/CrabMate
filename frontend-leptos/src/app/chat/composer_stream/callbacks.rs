@@ -12,11 +12,12 @@ use crate::message_format::{staged_timeline_system_message_body, tool_card_text}
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::sse_dispatch::{
     ClarificationQuestionnaireInfo, CommandApprovalRequest, StagedPlanStepEndInfo,
-    StagedPlanStepStartInfo, ThinkingTraceInfo, ToolResultInfo,
+    StagedPlanStepStartInfo, ThinkingTraceInfo, TimelineLogInfo, ToolResultInfo,
 };
 use crate::storage::StoredMessage;
 use crate::timeline_scan::{
-    timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
+    timeline_state_approval_decision, timeline_state_staged_end, timeline_state_staged_start,
+    timeline_state_tool,
 };
 
 use super::context::ChatStreamCallbackCtx;
@@ -254,6 +255,29 @@ pub(super) fn build_chat_stream_callbacks(
             stream_ctx.shell.thinking_trace_log.update(|v| v.push(info));
         })
     };
+    let on_timeline_log: Rc<dyn Fn(TimelineLogInfo)> = {
+        let stream_ctx = Rc::clone(&stream_ctx);
+        Rc::new(move |info: TimelineLogInfo| {
+            let aid = stream_ctx.active_session_id.as_str();
+            // Jump to latest message (current assistant streaming message).
+            let msg_id = stream_ctx.assistant_message_id.clone();
+            let state = timeline_state_approval_decision(&msg_id, &info.kind);
+            stream_ctx.chat.sessions.update(|list| {
+                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                    s.messages.push(StoredMessage {
+                        id: msg_id.clone(),
+                        role: "system".to_string(),
+                        text: info.title.clone(),
+                        reasoning_text: String::new(),
+                        image_urls: vec![],
+                        state: Some(state),
+                        is_tool: false,
+                        created_at: message_created_ms(),
+                    });
+                }
+            });
+        })
+    };
     let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: StagedPlanStepEndInfo| {
@@ -305,5 +329,6 @@ pub(super) fn build_chat_stream_callbacks(
         on_staged_plan_step_finished: on_staged_step_finished,
         on_clarification_questionnaire: on_clarification,
         on_thinking_trace,
+        on_timeline_log,
     }
 }

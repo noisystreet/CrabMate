@@ -122,6 +122,9 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
     if key_present_non_null(obj, "stream_ended") {
         return "handled";
     }
+    if key_present_non_null(obj, "timeline_log") {
+        return "handled";
+    }
 
     "plain"
 }
