@@ -253,6 +253,10 @@ pub struct StagedPlanStepFinishedBody {
     /// 与 `staged_plan_step_started` 对齐；无则省略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executor_kind: Option<String>,
+    /// 验证失败原因（当 `status` 为 `failed` 且失败源于步级验收时填充）。
+    /// 格式示例：`exit_code_mismatch: expected 0, got 1`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verify_fail_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -549,6 +553,7 @@ mod tests {
                 total_steps: 3,
                 status: "failed".into(),
                 executor_kind: Some("review_readonly".into()),
+                verify_fail_reason: None,
             },
         });
         let msg_step_finished: SseMessage = serde_json::from_str(&step_finished).unwrap();

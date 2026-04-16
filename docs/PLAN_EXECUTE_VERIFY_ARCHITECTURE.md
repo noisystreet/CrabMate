@@ -33,8 +33,15 @@
 - **分阶段规划**（**`agent_turn::staged`**）：无工具规划轮 → 将 **`steps`** 注入为多条 **user** → 每步跑完整工具子循环（**E**），并由 **`sub_agent_policy`** 按 **`executor_kind`** 拒绝越权 **`tool_calls`**。  
 - **`workflow_execute`**：同轮 **DAG**；与「分阶段单步」正交，可由规划 **`workflow_node_id`** 对齐责任。
 
-### 2.3 验证（Verify）— 当前「部分存在」
+### 2.3 验证（Verify）— **已实现**
 
+- **确定性验证闸门**（**`step_verifier.rs`**）：支持以下验收规则：
+  - **`expect_exit_code`**：退出码验证（如 `cargo test` → 0）
+  - **`expect_stdout_contains`**：stdout 是否包含指定字符串
+  - **`expect_stderr_contains`**：stderr 是否包含指定字符串
+  - **`expect_file_exists`**：文件是否存在
+  - **`expect_json_path_equals`**：JSON path 验证（支持 `$.field.nested` 和 `$[0].field` 格式）
+  - **`expect_http_status`**：HTTP 状态码验证（对 `http_request`/`http_fetch` 类工具生效）
 - **隐式验证**：工具返回的 **`error_code` / 退出码 / 结构化 `crabmate_tool` 信封** 已构成事实；模型在后续轮读取。  
 - **`final_plan_semantic_check_enabled`**（**`per_plan_semantic_check`**）：在静态 **PER** 规则通过后，可选 **再调一次无工具 LLM**，判断「终答规划 vs 最近工具摘要」是否明显矛盾（**fail-open** 等语义以配置为准）——偏 **「规划一致性」**，**不是**通用「验收测试通过」闸门。
 
@@ -145,12 +152,12 @@ flowchart TB
 
 ## 8. 演进阶段（建议）
 
-| 阶段 | 内容 | 产出 |
-|------|------|------|
-| **P0** | 文档化「推荐验收模式」：约定某工具输出首行 JSON、**`cargo_test` 退出码**等（**零代码**） | **`docs/TOOLS.md` + 本稿附录示例** |
-| **P1** | 配置项：**`step_verify_enabled`**、**全局 `max_verify_replan`**；**Verifier** 仅支持 **退出码 + 固定 JSON 路径** | **Rust 闸门 + 单测 + SSE 码表** |
-| **P2** | **`PlanStepV1`** 可选字段 **`step_kind` / `acceptance` / `max_step_retries`** | **serde 迁移 + 前端展示（若有）** |
-| **P3** | 与 **Chrome trace / `/status`** 对齐的 **verify 事件** | **观测性完备** |
+| 阶段 | 状态 | 内容 | 产出 |
+|------|------|------|------|
+| **P0** | ✅ 完成 | 文档化「推荐验收模式」 | **`docs/TOOLS.md` + 本稿附录示例** |
+| **P1** | ✅ 完成 | **Verifier** 支持 **退出码 + JSON 路径 + HTTP 状态** | **Rust 闸门 + 单测** |
+| **P2** | 🔄 进行中 | **`PlanStepV1`** 可选字段 **`step_kind` / `acceptance` / `max_step_retries`** | **serde 迁移 + 前端展示（若有）** |
+| **P3** | ⏳ 待办 | 与 **Chrome trace / `/status`** 对齐的 **verify 事件** | **观测性完备** |
 
 ---
 
@@ -160,6 +167,7 @@ flowchart TB
 |------|------|
 | 规划 JSON | `src/agent/plan_artifact.rs` |
 | 分阶段执行 | `src/agent/agent_turn/staged.rs`、`sub_agent_policy` |
+| **步级验收闸门** | `src/agent/step_verifier.rs` |
 | PER / 重写 | `src/agent/per_coord.rs`、`src/agent/reflection/plan_rewrite.rs` |
 | 工作流反思 | `src/agent/workflow_reflection_controller.rs` |
 | 侧向规划检查 | `src/agent/per_plan_semantic_check.rs` |
@@ -173,3 +181,106 @@ flowchart TB
 | 日期 | 摘要 |
 |------|------|
 | 2026-04-12 | 初稿：P-E-V 分层、与现有能力映射、Verifier 闸门与 `plan_rewrite` 正交、演进阶段与非目标。 |
+| 2026-04-16 | P1 完成：`step_verifier.rs` 支持 JSON path 和 HTTP 状态验证；`PlanStepAcceptance` 扩展字段。 |
+
+---
+
+## 附录：`acceptance` 使用示例
+
+### 基础退出码验证
+
+```json
+{
+  "type": "agent_reply_plan",
+  "version": 1,
+  "steps": [
+    {
+      "id": "run-tests",
+      "description": "运行项目测试",
+      "executor_kind": "test_runner",
+      "acceptance": {
+        "expect_exit_code": 0
+      }
+    }
+  ]
+}
+```
+
+### 多规则组合验证
+
+```json
+{
+  "steps": [
+    {
+      "id": "build",
+      "description": "编译项目",
+      "executor_kind": "patch_write",
+      "acceptance": {
+        "expect_exit_code": 0,
+        "expect_stderr_contains": "Finished"
+      }
+    },
+    {
+      "id": "verify-build-artifact",
+      "description": "验证构建产物",
+      "executor_kind": "review_readonly",
+      "acceptance": {
+        "expect_file_exists": "target/release/myapp"
+      }
+    }
+  ]
+}
+```
+
+### JSON Path 验证
+
+```json
+{
+  "steps": [
+    {
+      "id": "api-check",
+      "description": "调用健康检查 API",
+      "acceptance": {
+        "expect_exit_code": 0,
+        "expect_json_path_equals": {
+          "path": "$.status",
+          "value": "healthy"
+        },
+        "expect_http_status": 200
+      }
+    }
+  ]
+}
+```
+
+### 带重试与控制流
+
+```json
+{
+  "steps": [
+    {
+      "id": "apply-fix",
+      "description": "应用修复补丁",
+      "executor_kind": "patch_write",
+      "max_step_retries": 3,
+      "transitions": [
+        {
+          "condition": "on_verify_fail",
+          "target_step_id": "apply-fix",
+          "max_loops": 3
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "description": "运行测试验证",
+      "executor_kind": "test_runner",
+      "step_kind": "verify",
+      "acceptance": {
+        "expect_exit_code": 0,
+        "expect_stdout_contains": "all tests passed"
+      }
+    }
+  ]
+}
+```

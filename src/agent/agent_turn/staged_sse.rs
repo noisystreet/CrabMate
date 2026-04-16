@@ -152,6 +152,7 @@ pub(crate) async fn send_staged_plan_step_started(
     .await;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn send_staged_plan_step_finished(
     out: Option<&mpsc::Sender<String>>,
     plan_id: &str,
@@ -160,6 +161,7 @@ pub(crate) async fn send_staged_plan_step_finished(
     total_steps: usize,
     status: &str,
     executor_kind: Option<&str>,
+    verify_fail_reason: Option<&str>,
 ) {
     let Some(tx) = out else {
         return;
@@ -174,6 +176,7 @@ pub(crate) async fn send_staged_plan_step_finished(
                 total_steps,
                 status: status.to_string(),
                 executor_kind: executor_kind.map(|s| s.to_string()),
+                verify_fail_reason: verify_fail_reason.map(|s| s.to_string()),
             },
         }),
         "staged_sse::staged_plan_step_finished",

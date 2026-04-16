@@ -502,6 +502,7 @@ pub(crate) fn build_logical_dual_planner_messages(
 }
 
 /// 发送单步结束 SSE（`failed` / `cancelled` / `ok`）。
+#[allow(clippy::too_many_arguments)]
 async fn finish_staged_plan_step_sse(
     out: Option<&mpsc::Sender<String>>,
     plan_id: &str,
@@ -510,6 +511,7 @@ async fn finish_staged_plan_step_sse(
     n: usize,
     status: &'static str,
     executor_kind: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
+    verify_fail_reason: Option<&str>,
 ) {
     send_staged_plan_step_finished(
         out,
@@ -519,6 +521,7 @@ async fn finish_staged_plan_step_sse(
         n,
         status,
         executor_kind.map(|k| k.as_snake_case_str()),
+        verify_fail_reason,
     )
     .await;
 }
@@ -536,6 +539,7 @@ struct StagedPlanStepFailedExit<'a> {
 async fn finish_staged_plan_step_failed_and_plan_failed_sse(
     f: StagedPlanStepFailedExit<'_>,
     executor_kind: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
+    verify_fail_reason: Option<&str>,
 ) {
     finish_staged_plan_step_sse(
         f.out,
@@ -545,6 +549,7 @@ async fn finish_staged_plan_step_failed_and_plan_failed_sse(
         f.n,
         "failed",
         executor_kind,
+        verify_fail_reason,
     )
     .await;
     send_staged_plan_finished(
@@ -1249,18 +1254,21 @@ where
                 )
                 .await;
 
+                let step_status = if run_step.is_err() || step_verify_failed_reason.is_some() {
+                    "failed"
+                } else {
+                    "ok"
+                };
+                let step_verify_fail_reason = step_verify_failed_reason.as_deref();
                 finish_staged_plan_step_sse(
                     patch_ctx.p.out,
                     &plan_id,
                     step.id.trim(),
                     step_index,
                     n,
-                    if run_step.is_err() || step_verify_failed_reason.is_some() {
-                        "failed"
-                    } else {
-                        "ok"
-                    },
+                    step_status,
                     step.executor_kind,
+                    step_verify_fail_reason,
                 )
                 .await;
                 completed_steps = step_index;
@@ -1351,6 +1359,7 @@ where
                     completed_steps_before_this: completed_steps,
                 },
                 step.executor_kind,
+                step_verify_failed_reason.as_deref(),
             )
             .await;
 
@@ -1375,6 +1384,7 @@ where
                 n,
                 "cancelled",
                 step.executor_kind,
+                None,
             )
             .await;
             staged_loop_cancelled = true;
@@ -1441,6 +1451,7 @@ where
                     completed_steps_before_this: completed_steps,
                 },
                 step.executor_kind,
+                None,
             )
             .await;
             return Err(RunAgentTurnError::StepRetryExhausted {
@@ -1457,6 +1468,7 @@ where
             n,
             "ok",
             step.executor_kind,
+            None,
         )
         .await;
         completed_steps = step_index;
