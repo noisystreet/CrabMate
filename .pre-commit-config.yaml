@@ -22,6 +22,13 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [commit]
+      - id: frontend-wasm-check
+        name: frontend wasm check
+        entry: bash -c 'staged=$(git diff --cached --name-only -- "frontend-leptos/" | wc -l); if [ "$staged" -gt 0 ]; then cd frontend-leptos && cargo check --target wasm32-unknown-unknown; else exit 0; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
       - id: sse-control-golden
         name: SSE control golden (Rust mirror)
         entry: bash -c 'staged=$(git diff --cached --name-only | grep -E "^(fixtures/sse_control_golden.jsonl|crates/crabmate-sse-protocol/control_classify.rs|frontend-leptos/src/sse_dispatch.rs)$" | wc -l); if [ "$staged" -gt 0 ]; then cargo test golden_sse_control --workspace; else exit 0; fi'
