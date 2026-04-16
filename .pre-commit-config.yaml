@@ -17,16 +17,18 @@ repos:
         always_run: true
       - id: cargo-clippy
         name: cargo clippy (-D warnings)
-        entry: cargo clippy --all-targets --all-features -- -D warnings
+        entry: bash -c 'staged=$(git diff --cached --name-only -- "*.rs" | wc -l); if [ "$staged" -gt 0 ]; then cargo clippy --all-targets --all-features -- -D warnings; else exit 0; fi'
         language: system
         pass_filenames: false
         always_run: true
+        stages: [commit]
       - id: sse-control-golden
         name: SSE control golden (Rust mirror)
-        entry: cargo test golden_sse_control --workspace
+        entry: bash -c 'staged=$(git diff --cached --name-only | grep -E "^(fixtures/sse_control_golden.jsonl|crates/crabmate-sse-protocol/control_classify.rs|frontend-leptos/src/sse_dispatch.rs)$" | wc -l); if [ "$staged" -gt 0 ]; then cargo test golden_sse_control --workspace; else exit 0; fi'
         language: system
         pass_filenames: false
-        files: ^(fixtures/sse_control_golden\.jsonl|crates/crabmate-sse-protocol/control_classify\.rs|frontend-leptos/src/sse_dispatch\.rs)$
+        always_run: true
+        stages: [commit]
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
