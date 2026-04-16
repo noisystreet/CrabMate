@@ -11,8 +11,11 @@ mod http;
 
 pub use chat_stream::{ChatStreamCallbacks, send_chat_stream};
 pub use client_llm_storage::{
-    clear_client_llm_api_key_storage, client_llm_storage_has_api_key,
-    load_client_llm_text_fields_from_storage, persist_client_llm_to_storage,
+    clear_client_llm_api_key_storage, clear_executor_llm_api_key_storage,
+    client_llm_storage_has_api_key, executor_llm_json_for_chat_body,
+    executor_llm_storage_has_api_key, load_client_llm_text_fields_from_storage,
+    load_executor_llm_text_fields_from_storage, persist_client_llm_to_storage,
+    persist_executor_llm_to_storage,
 };
 pub use http::{
     StatusData, TaskItem, TasksData, WorkspaceData, WorkspaceEntry, fetch_conversation_messages,

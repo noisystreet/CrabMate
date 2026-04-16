@@ -241,6 +241,29 @@ pub fn timeline_panel_legacy_tool(l: Locale) -> &'static str {
     }
 }
 
+pub fn timeline_panel_approval_decision(l: Locale, kind: &str) -> String {
+    match l {
+        Locale::ZhHans => {
+            let label = match kind {
+                "deny" => "拒绝",
+                "allow_once" => "本次允许",
+                "allow_always" => "永久允许",
+                _ => kind,
+            };
+            format!("审批 · {}", label)
+        }
+        Locale::En => {
+            let label = match kind {
+                "deny" => "denied",
+                "allow_once" => "allowed once",
+                "allow_always" => "allowed always",
+                _ => kind,
+            };
+            format!("Approval · {}", label)
+        }
+    }
+}
+
 // --- 聊天列空态 ---
 
 pub fn chat_empty_title(l: Locale) -> &'static str {
