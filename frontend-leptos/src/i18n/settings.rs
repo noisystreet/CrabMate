@@ -334,6 +334,13 @@ pub fn settings_executor_cleared_key(l: Locale) -> &'static str {
 
 // --- 设置页面 ---
 
+pub fn settings_back(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "返回",
+        Locale::En => "Back",
+    }
+}
+
 pub fn settings_block_shortcuts(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "键盘",

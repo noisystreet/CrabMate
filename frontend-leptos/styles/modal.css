@@ -331,15 +331,30 @@
 
 /* —— 设置页面 —— */
 .settings-page {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: auto;
   background: var(--bg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
-.settings-page-head {
+.settings-page-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.shell-main.settings-page-hidden {
+  display: none;
+}
+
+.settings-page-header {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -352,21 +367,25 @@
   flex-shrink: 0;
 }
 
-.settings-back-btn {
+.settings-page-back {
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--muted);
   flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
 }
 
-.settings-back-btn:hover {
+.settings-page-back:hover {
   color: var(--text);
+  background: var(--surface-hover);
 }
 
-.settings-back-icon {
-  width: 16px;
-  height: 16px;
+.settings-page-back svg {
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 
@@ -377,7 +396,16 @@
   flex: 1;
 }
 
-.settings-badge {
+.settings-page-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
   flex-shrink: 0;
 }
 
@@ -390,16 +418,9 @@
   box-sizing: border-box;
 }
 
-.settings-page-intro {
+.settings-intro {
   margin: 0 0 var(--space-5);
   font-size: 13px;
   line-height: 1.55;
-  color: var(--muted);
-}
-
-.settings-page-field-hint {
-  margin: 0 0 var(--space-3);
-  font-size: 12px;
-  line-height: 1.5;
   color: var(--muted);
 }

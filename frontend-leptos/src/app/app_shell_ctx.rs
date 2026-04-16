@@ -58,6 +58,7 @@ pub struct AppShellCtx {
     pub view_menu_open: RwSignal<bool>,
     pub status_bar_visible: RwSignal<bool>,
     pub settings_modal: RwSignal<bool>,
+    pub settings_page: RwSignal<bool>,
     pub workspace_panel: WorkspacePanelSignals,
     pub status_tasks: StatusTasksSignals,
     pub refresh_workspace: Arc<dyn Fn() + Send + Sync>,
