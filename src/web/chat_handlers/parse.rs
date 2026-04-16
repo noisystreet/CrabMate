@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use super::super::app_state::{AppState, CONVERSATION_ID_MAX_LEN};
 use crate::chat_job_queue;
 use crate::config::LlmHttpAuthMode;
-use crate::web::http_types::chat::{ApiError, ClientLlmBody};
+use crate::web::http_types::chat::{ApiError, ClientLlmBody, ExecutorLlmBody};
 
 /// Web 聊天附带的图片 URL：仅允许同源 **`/uploads/<文件名>`**（与 `upload_handler` 一致），防目录穿越与外链滥用。
 pub(super) fn normalize_chat_image_urls(raw: &[String]) -> Result<Vec<String>, String> {
@@ -87,6 +87,64 @@ pub(super) fn parse_client_llm_override(
     {
         return Err(format!(
             "client_llm.api_key 过长（上限 {} 字符）",
+            CLIENT_LLM_API_KEY_MAX
+        ));
+    }
+    Ok(Some(chat_job_queue::WebChatLlmOverride {
+        api_base,
+        model,
+        api_key,
+    }))
+}
+
+pub(super) fn parse_executor_llm_override(
+    raw: Option<ExecutorLlmBody>,
+) -> Result<Option<chat_job_queue::WebChatLlmOverride>, String> {
+    let Some(b) = raw else {
+        return Ok(None);
+    };
+    let api_base = b
+        .api_base
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let model = b
+        .model
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let api_key = b
+        .api_key
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    if api_base.is_none() && model.is_none() && api_key.is_none() {
+        return Ok(None);
+    }
+    if let Some(ref s) = api_base
+        && s.len() > CLIENT_LLM_API_BASE_MAX
+    {
+        return Err(format!(
+            "executor_llm.api_base 过长（上限 {} 字符）",
+            CLIENT_LLM_API_BASE_MAX
+        ));
+    }
+    if let Some(ref s) = model
+        && s.len() > CLIENT_LLM_MODEL_MAX
+    {
+        return Err(format!(
+            "executor_llm.model 过长（上限 {} 字符）",
+            CLIENT_LLM_MODEL_MAX
+        ));
+    }
+    if let Some(ref s) = api_key
+        && s.len() > CLIENT_LLM_API_KEY_MAX
+    {
+        return Err(format!(
+            "executor_llm.api_key 过长（上限 {} 字符）",
             CLIENT_LLM_API_KEY_MAX
         ));
     }

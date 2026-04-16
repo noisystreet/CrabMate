@@ -72,6 +72,36 @@ fn resolve_web_llm_for_job(
     }
 }
 
+/// 从 `executor_llm_override` 提取 executor 阶段专用的覆盖配置。
+fn resolve_executor_llm_for_job(
+    deps: &WebChatQueueDeps,
+    cfg_snap: Arc<AgentConfig>,
+    ov: Option<&WebChatLlmOverride>,
+) -> Option<(Arc<AgentConfig>, String)> {
+    let o = ov?;
+    let mut c = (*cfg_snap).clone();
+    let mut key = deps.api_key.clone();
+    let mut has_override = false;
+    if let Some(ref x) = o.api_base {
+        c.api_base.clone_from(x);
+        has_override = true;
+    }
+    if let Some(ref x) = o.model {
+        c.model.clone_from(x);
+        has_override = true;
+    }
+    if let Some(ref x) = o.api_key {
+        key.clone_from(x);
+        c.llm_http_auth_mode = LlmHttpAuthMode::Bearer;
+        has_override = true;
+    }
+    if has_override {
+        Some((Arc::new(c), key))
+    } else {
+        None
+    }
+}
+
 /// 单条 `/chat` / `/chat/stream` 任务在跑 `run_agent_turn` 时，PER 相关状态的只读镜像（进程内、按 `job_id` 区分）。
 ///
 /// **局限**：与浏览器「会话」无稳定绑定；同一客户端连续请求会得到不同 `job_id`。完整「本会话是否在规划重写」需会话级协议（如 `conversation_id`）再关联。
@@ -137,6 +167,8 @@ pub struct JsonSubmitParams {
     pub seed_override: LlmSeedOverride,
     /// 可选：本任务覆盖 `api_base` / `model` / `api_key`（见 [`WebChatLlmOverride`]）。
     pub llm_override: Option<WebChatLlmOverride>,
+    /// 可选：本任务覆盖执行阶段 `api_base` / `model` / `api_key`。
+    pub executor_llm_override: Option<WebChatLlmOverride>,
     pub reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
 }
 
@@ -156,6 +188,8 @@ pub struct StreamSubmitParams {
     pub seed_override: LlmSeedOverride,
     /// 可选：本任务覆盖 `api_base` / `model` / `api_key`（见 [`WebChatLlmOverride`]）。
     pub llm_override: Option<WebChatLlmOverride>,
+    /// 可选：本任务覆盖执行阶段 `api_base` / `model` / `api_key`。
+    pub executor_llm_override: Option<WebChatLlmOverride>,
     /// HTTP SSE 层：每条为 **`(Last-Event-ID 序号, data 负载)`**（与 hub 环形缓冲一致）。
     pub stream_event_tx: mpsc::Sender<(u64, String)>,
     pub web_approval_session: Option<WebApprovalSession>,
@@ -205,6 +239,7 @@ enum QueuedChatJob {
         temperature_override: Option<f32>,
         seed_override: LlmSeedOverride,
         llm_override: Option<WebChatLlmOverride>,
+        executor_llm_override: Option<WebChatLlmOverride>,
         stream_event_tx: mpsc::Sender<(u64, String)>,
         web_approval_session: Option<WebApprovalSession>,
     },
@@ -222,6 +257,7 @@ enum QueuedChatJob {
         temperature_override: Option<f32>,
         seed_override: LlmSeedOverride,
         llm_override: Option<WebChatLlmOverride>,
+        executor_llm_override: Option<WebChatLlmOverride>,
         reply_tx: oneshot::Sender<Result<Vec<Message>, String>>,
     },
 }
@@ -375,6 +411,7 @@ impl ChatJobQueue {
             temperature_override,
             seed_override,
             llm_override,
+            executor_llm_override,
             stream_event_tx,
             web_approval_session,
         } = p;
@@ -392,6 +429,7 @@ impl ChatJobQueue {
             temperature_override,
             seed_override,
             llm_override,
+            executor_llm_override,
             stream_event_tx,
             web_approval_session,
         };
@@ -418,6 +456,7 @@ impl ChatJobQueue {
             temperature_override,
             seed_override,
             llm_override,
+            executor_llm_override,
             reply_tx,
         } = p;
         let job = QueuedChatJob::Json {
@@ -434,6 +473,7 @@ impl ChatJobQueue {
             temperature_override,
             seed_override,
             llm_override,
+            executor_llm_override,
             reply_tx,
         };
         self.inner
@@ -651,6 +691,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             temperature_override,
             seed_override,
             llm_override,
+            executor_llm_override,
             stream_event_tx,
             web_approval_session,
         } => {
@@ -743,6 +784,28 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 &queue_deps.tools,
                 turn_allow.as_ref().map(|a| a.as_ref()),
             );
+            let executor_override = resolve_executor_llm_for_job(
+                &queue_deps,
+                Arc::clone(&cfg_turn),
+                executor_llm_override.as_ref(),
+            );
+            let (executor_api_base, executor_api_key, executor_model_override) =
+                match executor_override {
+                    Some((executor_cfg, executor_key)) => {
+                        let base = if executor_cfg.api_base != cfg_turn.api_base {
+                            Some(executor_cfg.api_base.clone())
+                        } else {
+                            None
+                        };
+                        let model = if executor_cfg.model != cfg_turn.model {
+                            Some(executor_cfg.model.clone())
+                        } else {
+                            None
+                        };
+                        (base, Some(executor_key), model)
+                    }
+                    None => (None, None, None),
+                };
             let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_stream(
                 &queue_deps.client,
                 api_key_turn.as_str(),
@@ -755,6 +818,11 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 flight,
                 web_tool_ctx.as_ref(),
                 temperature_override,
+                None,  // model_override: planner 阶段不使用前端传来的 executor model
+                false, // use_executor_model: first iteration is always planner round
+                executor_model_override, // executor_model_override: 前端传来的 executor_llm.model
+                executor_api_base,
+                executor_api_key,
                 seed_override,
                 queue_deps.long_term_memory.clone(),
                 job_id,
@@ -894,6 +962,7 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             temperature_override,
             seed_override,
             llm_override,
+            executor_llm_override,
             reply_tx,
         } => {
             info!(
@@ -930,6 +999,28 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 &queue_deps.tools,
                 turn_allow.as_ref().map(|a| a.as_ref()),
             );
+            let executor_override = resolve_executor_llm_for_job(
+                &queue_deps,
+                Arc::clone(&cfg_turn),
+                executor_llm_override.as_ref(),
+            );
+            let (executor_api_base, executor_api_key, executor_model_override) =
+                match executor_override {
+                    Some((executor_cfg, executor_key)) => {
+                        let base = if executor_cfg.api_base != cfg_turn.api_base {
+                            Some(executor_cfg.api_base.clone())
+                        } else {
+                            None
+                        };
+                        let model = if executor_cfg.model != cfg_turn.model {
+                            Some(executor_cfg.model.clone())
+                        } else {
+                            None
+                        };
+                        (base, Some(executor_key), model)
+                    }
+                    None => (None, None, None),
+                };
             let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_json(
                 &queue_deps.client,
                 api_key_turn.as_str(),
@@ -940,6 +1031,11 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                 workspace_is_set,
                 flight,
                 temperature_override,
+                None,  // model_override: planner 阶段不使用前端传来的 executor model
+                false, // use_executor_model: first iteration is always planner round
+                executor_model_override, // executor_model_override: 前端传来的 executor_llm.model
+                executor_api_base,
+                executor_api_key,
                 seed_override,
                 queue_deps.long_term_memory.clone(),
                 job_id,

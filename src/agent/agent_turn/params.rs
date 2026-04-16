@@ -40,6 +40,14 @@ pub(crate) struct RunLoopParams<'a> {
     pub temperature_override: Option<f32>,
     /// 覆盖本回合的 `model`（`None` 时使用 `cfg.model`）
     pub model_override: Option<String>,
+    /// 若为 `true`，LLM 调用时使用 `cfg.executor_model` 而非 `cfg.planner_model`。
+    pub use_executor_model: bool,
+    /// 执行阶段模型覆盖（当 use_executor_model 为 true 时优先于 cfg.executor_model）
+    pub executor_model_override: Option<String>,
+    /// 当 use_executor_model 为 true 时，优先使用此 api_base。
+    pub executor_api_base: Option<String>,
+    /// 当 use_executor_model 为 true 时，优先使用此 api_key。
+    pub executor_api_key: Option<String>,
     pub seed_override: LlmSeedOverride,
     /// 长期记忆运行时（Web 或 CLI）；`None` 时不注入/不索引。
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
@@ -81,6 +89,22 @@ impl RunLoopParams<'_> {
             no_stream: self.no_stream,
             cancel: self.cancel,
             plain_terminal_stream: self.plain_terminal_stream,
+        }
+    }
+
+    /// 获取本回合 LLM 调用应使用的 model：
+    /// - planner 阶段：`model_override` > `cfg.planner_model` > `cfg.model`
+    /// - executor 阶段：`executor_model_override` > `cfg.executor_model` > `cfg.model`
+    #[inline]
+    pub(crate) fn effective_model(&self) -> Option<&str> {
+        if self.use_executor_model {
+            self.executor_model_override
+                .as_deref()
+                .or_else(|| self.cfg.executor_model.as_deref())
+        } else {
+            self.model_override
+                .as_deref()
+                .or_else(|| self.cfg.planner_model.as_deref())
         }
     }
 }
