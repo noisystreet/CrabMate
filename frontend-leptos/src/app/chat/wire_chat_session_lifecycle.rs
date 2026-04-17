@@ -1,6 +1,6 @@
-//! 会话首启、Web UI 展示偏好、服务端水合、会话列表持久化、上下文用量估算（从 `app/mod.rs` 迁入，阶段 B）。
+//! 会话首启、Web UI 展示偏好、服务端水合、会话列表持久化（从 `app/mod.rs` 迁入，阶段 B）。
 //!
-//! 调用顺序与原先在 `App` 内一致：**首启会话 → Web UI 一次配置 → 水合 → 持久化 → 用量估算**。
+//! 调用顺序与原先在 `App` 内一致：**首启会话 → Web UI 一次配置 → 水合 → 持久化**。
 
 use leptos::prelude::*;
 
@@ -9,7 +9,7 @@ use crate::i18n::Locale;
 use crate::storage::ChatSession;
 
 use crate::app::app_shell_effects::{
-    wire_context_used_estimate, wire_initial_sessions_from_storage, wire_persist_chat_sessions,
+    wire_initial_sessions_from_storage, wire_persist_chat_sessions,
     wire_web_ui_config_once_after_init,
 };
 use crate::app::session_hydrate::wire_session_hydration;
@@ -27,7 +27,6 @@ pub(crate) fn wire_chat_session_lifecycle_effects(
     apply_assistant_display_filters: RwSignal<bool>,
     chat_session: ChatSessionSignals,
     selected_agent_role: RwSignal<Option<String>>,
-    context_used_estimate: RwSignal<usize>,
 ) {
     wire_initial_sessions_from_storage(initialized, sessions, active_id, draft, locale);
     wire_web_ui_config_once_after_init(
@@ -47,11 +46,4 @@ pub(crate) fn wire_chat_session_lifecycle_effects(
     );
 
     wire_persist_chat_sessions(initialized, sessions, active_id);
-    wire_context_used_estimate(
-        initialized,
-        sessions,
-        active_id,
-        draft,
-        context_used_estimate,
-    );
 }

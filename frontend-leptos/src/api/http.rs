@@ -47,6 +47,7 @@ pub struct StatusData {
     pub default_agent_role_id: Option<String>,
     /// 与后端 `message_pipeline` 按字符删旧一致；`0` 表示未启用预算（进度条仅展示字符数）。
     #[serde(default)]
+    #[allow(dead_code)]
     pub context_char_budget: usize,
     #[serde(default)]
     pub executor_model: String,

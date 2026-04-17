@@ -16,7 +16,7 @@ use crate::app_prefs::{
     local_storage, store_bool_key, store_f64_key, store_side_panel_view,
 };
 use crate::i18n::{self, Locale};
-use crate::session_ops::{SessionContextAnchor, estimate_context_chars_for_active_session};
+use crate::session_ops::SessionContextAnchor;
 use crate::storage::{ChatSession, ensure_at_least_one, load_sessions, save_sessions};
 
 use super::status_tasks_state::StatusTasksSignals;
@@ -108,32 +108,6 @@ pub fn wire_persist_chat_sessions(
             return;
         }
         save_sessions(&list, Some(&aid));
-    });
-}
-
-/// 估算当前会话上下文字符数（对照底栏与 **`GET /status`**）。
-pub fn wire_context_used_estimate(
-    initialized: RwSignal<bool>,
-    sessions: RwSignal<Vec<ChatSession>>,
-    active_id: RwSignal<String>,
-    draft: RwSignal<String>,
-    context_used_estimate: RwSignal<usize>,
-) {
-    Effect::new({
-        let sessions = sessions;
-        let active_id = active_id;
-        let draft = draft;
-        move |_| {
-            if !initialized.get() {
-                return;
-            }
-            let n = estimate_context_chars_for_active_session(
-                &sessions.get(),
-                active_id.get().as_str(),
-                draft.get().as_str(),
-            );
-            context_used_estimate.set(n);
-        }
     });
 }
 

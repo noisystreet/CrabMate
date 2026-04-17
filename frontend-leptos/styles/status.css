@@ -61,69 +61,6 @@
   gap: 4px;
 }
 
-.status-chip-context {
-  height: auto;
-  min-height: 28px;
-  align-items: center;
-  padding-top: 5px;
-  padding-bottom: 5px;
-  max-width: min(200px, 30vw);
-}
-
-.status-context-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.status-context-row-inline {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 0;
-  row-gap: 2px;
-}
-
-.status-context-track {
-  width: 100%;
-  height: 5px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--muted) 18%, var(--border-subtle));
-  overflow: hidden;
-}
-
-.status-context-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: color-mix(in srgb, var(--accent) 50%, var(--info));
-  transition: width 0.2s ease;
-}
-
-.status-context-track-over .status-context-fill {
-  background: color-mix(in srgb, var(--warn) 40%, var(--error));
-}
-
-.status-context-meta {
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.status-context-meta-over {
-  color: var(--warn);
-}
-
-.status-context-rev-suffix {
-  font-weight: 500;
-  color: var(--muted);
-}
-
 .status-agent-select {
   appearance: none;
   height: 24px;

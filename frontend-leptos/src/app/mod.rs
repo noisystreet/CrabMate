@@ -221,8 +221,6 @@ pub fn App() -> impl IntoView {
     // 递增后由 Effect 拉取 GET /workspace/changelog（避免在 view 中捕获非 Send 的 Rc<dyn Fn>）。
     let changelist_fetch_nonce = RwSignal::new(0_u64);
     let locale = RwSignal::new(load_locale_from_storage());
-    // 当前会话消息 + 草稿字符数（本地估算），对照 `/status.context_char_budget`。
-    let context_used_estimate = RwSignal::new(0_usize);
     // 与 GET /web-ui、环境变量 AGENT_WEB_DISABLE_MARKDOWN 对齐；拉取失败时保持 true（沿用 Markdown）。
     let markdown_render = RwSignal::new(true);
     // 与 AGENT_WEB_RAW_ASSISTANT_OUTPUT 对齐；为 false 时助手展示/搜索/导出均不过滤原文。
@@ -240,7 +238,6 @@ pub fn App() -> impl IntoView {
         apply_assistant_display_filters,
         chat_session,
         selected_agent_role,
-        context_used_estimate,
     );
     wire_persist_side_panel_view_flags(side_panel_view);
     wire_persist_status_bar_visible(status_bar_visible);
@@ -405,7 +402,6 @@ pub fn App() -> impl IntoView {
         status_busy,
         client_llm_storage_tick,
         selected_agent_role,
-        context_used_estimate,
         refresh_status: Arc::clone(&refresh_status),
         theme,
         bg_decor,
