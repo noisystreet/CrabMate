@@ -109,10 +109,58 @@ impl ManagerAgent {
 
     /// 降级分解（不调用 LLM）
     fn decompose_fallback(&self, task: &str) -> ManagerOutput {
-        let sub_goals = vec![
-            SubGoal::new("goal_1", task)
-                .with_capabilities(vec![Capability::FileRead, Capability::CommandExecution]),
-        ];
+        let task_lower = task.to_lowercase();
+        let mut sub_goals: Vec<SubGoal> = Vec::new();
+        let mut goal_counter = 0;
+
+        // 简单关键词分析
+        if task_lower.contains("读取") || task_lower.contains("分析") || task_lower.contains("检查")
+        {
+            goal_counter += 1;
+            sub_goals.push(
+                SubGoal::new(&format!("goal_{}", goal_counter), "读取和分析相关文件")
+                    .with_capabilities(vec![Capability::FileRead]),
+            );
+        }
+
+        if task_lower.contains("修改") || task_lower.contains("编辑") || task_lower.contains("写")
+        {
+            goal_counter += 1;
+            sub_goals.push(
+                SubGoal::new(&format!("goal_{}", goal_counter), "修改或创建文件")
+                    .with_capabilities(vec![Capability::FileWrite]),
+            );
+        }
+
+        if task_lower.contains("运行")
+            || task_lower.contains("执行")
+            || task_lower.contains("测试")
+            || task_lower.contains("编译")
+            || task_lower.contains("构建")
+        {
+            goal_counter += 1;
+            sub_goals.push(
+                SubGoal::new(&format!("goal_{}", goal_counter), "执行命令或测试")
+                    .with_capabilities(vec![Capability::CommandExecution]),
+            );
+        }
+
+        if task_lower.contains("获取") || task_lower.contains("请求") || task_lower.contains("拉取")
+        {
+            goal_counter += 1;
+            sub_goals.push(
+                SubGoal::new(&format!("goal_{}", goal_counter), "发起网络请求")
+                    .with_capabilities(vec![Capability::NetworkRequest]),
+            );
+        }
+
+        // 如果没有匹配任何关键词，创建一个通用目标
+        if sub_goals.is_empty() {
+            sub_goals.push(
+                SubGoal::new("goal_1", task)
+                    .with_capabilities(vec![Capability::FileRead, Capability::CommandExecution]),
+            );
+        }
 
         ManagerOutput {
             sub_goals,

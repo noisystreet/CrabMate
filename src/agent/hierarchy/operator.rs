@@ -85,17 +85,28 @@ impl OperatorAgent {
     }
 
     /// 执行子目标（简化版本，不使用 LLM）
+    ///
+    /// 此版本用于测试或作为降级路径。完整版本使用 execute_with_llm。
     pub async fn execute(&self, goal: &SubGoal) -> Result<TaskResult, OperatorError> {
         let start_time = Instant::now();
 
-        log::info!(target: "crabmate", "Operator executing goal: {} (simple mode)", goal.goal_id);
+        log::info!(
+            target: "crabmate",
+            "Operator executing goal: {} description={} capabilities={:?}",
+            goal.goal_id,
+            goal.description,
+            goal.required_capabilities
+        );
+
+        // 模拟执行延迟
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
         // 简化版本：直接标记为完成
         // 完整版本需要实现 ReAct 循环，调用 execute_with_llm
         Ok(TaskResult {
             task_id: goal.goal_id.clone(),
             status: TaskStatus::Completed,
-            output: Some(format!("Completed: {}", goal.description)),
+            output: Some(format!("Completed: {} (simple mode)", goal.description)),
             error: None,
             artifacts: Vec::new(),
             duration_ms: start_time.elapsed().as_millis() as u64,
@@ -296,6 +307,31 @@ impl OperatorAgent {
 只输出 JSON，不要有其他内容。
 "#,
             goal.description
+        )
+    }
+
+    /// 构建工具提示
+    #[allow(dead_code)]
+    fn build_tools_prompt(&self) -> String {
+        // 根据 allowed_tools 返回工具定义
+        // 完整版本应该从工具注册表获取详细定义
+        let tools = if self.config.allowed_tools.is_empty() {
+            "所有可用工具".to_string()
+        } else {
+            self.config.allowed_tools.join(", ")
+        };
+
+        format!(
+            r#"## 可用工具
+{}
+
+## 规则
+1. 首先分析任务，确定需要的工具
+2. 每次只调用一个工具
+3. 根据工具返回结果决定下一步
+4. 任务完成后给出总结
+"#,
+            tools
         )
     }
 
