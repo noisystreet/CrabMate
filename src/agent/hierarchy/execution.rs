@@ -3,10 +3,14 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
+use tokio::sync::mpsc::Sender;
+
 use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
+use crate::sse;
 
 use super::artifact_store::ArtifactStore;
+use super::events;
 use super::manager::{ManagerOutput, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
 use super::task::{ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
@@ -62,6 +66,8 @@ pub struct HierarchicalExecutor<'a> {
     api_key: Option<String>,
     /// 工作目录
     working_dir: Option<std::path::PathBuf>,
+    /// SSE 发送器
+    sse_out: Option<Sender<String>>,
 }
 
 impl HierarchicalExecutor<'_> {
@@ -74,6 +80,7 @@ impl HierarchicalExecutor<'_> {
             client: None,
             api_key: None,
             working_dir: None,
+            sse_out: None,
         }
     }
 }
@@ -96,6 +103,12 @@ impl<'a> HierarchicalExecutor<'a> {
         self
     }
 
+    /// 设置 SSE 发送器
+    pub fn with_sse(mut self, sse_out: Sender<String>) -> Self {
+        self.sse_out = Some(sse_out);
+        self
+    }
+
     /// 执行并返回详细结果
     pub async fn execute_with_result(
         &self,
@@ -111,6 +124,20 @@ impl<'a> HierarchicalExecutor<'a> {
             sub_goals.len(),
             strategy
         );
+
+        // 发射 SSE 事件：分层执行开始
+        if let Some(ref sse_out) = self.sse_out {
+            let trace = events::build_hierarchical_started_trace(
+                sub_goals.len(),
+                &format!("{:?}", strategy),
+            );
+            let _ = sse::send_string_logged(
+                sse_out,
+                sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                "hierarchical::started",
+            )
+            .await;
+        }
 
         if sub_goals.is_empty() {
             return Ok(HierarchicalExecutionResult {
@@ -141,6 +168,17 @@ impl<'a> HierarchicalExecutor<'a> {
         for (level_idx, level) in levels.iter().enumerate() {
             info!(target: "crabmate", "Executing level {} with {} goals", level_idx, level.len());
 
+            // 发射 SSE 事件：层级开始
+            if let Some(ref sse_out) = self.sse_out {
+                let trace = events::build_level_started_trace(level_idx, level);
+                let _ = sse::send_string_logged(
+                    sse_out,
+                    sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                    "hierarchical::level_started",
+                )
+                .await;
+            }
+
             // 获取该层级的子目标
             let level_goals: Vec<_> = level
                 .iter()
@@ -165,6 +203,26 @@ impl<'a> HierarchicalExecutor<'a> {
                     artifact_store.store_result(result);
                 }
                 all_results.push(result.clone());
+            }
+
+            // 发射 SSE 事件：层级完成
+            if let Some(ref sse_out) = self.sse_out {
+                let level_completed = level_results
+                    .iter()
+                    .filter(|r| matches!(r.status, TaskStatus::Completed))
+                    .count();
+                let level_failed = level_results
+                    .iter()
+                    .filter(|r| matches!(r.status, TaskStatus::Failed { .. }))
+                    .count();
+                let trace =
+                    events::build_level_finished_trace(level_idx, level_completed, level_failed);
+                let _ = sse::send_string_logged(
+                    sse_out,
+                    sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                    "hierarchical::level_finished",
+                )
+                .await;
             }
 
             // 检查失败
@@ -201,6 +259,21 @@ impl<'a> HierarchicalExecutor<'a> {
             total_failed,
             total_duration_ms
         );
+
+        // 发射 SSE 事件：分层执行完成
+        if let Some(ref sse_out) = self.sse_out {
+            let trace = events::build_hierarchical_finished_trace(
+                total_completed,
+                total_failed,
+                total_duration_ms,
+            );
+            let _ = sse::send_string_logged(
+                sse_out,
+                sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                "hierarchical::finished",
+            )
+            .await;
+        }
 
         Ok(HierarchicalExecutionResult {
             results: all_results,
@@ -271,6 +344,17 @@ impl<'a> HierarchicalExecutor<'a> {
             deps.len()
         );
 
+        // 发射 SSE 事件：子目标开始
+        if let Some(ref sse_out) = self.sse_out {
+            let trace = events::build_subgoal_started_trace(&goal.goal_id, &goal.description);
+            let _ = sse::send_string_logged(
+                sse_out,
+                sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                "hierarchical::subgoal_started",
+            )
+            .await;
+        }
+
         // 构建 Operator 配置
         let allowed_tools =
             super::operator::get_tools_for_capabilities(&goal.required_capabilities);
@@ -301,6 +385,25 @@ impl<'a> HierarchicalExecutor<'a> {
             };
 
         let result = result.map_err(ExecutionError::OperatorError)?;
+
+        // 发射 SSE 事件：子目标完成
+        if let Some(ref sse_out) = self.sse_out {
+            let status_str = match &result.status {
+                TaskStatus::Completed => "completed",
+                TaskStatus::Failed { .. } => "failed",
+                TaskStatus::Pending => "pending",
+                TaskStatus::InProgress => "in_progress",
+                TaskStatus::Skipped { .. } => "skipped",
+            };
+            let trace =
+                events::build_subgoal_finished_trace(&goal.goal_id, status_str, result.duration_ms);
+            let _ = sse::send_string_logged(
+                sse_out,
+                sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                "hierarchical::subgoal_finished",
+            )
+            .await;
+        }
 
         // 如果完成，存储 artifacts
         if matches!(result.status, super::task::TaskStatus::Completed) {

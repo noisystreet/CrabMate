@@ -2,9 +2,13 @@
 //!
 //! 提供高层入口，封装 Router → Manager → Operator → Executor 流程
 
+use tokio::sync::mpsc::Sender;
+
 use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
+use crate::sse;
 
+use super::events;
 use super::execution::{ExecutionError, HierarchicalExecutionResult};
 use super::manager::ManagerAgent;
 use super::router::Router;
@@ -24,6 +28,8 @@ pub struct HierarchyRunnerParams<'a> {
     pub api_key: String,
     /// 工作目录
     pub working_dir: std::path::PathBuf,
+    /// SSE 发送器（用于发射分层执行进度事件）
+    pub sse_out: Option<Sender<String>>,
 }
 
 /// 分层 Agent 运行结果
@@ -47,6 +53,7 @@ pub async fn run_hierarchical(
         client,
         api_key,
         working_dir,
+        sse_out,
     } = params;
 
     // 1. 路由决策
@@ -69,7 +76,27 @@ pub async fn run_hierarchical(
             "Task complexity {} doesn't require hierarchical execution, falling back",
             router_output.mode.as_str()
         );
-        return run_simple_fallback(task, cfg, llm_backend, client, api_key, working_dir).await;
+        return run_simple_fallback(
+            task,
+            cfg,
+            llm_backend,
+            client,
+            api_key,
+            working_dir,
+            sse_out,
+        )
+        .await;
+    }
+
+    // 发射 SSE 事件：Manager 开始
+    if let Some(ref sse_out) = sse_out {
+        let trace = events::build_manager_started_trace(task);
+        let _ = sse::send_string_logged(
+            sse_out,
+            sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+            "hierarchical::manager_started",
+        )
+        .await;
     }
 
     // 2. Manager 分解任务
@@ -92,14 +119,31 @@ pub async fn run_hierarchical(
         manager_output.execution_strategy
     );
 
+    // 发射 SSE 事件：Manager 完成
+    if let Some(ref sse_out) = sse_out {
+        let trace = events::build_manager_finished_trace(
+            manager_output.sub_goals.len(),
+            manager_output.execution_strategy.as_str(),
+        );
+        let _ = sse::send_string_logged(
+            sse_out,
+            sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+            "hierarchical::manager_finished",
+        )
+        .await;
+    }
+
     // 3. 执行子目标（传递完整上下文）
-    let executor = HierarchicalExecutor::new(router_output.max_iterations, 3).with_context(
+    let mut executor = HierarchicalExecutor::new(router_output.max_iterations, 3).with_context(
         llm_backend,
         cfg.clone(),
         client.clone(),
         api_key.clone(),
         working_dir.clone(),
     );
+    if let Some(sse_tx) = sse_out {
+        executor = executor.with_sse(sse_tx);
+    }
     let execution_result = executor.execute_with_result(manager_output.clone()).await?;
 
     Ok(HierarchyRunnerResult {
@@ -116,6 +160,7 @@ async fn run_simple_fallback(
     client: std::sync::Arc<reqwest::Client>,
     api_key: String,
     working_dir: std::path::PathBuf,
+    sse_out: Option<Sender<String>>,
 ) -> Result<HierarchyRunnerResult, ExecutionError> {
     // 直接使用 Manager 的降级分解
     let manager_config = ManagerConfig::default();
@@ -126,13 +171,16 @@ async fn run_simple_fallback(
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
 
-    let executor = HierarchicalExecutor::new(10, 3).with_context(
+    let mut executor = HierarchicalExecutor::new(10, 3).with_context(
         llm_backend,
         cfg.clone(),
         client,
         api_key,
         working_dir,
     );
+    if let Some(sse_tx) = sse_out {
+        executor = executor.with_sse(sse_tx);
+    }
     let execution_result = executor.execute_with_result(manager_output).await?;
 
     Ok(HierarchyRunnerResult {
