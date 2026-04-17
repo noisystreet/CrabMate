@@ -148,3 +148,14 @@ pub enum ExecutionStrategy {
     #[default]
     Hybrid,
 }
+
+impl ExecutionStrategy {
+    /// 转换为字符串
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sequential => "sequential",
+            Self::Parallel => "parallel",
+            Self::Hybrid => "hybrid",
+        }
+    }
+}

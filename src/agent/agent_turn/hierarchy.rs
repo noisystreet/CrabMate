@@ -37,6 +37,7 @@ pub(crate) async fn run_hierarchical_agent(
         client: std::sync::Arc::new(p.client.clone()),
         api_key: p.api_key.to_string(),
         working_dir: p.effective_working_dir.to_path_buf(),
+        sse_out: p.out.cloned(),
     };
 
     // 运行分层 Agent
