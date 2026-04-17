@@ -3,10 +3,14 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
+use crate::config::AgentConfig;
+use crate::llm::backend::ChatCompletionsBackend;
+
 use super::artifact_store::ArtifactStore;
 use super::manager::{ManagerOutput, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
 use super::task::{ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
+use super::tool_executor::ToolExecutor;
 use log::{error, info};
 
 /// 分层执行结果
@@ -45,17 +49,51 @@ impl From<super::operator::OperatorError> for ExecutionError {
 }
 
 /// 分层执行器
-pub struct HierarchicalExecutor {
+pub struct HierarchicalExecutor<'a> {
     max_parallel: usize,
     max_failures: usize,
+    /// LLM 后端（用于 Operator 的 ReAct 循环）
+    llm_backend: Option<&'a dyn ChatCompletionsBackend>,
+    /// Agent 配置
+    cfg: Option<AgentConfig>,
+    /// HTTP 客户端
+    client: Option<std::sync::Arc<reqwest::Client>>,
+    /// API 密钥
+    api_key: Option<String>,
+    /// 工作目录
+    working_dir: Option<std::path::PathBuf>,
 }
 
-impl HierarchicalExecutor {
+impl HierarchicalExecutor<'_> {
     pub fn new(max_parallel: usize, max_failures: usize) -> Self {
         Self {
             max_parallel,
             max_failures,
+            llm_backend: None,
+            cfg: None,
+            client: None,
+            api_key: None,
+            working_dir: None,
         }
+    }
+}
+
+impl<'a> HierarchicalExecutor<'a> {
+    /// 设置执行上下文
+    pub fn with_context(
+        mut self,
+        llm_backend: &'a dyn ChatCompletionsBackend,
+        cfg: AgentConfig,
+        client: std::sync::Arc<reqwest::Client>,
+        api_key: String,
+        working_dir: std::path::PathBuf,
+    ) -> Self {
+        self.llm_backend = Some(llm_backend);
+        self.cfg = Some(cfg);
+        self.client = Some(client);
+        self.api_key = Some(api_key);
+        self.working_dir = Some(working_dir);
+        self
     }
 
     /// 执行并返回详细结果
@@ -241,9 +279,28 @@ impl HierarchicalExecutor {
             allowed_tools,
         };
 
-        // 执行
         let operator = OperatorAgent::new(op_config);
-        let result = operator.execute(goal).await?;
+
+        // 根据是否有完整上下文选择执行方法
+        let result =
+            if let (Some(llm_backend), Some(cfg), Some(client), Some(api_key), Some(work_dir)) = (
+                self.llm_backend,
+                self.cfg.as_ref(),
+                self.client.as_ref(),
+                self.api_key.as_ref(),
+                self.working_dir.as_ref(),
+            ) {
+                // 有完整上下文，使用带工具的执行
+                let tool_executor = ToolExecutor::new(cfg, work_dir.clone());
+                operator
+                    .execute_with_tools(goal, cfg, llm_backend, client, api_key, &tool_executor)
+                    .await
+            } else {
+                // 降级使用简化版本
+                operator.execute(goal).await
+            };
+
+        let result = result.map_err(ExecutionError::OperatorError)?;
 
         // 如果完成，存储 artifacts
         if matches!(result.status, super::task::TaskStatus::Completed) {

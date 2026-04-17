@@ -14,6 +14,7 @@ use crate::llm::{CompleteChatRetryingParams, LlmRetryingTransportOpts};
 use crate::types::{Message, MessageContent};
 
 use super::task::{Capability, SubGoal, TaskResult, TaskStatus};
+use super::tool_executor::ToolExecutor;
 
 /// Operator Agent 配置
 #[derive(Debug, Clone)]
@@ -86,23 +87,15 @@ impl OperatorAgent {
 
     /// 执行子目标（简化版本，不使用 LLM）
     ///
-    /// 此版本用于测试或作为降级路径。完整版本使用 execute_with_llm。
+    /// 此版本用于测试或作为降级路径。完整版本使用 execute_with_tools。
     pub async fn execute(&self, goal: &SubGoal) -> Result<TaskResult, OperatorError> {
         let start_time = Instant::now();
 
-        log::info!(
-            target: "crabmate",
-            "Operator executing goal: {} description={} capabilities={:?}",
-            goal.goal_id,
-            goal.description,
-            goal.required_capabilities
-        );
+        log::info!(target: "crabmate", "Operator executing goal: {} (simple mode)", goal.goal_id);
 
         // 模拟执行延迟
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-        // 简化版本：直接标记为完成
-        // 完整版本需要实现 ReAct 循环，调用 execute_with_llm
         Ok(TaskResult {
             task_id: goal.goal_id.clone(),
             status: TaskStatus::Completed,
@@ -113,19 +106,20 @@ impl OperatorAgent {
         })
     }
 
-    /// 执行子目标（使用 ReAct 循环 + LLM）
+    /// 执行子目标（使用 ReAct 循环 + 真实工具执行）
     #[allow(dead_code)]
-    pub async fn execute_with_llm(
+    pub async fn execute_with_tools(
         &self,
         goal: &SubGoal,
         cfg: &AgentConfig,
         llm_backend: &dyn ChatCompletionsBackend,
         client: &reqwest::Client,
         api_key: &str,
+        tool_executor: &ToolExecutor,
     ) -> Result<TaskResult, OperatorError> {
         let start_time = Instant::now();
 
-        log::info!(target: "crabmate", "Operator executing goal: {} with ReAct", goal.goal_id);
+        log::info!(target: "crabmate", "Operator executing goal: {} with ReAct + real tools", goal.goal_id);
 
         let mut state = ReactState {
             iteration: 0,
@@ -182,7 +176,7 @@ impl OperatorAgent {
                 .call_llm(cfg, llm_backend, client, api_key, &state)
                 .await?;
 
-            // 解析 LLM 响应（检查是否有工具调用）
+            // 检查是否有工具调用
             if let Some(tool_calls) = &response.tool_calls {
                 for tool_call in tool_calls {
                     let tool_name = &tool_call.function.name;
@@ -192,22 +186,51 @@ impl OperatorAgent {
                         state
                             .observations
                             .push(format!("Tool {} is not allowed", tool_name));
+                        state.messages.push(Message {
+                            role: "tool".to_string(),
+                            content: Some(MessageContent::Text(format!(
+                                "Error: Tool {} is not allowed. Available tools: {:?}",
+                                tool_name, self.config.allowed_tools
+                            ))),
+                            reasoning_content: None,
+                            reasoning_details: None,
+                            tool_calls: None,
+                            name: None,
+                            tool_call_id: Some(tool_call.id.clone()),
+                        });
                         continue;
                     }
 
                     // 添加工具调用到消息
-                    let mut assistant_msg = response.clone();
-                    assistant_msg.tool_calls = Some(vec![tool_call.clone()]);
-                    state.messages.push(assistant_msg);
+                    state.messages.push(Message {
+                        role: "assistant".to_string(),
+                        content: response.content.clone(),
+                        reasoning_content: None,
+                        reasoning_details: None,
+                        tool_calls: Some(vec![tool_call.clone()]),
+                        name: None,
+                        tool_call_id: None,
+                    });
 
-                    // 执行工具（这里需要调用实际的工具执行器）
-                    let observation = format!("[Tool {} executed]", tool_name);
+                    // 执行真实工具
+                    let result = tool_executor.execute_tool_call(tool_call);
+
+                    // 记录观察结果
+                    let observation = if result.success {
+                        format!(
+                            "Tool {} executed successfully: {}",
+                            result.tool_name,
+                            truncate_output(&result.output)
+                        )
+                    } else {
+                        format!("Tool {} failed: {}", result.tool_name, result.output)
+                    };
                     state.observations.push(observation.clone());
 
-                    // 添加工具结果
+                    // 添加工具结果到消息
                     state.messages.push(Message {
                         role: "tool".to_string(),
-                        content: Some(MessageContent::Text(observation)),
+                        content: Some(MessageContent::Text(result.output)),
                         reasoning_content: None,
                         reasoning_details: None,
                         tool_calls: None,
@@ -222,15 +245,26 @@ impl OperatorAgent {
                         .unwrap_or("")
                         .to_string();
                     if !text.is_empty() {
-                        state.observations.push(format!("Final: {}", text));
-                        return Ok(TaskResult {
-                            task_id: goal.goal_id.clone(),
-                            status: TaskStatus::Completed,
-                            output: Some(text),
-                            error: None,
-                            artifacts: Vec::new(),
-                            duration_ms: start_time.elapsed().as_millis() as u64,
-                        });
+                        // 检查是否包含"完成"或"已完成"
+                        if text.contains("完成")
+                            || text.contains("finished")
+                            || text.contains("done")
+                        {
+                            state.observations.push(format!("Final: {}", text));
+                            return Ok(TaskResult {
+                                task_id: goal.goal_id.clone(),
+                                status: TaskStatus::Completed,
+                                output: Some(text),
+                                error: None,
+                                artifacts: Vec::new(),
+                                duration_ms: start_time.elapsed().as_millis() as u64,
+                            });
+                        } else {
+                            // LLM 可能需要继续，直接将回复作为观察继续循环
+                            state
+                                .observations
+                                .push(format!("LLM response: {}", truncate_output(&text)));
+                        }
                     }
                 }
             }
@@ -272,71 +306,31 @@ impl OperatorAgent {
     /// 构建系统提示
     #[allow(dead_code)]
     fn build_system_prompt(&self, goal: &SubGoal) -> String {
-        format!(
-            r#"你是一个 ReAct (Reasoning + Acting) 代理。
-
-当前任务：{}
-
-## 能力
-你可以使用以下工具来完成任务：
-- read_file: 读取文件
-- glob: 搜索文件
-- grep: 搜索文件内容
-- write_file: 写文件
-- run_command: 执行命令
-- http_fetch: 发起 HTTP 请求
-
-## 输出格式
-每次回复请使用以下格式之一：
-
-1. 如果需要调用工具：
-```json
-{{"tool_calls": [{{"name": "工具名", "arguments": {{"arg1": "value1"}}}}]}}
-```
-
-2. 如果任务完成：
-```json
-{{"result": "任务完成描述"}}
-```
-
-3. 如果任务失败：
-```json
-{{"error": "失败原因"}}
-```
-
-只输出 JSON，不要有其他内容。
-"#,
-            goal.description
-        )
-    }
-
-    /// 构建工具提示
-    #[allow(dead_code)]
-    fn build_tools_prompt(&self) -> String {
-        // 根据 allowed_tools 返回工具定义
-        // 完整版本应该从工具注册表获取详细定义
-        let tools = if self.config.allowed_tools.is_empty() {
+        let tools_list = if self.config.allowed_tools.is_empty() {
             "所有可用工具".to_string()
         } else {
             self.config.allowed_tools.join(", ")
         };
 
         format!(
-            r#"## 可用工具
+            r#"你是一个 ReAct (Reasoning + Acting) 代理。
+
+当前任务：{}
+
+## 可用工具
 {}
 
 ## 规则
 1. 首先分析任务，确定需要的工具
 2. 每次只调用一个工具
 3. 根据工具返回结果决定下一步
-4. 任务完成后给出总结
+4. 任务完成后给出总结（包含"完成"或"finished"字样）
 "#,
-            tools
+            goal.description, tools_list
         )
     }
 
     /// 构建输出摘要
-    #[allow(dead_code)]
     fn build_output_summary(&self, state: &ReactState) -> String {
         format!(
             "Completed {} iterations with {} observations",
@@ -348,7 +342,11 @@ impl OperatorAgent {
     /// 检查工具是否允许
     pub fn is_tool_allowed(&self, tool_name: &str) -> bool {
         self.config.allowed_tools.is_empty()
-            || self.config.allowed_tools.contains(&tool_name.to_string())
+            || self
+                .config
+                .allowed_tools
+                .iter()
+                .any(|t| t == tool_name || t == "*")
     }
 }
 
@@ -383,6 +381,15 @@ pub fn get_tools_for_capabilities(capabilities: &[Capability]) -> Vec<String> {
     tool_names
 }
 
+/// 截断输出用于日志
+fn truncate_output(output: &str) -> String {
+    if output.len() > 200 {
+        format!("{}...", &output[..200])
+    } else {
+        output.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,5 +410,17 @@ mod tests {
         let tools = get_tools_for_capabilities(&caps);
         assert!(tools.contains(&"read_file".to_string()));
         assert!(tools.contains(&"run_command".to_string()));
+    }
+
+    #[test]
+    fn test_is_tool_allowed() {
+        let config = OperatorConfig {
+            max_iterations: 10,
+            allowed_tools: vec!["read_file".to_string()],
+        };
+        let operator = OperatorAgent::new(config);
+
+        assert!(operator.is_tool_allowed("read_file"));
+        assert!(!operator.is_tool_allowed("write_file"));
     }
 }

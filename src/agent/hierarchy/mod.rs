@@ -14,6 +14,7 @@ pub mod operator;
 pub mod router;
 pub mod runner;
 pub mod task;
+pub mod tool_executor;
 
 pub use artifact_store::ArtifactStore;
 pub use execution::{HierarchicalExecutionResult, HierarchicalExecutor};
