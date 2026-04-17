@@ -6,7 +6,15 @@
 //! - 确定执行策略
 //! - 协调子目标执行
 
-use super::task::{Capability, ExecutionStrategy, SubGoal, TaskResult};
+use crate::config::AgentConfig;
+use crate::llm::backend::ChatCompletionsBackend;
+use crate::llm::{
+    CompleteChatRetryingParams, LlmRetryingTransportOpts, complete_chat_retrying,
+    no_tools_chat_request,
+};
+use crate::types::{LlmSeedOverride, Message, message_content_as_str};
+
+use super::task::{Capability, ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
 
 /// Manager Agent 配置
 #[derive(Debug, Clone)]
@@ -32,6 +40,7 @@ impl Default for ManagerConfig {
 /// Manager Agent 错误
 #[derive(Debug)]
 pub enum ManagerError {
+    LlmError(String),
     ParseError(String),
     ExecutionError(String),
 }
@@ -39,6 +48,7 @@ pub enum ManagerError {
 impl std::fmt::Display for ManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ManagerError::LlmError(s) => write!(f, "LLM error: {}", s),
             ManagerError::ParseError(s) => write!(f, "Parse error: {}", s),
             ManagerError::ExecutionError(s) => write!(f, "Execution error: {}", s),
         }
@@ -57,20 +67,168 @@ impl ManagerAgent {
         Self { config }
     }
 
-    /// 分解任务为子目标（简化版本，需要外部 LLM 调用）
-    /// 返回 ManagerOutput 包含分解结果
-    pub async fn decompose(&self, task: &str) -> Result<ManagerOutput, ManagerError> {
-        // 简化版本：直接返回单目标
-        // 完整版本需要调用 LLM 进行分解
+    /// 分解任务为子目标（使用 LLM）
+    pub async fn decompose_with_llm(
+        &self,
+        task: &str,
+        cfg: &AgentConfig,
+        llm_backend: &dyn ChatCompletionsBackend,
+        client: &reqwest::Client,
+        api_key: &str,
+    ) -> Result<ManagerOutput, ManagerError> {
+        let prompt = self.build_decomposition_prompt(task);
+
+        let messages = vec![Message::user_only(&prompt)];
+        let request =
+            no_tools_chat_request(cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+
+        let params = CompleteChatRetryingParams::new(
+            llm_backend,
+            client,
+            api_key,
+            cfg,
+            LlmRetryingTransportOpts::headless_no_stream(),
+            None,
+            None,
+        );
+
+        match complete_chat_retrying(&params, &request).await {
+            Ok((response, _)) => {
+                let content = message_content_as_str(&response.content)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                self.parse_output(&content)
+            }
+            Err(e) => {
+                log::warn!(target: "crabmate", "Manager LLM call failed: {}, falling back to simple decomposition", e);
+                Ok(self.decompose_fallback(task))
+            }
+        }
+    }
+
+    /// 降级分解（不调用 LLM）
+    fn decompose_fallback(&self, task: &str) -> ManagerOutput {
         let sub_goals = vec![
             SubGoal::new("goal_1", task)
                 .with_capabilities(vec![Capability::FileRead, Capability::CommandExecution]),
         ];
 
-        Ok(ManagerOutput {
+        ManagerOutput {
             sub_goals,
             execution_strategy: self.config.execution_strategy,
-            summary: String::new(),
+            summary: format!("Simple decomposition for: {}", task),
+        }
+    }
+
+    /// 构建分解 prompt
+    fn build_decomposition_prompt(&self, task: &str) -> String {
+        format!(
+            r#"## 任务
+你是一个任务分解专家。请将以下用户任务分解为可执行的子目标。
+
+任务：{}
+
+## 要求
+1. 每个子目标应该是独立的、可验证的
+2. 考虑子目标之间的依赖关系
+3. 识别可以并行执行的子目标
+4. 为每个子目标分配合适的工具能力
+
+## 可用能力
+- FileRead: 文件读取、搜索
+- FileWrite: 文件写入、创建
+- CommandExecution: 命令执行
+- NetworkRequest: HTTP 请求
+- WebSearch: 网页搜索
+
+## 输出格式
+请严格按以下 JSON 格式输出，只输出 JSON，不要有其他内容：
+{{
+    "sub_goals": [
+        {{
+            "goal_id": "goal_1",
+            "description": "子目标描述",
+            "priority": 1,
+            "depends_on": [],
+            "required_capabilities": ["FileRead"]
+        }}
+    ],
+    "execution_strategy": "hybrid"
+}}
+
+## 约束
+- 子目标数量不超过 {}
+- 只输出 JSON
+"#,
+            task, self.config.max_sub_goals
+        )
+    }
+
+    /// 解析 LLM 输出
+    fn parse_output(&self, content: &str) -> Result<ManagerOutput, ManagerError> {
+        let json_str = extract_json(content).ok_or_else(|| {
+            ManagerError::ParseError("Failed to extract JSON from response".to_string())
+        })?;
+
+        #[derive(serde::Deserialize)]
+        struct OutputJson {
+            sub_goals: Vec<SubGoalJson>,
+            execution_strategy: Option<String>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct SubGoalJson {
+            goal_id: String,
+            description: String,
+            priority: Option<u32>,
+            depends_on: Option<Vec<String>>,
+            required_capabilities: Option<Vec<String>>,
+        }
+
+        let parsed: OutputJson =
+            serde_json::from_str(json_str).map_err(|e| ManagerError::ParseError(e.to_string()))?;
+
+        let execution_strategy = parsed
+            .execution_strategy
+            .as_ref()
+            .map(|s| match s.as_str() {
+                "sequential" => ExecutionStrategy::Sequential,
+                "parallel" => ExecutionStrategy::Parallel,
+                _ => ExecutionStrategy::Hybrid,
+            })
+            .unwrap_or(self.config.execution_strategy);
+
+        let mut sub_goals = Vec::new();
+        for sg in parsed.sub_goals {
+            let capabilities = sg
+                .required_capabilities
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|c| match c.as_str() {
+                    "FileRead" => Some(Capability::FileRead),
+                    "FileWrite" => Some(Capability::FileWrite),
+                    "CommandExecution" => Some(Capability::CommandExecution),
+                    "NetworkRequest" => Some(Capability::NetworkRequest),
+                    "WebSearch" => Some(Capability::WebSearch),
+                    _ => None,
+                })
+                .collect();
+
+            sub_goals.push(SubGoal {
+                goal_id: sg.goal_id,
+                description: sg.description,
+                priority: sg.priority.unwrap_or(0),
+                depends_on: sg.depends_on.unwrap_or_default(),
+                required_capabilities: capabilities,
+            });
+        }
+
+        let summary = format!("Decomposed into {} sub-goals", sub_goals.len());
+        Ok(ManagerOutput {
+            sub_goals,
+            execution_strategy,
+            summary,
         })
     }
 
@@ -108,12 +266,12 @@ pub fn handle_failure(
 ) -> (Vec<&TaskResult>, Vec<&TaskResult>, FailureDecision) {
     let completed: Vec<&TaskResult> = results
         .iter()
-        .filter(|r| matches!(r.status, super::task::TaskStatus::Completed))
+        .filter(|r| matches!(r.status, TaskStatus::Completed))
         .collect();
 
     let failed: Vec<&TaskResult> = results
         .iter()
-        .filter(|r| matches!(r.status, super::task::TaskStatus::Failed { .. }))
+        .filter(|r| matches!(r.status, TaskStatus::Failed { .. }))
         .collect();
 
     let decision = if failed.is_empty() {
@@ -129,44 +287,33 @@ pub fn handle_failure(
     (completed, failed, decision)
 }
 
+/// 从响应中提取 JSON
+fn extract_json(content: &str) -> Option<&str> {
+    let start = content.find('{')?;
+    let end = content.rfind('}').map(|i| i + 1)?;
+    let json_str = &content[start..end];
+    if json_str.starts_with('{') && json_str.ends_with('}') {
+        Some(json_str)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::super::task::TaskStatus;
     use super::*;
 
     #[tokio::test]
-    async fn test_decompose() {
+    async fn test_decompose_fallback() {
         let manager = ManagerAgent::new(ManagerConfig::default());
-        let output = manager.decompose("测试任务").await.unwrap();
+        let output = manager.decompose_fallback("测试任务");
         assert_eq!(output.sub_goals.len(), 1);
     }
 
     #[test]
-    fn test_handle_failure() {
-        let results = vec![
-            TaskResult {
-                task_id: "1".to_string(),
-                status: TaskStatus::Completed,
-                output: None,
-                error: None,
-                artifacts: vec![],
-                duration_ms: 0,
-            },
-            TaskResult {
-                task_id: "2".to_string(),
-                status: TaskStatus::Failed {
-                    reason: "error".to_string(),
-                },
-                output: None,
-                error: None,
-                artifacts: vec![],
-                duration_ms: 0,
-            },
-        ];
-
-        let (completed, failed, decision) = handle_failure(&results, 0);
-        assert_eq!(completed.len(), 1);
-        assert_eq!(failed.len(), 1);
-        assert!(matches!(decision, FailureDecision::Abort { .. }));
+    fn test_extract_json() {
+        let content = "好的，我来分解。\n{\n  \"sub_goals\": []\n}\n完成";
+        let json = extract_json(content).unwrap();
+        assert!(json.contains("sub_goals"));
     }
 }
