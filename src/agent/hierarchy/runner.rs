@@ -19,9 +19,11 @@ pub struct HierarchyRunnerParams<'a> {
     /// LLM 后端
     pub llm_backend: &'a dyn ChatCompletionsBackend,
     /// HTTP 客户端
-    pub client: &'a reqwest::Client,
+    pub client: std::sync::Arc<reqwest::Client>,
     /// API 密钥
-    pub api_key: &'a str,
+    pub api_key: String,
+    /// 工作目录
+    pub working_dir: std::path::PathBuf,
 }
 
 /// 分层 Agent 运行结果
@@ -44,6 +46,7 @@ pub async fn run_hierarchical(
         llm_backend,
         client,
         api_key,
+        working_dir,
     } = params;
 
     // 1. 路由决策
@@ -66,7 +69,7 @@ pub async fn run_hierarchical(
             "Task complexity {} doesn't require hierarchical execution, falling back",
             router_output.mode.as_str()
         );
-        return run_simple_fallback(task, cfg, llm_backend, client, api_key).await;
+        return run_simple_fallback(task, cfg, llm_backend, client, api_key, working_dir).await;
     }
 
     // 2. Manager 分解任务
@@ -78,7 +81,7 @@ pub async fn run_hierarchical(
     let manager = ManagerAgent::new(manager_config);
 
     let manager_output = manager
-        .decompose_with_llm(task, cfg, llm_backend, client, api_key)
+        .decompose_with_llm(task, cfg, llm_backend, client.as_ref(), &api_key)
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
 
@@ -89,8 +92,14 @@ pub async fn run_hierarchical(
         manager_output.execution_strategy
     );
 
-    // 3. 执行子目标
-    let executor = HierarchicalExecutor::new(router_output.max_iterations, 3);
+    // 3. 执行子目标（传递完整上下文）
+    let executor = HierarchicalExecutor::new(router_output.max_iterations, 3).with_context(
+        llm_backend,
+        cfg.clone(),
+        client.clone(),
+        api_key.clone(),
+        working_dir.clone(),
+    );
     let execution_result = executor.execute_with_result(manager_output.clone()).await?;
 
     Ok(HierarchyRunnerResult {
@@ -104,19 +113,26 @@ async fn run_simple_fallback(
     task: &str,
     cfg: &AgentConfig,
     llm_backend: &dyn ChatCompletionsBackend,
-    client: &reqwest::Client,
-    api_key: &str,
+    client: std::sync::Arc<reqwest::Client>,
+    api_key: String,
+    working_dir: std::path::PathBuf,
 ) -> Result<HierarchyRunnerResult, ExecutionError> {
     // 直接使用 Manager 的降级分解
     let manager_config = ManagerConfig::default();
     let manager = ManagerAgent::new(manager_config);
 
     let manager_output = manager
-        .decompose_with_llm(task, cfg, llm_backend, client, api_key)
+        .decompose_with_llm(task, cfg, llm_backend, client.as_ref(), &api_key)
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
 
-    let executor = HierarchicalExecutor::new(10, 3);
+    let executor = HierarchicalExecutor::new(10, 3).with_context(
+        llm_backend,
+        cfg.clone(),
+        client,
+        api_key,
+        working_dir,
+    );
     let execution_result = executor.execute_with_result(manager_output).await?;
 
     Ok(HierarchyRunnerResult {

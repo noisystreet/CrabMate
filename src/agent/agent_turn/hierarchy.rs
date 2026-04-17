@@ -34,8 +34,9 @@ pub(crate) async fn run_hierarchical_agent(
         task: &task,
         cfg: p.cfg.as_ref(),
         llm_backend: p.llm_backend,
-        client: p.client,
-        api_key: p.api_key,
+        client: std::sync::Arc::new(p.client.clone()),
+        api_key: p.api_key.to_string(),
+        working_dir: p.effective_working_dir.to_path_buf(),
     };
 
     // 运行分层 Agent
