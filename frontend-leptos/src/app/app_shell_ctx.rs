@@ -73,7 +73,6 @@ pub struct AppShellCtx {
     pub status_busy: RwSignal<bool>,
     pub client_llm_storage_tick: RwSignal<u64>,
     pub selected_agent_role: RwSignal<Option<String>>,
-    pub context_used_estimate: RwSignal<usize>,
     pub refresh_status: Arc<dyn Fn() + Send + Sync>,
     pub theme: RwSignal<String>,
     pub bg_decor: RwSignal<bool>,

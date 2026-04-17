@@ -5,7 +5,6 @@ use std::sync::Arc;
 use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
 
-use crate::api::StatusData;
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{status_bar_effective_api_base, status_bar_effective_model};
 use crate::chat_session_state::ChatSessionSignals;
@@ -13,93 +12,6 @@ use crate::chat_session_state::ChatSessionSignals;
 use super::app_shell_ctx::AppShellCtx;
 use super::status_tasks_state::StatusTasksSignals;
 use crate::i18n::{self, Locale};
-
-/// 本地估算上下文用量（对照 `context_char_budget`）与 [`SessionSyncState::last_known_revision`]。
-#[component]
-fn StatusBarContextChip(
-    locale: RwSignal<Locale>,
-    status_data: RwSignal<Option<StatusData>>,
-    context_used_estimate: RwSignal<usize>,
-    chat: ChatSessionSignals,
-) -> impl IntoView {
-    view! {
-        <span
-            class="status-chip status-chip-context"
-            prop:title=move || {
-                let loc = locale.get();
-                let used = context_used_estimate.get();
-                let budget = status_data
-                    .get()
-                    .map(|d| d.context_char_budget)
-                    .unwrap_or(0);
-                if budget > 0 {
-                    let over = used > budget;
-                    i18n::status_context_title(loc, used, budget, over)
-                } else {
-                    i18n::status_context_title_no_budget(loc, used)
-                }
-            }
-        >
-            <span class="status-chip-label">
-                {move || i18n::status_context_label(locale.get())}
-            </span>
-            {move || {
-                let loc = locale.get();
-                let used = context_used_estimate.get();
-                let budget = status_data
-                    .get()
-                    .map(|d| d.context_char_budget)
-                    .unwrap_or(0);
-                let rev_suffix: String = chat.session_sync.with(|s| {
-                    match (
-                        s.conversation_id.as_deref().map(str::trim).filter(|x| !x.is_empty()),
-                        s.last_known_revision,
-                    ) {
-                        (Some(_id), Some(r)) => format!(" · {}", i18n::status_context_rev(loc, r)),
-                        _ => String::new(),
-                    }
-                });
-
-                if budget == 0 {
-                    view! {
-                        <span class="status-context-row status-context-row-inline">
-                            <span class="status-context-meta">
-                                {i18n::status_context_meta_chars(loc, used)}
-                            </span>
-                            <span class="status-context-rev-suffix">{rev_suffix}</span>
-                        </span>
-                    }
-                    .into_any()
-                } else {
-                    let b = budget.max(1);
-                    let pct_raw: u64 = (used as u64).saturating_mul(100) / b as u64;
-                    let fill_pct: u32 = (pct_raw.min(100)) as u32;
-                    let pct_show: u32 = pct_raw.min(999) as u32;
-                    let over = used > budget;
-                    view! {
-                        <span class="status-context-row">
-                            <span
-                                class="status-context-track"
-                                class:status-context-track-over=over
-                                aria-hidden="true"
-                            >
-                                <span
-                                    class="status-context-fill"
-                                    style=format!("width: {fill_pct}%")
-                                ></span>
-                            </span>
-                            <span class="status-context-meta" class:status-context-meta-over=over>
-                                {i18n::status_context_meta_pct(loc, pct_show)}
-                                <span class="status-context-rev-suffix">{rev_suffix}</span>
-                            </span>
-                        </span>
-                    }
-                    .into_any()
-                }
-            }}
-        </span>
-    }
-}
 
 #[component]
 fn StatusFetchErrorPanel(
@@ -139,7 +51,6 @@ fn StatusBarFooterBody(
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     chat: ChatSessionSignals,
-    context_used_estimate: RwSignal<usize>,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
@@ -167,10 +78,6 @@ fn StatusBarFooterBody(
                                 <span class="status-chip status-chip-skeleton status-chip-url">
                                     <span class="skeleton skeleton-chip-label"></span>
                                     <span class="skeleton skeleton-chip-value skeleton-chip-url-bar"></span>
-                                </span>
-                                <span class="status-chip status-chip-skeleton status-chip-context">
-                                    <span class="skeleton skeleton-chip-label"></span>
-                                    <span class="skeleton skeleton-context-bar"></span>
                                 </span>
                                 <span class="status-chip status-chip-skeleton status-chip-role">
                                     <span class="skeleton skeleton-chip-label"></span>
@@ -230,12 +137,6 @@ fn StatusBarFooterBody(
                                         )
                                     }}</span>
                                 </span>
-                                <StatusBarContextChip
-                                    locale=locale
-                                    status_data=st.status_data
-                                    context_used_estimate=context_used_estimate
-                                    chat=chat
-                                />
                                 <label
                                     class="status-chip status-chip-role"
                                     prop:title=move || i18n::status_role_title_attr(locale.get())
@@ -336,7 +237,6 @@ pub fn status_bar_footer_view(ctx: AppShellCtx) -> impl IntoView {
         client_llm_storage_tick,
         selected_agent_role,
         chat,
-        context_used_estimate,
         refresh_status,
         locale,
         ..
@@ -351,7 +251,6 @@ pub fn status_bar_footer_view(ctx: AppShellCtx) -> impl IntoView {
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role
                 chat=chat
-                context_used_estimate=context_used_estimate
                 refresh_status=refresh_status.clone()
                 locale=locale
             />
