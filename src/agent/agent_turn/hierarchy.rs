@@ -1,0 +1,172 @@
+//! 分层多 Agent 执行入口
+//!
+//! 当 `planner_executor_mode = Hierarchical` 时使用此模块执行任务分解和子目标执行。
+
+use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult};
+use crate::sse;
+
+use super::errors::RunAgentTurnError;
+use super::params::RunLoopParams;
+use crate::agent::agent_turn::errors::AgentTurnSubPhase;
+
+/// 运行分层多 Agent
+pub(crate) async fn run_hierarchical_agent(
+    p: &mut RunLoopParams<'_>,
+) -> Result<(), RunAgentTurnError> {
+    // 获取用户消息
+    let task = extract_user_task(p.messages);
+    if task.is_empty() {
+        log::warn!(target: "crabmate", "Hierarchical mode: no user task found");
+        return Err(RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message: "Hierarchical mode requires a user message".to_string(),
+        });
+    }
+
+    log::info!(
+        target: "crabmate",
+        "Hierarchical agent starting: task={}",
+        truncate_string(&task, 100)
+    );
+
+    // 构建运行参数
+    let params = HierarchyRunnerParams {
+        task: &task,
+        cfg: p.cfg.as_ref(),
+        llm_backend: p.llm_backend,
+        client: p.client,
+        api_key: p.api_key,
+    };
+
+    // 运行分层 Agent
+    let result = hierarchy::runner::run_hierarchical(params)
+        .await
+        .map_err(|e| {
+            log::error!(target: "crabmate", "Hierarchical agent failed: {}", e);
+            RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: e.to_string(),
+            }
+        })?;
+
+    // 处理执行结果
+    handle_execution_result(p, result).await?;
+
+    Ok(())
+}
+
+/// 从消息中提取用户任务
+fn extract_user_task(messages: &[crate::types::Message]) -> String {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .and_then(|m| crate::types::message_content_as_str(&m.content))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
+/// 处理分层执行结果
+async fn handle_execution_result(
+    p: &mut RunLoopParams<'_>,
+    result: HierarchyRunnerResult,
+) -> Result<(), RunAgentTurnError> {
+    let HierarchyRunnerResult {
+        execution_result,
+        mode,
+    } = result;
+
+    log::info!(
+        target: "crabmate",
+        "Hierarchical execution completed: mode={} completed={} failed={} duration={}ms",
+        mode.as_str(),
+        execution_result.total_completed,
+        execution_result.total_failed,
+        execution_result.total_duration_ms
+    );
+
+    // 发送执行摘要到 SSE
+    if let Some(out) = p.out {
+        let summary = format!(
+            "分层执行完成：模式={}, 完成={}, 失败={}, 耗时={}ms",
+            mode.as_str(),
+            execution_result.total_completed,
+            execution_result.total_failed,
+            execution_result.total_duration_ms
+        );
+
+        let _ = sse::send_string_logged(
+            out,
+            sse::encode_message(crate::sse::SsePayload::TimelineLog {
+                log: crate::sse::protocol::TimelineLogBody {
+                    kind: "hierarchical_execution".to_string(),
+                    title: summary,
+                    detail: None,
+                },
+            }),
+            "hierarchical::execution_summary",
+        )
+        .await;
+    }
+
+    // 如果有失败的任务，记录警告
+    if execution_result.total_failed > 0 {
+        log::warn!(
+            target: "crabmate",
+            "Hierarchical execution had {} failed sub-goals",
+            execution_result.total_failed
+        );
+    }
+
+    // 汇总子目标结果生成最终回复
+    let final_response = aggregate_results(&execution_result.results);
+
+    // 添加助手回复到消息
+    p.messages
+        .push(crate::types::Message::assistant_only(final_response));
+
+    Ok(())
+}
+
+/// 汇总子目标结果生成最终回复
+fn aggregate_results(results: &[crate::agent::hierarchy::TaskResult]) -> String {
+    if results.is_empty() {
+        return "任务已完成".to_string();
+    }
+
+    let mut lines = Vec::new();
+    lines.push("## 分层执行结果\n".to_string());
+
+    for result in results {
+        let status_str = match &result.status {
+            crate::agent::hierarchy::TaskStatus::Completed => "✅ 完成",
+            crate::agent::hierarchy::TaskStatus::Failed { reason } => {
+                lines.push(format!("❌ {}: {}", result.task_id, reason));
+                continue;
+            }
+            crate::agent::hierarchy::TaskStatus::Pending => "⏳ 进行中",
+            crate::agent::hierarchy::TaskStatus::InProgress => "🔄 进行中",
+            crate::agent::hierarchy::TaskStatus::Skipped { .. } => "⏭️ 跳过",
+        };
+
+        lines.push(format!(
+            "- {}: {} ({}ms)",
+            status_str, result.task_id, result.duration_ms
+        ));
+
+        if let Some(output) = &result.output {
+            lines.push(format!("  {}", truncate_string(output, 200)));
+        }
+    }
+
+    lines.join("\n")
+}
+
+/// 截断字符串
+fn truncate_string(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}

@@ -33,14 +33,16 @@ impl WebSearchProvider {
     }
 }
 
-/// 规划器与执行器的运行模式（阶段 1：同进程逻辑双 agent）。
+/// 规划器与执行器的运行模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlannerExecutorMode {
     /// 单 agent 外层循环（历史行为）。
-    #[default]
     SingleAgent,
     /// 同进程逻辑双 agent：规划轮与执行轮使用不同上下文视图。
     LogicalDualAgent,
+    /// 分层多 Agent：Manager 分解任务 + Operator 执行子目标。
+    #[default]
+    Hierarchical,
 }
 
 impl PlannerExecutorMode {
@@ -48,8 +50,9 @@ impl PlannerExecutorMode {
         match s.trim().to_ascii_lowercase().as_str() {
             "single_agent" => Ok(Self::SingleAgent),
             "logical_dual_agent" => Ok(Self::LogicalDualAgent),
+            "hierarchical" => Ok(Self::Hierarchical),
             _ => Err(format!(
-                "未知的 planner_executor_mode: {:?}（支持 single_agent、logical_dual_agent）",
+                "未知的 planner_executor_mode: {:?}（支持 single_agent、logical_dual_agent、hierarchical）",
                 s.trim()
             )),
         }
@@ -59,6 +62,7 @@ impl PlannerExecutorMode {
         match self {
             Self::SingleAgent => "single_agent",
             Self::LogicalDualAgent => "logical_dual_agent",
+            Self::Hierarchical => "hierarchical",
         }
     }
 }

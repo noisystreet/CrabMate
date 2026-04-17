@@ -18,6 +18,7 @@ use crate::config::PlannerExecutorMode;
 mod agent_llm_call;
 mod errors;
 mod execute_tools;
+mod hierarchy;
 mod messages;
 mod outer_loop;
 mod params;
@@ -83,6 +84,8 @@ pub(crate) async fn run_agent_turn_common(
         run_logical_dual_agent_then_execute_steps(p, &mut per_coord).await
     } else if p.cfg.staged_plan_execution {
         run_staged_plan_then_execute_steps(p, &mut per_coord).await
+    } else if p.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical {
+        hierarchy::run_hierarchical_agent(p).await
     } else {
         run_agent_outer_loop(p, &mut per_coord).await
     }
