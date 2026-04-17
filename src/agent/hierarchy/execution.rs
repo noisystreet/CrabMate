@@ -1,12 +1,22 @@
 //! 分层执行器：按依赖层级执行子目标
 
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use super::artifact_store::ArtifactStore;
 use super::manager::{ManagerOutput, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
-use super::task::{ExecutionStrategy, SubGoal, TaskResult};
+use super::task::{ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
 use log::{error, info};
+
+/// 分层执行结果
+#[derive(Debug, Clone)]
+pub struct HierarchicalExecutionResult {
+    pub results: Vec<TaskResult>,
+    pub total_duration_ms: u64,
+    pub total_completed: usize,
+    pub total_failed: usize,
+}
 
 /// 分层执行器错误
 #[derive(Debug)]
@@ -48,16 +58,29 @@ impl HierarchicalExecutor {
         }
     }
 
-    /// 执行子目标列表
-    pub async fn execute(
+    /// 执行并返回详细结果
+    pub async fn execute_with_result(
         &self,
         manager_output: ManagerOutput,
-    ) -> Result<Vec<TaskResult>, ExecutionError> {
+    ) -> Result<HierarchicalExecutionResult, ExecutionError> {
+        let start_time = Instant::now();
         let sub_goals = manager_output.sub_goals;
         let strategy = manager_output.execution_strategy;
 
+        info!(
+            target: "crabmate",
+            "Hierarchical execution started: {} goals, strategy={:?}",
+            sub_goals.len(),
+            strategy
+        );
+
         if sub_goals.is_empty() {
-            return Ok(Vec::new());
+            return Ok(HierarchicalExecutionResult {
+                results: Vec::new(),
+                total_duration_ms: start_time.elapsed().as_millis() as u64,
+                total_completed: 0,
+                total_failed: 0,
+            });
         }
 
         // 构建 DAG
@@ -100,7 +123,7 @@ impl HierarchicalExecutor {
 
             // 更新 artifact store
             for result in &level_results {
-                if matches!(result.status, super::task::TaskStatus::Completed) {
+                if matches!(result.status, TaskStatus::Completed) {
                     artifact_store.store_result(result);
                 }
                 all_results.push(result.clone());
@@ -123,7 +146,39 @@ impl HierarchicalExecutor {
             }
         }
 
-        Ok(all_results)
+        let total_duration_ms = start_time.elapsed().as_millis() as u64;
+        let total_completed = all_results
+            .iter()
+            .filter(|r| matches!(r.status, TaskStatus::Completed))
+            .count();
+        let total_failed = all_results
+            .iter()
+            .filter(|r| matches!(r.status, TaskStatus::Failed { .. }))
+            .count();
+
+        info!(
+            target: "crabmate",
+            "Hierarchical execution finished: {} completed, {} failed, {}ms",
+            total_completed,
+            total_failed,
+            total_duration_ms
+        );
+
+        Ok(HierarchicalExecutionResult {
+            results: all_results,
+            total_duration_ms,
+            total_completed,
+            total_failed,
+        })
+    }
+
+    /// 执行子目标列表（保持原有接口兼容）
+    pub async fn execute(
+        &self,
+        manager_output: ManagerOutput,
+    ) -> Result<Vec<TaskResult>, ExecutionError> {
+        let result = self.execute_with_result(manager_output).await?;
+        Ok(result.results)
     }
 
     /// 顺序执行
