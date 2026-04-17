@@ -4,6 +4,8 @@ pub mod agent_turn;
 pub mod context_window;
 /// Agent 自我进化模块：决策历史记录、策略分析、system prompt 动态注入。
 pub mod evolution;
+/// 分层多 Agent 协作架构：Router + Manager + Operator
+pub mod hierarchy;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub mod message_pipeline;
 pub mod per_coord;
