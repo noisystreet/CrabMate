@@ -239,6 +239,17 @@ async fn run_simple_fallback(
         let _ =
             sse::send_string_logged(sse_out, encoded_trace, "hierarchical::manager_finished").await;
 
+        // 通知前端进入终答阶段（不再显示思维链脉动）
+        let encoded_phase = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+            assistant_answer_phase: true,
+        });
+        let _ = sse::send_string_logged(
+            sse_out,
+            encoded_phase,
+            "hierarchical::assistant_answer_phase",
+        )
+        .await;
+
         // 生成子目标列表详情
         let sub_goals_detail = manager_output
             .sub_goals
