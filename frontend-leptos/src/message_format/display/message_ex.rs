@@ -81,9 +81,15 @@ fn system_text_for_chat_display(raw: &str, loc: Locale) -> String {
 }
 
 fn user_text_for_chat_display(raw: &str) -> String {
-    if raw
-        .trim_start()
-        .starts_with(STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX)
+    let t = raw.trim_start();
+    // 过滤 NL 补全桥接消息
+    if t.starts_with(STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX) {
+        return String::new();
+    }
+    // 过滤分步注入的 user 消息（与后端 is_staged_step_injection_user_content 一致）
+    if t.contains("\n- id:")
+        && t.contains("\n- 描述:")
+        && (t.starts_with("### 分步 ") || t.starts_with("【分步执行"))
     {
         return String::new();
     }
