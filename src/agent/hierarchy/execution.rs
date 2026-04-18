@@ -339,9 +339,11 @@ impl<'a> HierarchicalExecutor<'a> {
 
         info!(
             target: "crabmate",
-            "Executing goal {} with {} dependencies",
+            "[HIERARCHICAL] Executor: executing goal_id={} desc={} deps={} tools={:?}",
             goal.goal_id,
-            deps.len()
+            truncate_goal_desc(&goal.description),
+            deps.len(),
+            goal.required_tools
         );
 
         // 发射 SSE 事件：子目标开始
@@ -355,9 +357,13 @@ impl<'a> HierarchicalExecutor<'a> {
             .await;
         }
 
-        // 构建 Operator 配置
-        let allowed_tools =
-            super::operator::get_tools_for_capabilities(&goal.required_capabilities);
+        // 构建 Operator 配置（直接使用 required_tools）
+        let allowed_tools = goal.required_tools.clone();
+        info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Operator: allowed_tools={:?}",
+            allowed_tools
+        );
         let op_config = OperatorConfig {
             max_iterations: 10,
             allowed_tools,
@@ -411,6 +417,22 @@ impl<'a> HierarchicalExecutor<'a> {
         }
 
         Ok(result)
+    }
+}
+
+/// 截断目标描述用于日志（按字符边界截断，支持中文）
+fn truncate_goal_desc(desc: &str) -> String {
+    const MAX_LEN: usize = 80;
+    if desc.len() > MAX_LEN {
+        let truncated = desc
+            .char_indices()
+            .take(MAX_LEN - 3)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &desc[..truncated])
+    } else {
+        desc.to_string()
     }
 }
 

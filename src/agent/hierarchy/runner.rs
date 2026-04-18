@@ -30,6 +30,8 @@ pub struct HierarchyRunnerParams<'a> {
     pub working_dir: std::path::PathBuf,
     /// SSE 发送器（用于发射分层执行进度事件）
     pub sse_out: Option<Sender<String>>,
+    /// 工具定义列表（用于 Manager 分解）
+    pub tools_defs: &'a [crate::types::Tool],
 }
 
 /// 分层 Agent 运行结果
@@ -54,6 +56,7 @@ pub async fn run_hierarchical(
         api_key,
         working_dir,
         sse_out,
+        tools_defs,
     } = params;
 
     // 1. 路由决策
@@ -84,6 +87,7 @@ pub async fn run_hierarchical(
             api_key,
             working_dir,
             sse_out,
+            tools_defs,
         )
         .await;
     }
@@ -108,7 +112,14 @@ pub async fn run_hierarchical(
     let manager = ManagerAgent::new(manager_config);
 
     let manager_output = manager
-        .decompose_with_llm(task, cfg, llm_backend, client.as_ref(), &api_key)
+        .decompose_with_llm(
+            task,
+            cfg,
+            llm_backend,
+            client.as_ref(),
+            &api_key,
+            tools_defs,
+        )
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
 
@@ -153,6 +164,7 @@ pub async fn run_hierarchical(
 }
 
 /// 简单降级执行（不进行任务分解）
+#[allow(clippy::too_many_arguments)]
 async fn run_simple_fallback(
     task: &str,
     cfg: &AgentConfig,
@@ -161,13 +173,21 @@ async fn run_simple_fallback(
     api_key: String,
     working_dir: std::path::PathBuf,
     sse_out: Option<Sender<String>>,
+    tools_defs: &[crate::types::Tool],
 ) -> Result<HierarchyRunnerResult, ExecutionError> {
     // 直接使用 Manager 的降级分解
     let manager_config = ManagerConfig::default();
     let manager = ManagerAgent::new(manager_config);
 
     let manager_output = manager
-        .decompose_with_llm(task, cfg, llm_backend, client.as_ref(), &api_key)
+        .decompose_with_llm(
+            task,
+            cfg,
+            llm_backend,
+            client.as_ref(),
+            &api_key,
+            tools_defs,
+        )
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
 
@@ -189,12 +209,18 @@ async fn run_simple_fallback(
     })
 }
 
-/// 截断字符串
+/// 截断字符串（按字符边界截断，支持中文）
 fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let truncated = s
+            .char_indices()
+            .take(max_len.saturating_sub(3))
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &s[..truncated])
     }
 }
 

@@ -14,7 +14,7 @@ use crate::llm::{
 };
 use crate::types::{LlmSeedOverride, Message, message_content_as_str};
 
-use super::task::{Capability, ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
+use super::task::{ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
 
 /// Manager Agent 配置
 #[derive(Debug, Clone)]
@@ -75,8 +75,11 @@ impl ManagerAgent {
         llm_backend: &dyn ChatCompletionsBackend,
         client: &reqwest::Client,
         api_key: &str,
+        tools_defs: &[crate::types::Tool],
     ) -> Result<ManagerOutput, ManagerError> {
-        let prompt = self.build_decomposition_prompt(task);
+        log::info!(target: "crabmate", "[HIERARCHICAL] Manager: decomposing task={}", truncate_task(task));
+
+        let prompt = self.build_decomposition_prompt(task, tools_defs);
 
         let messages = vec![Message::user_only(&prompt)];
         let request =
@@ -109,68 +112,24 @@ impl ManagerAgent {
 
     /// 降级分解（不调用 LLM）
     fn decompose_fallback(&self, task: &str) -> ManagerOutput {
-        let task_lower = task.to_lowercase();
-        let mut sub_goals: Vec<SubGoal> = Vec::new();
-        let mut goal_counter = 0;
-
-        // 简单关键词分析
-        if task_lower.contains("读取") || task_lower.contains("分析") || task_lower.contains("检查")
-        {
-            goal_counter += 1;
-            sub_goals.push(
-                SubGoal::new(&format!("goal_{}", goal_counter), "读取和分析相关文件")
-                    .with_capabilities(vec![Capability::FileRead]),
-            );
-        }
-
-        if task_lower.contains("修改") || task_lower.contains("编辑") || task_lower.contains("写")
-        {
-            goal_counter += 1;
-            sub_goals.push(
-                SubGoal::new(&format!("goal_{}", goal_counter), "修改或创建文件")
-                    .with_capabilities(vec![Capability::FileWrite]),
-            );
-        }
-
-        if task_lower.contains("运行")
-            || task_lower.contains("执行")
-            || task_lower.contains("测试")
-            || task_lower.contains("编译")
-            || task_lower.contains("构建")
-        {
-            goal_counter += 1;
-            sub_goals.push(
-                SubGoal::new(&format!("goal_{}", goal_counter), "执行命令或测试")
-                    .with_capabilities(vec![Capability::CommandExecution]),
-            );
-        }
-
-        if task_lower.contains("获取") || task_lower.contains("请求") || task_lower.contains("拉取")
-        {
-            goal_counter += 1;
-            sub_goals.push(
-                SubGoal::new(&format!("goal_{}", goal_counter), "发起网络请求")
-                    .with_capabilities(vec![Capability::NetworkRequest]),
-            );
-        }
-
-        // 如果没有匹配任何关键词，创建一个通用目标
-        if sub_goals.is_empty() {
-            sub_goals.push(
-                SubGoal::new("goal_1", task)
-                    .with_capabilities(vec![Capability::FileRead, Capability::CommandExecution]),
-            );
-        }
-
+        // 降级时创建一个通用目标，不指定具体工具
+        let sub_goal = SubGoal::new("goal_1", task);
         ManagerOutput {
-            sub_goals,
+            sub_goals: vec![sub_goal],
             execution_strategy: self.config.execution_strategy,
             summary: format!("Simple decomposition for: {}", task),
         }
     }
 
     /// 构建分解 prompt
-    fn build_decomposition_prompt(&self, task: &str) -> String {
+    fn build_decomposition_prompt(&self, task: &str, tools_defs: &[crate::types::Tool]) -> String {
+        // 生成工具列表
+        let tools_list = tools_defs
+            .iter()
+            .map(|t| format!("- {}: {}", t.function.name, t.function.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+
         format!(
             r#"## 任务
 你是一个任务分解专家。请将以下用户任务分解为可执行的子目标。
@@ -181,14 +140,10 @@ impl ManagerAgent {
 1. 每个子目标应该是独立的、可验证的
 2. 考虑子目标之间的依赖关系
 3. 识别可以并行执行的子目标
-4. 为每个子目标分配合适的工具能力
+4. 为每个子目标分配合适的工具（从下方可用工具列表中选择）
 
-## 可用能力
-- FileRead: 文件读取、搜索
-- FileWrite: 文件写入、创建
-- CommandExecution: 命令执行
-- NetworkRequest: HTTP 请求
-- WebSearch: 网页搜索
+## 可用工具
+{}
 
 ## 输出格式
 请严格按以下 JSON 格式输出，只输出 JSON，不要有其他内容：
@@ -199,7 +154,7 @@ impl ManagerAgent {
             "description": "子目标描述",
             "priority": 1,
             "depends_on": [],
-            "required_capabilities": ["FileRead"]
+            "required_tools": ["tool_name1", "tool_name2"]
         }}
     ],
     "execution_strategy": "hybrid"
@@ -209,7 +164,7 @@ impl ManagerAgent {
 - 子目标数量不超过 {}
 - 只输出 JSON
 "#,
-            task, self.config.max_sub_goals
+            task, tools_list, self.config.max_sub_goals
         )
     }
 
@@ -231,7 +186,7 @@ impl ManagerAgent {
             description: String,
             priority: Option<u32>,
             depends_on: Option<Vec<String>>,
-            required_capabilities: Option<Vec<String>>,
+            required_tools: Option<Vec<String>>,
         }
 
         let parsed: OutputJson =
@@ -249,30 +204,33 @@ impl ManagerAgent {
 
         let mut sub_goals = Vec::new();
         for sg in parsed.sub_goals {
-            let capabilities = sg
-                .required_capabilities
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|c| match c.as_str() {
-                    "FileRead" => Some(Capability::FileRead),
-                    "FileWrite" => Some(Capability::FileWrite),
-                    "CommandExecution" => Some(Capability::CommandExecution),
-                    "NetworkRequest" => Some(Capability::NetworkRequest),
-                    "WebSearch" => Some(Capability::WebSearch),
-                    _ => None,
-                })
-                .collect();
-
             sub_goals.push(SubGoal {
                 goal_id: sg.goal_id,
                 description: sg.description,
                 priority: sg.priority.unwrap_or(0),
                 depends_on: sg.depends_on.unwrap_or_default(),
-                required_capabilities: capabilities,
+                required_tools: sg.required_tools.unwrap_or_default(),
             });
         }
 
         let summary = format!("Decomposed into {} sub-goals", sub_goals.len());
+
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: decomposed into {} sub_goals, strategy={:?}",
+            sub_goals.len(),
+            execution_strategy
+        );
+        for (i, sg) in sub_goals.iter().enumerate() {
+            log::info!(
+                target: "crabmate",
+                "[HIERARCHICAL]   goal[{}]: id={} desc={}",
+                i,
+                sg.goal_id,
+                truncate_task(&sg.description)
+            );
+        }
+
         Ok(ManagerOutput {
             sub_goals,
             execution_strategy,
@@ -335,15 +293,39 @@ pub fn handle_failure(
     (completed, failed, decision)
 }
 
-/// 从响应中提取 JSON
+/// 从响应中提取 JSON（处理 LLM 输出中可能存在的多余字符）
 fn extract_json(content: &str) -> Option<&str> {
     let start = content.find('{')?;
-    let end = content.rfind('}').map(|i| i + 1)?;
-    let json_str = &content[start..end];
-    if json_str.starts_with('{') && json_str.ends_with('}') {
-        Some(json_str)
+    // 使用括号计数找到匹配的闭括号，处理嵌套 JSON
+    let mut depth = 0;
+    for (i, c) in content[start..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&content[start..start + i + 1]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 截断任务字符串用于日志（按字符边界截断，支持中文）
+fn truncate_task(task: &str) -> String {
+    const MAX_LEN: usize = 100;
+    if task.len() > MAX_LEN {
+        let truncated = task
+            .char_indices()
+            .take(MAX_LEN - 3)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &task[..truncated])
     } else {
-        None
+        task.to_string()
     }
 }
 

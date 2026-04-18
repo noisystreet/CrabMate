@@ -145,11 +145,17 @@ pub fn build_hierarchical_finished_trace(
     }
 }
 
-/// 截断字符串到指定长度
+/// 截断字符串到指定长度（按字符边界截断，支持中文）
 fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let truncated = s
+            .char_indices()
+            .take(max_len.saturating_sub(3))
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &s[..truncated])
     }
 }

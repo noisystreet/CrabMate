@@ -110,9 +110,9 @@ pub struct SubGoal {
     /// 依赖的 goal_ids（这些必须先完成）
     #[serde(default)]
     pub depends_on: Vec<String>,
-    /// 该子目标需要的工具类型
+    /// 该子目标需要的工具名称列表
     #[serde(default)]
-    pub required_capabilities: Vec<Capability>,
+    pub required_tools: Vec<String>,
 }
 
 impl SubGoal {
@@ -122,12 +122,12 @@ impl SubGoal {
             description: description.to_string(),
             priority: 0,
             depends_on: Vec::new(),
-            required_capabilities: Vec::new(),
+            required_tools: Vec::new(),
         }
     }
 
-    pub fn with_capabilities(mut self, caps: Vec<Capability>) -> Self {
-        self.required_capabilities = caps;
+    pub fn with_tools(mut self, tools: Vec<String>) -> Self {
+        self.required_tools = tools;
         self
     }
 
