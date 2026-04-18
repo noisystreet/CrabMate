@@ -262,12 +262,14 @@ pub(super) fn build_chat_stream_callbacks(
             // Jump to latest message (current assistant streaming message).
             let msg_id = stream_ctx.assistant_message_id.clone();
             let state = timeline_state_approval_decision(&msg_id, &info.kind);
+            // 包装为 staged_timeline 系统消息以在聊天气泡中正确展示
+            let text = staged_timeline_system_message_body(&info.title);
             stream_ctx.chat.sessions.update(|list| {
                 if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                     s.messages.push(StoredMessage {
                         id: msg_id.clone(),
                         role: "system".to_string(),
-                        text: info.title.clone(),
+                        text,
                         reasoning_text: String::new(),
                         image_urls: vec![],
                         state: Some(state),

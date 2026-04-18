@@ -93,14 +93,13 @@ pub async fn run_hierarchical(
     }
 
     // 发射 SSE 事件：Manager 开始
+    log::info!(target: "crabmate", "[HIERARCHICAL] run_hierarchical: sse_out is {:?}", sse_out.is_some());
     if let Some(ref sse_out) = sse_out {
         let trace = events::build_manager_started_trace(task);
-        let _ = sse::send_string_logged(
-            sse_out,
-            sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
-            "hierarchical::manager_started",
-        )
-        .await;
+        let encoded = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
+        log::info!(target: "crabmate", "[HIERARCHICAL] manager_started encoded length={}", encoded.len());
+        let _ = sse::send_string_logged(sse_out, encoded, "hierarchical::manager_started").await;
+        log::info!(target: "crabmate", "[HIERARCHICAL] manager_started send completed");
     }
 
     // 2. Manager 分解任务
@@ -130,7 +129,7 @@ pub async fn run_hierarchical(
         manager_output.execution_strategy
     );
 
-    // 发射 SSE 事件：Manager 完成
+    // 发射 SSE 事件：Manager 完成（ThinkingTrace 供调试台 + TimelineLog 供聊天气泡）
     if let Some(ref sse_out) = sse_out {
         let trace = events::build_manager_finished_trace(
             manager_output.sub_goals.len(),
@@ -142,16 +141,44 @@ pub async fn run_hierarchical(
             "hierarchical::manager_finished",
         )
         .await;
+
+        // 生成子目标列表详情用于聊天气泡显示
+        let sub_goals_detail = manager_output
+            .sub_goals
+            .iter()
+            .map(|sg| format!("- [ ] {}: {}", sg.goal_id, sg.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let plan_summary = format!(
+            "**Manager 规划** ({} 个子目标, 策略={})\n\n{}\n\n执行中...",
+            manager_output.sub_goals.len(),
+            manager_output.execution_strategy.as_str(),
+            sub_goals_detail
+        );
+        let timeline_payload = crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "hierarchical_plan".to_string(),
+                title: plan_summary.clone(),
+                detail: None,
+            },
+        };
+        let encoded = sse::encode_message(timeline_payload);
+        log::info!(target: "crabmate", "[HIERARCHICAL] TimelineLog encoded length={} preview={}", encoded.len(), &encoded[..encoded.len().min(200)]);
+        let _ =
+            sse::send_string_logged(sse_out, encoded, "hierarchical::manager_plan_timeline").await;
+        log::info!(target: "crabmate", "[HIERARCHICAL] TimelineLog send completed");
     }
 
     // 3. 执行子目标（传递完整上下文）
-    let mut executor = HierarchicalExecutor::new(router_output.max_iterations, 3).with_context(
-        llm_backend,
-        cfg.clone(),
-        client.clone(),
-        api_key.clone(),
-        working_dir.clone(),
-    );
+    let mut executor = HierarchicalExecutor::new(router_output.max_iterations, 3)
+        .with_context(
+            llm_backend,
+            cfg.clone(),
+            client.clone(),
+            api_key.clone(),
+            working_dir.clone(),
+        )
+        .with_tools_defs(tools_defs.to_vec());
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);
     }
@@ -179,6 +206,16 @@ async fn run_simple_fallback(
     let manager_config = ManagerConfig::default();
     let manager = ManagerAgent::new(manager_config);
 
+    // 发送 Manager 开始的 SSE 事件
+    log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback: sse_out is {:?}", sse_out.is_some());
+    if let Some(ref sse_out) = sse_out {
+        let trace = events::build_manager_started_trace(task);
+        let encoded = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
+        log::info!(target: "crabmate", "[HIERARCHICAL] manager_started encoded length={}", encoded.len());
+        let _ = sse::send_string_logged(sse_out, encoded, "hierarchical::manager_started").await;
+        log::info!(target: "crabmate", "[HIERARCHICAL] manager_started send completed");
+    }
+
     let manager_output = manager
         .decompose_with_llm(
             task,
@@ -191,13 +228,47 @@ async fn run_simple_fallback(
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
 
-    let mut executor = HierarchicalExecutor::new(10, 3).with_context(
-        llm_backend,
-        cfg.clone(),
-        client,
-        api_key,
-        working_dir,
-    );
+    // 发送 Manager 完成的 SSE 事件
+    if let Some(ref sse_out) = sse_out {
+        let trace = events::build_manager_finished_trace(
+            manager_output.sub_goals.len(),
+            manager_output.execution_strategy.as_str(),
+        );
+        let encoded_trace = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
+        log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback manager_finished encoded length={}", encoded_trace.len());
+        let _ =
+            sse::send_string_logged(sse_out, encoded_trace, "hierarchical::manager_finished").await;
+
+        // 生成子目标列表详情
+        let sub_goals_detail = manager_output
+            .sub_goals
+            .iter()
+            .map(|sg| format!("- [ ] {}: {}", sg.goal_id, sg.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let plan_summary = format!(
+            "**Manager 规划** ({} 个子目标, 策略={})\n\n{}\n\n执行中...",
+            manager_output.sub_goals.len(),
+            manager_output.execution_strategy.as_str(),
+            sub_goals_detail
+        );
+        let timeline_payload = crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "hierarchical_plan".to_string(),
+                title: plan_summary.clone(),
+                detail: None,
+            },
+        };
+        let encoded = sse::encode_message(timeline_payload);
+        log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback TimelineLog encoded length={} preview={}", encoded.len(), &encoded[..encoded.len().min(200)]);
+        let _ =
+            sse::send_string_logged(sse_out, encoded, "hierarchical::manager_plan_timeline").await;
+        log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback TimelineLog send completed");
+    }
+
+    let mut executor = HierarchicalExecutor::new(10, 3)
+        .with_context(llm_backend, cfg.clone(), client, api_key, working_dir)
+        .with_tools_defs(tools_defs.to_vec());
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);
     }

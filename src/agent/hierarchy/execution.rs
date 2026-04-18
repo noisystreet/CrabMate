@@ -15,6 +15,7 @@ use super::manager::{ManagerOutput, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
 use super::task::{ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
 use super::tool_executor::ToolExecutor;
+use crate::types::Tool;
 use log::{error, info};
 
 /// 分层执行结果
@@ -68,6 +69,8 @@ pub struct HierarchicalExecutor<'a> {
     working_dir: Option<std::path::PathBuf>,
     /// SSE 发送器
     sse_out: Option<Sender<String>>,
+    /// 工具定义列表（用于 Operator 的 LLM 函数调用）
+    tools_defs: Vec<Tool>,
 }
 
 impl HierarchicalExecutor<'_> {
@@ -81,6 +84,7 @@ impl HierarchicalExecutor<'_> {
             api_key: None,
             working_dir: None,
             sse_out: None,
+            tools_defs: Vec::new(),
         }
     }
 }
@@ -106,6 +110,12 @@ impl<'a> HierarchicalExecutor<'a> {
     /// 设置 SSE 发送器
     pub fn with_sse(mut self, sse_out: Sender<String>) -> Self {
         self.sse_out = Some(sse_out);
+        self
+    }
+
+    /// 设置工具定义列表
+    pub fn with_tools_defs(mut self, tools_defs: Vec<Tool>) -> Self {
+        self.tools_defs = tools_defs;
         self
     }
 
@@ -357,16 +367,27 @@ impl<'a> HierarchicalExecutor<'a> {
             .await;
         }
 
-        // 构建 Operator 配置（直接使用 required_tools）
+        // 构建 Operator 配置
         let allowed_tools = goal.required_tools.clone();
         info!(
             target: "crabmate",
             "[HIERARCHICAL] Operator: allowed_tools={:?}",
             allowed_tools
         );
+        // 仅将 allowed_tools 交集内的工具定义传给 LLM（避免 LLM 看到不可用工具）
+        let tools_defs_for_llm = if allowed_tools.is_empty() {
+            self.tools_defs.clone()
+        } else {
+            self.tools_defs
+                .iter()
+                .filter(|t| allowed_tools.contains(&t.function.name))
+                .cloned()
+                .collect()
+        };
         let op_config = OperatorConfig {
             max_iterations: 10,
             allowed_tools,
+            tools_defs: tools_defs_for_llm,
         };
 
         let operator = OperatorAgent::new(op_config);
