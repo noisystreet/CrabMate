@@ -6,6 +6,7 @@
 //! - 执行 ReAct 循环（Thought → Action → Observation）
 
 use std::time::Instant;
+use tokio::sync::mpsc::Sender;
 
 use crate::config::AgentConfig;
 use crate::llm::LlmCompleteError;
@@ -25,6 +26,8 @@ pub struct OperatorConfig {
     pub allowed_tools: Vec<String>,
     /// 工具定义列表（用于 LLM 函数调用）
     pub tools_defs: Vec<Tool>,
+    /// SSE 发送器（用于发送工具调用/结果事件）
+    pub sse_out: Option<Sender<String>>,
 }
 
 impl Default for OperatorConfig {
@@ -33,6 +36,7 @@ impl Default for OperatorConfig {
             max_iterations: 10,
             allowed_tools: Vec::new(),
             tools_defs: Vec::new(),
+            sse_out: None,
         }
     }
 }
@@ -204,6 +208,35 @@ impl OperatorAgent {
                         continue;
                     }
 
+                    // 发送 ToolCall SSE 事件
+                    if let Some(ref sse_out) = self.config.sse_out {
+                        log::info!(target: "crabmate", "[HIERARCHICAL] Operator: sending ToolCall SSE for tool={}", tool_name);
+                        let args = &tool_call.function.arguments;
+                        let summary = crate::tools::summarize_tool_call(tool_name, args)
+                            .unwrap_or_else(|| format!("tool: {tool_name}"));
+                        let encoded =
+                            crate::sse::encode_message(crate::sse::SsePayload::ToolCall {
+                                tool_call: crate::sse::protocol::ToolCallSummary {
+                                    name: tool_name.clone(),
+                                    summary,
+                                    arguments_preview: Some(
+                                        crate::redact::tool_arguments_preview_for_sse(args),
+                                    ),
+                                    arguments: Some(
+                                        crate::redact::tool_arguments_redacted_for_sse(args),
+                                    ),
+                                },
+                            });
+                        let _ = crate::sse::send_string_logged(
+                            sse_out,
+                            encoded,
+                            "hierarchical::operator_tool_call",
+                        )
+                        .await;
+                    } else {
+                        log::warn!(target: "crabmate", "[HIERARCHICAL] Operator: sse_out is None, skipping ToolCall SSE");
+                    }
+
                     // 添加工具调用到消息
                     state.messages.push(Message {
                         role: "assistant".to_string(),
@@ -225,6 +258,49 @@ impl OperatorAgent {
                         result.success,
                         result.output.len()
                     );
+
+                    // 发送 ToolResult SSE 事件
+                    if let Some(ref sse_out) = self.config.sse_out {
+                        // 使用更有意义的摘要：包含执行结果的描述
+                        let tool_summary = if result.success {
+                            if result.output.len() > 100 {
+                                format!(
+                                    "✅ {} 成功: {}...",
+                                    result.tool_name,
+                                    &result.output[..100]
+                                )
+                            } else {
+                                format!("✅ {} 成功: {}", result.tool_name, result.output)
+                            }
+                        } else {
+                            format!("❌ {} 失败: {}", result.tool_name, result.output)
+                        };
+                        let encoded =
+                            crate::sse::encode_message(crate::sse::SsePayload::ToolResult {
+                                tool_result: crate::sse::protocol::ToolResultBody {
+                                    name: result.tool_name.clone(),
+                                    result_version: 1,
+                                    summary: Some(tool_summary),
+                                    output: result.output.clone(),
+                                    ok: Some(result.success),
+                                    exit_code: None,
+                                    error_code: None,
+                                    failure_category: None,
+                                    retryable: Some(false),
+                                    tool_call_id: Some(tool_call.id.clone()),
+                                    execution_mode: Some("hierarchical".to_string()),
+                                    parallel_batch_id: None,
+                                    stdout: None,
+                                    stderr: None,
+                                },
+                            });
+                        let _ = crate::sse::send_string_logged(
+                            sse_out,
+                            encoded,
+                            "hierarchical::operator_tool_result",
+                        )
+                        .await;
+                    }
 
                     // 记录观察结果
                     let observation = if result.success {
@@ -453,6 +529,7 @@ mod tests {
             max_iterations: 10,
             allowed_tools: vec!["read_file".to_string()],
             tools_defs: vec![],
+            sse_out: None,
         };
         let operator = OperatorAgent::new(config);
 

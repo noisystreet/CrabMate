@@ -106,10 +106,17 @@ pub struct ToolExecutionResult {
     pub success: bool,
 }
 
-/// 截断参数用于日志
+/// 截断参数用于日志（按字符边界截断，支持中文）
 fn truncate_args(args: &str) -> String {
-    if args.len() > 100 {
-        format!("{}...", &args[..100])
+    const MAX_LEN: usize = 100;
+    if args.len() > MAX_LEN {
+        let truncated = args
+            .char_indices()
+            .take(MAX_LEN - 3)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &args[..truncated])
     } else {
         args.to_string()
     }

@@ -387,8 +387,10 @@ impl<'a> HierarchicalExecutor<'a> {
         let op_config = OperatorConfig {
             max_iterations: 10,
             allowed_tools,
-            tools_defs: tools_defs_for_llm,
+            tools_defs: tools_defs_for_llm.clone(),
+            sse_out: self.sse_out.clone(),
         };
+        log::info!(target: "crabmate", "[HIERARCHICAL] execute_single: sse_out is {:?}, tools_defs count={}", self.sse_out.is_some(), tools_defs_for_llm.len());
 
         let operator = OperatorAgent::new(op_config);
 

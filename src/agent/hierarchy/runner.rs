@@ -163,7 +163,7 @@ pub async fn run_hierarchical(
             },
         };
         let encoded = sse::encode_message(timeline_payload);
-        log::info!(target: "crabmate", "[HIERARCHICAL] TimelineLog encoded length={} preview={}", encoded.len(), &encoded[..encoded.len().min(200)]);
+        log::info!(target: "crabmate", "[HIERARCHICAL] TimelineLog encoded length={} preview={}", encoded.len(), truncate_string(&encoded, 200));
         let _ =
             sse::send_string_logged(sse_out, encoded, "hierarchical::manager_plan_timeline").await;
         log::info!(target: "crabmate", "[HIERARCHICAL] TimelineLog send completed");
@@ -260,7 +260,7 @@ async fn run_simple_fallback(
             },
         };
         let encoded = sse::encode_message(timeline_payload);
-        log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback TimelineLog encoded length={} preview={}", encoded.len(), &encoded[..encoded.len().min(200)]);
+        log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback TimelineLog encoded length={} preview={}", encoded.len(), truncate_string(&encoded, 200));
         let _ =
             sse::send_string_logged(sse_out, encoded, "hierarchical::manager_plan_timeline").await;
         log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback TimelineLog send completed");
