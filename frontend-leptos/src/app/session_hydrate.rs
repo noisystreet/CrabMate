@@ -99,7 +99,18 @@ pub fn wire_session_hydration(
                     if local_users > 0 && hydrated_users < local_users {
                         return;
                     }
-                    s.messages = msgs;
+                    // 保留本地的工具消息（is_tool=true 的消息，如分层执行通过 SSE 添加的工具卡片）
+                    let server_msg_ids: std::collections::HashSet<_> =
+                        msgs.iter().map(|m| m.id.as_str()).collect();
+                    let local_tool_messages: Vec<StoredMessage> = s
+                        .messages
+                        .iter()
+                        .filter(|m| m.is_tool && !server_msg_ids.contains(m.id.as_str()))
+                        .cloned()
+                        .collect();
+                    let mut new_messages = msgs;
+                    new_messages.extend(local_tool_messages);
+                    s.messages = new_messages;
                     s.server_revision = Some(resp.revision);
                     applied_hydration = true;
                     if let Some(role) = resp

@@ -52,12 +52,7 @@ impl Router {
     /// 根据任务内容进行路由决策
     pub fn route(task: &str) -> RouterOutput {
         let complexity = Self::estimate_complexity(task);
-        let task_preview = if task.len() > 80 {
-            format!("{}...", &task[..80])
-        } else {
-            task.to_string()
-        };
-
+        let task_preview = truncate_string(task, 80);
         log::info!(
             target: "crabmate",
             "[HIERARCHICAL] Router: complexity={:?} task={}",
@@ -151,6 +146,21 @@ impl Router {
             6..=10 => TaskComplexity::Complex,
             _ => TaskComplexity::VeryComplex,
         }
+    }
+}
+
+/// 截断字符串到指定长度（按字符边界截断，支持中文）
+fn truncate_string(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        let truncated = s
+            .char_indices()
+            .take(max_len.saturating_sub(3))
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &s[..truncated])
     }
 }
 
