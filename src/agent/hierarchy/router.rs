@@ -52,6 +52,18 @@ impl Router {
     /// 根据任务内容进行路由决策
     pub fn route(task: &str) -> RouterOutput {
         let complexity = Self::estimate_complexity(task);
+        let task_preview = if task.len() > 80 {
+            format!("{}...", &task[..80])
+        } else {
+            task.to_string()
+        };
+
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Router: complexity={:?} task={}",
+            complexity,
+            task_preview
+        );
 
         match complexity {
             TaskComplexity::Simple => RouterOutput {

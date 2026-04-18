@@ -25,7 +25,7 @@ pub(crate) async fn run_hierarchical_agent(
 
     log::info!(
         target: "crabmate",
-        "Hierarchical agent starting: task={}",
+        "[HIERARCHICAL] === Agent Role Enter === role=hierarchical task={}",
         truncate_string(&task, 100)
     );
 
@@ -38,6 +38,7 @@ pub(crate) async fn run_hierarchical_agent(
         api_key: p.api_key.to_string(),
         working_dir: p.effective_working_dir.to_path_buf(),
         sse_out: p.out.cloned(),
+        tools_defs: p.tools_defs,
     };
 
     // 运行分层 Agent
@@ -157,18 +158,24 @@ fn aggregate_results(results: &[crate::agent::hierarchy::TaskResult]) -> String 
         ));
 
         if let Some(output) = &result.output {
-            lines.push(format!("  {}", truncate_string(output, 200)));
+            lines.push(format!("  {}", output));
         }
     }
 
     lines.join("\n")
 }
 
-/// 截断字符串
+/// 截断字符串（按字符边界截断，支持中文）
 fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let truncated = s
+            .char_indices()
+            .take(max_len.saturating_sub(3))
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &s[..truncated])
     }
 }

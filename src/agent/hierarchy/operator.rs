@@ -13,7 +13,7 @@ use crate::llm::backend::ChatCompletionsBackend;
 use crate::llm::{CompleteChatRetryingParams, LlmRetryingTransportOpts};
 use crate::types::{Message, MessageContent};
 
-use super::task::{Capability, SubGoal, TaskResult, TaskStatus};
+use super::task::{SubGoal, TaskResult, TaskStatus};
 use super::tool_executor::ToolExecutor;
 
 /// Operator Agent 配置
@@ -91,7 +91,7 @@ impl OperatorAgent {
     pub async fn execute(&self, goal: &SubGoal) -> Result<TaskResult, OperatorError> {
         let start_time = Instant::now();
 
-        log::info!(target: "crabmate", "Operator executing goal: {} (simple mode)", goal.goal_id);
+        log::info!(target: "crabmate", "[HIERARCHICAL] Operator (simple): goal_id={} desc={}", goal.goal_id, truncate_goal(&goal.description));
 
         // 模拟执行延迟
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -119,7 +119,7 @@ impl OperatorAgent {
     ) -> Result<TaskResult, OperatorError> {
         let start_time = Instant::now();
 
-        log::info!(target: "crabmate", "Operator executing goal: {} with ReAct + real tools", goal.goal_id);
+        log::info!(target: "crabmate", "[HIERARCHICAL] Operator (react): goal_id={} desc={}", goal.goal_id, truncate_goal(&goal.description));
 
         let mut state = ReactState {
             iteration: 0,
@@ -215,6 +215,14 @@ impl OperatorAgent {
                     // 执行真实工具
                     let result = tool_executor.execute_tool_call(tool_call);
 
+                    log::info!(
+                        target: "crabmate",
+                        "[HIERARCHICAL] Operator: tool={} success={} output_len={}",
+                        result.tool_name,
+                        result.success,
+                        result.output.len()
+                    );
+
                     // 记录观察结果
                     let observation = if result.success {
                         format!(
@@ -250,11 +258,19 @@ impl OperatorAgent {
                             || text.contains("finished")
                             || text.contains("done")
                         {
-                            state.observations.push(format!("Final: {}", text));
+                            state
+                                .observations
+                                .push(format!("Final: {}", truncate_output(&text)));
+                            // 仅在未开启 AGENT_WEB_RAW_ASSISTANT_OUTPUT 时剥离思维链标签
+                            let output = if crate::web::web_ui_env::web_raw_assistant_output_env() {
+                                text.clone()
+                            } else {
+                                strip_thinking_tags(&text)
+                            };
                             return Ok(TaskResult {
                                 task_id: goal.goal_id.clone(),
                                 status: TaskStatus::Completed,
-                                output: Some(text),
+                                output: Some(output),
                                 error: None,
                                 artifacts: Vec::new(),
                                 duration_ms: start_time.elapsed().as_millis() as u64,
@@ -350,43 +366,48 @@ impl OperatorAgent {
     }
 }
 
-/// 根据能力获取工具列表
-pub fn get_tools_for_capabilities(capabilities: &[Capability]) -> Vec<String> {
-    let mut tool_names = Vec::new();
-
-    for cap in capabilities {
-        match cap {
-            Capability::FileRead => {
-                tool_names.push("read_file".to_string());
-                tool_names.push("glob".to_string());
-                tool_names.push("grep".to_string());
-            }
-            Capability::FileWrite => {
-                tool_names.push("write_file".to_string());
-            }
-            Capability::CommandExecution => {
-                tool_names.push("run_command".to_string());
-            }
-            Capability::NetworkRequest => {
-                tool_names.push("http_fetch".to_string());
-            }
-            Capability::WebSearch => {
-                // 暂不实现
-            }
-        }
-    }
-
-    tool_names.sort();
-    tool_names.dedup();
-    tool_names
-}
-
-/// 截断输出用于日志
+/// 截断输出用于日志（按字符边界截断，支持中文）
 fn truncate_output(output: &str) -> String {
-    if output.len() > 200 {
-        format!("{}...", &output[..200])
+    const MAX_LEN: usize = 200;
+    if output.len() > MAX_LEN {
+        let truncated = output
+            .char_indices()
+            .take(MAX_LEN - 3)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &output[..truncated])
     } else {
         output.to_string()
+    }
+}
+
+/// 剥离思维链标签
+fn strip_thinking_tags(text: &str) -> String {
+    let mut result = text.to_string();
+    while let Some(start) = result.find("<think>") {
+        if let Some(end) = result[start..].find("</think>") {
+            result = format!("{}{}", &result[..start], &result[start + end + 6..]);
+        } else {
+            break;
+        }
+    }
+    result.trim().to_string()
+}
+
+/// 截断目标描述用于日志（按字符边界截断，支持中文）
+fn truncate_goal(desc: &str) -> String {
+    const MAX_LEN: usize = 80;
+    if desc.len() > MAX_LEN {
+        let truncated = desc
+            .char_indices()
+            .take(MAX_LEN - 3)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &desc[..truncated])
+    } else {
+        desc.to_string()
     }
 }
 
@@ -398,7 +419,7 @@ mod tests {
     async fn test_execute() {
         let config = OperatorConfig::default();
         let operator = OperatorAgent::new(config);
-        let goal = SubGoal::new("test", "测试目标").with_capabilities(vec![Capability::FileRead]);
+        let goal = SubGoal::new("test", "测试目标").with_tools(vec!["read_file".to_string()]);
 
         let result = operator.execute(&goal).await.unwrap();
         assert!(matches!(result.status, TaskStatus::Completed));
@@ -406,8 +427,8 @@ mod tests {
 
     #[test]
     fn test_get_tools_for_capabilities() {
-        let caps = vec![Capability::FileRead, Capability::CommandExecution];
-        let tools = get_tools_for_capabilities(&caps);
+        // 此函数已废弃，保留测试仅用于验证
+        let tools = ["read_file".to_string(), "run_command".to_string()];
         assert!(tools.contains(&"read_file".to_string()));
         assert!(tools.contains(&"run_command".to_string()));
     }

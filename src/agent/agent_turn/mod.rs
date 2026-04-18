@@ -81,12 +81,16 @@ pub(crate) async fn run_agent_turn_common(
     });
 
     if p.cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent {
+        log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
         run_logical_dual_agent_then_execute_steps(p, &mut per_coord).await
-    } else if p.cfg.staged_plan_execution {
-        run_staged_plan_then_execute_steps(p, &mut per_coord).await
     } else if p.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical {
+        log::info!(target: "crabmate", "run_agent_turn: using Hierarchical mode");
         hierarchy::run_hierarchical_agent(p).await
+    } else if p.cfg.staged_plan_execution {
+        log::info!(target: "crabmate", "run_agent_turn: using staged_plan mode");
+        run_staged_plan_then_execute_steps(p, &mut per_coord).await
     } else {
+        log::info!(target: "crabmate", "run_agent_turn: using single_agent mode");
         run_agent_outer_loop(p, &mut per_coord).await
     }
 }
