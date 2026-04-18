@@ -11,7 +11,7 @@ use crate::config::AgentConfig;
 use crate::llm::LlmCompleteError;
 use crate::llm::backend::ChatCompletionsBackend;
 use crate::llm::{CompleteChatRetryingParams, LlmRetryingTransportOpts};
-use crate::types::{Message, MessageContent};
+use crate::types::{Message, MessageContent, Tool};
 
 use super::task::{SubGoal, TaskResult, TaskStatus};
 use super::tool_executor::ToolExecutor;
@@ -23,6 +23,8 @@ pub struct OperatorConfig {
     pub max_iterations: usize,
     /// 可用的工具列表（为空表示使用全部工具）
     pub allowed_tools: Vec<String>,
+    /// 工具定义列表（用于 LLM 函数调用）
+    pub tools_defs: Vec<Tool>,
 }
 
 impl Default for OperatorConfig {
@@ -30,6 +32,7 @@ impl Default for OperatorConfig {
         Self {
             max_iterations: 10,
             allowed_tools: Vec::new(),
+            tools_defs: Vec::new(),
         }
     }
 }
@@ -307,13 +310,24 @@ impl OperatorAgent {
             None,
         );
 
-        let request = crate::llm::no_tools_chat_request(
-            cfg,
-            &state.messages,
-            None,
-            None,
-            crate::types::LlmSeedOverride::FromConfig,
-        );
+        let request = if self.config.tools_defs.is_empty() {
+            crate::llm::no_tools_chat_request(
+                cfg,
+                &state.messages,
+                None,
+                None,
+                crate::types::LlmSeedOverride::FromConfig,
+            )
+        } else {
+            crate::llm::tool_chat_request(
+                cfg,
+                &state.messages,
+                &self.config.tools_defs,
+                None,
+                None,
+                crate::types::LlmSeedOverride::FromConfig,
+            )
+        };
 
         let (response, _) = crate::llm::complete_chat_retrying(&params, &request).await?;
         Ok(response)
@@ -438,6 +452,7 @@ mod tests {
         let config = OperatorConfig {
             max_iterations: 10,
             allowed_tools: vec!["read_file".to_string()],
+            tools_defs: vec![],
         };
         let operator = OperatorAgent::new(config);
 
