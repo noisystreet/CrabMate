@@ -102,14 +102,28 @@ pub fn wire_session_hydration(
                     // 保留本地的工具消息（is_tool=true 的消息，如分层执行通过 SSE 添加的工具卡片）
                     let server_msg_ids: std::collections::HashSet<_> =
                         msgs.iter().map(|m| m.id.as_str()).collect();
-                    let local_tool_messages: Vec<StoredMessage> = s
+                    let local_preserved: Vec<StoredMessage> = s
                         .messages
                         .iter()
-                        .filter(|m| m.is_tool && !server_msg_ids.contains(m.id.as_str()))
+                        .filter(|m| {
+                            // 保留 is_tool=true 的工具卡片
+                            if m.is_tool && !server_msg_ids.contains(m.id.as_str()) {
+                                return true;
+                            }
+                            // 保留 TimelineLog 消息（state 包含 cm_tl 的消息，如 hierarchical_plan）
+                            if let Some(ref state) = m.state {
+                                if state.contains("cm_tl")
+                                    && !server_msg_ids.contains(m.id.as_str())
+                                {
+                                    return true;
+                                }
+                            }
+                            false
+                        })
                         .cloned()
                         .collect();
                     let mut new_messages = msgs;
-                    new_messages.extend(local_tool_messages);
+                    new_messages.extend(local_preserved);
                     s.messages = new_messages;
                     s.server_revision = Some(resp.revision);
                     applied_hydration = true;
