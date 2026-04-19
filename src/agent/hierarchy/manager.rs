@@ -239,8 +239,9 @@ impl ManagerAgent {
 - `create_file` 的 `content` 参数必须是正确的 JSON 字符串（特殊字符需要转义）
 
 ## 输出格式
-请严格按以下 JSON 格式输出，只输出 JSON，不要有其他内容：
-{{
+**必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
+```
+{{{{
     "sub_goals": [
         {{
             "goal_id": "goal_1",
@@ -251,11 +252,17 @@ impl ManagerAgent {
         }}
     ],
     "execution_strategy": "hybrid"
-}}
+}}}}
+```
+- `goal_id` 必须是字符串
+- `description` 必须是字符串
+- `priority` 必须是数字
+- `depends_on` 必须是字符串数组
+- `required_tools` 必须是字符串数组
 
 ## 约束
 - 子目标数量不超过 {}
-- 只输出 JSON
+- **只输出 JSON，不要有markdown代码块标记、不要有任何解释文字**
 - 尽量复用已有的 artifacts，避免重复创建相同的文件
 "#,
             original_task,
@@ -348,8 +355,9 @@ impl ManagerAgent {
 - `create_file` 的 `content` 参数必须是正确的 JSON 字符串（特殊字符需要转义）
 
 ## 输出格式
-请严格按以下 JSON 格式输出，只输出 JSON，不要有其他内容：
-{{
+**必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
+```
+{{{{
     "sub_goals": [
         {{
             "goal_id": "goal_1",
@@ -360,11 +368,17 @@ impl ManagerAgent {
         }}
     ],
     "execution_strategy": "hybrid"
-}}
+}}}}
+```
+- `goal_id` 必须是字符串
+- `description` 必须是字符串
+- `priority` 必须是数字
+- `depends_on` 必须是字符串数组
+- `required_tools` 必须是字符串数组
 
 ## 约束
 - 子目标数量不超过 {}
-- 只输出 JSON
+- **只输出 JSON，不要有markdown代码块标记、不要有任何解释文字**
 "#,
             task, workspace_context, tools_description, self.config.max_sub_goals
         )
@@ -485,8 +499,11 @@ impl ManagerAgent {
     /// 解析 LLM 输出
     fn parse_output(&self, content: &str) -> Result<ManagerOutput, ManagerError> {
         let json_str = extract_json(content).ok_or_else(|| {
+            log::warn!(target: "crabmate", "[HIERARCHICAL] Manager: failed to extract JSON from response: {:?}", truncate_for_log(content, 200));
             ManagerError::ParseError("Failed to extract JSON from response".to_string())
         })?;
+
+        log::debug!(target: "crabmate", "[HIERARCHICAL] Manager: parsing JSON: {}", truncate_for_log(json_str, 500));
 
         #[derive(serde::Deserialize)]
         struct OutputJson {
@@ -504,7 +521,10 @@ impl ManagerAgent {
         }
 
         let parsed: OutputJson =
-            serde_json::from_str(json_str).map_err(|e| ManagerError::ParseError(e.to_string()))?;
+            serde_json::from_str(json_str).map_err(|e| {
+                log::warn!(target: "crabmate", "[HIERARCHICAL] Manager: JSON parse error: {} for content: {}", e, truncate_for_log(json_str, 300));
+                ManagerError::ParseError(e.to_string())
+            })?;
 
         let execution_strategy = parsed
             .execution_strategy
@@ -629,18 +649,16 @@ fn extract_json(content: &str) -> Option<&str> {
 
 /// 截断任务字符串用于日志（按字符边界截断，支持中文）
 fn truncate_task(task: &str) -> String {
-    const MAX_LEN: usize = 100;
-    if task.len() > MAX_LEN {
-        let truncated = task
-            .char_indices()
-            .take(MAX_LEN - 3)
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0);
-        format!("{}...", &task[..truncated])
-    } else {
-        task.to_string()
+    truncate_for_log(task, 100)
+}
+
+/// 按字符边界截断字符串（支持中文），用于日志输出
+fn truncate_for_log(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
     }
+    let truncated: String = s.chars().take(max_chars - 3).collect();
+    format!("{}...", truncated)
 }
 
 #[cfg(test)]
