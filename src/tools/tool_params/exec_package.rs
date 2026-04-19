@@ -6,7 +6,7 @@ pub(in crate::tools) fn params_run_command() -> serde_json::Value {
         "properties": {
             "command": {
                 "type": "string",
-                "description": "**命令名或相对路径**：\n- 白名单系统命令（如 ls、find、grep、stat、git、gh、cargo、gcc、cmake、ctest、mkdir、make、file、jq 等，完整列表见 config/tools.toml）\n- 工作区相对路径（如 ./build/app、scripts/test.sh）\n\n**仅填命令名或路径本身，不要把参数也填进来**。\n\n**正确示例**：`{\"command\": \"cat\", \"args\": [\"main.cpp\"]}`、`{\"command\": \"./build/app\", \"args\": [\"--help\"]}`、`{\"command\": \"bash\", \"args\": [\"script.sh\"]}`、`{\"command\": \"cmake\", \"args\": [\"-S\", \".\", \"-B\", \"build\"]}`\n**错误示例**：`{\"command\": \"cat main.cpp\"}`、`{\"command\": \"cmake --build\"}`"
+                "description": "**⚠️ 重要：command 必须是纯命令名，不能包含任何参数！**\n\n- 白名单系统命令（如 ls、find、grep、stat、git、gh、cargo、gcc、cmake、ctest、mkdir、make、file、jq 等，完整列表见 config/tools.toml）\n- 工作区相对路径（如 ./build/app、scripts/test.sh）\n\n**command 字段只填命令名或路径，参数必须放在 args 数组中。禁止在 command 中包含任何选项或参数！**\n\n**✅ 正确格式**：`{\"command\": \"cmake\", \"args\": [\"--build\", \"build\"]}`\n**❌ 错误格式**：`{\"command\": \"cmake --build\", \"args\": [\"build\"]}` 或 `{\"command\": \"cat main.cpp\"}`\n\n常见错误：\n- `cmake --build` → 应拆分为 `command: \"cmake\", args: [\"--build\", \"build\"]`\n- `cat main.cpp` → 应拆分为 `command: \"cat\", args: [\"main.cpp\"]`\n- `ls -la` → 应拆分为 `command: \"ls\", args: [\"-la\"]`"
             },
             "args": {
                 "type": "array",
