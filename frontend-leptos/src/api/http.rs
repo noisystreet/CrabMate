@@ -329,6 +329,43 @@ pub struct ChatBranchResponse {
     pub revision: u64,
 }
 
+/// `POST /chat/branch` 可能返回的错误类型。
+#[derive(Debug, Clone)]
+pub enum ChatBranchError {
+    /// 后端不认识该 `conversation_id`（HTTP 404）。
+    NotFound,
+    /// revision 冲突（HTTP 409）。
+    Conflict,
+    /// 其它错误。
+    Other(String),
+}
+
+impl ChatBranchError {
+    fn from_response(resp: &Response, loc: Locale) -> Self {
+        match resp.status() {
+            404 => ChatBranchError::NotFound,
+            409 => ChatBranchError::Conflict,
+            _ => ChatBranchError::Other(crate::i18n::api_err_request_failed(loc).to_string()),
+        }
+    }
+
+    pub fn as_deref(&self) -> &str {
+        match self {
+            ChatBranchError::NotFound => "会话不存在或已过期",
+            ChatBranchError::Conflict => "会话 revision 冲突",
+            ChatBranchError::Other(s) => s,
+        }
+    }
+}
+
+impl std::fmt::Display for ChatBranchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_deref())
+    }
+}
+
+impl std::error::Error for ChatBranchError {}
+
 /// `POST /chat/branch`：服务端按 `before_user_ordinal` 截断持久化会话（须 `conversation_store_sqlite_path` 等已启用）。
 /// `GET /conversation/messages`：拉取服务端已持久化会话（与 `conversation_id` + `revision` 对齐）。
 pub async fn fetch_conversation_messages(
@@ -345,16 +382,47 @@ pub async fn post_chat_branch(
     before_user_ordinal: u64,
     expected_revision: u64,
     loc: Locale,
-) -> Result<u64, String> {
+) -> Result<u64, ChatBranchError> {
     let body = serde_json::to_string(&ChatBranchBody {
         conversation_id: conversation_id.to_string(),
         before_user_ordinal,
         expected_revision,
     })
-    .map_err(|e| e.to_string())?;
-    let r: ChatBranchResponse = fetch_json_with_body("POST", "/chat/branch", &body, loc).await?;
+    .map_err(|e| ChatBranchError::Other(e.to_string()))?;
+    let w = window().ok_or_else(|| ChatBranchError::Other("no window".to_string()))?;
+    let init = RequestInit::new();
+    init.set_method("POST");
+    init.set_mode(RequestMode::Cors);
+    let h = auth_headers();
+    let _ = h.set("Content-Type", "application/json");
+    init.set_headers(&h);
+    init.set_body(&wasm_bindgen::JsValue::from_str(&body));
+    let req = Request::new_with_str_and_init("/chat/branch", &init)
+        .map_err(|e| ChatBranchError::Other(format!("req: {:?}", e)))?;
+    let resp_val = JsFuture::from(w.fetch_with_request(&req))
+        .await
+        .map_err(|e| ChatBranchError::Other(format!("fetch: {:?}", e)))?;
+    let resp: Response = resp_val
+        .dyn_into()
+        .map_err(|_| ChatBranchError::Other("not Response".to_string()))?;
+    if !resp.ok() {
+        return Err(ChatBranchError::from_response(&resp, loc));
+    }
+    let text = JsFuture::from(
+        resp.text()
+            .map_err(|e| ChatBranchError::Other(format!("text: {:?}", e)))?,
+    )
+    .await
+    .map_err(|e| ChatBranchError::Other(format!("read body: {:?}", e)))?;
+    let s = text
+        .as_string()
+        .ok_or_else(|| ChatBranchError::Other("body not string".to_string()))?;
+    let r: ChatBranchResponse =
+        serde_json::from_str(&s).map_err(|e| ChatBranchError::Other(e.to_string()))?;
     if !r.ok {
-        return Err(crate::i18n::api_err_branch_failed(loc).to_string());
+        return Err(ChatBranchError::Other(
+            crate::i18n::api_err_branch_failed(loc).to_string(),
+        ));
     }
     Ok(r.revision)
 }

@@ -261,7 +261,16 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                 return;
             };
             regen_stream_after_truncate.set(None);
-            if !initialized.get() || shell.status_busy.get() {
+            let init = initialized.get();
+            let busy = shell.status_busy.get();
+            web_sys::console::log_1(
+                &format!(
+                    "[effect] regen_stream consumed: init={}, busy={}, text={}, asst_id={}",
+                    init, busy, user_text, asst_id
+                )
+                .into(),
+            );
+            if !init || busy {
                 return;
             }
             auto_scroll_chat.set(true);
