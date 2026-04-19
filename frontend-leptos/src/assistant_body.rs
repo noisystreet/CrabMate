@@ -106,7 +106,7 @@ pub fn assistant_markdown_collapsible_view(
                     g.pending_first_chunk_anim = false;
                     (html, do_first)
                 };
-                if let Some(n) = split_ref.get()
+                if let Some(n) = split_ref.get_untracked()
                     && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
                 {
                     let _ = he.class_list().remove_1("msg-md-first-chunk");
@@ -114,7 +114,7 @@ pub fn assistant_markdown_collapsible_view(
                         let _ = he.class_list().add_1("msg-md-first-chunk");
                     }
                 }
-                if let Some(n) = body_ref.get()
+                if let Some(n) = body_ref.get_untracked()
                     && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
                 {
                     he.set_inner_html(&html);

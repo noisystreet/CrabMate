@@ -94,7 +94,7 @@ pub(crate) fn wire_draft_sync_to_buffer_and_textarea(
             let cref = composer_input_ref.clone();
             spawn_local(async move {
                 TimeoutFuture::new(0).await;
-                if let Some(el) = cref.get() {
+                if let Some(el) = cref.get_untracked() {
                     if el.value() != d_for_dom {
                         el.set_value(&d_for_dom);
                     }
