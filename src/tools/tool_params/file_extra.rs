@@ -50,7 +50,7 @@ pub(in crate::tools) fn params_search_replace() -> serde_json::Value {
     serde_json::json!({
         "type":"object",
         "properties":{
-            "path":{"type":"string","description":"目标文件路径（相对工作区，必填）"},
+            "path":{"type":"string","description":"目标文件路径（相对工作区，必填）。**必须先用 read_dir 确认文件存在**，禁止直接假设某个文件存在。"},
             "search":{"type":"string","description":"要搜索的字符串或正则表达式（必填）"},
             "replace":{"type":"string","description":"替换为的字符串（默认空字符串，即删除匹配）"},
             "regex":{"type":"boolean","description":"是否将 search 作为正则表达式，默认 false（字面量匹配）"},

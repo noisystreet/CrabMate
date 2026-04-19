@@ -6,7 +6,7 @@ pub(in crate::tools) fn params_file_write() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作目录的文件路径，如 subdir/name.txt"
+                "description": "相对工作目录的文件路径，如 subdir/name.txt。若文件已存在会覆盖；若不确定文件是否存在，先用 read_dir 确认。"
             },
             "content": {
                 "type": "string",
@@ -23,7 +23,7 @@ pub(in crate::tools) fn params_modify_file() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作目录的文件路径"
+                "description": "相对工作目录的文件路径。**必须先用 read_dir 确认文件存在**，禁止直接假设某个文件存在。"
             },
             "mode": {
                 "type": "string",
@@ -77,7 +77,7 @@ pub(in crate::tools) fn params_read_file() -> serde_json::Value {
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工作目录的文件路径，如 src/main.rs"
+                "description": "相对工作目录的文件路径，如 src/main.rs。**必须先用 read_dir 确认文件存在**，禁止直接假设某个文件存在。"
             },
             "start_line": {
                 "type": "integer",
