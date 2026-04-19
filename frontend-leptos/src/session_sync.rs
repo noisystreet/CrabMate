@@ -95,6 +95,14 @@ impl SessionSyncState {
         self.last_known_revision = None;
     }
 
+    /// 会话在后端不存在或已失效时彻底清除绑定（如 404 / NOT_FOUND）。
+    pub fn invalidate_conversation_id(&mut self) {
+        self.persistence = SessionPersistence::LocalOnly;
+        self.conversation_id = None;
+        self.last_known_revision = None;
+        self.branch_conflict = false;
+    }
+
     /// `GET /workspace/changelog?conversation_id=`（有则带 scope）。
     pub fn changelog_conversation_id(&self) -> Option<&str> {
         self.conversation_id

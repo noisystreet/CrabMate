@@ -27,6 +27,7 @@ web-sys = { version = "0.3", features = [
     "Blob",
     "Clipboard",
     "BlobPropertyBag",
+    "console",
     "Document",
     "DomTokenList",
     "DocumentFragment",

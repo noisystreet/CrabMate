@@ -17,8 +17,8 @@ pub use client_llm_storage::{
     persist_client_llm_to_storage, persist_executor_llm_to_storage,
 };
 pub use http::{
-    StatusData, TaskItem, TasksData, WorkspaceData, WorkspaceEntry, fetch_conversation_messages,
-    fetch_status, fetch_tasks, fetch_web_ui_config, fetch_workspace, fetch_workspace_changelog,
-    fetch_workspace_pick, post_chat_branch, post_workspace_set, save_tasks, submit_chat_approval,
-    upload_files_multipart,
+    ChatBranchError, StatusData, TaskItem, TasksData, WorkspaceData, WorkspaceEntry,
+    fetch_conversation_messages, fetch_status, fetch_tasks, fetch_web_ui_config, fetch_workspace,
+    fetch_workspace_changelog, fetch_workspace_pick, post_chat_branch, post_workspace_set,
+    save_tasks, submit_chat_approval, upload_files_multipart,
 };
