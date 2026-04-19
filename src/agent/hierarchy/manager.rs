@@ -115,7 +115,15 @@ impl ManagerAgent {
                     .unwrap_or("")
                     .trim()
                     .to_string();
-                self.parse_output(&content)
+                let output = self.parse_output(&content)?;
+
+                // 如果 LLM 返回空子目标列表，使用 fallback 确保至少有一个任务执行
+                if output.sub_goals.is_empty() {
+                    log::warn!(target: "crabmate", "[HIERARCHICAL] Manager: LLM returned empty sub_goals, using fallback");
+                    Ok(self.decompose_fallback(task))
+                } else {
+                    Ok(output)
+                }
             }
             Err(e) => {
                 log::warn!(target: "crabmate", "Manager LLM call failed: {}, falling back to simple decomposition", e);

@@ -36,6 +36,33 @@ fn build_tool_args_text(args: &super::context::PendingToolArgs, loc: Locale) -> 
     };
     out.push_str(label);
     out.push_str("\n");
+
+    // 对于 run_command，将 command 字段放在 args 之前显示
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(content) {
+        if v.get("command").is_some() && v.get("args").is_some() {
+            let mut reordered = serde_json::Map::new();
+            if let Some(cmd) = v.get("command").cloned() {
+                reordered.insert("command".to_string(), cmd);
+            }
+            if let Some(a) = v.get("args").cloned() {
+                reordered.insert("args".to_string(), a);
+            }
+            // 保留其他字段
+            if let Some(obj) = v.as_object() {
+                for (k, v) in obj.iter() {
+                    if k != "command" && k != "args" {
+                        reordered.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            out.push_str(
+                &serde_json::to_string(&serde_json::Value::Object(reordered))
+                    .unwrap_or_else(|_| content.to_string()),
+            );
+            return out;
+        }
+    }
+
     out.push_str(content);
     out
 }
@@ -170,9 +197,9 @@ pub(super) fn build_chat_stream_callbacks(
             let args_text = build_tool_args_text(&pending_args, stream_ctx.locale.get_untracked());
 
             let result_text = tool_card_text(&info, stream_ctx.locale.get_untracked());
-            // 参数在前，结果在后
+            // 结果在前，参数在后
             let t = if !args_text.is_empty() {
-                format!("{}\n\n{}", args_text, result_text)
+                format!("{}\n\n{}", result_text, args_text)
             } else {
                 result_text
             };

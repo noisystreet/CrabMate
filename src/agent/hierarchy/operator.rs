@@ -485,7 +485,12 @@ fn strip_thinking_tags(text: &str) -> String {
     let mut result = text.to_string();
     while let Some(start) = result.find("<think>") {
         if let Some(end) = result[start..].find("</think>") {
-            result = format!("{}{}", &result[..start], &result[start + end + 6..]);
+            let close_tag = "</think>";
+            result = format!(
+                "{}{}",
+                &result[..start],
+                &result[start + end + close_tag.len()..]
+            );
         } else {
             break;
         }
