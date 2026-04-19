@@ -8,6 +8,7 @@ use leptos::prelude::*;
 use crate::api::ChatStreamCallbacks;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n;
+use crate::i18n::Locale;
 use crate::message_format::{staged_timeline_system_message_body, tool_card_text};
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::sse_dispatch::{
@@ -20,6 +21,24 @@ use crate::timeline_scan::{
 };
 
 use super::context::ChatStreamCallbackCtx;
+
+/// 根据暂存的工具调用参数生成参数展示文本。
+fn build_tool_args_text(args: &super::context::PendingToolArgs, loc: Locale) -> String {
+    let mut out = String::new();
+    let args_content = args.full.as_ref().or(args.preview.as_ref());
+    let Some(content) = args_content else {
+        return String::new();
+    };
+    let label = if args.full.is_some() {
+        i18n::tool_call_args_label(loc)
+    } else {
+        i18n::tool_call_args_preview_label(loc)
+    };
+    out.push_str(label);
+    out.push_str("\n");
+    out.push_str(content);
+    out
+}
 
 /// 将内容追加到正在流式生成的 assistant 消息 text 中。
 fn append_to_assistant_text(
@@ -122,6 +141,20 @@ pub(super) fn build_chat_stream_callbacks(
         })
     };
 
+    // 暂存 tool_call 参数
+    let on_tool_call: Rc<dyn Fn(String, String, Option<String>, Option<String>)> = {
+        let stream_ctx = Rc::clone(&stream_ctx);
+        Rc::new(
+            move |_name: String,
+                  _summary: String,
+                  preview: Option<String>,
+                  full: Option<String>| {
+                let args = super::context::PendingToolArgs { preview, full };
+                *stream_ctx.pending_tool_args.borrow_mut() = args;
+            },
+        )
+    };
+
     let on_tool_status: Rc<dyn Fn(bool)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |b: bool| {
@@ -132,7 +165,18 @@ pub(super) fn build_chat_stream_callbacks(
     let on_tool_result: Rc<dyn Fn(ToolResultInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: ToolResultInfo| {
-            let t = tool_card_text(&info, stream_ctx.locale.get_untracked());
+            // 获取暂存的参数并构建参数文本
+            let pending_args = stream_ctx.pending_tool_args.borrow().clone();
+            let args_text = build_tool_args_text(&pending_args, stream_ctx.locale.get_untracked());
+
+            let result_text = tool_card_text(&info, stream_ctx.locale.get_untracked());
+            // 参数在前，结果在后
+            let t = if !args_text.is_empty() {
+                format!("{}\n\n{}", args_text, result_text)
+            } else {
+                result_text
+            };
+
             let id = make_message_id();
             let aid = stream_ctx.active_session_id.as_str();
             let tl_ok = info.ok.unwrap_or(true);
@@ -335,6 +379,7 @@ pub(super) fn build_chat_stream_callbacks(
         on_workspace_changed: on_ws,
         on_tool_status,
         on_tool_result,
+        on_tool_call,
         on_approval,
         on_conversation_id: on_cid,
         on_conversation_revision: on_conv_rev,

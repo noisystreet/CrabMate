@@ -346,7 +346,7 @@ pub(super) fn finalize(
         .unwrap_or(32768)
         .clamp(1024, 1_048_576) as usize;
     let tool_result_envelope_v1 = b.tool_result_envelope_v1.unwrap_or(true);
-    let sse_tool_call_include_arguments = b.sse_tool_call_include_arguments.unwrap_or(false);
+    let sse_tool_call_include_arguments = b.sse_tool_call_include_arguments.unwrap_or(true);
     // 默认开启；仅 `AGENT_THINKING_TRACE_ENABLED` 可关闭（不从 `[agent]` TOML 读入）。
     let agent_thinking_trace_enabled = b.agent_thinking_trace_enabled.unwrap_or(true);
     let agent_tool_stats_enabled = b.agent_tool_stats_enabled.unwrap_or(false);

@@ -349,6 +349,16 @@ async fn emit_tool_call_summary_sse(
     let arguments = cfg
         .sse_tool_call_include_arguments
         .then(|| crate::redact::tool_arguments_redacted_for_sse(args));
+
+    // 记录工具调用参数（脱敏后）
+    let args_for_log = crate::redact::tool_arguments_preview_for_log(args);
+    info!(
+        target: "crabmate::tool_call",
+        "[tool_call] name={} args={}",
+        name,
+        args_for_log
+    );
+
     let _ = crate::sse::send_string_logged(
         tx,
         encode_message(SsePayload::ToolCall {

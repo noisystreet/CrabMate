@@ -9,7 +9,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "git_commit",
-            description: "执行 git commit（受控写入，需 confirm=true）。可选先 stage_all。",
+            description: "执行 git commit（受控写入，需 confirm=true）。可选先 stage_all。\n\n【git commit 常用模式】提交暂存区：`git commit -m \"<message>\"`；提交所有已跟踪文件：`git commit -am \"<message>\"`；查看待提交状态：`git status`。推荐提交信息格式：`<type>(<scope>): <subject>`，如 `feat(tui): add new feature`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_commit,
             runner: runner_git_commit,

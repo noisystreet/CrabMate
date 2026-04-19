@@ -1,7 +1,7 @@
 [
 ToolSpec {
             name: "frontend_lint",
-            description: "运行前端 npm lint（结构化参数）。支持指定前端子目录和 script 名称。",
+            description: "运行前端 npm lint（结构化参数）。支持指定前端子目录和 script 名称。\n\n【npm lint 常用模式】运行项目配置的 lint 脚本：`npm run lint`；修复可自动修复的问题：`npm run lint -- --fix`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
             runner: runner_frontend_lint,
@@ -25,7 +25,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "cargo_audit",
-            description: "运行 cargo audit 做依赖漏洞扫描（需要已安装 cargo-audit）。",
+            description: "运行 cargo audit 做依赖漏洞扫描（需要已安装 cargo-audit）。\n\n【cargo audit 常用模式】检查所有依赖：`cargo audit`；忽略指定 advisory：`cargo audit --ignore RUSTSEC-xxxx-xxxx`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_audit,
             runner: runner_cargo_audit,
@@ -33,7 +33,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "cargo_deny",
-            description: "运行 cargo deny check（需要已安装 cargo-deny），做许可证/安全策略检查。",
+            description: "运行 cargo deny check（需要已安装 cargo-deny），做许可证/安全策略检查。\n\n【cargo deny 常用检查】许可证检查：`cargo deny check licenses`；安全源检查：`cargo deny check sources`； bans 检查：`cargo deny check bans`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_deny,
             runner: runner_cargo_deny,

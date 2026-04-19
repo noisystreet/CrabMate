@@ -10,7 +10,7 @@ pub(in crate::tools) fn params_file_write() -> serde_json::Value {
             },
             "content": {
                 "type": "string",
-                "description": "要写入的文件内容"
+                "description": "要写入的文件内容。**JSON 中字符串须正确转义**：换行用 `\\n`，制表用 `\\t`，双引号用 `\\\"`，反斜杠用 `\\\\`。大文件可分多次写入。"
             }
         },
         "required": ["path"]
@@ -32,7 +32,7 @@ pub(in crate::tools) fn params_modify_file() -> serde_json::Value {
             },
             "content": {
                 "type": "string",
-                "description": "full 时为新的全文；replace_lines 时替换区间的新内容（可为空以删除这些行）"
+                "description": "full 时为新的全文；replace_lines 时替换区间的新内容（可为空以删除这些行）。**JSON 中须正确转义**：换行用 `\\n`，制表用 `\\t`，双引号用 `\\\"`，反斜杠用 `\\\\`。"
             },
             "start_line": {
                 "type": "integer",

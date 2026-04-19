@@ -1,7 +1,7 @@
 [
 ToolSpec {
             name: "go_build",
-            description: "在工作区根运行 `go build`（须存在 go.mod）。可选 package（默认 ./...）、output（-o 相对路径）、verbose。路径禁止 .. 与绝对路径。",
+            description: "在工作区根运行 `go build`（须存在 go.mod）。可选 package（默认 ./...）、output（-o 相对路径）、verbose。路径禁止 .. 与绝对路径。\n\n【go build 常用模式】单个文件：`go build -o <output> <file>`；构建整个项目：`go build ./...`；交叉编译：`GOOS=linux GOARCH=amd64 go build`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_go_build,
             runner: runner_go_build,
@@ -9,7 +9,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "go_test",
-            description: "在工作区根运行 `go test`（须 go.mod）。可选 package、run（-run）、verbose、short、count、timeout。",
+            description: "在工作区根运行 `go test`（须 go.mod）。可选 package、run（-run）、verbose、short、count、timeout。\n\n【go test 常用模式】运行所有测试：`go test ./...`；运行匹配用例：`go test -run TestName ./...`；显示详细输出：`go test -v ./...`；运行 benchmark：`go test -bench=. ./...`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_go_test,
             runner: runner_go_test,

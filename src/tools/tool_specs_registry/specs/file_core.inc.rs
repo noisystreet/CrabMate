@@ -1,7 +1,7 @@
 [
 ToolSpec {
             name: "create_file",
-            description: "在工作区内创建新文件。仅当文件不存在时创建；若路径已存在则报错。路径相对于工作目录，不能包含 .. 超出工作目录。用于用户要求「新建文件」「创建 xx」等。参数 path 为相对路径，content 为文件内容。",
+            description: "在工作区内创建新文件。仅当文件不存在时创建；若路径已存在则报错。路径相对于工作目录，不能包含 .. 超出工作目录。用于用户要求「新建文件」「创建 xx」等。**JSON 中 content 字符串须正确转义**：换行用 `\\n`，制表用 `\\t`，双引号用 `\\\"`，反斜杠用 `\\\\`。大文件可分多次写入。",
             category: ToolCategory::Development,
             parameters: tool_params::params_file_write,
             runner: runner_create_file,
@@ -41,7 +41,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "read_dir",
-            description: "在工作区内读取目录下的文件/子目录列表（受控只读）。可选包含隐藏项、最大条数、文件大小（include_size）、修改时间（include_mtime）和排序方式（sort_by: name/size/mtime）。",
+            description: "在工作区内读取目录下的文件/子目录列表（受控只读）。**path 必须是相对工作目录的路径（如 `.`、`src`、`tmp/dir`），禁止绝对路径和 `..`**。可选包含隐藏项、最大条数、文件大小（include_size）、修改时间（include_mtime）和排序方式（sort_by: name/size/mtime）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_read_dir_enhanced,
             runner: runner_read_dir,

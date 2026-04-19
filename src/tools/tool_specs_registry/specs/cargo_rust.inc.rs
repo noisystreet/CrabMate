@@ -1,7 +1,7 @@
 [
 ToolSpec {
             name: "cargo_check",
-            description: "运行 cargo check（结构化参数）。用于快速检查 Rust 项目编译问题。",
+            description: "运行 cargo check（结构化参数）。用于快速检查 Rust 项目编译问题。\n\n【cargo check 常用模式】检查整个项目：`cargo check`；检查特定包：`cargo check -p <package>`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_common,
             runner: runner_cargo_check,
@@ -9,7 +9,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "cargo_test",
-            description: "运行 cargo test（支持 package/bin/filter/nocapture）。用于执行 Rust 测试。",
+            description: "运行 cargo test（支持 package/bin/filter/nocapture）。用于执行 Rust 测试。\n\n【cargo test 常用模式】运行所有测试：`cargo test`；运行特定测试：`cargo test <test_name>`；显示 println!：`cargo test -- --nocapture`；运行集成测试：`cargo test --test <integration_test_name>`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_test,
             runner: runner_cargo_test,

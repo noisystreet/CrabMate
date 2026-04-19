@@ -43,6 +43,8 @@ pub struct ChatStreamCallbacks {
         std::rc::Rc<dyn Fn(crate::sse_dispatch::ClarificationQuestionnaireInfo)>,
     pub on_thinking_trace: std::rc::Rc<dyn Fn(ThinkingTraceInfo)>,
     pub on_timeline_log: std::rc::Rc<dyn Fn(TimelineLogInfo)>,
+    /// SSE `tool_call`：工具调用事件，包含名称、摘要、参数预览和完整参数。
+    pub on_tool_call: std::rc::Rc<dyn Fn(String, String, Option<String>, Option<String>)>,
 }
 
 impl Clone for ChatStreamCallbacks {
@@ -68,6 +70,7 @@ impl Clone for ChatStreamCallbacks {
             ),
             on_thinking_trace: std::rc::Rc::clone(&self.on_thinking_trace),
             on_timeline_log: std::rc::Rc::clone(&self.on_timeline_log),
+            on_tool_call: std::rc::Rc::clone(&self.on_tool_call),
         }
     }
 }
@@ -336,7 +339,9 @@ fn handle_sse_block(
         (cbs.on_error)(msg);
     };
     let mut on_ws = || (cbs.on_workspace_changed)();
-    let mut on_tool_call = |_n: String, _s: String, _p: Option<String>, _a: Option<String>| {};
+    let mut on_tool_call = |n: String, s: String, p: Option<String>, a: Option<String>| {
+        (cbs.on_tool_call)(n, s, p, a);
+    };
     let mut on_tool_status = |b: bool| (cbs.on_tool_status)(b);
     let mut on_parse = |_b: bool| {};
     let mut on_tool_res = |info: ToolResultInfo| (cbs.on_tool_result)(info);
