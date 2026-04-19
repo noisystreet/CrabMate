@@ -106,51 +106,9 @@ pub(crate) fn chat_message_row(
     } else {
         let m_for_body = m.clone();
         let asc = auto_scroll_chat;
-        let body_inner = match jump_uid {
-            Some(uid) => {
-                let uid_click = uid.clone();
-                let uid_key = uid.clone();
-                view! {
-                    <span
-                        class="msg-body msg-tool-body-jump"
-                        role="link"
-                        tabindex="0"
-                        prop:title=move || i18n::msg_jump_user_title(locale.get())
-                        prop:aria-label=move || i18n::msg_jump_user_aria(locale.get())
-                        on:click=move |_| {
-                            spawn_scroll_to_linked_user_message(&uid_click, asc);
-                        }
-                        on:keydown=move |ev: web_sys::KeyboardEvent| {
-                            let k = ev.key();
-                            if k == "Enter" || k == " " {
-                                ev.prevent_default();
-                                spawn_scroll_to_linked_user_message(&uid_key, asc);
-                            }
-                        }
-                    >
-                        {move || {
-                            let apply = apply_assistant_display_filters.get();
-                            let loc = locale.get();
-                            let q = normalize_search_query(&chat_find_query.get());
-                            let disp =
-                                message_text_for_display_ex(&m_for_body, loc, apply);
-                            let segs = split_for_find_highlight(&disp, &q);
-                            segs
-                                .into_iter()
-                                .map(|(s, hl)| {
-                                    if hl {
-                                        view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
-                                    } else {
-                                        view! { {s} }.into_any()
-                                    }
-                                })
-                                .collect_view()
-                        }}
-                    </span>
-                }
-                .into_any()
-            }
-            None => view! {
+        // 工具气泡不需要跳转到用户消息的功能，只显示纯文本
+        let body_inner = if is_tool_bubble {
+            view! {
                 <span class="msg-body">
                     {move || {
                         let apply = apply_assistant_display_filters.get();
@@ -172,7 +130,73 @@ pub(crate) fn chat_message_row(
                     }}
                 </span>
             }
-            .into_any(),
+            .into_any()
+        } else if let Some(uid) = jump_uid {
+            let uid_click = uid.clone();
+            let uid_key = uid.clone();
+            view! {
+                <span
+                    class="msg-body msg-tool-body-jump"
+                    role="link"
+                    tabindex="0"
+                    prop:title=move || i18n::msg_jump_user_title(locale.get())
+                    prop:aria-label=move || i18n::msg_jump_user_aria(locale.get())
+                    on:click=move |_| {
+                        spawn_scroll_to_linked_user_message(&uid_click, asc);
+                    }
+                    on:keydown=move |ev: web_sys::KeyboardEvent| {
+                        let k = ev.key();
+                        if k == "Enter" || k == " " {
+                            ev.prevent_default();
+                            spawn_scroll_to_linked_user_message(&uid_key, asc);
+                        }
+                    }
+                >
+                    {move || {
+                        let apply = apply_assistant_display_filters.get();
+                        let loc = locale.get();
+                        let q = normalize_search_query(&chat_find_query.get());
+                        let disp =
+                            message_text_for_display_ex(&m_for_body, loc, apply);
+                        let segs = split_for_find_highlight(&disp, &q);
+                        segs
+                            .into_iter()
+                            .map(|(s, hl)| {
+                                if hl {
+                                    view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
+                                } else {
+                                    view! { {s} }.into_any()
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </span>
+            }
+            .into_any()
+        } else {
+            view! {
+                <span class="msg-body">
+                    {move || {
+                        let apply = apply_assistant_display_filters.get();
+                        let loc = locale.get();
+                        let q = normalize_search_query(&chat_find_query.get());
+                        let disp =
+                            message_text_for_display_ex(&m_for_body, loc, apply);
+                        let segs = split_for_find_highlight(&disp, &q);
+                        segs
+                            .into_iter()
+                            .map(|(s, hl)| {
+                                if hl {
+                                    view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
+                                } else {
+                                    view! { {s} }.into_any()
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </span>
+            }
+            .into_any()
         };
         if is_user_plain && !m.image_urls.is_empty() {
             let imgs: Vec<String> = m.image_urls.clone();

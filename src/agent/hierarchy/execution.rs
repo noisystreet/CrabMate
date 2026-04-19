@@ -375,8 +375,80 @@ impl<'a> HierarchicalExecutor<'a> {
         Ok(results)
     }
 
-    /// 执行单个子目标
+    /// 执行单个子目标（带重试循环）
     async fn execute_single(
+        &self,
+        goal: &SubGoal,
+        artifact_store: &mut ArtifactStore,
+    ) -> Result<TaskResult, ExecutionError> {
+        let mut current_goal = goal.clone();
+        const MAX_RETRIES: usize = 3;
+
+        for attempt in 0..MAX_RETRIES {
+            let result = self
+                .execute_single_impl(&current_goal, artifact_store)
+                .await?;
+
+            // 如果成功或不是 Manager 处理范围内的失败，直接返回
+            if !matches!(result.status, TaskStatus::Failed { .. }) {
+                return Ok(result);
+            }
+
+            // 尝试获取 Manager 的决策
+            let decision = if let Some(ref manager) = self.manager {
+                let error_msg = result.error.as_deref().unwrap_or("Unknown error");
+                let artifacts: Vec<_> = artifact_store.all().into_iter().cloned().collect();
+                match self
+                    .ask_manager_for_decision(manager, &current_goal, error_msg, &artifacts)
+                    .await
+                {
+                    Some(d) => d,
+                    None => return Ok(result), // Manager 不可用，返回失败结果
+                }
+            } else {
+                return Ok(result); // 没有 Manager，返回失败结果
+            };
+
+            match decision {
+                super::manager::ManagerDecision::Retry { updated_goal } => {
+                    info!(target: "crabmate", "[HIERARCHICAL] Executor: Manager decided to retry (attempt {}/{})", attempt + 1, MAX_RETRIES);
+                    current_goal = updated_goal;
+                    continue;
+                }
+                super::manager::ManagerDecision::Skip { reason } => {
+                    info!(target: "crabmate", "[HIERARCHICAL] Executor: Manager decided to skip: {}", reason);
+                    return Ok(TaskResult {
+                        task_id: current_goal.goal_id.clone(),
+                        status: TaskStatus::Skipped { reason },
+                        output: result.output,
+                        error: result.error,
+                        artifacts: result.artifacts,
+                        duration_ms: result.duration_ms,
+                    });
+                }
+                super::manager::ManagerDecision::Abort { reason } => {
+                    info!(target: "crabmate", "[HIERARCHICAL] Executor: Manager decided to abort: {}", reason);
+                    return Err(ExecutionError::MaxFailuresReached(reason));
+                }
+            }
+        }
+
+        // 达到最大重试次数，返回最后一次失败结果
+        info!(target: "crabmate", "[HIERARCHICAL] Executor: max retries ({}) reached for goal_id={}", MAX_RETRIES, current_goal.goal_id);
+        Ok(TaskResult {
+            task_id: current_goal.goal_id.clone(),
+            status: TaskStatus::Failed {
+                reason: format!("Max retries ({}) reached", MAX_RETRIES),
+            },
+            output: None,
+            error: Some(format!("Max retries ({}) reached", MAX_RETRIES)),
+            artifacts: Vec::new(),
+            duration_ms: 0,
+        })
+    }
+
+    /// 执行单个子目标的实际逻辑
+    async fn execute_single_impl(
         &self,
         goal: &SubGoal,
         artifact_store: &mut ArtifactStore,
@@ -491,6 +563,50 @@ impl<'a> HierarchicalExecutor<'a> {
         }
 
         Ok(result)
+    }
+
+    /// 询问 Manager 如何处理失败的子目标
+    async fn ask_manager_for_decision(
+        &self,
+        manager: &super::manager::ManagerAgent,
+        failed_goal: &SubGoal,
+        error_message: &str,
+        previous_artifacts: &[super::task::Artifact],
+    ) -> Option<super::manager::ManagerDecision> {
+        // 提前提取所有需要的数据，避免生命周期问题
+        let manager = manager.clone();
+        let goal = failed_goal.clone();
+        let error = error_message.to_string();
+        let artifacts = previous_artifacts.to_vec();
+
+        let cfg = self.cfg.clone()?;
+        let llm_backend = self.llm_backend?;
+        let client = self.client.as_ref()?.clone();
+        let api_key = self.api_key.as_ref()?.clone();
+        let working_dir = self.working_dir.as_ref()?.clone();
+        let tools_defs = self.tools_defs.clone();
+
+        // 调用 Manager
+        match manager
+            .handle_failed_goal(
+                &goal,
+                &error,
+                &cfg,
+                llm_backend,
+                &client,
+                &api_key,
+                &working_dir,
+                &tools_defs,
+                &artifacts,
+            )
+            .await
+        {
+            Ok(decision) => Some(decision),
+            Err(e) => {
+                log::warn!(target: "crabmate", "[HIERARCHICAL] ask_manager_for_decision failed: {}", e);
+                None
+            }
+        }
     }
 
     /// 尝试基于已完成的结果和产物重新规划（预留接口）

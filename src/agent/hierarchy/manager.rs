@@ -45,6 +45,17 @@ pub enum ManagerError {
     ExecutionError(String),
 }
 
+/// Manager 对失败子目标的决策
+#[derive(Debug)]
+pub enum ManagerDecision {
+    /// 重新执行修正后的子目标
+    Retry { updated_goal: SubGoal },
+    /// 跳过该子目标
+    Skip { reason: String },
+    /// 终止整个任务
+    Abort { reason: String },
+}
+
 impl std::fmt::Display for ManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -190,6 +201,190 @@ impl ManagerAgent {
         }
     }
 
+    /// 处理失败的子目标，返回决策
+    ///
+    /// 当 Executor 执行子目标失败时，调用此方法让 Manager 分析失败原因，
+    /// 决定是重试（可能修改子目标描述）、跳过还是终止。
+    #[allow(clippy::too_many_arguments)]
+    pub async fn handle_failed_goal(
+        &self,
+        failed_goal: &SubGoal,
+        error_message: &str,
+        cfg: &AgentConfig,
+        llm_backend: &dyn ChatCompletionsBackend,
+        client: &reqwest::Client,
+        api_key: &str,
+        working_dir: &std::path::Path,
+        tools_defs: &[crate::types::Tool],
+        previous_artifacts: &[super::task::Artifact],
+    ) -> Result<ManagerDecision, ManagerError> {
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: handling failed goal={} error={}",
+            failed_goal.goal_id,
+            truncate_for_log(error_message, 200)
+        );
+
+        let prompt = self.build_failed_goal_prompt(
+            failed_goal,
+            error_message,
+            working_dir,
+            tools_defs,
+            previous_artifacts,
+        );
+
+        let messages = vec![Message::user_only(&prompt)];
+        let request =
+            no_tools_chat_request(cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+
+        let params = CompleteChatRetryingParams::new(
+            llm_backend,
+            client,
+            api_key,
+            cfg,
+            LlmRetryingTransportOpts::headless_no_stream(),
+            None,
+            None,
+        );
+
+        match complete_chat_retrying(&params, &request).await {
+            Ok((response, _)) => {
+                let content = message_content_as_str(&response.content)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                self.parse_failure_decision(&content, failed_goal)
+            }
+            Err(e) => {
+                log::warn!(target: "crabmate", "Manager handle_failed_goal LLM call failed: {}", e);
+                // 默认跳过
+                Ok(ManagerDecision::Skip {
+                    reason: format!("Manager unavailable: {}", e),
+                })
+            }
+        }
+    }
+
+    /// 构建处理失败目标的 prompt
+    fn build_failed_goal_prompt(
+        &self,
+        failed_goal: &SubGoal,
+        error_message: &str,
+        working_dir: &std::path::Path,
+        tools_defs: &[crate::types::Tool],
+        previous_artifacts: &[super::task::Artifact],
+    ) -> String {
+        let workspace_context = self.get_workspace_context(working_dir);
+        let artifacts_summary = self.format_artifacts_summary(previous_artifacts);
+
+        format!(
+            r#"## 任务
+你是一个任务执行协调专家。子目标执行失败，需要你决定如何处理。
+
+原始子目标：{}
+目标描述：{}
+
+执行失败信息：
+{}
+
+## 当前工作目录
+{}
+重要：基于实际文件状态做决策。
+
+## 已有的产物（可供参考）
+{}
+
+## 工具定义（完整参数 schema）
+{}
+
+## 决策要求
+
+分析失败原因，从以下选项中选择：
+
+1. **重试（Retry）**：如果失败是因为工具参数错误或描述不准确，返回修改后的子目标。
+   - JSON 格式：{{"decision": "retry", "updated_goal": {{"goal_id": "goal_1", "description": "修改后的描述", "priority": 1, "depends_on": [], "required_tools": ["tool1"]}}}}
+
+2. **跳过（Skip）**：如果失败是因为条件不满足或无法完成，标记跳过并提供原因。
+   - JSON 格式：{{"decision": "skip", "reason": "跳过原因"}}
+
+3. **终止（Abort）**：如果任务根本无法完成，终止整个任务。
+   - JSON 格式：{{"decision": "abort", "reason": "终止原因"}}
+
+## 输出格式
+只输出 JSON，不要有任何解释文字。
+"#,
+            failed_goal.goal_id,
+            failed_goal.description,
+            error_message,
+            workspace_context,
+            artifacts_summary,
+            self.format_tools_with_schemas(tools_defs)
+        )
+    }
+
+    /// 解析失败决策
+    fn parse_failure_decision(
+        &self,
+        content: &str,
+        original_goal: &SubGoal,
+    ) -> Result<ManagerDecision, ManagerError> {
+        let json_str = extract_json(content).ok_or_else(|| {
+            ManagerError::ParseError("Failed to extract JSON from response".to_string())
+        })?;
+
+        #[derive(serde::Deserialize)]
+        struct DecisionJson {
+            decision: String,
+            updated_goal: Option<SubGoalJson>,
+            reason: Option<String>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct SubGoalJson {
+            goal_id: String,
+            description: String,
+            priority: Option<u32>,
+            depends_on: Option<Vec<String>>,
+            required_tools: Option<Vec<String>>,
+        }
+
+        let parsed: DecisionJson =
+            serde_json::from_str(json_str).map_err(|e| ManagerError::ParseError(e.to_string()))?;
+
+        match parsed.decision.as_str() {
+            "retry" => {
+                if let Some(ug) = parsed.updated_goal {
+                    Ok(ManagerDecision::Retry {
+                        updated_goal: SubGoal {
+                            goal_id: ug.goal_id,
+                            description: ug.description,
+                            priority: ug.priority.unwrap_or(original_goal.priority),
+                            depends_on: ug.depends_on.unwrap_or_default(),
+                            required_tools: ug.required_tools.unwrap_or_default(),
+                        },
+                    })
+                } else {
+                    Ok(ManagerDecision::Retry {
+                        updated_goal: original_goal.clone(),
+                    })
+                }
+            }
+            "skip" => Ok(ManagerDecision::Skip {
+                reason: parsed
+                    .reason
+                    .unwrap_or_else(|| "Skipped by manager".to_string()),
+            }),
+            "abort" => Ok(ManagerDecision::Abort {
+                reason: parsed
+                    .reason
+                    .unwrap_or_else(|| "Aborted by manager".to_string()),
+            }),
+            _ => Ok(ManagerDecision::Skip {
+                reason: format!("Unknown decision: {}", parsed.decision),
+            }),
+        }
+    }
+
     /// 构建重新规划的 prompt
     fn build_replan_prompt(
         &self,
@@ -218,8 +413,9 @@ impl ManagerAgent {
 {}
 重要：
 - 子目标的描述必须基于**实际存在的**文件和目录
-- 不要假设某个目录存在（如 src/），除非上下文中明确显示它存在
+- 不要假设某个文件或目录存在，除非上下文中明确显示它存在
 - 如果需要读取某个目录，先用 read_dir 确认它存在
+- 如果需要操作某个文件（如 search_replace、modify_file），应先确认文件存在
 
 ## 已完成的产物（可供后续子目标使用）
 {}
@@ -342,8 +538,9 @@ impl ManagerAgent {
 {}
 重要：
 - 子目标的描述必须基于**实际存在的**文件和目录
-- 不要假设某个目录存在（如 src/），除非上下文中明确显示它存在
+- 不要假设某个文件或目录存在，除非上下文中明确显示它存在
 - 如果需要读取某个目录，先用 read_dir 确认它存在
+- 如果需要操作某个文件（如 search_replace、modify_file），应先确认文件存在
 
 ## 工具定义（完整参数 schema）
 {}
