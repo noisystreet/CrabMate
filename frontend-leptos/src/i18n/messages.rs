@@ -251,13 +251,6 @@ pub fn staged_plan_todo_step_cancelled_aria(l: Locale) -> &'static str {
     }
 }
 
-pub fn staged_plan_todo_legacy_note(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "历史旁注",
-        Locale::En => "Legacy notes",
-    }
-}
-
 pub fn msg_jump_user_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "点击跳转到对应用户消息",

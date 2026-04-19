@@ -213,7 +213,7 @@ pub(crate) fn staged_timeline_group_view(
                         let apply = apply_assistant_display_filters.get();
                         let entries = items_sv.get_value();
                         let session = session_messages.get_value();
-                        let (steps, legacy) =
+                        let (steps, _legacy) =
                             build_staged_plan_todo_steps(loc, apply, &entries, &session);
                         let title_bar = i18n::staged_plan_todo_title(loc);
                         view! {
@@ -292,25 +292,6 @@ pub(crate) fn staged_timeline_group_view(
                                     })
                                     .collect_view()}
                             </ul>
-                            {(!legacy.is_empty()).then(|| {
-                                view! {
-                                    <div class="msg-staged-todo-legacy" role="note">
-                                        <span class="msg-staged-todo-legacy-label">
-                                            {i18n::staged_plan_todo_legacy_note(loc)}
-                                        </span>
-                                        <ul class="msg-staged-todo-legacy-list">
-                                            {legacy
-                                                .into_iter()
-                                                .map(|line| {
-                                                    view! {
-                                                        <li class="msg-staged-todo-legacy-li">{line}</li>
-                                                    }
-                                                })
-                                                .collect_view()}
-                                        </ul>
-                                    </div>
-                                }
-                            })}
                         }
                         .into_any()
                     }}

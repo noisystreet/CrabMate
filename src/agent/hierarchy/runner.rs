@@ -129,19 +129,8 @@ pub async fn run_hierarchical(
         manager_output.execution_strategy
     );
 
-    // 发射 SSE 事件：Manager 完成（ThinkingTrace 供调试台 + TimelineLog 供聊天气泡）
+    // 发射 SSE 事件顺序：TimelineLog(Manager规划) → ThinkingTrace(manager_finished)
     if let Some(ref sse_out) = sse_out {
-        let trace = events::build_manager_finished_trace(
-            manager_output.sub_goals.len(),
-            manager_output.execution_strategy.as_str(),
-        );
-        let _ = sse::send_string_logged(
-            sse_out,
-            sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
-            "hierarchical::manager_finished",
-        )
-        .await;
-
         // 生成子目标列表详情用于聊天气泡显示
         let sub_goals_detail = manager_output
             .sub_goals
@@ -163,10 +152,20 @@ pub async fn run_hierarchical(
             },
         };
         let encoded = sse::encode_message(timeline_payload);
-        log::info!(target: "crabmate", "[HIERARCHICAL] TimelineLog encoded length={} preview={}", encoded.len(), truncate_string(&encoded, 200));
         let _ =
             sse::send_string_logged(sse_out, encoded, "hierarchical::manager_plan_timeline").await;
-        log::info!(target: "crabmate", "[HIERARCHICAL] TimelineLog send completed");
+
+        // ThinkingTrace(manager_finished)
+        let trace = events::build_manager_finished_trace(
+            manager_output.sub_goals.len(),
+            manager_output.execution_strategy.as_str(),
+        );
+        let _ = sse::send_string_logged(
+            sse_out,
+            sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+            "hierarchical::manager_finished",
+        )
+        .await;
     }
 
     // 3. 执行子目标（传递完整上下文）
@@ -206,16 +205,6 @@ async fn run_simple_fallback(
     let manager_config = ManagerConfig::default();
     let manager = ManagerAgent::new(manager_config);
 
-    // 发送 Manager 开始的 SSE 事件
-    log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback: sse_out is {:?}", sse_out.is_some());
-    if let Some(ref sse_out) = sse_out {
-        let trace = events::build_manager_started_trace(task);
-        let encoded = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
-        log::info!(target: "crabmate", "[HIERARCHICAL] manager_started encoded length={}", encoded.len());
-        let _ = sse::send_string_logged(sse_out, encoded, "hierarchical::manager_started").await;
-        log::info!(target: "crabmate", "[HIERARCHICAL] manager_started send completed");
-    }
-
     let manager_output = manager
         .decompose_with_llm(
             task,
@@ -228,29 +217,10 @@ async fn run_simple_fallback(
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
 
-    // 发送 Manager 完成的 SSE 事件
+    // 发送 SSE 事件顺序：1) TimelineLog(Manager规划) → 2) ThinkingTrace(manager_started) → 3) ThinkingTrace(manager_finished)
+    // 这样前端 pending 队列按到达顺序就是正确的逻辑顺序
     if let Some(ref sse_out) = sse_out {
-        let trace = events::build_manager_finished_trace(
-            manager_output.sub_goals.len(),
-            manager_output.execution_strategy.as_str(),
-        );
-        let encoded_trace = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
-        log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback manager_finished encoded length={}", encoded_trace.len());
-        let _ =
-            sse::send_string_logged(sse_out, encoded_trace, "hierarchical::manager_finished").await;
-
-        // 通知前端进入终答阶段（不再显示思维链脉动）
-        let encoded_phase = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-            assistant_answer_phase: true,
-        });
-        let _ = sse::send_string_logged(
-            sse_out,
-            encoded_phase,
-            "hierarchical::assistant_answer_phase",
-        )
-        .await;
-
-        // 生成子目标列表详情
+        // 1) Manager 规划（TimelineLog）
         let sub_goals_detail = manager_output
             .sub_goals
             .iter()
@@ -271,10 +241,33 @@ async fn run_simple_fallback(
             },
         };
         let encoded = sse::encode_message(timeline_payload);
-        log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback TimelineLog encoded length={} preview={}", encoded.len(), truncate_string(&encoded, 200));
         let _ =
             sse::send_string_logged(sse_out, encoded, "hierarchical::manager_plan_timeline").await;
-        log::info!(target: "crabmate", "[HIERARCHICAL] run_simple_fallback TimelineLog send completed");
+
+        // 2) Manager 开始（ThinkingTrace）
+        let trace = events::build_manager_started_trace(task);
+        let encoded = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
+        let _ = sse::send_string_logged(sse_out, encoded, "hierarchical::manager_started").await;
+
+        // 3) Manager 完成（ThinkingTrace）
+        let trace = events::build_manager_finished_trace(
+            manager_output.sub_goals.len(),
+            manager_output.execution_strategy.as_str(),
+        );
+        let encoded_trace = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
+        let _ =
+            sse::send_string_logged(sse_out, encoded_trace, "hierarchical::manager_finished").await;
+
+        // 通知前端进入终答阶段
+        let encoded_phase = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+            assistant_answer_phase: true,
+        });
+        let _ = sse::send_string_logged(
+            sse_out,
+            encoded_phase,
+            "hierarchical::assistant_answer_phase",
+        )
+        .await;
     }
 
     let mut executor = HierarchicalExecutor::new(10, 3)

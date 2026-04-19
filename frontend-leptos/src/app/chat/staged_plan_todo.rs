@@ -163,7 +163,7 @@ pub(crate) fn build_staged_plan_todo_steps(
                 legacy_lines.push(disp);
             }
             _ => {
-                legacy_lines.push(disp);
+                // 其他类型（如 thinking_trace）不作为 legacy 旁注展示
             }
         }
     }

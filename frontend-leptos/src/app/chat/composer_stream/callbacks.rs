@@ -12,15 +12,30 @@ use crate::message_format::{staged_timeline_system_message_body, tool_card_text}
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::sse_dispatch::{
     ClarificationQuestionnaireInfo, CommandApprovalRequest, StagedPlanStepEndInfo,
-    StagedPlanStepStartInfo, ThinkingTraceInfo, TimelineLogInfo, ToolResultInfo,
+    StagedPlanStepStartInfo, TimelineLogInfo, ToolResultInfo,
 };
-use crate::storage::StoredMessage;
+use crate::storage::{ChatSession, StoredMessage};
 use crate::timeline_scan::{
-    timeline_state_approval_decision, timeline_state_staged_end, timeline_state_staged_start,
-    timeline_state_tool,
+    timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
 };
 
 use super::context::ChatStreamCallbackCtx;
+
+/// 将内容追加到正在流式生成的 assistant 消息 text 中。
+fn append_to_assistant_text(
+    aid: &str,
+    mid: &str,
+    chunk: &str,
+    sessions: &RwSignal<Vec<ChatSession>>,
+) {
+    sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+            if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
+                m.text.push_str(chunk);
+            }
+        }
+    });
+}
 
 /// 由 [`super::make_attach_chat_stream`](super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低 `mod.rs` 维护面。
 pub(super) fn build_chat_stream_callbacks(
@@ -33,19 +48,13 @@ pub(super) fn build_chat_stream_callbacks(
         Rc::new(move |chunk: String| {
             let aid = stream_ctx.active_session_id.as_str();
             let mid = stream_ctx.assistant_message_id.as_str();
-            stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                    if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
-                        if in_answer_phase.get() {
-                            m.text.push_str(&chunk);
-                        } else {
-                            m.reasoning_text.push_str(&chunk);
-                        }
-                    }
-                }
-            });
+            if in_answer_phase.get() {
+                append_to_assistant_text(aid, mid, &chunk, &stream_ctx.chat.sessions);
+            }
+            // 不在 answer 阶段时跳过（thinking 内容直接通过 on_timeline_log/on_thinking_trace 流入 text）
         })
     };
+
     let on_done: Rc<dyn Fn()> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move || {
@@ -56,38 +65,23 @@ pub(super) fn build_chat_stream_callbacks(
             let loc = stream_ctx.locale.get_untracked();
             let aid = stream_ctx.active_session_id.clone();
             let mid = stream_ctx.assistant_message_id.clone();
-            // 先保存 reasoning_text（hydration 会覆盖 sessions）
-            let reasoning_backup = stream_ctx.chat.sessions.with_untracked(|list| {
-                list.iter()
-                    .find(|s| s.id == aid)
-                    .and_then(|s| s.messages.iter().find(|m| m.id == mid))
-                    .map(|m| m.reasoning_text.clone())
-                    .unwrap_or_default()
-            });
-            if !reasoning_backup.is_empty() {
-                stream_ctx.chat.reasoning_preserved.update(|map| {
-                    map.insert(mid.clone(), reasoning_backup);
-                });
-            }
             stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|s| s.id == aid)
-                    && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
-                    && m.state.as_deref() == Some("loading")
-                {
-                    m.state = None;
-                    if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
-                        m.text = i18n::stream_empty_reply(loc).to_string();
+                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                    if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
+                        && m.state.as_deref() == Some("loading")
+                    {
+                        m.state = None;
+                        if m.text.trim().is_empty() {
+                            m.text = i18n::stream_empty_reply(loc).to_string();
+                        }
                     }
                 }
             });
             stream_ctx.shell.status_busy.set(false);
             *stream_ctx.shell.abort_cell.lock().unwrap() = None;
-            stream_ctx
-                .chat
-                .session_hydrate_nonce
-                .update(|n| *n = n.wrapping_add(1));
         })
     };
+
     let on_error: Rc<dyn Fn(String)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |msg: String| {
@@ -114,6 +108,7 @@ pub(super) fn build_chat_stream_callbacks(
             *stream_ctx.shell.abort_cell.lock().unwrap() = None;
         })
     };
+
     let on_ws: Rc<dyn Fn()> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move || {
@@ -126,12 +121,14 @@ pub(super) fn build_chat_stream_callbacks(
             }
         })
     };
+
     let on_tool_status: Rc<dyn Fn(bool)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |b: bool| {
             stream_ctx.shell.tool_busy.set(b);
         })
     };
+
     let on_tool_result: Rc<dyn Fn(ToolResultInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: ToolResultInfo| {
@@ -156,6 +153,7 @@ pub(super) fn build_chat_stream_callbacks(
             });
         })
     };
+
     let on_approval: Rc<dyn Fn(CommandApprovalRequest)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |req: CommandApprovalRequest| {
@@ -166,6 +164,7 @@ pub(super) fn build_chat_stream_callbacks(
             )));
         })
     };
+
     let on_cid: Rc<dyn Fn(String)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |id: String| {
@@ -182,6 +181,7 @@ pub(super) fn build_chat_stream_callbacks(
             });
         })
     };
+
     let on_conv_rev: Rc<dyn Fn(u64)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |rev: u64| {
@@ -197,6 +197,7 @@ pub(super) fn build_chat_stream_callbacks(
             });
         })
     };
+
     let on_stream_ended: Rc<dyn Fn(String)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |reason: String| {
@@ -206,22 +207,26 @@ pub(super) fn build_chat_stream_callbacks(
             }
         })
     };
+
     let on_stream_job_id: Rc<dyn Fn(u64)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |jid: u64| {
             stream_ctx.chat.stream_job_id.set(Some(jid));
         })
     };
+
     let on_last_sse_event_id: Rc<dyn Fn(u64)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |seq: u64| {
             stream_ctx.chat.stream_last_event_seq.set(seq);
         })
     };
+
     let on_assistant_answer_phase: Rc<dyn Fn()> = {
         let in_answer_phase = Rc::clone(&in_answer_phase);
         Rc::new(move || in_answer_phase.set(true))
     };
+
     let on_staged_step_started: Rc<dyn Fn(StagedPlanStepStartInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: StagedPlanStepStartInfo| {
@@ -253,6 +258,7 @@ pub(super) fn build_chat_stream_callbacks(
             });
         })
     };
+
     let on_clarification: Rc<dyn Fn(ClarificationQuestionnaireInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: ClarificationQuestionnaireInfo| {
@@ -262,62 +268,21 @@ pub(super) fn build_chat_stream_callbacks(
                 .set(Some(PendingClarificationForm::from_sse(info)));
         })
     };
-    let on_thinking_trace: Rc<dyn Fn(ThinkingTraceInfo)> = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        Rc::new(move |info: ThinkingTraceInfo| {
-            let aid = stream_ctx.active_session_id.as_str();
-            let mid = stream_ctx.assistant_message_id.clone();
-            let trace_text = if let (Some(title), Some(chunk)) = (&info.title, &info.chunk) {
-                format!("{}\n{}\n\n", title, chunk)
-            } else if let Some(title) = &info.title {
-                format!("{}\n\n", title)
-            } else if let Some(chunk) = &info.chunk {
-                format!("{}\n\n", chunk)
-            } else {
-                String::new()
-            };
-            if !trace_text.is_empty() {
-                stream_ctx.chat.sessions.update(|list| {
-                    if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                        if let Some(m) = s.messages.iter_mut().find(|msg| msg.id == mid) {
-                            m.reasoning_text.push_str(&trace_text);
-                        }
-                    }
-                });
-            }
-            stream_ctx.shell.thinking_trace_log.update(|v| v.push(info));
-        })
-    };
+
+    // Manager 规划 / 分层执行内容 → 追加到同一 assistant 消息 text，流式展示
     let on_timeline_log: Rc<dyn Fn(TimelineLogInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: TimelineLogInfo| {
+            web_sys::console::log_1(
+                &format!("[TL] kind={} title={}", info.kind, info.title).into(),
+            );
             let aid = stream_ctx.active_session_id.as_str();
-            let msg_id = stream_ctx.assistant_message_id.clone();
-            let state = timeline_state_approval_decision(&msg_id, &info.kind);
-            let text = staged_timeline_system_message_body(&info.title);
-            // 同时追加到助手消息的 reasoning_text（供思考区展示）
-            let timeline_for_thinking = format!("{}\n\n", info.title);
-            stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                    // 追加到助手消息的 reasoning_text
-                    if let Some(m) = s.messages.iter_mut().find(|msg| msg.id == msg_id) {
-                        m.reasoning_text.push_str(&timeline_for_thinking);
-                    }
-                    // 创建 timeline system 消息（原有行为）
-                    s.messages.push(StoredMessage {
-                        id: msg_id.clone(),
-                        role: "system".to_string(),
-                        text,
-                        reasoning_text: String::new(),
-                        image_urls: vec![],
-                        state: Some(state),
-                        is_tool: false,
-                        created_at: message_created_ms(),
-                    });
-                }
-            });
+            let mid = stream_ctx.assistant_message_id.as_str();
+            let chunk = format!("{}\n\n", info.title);
+            append_to_assistant_text(aid, mid, &chunk, &stream_ctx.chat.sessions);
         })
     };
+
     let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: StagedPlanStepEndInfo| {
@@ -348,6 +313,18 @@ pub(super) fn build_chat_stream_callbacks(
                     });
                 }
             });
+        })
+    };
+
+    // thinking_trace 内容 → 追加到同一 assistant 消息 text
+    let on_thinking_trace: Rc<dyn Fn(crate::sse_dispatch::ThinkingTraceInfo)> = {
+        let stream_ctx = Rc::clone(&stream_ctx);
+        Rc::new(move |info: crate::sse_dispatch::ThinkingTraceInfo| {
+            let aid = stream_ctx.active_session_id.as_str();
+            let mid = stream_ctx.assistant_message_id.as_str();
+            let title = info.title.as_deref().unwrap_or(&info.op);
+            let chunk = format!("{}\n\n", title);
+            append_to_assistant_text(aid, mid, &chunk, &stream_ctx.chat.sessions);
         })
     };
 

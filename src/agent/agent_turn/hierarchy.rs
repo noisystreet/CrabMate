@@ -125,8 +125,27 @@ async fn handle_execution_result(
     let final_response = aggregate_results(&execution_result.results);
 
     // 添加助手回复到消息
-    p.messages
-        .push(crate::types::Message::assistant_only(final_response));
+    p.messages.push(crate::types::Message::assistant_only(
+        final_response.clone(),
+    ));
+
+    // 发送终答阶段信号 + 最终回答文本到 SSE
+    if let Some(out) = p.out {
+        // 先发送 assistant_answer_phase 使前端进入 answer 阶段
+        let phase_payload = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+            assistant_answer_phase: true,
+        });
+        let _ = sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
+        // 用 TimelineLog 发送最终回答，与 Manager 规划方式一致
+        let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "final_response".to_string(),
+                title: final_response,
+                detail: None,
+            },
+        });
+        let _ = sse::send_string_logged(out, final_tl, "hierarchical::final_response").await;
+    }
 
     Ok(())
 }

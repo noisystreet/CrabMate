@@ -150,11 +150,27 @@ pub fn wire_session_hydration(
                 }
                 // 恢复 hydration 覆盖的 reasoning_text（SSE 实时累积，服务端不存）
                 let preserved = chat.reasoning_preserved.get_untracked();
+                web_sys::console::log_1(
+                    &format!(
+                        "[hydration] restoring {} reasoning_text entries, aid={}",
+                        preserved.len(),
+                        aid
+                    )
+                    .into(),
+                );
                 if !preserved.is_empty() {
                     chat.sessions.update(|list| {
                         if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
                             for m in s.messages.iter_mut() {
                                 if let Some(rt) = preserved.get(&m.id) {
+                                    web_sys::console::log_1(
+                                        &format!(
+                                            "[hydration] restored reasoning_text len={} for mid={}",
+                                            rt.len(),
+                                            m.id
+                                        )
+                                        .into(),
+                                    );
                                     m.reasoning_text = rt.clone();
                                 }
                             }

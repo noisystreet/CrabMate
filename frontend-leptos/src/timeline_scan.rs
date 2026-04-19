@@ -184,16 +184,6 @@ pub fn timeline_state_tool(msg_id: &str, ok: bool) -> String {
     .to_string()
 }
 
-pub fn timeline_state_approval_decision(msg_id: &str, decision: &str) -> String {
-    json!({
-        "k": TIMELINE_UI_STATE_KEY,
-        "t": "approval_decision",
-        "msg": msg_id,
-        "st": decision,
-    })
-    .to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
