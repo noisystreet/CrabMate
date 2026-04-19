@@ -438,8 +438,8 @@ impl ManagerAgent {
 重要：
 - 分配工具时，确保工具参数能匹配子目标需求
 - `run_command` 需要分别指定 `command`（命令名如 `ls`, `gcc`）和 `args`（参数数组），不要合并
-- **`run_executable` 用于执行编译产物（如 cmake 构建后的可执行文件）**，不要用 `run_command` 执行 `./xxx`
-- `read_dir` 默认只列出当前目录文件，路径必须是相对路径且不能包含 `..`
+- `run_command` 可以执行工作区内的 `./xxx` 形式可执行文件（如 `./build/app`）
+- `read_dir` 用于读取目录内容，路径必须是相对路径且不能包含 `..`
 - `create_file` 的 `content` 参数必须是正确的 JSON 字符串（特殊字符需要转义）
 
 ## 输出格式
@@ -558,8 +558,8 @@ impl ManagerAgent {
 重要：
 - 分配工具时，确保工具参数能匹配子目标需求
 - `run_command` 需要分别指定 `command`（命令名如 `ls`, `gcc`）和 `args`（参数数组），不要合并
-- **`run_executable` 用于执行编译产物（如 cmake 构建后的可执行文件）**，不要用 `run_command` 执行 `./xxx`
-- `read_dir` 默认只列出当前目录文件，路径必须是相对路径且不能包含 `..`
+- `run_command` 可以执行工作区内的 `./xxx` 形式可执行文件（如 `./build/app`）
+- `read_dir` 用于读取目录内容，路径必须是相对路径且不能包含 `..`
 - `create_file` 的 `content` 参数必须是正确的 JSON 字符串（特殊字符需要转义）
 
 ## 输出格式
