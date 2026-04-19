@@ -264,11 +264,8 @@ impl OperatorAgent {
                         // 使用更有意义的摘要：包含执行结果的描述
                         let tool_summary = if result.success {
                             if result.output.len() > 100 {
-                                format!(
-                                    "✅ {} 成功: {}...",
-                                    result.tool_name,
-                                    &result.output[..100]
-                                )
+                                let truncated: String = result.output.chars().take(100).collect();
+                                format!("✅ {} 成功: {}...", result.tool_name, truncated)
                             } else {
                                 format!("✅ {} 成功: {}", result.tool_name, result.output)
                             }
