@@ -6,12 +6,13 @@ pub(in crate::tools) fn params_run_command() -> serde_json::Value {
         "properties": {
             "command": {
                 "type": "string",
-                "description": "**命令名（小写）**，须为配置中 allowed_commands 白名单之一（如 ls、find、grep、stat、git、gh、cargo、gcc、cmake、ctest、mkdir、make、file、jq 等，完整列表见 config/tools.toml）。**仅填命令名本身（如 \"cat\" 或 \"cmake\"），不要把参数也填进来**。**禁止把 `./program` 当作 command（如 `{\"command\": \"./program\"}` 是错误的），此类请改用 run_executable**。\n\n**正确示例**：`{\"command\": \"cat\", \"args\": [\"main.cpp\"]}` 或 `{\"command\": \"cmake\", \"args\": [\"--build\", \"build\"]}` 或 `{\"command\": \"cmake\", \"args\": [\"..\"]}`\n**错误示例**：`{\"command\": \"cat main.cpp\"}` 或 `{\"command\": \"cmake --build\"}` 或 `{\"command\": \"./program\"}`"
+                "description": "**命令名（小写）**，须为配置中 allowed_commands 白名单之一（如 ls、find、grep、stat、git、gh、cargo、gcc、cmake、ctest、mkdir、make、file、jq 等，完整列表见 config/tools.toml）。**仅填命令名本身（如 \"cat\" 或 \"cmake\"），不要把参数也填进来**。**禁止把 `./program` 当作 command（如 `{\"command\": \"./program\"}` 是错误的），此类请改用 run_executable**。\n\n**正确示例**：`{\"command\": \"cat\", \"args\": [\"main.cpp\"]}` 或 `{\"command\": \"cmake\", \"args\": [\"-S\", \".\", \"-B\", \"build\"]}`（在当前目录找 CMakeLists.txt）或 `{\"command\": \"mkdir\", \"args\": [\"-p\", \"build\"]}`（创建目录，-p 确保已存在也不报错）\n**mkdir 注意事项**：必须使用 `-p` 选项，否则目录已存在时会失败。
+    **pwd vs ls**：pwd 显示当前工作目录（不接受 `-la` 等选项）；ls 列出目录内容（常用 `-la`）。不要混淆。\n**cmake 编译**：必须先确认 CMakeLists.txt 所在目录，然后分别用 `-S` 和 `-B` 指定源码和构建目录。禁止把 `-S . -B build` 合并成 `[\"..\"]` 或其他形式。\n**错误示例**：`{\"command\": \"cat main.cpp\"}` 或 `{\"command\": \"cmake --build\"}` 或 `{\"command\": \"./program\"}` 或 `{\"command\": \"cmake\", \"args\": [\"..\"]}` 或 `{\"command\": \"mkdir\", \"args\": [\"build\"]}`（缺少 -p）"
             },
             "args": {
                 "type": "array",
                 "items": { "type": "string" },
-                "description": "**传给命令的参数数组**（可选），如 [\"main.cpp\"] 或 [\"-la\", \"src/\"]。**不要**把命令和参数写在一起；command 只填命令名，参数全放 args。注意：参数中**禁止包含绝对路径**（以 / 开头），但 cmake 的 .. 例外。"
+                "description": "**传给命令的参数数组**（可选），如 [\"main.cpp\"] 或 [\"-la\", \"src/\"]。**不要**把命令和参数写在一起；command 只填命令名，参数全放 args。注意：参数中**禁止包含绝对路径**（以 / 开头），但 cmake 的 `-S` 和 `-B` 例外。"
             }
         },
         "required": ["command"]

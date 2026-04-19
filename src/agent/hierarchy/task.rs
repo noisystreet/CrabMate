@@ -100,6 +100,17 @@ impl Capability {
     }
 }
 
+/// 子目标类型
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GoalType {
+    /// 分析/收集信息（失败后不重试修复，直接跳过）
+    Analyze,
+    /// 修复/执行（失败后尝试修复）
+    #[default]
+    Fix,
+}
+
 /// 子目标
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubGoal {
@@ -113,6 +124,9 @@ pub struct SubGoal {
     /// 该子目标需要的工具名称列表
     #[serde(default)]
     pub required_tools: Vec<String>,
+    /// 子目标类型：analyze（分析/收集） 或 fix（修复/执行）
+    #[serde(default)]
+    pub goal_type: GoalType,
 }
 
 impl SubGoal {
@@ -123,6 +137,7 @@ impl SubGoal {
             priority: 0,
             depends_on: Vec::new(),
             required_tools: Vec::new(),
+            goal_type: GoalType::default(),
         }
     }
 
@@ -133,6 +148,11 @@ impl SubGoal {
 
     pub fn with_depends_on(mut self, deps: Vec<String>) -> Self {
         self.depends_on = deps;
+        self
+    }
+
+    pub fn with_goal_type(mut self, goal_type: GoalType) -> Self {
+        self.goal_type = goal_type;
         self
     }
 }

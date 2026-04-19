@@ -434,6 +434,11 @@ impl OperatorAgent {
 2. 每次只调用一个工具
 3. 根据工具返回结果决定下一步
 4. 任务完成后给出总结（包含"完成"或"finished"字样）
+
+## 重要约束
+- **禁止假设**任何文件或目录存在。调用 `read_dir`、`search_replace`、`modify_file` 等工具前，**必须先用 `read_dir` 确认目标路径存在**
+- 如果工具返回"路径无法解析"或"No such file or directory"，**必须承认路径不存在**，不能再用相同的错误路径继续操作
+- 如果不确定某个路径是否存在，先用 `read_dir` 的父目录来确认
 "#,
             goal.description, tools_list
         )

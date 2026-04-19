@@ -394,6 +394,24 @@ impl<'a> HierarchicalExecutor<'a> {
                 return Ok(result);
             }
 
+            // Analyze 类型的子目标：失败后直接跳过，不重试
+            if matches!(current_goal.goal_type, super::task::GoalType::Analyze) {
+                info!(target: "crabmate", "[HIERARCHICAL] Executor: Analyze type goal failed, skipping directly: {}", current_goal.goal_id);
+                return Ok(TaskResult {
+                    task_id: current_goal.goal_id.clone(),
+                    status: TaskStatus::Skipped {
+                        reason: result
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "Analyze goal failed".to_string()),
+                    },
+                    output: result.output,
+                    error: result.error,
+                    artifacts: result.artifacts,
+                    duration_ms: result.duration_ms,
+                });
+            }
+
             // 尝试获取 Manager 的决策
             let decision = if let Some(ref manager) = self.manager {
                 let error_msg = result.error.as_deref().unwrap_or("Unknown error");

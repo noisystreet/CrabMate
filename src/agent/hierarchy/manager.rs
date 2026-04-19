@@ -290,12 +290,15 @@ impl ManagerAgent {
 ## 当前工作目录
 {}
 重要：基于实际文件状态做决策。
+**禁止假设**任何文件或目录存在，必须先通过 read_dir 确认。
 
 ## 已有的产物（可供参考）
 {}
 
 ## 工具定义（完整参数 schema）
 {}
+重要：
+- `run_command` 需要分别指定 `command`（命令名如 `ls`, `gcc`）和 `args`（参数数组），不要合并
 
 ## 决策要求
 
@@ -340,12 +343,15 @@ impl ManagerAgent {
         }
 
         #[derive(serde::Deserialize)]
+        #[allow(dead_code)]
         struct SubGoalJson {
             goal_id: String,
             description: String,
             priority: Option<u32>,
             depends_on: Option<Vec<String>>,
             required_tools: Option<Vec<String>>,
+            #[serde(default)]
+            goal_type: Option<super::task::GoalType>,
         }
 
         let parsed: DecisionJson =
@@ -361,6 +367,7 @@ impl ManagerAgent {
                             priority: ug.priority.unwrap_or(original_goal.priority),
                             depends_on: ug.depends_on.unwrap_or_default(),
                             required_tools: ug.required_tools.unwrap_or_default(),
+                            goal_type: original_goal.goal_type.clone(),
                         },
                     })
                 } else {
@@ -413,9 +420,10 @@ impl ManagerAgent {
 {}
 重要：
 - 子目标的描述必须基于**实际存在的**文件和目录
-- 不要假设某个文件或目录存在，除非上下文中明确显示它存在
-- 如果需要读取某个目录，先用 read_dir 确认它存在
-- 如果需要操作某个文件（如 search_replace、modify_file），应先确认文件存在
+- **禁止假设**任何文件或目录存在，必须先通过 read_dir 确认
+- **禁止在子目标描述中使用不存在的路径**，如 `src/`、`include/`、`build/` 等，除非已确认存在
+- 如果需要读取某个目录，**必须先用 read_dir 确认它存在**，才能在后续子目标中使用
+- 如果需要操作某个文件（如 search_replace、modify_file），**必须先确认文件存在**
 
 ## 已完成的产物（可供后续子目标使用）
 {}
@@ -444,7 +452,8 @@ impl ManagerAgent {
             "description": "子目标描述（基于实际文件结构和已有产物）",
             "priority": 1,
             "depends_on": ["goal_id_of_dependency"],
-            "required_tools": ["tool_name1", "tool_name2"]
+            "required_tools": ["tool_name1", "tool_name2"],
+            "goal_type": "fix"  // 或 "analyze"
         }}
     ],
     "execution_strategy": "hybrid"
@@ -455,6 +464,7 @@ impl ManagerAgent {
 - `priority` 必须是数字
 - `depends_on` 必须是字符串数组
 - `required_tools` 必须是字符串数组
+- `goal_type` 必须是 `"fix"`（修复/执行）或 `"analyze"`（分析/收集）。如果只需要收集信息（如编译错误），用 `"analyze"`，失败后直接跳过。
 
 ## 约束
 - 子目标数量不超过 {}
@@ -538,9 +548,10 @@ impl ManagerAgent {
 {}
 重要：
 - 子目标的描述必须基于**实际存在的**文件和目录
-- 不要假设某个文件或目录存在，除非上下文中明确显示它存在
-- 如果需要读取某个目录，先用 read_dir 确认它存在
-- 如果需要操作某个文件（如 search_replace、modify_file），应先确认文件存在
+- **禁止假设**任何文件或目录存在，必须先通过 read_dir 确认
+- **禁止在子目标描述中使用不存在的路径**，如 `src/`、`include/`、`build/` 等，除非已确认存在
+- 如果需要读取某个目录，**必须先用 read_dir 确认它存在**，才能在后续子目标中使用
+- 如果需要操作某个文件（如 search_replace、modify_file），**必须先确认文件存在**
 
 ## 工具定义（完整参数 schema）
 {}
@@ -561,7 +572,8 @@ impl ManagerAgent {
             "description": "子目标描述（基于实际文件结构）",
             "priority": 1,
             "depends_on": [],
-            "required_tools": ["tool_name1", "tool_name2"]
+            "required_tools": ["tool_name1", "tool_name2"],
+            "goal_type": "fix"  // 或 "analyze"
         }}
     ],
     "execution_strategy": "hybrid"
@@ -572,6 +584,7 @@ impl ManagerAgent {
 - `priority` 必须是数字
 - `depends_on` 必须是字符串数组
 - `required_tools` 必须是字符串数组
+- `goal_type` 必须是 `"fix"`（修复/执行）或 `"analyze"`（分析/收集）。如果只需要收集信息（如编译错误），用 `"analyze"`，失败后直接跳过。
 
 ## 约束
 - 子目标数量不超过 {}
@@ -709,12 +722,15 @@ impl ManagerAgent {
         }
 
         #[derive(serde::Deserialize)]
+        #[allow(dead_code)]
         struct SubGoalJson {
             goal_id: String,
             description: String,
             priority: Option<u32>,
             depends_on: Option<Vec<String>>,
             required_tools: Option<Vec<String>>,
+            #[serde(default)]
+            goal_type: Option<super::task::GoalType>,
         }
 
         let parsed: OutputJson =
@@ -741,6 +757,7 @@ impl ManagerAgent {
                 priority: sg.priority.unwrap_or(0),
                 depends_on: sg.depends_on.unwrap_or_default(),
                 required_tools: sg.required_tools.unwrap_or_default(),
+                goal_type: sg.goal_type.unwrap_or_default(),
             });
         }
 
