@@ -1,18 +1,4 @@
 //! 聊天相关 UI 写入 **`innerHTML`** 时的「展示用纯文本 → 安全 HTML」统一入口。
-//!
-//! ## 职责
-//!
-//! - **[`fragment_to_chat_safe_html`]**：已拼好的 Markdown/纯文本片段，按 **`markdown_render`**
-//!   调用 [`crate::markdown::to_safe_html`] 或 [`crate::markdown::plaintext_to_safe_html`]。
-//!   用于助手流式气泡终帧、工作区**变更集**模态等。
-//! - **[`assistant_body_plain_for_stream`]**：与 [`crate::assistant_body`] 内流式 **`Effect`** 一致，
-//!   将 **`reasoning_text` + `text`** 经 [`crate::message_format`] 助手过滤链压成一段纯文本；
-//!   再与 [`fragment_to_chat_safe_html`] 组合即完整渲染链。
-//!
-//! ## 约定
-//!
-//! 业务组件应通过本模块访问上述 HTML 路径，避免散落直接调用 [`crate::markdown::to_safe_html`]，
-//! 便于日后增加统一前后处理（若需要）。
 
 use crate::i18n::Locale;
 use crate::markdown;
@@ -21,18 +7,8 @@ use crate::message_format::{
     filter_assistant_thinking_markers_for_display,
 };
 
-/// 与 `assistant_body` 一致：思维链 trim 后与终答拼成一段（无单独「思考过程」容器）。
-fn combined_assistant_display_plain(thinking_trimmed: &str, answer_display: &str) -> String {
-    if thinking_trimmed.is_empty() {
-        return answer_display.to_string();
-    }
-    if answer_display.trim().is_empty() {
-        return thinking_trimmed.to_string();
-    }
-    format!("{thinking_trimmed}\n\n{answer_display}")
-}
-
 /// 助手非工具消息：流式/静态展示用的**纯文本**（与 `assistant_markdown_collapsible_view` 的 `Effect` 同源）。
+#[allow(dead_code)]
 pub fn assistant_body_plain_for_stream(
     reasoning_text: &str,
     text: &str,
@@ -59,7 +35,13 @@ pub fn assistant_body_plain_for_stream(
         locale,
         apply_assistant_display_filters,
     );
-    combined_assistant_display_plain(r_trim, answer_display.as_str())
+    if r_trim.is_empty() {
+        answer_display
+    } else if answer_display.trim().is_empty() {
+        r_trim.to_string()
+    } else {
+        format!("{r_trim}\n\n{answer_display}")
+    }
 }
 
 /// 将片段转为可写入 `innerHTML` 的安全 HTML（Markdown 开/关与设置 **`GET /web-ui`** 对齐）。
