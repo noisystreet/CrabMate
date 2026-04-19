@@ -514,6 +514,79 @@
   align-self: flex-start;
 }
 
+/* 思考区 */
+.msg-md-thinking {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.msg-md-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.msg-md-thinking-label {
+  font-size: var(--text-xs);
+  color: var(--accent);
+  font-weight: var(--font-weight-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.msg-md-thinking-toggle {
+  font-size: var(--text-xs);
+  padding: 2px 6px;
+}
+
+.msg-md-thinking-body {
+  padding: var(--space-2) var(--space-3);
+}
+
+.msg-md-thinking .msg-md-prose {
+  font-size: 0.88em;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.msg-md-thinking .msg-md-prose p:first-child {
+  margin-top: 0;
+}
+.msg-md-thinking .msg-md-prose p:last-child {
+  margin-bottom: 0;
+}
+
+/* 思考区收起状态：只显示头部 */
+.msg-md-thinking--collapsed .msg-md-thinking-body {
+  display: none;
+}
+
+/* 流式中思考阶段：左边框呼吸动画 */
+.msg-md-thinking.streaming {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  animation: thinking-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+  0%, 100% { border-left-color: var(--accent); }
+  50% { border-left-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+}
+
+/* 回答区 */
+.msg-md-answer {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .msg-actions {
   display: flex;
   flex-direction: row;

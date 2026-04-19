@@ -83,13 +83,6 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
             let shell_for_stream_err = shell_outer.clone();
             let on_error_spawn = cbs.on_error.clone();
             spawn_local(async move {
-                web_sys::console::log_1(
-                    &format!(
-                        "[attach] user_text={}, conv={:?}, asst_id={}",
-                        user_text, conv, asst_id
-                    )
-                    .into(),
-                );
                 let stream_result = send_chat_stream(
                     user_text,
                     image_urls,
@@ -104,26 +97,13 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                     clarify_json,
                 )
                 .await;
-                web_sys::console::log_1(
-                    &format!(
-                        "[attach] stream_result={:?}",
-                        stream_result
-                            .as_ref()
-                            .map(|_| "ok".to_string())
-                            .unwrap_or_else(|e| e.clone())
-                    )
-                    .into(),
-                );
                 if let Err(e) = stream_result {
                     if *user_cancelled_for_spawn.lock().unwrap() {
-                        web_sys::console::log_1(&"[attach] skipped: user cancelled".into());
                         return;
                     }
                     if e == "stream stopped" {
-                        web_sys::console::log_1(&"[attach] skipped: stream stopped".into());
                         return;
                     }
-                    web_sys::console::log_1(&format!("[attach] setting status_err: {}", e).into());
                     shell_for_stream_err.status_err.set(Some(e.clone()));
                     on_error_spawn(e);
                 }

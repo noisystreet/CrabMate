@@ -1,4 +1,5 @@
 //! 助手消息 Markdown 渲染（随会话信号刷新 DOM）；超长回复默认全文，可由用户折叠。
+//!
 //! 展示链与 HTML 出口见 [`crate::message_render`]。
 
 use std::sync::{Arc, Mutex};
@@ -10,21 +11,25 @@ use wasm_bindgen::JsCast;
 
 use crate::i18n::{self, Locale};
 use crate::message_format::message_text_for_display_ex;
-use crate::message_render::{assistant_body_plain_for_stream, fragment_to_chat_safe_html};
+use crate::message_render::fragment_to_chat_safe_html;
 use crate::storage::ChatSession;
 
-/// 超过该字符数（按展示用 `message_text_for_display_ex` 与当前 `apply_assistant_display_filters` 计）的已完成助手消息可手动折叠；默认展示全文。
+/// 超过该字符数的已完成助手消息可手动折叠（作用于整条消息，含思考区）。
 const LONG_ASSISTANT_COLLAPSE_THRESHOLD: usize = 2400;
 
 #[derive(Default)]
-struct AssistantMdPaint {
+struct SectionPaint {
     latest_html: String,
     raf_scheduled: bool,
-    /// 本帧内是否曾出现「由空到有字」的流式首包（用于一次性淡入 class）。
-    pending_first_chunk_anim: bool,
 }
 
-/// 助手非工具消息：Markdown → 净化 HTML；超长时默认全文，列表中的 id 表示用户已折叠。
+impl SectionPaint {
+    fn take_html(&mut self) -> String {
+        std::mem::take(&mut self.latest_html)
+    }
+}
+
+/// 助手非工具消息：Markdown → 净化 HTML；思维链独立区域 + 终答区。
 pub fn assistant_markdown_collapsible_view(
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
@@ -34,16 +39,75 @@ pub fn assistant_markdown_collapsible_view(
     markdown_render: RwSignal<bool>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
-    let split_ref = NodeRef::<Div>::new();
-    let body_ref = NodeRef::<Div>::new();
+    let thinking_body_ref = NodeRef::<Div>::new();
+    let answer_body_ref = NodeRef::<Div>::new();
     let mid = message_id.clone();
     let mid_for_btn = message_id.clone();
-    let prev_raw = StoredValue::new(Arc::new(Mutex::new(String::new())));
-    let paint = StoredValue::new(Arc::new(Mutex::new(AssistantMdPaint::default())));
 
+    let thinking_paint = StoredValue::new(Arc::new(Mutex::new(SectionPaint::default())));
+    let answer_paint = StoredValue::new(Arc::new(Mutex::new(SectionPaint::default())));
+
+    // 思考区是否被用户收起（独立于整条折叠的子折叠）。
+    let thinking_collapsed = StoredValue::new(false);
+
+    // ---------- 思考区 Effect ----------
     Effect::new({
-        let split_ref = split_ref.clone();
-        let body_ref = body_ref.clone();
+        let thinking_body_ref = thinking_body_ref.clone();
+        let thinking_paint = thinking_paint.clone();
+        let mid = mid.clone();
+        move |_| {
+            let _ = sessions.get();
+            let _ = active_id.get();
+            let _ = locale.get();
+            let _ = markdown_render.get();
+            let _ = apply_assistant_display_filters.get();
+            let md_on = markdown_render.get_untracked();
+
+            let reasoning_src = sessions.with(|list| {
+                let aid = active_id.get_untracked();
+                list.iter()
+                    .find(|s| s.id == aid)
+                    .and_then(|s| s.messages.iter().find(|msg| msg.id == mid))
+                    .map(|m| m.reasoning_text.clone())
+                    .unwrap_or_default()
+            });
+
+            let thinking_plain = reasoning_src.trim();
+            if thinking_plain.is_empty() {
+                return;
+            }
+
+            let html = fragment_to_chat_safe_html(thinking_plain, md_on);
+            let paint_arc = thinking_paint.get_value();
+            {
+                let mut g = paint_arc.lock().expect("thinking paint mutex poisoned");
+                if g.raf_scheduled {
+                    return;
+                }
+                g.latest_html = html;
+                g.raf_scheduled = true;
+            }
+            let paint_run = Arc::clone(&paint_arc);
+            let thinking_body_ref = thinking_body_ref.clone();
+            request_animation_frame(move || {
+                let html = {
+                    let mut g = paint_run.lock().expect("thinking paint mutex poisoned");
+                    g.raf_scheduled = false;
+                    g.take_html()
+                };
+                if let Some(n) = thinking_body_ref.get_untracked()
+                    && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
+                {
+                    he.set_inner_html(&html);
+                }
+            });
+        }
+    });
+
+    // ---------- 回答区 Effect ----------
+    Effect::new({
+        let answer_body_ref = answer_body_ref.clone();
+        let answer_paint = answer_paint.clone();
         let mid = mid.clone();
         move |_| {
             let _ = sessions.get();
@@ -52,69 +116,36 @@ pub fn assistant_markdown_collapsible_view(
             let _ = locale.get();
             let _ = markdown_render.get();
             let _ = apply_assistant_display_filters.get();
-            let loc = locale.get_untracked();
             let md_on = markdown_render.get_untracked();
-            let apply = apply_assistant_display_filters.get_untracked();
-            let (reasoning_src, text_src, is_loading) = sessions.with(|list| {
+
+            let text_src = sessions.with(|list| {
                 let aid = active_id.get_untracked();
                 list.iter()
                     .find(|s| s.id == aid)
                     .and_then(|s| s.messages.iter().find(|msg| msg.id == mid))
-                    .map(|m| {
-                        (
-                            m.reasoning_text.clone(),
-                            m.text.clone(),
-                            m.state.as_deref() == Some("loading"),
-                        )
-                    })
+                    .map(|m| m.text.clone())
                     .unwrap_or_default()
             });
-            let combined =
-                assistant_body_plain_for_stream(&reasoning_src, &text_src, is_loading, loc, apply);
-            let snapshot = combined.clone();
-            let first_stream_chunk = {
-                let arc = prev_raw.get_value();
-                let mut g = arc.lock().expect("assistant prev_raw mutex poisoned");
-                let prev_empty = g.is_empty();
-                let now_nonempty = !snapshot.trim().is_empty();
-                let first = prev_empty && now_nonempty && is_loading;
-                *g = snapshot;
-                first
-            };
-            let html = fragment_to_chat_safe_html(&combined, md_on);
-            let paint_arc = paint.get_value();
+
+            let html = fragment_to_chat_safe_html(&text_src, md_on);
+            let paint_arc = answer_paint.get_value();
             {
-                let mut g = paint_arc.lock().expect("assistant paint mutex poisoned");
-                g.latest_html = html;
-                if first_stream_chunk {
-                    g.pending_first_chunk_anim = true;
-                }
+                let mut g = paint_arc.lock().expect("answer paint mutex poisoned");
                 if g.raf_scheduled {
                     return;
                 }
+                g.latest_html = html;
                 g.raf_scheduled = true;
             }
             let paint_run = Arc::clone(&paint_arc);
-            let split_ref = split_ref.clone();
-            let body_ref = body_ref.clone();
+            let answer_body_ref = answer_body_ref.clone();
             request_animation_frame(move || {
-                let (html, do_first) = {
-                    let mut g = paint_run.lock().expect("assistant paint mutex poisoned");
+                let html = {
+                    let mut g = paint_run.lock().expect("answer paint mutex poisoned");
                     g.raf_scheduled = false;
-                    let html = g.latest_html.clone();
-                    let do_first = g.pending_first_chunk_anim;
-                    g.pending_first_chunk_anim = false;
-                    (html, do_first)
+                    g.take_html()
                 };
-                if let Some(n) = split_ref.get_untracked()
-                    && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
-                {
-                    let _ = he.class_list().remove_1("msg-md-first-chunk");
-                    if do_first {
-                        let _ = he.class_list().add_1("msg-md-first-chunk");
-                    }
-                }
-                if let Some(n) = body_ref.get_untracked()
+                if let Some(n) = answer_body_ref.get_untracked()
                     && let Some(he) = n.dyn_ref::<web_sys::HtmlElement>()
                 {
                     he.set_inner_html(&html);
@@ -124,6 +155,7 @@ pub fn assistant_markdown_collapsible_view(
     });
 
     let mid_stored = StoredValue::new(mid_for_btn.clone());
+
     view! {
         <div class=move || {
             if markdown_render.get() {
@@ -132,6 +164,70 @@ pub fn assistant_markdown_collapsible_view(
                 "msg-md-wrap msg-md-wrap--plaintext"
             }
         }>
+            {/* 思考区：仅当有思维链内容时才渲染 */}
+            <Show when=move || {
+                sessions.with(|list| {
+                    let aid = active_id.get();
+                    list.iter()
+                        .find(|s| s.id == aid)
+                        .and_then(|s| {
+                            s.messages.iter().find(|msg| msg.id == mid_stored.get_value())
+                        })
+                        .map(|m| !m.reasoning_text.trim().is_empty())
+                        .unwrap_or(false)
+                })
+            }>
+                <div
+                    class=move || {
+                        let is_loading = sessions.with(|list| {
+                            let aid = active_id.get();
+                            list.iter()
+                                .find(|s| s.id == aid)
+                                .and_then(|s| {
+                                    s.messages
+                                        .iter()
+                                        .find(|msg| msg.id == mid_stored.get_value())
+                                })
+                                .map(|m| m.state.as_deref() == Some("loading"))
+                                .unwrap_or(false)
+                        });
+                        let collapsed = thinking_collapsed.get_value();
+                        let base = if collapsed { "msg-md-thinking msg-md-thinking--collapsed" } else { "msg-md-thinking" };
+                        if is_loading {
+                            format!("{base} streaming")
+                        } else {
+                            base.to_string()
+                        }
+                    }
+                >
+                    {/* 思考区头部：标签 + 展开/收起 */}
+                    <div class="msg-md-thinking-header">
+                        <span class="msg-md-thinking-label">
+                            {move || i18n::assistant_thinking_section_label(locale.get()) }
+                        </span>
+                        <button
+                            type="button"
+                            class="btn btn-muted btn-sm msg-md-thinking-toggle"
+                            on:click=move |_| {
+                                let cur = thinking_collapsed.get_value();
+                                thinking_collapsed.set_value(!cur);
+                            }
+                        >
+                            {move || {
+                                if thinking_collapsed.get_value() {
+                                    i18n::assistant_thinking_expand(locale.get())
+                                } else {
+                                    i18n::assistant_thinking_collapse(locale.get())
+                                }
+                            }}
+                        </button>
+                    </div>
+                    {/* 思考内容 */}
+                    <div class="msg-md-thinking-body" node_ref=thinking_body_ref></div>
+                </div>
+            </Show>
+
+            {/* 回答区 */}
             <div
                 class=move || {
                     let loc = locale.get();
@@ -147,10 +243,10 @@ pub fn assistant_markdown_collapsible_view(
                                     .find(|msg| msg.id == mid_stored.get_value())
                             });
                         match m {
-                            Some(msg) => (
-                                msg.state.as_deref() == Some("loading"),
-                                message_text_for_display_ex(msg, loc, apply).chars().count(),
-                            ),
+                            Some(msg) => {
+                                let len = message_text_for_display_ex(msg, loc, apply).chars().count();
+                                (msg.state.as_deref() == Some("loading"), len)
+                            }
                             None => (false, 0),
                         }
                     });
@@ -158,20 +254,20 @@ pub fn assistant_markdown_collapsible_view(
                     let mid = mid_stored.get_value();
                     let user_collapsed =
                         collapsed_long_assistant_ids.with(|v| v.iter().any(|id| id == &mid));
-                    let collapsed = long && user_collapsed;
-                    if collapsed {
-                        "msg-md-split msg-md-prose-collapsed"
+                    if long && user_collapsed {
+                        "msg-md-split msg-md-answer msg-md-prose msg-md-prose-collapsed"
                     } else {
-                        "msg-md-split"
+                        "msg-md-split msg-md-answer msg-md-prose"
                     }
                 }
-                node_ref=split_ref
             >
                 <div
                     class="msg-md-answer msg-body msg-md-prose"
-                    node_ref=body_ref
+                    node_ref=answer_body_ref
                 ></div>
             </div>
+
+            {/* 整条折叠按钮（作用于整个 msg-md-split，含思考区） */}
             <Show when=move || {
                 let loc = locale.get();
                 let apply = apply_assistant_display_filters.get();
@@ -219,6 +315,28 @@ pub fn assistant_markdown_collapsible_view(
                         }
                     }}
                 </button>
+            </Show>
+
+            {/* 流式打字指示器（loading 状态） */}
+            <Show when=move || {
+                sessions.with(|list| {
+                    let aid = active_id.get();
+                    list.iter()
+                        .find(|s| s.id == aid)
+                        .and_then(|s| {
+                            s.messages
+                                .iter()
+                                .find(|msg| msg.id == mid_stored.get_value())
+                        })
+                        .map(|m| m.state.as_deref() == Some("loading"))
+                        .unwrap_or(false)
+                })
+            }>
+                <span class="typing-dots" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </span>
             </Show>
         </div>
     }
