@@ -13,7 +13,7 @@ use super::artifact_store::ArtifactStore;
 use super::events;
 use super::manager::{ManagerOutput, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
-use super::task::{ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
+use super::task::{Artifact, ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
 use super::tool_executor::ToolExecutor;
 use crate::types::Tool;
 use log::{error, info};
@@ -57,6 +57,9 @@ impl From<super::operator::OperatorError> for ExecutionError {
 pub struct HierarchicalExecutor<'a> {
     max_parallel: usize,
     max_failures: usize,
+    /// 最大重新规划次数（预留）
+    #[allow(dead_code)]
+    max_replans: usize,
     /// LLM 后端（用于 Operator 的 ReAct 循环）
     llm_backend: Option<&'a dyn ChatCompletionsBackend>,
     /// Agent 配置
@@ -71,6 +74,10 @@ pub struct HierarchicalExecutor<'a> {
     sse_out: Option<Sender<String>>,
     /// 工具定义列表（用于 Operator 的 LLM 函数调用）
     tools_defs: Vec<Tool>,
+    /// Manager Agent（用于失败时重新规划）
+    manager: Option<super::manager::ManagerAgent>,
+    /// 原始任务（用于重新规划）
+    original_task: Option<String>,
 }
 
 impl HierarchicalExecutor<'_> {
@@ -78,6 +85,7 @@ impl HierarchicalExecutor<'_> {
         Self {
             max_parallel,
             max_failures,
+            max_replans: 2,
             llm_backend: None,
             cfg: None,
             client: None,
@@ -85,6 +93,8 @@ impl HierarchicalExecutor<'_> {
             working_dir: None,
             sse_out: None,
             tools_defs: Vec::new(),
+            manager: None,
+            original_task: None,
         }
     }
 }
@@ -116,6 +126,18 @@ impl<'a> HierarchicalExecutor<'a> {
     /// 设置工具定义列表
     pub fn with_tools_defs(mut self, tools_defs: Vec<Tool>) -> Self {
         self.tools_defs = tools_defs;
+        self
+    }
+
+    /// 设置 Manager Agent（用于失败时重新规划）
+    pub fn with_manager(mut self, manager: super::manager::ManagerAgent) -> Self {
+        self.manager = Some(manager);
+        self
+    }
+
+    /// 设置原始任务（用于失败时重新规划）
+    pub fn with_original_task(mut self, task: String) -> Self {
+        self.original_task = Some(task);
         self
     }
 
@@ -237,6 +259,21 @@ impl<'a> HierarchicalExecutor<'a> {
 
             // 检查失败
             let (_, failed, decision) = handle_failure(&all_results, self.max_failures);
+
+            // 如果有失败，记录可供重新规划的上下文信息
+            if !failed.is_empty() {
+                let artifacts: Vec<_> = artifact_store.all().into_iter().cloned().collect();
+                info!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] {} failures at level {}. Artifacts available for replan: {}, original_task: {}",
+                    failed.len(),
+                    level_idx,
+                    artifacts.len(),
+                    self.original_task.as_deref().unwrap_or("N/A")
+                );
+                // 失败时的重新规划逻辑已准备好，当 Manager.replan_with_artifacts 被调用时会使用这些信息
+            }
+
             if !failed.is_empty()
                 && let super::manager::FailureDecision::Abort { .. } = decision
             {
@@ -405,8 +442,22 @@ impl<'a> HierarchicalExecutor<'a> {
             ) {
                 // 有完整上下文，使用带工具的执行
                 let tool_executor = ToolExecutor::new(cfg, work_dir.clone());
+                // 构建额外上下文（依赖 artifacts）
+                let extra_context = if deps.is_empty() {
+                    None
+                } else {
+                    Some(self.format_dependencies_context(&deps))
+                };
                 operator
-                    .execute_with_tools(goal, cfg, llm_backend, client, api_key, &tool_executor)
+                    .execute_with_tools(
+                        goal,
+                        cfg,
+                        llm_backend,
+                        client,
+                        api_key,
+                        &tool_executor,
+                        extra_context.as_deref(),
+                    )
                     .await
             } else {
                 // 降级使用简化版本
@@ -440,6 +491,93 @@ impl<'a> HierarchicalExecutor<'a> {
         }
 
         Ok(result)
+    }
+
+    /// 尝试基于已完成的结果和产物重新规划（预留接口）
+    #[allow(dead_code)]
+    async fn try_replan(
+        &self,
+        previous_results: &[TaskResult],
+        artifact_store: &ArtifactStore,
+    ) -> Result<Vec<SubGoal>, ExecutionError> {
+        let manager = self.manager.as_ref().ok_or_else(|| {
+            ExecutionError::MaxFailuresReached("No manager available for replanning".to_string())
+        })?;
+
+        let original_task = self.original_task.as_ref().ok_or_else(|| {
+            ExecutionError::MaxFailuresReached(
+                "No original task available for replanning".to_string(),
+            )
+        })?;
+
+        let working_dir = self.working_dir.as_ref().ok_or_else(|| {
+            ExecutionError::MaxFailuresReached(
+                "No working_dir available for replanning".to_string(),
+            )
+        })?;
+
+        let cfg = self.cfg.as_ref().ok_or_else(|| {
+            ExecutionError::MaxFailuresReached("No cfg available for replanning".to_string())
+        })?;
+
+        let llm_backend = self.llm_backend.ok_or_else(|| {
+            ExecutionError::MaxFailuresReached(
+                "No llm_backend available for replanning".to_string(),
+            )
+        })?;
+
+        let client = self.client.as_ref().ok_or_else(|| {
+            ExecutionError::MaxFailuresReached("No client available for replanning".to_string())
+        })?;
+
+        let api_key = self.api_key.as_ref().ok_or_else(|| {
+            ExecutionError::MaxFailuresReached("No api_key available for replanning".to_string())
+        })?;
+
+        let artifacts: Vec<_> = artifact_store.all().into_iter().cloned().collect();
+
+        let manager_output = manager
+            .replan_with_artifacts(
+                original_task,
+                cfg,
+                llm_backend,
+                client,
+                api_key,
+                working_dir,
+                &self.tools_defs,
+                previous_results,
+                &artifacts,
+            )
+            .await
+            .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
+
+        Ok(manager_output.sub_goals)
+    }
+
+    /// 格式化依赖产物上下文
+    fn format_dependencies_context(&self, deps: &[&Artifact]) -> String {
+        if deps.is_empty() {
+            return String::new();
+        }
+
+        let mut lines = Vec::new();
+        for dep in deps {
+            let kind_str = format!("{:?}", dep.kind).to_lowercase();
+            if let Some(ref path) = dep.path {
+                lines.push(format!("- [{}] {}: 路径={}", kind_str, dep.name, path));
+            } else if let Some(ref content) = dep.content {
+                // 如果是文件内容，只显示前 200 字符
+                let preview = if content.len() > 200 {
+                    format!("{}... ({} chars)", &content[..200], content.len())
+                } else {
+                    content.clone()
+                };
+                lines.push(format!("- [{}] {}:\n{}", kind_str, dep.name, preview));
+            } else {
+                lines.push(format!("- [{}] {}", kind_str, dep.name));
+            }
+        }
+        lines.join("\n")
     }
 }
 

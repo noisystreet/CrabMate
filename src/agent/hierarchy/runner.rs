@@ -117,6 +117,7 @@ pub async fn run_hierarchical(
             llm_backend,
             client.as_ref(),
             &api_key,
+            &working_dir,
             tools_defs,
         )
         .await
@@ -177,7 +178,9 @@ pub async fn run_hierarchical(
             api_key.clone(),
             working_dir.clone(),
         )
-        .with_tools_defs(tools_defs.to_vec());
+        .with_tools_defs(tools_defs.to_vec())
+        .with_manager(manager.clone())
+        .with_original_task(task.to_string());
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);
     }
@@ -212,6 +215,7 @@ async fn run_simple_fallback(
             llm_backend,
             client.as_ref(),
             &api_key,
+            &working_dir,
             tools_defs,
         )
         .await

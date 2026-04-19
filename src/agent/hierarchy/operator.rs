@@ -114,7 +114,7 @@ impl OperatorAgent {
     }
 
     /// 执行子目标（使用 ReAct 循环 + 真实工具执行）
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::too_many_arguments)]
     pub async fn execute_with_tools(
         &self,
         goal: &SubGoal,
@@ -123,6 +123,7 @@ impl OperatorAgent {
         client: &reqwest::Client,
         api_key: &str,
         tool_executor: &ToolExecutor,
+        extra_context: Option<&str>,
     ) -> Result<TaskResult, OperatorError> {
         let start_time = Instant::now();
 
@@ -146,10 +147,15 @@ impl OperatorAgent {
             tool_call_id: None,
         });
 
-        // 添加用户任务
+        // 添加用户任务（使用增强后的描述）
+        let task_description = if let Some(ctx) = extra_context {
+            format!("{}\n\n{}", goal.description, ctx)
+        } else {
+            goal.description.clone()
+        };
         let user_task = format!(
             "任务：{}\n\n请执行任务并通过工具调用完成任务。",
-            goal.description
+            task_description
         );
         state.messages.push(Message {
             role: "user".to_string(),

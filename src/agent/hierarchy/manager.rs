@@ -58,6 +58,7 @@ impl std::fmt::Display for ManagerError {
 impl std::error::Error for ManagerError {}
 
 /// Manager Agent
+#[derive(Clone)]
 pub struct ManagerAgent {
     config: ManagerConfig,
 }
@@ -68,6 +69,7 @@ impl ManagerAgent {
     }
 
     /// 分解任务为子目标（使用 LLM）
+    #[allow(clippy::too_many_arguments)]
     pub async fn decompose_with_llm(
         &self,
         task: &str,
@@ -75,11 +77,12 @@ impl ManagerAgent {
         llm_backend: &dyn ChatCompletionsBackend,
         client: &reqwest::Client,
         api_key: &str,
+        working_dir: &std::path::Path,
         tools_defs: &[crate::types::Tool],
     ) -> Result<ManagerOutput, ManagerError> {
         log::info!(target: "crabmate", "[HIERARCHICAL] Manager: decomposing task={}", truncate_task(task));
 
-        let prompt = self.build_decomposition_prompt(task, tools_defs);
+        let prompt = self.build_decomposition_prompt(task, working_dir, tools_defs);
 
         let messages = vec![Message::user_only(&prompt)];
         let request =
@@ -121,29 +124,116 @@ impl ManagerAgent {
         }
     }
 
-    /// 构建分解 prompt
-    fn build_decomposition_prompt(&self, task: &str, tools_defs: &[crate::types::Tool]) -> String {
-        // 生成工具列表
-        let tools_list = tools_defs
-            .iter()
-            .map(|t| format!("- {}: {}", t.function.name, t.function.description))
-            .collect::<Vec<_>>()
-            .join("\n");
+    /// 基于执行结果和产物重新规划
+    ///
+    /// 当子目标执行失败或需要调整时，调用此方法让 Manager 重新分解任务，
+    /// 结合已完成的 artifacts 和失败信息生成新的子目标计划。
+    #[allow(clippy::too_many_arguments)]
+    pub async fn replan_with_artifacts(
+        &self,
+        original_task: &str,
+        cfg: &AgentConfig,
+        llm_backend: &dyn ChatCompletionsBackend,
+        client: &reqwest::Client,
+        api_key: &str,
+        working_dir: &std::path::Path,
+        tools_defs: &[crate::types::Tool],
+        previous_results: &[super::task::TaskResult],
+        previous_artifacts: &[super::task::Artifact],
+    ) -> Result<ManagerOutput, ManagerError> {
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: replanning with {} previous results and {} artifacts",
+            previous_results.len(),
+            previous_artifacts.len()
+        );
+
+        let prompt = self.build_replan_prompt(
+            original_task,
+            working_dir,
+            tools_defs,
+            previous_results,
+            previous_artifacts,
+        );
+
+        let messages = vec![Message::user_only(&prompt)];
+        let request =
+            no_tools_chat_request(cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+
+        let params = CompleteChatRetryingParams::new(
+            llm_backend,
+            client,
+            api_key,
+            cfg,
+            LlmRetryingTransportOpts::headless_no_stream(),
+            None,
+            None,
+        );
+
+        match complete_chat_retrying(&params, &request).await {
+            Ok((response, _)) => {
+                let content = message_content_as_str(&response.content)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                self.parse_output(&content)
+            }
+            Err(e) => {
+                log::warn!(target: "crabmate", "Manager replan LLM call failed: {}, falling back to original plan", e);
+                // 降级时返回原任务作为一个简单目标
+                Ok(ManagerOutput {
+                    sub_goals: vec![SubGoal::new("goal_1", original_task)],
+                    execution_strategy: self.config.execution_strategy,
+                    summary: "Replan failed, using simple decomposition".to_string(),
+                })
+            }
+        }
+    }
+
+    /// 构建重新规划的 prompt
+    fn build_replan_prompt(
+        &self,
+        original_task: &str,
+        working_dir: &std::path::Path,
+        tools_defs: &[crate::types::Tool],
+        previous_results: &[super::task::TaskResult],
+        previous_artifacts: &[super::task::Artifact],
+    ) -> String {
+        let workspace_context = self.get_workspace_context(working_dir);
+        let tools_description = self.format_tools_with_schemas(tools_defs);
+
+        // 生成已完成 artifacts 的摘要
+        let artifacts_summary = self.format_artifacts_summary(previous_artifacts);
+
+        // 生成失败信息摘要
+        let failures_summary = self.format_failures_summary(previous_results);
 
         format!(
             r#"## 任务
-你是一个任务分解专家。请将以下用户任务分解为可执行的子目标。
+你是一个任务分解专家。原始任务需要重新规划。
 
-任务：{}
+原始任务：{}
 
-## 要求
-1. 每个子目标应该是独立的、可验证的
-2. 考虑子目标之间的依赖关系
-3. 识别可以并行执行的子目标
-4. 为每个子目标分配合适的工具（从下方可用工具列表中选择）
-
-## 可用工具
+## 工作目录上下文
 {}
+重要：子目标的描述应该基于实际存在的文件和目录。
+
+## 已完成的产物（可供后续子目标使用）
+{}
+重要：后续子目标应该引用这些已创建的文件/产物，而不是重复创建。
+
+## 失败信息
+{}
+重要：分析失败原因，在重新规划时避免相同的问题。
+
+## 工具定义（完整参数 schema）
+{}
+重要：
+- 分配工具时，确保工具参数能匹配子目标需求
+- `run_command` 需要分别指定 `command`（命令名如 `ls`, `gcc`）和 `args`（参数数组），不要合并
+- **`run_executable` 用于执行编译产物（如 cmake 构建后的可执行文件）**，不要用 `run_command` 执行 `./xxx`
+- `read_dir` 默认只列出当前目录文件，路径必须是相对路径且不能包含 `..`
+- `create_file` 的 `content` 参数必须是正确的 JSON 字符串（特殊字符需要转义）
 
 ## 输出格式
 请严格按以下 JSON 格式输出，只输出 JSON，不要有其他内容：
@@ -151,7 +241,113 @@ impl ManagerAgent {
     "sub_goals": [
         {{
             "goal_id": "goal_1",
-            "description": "子目标描述",
+            "description": "子目标描述（基于实际文件结构和已有产物）",
+            "priority": 1,
+            "depends_on": ["goal_id_of_dependency"],
+            "required_tools": ["tool_name1", "tool_name2"]
+        }}
+    ],
+    "execution_strategy": "hybrid"
+}}
+
+## 约束
+- 子目标数量不超过 {}
+- 只输出 JSON
+- 尽量复用已有的 artifacts，避免重复创建相同的文件
+"#,
+            original_task,
+            workspace_context,
+            artifacts_summary,
+            failures_summary,
+            tools_description,
+            self.config.max_sub_goals
+        )
+    }
+
+    /// 格式化 artifacts 摘要
+    fn format_artifacts_summary(&self, artifacts: &[super::task::Artifact]) -> String {
+        if artifacts.is_empty() {
+            return "(尚无产物)".to_string();
+        }
+
+        let mut lines = Vec::new();
+        for artifact in artifacts {
+            let path_info = artifact
+                .path
+                .as_ref()
+                .map(|p| format!(" (路径: {})", p))
+                .unwrap_or_default();
+            lines.push(format!(
+                "- [{}] {}{}",
+                format!("{:?}", artifact.kind).to_lowercase(),
+                artifact.name,
+                path_info
+            ));
+        }
+        lines.join("\n")
+    }
+
+    /// 格式化失败摘要
+    fn format_failures_summary(&self, results: &[super::task::TaskResult]) -> String {
+        let failures: Vec<_> = results
+            .iter()
+            .filter(|r| matches!(r.status, super::task::TaskStatus::Failed { .. }))
+            .collect();
+
+        if failures.is_empty() {
+            return "(无失败)".to_string();
+        }
+
+        let mut lines = Vec::new();
+        for result in failures {
+            let reason = match &result.status {
+                super::task::TaskStatus::Failed { reason } => reason.clone(),
+                _ => unreachable!(),
+            };
+            lines.push(format!("- 子目标 {} 失败: {}", result.task_id, reason));
+        }
+        lines.join("\n")
+    }
+
+    /// 构建分解 prompt
+    fn build_decomposition_prompt(
+        &self,
+        task: &str,
+        working_dir: &std::path::Path,
+        tools_defs: &[crate::types::Tool],
+    ) -> String {
+        // 获取工作目录上下文
+        let workspace_context = self.get_workspace_context(working_dir);
+
+        // 生成完整工具定义（包含参数 schema）
+        let tools_description = self.format_tools_with_schemas(tools_defs);
+
+        format!(
+            r#"## 任务
+你是一个任务分解专家。请将以下用户任务分解为可执行的子目标。
+
+任务：{}
+
+## 工作目录上下文
+{}
+重要：子目标的描述应该基于实际存在的文件和目录。
+
+## 工具定义（完整参数 schema）
+{}
+重要：
+- 分配工具时，确保工具参数能匹配子目标需求
+- `run_command` 需要分别指定 `command`（命令名如 `ls`, `gcc`）和 `args`（参数数组），不要合并
+- **`run_executable` 用于执行编译产物（如 cmake 构建后的可执行文件）**，不要用 `run_command` 执行 `./xxx`
+- `read_dir` 默认只列出当前目录文件，路径必须是相对路径且不能包含 `..`
+- `create_file` 的 `content` 参数必须是正确的 JSON 字符串（特殊字符需要转义）
+
+## 输出格式
+请严格按以下 JSON 格式输出，只输出 JSON，不要有其他内容：
+{{
+    "sub_goals": [
+        {{
+            "goal_id": "goal_1",
+            "description": "子目标描述（基于实际文件结构）",
             "priority": 1,
             "depends_on": [],
             "required_tools": ["tool_name1", "tool_name2"]
@@ -164,8 +360,120 @@ impl ManagerAgent {
 - 子目标数量不超过 {}
 - 只输出 JSON
 "#,
-            task, tools_list, self.config.max_sub_goals
+            task, workspace_context, tools_description, self.config.max_sub_goals
         )
+    }
+
+    /// 获取工作目录上下文信息
+    fn get_workspace_context(&self, working_dir: &std::path::Path) -> String {
+        let dir_path = working_dir.display();
+
+        // 列出目录内容
+        let mut entries = Vec::new();
+        if let Ok(read_dir) = std::fs::read_dir(working_dir) {
+            for entry in read_dir.flatten() {
+                if let Ok(name) = entry.file_name().into_string() {
+                    let path = entry.path();
+                    let is_dir = path.is_dir();
+                    let prefix = if is_dir { "[DIR] " } else { "[FILE]" };
+                    entries.push(format!("{} {}", prefix, name));
+                }
+            }
+        }
+
+        let entries_str = if entries.is_empty() {
+            "(目录为空或无法读取)".to_string()
+        } else {
+            entries.join("\n")
+        };
+
+        // 检查是否有 build 目录
+        let build_info = if working_dir.join("build").is_dir() {
+            "\n注意：存在 build/ 目录（CMake 构建产物可能在这里）".to_string()
+        } else {
+            String::new()
+        };
+
+        // 检查是否有 src 目录
+        let src_info = if working_dir.join("src").is_dir() {
+            "\n注意：存在 src/ 目录".to_string()
+        } else {
+            String::new()
+        };
+
+        format!(
+            r#"当前工作目录：{}
+目录内容：
+{}
+{}{}{}"#,
+            dir_path,
+            entries_str,
+            build_info,
+            src_info,
+            if entries.len() > 20 {
+                "\n(只显示前20项)"
+            } else {
+                ""
+            }
+        )
+    }
+
+    /// 格式化工具定义，包含完整参数 schema
+    fn format_tools_with_schemas(&self, tools_defs: &[crate::types::Tool]) -> String {
+        tools_defs
+            .iter()
+            .map(|t| {
+                let name = &t.function.name;
+                let description = &t.function.description;
+                let params = &t.function.parameters;
+
+                // 提取 parameters properties 作为参数说明
+                let params_desc = if let Some(props) = params.get("properties") {
+                    if let Some(obj) = props.as_object() {
+                        obj.iter()
+                            .map(|(param_name, param_info)| {
+                                // 获取参数类型描述
+                                let param_type = param_info
+                                    .get("type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("any");
+                                let param_desc = param_info
+                                    .get("description")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let enum_vals = param_info.get("enum").and_then(|v| {
+                                    v.as_array().map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|x| x.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    })
+                                });
+                                let enum_str = enum_vals
+                                    .map(|e| format!(" (可选值: {})", e))
+                                    .unwrap_or_default();
+                                format!(
+                                    "  - {}: {}（类型：{}{}）",
+                                    param_name, param_desc, param_type, enum_str
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
+                if params_desc.is_empty() {
+                    format!("### {}\n{}\n(无参数)", name, description)
+                } else {
+                    format!("### {}\n{}\n参数：\n{}", name, description, params_desc)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
     }
 
     /// 解析 LLM 输出

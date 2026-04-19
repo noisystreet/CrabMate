@@ -198,6 +198,10 @@ fn is_arg_safe(cmd_name: &str, arg: &str) -> bool {
     if cmd_name == "cd" {
         return !a.contains("..") && !a.starts_with('/');
     }
+    // cmake 允许 .. (用于 cmake .. 从 build 目录配置源目录)
+    if cmd_name == "cmake" {
+        return !a.starts_with('/');
+    }
     // 其他命令禁止 .. 和绝对路径
     !a.contains("..") && !a.starts_with('/')
 }
