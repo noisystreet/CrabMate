@@ -80,7 +80,7 @@ pub(super) fn wire_changelist_body_inner_html(
             let r = changelist_body_ref.clone();
             spawn_local(async move {
                 TimeoutFuture::new(0).await;
-                if let Some(n) = r.get()
+                if let Some(n) = r.get_untracked()
                     && let Ok(he) = n.dyn_into::<web_sys::HtmlElement>()
                 {
                     he.set_inner_html(&html);

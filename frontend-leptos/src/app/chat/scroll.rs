@@ -62,7 +62,7 @@ pub(crate) fn wire_messages_auto_scroll(
             if !follow.get_untracked() {
                 return;
             }
-            if let Some(el) = mref.get() {
+            if let Some(el) = mref.get_untracked() {
                 if !messages_scroller_has_non_collapsed_selection(&el) {
                     el.set_scroll_top(el.scroll_height());
                 }
@@ -74,7 +74,7 @@ pub(crate) fn wire_messages_auto_scroll(
             if !follow.get_untracked() {
                 return;
             }
-            if let Some(el) = mref.get() {
+            if let Some(el) = mref.get_untracked() {
                 if !messages_scroller_has_non_collapsed_selection(&el) {
                     el.set_scroll_top(el.scroll_height());
                 }
@@ -87,7 +87,7 @@ pub(crate) fn wire_messages_auto_scroll(
             if !follow.get_untracked() {
                 return;
             }
-            if let Some(el) = mref.get() {
+            if let Some(el) = mref.get_untracked() {
                 if !messages_scroller_has_non_collapsed_selection(&el) {
                     el.set_scroll_top(el.scroll_height());
                 }
