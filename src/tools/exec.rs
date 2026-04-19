@@ -59,6 +59,53 @@ pub(crate) fn run_command_invocation_targets_workspace_script_or_executable(
         })
 }
 
+/// 解析 `./xxx` 形式的工作区可执行文件路径。
+/// 若命令是 `./xxx` 或含 `/` 的相对路径，且解析后为已存在的可执行文件或脚本，返回路径。
+/// 否则返回 Err。
+pub fn resolve_workspace_executable(
+    working_dir: &Path,
+    command_raw: &str,
+) -> Result<PathBuf, WorkspacePathError> {
+    let t = command_raw.trim();
+    if t.is_empty() || t.contains("..") {
+        return Err(WorkspacePathError::EmptyPath);
+    }
+    if !t.starts_with("./") && !t.contains('/') {
+        return Err(WorkspacePathError::EmptyPath);
+    }
+    let target = resolve_executable_path(working_dir, t)?;
+    if !target.is_file() {
+        return Err(WorkspacePathError::EmptyPath);
+    }
+    let meta = std::fs::metadata(&target).map_err(|_| WorkspacePathError::EmptyPath)?;
+    if !is_executable(&meta)
+        && !target
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| {
+                matches!(
+                    e.to_ascii_lowercase().as_str(),
+                    "sh" | "bash"
+                        | "zsh"
+                        | "py"
+                        | "pl"
+                        | "rb"
+                        | "js"
+                        | "mjs"
+                        | "cjs"
+                        | "ts"
+                        | "ps1"
+                        | "fish"
+                        | "ksh"
+                        | "dash"
+                )
+            })
+    {
+        return Err(WorkspacePathError::EmptyPath);
+    }
+    Ok(target)
+}
+
 /// 解析相对工作目录的路径，且不允许超出工作目录
 fn resolve_executable_path(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
     let sub = sub.trim();

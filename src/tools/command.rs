@@ -288,16 +288,32 @@ fn run_impl(
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
 ) -> Result<String, RunCommandError> {
     let args: serde_json::Value = serde_json::from_str(args_json)?;
-    let cmd_name = match args.get("command").and_then(|c| c.as_str()) {
-        Some(s) => s.trim().to_lowercase(),
+    let cmd_raw = match args.get("command").and_then(|c| c.as_str()) {
+        Some(s) => s.trim(),
         None => return Err(RunCommandError::MissingCommand),
     };
-    if !allowed_commands.iter().any(|c| c == &cmd_name) {
+    let cmd_name = cmd_raw.to_lowercase();
+
+    // 检查是否为 ./xxx 形式的工作区可执行文件
+    let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
+    let exec_path = if is_workspace_executable {
+        crate::tools::resolve_workspace_executable(working_dir, cmd_raw).ok()
+    } else {
+        None
+    };
+
+    // 验证命令是否在白名单中（./xxx 形式由 exec_path 验证）
+    if exec_path.is_none()
+        && !allowed_commands
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(&cmd_name))
+    {
         return Err(RunCommandError::DisallowedCommand {
             attempted: cmd_name,
             allowed: allowed_commands.join(", "),
         });
     }
+
     let cmd_args: Vec<String> = match args.get("args") {
         Some(serde_json::Value::Array(arr)) => arr
             .iter()
@@ -306,12 +322,32 @@ fn run_impl(
         Some(_) => return Err(RunCommandError::ArgsNotArray),
         None => vec![],
     };
-    for a in &cmd_args {
-        if !is_arg_safe(&cmd_name, a) {
-            return Err(RunCommandError::UnsafeArg);
+
+    // 对于 ./xxx 形式，检查参数安全性
+    if exec_path.is_some() {
+        for a in &cmd_args {
+            if a.contains("..") || a.trim_start().starts_with('/') {
+                return Err(RunCommandError::UnsafeArg);
+            }
+        }
+    } else {
+        for a in &cmd_args {
+            if !is_arg_safe(&cmd_name, a) {
+                return Err(RunCommandError::UnsafeArg);
+            }
         }
     }
     check_rate_limit()?;
+
+    // 执行工作区可执行文件
+    if let Some(target_path) = exec_path {
+        let output = Command::new(&target_path)
+            .args(&cmd_args)
+            .current_dir(working_dir)
+            .output()
+            .map_err(|e| map_spawn_error(cmd_raw, working_dir, e))?;
+        return Ok(format_command_output(cmd_raw, output, max_output_len));
+    }
 
     if cmd_name == "cargo"
         && let Some(opts) = test_cache.as_ref()
