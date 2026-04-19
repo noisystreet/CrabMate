@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 crabmate-sse-protocol = { path = "../crates/crabmate-sse-protocol" }
 ammonia = "4"
+async-trait = "0.1"
 console_error_panic_hook = "0.1"
 gloo-timers = { version = "0.3", features = ["futures"] }
 js-sys = "0.3"

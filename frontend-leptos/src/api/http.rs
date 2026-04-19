@@ -276,6 +276,15 @@ pub async fn upload_files_multipart(
     form: &web_sys::FormData,
     loc: Locale,
 ) -> Result<Vec<String>, String> {
+    let files = upload_files_multipart_raw(form, loc).await?;
+    Ok(files.into_iter().map(|f| f.url).collect())
+}
+
+/// `POST /upload` 原始版本：返回完整 `UploadedFileInfo` 列表（供 trait 抽象使用）。
+pub async fn upload_files_multipart_raw(
+    form: &web_sys::FormData,
+    loc: Locale,
+) -> Result<Vec<UploadedFileInfo>, String> {
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let init = RequestInit::new();
     init.set_method("POST");
@@ -306,7 +315,7 @@ pub async fn upload_files_multipart(
         .as_string()
         .ok_or_else(|| crate::i18n::api_err_body_type(loc).to_string())?;
     let body: UploadResponseBody = serde_json::from_str(&s).map_err(|e| e.to_string())?;
-    Ok(body.files.into_iter().map(|f| f.url).collect())
+    Ok(body.files)
 }
 
 #[derive(Debug, Serialize)]

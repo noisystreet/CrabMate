@@ -1036,6 +1036,7 @@ name = "crabmate-web-leptos"
 version = "0.1.0"
 dependencies = [
  "ammonia",
+ "async-trait",
  "console_error_panic_hook",
  "crabmate-sse-protocol",
  "gloo-timers",
