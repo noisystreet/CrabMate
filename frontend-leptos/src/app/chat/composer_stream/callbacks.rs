@@ -252,6 +252,26 @@ pub(super) fn build_chat_stream_callbacks(
     let on_thinking_trace: Rc<dyn Fn(ThinkingTraceInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: ThinkingTraceInfo| {
+            let aid = stream_ctx.active_session_id.as_str();
+            let mid = stream_ctx.assistant_message_id.clone();
+            let trace_text = if let (Some(title), Some(chunk)) = (&info.title, &info.chunk) {
+                format!("{}\n{}\n\n", title, chunk)
+            } else if let Some(title) = &info.title {
+                format!("{}\n\n", title)
+            } else if let Some(chunk) = &info.chunk {
+                format!("{}\n\n", chunk)
+            } else {
+                String::new()
+            };
+            if !trace_text.is_empty() {
+                stream_ctx.chat.sessions.update(|list| {
+                    if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                        if let Some(m) = s.messages.iter_mut().find(|msg| msg.id == mid) {
+                            m.reasoning_text.push_str(&trace_text);
+                        }
+                    }
+                });
+            }
             stream_ctx.shell.thinking_trace_log.update(|v| v.push(info));
         })
     };
@@ -259,13 +279,18 @@ pub(super) fn build_chat_stream_callbacks(
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: TimelineLogInfo| {
             let aid = stream_ctx.active_session_id.as_str();
-            // Jump to latest message (current assistant streaming message).
             let msg_id = stream_ctx.assistant_message_id.clone();
             let state = timeline_state_approval_decision(&msg_id, &info.kind);
-            // 包装为 staged_timeline 系统消息以在聊天气泡中正确展示
             let text = staged_timeline_system_message_body(&info.title);
+            // 同时追加到助手消息的 reasoning_text（供思考区展示）
+            let timeline_for_thinking = format!("{}\n\n", info.title);
             stream_ctx.chat.sessions.update(|list| {
                 if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                    // 追加到助手消息的 reasoning_text
+                    if let Some(m) = s.messages.iter_mut().find(|msg| msg.id == msg_id) {
+                        m.reasoning_text.push_str(&timeline_for_thinking);
+                    }
+                    // 创建 timeline system 消息（原有行为）
                     s.messages.push(StoredMessage {
                         id: msg_id.clone(),
                         role: "system".to_string(),
