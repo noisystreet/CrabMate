@@ -62,6 +62,7 @@ allowed_commands = [
     # 文本与表格（coreutils 类）
     "basename",
     "cat",
+    "cd",
     "cmp",
     "column",
     "cut",

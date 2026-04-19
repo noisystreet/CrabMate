@@ -192,8 +192,13 @@ static RATE_LIMIT: Mutex<RateLimitState> = Mutex::new(RateLimitState {
 
 const MAX_OUTPUT_LINES: usize = 500;
 
-fn is_arg_safe(arg: &str) -> bool {
+fn is_arg_safe(cmd_name: &str, arg: &str) -> bool {
     let a = arg.trim();
+    // cd 允许相对路径（禁止 .. 和绝对路径）
+    if cmd_name == "cd" {
+        return !a.contains("..") && !a.starts_with('/');
+    }
+    // 其他命令禁止 .. 和绝对路径
     !a.contains("..") && !a.starts_with('/')
 }
 
@@ -298,7 +303,7 @@ fn run_impl(
         None => vec![],
     };
     for a in &cmd_args {
-        if !is_arg_safe(a) {
+        if !is_arg_safe(&cmd_name, a) {
             return Err(RunCommandError::UnsafeArg);
         }
     }
@@ -407,6 +412,7 @@ mod tests {
         "tail",
         "wc",
         "cat",
+        "cd",
         "cmake",
         "ninja",
         "gcc",
