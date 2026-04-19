@@ -309,10 +309,6 @@ fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
-fn runner_run_executable(args: &str, ctx: &ToolContext<'_>) -> String {
-    exec::run(args, ctx.command_max_output_len, ctx.working_dir)
-}
-
 fn runner_package_query(args: &str, ctx: &ToolContext<'_>) -> String {
     package_query::run(args, ctx.command_max_output_len)
 }

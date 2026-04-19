@@ -130,33 +130,6 @@ impl ToolSummaryLine for RunCommandSummaryArgs {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct RunExecutableSummaryArgs {
-    path: String,
-    #[serde(default)]
-    args: Vec<serde_json::Value>,
-}
-
-impl ToolSummaryLine for RunExecutableSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        let args = self
-            .args
-            .iter()
-            .filter_map(|x| x.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-        if args.is_empty() {
-            Some(format!("run executable: {}", path))
-        } else {
-            Some(format!("run executable: {} {}", path, args))
-        }
-    }
-}
-
 // ── rust_analyzer * ───────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]

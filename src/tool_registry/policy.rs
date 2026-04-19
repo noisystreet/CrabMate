@@ -12,7 +12,6 @@ fn execution_class_parallel_wall_key(class: ToolExecutionClass) -> &'static str 
     match class {
         ToolExecutionClass::Workflow => "workflow",
         ToolExecutionClass::CommandSpawnTimeout => "command_spawn_timeout",
-        ToolExecutionClass::ExecutableSpawnTimeout => "executable_spawn_timeout",
         ToolExecutionClass::WeatherSpawnTimeout => "weather_spawn_timeout",
         ToolExecutionClass::WebSearchSpawnTimeout => "web_search_spawn_timeout",
         ToolExecutionClass::HttpFetchSpawnTimeout => "http_fetch_spawn_timeout",
@@ -37,7 +36,7 @@ pub fn parallel_tool_wall_timeout_secs(cfg: &AgentConfig, tool_name: &str) -> u6
             .max(cfg.command_timeout_secs.max(1)),
         WeatherSpawnTimeout => cfg.weather_timeout_secs.max(1),
         WebSearchSpawnTimeout => cfg.web_search_timeout_secs.max(1),
-        CommandSpawnTimeout | ExecutableSpawnTimeout => cfg.command_timeout_secs.max(1),
+        CommandSpawnTimeout => cfg.command_timeout_secs.max(1),
         Workflow | BlockingSync => cfg.command_timeout_secs.max(1),
     }
 }

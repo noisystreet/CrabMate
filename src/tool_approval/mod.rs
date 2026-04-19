@@ -25,6 +25,8 @@ pub enum SensitiveCapability {
     OutboundHttpWrite,
     /// 工作流 `requires_approval` 或图内 `run_command` 审批节点。
     WorkflowGate,
+    /// 工作区外路径访问（如 `read_dir` 使用绝对路径或 `..` 跨越工作区边界）。
+    WorkspaceExternalPath,
 }
 
 /// Web 侧审批通道句柄（与 [`crate::tool_registry::WebToolRuntime`] 字段一致，避免 `tool_approval` → `tool_registry` 依赖）。

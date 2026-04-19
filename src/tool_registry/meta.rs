@@ -9,7 +9,6 @@ use std::sync::OnceLock;
 pub enum ToolExecutionClass {
     Workflow,
     CommandSpawnTimeout,
-    ExecutableSpawnTimeout,
     WeatherSpawnTimeout,
     WebSearchSpawnTimeout,
     HttpFetchSpawnTimeout,
@@ -26,7 +25,6 @@ pub struct ToolDispatchMeta {
 pub(crate) enum HandlerId {
     Workflow,
     RunCommand,
-    RunExecutable,
     GetWeather,
     WebSearch,
     HttpFetch,
@@ -60,7 +58,6 @@ macro_rules! tool_dispatch_registry {
 tool_dispatch_registry! {
     ("workflow_execute", false, Workflow, Workflow),
     ("run_command", true, CommandSpawnTimeout, RunCommand),
-    ("run_executable", true, ExecutableSpawnTimeout, RunExecutable),
     ("get_weather", false, WeatherSpawnTimeout, GetWeather),
     ("web_search", false, WebSearchSpawnTimeout, WebSearch),
     ("http_fetch", false, HttpFetchSpawnTimeout, HttpFetch),

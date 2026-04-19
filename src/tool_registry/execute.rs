@@ -11,6 +11,10 @@ use log::error;
 use tokio::sync::Mutex;
 
 use crate::config::{AgentConfig, SyncDefaultToolSandboxMode};
+use crate::tool_approval::{
+    self, ApprovalRequestSpec, CliApprovalInput, InteractiveGateOutcome, SensitiveCapability,
+    SharedAllowlistHandles, ToolApprovalWebError,
+};
 use crate::tools;
 use crate::types::{CommandApprovalDecision, ToolCall};
 
@@ -64,6 +68,19 @@ fn http_tool_approval_context<'a>(
         ToolRuntime::Web { ctx, .. } => (ctx, None),
         ToolRuntime::Cli { ctx, .. } => (None, Some(ctx)),
     }
+}
+
+/// 检测 `read_dir` 入参中 `path` 是否为外部路径（绝对路径或含 `..`）。
+fn read_dir_path_is_external(args_json: &str) -> Option<String> {
+    let v: serde_json::Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+    let path = v.get("path")?.as_str()?.trim();
+    if path.starts_with('/') || path.contains("..") {
+        return Some(path.to_string());
+    }
+    None
 }
 
 /// Web / CLI 统一入口：`(tool_result_text, workflow 反思注入)`。
@@ -171,10 +188,6 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 .await
             }
         },
-        HandlerId::RunExecutable => {
-            execute_run_executable_web(cfg, effective_working_dir, workspace_is_set, name, args)
-                .await
-        }
         HandlerId::GetWeather => {
             execute_get_weather_web(cfg, effective_working_dir, workspace_is_set, name, args).await
         }
@@ -228,6 +241,59 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                     Err(e) => (e, None),
                 };
             }
+
+            // `read_dir` 外部路径审批：绝对路径或含 `..` 时需用户确认（不走白名单）。
+            // 审批通过后，directory.rs 会直接使用绝对路径读取目录。
+            if name == "read_dir"
+                && let Some(ext_path) = read_dir_path_is_external(args)
+            {
+                let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
+                if web_ctx.is_none() && cli_ctx.is_none() {
+                    return (
+                        format!(
+                            "错误：read_dir 访问工作区外路径 \"{}\" 需要审批通道（当前无可用会话）。",
+                            ext_path
+                        ),
+                        None,
+                    );
+                }
+                let spec = ApprovalRequestSpec {
+                    capability: SensitiveCapability::WorkspaceExternalPath,
+                    sse_command: "read_dir".to_string(),
+                    sse_args: format!("path={}", ext_path),
+                    allowlist_key: None,
+                    cli_title: "read_dir 工作区外路径审批",
+                    cli_detail: format!(
+                        "read_dir 请求访问工作区外路径：{}\n仅在可信环境下批准。",
+                        ext_path
+                    ),
+                    web_timeline_prefix_zh: "工作区外路径审批：",
+                };
+                let allow_handles = SharedAllowlistHandles {
+                    web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+                    cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
+                };
+                match tool_approval::interactive_gate_after_whitelist_miss(
+                    web_ctx.map(|w| w.approval_sink()),
+                    cli_ctx.map(|c| CliApprovalInput {
+                        auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+                    }),
+                    &spec,
+                    "tool_registry::read_dir external path approval",
+                    &allow_handles,
+                )
+                .await
+                {
+                    Ok(InteractiveGateOutcome::Allowed) => {}
+                    Ok(InteractiveGateOutcome::Denied(msg)) => {
+                        return (format!("已拒绝：{}", msg), None);
+                    }
+                    Err(ToolApprovalWebError::ChannelUnavailable) => {
+                        return ("错误：审批通道不可用，请重试。".to_string(), None);
+                    }
+                }
+            }
+
             if sync_default_runs_inline(cfg.as_ref(), name) {
                 let (mem_rt, mem_scope) = crate::long_term_memory::tool_context_memory_extras(
                     cfg.as_ref(),
@@ -824,60 +890,6 @@ async fn execute_http_request_impl(
             format!("http_request 执行异常：{:?}", e)
         }
         Err(_) => format!("http_request 超时（{} 秒）", outer_wall),
-    };
-    (s, None)
-}
-
-async fn execute_run_executable_web(
-    cfg: &Arc<AgentConfig>,
-    effective_working_dir: &Path,
-    workspace_is_set: bool,
-    name: &str,
-    args: &str,
-) -> (String, Option<serde_json::Value>) {
-    if !workspace_is_set {
-        return (web_tool_err_workspace_not_set("运行可执行程序"), None);
-    }
-    if let Some(out) = dispatch_non_sync_tool_to_docker(
-        cfg,
-        effective_working_dir,
-        workspace_is_set,
-        "run_executable",
-        args,
-        crate::tool_sandbox::write_runner_config_json(cfg.as_ref()),
-    )
-    .await
-    {
-        return out;
-    }
-    let name_in = name.to_string();
-    let cmd_timeout = cfg.command_timeout_secs;
-    let cfg = Arc::clone(cfg);
-    let work_dir = effective_working_dir.to_path_buf();
-    let args_owned = args.to_string();
-    let handle = tokio::task::spawn_blocking(move || {
-        let ctx = tools::tool_context_for(
-            cfg.as_ref(),
-            cfg.allowed_commands.as_ref(),
-            work_dir.as_path(),
-        );
-        tools::run_tool(&name_in, &args_owned, &ctx)
-    });
-    let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
-        Ok(Ok(s)) => s,
-        Ok(Err(e)) => {
-            error!(
-                target: "crabmate",
-                "工具执行异常 tool={} error={:?}",
-                name,
-                e
-            );
-            format!("工具执行异常：{:?}", e)
-        }
-        Err(_) => {
-            error!(target: "crabmate", "可执行程序运行超时 tool={}", name);
-            format!("可执行程序运行超时（{} 秒）", cmd_timeout)
-        }
     };
     (s, None)
 }

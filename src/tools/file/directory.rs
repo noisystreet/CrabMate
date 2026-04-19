@@ -6,6 +6,15 @@ use std::path::Path;
 use super::display_fmt::{format_size, format_unix_timestamp};
 use super::path::{path_for_tool_display, resolve_for_read};
 
+/// 敏感路径前缀（拒绝绝对路径访问）
+const SENSITIVE_EXTERNAL_PATHS: &[&str] = &["/proc", "/sys", "/dev", "/root", "/etc"];
+
+fn is_sensitive_external_path(path: &str) -> bool {
+    SENSITIVE_EXTERNAL_PATHS
+        .iter()
+        .any(|s| path == *s || path.starts_with(&format!("{}/", s)))
+}
+
 pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -19,8 +28,27 @@ pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
 
-    if path.starts_with('/') || path.contains("..") {
+    let root = if path.starts_with('/') {
+        // 绝对路径（外部路径，已在 tool_registry 层审批）
+        if is_sensitive_external_path(path) {
+            return format!("错误：禁止访问敏感系统路径：{}", path);
+        }
+        Path::new(path).to_path_buf()
+    } else if path.contains("..") {
         return "错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string();
+    } else {
+        // 相对路径，正常处理
+        match resolve_for_read(working_dir, path) {
+            Ok(p) => p,
+            Err(e) => return format!("错误：无法解析目录路径：{}", e),
+        }
+    };
+
+    if !root.is_dir() {
+        return format!(
+            "错误：指定路径不是目录：{}",
+            path_for_tool_display(working_dir, &root, Some(path))
+        );
     }
 
     let max_entries = v
@@ -32,18 +60,6 @@ pub fn read_dir(args_json: &str, working_dir: &Path) -> String {
         .get("include_hidden")
         .and_then(|b| b.as_bool())
         .unwrap_or(false);
-
-    let root = match resolve_for_read(working_dir, path) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：无法解析目录路径：{}", e),
-    };
-    if !root.is_dir() {
-        return format!(
-            "错误：指定路径不是目录：{}",
-            path_for_tool_display(working_dir, &root, Some(path))
-        );
-    }
-
     let include_size = v
         .get("include_size")
         .and_then(|b| b.as_bool())

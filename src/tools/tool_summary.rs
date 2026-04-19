@@ -155,10 +155,6 @@ pub(super) fn summary_apply_patch(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<ApplyPatchSummaryArgs>(v)
 }
 
-pub(super) fn summary_run_executable(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RunExecutableSummaryArgs>(v)
-}
-
 pub(super) fn summary_package_query(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<PackageQuerySummaryArgs>(v)
 }
