@@ -102,6 +102,7 @@ pub fn App() -> impl IntoView {
         session_hydrate_nonce,
         stream_job_id,
         stream_last_event_seq,
+        reasoning_preserved: RwSignal::new(HashMap::new()),
     };
     // 超长已完成助手消息默认全文展示；在此列表中的 id 表示用户手动折叠。
     let collapsed_long_assistant_ids = RwSignal::new(Vec::<String>::new());

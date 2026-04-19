@@ -148,6 +148,21 @@ pub fn wire_session_hydration(
                 if chat.session_hydrate_nonce.get_untracked() != nonce_at_start {
                     return;
                 }
+                // 恢复 hydration 覆盖的 reasoning_text（SSE 实时累积，服务端不存）
+                let preserved = chat.reasoning_preserved.get_untracked();
+                if !preserved.is_empty() {
+                    chat.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|x| x.id == aid) {
+                            for m in s.messages.iter_mut() {
+                                if let Some(rt) = preserved.get(&m.id) {
+                                    m.reasoning_text = rt.clone();
+                                }
+                            }
+                        }
+                    });
+                    chat.reasoning_preserved
+                        .update(|map| map.retain(|k, _| !preserved.contains_key(k)));
+                }
                 chat.session_sync.update(|st| {
                     if st.conversation_id.as_deref().map(str::trim) == Some(cid.as_str()) {
                         st.apply_saved_revision(resp.revision);
