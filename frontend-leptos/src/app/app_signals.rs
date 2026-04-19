@@ -16,20 +16,19 @@ use leptos_dom::helpers::WindowListenerHandle;
 
 use crate::api::{StatusData, TasksData, WorkspaceData};
 use crate::app_prefs::{
-    SidePanelView, DEFAULT_SIDE_WIDTH, WORKSPACE_WIDTH_KEY, load_bool_key, load_f64_key,
-    load_side_panel_view, AGENT_ROLE_KEY, BG_DECOR_KEY, SIDEBAR_RAIL_COLLAPSED_KEY,
-    STATUS_BAR_VISIBLE_KEY, THEME_KEY,
+    AGENT_ROLE_KEY, BG_DECOR_KEY, DEFAULT_SIDE_WIDTH, SIDEBAR_RAIL_COLLAPSED_KEY,
+    STATUS_BAR_VISIBLE_KEY, SidePanelView, THEME_KEY, WORKSPACE_WIDTH_KEY, load_bool_key,
+    load_f64_key, load_side_panel_view, local_storage,
 };
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n::Locale;
 use crate::session_ops::SessionContextAnchor;
 use crate::session_sync::SessionSyncState;
 use crate::sse_dispatch::ThinkingTraceInfo;
-use crate::storage::ChatSession;
 
-pub use crate::chat_session_state::ChatSessionSignals;
 pub use super::status_tasks_state::StatusTasksSignals;
 pub use super::workspace_panel_state::WorkspacePanelSignals;
+pub use crate::chat_session_state::ChatSessionSignals;
 
 #[derive(Clone, Copy)]
 pub struct ShellUISignals {
@@ -49,7 +48,7 @@ impl ShellUISignals {
     pub fn new() -> Self {
         Self {
             theme: RwSignal::new(
-                crate::storage::local_storage()
+                local_storage()
                     .and_then(|s| s.get_item(THEME_KEY).ok().flatten())
                     .unwrap_or_else(|| "dark".to_string()),
             ),
@@ -72,7 +71,7 @@ impl Default for ShellUISignals {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ChatComposerSignals {
     pub draft: RwSignal<String>,
     pub pending_images: RwSignal<Vec<String>>,
@@ -280,7 +279,7 @@ impl LLMSettingsSignals {
             executor_llm_settings_feedback: RwSignal::new(None),
             client_llm_storage_tick: RwSignal::new(0),
             selected_agent_role: RwSignal::new(
-                crate::storage::local_storage()
+                local_storage()
                     .and_then(|s| s.get_item(AGENT_ROLE_KEY).ok().flatten())
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty()),
@@ -384,7 +383,7 @@ impl Default for StatusSignals {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct AppSignals {
     pub initialized: RwSignal<bool>,
     pub chat: ChatSessionSignals,
