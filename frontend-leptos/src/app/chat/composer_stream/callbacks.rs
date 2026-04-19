@@ -56,6 +56,19 @@ pub(super) fn build_chat_stream_callbacks(
             let loc = stream_ctx.locale.get_untracked();
             let aid = stream_ctx.active_session_id.clone();
             let mid = stream_ctx.assistant_message_id.clone();
+            // 先保存 reasoning_text（hydration 会覆盖 sessions）
+            let reasoning_backup = stream_ctx.chat.sessions.with_untracked(|list| {
+                list.iter()
+                    .find(|s| s.id == aid)
+                    .and_then(|s| s.messages.iter().find(|m| m.id == mid))
+                    .map(|m| m.reasoning_text.clone())
+                    .unwrap_or_default()
+            });
+            if !reasoning_backup.is_empty() {
+                stream_ctx.chat.reasoning_preserved.update(|map| {
+                    map.insert(mid.clone(), reasoning_backup);
+                });
+            }
             stream_ctx.chat.sessions.update(|list| {
                 if let Some(s) = list.iter_mut().find(|s| s.id == aid)
                     && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
