@@ -177,7 +177,53 @@ flowchart TB
 | `project_profile.rs` | **项目画像**：只读扫描 `Cargo.toml` / `package.json` / 顶层目录 / **tokei** 语言占比 / 可选 **`cargo metadata --no-deps`**，生成 Markdown；Web **`GET /workspace/profile`**；首轮与备忘、**`project_dependency_brief`** 合并见 **`build_first_turn_user_context_markdown`**（**`project_profile_inject_*`**）。 |
 | `project_dependency_brief.rs` | **依赖结构摘要**：工作区内执行 **`cargo metadata`**（完整 resolve，**非** `--locked`），从 **`resolve.nodes[].deps`** 提取 **workspace 成员包之间**的边，输出 **Mermaid**（`flowchart LR`，节点/边上限制）与 **JSON**（`crabmate_project_dependency_brief_version` + `cargo` / `npm`）；npm 仅统计仓库根 `package.json`（若存在）。首轮注入预算 **`project_dependency_brief_inject_*`**。 |
 | `read_file_turn_cache.rs` | 单轮 **`run_agent_turn`** 内 **`read_file`** 结果缓存（键：canonical 路径 + 行区间等；校验 **mtime + size**）。**`execute_tools`** 在任意非只读工具执行后或 **`workspace_changed`** 时 **`clear`**，避免脏读。容量 **`read_file_turn_cache_max_entries`**（`0` 关闭）；嵌入方可选传入 **`RunAgentTurnParams::read_file_turn_cache`** 覆盖默认句柄。 |
-| `workspace_changelist.rs` | **会话级**工作区写入追踪：按作用域键（**`long_term_memory_scope_id`**；Web 为 **`conversation_id`**；无则为 **`__default__`**）在 **`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_file` / `append_file` / `search_replace` / `apply_patch` / `structured_patch`** 成功写盘后累积相对路径与「本会话首次触碰」基线；**`prepare_messages_for_model`** 在可选 LLM 摘要**之后**注入 **`user.name=crabmate_workspace_changelist`**（unified diff 摘要，受 **`session_workspace_changelist_max_chars`** 约束）。Web **`GET /workspace/changelog`**（**`chat_handlers::workspace_changelog`**）对前端暴露同源 Markdown 预览。**`workflow_execute` 节点**内工具经独立 **`ToolContext`**，**不**写入此表。 |
+| `workspace_changelist.rs` | **会话级**工作区写入追踪：按作用域键（**`long_term_memory_scope_id`**；Web 为 **`conversation_id`**；无则为 **`__default__`**）在 **`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_file` / `append_file` / `search_replace` / `apply_patch` / `structured_patch`** 成功写盘后累积相对路径与「本会话首次触碰」基线；**`prepare_messages_for_model`** 在可选 LLM 摘要**之后**注入 **`user.name=crabmate_workspace_changelist`**（unified diff 摘要，受 **`session_workspace_changelist_max_chars`** 约束）。Web **`GET /workspace/changelog`**（**`chat_handlers::workspace_changelog`**）对前端暴露同源 Markdown 预览。**`workflow_execute` 节点**内工具经独立 **`ToolContext`**，**不**写入此表。
+
+### 分层 Agent 模块（src/agent/hierarchy）改进建议
+
+此部分记录了分层多 Agent 架构（`src/agent/hierarchy/`）的当前状态及潜在改进方向，供维护者参考。
+
+#### 现有功能概述
+模块实现了 Manager + Operator 分层架构：
+- **Router**: 根据任务复杂度选择执行模式
+- **Manager**: 任务分解与协调（SubGoal 生成、执行策略）
+- **Operator**: 子目标执行（ReAct 循环：思考→行动→观察）
+- **ArtifactStore**: 全局产物存储（文件、命令输出等）
+
+#### 主要改进点
+
+**A. Manager 代码质量**
+- **文件**: `src/agent/hierarchy/manager.rs` (约895行)
+- **问题**: 函数过长且复杂（如 `decompose_with_llm` ~200行，`execute_subgoal` ~300行）
+- **建议**: 提取提示词构建至独立函数，将执行循环拆分为更小的状态处理函数
+
+**B. 错误处理不一致**
+- **问题**: 某些地方使用 `unwrap()` 或期望特定结果，重试逻辑硬编码
+- **建议**: 标准化错误类型，将重试次数、退避策略设为可配置参数
+
+**C. 状态管理可改进**
+- **问题**: 某些状态分散在多个结构中，执行历史和产物追踪可能不够完整
+- **建议**: 考虑引入执行上下文对象来追踪完整执行轨迹，增加执行指标收集
+
+**D. Operator 实现细节**
+- **文件**: `src/agent/hierarchy/operator.rs`
+- **问题**: ReAct 循环实现可以更模块化（思考、行动、观察阶段紧密耦合）
+- **建议**: 将 ReAct 循环的三个阶段解耦为可替换的组件，提供更好的工具契约验证
+
+**E. 缺失的可观测性**
+- **问题**: 监控和调试支持不足，缺乏结构化日志
+- **建议**: 在关键决策点添加结构化日志事件，考虑实现执行追踪 ID 传播
+
+**F. 测试覆盖**
+- **问题**: 单元测试可能不足，复杂的业务逻辑缺乏充分测试
+- **建议**: 增加针对管理器分解逻辑的单元测试，为操作员的 ReAct 循环添加模拟测试
+
+#### 具体改进方向
+1. **短期**: 提取复杂函数，标准化错误处理，改进日志
+2. **中期**: 状态机重构，依赖注入，配置外化
+3. **长期**: 执行回放，自适应策略，协作增强
+
+这些改进应当与代码库其他部分保持一致，遵循现有的错误处理模式、日志惯例和配置系统。 |
 | `web/` | Web（HTTP）专用 axum 模块：**`http_types/`**（仅 serde：`chat` / `workspace` / `tasks`，供 handler 与 **`routes/*`** 并列引用，避免路由模块与 handler 环依赖）、**`routes/`**（**`chat`**：`/chat*`、`/upload*`、**`GET /conversation/messages`**（只读会话快照）；**`workspace`**：`/workspace*`（含 changelog handler 挂载）；**`tasks`**：`/tasks`；**`config`**：`/config/reload`；**`system`**：`/health`、`/status`；各子模块导出对应 `router()`）、**`openapi`**（**`GET /openapi.json`**：OpenAPI 3.0 摘要，与路由对齐；由 `server` 单独 `route` 挂载；SSE 行协议仍以 **`docs/SSE_PROTOCOL.md`** 为准）、`app_state`（`AppState`、`ConversationBacking`：内存或 SQLite、可选 **`long_term_memory`**、**`web_tasks_by_workspace`**；**`MemoryConversationEntry`** / SQLite 行含 **`active_agent_role`**；**`ConversationTurnSeed`** 携带 **`persisted_active_agent_role`**；**`cfg`** 为 **`Arc<RwLock<AgentConfig>>`** 供热重载与 handler 读快照；**`config_path_for_reload`** 与启动时 **`--config`** 对齐；SQLite 路径下 **`save` / `truncate`** 经统一 **`sqlite_conversation_store_op`** 包装）、**`chat_handlers/`**（**`mod`** 再导出；子模块 **`parse`** / **`conflict`** / **`upload`** / **`auth`** / **`chat`** / **`workspace_changelog`** / **`health_status`** / **`config_reload`**；**`CONVERSATION_CONFLICT_*`** 与 **`conversation_conflict_sse_line`** 供 HTTP 与 SSE 冲突文案一致）、`server`（`merge` 各域 `router()` 与 **`/openapi.json`**；Web API 鉴权中间件（**`Authorization: Bearer`** / **`X-API-Key`**）是否在启动时挂载由 **`web_api_bearer_layer_enabled`** 决定）、**`workspace/`**（handler 实现；含 **`GET /workspace/profile`**）、`task`（`/tasks` handler）。`open_conversation_sqlite` 会 **`LongTermMemoryRuntime::migrate_on_connection`**；`AppState` 由 `lib.rs::run` 装配；`SaveConversationOutcome` 在 **`conversation_store`**，crate 根再导出供 `chat_job_queue` 等使用。 |
 | `web_static_dir.rs` | **`resolve_web_static_dir`**：`serve`、**`config --dry-run`** 与 **`GET /health`** 的 **`frontend_static_dir`** 检查共用的静态资源根；固定为仓库内 **`frontend-leptos/dist`**（Leptos + Trunk 的 WASM 构建产物）。 |
 
