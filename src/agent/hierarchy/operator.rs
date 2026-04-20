@@ -276,8 +276,15 @@ impl OperatorAgent {
                         tool_call_id: None,
                     });
 
-                    // 执行真实工具
-                    let result = tool_executor.execute_tool_call(tool_call);
+                    // 注入产物路径到工具参数
+                    let injected_tool_call = if let Some(ref resolver) = resolver {
+                        self.inject_artifact_paths_into_tool_call(tool_call, resolver)
+                    } else {
+                        tool_call.clone()
+                    };
+
+                    // 执行真实工具（使用注入后的参数）
+                    let result = tool_executor.execute_tool_call(&injected_tool_call);
 
                     log::info!(
                         target: "crabmate",
@@ -530,6 +537,103 @@ impl OperatorAgent {
                 .iter()
                 .any(|t| t == tool_name || t == "*")
     }
+
+    /// 将产物路径注入到工具调用参数中
+    ///
+    /// 解析工具参数中的占位符（如 `{artifact:main.cpp}`），
+    /// 并将其替换为实际产物路径
+    fn inject_artifact_paths_into_tool_call(
+        &self,
+        tool_call: &crate::types::ToolCall,
+        resolver: &ArtifactResolver<'_>,
+    ) -> crate::types::ToolCall {
+        let mut modified_call = tool_call.clone();
+
+        // 解析参数 JSON
+        if let Ok(mut args) =
+            serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments)
+        {
+            let modified = Self::inject_paths_into_value(&mut args, resolver);
+
+            if modified {
+                // 重新序列化参数
+                if let Ok(new_args) = serde_json::to_string(&args) {
+                    modified_call.function.arguments = new_args;
+                    log::info!(
+                        target: "crabmate",
+                        "[HIERARCHICAL] Operator: injected artifact paths into tool={}",
+                        tool_call.function.name
+                    );
+                }
+            }
+        }
+
+        modified_call
+    }
+
+    /// 递归地将产物路径注入到 JSON 值中
+    fn inject_paths_into_value(
+        value: &mut serde_json::Value,
+        resolver: &ArtifactResolver<'_>,
+    ) -> bool {
+        let mut modified = false;
+
+        match value {
+            serde_json::Value::String(s) => {
+                // 检查字符串是否包含占位符
+                let mut result = s.clone();
+
+                // 查找所有 {artifact:name} 模式
+                let pattern = "{artifact:";
+                let mut start = 0;
+                while let Some(idx) = result[start..].find(pattern) {
+                    let actual_idx = start + idx;
+                    if let Some(end_idx) = result[actual_idx..].find('}') {
+                        let end = actual_idx + end_idx;
+                        let artifact_name = &result[actual_idx + pattern.len()..end];
+
+                        // 尝试解析产物路径
+                        if let Some(path) = resolver
+                            .resolve_source_file(artifact_name)
+                            .or_else(|| resolver.resolve_build_artifact(artifact_name))
+                        {
+                            let path_str = path.to_string_lossy().to_string();
+                            result.replace_range(actual_idx..=end, &path_str);
+                            modified = true;
+                            // 更新 start 位置，因为字符串长度可能改变
+                            start = actual_idx + path_str.len();
+                        } else {
+                            // 未找到产物，跳过这个占位符
+                            start = end + 1;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
+                if modified {
+                    *s = result;
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                for item in arr.iter_mut() {
+                    if Self::inject_paths_into_value(item, resolver) {
+                        modified = true;
+                    }
+                }
+            }
+            serde_json::Value::Object(map) => {
+                for (_, v) in map.iter_mut() {
+                    if Self::inject_paths_into_value(v, resolver) {
+                        modified = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        modified
+    }
 }
 
 /// 截断输出用于日志（按字符边界截断，支持中文）
@@ -585,6 +689,8 @@ fn truncate_goal(desc: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::hierarchy::artifact_store::ArtifactStore;
+    use crate::agent::hierarchy::task::{Artifact, ArtifactKind};
 
     #[tokio::test]
     async fn test_execute() {
@@ -618,5 +724,83 @@ mod tests {
 
         assert!(operator.is_tool_allowed("read_file"));
         assert!(!operator.is_tool_allowed("write_file"));
+    }
+
+    #[test]
+    fn test_inject_artifact_paths_into_tool_call() {
+        // 创建测试产物存储
+        let mut store = ArtifactStore::new();
+        store.put(
+            Artifact::new(
+                "1",
+                "main.cpp",
+                ArtifactKind::BuildArtifact(
+                    crate::agent::hierarchy::task::BuildArtifactKind::SourceFile,
+                ),
+                "goal_1",
+            )
+            .with_path("/workspace/src/main.cpp"),
+        );
+
+        let resolver = ArtifactResolver::new(&store, None);
+
+        let config = OperatorConfig::default();
+        let operator = OperatorAgent::new(config);
+
+        // 创建包含占位符的工具调用
+        let tool_call = crate::types::ToolCall {
+            id: "test-1".to_string(),
+            typ: "function".to_string(),
+            function: crate::types::FunctionCall {
+                name: "run_command".to_string(),
+                arguments: r#"{"command": "g++", "args": ["{artifact:main.cpp}", "-o", "main"]}"#
+                    .to_string(),
+            },
+        };
+
+        // 注入路径
+        let injected = operator.inject_artifact_paths_into_tool_call(&tool_call, &resolver);
+
+        // 验证占位符被替换
+        assert!(
+            injected
+                .function
+                .arguments
+                .contains("/workspace/src/main.cpp")
+        );
+        assert!(!injected.function.arguments.contains("{artifact:main.cpp}"));
+    }
+
+    #[test]
+    fn test_inject_paths_into_value_nested() {
+        let mut store = ArtifactStore::new();
+        // 使用 BuildArtifactKind::SourceFile 以便 resolve_source_file 能找到
+        store.put(
+            Artifact::new(
+                "2",
+                "test.cpp",
+                ArtifactKind::BuildArtifact(
+                    crate::agent::hierarchy::task::BuildArtifactKind::SourceFile,
+                ),
+                "goal_2",
+            )
+            .with_path("/home/user/test.cpp"),
+        );
+
+        let resolver = ArtifactResolver::new(&store, None);
+
+        // 测试嵌套对象
+        let mut value = serde_json::json!({
+            "source": "{artifact:test.cpp}",
+            "options": {
+                "input": "{artifact:test.cpp}"
+            }
+        });
+
+        let modified = OperatorAgent::inject_paths_into_value(&mut value, &resolver);
+
+        assert!(modified);
+        assert_eq!(value["source"], "/home/user/test.cpp");
+        assert_eq!(value["options"]["input"], "/home/user/test.cpp");
     }
 }
