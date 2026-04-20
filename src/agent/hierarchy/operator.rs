@@ -654,6 +654,7 @@ impl OperatorAgent {
 - 如果工具返回"路径无法解析"或"No such file or directory"，**必须承认路径不存在**，不能再用相同的错误路径继续操作
 - 如果不确定某个路径是否存在，先用 `read_dir` 的父目录来确认
 - **创建文件必须使用 `create_file` 工具**，禁止使用 `echo`、`cat`、`tee` 等命令通过 `run_command` 创建文件
+- `create_file` 的 `content` 参数：在 JSON 中必须使用正确的转义序列，换行用 `\n`，制表用 `\t`，双引号用 `\"
 "#,
             goal.description, tools_list
         )

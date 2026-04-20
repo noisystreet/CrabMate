@@ -447,7 +447,7 @@ impl ManagerAgent {
 重要：
 - 分配工具时，确保工具参数能匹配子目标需求
 - **`create_file` 是创建文件的唯一正确方式**，禁止使用 `echo`、`cat`、`tee` 等命令通过 `run_command` 创建文件
-- `create_file` 的 `content` 参数直接传入文件内容字符串，不需要额外转义
+- `create_file` 的 `content` 参数：在 JSON 中必须使用正确的转义序列：换行用 `\n`，制表用 `\t`，双引号用 `\"`
 - `run_command` 需要分别指定 `command`（命令名如 `ls`, `gcc`）和 `args`（参数数组），不要合并
 - `run_command` 可以执行工作区内的 `./xxx` 形式可执行文件（如 `./build/app`）
 - `read_dir` 用于读取目录内容，路径必须是相对路径且不能包含 `..`
