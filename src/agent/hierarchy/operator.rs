@@ -6,6 +6,7 @@
 //! - 执行 ReAct 循环（Thought → Action → Observation）
 //! - 管理构建状态（BuildState）
 
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 
@@ -35,7 +36,7 @@ pub struct OperatorConfig {
     /// 产物存储（用于状态共享）
     pub artifact_store: Option<ArtifactStore>,
     /// 构建状态（编译任务使用）
-    pub build_state: Option<BuildState>,
+    pub build_state: Option<Arc<Mutex<BuildState>>>,
 }
 
 impl Default for OperatorConfig {
@@ -141,8 +142,11 @@ impl OperatorAgent {
 
         // 构建产物解析器
         let artifact_store = self.config.artifact_store.as_ref();
-        let build_state = self.config.build_state.as_ref();
-        let resolver = artifact_store.map(|store| ArtifactResolver::new(store, build_state));
+        let resolver = artifact_store.map(|store| {
+            // 注意：这里我们暂时不传递 build_state 给 resolver，因为生命周期问题
+            // 产物路径注入主要依赖 artifact_store
+            ArtifactResolver::new(store, None)
+        });
 
         // 如果有构建需求，注入产物信息到上下文
         let enhanced_context = if let Some(ref resolver) = resolver {
@@ -356,6 +360,46 @@ impl OperatorAgent {
                         name: None,
                         tool_call_id: Some(tool_call.id.clone()),
                     });
+
+                    // 从工具结果中提取产物并更新 BuildState
+                    if let Some(ref build_state_arc) = self.config.build_state
+                        && let Ok(mut build_state) = build_state_arc.lock()
+                    {
+                        for artifact in &result.extracted_artifacts {
+                            log::info!(
+                                target: "crabmate",
+                                "[HIERARCHICAL] Operator: recording artifact {:?} from tool={}",
+                                artifact.path,
+                                artifact.source_tool
+                            );
+
+                            // 根据产物类型更新 BuildState
+                            match artifact.kind {
+                                super::tool_executor::ExtractedArtifactKind::SourceFile => {
+                                    // 尝试读取源文件内容并记录
+                                    if let Ok(content) = std::fs::read_to_string(&artifact.path) {
+                                        build_state.record_source_file(&artifact.path, &content);
+                                    }
+                                }
+                                super::tool_executor::ExtractedArtifactKind::ObjectFile => {
+                                    build_state.add_object_file(artifact.path.clone());
+                                }
+                                super::tool_executor::ExtractedArtifactKind::Executable => {
+                                    build_state.add_executable(artifact.path.clone());
+                                }
+                                super::tool_executor::ExtractedArtifactKind::StaticLibrary => {
+                                    build_state.add_static_library(artifact.path.clone());
+                                }
+                                super::tool_executor::ExtractedArtifactKind::DynamicLibrary => {
+                                    build_state.add_dynamic_library(artifact.path.clone());
+                                }
+                                super::tool_executor::ExtractedArtifactKind::BuildDirectory => {
+                                    build_state.set_build_dir(artifact.path.clone());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 }
             } else {
                 // 没有工具调用，检查是否有最终回复

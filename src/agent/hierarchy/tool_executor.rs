@@ -55,11 +55,23 @@ impl ToolExecutor {
 
         log::info!(target: "crabmate", "Tool {} completed, success={}, output_len={}", name, success, output.len());
 
+        // 从输出中提取产物
+        let extracted_artifacts =
+            extract_artifacts_from_output(name, &output, &self._ctx.working_dir);
+        if !extracted_artifacts.is_empty() {
+            log::info!(
+                target: "crabmate",
+                "[HIERARCHICAL] Extracted {} artifacts from tool output",
+                extracted_artifacts.len()
+            );
+        }
+
         ToolExecutionResult {
             tool_name: name.clone(),
             output: output.clone(),
             error: if success { None } else { Some(output) },
             success,
+            extracted_artifacts,
         }
     }
 
@@ -104,6 +116,38 @@ pub struct ToolExecutionResult {
     pub output: String,
     pub error: Option<String>,
     pub success: bool,
+    /// 从输出中提取的产物路径
+    pub extracted_artifacts: Vec<ExtractedArtifact>,
+}
+
+/// 提取的产物信息
+#[derive(Debug, Clone)]
+pub struct ExtractedArtifact {
+    /// 产物路径
+    pub path: std::path::PathBuf,
+    /// 产物类型
+    pub kind: ExtractedArtifactKind,
+    /// 来源工具
+    pub source_tool: String,
+}
+
+/// 提取的产物类型
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtractedArtifactKind {
+    /// 源文件
+    SourceFile,
+    /// 目标文件
+    ObjectFile,
+    /// 可执行文件
+    Executable,
+    /// 静态库
+    StaticLibrary,
+    /// 动态库
+    DynamicLibrary,
+    /// 构建目录
+    BuildDirectory,
+    /// 其他文件
+    Other,
 }
 
 /// 截断参数用于日志（按字符边界截断，支持中文）
@@ -119,5 +163,243 @@ fn truncate_args(args: &str) -> String {
         format!("{}...", &args[..truncated])
     } else {
         args.to_string()
+    }
+}
+
+/// 从工具输出中提取产物路径
+fn extract_artifacts_from_output(
+    tool_name: &str,
+    output: &str,
+    working_dir: &std::path::Path,
+) -> Vec<ExtractedArtifact> {
+    let mut artifacts = Vec::new();
+
+    // 根据工具类型选择不同的提取策略
+    match tool_name {
+        "create_file" => {
+            // 从 create_file 的输出中提取创建的文件路径
+            if let Some(path) = extract_created_file_path(output) {
+                let kind = classify_file_by_extension(&path);
+                artifacts.push(ExtractedArtifact {
+                    path: resolve_path(&path, working_dir),
+                    kind,
+                    source_tool: tool_name.to_string(),
+                });
+            }
+        }
+        "run_command" | "cmake" | "make" => {
+            // 从构建命令输出中提取产物
+            artifacts.extend(extract_build_artifacts(output, working_dir, tool_name));
+        }
+        "read_dir" => {
+            // 从目录列表中提取文件
+            artifacts.extend(extract_files_from_dir_listing(
+                output,
+                working_dir,
+                tool_name,
+            ));
+        }
+        _ => {
+            // 通用提取：查找可能的文件路径
+            artifacts.extend(extract_generic_files(output, working_dir, tool_name));
+        }
+    }
+
+    artifacts
+}
+
+/// 从 create_file 输出中提取创建的文件路径
+fn extract_created_file_path(output: &str) -> Option<String> {
+    // 匹配 "已创建文件: path" 或 "Created file: path" 格式
+    for line in output.lines() {
+        if let Some(idx) = line.find("已创建文件:") {
+            let path = line[idx + "已创建文件:".len()..].trim();
+            return Some(path.to_string());
+        }
+        if let Some(idx) = line.find("Created file:") {
+            let path = line[idx + "Created file:".len()..].trim();
+            return Some(path.to_string());
+        }
+    }
+    None
+}
+
+/// 从构建命令输出中提取产物
+fn extract_build_artifacts(
+    output: &str,
+    working_dir: &std::path::Path,
+    source_tool: &str,
+) -> Vec<ExtractedArtifact> {
+    let mut artifacts = Vec::new();
+
+    for line in output.lines() {
+        // 匹配 [100%] Linking CXX executable xxx
+        if line.contains("Linking")
+            && line.contains("executable")
+            && let Some(name) = line.split_whitespace().last()
+        {
+            let path = resolve_path(name, working_dir);
+            artifacts.push(ExtractedArtifact {
+                path,
+                kind: ExtractedArtifactKind::Executable,
+                source_tool: source_tool.to_string(),
+            });
+        }
+
+        // 匹配 Building CXX object xxx.o
+        if line.contains("Building")
+            && line.contains("object")
+            && let Some(name) = line.split_whitespace().last()
+        {
+            let path = resolve_path(name, working_dir);
+            artifacts.push(ExtractedArtifact {
+                path,
+                kind: ExtractedArtifactKind::ObjectFile,
+                source_tool: source_tool.to_string(),
+            });
+        }
+
+        // 匹配 "-- Configuring done" 后的构建目录
+        if (line.contains("Configuring done") || line.contains("Build files have been written to"))
+            && let Some(idx) = line.find("to: ")
+        {
+            let path = &line[idx + 4..].trim();
+            artifacts.push(ExtractedArtifact {
+                path: resolve_path(path, working_dir),
+                kind: ExtractedArtifactKind::BuildDirectory,
+                source_tool: source_tool.to_string(),
+            });
+        }
+    }
+
+    artifacts
+}
+
+/// 从目录列表中提取文件
+fn extract_files_from_dir_listing(
+    output: &str,
+    working_dir: &std::path::Path,
+    source_tool: &str,
+) -> Vec<ExtractedArtifact> {
+    let mut artifacts = Vec::new();
+
+    for line in output.lines() {
+        // 尝试提取文件路径（简单启发式）
+        let trimmed = line.trim();
+        if trimmed.starts_with("./") || trimmed.starts_with("../") || trimmed.starts_with('/') {
+            let path = resolve_path(trimmed, working_dir);
+            if path.exists() {
+                let kind = classify_file_by_path(&path);
+                artifacts.push(ExtractedArtifact {
+                    path,
+                    kind,
+                    source_tool: source_tool.to_string(),
+                });
+            }
+        }
+    }
+
+    artifacts
+}
+
+/// 通用文件提取（从输出中查找可能的文件路径）
+fn extract_generic_files(
+    output: &str,
+    working_dir: &std::path::Path,
+    source_tool: &str,
+) -> Vec<ExtractedArtifact> {
+    let mut artifacts = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    // 匹配常见的文件路径模式
+    for line in output.lines() {
+        // 查找看起来像路径的字符串
+        for word in line.split_whitespace() {
+            let cleaned =
+                word.trim_matches(|c: char| c == '"' || c == '\'' || c == ',' || c == ';');
+
+            // 检查是否是文件路径
+            if (cleaned.contains('/') || cleaned.contains("\\"))
+                && !cleaned.starts_with("http")
+                && !cleaned.starts_with("git@")
+            {
+                let path = resolve_path(cleaned, working_dir);
+                if path.exists() && path.is_file() {
+                    let path_str = path.to_string_lossy().to_string();
+                    if seen.insert(path_str.clone()) {
+                        let kind = classify_file_by_path(&path);
+                        artifacts.push(ExtractedArtifact {
+                            path,
+                            kind,
+                            source_tool: source_tool.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    artifacts
+}
+
+/// 根据扩展名分类文件
+fn classify_file_by_extension(path: &str) -> ExtractedArtifactKind {
+    let path = std::path::Path::new(path);
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+
+    match ext.as_deref() {
+        Some("c") | Some("cpp") | Some("cc") | Some("cxx") | Some("h") | Some("hpp") => {
+            ExtractedArtifactKind::SourceFile
+        }
+        Some("o") | Some("obj") => ExtractedArtifactKind::ObjectFile,
+        Some("a") | Some("lib") => ExtractedArtifactKind::StaticLibrary,
+        Some("so") | Some("dll") | Some("dylib") => ExtractedArtifactKind::DynamicLibrary,
+        Some("exe") => ExtractedArtifactKind::Executable,
+        _ => {
+            // 检查文件名是否是常见可执行文件名
+            if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                && (name == "main" || name == "a.out" || name.ends_with(".exe"))
+            {
+                return ExtractedArtifactKind::Executable;
+            }
+            ExtractedArtifactKind::Other
+        }
+    }
+}
+
+/// 根据完整路径分类文件
+fn classify_file_by_path(path: &std::path::Path) -> ExtractedArtifactKind {
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        match ext.to_lowercase().as_str() {
+            "c" | "cpp" | "cc" | "cxx" | "h" | "hpp" => ExtractedArtifactKind::SourceFile,
+            "o" | "obj" => ExtractedArtifactKind::ObjectFile,
+            "a" | "lib" => ExtractedArtifactKind::StaticLibrary,
+            "so" | "dll" | "dylib" => ExtractedArtifactKind::DynamicLibrary,
+            "exe" => ExtractedArtifactKind::Executable,
+            _ => ExtractedArtifactKind::Other,
+        }
+    } else {
+        // 无扩展名的文件可能是可执行文件
+        if path
+            .file_name()
+            .is_some_and(|n| n == "main" || n == "a.out")
+        {
+            ExtractedArtifactKind::Executable
+        } else {
+            ExtractedArtifactKind::Other
+        }
+    }
+}
+
+/// 解析路径（处理相对路径和绝对路径）
+fn resolve_path(path: &str, working_dir: &std::path::Path) -> std::path::PathBuf {
+    let path = std::path::Path::new(path);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        working_dir.join(path)
     }
 }

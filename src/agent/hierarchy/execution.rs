@@ -1,6 +1,7 @@
 //! 分层执行器：按依赖层级执行子目标
 
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use tokio::sync::mpsc::Sender;
@@ -533,7 +534,7 @@ impl<'a> HierarchicalExecutor<'a> {
             tools_defs: tools_defs_for_llm.clone(),
             sse_out: self.sse_out.clone(),
             artifact_store: Some(artifact_store.clone()),
-            build_state: Some(build_state.clone()),
+            build_state: Some(Arc::new(Mutex::new(build_state.clone()))),
         };
         log::info!(target: "crabmate", "[HIERARCHICAL] execute_single: sse_out is {:?}, tools_defs count={}", self.sse_out.is_some(), tools_defs_for_llm.len());
 

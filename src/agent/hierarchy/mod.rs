@@ -31,3 +31,4 @@ pub use task::{
     Artifact, ArtifactKind, BuildArtifactKind, BuildRequirements, Capability, ExecutionStrategy,
     SubGoal, TaskResult, TaskStatus,
 };
+pub use tool_executor::{ExtractedArtifact, ExtractedArtifactKind, ToolExecutionResult};
