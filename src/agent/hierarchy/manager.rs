@@ -376,6 +376,7 @@ impl ManagerAgent {
                             depends_on: ug.depends_on.unwrap_or_default(),
                             required_tools: ug.required_tools.unwrap_or_default(),
                             goal_type: original_goal.goal_type.clone(),
+                            build_requirements: original_goal.build_requirements.clone(),
                         },
                     })
                 } else {
@@ -766,6 +767,7 @@ impl ManagerAgent {
                 depends_on: sg.depends_on.unwrap_or_default(),
                 required_tools: sg.required_tools.unwrap_or_default(),
                 goal_type: sg.goal_type.unwrap_or_default(),
+                build_requirements: super::task::BuildRequirements::default(),
             });
         }
 

@@ -9,11 +9,15 @@ use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
 use crate::sse;
 
+use super::artifact_resolver::ArtifactResolver;
 use super::artifact_store::ArtifactStore;
+use super::build_state::BuildState;
 use super::events;
 use super::manager::{ManagerOutput, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
-use super::task::{Artifact, ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
+use super::task::{
+    Artifact, ArtifactKind, BuildArtifactKind, ExecutionStrategy, SubGoal, TaskResult, TaskStatus,
+};
 use super::tool_executor::ToolExecutor;
 use crate::types::Tool;
 use log::{error, info};
@@ -194,6 +198,7 @@ impl<'a> HierarchicalExecutor<'a> {
         );
 
         let mut artifact_store = ArtifactStore::new();
+        let mut build_state = BuildState::default();
         let mut all_results = Vec::new();
 
         // 按层级执行
@@ -217,22 +222,24 @@ impl<'a> HierarchicalExecutor<'a> {
                 .filter_map(|id| sub_goals.iter().find(|g| &g.goal_id == id))
                 .collect();
 
-            // 按策略执行
+            // 按策略执行（传递 artifact_store 和 build_state）
             let level_results = match strategy {
                 ExecutionStrategy::Sequential => {
-                    self.execute_sequential(&level_goals, &mut artifact_store)
+                    self.execute_sequential(&level_goals, &mut artifact_store, &mut build_state)
                         .await
                 }
                 ExecutionStrategy::Parallel | ExecutionStrategy::Hybrid => {
-                    self.execute_parallel(&level_goals, &mut artifact_store)
+                    self.execute_parallel(&level_goals, &mut artifact_store, &mut build_state)
                         .await
                 }
             }?;
 
-            // 更新 artifact store
+            // 更新 artifact store 和 build_state
             for result in &level_results {
                 if matches!(result.status, TaskStatus::Completed) {
                     artifact_store.store_result(result);
+                    // 从结果中提取构建产物并更新 build_state
+                    self.update_build_state_from_result(&mut build_state, result);
                 }
                 all_results.push(result.clone());
             }
@@ -344,11 +351,14 @@ impl<'a> HierarchicalExecutor<'a> {
         &self,
         goals: &[&SubGoal],
         artifact_store: &mut ArtifactStore,
+        build_state: &mut BuildState,
     ) -> Result<Vec<TaskResult>, ExecutionError> {
         let mut results = Vec::new();
 
         for goal in goals {
-            let result = self.execute_single(goal, artifact_store).await?;
+            let result = self
+                .execute_single(goal, artifact_store, build_state)
+                .await?;
             results.push(result);
         }
 
@@ -360,6 +370,7 @@ impl<'a> HierarchicalExecutor<'a> {
         &self,
         goals: &[&SubGoal],
         _artifact_store: &mut ArtifactStore,
+        build_state: &mut BuildState,
     ) -> Result<Vec<TaskResult>, ExecutionError> {
         let mut results = Vec::new();
 
@@ -367,7 +378,7 @@ impl<'a> HierarchicalExecutor<'a> {
         for chunk in goals.chunks(self.max_parallel) {
             for goal in chunk {
                 let mut store = ArtifactStore::new();
-                let result = self.execute_single(goal, &mut store).await?;
+                let result = self.execute_single(goal, &mut store, build_state).await?;
                 results.push(result);
             }
         }
@@ -380,13 +391,14 @@ impl<'a> HierarchicalExecutor<'a> {
         &self,
         goal: &SubGoal,
         artifact_store: &mut ArtifactStore,
+        build_state: &BuildState,
     ) -> Result<TaskResult, ExecutionError> {
         let mut current_goal = goal.clone();
         const MAX_RETRIES: usize = 3;
 
         for attempt in 0..MAX_RETRIES {
             let result = self
-                .execute_single_impl(&current_goal, artifact_store)
+                .execute_single_impl(&current_goal, artifact_store, build_state)
                 .await?;
 
             // 如果成功或不是 Manager 处理范围内的失败，直接返回
@@ -470,6 +482,7 @@ impl<'a> HierarchicalExecutor<'a> {
         &self,
         goal: &SubGoal,
         artifact_store: &mut ArtifactStore,
+        build_state: &BuildState,
     ) -> Result<TaskResult, ExecutionError> {
         // 获取依赖的 artifacts
         let deps = artifact_store.get_dependencies(&goal.depends_on);
@@ -511,11 +524,16 @@ impl<'a> HierarchicalExecutor<'a> {
                 .cloned()
                 .collect()
         };
+        // 创建产物解析器，用于注入构建产物路径
+        let _resolver = ArtifactResolver::new(artifact_store, Some(build_state));
+
         let op_config = OperatorConfig {
             max_iterations: 10,
-            allowed_tools,
+            allowed_tools: allowed_tools.clone(),
             tools_defs: tools_defs_for_llm.clone(),
             sse_out: self.sse_out.clone(),
+            artifact_store: Some(artifact_store.clone()),
+            build_state: Some(build_state.clone()),
         };
         log::info!(target: "crabmate", "[HIERARCHICAL] execute_single: sse_out is {:?}, tools_defs count={}", self.sse_out.is_some(), tools_defs_for_llm.len());
 
@@ -712,6 +730,75 @@ impl<'a> HierarchicalExecutor<'a> {
             }
         }
         lines.join("\n")
+    }
+
+    /// 从执行结果中更新构建状态
+    fn update_build_state_from_result(&self, build_state: &mut BuildState, result: &TaskResult) {
+        for artifact in &result.artifacts {
+            // 根据产物类型更新 build_state
+            match &artifact.kind {
+                ArtifactKind::BuildArtifact(build_kind) => {
+                    if let Some(ref path) = artifact.path {
+                        let path_buf = std::path::PathBuf::from(path);
+                        match build_kind {
+                            BuildArtifactKind::SourceFile => {
+                                // 源文件：记录内容和哈希
+                                if let Some(ref content) = artifact.content {
+                                    build_state.record_source_file(&path_buf, content);
+                                }
+                            }
+                            BuildArtifactKind::ObjectFile => {
+                                build_state.add_object_file(path_buf);
+                            }
+                            BuildArtifactKind::Executable => {
+                                build_state.add_executable(path_buf);
+                            }
+                            BuildArtifactKind::StaticLibrary => {
+                                build_state.add_static_library(path_buf);
+                            }
+                            BuildArtifactKind::DynamicLibrary => {
+                                build_state.add_dynamic_library(path_buf);
+                            }
+                            BuildArtifactKind::BuildLog => {
+                                // 构建日志：暂不解析命令
+                            }
+                        }
+                    }
+                }
+                ArtifactKind::File => {
+                    // 检查是否是源码文件
+                    if let Some(ref path) = artifact.path {
+                        let path_buf = std::path::PathBuf::from(path);
+                        if let Some(ext) = path_buf.extension() {
+                            let ext = ext.to_string_lossy().to_lowercase();
+                            if matches!(ext.as_str(), "c" | "cpp" | "cc" | "h" | "hpp")
+                                && let Some(ref content) = artifact.content
+                            {
+                                build_state.record_source_file(&path_buf, content);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // 尝试从输出中提取构建目录
+        if let Some(ref output) = result.output {
+            // 检查常见的构建目录模式
+            for line in output.lines() {
+                if (line.contains("build/") || line.contains("Build directory:"))
+                    && let Some(idx) = line.find("build")
+                {
+                    let build_dir = &line[idx..].split_whitespace().next().unwrap_or("build");
+                    let build_path = std::path::PathBuf::from(build_dir);
+                    if build_path.exists() {
+                        build_state.set_build_dir(build_path);
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 

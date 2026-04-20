@@ -33,6 +33,25 @@ pub enum ArtifactKind {
     CodeSnippet,
     Summary,
     Other,
+    /// 构建产物（编译任务专用）
+    BuildArtifact(BuildArtifactKind),
+}
+
+/// 构建产物类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BuildArtifactKind {
+    /// 源码文件
+    SourceFile,
+    /// 目标文件（.o/.obj）
+    ObjectFile,
+    /// 可执行文件
+    Executable,
+    /// 静态库（.a/.lib）
+    StaticLibrary,
+    /// 动态库（.so/.dll/.dylib）
+    DynamicLibrary,
+    /// 构建日志
+    BuildLog,
 }
 
 /// 产物/制品
@@ -111,6 +130,17 @@ pub enum GoalType {
     Fix,
 }
 
+/// 构建需求声明
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BuildRequirements {
+    /// 需要的构建产物类型
+    #[serde(default)]
+    pub needs_artifacts: Vec<BuildArtifactKind>,
+    /// 产生的构建产物类型
+    #[serde(default)]
+    pub produces_artifacts: Vec<BuildArtifactKind>,
+}
+
 /// 子目标
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubGoal {
@@ -127,6 +157,9 @@ pub struct SubGoal {
     /// 子目标类型：analyze（分析/收集） 或 fix（修复/执行）
     #[serde(default)]
     pub goal_type: GoalType,
+    /// 构建需求（编译任务使用）
+    #[serde(default)]
+    pub build_requirements: BuildRequirements,
 }
 
 impl SubGoal {
@@ -138,6 +171,7 @@ impl SubGoal {
             depends_on: Vec::new(),
             required_tools: Vec::new(),
             goal_type: GoalType::default(),
+            build_requirements: BuildRequirements::default(),
         }
     }
 

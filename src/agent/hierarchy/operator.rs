@@ -4,6 +4,7 @@
 //! - 理解子目标
 //! - 决定工具调用
 //! - 执行 ReAct 循环（Thought → Action → Observation）
+//! - 管理构建状态（BuildState）
 
 use std::time::Instant;
 use tokio::sync::mpsc::Sender;
@@ -14,6 +15,9 @@ use crate::llm::backend::ChatCompletionsBackend;
 use crate::llm::{CompleteChatRetryingParams, LlmRetryingTransportOpts};
 use crate::types::{Message, MessageContent, Tool};
 
+use super::artifact_resolver::ArtifactResolver;
+use super::artifact_store::ArtifactStore;
+use super::build_state::BuildState;
 use super::task::{SubGoal, TaskResult, TaskStatus};
 use super::tool_executor::ToolExecutor;
 
@@ -28,6 +32,10 @@ pub struct OperatorConfig {
     pub tools_defs: Vec<Tool>,
     /// SSE 发送器（用于发送工具调用/结果事件）
     pub sse_out: Option<Sender<String>>,
+    /// 产物存储（用于状态共享）
+    pub artifact_store: Option<ArtifactStore>,
+    /// 构建状态（编译任务使用）
+    pub build_state: Option<BuildState>,
 }
 
 impl Default for OperatorConfig {
@@ -37,6 +45,8 @@ impl Default for OperatorConfig {
             allowed_tools: Vec::new(),
             tools_defs: Vec::new(),
             sse_out: None,
+            artifact_store: None,
+            build_state: None,
         }
     }
 }
@@ -129,6 +139,18 @@ impl OperatorAgent {
 
         log::info!(target: "crabmate", "[HIERARCHICAL] Operator (react): goal_id={} desc={}", goal.goal_id, truncate_goal(&goal.description));
 
+        // 构建产物解析器
+        let artifact_store = self.config.artifact_store.as_ref();
+        let build_state = self.config.build_state.as_ref();
+        let resolver = artifact_store.map(|store| ArtifactResolver::new(store, build_state));
+
+        // 如果有构建需求，注入产物信息到上下文
+        let enhanced_context = if let Some(ref resolver) = resolver {
+            self.build_context_with_artifacts(goal, extra_context, resolver)
+        } else {
+            extra_context.map(|s| s.to_string())
+        };
+
         let mut state = ReactState {
             iteration: 0,
             messages: Vec::new(),
@@ -148,7 +170,7 @@ impl OperatorAgent {
         });
 
         // 添加用户任务（使用增强后的描述）
-        let task_description = if let Some(ctx) = extra_context {
+        let task_description = if let Some(ctx) = enhanced_context {
             format!("{}\n\n{}", goal.description, ctx)
         } else {
             goal.description.clone()
@@ -453,6 +475,52 @@ impl OperatorAgent {
         )
     }
 
+    /// 构建包含产物信息的上下文
+    fn build_context_with_artifacts(
+        &self,
+        goal: &SubGoal,
+        extra_context: Option<&str>,
+        resolver: &ArtifactResolver<'_>,
+    ) -> Option<String> {
+        let mut parts = Vec::new();
+
+        // 添加原始上下文
+        if let Some(ctx) = extra_context {
+            parts.push(ctx.to_string());
+        }
+
+        // 如果有构建需求，添加可用产物信息
+        if !goal.build_requirements.needs_artifacts.is_empty() {
+            let resolved =
+                resolver.resolve_build_requirements(&goal.build_requirements.needs_artifacts);
+            let mut artifact_info = vec!["可用构建产物:".to_string()];
+
+            for (kind, path) in resolved {
+                let kind_name = format!("{:?}", kind);
+                match path {
+                    Some(p) => artifact_info.push(format!("  - {}: {}", kind_name, p.display())),
+                    None => artifact_info.push(format!("  - {}: (未找到)", kind_name)),
+                }
+            }
+
+            if artifact_info.len() > 1 {
+                parts.push(artifact_info.join("\n"));
+            }
+        }
+
+        // 添加所有可用产物的摘要
+        let artifact_summary = resolver.format_for_llm();
+        if artifact_summary != "无可用产物" {
+            parts.push(artifact_summary);
+        }
+
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n\n"))
+        }
+    }
+
     /// 检查工具是否允许
     pub fn is_tool_allowed(&self, tool_name: &str) -> bool {
         self.config.allowed_tools.is_empty()
@@ -543,6 +611,8 @@ mod tests {
             allowed_tools: vec!["read_file".to_string()],
             tools_defs: vec![],
             sse_out: None,
+            artifact_store: None,
+            build_state: None,
         };
         let operator = OperatorAgent::new(config);
 
