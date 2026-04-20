@@ -618,7 +618,131 @@ impl BuildState {
         self.artifact_cache.clear();
         self.current_cache_size = 0;
     }
+
+    // ==================== 持久化支持 ====================
+
+    /// 保存构建状态到磁盘
+    ///
+    /// 默认保存到 `.crabmate/build_state.json`
+    pub fn save_to_disk(&self, workspace_dir: &Path) -> Result<(), BuildStateError> {
+        let crabmate_dir = workspace_dir.join(".crabmate");
+        std::fs::create_dir_all(&crabmate_dir).map_err(|e| {
+            BuildStateError::IoError(format!("Failed to create .crabmate directory: {}", e))
+        })?;
+
+        let state_path = crabmate_dir.join("build_state.json");
+        let json = serde_json::to_string_pretty(self).map_err(|e| {
+            BuildStateError::SerializeError(format!("Failed to serialize build state: {}", e))
+        })?;
+
+        std::fs::write(&state_path, json)
+            .map_err(|e| BuildStateError::IoError(format!("Failed to write build state: {}", e)))?;
+
+        log::info!(
+            target: "crabmate",
+            "BuildState saved to {}",
+            state_path.display()
+        );
+
+        Ok(())
+    }
+
+    /// 从磁盘加载构建状态
+    ///
+    /// 从 `.crabmate/build_state.json` 加载
+    pub fn load_from_disk(workspace_dir: &Path) -> Result<Self, BuildStateError> {
+        let state_path = workspace_dir.join(".crabmate").join("build_state.json");
+
+        if !state_path.exists() {
+            return Err(BuildStateError::NotFound(format!(
+                "Build state file not found: {}",
+                state_path.display()
+            )));
+        }
+
+        let json = std::fs::read_to_string(&state_path)
+            .map_err(|e| BuildStateError::IoError(format!("Failed to read build state: {}", e)))?;
+
+        let state: BuildState = serde_json::from_str(&json).map_err(|e| {
+            BuildStateError::DeserializeError(format!("Failed to deserialize build state: {}", e))
+        })?;
+
+        log::info!(
+            target: "crabmate",
+            "BuildState loaded from {} ({} source files, {} artifacts cached)",
+            state_path.display(),
+            state.source_files.len(),
+            state.artifact_cache.len()
+        );
+
+        Ok(state)
+    }
+
+    /// 尝试从磁盘加载，如果不存在则创建新的
+    pub fn load_or_create(workspace_dir: &Path) -> Self {
+        match Self::load_from_disk(workspace_dir) {
+            Ok(state) => state,
+            Err(e) => {
+                log::info!(
+                    target: "crabmate",
+                    "Failed to load build state: {}, creating new one",
+                    e
+                );
+                Self::default()
+            }
+        }
+    }
+
+    /// 删除持久化的构建状态
+    pub fn remove_from_disk(workspace_dir: &Path) -> Result<(), BuildStateError> {
+        let state_path = workspace_dir.join(".crabmate").join("build_state.json");
+        if state_path.exists() {
+            std::fs::remove_file(&state_path).map_err(|e| {
+                BuildStateError::IoError(format!("Failed to remove build state: {}", e))
+            })?;
+            log::info!(
+                target: "crabmate",
+                "BuildState removed from {}",
+                state_path.display()
+            );
+        }
+        Ok(())
+    }
+
+    /// 检查是否存在持久化的构建状态
+    pub fn exists_on_disk(workspace_dir: &Path) -> bool {
+        workspace_dir
+            .join(".crabmate")
+            .join("build_state.json")
+            .exists()
+    }
 }
+
+/// 构建状态错误
+#[derive(Debug, Clone)]
+pub enum BuildStateError {
+    /// IO 错误
+    IoError(String),
+    /// 序列化错误
+    SerializeError(String),
+    /// 反序列化错误
+    DeserializeError(String),
+    /// 文件不存在
+    NotFound(String),
+}
+
+impl std::fmt::Display for BuildStateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuildStateError::IoError(s) => write!(f, "IO error: {}", s),
+            BuildStateError::SerializeError(s) => write!(f, "Serialize error: {}", s),
+            BuildStateError::DeserializeError(s) => write!(f, "Deserialize error: {}", s),
+            BuildStateError::NotFound(s) => write!(f, "Not found: {}", s),
+        }
+    }
+}
+
+impl std::error::Error for BuildStateError {}
 
 /// 缓存统计信息
 #[derive(Debug, Clone)]

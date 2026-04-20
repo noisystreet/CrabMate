@@ -21,7 +21,7 @@ use super::task::{
 };
 use super::tool_executor::ToolExecutor;
 use crate::types::Tool;
-use log::{error, info};
+use log::{error, info, warn};
 
 /// 分层执行结果
 #[derive(Debug, Clone)]
@@ -199,7 +199,18 @@ impl<'a> HierarchicalExecutor<'a> {
         );
 
         let mut artifact_store = ArtifactStore::new();
-        let mut build_state = BuildState::default();
+        // 尝试从磁盘加载之前的构建状态（用于增量编译）
+        let mut build_state = if let Some(ref working_dir) = self.working_dir {
+            BuildState::load_or_create(working_dir)
+        } else {
+            BuildState::default()
+        };
+        info!(
+            target: "crabmate",
+            "Loaded build state: {} source files tracked, {} artifacts cached",
+            build_state.source_files.len(),
+            build_state.artifact_cache.len()
+        );
         let mut all_results = Vec::new();
 
         // 按层级执行
@@ -314,6 +325,17 @@ impl<'a> HierarchicalExecutor<'a> {
             total_failed,
             total_duration_ms
         );
+
+        // 保存 BuildState 到磁盘（用于增量编译）
+        if let Some(ref working_dir) = self.working_dir
+            && let Err(e) = build_state.save_to_disk(working_dir)
+        {
+            warn!(
+                target: "crabmate",
+                "Failed to save build state: {}",
+                e
+            );
+        }
 
         // 发射 SSE 事件：分层执行完成
         if let Some(ref sse_out) = self.sse_out {

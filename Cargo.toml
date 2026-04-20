@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "frontend-leptos", "crates/crabmate-sse-protocol"]
+members = [".", "frontend-leptos", "crates/crabmate-sse-protocol", "tmp"]
 resolver = "2"
 
 [package]
