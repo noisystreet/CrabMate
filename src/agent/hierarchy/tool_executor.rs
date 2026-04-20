@@ -1,63 +1,81 @@
 //! 简化工具执行器
 //!
-//! 供 Operator 在 ReAct 循环中调用真实工具
+//! 供 Operator 在 ReAct 循环中调用真实工具，支持审批流程
+
+use std::collections::HashSet;
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
 
 use crate::config::AgentConfig;
-use crate::tools;
-use crate::tools::ToolContext;
-use crate::types::ToolCall;
+use crate::tool_registry::{self, ToolRuntime};
+use crate::types::{CommandApprovalDecision, FunctionCall, ToolCall};
+
+use std::sync::atomic::{AtomicU64, Ordering};
+static TOOL_CALL_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// 工具执行器上下文
+pub struct ToolExecutorContext {
+    pub cfg: Arc<AgentConfig>,
+    pub working_dir: std::path::PathBuf,
+    /// 可选的 Web 审批运行时（用于触发审批对话框）
+    pub web_tool_runtime: Option<crate::tool_registry::WebToolRuntime>,
+}
+
+impl ToolExecutorContext {
+    pub fn new(cfg: Arc<AgentConfig>, working_dir: std::path::PathBuf) -> Self {
+        Self {
+            cfg,
+            working_dir,
+            web_tool_runtime: None,
+        }
+    }
+
+    /// 启用 Web 审批流程
+    pub fn with_web_approval(
+        mut self,
+        out_tx: tokio::sync::mpsc::Sender<String>,
+        approval_rx: tokio::sync::mpsc::Receiver<CommandApprovalDecision>,
+    ) -> Self {
+        self.web_tool_runtime = Some(crate::tool_registry::WebToolRuntime {
+            out_tx,
+            approval_rx_shared: Arc::new(Mutex::new(approval_rx)),
+            approval_request_guard: Arc::new(Mutex::new(())),
+            persistent_allowlist_shared: Arc::new(Mutex::new(HashSet::new())),
+        });
+        self
+    }
+}
 
 /// 工具执行器
 pub struct ToolExecutor {
-    /// 持有 owned data 以满足 ToolContext 的生命周期
-    _ctx: ToolContextOwned,
-}
-
-struct ToolContextOwned {
-    cfg: AgentConfig,
-    allowed_commands: Vec<String>,
-    http_fetch_allowed_prefixes: Vec<String>,
-    working_dir: std::path::PathBuf,
+    ctx: ToolExecutorContext,
 }
 
 impl ToolExecutor {
     /// 创建新的工具执行器
-    #[allow(dead_code)]
-    pub fn new(cfg: &AgentConfig, working_dir: std::path::PathBuf) -> Self {
-        let allowed_commands = cfg.allowed_commands.to_vec();
-        let http_fetch_allowed_prefixes = cfg.http_fetch_allowed_prefixes.to_vec();
-
-        let owned = ToolContextOwned {
-            cfg: cfg.clone(),
-            allowed_commands,
-            http_fetch_allowed_prefixes,
-            working_dir: working_dir.clone(),
-        };
-
-        // Safety: ToolContext needs 'static lifetime references, so we need to create it carefully
-        // For now, we'll use a simpler approach that works for sync tool execution
-        Self { _ctx: owned }
+    pub fn new(ctx: ToolExecutorContext) -> Self {
+        Self { ctx }
     }
 
-    /// 执行单个工具调用
-    #[allow(dead_code)]
-    pub fn execute_tool_call(&self, tool_call: &ToolCall) -> ToolExecutionResult {
+    /// 执行单个工具调用（异步，支持审批流程）
+    pub async fn execute_tool_call(&self, tool_call: &ToolCall) -> ToolExecutionResult {
         let name = &tool_call.function.name;
         let args = &tool_call.function.arguments;
 
-        log::info!(target: "crabmate", "Executing tool: {} with args={}", name, truncate_args(args));
+        log::info!(target: "crabmate", "[HIERARCHICAL] Executing tool: {} with args={}", name, truncate_args(args));
 
-        // 直接创建 ToolContext 并调用
-        let output = self.run_tool_internal(name, args);
+        // 使用 tool_registry::dispatch_tool 以支持审批流程
+        let output = self.dispatch_tool_internal(name, args).await;
 
         let success =
             !output.contains("错误") && !output.contains("error:") && !output.contains("Error:");
 
-        log::info!(target: "crabmate", "Tool {} completed, success={}, output_len={}", name, success, output.len());
+        log::info!(target: "crabmate", "[HIERARCHICAL] Tool {} completed, success={}, output_len={}", name, success, output.len());
 
         // 从输出中提取产物
         let extracted_artifacts =
-            extract_artifacts_from_output(name, &output, &self._ctx.working_dir);
+            extract_artifacts_from_output(name, &output, &self.ctx.working_dir);
         if !extracted_artifacts.is_empty() {
             log::info!(
                 target: "crabmate",
@@ -75,31 +93,54 @@ impl ToolExecutor {
         }
     }
 
-    fn run_tool_internal(&self, name: &str, args: &str) -> String {
-        let ctx = ToolContext {
-            cfg: Some(&self._ctx.cfg),
-            codebase_semantic: None,
-            command_max_output_len: self._ctx.cfg.command_max_output_len,
-            weather_timeout_secs: self._ctx.cfg.weather_timeout_secs,
-            allowed_commands: &self._ctx.allowed_commands,
-            working_dir: &self._ctx.working_dir,
-            web_search_timeout_secs: self._ctx.cfg.web_search_timeout_secs,
-            web_search_provider: self._ctx.cfg.web_search_provider,
-            web_search_api_key: "",
-            web_search_max_results: self._ctx.cfg.web_search_max_results,
-            http_fetch_allowed_prefixes: &self._ctx.http_fetch_allowed_prefixes,
-            http_fetch_timeout_secs: self._ctx.cfg.http_fetch_timeout_secs,
-            http_fetch_max_response_bytes: self._ctx.cfg.http_fetch_max_response_bytes,
-            command_timeout_secs: self._ctx.cfg.command_timeout_secs,
-            read_file_turn_cache: None,
-            workspace_changelist: None,
-            test_result_cache_enabled: false,
-            test_result_cache_max_entries: 0,
-            long_term_memory: None,
-            long_term_memory_scope_id: None,
+    async fn dispatch_tool_internal(&self, name: &str, args: &str) -> String {
+        let mut workspace_changed = false;
+
+        // 构建 ToolRuntime
+        let runtime = if let Some(ref web_rt) = self.ctx.web_tool_runtime {
+            ToolRuntime::Web {
+                workspace_changed: &mut workspace_changed,
+                ctx: Some(web_rt),
+            }
+        } else {
+            // 没有审批上下文时，使用一个空的 Web 运行时
+            // 这会导致不在白名单的命令返回错误
+            ToolRuntime::Web {
+                workspace_changed: &mut workspace_changed,
+                ctx: None,
+            }
         };
 
-        tools::run_tool(name, args, &ctx)
+        let tc = ToolCall {
+            id: format!(
+                "hierarchical_{}",
+                TOOL_CALL_COUNTER.fetch_add(1, Ordering::Relaxed)
+            ),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: name.to_string(),
+                arguments: args.to_string(),
+            },
+        };
+
+        let (output, _) = tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
+            runtime,
+            cfg: &self.ctx.cfg,
+            effective_working_dir: &self.ctx.working_dir,
+            workspace_is_set: true,
+            name,
+            args,
+            tc: &tc,
+            read_file_turn_cache: None,
+            workspace_changelist: None,
+            mcp_session: None,
+            turn_allow: None,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+        })
+        .await;
+
+        output
     }
 
     /// 检查工具是否存在
@@ -284,56 +325,48 @@ fn extract_files_from_dir_listing(
     let mut artifacts = Vec::new();
 
     for line in output.lines() {
-        // 尝试提取文件路径（简单启发式）
-        let trimmed = line.trim();
-        if trimmed.starts_with("./") || trimmed.starts_with("../") || trimmed.starts_with('/') {
-            let path = resolve_path(trimmed, working_dir);
-            if path.exists() {
-                let kind = classify_file_by_path(&path);
-                artifacts.push(ExtractedArtifact {
-                    path,
-                    kind,
-                    source_tool: source_tool.to_string(),
-                });
-            }
+        // 匹配 file: xxx 或 dir: xxx 格式
+        if let Some(path) = line.strip_prefix("file: ") {
+            let path = path.trim();
+            artifacts.push(ExtractedArtifact {
+                path: resolve_path(path, working_dir),
+                kind: ExtractedArtifactKind::SourceFile,
+                source_tool: source_tool.to_string(),
+            });
+        } else if let Some(path) = line.strip_prefix("dir: ") {
+            let path = path.trim();
+            artifacts.push(ExtractedArtifact {
+                path: resolve_path(path, working_dir),
+                kind: ExtractedArtifactKind::BuildDirectory,
+                source_tool: source_tool.to_string(),
+            });
         }
     }
 
     artifacts
 }
 
-/// 通用文件提取（从输出中查找可能的文件路径）
+/// 通用文件提取：从输出中查找可能的路径
 fn extract_generic_files(
     output: &str,
     working_dir: &std::path::Path,
     source_tool: &str,
 ) -> Vec<ExtractedArtifact> {
     let mut artifacts = Vec::new();
-    let mut seen = std::collections::HashSet::new();
 
-    // 匹配常见的文件路径模式
+    // 简单的启发式：查找看起来像路径的字符串
     for line in output.lines() {
-        // 查找看起来像路径的字符串
+        // 查找 ./path 或 path/to/file 格式
         for word in line.split_whitespace() {
-            let cleaned =
-                word.trim_matches(|c: char| c == '"' || c == '\'' || c == ',' || c == ';');
-
-            // 检查是否是文件路径
-            if (cleaned.contains('/') || cleaned.contains("\\"))
-                && !cleaned.starts_with("http")
-                && !cleaned.starts_with("git@")
-            {
-                let path = resolve_path(cleaned, working_dir);
-                if path.exists() && path.is_file() {
-                    let path_str = path.to_string_lossy().to_string();
-                    if seen.insert(path_str.clone()) {
-                        let kind = classify_file_by_path(&path);
-                        artifacts.push(ExtractedArtifact {
-                            path,
-                            kind,
-                            source_tool: source_tool.to_string(),
-                        });
-                    }
+            if word.starts_with("./") || word.starts_with("../") {
+                let path = resolve_path(word, working_dir);
+                if path.exists() {
+                    let kind = classify_file_by_extension(&path.to_string_lossy());
+                    artifacts.push(ExtractedArtifact {
+                        path,
+                        kind,
+                        source_tool: source_tool.to_string(),
+                    });
                 }
             }
         }
@@ -342,64 +375,44 @@ fn extract_generic_files(
     artifacts
 }
 
-/// 根据扩展名分类文件
+/// 根据文件扩展名分类
 fn classify_file_by_extension(path: &str) -> ExtractedArtifactKind {
-    let path = std::path::Path::new(path);
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase());
-
-    match ext.as_deref() {
-        Some("c") | Some("cpp") | Some("cc") | Some("cxx") | Some("h") | Some("hpp") => {
-            ExtractedArtifactKind::SourceFile
-        }
-        Some("o") | Some("obj") => ExtractedArtifactKind::ObjectFile,
-        Some("a") | Some("lib") => ExtractedArtifactKind::StaticLibrary,
-        Some("so") | Some("dll") | Some("dylib") => ExtractedArtifactKind::DynamicLibrary,
-        Some("exe") => ExtractedArtifactKind::Executable,
-        _ => {
-            // 检查文件名是否是常见可执行文件名
-            if let Some(name) = path.file_name().and_then(|n| n.to_str())
-                && (name == "main" || name == "a.out" || name.ends_with(".exe"))
-            {
-                return ExtractedArtifactKind::Executable;
-            }
-            ExtractedArtifactKind::Other
-        }
-    }
-}
-
-/// 根据完整路径分类文件
-fn classify_file_by_path(path: &std::path::Path) -> ExtractedArtifactKind {
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        match ext.to_lowercase().as_str() {
-            "c" | "cpp" | "cc" | "cxx" | "h" | "hpp" => ExtractedArtifactKind::SourceFile,
-            "o" | "obj" => ExtractedArtifactKind::ObjectFile,
-            "a" | "lib" => ExtractedArtifactKind::StaticLibrary,
-            "so" | "dll" | "dylib" => ExtractedArtifactKind::DynamicLibrary,
-            "exe" => ExtractedArtifactKind::Executable,
-            _ => ExtractedArtifactKind::Other,
-        }
+    let path_lower = path.to_lowercase();
+    if path_lower.ends_with(".cpp")
+        || path_lower.ends_with(".c")
+        || path_lower.ends_with(".h")
+        || path_lower.ends_with(".hpp")
+        || path_lower.ends_with(".rs")
+        || path_lower.ends_with(".py")
+        || path_lower.ends_with(".js")
+        || path_lower.ends_with(".ts")
+        || path_lower.ends_with(".java")
+        || path_lower.ends_with(".go")
+    {
+        ExtractedArtifactKind::SourceFile
+    } else if path_lower.ends_with(".o") || path_lower.ends_with(".obj") {
+        ExtractedArtifactKind::ObjectFile
+    } else if path_lower.ends_with(".a") || path_lower.ends_with(".lib") {
+        ExtractedArtifactKind::StaticLibrary
+    } else if path_lower.ends_with(".so")
+        || path_lower.ends_with(".dll")
+        || path_lower.ends_with(".dylib")
+    {
+        ExtractedArtifactKind::DynamicLibrary
+    } else if path_lower.ends_with("/") || !path_lower.contains('.') {
+        // 目录或没有扩展名的可执行文件
+        ExtractedArtifactKind::Executable
     } else {
-        // 无扩展名的文件可能是可执行文件
-        if path
-            .file_name()
-            .is_some_and(|n| n == "main" || n == "a.out")
-        {
-            ExtractedArtifactKind::Executable
-        } else {
-            ExtractedArtifactKind::Other
-        }
+        ExtractedArtifactKind::Other
     }
 }
 
-/// 解析路径（处理相对路径和绝对路径）
+/// 解析路径（处理相对路径）
 fn resolve_path(path: &str, working_dir: &std::path::Path) -> std::path::PathBuf {
-    let path = std::path::Path::new(path);
-    if path.is_absolute() {
-        path.to_path_buf()
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        p.to_path_buf()
     } else {
-        working_dir.join(path)
+        working_dir.join(p)
     }
 }

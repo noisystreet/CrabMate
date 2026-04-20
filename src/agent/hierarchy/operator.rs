@@ -303,7 +303,7 @@ impl OperatorAgent {
                     };
 
                     // 执行真实工具（使用注入后的参数）
-                    let result = tool_executor.execute_tool_call(&injected_tool_call);
+                    let result = tool_executor.execute_tool_call(&injected_tool_call).await;
 
                     log::info!(
                         target: "crabmate",

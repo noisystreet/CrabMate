@@ -572,7 +572,11 @@ impl<'a> HierarchicalExecutor<'a> {
                 self.working_dir.as_ref(),
             ) {
                 // 有完整上下文，使用带工具的执行
-                let tool_executor = ToolExecutor::new(cfg, work_dir.clone());
+                let tool_executor_ctx = super::tool_executor::ToolExecutorContext::new(
+                    Arc::new(cfg.clone()),
+                    work_dir.clone(),
+                );
+                let tool_executor = ToolExecutor::new(tool_executor_ctx);
                 // 构建额外上下文（依赖 artifacts）
                 let extra_context = if deps.is_empty() {
                     None
