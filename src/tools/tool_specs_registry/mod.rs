@@ -6,6 +6,7 @@ use super::tool_params;
 use super::tool_summary as ts;
 use super::*;
 
+static SPECS_ARCHIVE: &[ToolSpec] = &include!("specs/archive.inc.rs");
 static SPECS_BASIC_NETWORK: &[ToolSpec] = &include!("specs/basic_network.inc.rs");
 static SPECS_EXEC_PACKAGE: &[ToolSpec] = &include!("specs/exec_package.inc.rs");
 static SPECS_CARGO_RUST: &[ToolSpec] = &include!("specs/cargo_rust.inc.rs");
@@ -36,7 +37,8 @@ static ALL_TOOL_SPECS: OnceLock<&'static [ToolSpec]> = OnceLock::new();
 
 pub(super) fn tool_specs() -> &'static [ToolSpec] {
     ALL_TOOL_SPECS.get_or_init(|| {
-        let cap = SPECS_BASIC_NETWORK.len()
+        let cap = SPECS_ARCHIVE.len()
+            + SPECS_BASIC_NETWORK.len()
             + SPECS_EXEC_PACKAGE.len()
             + SPECS_CARGO_RUST.len()
             + SPECS_FRONTEND_PYTHON.len()
@@ -62,6 +64,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             + SPECS_MISC_BASIC.len()
             + SPECS_SOURCE_ANALYSIS.len();
         let mut v = Vec::with_capacity(cap);
+        v.extend_from_slice(SPECS_ARCHIVE);
         v.extend_from_slice(SPECS_BASIC_NETWORK);
         v.extend_from_slice(SPECS_EXEC_PACKAGE);
         v.extend_from_slice(SPECS_CARGO_RUST);

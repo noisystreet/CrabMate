@@ -322,3 +322,15 @@ pub(super) fn summary_gh_search(v: &serde_json::Value) -> Option<String> {
 pub(super) fn summary_gh_api(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhApiSummaryArgs>(v)
 }
+
+pub(super) fn summary_archive_pack(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<ArchivePackSummaryArgs>(v)
+}
+
+pub(super) fn summary_archive_unpack(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<ArchiveUnpackSummaryArgs>(v)
+}
+
+pub(super) fn summary_archive_list(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<ArchiveListSummaryArgs>(v)
+}

@@ -1,5 +1,6 @@
 //! 工具 JSON 参数 schema（按领域拆分子模块，再统一导出）。
 
+mod archive;
 mod basic_network;
 mod cargo_rust;
 mod ci_workflow;
@@ -29,6 +30,7 @@ mod structured;
 mod text_format_lint;
 mod todo_dev;
 
+pub(super) use archive::*;
 pub(super) use basic_network::*;
 pub(super) use cargo_rust::*;
 pub(super) use ci_workflow::*;

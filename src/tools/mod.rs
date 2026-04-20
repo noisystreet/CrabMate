@@ -2,6 +2,7 @@
 //!
 //! 每个子模块对应一类工具，便于扩展新工具。
 
+mod archive;
 mod calc;
 mod call_graph_sketch;
 mod cargo_tools;
@@ -727,6 +728,18 @@ define_git_runners! {
     runner_git_reset => reset,
     runner_git_cherry_pick => cherry_pick,
     runner_git_revert => revert,
+}
+
+fn runner_archive_pack(args: &str, ctx: &ToolContext<'_>) -> String {
+    archive::archive_pack(args, ctx.working_dir, ctx)
+}
+
+fn runner_archive_unpack(args: &str, ctx: &ToolContext<'_>) -> String {
+    archive::archive_unpack(args, ctx.working_dir, ctx)
+}
+
+fn runner_archive_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    archive::archive_list(args, ctx.working_dir, ctx)
 }
 
 fn runner_create_file(args: &str, ctx: &ToolContext<'_>) -> String {

@@ -1683,3 +1683,64 @@ impl ToolSummaryLine for SymlinkInfoSummaryArgs {
         Some(format!("symlink info: {}", path))
     }
 }
+
+// ── archive_pack ─────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ArchivePackSummaryArgs {
+    output: String,
+    #[serde(default)]
+    sources: Vec<String>,
+}
+
+impl ToolSummaryLine for ArchivePackSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let output = self.output.trim();
+        let count = self.sources.len();
+        if output.is_empty() {
+            return None;
+        }
+        Some(format!("pack {} items into {}", count, output))
+    }
+}
+
+// ── archive_unpack ───────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ArchiveUnpackSummaryArgs {
+    archive: String,
+    #[serde(default)]
+    output_dir: Option<String>,
+}
+
+impl ToolSummaryLine for ArchiveUnpackSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let archive = self.archive.trim();
+        if archive.is_empty() {
+            return None;
+        }
+        let dir = self
+            .output_dir
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(".");
+        Some(format!("unpack {} to {}", archive, dir))
+    }
+}
+
+// ── archive_list ────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ArchiveListSummaryArgs {
+    archive: String,
+}
+
+impl ToolSummaryLine for ArchiveListSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let archive = self.archive.trim();
+        if archive.is_empty() {
+            return None;
+        }
+        Some(format!("list archive: {}", archive))
+    }
+}
