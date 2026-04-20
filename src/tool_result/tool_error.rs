@@ -198,6 +198,7 @@ impl ToolError {
     }
 
     /// 白名单拒绝等（`error_code`：`command_not_allowed`）；正文须使 [`super::parse_legacy_output`] 能识别为失败。
+    #[allow(dead_code)]
     pub fn command_not_allowed(message: String) -> Self {
         let parsed = ParsedLegacyOutput {
             ok: false,
@@ -209,6 +210,24 @@ impl ToolError {
         Self {
             category: ToolFailureCategory::PolicyDenied,
             code: "command_not_allowed".to_string(),
+            message,
+            retryable: false,
+            legacy_parsed: parsed,
+        }
+    }
+
+    /// 需要用户审批（`error_code`：`approval_required`）。
+    pub fn approval_required(message: String) -> Self {
+        let parsed = ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some("approval_required".to_string()),
+        };
+        Self {
+            category: ToolFailureCategory::PolicyDenied,
+            code: "approval_required".to_string(),
             message,
             retryable: false,
             legacy_parsed: parsed,

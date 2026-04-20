@@ -503,7 +503,13 @@ async fn execute_run_command_impl(
                         }
                     }
                 } else {
-                    None
+                    return (
+                        format!(
+                            "命令 '{}' 不在白名单中，且审批通道不可用。请在请求中提供 approval_session_id 以启用命令审批流程。",
+                            cmd
+                        ),
+                        None,
+                    );
                 };
                 if let Some(decision) = decision_opt {
                     match decision {

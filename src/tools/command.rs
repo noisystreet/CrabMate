@@ -74,7 +74,7 @@ impl RunCommandError {
                     error_code: Some("missing_command".to_string()),
                 },
             },
-            RunCommandError::DisallowedCommand { .. } => ToolError::command_not_allowed(msg),
+            RunCommandError::DisallowedCommand { .. } => ToolError::approval_required(msg),
             RunCommandError::ArgsNotArray | RunCommandError::UnsafeArg => {
                 ToolError::invalid_args(msg)
             }
