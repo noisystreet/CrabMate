@@ -1,7 +1,7 @@
 //! 分层执行器：按依赖层级执行子目标
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Instant;
 
 use tokio::sync::mpsc::Sender;
@@ -20,8 +20,10 @@ use super::task::{
     Artifact, ArtifactKind, BuildArtifactKind, ExecutionStrategy, SubGoal, TaskResult, TaskStatus,
 };
 use super::tool_executor::ToolExecutor;
-use crate::types::Tool;
+use crate::types::{CommandApprovalDecision, Tool};
 use log::{error, info, warn};
+use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::mpsc::Receiver;
 
 /// 分层执行结果
 #[derive(Debug, Clone)]
@@ -81,8 +83,12 @@ pub struct HierarchicalExecutor<'a> {
     tools_defs: Vec<Tool>,
     /// Manager Agent（用于失败时重新规划）
     manager: Option<super::manager::ManagerAgent>,
-    /// 原始任务（用于重新规划）
+    /// 原始任务（用于失败时重新规划）
     original_task: Option<String>,
+    /// 工具审批发送器（用于触发审批对话框）
+    tool_approval_out: Option<Sender<String>>,
+    /// 工具审批接收器（用于接收用户审批决定）
+    tool_approval_rx: Option<Arc<TokioMutex<Receiver<CommandApprovalDecision>>>>,
 }
 
 impl HierarchicalExecutor<'_> {
@@ -100,6 +106,8 @@ impl HierarchicalExecutor<'_> {
             tools_defs: Vec::new(),
             manager: None,
             original_task: None,
+            tool_approval_out: None,
+            tool_approval_rx: None,
         }
     }
 }
@@ -143,6 +151,17 @@ impl<'a> HierarchicalExecutor<'a> {
     /// 设置原始任务（用于失败时重新规划）
     pub fn with_original_task(mut self, task: String) -> Self {
         self.original_task = Some(task);
+        self
+    }
+
+    /// 设置工具审批上下文（用于敏感操作的交互式审批）
+    pub fn with_tool_approval(
+        mut self,
+        out_tx: Sender<String>,
+        approval_rx: Arc<TokioMutex<Receiver<CommandApprovalDecision>>>,
+    ) -> Self {
+        self.tool_approval_out = Some(out_tx);
+        self.tool_approval_rx = Some(approval_rx);
         self
     }
 
@@ -556,7 +575,7 @@ impl<'a> HierarchicalExecutor<'a> {
             tools_defs: tools_defs_for_llm.clone(),
             sse_out: self.sse_out.clone(),
             artifact_store: Some(artifact_store.clone()),
-            build_state: Some(Arc::new(Mutex::new(build_state.clone()))),
+            build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
         };
         log::info!(target: "crabmate", "[HIERARCHICAL] execute_single: sse_out is {:?}, tools_defs count={}", self.sse_out.is_some(), tools_defs_for_llm.len());
 
@@ -572,10 +591,18 @@ impl<'a> HierarchicalExecutor<'a> {
                 self.working_dir.as_ref(),
             ) {
                 // 有完整上下文，使用带工具的执行
-                let tool_executor_ctx = super::tool_executor::ToolExecutorContext::new(
+                let mut tool_executor_ctx = super::tool_executor::ToolExecutorContext::new(
                     Arc::new(cfg.clone()),
                     work_dir.clone(),
                 );
+                // 如果有审批上下文，启用 Web 审批流程
+                if let (Some(out_tx), Some(approval_rx)) = (
+                    self.tool_approval_out.clone(),
+                    self.tool_approval_rx.clone(),
+                ) {
+                    tool_executor_ctx =
+                        tool_executor_ctx.with_web_approval_arc(out_tx, approval_rx);
+                }
                 let tool_executor = ToolExecutor::new(tool_executor_ctx);
                 // 构建额外上下文（依赖 artifacts）
                 let extra_context = if deps.is_empty() {

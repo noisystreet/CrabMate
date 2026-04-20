@@ -2,11 +2,16 @@
 //!
 //! 提供高层入口，封装 Router → Manager → Operator → Executor 流程
 
-use tokio::sync::mpsc::Sender;
+use std::sync::Arc;
+use tokio::sync::{
+    Mutex,
+    mpsc::{Receiver, Sender},
+};
 
 use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
 use crate::sse;
+use crate::types::CommandApprovalDecision;
 
 use super::events;
 use super::execution::{ExecutionError, HierarchicalExecutionResult};
@@ -32,6 +37,10 @@ pub struct HierarchyRunnerParams<'a> {
     pub sse_out: Option<Sender<String>>,
     /// 工具定义列表（用于 Manager 分解）
     pub tools_defs: &'a [crate::types::Tool],
+    /// 工具审批发送器（用于触发审批对话框）
+    pub tool_approval_out: Option<Sender<String>>,
+    /// 工具审批接收器（用于接收用户审批决定）
+    pub tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
 }
 
 /// 分层 Agent 运行结果
@@ -57,6 +66,8 @@ pub async fn run_hierarchical(
         working_dir,
         sse_out,
         tools_defs,
+        tool_approval_out,
+        tool_approval_rx,
     } = params;
 
     // 1. 路由决策
@@ -88,6 +99,8 @@ pub async fn run_hierarchical(
             working_dir,
             sse_out,
             tools_defs,
+            tool_approval_out,
+            tool_approval_rx,
         )
         .await;
     }
@@ -184,6 +197,10 @@ pub async fn run_hierarchical(
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);
     }
+    // 如果有审批上下文，传递给 executor
+    if let (Some(out_tx), Some(approval_rx)) = (tool_approval_out, tool_approval_rx) {
+        executor = executor.with_tool_approval(out_tx, approval_rx);
+    }
     let execution_result = executor.execute_with_result(manager_output.clone()).await?;
 
     Ok(HierarchyRunnerResult {
@@ -203,6 +220,8 @@ async fn run_simple_fallback(
     working_dir: std::path::PathBuf,
     sse_out: Option<Sender<String>>,
     tools_defs: &[crate::types::Tool],
+    tool_approval_out: Option<Sender<String>>,
+    tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
 ) -> Result<HierarchyRunnerResult, ExecutionError> {
     // 直接使用 Manager 的降级分解
     let manager_config = ManagerConfig::default();
@@ -279,6 +298,10 @@ async fn run_simple_fallback(
         .with_tools_defs(tools_defs.to_vec());
     if let Some(sse_tx) = sse_out {
         executor = executor.with_sse(sse_tx);
+    }
+    // 如果有审批上下文，传递给 executor
+    if let (Some(out_tx), Some(approval_rx)) = (tool_approval_out, tool_approval_rx) {
+        executor = executor.with_tool_approval(out_tx, approval_rx);
     }
     let execution_result = executor.execute_with_result(manager_output).await?;
 

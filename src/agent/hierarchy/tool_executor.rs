@@ -5,13 +5,14 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as TokioMutex;
 
 use crate::config::AgentConfig;
 use crate::tool_registry::{self, ToolRuntime};
 use crate::types::{CommandApprovalDecision, FunctionCall, ToolCall};
 
 use std::sync::atomic::{AtomicU64, Ordering};
+
 static TOOL_CALL_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// 工具执行器上下文
@@ -39,9 +40,24 @@ impl ToolExecutorContext {
     ) -> Self {
         self.web_tool_runtime = Some(crate::tool_registry::WebToolRuntime {
             out_tx,
-            approval_rx_shared: Arc::new(Mutex::new(approval_rx)),
-            approval_request_guard: Arc::new(Mutex::new(())),
-            persistent_allowlist_shared: Arc::new(Mutex::new(HashSet::new())),
+            approval_rx_shared: Arc::new(TokioMutex::new(approval_rx)),
+            approval_request_guard: Arc::new(TokioMutex::new(())),
+            persistent_allowlist_shared: Arc::new(TokioMutex::new(HashSet::new())),
+        });
+        self
+    }
+
+    /// 启用 Web 审批流程（使用已包装的 Receiver）
+    pub fn with_web_approval_arc(
+        mut self,
+        out_tx: tokio::sync::mpsc::Sender<String>,
+        approval_rx: Arc<TokioMutex<tokio::sync::mpsc::Receiver<CommandApprovalDecision>>>,
+    ) -> Self {
+        self.web_tool_runtime = Some(crate::tool_registry::WebToolRuntime {
+            out_tx,
+            approval_rx_shared: approval_rx,
+            approval_request_guard: Arc::new(TokioMutex::new(())),
+            persistent_allowlist_shared: Arc::new(TokioMutex::new(HashSet::new())),
         });
         self
     }

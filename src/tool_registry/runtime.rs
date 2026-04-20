@@ -2,9 +2,8 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
 
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex as TokioMutex, mpsc};
 
 use crate::types::CommandApprovalDecision;
 
@@ -25,9 +24,9 @@ pub enum ToolRuntime<'a> {
 
 pub struct WebToolRuntime {
     pub out_tx: mpsc::Sender<String>,
-    pub approval_rx_shared: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
-    pub approval_request_guard: Arc<Mutex<()>>,
-    pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
+    pub approval_rx_shared: Arc<TokioMutex<mpsc::Receiver<CommandApprovalDecision>>>,
+    pub approval_request_guard: Arc<TokioMutex<()>>,
+    pub persistent_allowlist_shared: Arc<TokioMutex<HashSet<String>>>,
 }
 
 impl WebToolRuntime {
@@ -50,22 +49,22 @@ pub struct CliCommandTurnStats {
 /// CLI REPL / 单次提问：对**不在** `allowed_commands` 的 `run_command` 在终端 stdin 交互确认；**永久允许**写入本结构（进程内）。
 #[derive(Clone)]
 pub struct CliToolRuntime {
-    pub persistent_allowlist_shared: Arc<Mutex<HashSet<String>>>,
+    pub persistent_allowlist_shared: Arc<TokioMutex<HashSet<String>>>,
     /// `--yes`：对 [`crate::tool_approval::SensitiveCapability`] 所覆盖的敏感工具（`run_command`、未匹配前缀的 `http_fetch` / `http_request` 等）在非白名单时也自动「本次允许」（**仅可信环境**；与 [`crate::tool_approval::CliApprovalInput`] 同源语义）。
     pub auto_approve_all_non_whitelist_run_command: bool,
     /// `--approve-commands` 额外允许的命令名（小写），与配置白名单合并后再决定是否提示。
     pub extra_allowlist_commands: Arc<[String]>,
-    pub command_stats: Arc<StdMutex<CliCommandTurnStats>>,
+    pub command_stats: Arc<std::sync::Mutex<CliCommandTurnStats>>,
 }
 
 impl CliToolRuntime {
     /// REPL / 默认单次问答：交互审批，不自动批准。
     pub fn new_interactive_default() -> Self {
         Self {
-            persistent_allowlist_shared: Arc::new(Mutex::new(HashSet::new())),
+            persistent_allowlist_shared: Arc::new(TokioMutex::new(HashSet::new())),
             auto_approve_all_non_whitelist_run_command: false,
             extra_allowlist_commands: Arc::from([] as [String; 0]),
-            command_stats: Arc::new(StdMutex::new(CliCommandTurnStats::default())),
+            command_stats: Arc::new(std::sync::Mutex::new(CliCommandTurnStats::default())),
         }
     }
 

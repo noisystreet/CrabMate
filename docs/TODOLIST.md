@@ -70,6 +70,7 @@
   - **依赖管理类任务**：检测依赖文件 → 分析冲突 → 更新/安装 → 验证
 - [ ] **分层 Agent：动态子目标分解**：当前执行指导是静态规则；后续可评估在 Operator 执行过程中，当检测到目标过于复杂或执行失败时，动态调用 LLM 进行子目标分解（类似 Manager 的 `decompose_with_llm`），实现真正的递归分解。
 - [ ] **分层 Agent：执行步骤持久化与恢复**：复杂任务（如编译大型项目）可能耗时较长，支持将 Operator 的 ReAct 状态（迭代次数、消息历史、观察记录）持久化，允许中断后恢复执行。
+- [ ] **分层 Agent：工具审批流程集成**：当前 `execution.rs` 创建 `ToolExecutor` 时未传入 `web_tool_runtime`（审批上下文），导致分层执行路径中不在白名单的命令（如 `./configure`）直接失败，而不会触发 Web 界面的用户审批对话框。需要修改 `HierarchicalExecutor` 以接收并传递审批上下文（`out_tx` / `approval_rx`），使分层 Agent 也能支持敏感操作的交互式审批。
 ---
 
 ## `llm/` 与 `http_client.rs`（模型请求、重试、流式解析）

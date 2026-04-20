@@ -30,6 +30,16 @@ pub(crate) async fn run_hierarchical_agent(
     );
 
     // 构建运行参数
+    // 从 web_tool_ctx 中提取审批上下文（如果存在）
+    let (tool_approval_out, tool_approval_rx) = if let Some(web_ctx) = p.web_tool_ctx {
+        (
+            Some(web_ctx.out_tx.clone()),
+            Some(web_ctx.approval_rx_shared.clone()),
+        )
+    } else {
+        (None, None)
+    };
+
     let params = HierarchyRunnerParams {
         task: &task,
         cfg: p.cfg.as_ref(),
@@ -39,6 +49,8 @@ pub(crate) async fn run_hierarchical_agent(
         working_dir: p.effective_working_dir.to_path_buf(),
         sse_out: p.out.cloned(),
         tools_defs: p.tools_defs,
+        tool_approval_out,
+        tool_approval_rx,
     };
 
     // 运行分层 Agent
