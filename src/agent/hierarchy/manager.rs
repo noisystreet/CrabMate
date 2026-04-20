@@ -457,6 +457,12 @@ impl ManagerAgent {
 - **禁止假设**可执行文件名称（如 demo、test、main 等），必须使用 CMakeLists.txt 中 `add_executable()` 定义的实际名称
 - 运行可执行文件时，路径必须是 `./build/<实际名称>` 或 `./<实际名称>`，不能使用假设的名称
 
+## Cargo/Rust 项目特殊规则
+- 如果执行了 `cargo init` 且创建了子目录（如 `tmp/`），后续所有 `cargo` 命令必须在那个子目录中执行
+- 使用 `run_command` 执行 cargo 命令前，**必须先 `cd` 到项目目录**：`{{"command": "cd", "args": ["tmp"]}}`，然后再执行 `{{"command": "cargo", "args": ["build"]}}`
+- **禁止假设**可执行文件名称，必须使用 `Cargo.toml` 中 `[[bin]]` 或默认的 `src/main.rs` 对应的名称
+- 运行 Rust 可执行文件时，路径必须是 `./target/debug/<名称>`（在子目录内）或 `./tmp/target/debug/<名称>`（从根目录）
+
 ## 输出格式
 **必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
 ```
