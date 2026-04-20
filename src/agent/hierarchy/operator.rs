@@ -669,12 +669,18 @@ impl OperatorAgent {
             self.config.allowed_tools.join(", ")
         };
 
+        // 根据目标描述添加特定的执行指导
+        let execution_guide = self.build_execution_guide(goal);
+
         format!(
             r#"你是一个 ReAct (Reasoning + Acting) 代理。
 
 当前任务：{}
 
 ## 可用工具
+{}
+
+## 执行指导
 {}
 
 ## 规则
@@ -690,8 +696,81 @@ impl OperatorAgent {
 - **创建文件必须使用 `create_file` 工具**，禁止使用 `echo`、`cat`、`tee` 等命令通过 `run_command` 创建文件
 - `create_file` 的 `content` 参数：在 JSON 中必须使用正确的转义序列，换行用 `\n`，制表用 `\t`，双引号用 `\"
 "#,
-            goal.description, tools_list
+            goal.description, tools_list, execution_guide
         )
+    }
+
+    /// 根据目标类型构建执行指导
+    fn build_execution_guide(&self, goal: &SubGoal) -> String {
+        let desc = goal.description.to_lowercase();
+
+        // 编译/构建类任务
+        if desc.contains("编译")
+            || desc.contains("构建")
+            || desc.contains("build")
+            || desc.contains("make")
+            || desc.contains("cmake")
+        {
+            return r#"这是一个编译/构建任务，请按以下步骤执行：
+
+**步骤 1: 检测构建系统**
+- 使用 `read_dir` 查看源码目录结构
+- 检查是否存在以下构建文件（按优先级）：
+  * CMakeLists.txt → 使用 cmake 构建
+  * configure 脚本 → 使用 ./configure && make
+  * Makefile → 使用 make
+  * build.gradle/pom.xml → Java 项目
+  * package.json → Node.js 项目
+
+**步骤 2: 检查编译器/工具链**
+- 使用 `which` 检查必要的编译器是否存在（gcc/g++, cmake, make 等）
+- 如果编译器不存在，报告错误并终止（不要反复尝试不同的 which 组合）
+
+**步骤 3: 执行构建**
+- CMake 项目：
+  1. `mkdir -p build && cd build`
+  2. `cmake ..` 或 `cmake -S .. -B .`
+  3. `cmake --build .` 或 `make`
+- Configure 项目：
+  1. `./configure`（在源码目录）
+  2. `make`
+- Make 项目：
+  1. 直接 `make`
+
+**步骤 4: 验证构建结果**
+- 使用 `read_dir` 或 `run_command ls` 检查是否生成了可执行文件
+- 如果构建成功，报告生成的可执行文件路径
+
+**重要**：如果步骤 2 发现编译器不存在，直接报告失败，不要继续尝试构建。"#
+                .to_string();
+        }
+
+        // 文件操作类任务
+        if desc.contains("创建")
+            || desc.contains("修改")
+            || desc.contains("编辑")
+            || desc.contains("写入")
+        {
+            return r#"这是一个文件操作任务：
+
+**步骤 1: 确认路径**
+- 使用 `read_dir` 确认目标目录存在
+- 如果要修改文件，先用 `read_file` 查看当前内容
+
+**步骤 2: 执行操作**
+- 创建文件：使用 `create_file` 工具
+- 修改文件：使用 `search_replace` 工具
+- 删除文件：使用 `delete_file` 工具
+
+**步骤 3: 验证**
+- 使用 `read_file` 确认操作结果
+
+**重要**：禁止假设文件存在，必须先确认再操作。"#
+                .to_string();
+        }
+
+        // 默认指导
+        "分析任务需求，选择合适的工具，逐步执行并验证结果。".to_string()
     }
 
     /// 构建输出摘要
