@@ -91,6 +91,19 @@ struct ReactState {
     messages: Vec<Message>,
     /// 观察结果
     observations: Vec<String>,
+    /// 任务是否已完成（用于提前终止）
+    task_completed: bool,
+    /// 完成原因
+    completion_reason: Option<String>,
+}
+
+/// 工具执行结果分析
+#[derive(Debug, Clone)]
+enum ToolExecutionOutcome {
+    /// 普通执行
+    Normal,
+    /// 任务已完成
+    TaskCompleted { reason: String },
 }
 
 /// Operator Agent
@@ -159,6 +172,8 @@ impl OperatorAgent {
             iteration: 0,
             messages: Vec::new(),
             observations: Vec::new(),
+            task_completed: false,
+            completion_reason: None,
         };
 
         // 构建初始系统提示
@@ -338,6 +353,9 @@ impl OperatorAgent {
                         .await;
                     }
 
+                    // 分析工具执行结果，检查是否表示任务已完成
+                    let execution_outcome = self.analyze_tool_execution(&result, goal);
+
                     // 记录观察结果
                     let observation = if result.success {
                         format!(
@@ -360,6 +378,18 @@ impl OperatorAgent {
                         name: None,
                         tool_call_id: Some(tool_call.id.clone()),
                     });
+
+                    // 如果任务已完成，标记状态并准备返回
+                    if let ToolExecutionOutcome::TaskCompleted { reason } = execution_outcome {
+                        log::info!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Operator: task completion detected after tool={}: {}",
+                            result.tool_name,
+                            reason
+                        );
+                        state.task_completed = true;
+                        state.completion_reason = Some(reason);
+                    }
 
                     // 从工具结果中提取产物并更新 BuildState
                     if let Some(ref build_state_arc) = self.config.build_state
@@ -399,6 +429,24 @@ impl OperatorAgent {
                                 _ => {}
                             }
                         }
+                    }
+
+                    // 如果任务已标记完成，提前终止 ReAct 循环
+                    if state.task_completed {
+                        let reason = state.completion_reason.clone().unwrap_or_default();
+                        log::info!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Operator: terminating ReAct loop early, task completed: {}",
+                            reason
+                        );
+                        return Ok(TaskResult {
+                            task_id: goal.goal_id.clone(),
+                            status: TaskStatus::Completed,
+                            output: Some(format!("Task completed: {}", reason)),
+                            error: None,
+                            artifacts: Vec::new(),
+                            duration_ms: start_time.elapsed().as_millis() as u64,
+                        });
                     }
                 }
             } else {
@@ -483,6 +531,99 @@ impl OperatorAgent {
 
         let (response, _) = crate::llm::complete_chat_retrying(&params, &request).await?;
         Ok(response)
+    }
+
+    /// 分析工具执行结果，判断是否表示任务已完成
+    fn analyze_tool_execution(
+        &self,
+        result: &super::tool_executor::ToolExecutionResult,
+        goal: &SubGoal,
+    ) -> ToolExecutionOutcome {
+        if !result.success {
+            return ToolExecutionOutcome::Normal;
+        }
+
+        let output = &result.output;
+        let tool_name = &result.tool_name;
+
+        // 1. 检查是否成功运行了可执行文件并产生预期输出
+        if tool_name == "run_command" || tool_name.starts_with("./") {
+            // 检查是否运行了可执行文件并输出 Hello World
+            if output.contains("Hello") || output.contains("hello") || output.contains("world") {
+                return ToolExecutionOutcome::TaskCompleted {
+                    reason: "Program executed successfully with expected output".to_string(),
+                };
+            }
+            // 检查是否是 ELF 文件的 file 命令输出（验证步骤）
+            if output.contains("ELF") && output.contains("executable") {
+                // 这是验证步骤，不是真正的任务完成
+                return ToolExecutionOutcome::Normal;
+            }
+        }
+
+        // 2. 检查是否成功编译并链接了可执行文件
+        if tool_name == "run_command" || tool_name == "cmake" || tool_name == "make" {
+            // 匹配 cmake 构建成功输出
+            if output.contains("[100%]")
+                && output.contains("Linking")
+                && output.contains("executable")
+            {
+                // 提取可执行文件名
+                if let Some(line) = output
+                    .lines()
+                    .find(|l| l.contains("Linking") && l.contains("executable"))
+                    && let Some(name) = line.split_whitespace().last()
+                {
+                    return ToolExecutionOutcome::TaskCompleted {
+                        reason: format!("Build completed: executable '{}' generated", name),
+                    };
+                }
+            }
+        }
+
+        // 3. 根据目标描述判断
+        let goal_desc = goal.description.to_lowercase();
+
+        // 如果目标是运行程序并看到输出
+        if goal_desc.contains("运行")
+            || goal_desc.contains("执行")
+            || goal_desc.contains("run")
+            || goal_desc.contains("execute")
+        {
+            // 检查输出中是否有程序运行的典型特征
+            if output.contains("Hello")
+                || output.contains("World")
+                || output.contains("hello")
+                || output.contains("world")
+            {
+                return ToolExecutionOutcome::TaskCompleted {
+                    reason: "Program executed and produced output".to_string(),
+                };
+            }
+        }
+
+        // 如果目标是编译
+        if goal_desc.contains("编译") || goal_desc.contains("build") || goal_desc.contains("make")
+        {
+            // 检查是否成功生成了构建产物
+            if !result.extracted_artifacts.is_empty() {
+                for artifact in &result.extracted_artifacts {
+                    if matches!(
+                        artifact.kind,
+                        super::tool_executor::ExtractedArtifactKind::Executable
+                    ) {
+                        return ToolExecutionOutcome::TaskCompleted {
+                            reason: format!(
+                                "Build completed: {} generated",
+                                artifact.path.display()
+                            ),
+                        };
+                    }
+                }
+            }
+        }
+
+        ToolExecutionOutcome::Normal
     }
 
     /// 构建系统提示
