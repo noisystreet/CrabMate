@@ -194,7 +194,11 @@ pub(crate) fn ensure_canonical_within_root(
 }
 
 /// `candidate`（已 canonical）是否落在任一 **canonical** 允许根之下（配置 `workspace_allowed_roots`）。
+/// 当 `roots` 为空时，允许任意路径（返回 true）。
 pub(crate) fn is_within_allowed_roots(candidate: &Path, roots: &[PathBuf]) -> bool {
+    if roots.is_empty() {
+        return true;
+    }
     roots.iter().any(|r| candidate.starts_with(r))
 }
 
