@@ -732,8 +732,9 @@ impl OperatorAgent {
   2. `cmake ..` 或 `cmake -S .. -B .`
   3. `cmake --build .` 或 `make`
 - Configure 项目：
-  1. `./configure`（在源码目录）
-  2. `make`
+  1. 先尝试 `./configure`（在源码目录）
+  2. 如果 `./configure` 不在白名单，尝试直接 `make`（某些项目允许）
+  3. 如果上述都失败，检查是否有 `setup/` 目录，复制合适的配置到 `Make.custom` 后执行 `make`
 - Make 项目：
   1. 直接 `make`
 
@@ -741,7 +742,10 @@ impl OperatorAgent {
 - 使用 `read_dir` 或 `run_command ls` 检查是否生成了可执行文件
 - 如果构建成功，报告生成的可执行文件路径
 
-**重要**：如果步骤 2 发现编译器不存在，直接报告失败，不要继续尝试构建。"#
+**重要约束**：
+- 如果步骤 2 发现编译器不存在，直接报告失败，不要继续尝试构建
+- 如果命令返回不在白名单中，不要 用其他 shell（bash/sh）重复尝试同一命令，这不会成功
+- 最多尝试 2 种不同的构建方式，如果都失败则报告错误"#
                 .to_string();
         }
 
