@@ -451,6 +451,11 @@ impl ManagerAgent {
 - `read_dir` 用于读取目录内容，路径必须是相对路径且不能包含 `..`
 - `create_file` 的 `content` 参数必须是正确的 JSON 字符串（特殊字符需要转义）
 
+## CMake 项目特殊规则
+- 如果工作目录包含 CMakeLists.txt，**必须使用**其中定义的可执行文件目标名称
+- **禁止假设**可执行文件名称（如 demo、test、main 等），必须使用 CMakeLists.txt 中 `add_executable()` 定义的实际名称
+- 运行可执行文件时，路径必须是 `./build/<实际名称>` 或 `./<实际名称>`，不能使用假设的名称
+
 ## 输出格式
 **必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
 ```
@@ -640,21 +645,82 @@ impl ManagerAgent {
             String::new()
         };
 
+        // 解析 CMakeLists.txt 获取可执行文件名称
+        let cmake_info = self.parse_cmake_info(working_dir);
+
         format!(
             r#"当前工作目录：{}
 目录内容：
-{}
-{}{}{}"#,
+{}{}{}{}{}"#,
             dir_path,
             entries_str,
             build_info,
             src_info,
+            cmake_info,
             if entries.len() > 20 {
                 "\n(只显示前20项)"
             } else {
                 ""
             }
         )
+    }
+
+    /// 解析 CMakeLists.txt 获取项目信息
+    fn parse_cmake_info(&self, working_dir: &std::path::Path) -> String {
+        let cmake_path = working_dir.join("CMakeLists.txt");
+        if !cmake_path.exists() {
+            return String::new();
+        }
+
+        let content = match std::fs::read_to_string(&cmake_path) {
+            Ok(c) => c,
+            Err(_) => return String::new(),
+        };
+
+        let mut info_parts = Vec::new();
+
+        // 解析项目名称
+        if let Some(project_name) = self.extract_cmake_project_name(&content) {
+            info_parts.push(format!("CMake 项目名称: {}", project_name));
+        }
+
+        // 解析可执行文件目标
+        let executables = self.extract_cmake_executables(&content);
+        if !executables.is_empty() {
+            info_parts.push(format!("CMake 可执行文件目标: {}", executables.join(", ")));
+        }
+
+        if info_parts.is_empty() {
+            String::new()
+        } else {
+            format!("\nCMake 项目信息:\n  - {}", info_parts.join("\n  - "))
+        }
+    }
+
+    /// 从 CMakeLists.txt 内容中提取项目名称
+    fn extract_cmake_project_name(&self, content: &str) -> Option<String> {
+        // 匹配 project(Name) 或 project(Name VERSION x.y.z)
+        let re = regex::Regex::new(r"project\s*\(\s*([A-Za-z0-9_]+)").ok()?;
+        re.captures(content)
+            .and_then(|cap| cap.get(1))
+            .map(|m| m.as_str().to_string())
+    }
+
+    /// 从 CMakeLists.txt 内容中提取可执行文件目标
+    fn extract_cmake_executables(&self, content: &str) -> Vec<String> {
+        let mut executables = Vec::new();
+
+        // 匹配 add_executable(name source1 source2 ...)
+        let re = regex::Regex::new(r"add_executable\s*\(\s*([A-Za-z0-9_]+)").ok();
+        if let Some(re) = re {
+            for cap in re.captures_iter(content) {
+                if let Some(name) = cap.get(1) {
+                    executables.push(name.as_str().to_string());
+                }
+            }
+        }
+
+        executables
     }
 
     /// 格式化工具定义，包含完整参数 schema
