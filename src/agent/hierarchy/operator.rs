@@ -653,6 +653,7 @@ impl OperatorAgent {
 - **禁止假设**任何文件或目录存在。调用 `read_dir`、`search_replace`、`modify_file` 等工具前，**必须先用 `read_dir` 确认目标路径存在**
 - 如果工具返回"路径无法解析"或"No such file or directory"，**必须承认路径不存在**，不能再用相同的错误路径继续操作
 - 如果不确定某个路径是否存在，先用 `read_dir` 的父目录来确认
+- **创建文件必须使用 `create_file` 工具**，禁止使用 `echo`、`cat`、`tee` 等命令通过 `run_command` 创建文件
 "#,
             goal.description, tools_list
         )
