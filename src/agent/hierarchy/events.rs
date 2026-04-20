@@ -21,10 +21,7 @@ pub fn build_manager_started_trace(task: &str) -> ThinkingTraceBody {
         op: OP_MANAGER_STARTED.to_string(),
         node_id: None,
         parent_id: None,
-        title: Some(format!(
-            "Manager 开始分解任务: {}",
-            truncate_string(task, 50)
-        )),
+        title: Some(format!("Manager 开始分解任务: {}", task)),
         chunk: None,
         context_snapshot: None,
     }
@@ -86,7 +83,7 @@ pub fn build_subgoal_started_trace(goal_id: &str, description: &str) -> Thinking
         op: OP_SUBGOAL_STARTED.to_string(),
         node_id: Some(goal_id.to_string()),
         parent_id: None,
-        title: Some(format!("开始执行: {}", truncate_string(description, 60))),
+        title: Some(format!("开始执行: {}", description)),
         chunk: None,
         context_snapshot: None,
     }
@@ -142,20 +139,5 @@ pub fn build_hierarchical_finished_trace(
         )),
         chunk: None,
         context_snapshot: None,
-    }
-}
-
-/// 截断字符串到指定长度（按字符边界截断，支持中文）
-fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        let truncated = s
-            .char_indices()
-            .take(max_len.saturating_sub(3))
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0);
-        format!("{}...", &s[..truncated])
     }
 }
