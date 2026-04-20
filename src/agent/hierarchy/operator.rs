@@ -479,12 +479,46 @@ impl OperatorAgent {
                                 duration_ms: start_time.elapsed().as_millis() as u64,
                             });
                         } else {
-                            // LLM 可能需要继续，直接将回复作为观察继续循环
+                            // LLM 可能需要继续，将回复作为观察并添加到消息历史
                             state
                                 .observations
                                 .push(format!("LLM response: {}", truncate_output(&text)));
+                            // 重要：将 LLM 回复添加到 messages，否则上下文会丢失
+                            state.messages.push(Message {
+                                role: "assistant".to_string(),
+                                content: Some(MessageContent::Text(text.clone())),
+                                reasoning_content: None,
+                                reasoning_details: None,
+                                tool_calls: None,
+                                name: None,
+                                tool_call_id: None,
+                            });
                         }
+                    } else {
+                        // LLM 返回空内容，添加一个提示继续
+                        log::warn!(target: "crabmate", "[HIERARCHICAL] Operator: LLM returned empty content, adding prompt to continue");
+                        state.messages.push(Message {
+                            role: "user".to_string(),
+                            content: Some(MessageContent::Text("请继续执行任务。".to_string())),
+                            reasoning_content: None,
+                            reasoning_details: None,
+                            tool_calls: None,
+                            name: None,
+                            tool_call_id: None,
+                        });
                     }
+                } else {
+                    // LLM 没有返回任何内容，添加一个提示继续
+                    log::warn!(target: "crabmate", "[HIERARCHICAL] Operator: LLM returned no content, adding prompt to continue");
+                    state.messages.push(Message {
+                        role: "user".to_string(),
+                        content: Some(MessageContent::Text("请继续执行任务。".to_string())),
+                        reasoning_content: None,
+                        reasoning_details: None,
+                        tool_calls: None,
+                        name: None,
+                        tool_call_id: None,
+                    });
                 }
             }
         }
