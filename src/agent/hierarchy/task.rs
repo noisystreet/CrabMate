@@ -141,6 +141,50 @@ pub struct BuildRequirements {
     pub produces_artifacts: Vec<BuildArtifactKind>,
 }
 
+/// 子目标验收条件
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GoalAcceptance {
+    /// 期望文件存在（相对路径列表）
+    #[serde(default)]
+    pub expect_file_exists: Vec<String>,
+    /// 期望命令成功执行（验证命令）
+    #[serde(default)]
+    pub expect_command_success: Option<String>,
+    /// 期望输出包含特定字符串
+    #[serde(default)]
+    pub expect_output_contains: Vec<String>,
+    /// 期望退出码（默认 0）
+    #[serde(default)]
+    pub expect_exit_code: Option<i32>,
+}
+
+impl GoalAcceptance {
+    /// 创建文件存在验证
+    pub fn file_exists(path: &str) -> Self {
+        Self {
+            expect_file_exists: vec![path.to_string()],
+            ..Default::default()
+        }
+    }
+
+    /// 创建命令成功验证
+    pub fn command_success(cmd: &str) -> Self {
+        Self {
+            expect_command_success: Some(cmd.to_string()),
+            expect_exit_code: Some(0),
+            ..Default::default()
+        }
+    }
+
+    /// 创建输出包含验证
+    pub fn output_contains(text: &str) -> Self {
+        Self {
+            expect_output_contains: vec![text.to_string()],
+            ..Default::default()
+        }
+    }
+}
+
 /// 子目标
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubGoal {
@@ -160,6 +204,12 @@ pub struct SubGoal {
     /// 构建需求（编译任务使用）
     #[serde(default)]
     pub build_requirements: BuildRequirements,
+    /// 验收条件（验证子目标是否达成）
+    #[serde(default)]
+    pub acceptance: Option<GoalAcceptance>,
+    /// 最大重试次数（验证失败时）
+    #[serde(default)]
+    pub max_retries: Option<usize>,
 }
 
 impl SubGoal {
@@ -172,6 +222,8 @@ impl SubGoal {
             required_tools: Vec::new(),
             goal_type: GoalType::default(),
             build_requirements: BuildRequirements::default(),
+            acceptance: None,
+            max_retries: None,
         }
     }
 
@@ -187,6 +239,16 @@ impl SubGoal {
 
     pub fn with_goal_type(mut self, goal_type: GoalType) -> Self {
         self.goal_type = goal_type;
+        self
+    }
+
+    pub fn with_acceptance(mut self, acceptance: GoalAcceptance) -> Self {
+        self.acceptance = Some(acceptance);
+        self
+    }
+
+    pub fn with_max_retries(mut self, retries: usize) -> Self {
+        self.max_retries = Some(retries);
         self
     }
 }

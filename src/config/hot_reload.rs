@@ -188,4 +188,5 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.max_turn_duration_seconds = src.max_turn_duration_seconds;
     dst.max_turn_tokens = src.max_turn_tokens;
     dst.full_plan_rewrite_max_attempts = src.full_plan_rewrite_max_attempts;
+    dst.enable_llm_routing = src.enable_llm_routing;
 }

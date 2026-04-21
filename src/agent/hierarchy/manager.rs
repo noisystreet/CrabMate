@@ -49,7 +49,7 @@ pub enum ManagerError {
 #[derive(Debug)]
 pub enum ManagerDecision {
     /// 重新执行修正后的子目标
-    Retry { updated_goal: SubGoal },
+    Retry { updated_goal: Box<SubGoal> },
     /// 跳过该子目标
     Skip { reason: String },
     /// 终止整个任务
@@ -369,7 +369,7 @@ impl ManagerAgent {
             "retry" => {
                 if let Some(ug) = parsed.updated_goal {
                     Ok(ManagerDecision::Retry {
-                        updated_goal: SubGoal {
+                        updated_goal: Box::new(SubGoal {
                             goal_id: ug.goal_id,
                             description: ug.description,
                             priority: ug.priority.unwrap_or(original_goal.priority),
@@ -377,11 +377,13 @@ impl ManagerAgent {
                             required_tools: ug.required_tools.unwrap_or_default(),
                             goal_type: original_goal.goal_type.clone(),
                             build_requirements: original_goal.build_requirements.clone(),
-                        },
+                            acceptance: None,
+                            max_retries: None,
+                        }),
                     })
                 } else {
                     Ok(ManagerDecision::Retry {
-                        updated_goal: original_goal.clone(),
+                        updated_goal: Box::new(original_goal.clone()),
                     })
                 }
             }
@@ -841,6 +843,8 @@ impl ManagerAgent {
                 required_tools: sg.required_tools.unwrap_or_default(),
                 goal_type: sg.goal_type.unwrap_or_default(),
                 build_requirements: super::task::BuildRequirements::default(),
+                acceptance: None,
+                max_retries: None,
             });
         }
 
@@ -872,6 +876,266 @@ impl ManagerAgent {
     /// 获取执行策略
     pub fn execution_strategy(&self) -> ExecutionStrategy {
         self.config.execution_strategy
+    }
+
+    /// 反思验证失败并重新规划子目标
+    ///
+    /// 当验证失败时，分析失败原因并生成修复策略
+    #[allow(clippy::too_many_arguments)]
+    pub async fn reflect_and_replan(
+        &self,
+        failed_goal: &SubGoal,
+        verification_failure: &str,
+        execution_result: &TaskResult,
+        cfg: &AgentConfig,
+        llm_backend: &dyn ChatCompletionsBackend,
+        client: &reqwest::Client,
+        api_key: &str,
+        working_dir: &std::path::Path,
+        tools_defs: &[crate::types::Tool],
+        artifacts: &[super::task::Artifact],
+    ) -> Result<SubGoal, ManagerError> {
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: reflecting on verification failure for goal={}",
+            failed_goal.goal_id
+        );
+
+        let prompt = self.build_reflection_prompt(
+            failed_goal,
+            verification_failure,
+            execution_result,
+            working_dir,
+            tools_defs,
+            artifacts,
+        );
+
+        let messages = vec![Message::user_only(&prompt)];
+        let request =
+            no_tools_chat_request(cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+
+        let transport_opts = LlmRetryingTransportOpts::headless_no_stream();
+        let params = CompleteChatRetryingParams::new(
+            llm_backend,
+            client,
+            api_key,
+            cfg,
+            transport_opts,
+            None,
+            None,
+        );
+        let response = complete_chat_retrying(&params, &request)
+            .await
+            .map_err(|e| ManagerError::LlmError(e.to_string()))?;
+
+        let content = message_content_as_str(&response.0.content).unwrap_or_default();
+        log::debug!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: reflection response: {}",
+            truncate_for_log(content, 500)
+        );
+
+        // 解析更新的子目标
+        self.parse_reflection_output(failed_goal, content)
+    }
+
+    /// 构建反思 prompt
+    fn build_reflection_prompt(
+        &self,
+        failed_goal: &SubGoal,
+        verification_failure: &str,
+        execution_result: &TaskResult,
+        working_dir: &std::path::Path,
+        tools_defs: &[crate::types::Tool],
+        artifacts: &[super::task::Artifact],
+    ) -> String {
+        let workspace_context = self.get_workspace_context(working_dir);
+        let tools_description = self.format_tools_with_schemas(tools_defs);
+        let artifacts_summary = self.format_artifacts_summary(artifacts);
+
+        let execution_output = execution_result.output.as_deref().unwrap_or("(无输出)");
+        let execution_error = execution_result.error.as_deref().unwrap_or("(无错误)");
+
+        format!(
+            r#"## 任务
+你是一个任务修复专家。子目标执行后验证失败，需要分析原因并生成修复策略。
+
+## 失败的子目标
+- goal_id: {}
+- description: {}
+- goal_type: {:?}
+- required_tools: {:?}
+
+## 验证失败原因
+{}
+
+## 执行输出
+```
+{}
+```
+
+## 执行错误
+```
+{}
+```
+
+## 工作目录上下文
+{}
+
+## 已完成的产物
+{}
+
+## 工具定义
+{}
+
+## 输出格式
+**必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
+```json
+{{
+    "analysis": "失败原因分析（简要说明为什么验证失败）",
+    "fix_strategy": "修复策略（简要说明如何修复）",
+    "updated_goal": {{
+        "goal_id": "{}",
+        "description": "更新后的子目标描述（更具体、包含修复步骤）",
+        "priority": {},
+        "depends_on": {:?},
+        "required_tools": {:?},
+        "goal_type": "{:?}",
+        "acceptance": {{
+            "expect_file_exists": ["文件路径1", "文件路径2"],
+            "expect_command_success": "可选的验证命令",
+            "expect_output_contains": ["期望的输出片段"],
+            "expect_exit_code": 0
+        }},
+        "max_retries": 3
+    }}
+}}
+```
+
+重要：
+1. `updated_goal.goal_id` 必须与原子目标相同
+2. `updated_goal.description` 应该更具体，明确包含修复步骤
+3. 添加或完善 `acceptance` 条件，确保下次能正确验证
+4. `max_retries` 控制验证失败后的重试次数
+"#,
+            failed_goal.goal_id,
+            failed_goal.description,
+            failed_goal.goal_type,
+            failed_goal.required_tools,
+            verification_failure,
+            execution_output,
+            execution_error,
+            workspace_context,
+            artifacts_summary,
+            tools_description,
+            failed_goal.goal_id,
+            failed_goal.priority,
+            failed_goal.depends_on,
+            failed_goal.required_tools,
+            failed_goal.goal_type,
+        )
+    }
+
+    /// 解析反思输出
+    fn parse_reflection_output(
+        &self,
+        original_goal: &SubGoal,
+        content: &str,
+    ) -> Result<SubGoal, ManagerError> {
+        let json_str = extract_json(content).ok_or_else(|| {
+            log::warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] Manager: failed to extract JSON from reflection response"
+            );
+            ManagerError::ParseError("Failed to extract JSON from reflection response".to_string())
+        })?;
+
+        #[derive(serde::Deserialize)]
+        struct ReflectionOutput {
+            analysis: String,
+            fix_strategy: String,
+            updated_goal: SubGoalJson,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct SubGoalJson {
+            goal_id: String,
+            description: String,
+            priority: Option<u32>,
+            depends_on: Option<Vec<String>>,
+            required_tools: Option<Vec<String>>,
+            #[serde(default)]
+            goal_type: Option<super::task::GoalType>,
+            #[serde(default)]
+            acceptance: Option<super::task::GoalAcceptance>,
+            #[serde(default)]
+            max_retries: Option<usize>,
+        }
+
+        let parsed: ReflectionOutput = serde_json::from_str(json_str).map_err(|e| {
+            log::warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] Manager: JSON parse error in reflection: {}",
+                e
+            );
+            ManagerError::ParseError(e.to_string())
+        })?;
+
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: reflection analysis: {}",
+            parsed.analysis
+        );
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: fix strategy: {}",
+            parsed.fix_strategy
+        );
+
+        // 确保 goal_id 一致
+        if parsed.updated_goal.goal_id != original_goal.goal_id {
+            log::warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] Manager: reflection changed goal_id from {} to {}, using original",
+                original_goal.goal_id,
+                parsed.updated_goal.goal_id
+            );
+        }
+
+        let updated_goal = SubGoal {
+            goal_id: original_goal.goal_id.clone(),
+            description: parsed.updated_goal.description,
+            priority: parsed
+                .updated_goal
+                .priority
+                .unwrap_or(original_goal.priority),
+            depends_on: parsed
+                .updated_goal
+                .depends_on
+                .unwrap_or_else(|| original_goal.depends_on.clone()),
+            required_tools: parsed
+                .updated_goal
+                .required_tools
+                .unwrap_or_else(|| original_goal.required_tools.clone()),
+            goal_type: parsed
+                .updated_goal
+                .goal_type
+                .unwrap_or(original_goal.goal_type.clone()),
+            build_requirements: original_goal.build_requirements.clone(),
+            acceptance: parsed.updated_goal.acceptance,
+            max_retries: parsed
+                .updated_goal
+                .max_retries
+                .or(original_goal.max_retries),
+        };
+
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: reflection produced updated goal with acceptance={}",
+            updated_goal.acceptance.is_some()
+        );
+
+        Ok(updated_goal)
     }
 }
 

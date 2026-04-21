@@ -38,7 +38,12 @@
 以下由「与 AutoGen / CrewAI / LangGraph / Open Interpreter 等对照」整理为**方向性**待办，可与上文章节交叉推进；实现后按惯例删除条目。
 
 - [ ] **多 Agent 协作**：多角色实例、消息路由与监督式编排（对标 AutoGen / CrewAI / MetaGPT）；与当前单 `agent_turn`、会话与配额模型如何共存须在设计与 `docs/DEVELOPMENT.md` 中预案。
-- [ ] **结构化规划—执行—验证闭环**：显式子任务拆解、执行结果校验与反思/重试策略，降低对单次模型输出的隐式依赖（对标 AutoGPT / SWE-agent 类循环）；与已有 `plan_artifact`、分阶段规划能力衔接并补足「验证」与自动重规划边界。
+- [x] **结构化规划—执行—验证闭环**：已实现显式子任务拆解、执行结果校验与反思/重试策略，降低对单次模型输出的隐式依赖（对标 AutoGPT / SWE-agent 类循环）。具体实现：
+  - **扩展 `SubGoal`**：添加 `acceptance` 验收条件和 `max_retries` 最大重试次数字段
+  - **实现 `GoalVerifier`**：验证器组件支持文件存在性、输出内容匹配、退出码验证、验证命令执行
+  - **集成到 `HierarchicalExecutor`**：在每个子目标执行后添加验证阶段，形成「执行 → 验证 → 反思/重试」闭环
+  - **实现反思与重规划**：`ManagerAgent.reflect_and_replan()` 在验证失败时分析原因并生成修复策略
+  - **可观测性增强**：添加 `verification_passed/failed/escalated`、`reflection_started/finished` SSE 事件
 - [ ] **交互式代码执行与受控 REPL**：在 `run_command` 白名单与沙盒策略之上，评估解释执行、会话级依赖安装与输出校验（对标 Open Interpreter）；安全面与 `tool_approval`、Docker 沙盒文档对齐。
 - [ ] **工作流编排产品化**：在已有 `workflow_execute`（DAG）等能力上，补齐更接近 LangGraph 的**默认入口**——状态机式配置、条件/循环的可读表达、运行态可视化与排障故事；主聊天回合仍为线性时，在文档中写清「对话流 vs 工作流」边界。**架构设计见 `docs/WORKFLOW_ORCHESTRATION_ARCHITECTURE.md`（DAG/FSM 边界）与 `docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`（规划—执行—验证闭环与 `plan_rewrite` 正交）；实现前以该文为共识并随代码迭代修订。**
 - [ ] **工具与连接器生态**：在 MCP 与 `dev_tag` 分栈工具之外，系统化高频集成（DB、云 API、办公等）或维护「推荐连接器」清单与接入模板，降低重复造轮子（与 `tools/` 章 MCP 扩展条同向）。
@@ -70,7 +75,47 @@
   - **依赖管理类任务**：检测依赖文件 → 分析冲突 → 更新/安装 → 验证
 - [ ] **分层 Agent：动态子目标分解**：当前执行指导是静态规则；后续可评估在 Operator 执行过程中，当检测到目标过于复杂或执行失败时，动态调用 LLM 进行子目标分解（类似 Manager 的 `decompose_with_llm`），实现真正的递归分解。
 - [ ] **分层 Agent：执行步骤持久化与恢复**：复杂任务（如编译大型项目）可能耗时较长，支持将 Operator 的 ReAct 状态（迭代次数、消息历史、观察记录）持久化，允许中断后恢复执行。
+- [x] **分层 Agent：结构化规划-执行-验证闭环（质量保障）**：已实现完整的 P-E-V 闭环：
+  - **规划阶段**：Manager 分解任务时可为子目标定义 `acceptance` 验收条件
+  - **执行阶段**：Operator 执行子目标
+  - **验证阶段**：`GoalVerifier` 根据 `acceptance` 验证执行结果（文件存在、输出匹配、退出码、验证命令）
+  - **反思/重规划阶段**：验证失败时，`ManagerAgent.reflect_and_replan()` 分析失败原因并生成修复策略
+  - **重试阶段**：使用修复后的子目标重新执行，最多 `max_retries` 次
+  - **可观测性**：通过 SSE 事件实时展示验证和反思状态
 - [ ] **分层 Agent：工具审批流程集成**：当前 `execution.rs` 创建 `ToolExecutor` 时未传入 `web_tool_runtime`（审批上下文），导致分层执行路径中不在白名单的命令（如 `./configure`）直接失败，而不会触发 Web 界面的用户审批对话框。需要修改 `HierarchicalExecutor` 以接收并传递审批上下文（`out_tx` / `approval_rx`），使分层 Agent 也能支持敏感操作的交互式审批。
+
+### 分层 Agent 架构改进（`hierarchy/` 模块）
+
+**职责摘要**：Manager + Operator 分层架构；Router 路由决策；任务分解与执行；ArtifactStore 产物管理；BuildState 构建状态；工具执行与审批。
+
+- [x] **路由层智能化（高优先级）**：已实现 `SmartRouter`，支持四种路由策略：
+  - **RuleBased**：基于关键词匹配的快速路由（默认，无 LLM 开销）
+  - **LlmBased**：使用 LLM 分析任务语义进行智能路由决策
+  - **HistoryBased**：基于历史执行数据推荐执行模式
+  - **UserOverride**：用户显式指定执行模式
+  - 配置项 `enable_llm_routing` 控制是否启用 LLM 路由（默认关闭）
+- [ ] **真正的并行执行（高优先级）**：当前 `execution.rs` 的并行执行是"伪并行"（分块顺序执行），需实现基于 `tokio::spawn` 的真正并发执行，并添加并发控制和结果合并策略。
+- [x] **失败恢复与自我修复（高优先级）**：已实现错误分类器，支持以下错误类型：
+  - `OpenMPError`：OpenMP 并行区域错误
+  - `CompilerVersionError`：编译器版本不兼容
+  - `MissingDependency`：缺少依赖库
+  - `ConfigError`：配置错误（如 arch 参数）
+  - `WorkingDirectoryError`：工作目录错误
+  - `SyntaxError`：语法错误
+  - `LinkError`：链接错误
+  - 每种错误类型都有对应的修复建议和重试策略
+- [ ] **Manager 任务分解质量优化（中优先级）**：优化分解 Prompt，增加 Few-shot 示例引导；引入子目标粒度评估机制；支持基于代码结构的分解（按模块/函数）；添加子目标依赖自动检测。
+- [ ] **产物管理增强（中优先级）**：`artifact_store.rs` 添加产物版本历史、内容哈希去重、元数据搜索、依赖图谱可视化。
+- [ ] **构建状态扩展（中优先级）**：`build_state.rs` 扩展支持更多构建系统（Maven、Gradle、Webpack 等）；实现更精细的依赖变更检测；添加构建缓存共享机制。
+- [x] **Operator ReAct 循环优化（中优先级）**：已完成以下优化：
+  - 添加连续失败检测机制（3次连续失败自动终止）
+  - 增强工作目录管理（系统提示中明确显示当前工作目录）
+  - 添加详细的编译任务执行指导（步骤0-5的完整流程）
+  - 支持错误类型跟踪和重复错误检测
+  - 待完成：执行检查点（Checkpoint）机制、执行轨迹回放
+- [ ] **可观测性增强（中优先级）**：`events.rs` 添加更细粒度事件（工具调用耗时、LLM 调用耗时等）；实现执行 DAG 可视化输出；添加性能分析（各阶段耗时统计）；支持执行计划预览（dry-run 模式）。
+- [ ] **工具执行器增强（中优先级）**：`tool_executor.rs` 增强工具执行结果分析；实现工具调用链追踪；添加工具执行沙箱；支持工具执行超时和取消。
+- [ ] **任务模型扩展（低优先级）**：`task.rs` 添加资源需求声明（CPU、内存、IO）；支持优先级动态调整；实现子目标模板系统；添加任务预估耗时。
 ---
 
 ## `llm/` 与 `http_client.rs`（模型请求、重试、流式解析）

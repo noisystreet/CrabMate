@@ -84,8 +84,8 @@ impl ToolExecutor {
         // 使用 tool_registry::dispatch_tool 以支持审批流程
         let output = self.dispatch_tool_internal(name, args).await;
 
-        let success =
-            !output.contains("错误") && !output.contains("error:") && !output.contains("Error:");
+        // 判断工具执行是否成功
+        let success = Self::check_execution_success(name, &output);
 
         log::info!(target: "crabmate", "[HIERARCHICAL] Tool {} completed, success={}, output_len={}", name, success, output.len());
 
@@ -163,6 +163,63 @@ impl ToolExecutor {
     #[allow(dead_code)]
     pub fn has_tool(&self, name: &str) -> bool {
         !name.is_empty()
+    }
+
+    /// 检查工具执行是否成功
+    ///
+    /// 针对不同工具类型使用不同的成功判断逻辑：
+    /// - 编译/构建命令：允许警告（warning），只检查致命错误
+    /// - 其他命令：检查是否包含错误关键词
+    fn check_execution_success(tool_name: &str, output: &str) -> bool {
+        // 首先检查是否有明确的失败标记
+        let has_explicit_error = output.contains("错误：")
+            || output.contains("error:")
+            || output.contains("Error:")
+            || output.contains("致命错误")
+            || output.contains("fatal error");
+
+        // 检查是否是编译/构建相关命令
+        let is_build_command = matches!(tool_name, "run_command" | "cmake" | "make")
+            || output.contains("make:")
+            || output.contains("g++")
+            || output.contains("gcc")
+            || output.contains("cmake");
+
+        if is_build_command {
+            // 对于编译命令，需要更智能的判断：
+            // 1. 如果有致命错误，则失败
+            if has_explicit_error {
+                return false;
+            }
+
+            // 2. 检查是否有编译器错误（不是警告）
+            // 编译器错误通常包含 "error:" 且不在注释中
+            let lines: Vec<&str> = output.lines().collect();
+            for line in &lines {
+                let line_lower = line.to_lowercase();
+                // 真正的编译错误（不是警告）
+                if line_lower.contains("error:") &&
+                    !line_lower.contains("warning:") &&
+                    !line_lower.contains("note:") &&
+                    // 排除一些常见的非错误情况
+                    !line_lower.contains("0 errors") &&
+                    !line_lower.contains("no errors")
+                {
+                    return false;
+                }
+            }
+
+            // 3. 检查 make 的错误
+            if output.contains("make: ***") && output.contains("停止") {
+                return false;
+            }
+
+            // 4. 其他情况（包括有警告但无错误）视为成功
+            return true;
+        }
+
+        // 非编译命令：使用严格的错误检查
+        !has_explicit_error
     }
 }
 

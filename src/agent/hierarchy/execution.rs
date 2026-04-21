@@ -14,6 +14,7 @@ use super::artifact_resolver::ArtifactResolver;
 use super::artifact_store::ArtifactStore;
 use super::build_state::BuildState;
 use super::events;
+use super::goal_verifier::{GoalVerifier, VerificationResult};
 use super::manager::{ManagerOutput, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
 use super::task::{
@@ -428,7 +429,9 @@ impl<'a> HierarchicalExecutor<'a> {
         Ok(results)
     }
 
-    /// 执行单个子目标（带重试循环）
+    /// 执行单个子目标（带验证和重试循环）
+    ///
+    /// 执行流程：执行 → 验证 → （失败时）反思/重试
     async fn execute_single(
         &self,
         goal: &SubGoal,
@@ -436,18 +439,151 @@ impl<'a> HierarchicalExecutor<'a> {
         build_state: &BuildState,
     ) -> Result<TaskResult, ExecutionError> {
         let mut current_goal = goal.clone();
-        const MAX_RETRIES: usize = 3;
+        let max_retries = goal.max_retries.unwrap_or(3);
 
-        for attempt in 0..MAX_RETRIES {
+        // 创建验证器
+        let verifier = self
+            .working_dir
+            .as_ref()
+            .map(|dir| GoalVerifier::new(dir.clone()));
+
+        for attempt in 0..max_retries {
+            // 阶段 1: 执行
             let result = self
                 .execute_single_impl(&current_goal, artifact_store, build_state)
                 .await?;
 
-            // 如果成功或不是 Manager 处理范围内的失败，直接返回
-            if !matches!(result.status, TaskStatus::Failed { .. }) {
-                return Ok(result);
+            // 阶段 2: 验证（如果有定义验收条件）
+            if let Some(ref v) = verifier {
+                let verify_result = v.verify(&current_goal, &result);
+
+                // 发射 SSE 事件：验证结果
+                if let Some(ref sse_out) = self.sse_out {
+                    let trace = match &verify_result {
+                        VerificationResult::Pass => {
+                            events::build_verification_passed_trace(&current_goal.goal_id)
+                        }
+                        VerificationResult::Fail { reason } => {
+                            events::build_verification_failed_trace(&current_goal.goal_id, reason)
+                        }
+                        VerificationResult::EscalateHuman { reason } => {
+                            events::build_verification_escalated_trace(
+                                &current_goal.goal_id,
+                                reason,
+                            )
+                        }
+                    };
+                    let _ = sse::send_string_logged(
+                        sse_out,
+                        sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                        "hierarchical::verification",
+                    )
+                    .await;
+                }
+
+                match verify_result {
+                    VerificationResult::Pass => {
+                        // 验证通过，返回结果
+                        info!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Executor: Goal {} verification passed",
+                            current_goal.goal_id
+                        );
+                        return Ok(result);
+                    }
+                    VerificationResult::Fail { reason } => {
+                        // 验证失败，需要反思和重试
+                        warn!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Executor: Goal {} verification failed: {}. Attempt {}/{}",
+                            current_goal.goal_id,
+                            reason,
+                            attempt + 1,
+                            max_retries
+                        );
+
+                        // 如果还有重试次数，尝试反思和修复
+                        if attempt < max_retries - 1
+                            && let Some(ref manager) = self.manager
+                        {
+                            let artifacts: Vec<_> =
+                                artifact_store.all().into_iter().cloned().collect();
+                            let reflection_result = self
+                                .reflect_and_replan(
+                                    manager,
+                                    &current_goal,
+                                    &reason,
+                                    &result,
+                                    &artifacts,
+                                )
+                                .await;
+
+                            match reflection_result {
+                                Some(updated_goal) => {
+                                    info!(
+                                        target: "crabmate",
+                                        "[HIERARCHICAL] Executor: Replanning goal {}",
+                                        current_goal.goal_id
+                                    );
+                                    current_goal = updated_goal;
+                                    continue;
+                                }
+                                None => {
+                                    // 反思失败，返回验证失败的结果
+                                    return Ok(TaskResult {
+                                        task_id: current_goal.goal_id.clone(),
+                                        status: TaskStatus::Failed {
+                                            reason: format!("Verification failed: {}", reason),
+                                        },
+                                        output: result.output,
+                                        error: Some(format!("Verification failed: {}", reason)),
+                                        artifacts: result.artifacts,
+                                        duration_ms: result.duration_ms,
+                                    });
+                                }
+                            }
+                        }
+
+                        // 没有 Manager 或达到最大重试次数，返回验证失败
+                        return Ok(TaskResult {
+                            task_id: current_goal.goal_id.clone(),
+                            status: TaskStatus::Failed {
+                                reason: format!("Verification failed: {}", reason),
+                            },
+                            output: result.output,
+                            error: Some(format!("Verification failed: {}", reason)),
+                            artifacts: result.artifacts,
+                            duration_ms: result.duration_ms,
+                        });
+                    }
+                    VerificationResult::EscalateHuman { reason } => {
+                        // 需要人工介入
+                        warn!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Executor: Goal {} requires human escalation: {}",
+                            current_goal.goal_id,
+                            reason
+                        );
+                        return Ok(TaskResult {
+                            task_id: current_goal.goal_id.clone(),
+                            status: TaskStatus::Skipped {
+                                reason: format!("Requires human escalation: {}", reason),
+                            },
+                            output: result.output,
+                            error: Some(format!("Requires human escalation: {}", reason)),
+                            artifacts: result.artifacts,
+                            duration_ms: result.duration_ms,
+                        });
+                    }
+                }
+            } else {
+                // 没有定义验收条件，直接返回执行结果
+                if !matches!(result.status, TaskStatus::Failed { .. }) {
+                    return Ok(result);
+                }
             }
 
+            // 执行失败，尝试 Manager 决策（原有逻辑）
             // Analyze 类型的子目标：失败后直接跳过，不重试
             if matches!(current_goal.goal_type, super::task::GoalType::Analyze) {
                 info!(target: "crabmate", "[HIERARCHICAL] Executor: Analyze type goal failed, skipping directly: {}", current_goal.goal_id);
@@ -483,8 +619,8 @@ impl<'a> HierarchicalExecutor<'a> {
 
             match decision {
                 super::manager::ManagerDecision::Retry { updated_goal } => {
-                    info!(target: "crabmate", "[HIERARCHICAL] Executor: Manager decided to retry (attempt {}/{})", attempt + 1, MAX_RETRIES);
-                    current_goal = updated_goal;
+                    info!(target: "crabmate", "[HIERARCHICAL] Executor: Manager decided to retry (attempt {}/{})" , attempt + 1, max_retries);
+                    current_goal = *updated_goal;
                     continue;
                 }
                 super::manager::ManagerDecision::Skip { reason } => {
@@ -506,14 +642,14 @@ impl<'a> HierarchicalExecutor<'a> {
         }
 
         // 达到最大重试次数，返回最后一次失败结果
-        info!(target: "crabmate", "[HIERARCHICAL] Executor: max retries ({}) reached for goal_id={}", MAX_RETRIES, current_goal.goal_id);
+        info!(target: "crabmate", "[HIERARCHICAL] Executor: max retries ({}) reached for goal_id={}", max_retries, current_goal.goal_id);
         Ok(TaskResult {
             task_id: current_goal.goal_id.clone(),
             status: TaskStatus::Failed {
-                reason: format!("Max retries ({}) reached", MAX_RETRIES),
+                reason: format!("Max retries ({}) reached", max_retries),
             },
             output: None,
-            error: Some(format!("Max retries ({}) reached", MAX_RETRIES)),
+            error: Some(format!("Max retries ({}) reached", max_retries)),
             artifacts: Vec::new(),
             duration_ms: 0,
         })
@@ -761,6 +897,104 @@ impl<'a> HierarchicalExecutor<'a> {
             .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
 
         Ok(manager_output.sub_goals)
+    }
+
+    /// 反思验证失败并尝试重新规划
+    ///
+    /// 当验证失败时，调用 Manager 进行反思，生成修复策略
+    async fn reflect_and_replan(
+        &self,
+        manager: &super::manager::ManagerAgent,
+        failed_goal: &SubGoal,
+        verification_failure: &str,
+        execution_result: &TaskResult,
+        artifacts: &[super::task::Artifact],
+    ) -> Option<SubGoal> {
+        info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Reflecting on verification failure for goal {}: {}",
+            failed_goal.goal_id,
+            verification_failure
+        );
+
+        // 发射 SSE 事件：开始反思
+        if let Some(ref sse_out) = self.sse_out {
+            let trace =
+                events::build_reflection_started_trace(&failed_goal.goal_id, verification_failure);
+            let _ = sse::send_string_logged(
+                sse_out,
+                sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                "hierarchical::reflection_started",
+            )
+            .await;
+        }
+
+        // 提取必要数据
+        let cfg = self.cfg.clone()?;
+        let llm_backend = self.llm_backend?;
+        let client = self.client.as_ref()?.clone();
+        let api_key = self.api_key.as_ref()?.clone();
+        let working_dir = self.working_dir.as_ref()?.clone();
+
+        // 调用 Manager 进行反思和重新规划
+        let reflection_result = manager
+            .reflect_and_replan(
+                failed_goal,
+                verification_failure,
+                execution_result,
+                &cfg,
+                llm_backend,
+                &client,
+                &api_key,
+                &working_dir,
+                &self.tools_defs,
+                artifacts,
+            )
+            .await;
+
+        match reflection_result {
+            Ok(updated_goal) => {
+                info!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] Reflection successful, updated goal {}",
+                    updated_goal.goal_id
+                );
+
+                // 发射 SSE 事件：反思完成
+                if let Some(ref sse_out) = self.sse_out {
+                    let trace = events::build_reflection_finished_trace(&failed_goal.goal_id, true);
+                    let _ = sse::send_string_logged(
+                        sse_out,
+                        sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                        "hierarchical::reflection_finished",
+                    )
+                    .await;
+                }
+
+                Some(updated_goal)
+            }
+            Err(e) => {
+                warn!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] Reflection failed: {}",
+                    e
+                );
+
+                // 发射 SSE 事件：反思失败
+                if let Some(ref sse_out) = self.sse_out {
+                    let trace =
+                        events::build_reflection_finished_trace(&failed_goal.goal_id, false);
+                    let _ = sse::send_string_logged(
+                        sse_out,
+                        sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace }),
+                        "hierarchical::reflection_failed",
+                    )
+                    .await;
+                }
+
+                None
+            }
+        }
     }
 
     /// 格式化依赖产物上下文

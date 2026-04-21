@@ -16,7 +16,7 @@ use crate::types::CommandApprovalDecision;
 use super::events;
 use super::execution::{ExecutionError, HierarchicalExecutionResult};
 use super::manager::ManagerAgent;
-use super::router::Router;
+use super::router::SmartRouter;
 use super::{AgentMode, ExecutionStrategy, HierarchicalExecutor, ManagerConfig};
 
 /// 分层 Agent 运行参数
@@ -70,15 +70,38 @@ pub async fn run_hierarchical(
         tool_approval_rx,
     } = params;
 
-    // 1. 路由决策
-    let router_output = Router::route(task);
+    // 1. 智能路由决策
+    // 默认使用规则路由，可以通过配置启用 LLM 智能路由
+    let use_llm_routing = cfg.enable_llm_routing.unwrap_or(false);
+    let router = SmartRouter::new();
+    let router_output = router
+        .route_smart(
+            task,
+            cfg,
+            llm_backend,
+            client.as_ref(),
+            &api_key,
+            use_llm_routing,
+        )
+        .await;
+
     log::info!(
         target: "crabmate",
-        "Hierarchy runner: task={}, mode={:?}, max_sub_goals={}",
+        "Hierarchy runner: task={}, mode={:?}, strategy={:?}, max_sub_goals={}",
         truncate_string(task, 50),
         router_output.mode,
+        router_output.routing_strategy,
         router_output.max_sub_goals
     );
+
+    // 记录路由决策理由到日志
+    if let Some(ref reasoning) = router_output.reasoning {
+        log::info!(
+            target: "crabmate",
+            "[ROUTER] Decision reasoning: {}",
+            reasoning
+        );
+    }
 
     // 如果不是 Hierarchical 或 MultiAgent 模式，降级到简单执行
     if !matches!(
@@ -323,17 +346,5 @@ fn truncate_string(s: &str, max_len: usize) -> String {
             .map(|(i, c)| i + c.len_utf8())
             .unwrap_or(0);
         format!("{}...", &s[..truncated])
-    }
-}
-
-impl AgentMode {
-    /// 获取模式名称
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            AgentMode::Single => "single",
-            AgentMode::ReAct => "react",
-            AgentMode::Hierarchical => "hierarchical",
-            AgentMode::MultiAgent => "multi_agent",
-        }
     }
 }

@@ -14,6 +14,11 @@ const OP_LEVEL_STARTED: &str = "level_started";
 const OP_LEVEL_FINISHED: &str = "level_finished";
 const OP_SUBGOAL_STARTED: &str = "subgoal_started";
 const OP_SUBGOAL_FINISHED: &str = "subgoal_finished";
+const OP_VERIFICATION_PASSED: &str = "verification_passed";
+const OP_VERIFICATION_FAILED: &str = "verification_failed";
+const OP_VERIFICATION_ESCALATED: &str = "verification_escalated";
+const OP_REFLECTION_STARTED: &str = "reflection_started";
+const OP_REFLECTION_FINISHED: &str = "reflection_finished";
 
 /// 构建 Manager 开始分解任务的 ThinkingTrace
 pub fn build_manager_started_trace(task: &str) -> ThinkingTraceBody {
@@ -136,6 +141,70 @@ pub fn build_hierarchical_finished_trace(
         title: Some(format!(
             "分层执行完成: {} 成功, {} 失败 ({}ms)",
             total_completed, total_failed, total_duration_ms
+        )),
+        chunk: None,
+        context_snapshot: None,
+    }
+}
+
+/// 构建验证通过的 ThinkingTrace
+pub fn build_verification_passed_trace(goal_id: &str) -> ThinkingTraceBody {
+    ThinkingTraceBody {
+        op: OP_VERIFICATION_PASSED.to_string(),
+        node_id: Some(goal_id.to_string()),
+        parent_id: None,
+        title: Some(format!("验证通过: {}", goal_id)),
+        chunk: None,
+        context_snapshot: None,
+    }
+}
+
+/// 构建验证失败的 ThinkingTrace
+pub fn build_verification_failed_trace(goal_id: &str, reason: &str) -> ThinkingTraceBody {
+    ThinkingTraceBody {
+        op: OP_VERIFICATION_FAILED.to_string(),
+        node_id: Some(goal_id.to_string()),
+        parent_id: None,
+        title: Some(format!("验证失败: {}", goal_id)),
+        chunk: Some(reason.to_string()),
+        context_snapshot: None,
+    }
+}
+
+/// 构建验证需要人工介入的 ThinkingTrace
+pub fn build_verification_escalated_trace(goal_id: &str, reason: &str) -> ThinkingTraceBody {
+    ThinkingTraceBody {
+        op: OP_VERIFICATION_ESCALATED.to_string(),
+        node_id: Some(goal_id.to_string()),
+        parent_id: None,
+        title: Some(format!("验证需人工介入: {}", goal_id)),
+        chunk: Some(reason.to_string()),
+        context_snapshot: None,
+    }
+}
+
+/// 构建反思开始的 ThinkingTrace
+pub fn build_reflection_started_trace(goal_id: &str, failure_reason: &str) -> ThinkingTraceBody {
+    ThinkingTraceBody {
+        op: OP_REFLECTION_STARTED.to_string(),
+        node_id: Some(goal_id.to_string()),
+        parent_id: None,
+        title: Some(format!("开始反思: {}", goal_id)),
+        chunk: Some(failure_reason.to_string()),
+        context_snapshot: None,
+    }
+}
+
+/// 构建反思完成的 ThinkingTrace
+pub fn build_reflection_finished_trace(goal_id: &str, success: bool) -> ThinkingTraceBody {
+    ThinkingTraceBody {
+        op: OP_REFLECTION_FINISHED.to_string(),
+        node_id: Some(goal_id.to_string()),
+        parent_id: None,
+        title: Some(format!(
+            "反思完成: {} - {}",
+            goal_id,
+            if success { "成功" } else { "失败" }
         )),
         chunk: None,
         context_snapshot: None,

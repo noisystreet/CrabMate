@@ -622,6 +622,9 @@ pub struct AgentConfig {
     pub max_turn_tokens: usize,
     /// 单轮对话允许的全局重规划（Full Plan Rewrite）上限（默认 2）。
     pub full_plan_rewrite_max_attempts: usize,
+    /// 为 true 时：分层 Agent 路由层启用 LLM 智能路由（对复杂任务使用 LLM 分析语义决定执行模式）。
+    /// 默认 false，使用基于规则的快速路由（无 LLM 调用开销）。
+    pub enable_llm_routing: Option<bool>,
 }
 
 impl AgentConfig {

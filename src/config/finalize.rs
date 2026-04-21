@@ -864,5 +864,6 @@ pub(super) fn finalize(
         max_turn_duration_seconds: 600,
         max_turn_tokens: 100_000,
         full_plan_rewrite_max_attempts: 2,
+        enable_llm_routing: Some(true), // 默认开启 LLM 智能路由
     })
 }

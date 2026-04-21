@@ -12,6 +12,7 @@ pub mod artifact_store;
 pub mod build_state;
 pub mod events;
 pub mod execution;
+pub mod goal_verifier;
 pub mod manager;
 pub mod operator;
 pub mod router;
@@ -23,12 +24,15 @@ pub use artifact_resolver::{ArtifactResolver, prepare_build_env};
 pub use artifact_store::ArtifactStore;
 pub use build_state::{BuildState, CompileCommand, Diagnostic, DiagnosticSeverity};
 pub use execution::{HierarchicalExecutionResult, HierarchicalExecutor};
+pub use goal_verifier::{GoalVerifier, VerificationResult};
 pub use manager::{FailureDecision, ManagerAgent, ManagerConfig, ManagerError};
 pub use operator::{OperatorAgent, OperatorConfig, OperatorError};
-pub use router::{AgentMode, Router, RouterOutput, TaskComplexity};
+pub use router::{
+    AgentMode, Router, RouterError, RouterOutput, RoutingStrategy, SmartRouter, TaskComplexity,
+};
 pub use runner::{HierarchyRunnerParams, HierarchyRunnerResult};
 pub use task::{
     Artifact, ArtifactKind, BuildArtifactKind, BuildRequirements, Capability, ExecutionStrategy,
-    SubGoal, TaskResult, TaskStatus,
+    GoalAcceptance, SubGoal, TaskResult, TaskStatus,
 };
 pub use tool_executor::{ExtractedArtifact, ExtractedArtifactKind, ToolExecutionResult};

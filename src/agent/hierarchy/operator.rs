@@ -37,6 +37,8 @@ pub enum CompileErrorType {
     SyntaxError,
     /// 链接错误
     LinkError,
+    /// 工作目录错误
+    WorkingDirectoryError,
     /// 其他错误
     Other(String),
 }
@@ -138,6 +140,14 @@ struct ReactState {
     task_completed: bool,
     /// 完成原因
     completion_reason: Option<String>,
+    /// 当前工作目录（用于跟踪目录变化）
+    current_working_dir: Option<std::path::PathBuf>,
+    /// 连续失败计数
+    consecutive_failures: usize,
+    /// 上次失败的工具名称（用于检测重复失败）
+    last_failed_tool: Option<String>,
+    /// 上次失败的错误类型
+    last_error_type: Option<CompileErrorType>,
 }
 
 /// 工具执行结果分析
@@ -217,10 +227,14 @@ impl OperatorAgent {
             observations: Vec::new(),
             task_completed: false,
             completion_reason: None,
+            current_working_dir: None,
+            consecutive_failures: 0,
+            last_failed_tool: None,
+            last_error_type: None,
         };
 
-        // 构建初始系统提示
-        let system_prompt = self.build_system_prompt(goal);
+        // 构建初始系统提示（传入当前工作目录）
+        let system_prompt = self.build_system_prompt(goal, state.current_working_dir.as_deref());
         state.messages.push(Message {
             role: "system".to_string(),
             content: Some(MessageContent::Text(system_prompt)),
@@ -356,6 +370,18 @@ impl OperatorAgent {
                         result.output.len()
                     );
 
+                    // 检测工作目录变化（从工具参数或输出中提取）
+                    if let Some(new_dir) =
+                        self.detect_working_dir_change(&injected_tool_call, &result)
+                    {
+                        state.current_working_dir = Some(new_dir);
+                        log::info!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Operator: working directory changed to {:?}",
+                            state.current_working_dir
+                        );
+                    }
+
                     // 发送 ToolResult SSE 事件
                     if let Some(ref sse_out) = self.config.sse_out {
                         // 使用更有意义的摘要：包含执行结果的描述
@@ -413,6 +439,7 @@ impl OperatorAgent {
 
                     // 如果工具执行失败且是编译相关命令，分析错误并提供恢复提示
                     let mut error_recovery_hint = None;
+                    let mut current_error_type: Option<CompileErrorType> = None;
                     if !result.success
                         && self.config.enable_compile_error_recovery
                         && is_compile_command(&result.tool_name, &tool_call.function.arguments)
@@ -426,6 +453,51 @@ impl OperatorAgent {
                         );
                         error_recovery_hint =
                             Some(self.build_compile_error_recovery_hint(&error_info));
+                        current_error_type = Some(error_info.error_type.clone());
+                    }
+
+                    // 更新失败计数和状态
+                    if !result.success {
+                        state.consecutive_failures += 1;
+                        state.last_failed_tool = Some(result.tool_name.clone());
+                        state.last_error_type = current_error_type.clone();
+
+                        // 检查是否连续多次失败同一类型的错误
+                        if state.consecutive_failures >= 3 {
+                            let failure_reason = if let Some(ref err_type) = current_error_type {
+                                format!(
+                                    "连续 {} 次执行失败，错误类型: {:?}。请检查工作目录和命令参数是否正确。",
+                                    state.consecutive_failures, err_type
+                                )
+                            } else {
+                                format!(
+                                    "连续 {} 次执行失败。请检查工作目录和命令参数是否正确。",
+                                    state.consecutive_failures
+                                )
+                            };
+
+                            log::warn!(
+                                target: "crabmate",
+                                "[HIERARCHICAL] Operator: too many consecutive failures ({}), terminating early",
+                                state.consecutive_failures
+                            );
+
+                            return Ok(TaskResult {
+                                task_id: goal.goal_id.clone(),
+                                status: TaskStatus::Failed {
+                                    reason: failure_reason.clone(),
+                                },
+                                output: Some(failure_reason.clone()),
+                                error: Some(failure_reason),
+                                artifacts: Vec::new(),
+                                duration_ms: start_time.elapsed().as_millis() as u64,
+                            });
+                        }
+                    } else {
+                        // 成功执行，重置失败计数
+                        state.consecutive_failures = 0;
+                        state.last_failed_tool = None;
+                        state.last_error_type = None;
                     }
 
                     // 添加工具结果到消息
@@ -726,8 +798,7 @@ impl OperatorAgent {
     }
 
     /// 构建系统提示
-    #[allow(dead_code)]
-    fn build_system_prompt(&self, goal: &SubGoal) -> String {
+    fn build_system_prompt(&self, goal: &SubGoal, current_dir: Option<&std::path::Path>) -> String {
         let tools_list = if self.config.allowed_tools.is_empty() {
             "所有可用工具".to_string()
         } else {
@@ -737,10 +808,15 @@ impl OperatorAgent {
         // 根据目标描述添加特定的执行指导
         let execution_guide = self.build_execution_guide(goal);
 
+        // 添加当前工作目录信息
+        let working_dir_info = current_dir
+            .map(|d| format!("\n## 当前工作目录\n{}\n", d.display()))
+            .unwrap_or_default();
+
         format!(
             r#"你是一个 ReAct (Reasoning + Acting) 代理。
 
-当前任务：{}
+当前任务：{}{}
 
 ## 可用工具
 {}
@@ -760,8 +836,15 @@ impl OperatorAgent {
 - 如果不确定某个路径是否存在，先用 `read_dir` 的父目录来确认
 - **创建文件必须使用 `create_file` 工具**，禁止使用 `echo`、`cat`、`tee` 等命令通过 `run_command` 创建文件
 - `create_file` 的 `content` 参数：在 JSON 中必须使用正确的转义序列，换行用 `\n`，制表用 `\t`，双引号用 `\"
+
+## 工作目录管理（关键！）
+- **当前工作目录**已在上方"当前工作目录"部分显示
+- 如果需要在子目录中执行命令，**必须使用 `-C` 选项**，例如：`make -C subdirectory`
+- **禁止**使用 `cd` 命令后再执行其他命令（cd 不会持久化工作目录）
+- 对于需要复制文件到子目录的情况，使用完整路径：`cp source/path dest/path`
+- 如果命令返回"找不到文件"或"No such file or directory"，首先检查工作目录是否正确
 "#,
-            goal.description, tools_list, execution_guide
+            goal.description, working_dir_info, tools_list, execution_guide
         )
     }
 
@@ -778,8 +861,14 @@ impl OperatorAgent {
         {
             return r#"这是一个编译/构建任务，请按以下步骤执行：
 
+**步骤 0: 确定工作目录（关键！）**
+- 如果源码在子目录中（如 `hpcg-HPCG-release-3-1-0/`），**所有后续命令必须在正确的目录中执行**
+- 使用 `run_command` 的 `-C` 选项指定工作目录，例如：`make -C hpcg-HPCG-release-3-1-0`
+- 或者在执行命令前先用 `cd` 切换到源码目录
+- **重要**：复制配置文件、执行 make 等操作都要在正确的目录中进行
+
 **步骤 1: 检测构建系统**
-- 使用 `read_dir` 查看源码目录结构
+- 使用 `read_dir` 查看源码目录结构（注意使用正确的路径）
 - 检查是否存在以下构建文件（按优先级）：
   * CMakeLists.txt → 使用 cmake 构建
   * configure 脚本 → 使用 ./configure && make
@@ -791,7 +880,7 @@ impl OperatorAgent {
 - 使用 `which` 检查必要的编译器是否存在（gcc/g++, cmake, make 等）
 - 如果编译器不存在，报告错误并终止（不要反复尝试不同的 which 组合）
 
-**步骤 3: 执行构建**
+**步骤 3: 执行构建（注意工作目录）**
 - CMake 项目：
   1. `mkdir -p build && cd build`
   2. `cmake ..` 或 `cmake -S .. -B .`
@@ -799,13 +888,13 @@ impl OperatorAgent {
 - Configure 项目（如 HPCG）：
   1. 先尝试 `./configure`（在源码目录）
   2. 如果 `./configure` 不在白名单，按以下顺序尝试：
-     a. 检查是否有 `setup/` 目录
+     a. 检查是否有 `setup/` 目录（在源码目录中）
      b. 使用 `read_file` 查看 `setup/` 中的配置模板（如 `Make.GCC_OMP`、`Make.Linux_Serial`）
-     c. 使用 `run_command` 执行 `cp setup/Make.Linux_Serial Make.custom`（选择适合当前系统的模板）
-     d. 执行 `make` 进行编译
+     c. **在源码目录中**执行 `cp setup/Make.Linux_Serial Make.custom`（选择适合当前系统的模板）
+     d. **在源码目录中**执行 `make` 或 `make arch=Linux_Serial` 进行编译
   3. 如果上述都失败，报告错误
 - Make 项目：
-  1. 直接 `make`
+  1. **在源码目录中**执行 `make`
 
 **步骤 4: 处理编译错误（如果步骤 3 失败）**
 如果编译失败，请分析错误类型并采取相应措施：
@@ -825,6 +914,10 @@ impl OperatorAgent {
 - **配置错误**（如 "Please specify 'arch' variable"）：
   * 原因：Makefile 需要指定 arch 参数
   * 解决：使用 `make arch=Linux_Serial` 或复制配置到 Make.custom
+
+- **工作目录错误**（如 "没有指明目标并且找不到 makefile"）：
+  * 原因：当前目录不是源码目录
+  * 解决：使用 `-C` 选项指定正确的源码目录，如 `make -C hpcg-HPCG-release-3-1-0`
 
 **步骤 5: 验证构建结果**
 - 使用 `read_dir` 或 `run_command ls` 检查是否生成了可执行文件
@@ -923,6 +1016,24 @@ impl OperatorAgent {
                 suggested_fix: "使用 make arch=Linux_Serial 或复制配置到 Make.custom".to_string(),
                 retryable: true,
                 alternative_config: Some("Make.Linux_Serial".to_string()),
+            });
+        }
+
+        // 工作目录错误
+        if error_output.contains("没有指明目标并且找不到 makefile")
+            || error_output.contains("No targets specified and no makefile found")
+            || error_output.contains("没有那个文件或目录")
+            || error_output.contains("No such file or directory")
+            || error_output.contains("cannot find")
+            || error_output.contains("无法找到")
+        {
+            return Some(CompileErrorInfo {
+                error_type: CompileErrorType::WorkingDirectoryError,
+                description: "工作目录错误或找不到构建文件".to_string(),
+                suggested_fix: "使用 -C 选项指定正确的源码目录，如 make -C hpcg-HPCG-release-3-1-0"
+                    .to_string(),
+                retryable: true,
+                alternative_config: None,
             });
         }
 
@@ -1138,6 +1249,75 @@ impl OperatorAgent {
         }
 
         modified
+    }
+
+    /// 检测工作目录变化
+    ///
+    /// 从工具调用参数和输出中提取工作目录变化信息
+    fn detect_working_dir_change(
+        &self,
+        tool_call: &crate::types::ToolCall,
+        result: &super::tool_executor::ToolExecutionResult,
+    ) -> Option<std::path::PathBuf> {
+        let tool_name = &tool_call.function.name;
+        let args = &tool_call.function.arguments;
+
+        // 处理 run_command 工具
+        if tool_name == "run_command" {
+            // 尝试解析参数
+            if let Ok(args_json) = serde_json::from_str::<serde_json::Value>(args) {
+                // 检查是否有明确的 cwd 参数
+                if let Some(cwd) = args_json.get("cwd").and_then(|v| v.as_str()) {
+                    return Some(std::path::PathBuf::from(cwd));
+                }
+
+                // 检查命令参数中是否包含目录切换
+                if let Some(command) = args_json.get("command").and_then(|v| v.as_str())
+                    && command == "cd"
+                {
+                    // 检测 cd 命令
+                    if let Some(dir) = args_json
+                        .get("args")
+                        .and_then(|a| a.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|v| v.as_str())
+                    {
+                        return Some(std::path::PathBuf::from(dir));
+                    }
+                }
+            }
+
+            // 从输出中检测 make 的工作目录
+            // 例如："make: 进入目录"/home/gzz/test/hpcg-HPCG-release-3-1-0""
+            if (result.output.contains("make: 进入目录")
+                || result.output.contains("make: Entering directory"))
+                && let Some(start) = result
+                    .output
+                    .find("make: 进入目录\"")
+                    .or_else(|| result.output.find("make: Entering directory `"))
+            {
+                let search_start = start + "make: 进入目录\"".len();
+                if let Some(end) = result.output[search_start..]
+                    .find('"')
+                    .or_else(|| result.output[search_start..].find('\''))
+                {
+                    let dir = &result.output[search_start..search_start + end];
+                    return Some(std::path::PathBuf::from(dir));
+                }
+            }
+        }
+
+        // 处理 cmake 工具
+        if tool_name == "cmake"
+            && let Ok(args_json) = serde_json::from_str::<serde_json::Value>(args)
+        {
+            // 检查 -B 参数（构建目录）
+            if let Some(build_dir) = args_json.get("build_dir").and_then(|v| v.as_str()) {
+                return Some(std::path::PathBuf::from(build_dir));
+            }
+        }
+
+        None
     }
 }
 
