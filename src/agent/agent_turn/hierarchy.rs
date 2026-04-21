@@ -172,22 +172,34 @@ fn aggregate_results(results: &[crate::agent::hierarchy::TaskResult]) -> String 
     lines.push("## 分层执行结果\n".to_string());
 
     for result in results {
-        let status_str = match &result.status {
-            crate::agent::hierarchy::TaskStatus::Completed => "✅ 完成",
+        match &result.status {
+            crate::agent::hierarchy::TaskStatus::Completed => {
+                lines.push(format!(
+                    "- ✅ 完成: {} ({}ms)",
+                    result.task_id, result.duration_ms
+                ));
+            }
             crate::agent::hierarchy::TaskStatus::Failed { reason } => {
-                lines.push(format!("❌ {}: {}", result.task_id, reason));
+                lines.push(format!(
+                    "- ❌ 失败: {} ({}ms) - {}",
+                    result.task_id, result.duration_ms, reason
+                ));
+            }
+            crate::agent::hierarchy::TaskStatus::Pending => {
+                lines.push(format!("- ⏳ 进行中: {}", result.task_id));
                 continue;
             }
-            crate::agent::hierarchy::TaskStatus::Pending => "⏳ 进行中",
-            crate::agent::hierarchy::TaskStatus::InProgress => "🔄 进行中",
-            crate::agent::hierarchy::TaskStatus::Skipped { .. } => "⏭️ 跳过",
+            crate::agent::hierarchy::TaskStatus::InProgress => {
+                lines.push(format!("- 🔄 进行中: {}", result.task_id));
+                continue;
+            }
+            crate::agent::hierarchy::TaskStatus::Skipped { .. } => {
+                lines.push(format!("- ⏭️ 跳过: {}", result.task_id));
+                continue;
+            }
         };
 
-        lines.push(format!(
-            "- {}: {} ({}ms)",
-            status_str, result.task_id, result.duration_ms
-        ));
-
+        // 显示任务输出（包括成功和失败的任务）
         if let Some(output) = &result.output {
             lines.push(format!("  {}", output));
         }
