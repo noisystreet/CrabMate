@@ -22,6 +22,40 @@ use super::build_state::BuildState;
 use super::task::{SubGoal, TaskResult, TaskStatus};
 use super::tool_executor::ToolExecutor;
 
+/// 编译错误类型
+#[derive(Debug, Clone, PartialEq)]
+pub enum CompileErrorType {
+    /// OpenMP 并行区域错误
+    OpenMPError,
+    /// 编译器版本不兼容
+    CompilerVersionError,
+    /// 缺少依赖库
+    MissingDependency,
+    /// 配置错误（如错误的 arch 配置）
+    ConfigError,
+    /// 语法错误
+    SyntaxError,
+    /// 链接错误
+    LinkError,
+    /// 其他错误
+    Other(String),
+}
+
+/// 编译错误信息
+#[derive(Debug, Clone)]
+pub struct CompileErrorInfo {
+    /// 错误类型
+    pub error_type: CompileErrorType,
+    /// 错误描述
+    pub description: String,
+    /// 建议的修复方案
+    pub suggested_fix: String,
+    /// 是否可重试
+    pub retryable: bool,
+    /// 建议的替代配置（如果有）
+    pub alternative_config: Option<String>,
+}
+
 /// Operator Agent 配置
 #[derive(Debug, Clone)]
 pub struct OperatorConfig {
@@ -37,17 +71,26 @@ pub struct OperatorConfig {
     pub artifact_store: Option<ArtifactStore>,
     /// 构建状态（编译任务使用）
     pub build_state: Option<Arc<Mutex<BuildState>>>,
+    /// 是否启用编译错误自动修复
+    pub enable_compile_error_recovery: bool,
+    /// 编译错误重试次数
+    pub compile_error_max_retries: usize,
+    /// 已尝试的配置模板（用于避免重复尝试）
+    pub attempted_configs: Vec<String>,
 }
 
 impl Default for OperatorConfig {
     fn default() -> Self {
         Self {
-            max_iterations: 10,
+            max_iterations: 15,
             allowed_tools: Vec::new(),
             tools_defs: Vec::new(),
             sse_out: None,
             artifact_store: None,
             build_state: None,
+            enable_compile_error_recovery: true,
+            compile_error_max_retries: 3,
+            attempted_configs: Vec::new(),
         }
     }
 }
@@ -368,10 +411,32 @@ impl OperatorAgent {
                     };
                     state.observations.push(observation.clone());
 
+                    // 如果工具执行失败且是编译相关命令，分析错误并提供恢复提示
+                    let mut error_recovery_hint = None;
+                    if !result.success
+                        && self.config.enable_compile_error_recovery
+                        && is_compile_command(&result.tool_name, &tool_call.function.arguments)
+                        && let Some(error_info) = self.analyze_compile_error(&result.output)
+                        && error_info.retryable
+                    {
+                        log::info!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Operator: detected retryable compile error: {:?}",
+                            error_info.error_type
+                        );
+                        error_recovery_hint =
+                            Some(self.build_compile_error_recovery_hint(&error_info));
+                    }
+
                     // 添加工具结果到消息
+                    let tool_result_content = if let Some(ref hint) = error_recovery_hint {
+                        format!("{}\n\n{}", result.output, hint)
+                    } else {
+                        result.output.clone()
+                    };
                     state.messages.push(Message {
                         role: "tool".to_string(),
-                        content: Some(MessageContent::Text(result.output)),
+                        content: Some(MessageContent::Text(tool_result_content)),
                         reasoning_content: None,
                         reasoning_details: None,
                         tool_calls: None,
@@ -742,15 +807,35 @@ impl OperatorAgent {
 - Make 项目：
   1. 直接 `make`
 
-**步骤 4: 验证构建结果**
+**步骤 4: 处理编译错误（如果步骤 3 失败）**
+如果编译失败，请分析错误类型并采取相应措施：
+
+- **OpenMP 错误**（如 "'n' not specified in enclosing 'parallel'"）：
+  * 原因：当前编译器版本与 OpenMP 配置不兼容
+  * 解决：切换到非 OpenMP 配置，如 `cp setup/Make.Linux_Serial Make.custom && make`
+
+- **缺少依赖库**（如 "cannot find -lxxx"）：
+  * 原因：系统缺少必要的开发库
+  * 解决：尝试安装依赖或切换到不需要该库的配置
+
+- **编译器版本不兼容**（如 "unrecognized command line option"）：
+  * 原因：配置模板使用了当前编译器不支持的选项
+  * 解决：切换到更基础的配置模板
+
+- **配置错误**（如 "Please specify 'arch' variable"）：
+  * 原因：Makefile 需要指定 arch 参数
+  * 解决：使用 `make arch=Linux_Serial` 或复制配置到 Make.custom
+
+**步骤 5: 验证构建结果**
 - 使用 `read_dir` 或 `run_command ls` 检查是否生成了可执行文件
 - 如果构建成功，报告生成的可执行文件路径
 
 **重要约束**：
 - 如果步骤 2 发现编译器不存在，直接报告失败，不要继续尝试构建
 - 如果命令返回"不在白名单中"，**不要**用其他 shell（bash/sh）重复尝试同一命令，这不会成功
-- 最多尝试 2 种不同的构建方式，如果都失败则报告错误
-- 对于 configure 项目，优先使用 setup/ 目录中的配置模板，而不是反复尝试 ./configure"#
+- 最多尝试 3 种不同的构建方式，如果都失败则报告错误
+- 对于 configure 项目，优先使用 setup/ 目录中的配置模板，而不是反复尝试 ./configure
+- **编译失败后必须尝试其他配置**，不要重复尝试相同的配置"#
                 .to_string();
         }
 
@@ -780,6 +865,117 @@ impl OperatorAgent {
 
         // 默认指导
         "分析任务需求，选择合适的工具，逐步执行并验证结果。".to_string()
+    }
+
+    /// 分析编译错误并返回错误信息
+    fn analyze_compile_error(&self, error_output: &str) -> Option<CompileErrorInfo> {
+        let _error_lower = error_output.to_lowercase();
+
+        // OpenMP 错误
+        if error_output.contains("not specified in enclosing 'parallel'")
+            || error_output.contains("not specified in enclosing parallel")
+            || error_output.contains("#pragma omp")
+        {
+            return Some(CompileErrorInfo {
+                error_type: CompileErrorType::OpenMPError,
+                description: "OpenMP 并行区域变量声明错误".to_string(),
+                suggested_fix: "切换到非 OpenMP 配置模板，如 Make.Linux_Serial".to_string(),
+                retryable: true,
+                alternative_config: Some("Make.Linux_Serial".to_string()),
+            });
+        }
+
+        // 缺少依赖库
+        if error_output.contains("cannot find -l")
+            || error_output.contains("cannot find library")
+            || error_output.contains("No such file or directory")
+        {
+            return Some(CompileErrorInfo {
+                error_type: CompileErrorType::MissingDependency,
+                description: "缺少必要的依赖库".to_string(),
+                suggested_fix: "尝试安装缺失的库或切换到不需要该库的配置".to_string(),
+                retryable: true,
+                alternative_config: None,
+            });
+        }
+
+        // 编译器版本不兼容
+        if error_output.contains("unrecognized command line option")
+            || error_output.contains("unknown option")
+            || error_output.contains("invalid option")
+        {
+            return Some(CompileErrorInfo {
+                error_type: CompileErrorType::CompilerVersionError,
+                description: "编译器版本不兼容，配置使用了不支持的选项".to_string(),
+                suggested_fix: "切换到更基础的配置模板（如 Make.Linux_Serial）".to_string(),
+                retryable: true,
+                alternative_config: Some("Make.Linux_Serial".to_string()),
+            });
+        }
+
+        // 配置错误（需要指定 arch）
+        if error_output.contains("Please specify 'arch' variable")
+            || error_output.contains("arch variable")
+        {
+            return Some(CompileErrorInfo {
+                error_type: CompileErrorType::ConfigError,
+                description: "Makefile 需要指定 arch 参数".to_string(),
+                suggested_fix: "使用 make arch=Linux_Serial 或复制配置到 Make.custom".to_string(),
+                retryable: true,
+                alternative_config: Some("Make.Linux_Serial".to_string()),
+            });
+        }
+
+        // 链接错误
+        if error_output.contains("undefined reference")
+            || error_output.contains("linker error")
+            || error_output.contains("ld: ")
+        {
+            return Some(CompileErrorInfo {
+                error_type: CompileErrorType::LinkError,
+                description: "链接错误".to_string(),
+                suggested_fix: "检查依赖库是否正确链接".to_string(),
+                retryable: false,
+                alternative_config: None,
+            });
+        }
+
+        // 语法错误
+        if error_output.contains("error: expected")
+            || error_output.contains("error: syntax")
+            || error_output.contains("error: invalid")
+        {
+            return Some(CompileErrorInfo {
+                error_type: CompileErrorType::SyntaxError,
+                description: "源代码语法错误".to_string(),
+                suggested_fix: "检查源代码语法".to_string(),
+                retryable: false,
+                alternative_config: None,
+            });
+        }
+
+        None
+    }
+
+    /// 构建编译错误恢复提示
+    fn build_compile_error_recovery_hint(&self, error_info: &CompileErrorInfo) -> String {
+        format!(
+            r#"检测到编译错误：{}
+
+错误类型：{:?}
+建议修复方案：{}
+{}
+
+请在下一步工具调用中应用上述修复方案。"#,
+            error_info.description,
+            error_info.error_type,
+            error_info.suggested_fix,
+            if let Some(ref config) = error_info.alternative_config {
+                format!("\n建议尝试的配置模板：{}", config)
+            } else {
+                String::new()
+            }
+        )
     }
 
     /// 构建输出摘要
@@ -995,6 +1191,30 @@ fn truncate_goal(desc: &str) -> String {
     }
 }
 
+/// 判断工具调用是否是编译相关命令
+fn is_compile_command(tool_name: &str, args: &str) -> bool {
+    // 检查是否是 run_command 工具且参数包含编译相关命令
+    if tool_name != "run_command" {
+        return false;
+    }
+
+    let args_lower = args.to_lowercase();
+    let compile_keywords = [
+        "make",
+        "cmake",
+        "gcc",
+        "g++",
+        "clang",
+        "clang++",
+        "configure",
+        "build",
+        "compile",
+        "arch=",
+    ];
+
+    compile_keywords.iter().any(|kw| args_lower.contains(kw))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1028,6 +1248,9 @@ mod tests {
             sse_out: None,
             artifact_store: None,
             build_state: None,
+            enable_compile_error_recovery: true,
+            compile_error_max_retries: 3,
+            attempted_configs: Vec::new(),
         };
         let operator = OperatorAgent::new(config);
 

@@ -570,12 +570,15 @@ impl<'a> HierarchicalExecutor<'a> {
         let _resolver = ArtifactResolver::new(artifact_store, Some(build_state));
 
         let op_config = OperatorConfig {
-            max_iterations: 10,
+            max_iterations: 15,
             allowed_tools: allowed_tools.clone(),
             tools_defs: tools_defs_for_llm.clone(),
             sse_out: self.sse_out.clone(),
             artifact_store: Some(artifact_store.clone()),
             build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
+            enable_compile_error_recovery: true,
+            compile_error_max_retries: 3,
+            attempted_configs: Vec::new(),
         };
         log::info!(target: "crabmate", "[HIERARCHICAL] execute_single: sse_out is {:?}, tools_defs count={}", self.sse_out.is_some(), tools_defs_for_llm.len());
 
