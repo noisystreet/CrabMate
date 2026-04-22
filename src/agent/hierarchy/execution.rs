@@ -450,6 +450,7 @@ impl<'a> HierarchicalExecutor<'a> {
         let api_key = api_key.clone();
         let working_dir = self.working_dir.clone();
         let tools_defs = self.tools_defs.clone();
+        let sse_out = self.sse_out.clone(); // 克隆 SSE 发送器以支持并行执行
 
         // 为每个子目标创建并发任务
         for goal in goals {
@@ -464,6 +465,7 @@ impl<'a> HierarchicalExecutor<'a> {
             let working_dir = working_dir.clone();
             let tools_defs = tools_defs.clone();
             let build_state = build_state.clone();
+            let sse_out = sse_out.clone(); // 每个任务克隆 SSE 发送器
 
             join_set.spawn(async move {
                 let _permit = permit; // 持有 permit 直到任务完成
@@ -472,12 +474,12 @@ impl<'a> HierarchicalExecutor<'a> {
                 // 创建独立的 artifact store
                 let store = ArtifactStore::new();
 
-                // 创建 Operator 配置
+                // 创建 Operator 配置（现在支持 SSE）
                 let operator_config = OperatorConfig {
                     max_iterations: 15,
                     allowed_tools: Vec::new(),
                     tools_defs,
-                    sse_out: None, // 并发执行不支持 SSE
+                    sse_out, // 传递 SSE 发送器以支持工具调用事件
                     artifact_store: Some(store.clone()),
                     build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
                     enable_compile_error_recovery: true,
