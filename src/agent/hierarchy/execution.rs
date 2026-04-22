@@ -451,6 +451,8 @@ impl<'a> HierarchicalExecutor<'a> {
         let working_dir = self.working_dir.clone();
         let tools_defs = self.tools_defs.clone();
         let sse_out = self.sse_out.clone(); // 克隆 SSE 发送器以支持并行执行
+        let tool_approval_out = self.tool_approval_out.clone(); // 克隆审批发送器
+        let tool_approval_rx = self.tool_approval_rx.clone(); // 克隆审批接收器
 
         // 为每个子目标创建并发任务
         for goal in goals {
@@ -466,6 +468,8 @@ impl<'a> HierarchicalExecutor<'a> {
             let tools_defs = tools_defs.clone();
             let build_state = build_state.clone();
             let sse_out = sse_out.clone(); // 每个任务克隆 SSE 发送器
+            let tool_approval_out = tool_approval_out.clone(); // 每个任务克隆审批发送器
+            let tool_approval_rx = tool_approval_rx.clone(); // 每个任务克隆审批接收器
 
             join_set.spawn(async move {
                 let _permit = permit; // 持有 permit 直到任务完成
@@ -474,7 +478,7 @@ impl<'a> HierarchicalExecutor<'a> {
                 // 创建独立的 artifact store
                 let store = ArtifactStore::new();
 
-                // 创建 Operator 配置（现在支持 SSE）
+                // 创建 Operator 配置（现在支持 SSE 和动态分解）
                 let operator_config = OperatorConfig {
                     max_iterations: 15,
                     allowed_tools: Vec::new(),
@@ -485,15 +489,23 @@ impl<'a> HierarchicalExecutor<'a> {
                     enable_compile_error_recovery: true,
                     compile_error_max_retries: 3,
                     attempted_configs: Vec::new(),
+                    enable_dynamic_decomposition: true,
+                    dynamic_decomposition_threshold: 30,
                 };
 
                 let operator = OperatorAgent::new(operator_config);
 
-                // 创建工具执行器
-                let tool_executor = ToolExecutor::new(ToolExecutorContext::new(
-                    cfg.clone(),
-                    working_dir.clone().unwrap_or_default(),
-                ));
+                // 创建工具执行器上下文
+                let mut tool_executor_ctx =
+                    ToolExecutorContext::new(cfg.clone(), working_dir.clone().unwrap_or_default());
+
+                // 如果有审批上下文，启用 Web 审批流程
+                if let (Some(out_tx), Some(approval_rx)) = (tool_approval_out, tool_approval_rx) {
+                    tool_executor_ctx =
+                        tool_executor_ctx.with_web_approval_arc(out_tx, approval_rx);
+                }
+
+                let tool_executor = ToolExecutor::new(tool_executor_ctx);
 
                 // 执行子目标
                 // 使用全局静态的 OPENAI_COMPAT_BACKEND，避免生命周期问题
@@ -632,6 +644,70 @@ impl<'a> HierarchicalExecutor<'a> {
             let result = self
                 .execute_single_impl(&current_goal, artifact_store, build_state)
                 .await?;
+
+            // 检查是否需要动态分解
+            if let TaskStatus::NeedsDecomposition {
+                reason,
+                suggested_subgoals,
+            } = &result.status
+            {
+                info!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] Executor: Goal {} needs decomposition (suggested {} subgoals): {}",
+                    current_goal.goal_id,
+                    suggested_subgoals,
+                    reason
+                );
+
+                // 尝试通过 Manager 进行反思和重新规划
+                // 将 NeedsDecomposition 视为一种特殊的失败，触发 Manager 的反思
+                if let Some(ref _manager) = self.manager {
+                    // 构造一个模拟的失败结果，让 Manager 进行反思和重新规划
+                    let failure_result = TaskResult {
+                        task_id: current_goal.goal_id.clone(),
+                        status: TaskStatus::Failed {
+                            reason: format!(
+                                "任务过于复杂，建议分解为 {} 个子目标: {}",
+                                suggested_subgoals, reason
+                            ),
+                        },
+                        output: result.output.clone(),
+                        error: Some(format!("需要动态分解: {}", reason)),
+                        artifacts: result.artifacts.clone(),
+                        duration_ms: result.duration_ms,
+                    };
+
+                    let artifacts: Vec<_> = artifact_store.all().into_iter().cloned().collect();
+                    let reflection_result = self
+                        .reflect_and_replan(
+                            _manager,
+                            &current_goal,
+                            &format!("任务过于复杂，建议分解为 {} 个子目标", suggested_subgoals),
+                            &failure_result,
+                            &artifacts,
+                        )
+                        .await;
+
+                    match reflection_result {
+                        Some(updated_goal) => {
+                            info!(
+                                target: "crabmate",
+                                "[HIERARCHICAL] Executor: Manager replanned goal {} for decomposition",
+                                current_goal.goal_id
+                            );
+                            current_goal = updated_goal;
+                            continue;
+                        }
+                        None => {
+                            // 反思失败，返回需要分解的状态
+                            return Ok(result);
+                        }
+                    }
+                }
+
+                // 无法分解，返回需要分解的状态
+                return Ok(result);
+            }
 
             // 阶段 2: 验证（如果有定义验收条件）
             if let Some(ref v) = verifier {
@@ -895,6 +971,8 @@ impl<'a> HierarchicalExecutor<'a> {
             enable_compile_error_recovery: true,
             compile_error_max_retries: 3,
             attempted_configs: Vec::new(),
+            enable_dynamic_decomposition: true,
+            dynamic_decomposition_threshold: 30,
         };
         log::info!(target: "crabmate", "[HIERARCHICAL] execute_single: sse_out is {:?}, tools_defs count={}", self.sse_out.is_some(), tools_defs_for_llm.len());
 
@@ -955,6 +1033,7 @@ impl<'a> HierarchicalExecutor<'a> {
                 TaskStatus::Pending => "pending",
                 TaskStatus::InProgress => "in_progress",
                 TaskStatus::Skipped { .. } => "skipped",
+                TaskStatus::NeedsDecomposition { .. } => "needs_decomposition",
             };
             let trace =
                 events::build_subgoal_finished_trace(&goal.goal_id, status_str, result.duration_ms);

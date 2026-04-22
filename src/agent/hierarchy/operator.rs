@@ -79,6 +79,10 @@ pub struct OperatorConfig {
     pub compile_error_max_retries: usize,
     /// 已尝试的配置模板（用于避免重复尝试）
     pub attempted_configs: Vec<String>,
+    /// 是否启用动态子目标分解
+    pub enable_dynamic_decomposition: bool,
+    /// 动态分解复杂度阈值（达到此分数触发分解）
+    pub dynamic_decomposition_threshold: u8,
 }
 
 impl Default for OperatorConfig {
@@ -93,6 +97,8 @@ impl Default for OperatorConfig {
             enable_compile_error_recovery: true,
             compile_error_max_retries: 3,
             attempted_configs: Vec::new(),
+            enable_dynamic_decomposition: true,
+            dynamic_decomposition_threshold: 30,
         }
     }
 }
@@ -152,6 +158,10 @@ struct ReactState {
     recent_commands: Vec<String>,
     /// 重复命令计数
     duplicate_command_count: usize,
+    /// 已使用的工具集合（用于复杂度评估）
+    tools_used: std::collections::HashSet<String>,
+    /// 动态分解已触发次数
+    dynamic_decomposition_count: usize,
 }
 
 /// 工具执行结果分析
@@ -237,6 +247,8 @@ impl OperatorAgent {
             last_error_type: None,
             recent_commands: Vec::new(),
             duplicate_command_count: 0,
+            tools_used: std::collections::HashSet::new(),
+            dynamic_decomposition_count: 0,
         };
 
         // 构建初始系统提示（传入当前工作目录）
@@ -639,6 +651,51 @@ impl OperatorAgent {
                             artifacts: Vec::new(),
                             duration_ms: start_time.elapsed().as_millis() as u64,
                         });
+                    }
+
+                    // 记录使用的工具
+                    state.tools_used.insert(result.tool_name.clone());
+
+                    // 动态子目标分解检查
+                    if self.config.enable_dynamic_decomposition
+                        && state.dynamic_decomposition_count == 0 // 只触发一次
+                        && state.iteration >= 5
+                    // 至少执行了5轮
+                    {
+                        let decomposer = super::dynamic_decomposer::DynamicDecomposer::new();
+                        let assessment = decomposer.assess_complexity(
+                            goal,
+                            state.iteration,
+                            state.consecutive_failures,
+                            state.tools_used.len(),
+                        );
+
+                        if assessment.needs_decomposition
+                            && assessment.score >= self.config.dynamic_decomposition_threshold
+                        {
+                            log::info!(
+                                target: "crabmate",
+                                "[HIERARCHICAL] Operator: complexity assessment triggered decomposition (score={})",
+                                assessment.score
+                            );
+
+                            // 返回特殊结果，表示需要动态分解
+                            let reason = assessment.reason.clone();
+                            return Ok(TaskResult {
+                                task_id: goal.goal_id.clone(),
+                                status: TaskStatus::NeedsDecomposition {
+                                    reason: assessment.reason,
+                                    suggested_subgoals: assessment.suggested_subgoals,
+                                },
+                                output: Some(format!(
+                                    "任务过于复杂（复杂度评分: {}），建议分解为 {} 个子目标。原因: {}",
+                                    assessment.score, assessment.suggested_subgoals, reason
+                                )),
+                                error: None,
+                                artifacts: Vec::new(),
+                                duration_ms: start_time.elapsed().as_millis() as u64,
+                            });
+                        }
                     }
                 }
             } else {
@@ -1531,6 +1588,8 @@ mod tests {
             enable_compile_error_recovery: true,
             compile_error_max_retries: 3,
             attempted_configs: Vec::new(),
+            enable_dynamic_decomposition: true,
+            dynamic_decomposition_threshold: 30,
         };
         let operator = OperatorAgent::new(config);
 

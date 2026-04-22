@@ -197,6 +197,15 @@ fn aggregate_results(results: &[crate::agent::hierarchy::TaskResult]) -> String 
                 lines.push(format!("- ⏭️ 跳过: {}", result.task_id));
                 continue;
             }
+            crate::agent::hierarchy::TaskStatus::NeedsDecomposition {
+                suggested_subgoals, ..
+            } => {
+                lines.push(format!(
+                    "- 🔄 需要分解: {} (建议 {} 个子目标)",
+                    result.task_id, suggested_subgoals
+                ));
+                continue;
+            }
         };
 
         // 显示任务输出（包括成功和失败的任务）

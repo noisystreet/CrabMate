@@ -8,8 +8,17 @@ pub enum TaskStatus {
     Pending,
     InProgress,
     Completed,
-    Failed { reason: String },
-    Skipped { reason: String },
+    Failed {
+        reason: String,
+    },
+    Skipped {
+        reason: String,
+    },
+    /// 需要动态分解为子目标
+    NeedsDecomposition {
+        reason: String,
+        suggested_subgoals: usize,
+    },
 }
 
 /// 任务结果
