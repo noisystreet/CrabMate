@@ -148,6 +148,10 @@ struct ReactState {
     last_failed_tool: Option<String>,
     /// 上次失败的错误类型
     last_error_type: Option<CompileErrorType>,
+    /// 最近执行的命令历史（用于检测重复命令）
+    recent_commands: Vec<String>,
+    /// 重复命令计数
+    duplicate_command_count: usize,
 }
 
 /// 工具执行结果分析
@@ -231,6 +235,8 @@ impl OperatorAgent {
             consecutive_failures: 0,
             last_failed_tool: None,
             last_error_type: None,
+            recent_commands: Vec::new(),
+            duplicate_command_count: 0,
         };
 
         // 构建初始系统提示（传入当前工作目录）
@@ -420,6 +426,54 @@ impl OperatorAgent {
                             "hierarchical::operator_tool_result",
                         )
                         .await;
+                    }
+
+                    // 检测重复命令
+                    let command_signature =
+                        format!("{}:{}", result.tool_name, tool_call.function.arguments);
+                    if state.recent_commands.contains(&command_signature) {
+                        state.duplicate_command_count += 1;
+                        log::warn!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Operator: detected duplicate command (count={}): {}",
+                            state.duplicate_command_count,
+                            result.tool_name
+                        );
+
+                        // 如果重复执行同一命令超过 2 次，提前终止
+                        if state.duplicate_command_count >= 2 {
+                            log::warn!(
+                                target: "crabmate",
+                                "[HIERARCHICAL] Operator: too many duplicate commands ({}), terminating early",
+                                state.duplicate_command_count
+                            );
+
+                            return Ok(TaskResult {
+                                task_id: goal.goal_id.clone(),
+                                status: TaskStatus::Failed {
+                                    reason: format!(
+                                        "检测到重复执行同一命令 {} 次，可能陷入循环。请检查任务逻辑。",
+                                        state.duplicate_command_count + 1
+                                    ),
+                                },
+                                output: Some(self.build_output_summary(&state)),
+                                error: Some(format!(
+                                    "重复命令检测：命令 '{}' 被执行了多次",
+                                    result.tool_name
+                                )),
+                                artifacts: Vec::new(),
+                                duration_ms: start_time.elapsed().as_millis() as u64,
+                            });
+                        }
+                    } else {
+                        // 新命令，重置重复计数
+                        state.duplicate_command_count = 0;
+                    }
+
+                    // 保持最近 5 条命令历史
+                    state.recent_commands.push(command_signature);
+                    if state.recent_commands.len() > 5 {
+                        state.recent_commands.remove(0);
                     }
 
                     // 分析工具执行结果，检查是否表示任务已完成
@@ -929,6 +983,36 @@ impl OperatorAgent {
 - 最多尝试 3 种不同的构建方式，如果都失败则报告错误
 - 对于 configure 项目，优先使用 setup/ 目录中的配置模板，而不是反复尝试 ./configure
 - **编译失败后必须尝试其他配置**，不要重复尝试相同的配置"#
+                .to_string();
+        }
+
+        // 检查编译工具类任务
+        if desc.contains("检查")
+            && (desc.contains("编译")
+                || desc.contains("工具")
+                || desc.contains("gcc")
+                || desc.contains("make")
+                || desc.contains("mpi"))
+        {
+            return r#"这是一个检查编译工具的任务：
+
+**目标**：确认系统已安装必要的编译工具（gcc、g++、make、cmake、mpi 等）
+
+**执行步骤**：
+1. 使用 `which` 命令检查核心工具是否存在：
+   - `which gcc g++ make`（基础编译工具）
+   - `which cmake`（CMake 构建工具）
+   - `which mpicc mpicxx mpirun`（MPI 并行工具，如需要）
+   - `which gfortran`（Fortran 编译器，如需要）
+
+2. 如果上述工具都存在，**立即报告任务完成**，无需重复检查其他工具
+
+3. 如果某个工具不存在，报告缺失的工具名称
+
+**重要约束**：
+- **不要重复执行相同的 which 命令** - 一旦检测到工具存在，就不要再次检查
+- **检测完成即结束** - 确认所有必需工具存在后，立即输出"工具检查完成"并结束任务
+- 最多执行 3-5 个 which 命令，不要陷入无限检查循环"#
                 .to_string();
         }
 

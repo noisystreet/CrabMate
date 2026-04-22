@@ -7,7 +7,7 @@ use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 
 use crate::config::AgentConfig;
-use crate::llm::backend::ChatCompletionsBackend;
+use crate::llm::backend::{ChatCompletionsBackend, OPENAI_COMPAT_BACKEND};
 use crate::sse;
 
 use super::artifact_resolver::ArtifactResolver;
@@ -20,7 +20,7 @@ use super::operator::{OperatorAgent, OperatorConfig};
 use super::task::{
     Artifact, ArtifactKind, BuildArtifactKind, ExecutionStrategy, SubGoal, TaskResult, TaskStatus,
 };
-use super::tool_executor::ToolExecutor;
+use super::tool_executor::{ToolExecutor, ToolExecutorContext};
 use crate::types::{CommandApprovalDecision, Tool};
 use log::{error, info, warn};
 use tokio::sync::Mutex as TokioMutex;
@@ -409,21 +409,199 @@ impl<'a> HierarchicalExecutor<'a> {
     }
 
     /// 并行执行
+    ///
+    /// 使用 tokio::spawn 实现真正的并发执行，通过信号量控制并发度
+    ///
+    /// 特性：
+    /// - 支持部分失败继续执行（收集所有结果后返回）
+    /// - 使用 JoinSet 实现进度追踪和实时结果收集
+    /// - 每个子目标使用独立的 ArtifactStore，执行完成后合并结果
     async fn execute_parallel(
         &self,
         goals: &[&SubGoal],
-        _artifact_store: &mut ArtifactStore,
+        artifact_store: &mut ArtifactStore,
         build_state: &mut BuildState,
     ) -> Result<Vec<TaskResult>, ExecutionError> {
-        let mut results = Vec::new();
+        use std::sync::Arc;
+        use tokio::sync::Semaphore;
+        use tokio::task::JoinSet;
 
-        // 分块执行（简化版：顺序执行）
-        for chunk in goals.chunks(self.max_parallel) {
-            for goal in chunk {
-                let mut store = ArtifactStore::new();
-                let result = self.execute_single(goal, &mut store, build_state).await?;
-                results.push(result);
+        // 如果没有配置，回退到顺序执行
+        let (Some(cfg), Some(client), Some(api_key)) = (
+            self.cfg.as_ref(),
+            self.client.as_ref(),
+            self.api_key.as_ref(),
+        ) else {
+            warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] Parallel execution requires full context, falling back to sequential"
+            );
+            return self
+                .execute_sequential(goals, artifact_store, build_state)
+                .await;
+        };
+
+        let semaphore = Arc::new(Semaphore::new(self.max_parallel));
+        let mut join_set = JoinSet::new();
+
+        // 准备共享数据（使用 Arc 包装）
+        let cfg = Arc::new(cfg.clone());
+        let client = client.clone();
+        let api_key = api_key.clone();
+        let working_dir = self.working_dir.clone();
+        let tools_defs = self.tools_defs.clone();
+
+        // 为每个子目标创建并发任务
+        for goal in goals {
+            let permit = semaphore.clone().acquire_owned().await.map_err(|e| {
+                ExecutionError::DagError(format!("Failed to acquire semaphore: {}", e))
+            })?;
+
+            let goal = (*goal).clone();
+            let cfg = cfg.clone();
+            let client = client.clone();
+            let api_key = api_key.clone();
+            let working_dir = working_dir.clone();
+            let tools_defs = tools_defs.clone();
+            let build_state = build_state.clone();
+
+            join_set.spawn(async move {
+                let _permit = permit; // 持有 permit 直到任务完成
+                let goal_id = goal.goal_id.clone();
+
+                // 创建独立的 artifact store
+                let store = ArtifactStore::new();
+
+                // 创建 Operator 配置
+                let operator_config = OperatorConfig {
+                    max_iterations: 15,
+                    allowed_tools: Vec::new(),
+                    tools_defs,
+                    sse_out: None, // 并发执行不支持 SSE
+                    artifact_store: Some(store.clone()),
+                    build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
+                    enable_compile_error_recovery: true,
+                    compile_error_max_retries: 3,
+                    attempted_configs: Vec::new(),
+                };
+
+                let operator = OperatorAgent::new(operator_config);
+
+                // 创建工具执行器
+                let tool_executor = ToolExecutor::new(ToolExecutorContext::new(
+                    cfg.clone(),
+                    working_dir.clone().unwrap_or_default(),
+                ));
+
+                // 执行子目标
+                // 使用全局静态的 OPENAI_COMPAT_BACKEND，避免生命周期问题
+                let result = operator
+                    .execute_with_tools(
+                        &goal,
+                        &cfg,
+                        &OPENAI_COMPAT_BACKEND,
+                        &client,
+                        &api_key,
+                        &tool_executor,
+                        None,
+                    )
+                    .await;
+
+                (goal_id, result)
+            });
+        }
+
+        // 使用 JoinSet 收集所有结果（支持部分失败继续）
+        let mut results = Vec::new();
+        let mut failed_count = 0;
+        let mut panicked_count = 0;
+
+        while let Some(join_result) = join_set.join_next().await {
+            match join_result {
+                Ok((goal_id, Ok(result))) => {
+                    // 将成功的结果产物合并到主 artifact_store
+                    if matches!(result.status, TaskStatus::Completed) {
+                        artifact_store.store_result(&result);
+                        info!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Parallel: Goal {} completed successfully",
+                            goal_id
+                        );
+                    } else {
+                        warn!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Parallel: Goal {} failed: {:?}",
+                            goal_id, result.status
+                        );
+                    }
+                    results.push(result);
+                }
+                Ok((goal_id, Err(e))) => {
+                    // 任务执行出错，但继续收集其他结果
+                    failed_count += 1;
+                    error!(
+                        target: "crabmate",
+                        "[HIERARCHICAL] Parallel: Goal {} execution error: {}",
+                        goal_id, e
+                    );
+                    // 创建一个失败的 TaskResult 而不是直接返回错误
+                    results.push(TaskResult {
+                        task_id: goal_id.clone(),
+                        status: TaskStatus::Failed {
+                            reason: format!("Execution error: {}", e),
+                        },
+                        output: None,
+                        error: Some(format!("Execution error: {}", e)),
+                        artifacts: Vec::new(),
+                        duration_ms: 0,
+                    });
+                }
+                Err(e) => {
+                    // 任务 panic，但继续收集其他结果
+                    panicked_count += 1;
+                    error!(
+                        target: "crabmate",
+                        "[HIERARCHICAL] Parallel: Task panicked: {}",
+                        e
+                    );
+                    // 从 panic 信息中提取 goal_id（如果可能）
+                    let goal_id = format!("unknown_panicked_{}", panicked_count);
+                    results.push(TaskResult {
+                        task_id: goal_id,
+                        status: TaskStatus::Failed {
+                            reason: format!("Task panicked: {}", e),
+                        },
+                        output: None,
+                        error: Some(format!("Task panicked: {}", e)),
+                        artifacts: Vec::new(),
+                        duration_ms: 0,
+                    });
+                }
             }
+        }
+
+        // 记录执行统计
+        let completed_count = results
+            .iter()
+            .filter(|r| matches!(r.status, TaskStatus::Completed))
+            .count();
+        info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Parallel execution summary: {} total, {} completed, {} failed, {} panicked",
+            results.len(),
+            completed_count,
+            failed_count,
+            panicked_count
+        );
+
+        // 如果所有任务都失败了，返回错误
+        if completed_count == 0 && !results.is_empty() {
+            return Err(ExecutionError::MaxFailuresReached(format!(
+                "All {} parallel tasks failed ({} execution errors, {} panics)",
+                results.len(),
+                failed_count,
+                panicked_count
+            )));
         }
 
         Ok(results)

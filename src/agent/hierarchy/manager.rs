@@ -561,11 +561,17 @@ impl ManagerAgent {
         // 生成完整工具定义（包含参数 schema）
         let tools_description = self.format_tools_with_schemas(tools_defs);
 
+        // 识别任务类型并添加特定指导
+        let task_type_guidance = self.get_task_type_guidance(task);
+
         format!(
             r#"## 任务
 你是一个任务分解专家。请将以下用户任务分解为可执行的子目标。
 
 任务：{}
+
+## 任务类型识别与指导
+{}
 
 ## 工作目录上下文
 {}
@@ -587,8 +593,7 @@ impl ManagerAgent {
 
 ## 输出格式
 **必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
-```
-{{{{
+```{{{{
     "sub_goals": [
         {{
             "goal_id": "goal_1",
@@ -613,8 +618,88 @@ impl ManagerAgent {
 - 子目标数量不超过 {}
 - **只输出 JSON，不要有markdown代码块标记、不要有任何解释文字**
 "#,
-            task, workspace_context, tools_description, self.config.max_sub_goals
+            task,
+            task_type_guidance,
+            workspace_context,
+            tools_description,
+            self.config.max_sub_goals
         )
+    }
+
+    /// 根据任务描述识别任务类型并返回特定指导
+    fn get_task_type_guidance(&self, task: &str) -> String {
+        let task_lower = task.to_lowercase();
+
+        // 编译类任务
+        if task_lower.contains("编译")
+            || task_lower.contains("build")
+            || task_lower.contains("make")
+        {
+            return r#"**识别为：编译/构建任务**
+
+用户意图：将源代码编译为可执行文件或库
+
+**必须分解的完整步骤**：
+1. **确认源码存在** - 检查压缩包或源码目录
+2. **解压源码**（如果是压缩包）- 使用 archive_unpack
+3. **查找和阅读文档** - 查找 README、INSTALL、BUILDING、docs/ 等文档，了解构建要求和步骤
+4. **检查构建系统** - 查看 Makefile/CMakeLists.txt/configure 等
+5. **检查编译工具** - 确认 gcc/g++/make/cmake 等存在
+6. **执行编译** - 运行 make/cmake 等构建命令
+7. **验证结果** - 检查生成的可执行文件
+
+**重要**：
+- 不要只分解"检查"步骤，必须包含完整的编译流程！
+- **务必先阅读文档** - 很多项目有特定的构建要求和依赖，文档中会说明正确的构建步骤
+"#
+            .to_string();
+        }
+
+        // 代码修改类任务
+        if task_lower.contains("修改") || task_lower.contains("修复") || task_lower.contains("fix")
+        {
+            return r#"**识别为：代码修改/修复任务**
+
+用户意图：修改代码文件以修复问题或实现功能
+
+**必须分解的完整步骤**：
+1. **定位目标文件** - 找到需要修改的文件
+2. **读取当前内容** - 使用 read_file 查看文件
+3. **执行修改** - 使用 search_replace 或 modify_file
+4. **验证修改** - 读取文件确认修改成功
+5. **测试**（如需要）- 运行相关测试验证修复
+
+**重要**：不要只分解"查找"步骤，必须包含实际的修改操作！
+"#
+            .to_string();
+        }
+
+        // 分析/调查类任务
+        if task_lower.contains("分析") || task_lower.contains("查看") || task_lower.contains("调查")
+        {
+            return r#"**识别为：分析/调查任务**
+
+用户意图：收集信息、分析问题或查看状态
+
+**分解要点**：
+- 明确需要收集哪些信息
+- 确定信息来源（日志文件、配置文件、目录结构等）
+- 如果需要多步骤分析，确保步骤之间有逻辑关联
+
+**重要**：分析任务应该产出明确的结论或报告！
+"#
+            .to_string();
+        }
+
+        // 默认指导
+        r#"**通用任务**
+
+请确保：
+1. 完整理解用户意图 - 不要只分解验证/检查步骤
+2. 子目标应该覆盖任务的完整生命周期
+3. 如果任务涉及多个阶段（准备→执行→验证），确保每个阶段都有对应的子目标
+"#
+        .to_string()
     }
 
     /// 获取工作目录上下文信息
@@ -1050,6 +1135,18 @@ impl ManagerAgent {
             ManagerError::ParseError("Failed to extract JSON from reflection response".to_string())
         })?;
 
+        // 尝试修复常见的 JSON 格式错误
+        let fixed_json = fix_common_json_errors(json_str);
+        let json_to_parse = if fixed_json != json_str {
+            log::debug!(
+                target: "crabmate",
+                "[HIERARCHICAL] Manager: applied JSON format fixes"
+            );
+            fixed_json.as_str()
+        } else {
+            json_str
+        };
+
         #[derive(serde::Deserialize)]
         struct ReflectionOutput {
             analysis: String,
@@ -1072,11 +1169,12 @@ impl ManagerAgent {
             max_retries: Option<usize>,
         }
 
-        let parsed: ReflectionOutput = serde_json::from_str(json_str).map_err(|e| {
+        let parsed: ReflectionOutput = serde_json::from_str(json_to_parse).map_err(|e| {
             log::warn!(
                 target: "crabmate",
-                "[HIERARCHICAL] Manager: JSON parse error in reflection: {}",
-                e
+                "[HIERARCHICAL] Manager: JSON parse error in reflection: {}. Content preview: {}",
+                e,
+                truncate_for_log(json_to_parse, 200)
             );
             ManagerError::ParseError(e.to_string())
         })?;
@@ -1206,6 +1304,26 @@ fn extract_json(content: &str) -> Option<&str> {
         }
     }
     None
+}
+
+/// 尝试修复常见的 LLM JSON 格式错误
+fn fix_common_json_errors(content: &str) -> String {
+    let mut fixed = content.to_string();
+
+    // 修复 Perl/Ruby 风格的 => 语法为标准的 JSON :
+    // 但需要注意不要破坏 URL 中的 => 或合法的字符串内容
+    // 使用正则替换：在非字符串上下文中将 => 替换为 :
+    let re = regex::Regex::new(r"(\w+)\s*=>\s*").unwrap();
+    fixed = re.replace_all(&fixed, r#"$1": "#).to_string();
+
+    // 修复单引号为双引号（如果整个 JSON 使用单引号）
+    // 注意：这可能会破坏包含单引号的字符串，需要谨慎
+    // 只在检测到 JSON 以单引号开始时替换
+    if fixed.trim().starts_with("'") {
+        fixed = fixed.replace("'", "\"");
+    }
+
+    fixed
 }
 
 /// 截断任务字符串用于日志（按字符边界截断，支持中文）

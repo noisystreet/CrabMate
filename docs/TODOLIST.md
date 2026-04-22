@@ -94,7 +94,12 @@
   - **HistoryBased**：基于历史执行数据推荐执行模式
   - **UserOverride**：用户显式指定执行模式
   - 配置项 `enable_llm_routing` 控制是否启用 LLM 路由（默认关闭）
-- [ ] **真正的并行执行（高优先级）**：当前 `execution.rs` 的并行执行是"伪并行"（分块顺序执行），需实现基于 `tokio::spawn` 的真正并发执行，并添加并发控制和结果合并策略。
+- [x] **真正的并行执行（高优先级）**：已实现基于 `tokio::spawn` 的真正并发执行：
+  - 使用 `tokio::sync::Semaphore` 控制并发度（`max_parallel`）
+  - 每个子目标在独立的 `tokio::spawn` 任务中执行
+  - 使用 `Arc` 共享配置数据，避免克隆开销
+  - 执行完成后自动合并产物到主 `artifact_store`
+  - 注意：并发执行时不支持 SSE 事件流和工具审批（使用顺序执行获取完整功能）
 - [x] **失败恢复与自我修复（高优先级）**：已实现错误分类器，支持以下错误类型：
   - `OpenMPError`：OpenMP 并行区域错误
   - `CompilerVersionError`：编译器版本不兼容
