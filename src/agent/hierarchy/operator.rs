@@ -894,9 +894,17 @@ impl OperatorAgent {
 
 ## 工作目录管理（关键！）
 - **当前工作目录**已在上方"当前工作目录"部分显示
-- 如果需要在子目录中执行命令，**必须使用 `-C` 选项**，例如：`make -C subdirectory`
+- **所有相对路径都是基于当前工作目录的**
+- 如果需要在子目录中执行命令，有三种方式（按推荐顺序）：
+  1. **使用 `-C` 选项**（推荐）：`make -C subdirectory`
+  2. **使用完整路径作为 command**：`command: "subdirectory/script.sh"`, `args: []`
+  3. **使用完整路径在 args 中**：`command: "cp"`, `args: ["subdirectory/src", "subdirectory/dest"]`
 - **禁止**使用 `cd` 命令后再执行其他命令（cd 不会持久化工作目录）
-- 对于需要复制文件到子目录的情况，使用完整路径：`cp source/path dest/path`
+- **常见错误示例**：
+  - ❌ 错误：`command: "./configure"`, `args: ["subdirectory/configure"]` —— command 和 args 重复了路径
+  - ❌ 错误：`command: "cp"`, `args: ["setup/file", "dest"]` —— 当前目录下没有 setup/ 目录
+  - ✅ 正确：`command: "cp"`, `args: ["subdirectory/setup/file", "subdirectory/dest"]` —— 使用完整路径
+  - ✅ 正确：`command: "subdirectory/configure"`, `args: []` —— 完整路径作为 command
 - 如果命令返回"找不到文件"或"No such file or directory"，首先检查工作目录是否正确
 "#,
             goal.description, working_dir_info, tools_list, execution_guide
@@ -918,9 +926,16 @@ impl OperatorAgent {
 
 **步骤 0: 确定工作目录（关键！）**
 - 如果源码在子目录中（如 `hpcg-HPCG-release-3-1-0/`），**所有后续命令必须在正确的目录中执行**
-- 使用 `run_command` 的 `-C` 选项指定工作目录，例如：`make -C hpcg-HPCG-release-3-1-0`
-- 或者在执行命令前先用 `cd` 切换到源码目录
-- **重要**：复制配置文件、执行 make 等操作都要在正确的目录中进行
+- **当前工作目录**是固定的，不会因为你执行了 `cd` 而改变
+- **执行命令的三种方式**（按推荐顺序）：
+  1. **使用 `-C` 选项**（最推荐）：`make -C hpcg-HPCG-release-3-1-0`
+  2. **完整路径作为 command**：`command: "hpcg-HPCG-release-3-1-0/configure"`, `args: []`
+  3. **完整路径在 args 中**：`command: "cp"`, `args: ["hpcg-HPCG-release-3-1-0/setup/file", "hpcg-HPCG-release-3-1-0/dest"]`
+- **常见错误**：
+  - ❌ `command: "./configure"`, `args: ["hpcg-HPCG-release-3-1-0/configure"]` —— 路径重复
+  - ❌ `command: "cp"`, `args: ["setup/Make.Linux_Serial", "Make.custom"]` —— 当前目录下没有 setup/
+  - ✅ `command: "cp"`, `args: ["hpcg-HPCG-release-3-1-0/setup/Make.Linux_Serial", "hpcg-HPCG-release-3-1-0/Make.custom"]`
+- **重要**：复制配置文件、执行 make 等操作都要使用完整路径或在正确的目录中使用 `-C` 选项
 
 **步骤 1: 检测构建系统**
 - 使用 `read_dir` 查看源码目录结构（注意使用正确的路径）
