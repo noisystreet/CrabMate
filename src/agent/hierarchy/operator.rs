@@ -295,6 +295,18 @@ impl OperatorAgent {
 
             // 检查是否有工具调用
             if let Some(tool_calls) = &response.tool_calls {
+                // 首先添加一个包含所有 tool_calls 的 assistant 消息
+                // 这是 OpenAI API 的要求：所有 tool_calls 必须在同一个 assistant 消息中
+                state.messages.push(Message {
+                    role: "assistant".to_string(),
+                    content: response.content.clone(),
+                    reasoning_content: None,
+                    reasoning_details: None,
+                    tool_calls: Some(tool_calls.clone()),
+                    name: None,
+                    tool_call_id: None,
+                });
+
                 for tool_call in tool_calls {
                     let tool_name = &tool_call.function.name;
 
@@ -346,17 +358,6 @@ impl OperatorAgent {
                     } else {
                         log::warn!(target: "crabmate", "[HIERARCHICAL] Operator: sse_out is None, skipping ToolCall SSE");
                     }
-
-                    // 添加工具调用到消息
-                    state.messages.push(Message {
-                        role: "assistant".to_string(),
-                        content: response.content.clone(),
-                        reasoning_content: None,
-                        reasoning_details: None,
-                        tool_calls: Some(vec![tool_call.clone()]),
-                        name: None,
-                        tool_call_id: None,
-                    });
 
                     // 注入产物路径到工具参数
                     let injected_tool_call = if let Some(ref resolver) = resolver {
