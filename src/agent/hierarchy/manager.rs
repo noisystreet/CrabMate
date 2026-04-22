@@ -5,6 +5,7 @@
 //! - 分解为可执行的 SubGoals
 //! - 确定执行策略
 //! - 协调子目标执行
+//! - 会话状态管理（避免重复执行）
 
 use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
@@ -14,6 +15,7 @@ use crate::llm::{
 };
 use crate::types::{LlmSeedOverride, Message, message_content_as_str};
 
+use super::session_state::SessionStateManager;
 use super::task::{ExecutionStrategy, SubGoal, TaskResult, TaskStatus};
 
 /// Manager Agent 配置
@@ -72,11 +74,41 @@ impl std::error::Error for ManagerError {}
 #[derive(Clone)]
 pub struct ManagerAgent {
     config: ManagerConfig,
+    /// 会话状态管理器（可选）
+    session_manager: Option<std::sync::Arc<SessionStateManager>>,
 }
 
 impl ManagerAgent {
     pub fn new(config: ManagerConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            session_manager: None,
+        }
+    }
+
+    /// 设置会话状态管理器
+    pub fn with_session_manager(
+        mut self,
+        session_manager: std::sync::Arc<SessionStateManager>,
+    ) -> Self {
+        self.session_manager = Some(session_manager);
+        self
+    }
+
+    /// 检查任务是否需要执行（基于会话状态）
+    fn should_execute_task(&self, task: &str) -> bool {
+        if let Some(ref manager) = self.session_manager {
+            manager.should_execute_task(task)
+        } else {
+            true // 没有会话管理器时，默认执行
+        }
+    }
+
+    /// 检查可执行文件是否已构建
+    fn is_executable_built(&self, name: &str) -> Option<std::path::PathBuf> {
+        self.session_manager
+            .as_ref()
+            .and_then(|m| m.is_executable_built(name))
     }
 
     /// 分解任务为子目标（使用 LLM）
@@ -92,6 +124,39 @@ impl ManagerAgent {
         tools_defs: &[crate::types::Tool],
     ) -> Result<ManagerOutput, ManagerError> {
         log::info!(target: "crabmate", "[HIERARCHICAL] Manager: decomposing task={}", truncate_task(task));
+
+        // 检查任务是否已完成（会话状态检查）
+        if !self.should_execute_task(task) {
+            log::info!(
+                target: "crabmate",
+                "[HIERARCHICAL] Manager: task '{}' already completed, returning empty plan",
+                task
+            );
+            return Ok(ManagerOutput {
+                sub_goals: vec![],
+                execution_strategy: ExecutionStrategy::Sequential,
+                summary: format!("Task '{}' already completed in previous session", task),
+            });
+        }
+
+        // 检查是否是编译类任务且产物已存在
+        if self.is_compile_task(task)
+            && let Some(exe_path) = self.check_existing_executable(task)
+        {
+            log::info!(
+                target: "crabmate",
+                "[HIERARCHICAL] Manager: executable already exists at {:?}, skipping compilation",
+                exe_path
+            );
+            return Ok(ManagerOutput {
+                sub_goals: vec![],
+                execution_strategy: ExecutionStrategy::Sequential,
+                summary: format!(
+                    "Executable already exists at {:?}, compilation skipped",
+                    exe_path
+                ),
+            });
+        }
 
         let prompt = self.build_decomposition_prompt(task, working_dir, tools_defs);
 
@@ -961,6 +1026,91 @@ impl ManagerAgent {
     /// 获取执行策略
     pub fn execution_strategy(&self) -> ExecutionStrategy {
         self.config.execution_strategy
+    }
+
+    /// 检查是否是编译类任务
+    fn is_compile_task(&self, task: &str) -> bool {
+        let task_lower = task.to_lowercase();
+        task_lower.contains("编译")
+            || task_lower.contains("build")
+            || task_lower.contains("make")
+            || task_lower.contains("cmake")
+    }
+
+    /// 从任务描述中提取可执行文件名
+    fn extract_executable_name(&self, task: &str) -> Option<String> {
+        let task_lower = task.to_lowercase();
+
+        // 尝试匹配 "编译 xxx" 或 "build xxx" 模式
+        let patterns = [
+            r"编译\s+(\w+)",
+            r"build\s+(\w+)",
+            r"make\s+(\w+)",
+            r"编译\s+(\w+)\s+源码",
+            r"编译\s+(\w+)\s+源代码",
+        ];
+
+        for pattern in &patterns {
+            if let Ok(re) = regex::Regex::new(pattern)
+                && let Some(cap) = re.captures(&task_lower)
+                && let Some(name) = cap.get(1)
+            {
+                return Some(name.as_str().to_lowercase());
+            }
+        }
+
+        // 尝试从源码包名称提取（如 hpcg-HPCG-release-3-1-0.tar.gz -> hpcg）
+        if let Ok(re) = regex::Regex::new(r"(\w+)[-_].*\.(tar\.gz|tgz|zip)")
+            && let Some(cap) = re.captures(&task_lower)
+            && let Some(name) = cap.get(1)
+        {
+            return Some(name.as_str().to_lowercase());
+        }
+
+        None
+    }
+
+    /// 检查可执行文件是否已存在
+    fn check_existing_executable(&self, task: &str) -> Option<std::path::PathBuf> {
+        // 1. 首先检查会话状态
+        if let Some(name) = self.extract_executable_name(task) {
+            if let Some(path) = self.is_executable_built(&name) {
+                return Some(path);
+            }
+
+            // 2. 检查常见的可执行文件路径
+            let common_paths = [
+                format!("{}/bin/{}", name, name),
+                format!("{}/bin/x{}", name, name),
+                format!("{}/{}", name, name),
+                format!("bin/{}", name),
+                format!("build/{}", name),
+                name.clone(),
+            ];
+
+            for path_str in &common_paths {
+                let path = std::path::Path::new(path_str);
+                if path.exists() && path.is_file() {
+                    // 检查是否是可执行文件（Unix 系统）
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Ok(metadata) = path.metadata() {
+                            let permissions = metadata.permissions();
+                            if permissions.mode() & 0o111 != 0 {
+                                return Some(path.to_path_buf());
+                            }
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        return Some(path.to_path_buf());
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     /// 反思验证失败并重新规划子目标

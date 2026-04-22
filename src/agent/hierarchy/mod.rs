@@ -17,6 +17,7 @@ pub mod manager;
 pub mod operator;
 pub mod router;
 pub mod runner;
+pub mod session_state;
 pub mod task;
 pub mod tool_executor;
 
@@ -31,8 +32,11 @@ pub use router::{
     AgentMode, Router, RouterError, RouterOutput, RoutingStrategy, SmartRouter, TaskComplexity,
 };
 pub use runner::{HierarchyRunnerParams, HierarchyRunnerResult};
+pub use session_state::{
+    ArtifactKind, ArtifactStatus, CompletedTask, HierarchicalSessionState, SessionStateManager,
+};
 pub use task::{
-    Artifact, ArtifactKind, BuildArtifactKind, BuildRequirements, Capability, ExecutionStrategy,
-    GoalAcceptance, SubGoal, TaskResult, TaskStatus,
+    Artifact, ArtifactKind as TaskArtifactKind, BuildArtifactKind, BuildRequirements, Capability,
+    ExecutionStrategy, GoalAcceptance, SubGoal, TaskResult, TaskStatus,
 };
 pub use tool_executor::{ExtractedArtifact, ExtractedArtifactKind, ToolExecutionResult};
