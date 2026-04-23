@@ -63,6 +63,8 @@ env/
 # Rust
 ########################
 /target/
+# Tauri 子工程构建产物
+desktop-tauri/src-tauri/target/
 # 若使用 cargo vendor 或 path 依赖到 vendor/，忽略其 target
 vendor/**/target/
 
