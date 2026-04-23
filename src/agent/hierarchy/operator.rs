@@ -1059,6 +1059,268 @@ impl OperatorAgent {
                 .to_string();
         }
 
+        // 测试类任务
+        if desc.contains("测试")
+            || desc.contains("test")
+            || desc.contains("unittest")
+            || desc.contains("benchmark")
+            || desc.contains("验证")
+        {
+            return r#"这是一个测试/验证任务，请按以下步骤执行：
+
+**步骤 0: 确定工作目录**
+- 确认项目根目录和测试文件位置
+- 使用 `-C` 选项或完整路径执行命令
+
+**步骤 1: 检测测试框架**
+- 使用 `read_dir` 查看项目结构
+- 根据以下特征识别测试框架：
+  * `Cargo.toml` + `#[cfg(test)]` → Rust: `cargo test`
+  * `pytest.ini` / `conftest.py` / `test_*.py` → Python: `pytest`
+  * `package.json` + `jest/mocha/vitest` → Node.js: `npm test`
+  * `pom.xml` / `build.gradle` + `src/test/` → Java: `mvn test` / `gradle test`
+  * `Makefile` 中的 `test` 目标 → `make test`
+  * `CMakeLists.txt` 中的 `enable_testing()` → `ctest`
+
+**步骤 2: 执行测试**
+- 运行检测到的测试命令
+- 如果测试框架不明确，按优先级尝试：`make test` → `cargo test` → `pytest` → `npm test`
+- 对于特定测试用例，使用过滤参数（如 `cargo test test_name`、`pytest test_file.py`）
+
+**步骤 3: 分析测试结果**
+- **全部通过**：报告通过的测试数量和耗时
+- **部分失败**：分析失败原因（断言错误、超时、依赖缺失等）
+- **编译错误**：参考编译任务的错误处理步骤
+- **超时**：尝试增加超时时间或运行子集测试
+
+**步骤 4: 处理测试失败**
+- **断言失败**：查看错误消息定位问题代码
+- **依赖缺失**：安装缺失的测试依赖
+- **环境问题**：检查环境变量、配置文件
+- **竞态条件**：尝试串行运行测试
+
+**步骤 5: 生成报告**
+- 总结测试结果（通过/失败/跳过数量）
+- 列出失败测试的原因
+- 如果有覆盖率数据，报告覆盖率
+
+**重要约束**：
+- 最多尝试 3 种不同的测试运行方式
+- 不要反复运行同一命令期望不同结果
+- 如果测试需要特定环境（如数据库），报告缺失而非反复尝试"#
+                .to_string();
+        }
+
+        // 调试类任务
+        if desc.contains("调试")
+            || desc.contains("debug")
+            || desc.contains("修复")
+            || desc.contains("fix")
+            || desc.contains("排错")
+            || desc.contains("排查")
+        {
+            return r#"这是一个调试/修复任务，请按以下步骤执行：
+
+**步骤 0: 确定工作目录和问题上下文**
+- 确认项目根目录
+- 理解错误描述或用户反馈
+
+**步骤 1: 收集信息**
+- 使用 `read_file` 查看相关源代码
+- 使用 `read_dir` 确认项目结构
+- 如果有错误日志，使用 `read_file` 读取日志文件
+- 使用 `run_command` 运行命令复现问题（如 `make`、`cargo build`）
+
+**步骤 2: 定位问题**
+- 根据错误信息定位代码位置（文件名:行号）
+- 分析错误类型：
+  * **编译错误**：语法错误、类型不匹配、缺少导入
+  * **运行时错误**：空指针、越界访问、权限问题
+  * **逻辑错误**：算法错误、条件判断错误
+  * **配置错误**：路径错误、环境变量缺失
+
+**步骤 3: 实施修复**
+- 使用 `search_replace` 修改代码（小范围修改）
+- 使用 `create_file` 创建新文件（如需添加配置）
+- 修复原则：
+  * 最小化修改范围，只修复问题本身
+  * 不要重构或优化无关代码
+  * 保持代码风格一致
+
+**步骤 4: 验证修复**
+- 重新编译/运行确认错误已解决
+- 如果有测试，运行相关测试确认修复正确
+- 如果修复引入新错误，回滚并尝试其他方案
+
+**步骤 5: 总结**
+- 描述问题根因
+- 说明修复方案
+- 报告验证结果
+
+**重要约束**：
+- 不要猜测问题原因，必须基于错误信息定位
+- 不要同时修改多个不相关的文件
+- 最多尝试 3 种修复方案
+- 如果无法确定问题根因，报告分析结果而非盲目修改"#
+                .to_string();
+        }
+
+        // 部署类任务
+        if desc.contains("部署")
+            || desc.contains("deploy")
+            || desc.contains("安装")
+            || desc.contains("install")
+            || desc.contains("发布")
+            || desc.contains("publish")
+            || desc.contains("打包")
+            || desc.contains("package")
+        {
+            return r#"这是一个部署/打包任务，请按以下步骤执行：
+
+**步骤 0: 确定工作目录**
+- 确认项目根目录和构建输出位置
+
+**步骤 1: 检查部署环境**
+- 使用 `which` 检查必要工具（docker、kubectl、rsync 等）
+- 使用 `read_file` 查看部署配置（Dockerfile、docker-compose.yml、deploy.sh 等）
+- 检查目标环境连接性（如需远程部署）
+
+**步骤 2: 构建部署产物**
+- 确保项目已编译成功（参考编译任务指导）
+- 执行打包命令：
+  * Rust: `cargo build --release`
+  * Node.js: `npm run build`
+  * Docker: `docker build -t image_name .`
+  * 通用: `make package` / `make dist`
+
+**步骤 3: 执行部署**
+- **本地安装**: `make install` / `cargo install --path .`
+- **Docker 部署**: `docker run` / `docker-compose up`
+- **文件复制**: `cp` / `rsync` 到目标目录
+- 注意工作目录，使用完整路径
+
+**步骤 4: 验证部署**
+- 检查部署产物是否到位（`read_dir`、`ls`）
+- 如果是服务，检查是否运行（`ps`、`curl health endpoint`）
+- 验证版本号和配置
+
+**步骤 5: 清理（可选）**
+- 清理临时构建文件
+- 报告部署结果
+
+**重要约束**：
+- 不要在生产环境执行破坏性操作
+- 确认构建成功后再部署
+- 如果部署失败，检查日志而非反复重试
+- 最多尝试 3 种部署方式"#
+                .to_string();
+        }
+
+        // 代码审查类任务
+        if desc.contains("审查")
+            || desc.contains("review")
+            || desc.contains("分析代码")
+            || desc.contains("静态分析")
+            || desc.contains("lint")
+            || desc.contains("代码质量")
+        {
+            return r#"这是一个代码审查/分析任务，请按以下步骤执行：
+
+**步骤 0: 确定工作目录和审查范围**
+- 确认项目根目录
+- 理解审查范围（全部代码或特定文件/目录）
+
+**步骤 1: 了解项目结构**
+- 使用 `read_dir` 查看项目目录结构
+- 使用 `read_file` 查看关键配置文件（Cargo.toml、package.json 等）
+- 确定项目使用的语言和框架
+
+**步骤 2: 执行静态分析**
+- 根据项目语言选择工具：
+  * Rust: `cargo clippy`（如果有 `Cargo.toml`）
+  * Python: `python3 -m flake8` / `python3 -m pylint`
+  * JavaScript/TypeScript: `npm run lint`
+  * C/C++: `cppcheck` / `clang-tidy`
+  * Shell: `shellcheck`
+- 注意：工具可能未安装，如果不可用则跳过
+
+**步骤 3: 代码审查要点**
+- 使用 `read_file` 阅读源代码，关注：
+  * 潜在的 bug（空指针、越界、资源泄漏）
+  * 安全问题（硬编码密钥、SQL 注入、XSS）
+  * 代码风格（命名、格式、注释）
+  * 性能问题（不必要的克隆、N+1 查询）
+  * 可维护性（过长函数、深度嵌套）
+
+**步骤 4: 生成审查报告**
+- 按严重程度分类：🔴 严重 / 🟡 警告 / 🔵 建议
+- 每个问题包含：文件位置、问题描述、修复建议
+- 总结代码质量评分
+
+**重要约束**：
+- 不要修改代码，只做分析
+- 不要猜测代码逻辑，基于实际代码分析
+- 如果缺少分析工具，使用手动代码审查"#
+                .to_string();
+        }
+
+        // 依赖管理类任务
+        if desc.contains("依赖")
+            || desc.contains("dependency")
+            || desc.contains("安装依赖")
+            || desc.contains("更新依赖")
+            || desc.contains("npm install")
+            || desc.contains("pip install")
+            || desc.contains("cargo update")
+        {
+            return r#"这是一个依赖管理任务，请按以下步骤执行：
+
+**步骤 0: 确定工作目录**
+- 确认项目根目录
+
+**步骤 1: 检测依赖文件**
+- 使用 `read_dir` 查看项目结构
+- 识别依赖管理文件：
+  * Rust: `Cargo.toml` / `Cargo.lock`
+  * Python: `requirements.txt` / `Pipfile` / `pyproject.toml`
+  * Node.js: `package.json` / `package-lock.json` / `yarn.lock`
+  * Java: `pom.xml` / `build.gradle`
+  * C/C++: `vcpkg.json` / `conanfile.txt`
+
+**步骤 2: 检查依赖状态**
+- 使用 `read_file` 查看依赖文件内容
+- 检查依赖是否已安装：
+  * Rust: `cargo check`（自动下载依赖）
+  * Python: `python3 -c "import pkg"` 逐个检查
+  * Node.js: `ls node_modules/`
+- 分析是否有版本冲突或安全漏洞
+
+**步骤 3: 安装/更新依赖**
+- 根据项目类型执行安装命令：
+  * Rust: `cargo build`（自动安装依赖）
+  * Python: `pip install -r requirements.txt`
+  * Node.js: `npm install`
+  * Java: `mvn install` / `gradle build`
+- 注意工作目录，在包含依赖文件的目录中执行
+
+**步骤 4: 验证依赖**
+- 重新运行依赖检查确认安装成功
+- 如果有测试，运行测试确认兼容性
+- 检查是否有版本冲突警告
+
+**步骤 5: 处理依赖问题**
+- **安装失败**：检查网络连接、权限问题
+- **版本冲突**：查看错误信息，调整版本约束
+- **安全漏洞**：报告漏洞详情和建议升级版本
+- **缺少系统依赖**：报告需要安装的系统包
+
+**重要约束**：
+- 不要修改依赖文件（除非明确要求更新依赖）
+- 安装命令可能需要网络，报告网络错误而非反复重试
+- 最多尝试 3 种安装方式"#
+                .to_string();
+        }
+
         // 检查编译工具类任务
         if desc.contains("检查")
             && (desc.contains("编译")
