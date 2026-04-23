@@ -3,10 +3,40 @@
 use gloo_timers::callback::Timeout;
 use serde::Serialize;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use crate::i18n::Locale;
 use crate::message_format::{STAGED_TIMELINE_SYSTEM_PREFIX, message_text_for_display_ex};
 use crate::storage::{ChatSession, StoredMessage};
+
+#[wasm_bindgen(inline_js = r#"
+export function hasTauriInvoke() {
+  const direct = globalThis.__TAURI__ && globalThis.__TAURI__.core && globalThis.__TAURI__.core.invoke;
+  const internal = globalThis.__TAURI_INTERNALS__ && globalThis.__TAURI_INTERNALS__.invoke;
+  return typeof direct === "function" || typeof internal === "function";
+}
+
+export function invokeTauriSaveTextFile(defaultName, body) {
+  const invoke =
+    (globalThis.__TAURI__ && globalThis.__TAURI__.core && globalThis.__TAURI__.core.invoke) ||
+    (globalThis.__TAURI_INTERNALS__ && globalThis.__TAURI_INTERNALS__.invoke);
+  if (typeof invoke !== "function") {
+    throw new Error("Tauri invoke unavailable");
+  }
+  return invoke("save_text_file_via_dialog", {
+    default_name: defaultName,
+    defaultName,
+    content: body
+  });
+}
+"#)]
+extern "C" {
+    #[wasm_bindgen(js_name = hasTauriInvoke)]
+    fn has_tauri_invoke() -> bool;
+    #[wasm_bindgen(js_name = invokeTauriSaveTextFile)]
+    fn invoke_tauri_save_text_file(default_name: &str, body: &str) -> js_sys::Promise;
+}
 
 /// 须与 `src/runtime/chat_export.rs` 中 `CHAT_SESSION_FILE_VERSION` 一致。
 pub const CHAT_SESSION_FILE_VERSION: u32 = 1;
@@ -168,42 +198,102 @@ pub fn export_filename_stem(prefix: &str) -> String {
 
 /// 触发浏览器下载 UTF-8 文本；失败时返回说明字符串。
 pub fn trigger_download(filename: &str, mime: &str, body: &str) -> Result<(), String> {
+    if has_tauri_invoke() {
+        let default_name = filename.to_string();
+        let content = body.to_string();
+        let Some(w) = web_sys::window() else {
+            return Err("no window".to_string());
+        };
+        spawn_local(async move {
+            let p = invoke_tauri_save_text_file(&default_name, &content);
+            match JsFuture::from(p).await {
+                Ok(v) => {
+                    let cancelled = v.as_bool().is_some_and(|saved| !saved);
+                    if cancelled {
+                        let _ = w.alert_with_message("已取消保存。");
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("导出失败（Tauri 保存对话框）: {:?}", e);
+                    let _ = w.alert_with_message(&msg);
+                }
+            }
+        });
+        return Ok(());
+    }
+
     let window = web_sys::window().ok_or_else(|| "no window".to_string())?;
     let document = window.document().ok_or_else(|| "no document".to_string())?;
+    let body_el = document.body().ok_or_else(|| "no body".to_string())?;
 
+    let make_anchor = || -> Result<web_sys::HtmlAnchorElement, String> {
+        let a = document
+            .create_element("a")
+            .map_err(|e| format!("create a: {:?}", e))?
+            .dyn_into::<web_sys::HtmlAnchorElement>()
+            .map_err(|_| "a element".to_string())?;
+        a.set_download(filename);
+        a.set_attribute("rel", "noopener")
+            .map_err(|e| format!("rel: {:?}", e))?;
+        a.style().set_property("display", "none").ok();
+        Ok(a)
+    };
+
+    let click_anchor = |a: &web_sys::HtmlAnchorElement| -> Result<(), String> {
+        body_el
+            .append_child(a)
+            .map_err(|e| format!("append: {:?}", e))?;
+        a.click();
+        body_el.remove_child(a).ok();
+        Ok(())
+    };
+
+    // 首选 Blob URL（体积更稳，支持更大文件）；若 WebView 下载策略不接受，再回退 data URL。
     let parts = js_sys::Array::new();
     parts.push(&wasm_bindgen::JsValue::from_str(body));
     let opts = web_sys::BlobPropertyBag::new();
     opts.set_type(mime);
     let blob = web_sys::Blob::new_with_str_sequence_and_options(&parts, &opts)
         .map_err(|e| format!("Blob: {:?}", e))?;
-    let url = web_sys::Url::create_object_url_with_blob(&blob)
+    let blob_url = web_sys::Url::create_object_url_with_blob(&blob)
         .map_err(|e| format!("object URL: {:?}", e))?;
 
-    let a = document
-        .create_element("a")
-        .map_err(|e| format!("create a: {:?}", e))?
-        .dyn_into::<web_sys::HtmlAnchorElement>()
-        .map_err(|_| "a element".to_string())?;
-    a.set_href(&url);
-    a.set_download(filename);
-    a.set_attribute("rel", "noopener")
-        .map_err(|e| format!("rel: {:?}", e))?;
-    a.style().set_property("display", "none").ok();
-    let body_el = document.body().ok_or_else(|| "no body".to_string())?;
-    body_el
-        .append_child(&a)
-        .map_err(|e| format!("append: {:?}", e))?;
-    a.click();
-    body_el.remove_child(&a).ok();
+    let blob_attempt = (|| -> Result<(), String> {
+        let a = make_anchor()?;
+        a.set_href(&blob_url);
+        click_anchor(&a)
+    })();
 
-    let url_clone = url.clone();
+    let url_clone = blob_url.clone();
     Timeout::new(0, move || {
         let _ = web_sys::Url::revoke_object_url(&url_clone);
     })
     .forget();
 
-    Ok(())
+    if blob_attempt.is_ok() {
+        return Ok(());
+    }
+
+    let data_uri = format!(
+        "data:{};charset=utf-8,{}",
+        mime,
+        js_sys::encode_uri_component(body)
+    );
+    let data_attempt = (|| -> Result<(), String> {
+        let a = make_anchor()?;
+        a.set_href(&data_uri);
+        click_anchor(&a)
+    })();
+
+    if data_attempt.is_ok() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "download failed: blob={:?}, data={:?}",
+        blob_attempt.err(),
+        data_attempt.err()
+    ))
 }
 
 #[cfg(test)]

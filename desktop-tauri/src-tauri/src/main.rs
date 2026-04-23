@@ -1,20 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use serde::Deserialize;
 use std::io::{BufRead, BufReader};
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{Manager, RunEvent, Theme, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-
-#[derive(Debug, Clone, Deserialize)]
-struct WebReadyEvent {
-    event: String,
-    url: String,
-}
+use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogKind};
 
 #[derive(Debug)]
 struct BackendHandle {
@@ -87,8 +80,7 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
             .arg("--host")
             .arg("127.0.0.1")
             .arg("--port")
-            .arg("0")
-            .arg("--desktop-ready-json")
+            .arg("3000")
             .current_dir(backend_workdir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -108,8 +100,7 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
             .arg("--host")
             .arg("127.0.0.1")
             .arg("--port")
-            .arg("0")
-            .arg("--desktop-ready-json")
+            .arg("3000")
             .current_dir(backend_workdir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -129,8 +120,7 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
         .arg("--host")
         .arg("127.0.0.1")
         .arg("--port")
-        .arg("0")
-        .arg("--desktop-ready-json")
+        .arg("3000")
         .current_dir(backend_workdir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -150,6 +140,8 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
 
 fn spawn_backend_and_wait_ready() -> Result<(Child, String), String> {
     let backend_workdir = resolve_backend_workdir();
+    let backend_url = "http://127.0.0.1:3000".to_string();
+    let backend_addr = "127.0.0.1:3000";
 
     let mut child = try_spawn_backend(&backend_workdir).map_err(|e| {
         format!(
@@ -166,8 +158,6 @@ fn spawn_backend_and_wait_ready() -> Result<(Child, String), String> {
         .take()
         .ok_or_else(|| "backend stderr pipe unavailable".to_string())?;
 
-    let (ready_tx, ready_rx) = mpsc::channel::<Result<String, String>>();
-
     std::thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
@@ -177,34 +167,59 @@ fn spawn_backend_and_wait_ready() -> Result<(Child, String), String> {
 
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
-        for line_result in reader.lines() {
-            match line_result {
-                Ok(line) => {
-                    if let Ok(event) = serde_json::from_str::<WebReadyEvent>(&line) {
-                        if event.event == "web_ready" {
-                            let _ = ready_tx.send(Ok(event.url));
-                            return;
-                        }
-                    }
-                    println!("[backend] {line}");
-                }
-                Err(e) => {
-                    let _ = ready_tx.send(Err(format!("read backend stdout failed: {e}")));
-                    return;
-                }
-            }
+        for line in reader.lines().map_while(Result::ok) {
+            println!("[backend] {line}");
         }
-        let _ = ready_tx.send(Err(
-            "backend exited before emitting web_ready event".to_string()
-        ));
     });
 
-    let ready_url = ready_rx
-        .recv_timeout(Duration::from_secs(20))
-        .map_err(|_| "timed out waiting for backend ready event".to_string())?
-        .map_err(|e| format!("backend did not become ready: {e}"))?;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if TcpStream::connect(backend_addr).is_ok() {
+            break;
+        }
+        if let Some(status) = child.try_wait().map_err(|e| format!("backend wait failed: {e}"))? {
+            return Err(format!(
+                "backend exited before becoming ready (status: {status})"
+            ));
+        }
+        if Instant::now() >= deadline {
+            return Err("timed out waiting for backend to listen on 127.0.0.1:3000".to_string());
+        }
+        std::thread::sleep(Duration::from_millis(120));
+    }
 
-    Ok((child, ready_url))
+    Ok((child, backend_url))
+}
+
+#[tauri::command]
+async fn save_text_file_via_dialog(
+    app: tauri::AppHandle,
+    default_name: String,
+    content: String,
+) -> Result<bool, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<FilePath>>();
+    app.dialog()
+        .file()
+        .set_file_name(&default_name)
+        .save_file(move |picked| {
+            let _ = tx.send(picked);
+        });
+
+    let picked = rx
+        .await
+        .map_err(|e| format!("save dialog channel failed: {e}"))?;
+    let Some(file_path) = picked else {
+        return Ok(false);
+    };
+
+    let path = match file_path {
+        FilePath::Path(p) => p,
+        FilePath::Url(url) => url
+            .to_file_path()
+            .map_err(|_| "save dialog returned a non-file URL".to_string())?,
+    };
+    std::fs::write(&path, content).map_err(|e| format!("write file failed: {e}"))?;
+    Ok(true)
 }
 
 fn main() {
@@ -214,6 +229,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![save_text_file_via_dialog])
         .setup(move |app| {
             let (child, ready_url) = match spawn_backend_and_wait_ready() {
                 Ok(v) => v,
