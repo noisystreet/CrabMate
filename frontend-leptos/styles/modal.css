@@ -154,6 +154,7 @@
   gap: var(--space-2);
   margin: 0;
   font-size: 13px;
+  color: var(--text);
   cursor: pointer;
   user-select: none;
 }
@@ -162,7 +163,15 @@
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
   flex-shrink: 0;
+}
+
+.settings-checkbox-label input:focus-visible {
+  outline: var(--focus-ring-width) solid color-mix(in srgb, var(--accent) 32%, transparent);
+  outline-offset: 1px;
 }
 
 .settings-field-nested-hint {
@@ -189,8 +198,12 @@
   font-size: 13px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 88%, var(--surface));
+  background: var(--surface);
   color: var(--text);
+}
+
+.settings-text-input::placeholder {
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
 }
 
 .settings-text-input:hover {
@@ -202,6 +215,10 @@
   border-color: var(--accent);
 }
 
+.settings-text-input:focus-visible {
+  box-shadow: 0 0 0 var(--focus-ring-width) color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
 .settings-select {
   width: 100%;
   box-sizing: border-box;
@@ -209,9 +226,10 @@
   font-size: 13px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 88%, var(--surface));
+  background: var(--surface);
   color: var(--text);
   cursor: pointer;
+  appearance: none;
 }
 
 .settings-select:hover {
@@ -221,6 +239,10 @@
 .settings-select:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.settings-select:focus-visible {
+  box-shadow: 0 0 0 var(--focus-ring-width) color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .settings-actions-row {
@@ -233,9 +255,13 @@
 
 .settings-save-feedback {
   margin: var(--space-1) 14px 0;
+  padding: 6px 8px;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 86%, var(--text));
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: var(--radius-sm);
 }
 
 .session-row {
