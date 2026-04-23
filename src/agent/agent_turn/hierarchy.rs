@@ -3,6 +3,7 @@
 //! 当 `planner_executor_mode = Hierarchical` 时使用此模块执行任务分解和子目标执行。
 
 use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult};
+use crate::agent::intent_router::{IntentRoute, route_user_task};
 use crate::sse;
 
 use super::errors::RunAgentTurnError;
@@ -21,6 +22,35 @@ pub(crate) async fn run_hierarchical_agent(
             phase: AgentTurnSubPhase::Planner,
             message: "Hierarchical mode requires a user message".to_string(),
         });
+    }
+
+    let assessment = route_user_task(&task);
+    match assessment.route {
+        IntentRoute::Execute => {}
+        IntentRoute::DirectReply(reply)
+        | IntentRoute::AskThenExecute(reply)
+        | IntentRoute::ConfirmThenExecute(reply) => {
+            p.messages
+                .push(crate::types::Message::assistant_only(reply.clone()));
+            if let Some(out) = p.out {
+                let phase_payload =
+                    sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+                        assistant_answer_phase: true,
+                    });
+                let _ =
+                    sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
+                let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
+                    log: crate::sse::protocol::TimelineLogBody {
+                        kind: "final_response".to_string(),
+                        title: reply,
+                        detail: None,
+                    },
+                });
+                let _ =
+                    sse::send_string_logged(out, final_tl, "hierarchical::final_response").await;
+            }
+            return Ok(());
+        }
     }
 
     log::info!(
