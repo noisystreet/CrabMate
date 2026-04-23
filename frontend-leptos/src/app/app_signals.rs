@@ -50,7 +50,7 @@ impl ShellUISignals {
             theme: RwSignal::new(
                 local_storage()
                     .and_then(|s| s.get_item(THEME_KEY).ok().flatten())
-                    .unwrap_or_else(|| "dark".to_string()),
+                    .unwrap_or_else(|| "light".to_string()),
             ),
             bg_decor: RwSignal::new(load_bool_key(BG_DECOR_KEY, true)),
             locale: RwSignal::new(crate::i18n::load_locale_from_storage()),
