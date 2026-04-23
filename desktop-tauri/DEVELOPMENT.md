@@ -170,3 +170,21 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
 - 日志目录与诊断页
 - 单实例保护
 - sidecar 正式打包与自动更新
+
+## 5. 发布检查清单（sidecar 路径一致性）
+
+发布前建议最少检查以下项目：
+
+- **后端二进制命名**
+  - Linux/macOS: `crabmate`
+  - Windows: `crabmate.exe`
+- **三平台都能命中同一套回退顺序**
+  - env：`CRABMATE_DESKTOP_BACKEND_BIN`
+  - sidecar：`<exe_dir>/crabmate`、`<exe_dir>/sidecar/crabmate`、`<exe_dir>/resources/sidecar/crabmate`
+  - PATH：`crabmate` / `crabmate.exe`
+- **打包产物内存在 sidecar 文件**
+  - 实际解包后确认可执行文件存在且有执行权限（Linux/macOS）
+- **冷启动验证**
+  - 在“未设置 env、PATH 不含 crabmate”的干净机器上，仍能从 sidecar 启动成功
+- **错误提示验证**
+  - 故意移除 sidecar 后，能看到明确的启动失败弹窗与路径排查信息
