@@ -2,7 +2,8 @@
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::JsFuture;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{HtmlElement, Node};
 
 use crate::session_export::{
@@ -11,6 +12,30 @@ use crate::session_export::{
 use crate::storage::{
     ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, ensure_at_least_one, make_session_id,
 };
+
+#[wasm_bindgen(inline_js = r#"
+export function hasTauriInvokeForDelete() {
+  const direct = globalThis.__TAURI__ && globalThis.__TAURI__.core && globalThis.__TAURI__.core.invoke;
+  const internal = globalThis.__TAURI_INTERNALS__ && globalThis.__TAURI_INTERNALS__.invoke;
+  return typeof direct === "function" || typeof internal === "function";
+}
+
+export function invokeTauriDeleteConfirm(message) {
+  const invoke =
+    (globalThis.__TAURI__ && globalThis.__TAURI__.core && globalThis.__TAURI__.core.invoke) ||
+    (globalThis.__TAURI_INTERNALS__ && globalThis.__TAURI_INTERNALS__.invoke);
+  if (typeof invoke !== "function") {
+    throw new Error("Tauri invoke unavailable");
+  }
+  return invoke("confirm_delete_session_via_dialog", { message });
+}
+"#)]
+extern "C" {
+    #[wasm_bindgen(js_name = hasTauriInvokeForDelete)]
+    fn has_tauri_invoke_for_delete() -> bool;
+    #[wasm_bindgen(js_name = invokeTauriDeleteConfirm)]
+    fn invoke_tauri_delete_confirm(message: &str) -> js_sys::Promise;
+}
 
 fn running_in_tauri_webview() -> bool {
     let Some(w) = web_sys::window() else {
@@ -24,6 +49,46 @@ fn running_in_tauri_webview() -> bool {
             .ok()
             .is_some_and(|v| !v.is_null() && !v.is_undefined());
     has_tauri || has_internals
+}
+
+fn apply_delete_session(
+    sessions: RwSignal<Vec<ChatSession>>,
+    active_id: RwSignal<String>,
+    draft: RwSignal<String>,
+    session_sync: RwSignal<crate::session_sync::SessionSyncState>,
+    id: &str,
+    locale: crate::i18n::Locale,
+) {
+    let id = id.to_string();
+    let was_active = active_id.get() == id;
+    sessions.update(|list| {
+        list.retain(|s| s.id != id);
+    });
+    if sessions.with(|l| l.is_empty()) {
+        let (list, def_id) = ensure_at_least_one(
+            Vec::new(),
+            crate::i18n::default_session_title(locale).to_string(),
+        );
+        sessions.set(list);
+        active_id.set(def_id.clone());
+        draft.set(
+            sessions
+                .with(|l| l.iter().find(|s| s.id == def_id).map(|s| s.draft.clone()))
+                .unwrap_or_default(),
+        );
+        session_sync.set(crate::session_sync::SessionSyncState::local_only());
+        return;
+    }
+    if was_active {
+        let pick = sessions.with(|list| list[0].id.clone());
+        active_id.set(pick.clone());
+        draft.set(
+            sessions
+                .with(|l| l.iter().find(|s| s.id == pick).map(|s| s.draft.clone()))
+                .unwrap_or_default(),
+        );
+        session_sync.set(crate::session_sync::SessionSyncState::local_only());
+    }
 }
 
 pub fn make_message_id() -> String {
@@ -363,42 +428,41 @@ pub fn delete_session_after_confirm(
     let Some(w) = web_sys::window() else {
         return;
     };
-    if !running_in_tauri_webview() {
-        let confirm_msg = crate::i18n::delete_session_confirm(locale);
-        if !w.confirm_with_message(confirm_msg).unwrap_or(false) {
-            return;
-        }
-    }
-    let id = id.to_string();
-    let was_active = active_id.get() == id;
-    sessions.update(|list| {
-        list.retain(|s| s.id != id);
-    });
-    if sessions.with(|l| l.is_empty()) {
-        let (list, def_id) = ensure_at_least_one(
-            Vec::new(),
-            crate::i18n::default_session_title(locale).to_string(),
-        );
-        sessions.set(list);
-        active_id.set(def_id.clone());
-        draft.set(
-            sessions
-                .with(|l| l.iter().find(|s| s.id == def_id).map(|s| s.draft.clone()))
-                .unwrap_or_default(),
-        );
-        session_sync.set(crate::session_sync::SessionSyncState::local_only());
+    let confirm_msg = crate::i18n::delete_session_confirm(locale).to_string();
+    if running_in_tauri_webview() && has_tauri_invoke_for_delete() {
+        let sessions_c = sessions;
+        let active_id_c = active_id;
+        let draft_c = draft;
+        let session_sync_c = session_sync;
+        let id_s = id.to_string();
+        let w2 = w.clone();
+        spawn_local(async move {
+            match JsFuture::from(invoke_tauri_delete_confirm(&confirm_msg)).await {
+                Ok(v) => {
+                    if v.as_bool().unwrap_or(false) {
+                        apply_delete_session(
+                            sessions_c,
+                            active_id_c,
+                            draft_c,
+                            session_sync_c,
+                            &id_s,
+                            locale,
+                        );
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("删除确认失败（Tauri 对话框）: {:?}", e);
+                    let _ = w2.alert_with_message(&msg);
+                }
+            }
+        });
         return;
     }
-    if was_active {
-        let pick = sessions.with(|list| list[0].id.clone());
-        active_id.set(pick.clone());
-        draft.set(
-            sessions
-                .with(|l| l.iter().find(|s| s.id == pick).map(|s| s.draft.clone()))
-                .unwrap_or_default(),
-        );
-        session_sync.set(crate::session_sync::SessionSyncState::local_only());
+
+    if !w.confirm_with_message(&confirm_msg).unwrap_or(false) {
+        return;
     }
+    apply_delete_session(sessions, active_id, draft, session_sync, id, locale);
 }
 
 /// 左栏会话右键菜单锚点（`position: fixed` 使用视口坐标）。

@@ -7,7 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Manager, RunEvent, Theme, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogKind};
+use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 
 #[derive(Debug)]
 struct BackendHandle {
@@ -222,6 +222,27 @@ async fn save_text_file_via_dialog(
     Ok(true)
 }
 
+#[tauri::command]
+async fn confirm_delete_session_via_dialog(
+    app: tauri::AppHandle,
+    message: String,
+) -> Result<bool, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+    app.dialog()
+        .message(message)
+        .title("确认删除会话")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "删除".to_string(),
+            "取消".to_string(),
+        ))
+        .show(move |confirmed| {
+            let _ = tx.send(confirmed);
+        });
+    rx.await
+        .map_err(|e| format!("confirm dialog channel failed: {e}"))
+}
+
 fn main() {
     let backend_state = Arc::new(Mutex::new(None::<Child>));
     let backend_state_for_setup = Arc::clone(&backend_state);
@@ -229,7 +250,10 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![save_text_file_via_dialog])
+        .invoke_handler(tauri::generate_handler![
+            save_text_file_via_dialog,
+            confirm_delete_session_via_dialog
+        ])
         .setup(move |app| {
             let (child, ready_url) = match spawn_backend_and_wait_ready() {
                 Ok(v) => v,
