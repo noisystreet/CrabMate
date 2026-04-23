@@ -12,6 +12,20 @@ use crate::storage::{
     ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, ensure_at_least_one, make_session_id,
 };
 
+fn running_in_tauri_webview() -> bool {
+    let Some(w) = web_sys::window() else {
+        return false;
+    };
+    let has_tauri = js_sys::Reflect::get(&w, &wasm_bindgen::JsValue::from_str("__TAURI__"))
+        .ok()
+        .is_some_and(|v| !v.is_null() && !v.is_undefined());
+    let has_internals =
+        js_sys::Reflect::get(&w, &wasm_bindgen::JsValue::from_str("__TAURI_INTERNALS__"))
+            .ok()
+            .is_some_and(|v| !v.is_null() && !v.is_undefined());
+    has_tauri || has_internals
+}
+
 pub fn make_message_id() -> String {
     make_session_id()
 }
@@ -331,7 +345,7 @@ pub fn export_session_markdown_for_id(
     let md = session_to_markdown(&s, loc, apply_assistant_display_filters);
     let stem = export_filename_stem("chat_export");
     let name = format!("{stem}.md");
-    if let Err(e) = trigger_download(&name, "text/markdown;charset=utf-8", &md) {
+    if let Err(e) = trigger_download(&name, "text/plain;charset=utf-8", &md) {
         if let Some(w) = web_sys::window() {
             let _ = w.alert_with_message(&e);
         }
@@ -349,9 +363,11 @@ pub fn delete_session_after_confirm(
     let Some(w) = web_sys::window() else {
         return;
     };
-    let confirm_msg = crate::i18n::delete_session_confirm(locale);
-    if !w.confirm_with_message(confirm_msg).unwrap_or(false) {
-        return;
+    if !running_in_tauri_webview() {
+        let confirm_msg = crate::i18n::delete_session_confirm(locale);
+        if !w.confirm_with_message(confirm_msg).unwrap_or(false) {
+            return;
+        }
     }
     let id = id.to_string();
     let was_active = active_id.get() == id;
