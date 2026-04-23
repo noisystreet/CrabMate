@@ -52,20 +52,20 @@ impl DynamicDecomposer {
         let mut score = 0u8;
         let mut reasons = Vec::new();
 
-        // 基于迭代次数评分
-        if iterations > 10 {
+        // 基于迭代次数评分（提高阈值，编译任务 7-8 轮迭代很正常）
+        if iterations > 12 {
             score += 25;
             reasons.push(format!("已执行 {} 轮迭代", iterations));
-        } else if iterations > 5 {
+        } else if iterations > 8 {
             score += 15;
             reasons.push(format!("已执行 {} 轮迭代", iterations));
         }
 
-        // 基于连续失败次数评分
-        if consecutive_failures >= 3 {
+        // 基于连续失败次数评分（至少 3 次才计分，2 次在编译调试中很常见）
+        if consecutive_failures >= 5 {
             score += 30;
             reasons.push(format!("连续 {} 次失败", consecutive_failures));
-        } else if consecutive_failures >= 2 {
+        } else if consecutive_failures >= 3 {
             score += 15;
             reasons.push(format!("连续 {} 次失败", consecutive_failures));
         }
@@ -359,13 +359,18 @@ mod tests {
         assert!(!assessment.needs_decomposition);
         assert!(assessment.score < 30);
 
+        // 编译类任务：7 轮迭代 + 2 次失败不应触发分解
+        let compile_goal = SubGoal::new("test_compile", "编译 hpcg 代码");
+        let assessment = decomposer.assess_complexity(&compile_goal, 7, 2, 4);
+        assert!(!assessment.needs_decomposition);
+
         let complex_goal = SubGoal::new(
             "test_2",
             "重构整个项目的架构，优化性能，这是一个非常复杂的多步骤任务",
         );
-        let assessment = decomposer.assess_complexity(&complex_goal, 12, 3, 8);
+        let assessment = decomposer.assess_complexity(&complex_goal, 13, 4, 8);
         assert!(assessment.needs_decomposition);
-        assert!(assessment.score >= 30);
+        assert!(assessment.score >= 40);
     }
 
     #[test]

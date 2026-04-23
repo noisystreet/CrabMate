@@ -98,7 +98,7 @@ impl Default for OperatorConfig {
             compile_error_max_retries: 3,
             attempted_configs: Vec::new(),
             enable_dynamic_decomposition: true,
-            dynamic_decomposition_threshold: 30,
+            dynamic_decomposition_threshold: 40,
         }
     }
 }
@@ -659,7 +659,7 @@ impl OperatorAgent {
                     // 动态子目标分解检查
                     if self.config.enable_dynamic_decomposition
                         && state.dynamic_decomposition_count == 0 // 只触发一次
-                        && state.iteration >= 5
+                        && state.iteration >= 8
                     // 至少执行了5轮
                     {
                         let decomposer = super::dynamic_decomposer::DynamicDecomposer::new();
@@ -1851,7 +1851,7 @@ mod tests {
             compile_error_max_retries: 3,
             attempted_configs: Vec::new(),
             enable_dynamic_decomposition: true,
-            dynamic_decomposition_threshold: 30,
+            dynamic_decomposition_threshold: 40,
         };
         let operator = OperatorAgent::new(config);
 

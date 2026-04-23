@@ -490,7 +490,7 @@ impl<'a> HierarchicalExecutor<'a> {
                     compile_error_max_retries: 3,
                     attempted_configs: Vec::new(),
                     enable_dynamic_decomposition: true,
-                    dynamic_decomposition_threshold: 30,
+                    dynamic_decomposition_threshold: 40,
                 };
 
                 let operator = OperatorAgent::new(operator_config);
@@ -539,6 +539,13 @@ impl<'a> HierarchicalExecutor<'a> {
                         info!(
                             target: "crabmate",
                             "[HIERARCHICAL] Parallel: Goal {} completed successfully",
+                            goal_id
+                        );
+                    } else if matches!(result.status, TaskStatus::NeedsDecomposition { .. }) {
+                        // NeedsDecomposition 不是失败，而是需要重新规划
+                        info!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Parallel: Goal {} needs decomposition",
                             goal_id
                         );
                     } else {
@@ -599,17 +606,22 @@ impl<'a> HierarchicalExecutor<'a> {
             .iter()
             .filter(|r| matches!(r.status, TaskStatus::Completed))
             .count();
+        let needs_decomp_count = results
+            .iter()
+            .filter(|r| matches!(r.status, TaskStatus::NeedsDecomposition { .. }))
+            .count();
         info!(
             target: "crabmate",
-            "[HIERARCHICAL] Parallel execution summary: {} total, {} completed, {} failed, {} panicked",
+            "[HIERARCHICAL] Parallel execution summary: {} total, {} completed, {} needs_decomposition, {} failed, {} panicked",
             results.len(),
             completed_count,
+            needs_decomp_count,
             failed_count,
             panicked_count
         );
 
-        // 如果所有任务都失败了，返回错误
-        if completed_count == 0 && !results.is_empty() {
+        // 如果所有任务都失败了（排除 NeedsDecomposition），返回错误
+        if completed_count == 0 && needs_decomp_count == 0 && !results.is_empty() {
             return Err(ExecutionError::MaxFailuresReached(format!(
                 "All {} parallel tasks failed ({} execution errors, {} panics)",
                 results.len(),
@@ -972,7 +984,7 @@ impl<'a> HierarchicalExecutor<'a> {
             compile_error_max_retries: 3,
             attempted_configs: Vec::new(),
             enable_dynamic_decomposition: true,
-            dynamic_decomposition_threshold: 30,
+            dynamic_decomposition_threshold: 40,
         };
         log::info!(target: "crabmate", "[HIERARCHICAL] execute_single: sse_out is {:?}, tools_defs count={}", self.sse_out.is_some(), tools_defs_for_llm.len());
 
