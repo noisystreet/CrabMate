@@ -672,30 +672,15 @@ impl<'a> HierarchicalExecutor<'a> {
                 );
 
                 // 尝试通过 Manager 进行反思和重新规划
-                // 将 NeedsDecomposition 视为一种特殊的失败，触发 Manager 的反思
+                // NeedsDecomposition 不是失败，保留原始状态进入反思流程
                 if let Some(ref _manager) = self.manager {
-                    // 构造一个模拟的失败结果，让 Manager 进行反思和重新规划
-                    let failure_result = TaskResult {
-                        task_id: current_goal.goal_id.clone(),
-                        status: TaskStatus::Failed {
-                            reason: format!(
-                                "任务过于复杂，建议分解为 {} 个子目标: {}",
-                                suggested_subgoals, reason
-                            ),
-                        },
-                        output: result.output.clone(),
-                        error: Some(format!("需要动态分解: {}", reason)),
-                        artifacts: result.artifacts.clone(),
-                        duration_ms: result.duration_ms,
-                    };
-
                     let artifacts: Vec<_> = artifact_store.all().into_iter().cloned().collect();
                     let reflection_result = self
                         .reflect_and_replan(
                             _manager,
                             &current_goal,
                             &format!("任务过于复杂，建议分解为 {} 个子目标", suggested_subgoals),
-                            &failure_result,
+                            &result,
                             &artifacts,
                         )
                         .await;
