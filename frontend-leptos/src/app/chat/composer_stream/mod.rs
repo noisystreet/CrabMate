@@ -15,6 +15,7 @@ use leptos::task::spawn_local;
 
 use std::cell::Cell;
 use std::cell::RefCell;
+use std::collections::VecDeque;
 
 use crate::api::send_chat_stream;
 use crate::chat_session_state::ChatSessionSignals;
@@ -77,6 +78,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 approval_session_store_id: appr_store.clone(),
                 shell: shell_outer.clone(),
                 pending_tool_args: Rc::new(RefCell::new(context::PendingToolArgs::default())),
+                pending_tool_message_ids: Rc::new(RefCell::new(VecDeque::new())),
             });
 
             let in_answer_phase: Rc<Cell<bool>> = Rc::new(Cell::new(false));

@@ -122,7 +122,18 @@ fn message_text_for_export(
     loc: Locale,
     apply_assistant_display_filters: bool,
 ) -> String {
-    message_text_for_display_ex(m, loc, apply_assistant_display_filters)
+    let body = message_text_for_display_ex(m, loc, apply_assistant_display_filters);
+    // 兼容旧会话：仅有“(无回复)”占位时，导出追加最小诊断摘要，便于离线排查。
+    if m.role == "assistant"
+        && (body.trim() == crate::i18n::stream_empty_reply(Locale::ZhHans)
+            || body.trim() == crate::i18n::stream_empty_reply(Locale::En))
+    {
+        return format!(
+            "{body}\n\n{}",
+            crate::i18n::stream_empty_reply_diag_line(loc, None, false, 0)
+        );
+    }
+    body
 }
 
 fn markdown_sections_for_export(messages: &[ExportMessage], loc: Locale) -> String {

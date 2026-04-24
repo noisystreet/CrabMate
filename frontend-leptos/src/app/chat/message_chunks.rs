@@ -1,7 +1,7 @@
 //! 将 `StoredMessage` 切片折叠为连续工具组 / 分阶段时间线组，供聊天列迭代渲染。
 //!
-//! 分阶段时间线旁注（`### CrabMate·staged_timeline`）在工具输出之间仍属同一轮实施：
-//! 先输出**一条**聚合待办卡片（含簇内全部旁注），再按时间顺序输出簇内各工具块，避免顶/底重复「系统」气泡。
+//! 分阶段时间线旁注（`### CrabMate·staged_timeline`）与工具输出需按时间顺序穿插展示：
+//! 同类连续旁注会聚合为一张待办卡；工具输出连续段折叠为工具组。
 
 use crate::message_format::is_staged_timeline_stored_message;
 use crate::storage::StoredMessage;
@@ -64,23 +64,20 @@ pub(crate) fn chunk_messages(msgs: &[StoredMessage]) -> Vec<ChatChunk> {
             let slice: Vec<_> = (start..i).map(|j| (j, msgs[j].clone())).collect();
             push_tool_run_chunk(&mut out, slice);
         } else if is_staged_timeline_stored_message(&msgs[i]) {
-            let cluster_start = i;
-            let j = staged_cluster_end_exclusive(msgs, cluster_start);
-            let staged_items: Vec<_> = (cluster_start..j)
-                .filter(|&k| is_staged_timeline_stored_message(&msgs[k]))
-                .map(|k| (k, msgs[k].clone()))
-                .collect();
-            let head_id = staged_items
-                .first()
-                .map(|(_, m)| m.id.clone())
-                .unwrap_or_default();
-            out.push(ChatChunk::StagedTimelineGroup {
-                head_id,
-                items: staged_items,
-            });
-            let mut k = cluster_start;
+            // 分阶段簇内按时间顺序交替输出：
+            // staged 段 -> tool 段 -> staged 段 ...
+            let j = staged_cluster_end_exclusive(msgs, i);
+            let mut k = i;
             while k < j {
-                if msgs[k].is_tool {
+                if is_staged_timeline_stored_message(&msgs[k]) {
+                    let s_start = k;
+                    while k < j && is_staged_timeline_stored_message(&msgs[k]) {
+                        k += 1;
+                    }
+                    let items: Vec<_> = (s_start..k).map(|idx| (idx, msgs[idx].clone())).collect();
+                    let head_id = items.first().map(|(_, m)| m.id.clone()).unwrap_or_default();
+                    out.push(ChatChunk::StagedTimelineGroup { head_id, items });
+                } else if msgs[k].is_tool {
                     let t_start = k;
                     while k < j && msgs[k].is_tool {
                         k += 1;
@@ -131,7 +128,7 @@ mod tests {
     }
 
     #[test]
-    fn staged_bridged_across_tools_emits_one_card_then_tools_in_order() {
+    fn staged_bridged_across_tools_interleaves_in_order() {
         let msgs = vec![
             staged_line("s0", "cm_tl:0:start"),
             empty_msg("t0", "system", "tool0", true),
@@ -143,9 +140,8 @@ mod tests {
             "expected staged group first"
         );
         if let ChatChunk::StagedTimelineGroup { ref items, .. } = chunks[0] {
-            assert_eq!(items.len(), 2);
+            assert_eq!(items.len(), 1);
             assert_eq!(items[0].0, 0);
-            assert_eq!(items[1].0, 2);
         } else {
             panic!("chunk 0");
         }
@@ -153,7 +149,17 @@ mod tests {
             matches!(&chunks[1], ChatChunk::Single { idx: 1, .. }),
             "expected single tool"
         );
-        assert_eq!(chunks.len(), 2);
+        assert!(
+            matches!(chunks[2], ChatChunk::StagedTimelineGroup { .. }),
+            "expected trailing staged group"
+        );
+        if let ChatChunk::StagedTimelineGroup { ref items, .. } = chunks[2] {
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].0, 2);
+        } else {
+            panic!("chunk 2");
+        }
+        assert_eq!(chunks.len(), 3);
     }
 
     #[test]
