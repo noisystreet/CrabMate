@@ -218,6 +218,7 @@ fn map_execute_primary_intent(task: &str) -> &'static str {
     if has_any(&[
         "测试",
         "test",
+        "pytest",
         "cargo test",
         "cargo build",
         "构建",
@@ -232,6 +233,7 @@ fn map_execute_primary_intent(task: &str) -> &'static str {
     }
     if has_any(&[
         "报错", "error", "panic", "异常", "失败", "定位", "排查", "调试", "诊断", "修复", "bug",
+        "分析",
     ]) {
         return "execute.debug_diagnose";
     }
@@ -292,6 +294,17 @@ fn map_secondary_intents(task: &str, kind: IntentKind, primary_intent: &str) -> 
     if has_any(&[
         "改", "修改", "实现", "重构", "新增", "删除", ".rs", ".ts", ".tsx", ".py",
     ]) {
+        push_if_absent(&mut intents, "execute.code_change");
+    }
+    if has_any(&["跑", "执行"]) && has_any(&["test", "pytest", "cargo", "构建", "编译"]) {
+        push_if_absent(&mut intents, "execute.run_test_build");
+    }
+    if has_any(&["定位", "排查", "分析"]) && has_any(&["报错", "异常", "panic", "error", "bug"])
+    {
+        push_if_absent(&mut intents, "execute.debug_diagnose");
+    }
+    if has_any(&["改", "修改", "重构", "实现"]) && has_any(&["函数", "文件", "模块", "代码"])
+    {
         push_if_absent(&mut intents, "execute.code_change");
     }
     if has_any(&[
@@ -421,6 +434,20 @@ mod tests {
         let decision = assess_and_route("有hpcg的源码吗？", &IntentContext::default());
         assert_eq!(decision.kind, IntentKind::Execute);
         assert_eq!(decision.primary_intent, "execute.read_inspect");
+    }
+
+    #[test]
+    fn run_test_maps_to_run_test_build() {
+        let decision = assess_and_route("帮我跑一下 pytest", &IntentContext::default());
+        assert_eq!(decision.kind, IntentKind::Execute);
+        assert_eq!(decision.primary_intent, "execute.run_test_build");
+    }
+
+    #[test]
+    fn debug_phrase_maps_to_debug_diagnose() {
+        let decision = assess_and_route("这个异常请先分析定位", &IntentContext::default());
+        assert_eq!(decision.kind, IntentKind::Execute);
+        assert_eq!(decision.primary_intent, "execute.debug_diagnose");
     }
 
     #[test]

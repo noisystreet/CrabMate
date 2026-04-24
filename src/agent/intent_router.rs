@@ -76,6 +76,31 @@ const EXECUTION_HINT_KEYWORDS: &[&str] = &[
     "push", "deploy", "报错", "error", "异常", "panic", "cargo", "npm", "pnpm", "git", "python",
 ];
 
+const READONLY_OBJECT_KEYWORDS: &[&str] = &[
+    "目录", "文件", "源码", "项目", "仓库", "提交", "分支", "函数", "src", ".rs", ".ts", ".md",
+];
+
+const RUN_TEST_BUILD_ACTION_KEYWORDS: &[&str] = &[
+    "跑",
+    "运行",
+    "执行",
+    "测试",
+    "test",
+    "cargo test",
+    "pytest",
+    "编译",
+    "构建",
+    "build",
+    "cargo build",
+];
+
+const DEBUG_ACTION_KEYWORDS: &[&str] = &[
+    "报错", "异常", "panic", "失败", "定位", "排查", "分析", "调试", "error", "bug",
+];
+
+const CODE_CHANGE_ACTION_KEYWORDS: &[&str] = &["改", "修改", "重构", "实现"];
+const CODE_CHANGE_OBJECT_KEYWORDS: &[&str] = &["函数", "文件", "模块", ".rs", ".ts", ".py", "代码"];
+
 const READONLY_LISTING_KEYWORDS: &[&str] = &[
     "当前目录",
     "有哪些",
@@ -230,6 +255,23 @@ fn execution_confidence(s: &str) -> f32 {
     if s.contains(".rs") || s.contains(".ts") || s.contains(".md") {
         score += 0.2;
     }
+    if has_pair_hit(
+        s,
+        RUN_TEST_BUILD_ACTION_KEYWORDS,
+        &["test", "cargo", "构建", "编译"],
+    ) {
+        score += 0.2;
+    }
+    if has_pair_hit(
+        s,
+        DEBUG_ACTION_KEYWORDS,
+        &["报错", "异常", "panic", "error"],
+    ) {
+        score += 0.15;
+    }
+    if has_pair_hit(s, CODE_CHANGE_ACTION_KEYWORDS, CODE_CHANGE_OBJECT_KEYWORDS) {
+        score += 0.15;
+    }
     if s.chars().count() > 20 {
         score += 0.1;
     }
@@ -238,17 +280,13 @@ fn execution_confidence(s: &str) -> f32 {
 
 fn is_readonly_listing_request(s: &str) -> bool {
     let has_listing_phrase = READONLY_LISTING_KEYWORDS.iter().any(|k| s.contains(k));
-    let has_listing_object = s.contains("目录")
-        || s.contains("文件")
-        || s.contains("源码")
-        || s.contains("项目")
-        || s.contains("仓库")
-        || s.contains("src")
-        || s.contains(".rs")
-        || s.contains(".ts")
-        || s.contains(".md");
+    let has_listing_object = READONLY_OBJECT_KEYWORDS.iter().any(|k| s.contains(k));
     (has_listing_phrase && has_listing_object)
         || (s.contains('有') && (s.contains("源码") || s.contains("文件")) && s.contains('吗'))
+}
+
+fn has_pair_hit(s: &str, actions: &[&str], objects: &[&str]) -> bool {
+    actions.iter().any(|k| s.contains(k)) && objects.iter().any(|k| s.contains(k))
 }
 
 #[cfg(test)]
@@ -337,5 +375,41 @@ mod tests {
         let r = route_user_task("有hpcg的源码吗？");
         assert_eq!(r.kind, IntentKind::Execute);
         assert!(matches!(r.route, IntentRoute::Execute));
+    }
+
+    #[test]
+    fn run_test_pair_routes_to_execute() {
+        let r = route_user_task("帮我跑一下 cargo test");
+        assert_eq!(r.kind, IntentKind::Execute);
+        assert!(matches!(
+            r.route,
+            IntentRoute::Execute | IntentRoute::ConfirmThenExecute(_)
+        ));
+    }
+
+    #[test]
+    fn debug_pair_routes_to_execute() {
+        let r = route_user_task("这个报错帮我定位下原因");
+        assert_eq!(r.kind, IntentKind::Execute);
+        assert!(matches!(
+            r.route,
+            IntentRoute::Execute | IntentRoute::ConfirmThenExecute(_)
+        ));
+    }
+
+    #[test]
+    fn code_change_pair_routes_to_execute_or_confirm() {
+        let r = route_user_task("帮我修改这个函数实现");
+        assert_eq!(r.kind, IntentKind::Execute);
+        assert!(matches!(
+            r.route,
+            IntentRoute::Execute | IntentRoute::ConfirmThenExecute(_)
+        ));
+    }
+
+    #[test]
+    fn ability_question_should_not_route_to_execute() {
+        let r = route_user_task("你有哪些技能");
+        assert_eq!(r.kind, IntentKind::Qa);
     }
 }
