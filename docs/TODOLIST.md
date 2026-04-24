@@ -57,6 +57,7 @@
 
 **职责摘要**：`agent_turn` 主循环；`context_window` 裁剪/摘要；`reflection/plan_rewrite` 终答规划重写与历史扫描；`per_coord` / `plan_artifact` / `workflow_reflection_controller`；`workflow` DAG 执行。
 
+- [ ] **意图识别增强一期（设计落地）**：按 `docs/design/intent_recognition_enhancement.md` 实施 L0/L1/L2/L3 管线，形成统一 `IntentDecision` 契约并接入 `agent_turn` 主链路；至少覆盖细粒度执行意图拆分、`abstain/need_clarification`、阈值可配置、埋点与失败样本回灌。
 - [ ] **规划器/执行器阶段 2（模型与预算解耦）**：在阶段 1 逻辑双 agent 基础上，为 planner / executor 提供独立模型、温度、max_tokens 与上下文预算，建立成本/时延对照基线。
 - [ ] **规划器/执行器阶段 3（物理拆分可选）**：评估是否拆分为独立进程/服务（队列、会话与重试语义一致），目标是故障隔离与独立扩缩容；若收益不足则保留同进程架构。
 - [ ] **规划与反思策略可插拔**：在现有 `FinalPlanRequirementMode` 与已落地的 `final_plan_require_*` / `final_plan_semantic_check_*` 之上，继续按场景细化（如按工具类型门控、非 workflow 路径策略等）。
