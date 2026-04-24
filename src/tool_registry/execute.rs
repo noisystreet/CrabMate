@@ -83,6 +83,55 @@ fn read_dir_path_is_external(args_json: &str) -> Option<String> {
     None
 }
 
+async fn approve_external_read_dir_if_needed(
+    args: &str,
+    web_ctx: Option<&WebToolRuntime>,
+    cli_ctx: Option<&CliToolRuntime>,
+) -> Result<(), String> {
+    let Some(ext_path) = read_dir_path_is_external(args) else {
+        return Ok(());
+    };
+    if web_ctx.is_none() && cli_ctx.is_none() {
+        return Err(format!(
+            "错误：read_dir 访问工作区外路径 \"{}\" 需要审批通道（当前无可用会话）。",
+            ext_path
+        ));
+    }
+    let spec = ApprovalRequestSpec {
+        capability: SensitiveCapability::WorkspaceExternalPath,
+        sse_command: "read_dir".to_string(),
+        sse_args: format!("path={}", ext_path),
+        allowlist_key: None,
+        cli_title: "read_dir 工作区外路径审批",
+        cli_detail: format!(
+            "read_dir 请求访问工作区外路径：{}\n仅在可信环境下批准。",
+            ext_path
+        ),
+        web_timeline_prefix_zh: "工作区外路径审批：",
+    };
+    let allow_handles = SharedAllowlistHandles {
+        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+        cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
+    };
+    match tool_approval::interactive_gate_after_whitelist_miss(
+        web_ctx.map(|w| w.approval_sink()),
+        cli_ctx.map(|c| CliApprovalInput {
+            auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+        }),
+        &spec,
+        "tool_registry::read_dir external path approval",
+        &allow_handles,
+    )
+    .await
+    {
+        Ok(InteractiveGateOutcome::Allowed) => Ok(()),
+        Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{}", msg)),
+        Err(ToolApprovalWebError::ChannelUnavailable) => {
+            Err("错误：审批通道不可用，请重试。".to_string())
+        }
+    }
+}
+
 /// Web / CLI 统一入口：`(tool_result_text, workflow 反思注入)`。
 pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
     let DispatchToolParams {
@@ -243,54 +292,11 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             }
 
             // `read_dir` 外部路径审批：绝对路径或含 `..` 时需用户确认（不走白名单）。
-            // 审批通过后，directory.rs 会直接使用绝对路径读取目录。
-            if name == "read_dir"
-                && let Some(ext_path) = read_dir_path_is_external(args)
-            {
+            if name == "read_dir" {
                 let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
-                if web_ctx.is_none() && cli_ctx.is_none() {
-                    return (
-                        format!(
-                            "错误：read_dir 访问工作区外路径 \"{}\" 需要审批通道（当前无可用会话）。",
-                            ext_path
-                        ),
-                        None,
-                    );
-                }
-                let spec = ApprovalRequestSpec {
-                    capability: SensitiveCapability::WorkspaceExternalPath,
-                    sse_command: "read_dir".to_string(),
-                    sse_args: format!("path={}", ext_path),
-                    allowlist_key: None,
-                    cli_title: "read_dir 工作区外路径审批",
-                    cli_detail: format!(
-                        "read_dir 请求访问工作区外路径：{}\n仅在可信环境下批准。",
-                        ext_path
-                    ),
-                    web_timeline_prefix_zh: "工作区外路径审批：",
-                };
-                let allow_handles = SharedAllowlistHandles {
-                    web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-                    cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
-                };
-                match tool_approval::interactive_gate_after_whitelist_miss(
-                    web_ctx.map(|w| w.approval_sink()),
-                    cli_ctx.map(|c| CliApprovalInput {
-                        auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
-                    }),
-                    &spec,
-                    "tool_registry::read_dir external path approval",
-                    &allow_handles,
-                )
-                .await
+                if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx, cli_ctx).await
                 {
-                    Ok(InteractiveGateOutcome::Allowed) => {}
-                    Ok(InteractiveGateOutcome::Denied(msg)) => {
-                        return (format!("已拒绝：{}", msg), None);
-                    }
-                    Err(ToolApprovalWebError::ChannelUnavailable) => {
-                        return ("错误：审批通道不可用，请重试。".to_string(), None);
-                    }
+                    return (msg, None);
                 }
             }
 
@@ -356,6 +362,36 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             (result, None)
         }
     }
+}
+
+/// 并行只读批内 `SyncDefault` 预审批：当前仅覆盖 `read_dir` 的工作区外路径访问。
+/// 返回 `(name, args) -> 错误文案`；未出现的键表示已获准或无需审批。
+pub(crate) async fn prefetch_parallel_syncdefault_approvals(
+    tool_calls: &[ToolCall],
+    web_ctx: Option<&WebToolRuntime>,
+    cli_ctx: Option<&CliToolRuntime>,
+) -> HashMap<(String, String), String> {
+    let mut failures: HashMap<(String, String), String> = HashMap::new();
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    for tc in tool_calls {
+        if handler_id_for(tc.function.name.as_str()) != HandlerId::SyncDefault {
+            continue;
+        }
+        if tc.function.name != "read_dir" {
+            continue;
+        }
+        let key = (tc.function.name.clone(), tc.function.arguments.clone());
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        if let Err(msg) =
+            approve_external_read_dir_if_needed(tc.function.arguments.as_str(), web_ctx, cli_ctx)
+                .await
+        {
+            failures.insert(key, msg);
+        }
+    }
+    failures
 }
 
 /// `sync_default_tool_sandbox_mode = docker` 时，在宿主完成审批/白名单后把本类工具交给容器内 `tool-runner-internal`。
@@ -1000,4 +1036,45 @@ async fn execute_web_search_web(
         }
     };
     (s, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{FunctionCall, ToolCall};
+
+    fn tool_call(name: &str, arguments: &str) -> ToolCall {
+        ToolCall {
+            id: "tc_1".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: name.to_string(),
+                arguments: arguments.to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn read_dir_path_is_external_detects_absolute_and_parent_ref() {
+        assert_eq!(
+            read_dir_path_is_external(r#"{"path":"/tmp"}"#),
+            Some("/tmp".to_string())
+        );
+        assert_eq!(
+            read_dir_path_is_external(r#"{"path":"../secrets"}"#),
+            Some("../secrets".to_string())
+        );
+        assert_eq!(read_dir_path_is_external(r#"{"path":"src"}"#), None);
+    }
+
+    #[tokio::test]
+    async fn prefetch_parallel_syncdefault_approvals_blocks_external_read_dir_without_channel() {
+        let calls = vec![tool_call("read_dir", r#"{"path":"/tmp"}"#)];
+        let failures = prefetch_parallel_syncdefault_approvals(&calls, None, None).await;
+        assert_eq!(failures.len(), 1);
+        let msg = failures
+            .get(&("read_dir".to_string(), r#"{"path":"/tmp"}"#.to_string()))
+            .expect("missing failure for external read_dir");
+        assert!(msg.contains("需要审批通道"));
+    }
 }

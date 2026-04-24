@@ -105,6 +105,8 @@ fn trace_parallel_tool_child_span(
 #[derive(Clone, Copy)]
 enum ParallelToolKind {
     HttpFetch,
+    GetWeather,
+    WebSearch,
     SyncDefault,
 }
 
@@ -488,17 +490,26 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
     );
     let parallel_batch_id_ref = parallel_batch_id.as_str();
 
-    let prefetch_failures = if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
-        tool_registry::prefetch_http_fetch_parallel_approvals(
+    let mut prefetch_failures = HashMap::new();
+    if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
+        prefetch_failures.extend(
+            tool_registry::prefetch_http_fetch_parallel_approvals(
+                tool_calls,
+                cfg,
+                web_tool_ctx,
+                cli_tool_ctx,
+            )
+            .await,
+        );
+    }
+    prefetch_failures.extend(
+        tool_registry::prefetch_parallel_syncdefault_approvals(
             tool_calls,
-            cfg,
             web_tool_ctx,
             cli_tool_ctx,
         )
-        .await
-    } else {
-        HashMap::new()
-    };
+        .await,
+    );
 
     let mut seen_keys: HashSet<(String, String)> = HashSet::with_capacity(tool_calls.len());
     let mut unique_futs = Vec::new();
@@ -517,12 +528,14 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         let ltm_scope = long_term_memory_scope_id.clone();
         let name = tc.function.name.clone();
         let args = tc.function.arguments.clone();
+        let tc_owned = tc.clone();
         let tool_call_id_for_trace = tc.id.clone();
         let tracing_turn_parallel = tracing_chat_turn.clone();
-        let kind = if name == "http_fetch" {
-            ParallelToolKind::HttpFetch
-        } else {
-            ParallelToolKind::SyncDefault
+        let kind = match handler_id_for(name.as_str()) {
+            HandlerId::HttpFetch => ParallelToolKind::HttpFetch,
+            HandlerId::GetWeather => ParallelToolKind::GetWeather,
+            HandlerId::WebSearch => ParallelToolKind::WebSearch,
+            _ => ParallelToolKind::SyncDefault,
         };
         let constraint = step_executor_constraint;
         unique_futs.push(async move {
@@ -591,29 +604,38 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
                         .await
                         .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
                     }
-                    ParallelToolKind::SyncDefault => {
-                        let span_sync = tracing::Span::current();
-                        tokio::task::spawn_blocking(move || {
-                            let _g = span_sync.enter();
-                            let (mem_rt, mem_scope) =
-                                crate::long_term_memory::tool_context_memory_extras(
-                                    cfg.as_ref(),
-                                    ltm.clone(),
-                                    ltm_scope.as_deref(),
-                                );
-                            let ctx = tools::tool_context_for_with_read_cache_and_memory(
-                                cfg.as_ref(),
-                                cfg.allowed_commands.as_ref(),
-                                wd.as_path(),
-                                rfc.as_ref().map(|a| a.as_ref()),
-                                wcl.as_ref(),
-                                mem_rt,
-                                mem_scope,
-                            );
-                            tools::run_tool(&name, &args, &ctx)
+                    ParallelToolKind::GetWeather
+                    | ParallelToolKind::WebSearch
+                    | ParallelToolKind::SyncDefault => {
+                        let mut workspace_changed_local = false;
+                        let runtime = if let Some(cctx) = cli_tool_ctx {
+                            ToolRuntime::Cli {
+                                workspace_changed: &mut workspace_changed_local,
+                                ctx: cctx,
+                            }
+                        } else {
+                            ToolRuntime::Web {
+                                workspace_changed: &mut workspace_changed_local,
+                                ctx: web_tool_ctx,
+                            }
+                        };
+                        tool_registry::dispatch_tool(tool_registry::DispatchToolParams {
+                            runtime,
+                            cfg: &cfg,
+                            effective_working_dir: wd.as_path(),
+                            workspace_is_set: true,
+                            name: &name,
+                            args: &args,
+                            tc: &tc_owned,
+                            read_file_turn_cache: rfc.clone(),
+                            workspace_changelist: wcl.clone(),
+                            mcp_session: None,
+                            turn_allow,
+                            long_term_memory: ltm.clone(),
+                            long_term_memory_scope_id: ltm_scope.clone(),
                         })
                         .await
-                        .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
+                        .0
                     }
                 };
                 info!(
