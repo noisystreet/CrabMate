@@ -714,6 +714,17 @@ pub(super) fn finalize(
     let llm_reasoning_split = b.llm_reasoning_split.unwrap_or_else(|| {
         crate::llm::vendor::default_llm_reasoning_split_for_gateway(&b.model, &b.api_base)
     });
+    let intent_execute_low_threshold = b
+        .intent_execute_low_threshold
+        .unwrap_or(0.2)
+        .clamp(0.0, 1.0) as f32;
+    let intent_execute_high_threshold = b
+        .intent_execute_high_threshold
+        .unwrap_or(0.55)
+        .clamp(0.0, 1.0) as f32;
+    let intent_execute_high_threshold =
+        intent_execute_high_threshold.max(intent_execute_low_threshold);
+    let intent_mode_bias_enabled = b.intent_mode_bias_enabled.unwrap_or(true);
 
     Ok(AgentConfig {
         api_base: b.api_base,
@@ -865,5 +876,8 @@ pub(super) fn finalize(
         max_turn_tokens: 100_000,
         full_plan_rewrite_max_attempts: 2,
         enable_llm_routing: Some(true), // 默认开启 LLM 智能路由
+        intent_mode_bias_enabled,
+        intent_execute_low_threshold,
+        intent_execute_high_threshold,
     })
 }

@@ -625,6 +625,12 @@ pub struct AgentConfig {
     /// 为 true 时：分层 Agent 路由层启用 LLM 智能路由（对复杂任务使用 LLM 分析语义决定执行模式）。
     /// 默认 false，使用基于规则的快速路由（无 LLM 调用开销）。
     pub enable_llm_routing: Option<bool>,
+    /// 为 true 时：根据 `primary_intent/secondary_intents` 对 Router 输出执行模式做偏置提升（默认 true）。
+    pub intent_mode_bias_enabled: bool,
+    /// 首轮意图路由：执行意图中置信度触发“确认后执行”的低阈值（0.0..=1.0，默认 0.2）。
+    pub intent_execute_low_threshold: f32,
+    /// 首轮意图路由：执行意图触发“直接执行”的高阈值（0.0..=1.0，默认 0.55，且不低于 low）。
+    pub intent_execute_high_threshold: f32,
 }
 
 impl AgentConfig {

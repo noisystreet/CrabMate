@@ -3,7 +3,8 @@
 //! 当 `planner_executor_mode = Hierarchical` 时使用此模块执行任务分解和子目标执行。
 
 use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult};
-use crate::agent::intent_router::{IntentRoute, route_user_task};
+use crate::agent::intent_pipeline::{IntentAction, IntentContext, assess_and_route};
+use crate::agent::intent_router::ExecuteIntentThresholds;
 use crate::sse;
 
 use super::errors::RunAgentTurnError;
@@ -24,12 +25,29 @@ pub(crate) async fn run_hierarchical_agent(
         });
     }
 
-    let assessment = route_user_task(&task);
-    match assessment.route {
-        IntentRoute::Execute => {}
-        IntentRoute::DirectReply(reply)
-        | IntentRoute::AskThenExecute(reply)
-        | IntentRoute::ConfirmThenExecute(reply) => {
+    let intent_ctx = IntentContext {
+        thresholds: ExecuteIntentThresholds {
+            low: p.cfg.intent_execute_low_threshold,
+            high: p.cfg.intent_execute_high_threshold,
+        },
+        ..IntentContext::default()
+    };
+    let assessment = assess_and_route(&task, &intent_ctx);
+    log::info!(
+        target: "crabmate",
+        "[INTENT_PIPELINE] kind={:?} primary_intent={} confidence={:.2} abstain={} need_clarification={} action={:?}",
+        assessment.kind,
+        assessment.primary_intent,
+        assessment.confidence,
+        assessment.abstain,
+        assessment.need_clarification,
+        assessment.action
+    );
+    match assessment.action {
+        IntentAction::Execute => {}
+        IntentAction::DirectReply(reply)
+        | IntentAction::ClarifyThenExecute(reply)
+        | IntentAction::ConfirmThenExecute(reply) => {
             p.messages
                 .push(crate::types::Message::assistant_only(reply.clone()));
             if let Some(out) = p.out {
@@ -81,6 +99,9 @@ pub(crate) async fn run_hierarchical_agent(
         tools_defs: p.tools_defs,
         tool_approval_out,
         tool_approval_rx,
+        primary_intent: Some(assessment.primary_intent.clone()),
+        secondary_intents: assessment.secondary_intents.clone(),
+        intent_mode_bias_enabled: p.cfg.intent_mode_bias_enabled,
     };
 
     // 运行分层 Agent

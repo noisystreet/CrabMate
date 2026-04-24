@@ -227,6 +227,12 @@ pub(super) struct AgentSection {
     pub(super) codebase_semantic_hybrid_alpha: Option<f64>,
     pub(super) codebase_semantic_fts_top_n: Option<u64>,
     pub(super) codebase_semantic_hybrid_semantic_pool: Option<u64>,
+    /// 首轮意图路由：执行意图低阈值（0.0..=1.0）。
+    pub(super) intent_execute_low_threshold: Option<f64>,
+    /// 首轮意图路由：执行意图高阈值（0.0..=1.0，建议 >= low）。
+    pub(super) intent_execute_high_threshold: Option<f64>,
+    /// 是否启用基于 intent 标签的执行模式偏置（默认 true）。
+    pub(super) intent_mode_bias_enabled: Option<bool>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None。

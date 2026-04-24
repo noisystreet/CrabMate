@@ -146,6 +146,9 @@ pub(crate) struct ConfigBuilder {
     pub(crate) codebase_semantic_hybrid_alpha: Option<f64>,
     pub(crate) codebase_semantic_fts_top_n: Option<u64>,
     pub(crate) codebase_semantic_hybrid_semantic_pool: Option<u64>,
+    pub(crate) intent_execute_low_threshold: Option<f64>,
+    pub(crate) intent_execute_high_threshold: Option<f64>,
+    pub(crate) intent_mode_bias_enabled: Option<bool>,
     /// 见 `[tool_registry]`：`http_fetch` spawn 外圈超时秒数
     pub(crate) tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
     pub(crate) tool_registry_http_request_wall_timeout_secs: Option<u64>,
@@ -577,6 +580,15 @@ impl ConfigBuilder {
         self.codebase_semantic_hybrid_semantic_pool = agent
             .codebase_semantic_hybrid_semantic_pool
             .or(self.codebase_semantic_hybrid_semantic_pool);
+        self.intent_execute_low_threshold = agent
+            .intent_execute_low_threshold
+            .or(self.intent_execute_low_threshold);
+        self.intent_execute_high_threshold = agent
+            .intent_execute_high_threshold
+            .or(self.intent_execute_high_threshold);
+        self.intent_mode_bias_enabled = agent
+            .intent_mode_bias_enabled
+            .or(self.intent_mode_bias_enabled);
     }
 
     pub(super) fn merge_agent_role_rows(&mut self, rows: &[AgentRoleRow]) {

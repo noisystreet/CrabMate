@@ -41,6 +41,12 @@ pub struct HierarchyRunnerParams<'a> {
     pub tool_approval_out: Option<Sender<String>>,
     /// 工具审批接收器（用于接收用户审批决定）
     pub tool_approval_rx: Option<Arc<Mutex<Receiver<CommandApprovalDecision>>>>,
+    /// 一期意图识别：主意图标签（如 execute.run_test_build）
+    pub primary_intent: Option<String>,
+    /// 一期意图识别：次意图标签列表
+    pub secondary_intents: Vec<String>,
+    /// 是否启用基于意图标签的执行模式偏置。
+    pub intent_mode_bias_enabled: bool,
 }
 
 /// 分层 Agent 运行结果
@@ -68,13 +74,16 @@ pub async fn run_hierarchical(
         tools_defs,
         tool_approval_out,
         tool_approval_rx,
+        primary_intent,
+        secondary_intents,
+        intent_mode_bias_enabled,
     } = params;
 
     // 1. 智能路由决策
     // 默认使用规则路由，可以通过配置启用 LLM 智能路由
     let use_llm_routing = cfg.enable_llm_routing.unwrap_or(false);
     let router = SmartRouter::new();
-    let router_output = router
+    let mut router_output = router
         .route_smart(
             task,
             cfg,
@@ -84,6 +93,13 @@ pub async fn run_hierarchical(
             use_llm_routing,
         )
         .await;
+    if intent_mode_bias_enabled {
+        apply_intent_mode_bias(
+            &mut router_output,
+            primary_intent.as_deref(),
+            &secondary_intents,
+        );
+    }
 
     log::info!(
         target: "crabmate",
@@ -232,6 +248,52 @@ pub async fn run_hierarchical(
     })
 }
 
+fn apply_intent_mode_bias(
+    router_output: &mut super::router::RouterOutput,
+    primary_intent: Option<&str>,
+    secondary_intents: &[String],
+) {
+    let mut intents = secondary_intents
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    if let Some(primary) = primary_intent {
+        intents.push(primary);
+    }
+
+    let has = |needle: &str| intents.contains(&needle);
+    let prefer_hierarchical = has("execute.run_test_build")
+        || has("execute.debug_diagnose")
+        || has("execute.code_change");
+    let prefer_multi_agent = has("execute.run_test_build") && has("execute.git_ops");
+
+    if prefer_multi_agent && router_output.mode != AgentMode::MultiAgent {
+        router_output.mode = AgentMode::MultiAgent;
+        router_output.max_iterations = 50;
+        router_output.max_sub_goals = 50;
+        router_output.execution_strategy = ExecutionStrategy::Parallel;
+        let reason =
+            "意图偏置：检测到构建/测试与 Git 流程复合请求，提升为多 Agent 并行模式".to_string();
+        router_output.reasoning = Some(match &router_output.reasoning {
+            Some(old) => format!("{old}；{reason}"),
+            None => reason,
+        });
+        return;
+    }
+
+    if prefer_hierarchical && matches!(router_output.mode, AgentMode::Single | AgentMode::ReAct) {
+        router_output.mode = AgentMode::Hierarchical;
+        router_output.max_iterations = 30;
+        router_output.max_sub_goals = 20;
+        router_output.execution_strategy = ExecutionStrategy::Hybrid;
+        let reason = "意图偏置：检测到调试/构建/代码修改请求，提升为分层执行模式".to_string();
+        router_output.reasoning = Some(match &router_output.reasoning {
+            Some(old) => format!("{old}；{reason}"),
+            None => reason,
+        });
+    }
+}
+
 /// 简单降级执行（不进行任务分解）
 #[allow(clippy::too_many_arguments)]
 async fn run_simple_fallback(
@@ -346,5 +408,44 @@ fn truncate_string(s: &str, max_len: usize) -> String {
             .map(|(i, c)| i + c.len_utf8())
             .unwrap_or(0);
         format!("{}...", &s[..truncated])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_intent_mode_bias;
+    use crate::agent::hierarchy::router::{AgentMode, RouterOutput, RoutingStrategy};
+    use crate::agent::hierarchy::task::ExecutionStrategy;
+
+    #[test]
+    fn promote_to_hierarchical_for_debug_or_build_intent() {
+        let mut out = RouterOutput {
+            mode: AgentMode::Single,
+            max_iterations: 5,
+            max_sub_goals: 3,
+            execution_strategy: ExecutionStrategy::Sequential,
+            reasoning: Some("简单任务".to_string()),
+            routing_strategy: RoutingStrategy::RuleBased,
+        };
+        let secondary = vec!["execute.run_test_build".to_string()];
+        apply_intent_mode_bias(&mut out, Some("execute.debug_diagnose"), &secondary);
+        assert_eq!(out.mode, AgentMode::Hierarchical);
+        assert_eq!(out.execution_strategy, ExecutionStrategy::Hybrid);
+    }
+
+    #[test]
+    fn promote_to_multi_agent_for_build_plus_git() {
+        let mut out = RouterOutput {
+            mode: AgentMode::Hierarchical,
+            max_iterations: 30,
+            max_sub_goals: 20,
+            execution_strategy: ExecutionStrategy::Hybrid,
+            reasoning: None,
+            routing_strategy: RoutingStrategy::RuleBased,
+        };
+        let secondary = vec!["execute.run_test_build".to_string()];
+        apply_intent_mode_bias(&mut out, Some("execute.git_ops"), &secondary);
+        assert_eq!(out.mode, AgentMode::MultiAgent);
+        assert_eq!(out.execution_strategy, ExecutionStrategy::Parallel);
     }
 }

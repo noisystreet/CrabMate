@@ -133,6 +133,10 @@ sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # final_plan_semantic_check_max_non_readonly_tools = 0  # 摘要中非只读工具条数上限；AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS
 # final_plan_semantic_check_max_tokens = 256  # 侧向请求 max_tokens；AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS
 # planner_executor_mode = "single_agent"  # single_agent | logical_dual_agent（阶段1：同进程逻辑双agent）
+# intent_mode_bias_enabled = true   # 是否启用基于 primary/secondary intent 的执行模式偏置
+# 首轮意图路由执行阈值：low 触发“确认后执行”，high 触发“直接执行”
+# intent_execute_low_threshold = 0.2
+# intent_execute_high_threshold = 0.55
 # staged_plan_execution = false   # true：先无工具产出 agent_reply_plan，再按步执行
 # staged_plan_allow_no_task = true   # 兼容旧键，已无效果；no_task 约定见内置 schema（plan_artifact::PLAN_V1_SCHEMA_RULES）
 # staged_plan_phase_instruction = """……"""  # 可选；空则用内置规划轮说明
