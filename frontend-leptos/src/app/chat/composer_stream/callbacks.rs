@@ -44,6 +44,48 @@ fn build_final_response_text(title: &str, detail: Option<&str>) -> String {
     final_text
 }
 
+fn build_intent_analysis_main_bubble_text(title: &str, detail: Option<&str>) -> String {
+    let mut out = String::new();
+    let title = title.trim();
+    if !title.is_empty() {
+        out.push_str(title);
+    }
+    if let Some(detail) = detail.map(str::trim)
+        && !detail.is_empty()
+    {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(detail);
+    }
+    if out.is_empty() {
+        String::new()
+    } else {
+        format!("{out}\n\n")
+    }
+}
+
+fn build_hierarchical_plan_main_bubble_text(title: &str, detail: Option<&str>) -> String {
+    let mut out = String::new();
+    let title = title.trim();
+    if !title.is_empty() {
+        out.push_str(title);
+    }
+    if let Some(detail) = detail.map(str::trim)
+        && !detail.is_empty()
+    {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(detail);
+    }
+    if out.is_empty() {
+        String::new()
+    } else {
+        format!("{out}\n\n")
+    }
+}
+
 /// 根据暂存的工具调用参数生成参数展示文本。
 fn build_tool_args_text(args: &super::context::PendingToolArgs, loc: Locale) -> String {
     let mut out = String::new();
@@ -497,6 +539,50 @@ pub(super) fn build_chat_stream_callbacks(
                 }
                 return;
             }
+            if info.kind == "intent_analysis" {
+                let aid = stream_ctx.active_session_id.as_str();
+                let mid = stream_ctx.assistant_message_id.as_str();
+                let intent_text =
+                    build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
+                if intent_text.is_empty() {
+                    return;
+                }
+                stream_ctx.chat.sessions.update(|list| {
+                    if let Some(s) = list.iter_mut().find(|s| s.id == aid)
+                        && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
+                    {
+                        m.text.push_str(&intent_text);
+                    }
+                });
+                answer_delta_chars.set(
+                    answer_delta_chars
+                        .get()
+                        .saturating_add(intent_text.chars().count()),
+                );
+                return;
+            }
+            if info.kind == "hierarchical_plan" {
+                let aid = stream_ctx.active_session_id.as_str();
+                let mid = stream_ctx.assistant_message_id.as_str();
+                let plan_text =
+                    build_hierarchical_plan_main_bubble_text(&info.title, info.detail.as_deref());
+                if plan_text.is_empty() {
+                    return;
+                }
+                stream_ctx.chat.sessions.update(|list| {
+                    if let Some(s) = list.iter_mut().find(|s| s.id == aid)
+                        && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
+                    {
+                        m.text.push_str(&plan_text);
+                    }
+                });
+                answer_delta_chars.set(
+                    answer_delta_chars
+                        .get()
+                        .saturating_add(plan_text.chars().count()),
+                );
+                return;
+            }
             let loc = stream_ctx.locale.get_untracked();
             let normalized_title = match info.kind.as_str() {
                 "tool_step_started" => {
@@ -600,7 +686,9 @@ pub(super) fn build_chat_stream_callbacks(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_final_response_text, enqueue_pending_tool_message_id, take_pending_tool_message_id,
+        build_final_response_text, build_hierarchical_plan_main_bubble_text,
+        build_intent_analysis_main_bubble_text, enqueue_pending_tool_message_id,
+        take_pending_tool_message_id,
     };
     use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
@@ -633,5 +721,25 @@ mod tests {
     fn final_response_text_ignores_empty_detail() {
         let merged = build_final_response_text("  你好  ", Some("   "));
         assert_eq!(merged, "你好");
+    }
+
+    #[test]
+    fn intent_analysis_text_adds_trailing_gap() {
+        let t =
+            build_intent_analysis_main_bubble_text("意图分析：Execute", Some("confidence=0.61"));
+        assert_eq!(t, "意图分析：Execute\nconfidence=0.61\n\n");
+    }
+
+    #[test]
+    fn intent_analysis_text_empty_when_no_content() {
+        let t = build_intent_analysis_main_bubble_text("   ", Some(" "));
+        assert!(t.is_empty());
+    }
+
+    #[test]
+    fn hierarchical_plan_text_adds_trailing_gap() {
+        let t =
+            build_hierarchical_plan_main_bubble_text("**Manager 规划**", Some("- [ ] g1: 写代码"));
+        assert_eq!(t, "**Manager 规划**\n- [ ] g1: 写代码\n\n");
     }
 }
