@@ -86,6 +86,62 @@ fn build_hierarchical_plan_main_bubble_text(title: &str, detail: Option<&str>) -
     }
 }
 
+fn push_assistant_timeline_bubble(
+    stream_ctx: &ChatStreamCallbackCtx,
+    text: String,
+    state: Option<String>,
+) {
+    if text.trim().is_empty() {
+        return;
+    }
+    let id = make_message_id();
+    let aid = stream_ctx.active_session_id.as_str();
+    let now = message_created_ms();
+    stream_ctx.chat.sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+            s.messages.push(StoredMessage {
+                id,
+                role: "assistant".to_string(),
+                text,
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state,
+                is_tool: false,
+                created_at: now,
+            });
+        }
+    });
+}
+
+fn move_loading_assistant_to_bottom(stream_ctx: &ChatStreamCallbackCtx) {
+    let aid = stream_ctx.active_session_id.as_str();
+    let mid = stream_ctx.assistant_message_id.as_str();
+    stream_ctx.chat.sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == aid)
+            && let Some(idx) = s.messages.iter().position(|m| m.id == mid)
+            && s.messages[idx].role == "assistant"
+            && s.messages[idx].state.as_deref() == Some("loading")
+        {
+            let m = s.messages.remove(idx);
+            s.messages.push(m);
+        }
+    });
+}
+
+fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
+    let aid = stream_ctx.active_session_id.as_str();
+    let mid = stream_ctx.assistant_message_id.as_str();
+    stream_ctx.chat.sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == aid)
+            && let Some(idx) = s.messages.iter().position(|m| m.id == mid)
+            && s.messages[idx].role == "assistant"
+            && s.messages[idx].state.as_deref() == Some("loading")
+        {
+            s.messages.remove(idx);
+        }
+    });
+}
+
 /// 根据暂存的工具调用参数生成参数展示文本。
 fn build_tool_args_text(args: &super::context::PendingToolArgs, loc: Locale) -> String {
     let mut out = String::new();
@@ -520,17 +576,10 @@ pub(super) fn build_chat_stream_callbacks(
                 &format!("[TL] kind={} title={}", info.kind, info.title).into(),
             );
             if info.kind == "final_response" {
-                let aid = stream_ctx.active_session_id.as_str();
-                let mid = stream_ctx.assistant_message_id.as_str();
                 let final_text = build_final_response_text(&info.title, info.detail.as_deref());
                 if !final_text.is_empty() {
-                    stream_ctx.chat.sessions.update(|list| {
-                        if let Some(s) = list.iter_mut().find(|s| s.id == aid)
-                            && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
-                        {
-                            m.text = final_text.clone();
-                        }
-                    });
+                    remove_loading_assistant_placeholder(&stream_ctx);
+                    push_assistant_timeline_bubble(&stream_ctx, final_text.clone(), None);
                     answer_delta_chars.set(
                         answer_delta_chars
                             .get()
@@ -540,20 +589,13 @@ pub(super) fn build_chat_stream_callbacks(
                 return;
             }
             if info.kind == "intent_analysis" {
-                let aid = stream_ctx.active_session_id.as_str();
-                let mid = stream_ctx.assistant_message_id.as_str();
                 let intent_text =
                     build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
                 if intent_text.is_empty() {
                     return;
                 }
-                stream_ctx.chat.sessions.update(|list| {
-                    if let Some(s) = list.iter_mut().find(|s| s.id == aid)
-                        && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
-                    {
-                        m.text.push_str(&intent_text);
-                    }
-                });
+                push_assistant_timeline_bubble(&stream_ctx, intent_text.clone(), None);
+                move_loading_assistant_to_bottom(&stream_ctx);
                 answer_delta_chars.set(
                     answer_delta_chars
                         .get()
@@ -562,20 +604,13 @@ pub(super) fn build_chat_stream_callbacks(
                 return;
             }
             if info.kind == "hierarchical_plan" {
-                let aid = stream_ctx.active_session_id.as_str();
-                let mid = stream_ctx.assistant_message_id.as_str();
                 let plan_text =
                     build_hierarchical_plan_main_bubble_text(&info.title, info.detail.as_deref());
                 if plan_text.is_empty() {
                     return;
                 }
-                stream_ctx.chat.sessions.update(|list| {
-                    if let Some(s) = list.iter_mut().find(|s| s.id == aid)
-                        && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
-                    {
-                        m.text.push_str(&plan_text);
-                    }
-                });
+                push_assistant_timeline_bubble(&stream_ctx, plan_text.clone(), None);
+                move_loading_assistant_to_bottom(&stream_ctx);
                 answer_delta_chars.set(
                     answer_delta_chars
                         .get()
@@ -603,23 +638,12 @@ pub(super) fn build_chat_stream_callbacks(
             if body.is_empty() {
                 return;
             }
-            let id = make_message_id();
-            let aid = stream_ctx.active_session_id.as_str();
-            let now = message_created_ms();
-            stream_ctx.chat.sessions.update(|list| {
-                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                    s.messages.push(StoredMessage {
-                        id,
-                        role: "system".to_string(),
-                        text: staged_timeline_system_message_body(&body),
-                        reasoning_text: String::new(),
-                        image_urls: vec![],
-                        state: None,
-                        is_tool: false,
-                        created_at: now,
-                    });
-                }
-            });
+            push_assistant_timeline_bubble(
+                &stream_ctx,
+                staged_timeline_system_message_body(&body),
+                None,
+            );
+            move_loading_assistant_to_bottom(&stream_ctx);
         })
     };
 
