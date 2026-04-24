@@ -114,6 +114,53 @@ impl HierarchicalExecutor<'_> {
 }
 
 impl<'a> HierarchicalExecutor<'a> {
+    async fn emit_assistant_progress_delta_sse(
+        &self,
+        answer_phase_emitted: &mut bool,
+        line: String,
+    ) {
+        let Some(ref sse_out) = self.sse_out else {
+            return;
+        };
+        if !*answer_phase_emitted {
+            let phase_payload = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+                assistant_answer_phase: true,
+            });
+            let _ = sse::send_string_logged(
+                sse_out,
+                phase_payload,
+                "hierarchical::progress_answer_phase",
+            )
+            .await;
+            *answer_phase_emitted = true;
+        }
+        let _ = sse::send_string_logged(sse_out, line, "hierarchical::progress_delta").await;
+    }
+
+    fn progress_line_for_task_result(result: &TaskResult) -> Option<String> {
+        match &result.status {
+            TaskStatus::Completed => Some(format!(
+                "[子目标完成] {} ({}ms)",
+                result.task_id, result.duration_ms
+            )),
+            TaskStatus::Failed { reason } => Some(format!(
+                "[子目标失败] {} ({}ms): {}",
+                result.task_id, result.duration_ms, reason
+            )),
+            TaskStatus::Skipped { reason } => {
+                Some(format!("[子目标跳过] {}: {}", result.task_id, reason))
+            }
+            TaskStatus::NeedsDecomposition {
+                reason,
+                suggested_subgoals,
+            } => Some(format!(
+                "[子目标需分解] {}: {} (建议子目标数={})",
+                result.task_id, reason, suggested_subgoals
+            )),
+            TaskStatus::Pending | TaskStatus::InProgress => None,
+        }
+    }
+
     /// 设置执行上下文
     pub fn with_context(
         mut self,
@@ -232,6 +279,7 @@ impl<'a> HierarchicalExecutor<'a> {
             build_state.artifact_cache.len()
         );
         let mut all_results = Vec::new();
+        let mut answer_phase_emitted = false;
 
         // 按层级执行
         for (level_idx, level) in levels.iter().enumerate() {
@@ -274,6 +322,13 @@ impl<'a> HierarchicalExecutor<'a> {
                     self.update_build_state_from_result(&mut build_state, result);
                 }
                 all_results.push(result.clone());
+                if let Some(line) = Self::progress_line_for_task_result(result) {
+                    self.emit_assistant_progress_delta_sse(
+                        &mut answer_phase_emitted,
+                        format!("{line}\n"),
+                    )
+                    .await;
+                }
             }
 
             // 发射 SSE 事件：层级完成

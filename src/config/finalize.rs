@@ -720,7 +720,7 @@ pub(super) fn finalize(
         .clamp(0.0, 1.0) as f32;
     let intent_execute_high_threshold = b
         .intent_execute_high_threshold
-        .unwrap_or(0.55)
+        .unwrap_or(0.45)
         .clamp(0.0, 1.0) as f32;
     let intent_execute_high_threshold =
         intent_execute_high_threshold.max(intent_execute_low_threshold);

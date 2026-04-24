@@ -2,7 +2,7 @@
 //!
 //! 根据 SubGoal 中定义的 acceptance 条件对执行结果进行验证
 
-use super::task::{GoalAcceptance, SubGoal, TaskResult, TaskStatus};
+use super::task::{ArtifactKind, GoalAcceptance, SubGoal, TaskResult, TaskStatus};
 
 /// 验证结果
 #[derive(Debug, Clone)]
@@ -64,6 +64,13 @@ impl GoalVerifier {
                     reason: "子目标未处于完成状态".to_string(),
                 };
             }
+        }
+
+        // 对“编写并执行程序”类目标启用硬门槛：必须具备写源码 + 编译 + 运行证据，避免只 read_dir 也被判完成。
+        if is_program_build_and_run_goal(goal)
+            && let Err(reason) = verify_program_build_and_run_evidence(result)
+        {
+            return VerificationResult::Fail { reason };
         }
 
         // 如果没有定义验收条件，直接通过
@@ -274,6 +281,77 @@ impl GoalVerifier {
     }
 }
 
+fn is_program_build_and_run_goal(goal: &SubGoal) -> bool {
+    let d = goal.description.to_lowercase();
+    let asks_write = d.contains("编写") || d.contains("实现") || d.contains("write");
+    let asks_program = d.contains("程序") || d.contains("c++") || d.contains("cpp");
+    let asks_run = d.contains("执行")
+        || d.contains("运行")
+        || d.contains("编译")
+        || d.contains("build")
+        || d.contains("run");
+    asks_write && asks_program && asks_run
+}
+
+fn verify_program_build_and_run_evidence(result: &TaskResult) -> Result<(), String> {
+    let combined = format!(
+        "{}\n{}",
+        result.output.as_deref().unwrap_or(""),
+        result.error.as_deref().unwrap_or("")
+    )
+    .to_lowercase();
+
+    let has_source_artifact = result.artifacts.iter().any(|a| match a.kind {
+        ArtifactKind::File => a.path.as_deref().is_some_and(|p| {
+            let p = p.to_lowercase();
+            p.ends_with(".cpp") || p.ends_with(".cc") || p.ends_with(".cxx")
+        }),
+        ArtifactKind::BuildArtifact(kind) => {
+            matches!(kind, super::task::BuildArtifactKind::SourceFile)
+        }
+        _ => false,
+    });
+    let wrote_source = has_source_artifact
+        || combined.contains(".cpp")
+            && (combined.contains("create_file")
+                || combined.contains("已创建文件")
+                || combined.contains("created file")
+                || combined.contains("write_file")
+                || combined.contains("apply_patch"));
+
+    let compiled = combined.contains("g++")
+        || combined.contains("clang++")
+        || combined.contains("编译")
+        || combined.contains("cmake")
+        || combined.contains("make")
+        || combined.contains("build");
+
+    let ran_program = combined.contains("./")
+        || combined.contains("运行")
+        || combined.contains("执行程序")
+        || combined.contains("program output")
+        || combined.contains("hello");
+
+    let mut missing = Vec::new();
+    if !wrote_source {
+        missing.push("write_source");
+    }
+    if !compiled {
+        missing.push("compile");
+    }
+    if !ran_program {
+        missing.push("run");
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "编写并执行程序验收未通过; missing: {}; hint: 需包含写源码(.cpp)+编译(g++/clang++)+运行(可执行输出)",
+            missing.join(",")
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,5 +398,29 @@ mod tests {
 
         let verify_result = verifier.verify(&goal, &result);
         assert!(verify_result.is_fail());
+    }
+
+    #[test]
+    fn program_build_run_goal_fails_when_only_read_dir() {
+        let verifier = GoalVerifier::new(std::env::temp_dir());
+        let goal = SubGoal::new("goal_1", "编写一个简单c++程序并执行");
+        let result = TaskResult {
+            task_id: "goal_1".to_string(),
+            status: TaskStatus::Completed,
+            output: Some("✅ read_dir 成功: 目录: .".to_string()),
+            error: None,
+            artifacts: vec![],
+            duration_ms: 2654,
+        };
+        let verify_result = verifier.verify(&goal, &result);
+        match verify_result {
+            VerificationResult::Fail { reason } => {
+                assert!(reason.contains("missing:"));
+                assert!(reason.contains("write_source"));
+                assert!(reason.contains("compile"));
+                assert!(reason.contains("run"));
+            }
+            _ => panic!("expected fail with missing evidence"),
+        }
     }
 }

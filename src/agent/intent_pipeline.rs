@@ -5,7 +5,7 @@
 
 use crate::agent::intent_router::{
     ExecuteIntentThresholds, IntentAssessment, IntentKind, IntentRoute,
-    route_user_task_with_thresholds,
+    is_explicit_execute_confirmation, route_user_task_with_thresholds,
 };
 
 /// L0 上下文输入（一期先占位，后续逐步注入会话与工具轨迹特征）。
@@ -98,7 +98,15 @@ pub fn assess_and_route_with_l2(
     ctx: &IntentContext,
     l2_candidate: Option<L2IntentCandidate>,
 ) -> (IntentDecision, IntentMergeMeta) {
-    let l1_assessment = route_user_task_with_thresholds(task, ctx.thresholds);
+    let mut l1_assessment = route_user_task_with_thresholds(task, ctx.thresholds);
+    let normalized = task.trim().to_lowercase();
+    if ctx.in_clarification_flow && is_explicit_execute_confirmation(&normalized) {
+        l1_assessment = IntentAssessment {
+            kind: IntentKind::Execute,
+            confidence: 0.96,
+            route: IntentRoute::Execute,
+        };
+    }
     let l1_kind = l1_assessment.kind;
     let l1_confidence = l1_assessment.confidence;
     let mut decision = map_assessment_to_decision(task, l1_assessment);
@@ -503,5 +511,24 @@ mod tests {
         );
         assert_eq!(decision.primary_intent, "execute.docs_ops");
         assert!(meta.l2_applied);
+    }
+
+    #[test]
+    fn explicit_execute_confirmation_requires_clarification_context_to_direct_execute() {
+        let no_ctx = assess_and_route("直接开始执行", &IntentContext::default());
+        assert!(matches!(
+            no_ctx.action,
+            IntentAction::ConfirmThenExecute(_) | IntentAction::ClarifyThenExecute(_)
+        ));
+
+        let with_ctx = assess_and_route(
+            "直接开始执行",
+            &IntentContext {
+                in_clarification_flow: true,
+                ..IntentContext::default()
+            },
+        );
+        assert!(matches!(with_ctx.action, IntentAction::Execute));
+        assert_eq!(with_ctx.kind, IntentKind::Execute);
     }
 }

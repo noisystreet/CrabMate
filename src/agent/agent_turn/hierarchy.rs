@@ -2,22 +2,39 @@
 //!
 //! 当 `planner_executor_mode = Hierarchical` 时使用此模块执行任务分解和子目标执行。
 
+use crate::agent::hierarchy::task::{ArtifactKind, BuildArtifactKind, TaskResult};
 use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult};
 use crate::agent::intent_l2_classifier::classify_intent_l2_with_llm;
 use crate::agent::intent_pipeline::{IntentAction, IntentContext, assess_and_route_with_l2};
 use crate::agent::intent_router::ExecuteIntentThresholds;
+use crate::agent::intent_router::{
+    is_explicit_execute_confirmation, is_waiting_execute_confirmation_prompt,
+};
 use crate::sse;
 
 use super::errors::RunAgentTurnError;
 use super::params::RunLoopParams;
 use crate::agent::agent_turn::errors::AgentTurnSubPhase;
 
+fn recently_waiting_execute_confirmation(messages: &[crate::types::Message]) -> bool {
+    messages.iter().rev().take(4).any(|m| {
+        if m.role != "assistant" {
+            return false;
+        }
+        let Some(content) = crate::types::message_content_as_str(&m.content) else {
+            return false;
+        };
+        is_waiting_execute_confirmation_prompt(content)
+    })
+}
+
 /// 运行分层多 Agent
 pub(crate) async fn run_hierarchical_agent(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), RunAgentTurnError> {
     // 获取用户消息
-    let task = extract_user_task(p.messages);
+    let in_clarification_flow = recently_waiting_execute_confirmation(p.messages);
+    let task = extract_effective_user_task(p.messages, in_clarification_flow);
     if task.is_empty() {
         log::warn!(target: "crabmate", "Hierarchical mode: no user task found");
         return Err(RunAgentTurnError::Other {
@@ -27,6 +44,7 @@ pub(crate) async fn run_hierarchical_agent(
     }
 
     let intent_ctx = IntentContext {
+        in_clarification_flow,
         thresholds: ExecuteIntentThresholds {
             low: p.cfg.intent_execute_low_threshold,
             high: p.cfg.intent_execute_high_threshold,
@@ -70,8 +88,14 @@ pub(crate) async fn run_hierarchical_agent(
                     });
                 let _ =
                     sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
-                // NOTE: `DirectReply` 当前通过 `timeline_log(kind=final_response)` 发送终答正文；
-                // 前端需将该事件回写到 assistant 正文气泡，而非仅作为 system 时间线显示。
+                // 优先走 plain delta 正文链路，确保前端 assistant 气泡实时追加。
+                let _ = sse::send_string_logged(
+                    out,
+                    reply.clone(),
+                    "hierarchical::final_response_delta",
+                )
+                .await;
+                // 兼容旧前端：保留 final_response timeline 事件（用于旧版本回写正文/时间线）。
                 let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
                     log: crate::sse::protocol::TimelineLogBody {
                         kind: "final_response".to_string(),
@@ -131,7 +155,7 @@ pub(crate) async fn run_hierarchical_agent(
         })?;
 
     // 处理执行结果
-    handle_execution_result(p, result).await?;
+    handle_execution_result(p, result, &task).await?;
 
     Ok(())
 }
@@ -147,10 +171,48 @@ fn extract_user_task(messages: &[crate::types::Message]) -> String {
         .unwrap_or_default()
 }
 
+fn extract_effective_user_task(
+    messages: &[crate::types::Message],
+    in_clarification_flow: bool,
+) -> String {
+    let latest = extract_user_task(messages);
+    if !in_clarification_flow {
+        return latest;
+    }
+    let latest_norm = latest.trim().to_lowercase();
+    if !is_explicit_execute_confirmation(&latest_norm) {
+        return latest;
+    }
+
+    let mut seen_latest_user = false;
+    for m in messages.iter().rev() {
+        if m.role != "user" {
+            continue;
+        }
+        let Some(content) = crate::types::message_content_as_str(&m.content) else {
+            continue;
+        };
+        let t = content.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if !seen_latest_user {
+            seen_latest_user = true;
+            continue;
+        }
+        let norm = t.to_lowercase();
+        if !is_explicit_execute_confirmation(&norm) {
+            return t.to_string();
+        }
+    }
+    latest
+}
+
 /// 处理分层执行结果
 async fn handle_execution_result(
     p: &mut RunLoopParams<'_>,
     result: HierarchyRunnerResult,
+    original_task: &str,
 ) -> Result<(), RunAgentTurnError> {
     let HierarchyRunnerResult {
         execution_result,
@@ -199,6 +261,24 @@ async fn handle_execution_result(
         );
     }
 
+    if let Some(reason) =
+        verify_task_level_execution_evidence(original_task, &execution_result.results)
+    {
+        let msg = format!("任务未满足完成条件：{reason}");
+        p.messages
+            .push(crate::types::Message::assistant_only(msg.clone()));
+        if let Some(out) = p.out {
+            let phase_payload = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+                assistant_answer_phase: true,
+            });
+            let _ = sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
+            let _ =
+                sse::send_string_logged(out, msg.clone(), "hierarchical::task_level_guard_delta")
+                    .await;
+        }
+        return Ok(());
+    }
+
     // 汇总子目标结果生成最终回复
     let final_response = aggregate_results(&execution_result.results);
 
@@ -214,7 +294,14 @@ async fn handle_execution_result(
             assistant_answer_phase: true,
         });
         let _ = sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
-        // 用 TimelineLog 发送最终回答，与 Manager 规划方式一致
+        // 优先走 plain delta 正文链路，确保前端 assistant 气泡实时追加。
+        let _ = sse::send_string_logged(
+            out,
+            final_response.clone(),
+            "hierarchical::final_response_delta",
+        )
+        .await;
+        // 兼容旧前端：保留 final_response timeline 事件（用于旧版本回写正文/时间线）。
         let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
             log: crate::sse::protocol::TimelineLogBody {
                 kind: "final_response".to_string(),
@@ -226,6 +313,100 @@ async fn handle_execution_result(
     }
 
     Ok(())
+}
+
+fn is_program_build_run_request(task: &str) -> bool {
+    let t = task.to_lowercase();
+    let asks_write = t.contains("编写") || t.contains("实现") || t.contains("write");
+    let asks_program = t.contains("程序") || t.contains("c++") || t.contains("cpp");
+    let asks_run = t.contains("执行")
+        || t.contains("运行")
+        || t.contains("编译")
+        || t.contains("build")
+        || t.contains("run");
+    asks_write && asks_program && asks_run
+}
+
+fn verify_task_level_execution_evidence(task: &str, results: &[TaskResult]) -> Option<String> {
+    if !is_program_build_run_request(task) {
+        return None;
+    }
+    let mut wrote_source = false;
+    let mut compiled = false;
+    let mut ran_program = false;
+
+    for r in results {
+        let combined = format!(
+            "{}\n{}",
+            r.output.as_deref().unwrap_or(""),
+            r.error.as_deref().unwrap_or("")
+        )
+        .to_lowercase();
+        for a in &r.artifacts {
+            match a.kind {
+                ArtifactKind::File => {
+                    if a.path.as_deref().is_some_and(|p| {
+                        let p = p.to_lowercase();
+                        p.ends_with(".cpp") || p.ends_with(".cc") || p.ends_with(".cxx")
+                    }) {
+                        wrote_source = true;
+                    }
+                }
+                ArtifactKind::BuildArtifact(kind) => match kind {
+                    BuildArtifactKind::SourceFile => wrote_source = true,
+                    BuildArtifactKind::ObjectFile => compiled = true,
+                    BuildArtifactKind::Executable => ran_program = true,
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        if combined.contains("create_file")
+            || combined.contains("已创建文件")
+            || combined.contains("created file")
+            || combined.contains("write_file")
+            || combined.contains("apply_patch")
+            || combined.contains(".cpp")
+        {
+            wrote_source = true;
+        }
+        if combined.contains("g++")
+            || combined.contains("clang++")
+            || combined.contains("编译")
+            || combined.contains("cmake")
+            || combined.contains("make")
+            || combined.contains("build")
+        {
+            compiled = true;
+        }
+        if combined.contains("./")
+            || combined.contains("运行")
+            || combined.contains("执行程序")
+            || combined.contains("program output")
+            || combined.contains("hello")
+        {
+            ran_program = true;
+        }
+    }
+
+    let mut missing = Vec::new();
+    if !wrote_source {
+        missing.push("write_source");
+    }
+    if !compiled {
+        missing.push("compile");
+    }
+    if !ran_program {
+        missing.push("run");
+    }
+    if missing.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "missing: {}; 需要至少包含写源码(.cpp)+编译(g++/clang++)+运行(可执行输出)",
+            missing.join(",")
+        ))
+    }
 }
 
 /// 汇总子目标结果生成最终回复
@@ -295,5 +476,36 @@ fn truncate_string(s: &str, max_len: usize) -> String {
             .map(|(i, c)| i + c.len_utf8())
             .unwrap_or(0);
         format!("{}...", &s[..truncated])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_effective_user_task;
+    use crate::types::Message;
+
+    #[test]
+    fn confirmation_followup_uses_previous_user_task() {
+        let messages = vec![
+            Message::user_only("编写一个简单c++程序并执行".to_string()),
+            Message::assistant_only(
+                "我判断你可能想让我直接执行任务。请确认是否“直接开始执行”，或补充更具体范围。"
+                    .to_string(),
+            ),
+            Message::user_only("直接开始执行".to_string()),
+        ];
+        let task = extract_effective_user_task(&messages, true);
+        assert_eq!(task, "编写一个简单c++程序并执行");
+    }
+
+    #[test]
+    fn normal_latest_user_task_kept_when_not_confirmation() {
+        let messages = vec![
+            Message::user_only("先看看目录".to_string()),
+            Message::assistant_only("好的".to_string()),
+            Message::user_only("编写一个简单c++程序并执行".to_string()),
+        ];
+        let task = extract_effective_user_task(&messages, false);
+        assert_eq!(task, "编写一个简单c++程序并执行");
     }
 }
