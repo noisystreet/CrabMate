@@ -100,6 +100,17 @@ const DEBUG_ACTION_KEYWORDS: &[&str] = &[
 
 const CODE_CHANGE_ACTION_KEYWORDS: &[&str] = &["改", "修改", "重构", "实现"];
 const CODE_CHANGE_OBJECT_KEYWORDS: &[&str] = &["函数", "文件", "模块", ".rs", ".ts", ".py", "代码"];
+const DOCS_ACTION_KEYWORDS: &[&str] = &["更新", "补充", "完善", "整理", "编写"];
+const DOCS_OBJECT_KEYWORDS: &[&str] = &["readme", "文档", "docs", "注释", ".md"];
+const GIT_WRITE_ACTION_KEYWORDS: &[&str] = &[
+    "提交",
+    "commit",
+    "pr",
+    "pull request",
+    "rebase",
+    "cherry-pick",
+    "merge",
+];
 
 const READONLY_LISTING_KEYWORDS: &[&str] = &[
     "当前目录",
@@ -166,6 +177,15 @@ pub fn route_user_task_with_thresholds(
             kind: IntentKind::Execute,
             confidence: 0.78,
             route: IntentRoute::Execute,
+        };
+    }
+    if is_negative_execute_request(&normalized) {
+        return IntentAssessment {
+            kind: IntentKind::Qa,
+            confidence: 0.8,
+            route: IntentRoute::DirectReply(
+                "收到，我先不执行任何改动。你可以告诉我你想先了解哪部分。".to_string(),
+            ),
         };
     }
     if is_qa_only(&normalized) {
@@ -272,6 +292,12 @@ fn execution_confidence(s: &str) -> f32 {
     if has_pair_hit(s, CODE_CHANGE_ACTION_KEYWORDS, CODE_CHANGE_OBJECT_KEYWORDS) {
         score += 0.15;
     }
+    if has_pair_hit(s, DOCS_ACTION_KEYWORDS, DOCS_OBJECT_KEYWORDS) {
+        score += 0.22;
+    }
+    if GIT_WRITE_ACTION_KEYWORDS.iter().any(|k| s.contains(k)) {
+        score += 0.2;
+    }
     if s.chars().count() > 20 {
         score += 0.1;
     }
@@ -287,6 +313,18 @@ fn is_readonly_listing_request(s: &str) -> bool {
 
 fn has_pair_hit(s: &str, actions: &[&str], objects: &[&str]) -> bool {
     actions.iter().any(|k| s.contains(k)) && objects.iter().any(|k| s.contains(k))
+}
+
+fn is_negative_execute_request(s: &str) -> bool {
+    let negations = [
+        "不要执行",
+        "先别改",
+        "先不要改",
+        "只是想知道",
+        "仅解释",
+        "先解释",
+    ];
+    negations.iter().any(|k| s.contains(k))
 }
 
 #[cfg(test)]
@@ -411,5 +449,32 @@ mod tests {
     fn ability_question_should_not_route_to_execute() {
         let r = route_user_task("你有哪些技能");
         assert_eq!(r.kind, IntentKind::Qa);
+    }
+
+    #[test]
+    fn docs_action_pair_routes_to_execute_or_confirm() {
+        let r = route_user_task("请更新 README 文档");
+        assert_eq!(r.kind, IntentKind::Execute);
+        assert!(matches!(
+            r.route,
+            IntentRoute::Execute | IntentRoute::ConfirmThenExecute(_)
+        ));
+    }
+
+    #[test]
+    fn git_write_routes_to_execute_or_confirm() {
+        let r = route_user_task("把这些改动提交并开 PR");
+        assert_eq!(r.kind, IntentKind::Execute);
+        assert!(matches!(
+            r.route,
+            IntentRoute::Execute | IntentRoute::ConfirmThenExecute(_)
+        ));
+    }
+
+    #[test]
+    fn negative_execute_routes_to_qa_direct_reply() {
+        let r = route_user_task("先别改代码，我只是想知道这个报错什么意思");
+        assert_eq!(r.kind, IntentKind::Qa);
+        assert!(matches!(r.route, IntentRoute::DirectReply(_)));
     }
 }

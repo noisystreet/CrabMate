@@ -307,6 +307,11 @@ fn map_secondary_intents(task: &str, kind: IntentKind, primary_intent: &str) -> 
     {
         push_if_absent(&mut intents, "execute.code_change");
     }
+    if has_any(&["更新", "补充", "完善", "编写"])
+        && has_any(&["readme", "文档", "docs", "注释", ".md"])
+    {
+        push_if_absent(&mut intents, "execute.docs_ops");
+    }
     if has_any(&[
         "当前目录",
         "有哪些",
@@ -329,6 +334,11 @@ fn map_secondary_intents(task: &str, kind: IntentKind, primary_intent: &str) -> 
     }
 
     intents.retain(|it| it != primary_intent);
+    if has_any(&["先", "再", "然后", "并且"]) && intents.is_empty() && kind == IntentKind::Execute
+    {
+        intents.push("execute.code_change".to_string());
+        intents.retain(|it| it != primary_intent);
+    }
     intents
 }
 
@@ -448,6 +458,25 @@ mod tests {
         let decision = assess_and_route("这个异常请先分析定位", &IntentContext::default());
         assert_eq!(decision.kind, IntentKind::Execute);
         assert_eq!(decision.primary_intent, "execute.debug_diagnose");
+    }
+
+    #[test]
+    fn docs_update_maps_to_docs_ops() {
+        let decision = assess_and_route("请完善 docs 里的安装说明", &IntentContext::default());
+        assert_eq!(decision.kind, IntentKind::Execute);
+        assert_eq!(decision.primary_intent, "execute.docs_ops");
+    }
+
+    #[test]
+    fn git_and_docs_extracts_secondary_intent() {
+        let decision = assess_and_route("先更新 README 再提交并开 PR", &IntentContext::default());
+        assert_eq!(decision.kind, IntentKind::Execute);
+        assert_eq!(decision.primary_intent, "execute.git_ops");
+        assert!(
+            decision
+                .secondary_intents
+                .contains(&"execute.docs_ops".to_string())
+        );
     }
 
     #[test]
