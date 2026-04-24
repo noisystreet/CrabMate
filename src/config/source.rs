@@ -233,6 +233,12 @@ pub(super) struct AgentSection {
     pub(super) intent_execute_high_threshold: Option<f64>,
     /// 是否启用基于 intent 标签的执行模式偏置（默认 true）。
     pub(super) intent_mode_bias_enabled: Option<bool>,
+    /// 是否启用 L2 语义意图分类（默认 false）。
+    pub(super) intent_l2_enabled: Option<bool>,
+    /// L2 语义分类覆盖 L1 的最小置信度（0.0..=1.0，默认 0.7）。
+    pub(super) intent_l2_min_confidence: Option<f64>,
+    /// L2 语义分类请求 `max_tokens`（默认 220）。
+    pub(super) intent_l2_max_tokens: Option<u64>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None。

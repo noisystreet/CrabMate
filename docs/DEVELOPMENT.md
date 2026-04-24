@@ -303,7 +303,7 @@ flowchart TB
 - **规划器/执行器模式（阶段 1）**（`[agent] planner_executor_mode` / `AGENT_PLANNER_EXECUTOR_MODE`）：
   - `single_agent`（默认）：沿用历史单 agent 逻辑。
   - `logical_dual_agent`：同进程逻辑双 agent。规划轮仅消费去分隔线、去 `tool`、去空 assistant 的自然语言上下文，再追加规划 system 指令产出 `agent_reply_plan`；执行轮仍由既有外层循环负责工具调用与反思校验。该模式可减少工具原始输出对规划拆解的干扰，且不改变 HTTP/SSE 协议形状。
-- **意图增强一期（分层入口）**：`agent_turn::hierarchy` 先经 `intent_pipeline` 产出 `IntentDecision`（`primary_intent` / `secondary_intents` / `confidence`），再传入 `hierarchy::runner`。`runner` 在 Router 决策后可按 `[agent] intent_mode_bias_enabled`（默认 true）执行轻量模式偏置；首轮执行意图阈值由 `[agent] intent_execute_low_threshold` / `[agent] intent_execute_high_threshold` 控制（见 `config::finalize` 归一化逻辑）。
+- **意图增强一期（分层入口）**：`agent_turn::hierarchy` 先走 `intent_pipeline`（L1），并在 `[agent] intent_l2_enabled=true` 时追加一次 `intent_l2_classifier` 无工具 LLM 分类（失败 fail-open）；最终由 `assess_and_route_with_l2` 按 `intent_l2_min_confidence` 决定是否覆盖 L1。会输出 `l1_kind/l2_present/l2_applied/override_reason/final_*` 观测日志，再传入 `hierarchy::runner`。`runner` 在 Router 决策后可按 `[agent] intent_mode_bias_enabled`（默认 true）执行轻量模式偏置；首轮执行意图阈值由 `[agent] intent_execute_low_threshold` / `[agent] intent_execute_high_threshold` 控制（见 `config::finalize` 归一化逻辑）。
 
 #### 配置与 P/R/E 路径对照（`run_agent_turn_common`）
 

@@ -149,6 +149,9 @@ pub(crate) struct ConfigBuilder {
     pub(crate) intent_execute_low_threshold: Option<f64>,
     pub(crate) intent_execute_high_threshold: Option<f64>,
     pub(crate) intent_mode_bias_enabled: Option<bool>,
+    pub(crate) intent_l2_enabled: Option<bool>,
+    pub(crate) intent_l2_min_confidence: Option<f64>,
+    pub(crate) intent_l2_max_tokens: Option<u64>,
     /// 见 `[tool_registry]`：`http_fetch` spawn 外圈超时秒数
     pub(crate) tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
     pub(crate) tool_registry_http_request_wall_timeout_secs: Option<u64>,
@@ -589,6 +592,11 @@ impl ConfigBuilder {
         self.intent_mode_bias_enabled = agent
             .intent_mode_bias_enabled
             .or(self.intent_mode_bias_enabled);
+        self.intent_l2_enabled = agent.intent_l2_enabled.or(self.intent_l2_enabled);
+        self.intent_l2_min_confidence = agent
+            .intent_l2_min_confidence
+            .or(self.intent_l2_min_confidence);
+        self.intent_l2_max_tokens = agent.intent_l2_max_tokens.or(self.intent_l2_max_tokens);
     }
 
     pub(super) fn merge_agent_role_rows(&mut self, rows: &[AgentRoleRow]) {

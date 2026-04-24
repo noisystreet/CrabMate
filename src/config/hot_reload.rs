@@ -190,6 +190,9 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.full_plan_rewrite_max_attempts = src.full_plan_rewrite_max_attempts;
     dst.enable_llm_routing = src.enable_llm_routing;
     dst.intent_mode_bias_enabled = src.intent_mode_bias_enabled;
+    dst.intent_l2_enabled = src.intent_l2_enabled;
+    dst.intent_l2_min_confidence = src.intent_l2_min_confidence;
+    dst.intent_l2_max_tokens = src.intent_l2_max_tokens;
     dst.intent_execute_low_threshold = src.intent_execute_low_threshold;
     dst.intent_execute_high_threshold = src.intent_execute_high_threshold;
 }

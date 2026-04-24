@@ -100,7 +100,7 @@ cd frontend-leptos && trunk build && cd ..
 
 **前端**：`cd frontend-leptos && trunk build`（开发；**`--release`** 用于发布），再 **`crabmate serve`**。界面语言在「设置」；详 `frontend-leptos/README.md`、`docs/DEVELOPMENT.md`。
 
-**配置**：默认 `config/*.toml`（编译嵌入）+ 可选根目录 **`config.toml`**；**`system_prompt_file`** 指向 `config/prompts/default_system_prompt.md`（改后不必重编）。默认在首条 `system` 末附思考纪律附录（**`config/prompts/thinking_avoid_echo_appendix.md`** 等，见 [CONFIGURATION](docs/CONFIGURATION.md)）。意图增强一期可用 `[agent] intent_mode_bias_enabled`（默认 true）控制“意图到执行模式”的偏置，`intent_execute_low_threshold` / `intent_execute_high_threshold` 控制首轮执行意图阈值。高级项同页。**release / deb / man** 见 **[源码编译与打包](#源码编译与打包)**。
+**配置**：默认 `config/*.toml`（编译嵌入）+ 可选根目录 **`config.toml`**；**`system_prompt_file`** 指向 `config/prompts/default_system_prompt.md`（改后不必重编）。默认在首条 `system` 末附思考纪律附录（**`config/prompts/thinking_avoid_echo_appendix.md`** 等，见 [CONFIGURATION](docs/CONFIGURATION.md)）。意图增强一期可用 `[agent] intent_mode_bias_enabled`（默认 true）控制“意图到执行模式”的偏置，`intent_execute_low_threshold` / `intent_execute_high_threshold` 控制首轮执行意图阈值；可选 `[agent] intent_l2_enabled` 启用 L2 语义分类（失败自动回退 L1，受 `intent_l2_min_confidence` 控制覆盖阈值）。高级项同页。**release / deb / man** 见 **[源码编译与打包](#源码编译与打包)**。
 
 **切换模型 / 网关**（DeepSeek、MiniMax、Ollama 等）：见上文 **[「后端模型支持」](#后端模型支持)**。
 
