@@ -348,6 +348,83 @@ pub fn settings_block_shortcuts(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_nav_group_general(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "通用",
+        Locale::En => "General",
+    }
+}
+
+pub fn settings_nav_group_models(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "模型",
+        Locale::En => "Models",
+    }
+}
+
+pub fn settings_nav_group_help(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "帮助",
+        Locale::En => "Help",
+    }
+}
+
+pub fn settings_section_appearance_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "外观与界面",
+        Locale::En => "Appearance & Interface",
+    }
+}
+
+pub fn settings_section_appearance_desc(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "配置语言、主题和页面背景效果。",
+        Locale::En => "Configure language, theme, and page background effects.",
+    }
+}
+
+pub fn settings_section_llm_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "主模型配置",
+        Locale::En => "Primary Model",
+    }
+}
+
+pub fn settings_section_llm_desc(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "配置聊天阶段使用的模型网关、模型名与 API 密钥。",
+        Locale::En => "Set endpoint, model name, and API key for chat phase.",
+    }
+}
+
+pub fn settings_section_executor_llm_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "执行器模型配置",
+        Locale::En => "Executor Model",
+    }
+}
+
+pub fn settings_section_executor_llm_desc(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "配置执行阶段的模型覆盖参数。",
+        Locale::En => "Set model override options for execution phase.",
+    }
+}
+
+pub fn settings_section_shortcuts_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "快捷键",
+        Locale::En => "Keyboard Shortcuts",
+    }
+}
+
+pub fn settings_section_shortcuts_desc(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "查看常用交互快捷键和焦点行为。",
+        Locale::En => "View common shortcuts and focus behavior.",
+    }
+}
+
 pub fn settings_shortcuts_body(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {

@@ -2,6 +2,7 @@
 
 use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
+use leptos_dom::helpers::window_event_listener;
 
 use crate::api::{
     clear_client_llm_api_key_storage, clear_executor_llm_api_key_storage,
@@ -10,6 +11,88 @@ use crate::api::{
 };
 use crate::client_llm_presets::{CLIENT_LLM_API_BASE_PRESETS, preset_by_id};
 use crate::i18n::{self, Locale, store_locale_slug};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettingsSection {
+    Appearance,
+    Llm,
+    ExecutorLlm,
+    Shortcuts,
+}
+
+impl SettingsSection {
+    fn slug(self) -> &'static str {
+        match self {
+            Self::Appearance => "appearance",
+            Self::Llm => "llm",
+            Self::ExecutorLlm => "executor-llm",
+            Self::Shortcuts => "shortcuts",
+        }
+    }
+
+    fn from_slug(s: &str) -> Option<Self> {
+        match s {
+            "appearance" => Some(Self::Appearance),
+            "llm" => Some(Self::Llm),
+            "executor-llm" => Some(Self::ExecutorLlm),
+            "shortcuts" => Some(Self::Shortcuts),
+            _ => None,
+        }
+    }
+}
+
+fn read_settings_section_from_hash() -> Option<SettingsSection> {
+    let win = web_sys::window()?;
+    let hash = win.location().hash().ok()?;
+    let slug = if let Some(v) = hash.strip_prefix("#settings/") {
+        v
+    } else if let Some(v) = hash.strip_prefix("#settings=") {
+        // Backward compatibility with previous hash format.
+        v
+    } else {
+        return None;
+    };
+    SettingsSection::from_slug(slug)
+}
+
+fn write_settings_section_to_hash(section: SettingsSection) {
+    let Some(win) = web_sys::window() else {
+        return;
+    };
+    let _ = win
+        .location()
+        .set_hash(&format!("settings/{}", section.slug()));
+}
+
+fn clear_settings_hash_if_present() {
+    let Some(win) = web_sys::window() else {
+        return;
+    };
+    let Ok(hash) = win.location().hash() else {
+        return;
+    };
+    if hash.starts_with("#settings/") || hash.starts_with("#settings=") {
+        let _ = win.location().set_hash("");
+    }
+}
+
+fn section_title(section: SettingsSection, locale: Locale) -> &'static str {
+    match section {
+        SettingsSection::Appearance => i18n::settings_section_appearance_title(locale),
+        SettingsSection::Llm => i18n::settings_section_llm_title(locale),
+        SettingsSection::ExecutorLlm => i18n::settings_section_executor_llm_title(locale),
+        SettingsSection::Shortcuts => i18n::settings_section_shortcuts_title(locale),
+    }
+}
+
+fn section_desc(section: SettingsSection, locale: Locale) -> &'static str {
+    match section {
+        SettingsSection::Appearance => i18n::settings_section_appearance_desc(locale),
+        SettingsSection::Llm => i18n::settings_section_llm_desc(locale),
+        SettingsSection::ExecutorLlm => i18n::settings_section_executor_llm_desc(locale),
+        SettingsSection::Shortcuts => i18n::settings_section_shortcuts_desc(locale),
+    }
+}
 
 #[component]
 pub fn SettingsPageView(
@@ -31,6 +114,32 @@ pub fn SettingsPageView(
     executor_llm_settings_feedback: RwSignal<Option<String>>,
     client_llm_storage_tick: RwSignal<u64>,
 ) -> impl IntoView {
+    let active_section =
+        RwSignal::new(read_settings_section_from_hash().unwrap_or(SettingsSection::Appearance));
+
+    Effect::new(move |_| {
+        let h = window_event_listener(
+            leptos::ev::hashchange,
+            move |_ev: web_sys::HashChangeEvent| {
+                let Some(section) = read_settings_section_from_hash() else {
+                    return;
+                };
+                if active_section.get_untracked() != section {
+                    active_section.set(section);
+                }
+            },
+        );
+        on_cleanup(move || h.remove());
+    });
+
+    Effect::new(move |_| {
+        if !settings_page.get() {
+            clear_settings_hash_if_present();
+            return;
+        }
+        write_settings_section_to_hash(active_section.get());
+    });
+
     view! {
         <div class="settings-page" class:settings-page-visible=move || settings_page.get()>
             <div class="settings-page-header">
@@ -57,74 +166,138 @@ pub fn SettingsPageView(
             </div>
             <div class="settings-page-body">
                 <p class="settings-intro">{move || i18n::settings_intro(locale.get())}</p>
-
-                <div class="settings-block">
-                    <h3 class="settings-block-title">{move || i18n::settings_block_language(locale.get())}</h3>
-                    <div class="settings-row">
+                <div class="settings-layout">
+                    <nav class="settings-nav" aria-label="Settings sections">
+                        <p class="settings-nav-group-label">
+                            {move || i18n::settings_nav_group_general(locale.get())}
+                        </p>
                         <button
                             type="button"
-                            class="btn btn-secondary btn-sm"
-                            class:active=move || locale.get() == Locale::ZhHans
+                            class="settings-nav-item"
+                            class:active=move || active_section.get() == SettingsSection::Appearance
                             on:click=move |_| {
-                                locale.set(Locale::ZhHans);
-                                store_locale_slug(Locale::ZhHans.storage_slug());
+                                active_section.set(SettingsSection::Appearance);
+                                write_settings_section_to_hash(SettingsSection::Appearance);
                             }
                         >
-                            {move || i18n::settings_lang_zh(locale.get())}
+                            {move || i18n::settings_block_theme(locale.get())}
                         </button>
+                        <p class="settings-nav-group-label">
+                            {move || i18n::settings_nav_group_models(locale.get())}
+                        </p>
                         <button
                             type="button"
-                            class="btn btn-secondary btn-sm"
-                            class:active=move || locale.get() == Locale::En
+                            class="settings-nav-item"
+                            class:active=move || active_section.get() == SettingsSection::Llm
                             on:click=move |_| {
-                                locale.set(Locale::En);
-                                store_locale_slug(Locale::En.storage_slug());
+                                active_section.set(SettingsSection::Llm);
+                                write_settings_section_to_hash(SettingsSection::Llm);
                             }
                         >
-                            {move || i18n::settings_lang_en(locale.get())}
-                        </button>
-                    </div>
-                </div>
-
-                <div class="settings-block">
-                    <h3 class="settings-block-title">{move || i18n::settings_block_theme(locale.get())}</h3>
-                    <div class="settings-row">
-                        <button
-                            type="button"
-                            class="btn btn-secondary btn-sm"
-                            class:active=move || theme.get() == "dark"
-                            on:click=move |_| theme.set("dark".to_string())
-                        >
-                            {move || i18n::settings_theme_dark(locale.get())}
+                            {move || i18n::settings_block_llm(locale.get())}
                         </button>
                         <button
                             type="button"
-                            class="btn btn-secondary btn-sm"
-                            class:active=move || theme.get() == "light"
-                            on:click=move |_| theme.set("light".to_string())
+                            class="settings-nav-item"
+                            class:active=move || active_section.get() == SettingsSection::ExecutorLlm
+                            on:click=move |_| {
+                                active_section.set(SettingsSection::ExecutorLlm);
+                                write_settings_section_to_hash(SettingsSection::ExecutorLlm);
+                            }
                         >
-                            {move || i18n::settings_theme_light(locale.get())}
+                            {move || i18n::settings_block_executor_llm(locale.get())}
                         </button>
-                    </div>
-                </div>
+                        <p class="settings-nav-group-label">
+                            {move || i18n::settings_nav_group_help(locale.get())}
+                        </p>
+                        <button
+                            type="button"
+                            class="settings-nav-item"
+                            class:active=move || active_section.get() == SettingsSection::Shortcuts
+                            on:click=move |_| {
+                                active_section.set(SettingsSection::Shortcuts);
+                                write_settings_section_to_hash(SettingsSection::Shortcuts);
+                            }
+                        >
+                            {move || i18n::settings_block_shortcuts(locale.get())}
+                        </button>
+                    </nav>
 
-                <div class="settings-block">
-                    <h3 class="settings-block-title">{move || i18n::settings_block_bg(locale.get())}</h3>
-                    <label class="settings-checkbox-label">
-                        <input
-                            type="checkbox"
-                            prop:checked=move || bg_decor.get()
-                            on:change=move |_| bg_decor.update(|v| *v = !*v)
-                        />
-                        <span>{move || i18n::settings_bg_glow(locale.get())}</span>
-                    </label>
-                </div>
+                    <section class="settings-content">
+                        <header class="settings-content-header">
+                            <h2 class="settings-content-title">{move || section_title(active_section.get(), locale.get())}</h2>
+                            <p class="settings-content-desc">{move || section_desc(active_section.get(), locale.get())}</p>
+                        </header>
+                        <Show when=move || active_section.get() == SettingsSection::Appearance>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">{move || i18n::settings_block_language(locale.get())}</h3>
+                                <div class="settings-row">
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        class:active=move || locale.get() == Locale::ZhHans
+                                        on:click=move |_| {
+                                            locale.set(Locale::ZhHans);
+                                            store_locale_slug(Locale::ZhHans.storage_slug());
+                                        }
+                                    >
+                                        {move || i18n::settings_lang_zh(locale.get())}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        class:active=move || locale.get() == Locale::En
+                                        on:click=move |_| {
+                                            locale.set(Locale::En);
+                                            store_locale_slug(Locale::En.storage_slug());
+                                        }
+                                    >
+                                        {move || i18n::settings_lang_en(locale.get())}
+                                    </button>
+                                </div>
+                            </div>
 
-                <div class="settings-block">
-                    <h3 class="settings-block-title">{move || i18n::settings_block_llm(locale.get())}</h3>
-                    <p class="settings-field-nested-hint">
-                        {move || i18n::settings_llm_hint(locale.get())}
-                    </p>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">{move || i18n::settings_block_theme(locale.get())}</h3>
+                                <div class="settings-row">
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        class:active=move || theme.get() == "dark"
+                                        on:click=move |_| theme.set("dark".to_string())
+                                    >
+                                        {move || i18n::settings_theme_dark(locale.get())}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary btn-sm"
+                                        class:active=move || theme.get() == "light"
+                                        on:click=move |_| theme.set("light".to_string())
+                                    >
+                                        {move || i18n::settings_theme_light(locale.get())}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">{move || i18n::settings_block_bg(locale.get())}</h3>
+                                <label class="settings-checkbox-label">
+                                    <input
+                                        type="checkbox"
+                                        prop:checked=move || bg_decor.get()
+                                        on:change=move |_| bg_decor.update(|v| *v = !*v)
+                                    />
+                                    <span>{move || i18n::settings_bg_glow(locale.get())}</span>
+                                </label>
+                            </div>
+                        </Show>
+
+                        <Show when=move || active_section.get() == SettingsSection::Llm>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">{move || i18n::settings_block_llm(locale.get())}</h3>
+                                <p class="settings-field-nested-hint">
+                                    {move || i18n::settings_llm_hint(locale.get())}
+                                </p>
                     <div class="settings-field">
                         <label class="settings-field-label" for="settings-llm-api-base-preset">
                             {move || i18n::settings_label_api_base_preset(locale.get())}
@@ -276,13 +449,15 @@ pub fn SettingsPageView(
                             llm_settings_feedback.get().unwrap_or_default()
                         }}</p>
                     </Show>
-                </div>
+                            </div>
+                        </Show>
 
-                <div class="settings-block">
-                    <h3 class="settings-block-title">{move || i18n::settings_block_executor_llm(locale.get())}</h3>
-                    <p class="settings-field-nested-hint">
-                        {move || i18n::settings_executor_llm_hint(locale.get())}
-                    </p>
+                        <Show when=move || active_section.get() == SettingsSection::ExecutorLlm>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">{move || i18n::settings_block_executor_llm(locale.get())}</h3>
+                                <p class="settings-field-nested-hint">
+                                    {move || i18n::settings_executor_llm_hint(locale.get())}
+                                </p>
                     <div class="settings-field">
                         <label class="settings-field-label" for="settings-executor-llm-api-base-preset">
                             {move || i18n::settings_label_api_base_preset(locale.get())}
@@ -434,11 +609,16 @@ pub fn SettingsPageView(
                             executor_llm_settings_feedback.get().unwrap_or_default()
                         }}</p>
                     </Show>
-                </div>
+                            </div>
+                        </Show>
 
-                <div class="settings-block">
-                    <h3 class="settings-block-title">{move || i18n::settings_block_shortcuts(locale.get())}</h3>
-                    <p class="settings-intro">{move || i18n::settings_shortcuts_body(locale.get())}</p>
+                        <Show when=move || active_section.get() == SettingsSection::Shortcuts>
+                            <div class="settings-block">
+                                <h3 class="settings-block-title">{move || i18n::settings_block_shortcuts(locale.get())}</h3>
+                                <p class="settings-intro">{move || i18n::settings_shortcuts_body(locale.get())}</p>
+                            </div>
+                        </Show>
+                    </section>
                 </div>
             </div>
         </div>
