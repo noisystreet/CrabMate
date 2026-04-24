@@ -76,6 +76,20 @@ const EXECUTION_HINT_KEYWORDS: &[&str] = &[
     "push", "deploy", "报错", "error", "异常", "panic", "cargo", "npm", "pnpm", "git", "python",
 ];
 
+const READONLY_LISTING_KEYWORDS: &[&str] = &[
+    "当前目录",
+    "有哪些",
+    "列出",
+    "查看",
+    "列一下",
+    "清单",
+    "文件列表",
+    "源文件",
+    "目录下",
+    "list",
+    "show files",
+];
+
 const QA_HINT_KEYWORDS: &[&str] = &[
     "怎么",
     "如何",
@@ -120,6 +134,13 @@ pub fn route_user_task_with_thresholds(
             kind: IntentKind::Qa,
             confidence: 0.85,
             route: IntentRoute::DirectReply(QA_REPLY.to_string()),
+        };
+    }
+    if is_readonly_listing_request(&normalized) {
+        return IntentAssessment {
+            kind: IntentKind::Execute,
+            confidence: 0.78,
+            route: IntentRoute::Execute,
         };
     }
 
@@ -208,6 +229,10 @@ fn execution_confidence(s: &str) -> f32 {
     score.min(1.0)
 }
 
+fn is_readonly_listing_request(s: &str) -> bool {
+    READONLY_LISTING_KEYWORDS.iter().any(|k| s.contains(k))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{IntentKind, IntentRoute, route_user_task};
@@ -273,5 +298,12 @@ mod tests {
         let r = route_user_task("帮我改下这个");
         assert_eq!(r.kind, IntentKind::Execute);
         assert!(matches!(r.route, IntentRoute::ConfirmThenExecute(_)));
+    }
+
+    #[test]
+    fn readonly_listing_request_routes_to_execute() {
+        let r = route_user_task("当前目录下有哪些源文件");
+        assert_eq!(r.kind, IntentKind::Execute);
+        assert!(matches!(r.route, IntentRoute::Execute));
     }
 }

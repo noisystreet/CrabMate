@@ -9,7 +9,7 @@ use crate::agent::intent_router::{
 };
 
 /// L0 上下文输入（一期先占位，后续逐步注入会话与工具轨迹特征）。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct IntentContext {
     /// 近期用户消息（最近优先），用于后续多轮意图增强。
     pub recent_user_messages: Vec<String>,
@@ -17,6 +17,30 @@ pub struct IntentContext {
     pub in_clarification_flow: bool,
     /// 一期阈值策略（来自配置或默认值）。
     pub thresholds: ExecuteIntentThresholds,
+    /// L2 分类置信度阈值；低于该值不覆盖 L1。
+    pub l2_min_confidence: f32,
+}
+
+impl Default for IntentContext {
+    fn default() -> Self {
+        Self {
+            recent_user_messages: Vec::new(),
+            in_clarification_flow: false,
+            thresholds: ExecuteIntentThresholds::default(),
+            l2_min_confidence: 0.7,
+        }
+    }
+}
+
+/// L2 分类输出（可由 LLM/embedding/专用模型实现）。
+#[derive(Debug, Clone)]
+pub struct L2IntentCandidate {
+    pub kind: IntentKind,
+    pub primary_intent: String,
+    pub secondary_intents: Vec<String>,
+    pub confidence: f32,
+    pub need_clarification: bool,
+    pub abstain: bool,
 }
 
 /// L3 决策动作：执行、直接回复、先澄清或先确认。
@@ -54,8 +78,21 @@ pub struct IntentDecision {
 /// - L1/L2: 复用 `intent_router` 规则与阈值
 /// - L3: 统一动作映射
 pub fn assess_and_route(task: &str, _ctx: &IntentContext) -> IntentDecision {
-    let assessment = route_user_task_with_thresholds(task, _ctx.thresholds);
-    map_assessment_to_decision(task, assessment)
+    let l1_assessment = route_user_task_with_thresholds(task, _ctx.thresholds);
+    let mut decision = map_assessment_to_decision(task, l1_assessment);
+
+    // L2 入口骨架：当前默认返回 None，不增加推理成本。
+    if let Some(l2) = classify_with_l2_stub(task, _ctx)
+        && l2.confidence >= _ctx.l2_min_confidence
+    {
+        decision.kind = l2.kind;
+        decision.primary_intent = l2.primary_intent;
+        decision.secondary_intents = l2.secondary_intents;
+        decision.confidence = l2.confidence;
+        decision.need_clarification = l2.need_clarification;
+        decision.abstain = l2.abstain;
+    }
+    decision
 }
 
 fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> IntentDecision {
@@ -114,6 +151,19 @@ fn map_execute_primary_intent(task: &str) -> &'static str {
     let normalized = task.to_lowercase();
     let has_any = |keywords: &[&str]| keywords.iter().any(|k| normalized.contains(k));
 
+    if has_any(&[
+        "当前目录",
+        "有哪些",
+        "列出",
+        "查看",
+        "清单",
+        "文件列表",
+        "源文件",
+        "list",
+        "show files",
+    ]) {
+        return "execute.read_inspect";
+    }
     if has_any(&[
         "commit",
         "提交",
@@ -205,9 +255,26 @@ fn map_secondary_intents(task: &str, kind: IntentKind, primary_intent: &str) -> 
     ]) {
         push_if_absent(&mut intents, "execute.code_change");
     }
+    if has_any(&[
+        "当前目录",
+        "有哪些",
+        "列出",
+        "查看",
+        "清单",
+        "文件列表",
+        "源文件",
+        "list",
+        "show files",
+    ]) {
+        push_if_absent(&mut intents, "execute.read_inspect");
+    }
 
     intents.retain(|it| it != primary_intent);
     intents
+}
+
+fn classify_with_l2_stub(_task: &str, _ctx: &IntentContext) -> Option<L2IntentCandidate> {
+    None
 }
 
 #[cfg(test)]
@@ -284,5 +351,20 @@ mod tests {
                 .secondary_intents
                 .contains(&"execute.git_ops".to_string())
         );
+    }
+
+    #[test]
+    fn readonly_listing_maps_to_read_inspect() {
+        let decision = assess_and_route("当前目录下有哪些源文件", &IntentContext::default());
+        assert_eq!(decision.kind, IntentKind::Execute);
+        assert_eq!(decision.primary_intent, "execute.read_inspect");
+        assert!(matches!(decision.action, IntentAction::Execute));
+    }
+
+    #[test]
+    fn l2_stub_does_not_override_l1_result() {
+        let decision = assess_and_route("当前目录下有哪些源文件", &IntentContext::default());
+        assert_eq!(decision.primary_intent, "execute.read_inspect");
+        assert!(decision.confidence > 0.0);
     }
 }
