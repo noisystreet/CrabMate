@@ -5,7 +5,9 @@
 use crate::agent::hierarchy::task::{ArtifactKind, BuildArtifactKind, TaskResult};
 use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult};
 use crate::agent::intent_l2_classifier::classify_intent_l2_with_llm;
-use crate::agent::intent_pipeline::{IntentAction, IntentContext, assess_and_route_with_l2};
+use crate::agent::intent_pipeline::{
+    IntentAction, IntentContext, IntentDecision, assess_and_route_with_l2,
+};
 use crate::agent::intent_router::ExecuteIntentThresholds;
 use crate::agent::intent_router::{
     is_explicit_execute_confirmation, is_waiting_execute_confirmation_prompt,
@@ -26,6 +28,59 @@ fn recently_waiting_execute_confirmation(messages: &[crate::types::Message]) -> 
         };
         is_waiting_execute_confirmation_prompt(content)
     })
+}
+
+fn format_intent_analysis_title(assessment: &IntentDecision) -> String {
+    let action = match &assessment.action {
+        IntentAction::Execute => "直接执行",
+        IntentAction::ConfirmThenExecute(_) => "确认后执行",
+        IntentAction::ClarifyThenExecute(_) => "澄清后执行",
+        IntentAction::DirectReply(_) => "直接回复",
+    };
+    format!(
+        "意图分析：kind={:?}, primary={}, action={}",
+        assessment.kind, assessment.primary_intent, action
+    )
+}
+
+fn format_intent_analysis_detail(
+    assessment: &IntentDecision,
+    merge_meta: &crate::agent::intent_pipeline::IntentMergeMeta,
+) -> String {
+    format!(
+        "confidence={:.2}, need_clarification={}, abstain={}, l1={:?}@{:.2}, l2_present={}, l2_applied={}, l2_confidence={:?}, override_reason={:?}",
+        assessment.confidence,
+        assessment.need_clarification,
+        assessment.abstain,
+        merge_meta.l1_kind,
+        merge_meta.l1_confidence,
+        merge_meta.l2_present,
+        merge_meta.l2_applied,
+        merge_meta.l2_confidence,
+        merge_meta.override_reason
+    )
+}
+
+async fn emit_intent_analysis_sse(
+    out: Option<&tokio::sync::mpsc::Sender<String>>,
+    assessment: &IntentDecision,
+    merge_meta: &crate::agent::intent_pipeline::IntentMergeMeta,
+) {
+    let Some(out) = out else {
+        return;
+    };
+    let _ = sse::send_string_logged(
+        out,
+        sse::encode_message(crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "intent_analysis".to_string(),
+                title: format_intent_analysis_title(assessment),
+                detail: Some(format_intent_analysis_detail(assessment, merge_meta)),
+            },
+        }),
+        "hierarchical::intent_analysis",
+    )
+    .await;
 }
 
 /// 运行分层多 Agent
@@ -74,6 +129,8 @@ pub(crate) async fn run_hierarchical_agent(
         assessment.need_clarification,
         assessment.action
     );
+    emit_intent_analysis_sse(p.out, &assessment, &merge_meta).await;
+
     match assessment.action {
         IntentAction::Execute => {}
         IntentAction::DirectReply(reply)
@@ -481,7 +538,9 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_effective_user_task;
+    use super::{extract_effective_user_task, format_intent_analysis_title};
+    use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
+    use crate::agent::intent_router::IntentKind;
     use crate::types::Message;
 
     #[test]
@@ -507,5 +566,22 @@ mod tests {
         ];
         let task = extract_effective_user_task(&messages, false);
         assert_eq!(task, "编写一个简单c++程序并执行");
+    }
+
+    #[test]
+    fn intent_analysis_title_includes_primary_and_action() {
+        let assessment = IntentDecision {
+            kind: IntentKind::Execute,
+            confidence: 0.61,
+            action: IntentAction::Execute,
+            primary_intent: "execute.code_change".to_string(),
+            secondary_intents: Vec::new(),
+            abstain: false,
+            need_clarification: false,
+        };
+        let title = format_intent_analysis_title(&assessment);
+        assert!(title.contains("kind=Execute"));
+        assert!(title.contains("primary=execute.code_change"));
+        assert!(title.contains("action=直接执行"));
     }
 }
