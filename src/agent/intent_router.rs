@@ -41,6 +41,22 @@ const EXECUTE_CONFIRM: &str =
 const EXECUTE_LOW_THRESHOLD: f32 = 0.2;
 const EXECUTE_HIGH_THRESHOLD: f32 = 0.55;
 
+/// 执行意图阈值（用于阈值可配置化）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExecuteIntentThresholds {
+    pub low: f32,
+    pub high: f32,
+}
+
+impl Default for ExecuteIntentThresholds {
+    fn default() -> Self {
+        Self {
+            low: EXECUTE_LOW_THRESHOLD,
+            high: EXECUTE_HIGH_THRESHOLD,
+        }
+    }
+}
+
 const GREETING_KEYWORDS: &[&str] = &[
     "你好",
     "您好",
@@ -82,6 +98,14 @@ const QA_HINT_KEYWORDS: &[&str] = &[
 
 /// 多分类意图路由 + 置信度阈值分流。
 pub fn route_user_task(task: &str) -> IntentAssessment {
+    route_user_task_with_thresholds(task, ExecuteIntentThresholds::default())
+}
+
+/// 多分类意图路由 + 可配置执行阈值分流。
+pub fn route_user_task_with_thresholds(
+    task: &str,
+    thresholds: ExecuteIntentThresholds,
+) -> IntentAssessment {
     let normalized = task.trim().to_lowercase();
 
     if is_greeting_only(task) {
@@ -100,14 +124,14 @@ pub fn route_user_task(task: &str) -> IntentAssessment {
     }
 
     let execute_score = execution_confidence(&normalized);
-    if execute_score >= EXECUTE_HIGH_THRESHOLD {
+    if execute_score >= thresholds.high {
         return IntentAssessment {
             kind: IntentKind::Execute,
             confidence: execute_score,
             route: IntentRoute::Execute,
         };
     }
-    if execute_score >= EXECUTE_LOW_THRESHOLD {
+    if execute_score >= thresholds.low {
         return IntentAssessment {
             kind: IntentKind::Execute,
             confidence: execute_score,
