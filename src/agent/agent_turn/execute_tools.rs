@@ -231,6 +231,30 @@ async fn emit_sse_tool_running(
     .await;
 }
 
+async fn emit_timeline_log_sse(
+    out: Option<&mpsc::Sender<String>>,
+    kind: &str,
+    title: String,
+    detail: Option<String>,
+    log_label: &'static str,
+) {
+    let Some(tx) = out else {
+        return;
+    };
+    let _ = crate::sse::send_string_logged(
+        tx,
+        encode_message(SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: kind.to_string(),
+                title,
+                detail,
+            },
+        }),
+        log_label,
+    )
+    .await;
+}
+
 async fn emit_tool_result_sse_and_append(
     messages: &mut Vec<Message>,
     per_coord: &mut PerCoordinator,
@@ -255,6 +279,7 @@ async fn emit_tool_result_sse_and_append(
     } else {
         tools::summarize_tool_call(name, args)
     };
+    let parsed_for_timeline = parse_legacy_output(name, result.as_str());
 
     crate::runtime::terminal_cli_transcript::echo_tool_result_transcript(
         echo_terminal_transcript,
@@ -277,6 +302,29 @@ async fn emit_tool_result_sse_and_append(
         .await;
         maybe_emit_clarification_questionnaire_sse(Some(tx), name, args, result.as_str()).await;
     }
+
+    let status = if parsed_for_timeline.ok {
+        "ok"
+    } else {
+        "failed"
+    };
+    let detail = tool_summary.as_ref().map(|s| {
+        format!(
+            "status={status}, summary={s}, exit_code={}",
+            parsed_for_timeline
+                .exit_code
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "-".to_string())
+        )
+    });
+    emit_timeline_log_sse(
+        out,
+        "tool_step_finished",
+        name.to_string(),
+        detail,
+        "execute_tools::timeline tool_step_finished",
+    )
+    .await;
 
     crate::tool_stats::record_tool_outcome(
         cfg.as_ref(),
@@ -693,6 +741,17 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
             messages,
         )
         .await;
+        emit_timeline_log_sse(
+            out,
+            "tool_step_started",
+            tc.function.name.clone(),
+            Some(format!(
+                "args={}",
+                crate::redact::tool_arguments_preview_for_sse(&tc.function.arguments)
+            )),
+            "execute_tools::timeline tool_step_started",
+        )
+        .await;
         let cached = result_map
             .get(&(tc.function.name.as_str(), tc.function.arguments.as_str()))
             .copied()
@@ -774,6 +833,17 @@ async fn execute_tools_serial(
             t.record_tool_call_id_for_log(id.as_str());
         }
         emit_tool_call_summary_sse(out, cfg.as_ref(), &name, &args, messages).await;
+        emit_timeline_log_sse(
+            out,
+            "tool_step_started",
+            name.clone(),
+            Some(format!(
+                "args={}",
+                crate::redact::tool_arguments_preview_for_sse(&args)
+            )),
+            "execute_tools::timeline tool_step_started",
+        )
+        .await;
         info!(
             target: LOG_TARGET,
             "调用工具 tool={} args_preview={}",

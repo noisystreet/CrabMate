@@ -39,7 +39,7 @@ const EXECUTE_CONFIRM: &str =
     "我判断你可能想让我直接执行任务。请确认是否“直接开始执行”，或补充更具体范围。";
 
 const EXECUTE_LOW_THRESHOLD: f32 = 0.2;
-const EXECUTE_HIGH_THRESHOLD: f32 = 0.55;
+const EXECUTE_HIGH_THRESHOLD: f32 = 0.45;
 
 /// 执行意图阈值（用于阈值可配置化）。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -153,6 +153,16 @@ const QA_HINT_KEYWORDS: &[&str] = &[
     "how",
 ];
 
+const EXPLICIT_EXECUTE_CONFIRM_KEYWORDS: &[&str] = &[
+    "直接开始执行",
+    "开始执行",
+    "直接执行",
+    "确认执行",
+    "继续执行",
+    "现在执行",
+    "马上执行",
+];
+
 /// 多分类意图路由 + 置信度阈值分流。
 pub fn route_user_task(task: &str) -> IntentAssessment {
     route_user_task_with_thresholds(task, ExecuteIntentThresholds::default())
@@ -186,6 +196,13 @@ pub fn route_user_task_with_thresholds(
             route: IntentRoute::DirectReply(
                 "收到，我先不执行任何改动。你可以告诉我你想先了解哪部分。".to_string(),
             ),
+        };
+    }
+    if is_explicit_execute_confirmation(&normalized) {
+        return IntentAssessment {
+            kind: IntentKind::Execute,
+            confidence: 0.52,
+            route: IntentRoute::ConfirmThenExecute(EXECUTE_CONFIRM.to_string()),
         };
     }
     if is_qa_only(&normalized) {
@@ -327,9 +344,30 @@ fn is_negative_execute_request(s: &str) -> bool {
     negations.iter().any(|k| s.contains(k))
 }
 
+pub fn is_explicit_execute_confirmation(s: &str) -> bool {
+    EXPLICIT_EXECUTE_CONFIRM_KEYWORDS
+        .iter()
+        .any(|k| s.contains(k))
+}
+
+/// 助手是否正在等待用户确认执行（供多轮上下文复用，避免调用方硬编码文案片段）。
+pub fn is_waiting_execute_confirmation_prompt(assistant_text: &str) -> bool {
+    let t = assistant_text.trim();
+    let t_lower = t.to_lowercase();
+    !t.is_empty()
+        && (t == EXECUTE_CONFIRM
+            || t.contains("请确认是否“直接开始执行”")
+            || (t.contains("请确认是否") && (t.contains("开始执行") || t.contains("直接执行")))
+            || (t_lower.contains("confirm")
+                && (t_lower.contains("execute") || t_lower.contains("run"))))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{IntentKind, IntentRoute, route_user_task};
+    use super::{
+        EXECUTE_CONFIRM, IntentKind, IntentRoute, is_waiting_execute_confirmation_prompt,
+        route_user_task,
+    };
 
     #[test]
     fn greeting_routes_to_direct_reply() {
@@ -392,6 +430,25 @@ mod tests {
         let r = route_user_task("帮我改下这个");
         assert_eq!(r.kind, IntentKind::Execute);
         assert!(matches!(r.route, IntentRoute::ConfirmThenExecute(_)));
+    }
+
+    #[test]
+    fn explicit_start_execute_routes_to_execute() {
+        let r = route_user_task("直接开始执行");
+        assert_eq!(r.kind, IntentKind::Execute);
+        assert!(matches!(r.route, IntentRoute::ConfirmThenExecute(_)));
+    }
+
+    #[test]
+    fn waiting_execute_confirmation_prompt_detected() {
+        assert!(is_waiting_execute_confirmation_prompt(EXECUTE_CONFIRM));
+        assert!(is_waiting_execute_confirmation_prompt(
+            "我判断你可能想让我直接执行任务。请确认是否“直接开始执行”"
+        ));
+        assert!(is_waiting_execute_confirmation_prompt(
+            "请确认是否开始执行，或补充具体范围。"
+        ));
+        assert!(!is_waiting_execute_confirmation_prompt("你好！"));
     }
 
     #[test]

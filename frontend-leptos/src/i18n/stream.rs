@@ -40,6 +40,20 @@ pub fn stream_empty_reply_diag_line(
     }
 }
 
+pub fn timeline_tool_step_started_title(l: Locale, tool_name: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("准备执行工具: {tool_name}"),
+        Locale::En => format!("Preparing tool: {tool_name}"),
+    }
+}
+
+pub fn timeline_tool_step_finished_title(l: Locale, tool_name: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("工具执行完成: {tool_name}"),
+        Locale::En => format!("Tool finished: {tool_name}"),
+    }
+}
+
 pub fn stream_stopped_suffix(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "\n\n[已停止]",

@@ -497,7 +497,17 @@ pub(super) fn build_chat_stream_callbacks(
                 }
                 return;
             }
-            let mut body = info.title.trim().to_string();
+            let loc = stream_ctx.locale.get_untracked();
+            let normalized_title = match info.kind.as_str() {
+                "tool_step_started" => {
+                    i18n::timeline_tool_step_started_title(loc, info.title.trim())
+                }
+                "tool_step_finished" => {
+                    i18n::timeline_tool_step_finished_title(loc, info.title.trim())
+                }
+                _ => info.title.trim().to_string(),
+            };
+            let mut body = normalized_title;
             if let Some(detail) = info.detail.as_deref().map(str::trim)
                 && !detail.is_empty()
             {

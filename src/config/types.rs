@@ -635,7 +635,7 @@ pub struct AgentConfig {
     pub intent_l2_max_tokens: u32,
     /// 首轮意图路由：执行意图中置信度触发“确认后执行”的低阈值（0.0..=1.0，默认 0.2）。
     pub intent_execute_low_threshold: f32,
-    /// 首轮意图路由：执行意图触发“直接执行”的高阈值（0.0..=1.0，默认 0.55，且不低于 low）。
+    /// 首轮意图路由：执行意图触发“直接执行”的高阈值（0.0..=1.0，默认 0.45，且不低于 low）。
     pub intent_execute_high_threshold: f32,
 }
 
