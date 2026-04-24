@@ -627,6 +627,12 @@ pub struct AgentConfig {
     pub enable_llm_routing: Option<bool>,
     /// 为 true 时：根据 `primary_intent/secondary_intents` 对 Router 输出执行模式做偏置提升（默认 true）。
     pub intent_mode_bias_enabled: bool,
+    /// 为 true 时：启用 L2 语义意图分类（当前走额外无工具 LLM 调用，失败自动回退 L1；默认 false）。
+    pub intent_l2_enabled: bool,
+    /// L2 语义分类覆盖 L1 的最小置信度（0.0..=1.0，默认 0.7）。
+    pub intent_l2_min_confidence: f32,
+    /// L2 语义分类请求 `max_tokens`（32..=1024，默认 220）。
+    pub intent_l2_max_tokens: u32,
     /// 首轮意图路由：执行意图中置信度触发“确认后执行”的低阈值（0.0..=1.0，默认 0.2）。
     pub intent_execute_low_threshold: f32,
     /// 首轮意图路由：执行意图触发“直接执行”的高阈值（0.0..=1.0，默认 0.55，且不低于 low）。

@@ -33,7 +33,7 @@ impl Default for IntentContext {
 }
 
 /// L2 分类输出（可由 LLM/embedding/专用模型实现）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct L2IntentCandidate {
     pub kind: IntentKind,
     pub primary_intent: String,
@@ -41,6 +41,17 @@ pub struct L2IntentCandidate {
     pub confidence: f32,
     pub need_clarification: bool,
     pub abstain: bool,
+}
+
+/// L1/L2 合并元数据（用于观测与回归）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct IntentMergeMeta {
+    pub l1_kind: IntentKind,
+    pub l1_confidence: f32,
+    pub l2_present: bool,
+    pub l2_applied: bool,
+    pub l2_confidence: Option<f32>,
+    pub override_reason: Option<String>,
 }
 
 /// L3 决策动作：执行、直接回复、先澄清或先确认。
@@ -78,21 +89,42 @@ pub struct IntentDecision {
 /// - L1/L2: 复用 `intent_router` 规则与阈值
 /// - L3: 统一动作映射
 pub fn assess_and_route(task: &str, _ctx: &IntentContext) -> IntentDecision {
-    let l1_assessment = route_user_task_with_thresholds(task, _ctx.thresholds);
-    let mut decision = map_assessment_to_decision(task, l1_assessment);
+    assess_and_route_with_l2(task, _ctx, classify_with_l2_stub(task, _ctx)).0
+}
 
-    // L2 入口骨架：当前默认返回 None，不增加推理成本。
-    if let Some(l2) = classify_with_l2_stub(task, _ctx)
-        && l2.confidence >= _ctx.l2_min_confidence
-    {
-        decision.kind = l2.kind;
-        decision.primary_intent = l2.primary_intent;
-        decision.secondary_intents = l2.secondary_intents;
-        decision.confidence = l2.confidence;
-        decision.need_clarification = l2.need_clarification;
-        decision.abstain = l2.abstain;
+/// 合并 L1/L2 结果并返回观测元数据。
+pub fn assess_and_route_with_l2(
+    task: &str,
+    ctx: &IntentContext,
+    l2_candidate: Option<L2IntentCandidate>,
+) -> (IntentDecision, IntentMergeMeta) {
+    let l1_assessment = route_user_task_with_thresholds(task, ctx.thresholds);
+    let l1_kind = l1_assessment.kind;
+    let l1_confidence = l1_assessment.confidence;
+    let mut decision = map_assessment_to_decision(task, l1_assessment);
+    let mut meta = IntentMergeMeta {
+        l1_kind,
+        l1_confidence,
+        l2_present: l2_candidate.is_some(),
+        l2_applied: false,
+        l2_confidence: l2_candidate.as_ref().map(|x| x.confidence),
+        override_reason: None,
+    };
+    if let Some(l2) = l2_candidate {
+        if l2.confidence >= ctx.l2_min_confidence {
+            decision.kind = l2.kind;
+            decision.primary_intent = l2.primary_intent;
+            decision.secondary_intents = l2.secondary_intents;
+            decision.confidence = l2.confidence;
+            decision.need_clarification = l2.need_clarification;
+            decision.abstain = l2.abstain;
+            meta.l2_applied = true;
+            meta.override_reason = Some("l2_confidence_above_threshold".to_string());
+        } else {
+            meta.override_reason = Some("l2_confidence_below_threshold".to_string());
+        }
     }
-    decision
+    (decision, meta)
 }
 
 fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> IntentDecision {
@@ -279,7 +311,9 @@ fn classify_with_l2_stub(_task: &str, _ctx: &IntentContext) -> Option<L2IntentCa
 
 #[cfg(test)]
 mod tests {
-    use super::{IntentAction, IntentContext, assess_and_route};
+    use super::{
+        IntentAction, IntentContext, L2IntentCandidate, assess_and_route, assess_and_route_with_l2,
+    };
     use crate::agent::intent_router::IntentKind;
 
     #[test]
@@ -366,5 +400,24 @@ mod tests {
         let decision = assess_and_route("当前目录下有哪些源文件", &IntentContext::default());
         assert_eq!(decision.primary_intent, "execute.read_inspect");
         assert!(decision.confidence > 0.0);
+    }
+
+    #[test]
+    fn l2_high_confidence_overrides_l1() {
+        let l2 = L2IntentCandidate {
+            kind: IntentKind::Execute,
+            primary_intent: "execute.docs_ops".to_string(),
+            secondary_intents: vec!["execute.read_inspect".to_string()],
+            confidence: 0.91,
+            need_clarification: false,
+            abstain: false,
+        };
+        let (decision, meta) = assess_and_route_with_l2(
+            "当前目录下有哪些源文件",
+            &IntentContext::default(),
+            Some(l2),
+        );
+        assert_eq!(decision.primary_intent, "execute.docs_ops");
+        assert!(meta.l2_applied);
     }
 }

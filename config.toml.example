@@ -134,6 +134,9 @@ sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # final_plan_semantic_check_max_tokens = 256  # 侧向请求 max_tokens；AGENT_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS
 # planner_executor_mode = "single_agent"  # single_agent | logical_dual_agent（阶段1：同进程逻辑双agent）
 # intent_mode_bias_enabled = true   # 是否启用基于 primary/secondary intent 的执行模式偏置
+# intent_l2_enabled = false   # 是否启用 L2 语义意图分类（额外一次无工具 LLM 调用，失败自动回退 L1）
+# intent_l2_min_confidence = 0.7
+# intent_l2_max_tokens = 220
 # 首轮意图路由执行阈值：low 触发“确认后执行”，high 触发“直接执行”
 # intent_execute_low_threshold = 0.2
 # intent_execute_high_threshold = 0.55

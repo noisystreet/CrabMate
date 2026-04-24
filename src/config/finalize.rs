@@ -725,6 +725,9 @@ pub(super) fn finalize(
     let intent_execute_high_threshold =
         intent_execute_high_threshold.max(intent_execute_low_threshold);
     let intent_mode_bias_enabled = b.intent_mode_bias_enabled.unwrap_or(true);
+    let intent_l2_enabled = b.intent_l2_enabled.unwrap_or(false);
+    let intent_l2_min_confidence = b.intent_l2_min_confidence.unwrap_or(0.7).clamp(0.0, 1.0) as f32;
+    let intent_l2_max_tokens = b.intent_l2_max_tokens.unwrap_or(220).clamp(32, 1024) as u32;
 
     Ok(AgentConfig {
         api_base: b.api_base,
@@ -877,6 +880,9 @@ pub(super) fn finalize(
         full_plan_rewrite_max_attempts: 2,
         enable_llm_routing: Some(true), // 默认开启 LLM 智能路由
         intent_mode_bias_enabled,
+        intent_l2_enabled,
+        intent_l2_min_confidence,
+        intent_l2_max_tokens,
         intent_execute_low_threshold,
         intent_execute_high_threshold,
     })

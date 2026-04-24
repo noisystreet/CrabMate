@@ -3,7 +3,8 @@
 //! 当 `planner_executor_mode = Hierarchical` 时使用此模块执行任务分解和子目标执行。
 
 use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult};
-use crate::agent::intent_pipeline::{IntentAction, IntentContext, assess_and_route};
+use crate::agent::intent_l2_classifier::classify_intent_l2_with_llm;
+use crate::agent::intent_pipeline::{IntentAction, IntentContext, assess_and_route_with_l2};
 use crate::agent::intent_router::ExecuteIntentThresholds;
 use crate::sse;
 
@@ -30,12 +31,24 @@ pub(crate) async fn run_hierarchical_agent(
             low: p.cfg.intent_execute_low_threshold,
             high: p.cfg.intent_execute_high_threshold,
         },
+        l2_min_confidence: p.cfg.intent_l2_min_confidence,
         ..IntentContext::default()
     };
-    let assessment = assess_and_route(&task, &intent_ctx);
+    let l2_candidate = if p.cfg.intent_l2_enabled {
+        classify_intent_l2_with_llm(&task, p.cfg.as_ref(), p.llm_backend, p.client, p.api_key).await
+    } else {
+        None
+    };
+    let (assessment, merge_meta) = assess_and_route_with_l2(&task, &intent_ctx, l2_candidate);
     log::info!(
         target: "crabmate",
-        "[INTENT_PIPELINE] kind={:?} primary_intent={} confidence={:.2} abstain={} need_clarification={} action={:?}",
+        "[INTENT_PIPELINE] l1_kind={:?} l1_confidence={:.2} l2_present={} l2_applied={} l2_confidence={:?} override_reason={:?} final_kind={:?} primary_intent={} confidence={:.2} abstain={} need_clarification={} action={:?}",
+        merge_meta.l1_kind,
+        merge_meta.l1_confidence,
+        merge_meta.l2_present,
+        merge_meta.l2_applied,
+        merge_meta.l2_confidence,
+        merge_meta.override_reason,
         assessment.kind,
         assessment.primary_intent,
         assessment.confidence,
