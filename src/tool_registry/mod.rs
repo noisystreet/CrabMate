@@ -16,8 +16,10 @@ mod meta;
 mod policy;
 mod runtime;
 
-pub(crate) use execute::prefetch_http_fetch_parallel_approvals;
 pub use execute::{DispatchToolParams, dispatch_tool};
+pub(crate) use execute::{
+    prefetch_http_fetch_parallel_approvals, prefetch_parallel_syncdefault_approvals,
+};
 pub(crate) use meta::{HandlerId, handler_id_for};
 pub use meta::{
     ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata, execution_class_for_tool,
