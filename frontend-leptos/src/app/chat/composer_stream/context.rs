@@ -1,6 +1,7 @@
 //! 单次 `/chat/stream` 回调共享的只读/句柄上下文（与 `callbacks` 分离，便于单测与浏览）。
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use leptos::prelude::*;
@@ -27,4 +28,6 @@ pub(super) struct ChatStreamCallbackCtx {
     pub(super) shell: ComposerStreamShell,
     /// 暂存最近一次 tool_call 的参数。
     pub(super) pending_tool_args: Rc<RefCell<PendingToolArgs>>,
+    /// 当前“工具调用中”卡片的消息 id 队列；收到结果后按先入先出就地更新。
+    pub(super) pending_tool_message_ids: Rc<RefCell<VecDeque<String>>>,
 }

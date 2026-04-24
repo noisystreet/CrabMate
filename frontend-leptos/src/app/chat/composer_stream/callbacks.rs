@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::{cell::RefCell, collections::VecDeque};
 
 use leptos::prelude::*;
 
@@ -21,6 +22,27 @@ use crate::timeline_scan::{
 };
 
 use super::context::ChatStreamCallbackCtx;
+
+fn enqueue_pending_tool_message_id(queue: &Rc<RefCell<VecDeque<String>>>, message_id: String) {
+    queue.borrow_mut().push_back(message_id);
+}
+
+fn take_pending_tool_message_id(queue: &Rc<RefCell<VecDeque<String>>>) -> Option<String> {
+    queue.borrow_mut().pop_front()
+}
+
+fn build_final_response_text(title: &str, detail: Option<&str>) -> String {
+    let mut final_text = title.trim().to_string();
+    if let Some(detail) = detail.map(str::trim)
+        && !detail.is_empty()
+    {
+        if !final_text.is_empty() {
+            final_text.push_str("\n\n");
+        }
+        final_text.push_str(detail);
+    }
+    final_text
+}
 
 /// 根据暂存的工具调用参数生成参数展示文本。
 fn build_tool_args_text(args: &super::context::PendingToolArgs, loc: Locale) -> String {
@@ -83,26 +105,67 @@ fn append_to_assistant_text(
     });
 }
 
+fn build_empty_reply_with_diagnostic(
+    loc: Locale,
+    answer_phase_entered: bool,
+    answer_delta_chars: usize,
+    stream_end_reason: Option<&str>,
+) -> String {
+    let base = if !answer_phase_entered {
+        i18n::stream_empty_reply_no_answer_phase(loc)
+    } else if answer_delta_chars == 0 {
+        i18n::stream_empty_reply_no_delta(loc)
+    } else {
+        i18n::stream_empty_reply(loc)
+    };
+    format!(
+        "{base}\n\n{}",
+        i18n::stream_empty_reply_diag_line(
+            loc,
+            stream_end_reason,
+            answer_phase_entered,
+            answer_delta_chars
+        )
+    )
+}
+
 /// 由 [`super::make_attach_chat_stream`](super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低 `mod.rs` 维护面。
 pub(super) fn build_chat_stream_callbacks(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
     in_answer_phase: Rc<Cell<bool>>,
 ) -> ChatStreamCallbacks {
+    let answer_delta_chars: Rc<Cell<usize>> = Rc::new(Cell::new(0));
+    let stream_end_reason: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    // 兜底缓冲：若服务端未下发 assistant_answer_phase，但确实有 delta，
+    // 则在 on_done 且正文仍为空时回填，避免出现“后端有答复、前端无回复”。
+    let pre_answer_buffer: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
     let on_delta: Rc<dyn Fn(String)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         let in_answer_phase = Rc::clone(&in_answer_phase);
+        let answer_delta_chars = Rc::clone(&answer_delta_chars);
+        let pre_answer_buffer = Rc::clone(&pre_answer_buffer);
         Rc::new(move |chunk: String| {
             let aid = stream_ctx.active_session_id.as_str();
             let mid = stream_ctx.assistant_message_id.as_str();
             if in_answer_phase.get() {
+                answer_delta_chars.set(
+                    answer_delta_chars
+                        .get()
+                        .saturating_add(chunk.chars().count()),
+                );
                 append_to_assistant_text(aid, mid, &chunk, &stream_ctx.chat.sessions);
+            } else {
+                pre_answer_buffer.borrow_mut().push_str(&chunk);
             }
-            // 不在 answer 阶段时跳过（thinking 内容直接通过 on_timeline_log/on_thinking_trace 流入 text）
         })
     };
 
     let on_done: Rc<dyn Fn()> = {
         let stream_ctx = Rc::clone(&stream_ctx);
+        let in_answer_phase = Rc::clone(&in_answer_phase);
+        let answer_delta_chars = Rc::clone(&answer_delta_chars);
+        let stream_end_reason = Rc::clone(&stream_end_reason);
+        let pre_answer_buffer = Rc::clone(&pre_answer_buffer);
         Rc::new(move || {
             if *stream_ctx.shell.user_cancelled_stream.lock().unwrap() {
                 *stream_ctx.shell.abort_cell.lock().unwrap() = None;
@@ -118,7 +181,27 @@ pub(super) fn build_chat_stream_callbacks(
                     {
                         m.state = None;
                         if m.text.trim().is_empty() {
-                            m.text = i18n::stream_empty_reply(loc).to_string();
+                            let buffered = pre_answer_buffer.borrow();
+                            if !buffered.trim().is_empty() {
+                                m.text = buffered.clone();
+                                answer_delta_chars.set(
+                                    answer_delta_chars
+                                        .get()
+                                        .saturating_add(m.text.chars().count()),
+                                );
+                                web_sys::console::log_1(
+                                    &"[SSE] fallback_from_pre_answer_buffer=true".into(),
+                                );
+                            }
+                        }
+                        if m.text.trim().is_empty() {
+                            let end_reason = stream_end_reason.borrow();
+                            m.text = build_empty_reply_with_diagnostic(
+                                loc,
+                                in_answer_phase.get(),
+                                answer_delta_chars.get(),
+                                end_reason.as_deref(),
+                            );
                         }
                     }
                 }
@@ -172,12 +255,44 @@ pub(super) fn build_chat_stream_callbacks(
     let on_tool_call: Rc<dyn Fn(String, String, Option<String>, Option<String>)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(
-            move |_name: String,
-                  _summary: String,
-                  preview: Option<String>,
-                  full: Option<String>| {
+            move |name: String, summary: String, preview: Option<String>, full: Option<String>| {
                 let args = super::context::PendingToolArgs { preview, full };
                 *stream_ctx.pending_tool_args.borrow_mut() = args;
+                let args_text = build_tool_args_text(
+                    &stream_ctx.pending_tool_args.borrow(),
+                    stream_ctx.locale.get_untracked(),
+                );
+                let loc = stream_ctx.locale.get_untracked();
+                let mut parts: Vec<String> = Vec::new();
+                if !summary.trim().is_empty() {
+                    parts.push(summary.trim().to_string());
+                } else if !name.trim().is_empty() {
+                    parts.push(format!("{}{}", i18n::tool_card_prefix(loc), name.trim()));
+                } else {
+                    parts.push(i18n::tool_card_fallback(loc).to_string());
+                }
+                parts.push(i18n::status_tool_running(loc).to_string());
+                if !args_text.is_empty() {
+                    parts.push(args_text);
+                }
+                let text = parts.join("\n\n");
+                let id = make_message_id();
+                let aid = stream_ctx.active_session_id.as_str();
+                stream_ctx.chat.sessions.update(|list| {
+                    if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                        s.messages.push(StoredMessage {
+                            id: id.clone(),
+                            role: "system".to_string(),
+                            text,
+                            reasoning_text: String::new(),
+                            image_urls: vec![],
+                            state: Some("loading".to_string()),
+                            is_tool: true,
+                            created_at: message_created_ms(),
+                        });
+                    }
+                });
+                enqueue_pending_tool_message_id(&stream_ctx.pending_tool_message_ids, id);
             },
         )
     };
@@ -208,18 +323,30 @@ pub(super) fn build_chat_stream_callbacks(
             let aid = stream_ctx.active_session_id.as_str();
             let tl_ok = info.ok.unwrap_or(true);
             let state = timeline_state_tool(&id, tl_ok);
+            let pending_id = take_pending_tool_message_id(&stream_ctx.pending_tool_message_ids);
+            let mut updated_existing = false;
             stream_ctx.chat.sessions.update(|list| {
                 if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                    s.messages.push(StoredMessage {
-                        id,
-                        role: "system".to_string(),
-                        text: t,
-                        reasoning_text: String::new(),
-                        image_urls: vec![],
-                        state: Some(state),
-                        is_tool: true,
-                        created_at: message_created_ms(),
-                    });
+                    if let Some(pid) = pending_id.as_deref()
+                        && let Some(m) = s.messages.iter_mut().find(|m| m.id == pid)
+                    {
+                        m.text = t.clone();
+                        m.state = Some(state.clone());
+                        m.is_tool = true;
+                        updated_existing = true;
+                    }
+                    if !updated_existing {
+                        s.messages.push(StoredMessage {
+                            id: id.clone(),
+                            role: "system".to_string(),
+                            text: t.clone(),
+                            reasoning_text: String::new(),
+                            image_urls: vec![],
+                            state: Some(state.clone()),
+                            is_tool: true,
+                            created_at: message_created_ms(),
+                        });
+                    }
                 }
             });
         })
@@ -271,7 +398,9 @@ pub(super) fn build_chat_stream_callbacks(
 
     let on_stream_ended: Rc<dyn Fn(String)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
+        let stream_end_reason = Rc::clone(&stream_end_reason);
         Rc::new(move |reason: String| {
+            *stream_end_reason.borrow_mut() = Some(reason.clone());
             if reason == "completed" || reason == "cancelled" {
                 stream_ctx.chat.stream_job_id.set(None);
                 stream_ctx.chat.stream_last_event_seq.set(0);
@@ -340,17 +469,61 @@ pub(super) fn build_chat_stream_callbacks(
         })
     };
 
-    // Manager 规划 / 分层执行内容 → 追加到同一 assistant 消息 text，流式展示
+    // Manager 规划 / 分层执行旁注：作为 system 时间线消息落盘，按时间顺序与工具卡片交替展示。
     let on_timeline_log: Rc<dyn Fn(TimelineLogInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
+        let answer_delta_chars = Rc::clone(&answer_delta_chars);
         Rc::new(move |info: TimelineLogInfo| {
             web_sys::console::log_1(
                 &format!("[TL] kind={} title={}", info.kind, info.title).into(),
             );
+            if info.kind == "final_response" {
+                let aid = stream_ctx.active_session_id.as_str();
+                let mid = stream_ctx.assistant_message_id.as_str();
+                let final_text = build_final_response_text(&info.title, info.detail.as_deref());
+                if !final_text.is_empty() {
+                    stream_ctx.chat.sessions.update(|list| {
+                        if let Some(s) = list.iter_mut().find(|s| s.id == aid)
+                            && let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
+                        {
+                            m.text = final_text.clone();
+                        }
+                    });
+                    answer_delta_chars.set(
+                        answer_delta_chars
+                            .get()
+                            .saturating_add(final_text.chars().count()),
+                    );
+                }
+                return;
+            }
+            let mut body = info.title.trim().to_string();
+            if let Some(detail) = info.detail.as_deref().map(str::trim)
+                && !detail.is_empty()
+            {
+                body.push('\n');
+                body.push_str(detail);
+            }
+            if body.is_empty() {
+                return;
+            }
+            let id = make_message_id();
             let aid = stream_ctx.active_session_id.as_str();
-            let mid = stream_ctx.assistant_message_id.as_str();
-            let chunk = format!("{}\n\n", info.title);
-            append_to_assistant_text(aid, mid, &chunk, &stream_ctx.chat.sessions);
+            let now = message_created_ms();
+            stream_ctx.chat.sessions.update(|list| {
+                if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                    s.messages.push(StoredMessage {
+                        id,
+                        role: "system".to_string(),
+                        text: staged_timeline_system_message_body(&body),
+                        reasoning_text: String::new(),
+                        image_urls: vec![],
+                        state: None,
+                        is_tool: false,
+                        created_at: now,
+                    });
+                }
+            });
         })
     };
 
@@ -387,17 +560,9 @@ pub(super) fn build_chat_stream_callbacks(
         })
     };
 
-    // thinking_trace 内容 → 追加到同一 assistant 消息 text
-    let on_thinking_trace: Rc<dyn Fn(crate::sse_dispatch::ThinkingTraceInfo)> = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        Rc::new(move |info: crate::sse_dispatch::ThinkingTraceInfo| {
-            let aid = stream_ctx.active_session_id.as_str();
-            let mid = stream_ctx.assistant_message_id.as_str();
-            let title = info.title.as_deref().unwrap_or(&info.op);
-            let chunk = format!("{}\n\n", title);
-            append_to_assistant_text(aid, mid, &chunk, &stream_ctx.chat.sessions);
-        })
-    };
+    // thinking_trace 保留在调试台，不再写入聊天正文，避免干扰时间线可读性。
+    let on_thinking_trace: Rc<dyn Fn(crate::sse_dispatch::ThinkingTraceInfo)> =
+        { Rc::new(move |_info: crate::sse_dispatch::ThinkingTraceInfo| {}) };
 
     ChatStreamCallbacks {
         on_delta,
@@ -419,5 +584,44 @@ pub(super) fn build_chat_stream_callbacks(
         on_clarification_questionnaire: on_clarification,
         on_thinking_trace,
         on_timeline_log,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_final_response_text, enqueue_pending_tool_message_id, take_pending_tool_message_id,
+    };
+    use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+
+    #[test]
+    fn pending_tool_message_queue_is_fifo() {
+        let q = Rc::new(RefCell::new(VecDeque::new()));
+        enqueue_pending_tool_message_id(&q, "m1".to_string());
+        enqueue_pending_tool_message_id(&q, "m2".to_string());
+        enqueue_pending_tool_message_id(&q, "m3".to_string());
+
+        assert_eq!(take_pending_tool_message_id(&q).as_deref(), Some("m1"));
+        assert_eq!(take_pending_tool_message_id(&q).as_deref(), Some("m2"));
+        assert_eq!(take_pending_tool_message_id(&q).as_deref(), Some("m3"));
+        assert_eq!(take_pending_tool_message_id(&q), None);
+    }
+
+    #[test]
+    fn pending_tool_message_queue_empty_returns_none() {
+        let q = Rc::new(RefCell::new(VecDeque::new()));
+        assert_eq!(take_pending_tool_message_id(&q), None);
+    }
+
+    #[test]
+    fn final_response_text_merges_title_and_detail() {
+        let merged = build_final_response_text("  你好  ", Some("  世界  "));
+        assert_eq!(merged, "你好\n\n世界");
+    }
+
+    #[test]
+    fn final_response_text_ignores_empty_detail() {
+        let merged = build_final_response_text("  你好  ", Some("   "));
+        assert_eq!(merged, "你好");
     }
 }

@@ -70,6 +70,8 @@ pub(crate) async fn run_hierarchical_agent(
                     });
                 let _ =
                     sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
+                // NOTE: `DirectReply` 当前通过 `timeline_log(kind=final_response)` 发送终答正文；
+                // 前端需将该事件回写到 assistant 正文气泡，而非仅作为 system 时间线显示。
                 let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
                     log: crate::sse::protocol::TimelineLogBody {
                         kind: "final_response".to_string(),
