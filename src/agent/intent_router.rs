@@ -79,12 +79,19 @@ const EXECUTION_HINT_KEYWORDS: &[&str] = &[
 const READONLY_LISTING_KEYWORDS: &[&str] = &[
     "当前目录",
     "有哪些",
+    "有什么",
+    "有没有",
+    "有无",
+    "在不在",
+    "是否有",
+    "是否存在",
     "列出",
     "查看",
     "列一下",
     "清单",
     "文件列表",
     "源文件",
+    "源码",
     "目录下",
     "list",
     "show files",
@@ -129,18 +136,18 @@ pub fn route_user_task_with_thresholds(
             route: IntentRoute::DirectReply(GREETING_REPLY.to_string()),
         };
     }
-    if is_qa_only(&normalized) {
-        return IntentAssessment {
-            kind: IntentKind::Qa,
-            confidence: 0.85,
-            route: IntentRoute::DirectReply(QA_REPLY.to_string()),
-        };
-    }
     if is_readonly_listing_request(&normalized) {
         return IntentAssessment {
             kind: IntentKind::Execute,
             confidence: 0.78,
             route: IntentRoute::Execute,
+        };
+    }
+    if is_qa_only(&normalized) {
+        return IntentAssessment {
+            kind: IntentKind::Qa,
+            confidence: 0.85,
+            route: IntentRoute::DirectReply(QA_REPLY.to_string()),
         };
     }
 
@@ -230,7 +237,18 @@ fn execution_confidence(s: &str) -> f32 {
 }
 
 fn is_readonly_listing_request(s: &str) -> bool {
-    READONLY_LISTING_KEYWORDS.iter().any(|k| s.contains(k))
+    let has_listing_phrase = READONLY_LISTING_KEYWORDS.iter().any(|k| s.contains(k));
+    let has_listing_object = s.contains("目录")
+        || s.contains("文件")
+        || s.contains("源码")
+        || s.contains("项目")
+        || s.contains("仓库")
+        || s.contains("src")
+        || s.contains(".rs")
+        || s.contains(".ts")
+        || s.contains(".md");
+    (has_listing_phrase && has_listing_object)
+        || (s.contains('有') && (s.contains("源码") || s.contains("文件")) && s.contains('吗'))
 }
 
 #[cfg(test)]
@@ -303,6 +321,20 @@ mod tests {
     #[test]
     fn readonly_listing_request_routes_to_execute() {
         let r = route_user_task("当前目录下有哪些源文件");
+        assert_eq!(r.kind, IntentKind::Execute);
+        assert!(matches!(r.route, IntentRoute::Execute));
+    }
+
+    #[test]
+    fn current_dir_has_what_routes_to_execute() {
+        let r = route_user_task("当前目录下有什么");
+        assert_eq!(r.kind, IntentKind::Execute);
+        assert!(matches!(r.route, IntentRoute::Execute));
+    }
+
+    #[test]
+    fn has_hpcg_source_code_routes_to_execute() {
+        let r = route_user_task("有hpcg的源码吗？");
         assert_eq!(r.kind, IntentKind::Execute);
         assert!(matches!(r.route, IntentRoute::Execute));
     }

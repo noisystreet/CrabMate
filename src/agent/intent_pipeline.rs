@@ -186,11 +186,18 @@ fn map_execute_primary_intent(task: &str) -> &'static str {
     if has_any(&[
         "当前目录",
         "有哪些",
+        "有什么",
+        "有没有",
+        "有无",
+        "在不在",
+        "是否有",
+        "是否存在",
         "列出",
         "查看",
         "清单",
         "文件列表",
         "源文件",
+        "源码",
         "list",
         "show files",
     ]) {
@@ -290,11 +297,18 @@ fn map_secondary_intents(task: &str, kind: IntentKind, primary_intent: &str) -> 
     if has_any(&[
         "当前目录",
         "有哪些",
+        "有什么",
+        "有没有",
+        "有无",
+        "在不在",
+        "是否有",
+        "是否存在",
         "列出",
         "查看",
         "清单",
         "文件列表",
         "源文件",
+        "源码",
         "list",
         "show files",
     ]) {
@@ -393,6 +407,20 @@ mod tests {
         assert_eq!(decision.kind, IntentKind::Execute);
         assert_eq!(decision.primary_intent, "execute.read_inspect");
         assert!(matches!(decision.action, IntentAction::Execute));
+    }
+
+    #[test]
+    fn current_dir_has_what_maps_to_read_inspect() {
+        let decision = assess_and_route("当前目录下有什么", &IntentContext::default());
+        assert_eq!(decision.kind, IntentKind::Execute);
+        assert_eq!(decision.primary_intent, "execute.read_inspect");
+    }
+
+    #[test]
+    fn has_hpcg_source_code_maps_to_read_inspect() {
+        let decision = assess_and_route("有hpcg的源码吗？", &IntentContext::default());
+        assert_eq!(decision.kind, IntentKind::Execute);
+        assert_eq!(decision.primary_intent, "execute.read_inspect");
     }
 
     #[test]
