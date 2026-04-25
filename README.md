@@ -39,7 +39,7 @@
 
 - **流式与审批**：Web **SSE** + **`POST /chat/approval`**；CLI 终端审批；取消码等与 [docs/SSE_PROTOCOL.md](docs/SSE_PROTOCOL.md)、[docs/CLI.md](docs/CLI.md)「CLI 与 Web 能力对照」。
 
-- **会话与导出**：Web 可选 SQLite 持久化、导出 JSON/MD；CLI **`save-session`** / **`tool-replay`** 等。工作区变更注入、长期记忆等见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
+- **会话与导出**：Web 可选 SQLite 持久化、导出 JSON/MD（JSON 顶层与 CLI **`save-session`** 同形，含 **`schema`** / **`schema_version`** 与 **`version`**，见 [docs/CLI.md](docs/CLI.md) **`save-session`**）；CLI **`save-session`** / **`tool-replay`** 等。工作区变更注入、长期记忆等见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
 
 - **可选**：进程内工具统计（**`agent_tool_stats_enabled`**）；**MCP stdio 客户端**（**`mcp_enabled`** + **`mcp_command`**，`crabmate mcp list`）；**MCP stdio 服务端**（**`crabmate mcp serve`**，将内置工具暴露给外部 MCP 客户端，无传输鉴权）。见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)、[docs/CLI.md](docs/CLI.md)。
 

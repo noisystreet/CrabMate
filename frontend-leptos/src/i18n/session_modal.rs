@@ -58,8 +58,8 @@ pub fn session_prompt_title_label(l: Locale) -> &'static str {
 
 pub fn session_row_export_json_title(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "导出 JSON（ChatSessionFile v1）",
-        Locale::En => "Export JSON (ChatSessionFile v1)",
+        Locale::ZhHans => "导出 JSON（ChatSessionFile + schema）",
+        Locale::En => "Export JSON (ChatSessionFile + schema)",
     }
 }
 

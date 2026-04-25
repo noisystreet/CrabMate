@@ -93,7 +93,7 @@ cargo run -- save-session --format json --workspace /path/to/proj
 
 ## `save-session`
 
-Reads **`<workspace>/.crabmate/tui_session.json`** by default (`--workspace` and global `--config` before subcommand), writes timestamped **`chat_export_*.json`** / **`chat_export_*.md`** under **`<workspace>/.crabmate/exports/`** (same contract as Web; see `runtime/chat_export.rs` and `frontend-leptos/src/lib.rs`). Each stdout line is the absolute path of a written file for scripts.
+Reads **`<workspace>/.crabmate/tui_session.json`** by default (`--workspace` and global `--config` before subcommand), writes timestamped **`chat_export_*.json`** / **`chat_export_*.md`** under **`<workspace>/.crabmate/exports/`** (same contract as Web; see `runtime/chat_export.rs` and `frontend-leptos/src/session_export.rs`). JSON top-level **`ChatSessionFile`**: `schema` (fixed `crabmate.chat_session`), `schema_version` (SemVer for the envelope), `version` (message-array contract, evolved with OpenAI-compatible `messages`), `messages`. Older files without `schema` / `schema_version` still deserialize; missing fields default to current constants. Each stdout line is the absolute path of a written file for scripts.
 
 ## `tool-replay` (tool timeline fixture)
 

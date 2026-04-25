@@ -114,7 +114,6 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 - [ ] Future full-screen TUI.
 - [ ] CLI history persistence, batch message injection from files.
-- [ ] Export JSON schema version field.
 - [ ] Accessibility and weak-terminal fallbacks.
 
 ---
