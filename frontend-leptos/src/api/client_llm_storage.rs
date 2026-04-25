@@ -10,6 +10,8 @@ use super::browser::local_storage;
 pub const CLIENT_LLM_API_BASE_STORAGE_KEY: &str = "crabmate-client-llm-api-base";
 /// Web 设置中保存的模型名（`client_llm.model`）。
 pub const CLIENT_LLM_MODEL_STORAGE_KEY: &str = "crabmate-client-llm-model";
+/// Web 设置中保存的温度覆盖（`temperature`）。
+pub const CLIENT_LLM_TEMPERATURE_STORAGE_KEY: &str = "crabmate-client-llm-temperature";
 /// Web 设置中保存的云端 API 密钥（`client_llm.api_key`）；**仅存本机**。
 pub const CLIENT_LLM_API_KEY_STORAGE_KEY: &str = "crabmate-client-llm-api-key";
 
@@ -36,11 +38,12 @@ pub fn client_llm_storage_has_api_key() -> bool {
     storage_trimmed_item(CLIENT_LLM_API_KEY_STORAGE_KEY).is_some()
 }
 
-/// 供设置弹窗加载：`api_base` / `model` 的已存值（无则空串）。
-pub fn load_client_llm_text_fields_from_storage() -> (String, String) {
+/// 供设置弹窗加载：`api_base` / `model` / `temperature` 的已存值（无则空串）。
+pub fn load_client_llm_text_fields_from_storage() -> (String, String, String) {
     (
         storage_trimmed_item(CLIENT_LLM_API_BASE_STORAGE_KEY).unwrap_or_default(),
         storage_trimmed_item(CLIENT_LLM_MODEL_STORAGE_KEY).unwrap_or_default(),
+        storage_trimmed_item(CLIENT_LLM_TEMPERATURE_STORAGE_KEY).unwrap_or_default(),
     )
 }
 
@@ -48,6 +51,7 @@ pub fn load_client_llm_text_fields_from_storage() -> (String, String) {
 pub fn persist_client_llm_to_storage(
     api_base: &str,
     model: &str,
+    temperature: &str,
     api_key_update: Option<&str>,
     loc: Locale,
 ) -> Result<(), String> {
@@ -65,6 +69,13 @@ pub fn persist_client_llm_to_storage(
         let _ = st.remove_item(CLIENT_LLM_MODEL_STORAGE_KEY);
     } else {
         st.set_item(CLIENT_LLM_MODEL_STORAGE_KEY, m)
+            .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
+    }
+    let t = temperature.trim();
+    if t.is_empty() {
+        let _ = st.remove_item(CLIENT_LLM_TEMPERATURE_STORAGE_KEY);
+    } else {
+        st.set_item(CLIENT_LLM_TEMPERATURE_STORAGE_KEY, t)
             .map_err(|_| crate::i18n::api_err_write_model(loc).to_string())?;
     }
     if let Some(k) = api_key_update {
@@ -103,6 +114,16 @@ pub fn client_llm_json_for_chat_body() -> Option<Value> {
     } else {
         Some(Value::Object(m))
     }
+}
+
+/// 从本机设置读取 `/chat/stream` 的 `temperature` 覆盖（0～2）。
+pub fn chat_temperature_override_from_storage() -> Option<f64> {
+    let raw = storage_trimmed_item(CLIENT_LLM_TEMPERATURE_STORAGE_KEY)?;
+    let parsed = raw.parse::<f64>().ok()?;
+    if !parsed.is_finite() || !(0.0..=2.0).contains(&parsed) {
+        return None;
+    }
+    Some(parsed)
 }
 
 /// 合并进 `/chat/stream` 请求体的 `executor_llm` 对象（省略未配置的字段）。

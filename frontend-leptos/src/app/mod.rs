@@ -112,6 +112,7 @@ pub fn App() -> impl IntoView {
                 llm_api_base_draft=app_signals.llm_settings.llm_api_base_draft
                 llm_api_base_preset_select=app_signals.llm_settings.llm_api_base_preset_select
                 llm_model_draft=app_signals.llm_settings.llm_model_draft
+                llm_temperature_draft=app_signals.llm_settings.llm_temperature_draft
                 llm_api_key_draft=app_signals.llm_settings.llm_api_key_draft
                 llm_has_saved_key=app_signals.llm_settings.llm_has_saved_key
                 llm_settings_feedback=app_signals.llm_settings.llm_settings_feedback

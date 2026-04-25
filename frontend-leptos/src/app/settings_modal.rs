@@ -22,6 +22,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
         llm_api_base_draft,
         llm_api_base_preset_select,
         llm_model_draft,
+        llm_temperature_draft,
         llm_api_key_draft,
         llm_has_saved_key,
         llm_settings_feedback,
@@ -50,6 +51,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
         llm_api_base_draft.get_untracked(),
         llm_api_base_preset_select.get_untracked(),
         llm_model_draft.get_untracked(),
+        llm_temperature_draft.get_untracked(),
         llm_has_saved_key.get_untracked(),
     ));
     let baseline_executor = StoredValue::new((
@@ -104,6 +106,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
                     llm_api_base_draft.get_untracked(),
                     llm_api_base_preset_select.get_untracked(),
                     llm_model_draft.get_untracked(),
+                    llm_temperature_draft.get_untracked(),
                     llm_has_saved_key.get_untracked(),
                 );
             });
@@ -129,10 +132,11 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
             appearance_theme.set(bt);
             appearance_bg_decor.set(bbd);
 
-            let (bb, bp, bm, bh) = baseline_llm.get_value();
+            let (bb, bp, bm, bt, bh) = baseline_llm.get_value();
             llm_api_base_draft.set(bb);
             llm_api_base_preset_select.set(bp);
             llm_model_draft.set(bm);
+            llm_temperature_draft.set(bt);
             llm_has_saved_key.set(bh);
             llm_api_key_draft.set(String::new());
 
@@ -203,10 +207,11 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
         {
             return true;
         }
-        let (bb, bp, bm, bh) = baseline_llm.get_value();
+        let (bb, bp, bm, bt, bh) = baseline_llm.get_value();
         if llm_api_base_draft.get() != bb
             || llm_api_base_preset_select.get() != bp
             || llm_model_draft.get() != bm
+            || llm_temperature_draft.get() != bt
             || llm_has_saved_key.get() != bh
         {
             return true;
@@ -249,6 +254,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
             bg_decor,
             llm_api_base_draft.get().as_str(),
             llm_model_draft.get().as_str(),
+            llm_temperature_draft.get().as_str(),
             llm_api_key_draft.get().as_str(),
             executor_llm_api_base_draft.get().as_str(),
             executor_llm_model_draft.get().as_str(),
@@ -274,6 +280,7 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
                         llm_api_base_draft.get_untracked(),
                         llm_api_base_preset_select.get_untracked(),
                         llm_model_draft.get_untracked(),
+                        llm_temperature_draft.get_untracked(),
                         llm_has_saved_key.get_untracked(),
                     );
                 });
@@ -474,6 +481,27 @@ pub fn settings_modal_view(ctx: AppShellCtx) -> impl IntoView {
                                             llm_model_draft.set(event_target_value(&ev));
                                         }
                                     />
+                                </div>
+                                <div class="settings-field">
+                                    <label class="settings-field-label" for="settings-llm-temperature">
+                                        {move || i18n::settings_label_temperature(appearance_locale.get())}
+                                    </label>
+                                    <input
+                                        type="number"
+                                        id="settings-llm-temperature"
+                                        class="settings-text-input"
+                                        min="0"
+                                        max="2"
+                                        step="0.1"
+                                        prop:placeholder=move || i18n::settings_ph_temperature(appearance_locale.get())
+                                        prop:value=move || llm_temperature_draft.get()
+                                        on:input=move |ev| {
+                                            llm_temperature_draft.set(event_target_value(&ev));
+                                        }
+                                    />
+                                    <p class="modal-hint settings-field-nested-hint">
+                                        {move || i18n::settings_temperature_hint(appearance_locale.get())}
+                                    </p>
                                 </div>
                                 <div class="settings-field">
                                     <label class="settings-field-label" for="settings-llm-api-key">

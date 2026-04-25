@@ -79,6 +79,7 @@ pub struct AppShellCtx {
     pub llm_api_base_draft: RwSignal<String>,
     pub llm_api_base_preset_select: RwSignal<String>,
     pub llm_model_draft: RwSignal<String>,
+    pub llm_temperature_draft: RwSignal<String>,
     pub llm_api_key_draft: RwSignal<String>,
     pub llm_has_saved_key: RwSignal<bool>,
     pub llm_settings_feedback: RwSignal<Option<String>>,

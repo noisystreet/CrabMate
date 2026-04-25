@@ -9,6 +9,20 @@ use crate::api::{
 };
 use crate::i18n::{Locale, store_locale_slug};
 
+fn validate_temperature_override(raw: &str, loc: Locale) -> Result<(), String> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return Ok(());
+    }
+    let parsed = t
+        .parse::<f64>()
+        .map_err(|_| crate::i18n::settings_err_temperature_invalid(loc).to_string())?;
+    if !parsed.is_finite() || !(0.0..=2.0).contains(&parsed) {
+        return Err(crate::i18n::settings_err_temperature_range(loc).to_string());
+    }
+    Ok(())
+}
+
 /// 将语言 / 主题 / 背景与（可选）LLM 覆盖写入 `localStorage`，并更新全局 UI 信号。
 ///
 /// - `api_key_update`：`None` 表示不改已存密钥；`Some(...)` 则按 `persist_*` 语义写入或清除。
@@ -23,6 +37,7 @@ pub fn commit_all_settings(
     bg_decor: RwSignal<bool>,
     client_base: &str,
     client_model: &str,
+    client_temperature: &str,
     client_api_key_draft: &str,
     executor_base: &str,
     executor_model: &str,
@@ -49,7 +64,14 @@ pub fn commit_all_settings(
     } else {
         Some(client_api_key_draft)
     };
-    persist_client_llm_to_storage(client_base, client_model, client_key_upd, ui_locale)?;
+    validate_temperature_override(client_temperature, ui_locale)?;
+    persist_client_llm_to_storage(
+        client_base,
+        client_model,
+        client_temperature,
+        client_key_upd,
+        ui_locale,
+    )?;
 
     let executor_key_upd = if clear_executor_llm_key {
         Some("")

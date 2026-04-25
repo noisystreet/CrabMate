@@ -226,6 +226,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(
     llm_api_base_draft: RwSignal<String>,
     llm_api_base_preset_select: RwSignal<String>,
     llm_model_draft: RwSignal<String>,
+    llm_temperature_draft: RwSignal<String>,
     llm_api_key_draft: RwSignal<String>,
     llm_has_saved_key: RwSignal<bool>,
     llm_settings_feedback: RwSignal<Option<String>>,
@@ -240,7 +241,8 @@ pub fn wire_settings_modal_llm_drafts_on_open(
         if !settings_modal.get() && !settings_page.get() {
             return;
         }
-        let (stored_base, stored_model) = load_client_llm_text_fields_from_storage();
+        let (stored_base, stored_model, stored_temperature) =
+            load_client_llm_text_fields_from_storage();
         let sd = status_tasks.status_data.get_untracked();
         let base = if stored_base.trim().is_empty() {
             sd.as_ref().map(|d| d.api_base.clone()).unwrap_or_default()
@@ -257,6 +259,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(
             crate::client_llm_presets::api_base_select_value_for_draft(base.as_str()).to_string(),
         );
         llm_model_draft.set(model);
+        llm_temperature_draft.set(stored_temperature);
         llm_api_key_draft.set(String::new());
         llm_has_saved_key.set(client_llm_storage_has_api_key());
         llm_settings_feedback.set(None);
