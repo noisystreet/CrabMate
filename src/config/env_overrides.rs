@@ -302,6 +302,22 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.cursor_rules_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_SKILLS_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.skills_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_SKILLS_DIR") {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            b.skills_dir = Some(v);
+        }
+    }
+    if let Ok(v) = std::env::var("AGENT_SKILLS_MAX_CHARS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.skills_max_chars = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_TOOL_MESSAGE_MAX_CHARS")
         && let Ok(n) = v.trim().parse::<u64>()
     {

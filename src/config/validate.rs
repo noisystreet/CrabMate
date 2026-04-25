@@ -125,6 +125,7 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
         1024,
         1_000_000,
     )?;
+    check_u64_inclusive("skills_max_chars", b.skills_max_chars, 1024, 1_000_000)?;
     check_u64_inclusive(
         "tool_message_max_chars",
         b.tool_message_max_chars,

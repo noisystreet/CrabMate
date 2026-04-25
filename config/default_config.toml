@@ -63,6 +63,10 @@ cursor_rules_enabled = true
 cursor_rules_dir = ".cursor/rules"
 cursor_rules_include_agents_md = true
 cursor_rules_max_chars = 48000
+# 项目级 skills（CrabMate 约定目录）。读取 `skills_dir/*.md` 并附加到 system prompt。
+skills_enabled = true
+skills_dir = ".crabmate/skills"
+skills_max_chars = 32000
 # 系统提示词：默认正文在 **`config/prompts/default_system_prompt.md`**（改文件无需重编二进制）。相对路径依次尝试：进程当前目录、各覆盖配置文件所在目录（后加载的优先）、run_command_working_dir。
 # 覆盖：内联 system_prompt（低于文件）或改 system_prompt_file；环境变量 AGENT_SYSTEM_PROMPT、AGENT_SYSTEM_PROMPT_FILE（后者可为绝对路径）。
 system_prompt_file = "config/prompts/default_system_prompt.md"
