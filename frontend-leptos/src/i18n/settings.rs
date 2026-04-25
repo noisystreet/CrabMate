@@ -26,11 +26,46 @@ pub fn settings_close(l: Locale) -> &'static str {
 pub fn settings_intro(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "主题与页面背景保存在本机（localStorage）。模型网关与 API 密钥也可仅存本机；发消息时会在 JSON 中附带覆盖项，请仅在可信环境（HTTPS）使用。"
+            "修改后需点击「保存全部」才会写入本机（localStorage）并生效。模型网关与 API 密钥也可仅存本机；发消息时会在 JSON 中附带覆盖项，请仅在可信环境（HTTPS）使用。"
         }
         Locale::En => {
-            "Theme and page background are stored locally (localStorage). Model endpoint and API key can also stay in the browser; they are sent as JSON overrides with each message—use only on trusted connections (HTTPS)."
+            "Changes apply after you click “Save all”; they are written to localStorage. Model endpoint and API key can also stay in the browser; they are sent as JSON overrides with each message—use only on trusted connections (HTTPS)."
         }
+    }
+}
+
+pub fn settings_save_all(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "保存全部",
+        Locale::En => "Save all",
+    }
+}
+
+pub fn settings_discard_changes(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "放弃更改",
+        Locale::En => "Discard",
+    }
+}
+
+pub fn settings_unsaved_badge(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "未保存",
+        Locale::En => "Unsaved",
+    }
+}
+
+pub fn settings_save_all_ok(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已保存全部设置",
+        Locale::En => "All settings saved",
+    }
+}
+
+pub fn settings_nothing_to_save(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "没有需要保存的更改",
+        Locale::En => "No changes to save",
     }
 }
 
@@ -250,15 +285,15 @@ pub fn settings_label_executor_api_key(l: Locale) -> &'static str {
 
 pub fn settings_ph_api_key(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "留空保留已存密钥；填写新密钥后点保存",
-        Locale::En => "Leave blank to keep saved key; enter new key and Save",
+        Locale::ZhHans => "留空保留已存密钥；填写新密钥后点「保存全部」",
+        Locale::En => "Leave blank to keep saved key; enter a new key, then Save all",
     }
 }
 
 pub fn settings_ph_executor_api_key(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "留空保留已存密钥；填写新密钥后点保存",
-        Locale::En => "Leave blank to keep saved key; enter new key and Save",
+        Locale::ZhHans => "留空保留已存密钥；填写新密钥后点「保存全部」",
+        Locale::En => "Leave blank to keep saved key; enter a new key, then Save all",
     }
 }
 
@@ -276,20 +311,6 @@ pub fn settings_executor_key_saved_note(l: Locale) -> &'static str {
     }
 }
 
-pub fn settings_save_llm(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "保存模型设置",
-        Locale::En => "Save model settings",
-    }
-}
-
-pub fn settings_save_executor_llm(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "保存执行器设置",
-        Locale::En => "Save executor settings",
-    }
-}
-
 pub fn settings_clear_key(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "清除已存密钥",
@@ -301,34 +322,6 @@ pub fn settings_clear_executor_key(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "清除执行器密钥",
         Locale::En => "Clear executor key",
-    }
-}
-
-pub fn settings_saved_browser(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "已保存到本机浏览器",
-        Locale::En => "Saved in this browser",
-    }
-}
-
-pub fn settings_executor_saved_browser(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "执行器设置已保存到本机浏览器",
-        Locale::En => "Executor settings saved in this browser",
-    }
-}
-
-pub fn settings_cleared_key(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "已清除本机保存的密钥",
-        Locale::En => "Cleared locally saved key",
-    }
-}
-
-pub fn settings_executor_cleared_key(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "已清除本机保存的执行器密钥",
-        Locale::En => "Cleared locally saved executor key",
     }
 }
 
@@ -345,27 +338,6 @@ pub fn settings_block_shortcuts(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "键盘",
         Locale::En => "Keyboard",
-    }
-}
-
-pub fn settings_nav_group_general(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "通用",
-        Locale::En => "General",
-    }
-}
-
-pub fn settings_nav_group_models(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "模型",
-        Locale::En => "Models",
-    }
-}
-
-pub fn settings_nav_group_help(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "帮助",
-        Locale::En => "Help",
     }
 }
 
