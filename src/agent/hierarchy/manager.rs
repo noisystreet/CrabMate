@@ -371,7 +371,7 @@ impl ManagerAgent {
 ## 工具定义（完整参数 schema）
 {}
 重要：
-- `run_command` 需要分别指定 `command`（命令名如 `ls`, `gcc`）和 `args`（参数数组），不要合并
+{}
 
 ## 决策要求
 
@@ -394,7 +394,8 @@ impl ManagerAgent {
             error_message,
             workspace_context,
             artifacts_summary,
-            self.format_tools_with_schemas(tools_defs)
+            self.format_tools_with_schemas(tools_defs),
+            Self::manager_tool_invariants(),
         )
     }
 
@@ -512,17 +513,14 @@ impl ManagerAgent {
 ## 工具定义（完整参数 schema）
 {}
 重要：
-- 分配工具时，确保工具参数能匹配子目标需求
-- **`create_file` 是创建文件的唯一正确方式**，禁止使用 `echo`、`cat`、`tee` 等命令通过 `run_command` 创建文件
-- `create_file` 的 `content` 参数：在 JSON 中必须使用正确的转义序列：换行用 `\n`，制表用 `\t`，双引号用 `\"`
-- `run_command` 需要分别指定 `command`（命令名如 `ls`, `gcc`）和 `args`（参数数组），不要合并
-- `run_command` 可以执行工作区内的 `./xxx` 形式可执行文件（如 `./build/app`）
-- `read_dir` 用于读取目录内容，路径必须是相对路径且不能包含 `..`
+{}
 
 ## CMake 项目特殊规则
 - 如果工作目录包含 CMakeLists.txt，**必须使用**其中定义的可执行文件目标名称
 - **禁止假设**可执行文件名称（如 demo、test、main 等），必须使用 CMakeLists.txt 中 `add_executable()` 定义的实际名称
-- 运行可执行文件时，路径必须是 `./build/<实际名称>` 或 `./<实际名称>`，不能使用假设的名称
+- **禁止**在源码树根部使用 `file(GLOB_RECURSE "*.cpp" …)` 且不排除 `build/`、`CMakeFiles/`：会把 CMake 生成的 `CompilerId*.c/cpp` 等编进同一可执行目标，链接报 **multiple definition of `main`**。简单项目请 **`add_executable(目标名 main.cpp)`** 显式列源；若必须用 GLOB，须**排除** `build` 与 `CMakeFiles` 目录
+- 运行构建产物时，**优先**用 **`run_executable` + 工作区相对路径**（如经 `read_dir` 在 `build/` 中确认后的 `build/<目标名>`）；不要用猜测的名称或错误的 JSON `args` 等「凑合」方式跳过验证
+- 凡子目标描述含 **cmake / 编译 / make / 构建 / 检查 build / 验证可执行** 等，且你填写了非空 `required_tools`，**必须**包含 **`run_command`**（以及需要直接跑产物时的 **`run_executable`**）；仅 `read_dir` 会导致无法执行 `cmake --build` 等而空转
 
 ## Cargo/Rust 项目特殊规则
 - 如果执行了 `cargo init` 且创建了子目录（如 `tmp/`），后续所有 `cargo` 命令必须在那个子目录中执行
@@ -564,6 +562,7 @@ impl ManagerAgent {
             artifacts_summary,
             failures_summary,
             tools_description,
+            Self::manager_tool_invariants(),
             self.config.max_sub_goals
         )
     }
@@ -650,11 +649,7 @@ impl ManagerAgent {
 ## 工具定义（完整参数 schema）
 {}
 重要：
-- 分配工具时，确保工具参数能匹配子目标需求
-- `run_command` 需要分别指定 `command`（命令名如 `ls`, `gcc`）和 `args`（参数数组），不要合并
-- `run_command` 可以执行工作区内的 `./xxx` 形式可执行文件（如 `./build/app`）
-- `read_dir` 用于读取目录内容，路径必须是相对路径且不能包含 `..`
-- `create_file` 的 `content` 参数必须是正确的 JSON 字符串（特殊字符需要转义）
+{}
 
 ## 输出格式
 **必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
@@ -687,6 +682,7 @@ impl ManagerAgent {
             task_type_guidance,
             workspace_context,
             tools_description,
+            Self::manager_tool_invariants(),
             self.config.max_sub_goals
         )
     }
@@ -711,10 +707,14 @@ impl ManagerAgent {
 4. **检查构建系统** - 查看 Makefile/CMakeLists.txt/configure 等
 5. **检查编译工具** - 确认 gcc/g++/make/cmake 等存在
 6. **执行编译** - 运行 make/cmake 等构建命令
-7. **验证结果** - 检查生成的可执行文件
+7. **验证产物** - 用 `read_dir` 等检查构建输出目录中是否出现可执行文件/预期目标
+8. **运行并核对** - 用 **`run_executable`** 等工作区内运行能力执行产物、核对退出码与（如有）标准输出；用户若要求「能跑起来」或 Hello World/演示，**本步与前面步骤同等重要**，子目标**不得**停在仅编译通过
+
+**CMake 编写要点**（模型生成 `CMakeLists.txt` 时）：
+- 单文件示例程序用 **`add_executable(目标 main.cpp)`**，避免根目录 **`file(GLOB_RECURSE "*.cpp")`** 把 `build/CMakeFiles/**/CMake*CompilerId.*` 编进目标引发链接错误
 
 **重要**：
-- 不要只分解"检查"步骤，必须包含完整的编译流程！
+- 不要只分解"检查"步骤，必须包含完整的编译与（若适用）**运行**流程！
 - **务必先阅读文档** - 很多项目有特定的构建要求和依赖，文档中会说明正确的构建步骤
 "#
             .to_string();
@@ -765,6 +765,21 @@ impl ManagerAgent {
 3. 如果任务涉及多个阶段（准备→执行→验证），确保每个阶段都有对应的子目标
 "#
         .to_string()
+    }
+
+    /// 分解、重试、重规划、反思、失败处理等阶段共用的**工具/JSON 固定规范**（写入 Manager 提示，保证子目标与 Executor 调用工具一致）。
+    fn manager_tool_invariants() -> &'static str {
+        r#"- 分配工具时，确保参数与子目标、工具 `parameters` 一致
+- **`create_file` 是向工作区新建普通文件的正确方式**；禁止用 `echo`/`cat`/`tee` 经 `run_command` 建文件
+- `path` 优先**相对工作区根**（如 `main.cpp`）；**勿**在子目标或工具参数里造深层误路径（如无关子目录下的 `main.cpp`）
+- `create_file` 仅当目标路径**尚不存在**时成功；已存在时须用 `modify_file`、`search_replace`、`append_file` 等，**禁止**对同一路径重复 `create_file`
+- `run_command` 须分别传 `command` 与 `args`；`args` 在 JSON 中必须是**字符串**数组。每一项**必须**用双引号包起来（如列表标志为 `\"-la\"` 的数组元素，不得写成无引号 token），否则易触发「参数解析错误」或 `invalid number`
+- 查可执行/依赖是否在 PATH 时用 **`"command": "which"` + `"args": ["cmake"]`** 等；**禁止**写成 `\"command\": \"which cmake\"` 单字段（会把整串当程序名而失败）
+- 简单 CMake 项目用 **`add_executable(… main.cpp)`** 等**显式列出源文件**；勿对**空** `file(GLOB …)` 结果生成目标（会无源可链）；**勿**用未排除 `build/` 的 **`GLOB_RECURSE`** 收集 `*.cpp`（会把 `CMakeFiles/` 下探测源链进来导致重复 `main`）
+- 工作区内的**可执行/构建产物**的「运行（执行）」优先用 **`run_executable` + 相对工作区根路径**；白名单**系统**命令用 `run_command`；以工具说明与 `config` 中分工为准
+- 须**从源码到可跑通、输出可核对**的完整类任务，子目标**必须**含**运行产物并验证**的一步；**不得**在「只编译/只生成文件」时视为整任务完成
+- `read_dir` 路径为不含 `..` 的相对路径
+- `create_file` 的 `content` 为 JSON 字符串，须按规范对换行、引号等转义"#
     }
 
     /// 获取工作目录上下文信息
@@ -1223,11 +1238,14 @@ impl ManagerAgent {
 ## 工具定义
 {}
 
+## 子目标/工具调用的固定规范
+{}
+
 ## 输出格式
 **必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
 ```json
 {{
-    "analysis": "失败原因分析（简要说明为什么验证失败）",
+  "analysis": "失败原因分析（简要说明为什么验证失败）",
     "fix_strategy": "修复策略（简要说明如何修复）",
     "updated_goal": {{
         "goal_id": "{}",
@@ -1263,6 +1281,7 @@ impl ManagerAgent {
             workspace_context,
             artifacts_summary,
             tools_description,
+            Self::manager_tool_invariants(),
             failed_goal.goal_id,
             failed_goal.priority,
             failed_goal.depends_on,

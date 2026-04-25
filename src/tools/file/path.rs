@@ -19,6 +19,48 @@ pub(crate) fn tool_user_error_from_workspace_path(e: WorkspacePathError) -> Stri
     format!("错误：{}", e.user_message())
 }
 
+/// 若 `sub` 为**已落在工作区根下**的绝对路径，则转为工作区相对路径；否则原样返回（并 trim）。  
+/// 供 `read`/`write` 共用，减少模型误传 `/home/.../proj/foo` 时与「仅相对路径」规则冲突。
+pub(crate) fn normalize_subpath_for_workspace(
+    working_dir: &Path,
+    sub: &str,
+) -> Result<String, WorkspacePathError> {
+    let sub = sub.trim();
+    if sub.is_empty() {
+        return Err(WorkspacePathError::EmptyPath);
+    }
+    if !Path::new(sub).is_absolute() {
+        return Ok(sub.to_string());
+    }
+    let base = canonical_workspace_root(working_dir)?;
+    let p = Path::new(sub);
+    // 已存在时直接 canonical；若目标或中间目录尚不存在，则**向上**找到可 canonical 的已存在祖先，再拼上剩余相对后缀。
+    let mut try_path: &Path = p;
+    let resolved: std::path::PathBuf = loop {
+        match try_path.canonicalize() {
+            Ok(anchor) => {
+                let rel_suffix = p.strip_prefix(try_path).map_err(|_| {
+                    WorkspacePathError::PathResolveFailed(std::io::Error::other(
+                        "absolute path prefix mismatch during workspace normalization",
+                    ))
+                })?;
+                break anchor.join(rel_suffix);
+            }
+            Err(e) => {
+                try_path = try_path
+                    .parent()
+                    .ok_or(WorkspacePathError::PathResolveFailed(e))?;
+            }
+        }
+    };
+    ensure_canonical_within_root(&resolved, &base)?;
+    let rel = resolved
+        .strip_prefix(&base)
+        .map_err(|_| WorkspacePathError::OutsideWorkspaceRoot)?;
+    let s = rel.to_string_lossy().replace('\\', "/");
+    Ok(if s.is_empty() { ".".to_string() } else { s })
+}
+
 /// 解析用于读取或修改的路径（目标必须存在；path 必须为相对工作目录的相对路径）
 pub(crate) fn resolve_for_read(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
     Ok(resolve_for_read_open(base, sub)?.resolved_path)
@@ -29,6 +71,7 @@ pub(crate) fn resolve_for_read_open(
     base: &Path,
     sub: &str,
 ) -> Result<OpenedWorkspaceFile, WorkspacePathError> {
+    let sub = normalize_subpath_for_workspace(base, sub)?;
     let sub = sub.trim();
     if sub.is_empty() {
         return Err(WorkspacePathError::EmptyPath);
@@ -52,6 +95,7 @@ pub(crate) fn resolve_for_read_open(
 
 /// 解析用于写入的路径（目标可不存在；path 必须为相对工作目录的相对路径，且不能通过 .. 超出工作目录）
 pub(super) fn resolve_for_write(base: &Path, sub: &str) -> Result<PathBuf, WorkspacePathError> {
+    let sub = normalize_subpath_for_workspace(base, sub)?;
     let sub = sub.trim();
     if sub.is_empty() {
         return Err(WorkspacePathError::EmptyPath);

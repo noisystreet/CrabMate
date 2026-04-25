@@ -17,6 +17,41 @@ use crate::sse;
 use super::errors::RunAgentTurnError;
 use super::params::RunLoopParams;
 use crate::agent::agent_turn::errors::AgentTurnSubPhase;
+use crate::agent::hierarchy::execution::ExecutionError;
+
+fn format_hierarchical_aborted_summary(e: &ExecutionError, task: &str) -> String {
+    format!(
+        "## 分层执行未正常结束\n\n**错误**：{e}\n\n**用户任务（摘要）**：{}\n\n若已出现 Manager 规划、子目标进度或工具结果，可结合上方时间线判断已完成的步骤。\n",
+        truncate_string(task, 200)
+    )
+}
+
+/// 将分层执行的总结正文写入 `messages` 与 SSE：终答相 + 正文 delta + `final_response` 时间线（与其它分层收尾路径一致）。
+async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_response: String) {
+    p.messages.push(crate::types::Message::assistant_only(
+        final_response.clone(),
+    ));
+    if let Some(out) = p.out {
+        let phase_payload = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+            assistant_answer_phase: true,
+        });
+        let _ = sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
+        let _ = sse::send_string_logged(
+            out,
+            final_response.clone(),
+            "hierarchical::final_response_delta",
+        )
+        .await;
+        let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "final_response".to_string(),
+                title: final_response,
+                detail: None,
+            },
+        });
+        let _ = sse::send_string_logged(out, final_tl, "hierarchical::final_response").await;
+    }
+}
 
 fn recently_waiting_execute_confirmation(messages: &[crate::types::Message]) -> bool {
     messages.iter().rev().take(4).any(|m| {
@@ -200,16 +235,31 @@ pub(crate) async fn run_hierarchical_agent(
         intent_mode_bias_enabled: p.cfg.intent_mode_bias_enabled,
     };
 
-    // 运行分层 Agent
-    let result = hierarchy::runner::run_hierarchical(params)
-        .await
-        .map_err(|e| {
+    // 运行分层 Agent：失败时也输出总结性终答，避免主气泡无收尾
+    let result = match hierarchy::runner::run_hierarchical(params).await {
+        Ok(r) => r,
+        Err(e) => {
             log::error!(target: "crabmate", "Hierarchical agent failed: {}", e);
-            RunAgentTurnError::Other {
-                phase: AgentTurnSubPhase::Planner,
-                message: e.to_string(),
+            if let Some(out) = p.out {
+                let title = format!("分层执行未正常完成：{e}");
+                let _ = sse::send_string_logged(
+                    out,
+                    sse::encode_message(crate::sse::SsePayload::TimelineLog {
+                        log: crate::sse::protocol::TimelineLogBody {
+                            kind: "hierarchical_execution".to_string(),
+                            title,
+                            detail: None,
+                        },
+                    }),
+                    "hierarchical::execution_aborted_timeline",
+                )
+                .await;
             }
-        })?;
+            let final_response = format_hierarchical_aborted_summary(&e, &task);
+            emit_hierarchical_final_assistant(p, final_response).await;
+            return Ok(());
+        }
+    };
 
     // 处理执行结果
     handle_execution_result(p, result, &task).await?;
@@ -318,56 +368,49 @@ async fn handle_execution_result(
         );
     }
 
-    if let Some(reason) =
+    // 终答：始终含「概览 + 子目标表」；再追加任务级验收或全类任务小结
+    let body = aggregate_results(&execution_result.results);
+    let intro = format!(
+        "**分层执行概览**（模式 `{}`）：子目标 **{}** 个；其中完成 **{}**、失败 **{}**；总耗时约 **{}** ms。\n\n{}\n\n",
+        mode.as_str(),
+        execution_result.results.len(),
+        execution_result.total_completed,
+        execution_result.total_failed,
+        execution_result.total_duration_ms,
+        if execution_result.total_failed > 0 {
+            "子目标层存在失败项，详见下表带 ❌ 的条目；若下节「任务级验收」有说明，以验收为准。"
+        } else {
+            "子目标层无失败状态返回，详见下表。"
+        }
+    );
+    let with_core = format!("{intro}{body}");
+
+    let final_response: String = if let Some(reason) =
         verify_task_level_execution_evidence(original_task, &execution_result.results)
     {
-        let msg = format!("任务未满足完成条件：{reason}");
-        p.messages
-            .push(crate::types::Message::assistant_only(msg.clone()));
-        if let Some(out) = p.out {
-            let phase_payload = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-                assistant_answer_phase: true,
-            });
-            let _ = sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
-            let _ =
-                sse::send_string_logged(out, msg.clone(), "hierarchical::task_level_guard_delta")
-                    .await;
+        format!("{with_core}\n\n---\n**任务级验收（未通过）**：{reason}\n")
+    } else if is_program_build_run_request(original_task) {
+        if execution_result.total_failed == 0 {
+            format!(
+                "{with_core}\n\n---\n**任务级验收**：已通过（写源码/编译/运行等要求可在子目标与工具结果中核对）。\n"
+            )
+        } else {
+            format!(
+                "{with_core}\n\n---\n**任务级验收**：因存在未成功的子目标，不记为整任务通过，请据上表排查。\n"
+            )
         }
-        return Ok(());
-    }
-
-    // 汇总子目标结果生成最终回复
-    let final_response = aggregate_results(&execution_result.results);
-
-    // 添加助手回复到消息
-    p.messages.push(crate::types::Message::assistant_only(
-        final_response.clone(),
-    ));
-
-    // 发送终答阶段信号 + 最终回答文本到 SSE
-    if let Some(out) = p.out {
-        // 先发送 assistant_answer_phase 使前端进入 answer 阶段
-        let phase_payload = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-            assistant_answer_phase: true,
-        });
-        let _ = sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
-        // 优先走 plain delta 正文链路，确保前端 assistant 气泡实时追加。
-        let _ = sse::send_string_logged(
-            out,
-            final_response.clone(),
-            "hierarchical::final_response_delta",
+    } else if execution_result.total_failed > 0 {
+        format!(
+            "{with_core}\n\n---\n**小结**：本轮有 **{}** 个子目标未成功，请据上表与工具输出排查。\n",
+            execution_result.total_failed
         )
-        .await;
-        // 兼容旧前端：保留 final_response timeline 事件（用于旧版本回写正文/时间线）。
-        let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
-            log: crate::sse::protocol::TimelineLogBody {
-                kind: "final_response".to_string(),
-                title: final_response,
-                detail: None,
-            },
-        });
-        let _ = sse::send_string_logged(out, final_tl, "hierarchical::final_response").await;
-    }
+    } else {
+        format!(
+            "{with_core}\n\n---\n**小结**：本轮子目标均成功，可视为在分层阶段已满足执行侧结论。\n"
+        )
+    };
+
+    emit_hierarchical_final_assistant(p, final_response).await;
 
     Ok(())
 }
@@ -412,11 +455,23 @@ fn verify_task_level_execution_evidence(task: &str, results: &[TaskResult]) -> O
                 ArtifactKind::BuildArtifact(kind) => match kind {
                     BuildArtifactKind::SourceFile => wrote_source = true,
                     BuildArtifactKind::ObjectFile => compiled = true,
-                    BuildArtifactKind::Executable => ran_program = true,
                     _ => {}
                 },
                 _ => {}
             }
+        }
+        let combined_full = format!(
+            "{}\n{}",
+            r.output.as_deref().unwrap_or(""),
+            r.error.as_deref().unwrap_or("")
+        );
+        if r.tools_invoked.iter().any(|n| n == "run_executable")
+            || (r.tools_invoked.iter().any(|n| n == "run_command")
+                && crate::agent::hierarchy::goal_verifier::run_command_invocation_mentions_hello(
+                    &combined_full,
+                ))
+        {
+            ran_program = true;
         }
         if combined.contains("create_file")
             || combined.contains("已创建文件")
@@ -435,14 +490,6 @@ fn verify_task_level_execution_evidence(task: &str, results: &[TaskResult]) -> O
             || combined.contains("build")
         {
             compiled = true;
-        }
-        if combined.contains("./")
-            || combined.contains("运行")
-            || combined.contains("执行程序")
-            || combined.contains("program output")
-            || combined.contains("hello")
-        {
-            ran_program = true;
         }
     }
 

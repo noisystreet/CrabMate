@@ -31,6 +31,9 @@ pub struct TaskResult {
     pub artifacts: Vec<Artifact>,
     #[serde(default)]
     pub duration_ms: u64,
+    /// 本子目标内按时间顺序记录的工具名（如 `run_executable`、`run_command`），供分层 GoalVerifier 验收
+    #[serde(default)]
+    pub tools_invoked: Vec<String>,
 }
 
 /// 产物类型
