@@ -222,6 +222,41 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
             b.planner_executor_mode_str = Some(s);
         }
     }
+    if let Ok(v) = std::env::var("AGENT_INTENT_L2_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.intent_l2_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_INTENT_L2_MIN_CONFIDENCE")
+        && let Ok(f) = v.trim().parse::<f64>()
+    {
+        b.intent_l2_min_confidence = Some(f);
+    }
+    if let Ok(v) = std::env::var("AGENT_INTENT_L2_MAX_TOKENS")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.intent_l2_max_tokens = Some(n);
+    }
+    if let Ok(v) = std::env::var("AGENT_INTENT_L0_ROUTING_BOOST_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.intent_l0_routing_boost_enabled = Some(val);
+    }
+    if let Ok(v) = std::env::var("AGENT_INTENT_EXECUTE_LOW_THRESHOLD")
+        && let Ok(f) = v.trim().parse::<f64>()
+    {
+        b.intent_execute_low_threshold = Some(f);
+    }
+    if let Ok(v) = std::env::var("AGENT_INTENT_EXECUTE_HIGH_THRESHOLD")
+        && let Ok(f) = v.trim().parse::<f64>()
+    {
+        b.intent_execute_high_threshold = Some(f);
+    }
+    if let Ok(v) = std::env::var("AGENT_INTENT_MODE_BIAS_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.intent_mode_bias_enabled = Some(val);
+    }
     if let Ok(s) = std::env::var("AGENT_SYSTEM_PROMPT") {
         let s = s.trim().to_string();
         if !s.is_empty() {

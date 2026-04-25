@@ -3,15 +3,16 @@
 //! 目标：提供统一 `IntentDecision` 契约，并先复用现有 `intent_router` 规则逻辑，
 //! 为后续接入 L2 分类器（LLM / embedding / 专用分类模型）预留稳定入口。
 
+use crate::agent::intent_l0::{self, IntentL0Snapshot};
 use crate::agent::intent_router::{
     ExecuteIntentThresholds, IntentAssessment, IntentKind, IntentRoute,
     is_explicit_execute_confirmation, route_user_task_with_thresholds,
 };
 
-/// L0 上下文输入（一期先占位，后续逐步注入会话与工具轨迹特征）。
+/// 上层传入的意图上下文；`recent_user_messages` 为**当前用户条之前**的近期 user 正文（新在前）。
 #[derive(Debug, Clone)]
 pub struct IntentContext {
-    /// 近期用户消息（最近优先），用于后续多轮意图增强。
+    /// 近期用户消息（最近优先），澄清续接时与 `intent_l0::effective_intent_routing_text` 拼成路由文本。
     pub recent_user_messages: Vec<String>,
     /// 最近是否处于澄清流程中。
     pub in_clarification_flow: bool,
@@ -19,6 +20,8 @@ pub struct IntentContext {
     pub thresholds: ExecuteIntentThresholds,
     /// L2 分类置信度阈值；低于该值不覆盖 L1。
     pub l2_min_confidence: f32,
+    /// 为 false 时跳过 L0 对 L1 的**保守提级/抬档**（仍保留续接合并与 L0 观测）。
+    pub l0_routing_boost_enabled: bool,
 }
 
 impl Default for IntentContext {
@@ -28,6 +31,7 @@ impl Default for IntentContext {
             in_clarification_flow: false,
             thresholds: ExecuteIntentThresholds::default(),
             l2_min_confidence: 0.7,
+            l0_routing_boost_enabled: true,
         }
     }
 }
@@ -52,6 +56,10 @@ pub struct IntentMergeMeta {
     pub l2_applied: bool,
     pub l2_confidence: Option<f32>,
     pub override_reason: Option<String>,
+    /// 澄清流程下是否将前序 user 与当前短句拼成**路由**文本供 L1/L2 使用。
+    pub used_merged_continuation: bool,
+    /// 对合并/当前路由文本的 L0 可观测特征。
+    pub l0: IntentL0Snapshot,
 }
 
 /// L3 决策动作：执行、直接回复、先澄清或先确认。
@@ -84,22 +92,60 @@ pub struct IntentDecision {
 
 /// 意图管线入口（一期）。
 ///
-/// 当前实现：
-/// - L0: 接收上下文（暂不参与计算）
-/// - L1/L2: 复用 `intent_router` 规则与阈值
+/// - L0: 多轮**路由**合并与特征快照
+/// - L1/L2: 复用 `intent_router` 与可选 L2
 /// - L3: 统一动作映射
-pub fn assess_and_route(task: &str, _ctx: &IntentContext) -> IntentDecision {
-    assess_and_route_with_l2(task, _ctx, classify_with_l2_stub(task, _ctx)).0
+pub fn assess_and_route(task: &str, ctx: &IntentContext) -> IntentDecision {
+    let (routing, used_merge, l0) = prepare_intent_routing(task, ctx);
+    assess_and_route_with_l2_inner(
+        &routing,
+        task,
+        &l0,
+        used_merge,
+        ctx,
+        classify_with_l2_stub(task, ctx),
+    )
+    .0
+}
+
+/// 对当前 `task` 与 `ctx` 做 L0 续接合并，供 L1/L2 与观测共用。
+pub fn prepare_intent_routing(
+    current_task: &str,
+    ctx: &IntentContext,
+) -> (String, bool, IntentL0Snapshot) {
+    let (routing, used_merge) = intent_l0::effective_intent_routing_text(
+        current_task,
+        ctx.in_clarification_flow,
+        &ctx.recent_user_messages,
+    );
+    let l0 = intent_l0::l0_snapshot_from_merged_routing(&routing);
+    (routing, used_merge, l0)
 }
 
 /// 合并 L1/L2 结果并返回观测元数据。
 pub fn assess_and_route_with_l2(
-    task: &str,
+    current_task: &str,
     ctx: &IntentContext,
     l2_candidate: Option<L2IntentCandidate>,
 ) -> (IntentDecision, IntentMergeMeta) {
-    let mut l1_assessment = route_user_task_with_thresholds(task, ctx.thresholds);
-    let normalized = task.trim().to_lowercase();
+    let (routing, used_merge, l0) = prepare_intent_routing(current_task, ctx);
+    assess_and_route_with_l2_inner(&routing, current_task, &l0, used_merge, ctx, l2_candidate)
+}
+
+/// `routing` 为 L1 输入；`primary_task` 为细粒度 heuristics，通常取当前用户句原文。
+fn assess_and_route_with_l2_inner(
+    routing: &str,
+    primary_task: &str,
+    l0: &IntentL0Snapshot,
+    used_merged_continuation: bool,
+    ctx: &IntentContext,
+    l2_candidate: Option<L2IntentCandidate>,
+) -> (IntentDecision, IntentMergeMeta) {
+    let mut l1_assessment = route_user_task_with_thresholds(routing, ctx.thresholds);
+    if ctx.l0_routing_boost_enabled {
+        maybe_boost_execute_from_l0(&mut l1_assessment, ctx.thresholds, l0);
+    }
+    let normalized = routing.trim().to_lowercase();
     if ctx.in_clarification_flow && is_explicit_execute_confirmation(&normalized) {
         l1_assessment = IntentAssessment {
             kind: IntentKind::Execute,
@@ -109,7 +155,7 @@ pub fn assess_and_route_with_l2(
     }
     let l1_kind = l1_assessment.kind;
     let l1_confidence = l1_assessment.confidence;
-    let mut decision = map_assessment_to_decision(task, l1_assessment);
+    let mut decision = map_assessment_to_decision(primary_task, l1_assessment);
     let mut meta = IntentMergeMeta {
         l1_kind,
         l1_confidence,
@@ -117,6 +163,8 @@ pub fn assess_and_route_with_l2(
         l2_applied: false,
         l2_confidence: l2_candidate.as_ref().map(|x| x.confidence),
         override_reason: None,
+        used_merged_continuation,
+        l0: *l0,
     };
     if let Some(l2) = l2_candidate {
         if l2.confidence >= ctx.l2_min_confidence {
@@ -133,6 +181,42 @@ pub fn assess_and_route_with_l2(
         }
     }
     (decision, meta)
+}
+
+/// L0 为「路径/错误/构建」等时，将偏 Ambiguous 的**合并路由**提级为可执行，减少无意义追问。
+fn maybe_boost_execute_from_l0(
+    a: &mut IntentAssessment,
+    thresholds: ExecuteIntentThresholds,
+    l0: &IntentL0Snapshot,
+) {
+    if a.kind == IntentKind::Ambiguous
+        && l0.has_file_path_like
+        && (l0.has_error_signal || l0.has_command_cargo || l0.has_git_keyword)
+    {
+        let conf = 0.62_f32.max(a.confidence);
+        *a = IntentAssessment {
+            kind: IntentKind::Execute,
+            confidence: conf,
+            route: if conf >= thresholds.high {
+                IntentRoute::Execute
+            } else {
+                IntentRoute::ConfirmThenExecute(
+                    crate::agent::intent_router::EXECUTE_CONFIRM.to_string(),
+                )
+            },
+        };
+        return;
+    }
+    if a.kind == IntentKind::Execute
+        && matches!(&a.route, IntentRoute::ConfirmThenExecute(_))
+        && l0.has_file_path_like
+        && (l0.has_error_signal || l0.has_command_cargo)
+        && a.confidence + 0.12 >= thresholds.high
+    {
+        let c = (a.confidence + 0.12).min(1.0);
+        a.confidence = c;
+        a.route = IntentRoute::Execute;
+    }
 }
 
 fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> IntentDecision {

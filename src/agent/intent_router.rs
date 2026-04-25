@@ -35,7 +35,7 @@ const GREETING_REPLY: &str = "你好！我在这，想先处理什么问题？";
 const QA_REPLY: &str = "我可以帮你定位和修复 bug、改代码、跑构建和测试、解释报错、做代码审查、整理文档和提交 commit。你想先让我做哪一项？";
 const AMBIGUOUS_ASK: &str =
     "我理解你可能希望我直接动手处理。请补充具体目标（文件/报错/命令/期望结果），我再开始执行。";
-const EXECUTE_CONFIRM: &str =
+pub const EXECUTE_CONFIRM: &str =
     "我判断你可能想让我直接执行任务。请确认是否“直接开始执行”，或补充更具体范围。";
 
 const EXECUTE_LOW_THRESHOLD: f32 = 0.2;
