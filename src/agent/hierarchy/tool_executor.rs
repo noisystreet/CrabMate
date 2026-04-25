@@ -2,9 +2,10 @@
 //!
 //! 供 Operator 在 ReAct 循环中调用真实工具，支持审批流程
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use serde_json::Value;
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::config::AgentConfig;
@@ -21,6 +22,8 @@ pub struct ToolExecutorContext {
     pub working_dir: std::path::PathBuf,
     /// 可选的 Web 审批运行时（用于触发审批对话框）
     pub web_tool_runtime: Option<crate::tool_registry::WebToolRuntime>,
+    /// 分层回合内无副作用探测命令缓存（例如 `which` / `--version`）。
+    pub probe_cache: Option<Arc<TokioMutex<ProbeCache>>>,
 }
 
 impl ToolExecutorContext {
@@ -29,7 +32,13 @@ impl ToolExecutorContext {
             cfg,
             working_dir,
             web_tool_runtime: None,
+            probe_cache: None,
         }
+    }
+
+    pub fn with_probe_cache(mut self, cache: Arc<TokioMutex<ProbeCache>>) -> Self {
+        self.probe_cache = Some(cache);
+        self
     }
 
     /// 启用 Web 审批流程
@@ -61,6 +70,11 @@ impl ToolExecutorContext {
         });
         self
     }
+}
+
+#[derive(Debug, Default)]
+pub struct ProbeCache {
+    run_command_outputs: HashMap<String, String>,
 }
 
 /// 工具执行器
@@ -110,6 +124,23 @@ impl ToolExecutor {
     }
 
     async fn dispatch_tool_internal(&self, name: &str, args: &str) -> String {
+        if let Some(cache_key) = probe_cache_key(name, args)
+            && let Some(cache) = self.ctx.probe_cache.as_ref()
+        {
+            let cached = {
+                let guard = cache.lock().await;
+                guard.run_command_outputs.get(&cache_key).cloned()
+            };
+            if let Some(output) = cached {
+                log::info!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] Probe cache hit for {}",
+                    cache_key
+                );
+                return output;
+            }
+        }
+
         let mut workspace_changed = false;
 
         // 构建 ToolRuntime
@@ -155,6 +186,14 @@ impl ToolExecutor {
             long_term_memory_scope_id: None,
         })
         .await;
+
+        if let Some(cache_key) = probe_cache_key(name, args)
+            && let Some(cache) = self.ctx.probe_cache.as_ref()
+            && !output.is_empty()
+        {
+            let mut guard = cache.lock().await;
+            guard.run_command_outputs.insert(cache_key, output.clone());
+        }
 
         output
     }
@@ -221,6 +260,30 @@ impl ToolExecutor {
         // 非编译命令：使用严格的错误检查
         !has_explicit_error
     }
+}
+
+fn probe_cache_key(tool_name: &str, args: &str) -> Option<String> {
+    if tool_name != "run_command" {
+        return None;
+    }
+    let Ok(v) = serde_json::from_str::<Value>(args) else {
+        return None;
+    };
+    let obj = v.as_object()?;
+    let command = obj.get("command")?.as_str()?.trim();
+    let argv = obj.get("args")?.as_array()?;
+    let args_vec: Vec<String> = argv
+        .iter()
+        .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
+        .collect();
+
+    let is_which_probe = command == "which";
+    let is_version_probe = args_vec.len() == 1 && args_vec[0] == "--version";
+    if !is_which_probe && !is_version_probe {
+        return None;
+    }
+
+    Some(format!("run_command|{command}|{}", args_vec.join("\u{1f}")))
 }
 
 /// 工具执行结果

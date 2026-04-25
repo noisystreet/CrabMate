@@ -185,10 +185,11 @@ async fn handle_execution_result(
         );
     }
 
-    // 终答：始终含「概览 + 子目标表」；再追加任务级验收或全类任务小结
+    // 终答：始终含「概览 + 计划完成态 + 子目标精简表」；再追加任务级验收或全类任务小结
     let body = aggregate_results(&execution_result.results);
+    let plan_done = render_plan_completion(&execution_result.results);
     let intro = format!(
-        "**分层执行概览**（模式 `{}`）：子目标 **{}** 个；其中完成 **{}**、失败 **{}**；总耗时约 **{}** ms。\n\n{}\n\n",
+        "**分层执行概览**（模式 `{}`）：子目标 **{}** 个；其中完成 **{}**、失败 **{}**；总耗时约 **{}** ms。\n\n{}\n\n{}\n\n",
         mode.as_str(),
         execution_result.results.len(),
         execution_result.total_completed,
@@ -198,32 +199,39 @@ async fn handle_execution_result(
             "子目标层存在失败项，详见下表带 ❌ 的条目；若下节「任务级验收」有说明，以验收为准。"
         } else {
             "子目标层无失败状态返回，详见下表。"
-        }
+        },
+        plan_done
     );
     let with_core = format!("{intro}{body}");
+    let evidence_md = render_task_level_evidence(original_task, &execution_result.results);
+    let with_evidence = if evidence_md.is_empty() {
+        with_core
+    } else {
+        format!("{with_core}\n\n{evidence_md}")
+    };
 
     let final_response: String = if let Some(reason) =
         verify_task_level_execution_evidence(original_task, &execution_result.results)
     {
-        format!("{with_core}\n\n---\n**任务级验收（未通过）**：{reason}\n")
+        format!("{with_evidence}\n\n---\n**任务级验收（未通过）**：{reason}\n")
     } else if is_program_build_run_request(original_task) {
         if execution_result.total_failed == 0 {
             format!(
-                "{with_core}\n\n---\n**任务级验收**：已通过（写源码/编译/运行等要求可在子目标与工具结果中核对）。\n"
+                "{with_evidence}\n\n---\n**任务级验收**：已通过（写源码/编译/运行等要求可在子目标与工具结果中核对）。\n"
             )
         } else {
             format!(
-                "{with_core}\n\n---\n**任务级验收**：因存在未成功的子目标，不记为整任务通过，请据上表排查。\n"
+                "{with_evidence}\n\n---\n**任务级验收**：因存在未成功的子目标，不记为整任务通过，请据上表排查。\n"
             )
         }
     } else if execution_result.total_failed > 0 {
         format!(
-            "{with_core}\n\n---\n**小结**：本轮有 **{}** 个子目标未成功，请据上表与工具输出排查。\n",
+            "{with_evidence}\n\n---\n**小结**：本轮有 **{}** 个子目标未成功，请据上表排查。\n",
             execution_result.total_failed
         )
     } else {
         format!(
-            "{with_core}\n\n---\n**小结**：本轮子目标均成功，可视为在分层阶段已满足执行侧结论。\n"
+            "{with_evidence}\n\n---\n**小结**：本轮子目标均成功，可视为在分层阶段已满足执行侧结论。\n"
         )
     };
 
@@ -337,7 +345,7 @@ fn aggregate_results(results: &[crate::agent::hierarchy::TaskResult]) -> String 
     }
 
     let mut lines = Vec::new();
-    lines.push("## 分层执行结果\n".to_string());
+    lines.push("## 分层执行结果（精简）\n".to_string());
 
     for result in results {
         match &result.status {
@@ -375,13 +383,126 @@ fn aggregate_results(results: &[crate::agent::hierarchy::TaskResult]) -> String 
                 continue;
             }
         };
+    }
 
-        // 显示任务输出（包括成功和失败的任务）
-        if let Some(output) = &result.output {
-            lines.push(format!("  {}", output));
+    lines.join("\n")
+}
+
+fn render_plan_completion(results: &[crate::agent::hierarchy::TaskResult]) -> String {
+    if results.is_empty() {
+        return String::new();
+    }
+    let mut lines = vec!["## 计划完成态".to_string(), String::new()];
+    for r in results {
+        match &r.status {
+            crate::agent::hierarchy::TaskStatus::Completed => {
+                lines.push(format!("- [x] {}（{}ms）", r.task_id, r.duration_ms));
+            }
+            crate::agent::hierarchy::TaskStatus::Failed { reason } => {
+                lines.push(format!(
+                    "- [!] {}（{}ms）：{}",
+                    r.task_id, r.duration_ms, reason
+                ));
+            }
+            crate::agent::hierarchy::TaskStatus::Skipped { reason } => {
+                lines.push(format!("- [-] {}：{}", r.task_id, reason));
+            }
+            crate::agent::hierarchy::TaskStatus::NeedsDecomposition {
+                reason,
+                suggested_subgoals,
+            } => {
+                lines.push(format!(
+                    "- [~] {}：{}（建议分解 {}）",
+                    r.task_id, reason, suggested_subgoals
+                ));
+            }
+            crate::agent::hierarchy::TaskStatus::Pending
+            | crate::agent::hierarchy::TaskStatus::InProgress => {
+                lines.push(format!("- [ ] {}", r.task_id));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+fn render_task_level_evidence(
+    task: &str,
+    results: &[crate::agent::hierarchy::TaskResult],
+) -> String {
+    if !is_program_build_run_request(task) {
+        return String::new();
+    }
+
+    let mut wrote_source = false;
+    let mut built_binary = false;
+    let mut ran_binary = false;
+    let mut seen_hello_world = false;
+
+    for r in results {
+        let combined = format!(
+            "{}\n{}",
+            r.output.as_deref().unwrap_or(""),
+            r.error.as_deref().unwrap_or("")
+        );
+        let lower = combined.to_lowercase();
+        for a in &r.artifacts {
+            if a.path.as_deref().is_some_and(|p| {
+                let p = p.to_lowercase();
+                p.ends_with(".cpp") || p.ends_with(".cc") || p.ends_with(".cxx")
+            }) {
+                wrote_source = true;
+            }
+            if a.path
+                .as_deref()
+                .is_some_and(|p| p.to_lowercase().contains("build/"))
+            {
+                built_binary = true;
+            }
+        }
+        if lower.contains("built target")
+            || lower.contains("cmake --build")
+            || lower.contains("linking cxx executable")
+        {
+            built_binary = true;
+        }
+        if r.tools_invoked.iter().any(|n| n == "run_executable")
+            || r.tools_invoked.iter().any(|n| n == "run_command")
+                && crate::agent::hierarchy::goal_verifier::run_command_invocation_mentions_hello(
+                    &combined,
+                )
+        {
+            ran_binary = true;
+        }
+        if lower.contains("hello, world!") {
+            seen_hello_world = true;
         }
     }
 
+    let mut lines = vec!["## 关键证据".to_string(), String::new()];
+    lines.push(format!(
+        "- 源码落地：{}",
+        if wrote_source {
+            "已检测到 `.cpp` 源文件写入"
+        } else {
+            "未检测到明确证据"
+        }
+    ));
+    lines.push(format!(
+        "- 编译产物：{}",
+        if built_binary {
+            "已检测到构建/链接成功信号"
+        } else {
+            "未检测到明确证据"
+        }
+    ));
+    lines.push(format!(
+        "- 运行验证：{}",
+        if ran_binary || seen_hello_world {
+            "已检测到程序执行（含 `Hello, World!` 输出）"
+        } else {
+            "未检测到明确证据"
+        }
+    ));
     lines.join("\n")
 }
 

@@ -90,6 +90,8 @@ pub struct HierarchicalExecutor<'a> {
     tool_approval_out: Option<Sender<String>>,
     /// 工具审批接收器（用于接收用户审批决定）
     tool_approval_rx: Option<Arc<TokioMutex<Receiver<CommandApprovalDecision>>>>,
+    /// 分层单轮共享探测缓存：去重 `which` / `--version` 等无副作用探测命令。
+    probe_cache: Arc<TokioMutex<super::tool_executor::ProbeCache>>,
 }
 
 impl HierarchicalExecutor<'_> {
@@ -109,6 +111,7 @@ impl HierarchicalExecutor<'_> {
             original_task: None,
             tool_approval_out: None,
             tool_approval_rx: None,
+            probe_cache: Arc::new(TokioMutex::new(Default::default())),
         }
     }
 }
@@ -134,7 +137,18 @@ impl<'a> HierarchicalExecutor<'a> {
             .await;
             *answer_phase_emitted = true;
         }
-        let _ = sse::send_string_logged(sse_out, line, "hierarchical::progress_delta").await;
+        let title = line.trim().to_string();
+        if title.is_empty() {
+            return;
+        }
+        let payload = sse::encode_message(crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "hierarchical_subgoal".to_string(),
+                title,
+                detail: None,
+            },
+        });
+        let _ = sse::send_string_logged(sse_out, payload, "hierarchical::progress_timeline").await;
     }
 
     fn progress_line_for_task_result(result: &TaskResult) -> Option<String> {
@@ -323,11 +337,8 @@ impl<'a> HierarchicalExecutor<'a> {
                 }
                 all_results.push(result.clone());
                 if let Some(line) = Self::progress_line_for_task_result(result) {
-                    self.emit_assistant_progress_delta_sse(
-                        &mut answer_phase_emitted,
-                        format!("{line}\n"),
-                    )
-                    .await;
+                    self.emit_assistant_progress_delta_sse(&mut answer_phase_emitted, line)
+                        .await;
                 }
             }
 
@@ -508,6 +519,7 @@ impl<'a> HierarchicalExecutor<'a> {
         let sse_out = self.sse_out.clone(); // 克隆 SSE 发送器以支持并行执行
         let tool_approval_out = self.tool_approval_out.clone(); // 克隆审批发送器
         let tool_approval_rx = self.tool_approval_rx.clone(); // 克隆审批接收器
+        let probe_cache = self.probe_cache.clone();
 
         // 为每个子目标创建并发任务
         for goal in goals {
@@ -525,6 +537,7 @@ impl<'a> HierarchicalExecutor<'a> {
             let sse_out = sse_out.clone(); // 每个任务克隆 SSE 发送器
             let tool_approval_out = tool_approval_out.clone(); // 每个任务克隆审批发送器
             let tool_approval_rx = tool_approval_rx.clone(); // 每个任务克隆审批接收器
+            let probe_cache = probe_cache.clone();
 
             join_set.spawn(async move {
                 let _permit = permit; // 持有 permit 直到任务完成
@@ -553,6 +566,7 @@ impl<'a> HierarchicalExecutor<'a> {
                 // 创建工具执行器上下文
                 let mut tool_executor_ctx =
                     ToolExecutorContext::new(cfg.clone(), working_dir.clone().unwrap_or_default());
+                tool_executor_ctx = tool_executor_ctx.with_probe_cache(probe_cache);
 
                 // 如果有审批上下文，启用 Web 审批流程
                 if let (Some(out_tx), Some(approval_rx)) = (tool_approval_out, tool_approval_rx) {
@@ -1054,6 +1068,7 @@ impl<'a> HierarchicalExecutor<'a> {
                     Arc::new(cfg.clone()),
                     work_dir.clone(),
                 );
+                tool_executor_ctx = tool_executor_ctx.with_probe_cache(self.probe_cache.clone());
                 // 如果有审批上下文，启用 Web 审批流程
                 if let (Some(out_tx), Some(approval_rx)) = (
                     self.tool_approval_out.clone(),
