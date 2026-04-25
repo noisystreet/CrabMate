@@ -618,6 +618,21 @@ pub(super) fn build_chat_stream_callbacks(
                 );
                 return;
             }
+            if info.kind == "hierarchical_subgoal" {
+                let text =
+                    build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
+                if text.is_empty() {
+                    return;
+                }
+                push_assistant_timeline_bubble(&stream_ctx, text.clone(), None);
+                move_loading_assistant_to_bottom(&stream_ctx);
+                answer_delta_chars.set(
+                    answer_delta_chars
+                        .get()
+                        .saturating_add(text.chars().count()),
+                );
+                return;
+            }
             let loc = stream_ctx.locale.get_untracked();
             let normalized_title = match info.kind.as_str() {
                 "tool_step_started" => {
