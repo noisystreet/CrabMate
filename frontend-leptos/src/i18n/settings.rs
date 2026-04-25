@@ -9,6 +9,13 @@ pub fn settings_title(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_nav_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "设置分区导航",
+        Locale::En => "Settings sections",
+    }
+}
+
 pub fn settings_badge_local(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "本机",

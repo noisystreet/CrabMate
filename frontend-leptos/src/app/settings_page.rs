@@ -417,7 +417,7 @@ pub fn SettingsPageView(
                     }}</p>
                 </Show>
                 <div class="settings-layout">
-                    <nav class="settings-nav" aria-label="Settings sections">
+                    <nav class="settings-nav" prop:aria-label=move || i18n::settings_nav_aria(appearance_locale.get())>
                         <button
                             type="button"
                             class="settings-nav-item"

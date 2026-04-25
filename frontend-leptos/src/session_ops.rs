@@ -348,7 +348,7 @@ pub fn export_session_json_for_id(
     };
     let stem = export_filename_stem("chat_export");
     let name = format!("{stem}.json");
-    if let Err(e) = trigger_download(&name, "application/json", &json) {
+    if let Err(e) = trigger_download(&name, "application/json", &json, loc) {
         if let Some(w) = web_sys::window() {
             let _ = w.alert_with_message(&e);
         }
@@ -410,7 +410,7 @@ pub fn export_session_markdown_for_id(
     let md = session_to_markdown(&s, loc, apply_assistant_display_filters);
     let stem = export_filename_stem("chat_export");
     let name = format!("{stem}.md");
-    if let Err(e) = trigger_download(&name, "text/plain;charset=utf-8", &md) {
+    if let Err(e) = trigger_download(&name, "text/plain;charset=utf-8", &md, loc) {
         if let Some(w) = web_sys::window() {
             let _ = w.alert_with_message(&e);
         }

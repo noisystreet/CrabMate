@@ -7,6 +7,8 @@
 use crabmate_sse_protocol::{SSE_PROTOCOL_VERSION, key_present_non_null};
 use serde_json::Value;
 
+use crate::i18n::Locale;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SseDispatch {
     Stop,
@@ -16,6 +18,8 @@ pub enum SseDispatch {
 
 #[allow(clippy::type_complexity)]
 pub struct SseCallbacks<'a> {
+    /// 用户可见错误文案语言（如 SSE 协议版本不匹配提示）。
+    pub user_locale: Locale,
     pub on_error: &'a mut dyn FnMut(String),
     pub on_workspace_changed: Option<&'a mut dyn FnMut()>,
     pub on_tool_call:
@@ -519,8 +523,11 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                     } else {
                         "SSE_SERVER_TOO_OLD"
                     };
-                    (cbs.on_error)(format!(
-                        "SSE 协议版本不匹配：服务端 supported_sse_v={sv}，本页 {SSE_PROTOCOL_VERSION} ({hint})"
+                    (cbs.on_error)(crate::i18n::sse_protocol_version_mismatch(
+                        cbs.user_locale,
+                        sv,
+                        SSE_PROTOCOL_VERSION,
+                        hint,
                     ));
                     return SseDispatch::Stop;
                 }
@@ -543,11 +550,14 @@ mod sse_control_order_tests {
     use crabmate_sse_protocol::classify_sse_control_outcome;
     use serde_json::Value;
 
+    use crate::i18n::Locale;
+
     use super::{SseCallbacks, SseDispatch, try_dispatch_sse_control_payload};
 
     fn dispatch_triage_string(data: &str) -> &'static str {
         let mut on_err = |_msg: String| {};
         let mut cbs = SseCallbacks {
+            user_locale: Locale::ZhHans,
             on_error: &mut on_err,
             on_workspace_changed: None,
             on_tool_call: None,

@@ -20,7 +20,7 @@ pub fn mobile_shell_header_view(ctx: AppShellCtx) -> impl IntoView {
             >
                 "☰"
             </button>
-            <span class="shell-main-header-title">"CrabMate"</span>
+            <span class="shell-main-header-title">{move || i18n::app_shell_title(locale.get())}</span>
             <button
                 type="button"
                 class="btn btn-secondary btn-sm"
