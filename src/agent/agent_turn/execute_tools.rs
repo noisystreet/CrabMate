@@ -194,6 +194,7 @@ async fn emit_sse_tool_result(
         encode_message(SsePayload::ToolResult {
             tool_result: ToolResultBody {
                 name: norm.name,
+                goal_id: None,
                 result_version: norm.envelope_version,
                 summary: tool_summary,
                 output: result.to_string(),
@@ -415,6 +416,7 @@ async fn emit_tool_call_summary_sse(
             tool_call: ToolCallSummary {
                 name: name.to_string(),
                 summary,
+                goal_id: None,
                 arguments_preview,
                 arguments,
             },

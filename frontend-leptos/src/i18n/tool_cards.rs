@@ -41,19 +41,3 @@ pub fn plan_step_line(l: Locale, idx: usize, id: &str, desc: &str) -> String {
         Locale::En => format!("{n}. `{id}`: {desc}"),
     }
 }
-
-// --- tool_call 参数标签 ---
-
-pub fn tool_call_args_label(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "参数：",
-        Locale::En => "Args: ",
-    }
-}
-
-pub fn tool_call_args_preview_label(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "参数预览：",
-        Locale::En => "Args preview: ",
-    }
-}

@@ -358,6 +358,7 @@ impl OperatorAgent {
                                 tool_call: crate::sse::protocol::ToolCallSummary {
                                     name: tool_name.clone(),
                                     summary,
+                                    goal_id: Some(goal.goal_id.clone()),
                                     arguments_preview: Some(
                                         crate::redact::tool_arguments_preview_for_sse(args),
                                     ),
@@ -425,6 +426,7 @@ impl OperatorAgent {
                             crate::sse::encode_message(crate::sse::SsePayload::ToolResult {
                                 tool_result: crate::sse::protocol::ToolResultBody {
                                     name: result.tool_name.clone(),
+                                    goal_id: Some(goal.goal_id.clone()),
                                     result_version: 1,
                                     summary: Some(tool_summary),
                                     output: result.output.clone(),

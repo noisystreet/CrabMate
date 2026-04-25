@@ -1196,9 +1196,9 @@
 .msg-tool:not(.msg-loading) {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.2rem 0.55rem;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .msg-tool:not(.msg-loading) .msg-meta {
@@ -1207,8 +1207,61 @@
 }
 
 .msg-tool:not(.msg-loading) .msg-body {
-  flex: 1 1 10rem;
+  flex: 1 1 auto;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-tool-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+.msg-tool-summary {
+  flex: 1 1 auto;
+}
+
+.msg-tool-drawer-btn {
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface) 92%, var(--bg));
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.msg-tool-drawer-btn:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
+}
+
+.msg-tool-drawer {
+  flex-basis: 100%;
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 86%, var(--surface));
+  max-height: 10rem;
+  overflow: auto;
+}
+
+.msg-tool-drawer-pre {
+  margin: 0;
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .msg-error {

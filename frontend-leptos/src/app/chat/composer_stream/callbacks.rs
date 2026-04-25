@@ -86,6 +86,23 @@ fn build_hierarchical_plan_main_bubble_text(title: &str, detail: Option<&str>) -
     }
 }
 
+fn to_single_line(s: &str, max_chars: usize) -> String {
+    let compact = s
+        .split_whitespace()
+        .filter(|seg| !seg.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if compact.chars().count() <= max_chars {
+        return compact;
+    }
+    let mut out = String::new();
+    for ch in compact.chars().take(max_chars.saturating_sub(1)) {
+        out.push(ch);
+    }
+    out.push('…');
+    out
+}
+
 fn push_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
     text: String,
@@ -196,51 +213,6 @@ fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
     });
 }
 
-/// 根据暂存的工具调用参数生成参数展示文本。
-fn build_tool_args_text(args: &super::context::PendingToolArgs, loc: Locale) -> String {
-    let mut out = String::new();
-    let args_content = args.full.as_ref().or(args.preview.as_ref());
-    let Some(content) = args_content else {
-        return String::new();
-    };
-    let label = if args.full.is_some() {
-        i18n::tool_call_args_label(loc)
-    } else {
-        i18n::tool_call_args_preview_label(loc)
-    };
-    out.push_str(label);
-    out.push_str("\n");
-
-    // 对于 run_command，将 command 字段放在 args 之前显示
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(content) {
-        if v.get("command").is_some() && v.get("args").is_some() {
-            let mut reordered = serde_json::Map::new();
-            if let Some(cmd) = v.get("command").cloned() {
-                reordered.insert("command".to_string(), cmd);
-            }
-            if let Some(a) = v.get("args").cloned() {
-                reordered.insert("args".to_string(), a);
-            }
-            // 保留其他字段
-            if let Some(obj) = v.as_object() {
-                for (k, v) in obj.iter() {
-                    if k != "command" && k != "args" {
-                        reordered.insert(k.clone(), v.clone());
-                    }
-                }
-            }
-            out.push_str(
-                &serde_json::to_string(&serde_json::Value::Object(reordered))
-                    .unwrap_or_else(|_| content.to_string()),
-            );
-            return out;
-        }
-    }
-
-    out.push_str(content);
-    out
-}
-
 /// 将内容追加到正在流式生成的 assistant 消息 text 中。
 fn append_to_assistant_text(
     aid: &str,
@@ -288,6 +260,7 @@ pub(super) fn build_chat_stream_callbacks(
 ) -> ChatStreamCallbacks {
     let answer_delta_chars: Rc<Cell<usize>> = Rc::new(Cell::new(0));
     let stream_end_reason: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let current_subgoal_marker: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     // 兜底缓冲：若服务端未下发 assistant_answer_phase，但确实有 delta，
     // 则在 on_done 且正文仍为空时回填，避免出现“后端有答复、前端无回复”。
     let pre_answer_buffer: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
@@ -404,46 +377,65 @@ pub(super) fn build_chat_stream_callbacks(
     };
 
     // 暂存 tool_call 参数
-    let on_tool_call: Rc<dyn Fn(String, String, Option<String>, Option<String>)> = {
+    let on_tool_call: Rc<dyn Fn(String, String, Option<String>, Option<String>, Option<String>)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
+        let current_subgoal_marker = Rc::clone(&current_subgoal_marker);
         Rc::new(
-            move |name: String, summary: String, preview: Option<String>, full: Option<String>| {
-                let args = super::context::PendingToolArgs { preview, full };
-                *stream_ctx.pending_tool_args.borrow_mut() = args;
-                let args_text = build_tool_args_text(
-                    &stream_ctx.pending_tool_args.borrow(),
-                    stream_ctx.locale.get_untracked(),
-                );
+            move |name: String,
+                  summary: String,
+                  preview: Option<String>,
+                  full: Option<String>,
+                  goal_id: Option<String>| {
+                let _ = (preview, full);
                 let loc = stream_ctx.locale.get_untracked();
-                let mut parts: Vec<String> = Vec::new();
-                if !summary.trim().is_empty() {
-                    parts.push(summary.trim().to_string());
+                let core = if !summary.trim().is_empty() {
+                    summary.trim().to_string()
                 } else if !name.trim().is_empty() {
-                    parts.push(format!("{}{}", i18n::tool_card_prefix(loc), name.trim()));
+                    format!("{}{}", i18n::tool_card_prefix(loc), name.trim())
                 } else {
-                    parts.push(i18n::tool_card_fallback(loc).to_string());
-                }
-                parts.push(i18n::status_tool_running(loc).to_string());
-                if !args_text.is_empty() {
-                    parts.push(args_text);
-                }
-                let text = parts.join("\n\n");
+                    i18n::tool_card_fallback(loc).to_string()
+                };
+                let text = to_single_line(
+                    &format!("{} · {}", core, i18n::status_tool_running(loc)),
+                    140,
+                );
+                let detail = if !name.trim().is_empty() {
+                    format!("tool: {name}\nstatus: running")
+                } else {
+                    "status: running".to_string()
+                };
                 let id = make_message_id();
                 let aid = stream_ctx.active_session_id.as_str();
+                let marker = goal_id
+                    .as_deref()
+                    .map(|g| format!("hierarchical-subgoal:{g}"))
+                    .or_else(|| current_subgoal_marker.borrow().clone());
                 stream_ctx.chat.sessions.update(|list| {
                     if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                        s.messages.push(StoredMessage {
+                        let msg = StoredMessage {
                             id: id.clone(),
                             role: "system".to_string(),
                             text,
-                            reasoning_text: String::new(),
+                            reasoning_text: detail.clone(),
                             image_urls: vec![],
                             state: Some("loading".to_string()),
                             is_tool: true,
                             created_at: message_created_ms(),
-                        });
+                        };
+                        if let Some(mk) = marker.as_deref()
+                            && let Some(idx) = s
+                                .messages
+                                .iter()
+                                .rposition(|m| m.state.as_deref() == Some(mk))
+                        {
+                            s.messages.insert(idx + 1, msg);
+                        } else {
+                            s.messages.push(msg);
+                        }
                     }
                 });
+                // 工具调用出现后，保持“助手正在生成”气泡在最底部，避免视觉时序倒置。
+                move_loading_assistant_to_bottom(&stream_ctx);
                 enqueue_pending_tool_message_id(&stream_ctx.pending_tool_message_ids, id);
             },
         )
@@ -459,17 +451,9 @@ pub(super) fn build_chat_stream_callbacks(
     let on_tool_result: Rc<dyn Fn(ToolResultInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: ToolResultInfo| {
-            // 获取暂存的参数并构建参数文本
-            let pending_args = stream_ctx.pending_tool_args.borrow().clone();
-            let args_text = build_tool_args_text(&pending_args, stream_ctx.locale.get_untracked());
-
             let result_text = tool_card_text(&info, stream_ctx.locale.get_untracked());
-            // 结果在前，参数在后
-            let t = if !args_text.is_empty() {
-                format!("{}\n\n{}", result_text, args_text)
-            } else {
-                result_text
-            };
+            let t = to_single_line(&result_text, 180);
+            let detail = result_text.clone();
 
             let id = make_message_id();
             let aid = stream_ctx.active_session_id.as_str();
@@ -483,24 +467,41 @@ pub(super) fn build_chat_stream_callbacks(
                         && let Some(m) = s.messages.iter_mut().find(|m| m.id == pid)
                     {
                         m.text = t.clone();
+                        m.reasoning_text = detail.clone();
                         m.state = Some(state.clone());
                         m.is_tool = true;
                         updated_existing = true;
                     }
                     if !updated_existing {
-                        s.messages.push(StoredMessage {
+                        let msg = StoredMessage {
                             id: id.clone(),
                             role: "system".to_string(),
                             text: t.clone(),
-                            reasoning_text: String::new(),
+                            reasoning_text: detail.clone(),
                             image_urls: vec![],
                             state: Some(state.clone()),
                             is_tool: true,
                             created_at: message_created_ms(),
-                        });
+                        };
+                        if let Some(goal_id) = info.goal_id.as_deref() {
+                            let marker = format!("hierarchical-subgoal:{goal_id}");
+                            if let Some(idx) = s
+                                .messages
+                                .iter()
+                                .rposition(|m| m.state.as_deref() == Some(marker.as_str()))
+                            {
+                                s.messages.insert(idx + 1, msg);
+                            } else {
+                                s.messages.push(msg);
+                            }
+                        } else {
+                            s.messages.push(msg);
+                        }
                     }
                 }
             });
+            // 工具结果落盘后，同样把 loading 助手气泡放到底部。
+            move_loading_assistant_to_bottom(&stream_ctx);
         })
     };
 
@@ -625,6 +626,7 @@ pub(super) fn build_chat_stream_callbacks(
     let on_timeline_log: Rc<dyn Fn(TimelineLogInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         let answer_delta_chars = Rc::clone(&answer_delta_chars);
+        let current_subgoal_marker = Rc::clone(&current_subgoal_marker);
         Rc::new(move |info: TimelineLogInfo| {
             web_sys::console::log_1(
                 &format!("[TL] kind={} title={}", info.kind, info.title).into(),
@@ -678,6 +680,8 @@ pub(super) fn build_chat_stream_callbacks(
                 if text.is_empty() {
                     return;
                 }
+                *current_subgoal_marker.borrow_mut() =
+                    extract_subgoal_marker_from_title(&info.title);
                 upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
                 move_loading_assistant_to_bottom(&stream_ctx);
                 answer_delta_chars.set(
@@ -693,6 +697,8 @@ pub(super) fn build_chat_stream_callbacks(
                 if text.is_empty() {
                     return;
                 }
+                *current_subgoal_marker.borrow_mut() =
+                    extract_subgoal_marker_from_title(&info.title);
                 upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
                 move_loading_assistant_to_bottom(&stream_ctx);
                 answer_delta_chars.set(
