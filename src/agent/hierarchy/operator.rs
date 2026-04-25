@@ -160,6 +160,8 @@ struct ReactState {
     duplicate_command_count: usize,
     /// 已使用的工具集合（用于复杂度评估）
     tools_used: std::collections::HashSet<String>,
+    /// 按时间顺序的每次成功/失败工具调用名（与 tools_used 不同：含重复、用于验收）
+    tool_names_chron: Vec<String>,
     /// 动态分解已触发次数
     dynamic_decomposition_count: usize,
 }
@@ -201,6 +203,7 @@ impl OperatorAgent {
             error: None,
             artifacts: Vec::new(),
             duration_ms: start_time.elapsed().as_millis() as u64,
+            tools_invoked: Vec::new(),
         })
     }
 
@@ -248,6 +251,7 @@ impl OperatorAgent {
             recent_commands: Vec::new(),
             duplicate_command_count: 0,
             tools_used: std::collections::HashSet::new(),
+            tool_names_chron: Vec::new(),
             dynamic_decomposition_count: 0,
         };
 
@@ -297,6 +301,7 @@ impl OperatorAgent {
                     error: Some("Max iterations reached".to_string()),
                     artifacts: Vec::new(),
                     duration_ms: start_time.elapsed().as_millis() as u64,
+                    tools_invoked: state.tool_names_chron.clone(),
                 });
             }
 
@@ -388,6 +393,8 @@ impl OperatorAgent {
                         result.success,
                         result.output.len()
                     );
+                    state.tool_names_chron.push(result.tool_name.clone());
+                    state.tools_used.insert(result.tool_name.clone());
 
                     // 检测工作目录变化（从工具参数或输出中提取）
                     if let Some(new_dir) =
@@ -476,6 +483,7 @@ impl OperatorAgent {
                                 )),
                                 artifacts: Vec::new(),
                                 duration_ms: start_time.elapsed().as_millis() as u64,
+                                tools_invoked: state.tool_names_chron.clone(),
                             });
                         }
                     } else {
@@ -497,7 +505,7 @@ impl OperatorAgent {
                         format!(
                             "Tool {} executed successfully: {}",
                             result.tool_name,
-                            truncate_output(&result.output)
+                            truncate_for_subgoal_trace(&result.output, &result.tool_name)
                         )
                     } else {
                         format!("Tool {} failed: {}", result.tool_name, result.output)
@@ -558,6 +566,7 @@ impl OperatorAgent {
                                 error: Some(failure_reason),
                                 artifacts: Vec::new(),
                                 duration_ms: start_time.elapsed().as_millis() as u64,
+                                tools_invoked: state.tool_names_chron.clone(),
                             });
                         }
                     } else {
@@ -643,18 +652,20 @@ impl OperatorAgent {
                             "[HIERARCHICAL] Operator: terminating ReAct loop early, task completed: {}",
                             reason
                         );
+                        let trace = state.observations.join("\n");
                         return Ok(TaskResult {
                             task_id: goal.goal_id.clone(),
                             status: TaskStatus::Completed,
-                            output: Some(format!("Task completed: {}", reason)),
+                            output: Some(format!(
+                                "Task completed: {}\n\n[subgoal_tool_trace]\n{}",
+                                reason, trace
+                            )),
                             error: None,
                             artifacts: Vec::new(),
                             duration_ms: start_time.elapsed().as_millis() as u64,
+                            tools_invoked: state.tool_names_chron.clone(),
                         });
                     }
-
-                    // 记录使用的工具
-                    state.tools_used.insert(result.tool_name.clone());
 
                     // 动态子目标分解检查
                     if self.config.enable_dynamic_decomposition
@@ -694,6 +705,7 @@ impl OperatorAgent {
                                 error: None,
                                 artifacts: Vec::new(),
                                 duration_ms: start_time.elapsed().as_millis() as u64,
+                                tools_invoked: state.tool_names_chron.clone(),
                             });
                         }
                     }
@@ -714,11 +726,19 @@ impl OperatorAgent {
                                 .observations
                                 .push(format!("Final: {}", truncate_output(&text)));
                             // 仅在未开启 AGENT_WEB_RAW_ASSISTANT_OUTPUT 时剥离思维链标签
-                            let output = if crate::web::web_ui_env::web_raw_assistant_output_env() {
-                                text.clone()
-                            } else {
-                                strip_thinking_tags(&text)
-                            };
+                            let mut output =
+                                if crate::web::web_ui_env::web_raw_assistant_output_env() {
+                                    text.clone()
+                                } else {
+                                    strip_thinking_tags(&text)
+                                };
+                            // 与「工具触发提前结束」路径一致：验收依赖 `[subgoal_tool_trace]` 内的 `Tool run_command…` 行；
+                            // 若仅因模型无工具收尾而走到此处，必须把本轮已执行的工具观察一并写入，否则 GoalVerifier 会误判。
+                            let trace = state.observations.join("\n");
+                            if !trace.trim().is_empty() {
+                                output.push_str("\n\n[subgoal_tool_trace]\n");
+                                output.push_str(&trace);
+                            }
                             return Ok(TaskResult {
                                 task_id: goal.goal_id.clone(),
                                 status: TaskStatus::Completed,
@@ -726,6 +746,7 @@ impl OperatorAgent {
                                 error: None,
                                 artifacts: Vec::new(),
                                 duration_ms: start_time.elapsed().as_millis() as u64,
+                                tools_invoked: state.tool_names_chron.clone(),
                             });
                         } else {
                             // LLM 可能需要继续，将回复作为观察并添加到消息历史
@@ -828,80 +849,70 @@ impl OperatorAgent {
 
         let output = &result.output;
         let tool_name = &result.tool_name;
-
-        // 1. 检查是否成功运行了可执行文件并产生预期输出
-        if tool_name == "run_command" || tool_name.starts_with("./") {
-            // 检查是否运行了可执行文件并输出 Hello World
-            if output.contains("Hello") || output.contains("hello") || output.contains("world") {
-                return ToolExecutionOutcome::TaskCompleted {
-                    reason: "Program executed successfully with expected output".to_string(),
-                };
-            }
-            // 检查是否是 ELF 文件的 file 命令输出（验证步骤）
-            if output.contains("ELF") && output.contains("executable") {
-                // 这是验证步骤，不是真正的任务完成
-                return ToolExecutionOutcome::Normal;
-            }
-        }
-
-        // 2. 检查是否成功编译并链接了可执行文件
-        if tool_name == "run_command" || tool_name == "cmake" || tool_name == "make" {
-            // 匹配 cmake 构建成功输出
-            if output.contains("[100%]")
-                && output.contains("Linking")
-                && output.contains("executable")
-            {
-                // 提取可执行文件名
-                if let Some(line) = output
-                    .lines()
-                    .find(|l| l.contains("Linking") && l.contains("executable"))
-                    && let Some(name) = line.split_whitespace().last()
-                {
-                    return ToolExecutionOutcome::TaskCompleted {
-                        reason: format!("Build completed: executable '{}' generated", name),
-                    };
-                }
-            }
-        }
-
-        // 3. 根据目标描述判断
         let goal_desc = goal.description.to_lowercase();
 
-        // 如果目标是运行程序并看到输出
-        if goal_desc.contains("运行")
-            || goal_desc.contains("执行")
-            || goal_desc.contains("run")
-            || goal_desc.contains("execute")
+        // 1. 仅对 run_executable：以典型 stdout 为完成信号（可执行体运行）
+        if tool_name == "run_executable"
+            && (output.to_lowercase().contains("hello")
+                || (output.contains("退出码：0")
+                    && output.chars().count() < 8000
+                    && !output.contains("cmake version")))
         {
-            // 检查输出中是否有程序运行的典型特征
-            if output.contains("Hello")
-                || output.contains("World")
-                || output.contains("hello")
-                || output.contains("world")
-            {
-                return ToolExecutionOutcome::TaskCompleted {
-                    reason: "Program executed and produced output".to_string(),
-                };
-            }
+            return ToolExecutionOutcome::TaskCompleted {
+                reason: "Program executed successfully with expected output".to_string(),
+            };
+        }
+        // 1b. 「运行可执行体」子目标：`run_command` 直接跑构建产物且 stdout 可核对（与 GoalVerifier 同源判定）
+        if tool_name == "run_command"
+            && super::goal_verifier::is_run_executable_subgoal(goal)
+            && super::goal_verifier::run_command_invocation_mentions_hello(&format!(
+                "Tool run_command executed successfully: {}",
+                output
+            ))
+        {
+            return ToolExecutionOutcome::TaskCompleted {
+                reason: "Program executed successfully via run_command (verified stdout)"
+                    .to_string(),
+            };
+        }
+        if tool_name == "run_command" && output.contains("ELF") && output.contains("executable") {
+            return ToolExecutionOutcome::Normal;
         }
 
-        // 如果目标是编译
-        if goal_desc.contains("编译") || goal_desc.contains("build") || goal_desc.contains("make")
+        // 2. 编译/链接：run_command/cmake/make 的成功输出。注意「仅运行可执行体」子目标不得仅靠编译成功收尾。
+        if (tool_name == "run_command" || tool_name == "cmake" || tool_name == "make")
+            && !super::goal_verifier::is_run_executable_subgoal(goal)
+            && output.contains("[100%]")
+            && output.contains("Linking")
+            && output.contains("executable")
+            && let Some(line) = output
+                .lines()
+                .find(|l| l.contains("Linking") && l.contains("executable"))
+            && let Some(name) = line.split_whitespace().last()
         {
-            // 检查是否成功生成了构建产物
-            if !result.extracted_artifacts.is_empty() {
-                for artifact in &result.extracted_artifacts {
-                    if matches!(
-                        artifact.kind,
-                        super::tool_executor::ExtractedArtifactKind::Executable
-                    ) {
-                        return ToolExecutionOutcome::TaskCompleted {
-                            reason: format!(
-                                "Build completed: {} generated",
-                                artifact.path.display()
-                            ),
-                        };
-                    }
+            return ToolExecutionOutcome::TaskCompleted {
+                reason: format!("Build completed: executable '{name}' generated"),
+            };
+        }
+
+        // 3. 编译子目标 + 可执行体产物
+        if !super::goal_verifier::is_run_executable_subgoal(goal)
+            && (goal_desc.contains("编译")
+                || goal_desc.contains("build")
+                || goal_desc.contains("make")
+                || goal_desc.contains("cmake")
+                || goal_desc.contains("链接")
+                || goal_desc.contains("build"))
+            && !result.extracted_artifacts.is_empty()
+        {
+            for artifact in &result.extracted_artifacts {
+                if matches!(
+                    artifact.kind,
+                    super::tool_executor::ExtractedArtifactKind::Executable
+                ) {
+                    return ToolExecutionOutcome::TaskCompleted {
+                        reason: format!("Build completed: {} generated", artifact.path.display()),
+                    };
                 }
             }
         }
@@ -1009,6 +1020,7 @@ impl OperatorAgent {
 
 **步骤 3: 执行构建（注意工作目录）**
 - CMake 项目：
+  0. **若你编写 CMakeLists.txt**：单文件示例用 `add_executable(目标名 main.cpp)`；**勿**在仓库根用 `file(GLOB_RECURSE "*.cpp" …)` 且不排除 `build/`、`CMakeFiles/`（会把 CMake 的 `CompilerId*.c/cpp` 链进同一目标，出现 **multiple definition of `main`**）
   1. `mkdir -p build && cd build`
   2. `cmake ..` 或 `cmake -S .. -B .`
   3. `cmake --build .` 或 `make`
@@ -1737,6 +1749,28 @@ impl OperatorAgent {
         }
 
         None
+    }
+}
+
+/// 子目标内工具轨迹用截断：运行类保留更多字符，供 GoalVerifier 识别 stdout
+fn truncate_for_subgoal_trace(output: &str, tool_name: &str) -> String {
+    const DEFAULT_MAX: usize = 200;
+    const RUN_LIKE_MAX: usize = 8000;
+    let max = if tool_name == "run_executable" || tool_name == "run_command" {
+        RUN_LIKE_MAX
+    } else {
+        DEFAULT_MAX
+    };
+    if output.len() > max {
+        let truncated = output
+            .char_indices()
+            .take(max.saturating_sub(3))
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...", &output[..truncated])
+    } else {
+        output.to_string()
     }
 }
 

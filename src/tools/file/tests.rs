@@ -404,3 +404,50 @@ fn test_move_file_reject_existing_without_overwrite() {
     assert!(dir.join("a.txt").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn normalize_absolute_path_in_workspace() {
+    use super::path::{normalize_subpath_for_workspace, resolve_for_read, resolve_for_write};
+
+    let dir = make_test_dir();
+    let f = dir.join("a").join("b.txt");
+    std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+    std::fs::write(&f, "x").unwrap();
+    let abs = f.to_str().unwrap();
+    assert_eq!(
+        normalize_subpath_for_workspace(&dir, abs).unwrap(),
+        "a/b.txt"
+    );
+    resolve_for_read(&dir, abs).expect("resolve read with abs under workspace");
+    // 目标尚不存在，但父目录存在
+    let newf = dir.join("c").join("d.txt");
+    std::fs::create_dir_all(newf.parent().unwrap()).unwrap();
+    let abs_new = newf.to_str().unwrap();
+    assert_eq!(
+        normalize_subpath_for_workspace(&dir, abs_new).unwrap(),
+        "c/d.txt"
+    );
+    let w = resolve_for_write(&dir, abs_new).expect("resolve write with abs under workspace");
+    assert_eq!(w, newf);
+    // 已存在路径若落在工作区外，应拒
+    let err = normalize_subpath_for_workspace(&dir, "/usr/bin/env");
+    assert!(err.is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn create_file_accepts_abs_path_string_under_workspace() {
+    let dir = make_test_dir();
+    let target = dir.join("abs").join("f.txt");
+    let cfg = crate::config::load_config(None).expect("embedded default config");
+    let ctx = crate::tools::tool_context_for(&cfg, cfg.allowed_commands.as_ref(), &dir);
+    let path_arg = serde_json::to_string(target.to_str().unwrap()).unwrap();
+    let out = create_file(
+        &format!(r#"{{"path":{},"content":"z"}}"#, path_arg),
+        &dir,
+        &ctx,
+    );
+    assert!(!out.starts_with("错误："), "{}", out);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "z");
+    let _ = std::fs::remove_dir_all(&dir);
+}

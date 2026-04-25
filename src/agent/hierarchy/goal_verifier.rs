@@ -73,6 +73,13 @@ impl GoalVerifier {
             return VerificationResult::Fail { reason };
         }
 
+        // 「运行可执行体」子目标：须出现 run_executable，或 run_command 且可核对到进程级输出
+        if is_run_executable_subgoal(goal)
+            && let Err(reason) = verify_run_executable_subgoal_tool_evidence(result)
+        {
+            return VerificationResult::Fail { reason };
+        }
+
         // 如果没有定义验收条件，直接通过
         let acceptance = match &goal.acceptance {
             Some(a) => a,
@@ -281,6 +288,108 @@ impl GoalVerifier {
     }
 }
 
+/// 子目标是否要求「真正运行已构建的可执行体」（与仅「检查产物是否生成」区分，仅用于分层模式验收）。
+pub(crate) fn is_run_executable_subgoal(goal: &SubGoal) -> bool {
+    let d = goal.description.to_lowercase();
+    // 仅检查目录/是否生成/是否存在 → 不强制 run_executable
+    if d.contains("检查")
+        && (d.contains("是否生成")
+            || d.contains("是否已生成")
+            || d.contains("是否存在")
+            || d.contains("是否产生"))
+        && !d.contains("运行")
+    {
+        return false;
+    }
+    let has_run_verb = d.contains("运行")
+        || d.contains("并运行")
+        || d.contains("跑")
+        || d.contains("run the")
+        || d.contains("run ");
+    let has_target = d.contains("可执行")
+        || d.contains("executable")
+        || d.contains("可执行文件")
+        || (d.contains("编译")
+            && d.contains("生成")
+            && (d.contains("运行") || d.contains("执行") || d.contains("验证")));
+    (has_run_verb && (has_target || d.contains("产物")))
+        || (d.contains("验证") && d.contains("输出") && (d.contains("运行") || d.contains("程序")))
+        || (d.contains("验证") && d.contains("hello"))
+}
+
+/// 对「运行可执行体」子目标，必须有 `run_executable` 或充分的 `run_command` 执行产物证据
+fn verify_run_executable_subgoal_tool_evidence(result: &TaskResult) -> Result<(), String> {
+    if result.tools_invoked.iter().any(|n| n == "run_executable") {
+        return Ok(());
+    }
+    if !result.tools_invoked.iter().any(|n| n == "run_command") {
+        return Err(
+            "缺少 `run_executable` 或能证明已执行可执行产物的 `run_command`。请用 `run_executable` + 工作区相对路径（如 `build/目标名`）运行产物。"
+                .to_string(),
+        );
+    }
+    let c = format!(
+        "{}\n{}",
+        result.output.as_deref().unwrap_or(""),
+        result.error.as_deref().unwrap_or("")
+    );
+    // 在「同一次 run_command 工具行」的片段内出现 Hello，避免与 read_file 里读到的源码混淆
+    if run_command_invocation_mentions_hello(&c) {
+        return Ok(());
+    }
+    Err(
+        "子目标为「运行可执行体」：已调用 `run_command` 但未能核对到可执行体进程级输出；请用 `run_executable` 或 `run_command` 直接执行构建产物，并产生可核对输出（如 Hello, World!）。"
+            .to_string(),
+    )
+}
+
+pub(crate) fn run_command_invocation_mentions_hello(c: &str) -> bool {
+    fn has_hello(t: &str) -> bool {
+        let l = t.to_lowercase();
+        l.contains("hello, world!") || l.contains("hello, world")
+    }
+    /// 单次 `Tool run_command …` 片段内是否像「成功执行且 stdout 含 Hello」
+    fn run_command_section_indicates_hello_run(seg: &str) -> bool {
+        let t = format!("Tool run_command{seg}");
+        let l = t.to_lowercase();
+        let looks_ok = l.contains("executed successfully")
+            || l.contains("退出码：0")
+            || l.contains("退出码:0")
+            || l.contains("(exit=0)");
+        if !looks_ok || !has_hello(&t) {
+            return false;
+        }
+        // 有「标准输出：」+ Hello 时，避免误把 read_file/cat 里的源码行计为运行结果
+        if t.contains("标准输出") {
+            return !l.contains("#include <iostream>");
+        }
+        has_hello(&t) && !l.contains("#include <iostream>")
+    }
+    if c.split("Tool run_command")
+        .skip(1)
+        .any(run_command_section_indicates_hello_run)
+    {
+        return true;
+    }
+    // 子目标 trace / 去英文前缀等：须同时出现「可核对成功」与 run_command 语境，防把其它工具输出串进来误判
+    let low = c.to_lowercase();
+    if low.contains("标准输出")
+        && (low.contains("退出码：0") || low.contains("退出码:0") || low.contains("(exit=0)"))
+        && (low.contains("hello, world!") || low.contains("hello, world"))
+        && low.contains("run_command")
+        && (low.contains("subgoal_tool_trace")
+            || low.contains("executed successfully")
+            || low.contains("tool run_command"))
+        && !low.contains("#include <iostream>")
+    {
+        return true;
+    }
+    low.contains("subgoal_tool_trace")
+        && low.contains("run_command")
+        && (low.contains("hello, world!") || low.contains("hello, world"))
+        && !low.contains("#include <iostream>")
+}
+
 fn is_program_build_and_run_goal(goal: &SubGoal) -> bool {
     let d = goal.description.to_lowercase();
     let asks_write = d.contains("编写") || d.contains("实现") || d.contains("write");
@@ -326,11 +435,14 @@ fn verify_program_build_and_run_evidence(result: &TaskResult) -> Result<(), Stri
         || combined.contains("make")
         || combined.contains("build");
 
-    let ran_program = combined.contains("./")
-        || combined.contains("运行")
-        || combined.contains("执行程序")
-        || combined.contains("program output")
-        || combined.contains("hello");
+    let combined_raw = format!(
+        "{}\n{}",
+        result.output.as_deref().unwrap_or(""),
+        result.error.as_deref().unwrap_or("")
+    );
+    let ran_program = result.tools_invoked.iter().any(|n| n == "run_executable")
+        || (result.tools_invoked.iter().any(|n| n == "run_command")
+            && run_command_invocation_mentions_hello(&combined_raw));
 
     let mut missing = Vec::new();
     if !wrote_source {
@@ -375,6 +487,7 @@ mod tests {
             error: None,
             artifacts: vec![],
             duration_ms: 0,
+            tools_invoked: vec![],
         };
 
         let verify_result = verifier.verify(&goal, &result);
@@ -394,10 +507,35 @@ mod tests {
             error: Some("error".to_string()),
             artifacts: vec![],
             duration_ms: 0,
+            tools_invoked: vec![],
         };
 
         let verify_result = verifier.verify(&goal, &result);
         assert!(verify_result.is_fail());
+    }
+
+    #[test]
+    fn run_command_hello_detects_zh_stdout_block() {
+        let sample = r#"
+        Tool run_command executed successfully: 退出码：0
+        标准输出：
+        Hello, World!
+        "#;
+        assert!(run_command_invocation_mentions_hello(sample));
+    }
+
+    /// 与 Operator 里拼出的「单条工具观察」前缀一致，供「运行可执行体」提前收尾与验收对齐
+    #[test]
+    fn run_command_hello_detects_operator_observation_prefix() {
+        let tool_body = "退出码：0\n标准输出：\nHello, World!\n";
+        let obs = format!("Tool run_command executed successfully: {}", tool_body);
+        assert!(run_command_invocation_mentions_hello(&obs));
+    }
+
+    #[test]
+    fn run_command_hello_falls_back_with_trace() {
+        let s = "subgoal_tool_trace\n… run_command …\n标准输出：\nHello, World!\n退出码：0\nexecuted successfully\n";
+        assert!(run_command_invocation_mentions_hello(s));
     }
 
     #[test]
@@ -411,6 +549,7 @@ mod tests {
             error: None,
             artifacts: vec![],
             duration_ms: 2654,
+            tools_invoked: vec!["read_dir".to_string()],
         };
         let verify_result = verifier.verify(&goal, &result);
         match verify_result {

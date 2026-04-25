@@ -365,17 +365,7 @@ async fn run_simple_fallback(
         let encoded_trace = sse::encode_message(crate::sse::SsePayload::ThinkingTrace { trace });
         let _ =
             sse::send_string_logged(sse_out, encoded_trace, "hierarchical::manager_finished").await;
-
-        // 通知前端进入终答阶段
-        let encoded_phase = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-            assistant_answer_phase: true,
-        });
-        let _ = sse::send_string_logged(
-            sse_out,
-            encoded_phase,
-            "hierarchical::assistant_answer_phase",
-        )
-        .await;
+        // 不在此下发 `assistant_answer_phase`：须等子目标进度或最终汇总，由 execution / handle_execution_result 统一发送，避免「进入终答相却无正文」的错位。
     }
 
     let mut executor = HierarchicalExecutor::new(10, 3)
