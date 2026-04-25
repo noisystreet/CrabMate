@@ -366,7 +366,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-2);
-  margin-bottom: var(--space-1);
+  margin-bottom: 6px;
   font-size: var(--text-2xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -416,8 +416,15 @@
   opacity: 0.88;
 }
 
-.msg-user .msg-meta {
+.msg-with-select:has(.msg-user) .msg-meta {
   flex-direction: row-reverse;
+  justify-content: flex-start;
+}
+
+.msg-with-select:has(.msg-assistant) .msg-meta,
+.msg-with-select:has(.msg-system) .msg-meta,
+.msg-with-select:has(.msg-tool) .msg-meta {
+  justify-content: flex-start;
 }
 
 .msg {
@@ -1166,7 +1173,7 @@
     0 1px 0 color-mix(in srgb, #000 22%, transparent);
 }
 
-.msg-tool .msg-meta {
+.msg-with-select:has(.msg-tool) .msg-meta {
   font-family: var(--font-mono);
   font-size: 11px;
   color: color-mix(in srgb, var(--muted) 88%, var(--success) 12%);
