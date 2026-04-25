@@ -113,6 +113,60 @@ fn push_assistant_timeline_bubble(
     });
 }
 
+fn extract_subgoal_marker_from_title(title: &str) -> Option<String> {
+    let title = title.trim();
+    if !title.starts_with("子目标 `") {
+        return None;
+    }
+    let rest = title.strip_prefix("子目标 `")?;
+    let goal_id = rest.strip_suffix('`')?;
+    if goal_id.is_empty() {
+        return None;
+    }
+    Some(format!("hierarchical-subgoal:{goal_id}"))
+}
+
+fn upsert_hierarchical_subgoal_bubble(
+    stream_ctx: &ChatStreamCallbackCtx,
+    text: String,
+    title: &str,
+) {
+    if text.trim().is_empty() {
+        return;
+    }
+    let marker = extract_subgoal_marker_from_title(title);
+    if marker.is_none() {
+        push_assistant_timeline_bubble(stream_ctx, text, None);
+        return;
+    }
+    let marker = marker.unwrap_or_default();
+    let aid = stream_ctx.active_session_id.as_str();
+    let now = message_created_ms();
+    stream_ctx.chat.sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+            if let Some(existing) = s
+                .messages
+                .iter_mut()
+                .find(|m| m.role == "assistant" && m.state.as_deref() == Some(marker.as_str()))
+            {
+                existing.text = text.clone();
+                existing.created_at = now;
+                return;
+            }
+            s.messages.push(StoredMessage {
+                id: make_message_id(),
+                role: "assistant".to_string(),
+                text: text.clone(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: Some(marker.clone()),
+                is_tool: false,
+                created_at: now,
+            });
+        }
+    });
+}
+
 fn move_loading_assistant_to_bottom(stream_ctx: &ChatStreamCallbackCtx) {
     let aid = stream_ctx.active_session_id.as_str();
     let mid = stream_ctx.assistant_message_id.as_str();
@@ -624,7 +678,22 @@ pub(super) fn build_chat_stream_callbacks(
                 if text.is_empty() {
                     return;
                 }
-                push_assistant_timeline_bubble(&stream_ctx, text.clone(), None);
+                upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
+                move_loading_assistant_to_bottom(&stream_ctx);
+                answer_delta_chars.set(
+                    answer_delta_chars
+                        .get()
+                        .saturating_add(text.chars().count()),
+                );
+                return;
+            }
+            if info.kind == "hierarchical_subgoal_started" {
+                let text =
+                    build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
+                if text.is_empty() {
+                    return;
+                }
+                upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
                 move_loading_assistant_to_bottom(&stream_ctx);
                 answer_delta_chars.set(
                     answer_delta_chars

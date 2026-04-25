@@ -117,10 +117,40 @@ impl HierarchicalExecutor<'_> {
 }
 
 impl<'a> HierarchicalExecutor<'a> {
+    async fn emit_subgoal_started_timeline(
+        &self,
+        goal_id: &str,
+        goal_description: &str,
+        required_tools: &[String],
+    ) {
+        let Some(ref sse_out) = self.sse_out else {
+            return;
+        };
+        let title = format!("子目标 `{goal_id}`");
+        let mut detail = format!(
+            "- 阶段：开始执行\n- 目标：{}",
+            trim_for_detail(goal_description, 180)
+        );
+        if !required_tools.is_empty() {
+            detail.push_str("\n- 计划工具：");
+            detail.push_str(&required_tools.join(", "));
+        }
+        let payload = sse::encode_message(crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "hierarchical_subgoal_started".to_string(),
+                title,
+                detail: Some(detail),
+            },
+        });
+        let _ = sse::send_string_logged(sse_out, payload, "hierarchical::subgoal_started_timeline")
+            .await;
+    }
+
     async fn emit_assistant_progress_delta_sse(
         &self,
         answer_phase_emitted: &mut bool,
-        line: String,
+        title: String,
+        detail: Option<String>,
     ) {
         let Some(ref sse_out) = self.sse_out else {
             return;
@@ -137,7 +167,7 @@ impl<'a> HierarchicalExecutor<'a> {
             .await;
             *answer_phase_emitted = true;
         }
-        let title = line.trim().to_string();
+        let title = title.trim().to_string();
         if title.is_empty() {
             return;
         }
@@ -145,34 +175,59 @@ impl<'a> HierarchicalExecutor<'a> {
             log: crate::sse::protocol::TimelineLogBody {
                 kind: "hierarchical_subgoal".to_string(),
                 title,
-                detail: None,
+                detail,
             },
         });
         let _ = sse::send_string_logged(sse_out, payload, "hierarchical::progress_timeline").await;
     }
 
-    fn progress_line_for_task_result(result: &TaskResult) -> Option<String> {
-        match &result.status {
-            TaskStatus::Completed => Some(format!(
-                "[子目标完成] {} ({}ms)",
-                result.task_id, result.duration_ms
-            )),
-            TaskStatus::Failed { reason } => Some(format!(
-                "[子目标失败] {} ({}ms): {}",
-                result.task_id, result.duration_ms, reason
-            )),
-            TaskStatus::Skipped { reason } => {
-                Some(format!("[子目标跳过] {}: {}", result.task_id, reason))
+    fn progress_line_for_task_result(result: &TaskResult) -> Option<(String, String)> {
+        let status = match &result.status {
+            TaskStatus::Completed => "完成",
+            TaskStatus::Failed { .. } => "失败",
+            TaskStatus::Skipped { .. } => "跳过",
+            TaskStatus::NeedsDecomposition { .. } => "需分解",
+            TaskStatus::Pending | TaskStatus::InProgress => return None,
+        };
+        let title = format!("子目标 `{}`", result.task_id);
+
+        let mut details = Vec::new();
+        details.push("- 阶段：执行完成".to_string());
+        details.push(format!("- 结果：{status}"));
+        let tools = if result.tools_invoked.is_empty() {
+            "无".to_string()
+        } else {
+            let mut seen = std::collections::BTreeSet::new();
+            for t in &result.tools_invoked {
+                seen.insert(t.as_str());
             }
-            TaskStatus::NeedsDecomposition {
-                reason,
-                suggested_subgoals,
-            } => Some(format!(
-                "[子目标需分解] {}: {} (建议子目标数={})",
-                result.task_id, reason, suggested_subgoals
-            )),
-            TaskStatus::Pending | TaskStatus::InProgress => None,
+            seen.into_iter().take(5).collect::<Vec<_>>().join(", ")
+        };
+        details.push(format!("- 工具：{tools}"));
+        details.push(format!(
+            "- 证据：{}",
+            summarize_subgoal_evidence(result).unwrap_or_else(|| "无额外证据".to_string())
+        ));
+
+        if let TaskStatus::Failed { reason } = &result.status {
+            details.push(format!("- 失败原因：{}", trim_for_detail(reason, 140)));
         }
+        if let TaskStatus::Skipped { reason } = &result.status {
+            details.push(format!("- 跳过原因：{}", trim_for_detail(reason, 140)));
+        }
+        if let TaskStatus::NeedsDecomposition {
+            reason,
+            suggested_subgoals,
+        } = &result.status
+        {
+            details.push(format!(
+                "- 分解建议：{}（建议子目标数={})",
+                trim_for_detail(reason, 120),
+                suggested_subgoals
+            ));
+        }
+
+        Some((title, details.join("\n")))
     }
 
     /// 设置执行上下文
@@ -336,9 +391,13 @@ impl<'a> HierarchicalExecutor<'a> {
                     self.update_build_state_from_result(&mut build_state, result);
                 }
                 all_results.push(result.clone());
-                if let Some(line) = Self::progress_line_for_task_result(result) {
-                    self.emit_assistant_progress_delta_sse(&mut answer_phase_emitted, line)
-                        .await;
+                if let Some((title, detail)) = Self::progress_line_for_task_result(result) {
+                    self.emit_assistant_progress_delta_sse(
+                        &mut answer_phase_emitted,
+                        title,
+                        Some(detail),
+                    )
+                    .await;
                 }
             }
 
@@ -535,6 +594,7 @@ impl<'a> HierarchicalExecutor<'a> {
             let tools_defs = tools_defs.clone();
             let build_state = build_state.clone();
             let sse_out = sse_out.clone(); // 每个任务克隆 SSE 发送器
+            let sse_out_for_start = sse_out.clone();
             let tool_approval_out = tool_approval_out.clone(); // 每个任务克隆审批发送器
             let tool_approval_rx = tool_approval_rx.clone(); // 每个任务克隆审批接收器
             let probe_cache = probe_cache.clone();
@@ -542,6 +602,8 @@ impl<'a> HierarchicalExecutor<'a> {
             join_set.spawn(async move {
                 let _permit = permit; // 持有 permit 直到任务完成
                 let goal_id = goal.goal_id.clone();
+                let goal_description = goal.description.clone();
+                let goal_required_tools = goal.required_tools.clone();
 
                 // 创建独立的 artifact store
                 let store = ArtifactStore::new();
@@ -567,6 +629,30 @@ impl<'a> HierarchicalExecutor<'a> {
                 let mut tool_executor_ctx =
                     ToolExecutorContext::new(cfg.clone(), working_dir.clone().unwrap_or_default());
                 tool_executor_ctx = tool_executor_ctx.with_probe_cache(probe_cache);
+                if let Some(ref sse_out_tx) = sse_out_for_start {
+                    let title = format!("子目标 `{}`", goal_id);
+                    let mut detail = format!(
+                        "- 阶段：开始执行\n- 目标：{}",
+                        trim_for_detail(&goal_description, 180)
+                    );
+                    if !goal_required_tools.is_empty() {
+                        detail.push_str("\n- 计划工具：");
+                        detail.push_str(&goal_required_tools.join(", "));
+                    }
+                    let payload = sse::encode_message(crate::sse::SsePayload::TimelineLog {
+                        log: crate::sse::protocol::TimelineLogBody {
+                            kind: "hierarchical_subgoal_started".to_string(),
+                            title,
+                            detail: Some(detail),
+                        },
+                    });
+                    let _ = sse::send_string_logged(
+                        sse_out_tx,
+                        payload,
+                        "hierarchical::parallel_subgoal_started_timeline",
+                    )
+                    .await;
+                }
 
                 // 如果有审批上下文，启用 Web 审批流程
                 if let (Some(out_tx), Some(approval_rx)) = (tool_approval_out, tool_approval_rx) {
@@ -1014,6 +1100,8 @@ impl<'a> HierarchicalExecutor<'a> {
             )
             .await;
         }
+        self.emit_subgoal_started_timeline(&goal.goal_id, &goal.description, &goal.required_tools)
+            .await;
 
         // 构建 Operator 配置
         let mut allowed_tools = goal.required_tools.clone();
@@ -1427,6 +1515,42 @@ impl<'a> HierarchicalExecutor<'a> {
             }
         }
     }
+}
+
+fn summarize_subgoal_evidence(result: &TaskResult) -> Option<String> {
+    let text = format!(
+        "{}\n{}",
+        result.output.as_deref().unwrap_or(""),
+        result.error.as_deref().unwrap_or("")
+    );
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty()
+            || line.starts_with("[subgoal_tool_trace]")
+            || line.starts_with("Tool ")
+            || line.starts_with("Final:")
+            || line.starts_with("参数：")
+            || line.starts_with("标准输出：")
+            || line.starts_with("## ")
+            || line.starts_with("---")
+        {
+            continue;
+        }
+        return Some(trim_for_detail(line, 160));
+    }
+    None
+}
+
+fn trim_for_detail(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    for ch in s.chars().take(max_chars.saturating_sub(3)) {
+        out.push(ch);
+    }
+    out.push_str("...");
+    out
 }
 
 /// 截断目标描述用于日志（按字符边界截断，支持中文）

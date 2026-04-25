@@ -222,6 +222,22 @@ pub(crate) fn chat_message_row(
     view! {
         <div class="msg-with-select">
             <div class="msg-stack">
+                <div class="msg-meta" aria-hidden="true">
+                    <span class="msg-meta-primary">
+                        <span class="msg-meta-role">{role_lbl}</span>
+                        <Show when=move || show_planner_round_badge>
+                            <span
+                                class="msg-planner-round-badge"
+                                prop:title=move || {
+                                    i18n::msg_planner_round_badge_title(locale.get())
+                                }
+                            >
+                                {move || i18n::msg_planner_round_badge(locale.get())}
+                            </span>
+                        </Show>
+                    </span>
+                    <span class="msg-meta-time">{time_str}</span>
+                </div>
                 <div
                     class=move || {
                         let mut c = class_prefix.clone();
@@ -255,22 +271,6 @@ pub(crate) fn chat_message_row(
                         }
                     }
                 >
-                    <div class="msg-meta" aria-hidden="true">
-                        <span class="msg-meta-primary">
-                            <span class="msg-meta-role">{role_lbl}</span>
-                            <Show when=move || show_planner_round_badge>
-                                <span
-                                    class="msg-planner-round-badge"
-                                    prop:title=move || {
-                                        i18n::msg_planner_round_badge_title(locale.get())
-                                    }
-                                >
-                                    {move || i18n::msg_planner_round_badge(locale.get())}
-                                </span>
-                            </Show>
-                        </span>
-                        <span class="msg-meta-time">{time_str}</span>
-                    </div>
                     {msg_core}
                     {loading.then(|| {
                         view! {
