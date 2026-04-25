@@ -20,22 +20,16 @@ fn format_hierarchical_aborted_summary(e: &ExecutionError, task: &str) -> String
     )
 }
 
-/// 将分层执行的总结正文写入 `messages` 与 SSE：终答相 + 正文 delta + `final_response` 时间线（与其它分层收尾路径一致）。
+/// 将分层执行的总结正文写入 `messages` 与 SSE：`final_response` 时间线 + 终答相（与其它分层收尾路径一致）。
+///
+/// 顺序：先发带协议封装的 `timeline_log(kind=final_response)`，再发 `assistant_answer_phase`。
+/// Web 端以 `on_timeline_log` 落主气泡；不再下发裸 Markdown delta，避免与 `timeline_log`
+/// 重复以及由缓冲/解析顺序带来的总结缺失问题。
 async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_response: String) {
     p.messages.push(crate::types::Message::assistant_only(
         final_response.clone(),
     ));
     if let Some(out) = p.out {
-        let phase_payload = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-            assistant_answer_phase: true,
-        });
-        let _ = sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
-        let _ = sse::send_string_logged(
-            out,
-            final_response.clone(),
-            "hierarchical::final_response_delta",
-        )
-        .await;
         let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
             log: crate::sse::protocol::TimelineLogBody {
                 kind: "final_response".to_string(),
@@ -44,6 +38,10 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
             },
         });
         let _ = sse::send_string_logged(out, final_tl, "hierarchical::final_response").await;
+        let phase_payload = sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+            assistant_answer_phase: true,
+        });
+        let _ = sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
     }
 }
 
