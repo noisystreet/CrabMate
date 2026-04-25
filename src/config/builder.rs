@@ -54,6 +54,9 @@ pub(crate) struct ConfigBuilder {
     pub(crate) cursor_rules_dir: Option<String>,
     pub(crate) cursor_rules_include_agents_md: Option<bool>,
     pub(crate) cursor_rules_max_chars: Option<u64>,
+    pub(crate) skills_enabled: Option<bool>,
+    pub(crate) skills_dir: Option<String>,
+    pub(crate) skills_max_chars: Option<u64>,
     pub(crate) tool_message_max_chars: Option<u64>,
     pub(crate) tool_result_envelope_v1: Option<bool>,
     pub(crate) sse_tool_call_include_arguments: Option<bool>,
@@ -241,6 +244,7 @@ impl ConfigBuilder {
             agent.planner_executor_mode,
         );
         override_opt_string_non_empty(&mut self.cursor_rules_dir, agent.cursor_rules_dir);
+        override_opt_string_non_empty(&mut self.skills_dir, agent.skills_dir);
 
         override_opt_string_trimmed(
             &mut self.web_api_bearer_token,
@@ -321,6 +325,8 @@ impl ConfigBuilder {
             .cursor_rules_include_agents_md
             .or(self.cursor_rules_include_agents_md);
         self.cursor_rules_max_chars = agent.cursor_rules_max_chars.or(self.cursor_rules_max_chars);
+        self.skills_enabled = agent.skills_enabled.or(self.skills_enabled);
+        self.skills_max_chars = agent.skills_max_chars.or(self.skills_max_chars);
         self.tool_message_max_chars = agent.tool_message_max_chars.or(self.tool_message_max_chars);
         self.tool_result_envelope_v1 = agent
             .tool_result_envelope_v1

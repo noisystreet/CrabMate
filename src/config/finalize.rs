@@ -9,6 +9,7 @@ use crate::agent::per_coord::FinalPlanRequirementMode;
 use super::agent_roles;
 use super::builder::ConfigBuilder;
 use super::cursor_rules;
+use super::skills;
 use super::types::{
     self, AgentConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
     StagedPlanFeedbackMode, WebSearchProvider,
@@ -302,6 +303,17 @@ pub(super) fn finalize(
         cursor_rules_include_agents_md,
         cursor_rules_max_chars as usize,
     )?;
+    let skills_enabled = b.skills_enabled.unwrap_or(true);
+    let skills_dir = b
+        .skills_dir
+        .unwrap_or_else(|| ".crabmate/skills".to_string());
+    let skills_max_chars = b.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
+    let system_prompt = skills::merge_system_prompt_with_skills(
+        system_prompt,
+        skills_enabled,
+        &skills_dir,
+        skills_max_chars as usize,
+    )?;
 
     let default_agent_role_id = b
         .default_agent_role_id
@@ -318,6 +330,9 @@ pub(super) fn finalize(
         &cursor_rules_dir,
         cursor_rules_include_agents_md,
         cursor_rules_max_chars as usize,
+        skills_enabled,
+        &skills_dir,
+        skills_max_chars as usize,
     )?;
 
     let final_plan_requirement = match b.final_plan_requirement_str.as_deref() {
@@ -777,6 +792,9 @@ pub(super) fn finalize(
         cursor_rules_dir,
         cursor_rules_include_agents_md,
         cursor_rules_max_chars: cursor_rules_max_chars as usize,
+        skills_enabled,
+        skills_dir,
+        skills_max_chars: skills_max_chars as usize,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,

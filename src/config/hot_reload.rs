@@ -65,6 +65,9 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.cursor_rules_dir.clone_from(&src.cursor_rules_dir);
     dst.cursor_rules_include_agents_md = src.cursor_rules_include_agents_md;
     dst.cursor_rules_max_chars = src.cursor_rules_max_chars;
+    dst.skills_enabled = src.skills_enabled;
+    dst.skills_dir.clone_from(&src.skills_dir);
+    dst.skills_max_chars = src.skills_max_chars;
     dst.tool_message_max_chars = src.tool_message_max_chars;
     dst.tool_result_envelope_v1 = src.tool_result_envelope_v1;
     dst.sse_tool_call_include_arguments = src.sse_tool_call_include_arguments;

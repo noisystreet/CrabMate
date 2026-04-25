@@ -182,8 +182,8 @@ cargo run -- serve
 | GET | `/openapi.json` | OpenAPI 3.0 机器可读契约（`application/json`）；与下列路由对齐；SSE 行级语义见 **`docs/SSE_PROTOCOL.md`** |
 | GET | `/` | 前端页面 |
 | POST | `/config/reload` | 热重载内存中的 `AgentConfig`（不含会话 SQLite 路径）；body 可为 `{}`；见 **`docs/CONFIGURATION.md`**「配置热重载」 |
-| POST | `/chat` | JSON 对话；可选 `conversation_id`、`agent_role`（仅新建服务端会话时）、`temperature`、`seed`、`seed_policy` |
-| POST | `/chat/stream` | SSE；每条事件含 **`id:`** 序号；响应头 **`x-conversation-id`**、**`x-stream-job-id`**；可选 JSON **`stream_resume`**（`job_id`、`after_seq`）与请求头 **`Last-Event-ID`** 断线重连；任务已结束则 **410** `STREAM_JOB_GONE`；可选 `approval_session_id`、`agent_role`（同上） |
+| POST | `/chat` | JSON 对话；可选 `conversation_id`、`agent_role`（仅新建服务端会话时）、`temperature`、`seed`、`seed_policy`。内置命令：消息为 **`/skills`** 或 **`/skills list`** 时直接返回当前配置下已加载的 skills 列表（不走模型推理；相对 `skills_dir` 按当前工作区解析）。 |
+| POST | `/chat/stream` | SSE；每条事件含 **`id:`** 序号；响应头 **`x-conversation-id`**、**`x-stream-job-id`**；可选 JSON **`stream_resume`**（`job_id`、`after_seq`）与请求头 **`Last-Event-ID`** 断线重连；任务已结束则 **410** `STREAM_JOB_GONE`；可选 `approval_session_id`、`agent_role`（同上）。内置命令 **`/skills`** / **`/skills list`** 直接返回文本 SSE（相对 `skills_dir` 按当前工作区解析）。 |
 | POST | `/chat/approval` | 审批：`approval_session_id`、`decision` |
 | POST | `/chat/branch` | 会话分叉截断：JSON `conversation_id`、`before_user_ordinal`（0-based 普通用户消息序号）、`expected_revision`；服务端截断到该序号对应用户消息**之前**（与 Web「从此处重试」一致：随后由 `/chat/stream` 再发同一条用户文本）。须已持久化会话且 `revision` 匹配 |
 | GET | `/conversation/messages` | 只读拉取已持久化会话：查询参数 **`conversation_id`**（必填）；响应含 **`revision`**、**`messages`**（OpenAI 兼容数组，已剔除长期记忆/变更集注入、首轮工作区画像注入（`name=crabmate_first_turn_workspace_context`）、**普通 `system` 系统提示词**与 UI 分隔；**保留** `name=crabmate_timeline` 时间线旁注）、可选 **`active_agent_role`**；不存在或已过期则 **404**（`CONVERSATION_NOT_FOUND`）。供 Web 刷新后与 `localStorage` 中的绑定对齐 |

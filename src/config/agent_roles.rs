@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use super::agent_role_spec::AgentRoleSpec;
 use super::cursor_rules;
+use super::skills;
 
 pub(super) type AgentRoleCatalogBuilt = Arc<HashMap<String, AgentRoleSpec>>;
 
@@ -164,6 +165,9 @@ pub(super) fn finalize_agent_role_catalog(
     cursor_rules_dir: &str,
     cursor_rules_include_agents_md: bool,
     cursor_rules_max_chars: usize,
+    skills_enabled: bool,
+    skills_dir: &str,
+    skills_max_chars: usize,
 ) -> Result<(Option<String>, AgentRoleCatalogBuilt), String> {
     let mut out: HashMap<String, AgentRoleSpec> = HashMap::with_capacity(entries.len());
     for (id, b) in entries {
@@ -179,23 +183,35 @@ pub(super) fn finalize_agent_role_catalog(
                     "配置错误：角色 \"{id}\" 的 system_prompt_file 加载后为空"
                 ));
             }
-            cursor_rules::merge_system_prompt_with_cursor_rules(
+            let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
                 raw,
                 cursor_rules_enabled,
                 cursor_rules_dir,
                 cursor_rules_include_agents_md,
                 cursor_rules_max_chars,
+            )?;
+            skills::merge_system_prompt_with_skills(
+                with_rules,
+                skills_enabled,
+                skills_dir,
+                skills_max_chars,
             )?
         } else if let Some(ref s) = b.system_prompt {
             if s.trim().is_empty() {
                 global_effective_system_prompt.to_string()
             } else {
-                cursor_rules::merge_system_prompt_with_cursor_rules(
+                let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
                     s.clone(),
                     cursor_rules_enabled,
                     cursor_rules_dir,
                     cursor_rules_include_agents_md,
                     cursor_rules_max_chars,
+                )?;
+                skills::merge_system_prompt_with_skills(
+                    with_rules,
+                    skills_enabled,
+                    skills_dir,
+                    skills_max_chars,
                 )?
             }
         } else {
