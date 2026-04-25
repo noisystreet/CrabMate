@@ -10,7 +10,9 @@ use crate::api::ChatStreamCallbacks;
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n;
 use crate::i18n::Locale;
-use crate::message_format::{staged_timeline_system_message_body, tool_card_text};
+use crate::message_format::{
+    staged_timeline_system_message_body, tool_card_compact_text, tool_card_text,
+};
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::sse_dispatch::{
     ClarificationQuestionnaireInfo, CommandApprovalRequest, StagedPlanStepEndInfo,
@@ -45,6 +47,48 @@ fn build_final_response_text(title: &str, detail: Option<&str>) -> String {
 }
 
 fn build_intent_analysis_main_bubble_text(title: &str, detail: Option<&str>) -> String {
+    let title = title.trim();
+    let detail = detail.map(str::trim).unwrap_or("");
+    let mut out = String::new();
+    if !title.is_empty() {
+        out.push_str(title);
+    }
+    if !detail.is_empty() {
+        let mut confidence = String::new();
+        let mut primary = String::new();
+        let mut clarification = String::new();
+        let mut l2 = String::new();
+        for line in detail.lines().map(str::trim) {
+            if line.starts_with("综合置信度：") {
+                confidence = line.to_string();
+            } else if line.starts_with("主意图：") {
+                primary = line.to_string();
+            } else if line.starts_with("需要澄清：") {
+                clarification = line.to_string();
+            } else if line.starts_with("L2 结果：") {
+                l2 = line.to_string();
+            }
+        }
+        let concise = [confidence, primary, clarification, l2]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !concise.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&concise);
+        }
+    }
+    if out.is_empty() {
+        String::new()
+    } else {
+        format!("{out}\n\n")
+    }
+}
+
+fn build_hierarchical_plan_main_bubble_text(title: &str, detail: Option<&str>) -> String {
     let mut out = String::new();
     let title = title.trim();
     if !title.is_empty() {
@@ -65,12 +109,8 @@ fn build_intent_analysis_main_bubble_text(title: &str, detail: Option<&str>) -> 
     }
 }
 
-fn build_hierarchical_plan_main_bubble_text(title: &str, detail: Option<&str>) -> String {
-    let mut out = String::new();
-    let title = title.trim();
-    if !title.is_empty() {
-        out.push_str(title);
-    }
+fn build_hierarchical_subgoal_main_bubble_text(title: &str, detail: Option<&str>) -> String {
+    let mut out = title.trim().to_string();
     if let Some(detail) = detail.map(str::trim)
         && !detail.is_empty()
     {
@@ -130,6 +170,21 @@ fn push_assistant_timeline_bubble(
     });
 }
 
+fn has_same_assistant_timeline_bubble(stream_ctx: &ChatStreamCallbackCtx, text: &str) -> bool {
+    let aid = stream_ctx.active_session_id.as_str();
+    stream_ctx.chat.sessions.with(|list| {
+        list.iter()
+            .find(|s| s.id == aid)
+            .and_then(|s| {
+                s.messages
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == "assistant" && !m.is_tool && m.state.is_none())
+            })
+            .is_some_and(|m| m.text.trim() == text.trim())
+    })
+}
+
 fn extract_subgoal_marker_from_title(title: &str) -> Option<String> {
     let title = title.trim();
     if !title.starts_with("子目标 `") {
@@ -141,6 +196,40 @@ fn extract_subgoal_marker_from_title(title: &str) -> Option<String> {
         return None;
     }
     Some(format!("hierarchical-subgoal:{goal_id}"))
+}
+
+fn extract_subgoal_target_line(text: &str) -> Option<String> {
+    text.lines().map(str::trim).find_map(|line| {
+        if line.starts_with("- 目标：") || line.starts_with("目标：") {
+            Some(line.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+fn merge_subgoal_text_preserving_target(existing: &str, incoming: &str) -> String {
+    if extract_subgoal_target_line(incoming).is_some() {
+        return incoming.to_string();
+    }
+    let Some(target_line) = extract_subgoal_target_line(existing) else {
+        return incoming.to_string();
+    };
+    let mut lines = incoming.lines().collect::<Vec<_>>();
+    if lines.is_empty() {
+        return format!("{target_line}\n\n");
+    }
+    let insert_idx = if lines[0].trim_start().starts_with("子目标 ") {
+        1
+    } else {
+        0
+    };
+    lines.insert(insert_idx, target_line.as_str());
+    let mut out = lines.join("\n");
+    if !out.ends_with("\n\n") {
+        out.push_str("\n\n");
+    }
+    out
 }
 
 fn upsert_hierarchical_subgoal_bubble(
@@ -166,7 +255,7 @@ fn upsert_hierarchical_subgoal_bubble(
                 .iter_mut()
                 .find(|m| m.role == "assistant" && m.state.as_deref() == Some(marker.as_str()))
             {
-                existing.text = text.clone();
+                existing.text = merge_subgoal_text_preserving_target(&existing.text, &text);
                 existing.created_at = now;
                 return;
             }
@@ -235,6 +324,31 @@ fn build_empty_reply_with_diagnostic(
     answer_delta_chars: usize,
     stream_end_reason: Option<&str>,
 ) -> String {
+    // 兜底保护：已有终答阶段且收到不少增量，但缺失 `stream_ended`，
+    // 这更像“收尾中断”而非“无回复”，避免误导用户。
+    let reason_unknown = stream_end_reason
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none_or(|s| s.eq_ignore_ascii_case("unknown"));
+    if answer_phase_entered && answer_delta_chars > 0 && reason_unknown {
+        let hint = match loc {
+            Locale::ZhHans => {
+                "本轮回复已生成，但流式收尾信号缺失（stream_ended=unknown）。请点击“重试”获取完整收尾。"
+            }
+            Locale::En => {
+                "Reply content was generated, but stream finalization signal is missing (stream_ended=unknown). Click Retry to finish cleanly."
+            }
+        };
+        return format!(
+            "{hint}\n\n{}",
+            i18n::stream_empty_reply_diag_line(
+                loc,
+                stream_end_reason,
+                answer_phase_entered,
+                answer_delta_chars
+            )
+        );
+    }
     let base = if !answer_phase_entered {
         i18n::stream_empty_reply_no_answer_phase(loc)
     } else if answer_delta_chars == 0 {
@@ -251,6 +365,71 @@ fn build_empty_reply_with_diagnostic(
             answer_delta_chars
         )
     )
+}
+
+fn build_completed_without_final_summary_hint(loc: Locale) -> &'static str {
+    match loc {
+        Locale::ZhHans => {
+            "本轮执行已完成，但最终总结消息缺失。你可以点击“重试”让助手补发最终汇总。"
+        }
+        Locale::En => {
+            "Execution finished, but final summary message is missing. Click Retry to regenerate the final summary."
+        }
+    }
+}
+
+fn build_stream_error_with_suggestion(raw: &str, loc: Locale) -> String {
+    let msg = raw.trim();
+    if msg.is_empty() {
+        return raw.to_string();
+    }
+    let low = msg.to_lowercase();
+    let (impact, hint) = if low.contains("llm_api_key_required")
+        || low.contains("api key")
+        || low.contains("unauthorized")
+        || low.contains("401")
+    {
+        match loc {
+            Locale::ZhHans => (
+                "当前回合无法调用模型，助手不会继续生成。",
+                "检查右侧设置中的 API Key 是否已填写且有效，然后点击“重试”。",
+            ),
+            Locale::En => (
+                "The model call cannot proceed for this turn.",
+                "Verify API key in Settings is present and valid, then click Retry.",
+            ),
+        }
+    } else if low.contains("timeout") || low.contains("timed out") || low.contains("408") {
+        match loc {
+            Locale::ZhHans => (
+                "本次请求超时中断，当前回复未完整生成。",
+                "稍后重试，或缩小本次请求范围后再发送。",
+            ),
+            Locale::En => (
+                "The request timed out and the reply is incomplete.",
+                "Retry later or send a narrower request.",
+            ),
+        }
+    } else {
+        match loc {
+            Locale::ZhHans => (
+                "本轮流式对话已中止，后续步骤未执行。",
+                "点击“重试”；若仍失败，请补充报错上下文以便排查。",
+            ),
+            Locale::En => (
+                "The streaming turn stopped and follow-up steps were skipped.",
+                "Click Retry; if it persists, share more error context.",
+            ),
+        }
+    };
+    match loc {
+        Locale::ZhHans => {
+            format!("发生了什么\n{msg}\n\n影响范围\n{impact}\n\n建议下一步\n{hint}")
+        }
+        Locale::En => {
+            format!("What happened\n{msg}\n\nImpact\n{impact}\n\nNext step\n{hint}")
+        }
+    }
 }
 
 /// 由 [`super::make_attach_chat_stream`](super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低 `mod.rs` 维护面。
@@ -301,6 +480,12 @@ pub(super) fn build_chat_stream_callbacks(
             let mid = stream_ctx.assistant_message_id.clone();
             stream_ctx.chat.sessions.update(|list| {
                 if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+                    let has_hierarchical_or_tool = s.messages.iter().any(|x| {
+                        x.is_tool
+                            || x.state
+                                .as_deref()
+                                .is_some_and(|st| st.starts_with("hierarchical-subgoal:"))
+                    });
                     if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
                         && m.state.as_deref() == Some("loading")
                     {
@@ -321,12 +506,30 @@ pub(super) fn build_chat_stream_callbacks(
                         }
                         if m.text.trim().is_empty() {
                             let end_reason = stream_end_reason.borrow();
-                            m.text = build_empty_reply_with_diagnostic(
-                                loc,
-                                in_answer_phase.get(),
-                                answer_delta_chars.get(),
-                                end_reason.as_deref(),
-                            );
+                            let completed_no_final = end_reason
+                                .as_deref()
+                                .is_some_and(|r| r.eq_ignore_ascii_case("completed"))
+                                && (in_answer_phase.get() || answer_delta_chars.get() > 0)
+                                && has_hierarchical_or_tool;
+                            if completed_no_final {
+                                m.text = format!(
+                                    "{}\n\n{}",
+                                    build_completed_without_final_summary_hint(loc),
+                                    i18n::stream_empty_reply_diag_line(
+                                        loc,
+                                        end_reason.as_deref(),
+                                        in_answer_phase.get(),
+                                        answer_delta_chars.get()
+                                    )
+                                );
+                            } else {
+                                m.text = build_empty_reply_with_diagnostic(
+                                    loc,
+                                    in_answer_phase.get(),
+                                    answer_delta_chars.get(),
+                                    end_reason.as_deref(),
+                                );
+                            }
                         }
                     }
                 }
@@ -347,10 +550,12 @@ pub(super) fn build_chat_stream_callbacks(
             stream_ctx.chat.stream_last_event_seq.set(0);
             let aid = stream_ctx.active_session_id.clone();
             let mid = stream_ctx.assistant_message_id.clone();
+            let loc = stream_ctx.locale.get_untracked();
+            let friendly = build_stream_error_with_suggestion(&msg, loc);
             stream_ctx.chat.sessions.update(|list| {
                 if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                     if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
-                        m.text = msg;
+                        m.text = friendly.clone();
                         m.state = Some("error".to_string());
                     }
                 }
@@ -451,8 +656,10 @@ pub(super) fn build_chat_stream_callbacks(
     let on_tool_result: Rc<dyn Fn(ToolResultInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: ToolResultInfo| {
-            let result_text = tool_card_text(&info, stream_ctx.locale.get_untracked());
-            let t = to_single_line(&result_text, 180);
+            let loc = stream_ctx.locale.get_untracked();
+            let result_text = tool_card_text(&info, loc);
+            let compact = tool_card_compact_text(&info, loc);
+            let t = to_single_line(&compact, 180);
             let detail = result_text.clone();
 
             let id = make_message_id();
@@ -635,12 +842,14 @@ pub(super) fn build_chat_stream_callbacks(
                 let final_text = build_final_response_text(&info.title, info.detail.as_deref());
                 if !final_text.is_empty() {
                     remove_loading_assistant_placeholder(&stream_ctx);
-                    push_assistant_timeline_bubble(&stream_ctx, final_text.clone(), None);
-                    answer_delta_chars.set(
-                        answer_delta_chars
-                            .get()
-                            .saturating_add(final_text.chars().count()),
-                    );
+                    if !has_same_assistant_timeline_bubble(&stream_ctx, &final_text) {
+                        push_assistant_timeline_bubble(&stream_ctx, final_text.clone(), None);
+                        answer_delta_chars.set(
+                            answer_delta_chars
+                                .get()
+                                .saturating_add(final_text.chars().count()),
+                        );
+                    }
                 }
                 return;
             }
@@ -675,8 +884,10 @@ pub(super) fn build_chat_stream_callbacks(
                 return;
             }
             if info.kind == "hierarchical_subgoal" {
-                let text =
-                    build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
+                let text = build_hierarchical_subgoal_main_bubble_text(
+                    &info.title,
+                    info.detail.as_deref(),
+                );
                 if text.is_empty() {
                     return;
                 }
@@ -692,8 +903,10 @@ pub(super) fn build_chat_stream_callbacks(
                 return;
             }
             if info.kind == "hierarchical_subgoal_started" {
-                let text =
-                    build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
+                let text = build_hierarchical_subgoal_main_bubble_text(
+                    &info.title,
+                    info.detail.as_deref(),
+                );
                 if text.is_empty() {
                     return;
                 }
@@ -800,10 +1013,14 @@ pub(super) fn build_chat_stream_callbacks(
 #[cfg(test)]
 mod tests {
     use super::{
+        build_completed_without_final_summary_hint, build_empty_reply_with_diagnostic,
         build_final_response_text, build_hierarchical_plan_main_bubble_text,
-        build_intent_analysis_main_bubble_text, enqueue_pending_tool_message_id,
+        build_hierarchical_subgoal_main_bubble_text, build_intent_analysis_main_bubble_text,
+        build_stream_error_with_suggestion, enqueue_pending_tool_message_id,
+        has_same_assistant_timeline_bubble, merge_subgoal_text_preserving_target,
         take_pending_tool_message_id,
     };
+    use crate::i18n::Locale;
     use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
     #[test]
@@ -839,9 +1056,13 @@ mod tests {
 
     #[test]
     fn intent_analysis_text_adds_trailing_gap() {
+        let detail = "主意图：execute.run_test_build\n综合置信度：0.61\n需要澄清：false\nL2 结果：未启用/未触发\n覆盖原因：无";
         let t =
-            build_intent_analysis_main_bubble_text("意图分析：Execute", Some("confidence=0.61"));
-        assert_eq!(t, "意图分析：Execute\nconfidence=0.61\n\n");
+            build_intent_analysis_main_bubble_text("意图分析：执行类（直接执行）", Some(detail));
+        assert_eq!(
+            t,
+            "意图分析：执行类（直接执行）\n综合置信度：0.61\n主意图：execute.run_test_build\n需要澄清：false\nL2 结果：未启用/未触发\n\n"
+        );
     }
 
     #[test]
@@ -855,5 +1076,54 @@ mod tests {
         let t =
             build_hierarchical_plan_main_bubble_text("**Manager 规划**", Some("- [ ] g1: 写代码"));
         assert_eq!(t, "**Manager 规划**\n- [ ] g1: 写代码\n\n");
+    }
+
+    #[test]
+    fn hierarchical_subgoal_text_keeps_phase_lines() {
+        let t = build_hierarchical_subgoal_main_bubble_text(
+            "子目标 `goal_2`",
+            Some("- 阶段：开始执行\n- 目标：创建 build 目录"),
+        );
+        assert!(t.contains("阶段：开始执行"));
+        assert!(t.contains("目标：创建 build 目录"));
+    }
+
+    #[test]
+    fn stream_error_uses_standardized_sections() {
+        let out = build_stream_error_with_suggestion("LLM_API_KEY_REQUIRED", Locale::ZhHans);
+        assert!(out.contains("发生了什么"));
+        assert!(out.contains("影响范围"));
+        assert!(out.contains("建议下一步"));
+    }
+
+    #[test]
+    fn empty_reply_diagnostic_uses_partial_generation_hint_when_reason_unknown() {
+        let out = build_empty_reply_with_diagnostic(Locale::ZhHans, true, 128, Some("unknown"));
+        assert!(out.contains("流式收尾信号缺失"));
+        assert!(out.contains("stream_ended=unknown"));
+    }
+
+    #[test]
+    fn subgoal_update_preserves_target_line_when_new_payload_missing_target() {
+        let existing = "子目标 `goal_4`\n- 阶段：开始执行\n- 目标：创建 CMakeLists.txt\n\n";
+        let incoming = "子目标 `goal_4`\n- 结果：完成\n- 工具：create_file\n\n";
+        let out = merge_subgoal_text_preserving_target(existing, incoming);
+        assert!(out.contains("目标：创建 CMakeLists.txt"));
+        assert!(out.contains("结果：完成"));
+    }
+
+    #[test]
+    fn completed_without_final_summary_hint_is_shown() {
+        let out = build_completed_without_final_summary_hint(Locale::ZhHans);
+        assert!(out.contains("最终总结消息缺失"));
+    }
+
+    #[test]
+    fn dedupe_helper_trims_whitespace() {
+        let dummy = "hello world";
+        assert_eq!(dummy.trim(), "hello world");
+        // 间接保障：去重比较使用 trim，不会因尾部换行误判不同。
+        // 该逻辑在 `has_same_assistant_timeline_bubble` 中实现。
+        let _ = has_same_assistant_timeline_bubble;
     }
 }

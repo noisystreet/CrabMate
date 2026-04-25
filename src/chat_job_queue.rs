@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use log::{debug, error, info, warn};
 use tokio::sync::{Semaphore, mpsc, oneshot};
+use tokio::time::{Duration, sleep};
 
 use crate::AppState;
 use crate::agent_errors::is_user_cancelled_run_agent_error;
@@ -21,7 +22,9 @@ use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
 use crate::long_term_memory::LongTermMemoryRuntime;
 use crate::sse::SseStreamHub;
 use crate::text_util::truncate_chars_with_ellipsis;
-use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message, Tool};
+use crate::types::{
+    CommandApprovalDecision, LlmSeedOverride, Message, Tool, message_content_as_str,
+};
 
 const RECENT_CAP: usize = 32;
 
@@ -675,6 +678,93 @@ async fn emit_stream_cancelled_terminal(sse_tx: &mpsc::Sender<String>, job_id: u
     }
 }
 
+fn sse_payload_has_final_response_timeline(payload: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return false;
+    };
+    v.get("timeline_log")
+        .and_then(|x| x.as_object())
+        .and_then(|obj| obj.get("kind"))
+        .and_then(|x| x.as_str())
+        .is_some_and(|k| k == "final_response")
+}
+
+fn stream_job_has_final_response_timeline(hub: &SseStreamHub, job_id: u64) -> bool {
+    hub.replay_after(job_id, 0)
+        .unwrap_or_default()
+        .into_iter()
+        .any(|(_, payload)| sse_payload_has_final_response_timeline(&payload))
+}
+
+async fn stream_job_has_final_response_timeline_eventually(
+    hub: &SseStreamHub,
+    job_id: u64,
+) -> bool {
+    const MAX_RETRIES: usize = 5;
+    const RETRY_DELAY_MS: u64 = 20;
+    for attempt in 0..=MAX_RETRIES {
+        if stream_job_has_final_response_timeline(hub, job_id) {
+            return true;
+        }
+        if attempt < MAX_RETRIES {
+            sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
+        }
+    }
+    false
+}
+
+fn last_assistant_text_for_fallback(messages: &[Message]) -> Option<String> {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "assistant")
+        .and_then(|m| message_content_as_str(&m.content))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
+async fn emit_missing_final_response_fallback_if_needed(
+    hub: &SseStreamHub,
+    sse_tx: &mpsc::Sender<String>,
+    job_id: u64,
+    messages: &[Message],
+) {
+    if stream_job_has_final_response_timeline_eventually(hub, job_id).await {
+        return;
+    }
+    let Some(final_text) = last_assistant_text_for_fallback(messages) else {
+        return;
+    };
+    warn!(
+        target: "crabmate",
+        "stream fallback: missing final_response timeline, emit synthesized terminal frame job_id={}",
+        job_id
+    );
+    let timeline = crate::sse::encode_message(crate::sse::SsePayload::TimelineLog {
+        log: crate::sse::protocol::TimelineLogBody {
+            kind: "final_response".to_string(),
+            title: final_text,
+            detail: None,
+        },
+    });
+    let _ = crate::sse::send_string_logged(
+        sse_tx,
+        timeline,
+        "chat_job_queue::stream final_response_fallback",
+    )
+    .await;
+    let phase = crate::sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
+        assistant_answer_phase: true,
+    });
+    let _ = crate::sse::send_string_logged(
+        sse_tx,
+        phase,
+        "chat_job_queue::stream answer_phase_fallback",
+    )
+    .await;
+}
+
 async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
     match job {
         QueuedChatJob::Stream {
@@ -842,6 +932,13 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     (false, true, None)
                 }
                 Ok(()) => {
+                    emit_missing_final_response_fallback_if_needed(
+                        queue_deps.sse_stream_hub.as_ref(),
+                        &sse_tx,
+                        job_id,
+                        &messages,
+                    )
+                    .await;
                     match post_turn_web_prepare_and_save(
                         app.as_ref(),
                         &cfg_snap,
@@ -1130,11 +1227,95 @@ async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::time::timeout;
 
     #[tokio::test]
     async fn queue_accepts_config_bounds() {
         let q = ChatJobQueue::new(2, 4);
         assert_eq!(q.max_concurrent(), 2);
         assert_eq!(q.max_pending(), 4);
+    }
+
+    // `final_response` 兜底回归覆盖：
+    // 1) 缺失时应补发（fallback_emits_final_response_when_missing）
+    // 2) 已存在且稍后可见时不应误补（fallback_skips_when_final_response_arrives_with_small_delay）
+    // 3) 同一 job 二次触发时保持幂等（fallback_is_idempotent_for_same_job）
+    #[tokio::test]
+    async fn fallback_emits_final_response_when_missing() {
+        let hub = SseStreamHub::new();
+        let job_id = 42_u64;
+        hub.register_job(job_id);
+        let (tx, mut rx) = mpsc::channel::<String>(8);
+        let messages = vec![Message::assistant_only("最终总结内容")];
+
+        emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+
+        let first = timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .expect("recv final_response frame")
+            .expect("final_response payload");
+        assert!(sse_payload_has_final_response_timeline(&first));
+
+        let second = timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .expect("recv answer_phase frame")
+            .expect("answer_phase payload");
+        assert!(second.contains("\"assistant_answer_phase\":true"));
+    }
+
+    #[tokio::test]
+    async fn fallback_skips_when_final_response_arrives_with_small_delay() {
+        let hub = SseStreamHub::new();
+        let job_id = 43_u64;
+        hub.register_job(job_id);
+        let (tx, mut rx) = mpsc::channel::<String>(8);
+        let messages = vec![Message::assistant_only("最终总结内容")];
+
+        let delayed_payload = crate::sse::encode_message(crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "final_response".to_string(),
+                title: "已存在总结".to_string(),
+                detail: None,
+            },
+        });
+        let hub_for_task = hub.clone();
+        tokio::spawn(async move {
+            sleep(Duration::from_millis(10)).await;
+            let _ = hub_for_task.publish(job_id, delayed_payload);
+        });
+
+        emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+
+        let no_frame = timeout(Duration::from_millis(120), rx.recv()).await;
+        assert!(no_frame.is_err(), "已有 final_response 时不应再补发");
+    }
+
+    #[tokio::test]
+    async fn fallback_is_idempotent_for_same_job() {
+        let hub = SseStreamHub::new();
+        let job_id = 44_u64;
+        hub.register_job(job_id);
+        let (tx, mut rx) = mpsc::channel::<String>(8);
+        let messages = vec![Message::assistant_only("最终总结内容")];
+
+        emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+        let first = timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .expect("recv first frame")
+            .expect("first frame payload");
+        let second = timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .expect("recv second frame")
+            .expect("second frame payload");
+        assert!(sse_payload_has_final_response_timeline(&first));
+        assert!(second.contains("\"assistant_answer_phase\":true"));
+
+        // 首次 fallback 通过桥接后，hub 已可见 final_response；二次调用应无输出。
+        if let Some(payload) = hub.publish(job_id, first) {
+            let _ = payload;
+        }
+        emit_missing_final_response_fallback_if_needed(&hub, &tx, job_id, &messages).await;
+        let no_more = timeout(Duration::from_millis(120), rx.recv()).await;
+        assert!(no_more.is_err(), "同一 job 的 fallback 不应重复发");
     }
 }

@@ -226,6 +226,7 @@ pub async fn send_chat_stream(
         let mut raw: Vec<u8> = Vec::new();
         let mut buffer = String::new();
         let mut stream_finished_normally = false;
+        let mut saw_stream_ended = false;
         loop {
             if signal.aborted() {
                 return Ok(());
@@ -253,14 +254,30 @@ pub async fn send_chat_stream(
             if let Some(u8) = value.dyn_ref::<js_sys::Uint8Array>() {
                 append_chunk_to_text_buffer(&mut raw, &u8.to_vec(), &mut buffer);
             }
-            process_sse_buffer(&mut buffer, &mut last_event_id, &cbs, loc)?;
+            process_sse_buffer(
+                &mut buffer,
+                &mut last_event_id,
+                &mut saw_stream_ended,
+                &cbs,
+                loc,
+            )?;
         }
         if !raw.is_empty() {
             buffer.push_str(&String::from_utf8_lossy(&raw));
             raw.clear();
         }
-        flush_sse_tail(&mut buffer, &mut last_event_id, &cbs, loc)?;
+        flush_sse_tail(
+            &mut buffer,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            loc,
+        )?;
         if stream_finished_normally {
+            if !saw_stream_ended {
+                // 某些后端/网络尾部场景可能未显式下发 `stream_ended`，前端按正常完结补齐。
+                (cbs.on_stream_ended)("completed".to_string());
+            }
             (cbs.on_done)();
             return Ok(());
         }
@@ -279,13 +296,14 @@ pub async fn send_chat_stream(
 fn process_sse_buffer(
     buffer: &mut String,
     last_event_id: &mut u64,
+    saw_stream_ended: &mut bool,
     cbs: &ChatStreamCallbacks,
     loc: Locale,
 ) -> Result<(), String> {
     while let Some(pos) = buffer.find("\n\n") {
         let block = buffer[..pos].to_string();
         *buffer = buffer[pos + 2..].to_string();
-        handle_sse_block(&block, last_event_id, cbs, loc)?;
+        handle_sse_block(&block, last_event_id, saw_stream_ended, cbs, loc)?;
     }
     Ok(())
 }
@@ -293,12 +311,13 @@ fn process_sse_buffer(
 fn flush_sse_tail(
     buffer: &mut String,
     last_event_id: &mut u64,
+    saw_stream_ended: &mut bool,
     cbs: &ChatStreamCallbacks,
     loc: Locale,
 ) -> Result<(), String> {
     let t = buffer.trim();
     if !t.is_empty() {
-        handle_sse_block(t, last_event_id, cbs, loc)?;
+        handle_sse_block(t, last_event_id, saw_stream_ended, cbs, loc)?;
     }
     buffer.clear();
     Ok(())
@@ -319,6 +338,7 @@ fn parse_sse_event_id_block(block: &str) -> Option<u64> {
 fn handle_sse_block(
     block: &str,
     last_event_id: &mut u64,
+    saw_stream_ended: &mut bool,
     cbs: &ChatStreamCallbacks,
     loc: Locale,
 ) -> Result<(), String> {
@@ -390,6 +410,7 @@ fn handle_sse_block(
                 && let Some(Value::Object(ended)) = obj.get("stream_ended")
                 && let Some(Value::String(reason)) = ended.get("reason")
             {
+                *saw_stream_ended = true;
                 (cbs.on_stream_ended)(reason.clone());
             }
             if stop {
@@ -412,5 +433,59 @@ fn key_present_non_null_sse(obj: &serde_json::Map<String, Value>, key: &str) -> 
     match obj.get(key) {
         None | Some(Value::Null) => false,
         Some(_) => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ChatStreamCallbacks, handle_sse_block};
+    use crate::i18n::Locale;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn callbacks_with_end_capture(ended: Rc<RefCell<Option<String>>>) -> ChatStreamCallbacks {
+        ChatStreamCallbacks {
+            on_delta: Rc::new(|_s| {}),
+            on_done: Rc::new(|| {}),
+            on_error: Rc::new(|_e| {}),
+            on_workspace_changed: Rc::new(|| {}),
+            on_tool_status: Rc::new(|_b| {}),
+            on_tool_result: Rc::new(|_info| {}),
+            on_approval: Rc::new(|_req| {}),
+            on_conversation_id: Rc::new(|_id| {}),
+            on_conversation_revision: Rc::new(|_rev| {}),
+            on_stream_ended: Rc::new(move |reason| {
+                *ended.borrow_mut() = Some(reason);
+            }),
+            on_stream_job_id: Rc::new(|_jid| {}),
+            on_last_sse_event_id: Rc::new(|_seq| {}),
+            on_assistant_answer_phase: Rc::new(|| {}),
+            on_staged_plan_step_started: Rc::new(|_info| {}),
+            on_staged_plan_step_finished: Rc::new(|_info| {}),
+            on_clarification_questionnaire: Rc::new(|_info| {}),
+            on_thinking_trace: Rc::new(|_info| {}),
+            on_timeline_log: Rc::new(|_info| {}),
+            on_tool_call: Rc::new(|_n, _s, _p, _a, _g| {}),
+        }
+    }
+
+    #[test]
+    fn handle_block_marks_stream_ended_when_reason_present() {
+        let ended = Rc::new(RefCell::new(None::<String>));
+        let cbs = callbacks_with_end_capture(Rc::clone(&ended));
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let block = "id: 12\ndata: {\"stream_ended\":{\"job_id\":1,\"reason\":\"completed\"}}\n\n";
+        let res = handle_sse_block(
+            block.trim(),
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        );
+        assert!(res.is_ok());
+        assert!(saw_stream_ended);
+        assert_eq!(last_event_id, 12);
+        assert_eq!(ended.borrow().as_deref(), Some("completed"));
     }
 }
