@@ -20,6 +20,70 @@ use crate::storage::{ChatSession, StoredMessage};
 
 use super::message_row_actions::{MessageRowActionSignals, spawn_scroll_to_linked_user_message};
 
+fn extract_hierarchical_phase_chip(msg: &StoredMessage) -> Option<(String, String)> {
+    let state = msg.state.as_deref()?;
+    if !state.starts_with("hierarchical-subgoal:") {
+        return None;
+    }
+    let phase = msg.text.lines().map(str::trim).find_map(|line| {
+        line.strip_prefix("- 阶段：")
+            .or_else(|| line.strip_prefix("阶段："))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    })?;
+    let cls = match phase.as_str() {
+        "诊断" => "msg-subgoal-phase-chip phase-diagnose",
+        "修复" => "msg-subgoal-phase-chip phase-fix",
+        "验证" => "msg-subgoal-phase-chip phase-verify",
+        "升级" => "msg-subgoal-phase-chip phase-escalate",
+        _ => "msg-subgoal-phase-chip",
+    };
+    Some((phase, cls.to_string()))
+}
+
+fn extract_hierarchical_metrics(msg: &StoredMessage) -> Option<String> {
+    let state = msg.state.as_deref()?;
+    if !state.starts_with("hierarchical-subgoal:") {
+        return None;
+    }
+    let mut error_count: Option<String> = None;
+    let mut stagnant_rounds: Option<String> = None;
+    for line in msg.text.lines().map(str::trim) {
+        if error_count.is_none()
+            && let Some(v) = line
+                .strip_prefix("- 错误数：")
+                .or_else(|| line.strip_prefix("错误数："))
+        {
+            let v = v.trim();
+            if !v.is_empty() {
+                error_count = Some(v.to_string());
+            }
+        }
+        if stagnant_rounds.is_none()
+            && let Some(v) = line
+                .strip_prefix("- 无进展轮次：")
+                .or_else(|| line.strip_prefix("无进展轮次："))
+        {
+            let v = v.trim();
+            if !v.is_empty() {
+                stagnant_rounds = Some(v.to_string());
+            }
+        }
+    }
+    if error_count.is_none() && stagnant_rounds.is_none() {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if let Some(v) = error_count {
+        parts.push(format!("错误数 {v}"));
+    }
+    if let Some(v) = stagnant_rounds {
+        parts.push(format!("无进展 {v} 轮"));
+    }
+    Some(parts.join(" · "))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn chat_message_row(
     msg_idx: usize,
@@ -93,6 +157,8 @@ pub(crate) fn chat_message_row(
     };
     let show_msg_action_bar = !is_tool_bubble || is_user_plain || err;
     let show_planner_round_badge = stored_message_is_staged_planner_round(&m);
+    let subgoal_phase_chip = extract_hierarchical_phase_chip(&m);
+    let subgoal_metrics_line = extract_hierarchical_metrics(&m);
     let msg_core = if m.role == "assistant" && !m.is_tool {
         assistant_markdown_collapsible_view(
             sessions,
@@ -137,7 +203,7 @@ pub(crate) fn chat_message_row(
                     <Show when=move || !detail_for_btn.trim().is_empty()>
                         <button
                             type="button"
-                            class="msg-tool-drawer-btn"
+                            class="msg-tool-drawer-btn msg-tool-drawer-icon-btn"
                             prop:title=move || {
                                 if tool_detail_open.get() {
                                     i18n::msg_tool_detail_collapse_title(locale.get())
@@ -156,13 +222,24 @@ pub(crate) fn chat_message_row(
                                 tool_detail_open.update(|v| *v = !*v);
                             }
                         >
-                            {move || {
-                                if tool_detail_open.get() {
-                                    i18n::msg_tool_detail_collapse_btn(locale.get())
-                                } else {
-                                    i18n::msg_tool_detail_expand_btn(locale.get())
+                            <svg
+                                class=move || {
+                                    if tool_detail_open.get() {
+                                        "msg-tool-drawer-icon is-open"
+                                    } else {
+                                        "msg-tool-drawer-icon"
+                                    }
                                 }
-                            }}
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true"
+                            >
+                                <polyline points="6 9 12 15 18 9" />
+                            </svg>
                         </button>
                     </Show>
                 </div>
@@ -283,6 +360,9 @@ pub(crate) fn chat_message_row(
                 <div
                     class=move || {
                         let mut c = class_prefix.clone();
+                        if !is_tool_bubble {
+                            c.push_str(" msg-has-inline-copy");
+                        }
                         let q = normalize_search_query(&chat_find_query.get());
                         if !q.is_empty() {
                             let in_list = chat_find_match_ids.with(|ids| {
@@ -313,6 +393,71 @@ pub(crate) fn chat_message_row(
                         }
                     }
                 >
+                    {(!is_tool_bubble).then(|| {
+                        view! {
+                            <button
+                                type="button"
+                                class="btn btn-muted btn-sm msg-copy-inside-btn"
+                                prop:title=move || i18n::msg_copy_title(locale.get())
+                                prop:aria-label=move || i18n::msg_copy_aria(locale.get())
+                                on:click=move |_| {
+                                    let loc = locale.get_untracked();
+                                    let apply = apply_assistant_display_filters.get_untracked();
+                                    let t = sessions.with(|list| {
+                                        let aid = active_id.get_untracked();
+                                        list.iter()
+                                            .find(|s| s.id == aid)
+                                            .and_then(|s| {
+                                                s.messages
+                                                    .iter()
+                                                    .find(|msg| msg.id == copy_id)
+                                            })
+                                            .map(|msg| {
+                                                message_text_for_display_ex(msg, loc, apply)
+                                            })
+                                            .unwrap_or_default()
+                                    });
+                                    write_clipboard_text(&t, loc);
+                                }
+                            >
+                                <svg
+                                    class="msg-action-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    aria-hidden="true"
+                                >
+                                    <rect
+                                        x="9"
+                                        y="9"
+                                        width="13"
+                                        height="13"
+                                        rx="2"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                    />
+                                    <path
+                                        d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                    />
+                                </svg>
+                            </button>
+                        }
+                    })}
+                    {subgoal_phase_chip.as_ref().map(|(phase, chip_class)| {
+                        let phase = phase.clone();
+                        let chip_class = chip_class.clone();
+                        view! {
+                            <div class=chip_class>{phase}</div>
+                        }
+                    })}
+                    {subgoal_metrics_line.as_ref().map(|line| {
+                        let line = line.clone();
+                        view! {
+                            <div class="msg-subgoal-metrics-line">{line}</div>
+                        }
+                    })}
                     {msg_core}
                     {loading.then(|| {
                         view! {
@@ -327,59 +472,6 @@ pub(crate) fn chat_message_row(
                 {show_msg_action_bar.then(|| {
                     view! {
                         <div class="msg-actions msg-actions-below" role="group" prop:aria-label=move || i18n::msg_actions_group_aria(locale.get())>
-                            {(!is_tool_bubble).then(|| {
-                                view! {
-                                    <button
-                                        type="button"
-                                        class="btn btn-muted btn-sm msg-action-btn msg-action-icon-btn"
-                                        prop:title=move || i18n::msg_copy_title(locale.get())
-                                        prop:aria-label=move || i18n::msg_copy_aria(locale.get())
-                                        on:click=move |_| {
-                                            let loc = locale.get_untracked();
-                                            let apply =
-                                                apply_assistant_display_filters.get_untracked();
-                                            let t = sessions.with(|list| {
-                                                let aid = active_id.get_untracked();
-                                                list.iter()
-                                                    .find(|s| s.id == aid)
-                                                    .and_then(|s| {
-                                                        s.messages
-                                                            .iter()
-                                                            .find(|msg| msg.id == copy_id)
-                                                    })
-                                                    .map(|msg| {
-                                                        message_text_for_display_ex(msg, loc, apply)
-                                                    })
-                                                    .unwrap_or_default()
-                                            });
-                                            write_clipboard_text(&t, loc);
-                                        }
-                                    >
-                                        <svg
-                                            class="msg-action-icon"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            aria-hidden="true"
-                                        >
-                                            <rect
-                                                x="9"
-                                                y="9"
-                                                width="13"
-                                                height="13"
-                                                rx="2"
-                                                stroke="currentColor"
-                                                stroke-width="2"
-                                            />
-                                            <path
-                                                d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
-                                                stroke="currentColor"
-                                                stroke-width="2"
-                                            />
-                                        </svg>
-                                    </button>
-                                }
-                            })}
                             {is_user_plain.then(|| {
                                 let idx = msg_idx;
                                 let uid_r = user_retry_id.clone();

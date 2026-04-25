@@ -57,17 +57,18 @@ pub fn assistant_markdown_collapsible_view(
             let _ = locale.get();
             let _ = markdown_render.get();
             let _ = apply_assistant_display_filters.get();
-            let md_on = markdown_render.get_untracked();
-
-            let text_src = sessions.with(|list| {
+            let (text_src, is_loading_msg) = sessions.with(|list| {
                 let aid = active_id.get_untracked();
                 list.iter()
                     .find(|s| s.id == aid)
                     .and_then(|s| s.messages.iter().find(|msg| msg.id == mid))
-                    .map(|m| m.text.clone())
+                    .map(|m| (m.text.clone(), m.state.as_deref() == Some("loading")))
                     .unwrap_or_default()
             });
 
+            // 流式生成中先按纯文本渲染，避免半截 Markdown（尤其未闭合代码围栏）
+            // 在不同浏览器里触发布局伪影（如黑条/闪动）；完成后自动切回 Markdown。
+            let md_on = markdown_render.get_untracked() && !is_loading_msg;
             let html = fragment_to_chat_safe_html(&text_src, md_on);
             let paint_arc = answer_paint.get_value();
             {
