@@ -437,8 +437,32 @@
   line-height: 1.6;
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border-subtle);
+  position: relative;
   overflow-x: hidden;
   overflow-y: visible;
+}
+
+.msg-has-inline-copy {
+  padding-right: calc(var(--space-inset-msg) + 28px);
+}
+
+.msg-copy-inside-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  opacity: 0.9;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.msg-copy-inside-btn:hover {
+  opacity: 1;
 }
 
 /* 正文单独一层：loading 时与 typing 同行 flex，避免匿名 flex 项 min-width:auto 撑破 */
@@ -1239,9 +1263,43 @@
   cursor: pointer;
 }
 
+.msg-tool-drawer-icon-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.msg-tool-drawer-icon {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s ease;
+}
+
+.msg-tool-drawer-icon.is-open {
+  transform: rotate(180deg);
+}
+
 .msg-tool-drawer-btn:hover {
   color: var(--text);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
+}
+
+.msg-tool-drawer-icon-btn:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent) inset;
+}
+
+.msg-tool-drawer-icon-btn:active {
+  transform: translateY(0.5px);
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+}
+
+.msg-tool-drawer-icon-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 1px;
 }
 
 .msg-tool-drawer {
@@ -1262,6 +1320,51 @@
   line-height: 1.35;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.msg-subgoal-phase-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: color-mix(in srgb, var(--accent) 88%, var(--text));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+
+.msg-subgoal-phase-chip.phase-diagnose {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+}
+
+.msg-subgoal-phase-chip.phase-fix {
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: color-mix(in srgb, var(--success) 88%, var(--text));
+}
+
+.msg-subgoal-phase-chip.phase-verify {
+  border-color: color-mix(in srgb, #4f8cff 45%, var(--border-subtle));
+  background: color-mix(in srgb, #4f8cff 12%, var(--surface));
+  color: color-mix(in srgb, #4f8cff 82%, var(--text));
+}
+
+.msg-subgoal-phase-chip.phase-escalate {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border-subtle));
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  color: color-mix(in srgb, var(--danger) 84%, var(--text));
+}
+
+.msg-subgoal-metrics-line {
+  margin: -2px 0 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .msg-error {

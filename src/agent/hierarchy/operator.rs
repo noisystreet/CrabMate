@@ -164,6 +164,12 @@ struct ReactState {
     tool_names_chron: Vec<String>,
     /// 动态分解已触发次数
     dynamic_decomposition_count: usize,
+    /// 循环型子目标当前阶段（轻量状态机）
+    phase: SubgoalPhase,
+    /// 收敛进展指标（仅在循环型子目标中更新）
+    progress: ConvergenceProgress,
+    /// 上次已上报到时间线的阶段（避免重复刷屏）
+    last_reported_phase: Option<SubgoalPhase>,
 }
 
 /// 工具执行结果分析
@@ -173,6 +179,22 @@ enum ToolExecutionOutcome {
     Normal,
     /// 任务已完成
     TaskCompleted { reason: String },
+}
+
+/// 循环型子目标阶段（轻量状态机）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SubgoalPhase {
+    Diagnose,
+    ApplyFix,
+    Verify,
+    Escalate,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ConvergenceProgress {
+    last_error_count: Option<usize>,
+    last_first_error_signature: Option<String>,
+    rounds_without_progress: usize,
 }
 
 /// Operator Agent
@@ -253,7 +275,11 @@ impl OperatorAgent {
             tools_used: std::collections::HashSet::new(),
             tool_names_chron: Vec::new(),
             dynamic_decomposition_count: 0,
+            phase: SubgoalPhase::Diagnose,
+            progress: ConvergenceProgress::default(),
+            last_reported_phase: None,
         };
+        let convergence_goal = is_convergence_compile_fix_goal(goal);
 
         // 构建初始系统提示（传入当前工作目录）
         let system_prompt = self.build_system_prompt(goal, state.current_working_dir.as_deref());
@@ -290,6 +316,24 @@ impl OperatorAgent {
         // ReAct 循环
         loop {
             state.iteration += 1;
+            if convergence_goal {
+                if state.last_reported_phase != Some(state.phase) {
+                    self.emit_convergence_timeline(
+                        &goal.goal_id,
+                        state.phase,
+                        state.iteration,
+                        state.progress.last_error_count,
+                        state.progress.rounds_without_progress,
+                        state.progress.last_first_error_signature.as_deref(),
+                    )
+                    .await;
+                    state.last_reported_phase = Some(state.phase);
+                }
+                state.observations.push(format!(
+                    "Phase {:?} (iteration {})",
+                    state.phase, state.iteration
+                ));
+            }
 
             if state.iteration > self.config.max_iterations {
                 return Ok(TaskResult {
@@ -531,6 +575,71 @@ impl OperatorAgent {
                         error_recovery_hint =
                             Some(self.build_compile_error_recovery_hint(&error_info));
                         current_error_type = Some(error_info.error_type.clone());
+                    }
+
+                    if convergence_goal
+                        && is_compile_command(&result.tool_name, &tool_call.function.arguments)
+                    {
+                        state.phase = SubgoalPhase::Verify;
+                        if let Some(metrics) = parse_compile_error_metrics(&result.output) {
+                            let improved = state.progress.last_error_count.is_none_or(|prev| {
+                                metrics.error_count < prev
+                                    || state
+                                        .progress
+                                        .last_first_error_signature
+                                        .as_deref()
+                                        .is_some_and(|sig| sig != metrics.first_error_signature)
+                            });
+                            if improved {
+                                state.progress.rounds_without_progress = 0;
+                            } else {
+                                state.progress.rounds_without_progress += 1;
+                            }
+                            state.progress.last_error_count = Some(metrics.error_count);
+                            state.progress.last_first_error_signature =
+                                Some(metrics.first_error_signature.clone());
+                            state.observations.push(format!(
+                                "Convergence metrics: errors={} first='{}' stagnant_rounds={}",
+                                metrics.error_count,
+                                truncate_output(&metrics.first_error_signature),
+                                state.progress.rounds_without_progress
+                            ));
+                            if metrics.error_count > 0 {
+                                state.phase = SubgoalPhase::ApplyFix;
+                            }
+                            if state.progress.rounds_without_progress >= 2 {
+                                state.phase = SubgoalPhase::Escalate;
+                                let reason = format!(
+                                    "连续 {} 轮无进展（error_count={}, first_error='{}'），建议升级处理策略",
+                                    state.progress.rounds_without_progress,
+                                    metrics.error_count,
+                                    truncate_output(&metrics.first_error_signature)
+                                );
+                                return Ok(TaskResult {
+                                    task_id: goal.goal_id.clone(),
+                                    status: TaskStatus::Failed {
+                                        reason: reason.clone(),
+                                    },
+                                    output: Some(self.build_output_summary(&state)),
+                                    error: Some(reason),
+                                    artifacts: Vec::new(),
+                                    duration_ms: start_time.elapsed().as_millis() as u64,
+                                    tools_invoked: state.tool_names_chron.clone(),
+                                });
+                            }
+                            if state.last_reported_phase != Some(state.phase) {
+                                self.emit_convergence_timeline(
+                                    &goal.goal_id,
+                                    state.phase,
+                                    state.iteration,
+                                    state.progress.last_error_count,
+                                    state.progress.rounds_without_progress,
+                                    state.progress.last_first_error_signature.as_deref(),
+                                )
+                                .await;
+                                state.last_reported_phase = Some(state.phase);
+                            }
+                        }
                     }
 
                     // 更新失败计数和状态
@@ -1525,10 +1634,54 @@ impl OperatorAgent {
     /// 构建输出摘要
     fn build_output_summary(&self, state: &ReactState) -> String {
         format!(
-            "Completed {} iterations with {} observations",
+            "Completed {} iterations with {} observations (phase={:?}, stagnant_rounds={})",
             state.iteration,
-            state.observations.len()
+            state.observations.len(),
+            state.phase,
+            state.progress.rounds_without_progress
         )
+    }
+
+    async fn emit_convergence_timeline(
+        &self,
+        goal_id: &str,
+        phase: SubgoalPhase,
+        iteration: usize,
+        error_count: Option<usize>,
+        stagnant_rounds: usize,
+        first_error: Option<&str>,
+    ) {
+        let Some(ref sse_out) = self.config.sse_out else {
+            return;
+        };
+        let phase_label = match phase {
+            SubgoalPhase::Diagnose => "诊断",
+            SubgoalPhase::ApplyFix => "修复",
+            SubgoalPhase::Verify => "验证",
+            SubgoalPhase::Escalate => "升级",
+        };
+        let mut detail = format!(
+            "- 阶段：{}\n- 轮次：{}\n- 无进展轮次：{}",
+            phase_label, iteration, stagnant_rounds
+        );
+        if let Some(n) = error_count {
+            detail.push_str(&format!("\n- 错误数：{}", n));
+        }
+        if let Some(sig) = first_error
+            && !sig.trim().is_empty()
+        {
+            detail.push_str(&format!("\n- 首错：{}", truncate_output(sig)));
+        }
+        let payload = crate::sse::encode_message(crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "hierarchical_subgoal".to_string(),
+                title: format!("子目标 `{}`", goal_id),
+                detail: Some(detail),
+            },
+        });
+        let _ =
+            crate::sse::send_string_logged(sse_out, payload, "hierarchical::convergence_timeline")
+                .await;
     }
 
     /// 构建包含产物信息的上下文
@@ -1850,6 +2003,43 @@ fn is_compile_command(tool_name: &str, args: &str) -> bool {
     compile_keywords.iter().any(|kw| args_lower.contains(kw))
 }
 
+fn is_convergence_compile_fix_goal(goal: &SubGoal) -> bool {
+    let d = goal.description.to_lowercase();
+    (d.contains("修复") || d.contains("fix") || d.contains("排错") || d.contains("debug"))
+        && (d.contains("编译")
+            || d.contains("构建")
+            || d.contains("build")
+            || d.contains("cargo check")
+            || d.contains("cargo build"))
+}
+
+#[derive(Debug, Clone)]
+struct CompileErrorMetrics {
+    error_count: usize,
+    first_error_signature: String,
+}
+
+fn parse_compile_error_metrics(output: &str) -> Option<CompileErrorMetrics> {
+    let mut error_lines: Vec<&str> = output
+        .lines()
+        .map(str::trim)
+        .filter(|l| {
+            l.contains(" error:")
+                || l.starts_with("error:")
+                || l.starts_with("error[")
+                || l.contains(": error:")
+        })
+        .collect();
+    if error_lines.is_empty() {
+        return None;
+    }
+    let first = error_lines.remove(0).to_string();
+    Some(CompileErrorMetrics {
+        error_count: error_lines.len() + 1,
+        first_error_signature: first,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1971,5 +2161,21 @@ mod tests {
         assert!(modified);
         assert_eq!(value["source"], "/home/user/test.cpp");
         assert_eq!(value["options"]["input"], "/home/user/test.cpp");
+    }
+
+    #[test]
+    fn test_convergence_goal_detection() {
+        let goal = SubGoal::new("g1", "修复编译报错直到 cargo check 通过");
+        assert!(is_convergence_compile_fix_goal(&goal));
+        let goal = SubGoal::new("g2", "编写 README 文档");
+        assert!(!is_convergence_compile_fix_goal(&goal));
+    }
+
+    #[test]
+    fn test_parse_compile_error_metrics() {
+        let out = "error[E0425]: cannot find value `x`\nwarning: unused variable\nsrc/main.rs:3:5: error: expected `;`";
+        let m = parse_compile_error_metrics(out).expect("metrics");
+        assert_eq!(m.error_count, 2);
+        assert!(m.first_error_signature.contains("error"));
     }
 }

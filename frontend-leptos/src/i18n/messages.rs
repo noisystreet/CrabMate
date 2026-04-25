@@ -199,20 +199,6 @@ pub fn msg_tool_detail_collapse_title(l: Locale) -> &'static str {
     }
 }
 
-pub fn msg_tool_detail_expand_btn(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "查看详情",
-        Locale::En => "Details",
-    }
-}
-
-pub fn msg_tool_detail_collapse_btn(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "收起详情",
-        Locale::En => "Hide details",
-    }
-}
-
 /// 服务端注入的 `### 分阶段规划 · …` 首行剥除后正文为空时的短标签（与 [`crate::message_format::display::message_ex`] 序号配合）。
 pub fn staged_coach_injection_fallback(l: Locale, ordinal: usize) -> &'static str {
     match l {
