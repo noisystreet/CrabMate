@@ -318,6 +318,11 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     {
         b.skills_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("AGENT_SKILLS_TOP_K")
+        && let Ok(n) = v.trim().parse::<u64>()
+    {
+        b.skills_top_k = Some(n);
+    }
     if let Ok(v) = std::env::var("AGENT_TOOL_MESSAGE_MAX_CHARS")
         && let Ok(n) = v.trim().parse::<u64>()
     {

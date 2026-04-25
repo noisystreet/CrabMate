@@ -407,12 +407,14 @@ pub struct AgentConfig {
     pub cursor_rules_include_agents_md: bool,
     /// 规则附加段最大字符数，超出时截断并附提示
     pub cursor_rules_max_chars: usize,
-    /// 为 true（默认）时：读取 `skills_dir/*/SKILL.md` 并附加到系统提示词
+    /// 为 true（默认）时：读取 `skills_dir/*.md` 并附加到系统提示词
     pub skills_enabled: bool,
     /// skills 目录（相对路径相对进程当前目录）
     pub skills_dir: String,
     /// skills 附加段最大字符数，超出时截断并附提示
     pub skills_max_chars: usize,
+    /// 每轮按用户输入注入的 skills 数量上限（Top-K）
+    pub skills_top_k: usize,
     /// `role: tool` 的 `content` 超过此字符数时压缩（每次调模型前应用）。信封形态下对 `output` 做首尾采样并写 `output_truncated` 等元数据，见 `tool_result::maybe_compress_tool_message_content`。
     pub tool_message_max_chars: usize,
     /// 为 true（默认）时：写入历史的 `role: tool` 使用 `crabmate_tool` JSON 信封（含 `summary`/`ok`/`output` 等），便于聚合解析；为 false 时保持纯工具原文。

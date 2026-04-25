@@ -361,7 +361,7 @@ impl CliReplStyle {
         self.write_banner_subheading(&mut out, "内建命令")?;
         self.write_banner_note_line(
             &mut out,
-            "    /clear  /model（·set） /api-base（·set） /models（list·choose） /api-key  /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /tools  /export  /save-session  /help  /?  · Tab 补全",
+            "    /clear  /model（·set） /api-base（·set） /models（list·choose） /api-key  /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /skills（list） /tools  /export  /save-session  /help  /?  · Tab 补全",
         )?;
         self.write_banner_note_line(
             &mut out,
@@ -731,6 +731,10 @@ impl CliReplStyle {
             (
                 "/workspace <路径>",
                 "切换工作区（须为已存在目录，别名 /cd）：相对路径同 read_file（相对当前根、禁止 / 开头）；绝对路径须落在 workspace_allowed_roots",
+            ),
+            (
+                "/skills · /skills list",
+                "列出当前工作区下可见的 skills 文件",
             ),
             ("/tools", "列出当前加载的工具名"),
             (

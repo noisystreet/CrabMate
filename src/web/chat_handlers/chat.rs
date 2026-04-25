@@ -71,56 +71,26 @@ fn resolve_skills_dir_path(
     })
 }
 
-fn render_skills_appendix_for_web(
-    docs: &[SkillFileInfo],
-    max_chars: usize,
-) -> (String, Vec<SkillFileInfo>, Vec<SkillFileInfo>) {
-    let mut body = String::from(
-        "【项目技能（skills）】\n以下内容来自技能目录；若与更高优先级指令冲突，以更高优先级为准。\n",
-    );
-    let mut loaded: Vec<SkillFileInfo> = Vec::new();
-    let mut skipped: Vec<SkillFileInfo> = Vec::new();
-    for d in docs {
-        let chunk = format!(
-            "\n\n---\n技能文件: {}\n\n{}",
-            d.display_path,
-            d.content.trim()
-        );
-        if (body.chars().count() + chunk.chars().count()) <= max_chars {
-            body.push_str(&chunk);
-            loaded.push(d.clone());
-        } else {
-            skipped.push(d.clone());
-        }
-    }
-    if loaded.is_empty() {
-        return (String::new(), loaded, skipped);
-    }
-    (body, loaded, skipped)
-}
-
 fn merge_system_prompt_with_workspace_skills_for_web(
     system_prompt: String,
     skills_enabled: bool,
     skills_dir: &str,
     skills_max_chars: usize,
+    skills_top_k: usize,
     workspace_root: &std::path::Path,
+    user_text: &str,
 ) -> String {
-    if !skills_enabled {
-        return system_prompt;
-    }
     let base_dir = resolve_skills_base_dir(workspace_root);
-    let Ok(files) = list_skill_files_for_web_builtin(skills_dir, &base_dir) else {
-        return system_prompt;
-    };
-    if files.is_empty() {
-        return system_prompt;
-    }
-    let (appendix, _loaded, _skipped) = render_skills_appendix_for_web(&files, skills_max_chars);
-    if appendix.is_empty() {
-        return system_prompt;
-    }
-    format!("{}\n\n{}", system_prompt.trim_end(), appendix)
+    crate::config::skills::merge_system_prompt_with_skills_selected(
+        system_prompt.clone(),
+        skills_enabled,
+        skills_dir,
+        skills_max_chars,
+        base_dir.as_path(),
+        user_text,
+        skills_top_k,
+    )
+    .unwrap_or(system_prompt)
 }
 
 fn classify_web_builtin_command(input: &str) -> Option<&'static str> {
@@ -376,6 +346,8 @@ async fn build_messages_for_turn(
     image_urls: &[String],
     agent_role: Option<&str>,
 ) -> Result<ConversationTurnSeed, String> {
+    let root_str = state.effective_workspace_path().await;
+    let root = std::path::PathBuf::from(root_str);
     let last_user = if image_urls.is_empty() {
         Message::user_only(user_msg.to_string())
     } else {
@@ -395,25 +367,49 @@ async fn build_messages_for_turn(
                 persisted.as_deref(),
                 agent_role,
             )?;
+            let role_for_turn = agent_role
+                .and_then(|s| {
+                    let t = s.trim();
+                    if t.is_empty() { None } else { Some(t) }
+                })
+                .or(persisted.as_deref());
+            let system_for_turn = cfg
+                .system_prompt_for_new_conversation(role_for_turn)
+                .map_err(|e| e.to_string())?
+                .to_string();
+            let system_for_turn = crate::tool_stats::augment_system_prompt(&system_for_turn, &cfg);
+            let system_for_turn = merge_system_prompt_with_workspace_skills_for_web(
+                system_for_turn,
+                cfg.skills_enabled,
+                cfg.skills_dir.as_str(),
+                cfg.skills_max_chars,
+                cfg.skills_top_k,
+                root.as_path(),
+                user_msg,
+            );
+            if let Some(first) = seed.messages.first_mut()
+                && first.role == "system"
+            {
+                first.content = Some(crate::types::MessageContent::Text(system_for_turn));
+            }
         }
         seed.messages.push(last_user);
         return Ok(seed);
     }
-    // 先取工作区路径，再读 `cfg`，避免在持有 `cfg` 读锁时调用 `effective_workspace_path`（其内部再次 `cfg.read` 会死锁）。
-    let root_str = state.effective_workspace_path().await;
     let cfg = state.cfg.read().await;
     let system_for_turn = cfg
         .system_prompt_for_new_conversation(agent_role)
         .map_err(|e| e.to_string())?
         .to_string();
     let system_for_turn = crate::tool_stats::augment_system_prompt(&system_for_turn, &cfg);
-    let root = std::path::PathBuf::from(root_str);
     let system_for_turn = merge_system_prompt_with_workspace_skills_for_web(
         system_for_turn,
         cfg.skills_enabled,
         cfg.skills_dir.as_str(),
         cfg.skills_max_chars,
+        cfg.skills_top_k,
         root.as_path(),
+        user_msg,
     );
     let memory_snippet = if cfg.agent_memory_file_enabled {
         load_memory_snippet(

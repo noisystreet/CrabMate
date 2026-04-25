@@ -308,6 +308,29 @@ pub async fn run_repl(
                         }
                     }
                 };
+                {
+                    let g = cfg_holder.read().await;
+                    if let Some(first) = messages.first_mut()
+                        && first.role == "system"
+                    {
+                        let base_system = crate::conversation_turn_bootstrap::augmented_system_for_new_conversation_lenient(
+                            &g,
+                            agent_role_owned.as_deref(),
+                        );
+                        let merged =
+                            crate::config::skills::merge_system_prompt_with_skills_selected(
+                                base_system.clone(),
+                                g.skills_enabled,
+                                g.skills_dir.as_str(),
+                                g.skills_max_chars,
+                                work_dir.as_path(),
+                                user_body.as_str(),
+                                g.skills_top_k,
+                            )
+                            .unwrap_or(base_system);
+                        first.content = Some(crate::types::MessageContent::Text(merged));
+                    }
+                }
                 messages.push(Message::user_only(user_body));
                 debug!(
                     target: "crabmate::print",

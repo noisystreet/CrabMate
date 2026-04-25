@@ -81,7 +81,7 @@
 
 - **Docker 开发环境**（可选）：仓库 [Dockerfile](Dockerfile)（Ubuntu 24.04，Rust + trunk 等）。`docker build -t crabmate-dev .` 后 `docker run --rm -it -v "$(pwd)":/workspace -w /workspace crabmate-dev`；UID/GID 可用 `--build-arg DEV_UID` / `DEV_GID`。**未**预装 pre-commit / Node。
 
-- **环境变量**：**`API_KEY`**（bearer 时；`serve` / `repl` / `chat` 可先启动，对话前在 Web「设置」或 REPL **`/api-key set`**）；**`models` / `probe`** 在 bearer 下通常仍需环境变量里的 Key。**`AGENT_API_BASE`** / **`AGENT_MODEL`** 覆盖配置。分阶段规划可选 **`AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`**（或 TOML **`staged_plan_two_phase_nl_display`**）：首轮 JSON 定稿不向用户侧流式输出，再追加一轮自然语言（默认关闭）；Web 侧可按 SSE **`staged_plan_step_*`** 在聊天区插入浅色「时间线」系统旁注（含可选 **`executor_kind`**，**不**进入模型上下文）。完整表见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md#分阶段规划staged_plan_execution)。
+- **环境变量**：**`API_KEY`**（bearer 时；`serve` / `repl` / `chat` 可先启动，对话前在 Web「设置」或 REPL **`/api-key set`**）；**`models` / `probe`** 在 bearer 下通常仍需环境变量里的 Key。**`AGENT_API_BASE`** / **`AGENT_MODEL`** 覆盖配置。skills 注入可用 **`AGENT_SKILLS_TOP_K`** 控制每轮按用户输入选取的 Top-K 数量（默认 3）。分阶段规划可选 **`AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`**（或 TOML **`staged_plan_two_phase_nl_display`**）：首轮 JSON 定稿不向用户侧流式输出，再追加一轮自然语言（默认关闭）；Web 侧可按 SSE **`staged_plan_step_*`** 在聊天区插入浅色「时间线」系统旁注（含可选 **`executor_kind`**，**不**进入模型上下文）。完整表见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md#分阶段规划staged_plan_execution)。
 
 ```bash
 # 可选：export AGENT_API_BASE=… AGENT_MODEL=… API_KEY=…（或 Web「设置」/ REPL /api-key set）

@@ -292,6 +292,30 @@ pub(crate) async fn try_handle_repl_slash_command(
                 }
             }
         }
+        ReplBuiltIn::SkillsList => {
+            let cfg = cfg_holder.read().await;
+            if !cfg.skills_enabled {
+                let _ = style.print_line("skills 已关闭（skills_enabled=false）。");
+                return ReplSlashHandled::Handled;
+            }
+            match crate::config::skills::list_skills_from_base(work_dir.as_path(), &cfg.skills_dir)
+            {
+                Ok(files) if files.is_empty() => {
+                    let _ = style.print_line("当前未发现 skills。");
+                }
+                Ok(files) => {
+                    let _ = style.print_line(&format!("当前 skills（{}）：", files.len()));
+                    for f in files {
+                        let name = f.name.as_deref().unwrap_or("未声明 name");
+                        let _ =
+                            style.print_line(&format!("  - {} (name: {})", f.display_path, name));
+                    }
+                }
+                Err(e) => {
+                    let _ = style.eprint_error(&format!("读取 skills 失败：{e}"));
+                }
+            }
+        }
         ReplBuiltIn::Tools => {
             if tools.is_empty() {
                 let _ = style.print_line("当前未加载工具（可能使用了 --no-tools）。");

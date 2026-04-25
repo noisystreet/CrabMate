@@ -72,6 +72,7 @@
 | `AGENT_SKILLS_ENABLED` | 是否启用 skills 注入（默认 `true`，读取 `skills_dir/*.md`）。 |
 | `AGENT_SKILLS_DIR` | skills 目录（默认 `.crabmate/skills`）。相对路径在 Web 对话中按**当前已选工作区根**解析（未选工作区时退回进程当前目录）。 |
 | `AGENT_SKILLS_MAX_CHARS` | skills 注入长度上限。 |
+| `AGENT_SKILLS_TOP_K` | 每轮按当前用户输入选取并注入的 skills 数量上限（Top-K，默认 `3`）。 |
 
 **Web 工作区**：**`serve`** 启动后，在侧栏通过 **`POST /workspace`** 选择目录之前，服务端不把 **`run_command_working_dir`**（默认常为 `"."`）视为「已选工作区」：不注入依赖工作区根的首轮上下文，**`@路径`** 引用会返回 **`WORKSPACE_NOT_SET`**，**SyncDefault** 类内置工具亦不可用；对话任务入队时进程内工作目录仍会规范为 **`run_command_working_dir`**，**`GET /health`** 对该目录做可选依赖探测。显式将工作区设为与 **`run_command_working_dir`** 等价的目录后，行为与旧版「默认 cwd 即工作区」一致。
 

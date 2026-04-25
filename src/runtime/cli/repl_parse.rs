@@ -33,6 +33,7 @@ pub(crate) enum ReplBuiltIn<'a> {
     ModelsUsage,
     WorkspaceShow,
     WorkspaceSet(&'a str),
+    SkillsList,
     Tools,
     Help,
     Export(&'a str),
@@ -274,6 +275,13 @@ pub(crate) fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>
                 ReplBuiltIn::WorkspaceSet(arg)
             }
         }
+        "skills" => {
+            if arg.is_empty() || arg.eq_ignore_ascii_case("list") {
+                ReplBuiltIn::SkillsList
+            } else {
+                ReplBuiltIn::Unknown(head)
+            }
+        }
         "tools" => ReplBuiltIn::Tools,
         "help" | "?" => ReplBuiltIn::Help,
         "export" => ReplBuiltIn::Export(arg),
@@ -383,6 +391,14 @@ mod repl_slash_tests {
         assert_eq!(
             classify_repl_slash_command("/tools"),
             Some(ReplBuiltIn::Tools)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/skills"),
+            Some(ReplBuiltIn::SkillsList)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/skills list"),
+            Some(ReplBuiltIn::SkillsList)
         );
         assert_eq!(
             classify_repl_slash_command("/help"),

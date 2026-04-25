@@ -10,7 +10,7 @@ mod env_overrides;
 mod finalize;
 mod hot_reload;
 mod load;
-mod skills;
+pub(crate) mod skills;
 mod source;
 mod types;
 mod validate;
