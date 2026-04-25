@@ -222,6 +222,11 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
             b.planner_executor_mode_str = Some(s);
         }
     }
+    if let Ok(v) = std::env::var("AGENT_INTENT_AT_TURN_START_ENABLED")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.intent_at_turn_start_enabled = Some(val);
+    }
     if let Ok(v) = std::env::var("AGENT_INTENT_L2_ENABLED")
         && let Some(val) = parse_bool_like(&v)
     {

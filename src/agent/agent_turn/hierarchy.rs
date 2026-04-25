@@ -4,17 +4,11 @@
 
 use crate::agent::hierarchy::task::{ArtifactKind, BuildArtifactKind, TaskResult};
 use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult};
-use crate::agent::intent_l2_classifier::classify_intent_l2_with_llm;
-use crate::agent::intent_pipeline::{
-    IntentAction, IntentContext, IntentDecision, assess_and_route_with_l2,
-};
-use crate::agent::intent_router::ExecuteIntentThresholds;
-use crate::agent::intent_router::{
-    is_explicit_execute_confirmation, is_waiting_execute_confirmation_prompt,
-};
 use crate::sse;
 
 use super::errors::RunAgentTurnError;
+use super::intent_at_turn_start;
+use super::intent_user;
 use super::params::RunLoopParams;
 use crate::agent::agent_turn::errors::AgentTurnSubPhase;
 use crate::agent::hierarchy::execution::ExecutionError;
@@ -53,85 +47,12 @@ async fn emit_hierarchical_final_assistant(p: &mut RunLoopParams<'_>, final_resp
     }
 }
 
-fn recently_waiting_execute_confirmation(messages: &[crate::types::Message]) -> bool {
-    messages.iter().rev().take(4).any(|m| {
-        if m.role != "assistant" {
-            return false;
-        }
-        let Some(content) = crate::types::message_content_as_str(&m.content) else {
-            return false;
-        };
-        is_waiting_execute_confirmation_prompt(content)
-    })
-}
-
-fn format_intent_analysis_title(assessment: &IntentDecision) -> String {
-    let action = match &assessment.action {
-        IntentAction::Execute => "直接执行",
-        IntentAction::ConfirmThenExecute(_) => "确认后执行",
-        IntentAction::ClarifyThenExecute(_) => "澄清后执行",
-        IntentAction::DirectReply(_) => "直接回复",
-    };
-    format!(
-        "意图分析：kind={:?}, primary={}, action={}",
-        assessment.kind, assessment.primary_intent, action
-    )
-}
-
-fn format_intent_analysis_detail(
-    assessment: &IntentDecision,
-    merge_meta: &crate::agent::intent_pipeline::IntentMergeMeta,
-) -> String {
-    let l0 = &merge_meta.l0;
-    format!(
-        "confidence={:.2}, need_clarification={}, abstain={}, l1={:?}@{:.2}, l2_present={}, l2_applied={}, l2_confidence={:?}, override_reason={:?}, merged_continuation={}, l0(path={},err={},short={},git={},cmd={})",
-        assessment.confidence,
-        assessment.need_clarification,
-        assessment.abstain,
-        merge_meta.l1_kind,
-        merge_meta.l1_confidence,
-        merge_meta.l2_present,
-        merge_meta.l2_applied,
-        merge_meta.l2_confidence,
-        merge_meta.override_reason,
-        merge_meta.used_merged_continuation,
-        l0.has_file_path_like,
-        l0.has_error_signal,
-        l0.is_short,
-        l0.has_git_keyword,
-        l0.has_command_cargo
-    )
-}
-
-async fn emit_intent_analysis_sse(
-    out: Option<&tokio::sync::mpsc::Sender<String>>,
-    assessment: &IntentDecision,
-    merge_meta: &crate::agent::intent_pipeline::IntentMergeMeta,
-) {
-    let Some(out) = out else {
-        return;
-    };
-    let _ = sse::send_string_logged(
-        out,
-        sse::encode_message(crate::sse::SsePayload::TimelineLog {
-            log: crate::sse::protocol::TimelineLogBody {
-                kind: "intent_analysis".to_string(),
-                title: format_intent_analysis_title(assessment),
-                detail: Some(format_intent_analysis_detail(assessment, merge_meta)),
-            },
-        }),
-        "hierarchical::intent_analysis",
-    )
-    .await;
-}
-
 /// 运行分层多 Agent
 pub(crate) async fn run_hierarchical_agent(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), RunAgentTurnError> {
-    // 获取用户消息
-    let in_clarification_flow = recently_waiting_execute_confirmation(p.messages);
-    let task = extract_effective_user_task(p.messages, in_clarification_flow);
+    let in_clarification_flow = intent_user::recently_waiting_execute_confirmation(p.messages);
+    let task = intent_user::extract_effective_user_task(p.messages, in_clarification_flow);
     if task.is_empty() {
         log::warn!(target: "crabmate", "Hierarchical mode: no user task found");
         return Err(RunAgentTurnError::Other {
@@ -140,86 +61,13 @@ pub(crate) async fn run_hierarchical_agent(
         });
     }
 
-    let recent_user_messages = collect_recent_user_messages(p.messages, 4);
-    let intent_ctx = IntentContext {
-        recent_user_messages,
-        in_clarification_flow,
-        thresholds: ExecuteIntentThresholds {
-            low: p.cfg.intent_execute_low_threshold,
-            high: p.cfg.intent_execute_high_threshold,
-        },
-        l2_min_confidence: p.cfg.intent_l2_min_confidence,
-        l0_routing_boost_enabled: p.cfg.intent_l0_routing_boost_enabled,
-    };
-    let (routing_for_l1, _, _) =
-        crate::agent::intent_pipeline::prepare_intent_routing(&task, &intent_ctx);
-    let l2_candidate = if p.cfg.intent_l2_enabled {
-        classify_intent_l2_with_llm(
-            &routing_for_l1,
-            &task,
-            p.cfg.as_ref(),
-            p.llm_backend,
-            p.client,
-            p.api_key,
-        )
-        .await
-    } else {
-        None
-    };
-    let (assessment, merge_meta) = assess_and_route_with_l2(&task, &intent_ctx, l2_candidate);
-    log::info!(
-        target: "crabmate",
-        "[INTENT_PIPELINE] l1_kind={:?} l1_confidence={:.2} l2_present={} l2_applied={} l2_confidence={:?} override_reason={:?} final_kind={:?} primary_intent={} confidence={:.2} abstain={} need_clarification={} action={:?}",
-        merge_meta.l1_kind,
-        merge_meta.l1_confidence,
-        merge_meta.l2_present,
-        merge_meta.l2_applied,
-        merge_meta.l2_confidence,
-        merge_meta.override_reason,
-        assessment.kind,
-        assessment.primary_intent,
-        assessment.confidence,
-        assessment.abstain,
-        assessment.need_clarification,
-        assessment.action
-    );
-    emit_intent_analysis_sse(p.out, &assessment, &merge_meta).await;
-
-    match assessment.action {
-        IntentAction::Execute => {}
-        IntentAction::DirectReply(reply)
-        | IntentAction::ClarifyThenExecute(reply)
-        | IntentAction::ConfirmThenExecute(reply) => {
-            p.messages
-                .push(crate::types::Message::assistant_only(reply.clone()));
-            if let Some(out) = p.out {
-                let phase_payload =
-                    sse::encode_message(crate::sse::SsePayload::AssistantAnswerPhase {
-                        assistant_answer_phase: true,
-                    });
-                let _ =
-                    sse::send_string_logged(out, phase_payload, "hierarchical::answer_phase").await;
-                // 优先走 plain delta 正文链路，确保前端 assistant 气泡实时追加。
-                let _ = sse::send_string_logged(
-                    out,
-                    reply.clone(),
-                    "hierarchical::final_response_delta",
-                )
-                .await;
-                // 兼容旧前端：保留 final_response timeline 事件（用于旧版本回写正文/时间线）。
-                let final_tl = sse::encode_message(crate::sse::SsePayload::TimelineLog {
-                    log: crate::sse::protocol::TimelineLogBody {
-                        kind: "final_response".to_string(),
-                        title: reply,
-                        detail: None,
-                    },
-                });
-                let _ =
-                    sse::send_string_logged(out, final_tl, "hierarchical::final_response").await;
-            }
+    let intent_gate = intent_at_turn_start::run_intent_for_hierarchical(p, &task).await?;
+    let assessment = match intent_gate {
+        intent_at_turn_start::IntentGateResult::Finished => {
             return Ok(());
         }
-    }
+        intent_at_turn_start::IntentGateResult::ProceedExecute { assessment } => assessment,
+    };
 
     log::info!(
         target: "crabmate",
@@ -284,79 +132,6 @@ pub(crate) async fn run_hierarchical_agent(
     handle_execution_result(p, result, &task).await?;
 
     Ok(())
-}
-
-/// 取当前 user 条之前的最近 `max` 条 user 正文（**新在前**），供 L0 续接合并。
-fn collect_recent_user_messages(messages: &[crate::types::Message], max: usize) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for m in messages.iter().rev() {
-        if m.role != "user" {
-            continue;
-        }
-        if out.len() > max {
-            break;
-        }
-        if let Some(t) = crate::types::message_content_as_str(&m.content) {
-            let s = t.trim();
-            if !s.is_empty() {
-                out.push(s.to_string());
-            }
-        }
-    }
-    if out.is_empty() {
-        return Vec::new();
-    }
-    // 去掉当前（最新）user，只保留前序
-    out.remove(0);
-    out
-}
-
-/// 从消息中提取用户任务
-fn extract_user_task(messages: &[crate::types::Message]) -> String {
-    messages
-        .iter()
-        .rev()
-        .find(|m| m.role == "user")
-        .and_then(|m| crate::types::message_content_as_str(&m.content))
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
-}
-
-fn extract_effective_user_task(
-    messages: &[crate::types::Message],
-    in_clarification_flow: bool,
-) -> String {
-    let latest = extract_user_task(messages);
-    if !in_clarification_flow {
-        return latest;
-    }
-    let latest_norm = latest.trim().to_lowercase();
-    if !is_explicit_execute_confirmation(&latest_norm) {
-        return latest;
-    }
-
-    let mut seen_latest_user = false;
-    for m in messages.iter().rev() {
-        if m.role != "user" {
-            continue;
-        }
-        let Some(content) = crate::types::message_content_as_str(&m.content) else {
-            continue;
-        };
-        let t = content.trim();
-        if t.is_empty() {
-            continue;
-        }
-        if !seen_latest_user {
-            seen_latest_user = true;
-            continue;
-        }
-        let norm = t.to_lowercase();
-        if !is_explicit_execute_confirmation(&norm) {
-            return t.to_string();
-        }
-    }
-    latest
 }
 
 /// 处理分层执行结果
@@ -629,7 +404,7 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_effective_user_task, format_intent_analysis_title};
+    use super::super::intent_user;
     use crate::agent::intent_pipeline::{IntentAction, IntentDecision};
     use crate::agent::intent_router::IntentKind;
     use crate::types::Message;
@@ -644,7 +419,7 @@ mod tests {
             ),
             Message::user_only("直接开始执行".to_string()),
         ];
-        let task = extract_effective_user_task(&messages, true);
+        let task = intent_user::extract_effective_user_task(&messages, true);
         assert_eq!(task, "编写一个简单c++程序并执行");
     }
 
@@ -655,7 +430,7 @@ mod tests {
             Message::assistant_only("好的".to_string()),
             Message::user_only("编写一个简单c++程序并执行".to_string()),
         ];
-        let task = extract_effective_user_task(&messages, false);
+        let task = intent_user::extract_effective_user_task(&messages, false);
         assert_eq!(task, "编写一个简单c++程序并执行");
     }
 
@@ -670,9 +445,23 @@ mod tests {
             abstain: false,
             need_clarification: false,
         };
-        let title = format_intent_analysis_title(&assessment);
+        let title = format_intent_title(&assessment);
         assert!(title.contains("kind=Execute"));
         assert!(title.contains("primary=execute.code_change"));
         assert!(title.contains("action=直接执行"));
+    }
+
+    fn format_intent_title(assessment: &IntentDecision) -> String {
+        use crate::agent::intent_pipeline::IntentAction;
+        let action = match &assessment.action {
+            IntentAction::Execute => "直接执行",
+            IntentAction::ConfirmThenExecute(_) => "确认后执行",
+            IntentAction::ClarifyThenExecute(_) => "澄清后执行",
+            IntentAction::DirectReply(_) => "直接回复",
+        };
+        format!(
+            "意图分析：kind={:?}, primary={}, action={}",
+            assessment.kind, assessment.primary_intent, action
+        )
     }
 }

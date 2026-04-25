@@ -19,6 +19,8 @@ mod agent_llm_call;
 mod errors;
 mod execute_tools;
 mod hierarchy;
+mod intent_at_turn_start;
+mod intent_user;
 mod messages;
 mod outer_loop;
 mod params;
@@ -80,17 +82,23 @@ pub(crate) async fn run_agent_turn_common(
             .final_plan_semantic_check_max_non_readonly_tools,
     });
 
-    if p.cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent {
-        log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
-        run_logical_dual_agent_then_execute_steps(p, &mut per_coord).await
-    } else if p.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical {
+    if p.cfg.planner_executor_mode == PlannerExecutorMode::Hierarchical {
+        // 意图门控在 `hierarchy::run_hierarchical_agent` 内通过 `run_intent_for_hierarchical` 执行（与 L0/合并文本一致），勿在此重复。
         log::info!(target: "crabmate", "run_agent_turn: using Hierarchical mode");
         hierarchy::run_hierarchical_agent(p).await
-    } else if p.cfg.staged_plan_execution {
-        log::info!(target: "crabmate", "run_agent_turn: using staged_plan mode");
-        run_staged_plan_then_execute_steps(p, &mut per_coord).await
     } else {
-        log::info!(target: "crabmate", "run_agent_turn: using single_agent mode");
-        run_agent_outer_loop(p, &mut per_coord).await
+        if !intent_at_turn_start::run_intent_at_turn_start_if_configured(p).await? {
+            return Ok(());
+        }
+        if p.cfg.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent {
+            log::info!(target: "crabmate", "run_agent_turn: using LogicalDualAgent mode");
+            run_logical_dual_agent_then_execute_steps(p, &mut per_coord).await
+        } else if p.cfg.staged_plan_execution {
+            log::info!(target: "crabmate", "run_agent_turn: using staged_plan mode");
+            run_staged_plan_then_execute_steps(p, &mut per_coord).await
+        } else {
+            log::info!(target: "crabmate", "run_agent_turn: using single_agent mode");
+            run_agent_outer_loop(p, &mut per_coord).await
+        }
     }
 }

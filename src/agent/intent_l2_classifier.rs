@@ -90,7 +90,10 @@ fn parse_l2_response_json(raw: &str) -> Option<L2IntentCandidate> {
     let raw = raw.trim();
     let json_block = raw.find("```").and_then(|start| {
         let after = &raw[start + 3..];
-        let after = after.strip_prefix("json").unwrap_or(after);
+        let after = after
+            .strip_prefix("json")
+            .map(str::trim_start)
+            .unwrap_or(after);
         after.find("```").map(|end| after[..end].trim())
     });
     let json_str = json_block.unwrap_or(raw);
