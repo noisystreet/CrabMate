@@ -1,14 +1,19 @@
-//! L0 预处理与特征：从合并后的用户文本抽信号，供 L1/L2 与观测使用。
+//! L0 预处理与特征：多轮续接合并、文本启发式、近期 **tool** 条成败（不记录参数正文）。
 //!
 //! 与 `docs/design/intent_recognition_enhancement.md` 的 L0 节对齐（轻量实现，无独立 ML）。
 
-/// 从当前用户句与 L0 可观测信号。
+const SHORT_UTTERANCE_MAX_CHARS: usize = 40;
+const MERGED_MAX_CHARS: usize = 2000;
+
+/// 可观测的 L0 特征，供 L1 提级与 `IntentMergeMeta`。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct IntentL0Snapshot {
     /// 出现路径/工作区/文件或 `@` 引用等信号。
     pub has_file_path_like: bool,
     /// 出现报错、trace、panic 等信号。
     pub has_error_signal: bool,
+    /// 近邻（当前 user 前）存在 `role: tool` 且非成功态。
+    pub has_recent_tool_failure: bool,
     /// 是否偏短、可能指代不足（启发式，非严格「字数」产品定义）。
     pub is_short: bool,
     /// 出现 `git` / 分支 / 提交 等（大小写不敏感，git 为 ASCII）。
@@ -16,9 +21,6 @@ pub struct IntentL0Snapshot {
     /// 出现 `cargo` / `npm` / `pnpm` 等包管理器命令痕迹。
     pub has_command_cargo: bool,
 }
-
-const SHORT_UTTERANCE_MAX_CHARS: usize = 40;
-const MERGED_MAX_CHARS: usize = 2000;
 
 /// 在「续接短句 + 前序在澄清/确认」时，将最近用户句与当前句拼成**路由用**文本，降低指代失败。
 /// 返回 `(路由文本, 是否发生了续接合并)`；不修改原始 `current_task`。
@@ -85,8 +87,13 @@ fn has_substantive_execute_leverage(s: &str) -> bool {
         || n.contains("pnpm")
 }
 
-/// 为合并后的 `routing` 文本计算 L0 信号。
+/// 为合并后的 `routing` 文本计算 L0 信号（**不含** tool 位，等价于 `l0_snapshot_merged(routing, false)`）。
 pub fn l0_snapshot_from_merged_routing(routing: &str) -> IntentL0Snapshot {
+    l0_snapshot_merged(routing, false)
+}
+
+/// 对合并/当前路由正文的**文本**子串特征（不含 tool 位）。
+fn text_flags_from_routing(routing: &str) -> IntentL0Snapshot {
     let n = routing.to_lowercase();
     let has_file_path_like = n.contains('/')
         || n.contains('@')
@@ -120,10 +127,51 @@ pub fn l0_snapshot_from_merged_routing(routing: &str) -> IntentL0Snapshot {
     IntentL0Snapshot {
         has_file_path_like,
         has_error_signal,
+        has_recent_tool_failure: false,
         is_short,
         has_git_keyword,
         has_command_cargo,
     }
+}
+
+/// 合并**路由文本**子串 + **近期 tool 是否失败**（不解析完整 JSON 正文，依赖 normalize）。
+pub fn l0_snapshot_merged(merged_routing: &str, has_recent_tool_failure: bool) -> IntentL0Snapshot {
+    let mut s = text_flags_from_routing(merged_routing);
+    s.has_recent_tool_failure = has_recent_tool_failure;
+    if has_recent_tool_failure {
+        s.has_error_signal = true;
+    }
+    s
+}
+
+/// 自当前 user 条**之前**、自尾向前，若存在 `ok: false` 的 `crabmate_tool` 则视为需跟进。最多扫 `max_tail` 条 `Message`。
+pub fn messages_have_recent_tool_failure(
+    messages: &[crate::types::Message],
+    max_tail: usize,
+) -> bool {
+    use crate::tool_result::normalize_tool_message_content;
+    for m in messages.iter().rev().take(max_tail) {
+        if m.role != "tool" {
+            continue;
+        }
+        let Some(t) = crate::types::message_content_as_str(&m.content) else {
+            continue;
+        };
+        if let Some(env) = normalize_tool_message_content(t) {
+            if !env.ok {
+                return true;
+            }
+        } else {
+            // 无信封时的保守启发式（不依赖具体供应商）
+            let low = t.to_lowercase();
+            if low.contains("\"ok\":false")
+                || (low.contains("ok") && (low.contains("error_code") || low.contains("失败")))
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -150,6 +198,13 @@ mod tests {
     #[test]
     fn l0_detects_error_signal() {
         let s = super::l0_snapshot_from_merged_routing("cargo test 报 error: 找不到模块");
+        assert!(s.has_error_signal);
+    }
+
+    #[test]
+    fn l0_merged_sets_tool_flag() {
+        let s = super::l0_snapshot_merged("继续改", true);
+        assert!(s.has_recent_tool_failure);
         assert!(s.has_error_signal);
     }
 }

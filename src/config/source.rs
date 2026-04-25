@@ -239,6 +239,8 @@ pub(super) struct AgentSection {
     pub(super) intent_l2_min_confidence: Option<f64>,
     /// L2 语义分类请求 `max_tokens`（默认 220）。
     pub(super) intent_l2_max_tokens: Option<u64>,
+    /// 非分层路径是否在主循环前跑 L0/L1/可选 L2 门控（缺省为 false，与 `finalize` 一致）。
+    pub(super) intent_at_turn_start_enabled: Option<bool>,
     /// 是否根据 L0 对 L1 做保守提级（缺省为 true，与 `finalize` 一致）。
     pub(super) intent_l0_routing_boost_enabled: Option<bool>,
 }
