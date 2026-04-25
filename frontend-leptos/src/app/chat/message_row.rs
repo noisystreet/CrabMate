@@ -20,9 +20,13 @@ use crate::storage::{ChatSession, StoredMessage};
 
 use super::message_row_actions::{MessageRowActionSignals, spawn_scroll_to_linked_user_message};
 
+fn is_hierarchical_subgoal_state(state: Option<&str>) -> bool {
+    state.is_some_and(|s| s.starts_with("hierarchical-subgoal:"))
+}
+
 fn extract_hierarchical_phase_chip(msg: &StoredMessage) -> Option<(String, String)> {
     let state = msg.state.as_deref()?;
-    if !state.starts_with("hierarchical-subgoal:") {
+    if !is_hierarchical_subgoal_state(Some(state)) {
         return None;
     }
     let phase = msg.text.lines().map(str::trim).find_map(|line| {
@@ -44,7 +48,7 @@ fn extract_hierarchical_phase_chip(msg: &StoredMessage) -> Option<(String, Strin
 
 fn extract_hierarchical_metrics(msg: &StoredMessage) -> Option<String> {
     let state = msg.state.as_deref()?;
-    if !state.starts_with("hierarchical-subgoal:") {
+    if !is_hierarchical_subgoal_state(Some(state)) {
         return None;
     }
     let mut error_count: Option<String> = None;
@@ -82,6 +86,75 @@ fn extract_hierarchical_metrics(msg: &StoredMessage) -> Option<String> {
         parts.push(format!("无进展 {v} 轮"));
     }
     Some(parts.join(" · "))
+}
+
+fn extract_hierarchical_goal_target(msg: &StoredMessage) -> Option<String> {
+    let state = msg.state.as_deref()?;
+    if !is_hierarchical_subgoal_state(Some(state)) {
+        return None;
+    }
+    msg.text.lines().map(str::trim).find_map(|line| {
+        line.strip_prefix("- 目标：")
+            .or_else(|| line.strip_prefix("目标："))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn build_subgoal_exec_banner_text(
+    loc: Locale,
+    phase: Option<&str>,
+    target: Option<&str>,
+) -> Option<String> {
+    let key = subgoal_phase_key(phase)?;
+    let verb = match (loc, key) {
+        (Locale::ZhHans, "diagnose") => "正在诊断",
+        (Locale::ZhHans, "fix") => "正在修复",
+        (Locale::ZhHans, "verify") => "正在验证",
+        (Locale::ZhHans, "escalate") => "正在升级",
+        (Locale::ZhHans, "run") => "正在执行",
+        (Locale::En, "diagnose") => "Diagnosing",
+        (Locale::En, "fix") => "Fixing",
+        (Locale::En, "verify") => "Verifying",
+        (Locale::En, "escalate") => "Escalating",
+        (Locale::En, "run") => "Running",
+        _ => "",
+    };
+    if verb.is_empty() {
+        return None;
+    }
+    match (loc, target.filter(|t| !t.trim().is_empty())) {
+        (Locale::ZhHans, Some(t)) => Some(format!("{verb}：{}…", t.trim())),
+        (Locale::ZhHans, None) => Some(format!("{verb}子目标…")),
+        (Locale::En, Some(t)) => Some(format!("{verb}: {}…", t.trim())),
+        (Locale::En, None) => Some(format!("{verb} subgoal…")),
+    }
+}
+
+fn subgoal_phase_key(phase: Option<&str>) -> Option<&'static str> {
+    let p = phase.map(str::trim).unwrap_or("").to_ascii_lowercase();
+    if p.is_empty() {
+        return None;
+    }
+    // 阶段文本可能来自模型/后端（中英均可能），因此识别不依赖当前 locale。
+    match p.as_str() {
+        "诊断" | "diagnose" => Some("diagnose"),
+        "修复" | "fix" => Some("fix"),
+        "验证" | "verify" => Some("verify"),
+        "升级" | "escalate" => Some("escalate"),
+        "开始执行" | "start" | "running" => Some("run"),
+        _ => None,
+    }
+}
+
+fn build_subgoal_exec_banner_icon_key(_loc: Locale, phase: Option<&str>) -> Option<&'static str> {
+    subgoal_phase_key(phase)
+}
+
+fn is_running_subgoal_phase(loc: Locale, phase: Option<&str>) -> bool {
+    let _ = loc;
+    subgoal_phase_key(phase).is_some()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -159,6 +232,37 @@ pub(crate) fn chat_message_row(
     let show_planner_round_badge = stored_message_is_staged_planner_round(&m);
     let subgoal_phase_chip = extract_hierarchical_phase_chip(&m);
     let subgoal_metrics_line = extract_hierarchical_metrics(&m);
+    let subgoal_target_line = extract_hierarchical_goal_target(&m);
+    let subgoal_exec_banner = build_subgoal_exec_banner_text(
+        locale.get_untracked(),
+        subgoal_phase_chip.as_ref().map(|(phase, _)| phase.as_str()),
+        subgoal_target_line.as_deref(),
+    );
+    let subgoal_exec_banner_icon_key = build_subgoal_exec_banner_icon_key(
+        locale.get_untracked(),
+        subgoal_phase_chip.as_ref().map(|(phase, _)| phase.as_str()),
+    );
+    let is_active_subgoal_banner = if subgoal_exec_banner.is_some()
+        && is_running_subgoal_phase(
+            locale.get_untracked(),
+            subgoal_phase_chip.as_ref().map(|(phase, _)| phase.as_str()),
+        ) {
+        sessions.with(|list| {
+            let aid = active_id.get_untracked();
+            list.iter()
+                .find(|s| s.id == aid)
+                .and_then(|sess| {
+                    sess.messages
+                        .iter()
+                        .rev()
+                        .find(|msg| is_hierarchical_subgoal_state(msg.state.as_deref()))
+                })
+                .map(|msg| msg.id == m.id)
+                .unwrap_or(false)
+        })
+    } else {
+        false
+    };
     let msg_core = if m.role == "assistant" && !m.is_tool {
         assistant_markdown_collapsible_view(
             sessions,
@@ -445,11 +549,52 @@ pub(crate) fn chat_message_row(
                             </button>
                         }
                     })}
-                    {subgoal_phase_chip.as_ref().map(|(phase, chip_class)| {
-                        let phase = phase.clone();
-                        let chip_class = chip_class.clone();
+                    {subgoal_exec_banner.as_ref().map(|banner| {
+                        let banner = banner.clone();
+                        let icon_key = subgoal_exec_banner_icon_key.unwrap_or("run").to_string();
+                        let active_cls = if is_active_subgoal_banner {
+                            " is-active-subgoal-banner"
+                        } else {
+                            ""
+                        };
+                        let banner_class =
+                            format!("msg-subgoal-exec-banner phase-{icon_key}{active_cls}");
                         view! {
-                            <div class=chip_class>{phase}</div>
+                            <div class=banner_class>
+                                <span class="msg-subgoal-exec-banner-icon" aria-hidden="true">
+                                    {match icon_key.as_str() {
+                                        "diagnose" => view! {
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <circle cx="11" cy="11" r="7"></circle>
+                                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                            </svg>
+                                        }.into_any(),
+                                        "fix" => view! {
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18v3h3l6.1-6.1a4 4 0 0 0 5.6-5.6l-2.4 2.4-3.2-3.2 2.6-2.2z"></path>
+                                            </svg>
+                                        }.into_any(),
+                                        "verify" => view! {
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M20 6 9 17l-5-5"></path>
+                                            </svg>
+                                        }.into_any(),
+                                        "escalate" => view! {
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M12 19V5"></path>
+                                                <path d="m5 12 7-7 7 7"></path>
+                                            </svg>
+                                        }.into_any(),
+                                        _ => view! {
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                                <circle cx="12" cy="12" r="9"></circle>
+                                                <path d="M12 7v5l3 2"></path>
+                                            </svg>
+                                        }.into_any(),
+                                    }}
+                                </span>
+                                <span class="msg-subgoal-exec-banner-text" prop:title=banner.clone()>{banner.clone()}</span>
+                            </div>
                         }
                     })}
                     {subgoal_metrics_line.as_ref().map(|line| {
@@ -593,5 +738,71 @@ pub(crate) fn chat_message_row(
                 })}
             </div>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_running_subgoal_phase;
+    use super::{
+        build_subgoal_exec_banner_icon_key, build_subgoal_exec_banner_text,
+        extract_hierarchical_goal_target, subgoal_phase_key,
+    };
+    use crate::i18n::Locale;
+    use crate::storage::StoredMessage;
+
+    fn subgoal_msg(text: &str) -> StoredMessage {
+        StoredMessage {
+            id: "m1".to_string(),
+            role: "assistant".to_string(),
+            text: text.to_string(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some("hierarchical-subgoal:goal_5".to_string()),
+            is_tool: false,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn extract_goal_target_from_subgoal_text() {
+        let m = subgoal_msg("- 阶段：开始执行\n- 目标：创建 build 目录");
+        let target = extract_hierarchical_goal_target(&m);
+        assert_eq!(target.as_deref(), Some("创建 build 目录"));
+    }
+
+    #[test]
+    fn build_exec_banner_for_started_phase() {
+        let t = build_subgoal_exec_banner_text(
+            Locale::ZhHans,
+            Some("开始执行"),
+            Some("创建 build 目录并运行 cmake"),
+        );
+        assert_eq!(t.as_deref(), Some("正在执行：创建 build 目录并运行 cmake…"));
+    }
+
+    #[test]
+    fn build_exec_banner_for_fix_phase() {
+        let t =
+            build_subgoal_exec_banner_text(Locale::ZhHans, Some("修复"), Some("修正 CMake 路径"));
+        assert_eq!(t.as_deref(), Some("正在修复：修正 CMake 路径…"));
+    }
+
+    #[test]
+    fn build_exec_banner_icon_for_verify_phase() {
+        let icon = build_subgoal_exec_banner_icon_key(Locale::ZhHans, Some("验证"));
+        assert_eq!(icon, Some("verify"));
+    }
+
+    #[test]
+    fn running_subgoal_phase_only_for_active_progress() {
+        assert!(is_running_subgoal_phase(Locale::ZhHans, Some("修复")));
+        assert!(!is_running_subgoal_phase(Locale::ZhHans, Some("完成")));
+    }
+
+    #[test]
+    fn phase_key_is_locale_independent() {
+        assert_eq!(subgoal_phase_key(Some("开始执行")), Some("run"));
+        assert_eq!(subgoal_phase_key(Some("diagnose")), Some("diagnose"));
     }
 }

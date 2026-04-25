@@ -19,4 +19,4 @@ pub(crate) use staged_timeline::{
     STAGED_TIMELINE_SYSTEM_PREFIX, is_staged_timeline_stored_message,
     staged_timeline_system_message_body,
 };
-pub(crate) use tool_card::tool_card_text;
+pub(crate) use tool_card::{tool_card_compact_text, tool_card_text};

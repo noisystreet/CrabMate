@@ -96,6 +96,32 @@ fn user_text_for_chat_display(raw: &str) -> String {
     raw.to_string()
 }
 
+fn maybe_trim_hierarchical_subgoal_redundant_lines(
+    state: Option<&str>,
+    raw: String,
+    apply_assistant_display_filters: bool,
+) -> String {
+    if !apply_assistant_display_filters {
+        return raw;
+    }
+    let is_subgoal = state.is_some_and(|s| s.starts_with("hierarchical-subgoal:"));
+    if !is_subgoal {
+        return raw;
+    }
+    let kept = raw
+        .lines()
+        .filter(|line| {
+            let t = line.trim();
+            !(t.starts_with("子目标 `")
+                || t.starts_with("子目标 goal_")
+                || t.starts_with("- 阶段：")
+                || t.starts_with("阶段："))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    kept.trim().to_string()
+}
+
 /// `apply_assistant_display_filters == false` 时助手消息按存储原文输出（不剥 `agent_reply_plan`、不拆内联思维链标记）。
 pub fn message_text_for_display_ex(
     m: &StoredMessage,
@@ -139,7 +165,7 @@ pub fn message_text_for_display_ex(
                 || t_trim.contains("\"type\":\"agent_reply_plan\"");
             let answer_is_plan_digest_only = text_looks_like_plan_json
                 && (a.is_empty() || a == crate::i18n::plan_generated(loc));
-            if r.is_empty() {
+            let out = if r.is_empty() {
                 answer
             } else if a.is_empty() || answer_is_plan_digest_only {
                 // Web SSE：`assistant_answer_phase` 之前的增量写入 `reasoning_text`，之后写入 `text`。
@@ -157,17 +183,27 @@ pub fn message_text_for_display_ex(
                 }
             } else {
                 format!("{r}\n\n{answer}")
-            }
+            };
+            maybe_trim_hierarchical_subgoal_redundant_lines(
+                m.state.as_deref(),
+                out,
+                apply_assistant_display_filters,
+            )
         } else {
             let r_empty = r_body.trim().is_empty();
             let a_empty = answer.trim().is_empty();
-            if r_empty {
+            let out = if r_empty {
                 answer
             } else if a_empty {
                 r_body.to_string()
             } else {
                 format!("{r_body}\n\n{answer}")
-            }
+            };
+            maybe_trim_hierarchical_subgoal_redundant_lines(
+                m.state.as_deref(),
+                out,
+                apply_assistant_display_filters,
+            )
         }
     } else if m.role == "user" {
         user_text_for_chat_display(&m.text)

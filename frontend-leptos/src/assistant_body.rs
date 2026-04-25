@@ -59,10 +59,17 @@ pub fn assistant_markdown_collapsible_view(
             let _ = apply_assistant_display_filters.get();
             let (text_src, is_loading_msg) = sessions.with(|list| {
                 let aid = active_id.get_untracked();
+                let loc = locale.get_untracked();
+                let apply = apply_assistant_display_filters.get_untracked();
                 list.iter()
                     .find(|s| s.id == aid)
                     .and_then(|s| s.messages.iter().find(|msg| msg.id == mid))
-                    .map(|m| (m.text.clone(), m.state.as_deref() == Some("loading")))
+                    .map(|m| {
+                        (
+                            message_text_for_display_ex(m, loc, apply),
+                            m.state.as_deref() == Some("loading"),
+                        )
+                    })
                     .unwrap_or_default()
             });
 

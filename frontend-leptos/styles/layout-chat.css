@@ -1367,6 +1367,90 @@
   font-variant-numeric: tabular-nums;
 }
 
+.msg-subgoal-exec-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(100%, 42rem);
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 82%, var(--accent));
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent) 12%);
+  color: color-mix(in srgb, var(--text) 88%, var(--accent));
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  opacity: 0.9;
+  transition: opacity 0.16s ease, filter 0.16s ease, border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.msg-subgoal-exec-banner.phase-diagnose {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: color-mix(in srgb, var(--accent) 90%, var(--text));
+}
+
+.msg-subgoal-exec-banner.phase-fix {
+  border-color: color-mix(in srgb, var(--success) 52%, var(--border-subtle));
+  background: color-mix(in srgb, var(--success) 14%, var(--surface));
+  color: color-mix(in srgb, var(--success) 88%, var(--text));
+}
+
+.msg-subgoal-exec-banner.phase-verify {
+  border-color: color-mix(in srgb, #4f8cff 52%, var(--border-subtle));
+  background: color-mix(in srgb, #4f8cff 14%, var(--surface));
+  color: color-mix(in srgb, #4f8cff 84%, var(--text));
+}
+
+.msg-subgoal-exec-banner.phase-escalate {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--border-subtle));
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  color: color-mix(in srgb, var(--danger) 86%, var(--text));
+}
+
+.msg-subgoal-exec-banner.phase-run {
+  border-color: color-mix(in srgb, var(--warning) 52%, var(--border-subtle));
+  background: color-mix(in srgb, var(--warning) 16%, var(--surface));
+  color: color-mix(in srgb, var(--warning) 86%, var(--text));
+}
+
+.msg:hover .msg-subgoal-exec-banner,
+.msg:focus-within .msg-subgoal-exec-banner {
+  opacity: 1;
+  filter: saturate(1.07) contrast(1.04);
+}
+
+.msg-subgoal-exec-banner.is-active-subgoal-banner {
+  opacity: 1;
+  filter: saturate(1.06) contrast(1.03);
+  box-shadow: 0 1px 6px color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.msg-subgoal-exec-banner-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  justify-content: center;
+  align-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  flex: 0 0 auto;
+}
+
+.msg-subgoal-exec-banner-icon svg {
+  width: 10px;
+  height: 10px;
+}
+
+.msg-subgoal-exec-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .msg-error {
   border-color: var(--error);
   color: var(--error);

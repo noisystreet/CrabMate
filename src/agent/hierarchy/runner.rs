@@ -192,7 +192,7 @@ pub async fn run_hierarchical(
             .collect::<Vec<_>>()
             .join("\n");
         let plan_summary = format!(
-            "**Manager 规划** ({} 个子目标, 策略={})\n\n{}\n\n执行中...",
+            "**Manager 规划** ({} 个子目标, 策略={})\n\n{}",
             manager_output.sub_goals.len(),
             manager_output.execution_strategy.as_str(),
             sub_goals_detail
@@ -336,7 +336,7 @@ async fn run_simple_fallback(
             .collect::<Vec<_>>()
             .join("\n");
         let plan_summary = format!(
-            "**Manager 规划** ({} 个子目标, 策略={})\n\n{}\n\n执行中...",
+            "**Manager 规划** ({} 个子目标, 策略={})\n\n{}",
             manager_output.sub_goals.len(),
             manager_output.execution_strategy.as_str(),
             sub_goals_detail

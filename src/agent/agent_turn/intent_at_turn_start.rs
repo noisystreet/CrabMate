@@ -53,16 +53,19 @@ pub(crate) async fn run_intent_for_hierarchical(
 
 fn format_intent_title(assessment: &crate::agent::intent_pipeline::IntentDecision) -> String {
     use crate::agent::intent_pipeline::IntentAction;
+    let kind = match assessment.kind {
+        crate::agent::intent_router::IntentKind::Greeting => "问候类",
+        crate::agent::intent_router::IntentKind::Execute => "执行类",
+        crate::agent::intent_router::IntentKind::Qa => "问答类",
+        crate::agent::intent_router::IntentKind::Ambiguous => "待澄清",
+    };
     let action = match &assessment.action {
         IntentAction::Execute => "直接执行",
         IntentAction::ConfirmThenExecute(_) => "确认后执行",
         IntentAction::ClarifyThenExecute(_) => "澄清后执行",
         IntentAction::DirectReply(_) => "直接回复",
     };
-    format!(
-        "意图分析：kind={:?}, primary={}, action={}",
-        assessment.kind, assessment.primary_intent, action
-    )
+    format!("意图分析：{}（{}）", kind, action)
 }
 
 fn format_intent_detail(
@@ -70,17 +73,40 @@ fn format_intent_detail(
     merge_meta: &crate::agent::intent_pipeline::IntentMergeMeta,
 ) -> String {
     let l0 = &merge_meta.l0;
+    let l2_status = if !merge_meta.l2_present {
+        "未启用/未触发".to_string()
+    } else if merge_meta.l2_applied {
+        match merge_meta.l2_confidence {
+            Some(c) => format!("已应用（置信度 {:.2}）", c),
+            None => "已应用".to_string(),
+        }
+    } else {
+        match merge_meta.l2_confidence {
+            Some(c) => format!("未应用（置信度 {:.2}）", c),
+            None => "未应用".to_string(),
+        }
+    };
+    let override_reason = merge_meta
+        .override_reason
+        .as_deref()
+        .unwrap_or("无")
+        .to_string();
+    let secondary = if assessment.secondary_intents.is_empty() {
+        "无".to_string()
+    } else {
+        assessment.secondary_intents.join("、")
+    };
     format!(
-        "confidence={:.2}, need_clarification={}, abstain={}, l1={:?}@{:.2}, l2_present={}, l2_applied={}, l2_conf={:?}, override={:?}, merged_continuation={}, l0(path={},err={},short={},git={},cmd={},tool_fail={})",
+        "主意图：{}\n次意图：{}\n综合置信度：{:.2}\n需要澄清：{}\n是否保守拒识：{}\nL1 判定：{:?}（{:.2}）\nL2 结果：{}\n覆盖原因：{}\n是否命中续接合并：{}\nL0 信号：路径={}，报错={}，短句={}，Git关键词={}，命令词={}，近期工具失败={}",
+        assessment.primary_intent,
+        secondary,
         assessment.confidence,
         assessment.need_clarification,
         assessment.abstain,
         merge_meta.l1_kind,
         merge_meta.l1_confidence,
-        merge_meta.l2_present,
-        merge_meta.l2_applied,
-        merge_meta.l2_confidence,
-        merge_meta.override_reason,
+        l2_status,
+        override_reason,
         merge_meta.used_merged_continuation,
         l0.has_file_path_like,
         l0.has_error_signal,
