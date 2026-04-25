@@ -303,7 +303,7 @@ flowchart TB
 - **规划器/执行器模式（阶段 1）**（`[agent] planner_executor_mode` / `AGENT_PLANNER_EXECUTOR_MODE`）：
   - `single_agent`（默认）：沿用历史单 agent 逻辑。
   - `logical_dual_agent`：同进程逻辑双 agent。规划轮仅消费去分隔线、去 `tool`、去空 assistant 的自然语言上下文，再追加规划 system 指令产出 `agent_reply_plan`；执行轮仍由既有外层循环负责工具调用与反思校验。该模式可减少工具原始输出对规划拆解的干扰，且不改变 HTTP/SSE 协议形状。
-- **意图增强一期（分层入口）**：`agent_turn::hierarchy` 先走 `intent_pipeline`（L1），并在 `[agent] intent_l2_enabled=true` 时追加一次 `intent_l2_classifier` 无工具 LLM 分类（失败 fail-open）；最终由 `assess_and_route_with_l2` 按 `intent_l2_min_confidence` 决定是否覆盖 L1。会输出 `l1_kind/l2_present/l2_applied/override_reason/final_*` 观测日志，再传入 `hierarchy::runner`。`runner` 在 Router 决策后可按 `[agent] intent_mode_bias_enabled`（默认 true）执行轻量模式偏置；首轮执行意图阈值由 `[agent] intent_execute_low_threshold` / `[agent] intent_execute_high_threshold` 控制（见 `config::finalize` 归一化逻辑）。
+- **意图增强一期（分层入口）**：`agent_turn::hierarchy` 先经 **`intent_l0`** 做**路由文本**与特征（澄清流程下可合并「前序 user + 当前短续接」、供 L1/L2 同吃），再跑 **`intent_pipeline`（L1 规则 + 可选 L0 提级，由 `intent_l0_routing_boost_enabled` 门控）**；`[agent] intent_l2_enabled=true` 时再追加 `intent_l2_classifier` 无工具 LLM（**输入**为合并路由 + 当前句；失败 fail-open），由 `assess_and_route_with_l2` 按 `intent_l2_min_confidence` 是否覆盖 L1。观测：`[INTENT_PIPELINE]` 与 SSE `intent_analysis`（`IntentMergeMeta` 含 `used_merged_continuation`、L0 特征字段）。`runner` 在 Router 后可按 `intent_mode_bias_enabled` 偏置；执行阈值与上述键见 **`docs/CONFIGURATION.md`** 与 `config::finalize`。
 
 #### 配置与 P/R/E 路径对照（`run_agent_turn_common`）
 

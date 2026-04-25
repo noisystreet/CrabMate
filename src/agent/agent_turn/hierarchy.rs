@@ -82,8 +82,9 @@ fn format_intent_analysis_detail(
     assessment: &IntentDecision,
     merge_meta: &crate::agent::intent_pipeline::IntentMergeMeta,
 ) -> String {
+    let l0 = &merge_meta.l0;
     format!(
-        "confidence={:.2}, need_clarification={}, abstain={}, l1={:?}@{:.2}, l2_present={}, l2_applied={}, l2_confidence={:?}, override_reason={:?}",
+        "confidence={:.2}, need_clarification={}, abstain={}, l1={:?}@{:.2}, l2_present={}, l2_applied={}, l2_confidence={:?}, override_reason={:?}, merged_continuation={}, l0(path={},err={},short={},git={},cmd={})",
         assessment.confidence,
         assessment.need_clarification,
         assessment.abstain,
@@ -92,7 +93,13 @@ fn format_intent_analysis_detail(
         merge_meta.l2_present,
         merge_meta.l2_applied,
         merge_meta.l2_confidence,
-        merge_meta.override_reason
+        merge_meta.override_reason,
+        merge_meta.used_merged_continuation,
+        l0.has_file_path_like,
+        l0.has_error_signal,
+        l0.is_short,
+        l0.has_git_keyword,
+        l0.has_command_cargo
     )
 }
 
@@ -133,17 +140,29 @@ pub(crate) async fn run_hierarchical_agent(
         });
     }
 
+    let recent_user_messages = collect_recent_user_messages(p.messages, 4);
     let intent_ctx = IntentContext {
+        recent_user_messages,
         in_clarification_flow,
         thresholds: ExecuteIntentThresholds {
             low: p.cfg.intent_execute_low_threshold,
             high: p.cfg.intent_execute_high_threshold,
         },
         l2_min_confidence: p.cfg.intent_l2_min_confidence,
-        ..IntentContext::default()
+        l0_routing_boost_enabled: p.cfg.intent_l0_routing_boost_enabled,
     };
+    let (routing_for_l1, _, _) =
+        crate::agent::intent_pipeline::prepare_intent_routing(&task, &intent_ctx);
     let l2_candidate = if p.cfg.intent_l2_enabled {
-        classify_intent_l2_with_llm(&task, p.cfg.as_ref(), p.llm_backend, p.client, p.api_key).await
+        classify_intent_l2_with_llm(
+            &routing_for_l1,
+            &task,
+            p.cfg.as_ref(),
+            p.llm_backend,
+            p.client,
+            p.api_key,
+        )
+        .await
     } else {
         None
     };
@@ -265,6 +284,31 @@ pub(crate) async fn run_hierarchical_agent(
     handle_execution_result(p, result, &task).await?;
 
     Ok(())
+}
+
+/// 取当前 user 条之前的最近 `max` 条 user 正文（**新在前**），供 L0 续接合并。
+fn collect_recent_user_messages(messages: &[crate::types::Message], max: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for m in messages.iter().rev() {
+        if m.role != "user" {
+            continue;
+        }
+        if out.len() > max {
+            break;
+        }
+        if let Some(t) = crate::types::message_content_as_str(&m.content) {
+            let s = t.trim();
+            if !s.is_empty() {
+                out.push(s.to_string());
+            }
+        }
+    }
+    if out.is_empty() {
+        return Vec::new();
+    }
+    // 去掉当前（最新）user，只保留前序
+    out.remove(0);
+    out
 }
 
 /// 从消息中提取用户任务

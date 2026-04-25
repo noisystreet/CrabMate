@@ -6,6 +6,7 @@ pub mod context_window;
 pub mod evolution;
 /// 分层多 Agent 协作架构：Router + Manager + Operator
 pub mod hierarchy;
+pub mod intent_l0;
 pub mod intent_l2_classifier;
 pub mod intent_pipeline;
 pub mod intent_router;
