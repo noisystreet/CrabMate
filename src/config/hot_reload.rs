@@ -68,6 +68,7 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.skills_enabled = src.skills_enabled;
     dst.skills_dir.clone_from(&src.skills_dir);
     dst.skills_max_chars = src.skills_max_chars;
+    dst.skills_top_k = src.skills_top_k;
     dst.tool_message_max_chars = src.tool_message_max_chars;
     dst.tool_result_envelope_v1 = src.tool_result_envelope_v1;
     dst.sse_tool_call_include_arguments = src.sse_tool_call_include_arguments;

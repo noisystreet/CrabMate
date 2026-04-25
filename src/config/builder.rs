@@ -57,6 +57,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) skills_enabled: Option<bool>,
     pub(crate) skills_dir: Option<String>,
     pub(crate) skills_max_chars: Option<u64>,
+    pub(crate) skills_top_k: Option<u64>,
     pub(crate) tool_message_max_chars: Option<u64>,
     pub(crate) tool_result_envelope_v1: Option<bool>,
     pub(crate) sse_tool_call_include_arguments: Option<bool>,
@@ -327,6 +328,7 @@ impl ConfigBuilder {
         self.cursor_rules_max_chars = agent.cursor_rules_max_chars.or(self.cursor_rules_max_chars);
         self.skills_enabled = agent.skills_enabled.or(self.skills_enabled);
         self.skills_max_chars = agent.skills_max_chars.or(self.skills_max_chars);
+        self.skills_top_k = agent.skills_top_k.or(self.skills_top_k);
         self.tool_message_max_chars = agent.tool_message_max_chars.or(self.tool_message_max_chars);
         self.tool_result_envelope_v1 = agent
             .tool_result_envelope_v1

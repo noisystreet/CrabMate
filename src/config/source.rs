@@ -118,6 +118,7 @@ pub(super) struct AgentSection {
     pub(super) skills_enabled: Option<bool>,
     pub(super) skills_dir: Option<String>,
     pub(super) skills_max_chars: Option<u64>,
+    pub(super) skills_top_k: Option<u64>,
     pub(super) tool_message_max_chars: Option<u64>,
     pub(super) tool_result_envelope_v1: Option<bool>,
     pub(super) sse_tool_call_include_arguments: Option<bool>,

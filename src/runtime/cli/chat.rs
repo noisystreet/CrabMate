@@ -350,7 +350,18 @@ async fn run_chat_batch_jsonl(
                 };
                 let u_exp = expand_at_file_refs_in_user_message(u, work_dir, cfg_snap.as_ref())
                     .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
-                messages = messages_chat_seed(&system_seed, &u_exp);
+                let system_selected =
+                    crate::config::skills::merge_system_prompt_with_skills_selected(
+                        system_seed.clone(),
+                        cfg_snap.skills_enabled,
+                        cfg_snap.skills_dir.as_str(),
+                        cfg_snap.skills_max_chars,
+                        work_dir,
+                        &u_exp,
+                        cfg_snap.skills_top_k,
+                    )
+                    .unwrap_or_else(|_| system_seed.clone());
+                messages = messages_chat_seed(&system_selected, &u_exp);
                 prepend_cli_first_turn_injection(cfg_holder, work_dir, &mut messages).await;
             } else {
                 let cfg_snap = {
@@ -502,6 +513,17 @@ pub async fn run_chat_invocation(
     let user =
         expand_at_file_refs_in_user_message(&user, work_dir.as_path(), cfg_for_expand.as_ref())
             .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
+    let base_system = system;
+    let system = crate::config::skills::merge_system_prompt_with_skills_selected(
+        base_system.clone(),
+        cfg_for_expand.skills_enabled,
+        cfg_for_expand.skills_dir.as_str(),
+        cfg_for_expand.skills_max_chars,
+        work_dir.as_path(),
+        &user,
+        cfg_for_expand.skills_top_k,
+    )
+    .unwrap_or(base_system);
     let mut messages = messages_chat_seed(&system, &user);
     prepend_cli_first_turn_injection(cfg_holder, work_dir.as_path(), &mut messages).await;
     debug!(

@@ -308,6 +308,7 @@ pub(super) fn finalize(
         .skills_dir
         .unwrap_or_else(|| ".crabmate/skills".to_string());
     let skills_max_chars = b.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
+    let skills_top_k = b.skills_top_k.unwrap_or(3).clamp(1, 64) as usize;
     let system_prompt = skills::merge_system_prompt_with_skills(
         system_prompt,
         skills_enabled,
@@ -333,6 +334,7 @@ pub(super) fn finalize(
         skills_enabled,
         &skills_dir,
         skills_max_chars as usize,
+        skills_top_k,
     )?;
 
     let final_plan_requirement = match b.final_plan_requirement_str.as_deref() {
@@ -795,6 +797,7 @@ pub(super) fn finalize(
         skills_enabled,
         skills_dir,
         skills_max_chars: skills_max_chars as usize,
+        skills_top_k,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
