@@ -2,6 +2,11 @@ use super::Locale;
 
 // --- 侧栏 / 移动顶栏 ---
 
+/// 壳层标题（窄屏顶栏等）；品牌化时改此处即可。
+pub fn app_shell_title(_l: Locale) -> &'static str {
+    "CrabMate"
+}
+
 pub fn brand_sub(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "本地 Agent",

@@ -330,6 +330,7 @@ pub fn workspace_list_row_icon(is_dir: bool, name: &str) -> AnyView {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn reload_workspace_panel(
     workspace_loading: RwSignal<bool>,
     workspace_err: RwSignal<Option<String>>,

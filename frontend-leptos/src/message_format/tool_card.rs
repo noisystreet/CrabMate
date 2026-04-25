@@ -1,6 +1,6 @@
 //! 工具结果卡片的展示用单行/多行摘要（与 SSE `ToolResultInfo` 对齐）。
 
-use crate::i18n::Locale;
+use crate::i18n::{self, Locale};
 use crate::sse_dispatch::ToolResultInfo;
 
 use super::plain::collapse_duplicate_summary_lines;
@@ -22,10 +22,7 @@ fn strip_tool_status_prefix(line: &str) -> String {
 }
 
 fn rewrite_legacy_tool_summary(sum: &str, loc: Locale) -> String {
-    let normalized = sum
-        .replace(" 退出码：", "\n退出码：")
-        .replace(" 标准输出：", "\n标准输出：")
-        .replace(" 标准错误：", "\n标准错误：");
+    let normalized = i18n::tool_summary_normalize_line_breaks(sum, loc);
     let mut lines: Vec<String> = normalized
         .lines()
         .map(str::trim)
@@ -39,23 +36,17 @@ fn rewrite_legacy_tool_summary(sum: &str, loc: Locale) -> String {
     let first_raw = lines.remove(0);
     let first = strip_tool_status_prefix(&first_raw);
     let mut title = first.clone();
-    if let Some((left, right)) = first.split_once(" 成功:") {
+    if let Some((left, right)) = first.split_once(i18n::tool_cmd_success_sep(loc)) {
         let tool = left.trim();
         let rest = right.trim();
-        title = match loc {
-            Locale::ZhHans => format!("{} 已完成", tool_name_human(tool, loc)),
-            Locale::En => format!("{tool} completed"),
-        };
+        title = i18n::tool_rewrite_title_done(loc, &i18n::tool_human_name(loc, tool));
         if !rest.is_empty() {
             lines.insert(0, rest.to_string());
         }
-    } else if let Some((left, right)) = first.split_once(" 失败:") {
+    } else if let Some((left, right)) = first.split_once(i18n::tool_cmd_fail_sep(loc)) {
         let tool = left.trim();
         let rest = right.trim();
-        title = match loc {
-            Locale::ZhHans => format!("{} 执行失败", tool_name_human(tool, loc)),
-            Locale::En => format!("{tool} failed"),
-        };
+        title = i18n::tool_rewrite_title_failed_run(loc, &i18n::tool_human_name(loc, tool));
         if !rest.is_empty() {
             lines.insert(0, rest.to_string());
         }
@@ -63,33 +54,37 @@ fn rewrite_legacy_tool_summary(sum: &str, loc: Locale) -> String {
 
     let mut extras: Vec<String> = Vec::new();
     for line in lines {
-        if line == "退出码：0" {
+        if line == i18n::tool_exit_line_zero(loc)
+            || line == i18n::tool_exit_line_zero(Locale::ZhHans)
+        {
             continue;
         }
-        if let Some(v) = line.strip_prefix("标准输出：") {
+        if let Some(v) = line
+            .strip_prefix(i18n::tool_line_stdout_prefix(loc))
+            .or_else(|| line.strip_prefix(i18n::tool_line_stdout_prefix(Locale::ZhHans)))
+        {
             let v = v.trim();
             if !v.is_empty() {
-                let label = match loc {
-                    Locale::ZhHans => "输出",
-                    Locale::En => "Output",
-                };
+                let label = i18n::tool_summary_label_stdout(loc);
                 extras.push(format!("{label}：{v}"));
             }
             continue;
         }
-        if let Some(v) = line.strip_prefix("标准错误：") {
+        if let Some(v) = line
+            .strip_prefix(i18n::tool_line_stderr_prefix(loc))
+            .or_else(|| line.strip_prefix(i18n::tool_line_stderr_prefix(Locale::ZhHans)))
+        {
             let v = v.trim();
             if !v.is_empty() {
-                let label = match loc {
-                    Locale::ZhHans => "错误输出",
-                    Locale::En => "Stderr",
-                };
+                let label = i18n::tool_summary_label_stderr(loc);
                 extras.push(format!("{label}：{v}"));
             }
             continue;
         }
-        if line.starts_with("退出码：") {
-            extras.push(line);
+        if line.starts_with(i18n::tool_line_exit_prefix(loc))
+            || line.starts_with(i18n::tool_line_exit_prefix(Locale::ZhHans))
+        {
+            extras.push(line.to_string());
             continue;
         }
         extras.push(line);
@@ -101,19 +96,9 @@ fn rewrite_legacy_tool_summary(sum: &str, loc: Locale) -> String {
     format!("{title}\n\n{}", extras.join("\n"))
 }
 
+#[inline]
 fn tool_name_human(name: &str, loc: Locale) -> String {
-    match (loc, name) {
-        (Locale::ZhHans, "run_command") => "命令执行".to_string(),
-        (Locale::ZhHans, "read_file") => "读取文件".to_string(),
-        (Locale::ZhHans, "read_dir") => "读取目录".to_string(),
-        (Locale::ZhHans, "search_in_files") => "全文检索".to_string(),
-        (Locale::ZhHans, "list_files") => "列出文件".to_string(),
-        (Locale::En, "run_command") => "Command run".to_string(),
-        (Locale::En, "read_file") => "Read file".to_string(),
-        (Locale::En, "search_in_files") => "Search files".to_string(),
-        (Locale::En, "list_files") => "List files".to_string(),
-        _ => name.to_string(),
-    }
+    i18n::tool_human_name(loc, name)
 }
 
 fn compact_key_signal(info: &ToolResultInfo, summary: &str, loc: Locale) -> Option<String> {
@@ -128,12 +113,18 @@ fn compact_key_signal(info: &ToolResultInfo, summary: &str, loc: Locale) -> Opti
     if info.name.trim() == "read_dir" {
         let joined = lines.join(" ");
         let dir = joined
-            .split("目录：")
+            .split(i18n::tool_read_dir_label_dir(loc))
             .nth(1)
             .and_then(|rest| rest.split_whitespace().next())
+            .or_else(|| {
+                joined
+                    .split(i18n::tool_read_dir_label_dir(Locale::ZhHans))
+                    .nth(1)
+                    .and_then(|rest| rest.split_whitespace().next())
+            })
             .unwrap_or(".");
         let shown = joined
-            .split("展示：")
+            .split(i18n::tool_read_dir_label_shown(loc))
             .nth(1)
             .and_then(|rest| {
                 rest.chars()
@@ -144,26 +135,32 @@ fn compact_key_signal(info: &ToolResultInfo, summary: &str, loc: Locale) -> Opti
                     .ok()
             })
             .unwrap_or(0);
-        return Some(match loc {
-            Locale::ZhHans => join_compact_parts(&format!("目录 {dir}"), &format!("{shown} 项")),
-            Locale::En => join_compact_parts(&format!("dir {dir}"), &format!("{shown} entries")),
-        });
+        return Some(join_compact_parts(
+            &format!("{} {dir}", i18n::tool_read_dir_compact_dir_word(loc)),
+            &i18n::tool_read_dir_compact_entries(loc, shown),
+        ));
     }
     if info.name.trim() == "read_file" {
         let joined = lines.join(" ");
         let path = joined
-            .split("路径：")
+            .split(i18n::tool_read_file_label_path(loc))
             .nth(1)
             .and_then(|rest| rest.split_whitespace().next())
+            .or_else(|| {
+                joined
+                    .split(i18n::tool_read_file_label_path(Locale::ZhHans))
+                    .nth(1)
+                    .and_then(|rest| rest.split_whitespace().next())
+            })
             .or_else(|| {
                 joined
                     .split("path:")
                     .nth(1)
                     .and_then(|rest| rest.split_whitespace().next())
             })
-            .unwrap_or("文件");
+            .unwrap_or(i18n::tool_read_file_default_path(loc));
         let line_count = joined
-            .split("行数：")
+            .split(i18n::tool_read_file_label_lines(loc))
             .nth(1)
             .and_then(|rest| {
                 rest.chars()
@@ -182,29 +179,46 @@ fn compact_key_signal(info: &ToolResultInfo, summary: &str, loc: Locale) -> Opti
                         .parse::<usize>()
                         .ok()
                 })
+            })
+            .or_else(|| {
+                joined
+                    .split(i18n::tool_read_file_label_lines(Locale::ZhHans))
+                    .nth(1)
+                    .and_then(|rest| {
+                        rest.chars()
+                            .skip_while(|c| c.is_whitespace())
+                            .take_while(|c| c.is_ascii_digit())
+                            .collect::<String>()
+                            .parse::<usize>()
+                            .ok()
+                    })
             });
-        return Some(match (loc, line_count) {
-            (Locale::ZhHans, Some(n)) => join_compact_parts(path, &format!("{n} 行")),
-            (Locale::ZhHans, None) => path.to_string(),
-            (Locale::En, Some(n)) => join_compact_parts(path, &format!("{n} lines")),
-            (Locale::En, None) => path.to_string(),
+        return Some(match line_count {
+            Some(n) => join_compact_parts(path, &i18n::tool_read_file_lines_suffix(loc, n)),
+            None => path.to_string(),
         });
     }
     if info.name.trim() == "search_in_files" {
         let joined = lines.join(" ");
         let keyword = joined
-            .split("关键词：")
+            .split(i18n::tool_search_label_keyword(loc))
             .nth(1)
             .and_then(|rest| rest.split_whitespace().next())
+            .or_else(|| {
+                joined
+                    .split(i18n::tool_search_label_keyword(Locale::ZhHans))
+                    .nth(1)
+                    .and_then(|rest| rest.split_whitespace().next())
+            })
             .or_else(|| {
                 joined
                     .split("pattern:")
                     .nth(1)
                     .and_then(|rest| rest.split_whitespace().next())
             })
-            .unwrap_or("关键词");
+            .unwrap_or(i18n::tool_search_default_keyword(loc));
         let hit_count = joined
-            .split("命中：")
+            .split(i18n::tool_search_label_hits(loc))
             .nth(1)
             .and_then(|rest| {
                 rest.chars()
@@ -223,21 +237,31 @@ fn compact_key_signal(info: &ToolResultInfo, summary: &str, loc: Locale) -> Opti
                         .parse::<usize>()
                         .ok()
                 })
+            })
+            .or_else(|| {
+                joined
+                    .split(i18n::tool_search_label_hits(Locale::ZhHans))
+                    .nth(1)
+                    .and_then(|rest| {
+                        rest.chars()
+                            .skip_while(|c| c.is_whitespace())
+                            .take_while(|c| c.is_ascii_digit())
+                            .collect::<String>()
+                            .parse::<usize>()
+                            .ok()
+                    })
             });
-        return Some(match (loc, hit_count) {
-            (Locale::ZhHans, Some(n)) => {
-                join_compact_parts(&format!("关键词 {keyword}"), &format!("命中 {n} 处"))
-            }
-            (Locale::ZhHans, None) => format!("关键词 {keyword}"),
-            (Locale::En, Some(n)) => {
-                join_compact_parts(&format!("keyword {keyword}"), &format!("{n} hits"))
-            }
-            (Locale::En, None) => format!("keyword {keyword}"),
+        return Some(match hit_count {
+            Some(n) => join_compact_parts(
+                &format!("{} {keyword}", i18n::tool_search_compact_keyword_word(loc)),
+                &i18n::tool_search_compact_hits_suffix(loc, n),
+            ),
+            None => format!("{} {keyword}", i18n::tool_search_compact_keyword_word(loc)),
         });
     }
     lines
         .iter()
-        .find(|l| l.contains("输出：") || l.contains("错误输出：") || l.contains("目录："))
+        .find(|l| i18n::summary_line_looks_like_compact_signal(l, loc))
         .map(|s| s.to_string())
         .or_else(|| lines.first().map(|s| (*s).to_string()))
 }
@@ -246,15 +270,9 @@ fn render_tool_title(info: &ToolResultInfo, loc: Locale) -> String {
     let human = tool_name_human(info.name.trim(), loc);
     let ok = info.ok.unwrap_or(true);
     if ok {
-        match loc {
-            Locale::ZhHans => format!("{human}完成"),
-            Locale::En => format!("{human} done"),
-        }
+        i18n::tool_title_completed(loc, &human)
     } else {
-        match loc {
-            Locale::ZhHans => format!("{human}失败"),
-            Locale::En => format!("{human} failed"),
-        }
+        i18n::tool_title_failed(loc, &human)
     }
 }
 
@@ -268,20 +286,11 @@ fn build_tool_failure_suggestion(info: &ToolResultInfo, loc: Locale) -> Option<S
         .unwrap_or("")
         .to_ascii_lowercase();
     let hint = if code.contains("timeout") {
-        match loc {
-            Locale::ZhHans => "建议：缩小命令范围后重试，或提高超时阈值。",
-            Locale::En => "Suggestion: retry with narrower scope or increase timeout.",
-        }
+        i18n::tool_failure_suggest_timeout(loc)
     } else if code.contains("invalid") || code.contains("arg") {
-        match loc {
-            Locale::ZhHans => "建议：检查命令参数格式与路径是否正确。",
-            Locale::En => "Suggestion: verify command args format and paths.",
-        }
+        i18n::tool_failure_suggest_invalid_args(loc)
     } else {
-        match loc {
-            Locale::ZhHans => "建议：检查错误输出并按需重试。",
-            Locale::En => "Suggestion: inspect stderr and retry if needed.",
-        }
+        i18n::tool_failure_suggest_generic(loc)
     };
     Some(hint.to_string())
 }
@@ -293,84 +302,46 @@ fn build_tool_failure_block(info: &ToolResultInfo, loc: Locale, body: &str) -> O
     let happened = if !body.trim().is_empty() {
         body.trim().to_string()
     } else if let Some(code) = info.error_code.as_deref().filter(|s| !s.is_empty()) {
-        match loc {
-            Locale::ZhHans => format!("工具返回错误码：{code}"),
-            Locale::En => format!("Tool returned error code: {code}"),
-        }
+        i18n::tool_failure_returned_code(loc, code)
     } else {
-        match loc {
-            Locale::ZhHans => "工具执行失败。".to_string(),
-            Locale::En => "Tool execution failed.".to_string(),
-        }
+        i18n::tool_failure_no_detail(loc).to_string()
     };
     let impact = if let Some(ec) = info.exit_code {
-        match loc {
-            Locale::ZhHans => format!("当前步骤中断（退出码：{ec}），本轮后续动作可能被跳过。"),
-            Locale::En => {
-                format!("This step stopped (exit code: {ec}); follow-up actions may be skipped.")
-            }
-        }
+        i18n::tool_failure_impact_exit(loc, ec)
     } else {
-        match loc {
-            Locale::ZhHans => "当前步骤中断，本轮后续动作可能被跳过。".to_string(),
-            Locale::En => "This step stopped; follow-up actions may be skipped.".to_string(),
-        }
+        i18n::tool_failure_impact_no_exit(loc).to_string()
     };
-    let suggestion = build_tool_failure_suggestion(info, loc).unwrap_or_else(|| match loc {
-        Locale::ZhHans => "检查错误输出并按需重试。".to_string(),
-        Locale::En => "Inspect stderr and retry if needed.".to_string(),
-    });
-    Some(match loc {
-        Locale::ZhHans => {
-            format!("发生了什么\n{happened}\n\n影响范围\n{impact}\n\n建议下一步\n{suggestion}")
-        }
-        Locale::En => {
-            format!("What happened\n{happened}\n\nImpact\n{impact}\n\nNext step\n{suggestion}")
-        }
-    })
+    let suggestion = build_tool_failure_suggestion(info, loc)
+        .unwrap_or_else(|| i18n::tool_failure_suggest_fallback(loc).to_string());
+    Some(i18n::format_error_three_part(
+        loc,
+        happened.as_str(),
+        impact.as_str(),
+        suggestion.as_str(),
+    ))
 }
 
 fn build_tool_success_block(info: &ToolResultInfo, loc: Locale, body: &str) -> Option<String> {
     if !info.ok.unwrap_or(true) {
         return None;
     }
-    let done = match loc {
-        Locale::ZhHans => format!("{} 已成功完成。", tool_name_human(info.name.trim(), loc)),
-        Locale::En => format!(
-            "{} completed successfully.",
-            tool_name_human(info.name.trim(), loc)
-        ),
-    };
+    let done = i18n::tool_success_done_line(loc, &tool_name_human(info.name.trim(), loc));
     let output = if body.trim().is_empty() {
-        match loc {
-            Locale::ZhHans => "未返回可展示的输出摘要。".to_string(),
-            Locale::En => "No displayable output summary returned.".to_string(),
-        }
+        i18n::tool_success_no_output_summary(loc).to_string()
     } else {
         body.trim().to_string()
     };
     let next = match info.name.trim() {
-        "run_command" => match loc {
-            Locale::ZhHans => "可继续：检查输出后执行下一条命令或进入验证。",
-            Locale::En => "Next: inspect output, then run next command or verify.",
-        },
-        "read_file" => match loc {
-            Locale::ZhHans => "可继续：基于读取结果定位修改点或继续检索相关文件。",
-            Locale::En => "Next: locate edit points or continue searching related files.",
-        },
-        _ => match loc {
-            Locale::ZhHans => "可继续：基于当前结果继续下一步操作。",
-            Locale::En => "Next: continue with the next step based on this result.",
-        },
+        "run_command" => i18n::tool_success_next_run_command(loc).to_string(),
+        "read_file" => i18n::tool_success_next_read_file(loc).to_string(),
+        _ => i18n::tool_success_next_generic(loc).to_string(),
     };
-    Some(match loc {
-        Locale::ZhHans => {
-            format!("完成了什么\n{done}\n\n产出是什么\n{output}\n\n可继续做什么\n{next}")
-        }
-        Locale::En => {
-            format!("What was done\n{done}\n\nWhat was produced\n{output}\n\nWhat next\n{next}")
-        }
-    })
+    Some(i18n::format_success_three_part(
+        loc,
+        done.as_str(),
+        output.as_str(),
+        next.as_str(),
+    ))
 }
 
 fn normalized_tool_summary(info: &ToolResultInfo, loc: Locale) -> String {
@@ -411,10 +382,11 @@ pub fn tool_card_compact_text(info: &ToolResultInfo, loc: Locale) -> String {
     let summary = normalized_tool_summary(info, loc);
     let candidate = compact_key_signal(info, &summary, loc);
     let mut out = title.clone();
+    let skip_compact = i18n::tool_card_compact_skip_headings(loc);
     if let Some(c) = candidate.as_deref()
         && !c.is_empty()
         && c != title
-        && !matches!(c, "完成了什么" | "产出是什么" | "可继续做什么")
+        && !skip_compact.contains(&c)
     {
         out.push_str(COMPACT_SEPARATOR);
         out.push_str(c);
