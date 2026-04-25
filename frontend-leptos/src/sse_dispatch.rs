@@ -18,7 +18,8 @@ pub enum SseDispatch {
 pub struct SseCallbacks<'a> {
     pub on_error: &'a mut dyn FnMut(String),
     pub on_workspace_changed: Option<&'a mut dyn FnMut()>,
-    pub on_tool_call: Option<&'a mut dyn FnMut(String, String, Option<String>, Option<String>)>,
+    pub on_tool_call:
+        Option<&'a mut dyn FnMut(String, String, Option<String>, Option<String>, Option<String>)>,
     pub on_tool_status_change: Option<&'a mut dyn FnMut(bool)>,
     pub on_parsing_tool_calls_change: Option<&'a mut dyn FnMut(bool)>,
     /// 后续 `on_delta` 为终答正文（此前为思维链）；无链时也会在首段正文前下发。
@@ -39,6 +40,7 @@ pub struct SseCallbacks<'a> {
 #[allow(dead_code)] // 与后端 JSON 同形；展示层当前仅用 name/summary。
 pub struct ToolResultInfo {
     pub name: String,
+    pub goal_id: Option<String>,
     /// 与 `crabmate_tool.v` 对齐；缺省按 **1**（与后端 `serde(default)` 一致）。
     pub result_version: u32,
     pub summary: Option<String>,
@@ -357,12 +359,18 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                 .and_then(|x| x.as_str())
                 .unwrap_or("")
                 .to_string();
+            let goal_id = tc
+                .get("goal_id")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
             if let Some(f) = cbs.on_tool_call.as_mut() {
                 f(
                     name,
                     summary.to_string(),
                     preview.map(String::from),
                     args_full.map(String::from),
+                    goal_id,
                 );
             }
             return SseDispatch::Handled;
@@ -391,6 +399,11 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                 .and_then(|x| x.as_str())
                 .unwrap_or("")
                 .to_string(),
+            goal_id: tr
+                .get("goal_id")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from),
             result_version: tr
                 .get("result_version")
                 .and_then(|x| x.as_u64())

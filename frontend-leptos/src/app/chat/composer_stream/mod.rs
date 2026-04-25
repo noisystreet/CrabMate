@@ -77,7 +77,6 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> Arc<AttachCha
                 assistant_message_id: asst_id.clone(),
                 approval_session_store_id: appr_store.clone(),
                 shell: shell_outer.clone(),
-                pending_tool_args: Rc::new(RefCell::new(context::PendingToolArgs::default())),
                 pending_tool_message_ids: Rc::new(RefCell::new(VecDeque::new())),
             });
 

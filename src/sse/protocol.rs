@@ -175,6 +175,8 @@ pub struct ClarificationQuestionnaireBody {
 pub struct ToolCallSummary {
     pub name: String,
     pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_id: Option<String>,
     /// 与 `redact::tool_arguments_preview_for_sse` 一致：单行截断的 `function.arguments` 预览；缺省省略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments_preview: Option<String>,
@@ -190,6 +192,8 @@ fn default_tool_result_payload_version() -> u32 {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolResultBody {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub goal_id: Option<String>,
     /// 与 `crabmate_tool.v` 对齐的**工具结果载荷版本**（区别于顶层 `SseMessage.v` / `SSE_PROTOCOL_VERSION`）。
     #[serde(default = "default_tool_result_payload_version")]
     pub result_version: u32,
@@ -441,6 +445,7 @@ mod tests {
         let s = encode_message(SsePayload::ToolResult {
             tool_result: ToolResultBody {
                 name: "run_command".into(),
+                goal_id: None,
                 result_version: 1,
                 summary: Some("ls".into()),
                 output: "退出码：1".into(),

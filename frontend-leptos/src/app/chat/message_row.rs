@@ -80,6 +80,7 @@ pub(crate) fn chat_message_row(
     let user_branch_id = m.id.clone();
     let is_user_plain = m.role == "user" && !m.is_tool;
     let is_tool_bubble = m.is_tool;
+    let tool_detail_open = RwSignal::new(false);
     let jump_uid = if is_tool_bubble {
         sessions.with(|list| {
             let aid = active_id.get();
@@ -108,27 +109,68 @@ pub(crate) fn chat_message_row(
         let asc = auto_scroll_chat;
         // 工具气泡不需要跳转到用户消息的功能，只显示纯文本
         let body_inner = if is_tool_bubble {
+            let detail_text = m_for_body.reasoning_text.clone();
+            let detail_for_btn = detail_text.clone();
+            let detail_for_show = detail_text.clone();
             view! {
-                <span class="msg-body">
-                    {move || {
-                        let apply = apply_assistant_display_filters.get();
-                        let loc = locale.get();
-                        let q = normalize_search_query(&chat_find_query.get());
-                        let disp =
-                            message_text_for_display_ex(&m_for_body, loc, apply);
-                        let segs = split_for_find_highlight(&disp, &q);
-                        segs
-                            .into_iter()
-                            .map(|(s, hl)| {
-                                if hl {
-                                    view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
+                <div class="msg-tool-compact">
+                    <span class="msg-body msg-tool-summary">
+                        {move || {
+                            let apply = apply_assistant_display_filters.get();
+                            let loc = locale.get();
+                            let q = normalize_search_query(&chat_find_query.get());
+                            let disp =
+                                message_text_for_display_ex(&m_for_body, loc, apply);
+                            let segs = split_for_find_highlight(&disp, &q);
+                            segs
+                                .into_iter()
+                                .map(|(s, hl)| {
+                                    if hl {
+                                        view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
+                                    } else {
+                                        view! { {s} }.into_any()
+                                    }
+                                })
+                                .collect_view()
+                        }}
+                    </span>
+                    <Show when=move || !detail_for_btn.trim().is_empty()>
+                        <button
+                            type="button"
+                            class="msg-tool-drawer-btn"
+                            prop:title=move || {
+                                if tool_detail_open.get() {
+                                    i18n::msg_tool_detail_collapse_title(locale.get())
                                 } else {
-                                    view! { {s} }.into_any()
+                                    i18n::msg_tool_detail_expand_title(locale.get())
                                 }
-                            })
-                            .collect_view()
-                    }}
-                </span>
+                            }
+                            prop:aria-label=move || {
+                                if tool_detail_open.get() {
+                                    i18n::msg_tool_detail_collapse_title(locale.get())
+                                } else {
+                                    i18n::msg_tool_detail_expand_title(locale.get())
+                                }
+                            }
+                            on:click=move |_| {
+                                tool_detail_open.update(|v| *v = !*v);
+                            }
+                        >
+                            {move || {
+                                if tool_detail_open.get() {
+                                    i18n::msg_tool_detail_collapse_btn(locale.get())
+                                } else {
+                                    i18n::msg_tool_detail_expand_btn(locale.get())
+                                }
+                            }}
+                        </button>
+                    </Show>
+                </div>
+                <Show when=move || tool_detail_open.get() && !detail_for_show.trim().is_empty()>
+                    <div class="msg-tool-drawer">
+                        <pre class="msg-tool-drawer-pre">{detail_text.clone()}</pre>
+                    </div>
+                </Show>
             }
             .into_any()
         } else if let Some(uid) = jump_uid {
