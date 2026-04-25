@@ -728,6 +728,7 @@ pub(super) fn finalize(
     let intent_l2_enabled = b.intent_l2_enabled.unwrap_or(false);
     let intent_l2_min_confidence = b.intent_l2_min_confidence.unwrap_or(0.7).clamp(0.0, 1.0) as f32;
     let intent_l2_max_tokens = b.intent_l2_max_tokens.unwrap_or(220).clamp(32, 1024) as u32;
+    let intent_l0_routing_boost_enabled = b.intent_l0_routing_boost_enabled.unwrap_or(true);
 
     Ok(AgentConfig {
         api_base: b.api_base,
@@ -885,5 +886,6 @@ pub(super) fn finalize(
         intent_l2_max_tokens,
         intent_execute_low_threshold,
         intent_execute_high_threshold,
+        intent_l0_routing_boost_enabled,
     })
 }

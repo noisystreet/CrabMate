@@ -11,14 +11,18 @@ use crate::llm::{CompleteChatRetryingParams, LlmRetryingTransportOpts, complete_
 use crate::types::{Message, message_content_as_str};
 
 /// 尝试执行 L2 语义分类；失败返回 `None`（fail-open）。
+///
+/// - `merged_routing_text`：L0 续接合并后的**路由**文本（与 L1 一致）
+/// - `current_user_line`：当前轮用户原句，供模型区分指代
 pub async fn classify_intent_l2_with_llm(
-    task: &str,
+    merged_routing_text: &str,
+    current_user_line: &str,
     cfg: &AgentConfig,
     llm_backend: &dyn ChatCompletionsBackend,
     client: &reqwest::Client,
     api_key: &str,
 ) -> Option<L2IntentCandidate> {
-    let prompt = build_l2_prompt(task);
+    let prompt = build_l2_prompt(merged_routing_text, current_user_line);
     let request = crate::types::ChatRequest {
         model: cfg.model.clone(),
         messages: vec![Message::user_only(&prompt)],
@@ -45,26 +49,29 @@ pub async fn classify_intent_l2_with_llm(
     parse_l2_response_json(content)
 }
 
-fn build_l2_prompt(task: &str) -> String {
+fn build_l2_prompt(merged_routing_text: &str, current_user_line: &str) -> String {
     format!(
-        r#"你是一个意图分类器。请仅输出 JSON，不要输出解释文字。
+        r#"你是 CrabMate 的意图分类器。只输出**一段** JSON 对象，不要解释；若必须包在代码块，请用 ```json ... ``` 包裹该 JSON。
 
-任务：
-{task}
+【合并后的路由文本】（可能含前序+续接；用于消歧义）
+{merged}
 
-你必须从以下 kind 选择一个：greeting, qa, execute, ambiguous
-primary_intent 建议值：
-- meta.greeting
-- qa.explain
-- execute.read_inspect
-- execute.code_change
-- execute.debug_diagnose
-- execute.run_test_build
-- execute.docs_ops
-- execute.git_ops
-- unknown
+【当前轮用户原句】
+{current}
 
-输出 JSON 结构：
+分类规则要点：
+- kind=greeting：纯寒暄/感谢，无任务。
+- kind=qa：以解释/概念/比较为主，不要求改仓库或跑命令；含「不要执行/只解释」时倾向 qa。
+- kind=execute：要改代码、跑测试/构建、查目录与文件、git 提交/PR、修报错等可执行工作。
+- kind=ambiguous：信息不足且无法合理猜测执行目标。
+
+primary_intent 从下列选用最贴切的一项（可接近则选 execute 子类）：
+- meta.greeting, qa.explain, execute.read_inspect, execute.code_change, execute.debug_diagnose, execute.run_test_build, execute.docs_ops, execute.git_ops, unknown
+
+secondary_intents：同句中其它显著意图，可空。
+confidence：0.0-1.0。need_clarification：是否缺关键信息；abstain：是否应拒识为执行（与 ambiguous 常同向）。
+
+严格 JSON 键名与类型（勿加注释）：
 {{
   "kind": "greeting|qa|execute|ambiguous",
   "primary_intent": "string",
@@ -73,11 +80,20 @@ primary_intent 建议值：
   "need_clarification": false,
   "abstain": false
 }}
-"#
+"#,
+        merged = merged_routing_text,
+        current = current_user_line,
     )
 }
 
 fn parse_l2_response_json(raw: &str) -> Option<L2IntentCandidate> {
+    let raw = raw.trim();
+    let json_block = raw.find("```").and_then(|start| {
+        let after = &raw[start + 3..];
+        let after = after.strip_prefix("json").unwrap_or(after);
+        after.find("```").map(|end| after[..end].trim())
+    });
+    let json_str = json_block.unwrap_or(raw);
     #[derive(serde::Deserialize)]
     struct RawL2 {
         kind: String,
@@ -90,7 +106,7 @@ fn parse_l2_response_json(raw: &str) -> Option<L2IntentCandidate> {
         #[serde(default)]
         abstain: bool,
     }
-    let parsed: RawL2 = serde_json::from_str(raw).ok()?;
+    let parsed: RawL2 = serde_json::from_str(json_str).ok()?;
     let kind = match parsed.kind.as_str() {
         "greeting" => IntentKind::Greeting,
         "qa" => IntentKind::Qa,
@@ -124,5 +140,12 @@ mod tests {
         let x = parse_l2_response_json(raw).expect("parse");
         assert_eq!(x.kind, IntentKind::Execute);
         assert_eq!(x.primary_intent, "execute.read_inspect");
+    }
+
+    #[test]
+    fn parse_fenced_json_block() {
+        let raw = "```json\n{\"kind\":\"qa\",\"primary_intent\":\"qa.explain\",\"secondary_intents\":[],\"confidence\":0.9,\"need_clarification\":false,\"abstain\":false}\n```";
+        let x = parse_l2_response_json(raw).expect("parse");
+        assert_eq!(x.kind, IntentKind::Qa);
     }
 }
