@@ -6,7 +6,7 @@ use std::{cell::RefCell, collections::VecDeque};
 
 use leptos::prelude::*;
 
-use crate::api::ChatStreamCallbacks;
+use crate::api::{ChatStreamCallbacks, OnToolCallFn};
 use crate::clarification_form::PendingClarificationForm;
 use crate::i18n;
 use crate::i18n::Locale;
@@ -331,14 +331,7 @@ fn build_empty_reply_with_diagnostic(
         .filter(|s| !s.is_empty())
         .is_none_or(|s| s.eq_ignore_ascii_case("unknown"));
     if answer_phase_entered && answer_delta_chars > 0 && reason_unknown {
-        let hint = match loc {
-            Locale::ZhHans => {
-                "本轮回复已生成，但流式收尾信号缺失（stream_ended=unknown）。请点击“重试”获取完整收尾。"
-            }
-            Locale::En => {
-                "Reply content was generated, but stream finalization signal is missing (stream_ended=unknown). Click Retry to finish cleanly."
-            }
-        };
+        let hint = i18n::stream_partial_finalize_missing_hint(loc);
         return format!(
             "{hint}\n\n{}",
             i18n::stream_empty_reply_diag_line(
@@ -367,17 +360,6 @@ fn build_empty_reply_with_diagnostic(
     )
 }
 
-fn build_completed_without_final_summary_hint(loc: Locale) -> &'static str {
-    match loc {
-        Locale::ZhHans => {
-            "本轮执行已完成，但最终总结消息缺失。你可以点击“重试”让助手补发最终汇总。"
-        }
-        Locale::En => {
-            "Execution finished, but final summary message is missing. Click Retry to regenerate the final summary."
-        }
-    }
-}
-
 fn build_stream_error_with_suggestion(raw: &str, loc: Locale) -> String {
     let msg = raw.trim();
     if msg.is_empty() {
@@ -389,47 +371,22 @@ fn build_stream_error_with_suggestion(raw: &str, loc: Locale) -> String {
         || low.contains("unauthorized")
         || low.contains("401")
     {
-        match loc {
-            Locale::ZhHans => (
-                "当前回合无法调用模型，助手不会继续生成。",
-                "检查右侧设置中的 API Key 是否已填写且有效，然后点击“重试”。",
-            ),
-            Locale::En => (
-                "The model call cannot proceed for this turn.",
-                "Verify API key in Settings is present and valid, then click Retry.",
-            ),
-        }
+        (
+            i18n::stream_err_impact_api_key(loc),
+            i18n::stream_err_hint_api_key(loc),
+        )
     } else if low.contains("timeout") || low.contains("timed out") || low.contains("408") {
-        match loc {
-            Locale::ZhHans => (
-                "本次请求超时中断，当前回复未完整生成。",
-                "稍后重试，或缩小本次请求范围后再发送。",
-            ),
-            Locale::En => (
-                "The request timed out and the reply is incomplete.",
-                "Retry later or send a narrower request.",
-            ),
-        }
+        (
+            i18n::stream_err_impact_timeout(loc),
+            i18n::stream_err_hint_timeout(loc),
+        )
     } else {
-        match loc {
-            Locale::ZhHans => (
-                "本轮流式对话已中止，后续步骤未执行。",
-                "点击“重试”；若仍失败，请补充报错上下文以便排查。",
-            ),
-            Locale::En => (
-                "The streaming turn stopped and follow-up steps were skipped.",
-                "Click Retry; if it persists, share more error context.",
-            ),
-        }
+        (
+            i18n::stream_err_impact_generic(loc),
+            i18n::stream_err_hint_generic(loc),
+        )
     };
-    match loc {
-        Locale::ZhHans => {
-            format!("发生了什么\n{msg}\n\n影响范围\n{impact}\n\n建议下一步\n{hint}")
-        }
-        Locale::En => {
-            format!("What happened\n{msg}\n\nImpact\n{impact}\n\nNext step\n{hint}")
-        }
-    }
+    i18n::format_error_three_part(loc, msg, impact, hint)
 }
 
 /// 由 [`super::make_attach_chat_stream`](super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低 `mod.rs` 维护面。
@@ -514,7 +471,7 @@ pub(super) fn build_chat_stream_callbacks(
                             if completed_no_final {
                                 m.text = format!(
                                     "{}\n\n{}",
-                                    build_completed_without_final_summary_hint(loc),
+                                    i18n::stream_completed_missing_final_summary_hint(loc),
                                     i18n::stream_empty_reply_diag_line(
                                         loc,
                                         end_reason.as_deref(),
@@ -582,7 +539,7 @@ pub(super) fn build_chat_stream_callbacks(
     };
 
     // 暂存 tool_call 参数
-    let on_tool_call: Rc<dyn Fn(String, String, Option<String>, Option<String>, Option<String>)> = {
+    let on_tool_call: OnToolCallFn = {
         let stream_ctx = Rc::clone(&stream_ctx);
         let current_subgoal_marker = Rc::clone(&current_subgoal_marker);
         Rc::new(
@@ -1013,14 +970,13 @@ pub(super) fn build_chat_stream_callbacks(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_completed_without_final_summary_hint, build_empty_reply_with_diagnostic,
-        build_final_response_text, build_hierarchical_plan_main_bubble_text,
-        build_hierarchical_subgoal_main_bubble_text, build_intent_analysis_main_bubble_text,
-        build_stream_error_with_suggestion, enqueue_pending_tool_message_id,
-        has_same_assistant_timeline_bubble, merge_subgoal_text_preserving_target,
-        take_pending_tool_message_id,
+        build_empty_reply_with_diagnostic, build_final_response_text,
+        build_hierarchical_plan_main_bubble_text, build_hierarchical_subgoal_main_bubble_text,
+        build_intent_analysis_main_bubble_text, build_stream_error_with_suggestion,
+        enqueue_pending_tool_message_id, has_same_assistant_timeline_bubble,
+        merge_subgoal_text_preserving_target, take_pending_tool_message_id,
     };
-    use crate::i18n::Locale;
+    use crate::i18n::{self, Locale};
     use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
     #[test]
@@ -1114,7 +1070,7 @@ mod tests {
 
     #[test]
     fn completed_without_final_summary_hint_is_shown() {
-        let out = build_completed_without_final_summary_hint(Locale::ZhHans);
+        let out = i18n::stream_completed_missing_final_summary_hint(Locale::ZhHans);
         assert!(out.contains("最终总结消息缺失"));
     }
 

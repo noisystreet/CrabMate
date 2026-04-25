@@ -21,7 +21,7 @@ mod http;
 
 #[allow(unused_imports)]
 pub use api_client::{ApiClient, RealApiClient};
-pub use chat_stream::{ChatStreamCallbacks, send_chat_stream};
+pub use chat_stream::{ChatStreamCallbacks, OnToolCallFn, send_chat_stream};
 pub use client_llm_storage::{
     clear_client_llm_api_key_storage, clear_executor_llm_api_key_storage,
     client_llm_storage_has_api_key, executor_llm_storage_has_api_key,

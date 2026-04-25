@@ -219,7 +219,12 @@ pub fn export_filename_stem(prefix: &str) -> String {
 }
 
 /// 触发浏览器下载 UTF-8 文本；失败时返回说明字符串。
-pub fn trigger_download(filename: &str, mime: &str, body: &str) -> Result<(), String> {
+pub fn trigger_download(
+    filename: &str,
+    mime: &str,
+    body: &str,
+    loc: crate::i18n::Locale,
+) -> Result<(), String> {
     if has_tauri_invoke() {
         let default_name = filename.to_string();
         let content = body.to_string();
@@ -232,11 +237,13 @@ pub fn trigger_download(filename: &str, mime: &str, body: &str) -> Result<(), St
                 Ok(v) => {
                     let cancelled = v.as_bool().is_some_and(|saved| !saved);
                     if cancelled {
-                        let _ = w.alert_with_message("已取消保存。");
+                        let _ = w.alert_with_message(
+                            crate::i18n::export_tauri_save_cancelled_alert(loc),
+                        );
                     }
                 }
                 Err(e) => {
-                    let msg = format!("导出失败（Tauri 保存对话框）: {:?}", e);
+                    let msg = crate::i18n::export_tauri_save_failed_alert(loc, &format!("{e:?}"));
                     let _ = w.alert_with_message(&msg);
                 }
             }

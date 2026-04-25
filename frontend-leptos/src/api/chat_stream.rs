@@ -20,6 +20,9 @@ use super::client_llm_storage::{
     executor_llm_json_for_chat_body,
 };
 
+pub type OnToolCallFn =
+    std::rc::Rc<dyn Fn(String, String, Option<String>, Option<String>, Option<String>)>;
+
 pub struct ChatStreamCallbacks {
     pub on_delta: std::rc::Rc<dyn Fn(String)>,
     pub on_done: std::rc::Rc<dyn Fn()>,
@@ -47,8 +50,7 @@ pub struct ChatStreamCallbacks {
     pub on_thinking_trace: std::rc::Rc<dyn Fn(ThinkingTraceInfo)>,
     pub on_timeline_log: std::rc::Rc<dyn Fn(TimelineLogInfo)>,
     /// SSE `tool_call`：工具调用事件，包含名称、摘要、参数预览和完整参数。
-    pub on_tool_call:
-        std::rc::Rc<dyn Fn(String, String, Option<String>, Option<String>, Option<String>)>,
+    pub on_tool_call: OnToolCallFn,
 }
 
 impl Clone for ChatStreamCallbacks {
@@ -386,6 +388,7 @@ fn handle_sse_block(
     let mut on_timeline_log = |info: TimelineLogInfo| (cbs.on_timeline_log)(info);
 
     let mut cbs2 = SseCallbacks {
+        user_locale: loc,
         on_error: &mut on_err,
         on_workspace_changed: Some(&mut on_ws),
         on_tool_call: Some(&mut on_tool_call),
