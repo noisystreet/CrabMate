@@ -217,9 +217,10 @@ pub fn wire_sync_bg_decor_to_storage_and_dom(bg_decor: RwSignal<bool>) {
     });
 }
 
-/// 打开设置页面时，用 **`localStorage`** 与 **`/status`** 快照填充 LLM 草稿区。
+/// 打开设置弹窗或设置页面时，用 **`localStorage`** 与 **`/status`** 快照填充 LLM 草稿区。
 #[allow(clippy::too_many_arguments)]
 pub fn wire_settings_modal_llm_drafts_on_open(
+    settings_modal: RwSignal<bool>,
     settings_page: RwSignal<bool>,
     status_tasks: StatusTasksSignals,
     llm_api_base_draft: RwSignal<String>,
@@ -236,7 +237,7 @@ pub fn wire_settings_modal_llm_drafts_on_open(
     executor_llm_settings_feedback: RwSignal<Option<String>>,
 ) {
     Effect::new(move |_| {
-        if !settings_page.get() {
+        if !settings_modal.get() && !settings_page.get() {
             return;
         }
         let (stored_base, stored_model) = load_client_llm_text_fields_from_storage();

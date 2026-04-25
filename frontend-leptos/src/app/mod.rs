@@ -13,6 +13,7 @@ mod mobile_shell_header;
 pub mod scroll_guard;
 mod session_hydrate;
 mod session_list_modal;
+mod settings_commit;
 mod settings_modal;
 mod settings_page;
 mod side_column;

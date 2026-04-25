@@ -435,6 +435,33 @@
   flex-shrink: 0;
 }
 
+.settings-page-head-spacer {
+  flex: 1;
+}
+
+.settings-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-unsaved-pill {
+  font-size: 10px;
+  font-weight: 650;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--warn, #f59e0b) 35%, var(--border));
+  background: color-mix(in srgb, var(--warn, #f59e0b) 12%, var(--surface));
+  color: color-mix(in srgb, var(--warn, #f59e0b) 85%, var(--text));
+  flex-shrink: 0;
+}
+
+.settings-save-feedback-global {
+  margin: 0 0 var(--space-4);
+}
+
 .settings-page-body {
   flex: 1;
   padding: var(--space-5);

@@ -119,7 +119,7 @@ cd frontend-leptos && trunk build && cd ..
 - **监听**：默认 **`127.0.0.1`**；`0.0.0.0` 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)）。
 - **Web API 密钥**：与 **`web_api_bearer_token`** 一致；请求头 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（二选一）。前端可读 **`localStorage["crabmate-api-bearer-token"]`**（同时发送上述两头来兼容脚本/网关习惯）。未配置密钥时 **`/chat*`、`/workspace*`** 等可被能访问该地址的客户端匿名调用；生产或共享环境建议配置密钥，或设 **`web_api_require_bearer`** / **`AGENT_WEB_API_REQUIRE_BEARER`** 强制非空密钥后才允许启动 **`serve`**。
 - **调试与排障**：环境变量、日志、`doctor`、HTTP 探针、SSE 对齐等见 **[docs/DEBUG.md](docs/DEBUG.md)**（含 **`AGENT_WEB_DISABLE_MARKDOWN`**、**`AGENT_WEB_RAW_ASSISTANT_OUTPUT`** 与 **`GET /web-ui`**）；变量说明亦在 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「Web 服务」。
-- **Web「设置」**：本机 **`client_llm`**（`api_base` / `model` / 密钥）仅影响当次请求；`api_base` 可从常用供应商预设中选择或手写，详 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「Web 对话队列」。
+- **Web「设置」**：界面语言 / 主题 / 背景与本机 **`client_llm`**（`api_base` / `model` / 密钥）等修改后，需点击 **「保存全部」** 才写入浏览器 **`localStorage`** 并随请求生效；`api_base` 可从常用供应商预设中选择或手写，详 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)「Web 对话队列」。
 - **工作区**：须在允许根内；Unix 上尽力用 **`openat2`** 等收窄路径风险，**非**绝对沙箱。见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)、[`src/path_workspace.rs`](src/path_workspace.rs)。
 - **其它**：**`web_search_api_key`** 与主 **`API_KEY`** 分离；可选 **SyncDefault Docker 沙盒**见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。维护者另见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)、[.cursor/rules/security-sensitive-surface.mdc](.cursor/rules/security-sensitive-surface.mdc)。
 

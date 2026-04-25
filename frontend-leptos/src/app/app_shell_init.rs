@@ -62,6 +62,7 @@ pub fn init_app_shell() -> AppShellInit {
     wire_sync_bg_decor_to_storage_and_dom(app_signals.shell_ui.bg_decor);
     wire_settings_modal_llm_drafts_on_open(
         app_signals.modal.settings_modal,
+        app_signals.modal.settings_page,
         app_signals.to_status_tasks(),
         app_signals.llm_settings.llm_api_base_draft,
         app_signals.llm_settings.llm_api_base_preset_select,
