@@ -9,17 +9,16 @@ use crate::agent::intent_router::{
     is_explicit_execute_confirmation, route_user_task_with_thresholds,
 };
 
-/// 上层传入的意图上下文；`recent_user_messages` 为**当前用户条之前**的近期 user 正文（新在前）。
+/// 意图管线上下文；`recent_user_messages` 为**当前** user 条**之前**的近期 user 正文（**新在前**）；
+/// 澄清续接时与 `intent_l0::effective_intent_routing_text` 拼成路由文本。
 #[derive(Debug, Clone)]
 pub struct IntentContext {
-    /// 近期用户消息（最近优先），澄清续接时与 `intent_l0::effective_intent_routing_text` 拼成路由文本。
     pub recent_user_messages: Vec<String>,
-    /// 最近是否处于澄清流程中。
     pub in_clarification_flow: bool,
-    /// 一期阈值策略（来自配置或默认值）。
     pub thresholds: ExecuteIntentThresholds,
-    /// L2 分类置信度阈值；低于该值不覆盖 L1。
     pub l2_min_confidence: f32,
+    /// 当前 user 前消息尾部是否存在失败 `role: tool`；见 `intent_l0::messages_have_recent_tool_failure`。
+    pub has_recent_tool_failure: bool,
     /// 为 false 时跳过 L0 对 L1 的**保守提级/抬档**（仍保留续接合并与 L0 观测）。
     pub l0_routing_boost_enabled: bool,
 }
@@ -31,6 +30,7 @@ impl Default for IntentContext {
             in_clarification_flow: false,
             thresholds: ExecuteIntentThresholds::default(),
             l2_min_confidence: 0.7,
+            has_recent_tool_failure: false,
             l0_routing_boost_enabled: true,
         }
     }
@@ -58,7 +58,7 @@ pub struct IntentMergeMeta {
     pub override_reason: Option<String>,
     /// 澄清流程下是否将前序 user 与当前短句拼成**路由**文本供 L1/L2 使用。
     pub used_merged_continuation: bool,
-    /// 对合并/当前路由文本的 L0 可观测特征。
+    /// 对合并/当前路由文本的 L0 可观测特征（含 `has_recent_tool_failure` 等）。
     pub l0: IntentL0Snapshot,
 }
 
@@ -90,11 +90,7 @@ pub struct IntentDecision {
     pub action: IntentAction,
 }
 
-/// 意图管线入口（一期）。
-///
-/// - L0: 多轮**路由**合并与特征快照
-/// - L1/L2: 复用 `intent_router` 与可选 L2
-/// - L3: 统一动作映射
+/// 意图管线入口：L0 多轮路由合并与特征快照、L1、可选 L2（stub 无 L2）与 L3 动作映射。
 pub fn assess_and_route(task: &str, ctx: &IntentContext) -> IntentDecision {
     let (routing, used_merge, l0) = prepare_intent_routing(task, ctx);
     assess_and_route_with_l2_inner(
@@ -108,7 +104,7 @@ pub fn assess_and_route(task: &str, ctx: &IntentContext) -> IntentDecision {
     .0
 }
 
-/// 对当前 `task` 与 `ctx` 做 L0 续接合并，供 L1/L2 与观测共用。
+/// 对当前 `task` 与 `ctx` 做 L0 续接合并与 L0 快照，供 L1/L2 与观测共用（含 `has_recent_tool_failure`）。
 pub fn prepare_intent_routing(
     current_task: &str,
     ctx: &IntentContext,
@@ -118,7 +114,7 @@ pub fn prepare_intent_routing(
         ctx.in_clarification_flow,
         &ctx.recent_user_messages,
     );
-    let l0 = intent_l0::l0_snapshot_from_merged_routing(&routing);
+    let l0 = intent_l0::l0_snapshot_merged(&routing, ctx.has_recent_tool_failure);
     (routing, used_merge, l0)
 }
 
@@ -183,7 +179,7 @@ fn assess_and_route_with_l2_inner(
     (decision, meta)
 }
 
-/// L0 为「路径/错误/构建」等时，将偏 Ambiguous 的**合并路由**提级为可执行，减少无意义追问。
+/// L0 为「路径/错误/构建/近期 tool 失败」等时，将偏 Ambiguous 的**合并路由**提级为可执行，减少无意义追问。
 fn maybe_boost_execute_from_l0(
     a: &mut IntentAssessment,
     thresholds: ExecuteIntentThresholds,
@@ -191,7 +187,10 @@ fn maybe_boost_execute_from_l0(
 ) {
     if a.kind == IntentKind::Ambiguous
         && l0.has_file_path_like
-        && (l0.has_error_signal || l0.has_command_cargo || l0.has_git_keyword)
+        && (l0.has_error_signal
+            || l0.has_command_cargo
+            || l0.has_git_keyword
+            || l0.has_recent_tool_failure)
     {
         let conf = 0.62_f32.max(a.confidence);
         *a = IntentAssessment {

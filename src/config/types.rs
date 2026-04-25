@@ -637,7 +637,9 @@ pub struct AgentConfig {
     pub intent_execute_low_threshold: f32,
     /// 首轮意图路由：执行意图触发“直接执行”的高阈值（0.0..=1.0，默认 0.45，且不低于 low）。
     pub intent_execute_high_threshold: f32,
-    /// 为 true 时：根据 L0 特征（路径/错误/cargo 等）对 L1 的 Ambiguous 与「确认后执行」做**保守**提级/抬档（默认 true）。
+    /// 为 true 时：在 `planner_executor_mode != hierarchical` 下于主循环前跑 L0/L1/可选 L2；非「直接执行」则本回合终答（**额外** L2 调用由 `intent_l2_enabled` 控制）。默认 false。
+    pub intent_at_turn_start_enabled: bool,
+    /// 为 true 时：根据 L0 特征（路径/错误/cargo/近期 tool 失败等）对 L1 的 Ambiguous 与「确认后执行」做**保守**提级/抬档（默认 true）。
     pub intent_l0_routing_boost_enabled: bool,
 }
 

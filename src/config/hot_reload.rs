@@ -195,5 +195,6 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.intent_l2_max_tokens = src.intent_l2_max_tokens;
     dst.intent_execute_low_threshold = src.intent_execute_low_threshold;
     dst.intent_execute_high_threshold = src.intent_execute_high_threshold;
+    dst.intent_at_turn_start_enabled = src.intent_at_turn_start_enabled;
     dst.intent_l0_routing_boost_enabled = src.intent_l0_routing_boost_enabled;
 }
