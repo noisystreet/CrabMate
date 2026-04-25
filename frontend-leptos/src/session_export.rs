@@ -1,4 +1,5 @@
-//! 浏览器内导出会话：JSON 与 `runtime/chat_export::ChatSessionFile` v1 对齐；Markdown 与 CLI `messages_to_markdown` 语义对齐（跳过纯 system，工具卡为「工具」段）。
+//! 浏览器内导出会话：JSON 与 `runtime/chat_export::ChatSessionFile` 对齐（`schema` / `schema_version` / `version`）；
+//! Markdown 与 CLI `messages_to_markdown` 语义对齐（跳过纯 system，工具卡为「工具」段）。
 
 use gloo_timers::callback::Timeout;
 use serde::Serialize;
@@ -41,6 +42,12 @@ extern "C" {
 /// 须与 `src/runtime/chat_export.rs` 中 `CHAT_SESSION_FILE_VERSION` 一致。
 pub const CHAT_SESSION_FILE_VERSION: u32 = 1;
 
+/// 须与 `src/runtime/chat_export.rs` 中 `CHAT_EXPORT_SCHEMA_ID` 一致。
+pub const CHAT_EXPORT_SCHEMA_ID: &str = "crabmate.chat_session";
+
+/// 须与 `src/runtime/chat_export.rs` 中 `CHAT_EXPORT_SCHEMA_VERSION` 一致。
+pub const CHAT_EXPORT_SCHEMA_VERSION: &str = "1.0.0";
+
 #[derive(Debug, Serialize)]
 pub struct ExportMessage {
     pub role: String,
@@ -52,6 +59,8 @@ pub struct ExportMessage {
 
 #[derive(Debug, Serialize)]
 pub struct ChatSessionFile {
+    pub schema: String,
+    pub schema_version: String,
     pub version: u32,
     pub messages: Vec<ExportMessage>,
 }
@@ -62,6 +71,8 @@ pub fn session_to_export_file(
     apply_assistant_display_filters: bool,
 ) -> ChatSessionFile {
     ChatSessionFile {
+        schema: CHAT_EXPORT_SCHEMA_ID.to_string(),
+        schema_version: CHAT_EXPORT_SCHEMA_VERSION.to_string(),
         version: CHAT_SESSION_FILE_VERSION,
         messages: stored_messages_to_export(
             &session.messages,
@@ -378,6 +389,9 @@ mod tests {
             server_revision: None,
         };
         let file = session_to_export_file(&session, Locale::ZhHans, true);
+        assert_eq!(file.schema, CHAT_EXPORT_SCHEMA_ID);
+        assert_eq!(file.schema_version, CHAT_EXPORT_SCHEMA_VERSION);
+        assert_eq!(file.version, CHAT_SESSION_FILE_VERSION);
         assert_eq!(file.messages.len(), 3);
         assert_eq!(file.messages[0].role, "user");
         assert_eq!(file.messages[1].role, "tool");

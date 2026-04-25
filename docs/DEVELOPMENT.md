@@ -658,7 +658,7 @@ flowchart LR
 
 - `localStorage` 会话持久化（会话列表、活动会话、草稿等）。**`ChatSession`** 含 **`pinned` / `starred`**（侧栏排序与展示；旧数据缺省为 `false`）。
 - **`DEFAULT_CHAT_SESSION_TITLE`**：新建会话默认标题，与 **`app/mod.rs`** 首条消息自动命名（**`session_ops::title_from_user_prompt`**）条件一致。
-- 与导出结构保持兼容，供 `runtime/chat_export` 与前端互通。
+- 与导出结构保持兼容：Web 下载的 JSON 与 **`runtime/chat_export::ChatSessionFile`** 一致，含 **`schema`**（`crabmate.chat_session`）、**`schema_version`**（SemVer 信封）、**`version`**（`messages` 约定）、**`messages`**；见 **`docs/CLI.md`** **`save-session`**。
 
 ## 数据与文件持久化约定
 

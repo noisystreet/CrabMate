@@ -93,7 +93,7 @@ cargo run -- save-session --format json --workspace /path/to/proj
 
 ## `save-session`
 
-默认读取 **`<workspace>/.crabmate/tui_session.json`**（`--workspace` 与全局 `--config` 写在子命令前），在 **`<workspace>/.crabmate/exports/`** 下生成带时间戳的 **`chat_export_*.json`** / **`chat_export_*.md`**（与 Web 前端导出约定一致，见 `runtime/chat_export.rs` 与 `frontend-leptos/src/lib.rs`）。每行 stdout 为写出文件的绝对路径，便于脚本捕获。
+默认读取 **`<workspace>/.crabmate/tui_session.json`**（`--workspace` 与全局 `--config` 写在子命令前），在 **`<workspace>/.crabmate/exports/`** 下生成带时间戳的 **`chat_export_*.json`** / **`chat_export_*.md`**（与 Web 前端导出约定一致，见 `runtime/chat_export.rs` 与 `frontend-leptos/src/session_export.rs`）。JSON 顶层为 **`ChatSessionFile`**：`schema`（固定 `crabmate.chat_session`）、`schema_version`（SemVer 信封版本）、`version`（消息数组约定版本，与 OpenAI 兼容 `messages` 演进同步）、`messages`。缺 `schema` / `schema_version` 的旧文件仍可被加载，反序列化时默认填充当前常量。每行 stdout 为写出文件的绝对路径，便于脚本捕获。
 
 ## `tool-replay`（工具时间线 fixture）
 
