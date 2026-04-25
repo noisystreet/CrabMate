@@ -255,6 +255,41 @@ pub fn settings_label_model(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_label_temperature(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "温度（temperature）",
+        Locale::En => "Temperature (temperature)",
+    }
+}
+
+pub fn settings_ph_temperature(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "0 到 2，留空使用服务端默认值",
+        Locale::En => "0 to 2, leave empty for server default",
+    }
+}
+
+pub fn settings_temperature_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "仅覆盖当前浏览器发起的聊天请求温度。",
+        Locale::En => "Overrides temperature for chats started from this browser only.",
+    }
+}
+
+pub fn settings_err_temperature_invalid(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "温度格式无效，请输入数字（例如 0.7）",
+        Locale::En => "Invalid temperature format; enter a number (for example 0.7)",
+    }
+}
+
+pub fn settings_err_temperature_range(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "温度必须在 0 到 2 之间",
+        Locale::En => "Temperature must be between 0 and 2",
+    }
+}
+
 pub fn settings_label_executor_model(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "执行器模型名称（model）",

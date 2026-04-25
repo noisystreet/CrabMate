@@ -668,6 +668,7 @@ flowchart LR
 - **前端本地存储（`localStorage`）**：
   - 工作区路径选择（`agent-demo-workspace-dir`）
   - 聊天输入框高度（`agent-demo-input-height`）
+  - Web 设置中的 `client_llm` 覆盖项（`api_base` / `model` / `temperature` / `api_key`）与 `executor_llm` 覆盖项（`api_base` / `model` / `api_key`）
 
 ## 常见扩展点与注意事项
 

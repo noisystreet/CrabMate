@@ -15,7 +15,10 @@ use crate::sse_dispatch::{
 };
 
 use super::browser::{auth_headers, window};
-use super::client_llm_storage::{client_llm_json_for_chat_body, executor_llm_json_for_chat_body};
+use super::client_llm_storage::{
+    chat_temperature_override_from_storage, client_llm_json_for_chat_body,
+    executor_llm_json_for_chat_body,
+};
 
 pub struct ChatStreamCallbacks {
     pub on_delta: std::rc::Rc<dyn Fn(String)>,
@@ -123,6 +126,9 @@ pub async fn send_chat_stream(
         }
         if let Some(el) = executor_llm_json_for_chat_body() {
             body["executor_llm"] = el;
+        }
+        if let Some(temp) = chat_temperature_override_from_storage() {
+            body["temperature"] = serde_json::json!(temp);
         }
         let init = RequestInit::new();
         init.set_method("POST");
