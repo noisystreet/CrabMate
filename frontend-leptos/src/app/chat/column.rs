@@ -10,7 +10,7 @@ use wasm_bindgen::JsCast;
 
 use super::handles::ChatColumnShell;
 use super::message_chunks::{ChatChunk, chunk_messages};
-use super::message_group_views::{staged_timeline_group_view, tool_run_group_view};
+use super::message_group_views::tool_run_group_view;
 use super::message_row::chat_message_row;
 use super::timeline::timeline_panel_view;
 use crate::api::upload_files_multipart;
@@ -194,7 +194,6 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                                         }
                                         .into_any()
                                     } else {
-                                        let msgs_for_staged = StoredValue::new(msgs.clone());
                                         chunk_messages(&msgs)
                                             .into_iter()
                                             .map(|chunk| match chunk {
@@ -238,19 +237,6 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                                                         locale,
                                                         markdown_render,
                                                         apply_assistant_display_filters,
-                                                    )
-                                                    .into_any()
-                                                }
-                                                ChatChunk::StagedTimelineGroup { head_id, items } => {
-                                                    staged_timeline_group_view(
-                                                        head_id,
-                                                        items,
-                                                        chat_find_query,
-                                                        chat_find_match_ids,
-                                                        chat_find_cursor,
-                                                        locale,
-                                                        apply_assistant_display_filters,
-                                                        msgs_for_staged,
                                                     )
                                                     .into_any()
                                                 }

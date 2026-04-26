@@ -4,6 +4,20 @@
 
 use pulldown_cmark::{Event, Options, Parser, html};
 
+/// 在按行拆分前做**跨行**轻量修补：模型常把小节标题、围栏开符与正文粘在同一行，
+/// `pulldown_cmark` 会收成单段 `<p>` 或把后续正文吃进代码块，界面上像「一整段」且标点后缺空格感更强。
+fn normalize_glued_markdown_blocks(md: &str) -> String {
+    let mut s = md.to_string();
+    // 全角冒号后紧跟围栏：强制换行，避免 `：**…**：```code` 整行误解析。
+    s = s.replace("：```", "：\n```");
+    // 句末 / 右括号后紧贴下一小节 `**标题**`：拆成独立段，便于分段与列表式阅读。
+    s = s.replace("）**", "）\n\n**");
+    s = s.replace("。**", "。\n\n**");
+    s = s.replace("！**", "！\n\n**");
+    s = s.replace("？**", "？\n\n**");
+    s
+}
+
 /// 在 `pulldown_cmark` 解析前做轻量规范化（单行规则，不解析嵌套结构）。
 ///
 /// 处理常见误写：
@@ -18,6 +32,7 @@ pub fn normalize_markdown_for_render(md: &str) -> String {
     if md.is_empty() {
         return String::new();
     }
+    let md = normalize_glued_markdown_blocks(md);
     md.split('\n')
         .map(normalize_one_input_line)
         .collect::<Vec<_>>()
@@ -465,6 +480,22 @@ mod tests {
         assert!(h.contains("&lt;"));
         assert!(h.to_lowercase().contains("<br"));
         assert!(!h.contains("<b>"));
+    }
+
+    /// 模型把「运行结果」与围栏粘在一行时，先插换行再解析，避免整段吃进代码块或单 `<p>`。
+    #[test]
+    fn normalize_inserts_newline_before_fence_after_fullwidth_colon() {
+        let raw = "小结：**文件**：`x`（C++17）**编译**：`y`**运行结果**：```out```";
+        let n = normalize_markdown_for_render(raw);
+        assert!(
+            n.contains("运行结果**：\n```") || n.contains("运行结果**：\n\n```"),
+            "expected newline before fence, got {n:?}"
+        );
+        let h = to_safe_html(raw);
+        assert!(
+            h.matches("<p").count() >= 2 || h.contains("<pre"),
+            "expected multiple blocks or a code block, got {h:?}"
+        );
     }
 }
 

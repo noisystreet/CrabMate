@@ -1,12 +1,11 @@
 //! 连续工具输出组视图（[`super::message_row::chat_message_row`]）：默认展开全部，可收起为仅最后一条；
-//! 组内顺序与 [`super::message_chunks::chunk_messages`] 传入的 `items` 一致（即会话里消息到达/排列顺序，通常旧在上、新在下），标题栏在组内底部；分阶段时间线聚合为待办列表（[`super::staged_plan_todo`]）。
+//! 组内顺序与 [`super::message_chunks::chunk_messages`] 传入的 `items` 一致（即会话里消息到达/排列顺序，通常旧在上、新在下），标题栏在组内底部。
 
 use std::collections::HashSet;
 
 use leptos::prelude::*;
 
 use super::message_row::chat_message_row;
-use super::staged_plan_todo::{StagedStepPhase, build_staged_plan_todo_steps};
 use crate::i18n::{self, Locale};
 use crate::session_search::normalize_search_query;
 use crate::session_sync::SessionSyncState;
@@ -152,152 +151,6 @@ pub(crate) fn tool_run_group_view(
                     view! { <div class="msg-tool-run-empty"></div> }.into_any()
                 }
             }}
-        </div>
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn staged_timeline_group_view(
-    head_key: String,
-    items: Vec<(usize, StoredMessage)>,
-    chat_find_query: RwSignal<String>,
-    chat_find_match_ids: RwSignal<Vec<String>>,
-    chat_find_cursor: RwSignal<usize>,
-    locale: RwSignal<Locale>,
-    apply_assistant_display_filters: RwSignal<bool>,
-    session_messages: StoredValue<Vec<StoredMessage>>,
-) -> impl IntoView {
-    let items_sv = StoredValue::new(items);
-    let group_ids: Vec<String> = items_sv
-        .get_value()
-        .iter()
-        .map(|(_, m)| m.id.clone())
-        .collect();
-    let head_attr = head_key.clone();
-    view! {
-        <div class="msg-with-select">
-            <div class="msg-stack">
-                <div
-                    class=move || {
-                        let mut c =
-                            String::from("msg msg-system msg-staged-timeline msg-staged-todo-wrap");
-                        let q = normalize_search_query(&chat_find_query.get());
-                        if !q.is_empty() {
-                            let any = chat_find_match_ids.with(|ids| {
-                                ids
-                                    .iter()
-                                    .any(|mid| group_ids.iter().any(|g| g == mid))
-                            });
-                            if any {
-                                c.push_str(" msg-find-match");
-                                let cur = chat_find_cursor.get();
-                                if chat_find_match_ids.with(|ids| {
-                                    ids
-                                        .get(cur)
-                                        .map(|x| group_ids.iter().any(|g| g == x))
-                                        .unwrap_or(false)
-                                }) {
-                                    c.push_str(" msg-find-highlight");
-                                }
-                            }
-                        }
-                        c
-                    }
-                    prop:aria-label=move || i18n::staged_plan_todo_region_aria(locale.get())
-                    data-staged-timeline-run=head_attr
-                    data-testid="staged-plan-todo-card"
-                >
-                    {move || {
-                        let _ = chat_find_cursor.get();
-                        let _ = chat_find_match_ids.get();
-                        let loc = locale.get();
-                        let apply = apply_assistant_display_filters.get();
-                        let entries = items_sv.get_value();
-                        let session = session_messages.get_value();
-                        let (steps, _legacy) =
-                            build_staged_plan_todo_steps(loc, apply, &entries, &session);
-                        let title_bar = i18n::staged_plan_todo_title(loc);
-                        view! {
-                            <div class="msg-meta" aria-hidden="true">
-                                <span class="msg-meta-primary msg-staged-todo-card-title">
-                                    {title_bar}
-                                </span>
-                            </div>
-                            <ul class="msg-staged-todo-list" role="list" data-testid="staged-plan-todo-list">
-                                {steps
-                                    .into_iter()
-                                    .map(|s| {
-                                        let anchor = s.anchor_message_id.clone();
-                                        let anchor_cmp = anchor.clone();
-                                        let row_id = format!("msg-{anchor}");
-                                        let title = s.title.clone();
-                                        let title_aria = title.clone();
-                                        let li_phase = match s.phase {
-                                            StagedStepPhase::Done => "msg-staged-todo-li-done",
-                                            StagedStepPhase::InProgress => "msg-staged-todo-li-progress",
-                                            StagedStepPhase::Pending => "msg-staged-todo-li-pending",
-                                            StagedStepPhase::Cancelled => "msg-staged-todo-li-cancelled",
-                                            StagedStepPhase::Failed => "msg-staged-todo-li-failed",
-                                        };
-                                        let glyph = match s.phase {
-                                            StagedStepPhase::Done => "✓",
-                                            StagedStepPhase::InProgress => "◦",
-                                            StagedStepPhase::Pending => "☐",
-                                            StagedStepPhase::Cancelled => "⊘",
-                                            StagedStepPhase::Failed => "✗",
-                                        };
-                                        let phase_aria = match s.phase {
-                                            StagedStepPhase::Done => {
-                                                i18n::staged_plan_todo_step_done_aria(loc)
-                                            }
-                                            StagedStepPhase::InProgress => {
-                                                i18n::staged_plan_todo_step_in_progress_aria(loc)
-                                            }
-                                            StagedStepPhase::Pending => {
-                                                i18n::staged_plan_todo_step_pending_aria(loc)
-                                            }
-                                            StagedStepPhase::Failed => {
-                                                i18n::staged_plan_todo_step_failed_aria(loc)
-                                            }
-                                            StagedStepPhase::Cancelled => {
-                                                i18n::staged_plan_todo_step_cancelled_aria(loc)
-                                            }
-                                        };
-                                        view! {
-                                            <li
-                                                class=move || {
-                                                    let mut c = format!("msg-staged-todo-li {li_phase}");
-                                                    let cur = chat_find_cursor.get();
-                                                    if chat_find_match_ids.with(|ids| {
-                                                        ids
-                                                            .get(cur)
-                                                            .map(|x| x.as_str() == anchor_cmp.as_str())
-                                                            .unwrap_or(false)
-                                                    }) {
-                                                        c.push_str(" msg-find-highlight");
-                                                    }
-                                                    c
-                                                }
-                                                id=row_id
-                                                role="listitem"
-                                                prop:aria-label=format!("{phase_aria} · {title_aria}")
-                                            >
-                                                <span class="msg-staged-todo-glyph" aria-hidden="true">
-                                                    {glyph}
-                                                </span>
-                                                <span class="msg-staged-todo-label">
-                                                    {format!("{}. {}", s.ordinal, title)}
-                                                </span>
-                                            </li>
-                                        }
-                                    })
-                                    .collect_view()}
-                            </ul>
-                        }
-                        .into_any()
-                    }}
-                </div>
-            </div>
         </div>
     }
 }

@@ -1,8 +1,8 @@
 //! 将 SSE 各事件装配为 [`ChatStreamCallbacks`]：与 `send_chat_stream` 对齐的单一出口，便于审阅与后续按事件拆文件。
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::rc::Rc;
-use std::{cell::RefCell, collections::VecDeque};
 
 use leptos::prelude::*;
 
@@ -148,6 +148,38 @@ fn to_single_line(s: &str, max_chars: usize) -> String {
     out
 }
 
+/// 将旁注插在**当前流式 `loading` 助手气泡之前**；若无占位则追加到末尾。
+fn insert_msg_before_streaming_assistant_tail(
+    messages: &mut Vec<StoredMessage>,
+    streaming_assistant_id: &str,
+    msg: StoredMessage,
+) {
+    if let Some(idx) = messages.iter().position(|m| {
+        m.id == streaming_assistant_id
+            && m.role == "assistant"
+            && m.state.as_deref() == Some("loading")
+    }) {
+        messages.insert(idx, msg);
+    } else {
+        messages.push(msg);
+    }
+}
+
+/// 管理器时间线（意图分析、规划摘要等）在服务端往往早于正文 `delta`，
+/// 须插在**当前流式 `loading` 助手气泡之前**，否则会跑到已流出的计划文字下面。
+fn insert_before_streaming_assistant_or_append(
+    stream_ctx: &ChatStreamCallbackCtx,
+    msg: StoredMessage,
+) {
+    let aid = stream_ctx.active_session_id.as_str();
+    let mid = stream_ctx.assistant_message_id.borrow().clone();
+    stream_ctx.chat.sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+            insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
+        }
+    });
+}
+
 fn push_assistant_timeline_bubble(
     stream_ctx: &ChatStreamCallbackCtx,
     text: String,
@@ -156,25 +188,21 @@ fn push_assistant_timeline_bubble(
     if text.trim().is_empty() {
         return;
     }
-    let id = make_message_id();
-    let aid = stream_ctx.active_session_id.as_str();
     let now = message_created_ms();
-    stream_ctx.chat.sessions.update(|list| {
-        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-            s.messages.push(StoredMessage {
-                id,
-                role: "assistant".to_string(),
-                text,
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: now,
-            });
-        }
-    });
+    let msg = StoredMessage {
+        id: make_message_id(),
+        role: "assistant".to_string(),
+        text,
+        reasoning_text: String::new(),
+        image_urls: vec![],
+        state,
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: now,
+    };
+    insert_before_streaming_assistant_or_append(stream_ctx, msg);
+    ensure_streaming_assistant_tail_last(stream_ctx);
 }
 
 fn has_same_assistant_timeline_bubble(stream_ctx: &ChatStreamCallbackCtx, text: &str) -> bool {
@@ -266,7 +294,7 @@ fn upsert_hierarchical_subgoal_bubble(
                 existing.created_at = now;
                 return;
             }
-            s.messages.push(StoredMessage {
+            let msg = StoredMessage {
                 id: make_message_id(),
                 role: "assistant".to_string(),
                 text: text.clone(),
@@ -277,20 +305,85 @@ fn upsert_hierarchical_subgoal_bubble(
                 tool_call_id: None,
                 tool_name: None,
                 created_at: now,
-            });
+            };
+            let mid = stream_ctx.assistant_message_id.borrow().clone();
+            insert_msg_before_streaming_assistant_tail(&mut s.messages, &mid, msg);
         }
     });
+    ensure_streaming_assistant_tail_last(stream_ctx);
 }
 
-fn move_loading_assistant_to_bottom(stream_ctx: &ChatStreamCallbackCtx) {
+/// 工具卡片插入前：结束当前流式段（开场白等保留在工具与时间线**之上**），
+/// 并在本条工具消息之后挂新的 `loading` 占位，供工具结束后的续写。
+fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
+    stream_ctx: &ChatStreamCallbackCtx,
+    tool_message_id: &str,
+) {
     let aid = stream_ctx.active_session_id.as_str();
-    let mid = stream_ctx.assistant_message_id.as_str();
+    let now = message_created_ms();
+    let new_tail_id = RefCell::new(None::<String>);
     stream_ctx.chat.sessions.update(|list| {
-        if let Some(s) = list.iter_mut().find(|s| s.id == aid)
-            && let Some(idx) = s.messages.iter().position(|m| m.id == mid)
-            && s.messages[idx].role == "assistant"
-            && s.messages[idx].state.as_deref() == Some("loading")
-        {
+        let Some(s) = list.iter_mut().find(|s| s.id == aid) else {
+            return;
+        };
+        if !s.messages.iter().any(|m| m.id == tool_message_id) {
+            return;
+        }
+        let mid = stream_ctx.assistant_message_id.borrow();
+        if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
+            let m = &mut s.messages[idx];
+            if m.role == "assistant" && m.state.as_deref() == Some("loading") {
+                if m.text.trim().is_empty() {
+                    s.messages.remove(idx);
+                } else {
+                    m.state = None;
+                }
+            }
+        }
+        let Some(tidx) = s.messages.iter().position(|m| m.id == tool_message_id) else {
+            return;
+        };
+        let new_asst_id = make_message_id();
+        s.messages.insert(
+            tidx + 1,
+            StoredMessage {
+                id: new_asst_id.clone(),
+                role: "assistant".to_string(),
+                text: String::new(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: Some("loading".to_string()),
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: now,
+            },
+        );
+        *new_tail_id.borrow_mut() = Some(new_asst_id);
+    });
+    if let Some(id) = new_tail_id.into_inner() {
+        stream_ctx.assistant_message_id.replace(id);
+        stream_ctx.post_tool_stream_tail.set(true);
+    }
+}
+
+/// 工具后续写段：分步/时间线等仍会 `push` 到列表末尾，需把当前 `loading` 占位再次移到最下方。
+fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallbackCtx) {
+    if !stream_ctx.post_tool_stream_tail.get() {
+        return;
+    }
+    let aid = stream_ctx.active_session_id.as_str();
+    let mid = stream_ctx.assistant_message_id.borrow().clone();
+    stream_ctx.chat.sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+            let Some(idx) = s.messages.iter().position(|m| m.id == mid) else {
+                return;
+            };
+            if s.messages[idx].role != "assistant"
+                || s.messages[idx].state.as_deref() != Some("loading")
+            {
+                return;
+            }
             let m = s.messages.remove(idx);
             s.messages.push(m);
         }
@@ -299,10 +392,10 @@ fn move_loading_assistant_to_bottom(stream_ctx: &ChatStreamCallbackCtx) {
 
 fn remove_loading_assistant_placeholder(stream_ctx: &ChatStreamCallbackCtx) {
     let aid = stream_ctx.active_session_id.as_str();
-    let mid = stream_ctx.assistant_message_id.as_str();
+    let mid = stream_ctx.assistant_message_id.borrow();
     stream_ctx.chat.sessions.update(|list| {
         if let Some(s) = list.iter_mut().find(|s| s.id == aid)
-            && let Some(idx) = s.messages.iter().position(|m| m.id == mid)
+            && let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str())
             && s.messages[idx].role == "assistant"
             && s.messages[idx].state.as_deref() == Some("loading")
         {
@@ -416,14 +509,14 @@ pub(super) fn build_chat_stream_callbacks(
         let pre_answer_buffer = Rc::clone(&pre_answer_buffer);
         Rc::new(move |chunk: String| {
             let aid = stream_ctx.active_session_id.as_str();
-            let mid = stream_ctx.assistant_message_id.as_str();
+            let mid = stream_ctx.assistant_message_id.borrow();
             if in_answer_phase.get() {
                 answer_delta_chars.set(
                     answer_delta_chars
                         .get()
                         .saturating_add(chunk.chars().count()),
                 );
-                append_to_assistant_text(aid, mid, &chunk, &stream_ctx.chat.sessions);
+                append_to_assistant_text(aid, mid.as_str(), &chunk, &stream_ctx.chat.sessions);
             } else {
                 pre_answer_buffer.borrow_mut().push_str(&chunk);
             }
@@ -443,7 +536,7 @@ pub(super) fn build_chat_stream_callbacks(
             }
             let loc = stream_ctx.locale.get_untracked();
             let aid = stream_ctx.active_session_id.clone();
-            let mid = stream_ctx.assistant_message_id.clone();
+            let mid = stream_ctx.assistant_message_id.borrow().clone();
             stream_ctx.chat.sessions.update(|list| {
                 if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                     let has_hierarchical_or_tool = s.messages.iter().any(|x| {
@@ -515,7 +608,7 @@ pub(super) fn build_chat_stream_callbacks(
             stream_ctx.chat.stream_job_id.set(None);
             stream_ctx.chat.stream_last_event_seq.set(0);
             let aid = stream_ctx.active_session_id.clone();
-            let mid = stream_ctx.assistant_message_id.clone();
+            let mid = stream_ctx.assistant_message_id.borrow().clone();
             let loc = stream_ctx.locale.get_untracked();
             let friendly = build_stream_error_with_suggestion(&msg, loc);
             stream_ctx.chat.sessions.update(|list| {
@@ -613,8 +706,8 @@ pub(super) fn build_chat_stream_callbacks(
                         }
                     }
                 });
-                // 工具调用出现后，保持“助手正在生成”气泡在最底部，避免视觉时序倒置。
-                move_loading_assistant_to_bottom(&stream_ctx);
+                // 开场白留在时间线/工具之上；工具后挂新占位，续写走新气泡，避免“最早的话出现在最下面”。
+                finalize_loading_assistant_before_tool_and_tail_with_new_loading(&stream_ctx, &id);
                 // 有 `tool_call_id` 时由 `tool_result` 按 id 命中占位气泡；否则保持 FIFO。
                 if tcid.is_none() {
                     enqueue_pending_tool_message_id(&stream_ctx.pending_tool_message_ids, id);
@@ -712,8 +805,7 @@ pub(super) fn build_chat_stream_callbacks(
                     }
                 }
             });
-            // 工具结果落盘后，同样把 loading 助手气泡放到底部。
-            move_loading_assistant_to_bottom(&stream_ctx);
+            ensure_streaming_assistant_tail_last(&stream_ctx);
         })
     };
 
@@ -823,6 +915,7 @@ pub(super) fn build_chat_stream_callbacks(
                     });
                 }
             });
+            ensure_streaming_assistant_tail_last(&stream_ctx);
         })
     };
 
@@ -867,7 +960,6 @@ pub(super) fn build_chat_stream_callbacks(
                     return;
                 }
                 push_assistant_timeline_bubble(&stream_ctx, intent_text.clone(), None);
-                move_loading_assistant_to_bottom(&stream_ctx);
                 answer_delta_chars.set(
                     answer_delta_chars
                         .get()
@@ -882,7 +974,6 @@ pub(super) fn build_chat_stream_callbacks(
                     return;
                 }
                 push_assistant_timeline_bubble(&stream_ctx, plan_text.clone(), None);
-                move_loading_assistant_to_bottom(&stream_ctx);
                 answer_delta_chars.set(
                     answer_delta_chars
                         .get()
@@ -901,7 +992,6 @@ pub(super) fn build_chat_stream_callbacks(
                 *current_subgoal_marker.borrow_mut() =
                     extract_subgoal_marker_from_title(&info.title);
                 upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
-                move_loading_assistant_to_bottom(&stream_ctx);
                 answer_delta_chars.set(
                     answer_delta_chars
                         .get()
@@ -920,7 +1010,6 @@ pub(super) fn build_chat_stream_callbacks(
                 *current_subgoal_marker.borrow_mut() =
                     extract_subgoal_marker_from_title(&info.title);
                 upsert_hierarchical_subgoal_bubble(&stream_ctx, text.clone(), &info.title);
-                move_loading_assistant_to_bottom(&stream_ctx);
                 answer_delta_chars.set(
                     answer_delta_chars
                         .get()
@@ -953,7 +1042,6 @@ pub(super) fn build_chat_stream_callbacks(
                 staged_timeline_system_message_body(&body),
                 None,
             );
-            move_loading_assistant_to_bottom(&stream_ctx);
         })
     };
 
@@ -989,6 +1077,7 @@ pub(super) fn build_chat_stream_callbacks(
                     });
                 }
             });
+            ensure_streaming_assistant_tail_last(&stream_ctx);
         })
     };
 

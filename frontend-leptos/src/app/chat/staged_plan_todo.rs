@@ -1,5 +1,7 @@
 //! 将连续「分阶段时间线」`system` 消息聚合为待办式步骤列表（解析 `cm_tl` 与旧式前缀旁注）。
 //! 若会话中本簇之前有「规划轮」`agent_reply_plan`，则**预先展开全部步骤**；尚未有时间线事件的步骤为 `Pending`，仅随完成态更新勾选。
+//!
+//! **注意**：主界面已改为逐条时间线气泡；本模块仅保留供单测与将来若恢复聚合卡时复用。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,6 +31,7 @@ pub(crate) struct StagedPlanTodoStep {
     /// 已去掉前导 `^\d+\.\s*`，避免与 `ordinal` 重复拼接。
     pub title: String,
     pub phase: StagedStepPhase,
+    #[allow(dead_code)]
     pub anchor_message_id: String,
 }
 

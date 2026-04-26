@@ -13,6 +13,7 @@ mod message_group_views;
 mod message_row;
 mod message_row_actions;
 mod scroll;
+#[cfg(test)]
 mod staged_plan_todo;
 mod timeline;
 pub(crate) mod wire_chat_domain;

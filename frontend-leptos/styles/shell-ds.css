@@ -643,7 +643,15 @@
 }
 
 .app-shell-ds .msg.msg-staged-timeline {
-  border-radius: 0;
+  background: linear-gradient(
+    168deg,
+    color-mix(in srgb, var(--surface) 92%, var(--bg)) 0%,
+    color-mix(in srgb, var(--surface) 96%, var(--border-subtle)) 100%
+  );
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  border-left-width: 3px;
+  border-left-color: color-mix(in srgb, var(--accent) 52%, var(--border-subtle));
 }
 
 /* —— 底部一体输入条 —— */

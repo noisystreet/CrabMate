@@ -1,9 +1,9 @@
-//! 将 `StoredMessage` 切片折叠为连续工具组 / 分阶段时间线组，供聊天列迭代渲染。
+//! 将 `StoredMessage` 切片折叠为连续工具组，供聊天列迭代渲染。
 //!
-//! 分阶段时间线旁注（`### CrabMate·staged_timeline`）与工具输出需按时间顺序穿插展示：
-//! 同类连续旁注会聚合为一张待办卡；工具输出连续段折叠为工具组。
+//! 分阶段时间线旁注（`### CrabMate·staged_timeline`）与工具输出按时间顺序穿插展示：
+//! **每条**旁注单独一条消息气泡（与分层子目标一致）；仅**连续工具**折叠为工具组。
 
-use crate::message_format::is_staged_timeline_stored_message;
+use crate::message_format::is_staged_timeline_bubble;
 use crate::storage::StoredMessage;
 
 pub(crate) enum ChatChunk {
@@ -12,10 +12,6 @@ pub(crate) enum ChatChunk {
         msg: StoredMessage,
     },
     ToolGroup {
-        head_id: String,
-        items: Vec<(usize, StoredMessage)>,
-    },
-    StagedTimelineGroup {
         head_id: String,
         items: Vec<(usize, StoredMessage)>,
     },
@@ -40,7 +36,7 @@ fn push_tool_run_chunk(out: &mut Vec<ChatChunk>, slice: Vec<(usize, StoredMessag
 
 #[inline]
 fn is_staged_or_tool(m: &StoredMessage) -> bool {
-    is_staged_timeline_stored_message(m) || m.is_tool
+    is_staged_timeline_bubble(m) || m.is_tool
 }
 
 /// 从 `start`（须为分阶段旁注）起，向后扩展直到遇到非（旁注|工具）消息。
@@ -63,20 +59,23 @@ pub(crate) fn chunk_messages(msgs: &[StoredMessage]) -> Vec<ChatChunk> {
             }
             let slice: Vec<_> = (start..i).map(|j| (j, msgs[j].clone())).collect();
             push_tool_run_chunk(&mut out, slice);
-        } else if is_staged_timeline_stored_message(&msgs[i]) {
+        } else if is_staged_timeline_bubble(&msgs[i]) {
             // 分阶段簇内按时间顺序交替输出：
             // staged 段 -> tool 段 -> staged 段 ...
             let j = staged_cluster_end_exclusive(msgs, i);
             let mut k = i;
             while k < j {
-                if is_staged_timeline_stored_message(&msgs[k]) {
+                if is_staged_timeline_bubble(&msgs[k]) {
                     let s_start = k;
-                    while k < j && is_staged_timeline_stored_message(&msgs[k]) {
+                    while k < j && is_staged_timeline_bubble(&msgs[k]) {
                         k += 1;
                     }
-                    let items: Vec<_> = (s_start..k).map(|idx| (idx, msgs[idx].clone())).collect();
-                    let head_id = items.first().map(|(_, m)| m.id.clone()).unwrap_or_default();
-                    out.push(ChatChunk::StagedTimelineGroup { head_id, items });
+                    for (off, msg) in msgs[s_start..k].iter().cloned().enumerate() {
+                        out.push(ChatChunk::Single {
+                            idx: s_start + off,
+                            msg,
+                        });
+                    }
                 } else if msgs[k].is_tool {
                     let t_start = k;
                     while k < j && msgs[k].is_tool {
@@ -137,30 +136,12 @@ mod tests {
             staged_line("s1", "cm_tl:0:end"),
         ];
         let chunks = chunk_messages(&msgs);
-        assert!(
-            matches!(chunks[0], ChatChunk::StagedTimelineGroup { .. }),
-            "expected staged group first"
-        );
-        if let ChatChunk::StagedTimelineGroup { ref items, .. } = chunks[0] {
-            assert_eq!(items.len(), 1);
-            assert_eq!(items[0].0, 0);
-        } else {
-            panic!("chunk 0");
-        }
+        assert!(matches!(&chunks[0], ChatChunk::Single { idx: 0, .. }));
         assert!(
             matches!(&chunks[1], ChatChunk::Single { idx: 1, .. }),
             "expected single tool"
         );
-        assert!(
-            matches!(chunks[2], ChatChunk::StagedTimelineGroup { .. }),
-            "expected trailing staged group"
-        );
-        if let ChatChunk::StagedTimelineGroup { ref items, .. } = chunks[2] {
-            assert_eq!(items.len(), 1);
-            assert_eq!(items[0].0, 2);
-        } else {
-            panic!("chunk 2");
-        }
+        assert!(matches!(&chunks[2], ChatChunk::Single { idx: 2, .. }));
         assert_eq!(chunks.len(), 3);
     }
 
@@ -173,8 +154,17 @@ mod tests {
         ];
         let chunks = chunk_messages(&msgs);
         assert_eq!(chunks.len(), 3);
-        assert!(matches!(chunks[0], ChatChunk::StagedTimelineGroup { .. }));
+        assert!(matches!(&chunks[0], ChatChunk::Single { .. }));
         assert!(matches!(&chunks[1], ChatChunk::Single { .. }));
-        assert!(matches!(chunks[2], ChatChunk::StagedTimelineGroup { .. }));
+        assert!(matches!(&chunks[2], ChatChunk::Single { .. }));
+    }
+
+    #[test]
+    fn consecutive_staged_lines_are_separate_singles() {
+        let msgs = vec![staged_line("s0", "1. a"), staged_line("s1", "2. b")];
+        let chunks = chunk_messages(&msgs);
+        assert_eq!(chunks.len(), 2);
+        assert!(matches!(&chunks[0], ChatChunk::Single { idx: 0, .. }));
+        assert!(matches!(&chunks[1], ChatChunk::Single { idx: 1, .. }));
     }
 }
