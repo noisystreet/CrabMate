@@ -22,6 +22,12 @@ pub struct StoredMessage {
     pub state: Option<String>,
     #[serde(default)]
     pub is_tool: bool,
+    /// 与 SSE `tool_call` / `tool_result` 的 `tool_call_id` 对齐；旧数据缺省为无（按 FIFO 配对结果）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    /// OpenAI function `name`（蛇形）；供工具气泡图标等 UI，**不**拼进可复制正文。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
     /// 消息创建时间（毫秒，与 `js_sys::Date::now()` 一致）；旧数据缺省为 0，UI 不显示时钟点。
     #[serde(default)]
     pub created_at: i64,

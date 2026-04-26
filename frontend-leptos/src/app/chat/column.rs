@@ -29,7 +29,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
         timeline_panel_expanded,
         chat,
         collapsed_long_assistant_ids,
-        expanded_tool_run_heads,
+        collapsed_tool_run_heads,
         chat_find_query,
         chat_find_match_ids,
         chat_find_cursor,
@@ -201,7 +201,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                                                     tool_run_group_view(
                                                         head_id,
                                                         items,
-                                                        expanded_tool_run_heads,
+                                                        collapsed_tool_run_heads,
                                                         chat_find_query,
                                                         chat_find_match_ids,
                                                         sessions,

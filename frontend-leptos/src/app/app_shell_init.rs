@@ -253,7 +253,7 @@ pub fn init_app_shell() -> AppShellInit {
             timeline_panel_expanded: app_signals.chat_composer.timeline_panel_expanded,
             chat: app_signals.chat,
             collapsed_long_assistant_ids: app_signals.chat_composer.collapsed_long_assistant_ids,
-            expanded_tool_run_heads: app_signals.chat_composer.expanded_tool_run_heads,
+            collapsed_tool_run_heads: app_signals.chat_composer.collapsed_tool_run_heads,
             chat_find_query: app_signals.chat_composer.chat_find_query,
             chat_find_match_ids: app_signals.chat_composer.chat_find_match_ids,
             chat_find_cursor: app_signals.chat_composer.chat_find_cursor,

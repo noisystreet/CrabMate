@@ -12,6 +12,23 @@ use super::path::{
 use crate::tools::ToolContext;
 use crate::workspace_changelist::record_file_state_after_write;
 
+/// 工具正文首行统一 `路径：…`，便于 Web 紧凑条与模型扫读（与 `run_command` 的 `命令：` 同理）。
+#[inline]
+fn tool_output_prepend_path(rel_display: &str, message: impl AsRef<str>) -> String {
+    format!("路径：{}\n{}", rel_display.trim(), message.as_ref())
+}
+
+/// 复制/移动：`从→到：a → b` 与后续说明分行。
+#[inline]
+fn tool_output_prepend_from_to(from: &str, to: &str, message: impl AsRef<str>) -> String {
+    format!(
+        "从→到：{} → {}\n{}",
+        from.trim(),
+        to.trim(),
+        message.as_ref()
+    )
+}
+
 /// 创建文件：仅在文件不存在时创建；若已存在则报错。
 /// 参数 args_json: { "path": string, "content": string }
 pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
@@ -35,10 +52,8 @@ pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     match std::fs::write(&target, content.as_bytes()) {
         Ok(()) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, None);
-            format!(
-                "已创建文件: {}",
-                path_for_tool_display(working_dir, &target, Some(&path))
-            )
+            let disp = path_for_tool_display(working_dir, &target, Some(&path));
+            tool_output_prepend_path(&disp, format!("已创建文件: {}", disp))
         }
         Err(e) => format!("写入文件失败: {}", e),
     }
@@ -142,7 +157,7 @@ pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
     match std::fs::copy(&src, &dst) {
         Ok(n) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &to, None);
-            format!("已复制：{} -> {}（{} 字节）", from, to, n)
+            tool_output_prepend_from_to(&from, &to, format!("已复制（{} 字节）", n))
         }
         Err(e) => format!("复制失败: {}", e),
     }
@@ -182,7 +197,7 @@ pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
         Ok(()) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &from, None);
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &to, None);
-            format!("已移动：{} -> {}", from, to)
+            tool_output_prepend_from_to(&from, &to, "已移动")
         }
         Err(e) => format!("移动失败: {}", e),
     }
@@ -233,10 +248,8 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         match std::fs::write(&target, content.as_bytes()) {
             Ok(()) => {
                 record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, before);
-                format!(
-                    "已整文件覆盖: {}",
-                    path_for_tool_display(working_dir, &target, Some(&path))
-                )
+                let disp = path_for_tool_display(working_dir, &target, Some(&path));
+                tool_output_prepend_path(&disp, format!("已整文件覆盖: {}", disp))
             }
             Err(e) => format!("写入文件失败: {}", e),
         }
@@ -369,12 +382,14 @@ fn modify_file_replace_lines(
     }
 
     record_file_state_after_write(ctx.workspace_changelist, working_dir, rel_path, original);
-    format!(
-        "已按行替换: {} (行 {}-{}，共删除 {} 行，写入新内容 {} 字节)",
+    tool_output_prepend_path(
         display_path,
-        start_line,
-        end_line,
-        end_line - start_line + 1,
-        new_body.len()
+        format!(
+            "已按行替换（行 {}-{}，共删除 {} 行，写入新内容 {} 字节）",
+            start_line,
+            end_line,
+            end_line - start_line + 1,
+            new_body.len()
+        ),
     )
 }

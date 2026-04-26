@@ -1314,14 +1314,8 @@ pub(crate) fn is_compile_command_success(args_json: &str, result: &str) -> bool 
     if !is_compile_cmd {
         return false;
     }
-    // run_command 输出的第一行形如：退出码：0
-    let first_line = result.lines().next().unwrap_or("");
-    if let Some(rest) = first_line.strip_prefix("退出码：")
-        && let Ok(code) = rest.trim().parse::<i32>()
-    {
-        return code == 0;
-    }
-    false
+    let parsed = crate::tool_result::parse_legacy_output("run_command", result);
+    parsed.ok && parsed.exit_code == Some(0)
 }
 
 /// 为前端生成简短的工具调用摘要，便于在 Chat 面板中展示

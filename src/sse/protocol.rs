@@ -177,6 +177,9 @@ pub struct ToolCallSummary {
     pub summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal_id: Option<String>,
+    /// 与本轮 `tool_calls[].id` / `tool_result.tool_call_id` 对齐，供前端将结果写回正确占位气泡。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
     /// 与 `redact::tool_arguments_preview_for_sse` 一致：单行截断的 `function.arguments` 预览；缺省省略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments_preview: Option<String>,

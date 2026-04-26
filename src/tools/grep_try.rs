@@ -311,11 +311,10 @@ pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<Str
     let match_count = results.len();
 
     if results.is_empty() {
+        let rel = path_under_workspace_display(workspace_root, &root);
         let body = format!(
-            "未找到匹配：\"{}\"（共遍历 {} 个文件，搜索根目录：{}）",
-            params.pattern,
-            visited,
-            root.display()
+            "搜索：\"{}\"\n范围：{}\n未找到匹配（共遍历 {} 个文件）",
+            params.pattern, rel, visited,
         );
         return Ok(prepend_search_header(
             &body,
@@ -331,11 +330,12 @@ pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<Str
         ));
     }
 
+    let rel = path_under_workspace_display(workspace_root, &root);
     let mut out = String::new();
     out.push_str(&format!(
-        "搜索模式：\"{}\"，根目录：{}\n匹配结果（最多 {} 条，实际 {} 条）：\n\n",
+        "搜索：\"{}\"\n范围：{}\n匹配结果（最多 {} 条，实际 {} 条）：\n\n",
         params.pattern,
-        root.display(),
+        rel,
         params.max_results,
         results.len()
     ));

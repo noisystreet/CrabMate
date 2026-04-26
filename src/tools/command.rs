@@ -340,13 +340,15 @@ fn run_impl(
     check_rate_limit()?;
 
     // 执行工作区可执行文件
+    let invocation = format_invocation_for_display(cmd_raw, &cmd_args);
+
     if let Some(target_path) = exec_path {
         let output = Command::new(&target_path)
             .args(&cmd_args)
             .current_dir(working_dir)
             .output()
             .map_err(|e| map_spawn_error(cmd_raw, working_dir, e))?;
-        return Ok(format_command_output(cmd_raw, output, max_output_len));
+        return Ok(format_command_output(&invocation, output, max_output_len));
     }
 
     if cmd_name == "cargo"
@@ -370,7 +372,7 @@ fn run_impl(
             .current_dir(working_dir)
             .output()
             .map_err(|e| map_spawn_error(&cmd_name, working_dir, e))?;
-        let formatted = format_command_output(&cmd_name, output, max_output_len);
+        let formatted = format_command_output(&invocation, output, max_output_len);
         store_cached(opts.enabled, opts.max_entries, key, formatted.clone());
         return Ok(formatted);
     }
@@ -380,11 +382,20 @@ fn run_impl(
         .current_dir(working_dir)
         .output()
         .map_err(|e| map_spawn_error(&cmd_name, working_dir, e))?;
-    Ok(format_command_output(&cmd_name, output, max_output_len))
+    Ok(format_command_output(&invocation, output, max_output_len))
+}
+
+fn format_invocation_for_display(cmd_raw: &str, args: &[String]) -> String {
+    let cmd = cmd_raw.trim();
+    if args.is_empty() {
+        cmd.to_string()
+    } else {
+        format!("{} {}", cmd, args.join(" "))
+    }
 }
 
 fn format_command_output(
-    _cmd_name: &str,
+    invocation: &str,
     output: std::process::Output,
     max_output_len: usize,
 ) -> String {
@@ -393,7 +404,10 @@ fn format_command_output(
     let truncate =
         |s: &str| output_util::truncate_output_lines(s, max_output_len, MAX_OUTPUT_LINES);
     let status = output.status;
-    let mut out = format!("退出码：{}\n", status.code().unwrap_or(-1));
+    let mut out = format!(
+        "命令：{invocation}\n退出码：{}\n",
+        status.code().unwrap_or(-1)
+    );
     if !stdout.is_empty() {
         out.push_str("标准输出：\n");
         out.push_str(&truncate(&stdout));

@@ -339,6 +339,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         }
     }

@@ -147,26 +147,38 @@ pub(crate) fn tool_content_for_display_impl(raw: &str, include_raw: bool) -> Str
 }
 
 fn should_format_as_structured_plain_tool(raw: &str) -> bool {
-    let first = raw.lines().next().unwrap_or("").trim();
-    if first.starts_with("退出码：") {
-        return true;
-    }
-    if first.contains("(exit=") && first.contains(')') {
-        return true;
+    for line in raw.lines().map(str::trim) {
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with("命令：") {
+            continue;
+        }
+        if line.starts_with("退出码：") {
+            return true;
+        }
+        if line.contains("(exit=") && line.contains(')') {
+            return true;
+        }
+        break;
     }
     raw.contains("标准输出：\n") || raw.contains("标准错误：\n")
 }
 
 fn strip_first_tool_status_line(raw: &str) -> String {
-    let lines: Vec<&str> = raw.lines().collect();
-    if lines.is_empty() {
-        return String::new();
+    let mut lines: Vec<&str> = raw.lines().collect();
+    while let Some(first) = lines.first() {
+        let t = first.trim();
+        if t.starts_with("命令：")
+            || t.starts_with("退出码：")
+            || (t.contains("(exit=") && t.contains(')'))
+        {
+            lines.remove(0);
+            continue;
+        }
+        break;
     }
-    let first = lines[0].trim();
-    if first.starts_with("退出码：") || (first.contains("(exit=") && first.contains(')')) {
-        return lines[1..].join("\n").trim().to_string();
-    }
-    raw.to_string()
+    lines.join("\n").trim().to_string()
 }
 
 fn format_structured_plain_tool(raw: &str, include_raw: bool) -> String {
@@ -692,6 +704,15 @@ mod tests {
         assert!(out.contains("标准输出："));
         assert!(out.contains("hello"));
         assert!(!out.lines().next().unwrap_or("").starts_with("退出码："));
+    }
+
+    #[test]
+    fn tool_plain_run_command_structured_with_command_line() {
+        let raw = "命令：echo hi\n退出码：0\n标准输出：\nhi\n";
+        let out = tool_content_for_display_impl(raw, true);
+        assert!(out.contains(TOOL_OUTPUT_SECTION_HEADLINE));
+        assert!(out.contains("成功"));
+        assert!(out.contains("hi"));
     }
 
     #[test]

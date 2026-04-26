@@ -78,7 +78,8 @@ pub struct ChatComposerSignals {
     pub composer_draft_buffer: Arc<Mutex<String>>,
     pub composer_input_ref: NodeRef<leptos::html::Textarea>,
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    pub expanded_tool_run_heads: RwSignal<HashSet<String>>,
+    /// 连续工具组中用户手动**收起**为仅显示最后一条的分组 head（message id）；默认空 = 全部展开。
+    pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
     pub auto_scroll_chat: RwSignal<bool>,
     pub messages_scroll_from_effect: RwSignal<bool>,
     pub last_messages_scroll_top: RwSignal<i32>,
@@ -99,7 +100,7 @@ impl ChatComposerSignals {
             composer_draft_buffer: Arc::new(Mutex::new(String::new())),
             composer_input_ref: NodeRef::new(),
             collapsed_long_assistant_ids: RwSignal::new(Vec::new()),
-            expanded_tool_run_heads: RwSignal::new(HashSet::new()),
+            collapsed_tool_run_heads: RwSignal::new(HashSet::new()),
             auto_scroll_chat: RwSignal::new(true),
             messages_scroll_from_effect: RwSignal::new(false),
             last_messages_scroll_top: RwSignal::new(0),

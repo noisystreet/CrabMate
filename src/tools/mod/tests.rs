@@ -149,6 +149,7 @@ fn test_run_tool_run_command_pwd() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
     let out = run_tool("run_command", r#"{"command":"pwd"}"#, &ctx);
+    assert!(out.contains("命令：pwd"), "应含命令行，得到: {}", out);
     assert!(out.contains("退出码：0"), "pwd 应成功，得到: {}", out);
 }
 

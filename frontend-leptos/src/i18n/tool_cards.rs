@@ -44,15 +44,120 @@ pub fn plan_step_line(l: Locale, idx: usize, id: &str, desc: &str) -> String {
 
 // --- `message_format/tool_card.rs` 展示层（与 Rust 工具中文摘要解析配套）---
 
+/// 稳定哈希：同名工具图标不变，不同名在调色板中大多可区分（MCP、长尾 `cargo_*` / `git_*` 等）。
+fn tool_kind_emoji_hashed(name: &str) -> &'static str {
+    const PALETTE: &[&str] = &[
+        "🛠️", "⚙️", "🔩", "🧰", "📎", "🗂️", "📌", "🧲", "🔑", "🪛", "⚗️", "🧪", "📡", "🛰️", "🗃️",
+        "📇", "🔖", "🏷️", "🪄", "✨", "🔔", "📯", "🧿", "🔮", "🎲", "🧩", "🎁", "🧱", "🪢", "📮",
+        "🧬", "🦾", "🖇️", "🗝️", "🪁", "🎪", "💠", "🔷", "🔶", "🟣", "🦀", "🐙", "🐳", "🐍", "🐹",
+        "☕", "🔀",
+    ];
+    let mut h: u32 = 2_166_136_261;
+    for b in name.bytes() {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(16_777_619);
+    }
+    PALETTE[(h as usize) % PALETTE.len()]
+}
+
+/// 按内置工具 `name`（蛇形）选气泡左侧图标；空名回退 🔧，未单独列出的名走 [`tool_kind_emoji_hashed`]。
+pub fn tool_kind_emoji(name: &str) -> &'static str {
+    let n = name.trim();
+    if n.is_empty() {
+        return "🔧";
+    }
+    match n {
+        "run_command" => "⚡",
+        "playbook_run_commands" => "📜",
+        "read_file" => "📄",
+        "read_binary_meta" => "💽",
+        "extract_in_file" => "📤",
+        "read_dir" => "📁",
+        "list_tree" => "🌲",
+        "glob_files" => "✴️",
+        "file_exists" => "❔",
+        "create_file" => "📝",
+        "append_file" => "➕",
+        "create_dir" => "📂",
+        "modify_file" => "✏️",
+        "search_replace" => "🔁",
+        "apply_patch" => "🩹",
+        "chmod_file" => "🛡️",
+        "copy_file" => "📋",
+        "move_file" => "🚚",
+        "symlink_info" => "🔗",
+        "delete_file" | "delete_dir" => "🗑️",
+        "search_in_files" => "🔎",
+        "codebase_semantic_search" => "🧭",
+        "http_fetch" | "http_request" => "🌐",
+        "web_search" => "🔍",
+        "get_weather" => "🌤️",
+        "calc" => "🧮",
+        "date_calc" => "📆",
+        "convert_units" => "↔️",
+        "regex_test" => "🔣",
+        "format_file" | "format_check_file" => "🎨",
+        "get_current_time" => "🕐",
+        "text_transform" => "🔤",
+        "table_text" => "🔠",
+        "text_diff" => "⚖️",
+        "json_format" => "🗃️",
+        "package_query" => "📦",
+        "find_symbol" => "🔭",
+        "find_references" => "📍",
+        "call_graph_sketch" => "🕸️",
+        "rust_file_outline" => "📑",
+        "code_stats" => "📊",
+        "dependency_graph" => "🪢",
+        "coverage_report" => "📈",
+        "hash_file" => "🔢",
+        "port_check" => "🔌",
+        "process_list" => "📟",
+        "archive_pack" => "🗜️",
+        "archive_unpack" => "📤",
+        "archive_list" => "📃",
+        "run_lints" | "quality_workspace" | "rust_backtrace_analyze" => "✅",
+        "cargo_audit" => "🔒",
+        "cargo_deny" => "🚧",
+        "long_term_remember" => "💭",
+        "long_term_forget" => "🧹",
+        "long_term_memory_list" => "📚",
+        "summarize_experience" => "📔",
+        "add_reminder" | "complete_reminder" | "delete_reminder" => "⏰",
+        "list_reminders" => "📒",
+        "add_event" | "delete_event" | "update_event" => "🗓️",
+        "list_events" => "📅",
+        "diagnostic_summary" => "🩺",
+        "error_output_playbook" => "📕",
+        "present_clarification_questionnaire" => "❓",
+        "changelog_draft" => "📰",
+        "license_notice" => "🧾",
+        "repo_overview_sweep" => "🗺️",
+        "todo_scan" => "🗒️",
+        "env_var_check" => "🔐",
+        "structured_validate" => "✔️",
+        "structured_query" => "🔬",
+        "structured_diff" => "➖",
+        "structured_patch" => "🧩",
+        "markdown_check_links" => "📎",
+        "workflow_execute" => "⚙️",
+        "ci_pipeline_local" => "🛤️",
+        "release_ready_check" => "🚀",
+        _ => tool_kind_emoji_hashed(n),
+    }
+}
+
 pub fn tool_human_name(l: Locale, name: &str) -> String {
     match (l, name) {
         (Locale::ZhHans, "run_command") => "命令执行".to_string(),
         (Locale::ZhHans, "read_file") => "读取文件".to_string(),
+        (Locale::ZhHans, "create_file") => "创建文件".to_string(),
         (Locale::ZhHans, "read_dir") => "读取目录".to_string(),
         (Locale::ZhHans, "search_in_files") => "全文检索".to_string(),
         (Locale::ZhHans, "list_files") => "列出文件".to_string(),
         (Locale::En, "run_command") => "Command run".to_string(),
         (Locale::En, "read_file") => "Read file".to_string(),
+        (Locale::En, "create_file") => "Create file".to_string(),
         (Locale::En, "read_dir") => "Read directory".to_string(),
         (Locale::En, "search_in_files") => "Search files".to_string(),
         (Locale::En, "list_files") => "List files".to_string(),
@@ -134,11 +239,9 @@ pub fn tool_summary_label_stderr(l: Locale) -> &'static str {
     }
 }
 
-pub fn tool_title_completed(l: Locale, human: &str) -> String {
-    match l {
-        Locale::ZhHans => format!("{human}完成"),
-        Locale::En => format!("{human} done"),
-    }
+/// 紧凑条左侧标题：成功态只展示工具人类名，避免与右侧摘要里的「已完成」等重复「完成」。
+pub fn tool_title_completed(_l: Locale, human: &str) -> String {
+    human.to_string()
 }
 
 pub fn tool_title_failed(l: Locale, human: &str) -> String {
@@ -148,11 +251,9 @@ pub fn tool_title_failed(l: Locale, human: &str) -> String {
     }
 }
 
-pub fn tool_rewrite_title_done(l: Locale, human: &str) -> String {
-    match l {
-        Locale::ZhHans => format!("{human} 已完成"),
-        Locale::En => format!("{human} completed"),
-    }
+/// 重写旧版摘要首行时的成功标题：仅保留工具人类名，不附加「已完成」等状态词。
+pub fn tool_rewrite_title_done(_l: Locale, human: &str) -> String {
+    human.to_string()
 }
 
 pub fn tool_rewrite_title_failed_run(l: Locale, human: &str) -> String {
@@ -176,17 +277,18 @@ pub fn tool_read_dir_label_shown(l: Locale) -> &'static str {
     }
 }
 
-pub fn tool_read_dir_compact_dir_word(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "目录",
-        Locale::En => "dir",
-    }
-}
-
 pub fn tool_read_dir_compact_entries(l: Locale, n: usize) -> String {
     match l {
         Locale::ZhHans => format!("{n} 项"),
         Locale::En => format!("{n} entries"),
+    }
+}
+
+/// 紧凑条：全文检索时与「搜索 · 模式 · 范围」摘要左侧对齐。
+pub fn tool_search_compact_header_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "搜索",
+        Locale::En => "Search",
     }
 }
 
@@ -319,41 +421,6 @@ pub fn tool_failure_suggest_fallback(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "检查错误输出并按需重试。",
         Locale::En => "Inspect stderr and retry if needed.",
-    }
-}
-
-pub fn tool_success_done_line(l: Locale, human: &str) -> String {
-    match l {
-        Locale::ZhHans => format!("{human} 已成功完成。"),
-        Locale::En => format!("{human} completed successfully."),
-    }
-}
-
-pub fn tool_success_no_output_summary(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "未返回可展示的输出摘要。",
-        Locale::En => "No displayable output summary returned.",
-    }
-}
-
-pub fn tool_success_next_run_command(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "可继续：检查输出后执行下一条命令或进入验证。",
-        Locale::En => "Next: inspect output, then run next command or verify.",
-    }
-}
-
-pub fn tool_success_next_read_file(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "可继续：基于读取结果定位修改点或继续检索相关文件。",
-        Locale::En => "Next: locate edit points or continue searching related files.",
-    }
-}
-
-pub fn tool_success_next_generic(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "可继续：基于当前结果继续下一步操作。",
-        Locale::En => "Next: continue with the next step based on this result.",
     }
 }
 

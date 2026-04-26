@@ -192,6 +192,8 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                     image_urls: imgs_send.clone(),
                     state: None,
                     is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
                     created_at: now,
                 });
                 s.messages.push(StoredMessage {
@@ -202,6 +204,8 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
                     image_urls: vec![],
                     state: Some("loading".to_string()),
                     is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
                     created_at: now,
                 });
                 if is_first_user_turn && i18n::is_default_session_title(&s.title) {

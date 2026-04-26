@@ -49,9 +49,22 @@ pub struct ParsedLegacyOutput {
     pub error_code: Option<String>,
 }
 
+/// 跳过 `run_command` 正文可能开头的 `命令：…` 行，使后续仍以 `退出码：` 行为准。
+fn strip_leading_command_invocation_line(output: &str) -> &str {
+    let mut s = output.trim_start();
+    if let Some(idx) = s.find('\n') {
+        let first = s[..idx].trim();
+        if first.starts_with("命令：") {
+            s = s[idx + 1..].trim_start();
+        }
+    }
+    s
+}
+
 /// 解析旧格式工具输出，仅返回状态与分流字段，避免复制完整 message。
 pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput {
-    let first = output.lines().next().unwrap_or("").trim();
+    let body = strip_leading_command_invocation_line(output);
+    let first = body.lines().next().unwrap_or("").trim();
     let exit_code = parse_exit_code(first);
     let (stdout, stderr) = extract_streams(output);
 
@@ -286,6 +299,15 @@ mod tests {
         assert!(r.ok);
         assert_eq!(r.exit_code, Some(0));
         assert_eq!(r.stdout, "hello");
+    }
+
+    #[test]
+    fn parse_skips_command_invocation_prefix() {
+        let raw = "命令：pwd\n退出码：0\n标准输出：\n/\n";
+        let r = ToolResult::from_legacy_output("run_command", raw.to_string());
+        assert!(r.ok);
+        assert_eq!(r.exit_code, Some(0));
+        assert_eq!(r.stdout, "/");
     }
 
     #[test]
