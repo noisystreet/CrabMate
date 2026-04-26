@@ -118,11 +118,11 @@ pub fn nav_hide_search_panel_aria(l: Locale) -> &'static str {
     nav_hide_search_panel(l)
 }
 
-/// 悬停于会话列表区时的提示：如何打开筛选/搜索。
+/// 悬停于会话列表区时的提示：如何打开管理会话 / 筛选 / 搜索。
 pub fn nav_rail_scroll_search_hint(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "在列表空白处右键可打开筛选与搜索",
-        Locale::En => "Right-click empty area here for filter & search",
+        Locale::ZhHans => "在列表空白处右键可管理会话、筛选与搜索",
+        Locale::En => "Right-click empty area here for manage sessions, filter & search",
     }
 }
 

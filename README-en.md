@@ -29,7 +29,7 @@ It ships **function calling**, workspace commands and file tools, plus a **Web U
 
 - **CLI**: **`crabmate repl`** / **`chat`** / **`serve`** (same agent/tools as the Web UI). Details: **[CLI](#cli)** and [docs/en/CLI.md](docs/en/CLI.md).
 
-- **Web UI**: DeepSeek-style layout; assistant replies as **Markdown**; sidebar sessions (export, filter, search), workspace tree and change preview, tasks and context status, multi-select / retry / branch on messages; **multi-role** and more in [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+- **Web UI**: DeepSeek-style layout; assistant replies as **Markdown**; sidebar sessions (right-click a session or empty list area for **Manage sessions…**, starring, pinning, export; filter & search), workspace tree and change preview, tasks and context status, multi-select / retry / branch on messages; **multi-role** and more in [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 
 - **Project profile**: sidebar summary and optional first-turn injection; models can use **`repo_overview_sweep`** ([docs/en/TOOLS.md](docs/en/TOOLS.md)).
 
