@@ -8,6 +8,7 @@ use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
+use super::composer_input_stack::ComposerInputStack;
 use super::handles::ChatColumnShell;
 use super::message_chunks::{ChatChunk, chunk_messages};
 use super::message_group_views::tool_run_group_view;
@@ -33,6 +34,9 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
         chat_find_query,
         chat_find_match_ids,
         chat_find_cursor,
+        draft: _draft,
+        composer_mirror_html,
+        composer_mirror_scroll_top,
         composer_input_ref,
         composer_buf_ta,
         pending_images,
@@ -434,26 +438,14 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                             </div>
                         </Show>
                         <div class="composer-input-row">
-                        <textarea
-                            class="composer-input"
-                            data-testid="chat-composer-input"
-                            node_ref=composer_input_ref
-                            on:input=move |ev| {
-                                let v = event_target_value(&ev);
-                                *composer_buf_ta.lock().unwrap() = v;
-                            }
-                            on:keydown={
-                                let r = Arc::clone(&run_send_message);
-                                move |ev: web_sys::KeyboardEvent| {
-                                    if ev.key() == "Enter" && !ev.shift_key() {
-                                        ev.prevent_default();
-                                        r();
-                                    }
-                                }
-                            }
-                            prop:placeholder=move || i18n::composer_ph(locale.get())
-                            rows="3"
-                        ></textarea>
+                        <ComposerInputStack
+                            composer_input_ref=composer_input_ref
+                            composer_buf_ta=composer_buf_ta
+                            composer_mirror_html=composer_mirror_html
+                            composer_mirror_scroll_top=composer_mirror_scroll_top
+                            run_send_message=run_send_message.clone()
+                            locale=locale
+                        />
                         <div class="composer-bar-actions">
                             <label
                                 class="btn btn-muted btn-sm composer-attach-label"

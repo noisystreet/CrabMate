@@ -1609,6 +1609,83 @@
   outline-offset: var(--focus-ring-offset);
 }
 
+/* 输入栈：底层镜像高亮 + 透明文字 textarea（工作区 @路径 徽章样式见 .composer-ws-ref） */
+/* 勿 align-self: stretch：与 .composer-input-row 的 flex-end 组合时，行高会按右侧按钮列抬高，
+   stack 被拉高而 textarea 仍较矮，会在输入区内留下一条「空白带」像中间分隔。随内容高度即可。 */
+.composer-input-stack {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: flex-end;
+}
+
+/* textarea 在 stack 内不再是 flex 行的直接子项，沿用 flex:1 不会撑宽；须显式 100% 宽，否则会回落到默认 cols≈20 的窄条 */
+.composer-input-stack > .composer-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.composer-input-stack .composer-input-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+}
+
+.composer-input-stack .composer-input-highlight-inner {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  padding: 11px 14px;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.composer-input--mirror-overlay {
+  position: relative;
+  z-index: 1;
+  color: transparent;
+  caret-color: var(--text);
+}
+
+.composer-input--mirror-overlay::placeholder {
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+/* 镜像层与透明 textarea 叠放：任何 padding/border/异化字号或字重都会改变视觉宽度，
+   而 caret 仍按纯文本排版 → 必须保持与 .composer-input 相同的行内度量（描边用 box-shadow，不占布局宽度） */
+.composer-ws-ref {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 4px;
+  font-weight: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 38%, var(--border));
+  color: color-mix(in srgb, var(--text) 88%, var(--accent));
+}
+
+:root[data-theme="light"] .composer-ws-ref {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
 .composer-actions {
   display: flex;
   flex-direction: column;
