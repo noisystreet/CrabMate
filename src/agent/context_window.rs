@@ -134,6 +134,7 @@ pub async fn maybe_summarize_with_llm(
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
         thinking: chat_request_thinking_from_cfg(cfg),
+        response_format: None,
     };
 
     let cc = CompleteChatRetryingParams::new(

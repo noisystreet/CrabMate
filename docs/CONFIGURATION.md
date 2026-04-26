@@ -102,6 +102,8 @@
 | `AGENT_STAGED_PLAN_OPTIMIZER_ROUND` | 是否启用规划步骤优化轮（默认 `true`）。 |
 | `AGENT_STAGED_PLAN_TWO_PHASE_NL_DISPLAY` | 为 `true` 时：无工具规划 JSON **定稿**后不向用户侧流式输出该 JSON，再追加一轮仅自然语言的补全请求（默认 `false`；见下文「分阶段规划」）。 |
 
+**分层模式（`planner_executor_mode = hierarchical`）与 DeepSeek**：当 **`api_base` 主机名含 `deepseek`**（如官方 `https://api.deepseek.com/v1`）时：（1）分层 **Manager** / **动态分解器** 的无工具请求会自动附带 **`response_format: {"type":"json_object"}`**（[JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)），请合理设置 **`max_tokens`**；（2）[思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode)下，**仅当**某轮助手 **发起了 `tool_calls`** 时，后续请求才必须完整回传该条助手 **`reasoning_content`**（否则 HTTP 400）；未工具调用的轮次思维链可不拼进上下文。分层 **Operator** 按轮次保存助手消息（含思维链），出站 **`messages`** 在相同 **`api_base`** 判定下**仅对含 `tool_calls` 的助手**保留 `reasoning_content`。其它 API 基址不自动启用上述行为。
+
 ### 整请求 Chrome Trace（`run_agent_turn`）
 
 | 环境变量 | 说明 |

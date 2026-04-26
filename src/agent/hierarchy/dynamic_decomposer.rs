@@ -7,7 +7,7 @@ use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
 use crate::llm::{
     CompleteChatRetryingParams, LlmRetryingTransportOpts, complete_chat_retrying,
-    no_tools_chat_request,
+    no_tools_chat_request_for_hierarchical_manager,
 };
 use crate::types::{LlmSeedOverride, Message, message_content_as_str};
 
@@ -158,8 +158,13 @@ impl DynamicDecomposer {
             self.build_decomposition_prompt(parent_goal, execution_history, current_iteration);
 
         let messages = vec![Message::user_only(&prompt)];
-        let request =
-            no_tools_chat_request(cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+        let request = no_tools_chat_request_for_hierarchical_manager(
+            cfg,
+            &messages,
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
 
         let params = CompleteChatRetryingParams::new(
             llm_backend,

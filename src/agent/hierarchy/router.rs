@@ -202,6 +202,7 @@ impl SmartRouter {
             seed: None,
             reasoning_split: Some(false),
             thinking: None,
+            response_format: None,
         };
 
         let params = CompleteChatRetryingParams::new(

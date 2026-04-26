@@ -34,6 +34,7 @@ pub async fn classify_intent_l2_with_llm(
         seed: None,
         reasoning_split: Some(false),
         thinking: None,
+        response_format: None,
     };
     let params = CompleteChatRetryingParams::new(
         llm_backend,

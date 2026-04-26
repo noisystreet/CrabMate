@@ -358,15 +358,13 @@ impl OperatorAgent {
             if let Some(tool_calls) = &response.tool_calls {
                 // 首先添加一个包含所有 tool_calls 的 assistant 消息
                 // 这是 OpenAI API 的要求：所有 tool_calls 必须在同一个 assistant 消息中
-                state.messages.push(Message {
-                    role: "assistant".to_string(),
-                    content: response.content.clone(),
-                    reasoning_content: None,
-                    reasoning_details: None,
-                    tool_calls: Some(tool_calls.clone()),
-                    name: None,
-                    tool_call_id: None,
-                });
+                state
+                    .messages
+                    .push(Self::assistant_message_for_operator_history(
+                        &response,
+                        response.content.clone(),
+                        Some(tool_calls.clone()),
+                    ));
 
                 for tool_call in tool_calls {
                     let tool_name = &tool_call.function.name;
@@ -866,15 +864,13 @@ impl OperatorAgent {
                                 .observations
                                 .push(format!("LLM response: {}", truncate_output(&text)));
                             // 重要：将 LLM 回复添加到 messages，否则上下文会丢失
-                            state.messages.push(Message {
-                                role: "assistant".to_string(),
-                                content: Some(MessageContent::Text(text.clone())),
-                                reasoning_content: None,
-                                reasoning_details: None,
-                                tool_calls: None,
-                                name: None,
-                                tool_call_id: None,
-                            });
+                            state
+                                .messages
+                                .push(Self::assistant_message_for_operator_history(
+                                    &response,
+                                    Some(MessageContent::Text(text.clone())),
+                                    None,
+                                ));
                         }
                     } else {
                         // LLM 返回空内容，添加一个提示继续
@@ -903,6 +899,23 @@ impl OperatorAgent {
                     });
                 }
             }
+        }
+    }
+
+    /// 将本轮 LLM 答复记入 ReAct 历史。与 [DeepSeek 思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode) 示例一致，完整保留 `content` / `reasoning_content` / `tool_calls`；出站仅对含 **`tool_calls`** 的助手向 API 回传思维链。
+    fn assistant_message_for_operator_history(
+        response: &Message,
+        content: Option<MessageContent>,
+        tool_calls: Option<Vec<crate::types::ToolCall>>,
+    ) -> Message {
+        Message {
+            role: "assistant".to_string(),
+            content,
+            reasoning_content: response.reasoning_content.clone(),
+            reasoning_details: response.reasoning_details.clone(),
+            tool_calls,
+            name: None,
+            tool_call_id: None,
         }
     }
 

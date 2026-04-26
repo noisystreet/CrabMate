@@ -136,6 +136,7 @@ where
         let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(
             p.messages.as_slice(),
             kimi_k2_5_vendor_requires_tool_call_reasoning(p.cfg.as_ref()),
+            crate::llm::vendor::deepseek_json_output_eligible(p.cfg.as_ref()),
         );
         let req = no_tools_chat_request_from_messages(
             p.cfg.as_ref(),
@@ -183,7 +184,7 @@ where
 async fn complete_one_staged_planner_assistant_round(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-    build_planner_messages: fn(&[Message], String, bool) -> Vec<Message>,
+    build_planner_messages: fn(&[Message], String, bool, bool) -> Vec<Message>,
     planner_render_to_terminal: bool,
     log_label: &'static str,
 ) -> Result<(Message, String), RunAgentTurnError> {
@@ -334,13 +335,13 @@ where
 pub(crate) struct StagedPlanRunLabels {
     pub planning_log_label: &'static str,
     pub step_injection_log_label: &'static str,
-    pub build_planner_messages: fn(&[Message], String, bool) -> Vec<Message>,
+    pub build_planner_messages: fn(&[Message], String, bool, bool) -> Vec<Message>,
 }
 
 async fn prepare_staged_planner_no_tools_request(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-    build_planner_messages: fn(&[Message], String, bool) -> Vec<Message>,
+    build_planner_messages: fn(&[Message], String, bool, bool) -> Vec<Message>,
 ) -> Result<crate::types::ChatRequest, RunAgentTurnError> {
     if let Some(ref ltm) = p.long_term_memory {
         ltm.prepare_messages(
@@ -370,11 +371,12 @@ async fn prepare_staged_planner_no_tools_request(
     } else {
         instr.to_string()
     };
-    let preserve = crate::llm::llm_vendor_adapter(p.cfg.as_ref())
+    let preserve_kimi = crate::llm::llm_vendor_adapter(p.cfg.as_ref())
         .preserve_assistant_tool_call_reasoning(p.cfg.as_ref());
+    let preserve_deepseek = crate::llm::vendor::deepseek_json_output_eligible(p.cfg.as_ref());
     Ok(no_tools_chat_request_from_messages(
         p.cfg.as_ref(),
-        build_planner_messages(p.messages, plan_system, preserve),
+        build_planner_messages(p.messages, plan_system, preserve_kimi, preserve_deepseek),
         p.temperature_override,
         p.effective_model(),
         p.seed_override,
@@ -462,12 +464,17 @@ pub(crate) fn build_single_agent_planner_messages(
     messages: &[Message],
     plan_system: String,
     preserve_reasoning_on_assistant_tool_calls: bool,
+    preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Vec<Message> {
     let mut out: Vec<Message> = messages
         .iter()
         .filter(|m| !is_message_excluded_from_llm_context_except_memory(m))
         .map(|m| {
-            message_clone_stripping_reasoning_for_api(m, preserve_reasoning_on_assistant_tool_calls)
+            message_clone_stripping_reasoning_for_api(
+                m,
+                preserve_reasoning_on_assistant_tool_calls,
+                preserve_deepseek_thinking_reasoning_roundtrip,
+            )
         })
         .collect();
     out.push(Message::system_only(plan_system));
@@ -478,6 +485,7 @@ pub(crate) fn build_logical_dual_planner_messages(
     messages: &[Message],
     plan_system: String,
     preserve_reasoning_on_assistant_tool_calls: bool,
+    preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Vec<Message> {
     let mut out: Vec<Message> = messages
         .iter()
@@ -494,7 +502,11 @@ pub(crate) fn build_logical_dual_planner_messages(
                 .unwrap_or(false)
         })
         .map(|m| {
-            message_clone_stripping_reasoning_for_api(m, preserve_reasoning_on_assistant_tool_calls)
+            message_clone_stripping_reasoning_for_api(
+                m,
+                preserve_reasoning_on_assistant_tool_calls,
+                preserve_deepseek_thinking_reasoning_roundtrip,
+            )
         })
         .collect();
     out.push(Message::system_only(plan_system));

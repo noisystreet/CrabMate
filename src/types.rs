@@ -96,7 +96,7 @@ pub fn message_content_get_or_insert_empty_text(
 pub struct Message {
     pub role: String,
     pub content: Option<MessageContent>,
-    /// DeepSeek `deepseek-reasoner` 等非流式/流式响应中的思维链；出站默认**不**回传供应商（见 [`message_clone_stripping_reasoning_for_api`]）；Moonshot **kimi-k2.5** 在 **thinking** 启用时对含 **`tool_calls`** 的 assistant **须**回传（由同一函数在 `preserve_reasoning_on_assistant_tool_calls` 为真时处理）。
+    /// DeepSeek 思考模式等响应中的思维链（与 `content` 同级，见 [思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode)）；出站默认剥离，**仅**在官方 DeepSeek **`api_base`** 且该助手含 **`tool_calls`** 时多轮回传（`preserve_deepseek_thinking_reasoning_roundtrip`）。Moonshot **kimi-k2.5** + thinking 时对含 **`tool_calls`** 的助手由 `preserve_reasoning_on_assistant_tool_calls` 保留。
     /// 部分网关（如 Ollama 对 Qwen3）流式/非流式使用键名 **`reasoning`**，与 **`reasoning_content`** 等价。
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "reasoning")]
     pub reasoning_content: Option<String>,
@@ -392,14 +392,19 @@ impl Message {
 /// 单条消息：发往供应商时默认去掉 `reasoning_content` / `reasoning_details`（与 [`messages_stripping_reasoning_for_api_request`] 单元素语义一致）。
 ///
 /// **`preserve_reasoning_on_assistant_tool_calls`**：Moonshot **kimi-k2.5** 在 **thinking 启用** 时要求含 **`tool_calls`** 的 assistant 必须带 **`reasoning_content`**；为真时对该类消息在合并 **`reasoning_details`** 后保留思维链，若仍为空则写入空串以便 JSON 带出该字段。
+///
+/// **`preserve_deepseek_thinking_reasoning_roundtrip`**：与 [DeepSeek 思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode) 中「工具调用」一致——**仅**含非空 **`tool_calls`** 的助手须在后续请求回传 **`reasoning_content`**。
 #[inline]
 pub(crate) fn message_clone_stripping_reasoning_for_api(
     m: &Message,
     preserve_reasoning_on_assistant_tool_calls: bool,
+    preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Message {
-    let keep = preserve_reasoning_on_assistant_tool_calls
-        && is_assistant_role(m.role.as_str())
-        && assistant_has_non_empty_tool_calls(m);
+    let is_asst = is_assistant_role(m.role.as_str());
+    let tc = assistant_has_non_empty_tool_calls(m);
+    let keep_kimi = preserve_reasoning_on_assistant_tool_calls && is_asst && tc;
+    let keep_deepseek = preserve_deepseek_thinking_reasoning_roundtrip && is_asst && tc;
+    let keep = keep_kimi || keep_deepseek;
     if keep {
         let mut x = m.clone();
         merge_reasoning_details_into_reasoning_content(&mut x);
@@ -451,11 +456,16 @@ pub fn merge_reasoning_details_into_reasoning_content(msg: &mut Message) {
 pub fn messages_stripping_reasoning_for_api_request(
     messages: &[Message],
     preserve_reasoning_on_assistant_tool_calls: bool,
+    preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Vec<Message> {
     messages
         .iter()
         .map(|m| {
-            message_clone_stripping_reasoning_for_api(m, preserve_reasoning_on_assistant_tool_calls)
+            message_clone_stripping_reasoning_for_api(
+                m,
+                preserve_reasoning_on_assistant_tool_calls,
+                preserve_deepseek_thinking_reasoning_roundtrip,
+            )
         })
         .collect()
 }
@@ -465,6 +475,7 @@ pub fn messages_stripping_reasoning_for_api_request(
 pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
     messages: &[Message],
     preserve_reasoning_on_assistant_tool_calls: bool,
+    preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Vec<Message> {
     messages
         .iter()
@@ -474,7 +485,11 @@ pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
                 && !is_workspace_changelist_injection(m)
         })
         .map(|m| {
-            message_clone_stripping_reasoning_for_api(m, preserve_reasoning_on_assistant_tool_calls)
+            message_clone_stripping_reasoning_for_api(
+                m,
+                preserve_reasoning_on_assistant_tool_calls,
+                preserve_deepseek_thinking_reasoning_roundtrip,
+            )
         })
         .collect()
 }
@@ -740,6 +755,9 @@ pub struct ChatRequest {
     /// 供应商扩展：**`thinking`**（如智谱 GLM-5 深度思考、Moonshot **kimi-k2.5** 开关）；由 **`llm_bigmodel_thinking`** / **`llm_kimi_thinking_disabled`** 等配置拼装（见 `docs/CONFIGURATION.md`）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<serde_json::Value>,
+    /// OpenAI 兼容 **`response_format`**（如 DeepSeek [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode) 的 `{"type":"json_object"}`）；`None` 则省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<serde_json::Value>,
 }
 
 // ---------- 非流式响应（`stream: false` 时 chat/completions 返回体） ----------
@@ -886,7 +904,7 @@ mod api_messages_strip_tests {
             tool_call_id: None,
         };
         let v = vec![Message::user_only("u"), sep, assistant];
-        let out = messages_for_api_stripping_reasoning_skip_ui_separators(&v, false);
+        let out = messages_for_api_stripping_reasoning_skip_ui_separators(&v, false, false);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].role, "user");
         assert_eq!(out[1].role, "assistant");
@@ -906,8 +924,8 @@ mod api_messages_strip_tests {
             tool_call_id: None,
         };
         let v = vec![Message::user_only("u"), assistant];
-        let a = messages_stripping_reasoning_for_api_request(&v, false);
-        let b = messages_for_api_stripping_reasoning_skip_ui_separators(&v, false);
+        let a = messages_stripping_reasoning_for_api_request(&v, false, false);
+        let b = messages_for_api_stripping_reasoning_skip_ui_separators(&v, false, false);
         assert_eq!(a, b);
     }
 
@@ -930,10 +948,10 @@ mod api_messages_strip_tests {
             name: None,
             tool_call_id: None,
         };
-        let kept = message_clone_stripping_reasoning_for_api(&asst, true);
+        let kept = message_clone_stripping_reasoning_for_api(&asst, true, false);
         assert_eq!(kept.reasoning_content.as_deref(), Some("think"));
         assert!(kept.reasoning_details.is_none());
-        let gone = message_clone_stripping_reasoning_for_api(&asst, false);
+        let gone = message_clone_stripping_reasoning_for_api(&asst, false, false);
         assert!(gone.reasoning_content.is_none());
     }
 
@@ -956,8 +974,47 @@ mod api_messages_strip_tests {
             name: None,
             tool_call_id: None,
         };
-        let out = message_clone_stripping_reasoning_for_api(&asst, true);
+        let out = message_clone_stripping_reasoning_for_api(&asst, true, false);
         assert_eq!(out.reasoning_content.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn deepseek_thinking_strips_reasoning_when_no_tool_calls_per_vendor_doc() {
+        // https://api-docs.deepseek.com/zh-cn/guides/thinking_mode — 未工具调用时 reasoning 无需参与拼接
+        let asst = Message {
+            role: "assistant".to_string(),
+            content: Some(MessageContent::Text("hi".to_string())),
+            reasoning_content: Some("think only".to_string()),
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        };
+        let out = message_clone_stripping_reasoning_for_api(&asst, false, true);
+        assert!(out.reasoning_content.is_none());
+    }
+
+    #[test]
+    fn deepseek_thinking_keeps_reasoning_when_tool_calls_present() {
+        let tc = ToolCall {
+            id: "t".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "f".to_string(),
+                arguments: "{}".to_string(),
+            },
+        };
+        let asst = Message {
+            role: "assistant".to_string(),
+            content: Some(MessageContent::Text("call".to_string())),
+            reasoning_content: Some("chain".to_string()),
+            reasoning_details: None,
+            tool_calls: Some(vec![tc]),
+            name: None,
+            tool_call_id: None,
+        };
+        let out = message_clone_stripping_reasoning_for_api(&asst, false, true);
+        assert_eq!(out.reasoning_content.as_deref(), Some("chain"));
     }
 }
 
