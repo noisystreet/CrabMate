@@ -66,7 +66,11 @@ fn build_l2_prompt(merged_routing_text: &str, current_user_line: &str) -> String
 - kind=ambiguous：信息不足且无法合理猜测执行目标。
 
 primary_intent 从下列选用最贴切的一项（可接近则选 execute 子类）：
-- meta.greeting, qa.explain, execute.read_inspect, execute.code_change, execute.debug_diagnose, execute.run_test_build, execute.docs_ops, execute.git_ops, unknown
+- meta.greeting
+- qa.explain：概念/报错含义/用法解释，不要求动仓库
+- qa.meta：自我介绍、你能做什么、技能与能力范围
+- qa.readonly / qa.codebase：需要结合仓库**只读**查看文件/目录后回答，不修改代码、不跑构建测试
+- execute.read_inspect, execute.code_change, execute.debug_diagnose, execute.run_test_build, execute.docs_ops, execute.git_ops, unknown
 
 secondary_intents：同句中其它显著意图，可空。
 confidence：0.0-1.0。need_clarification：是否缺关键信息；abstain：是否应拒识为执行（与 ambiguous 常同向）。

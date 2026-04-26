@@ -6,7 +6,8 @@ use crate::agent::intent_l2_classifier::classify_intent_l2_with_llm;
 use crate::agent::intent_pipeline::{
     IntentAction, IntentContext, assess_and_route_with_l2, prepare_intent_routing,
 };
-use crate::agent::intent_router::ExecuteIntentThresholds;
+use crate::agent::intent_router::{ExecuteIntentThresholds, qa_readonly_style_primary};
+use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::sse;
 
 use super::intent_user;
@@ -222,13 +223,25 @@ async fn run_intent_l0_l1_l2_gate(
     );
     emit_intent_timeline(p.out, sse_log_tag, &assessment, &merge_meta).await;
 
+    if matches!(assessment.action, IntentAction::Execute) {
+        return Ok(IntentGateResult::ProceedExecute { assessment });
+    }
+
+    let qa_readonly_enter_loop = merge_meta.l2_applied
+        && assessment.kind == crate::agent::intent_router::IntentKind::Qa
+        && qa_readonly_style_primary(&assessment.primary_intent);
+    if qa_readonly_enter_loop {
+        p.step_executor_constraint = Some(PlanStepExecutorKind::ReviewReadonly);
+        return Ok(IntentGateResult::ProceedExecute { assessment });
+    }
+
     match assessment.action {
-        IntentAction::Execute => Ok(IntentGateResult::ProceedExecute { assessment }),
         IntentAction::DirectReply(ref s)
         | IntentAction::ClarifyThenExecute(ref s)
         | IntentAction::ConfirmThenExecute(ref s) => {
             let _ = apply_non_execute_and_finish(p, s).await?;
             Ok(IntentGateResult::Finished)
         }
+        IntentAction::Execute => unreachable!("execute and qa.readonly branch return above"),
     }
 }

@@ -33,6 +33,8 @@ pub struct IntentAssessment {
 
 const GREETING_REPLY: &str = "你好！我在这，想先处理什么问题？";
 const QA_REPLY: &str = "我可以帮你定位和修复 bug、改代码、跑构建和测试、解释报错、做代码审查、整理文档和提交 commit。你想先让我做哪一项？";
+/// 能力范围 / 自我介绍类短答（与 `qa.meta` 对齐）。
+const QA_META_REPLY: &str = "我是 CrabMate，面向你当前工作区的编程助手：可读代码与目录、解释报错与概念、在确认后改代码与跑测试、整理文档与 Git 流程。你现在最想解决的是哪一类问题？";
 const AMBIGUOUS_ASK: &str =
     "我理解你可能希望我直接动手处理。请补充具体目标（文件/报错/命令/期望结果），我再开始执行。";
 pub const EXECUTE_CONFIRM: &str =
@@ -147,6 +149,11 @@ const QA_HINT_KEYWORDS: &[&str] = &[
     "你会什么",
     "你能做什么",
     "你有哪些",
+    // 身份与能力自述（如「介绍一下你自己」）；含执行动词的句子仍由 `contains_execution_hint` 排除。
+    "介绍一下你",
+    "你是谁",
+    "你叫什么",
+    "自我介绍一下",
     "what can you do",
     "what",
     "why",
@@ -260,20 +267,75 @@ fn is_greeting_only(raw: &str) -> bool {
     compact.chars().count() <= 12 && GREETING_KEYWORDS.iter().any(|k| compact.contains(k))
 }
 
-fn contains_execution_hint(s: &str) -> bool {
-    EXECUTION_HINT_KEYWORDS.iter().any(|k| s.contains(k))
-        || s.contains('/')
+fn contains_structural_path_signal(s: &str) -> bool {
+    s.contains('/')
+        || s.contains('@')
         || s.contains(".rs")
         || s.contains(".ts")
         || s.contains(".md")
-        || s.contains('@')
+}
+
+fn contains_execution_action_hint(s: &str) -> bool {
+    EXECUTION_HINT_KEYWORDS.iter().any(|k| s.contains(k))
+}
+
+fn contains_execution_hint(s: &str) -> bool {
+    contains_execution_action_hint(s) || contains_structural_path_signal(s)
+}
+
+fn has_strong_qa_question_signal(s: &str) -> bool {
+    QA_HINT_KEYWORDS.iter().any(|k| s.contains(k))
+        || s.contains("什么意思")
+        || s.contains("啥意思")
+        || s.contains("何意")
+        || s.contains("指的是什么")
+        || s.contains("是指什么")
+        || s.contains("干啥用的")
+        || s.contains("如何用")
+        || s.contains("怎么用")
 }
 
 fn is_qa_only(s: &str) -> bool {
-    if s.is_empty() || contains_execution_hint(s) {
+    if s.is_empty() {
         return false;
     }
-    QA_HINT_KEYWORDS.iter().any(|k| s.contains(k))
+    if !has_strong_qa_question_signal(s) {
+        return false;
+    }
+    // 强疑问句允许出现路径/扩展名（如「README.md 里这段什么意思」），仍禁止明显执行动词。
+    if contains_execution_action_hint(s) {
+        return false;
+    }
+    true
+}
+
+/// 首轮门控「只读 QA」类：`qa.readonly*`、`qa.codebase`（与 L2 `primary_intent` 对齐）。
+#[must_use]
+pub fn qa_readonly_style_primary(primary_intent: &str) -> bool {
+    primary_intent.starts_with("qa.readonly") || primary_intent == "qa.codebase"
+}
+
+/// 按 `primary_intent`（`qa.*`）选择门控直接回复正文；L2 覆盖后应与之一致。
+#[must_use]
+pub fn qa_direct_reply_for_primary(primary_intent: &str) -> String {
+    if qa_readonly_style_primary(primary_intent) {
+        return "我会只读查看你仓库里的相关文件与目录来回答，不会主动改代码；若需要我修改或运行命令，请直接说明。".to_string();
+    }
+    match primary_intent {
+        "qa.meta" => QA_META_REPLY.to_string(),
+        s if s.starts_with("qa.meta.") => QA_META_REPLY.to_string(),
+        _ => QA_REPLY.to_string(),
+    }
+}
+
+#[must_use]
+pub fn greeting_reply_message() -> &'static str {
+    GREETING_REPLY
+}
+
+#[must_use]
+pub fn ambiguous_ask_message() -> &'static str {
+    AMBIGUOUS_ASK
 }
 
 fn execution_confidence(s: &str) -> f32 {
@@ -414,6 +476,27 @@ mod tests {
     #[test]
     fn ability_scope_question_routes_to_qa() {
         let r = route_user_task("你的能力范围是什么");
+        assert_eq!(r.kind, IntentKind::Qa);
+        assert!(matches!(r.route, IntentRoute::DirectReply(_)));
+    }
+
+    #[test]
+    fn introduce_self_question_routes_to_qa() {
+        let r = route_user_task("介绍一下你自己");
+        assert_eq!(r.kind, IntentKind::Qa);
+        assert!(matches!(r.route, IntentRoute::DirectReply(_)));
+    }
+
+    #[test]
+    fn who_are_you_routes_to_qa() {
+        let r = route_user_task("你是谁");
+        assert_eq!(r.kind, IntentKind::Qa);
+        assert!(matches!(r.route, IntentRoute::DirectReply(_)));
+    }
+
+    #[test]
+    fn path_with_what_means_routes_to_qa() {
+        let r = route_user_task("docs/README.md 里这段什么意思");
         assert_eq!(r.kind, IntentKind::Qa);
         assert!(matches!(r.route, IntentRoute::DirectReply(_)));
     }

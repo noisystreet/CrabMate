@@ -635,7 +635,7 @@ pub struct AgentConfig {
     pub enable_llm_routing: Option<bool>,
     /// 为 true 时：根据 `primary_intent/secondary_intents` 对 Router 输出执行模式做偏置提升（默认 true）。
     pub intent_mode_bias_enabled: bool,
-    /// 为 true 时：启用 L2 语义意图分类（当前走额外无工具 LLM 调用，失败自动回退 L1；默认 false）。
+    /// 为 true 时：启用 L2 语义意图分类（当前走额外无工具 LLM 调用，失败自动回退 L1；默认 true）。
     pub intent_l2_enabled: bool,
     /// L2 语义分类覆盖 L1 的最小置信度（0.0..=1.0，默认 0.7）。
     pub intent_l2_min_confidence: f32,
