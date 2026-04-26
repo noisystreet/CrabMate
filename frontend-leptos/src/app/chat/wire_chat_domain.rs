@@ -30,6 +30,8 @@ pub(crate) fn wire_chat_domain_effects(
     pending_clarification: RwSignal<Option<PendingClarificationForm>>,
     collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     composer_draft_buffer: Arc<Mutex<String>>,
+    composer_mirror_html: RwSignal<String>,
+    composer_mirror_scroll_top: RwSignal<f64>,
     composer_input_ref: NodeRef<Textarea>,
     sessions: RwSignal<Vec<ChatSession>>,
     active_id: RwSignal<String>,
@@ -58,6 +60,8 @@ pub(crate) fn wire_chat_domain_effects(
         draft,
         Arc::clone(&composer_draft_buffer),
         composer_input_ref.clone(),
+        composer_mirror_html,
+        composer_mirror_scroll_top,
     );
 
     wire_messages_auto_scroll(

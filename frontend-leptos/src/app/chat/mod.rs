@@ -4,6 +4,8 @@
 
 mod column;
 mod composer;
+mod composer_input_stack;
+mod composer_mirror;
 mod composer_stream;
 mod find;
 mod find_bar;

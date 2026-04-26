@@ -839,6 +839,14 @@
   outline: none;
 }
 
+.app-shell-ds .composer-input-stack .composer-input-highlight-inner {
+  padding: 6px 4px;
+}
+
+.app-shell-ds .composer-ws-ref {
+  border-radius: 4px;
+}
+
 .composer-inner-ds:focus-within {
   border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
   box-shadow:

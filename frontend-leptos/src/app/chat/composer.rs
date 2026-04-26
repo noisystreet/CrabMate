@@ -24,6 +24,8 @@ use crate::storage::{ChatSession, DEFAULT_CHAT_SESSION_TITLE, StoredMessage, mak
 
 use crate::chat_session_state::ChatSessionSignals;
 
+use super::composer_mirror::composer_workspace_at_refs_html;
+
 pub(crate) struct ChatComposerWires {
     pub retry_assistant_target: RwSignal<Option<String>>,
     pub regen_stream_after_truncate: RwSignal<Option<(String, Vec<String>, String)>>,
@@ -83,6 +85,8 @@ pub(crate) fn wire_draft_sync_to_buffer_and_textarea(
     draft: RwSignal<String>,
     composer_draft_buffer: Arc<Mutex<String>>,
     composer_input_ref: NodeRef<Textarea>,
+    composer_mirror_html: RwSignal<String>,
+    composer_mirror_scroll_top: RwSignal<f64>,
 ) {
     Effect::new({
         let composer_draft_buffer = Arc::clone(&composer_draft_buffer);
@@ -90,6 +94,8 @@ pub(crate) fn wire_draft_sync_to_buffer_and_textarea(
         move |_| {
             let d = draft.get();
             *composer_draft_buffer.lock().unwrap() = d.clone();
+            composer_mirror_html.set(composer_workspace_at_refs_html(&d));
+            composer_mirror_scroll_top.set(0.0);
             let d_for_dom = d.clone();
             let cref = composer_input_ref.clone();
             spawn_local(async move {
