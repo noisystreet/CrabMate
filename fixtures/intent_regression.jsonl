@@ -18,6 +18,7 @@
 {"id":"greeting_hello_punct","task":"hello!!!","expect":{"kind":"Greeting","primary_intent":"meta.greeting","action":"DirectReply"}}
 {"id":"skill_inventory_q","task":"你有哪些技能","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply"}}
 {"id":"capability_what_can_you_do","task":"你能帮我做什么","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply"}}
+{"id":"capability_cpp_can_you","task":"你会c++编程吗？","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply"}}
 {"id":"introduce_self_short","task":"介绍一下你自己","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply","need_clarification":false,"abstain":false}}
 {"id":"who_are_you","task":"你是谁","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply","need_clarification":false,"abstain":false}}
 {"id":"self_intro_one_liner","task":"自我介绍一下","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply","need_clarification":false,"abstain":false}}

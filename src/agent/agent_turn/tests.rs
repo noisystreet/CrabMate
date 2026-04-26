@@ -237,6 +237,7 @@ mod per_reflect_tests {
             turn_allowed_tool_names: None,
             tracing_chat_turn: None,
             sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
+            intent_turn_gate_hint: None,
         };
         let out = per_reflect_after_assistant(&mut p, &mut c, "stop", &msg).await;
         assert!(matches!(

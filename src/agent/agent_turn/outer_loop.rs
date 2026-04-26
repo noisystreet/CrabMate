@@ -6,7 +6,7 @@ use log::{debug, info};
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::sse::{SsePayload, encode_message};
-use crate::types::USER_CANCELLED_FINISH_REASON;
+use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_intent_gate_ephemeral_system};
 
 use super::errors::{
     AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason, sse_plan_rewrite_exhausted_body,
@@ -62,6 +62,9 @@ pub(crate) async fn run_agent_outer_loop(
         }
 
         let render_to_terminal = p.render_to_terminal;
+        if let Some(hint) = p.intent_turn_gate_hint.take() {
+            p.messages.push(Message::system_intent_gate_hint(hint));
+        }
         if let Some(ref ltm) = p.long_term_memory {
             ltm.prepare_messages(
                 p.cfg.as_ref(),
@@ -79,9 +82,12 @@ pub(crate) async fn run_agent_outer_loop(
             p.workspace_changelist.as_ref().map(|a| a.as_ref()),
         )
         .await
-        .map_err(|e| RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Planner,
-            message: e.to_string(),
+        .map_err(|e| {
+            p.messages.retain(|m| !is_intent_gate_ephemeral_system(m));
+            RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: e.to_string(),
+            }
         })?;
         let tools_for_call: Vec<crate::types::Tool> = match p.step_executor_constraint {
             Some(k) => {
@@ -134,7 +140,11 @@ pub(crate) async fn run_agent_outer_loop(
             },
         })
         .await
-        .map_err(|e| RunAgentTurnError::from_llm(AgentTurnSubPhase::Planner, e))?;
+        .map_err(|e| {
+            p.messages.retain(|m| !is_intent_gate_ephemeral_system(m));
+            RunAgentTurnError::from_llm(AgentTurnSubPhase::Planner, e)
+        })?;
+        p.messages.retain(|m| !is_intent_gate_ephemeral_system(m));
         if let Some(f) = p.per_flight.as_ref() {
             f.awaiting_plan_rewrite_model
                 .store(false, Ordering::Relaxed);

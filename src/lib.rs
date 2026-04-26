@@ -495,6 +495,7 @@ pub async fn run_agent_turn<'a>(
         turn_allowed_tool_names: turn_allowed_tool_names.clone(),
         tracing_chat_turn: tracing_chat_turn.clone(),
         sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
+        intent_turn_gate_hint: None,
     };
 
     let trace_span = loop_params
