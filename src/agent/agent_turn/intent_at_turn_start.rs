@@ -1,12 +1,15 @@
 //! 在 `run_agent_turn` 起点（**非** Hierarchical 模式可选）与分层模式共用的**意图门控**：
 //! L0 + L1 + 可选 L2；非「直接执行」时写入助手终答并结束本回合。
+//! `meta.greeting`、`qa.meta*`、`qa.explain`、`qa.readonly*`（只读 + hint）、`ClarifyThenExecute`、`ConfirmThenExecute` 等改入**主模型**；占位 canned 不终答（可配合 `intent_turn_gate_hint` 与 `system_intent_gate_hint`）。
 
 use crate::agent::intent_l0;
 use crate::agent::intent_l2_classifier::classify_intent_l2_with_llm;
 use crate::agent::intent_pipeline::{
     IntentAction, IntentContext, assess_and_route_with_l2, prepare_intent_routing,
 };
-use crate::agent::intent_router::{ExecuteIntentThresholds, qa_readonly_style_primary};
+use crate::agent::intent_router::{
+    ExecuteIntentThresholds, intent_reply_delegates_to_main_model, qa_readonly_style_primary,
+};
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::sse;
 
@@ -16,7 +19,14 @@ use super::params::RunLoopParams;
 const RECENT_USER_FOR_MERGE: usize = 4;
 const MSG_TAIL_FOR_TOOL: usize = 32;
 
-/// 意图门控的聚合结果：终答结束本回合，或进入主执行路径（当前仅 **Execute** 会进入主路径）。
+/// 只读门控：主模型作答 + 工具已收窄为只读。
+const GATE_HINT_READONLY_ZH: &str = "【意图门控】当前回合应只读理解仓库（可列出/读取文件），不要改文件、不要跑测试或长耗时构建，除非用户明确要求。";
+/// 模糊意图：主模型追问而非 canned 模板。
+const GATE_HINT_CLARIFY_ZH: &str = "【意图门控】用户目标可能不够明确。请用简短自然的中文追问：尽量请用户补充文件路径、报错原文、拟运行命令或期望结果；不要编造未提供的信息。此轮不要执行会修改仓库或长耗时构建的操作，除非用户已明确授权。";
+/// 待确认执行：主模型说明 + 保留可识别的确认措辞（见 `intent_router::is_waiting_execute_confirmation_prompt`）。
+const GATE_HINT_CONFIRM_ZH: &str = "【意图门控】你判断用户可能想让你执行具体改动或命令，但需要先确认。请简短说明你的理解；并在回复最后一段包含可被识别的确认句式，例如同时包含「请确认是否」与「开始执行」或「直接开始执行」（可与历史文案「请确认是否「直接开始执行」」同义），以便多轮对话继续识别确认流。";
+
+/// 意图门控的聚合结果：终答结束本回合，或进入主执行路径（**Execute**、`qa.readonly` 续接、以及委托主模型的 **`DirectReply`** 等会进入主路径）。
 pub(crate) enum IntentGateResult {
     /// 已写入助手终答，调用方应结束本回合。
     Finished,
@@ -227,21 +237,41 @@ async fn run_intent_l0_l1_l2_gate(
         return Ok(IntentGateResult::ProceedExecute { assessment });
     }
 
-    let qa_readonly_enter_loop = merge_meta.l2_applied
-        && assessment.kind == crate::agent::intent_router::IntentKind::Qa
-        && qa_readonly_style_primary(&assessment.primary_intent);
-    if qa_readonly_enter_loop {
+    if assessment.kind == crate::agent::intent_router::IntentKind::Qa
+        && qa_readonly_style_primary(&assessment.primary_intent)
+        && matches!(&assessment.action, IntentAction::DirectReply(_))
+    {
         p.step_executor_constraint = Some(PlanStepExecutorKind::ReviewReadonly);
+        p.intent_turn_gate_hint = Some(GATE_HINT_READONLY_ZH.to_string());
         return Ok(IntentGateResult::ProceedExecute { assessment });
     }
 
+    if matches!(&assessment.action, IntentAction::DirectReply(_))
+        && intent_reply_delegates_to_main_model(assessment.kind, &assessment.primary_intent)
+    {
+        return Ok(IntentGateResult::ProceedExecute { assessment });
+    }
+
+    match &assessment.action {
+        IntentAction::ClarifyThenExecute(_) => {
+            p.intent_turn_gate_hint = Some(GATE_HINT_CLARIFY_ZH.to_string());
+            return Ok(IntentGateResult::ProceedExecute { assessment });
+        }
+        IntentAction::ConfirmThenExecute(_) => {
+            p.intent_turn_gate_hint = Some(GATE_HINT_CONFIRM_ZH.to_string());
+            return Ok(IntentGateResult::ProceedExecute { assessment });
+        }
+        _ => {}
+    }
+
     match assessment.action {
-        IntentAction::DirectReply(ref s)
-        | IntentAction::ClarifyThenExecute(ref s)
-        | IntentAction::ConfirmThenExecute(ref s) => {
+        IntentAction::DirectReply(ref s) => {
             let _ = apply_non_execute_and_finish(p, s).await?;
             Ok(IntentGateResult::Finished)
         }
-        IntentAction::Execute => unreachable!("execute and qa.readonly branch return above"),
+        IntentAction::ClarifyThenExecute(_) | IntentAction::ConfirmThenExecute(_) => {
+            unreachable!("clarify/confirm branch returns above")
+        }
+        IntentAction::Execute => unreachable!("execute branch returns above"),
     }
 }

@@ -162,6 +162,14 @@ pub const CRABMATE_WORKSPACE_CHANGELIST_NAME: &str = "crabmate_workspace_changel
 pub const CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME: &str =
     "crabmate_first_turn_workspace_context";
 
+/// 意图门控将 canned 改为走主模型时，首轮 P 前临时插入的 `system.name`；调用后须从会话中剔除，避免落盘污染。
+pub const CRABMATE_INTENT_GATE_HINT_NAME: &str = "crabmate_intent_gate_hint";
+
+#[inline]
+pub fn is_intent_gate_ephemeral_system(m: &Message) -> bool {
+    m.role == "system" && m.name.as_deref() == Some(CRABMATE_INTENT_GATE_HINT_NAME)
+}
+
 #[inline]
 pub fn is_long_term_memory_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_LONG_TERM_MEMORY_NAME)
@@ -324,6 +332,19 @@ impl Message {
             reasoning_details: None,
             tool_calls: None,
             name: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// 意图门控注入的临时 system（[`CRABMATE_INTENT_GATE_HINT_NAME`]）；**不得**长期留在 `messages` 中。
+    pub fn system_intent_gate_hint(content: impl Into<String>) -> Self {
+        Self {
+            role: "system".to_string(),
+            content: Some(MessageContent::Text(content.into())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: Some(CRABMATE_INTENT_GATE_HINT_NAME.to_string()),
             tool_call_id: None,
         }
     }

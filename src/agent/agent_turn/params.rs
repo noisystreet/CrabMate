@@ -77,6 +77,8 @@ pub(crate) struct RunLoopParams<'a> {
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     /// 当前编排子阶段（供失败时 SSE `sub_phase` 与日志）；由 `outer_loop` / 分阶段路径在调用模型或执行工具前更新。
     pub sub_phase: AgentTurnSubPhase,
+    /// 意图门控将澄清/确认/只读说明改为走主模型时，首轮 P 前注入的临时 system 正文（见 [`crate::types::Message::system_intent_gate_hint`]）。
+    pub(crate) intent_turn_gate_hint: Option<String>,
 }
 
 impl RunLoopParams<'_> {

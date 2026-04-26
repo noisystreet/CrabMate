@@ -4,14 +4,20 @@
 
 use crate::agent::hierarchy::task::{ArtifactKind, BuildArtifactKind, TaskResult};
 use crate::agent::hierarchy::{self, HierarchyRunnerParams, HierarchyRunnerResult};
+use crate::agent::intent_router::{
+    IntentKind, intent_reply_delegates_to_main_model, qa_readonly_style_primary,
+};
+use crate::agent::per_coord::PerCoordinator;
 use crate::sse;
 
 use super::errors::RunAgentTurnError;
 use super::intent_at_turn_start;
 use super::intent_user;
+use super::outer_loop::run_agent_outer_loop;
 use super::params::RunLoopParams;
 use crate::agent::agent_turn::errors::AgentTurnSubPhase;
 use crate::agent::hierarchy::execution::ExecutionError;
+use crate::agent::intent_pipeline::IntentAction;
 
 fn format_hierarchical_aborted_summary(e: &ExecutionError, task: &str) -> String {
     format!(
@@ -66,6 +72,44 @@ pub(crate) async fn run_hierarchical_agent(
         }
         intent_at_turn_start::IntentGateResult::ProceedExecute { assessment } => assessment,
     };
+
+    let skip_manager_for_discourse =
+        intent_reply_delegates_to_main_model(assessment.kind, &assessment.primary_intent)
+            || matches!(
+                &assessment.action,
+                IntentAction::ClarifyThenExecute(_) | IntentAction::ConfirmThenExecute(_)
+            )
+            || (assessment.kind == IntentKind::Qa
+                && qa_readonly_style_primary(&assessment.primary_intent)
+                && matches!(&assessment.action, IntentAction::DirectReply(_)));
+    if skip_manager_for_discourse {
+        let action_tag = match &assessment.action {
+            IntentAction::Execute => "Execute",
+            IntentAction::DirectReply(_) => "DirectReply",
+            IntentAction::ClarifyThenExecute(_) => "ClarifyThenExecute",
+            IntentAction::ConfirmThenExecute(_) => "ConfirmThenExecute",
+        };
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] kind={:?} primary={} action={}: discourse/clarify/confirm delegates to main model; skipping Manager/decompose, using single-agent outer loop",
+            assessment.kind,
+            assessment.primary_intent,
+            action_tag
+        );
+        let mut per_coord = PerCoordinator::new(crate::agent::per_coord::PerCoordinatorInit {
+            reflection_default_max_rounds: p.cfg.reflection_default_max_rounds,
+            final_plan_policy: p.cfg.final_plan_requirement,
+            plan_rewrite_max_attempts: p.cfg.plan_rewrite_max_attempts,
+            final_plan_require_strict_workflow_node_coverage: p
+                .cfg
+                .final_plan_require_strict_workflow_node_coverage,
+            final_plan_semantic_check_enabled: p.cfg.final_plan_semantic_check_enabled,
+            final_plan_semantic_check_max_non_readonly_tools: p
+                .cfg
+                .final_plan_semantic_check_max_non_readonly_tools,
+        });
+        return run_agent_outer_loop(p, &mut per_coord).await;
+    }
 
     log::info!(
         target: "crabmate",

@@ -33,7 +33,7 @@ pub struct IntentAssessment {
 
 const GREETING_REPLY: &str = "你好！我在这，想先处理什么问题？";
 const QA_REPLY: &str = "我可以帮你定位和修复 bug、改代码、跑构建和测试、解释报错、做代码审查、整理文档和提交 commit。你想先让我做哪一项？";
-/// 能力范围 / 自我介绍类短答（与 `qa.meta` 对齐）。
+/// 能力范围 / 自我介绍类占位文案（`qa.meta*`；意图门控开启时改由主模型生成，通常不展示）。
 const QA_META_REPLY: &str = "我是 CrabMate，面向你当前工作区的编程助手：可读代码与目录、解释报错与概念、在确认后改代码与跑测试、整理文档与 Git 流程。你现在最想解决的是哪一类问题？";
 const AMBIGUOUS_ASK: &str =
     "我理解你可能希望我直接动手处理。请补充具体目标（文件/报错/命令/期望结果），我再开始执行。";
@@ -293,6 +293,8 @@ fn has_strong_qa_question_signal(s: &str) -> bool {
         || s.contains("干啥用的")
         || s.contains("如何用")
         || s.contains("怎么用")
+        // 「你会 Rust 吗」类能力问句：避免依赖语言枚举；含「帮我」的仍由 `contains_execution_action_hint` 挡掉。
+        || (s.contains("你会") && s.contains('吗') && !s.contains("帮我"))
 }
 
 fn is_qa_only(s: &str) -> bool {
@@ -315,17 +317,36 @@ pub fn qa_readonly_style_primary(primary_intent: &str) -> bool {
     primary_intent.starts_with("qa.readonly") || primary_intent == "qa.codebase"
 }
 
-/// 按 `primary_intent`（`qa.*`）选择门控直接回复正文；L2 覆盖后应与之一致。
+/// 能力/自我介绍类：`qa.meta` 与 `qa.meta.*`（与 L2 `primary_intent` 对齐）。
+#[must_use]
+pub fn qa_meta_style_primary(primary_intent: &str) -> bool {
+    primary_intent == "qa.meta" || primary_intent.starts_with("qa.meta.")
+}
+
+/// 概念/含义解释类：`qa.explain`（与 L2 `primary_intent` 对齐）。
+#[must_use]
+pub fn qa_explain_style_primary(primary_intent: &str) -> bool {
+    primary_intent == "qa.explain"
+}
+
+/// 管线中虽为 `DirectReply`，但意图门控**不**下发 canned，改由主模型生成（占位见 `qa_direct_reply_for_primary`）。
+#[must_use]
+pub fn intent_reply_delegates_to_main_model(kind: IntentKind, primary_intent: &str) -> bool {
+    matches!(kind, IntentKind::Greeting)
+        || qa_meta_style_primary(primary_intent)
+        || qa_explain_style_primary(primary_intent)
+}
+
+/// 按 `primary_intent` 选择门控直接回复正文（`qa.meta*` / `qa.explain` 等为占位；门控开启时常改走主模型）。
 #[must_use]
 pub fn qa_direct_reply_for_primary(primary_intent: &str) -> String {
     if qa_readonly_style_primary(primary_intent) {
         return "我会只读查看你仓库里的相关文件与目录来回答，不会主动改代码；若需要我修改或运行命令，请直接说明。".to_string();
     }
-    match primary_intent {
-        "qa.meta" => QA_META_REPLY.to_string(),
-        s if s.starts_with("qa.meta.") => QA_META_REPLY.to_string(),
-        _ => QA_REPLY.to_string(),
+    if qa_meta_style_primary(primary_intent) {
+        return QA_META_REPLY.to_string();
     }
+    QA_REPLY.to_string()
 }
 
 #[must_use]
@@ -428,7 +449,7 @@ pub fn is_waiting_execute_confirmation_prompt(assistant_text: &str) -> bool {
 mod tests {
     use super::{
         EXECUTE_CONFIRM, IntentKind, IntentRoute, is_waiting_execute_confirmation_prompt,
-        route_user_task,
+        qa_direct_reply_for_primary, route_user_task,
     };
 
     #[test]
@@ -563,6 +584,54 @@ mod tests {
             r.route,
             IntentRoute::Execute | IntentRoute::ConfirmThenExecute(_)
         ));
+    }
+
+    #[test]
+    fn qa_meta_family_uses_meta_placeholder_reply() {
+        let s = qa_direct_reply_for_primary("qa.meta");
+        assert!(s.contains("CrabMate"), "s={s}");
+        let s2 = qa_direct_reply_for_primary("qa.meta.capability");
+        assert_eq!(s, s2);
+    }
+
+    #[test]
+    fn qa_meta_style_primary_detects_family() {
+        assert!(super::qa_meta_style_primary("qa.meta"));
+        assert!(super::qa_meta_style_primary("qa.meta.capability"));
+        assert!(!super::qa_meta_style_primary("qa.explain"));
+        assert!(!super::qa_meta_style_primary("execute.code_change"));
+    }
+
+    #[test]
+    fn intent_reply_delegates_to_main_model_covers_greeting_meta_explain() {
+        use super::{IntentKind, intent_reply_delegates_to_main_model};
+        assert!(intent_reply_delegates_to_main_model(
+            IntentKind::Greeting,
+            "meta.greeting"
+        ));
+        assert!(intent_reply_delegates_to_main_model(
+            IntentKind::Qa,
+            "qa.meta"
+        ));
+        assert!(intent_reply_delegates_to_main_model(
+            IntentKind::Qa,
+            "qa.explain"
+        ));
+        assert!(!intent_reply_delegates_to_main_model(
+            IntentKind::Qa,
+            "qa.readonly.foo"
+        ));
+        assert!(!intent_reply_delegates_to_main_model(
+            IntentKind::Ambiguous,
+            "unknown"
+        ));
+    }
+
+    #[test]
+    fn capability_style_question_routes_l1_to_qa() {
+        let r = route_user_task("你会c++编程吗？");
+        assert_eq!(r.kind, IntentKind::Qa);
+        assert!(matches!(r.route, IntentRoute::DirectReply(_)));
     }
 
     #[test]

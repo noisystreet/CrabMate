@@ -68,7 +68,7 @@ fn build_l2_prompt(merged_routing_text: &str, current_user_line: &str) -> String
 primary_intent 从下列选用最贴切的一项（可接近则选 execute 子类）：
 - meta.greeting
 - qa.explain：概念/报错含义/用法解释，不要求动仓库
-- qa.meta：自我介绍、你能做什么、技能与能力范围
+- qa.meta：自我介绍、你能做什么、技能与能力范围、会不会/能否使用某语言或技术（如「你会 C++ 吗」）；需要细分时可加后缀如 qa.meta.capability，与 qa.meta 等价归并即可
 - qa.readonly / qa.codebase：需要结合仓库**只读**查看文件/目录后回答，不修改代码、不跑构建测试
 - execute.read_inspect, execute.code_change, execute.debug_diagnose, execute.run_test_build, execute.docs_ops, execute.git_ops, unknown
 
