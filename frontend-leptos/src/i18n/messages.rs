@@ -215,53 +215,19 @@ pub fn staged_coach_injection_fallback(l: Locale, ordinal: usize) -> &'static st
     }
 }
 
-/// 聚合待办卡片标题（**无**「分阶段」字样）。
-pub fn staged_plan_todo_title(l: Locale) -> String {
+/// 与分层子目标顶栏同构：单条分步时间线气泡的横幅文案。
+pub fn msg_staged_timeline_exec_banner(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "规划步骤".to_string(),
-        Locale::En => "Plan steps".to_string(),
+        Locale::ZhHans => "分步执行",
+        Locale::En => "Plan step",
     }
 }
 
-pub fn staged_plan_todo_region_aria(l: Locale) -> &'static str {
+/// 消息元信息角色列：分步时间线（与分层执行卡片同一视觉层级）。
+pub fn msg_staged_timeline_role_meta(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "规划步骤列表",
-        Locale::En => "Plan step list",
-    }
-}
-
-pub fn staged_plan_todo_step_done_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "已完成",
-        Locale::En => "Completed",
-    }
-}
-
-pub fn staged_plan_todo_step_in_progress_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "进行中",
-        Locale::En => "In progress",
-    }
-}
-
-pub fn staged_plan_todo_step_pending_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "待执行",
-        Locale::En => "Pending",
-    }
-}
-
-pub fn staged_plan_todo_step_failed_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "失败",
-        Locale::En => "Failed",
-    }
-}
-
-pub fn staged_plan_todo_step_cancelled_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "已取消",
-        Locale::En => "Cancelled",
+        Locale::ZhHans => "步骤",
+        Locale::En => "Step",
     }
 }
 

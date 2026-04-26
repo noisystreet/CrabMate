@@ -146,6 +146,14 @@ pub fn message_text_for_display_ex(
         } else {
             Cow::Borrowed(m.text.as_str())
         };
+        // `timeline_log` 的 tool_step_* 写入助手气泡但带分步前缀：与 `system` 旁注同形，走 system 剥前缀逻辑。
+        if text_for_split
+            .trim_start()
+            .starts_with(STAGED_TIMELINE_SYSTEM_PREFIX)
+            && reasoning_for_split.trim().is_empty()
+        {
+            return system_text_for_chat_display(text_for_split.trim(), loc);
+        }
         let (r_body, t_body) = assistant_thinking_body_and_answer_raw(
             reasoning_for_split.as_ref(),
             text_for_split.as_ref(),

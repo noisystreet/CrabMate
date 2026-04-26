@@ -275,6 +275,8 @@ fn assistant_text_for_display_inner(
     raw.to_string()
 }
 
+// 仅 `staged_plan_todo` 单测调用；主界面已改为逐条分步气泡，不再做聚合待办解析。
+#[cfg_attr(not(test), allow(dead_code))]
 fn parse_agent_reply_plan_step_descriptions_json(json: &str) -> Option<Vec<String>> {
     let v: Value = serde_json::from_str(json).ok()?;
     let obj = v.as_object()?;
@@ -296,6 +298,7 @@ fn parse_agent_reply_plan_step_descriptions_json(json: &str) -> Option<Vec<Strin
 }
 
 /// 收集可能含 `agent_reply_plan` 的 JSON 文本块（围栏内优先，再尝试整段 trim）。
+#[cfg_attr(not(test), allow(dead_code))]
 fn collect_agent_reply_plan_json_blobs(raw: &str) -> Vec<String> {
     let mut blobs = Vec::new();
     let parts: Vec<&str> = raw.split("```").collect();
@@ -320,6 +323,7 @@ fn collect_agent_reply_plan_json_blobs(raw: &str) -> Vec<String> {
 }
 
 /// 从助手消息（`text` / `reasoning_text`、含 ```json 围栏）解析 `agent_reply_plan.steps[].description`；**靠后者覆盖**（多围栏时取最后一次可解析结果）。
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn agent_reply_plan_step_descriptions_from_assistant(
     m: &StoredMessage,
 ) -> Option<Vec<String>> {

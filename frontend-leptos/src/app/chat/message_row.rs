@@ -7,8 +7,7 @@ use leptos::prelude::*;
 use crate::assistant_body::assistant_markdown_collapsible_view;
 use crate::i18n::{self, Locale};
 use crate::message_format::{
-    is_staged_timeline_stored_message, message_text_for_display_ex,
-    stored_message_is_staged_planner_round,
+    is_staged_timeline_bubble, message_text_for_display_ex, stored_message_is_staged_planner_round,
 };
 use crate::session_ops::{
     format_msg_time_label, message_role_label, preceding_plain_user_message_id,
@@ -202,9 +201,9 @@ pub(crate) fn chat_message_row(
         status_err,
         locale,
     };
-    let is_staged_timeline = is_staged_timeline_stored_message(&m);
+    let is_staged_timeline = is_staged_timeline_bubble(&m);
     let cls = if is_staged_timeline {
-        "msg msg-system msg-staged-timeline"
+        "msg msg-staged-timeline"
     } else {
         match m.role.as_str() {
             "user" => "msg msg-user",
@@ -226,7 +225,13 @@ pub(crate) fn chat_message_row(
     };
     let mid_highlight = m.id.clone();
     let m_role = m.clone();
-    let role_lbl = move || message_role_label(&m_role, locale.get());
+    let role_lbl = move || {
+        if is_staged_timeline {
+            i18n::msg_staged_timeline_role_meta(locale.get())
+        } else {
+            message_role_label(&m_role, locale.get())
+        }
+    };
     let time_str = format_msg_time_label(m.created_at).unwrap_or_default();
     let mid_retry = m.id.clone();
     let copy_id = m.id.clone();
@@ -576,6 +581,29 @@ pub(crate) fn chat_message_row(
                             </button>
                         }
                     })}
+                    <Show when=move || is_staged_timeline>
+                        {move || {
+                            let banner = i18n::msg_staged_timeline_exec_banner(locale.get());
+                            view! {
+                                <div class="msg-subgoal-exec-banner phase-run">
+                                    <span class="msg-subgoal-exec-banner-icon" aria-hidden="true">
+                                        <svg
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2.2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <circle cx="12" cy="12" r="9"></circle>
+                                            <path d="M12 7v5l3 2"></path>
+                                        </svg>
+                                    </span>
+                                    <span class="msg-subgoal-exec-banner-text">{banner}</span>
+                                </div>
+                            }
+                        }}
+                    </Show>
                     {subgoal_exec_banner.as_ref().map(|banner| {
                         let banner = banner.clone();
                         let icon_key = subgoal_exec_banner_icon_key.unwrap_or("run").to_string();
