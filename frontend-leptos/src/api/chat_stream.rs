@@ -318,9 +318,9 @@ fn flush_sse_tail(
     cbs: &ChatStreamCallbacks,
     loc: Locale,
 ) -> Result<(), String> {
-    let t = buffer.trim();
-    if !t.is_empty() {
-        handle_sse_block(t, last_event_id, saw_stream_ended, cbs, loc)?;
+    // 勿对尾部缓冲 `trim`：流式正文可能单独落在仅含空格/`data: ` 尾部的帧里，trim 会吞掉词间空格。
+    if !buffer.is_empty() {
+        handle_sse_block(buffer.as_str(), last_event_id, saw_stream_ended, cbs, loc)?;
     }
     buffer.clear();
     Ok(())
@@ -353,13 +353,14 @@ fn handle_sse_block(
     if data_lines.is_empty() {
         return Ok(());
     }
+    // 勿对 payload `trim_start`：`data: ` 后的内容（含单独空格）必须原样保留，否则词间空格增量会变成空串。
     let data = data_lines
         .iter()
-        .map(|l| l[6..].trim_start())
+        .map(|l| &l[6..])
         .collect::<Vec<_>>()
         .join("\n");
-    let data = data.trim();
-    if data.is_empty() || data == "[DONE]" {
+    // 勿对 `data` 全文 `trim`：模型/代理可能把词间空格单独打成一段 SSE，trim 会导致单词粘在一起。
+    if data.is_empty() || data.trim() == "[DONE]" {
         return Ok(());
     }
 
@@ -409,10 +410,10 @@ fn handle_sse_block(
         on_thinking_trace: Some(&mut on_thinking_trace),
         on_timeline_log: Some(&mut on_timeline_log),
     };
-    match try_dispatch_sse_control_payload(data, &mut cbs2) {
+    match try_dispatch_sse_control_payload(&data, &mut cbs2) {
         crate::sse_dispatch::SseDispatch::Stop => Ok(()),
         crate::sse_dispatch::SseDispatch::Handled => {
-            if let Ok(v) = serde_json::from_str::<Value>(data)
+            if let Ok(v) = serde_json::from_str::<Value>(&data)
                 && let Some(obj) = v.as_object()
                 && key_present_non_null_sse(obj, "stream_ended")
                 && let Some(Value::Object(ended)) = obj.get("stream_ended")
@@ -431,7 +432,7 @@ fn handle_sse_block(
             if stop {
                 return Err(crate::i18n::api_err_stream_stopped(loc).to_string());
             }
-            (cbs.on_delta)(data.to_string());
+            (cbs.on_delta)(data);
             Ok(())
         }
     }
@@ -495,5 +496,45 @@ mod tests {
         assert!(saw_stream_ended);
         assert_eq!(last_event_id, 12);
         assert_eq!(ended.borrow().as_deref(), Some("completed"));
+    }
+
+    /// `data: ` 后仅空格的增量不得被 `trim_start` 吞掉，否则英文词会粘在一起。
+    #[test]
+    fn handle_block_preserves_whitespace_only_delta() {
+        let got = Rc::new(RefCell::new(String::new()));
+        let got2 = Rc::clone(&got);
+        let cbs = ChatStreamCallbacks {
+            on_delta: Rc::new(move |s| got2.borrow_mut().push_str(&s)),
+            on_done: Rc::new(|| {}),
+            on_error: Rc::new(|_e| {}),
+            on_workspace_changed: Rc::new(|| {}),
+            on_tool_status: Rc::new(|_b| {}),
+            on_tool_result: Rc::new(|_info| {}),
+            on_approval: Rc::new(|_req| {}),
+            on_conversation_id: Rc::new(|_id| {}),
+            on_conversation_revision: Rc::new(|_rev| {}),
+            on_stream_ended: Rc::new(|_reason| {}),
+            on_stream_job_id: Rc::new(|_jid| {}),
+            on_last_sse_event_id: Rc::new(|_seq| {}),
+            on_assistant_answer_phase: Rc::new(|| {}),
+            on_staged_plan_step_started: Rc::new(|_info| {}),
+            on_staged_plan_step_finished: Rc::new(|_info| {}),
+            on_clarification_questionnaire: Rc::new(|_info| {}),
+            on_thinking_trace: Rc::new(|_info| {}),
+            on_timeline_log: Rc::new(|_info| {}),
+            on_tool_call: Rc::new(|_n, _s, _p, _a, _g, _tid| {}),
+        };
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let block = "data:  \n\n";
+        let res = handle_sse_block(
+            block,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        );
+        assert!(res.is_ok());
+        assert_eq!(got.borrow().as_str(), " ");
     }
 }
