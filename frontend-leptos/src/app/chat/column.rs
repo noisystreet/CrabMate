@@ -58,7 +58,8 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                 <div
                     class="chat-column"
                     on:keydown=move |ev: web_sys::KeyboardEvent| {
-                        if ev.key() != "End" {
+                        let key = ev.key();
+                        if key != "End" && key != "Home" {
                             return;
                         }
                         let Some(t) = ev.target() else {
@@ -78,7 +79,7 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                         if he.is_content_editable() {
                             return;
                         }
-                        // 若用户正在消息区选中文字，跳过流式跟底逻辑，尊重用户主动选择。
+                        // 若用户正在消息区选中文字，不劫持 Home/End，尊重文本选择。
                         let mref = messages_scroller;
                         if let Some(el) = mref.get() {
                             if messages_scroller_has_non_collapsed_selection(&el) {
@@ -86,9 +87,29 @@ pub fn chat_column_view(shell: ChatColumnShell) -> impl IntoView {
                             }
                         }
                         ev.prevent_default();
-                        auto_scroll_chat.set(true);
                         let scroll_from_effect = messages_scroll_from_effect;
                         let mref = messages_scroller;
+                        if key == "Home" {
+                            auto_scroll_chat.set(false);
+                            spawn_local(async move {
+                                let _guard = MessagesScrollFromEffectGuard::new(scroll_from_effect);
+                                TimeoutFuture::new(0).await;
+                                if let Some(el) = mref.get() {
+                                    el.set_scroll_top(0);
+                                }
+                                TimeoutFuture::new(0).await;
+                                if let Some(el) = mref.get() {
+                                    el.set_scroll_top(0);
+                                }
+                                TimeoutFuture::new(16).await;
+                                if let Some(el) = mref.get() {
+                                    el.set_scroll_top(0);
+                                }
+                            });
+                            return;
+                        }
+                        // End：滚到当前会话最新消息并恢复自动跟底。
+                        auto_scroll_chat.set(true);
                         spawn_local(async move {
                             let _guard = MessagesScrollFromEffectGuard::new(scroll_from_effect);
                             TimeoutFuture::new(0).await;
