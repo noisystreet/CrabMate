@@ -367,6 +367,50 @@ fn finalize_loading_assistant_before_tool_and_tail_with_new_loading(
     }
 }
 
+/// 同一轮 `run_agent_turn` 内可能多次调用模型（如外层 `continue 'outer` 规划改写），每次首段正文前都会再发
+/// `assistant_answer_phase`。若仍写入同一 `assistant_message_id`，多段可见输出会挤在一个气泡里「不断刷新」。
+/// 工具轮之间已有 [`finalize_loading_assistant_before_tool_and_tail_with_new_loading`]；此处补齐**无工具**的多轮。
+fn rotate_streaming_assistant_for_followup_model_round(stream_ctx: &ChatStreamCallbackCtx) {
+    let aid = stream_ctx.active_session_id.as_str();
+    let now = message_created_ms();
+    let new_tail_id = RefCell::new(None::<String>);
+    stream_ctx.chat.sessions.update(|list| {
+        let Some(s) = list.iter_mut().find(|s| s.id == aid) else {
+            return;
+        };
+        let mid = stream_ctx.assistant_message_id.borrow();
+        if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
+            let m = &mut s.messages[idx];
+            if m.role == "assistant" && m.state.as_deref() == Some("loading") {
+                if m.text.trim().is_empty() {
+                    s.messages.remove(idx);
+                } else {
+                    m.state = None;
+                }
+            }
+        }
+        let new_asst_id = make_message_id();
+        s.messages.push(StoredMessage {
+            id: new_asst_id.clone(),
+            role: "assistant".to_string(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some("loading".to_string()),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: now,
+        });
+        *new_tail_id.borrow_mut() = Some(new_asst_id);
+    });
+    if let Some(id) = new_tail_id.into_inner() {
+        stream_ctx.assistant_message_id.replace(id);
+        stream_ctx.post_tool_stream_tail.set(true);
+    }
+    ensure_streaming_assistant_tail_last(stream_ctx);
+}
+
 /// 工具后续写段：分步/时间线等仍会 `push` 到列表末尾，需把当前 `loading` 占位再次移到最下方。
 fn ensure_streaming_assistant_tail_last(stream_ctx: &ChatStreamCallbackCtx) {
     if !stream_ctx.post_tool_stream_tail.get() {
@@ -415,6 +459,22 @@ fn append_to_assistant_text(
         if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
             if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
                 m.text.push_str(chunk);
+            }
+        }
+    });
+}
+
+/// `assistant_answer_phase` 之前的增量（思维链/思考区）：须写入 `reasoning_text`，`message_text_for_display_ex` 才能与终答 `text` 分流展示。
+fn append_to_assistant_reasoning(
+    aid: &str,
+    mid: &str,
+    chunk: &str,
+    sessions: &RwSignal<Vec<ChatSession>>,
+) {
+    sessions.update(|list| {
+        if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
+            if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid) {
+                m.reasoning_text.push_str(chunk);
             }
         }
     });
@@ -499,14 +559,10 @@ pub(super) fn build_chat_stream_callbacks(
     let answer_delta_chars: Rc<Cell<usize>> = Rc::new(Cell::new(0));
     let stream_end_reason: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let current_subgoal_marker: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
-    // 兜底缓冲：若服务端未下发 assistant_answer_phase，但确实有 delta，
-    // 则在 on_done 且正文仍为空时回填，避免出现“后端有答复、前端无回复”。
-    let pre_answer_buffer: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
     let on_delta: Rc<dyn Fn(String)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         let in_answer_phase = Rc::clone(&in_answer_phase);
         let answer_delta_chars = Rc::clone(&answer_delta_chars);
-        let pre_answer_buffer = Rc::clone(&pre_answer_buffer);
         Rc::new(move |chunk: String| {
             let aid = stream_ctx.active_session_id.as_str();
             let mid = stream_ctx.assistant_message_id.borrow();
@@ -518,7 +574,7 @@ pub(super) fn build_chat_stream_callbacks(
                 );
                 append_to_assistant_text(aid, mid.as_str(), &chunk, &stream_ctx.chat.sessions);
             } else {
-                pre_answer_buffer.borrow_mut().push_str(&chunk);
+                append_to_assistant_reasoning(aid, mid.as_str(), &chunk, &stream_ctx.chat.sessions);
             }
         })
     };
@@ -528,7 +584,6 @@ pub(super) fn build_chat_stream_callbacks(
         let in_answer_phase = Rc::clone(&in_answer_phase);
         let answer_delta_chars = Rc::clone(&answer_delta_chars);
         let stream_end_reason = Rc::clone(&stream_end_reason);
-        let pre_answer_buffer = Rc::clone(&pre_answer_buffer);
         Rc::new(move || {
             if *stream_ctx.shell.user_cancelled_stream.lock().unwrap() {
                 *stream_ctx.shell.abort_cell.lock().unwrap() = None;
@@ -549,26 +604,14 @@ pub(super) fn build_chat_stream_callbacks(
                         && m.state.as_deref() == Some("loading")
                     {
                         m.state = None;
-                        if m.text.trim().is_empty() {
-                            let buffered = pre_answer_buffer.borrow();
-                            if !buffered.trim().is_empty() {
-                                m.text = buffered.clone();
-                                answer_delta_chars.set(
-                                    answer_delta_chars
-                                        .get()
-                                        .saturating_add(m.text.chars().count()),
-                                );
-                                web_sys::console::log_1(
-                                    &"[SSE] fallback_from_pre_answer_buffer=true".into(),
-                                );
-                            }
-                        }
-                        if m.text.trim().is_empty() {
+                        let body_chars = m.text.chars().count() + m.reasoning_text.chars().count();
+                        let diag_chars = body_chars.max(answer_delta_chars.get());
+                        if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
                             let end_reason = stream_end_reason.borrow();
                             let completed_no_final = end_reason
                                 .as_deref()
                                 .is_some_and(|r| r.eq_ignore_ascii_case("completed"))
-                                && (in_answer_phase.get() || answer_delta_chars.get() > 0)
+                                && (in_answer_phase.get() || diag_chars > 0)
                                 && has_hierarchical_or_tool;
                             if completed_no_final {
                                 m.text = format!(
@@ -578,14 +621,14 @@ pub(super) fn build_chat_stream_callbacks(
                                         loc,
                                         end_reason.as_deref(),
                                         in_answer_phase.get(),
-                                        answer_delta_chars.get()
+                                        diag_chars
                                     )
                                 );
                             } else {
                                 m.text = build_empty_reply_with_diagnostic(
                                     loc,
                                     in_answer_phase.get(),
-                                    answer_delta_chars.get(),
+                                    diag_chars,
                                     end_reason.as_deref(),
                                 );
                             }
@@ -881,7 +924,13 @@ pub(super) fn build_chat_stream_callbacks(
 
     let on_assistant_answer_phase: Rc<dyn Fn()> = {
         let in_answer_phase = Rc::clone(&in_answer_phase);
-        Rc::new(move || in_answer_phase.set(true))
+        let stream_ctx = Rc::clone(&stream_ctx);
+        Rc::new(move || {
+            if in_answer_phase.get() {
+                rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
+            }
+            in_answer_phase.set(true);
+        })
     };
 
     let on_staged_step_started: Rc<dyn Fn(StagedPlanStepStartInfo)> = {
