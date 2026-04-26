@@ -9,6 +9,8 @@ pub mod hierarchy;
 pub mod intent_l0;
 pub mod intent_l2_classifier;
 pub mod intent_pipeline;
+#[cfg(test)]
+mod intent_regression_golden;
 pub mod intent_router;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub mod message_pipeline;

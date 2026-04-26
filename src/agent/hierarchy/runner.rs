@@ -8,6 +8,9 @@ use tokio::sync::{
     mpsc::{Receiver, Sender},
 };
 
+use crate::agent::agent_turn::filter_tool_defs_for_executor_kind;
+use crate::agent::intent_router::qa_readonly_style_primary;
+use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
 use crate::sse;
@@ -79,6 +82,20 @@ pub async fn run_hierarchical(
         intent_mode_bias_enabled,
     } = params;
 
+    let tools_eff: std::borrow::Cow<'_, [crate::types::Tool]> = if primary_intent
+        .as_deref()
+        .is_some_and(qa_readonly_style_primary)
+    {
+        std::borrow::Cow::Owned(filter_tool_defs_for_executor_kind(
+            tools_defs,
+            cfg,
+            PlanStepExecutorKind::ReviewReadonly,
+        ))
+    } else {
+        std::borrow::Cow::Borrowed(tools_defs)
+    };
+    let tools_slice: &[crate::types::Tool] = tools_eff.as_ref();
+
     // 1. 智能路由决策
     // 默认使用规则路由，可以通过配置启用 LLM 智能路由
     let use_llm_routing = cfg.enable_llm_routing.unwrap_or(false);
@@ -137,7 +154,7 @@ pub async fn run_hierarchical(
             api_key,
             working_dir,
             sse_out,
-            tools_defs,
+            tools_slice,
             tool_approval_out,
             tool_approval_rx,
         )
@@ -170,7 +187,7 @@ pub async fn run_hierarchical(
             client.as_ref(),
             &api_key,
             &working_dir,
-            tools_defs,
+            tools_slice,
         )
         .await
         .map_err(|e| ExecutionError::MaxFailuresReached(e.to_string()))?;
@@ -230,7 +247,7 @@ pub async fn run_hierarchical(
             api_key.clone(),
             working_dir.clone(),
         )
-        .with_tools_defs(tools_defs.to_vec())
+        .with_tools_defs(tools_slice.to_vec())
         .with_manager(manager.clone())
         .with_original_task(task.to_string());
     if let Some(sse_tx) = sse_out {

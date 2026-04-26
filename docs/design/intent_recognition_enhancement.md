@@ -233,6 +233,21 @@ context_turn_window = 4
 enable_multi_intent_split = true
 ```
 
+### 6.3 离线回归金样（L1 + `intent_pipeline`）
+
+仓库内维护 **`fixtures/intent_regression.jsonl`**：每行一条 JSON，覆盖 `IntentKind`、`primary_intent`、动作分支（`Execute` / `DirectReply` / `ClarifyThenExecute` / `ConfirmThenExecute`）、澄清与 `abstain`，以及可选的 `ctx`（澄清续接、工具失败位等）。门禁测试：
+
+```bash
+cargo test golden_intent_regression -p crabmate
+```
+
+实现见 **`src/agent/intent_regression_golden.rs`**。改动 `intent_router` / `intent_pipeline` / L0 合并启发式时须更新金样并跑通上述测试。
+
+**`qa.*` 模板与只读工具策略（L2 置信度达标时）**：
+
+- 门控直接回复：`qa.meta` / `qa.explain` / `qa.readonly`（及 `qa.codebase`）走 `intent_router::qa_direct_reply_for_primary`；L2 覆盖 L1 后由 `intent_pipeline` 内 `refresh_decision_action_after_l2_override` 同步 `IntentAction::DirectReply` 正文。
+- **`qa.readonly` / `qa.codebase`**：若本回合 **L2 已应用**（`merge_meta.l2_applied`），意图门控**不**终答，改为进入主循环，并设置 `RunLoopParams::step_executor_constraint = ReviewReadonly`（单 Agent）；分层模式下在 `src/agent/hierarchy/runner.rs` 对传入 Manager/Executor 的 `tools_defs` 做同等只读过滤（与分阶段 `review_readonly` 步一致）。
+
 ---
 
 ## 7. 上线计划（4 个阶段）

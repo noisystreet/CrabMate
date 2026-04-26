@@ -1,0 +1,30 @@
+# 意图识别回归金样：每行一条 JSON，供 `src/agent/intent_regression_golden.rs` 加载。
+# 运行：`cargo test golden_intent_regression -p crabmate`
+# 字段：`id`、`task`、可选 `ctx`（与 IntentContext 对齐）、`expect`（kind / primary_intent / action / …）。
+{"id":"execute_debug","task":"帮我修复这个报错","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"Execute"}}
+{"id":"qa_error_meaning","task":"这个错误是什么意思？","expect":{"kind":"Qa","primary_intent":"qa.explain","action":"DirectReply"}}
+{"id":"ambiguous_help_me_see","task":"帮我看看","expect":{"kind":"Ambiguous","primary_intent":"unknown","action":"ClarifyThenExecute","need_clarification":true,"abstain":true}}
+{"id":"run_cargo_test_and_fix","task":"请帮我运行 cargo test 并修复失败项","expect":{"kind":"Execute","primary_intent":"execute.run_test_build","action":"Execute"}}
+{"id":"git_commit_pr","task":"把这些改动提交并开一个 PR","expect":{"kind":"Execute","primary_intent":"execute.git_ops","action":"Execute"}}
+{"id":"mixed_test_fix_then_git","task":"先跑 cargo test 修复失败，再把改动提交并开 PR","expect":{"kind":"Execute","primary_intent":"execute.git_ops","action":"Execute","secondary_intents_contains":["execute.run_test_build","execute.debug_diagnose"],"secondary_intents_excludes":["execute.git_ops"]}}
+{"id":"list_sources_in_dir","task":"当前目录下有哪些源文件","expect":{"kind":"Execute","primary_intent":"execute.read_inspect","action":"Execute"}}
+{"id":"current_dir_what","task":"当前目录下有什么","expect":{"kind":"Execute","primary_intent":"execute.read_inspect","action":"Execute"}}
+{"id":"has_hpcg_source","task":"有hpcg的源码吗？","expect":{"kind":"Execute","primary_intent":"execute.read_inspect","action":"Execute"}}
+{"id":"run_pytest","task":"帮我跑一下 pytest","expect":{"kind":"Execute","primary_intent":"execute.run_test_build","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
+{"id":"analyze_exception_first","task":"这个异常请先分析定位","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
+{"id":"docs_install_guides","task":"请完善 docs 里的安装说明","expect":{"kind":"Execute","primary_intent":"execute.docs_ops","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
+{"id":"readme_then_git_pr","task":"先更新 README 再提交并开 PR","expect":{"kind":"Execute","primary_intent":"execute.git_ops","action":"Execute","secondary_intents_contains":["execute.docs_ops"]}}
+{"id":"greeting_nihao","task":"你好","expect":{"kind":"Greeting","primary_intent":"meta.greeting","action":"DirectReply"}}
+{"id":"greeting_hello_punct","task":"hello!!!","expect":{"kind":"Greeting","primary_intent":"meta.greeting","action":"DirectReply"}}
+{"id":"skill_inventory_q","task":"你有哪些技能","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply"}}
+{"id":"capability_what_can_you_do","task":"你能帮我做什么","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply"}}
+{"id":"introduce_self_short","task":"介绍一下你自己","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply","need_clarification":false,"abstain":false}}
+{"id":"who_are_you","task":"你是谁","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply","need_clarification":false,"abstain":false}}
+{"id":"self_intro_one_liner","task":"自我介绍一下","expect":{"kind":"Qa","primary_intent":"qa.meta","action":"DirectReply","need_clarification":false,"abstain":false}}
+{"id":"readme_path_what_means","task":"docs/README.md 里这段什么意思","expect":{"kind":"Qa","primary_intent":"qa.explain","action":"DirectReply"}}
+{"id":"negative_execute_explain_only","task":"不要执行，只解释这个错误","expect":{"kind":"Qa","primary_intent":"qa.explain","action":"DirectReply"}}
+{"id":"explicit_execute_no_prior_clarification","task":"直接开始执行","expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
+{"id":"explicit_execute_after_clarification_flow","task":"直接开始执行","ctx":{"in_clarification_flow":true},"expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"Execute"}}
+{"id":"medium_confidence_code_change_confirm","task":"帮我改下这个","expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
+{"id":"high_confidence_tauri_markdown_error","task":"帮我修复 tauri 导出 markdown 报错","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"Execute"}}
+{"id":"clarification_short_followup_after_readonly_style_prior","task":"再试一次","ctx":{"in_clarification_flow":true,"recent_user_messages":["请看 src/main.rs 编译失败输出"]},"expect":{"kind":"Execute","primary_intent":"execute.code_change","action":"Execute"}}

@@ -304,7 +304,7 @@ flowchart TB
   - `single_agent`（默认）：沿用历史单 agent 逻辑。
   - `logical_dual_agent`：同进程逻辑双 agent。规划轮仅消费去分隔线、去 `tool`、去空 assistant 的自然语言上下文，再追加规划 system 指令产出 `agent_reply_plan`；执行轮仍由既有外层循环负责工具调用与反思校验。该模式可减少工具原始输出对规划拆解的干扰，且不改变 HTTP/SSE 协议形状。
 - **意图门控（L0/L1/可选 L2，共用）**：
-  - 管线构成：`intent_l0` 在澄清/确认流中做**路由文本**与特征（可合并前序 user + 当前短续接、含 `role: tool` 近期失败位）；L1 规则在 `intent_pipeline`；L0 提级由 `intent_l0_routing_boost_enabled` 门控。`[agent] intent_l2_enabled=true` 时经 `intent_l2_classifier` 无工具 LLM（合并路由 + 当前句，失败 fail-open），`assess_and_route_with_l2` 按 `intent_l2_min_confidence` 是否覆盖 L1。
+  - 管线构成：`intent_l0` 在澄清/确认流中做**路由文本**与特征（可合并前序 user + 当前短续接、含 `role: tool` 近期失败位）；L1 规则在 `intent_pipeline`；L0 提级由 `intent_l0_routing_boost_enabled` 门控。默认 **`intent_l2_enabled=true`** 时经 `intent_l2_classifier` 无工具 LLM（合并路由 + 当前句，失败 fail-open），`assess_and_route_with_l2` 按 `intent_l2_min_confidence` 是否覆盖 L1；可在配置中关闭以省一次调用。
   - 观测：`[INTENT_PIPELINE]` 与 SSE `intent_analysis`（`IntentMergeMeta` 含 `used_merged_continuation` 与 L0 字段，含 `tool_fail`）。
   - **非** `Hierarchical`：`agent_turn::intent_at_turn_start` 在 `intent_at_turn_start_enabled=true` 时，于主循环分支前多跑**同一**条管线。`Hierarchical` 在 `hierarchy::run_hierarchical_agent` 内**始终**走 `run_intent_for_hierarchical`，不依赖 `intent_at_turn_start_enabled`。
   - `hierarchy::runner` 在 Router 后可按 `intent_mode_bias_enabled` 偏置。键见 **`docs/CONFIGURATION.md`** 与 `config::finalize`。

@@ -44,6 +44,7 @@ pub(crate) use params::RunLoopParams;
 pub(crate) use plan_call::{PerPlanCallModelParams, per_plan_call_model_retrying};
 #[allow(unused_imports)]
 pub(crate) use reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
+pub(crate) use sub_agent_policy::filter_tool_defs_for_executor_kind;
 
 use messages::insert_separator_after_last_user_for_turn;
 use outer_loop::run_agent_outer_loop;

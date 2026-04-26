@@ -151,6 +151,7 @@ fn assess_and_route_with_l2_inner(
     }
     let l1_kind = l1_assessment.kind;
     let l1_confidence = l1_assessment.confidence;
+    let l1_route = l1_assessment.route.clone();
     let mut decision = map_assessment_to_decision(primary_task, l1_assessment);
     let mut meta = IntentMergeMeta {
         l1_kind,
@@ -172,11 +173,66 @@ fn assess_and_route_with_l2_inner(
             decision.abstain = l2.abstain;
             meta.l2_applied = true;
             meta.override_reason = Some("l2_confidence_above_threshold".to_string());
+            refresh_decision_action_after_l2_override(&mut decision, l1_kind, &l1_route);
         } else {
             meta.override_reason = Some("l2_confidence_below_threshold".to_string());
         }
     }
     (decision, meta)
+}
+
+/// L2 覆盖 `kind` 后，与 `DirectReply` 模板、执行阈值路由对齐（避免仍沿用 L1 的回复文案或动作）。
+fn refresh_decision_action_after_l2_override(
+    decision: &mut IntentDecision,
+    l1_kind: IntentKind,
+    l1_route: &IntentRoute,
+) {
+    use crate::agent::intent_router::{
+        ambiguous_ask_message, greeting_reply_message, qa_direct_reply_for_primary,
+    };
+    match decision.kind {
+        IntentKind::Qa => {
+            decision.action =
+                IntentAction::DirectReply(qa_direct_reply_for_primary(&decision.primary_intent));
+        }
+        IntentKind::Greeting => {
+            decision.action = IntentAction::DirectReply(greeting_reply_message().to_string());
+            decision.need_clarification = false;
+            decision.abstain = false;
+        }
+        IntentKind::Ambiguous => {
+            decision.action = IntentAction::ClarifyThenExecute(ambiguous_ask_message().to_string());
+        }
+        IntentKind::Execute => {
+            if l1_kind == IntentKind::Execute {
+                match l1_route {
+                    IntentRoute::Execute => {
+                        decision.action = IntentAction::Execute;
+                        decision.need_clarification = false;
+                        decision.abstain = false;
+                    }
+                    IntentRoute::ConfirmThenExecute(s) => {
+                        decision.action = IntentAction::ConfirmThenExecute(s.clone());
+                        decision.need_clarification = true;
+                        decision.abstain = false;
+                    }
+                    IntentRoute::AskThenExecute(s) => {
+                        decision.action = IntentAction::ClarifyThenExecute(s.clone());
+                        decision.need_clarification = true;
+                    }
+                    IntentRoute::DirectReply(_) => {
+                        decision.action = IntentAction::Execute;
+                        decision.need_clarification = false;
+                        decision.abstain = false;
+                    }
+                }
+            } else {
+                decision.action = IntentAction::Execute;
+                decision.need_clarification = false;
+                decision.abstain = false;
+            }
+        }
+    }
 }
 
 /// L0 为「路径/错误/构建/近期 tool 失败」等时，将偏 Ambiguous 的**合并路由**提级为可执行，减少无意义追问。
@@ -221,7 +277,7 @@ fn maybe_boost_execute_from_l0(
 fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> IntentDecision {
     let primary_intent = map_primary_intent(task, assessment.kind).to_string();
     let secondary_intents = map_secondary_intents(task, assessment.kind, &primary_intent);
-    match assessment.route {
+    match &assessment.route {
         IntentRoute::Execute => IntentDecision {
             kind: assessment.kind,
             primary_intent,
@@ -231,15 +287,26 @@ fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> Inten
             need_clarification: false,
             action: IntentAction::Execute,
         },
-        IntentRoute::DirectReply(reply) => IntentDecision {
-            kind: assessment.kind,
-            primary_intent,
-            secondary_intents,
-            confidence: assessment.confidence,
-            abstain: false,
-            need_clarification: false,
-            action: IntentAction::DirectReply(reply),
-        },
+        IntentRoute::DirectReply(reply) => {
+            let body = if assessment.kind == IntentKind::Qa {
+                if reply.starts_with("收到，我先不执行") {
+                    reply.clone()
+                } else {
+                    crate::agent::intent_router::qa_direct_reply_for_primary(&primary_intent)
+                }
+            } else {
+                reply.clone()
+            };
+            IntentDecision {
+                kind: assessment.kind,
+                primary_intent,
+                secondary_intents,
+                confidence: assessment.confidence,
+                abstain: false,
+                need_clarification: false,
+                action: IntentAction::DirectReply(body),
+            }
+        }
         IntentRoute::AskThenExecute(reply) => IntentDecision {
             kind: assessment.kind,
             primary_intent,
@@ -247,7 +314,7 @@ fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> Inten
             confidence: assessment.confidence,
             abstain: assessment.kind == IntentKind::Ambiguous,
             need_clarification: true,
-            action: IntentAction::ClarifyThenExecute(reply),
+            action: IntentAction::ClarifyThenExecute(reply.clone()),
         },
         IntentRoute::ConfirmThenExecute(reply) => IntentDecision {
             kind: assessment.kind,
@@ -256,7 +323,7 @@ fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> Inten
             confidence: assessment.confidence,
             abstain: false,
             need_clarification: true,
-            action: IntentAction::ConfirmThenExecute(reply),
+            action: IntentAction::ConfirmThenExecute(reply.clone()),
         },
     }
 }
@@ -264,10 +331,29 @@ fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> Inten
 fn map_primary_intent(task: &str, kind: IntentKind) -> &'static str {
     match kind {
         IntentKind::Greeting => "meta.greeting",
-        IntentKind::Qa => "qa.explain",
+        IntentKind::Qa => map_qa_primary_intent(task),
         IntentKind::Execute => map_execute_primary_intent(task),
         IntentKind::Ambiguous => "unknown",
     }
+}
+
+fn map_qa_primary_intent(task: &str) -> &'static str {
+    let n = task.to_lowercase();
+    if n.contains("介绍") && (n.contains('你') || n.contains("自己")) {
+        return "qa.meta";
+    }
+    if n.contains("你是谁")
+        || n.contains("你叫什么")
+        || n.contains("自我介绍一下")
+        || n.contains("技能")
+        || n.contains("你能做什么")
+        || n.contains("你能帮我")
+        || n.contains("你有哪些")
+        || n.contains("能力范围")
+    {
+        return "qa.meta";
+    }
+    "qa.explain"
 }
 
 fn map_execute_primary_intent(task: &str) -> &'static str {
@@ -439,143 +525,10 @@ fn classify_with_l2_stub(_task: &str, _ctx: &IntentContext) -> Option<L2IntentCa
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        IntentAction, IntentContext, L2IntentCandidate, assess_and_route, assess_and_route_with_l2,
-    };
+    use super::{IntentContext, L2IntentCandidate, assess_and_route_with_l2};
     use crate::agent::intent_router::IntentKind;
 
-    #[test]
-    fn execute_routes_to_execute_action() {
-        let decision = assess_and_route("帮我修复这个报错", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert!(matches!(decision.action, IntentAction::Execute));
-        assert_eq!(decision.primary_intent, "execute.debug_diagnose");
-    }
-
-    #[test]
-    fn qa_routes_to_direct_reply_action() {
-        let decision = assess_and_route("这个错误是什么意思？", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Qa);
-        assert!(matches!(decision.action, IntentAction::DirectReply(_)));
-        assert!(!decision.need_clarification);
-    }
-
-    #[test]
-    fn ambiguous_routes_to_clarification_and_abstain() {
-        let decision = assess_and_route("帮我看看", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Ambiguous);
-        assert!(matches!(
-            decision.action,
-            IntentAction::ClarifyThenExecute(_)
-        ));
-        assert!(decision.need_clarification);
-        assert!(decision.abstain);
-        assert_eq!(decision.primary_intent, "unknown");
-    }
-
-    #[test]
-    fn build_like_request_maps_to_run_test_build() {
-        let decision = assess_and_route(
-            "请帮我运行 cargo test 并修复失败项",
-            &IntentContext::default(),
-        );
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.run_test_build");
-    }
-
-    #[test]
-    fn git_like_request_maps_to_git_ops() {
-        let decision = assess_and_route("把这些改动提交并开一个 PR", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.git_ops");
-    }
-
-    #[test]
-    fn mixed_request_extracts_secondary_intents() {
-        let decision = assess_and_route(
-            "先跑 cargo test 修复失败，再把改动提交并开 PR",
-            &IntentContext::default(),
-        );
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.git_ops");
-        assert!(
-            decision
-                .secondary_intents
-                .contains(&"execute.run_test_build".to_string())
-        );
-        assert!(
-            decision
-                .secondary_intents
-                .contains(&"execute.debug_diagnose".to_string())
-        );
-        assert!(
-            !decision
-                .secondary_intents
-                .contains(&"execute.git_ops".to_string())
-        );
-    }
-
-    #[test]
-    fn readonly_listing_maps_to_read_inspect() {
-        let decision = assess_and_route("当前目录下有哪些源文件", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.read_inspect");
-        assert!(matches!(decision.action, IntentAction::Execute));
-    }
-
-    #[test]
-    fn current_dir_has_what_maps_to_read_inspect() {
-        let decision = assess_and_route("当前目录下有什么", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.read_inspect");
-    }
-
-    #[test]
-    fn has_hpcg_source_code_maps_to_read_inspect() {
-        let decision = assess_and_route("有hpcg的源码吗？", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.read_inspect");
-    }
-
-    #[test]
-    fn run_test_maps_to_run_test_build() {
-        let decision = assess_and_route("帮我跑一下 pytest", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.run_test_build");
-    }
-
-    #[test]
-    fn debug_phrase_maps_to_debug_diagnose() {
-        let decision = assess_and_route("这个异常请先分析定位", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.debug_diagnose");
-    }
-
-    #[test]
-    fn docs_update_maps_to_docs_ops() {
-        let decision = assess_and_route("请完善 docs 里的安装说明", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.docs_ops");
-    }
-
-    #[test]
-    fn git_and_docs_extracts_secondary_intent() {
-        let decision = assess_and_route("先更新 README 再提交并开 PR", &IntentContext::default());
-        assert_eq!(decision.kind, IntentKind::Execute);
-        assert_eq!(decision.primary_intent, "execute.git_ops");
-        assert!(
-            decision
-                .secondary_intents
-                .contains(&"execute.docs_ops".to_string())
-        );
-    }
-
-    #[test]
-    fn l2_stub_does_not_override_l1_result() {
-        let decision = assess_and_route("当前目录下有哪些源文件", &IntentContext::default());
-        assert_eq!(decision.primary_intent, "execute.read_inspect");
-        assert!(decision.confidence > 0.0);
-    }
+    /// 细粒度断言见 `fixtures/intent_regression.jsonl`（`cargo test golden_intent_regression`）。
 
     #[test]
     fn l2_high_confidence_overrides_l1() {
@@ -594,24 +547,5 @@ mod tests {
         );
         assert_eq!(decision.primary_intent, "execute.docs_ops");
         assert!(meta.l2_applied);
-    }
-
-    #[test]
-    fn explicit_execute_confirmation_requires_clarification_context_to_direct_execute() {
-        let no_ctx = assess_and_route("直接开始执行", &IntentContext::default());
-        assert!(matches!(
-            no_ctx.action,
-            IntentAction::ConfirmThenExecute(_) | IntentAction::ClarifyThenExecute(_)
-        ));
-
-        let with_ctx = assess_and_route(
-            "直接开始执行",
-            &IntentContext {
-                in_clarification_flow: true,
-                ..IntentContext::default()
-            },
-        );
-        assert!(matches!(with_ctx.action, IntentAction::Execute));
-        assert_eq!(with_ctx.kind, IntentKind::Execute);
     }
 }

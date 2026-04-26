@@ -85,7 +85,7 @@
 | `AGENT_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`。 |
 | `AGENT_PLAN_REWRITE_MAX_ATTEMPTS` | 规划重写上限。 |
 | `AGENT_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`；`hierarchical` 见 TOML **`[agent] planner_executor_mode`**（与分层入口一致，见 `docs/DEVELOPMENT.md`）。 |
-| `AGENT_INTENT_L2_ENABLED` | 分层模式入口下是否启用 L2 无工具语义意图分类（**额外** `chat` 一次；失败回退 L1，默认关）。同义 TOML 键 **`intent_l2_enabled`**。 |
+| `AGENT_INTENT_L2_ENABLED` | 是否启用 L2 无工具语义意图分类（**额外** `chat` 一次；失败回退 L1，**默认开**）。同义 TOML 键 **`intent_l2_enabled`**；设为 `false` 可关。 |
 | `AGENT_INTENT_L2_MIN_CONFIDENCE` | L2 覆盖 L1 的最低 `confidence`（0.0–1.0，默认 0.7）。TOML：`intent_l2_min_confidence`。 |
 | `AGENT_INTENT_L2_MAX_TOKENS` | L2 分类请求的 `max_tokens`（32–1024，默认 220）。TOML：`intent_l2_max_tokens`。 |
 | `AGENT_INTENT_L0_ROUTING_BOOST_ENABLED` | 是否按 L0 特征（路径/错误/cargo 等）对 L1 的模糊句做**保守**提级（默认开）。TOML：`intent_l0_routing_boost_enabled`。 |
