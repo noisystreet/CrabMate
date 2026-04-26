@@ -24,6 +24,23 @@ fn is_hierarchical_subgoal_state(state: Option<&str>) -> bool {
     state.is_some_and(|s| s.starts_with("hierarchical-subgoal:"))
 }
 
+fn tool_bubble_emoji(m: &StoredMessage) -> &'static str {
+    let name = m
+        .tool_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            m.reasoning_text.lines().next().and_then(|line| {
+                line.trim()
+                    .strip_prefix("tool:")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+            })
+        });
+    name.map(i18n::tool_kind_emoji).unwrap_or("🔧")
+}
+
 fn extract_hierarchical_phase_chip(msg: &StoredMessage) -> Option<(String, String)> {
     let state = msg.state.as_deref()?;
     if !is_hierarchical_subgoal_state(Some(state)) {
@@ -282,8 +299,11 @@ pub(crate) fn chat_message_row(
             let detail_text = m_for_body.reasoning_text.clone();
             let detail_for_btn = detail_text.clone();
             let detail_for_show = detail_text.clone();
+            let tool_emoji = tool_bubble_emoji(&m_for_body);
+            let tool_line_time = time_str.clone();
             view! {
                 <div class="msg-tool-compact">
+                    <span class="msg-tool-emoji" aria-hidden="true">{tool_emoji}</span>
                     <span class="msg-body msg-tool-summary">
                         {move || {
                             let apply = apply_assistant_display_filters.get();
@@ -303,6 +323,9 @@ pub(crate) fn chat_message_row(
                                 })
                                 .collect_view()
                         }}
+                    </span>
+                    <span class="msg-tool-line-time" aria-hidden="true">
+                        {tool_line_time}
                     </span>
                     <Show when=move || !detail_for_btn.trim().is_empty()>
                         <button
@@ -445,22 +468,26 @@ pub(crate) fn chat_message_row(
     view! {
         <div class="msg-with-select">
             <div class="msg-stack">
-                <div class="msg-meta" aria-hidden="true">
-                    <span class="msg-meta-primary">
-                        <span class="msg-meta-role">{role_lbl}</span>
-                        <Show when=move || show_planner_round_badge>
-                            <span
-                                class="msg-planner-round-badge"
-                                prop:title=move || {
-                                    i18n::msg_planner_round_badge_title(locale.get())
-                                }
-                            >
-                                {move || i18n::msg_planner_round_badge(locale.get())}
+                {(!is_tool_bubble).then(|| {
+                    view! {
+                        <div class="msg-meta" aria-hidden="true">
+                            <span class="msg-meta-primary">
+                                <span class="msg-meta-role">{role_lbl}</span>
+                                <Show when=move || show_planner_round_badge>
+                                    <span
+                                        class="msg-planner-round-badge"
+                                        prop:title=move || {
+                                            i18n::msg_planner_round_badge_title(locale.get())
+                                        }
+                                    >
+                                        {move || i18n::msg_planner_round_badge(locale.get())}
+                                    </span>
+                                </Show>
                             </span>
-                        </Show>
-                    </span>
-                    <span class="msg-meta-time">{time_str}</span>
-                </div>
+                            <span class="msg-meta-time">{time_str.clone()}</span>
+                        </div>
+                    }
+                })}
                 <div
                     class=move || {
                         let mut c = class_prefix.clone();
@@ -760,6 +787,8 @@ mod tests {
             image_urls: vec![],
             state: Some("hierarchical-subgoal:goal_5".to_string()),
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         }
     }

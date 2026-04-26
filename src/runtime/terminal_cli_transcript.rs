@@ -680,7 +680,7 @@ mod search_in_files_terminal_short_tests {
     #[test]
     fn no_matches_keeps_summary_line() {
         let hdr = r#"{"kind":"crabmate_tool_output","tool":"search_in_files","version":1,"pattern":"foo","root":".","match_count":0,"files_visited":3,"max_results":200,"truncated":false}"#;
-        let body = r#"未找到匹配："foo"（共遍历 3 个文件，搜索根目录：/tmp/w）"#;
+        let body = "搜索：\"foo\"\n范围：.\n未找到匹配（共遍历 3 个文件）";
         let raw = format!("{hdr}\n{body}");
         let out = search_in_files_result_terminal_short(&raw);
         assert!(out.contains("未找到匹配"));
@@ -691,7 +691,7 @@ mod search_in_files_terminal_short_tests {
     #[test]
     fn with_matches_omits_path_lines() {
         let hdr = r#"{"kind":"crabmate_tool_output","tool":"search_in_files","version":1,"pattern":"fn","root":"src","match_count":2,"files_visited":10,"max_results":200,"truncated":false}"#;
-        let body = "搜索模式：\"fn\"，根目录：/x\n匹配结果（最多 200 条，实际 2 条）：\n\nsrc/main.rs:1: fn main() {}\n";
+        let body = "搜索：\"fn\"\n范围：src\n匹配结果（最多 200 条，实际 2 条）：\n\nsrc/main.rs:1: fn main() {}\n";
         let raw = format!("{hdr}\n{body}");
         let out = search_in_files_result_terminal_short(&raw);
         assert!(out.starts_with(hdr));

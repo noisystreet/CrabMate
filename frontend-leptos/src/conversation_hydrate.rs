@@ -100,6 +100,18 @@ fn tool_calls_summary(tool_calls: &Value) -> String {
     }
 }
 
+fn first_tool_call_function_name(tool_calls: &Value) -> Option<String> {
+    let arr = tool_calls.as_array()?;
+    let tc = arr.first()?;
+    let obj = tc.as_object()?;
+    let n = obj.get("function")?.get("name")?.as_str()?.trim();
+    if n.is_empty() {
+        None
+    } else {
+        Some(n.to_string())
+    }
+}
+
 /// 将会话快照转为 UI 消息列表（新 id；`created_at` 从 `base_ms` 递增以保证顺序）。
 pub fn stored_messages_from_conversation_api_with_base(
     msgs: &[Value],
@@ -179,6 +191,8 @@ pub fn stored_messages_from_conversation_api_with_base(
                         image_urls: vec![],
                         state: Some(state),
                         is_tool: false,
+                        tool_call_id: None,
+                        tool_name: None,
                         created_at: t,
                     });
                     continue;
@@ -218,6 +232,8 @@ pub fn stored_messages_from_conversation_api_with_base(
                         image_urls: vec![],
                         state: Some(state),
                         is_tool: false,
+                        tool_call_id: None,
+                        tool_name: None,
                         created_at: t,
                     });
                     continue;
@@ -234,6 +250,8 @@ pub fn stored_messages_from_conversation_api_with_base(
                 image_urls: vec![],
                 state: None,
                 is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: t,
             });
             continue;
@@ -257,6 +275,10 @@ pub fn stored_messages_from_conversation_api_with_base(
                 format!("工具：{summary}")
             };
             let state = timeline_state_tool(&id, true);
+            let tool_name = parsed
+                .tool_calls
+                .as_ref()
+                .and_then(first_tool_call_function_name);
             out.push(StoredMessage {
                 id,
                 role: "system".into(),
@@ -265,6 +287,8 @@ pub fn stored_messages_from_conversation_api_with_base(
                 image_urls: vec![],
                 state: Some(state),
                 is_tool: true,
+                tool_call_id: None,
+                tool_name,
                 created_at: t,
             });
             continue;
@@ -274,6 +298,7 @@ pub fn stored_messages_from_conversation_api_with_base(
             let id = format!("h_{}_{}", base_ms, out.len());
             t = t.saturating_add(1);
             let state = timeline_state_tool(&id, true);
+            let tool_name = (!name.is_empty()).then(|| name.to_string());
             out.push(StoredMessage {
                 id,
                 role: "system".into(),
@@ -282,6 +307,8 @@ pub fn stored_messages_from_conversation_api_with_base(
                 image_urls: vec![],
                 state: Some(state),
                 is_tool: true,
+                tool_call_id: None,
+                tool_name,
                 created_at: t,
             });
             continue;
@@ -298,6 +325,8 @@ pub fn stored_messages_from_conversation_api_with_base(
             image_urls: if is_user { image_urls } else { vec![] },
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: t,
         });
     }

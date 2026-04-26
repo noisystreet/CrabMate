@@ -403,6 +403,7 @@ impl OperatorAgent {
                                     name: tool_name.clone(),
                                     summary,
                                     goal_id: Some(goal.goal_id.clone()),
+                                    tool_call_id: Some(tool_call.id.clone()),
                                     arguments_preview: Some(
                                         crate::redact::tool_arguments_preview_for_sse(args),
                                     ),

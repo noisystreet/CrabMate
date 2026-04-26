@@ -259,6 +259,8 @@ mod merge_tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         }
     }
@@ -272,6 +274,8 @@ mod merge_tests {
             image_urls: vec![],
             state: Some(timeline_state_staged_start(id, step, total)),
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 1,
         }
     }
@@ -285,6 +289,8 @@ mod merge_tests {
             image_urls: vec![],
             state: Some(timeline_state_staged_end(id, step, total, status)),
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 2,
         }
     }

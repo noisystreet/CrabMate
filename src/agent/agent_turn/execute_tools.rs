@@ -382,6 +382,7 @@ pub(crate) fn sse_sender_closed(out: Option<&mpsc::Sender<String>>) -> bool {
 async fn emit_tool_call_summary_sse(
     out: Option<&mpsc::Sender<String>>,
     cfg: &AgentConfig,
+    tool_call_id: &str,
     name: &str,
     args: &str,
     messages: &[Message],
@@ -417,6 +418,7 @@ async fn emit_tool_call_summary_sse(
                 name: name.to_string(),
                 summary,
                 goal_id: None,
+                tool_call_id: Some(tool_call_id.to_string()),
                 arguments_preview,
                 arguments,
             },
@@ -738,6 +740,7 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
         emit_tool_call_summary_sse(
             out,
             cfg.as_ref(),
+            tc.id.as_str(),
             &tc.function.name,
             &tc.function.arguments,
             messages,
@@ -834,7 +837,7 @@ async fn execute_tools_serial(
         if let Some(ref t) = tracing_chat_turn {
             t.record_tool_call_id_for_log(id.as_str());
         }
-        emit_tool_call_summary_sse(out, cfg.as_ref(), &name, &args, messages).await;
+        emit_tool_call_summary_sse(out, cfg.as_ref(), id.as_str(), &name, &args, messages).await;
         emit_timeline_log_sse(
             out,
             "tool_step_started",

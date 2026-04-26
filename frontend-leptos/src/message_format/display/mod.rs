@@ -205,6 +205,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
@@ -230,6 +232,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
@@ -261,6 +265,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         assert!(stored_message_is_staged_planner_round(&m));
@@ -277,6 +283,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         assert!(stored_message_is_staged_planner_round(&m));
@@ -292,6 +300,8 @@ mod tests {
             image_urls: vec![],
             state: Some("loading".into()),
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         assert!(stored_message_is_staged_planner_round(&m));
@@ -307,6 +317,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         assert!(!stored_message_is_staged_planner_round(&user));
@@ -318,6 +330,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: true,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         assert!(!stored_message_is_staged_planner_round(&tool));
@@ -333,6 +347,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
@@ -350,6 +366,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
@@ -467,6 +485,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
@@ -494,6 +514,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         assert_eq!(message_text_for_display_ex(&m, Locale::ZhHans, true), "");
@@ -529,6 +551,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
@@ -559,6 +583,8 @@ mod tests {
             image_urls: vec![],
             state: None,
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
@@ -580,6 +606,8 @@ mod tests {
             image_urls: vec![],
             state: Some("hierarchical-subgoal:goal_2".into()),
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let out = message_text_for_display_ex(&m, Locale::ZhHans, true);

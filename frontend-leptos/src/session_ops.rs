@@ -159,6 +159,8 @@ pub fn truncate_at_user_message_and_prepare_regenerate(
         image_urls: vec![],
         state: Some("loading".to_string()),
         is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
         created_at: now,
     });
     Some((user_text, user_images, new_asst_id))
@@ -218,6 +220,8 @@ pub fn prepare_retry_failed_assistant_turn(
         image_urls: vec![],
         state: Some("loading".to_string()),
         is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
         created_at: now,
     });
     Some((user_text, user_images, new_asst_id))
@@ -488,6 +492,8 @@ mod message_branch_tests {
                 image_urls: vec![],
                 state: None,
                 is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: 0,
             },
             StoredMessage {
@@ -498,6 +504,8 @@ mod message_branch_tests {
                 image_urls: vec![],
                 state: None,
                 is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: 0,
             },
             StoredMessage {
@@ -508,6 +516,8 @@ mod message_branch_tests {
                 image_urls: vec![],
                 state: None,
                 is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: 0,
             },
         ];
@@ -527,6 +537,8 @@ mod message_branch_tests {
                 image_urls: vec![],
                 state: None,
                 is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: 0,
             },
             StoredMessage {
@@ -537,6 +549,8 @@ mod message_branch_tests {
                 image_urls: vec![],
                 state: None,
                 is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: 0,
             },
             StoredMessage {
@@ -547,6 +561,8 @@ mod message_branch_tests {
                 image_urls: vec![],
                 state: None,
                 is_tool: true,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: 0,
             },
         ];
@@ -567,6 +583,8 @@ mod message_branch_tests {
                 image_urls: vec![],
                 state: None,
                 is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: 0,
             },
             StoredMessage {
@@ -577,6 +595,8 @@ mod message_branch_tests {
                 image_urls: vec![],
                 state: None,
                 is_tool: true,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: 0,
             },
             StoredMessage {
@@ -587,6 +607,8 @@ mod message_branch_tests {
                 image_urls: vec![],
                 state: None,
                 is_tool: true,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: 0,
             },
         ];
@@ -606,6 +628,8 @@ mod message_branch_tests {
             image_urls: vec![],
             state: None,
             is_tool: true,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         }];
         assert!(preceding_plain_user_message_id(&messages, 0).is_none());
@@ -630,6 +654,8 @@ mod message_branch_tests {
                     image_urls: vec![],
                     state: None,
                     is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
                     created_at: 0,
                 },
                 StoredMessage {
@@ -640,6 +666,8 @@ mod message_branch_tests {
                     image_urls: vec![],
                     state: None,
                     is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
                     created_at: 0,
                 },
                 StoredMessage {
@@ -650,6 +678,8 @@ mod message_branch_tests {
                     image_urls: vec![],
                     state: None,
                     is_tool: false,
+                    tool_call_id: None,
+                    tool_name: None,
                     created_at: 0,
                 },
             ],

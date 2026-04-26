@@ -22,8 +22,16 @@ pub struct SseCallbacks<'a> {
     pub user_locale: Locale,
     pub on_error: &'a mut dyn FnMut(String),
     pub on_workspace_changed: Option<&'a mut dyn FnMut()>,
-    pub on_tool_call:
-        Option<&'a mut dyn FnMut(String, String, Option<String>, Option<String>, Option<String>)>,
+    pub on_tool_call: Option<
+        &'a mut dyn FnMut(
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ),
+    >,
     pub on_tool_status_change: Option<&'a mut dyn FnMut(bool)>,
     pub on_parsing_tool_calls_change: Option<&'a mut dyn FnMut(bool)>,
     /// 后续 `on_delta` 为终答正文（此前为思维链）；无链时也会在首段正文前下发。
@@ -45,6 +53,8 @@ pub struct SseCallbacks<'a> {
 pub struct ToolResultInfo {
     pub name: String,
     pub goal_id: Option<String>,
+    /// 与对应 `tool_call.tool_call_id` 对齐；缺省时前端按 FIFO 与占位气泡配对。
+    pub tool_call_id: Option<String>,
     /// 与 `crabmate_tool.v` 对齐；缺省按 **1**（与后端 `serde(default)` 一致）。
     pub result_version: u32,
     pub summary: Option<String>,
@@ -368,6 +378,11 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                 .and_then(|x| x.as_str())
                 .filter(|s| !s.is_empty())
                 .map(String::from);
+            let tool_call_id = tc
+                .get("tool_call_id")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
             if let Some(f) = cbs.on_tool_call.as_mut() {
                 f(
                     name,
@@ -375,6 +390,7 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                     preview.map(String::from),
                     args_full.map(String::from),
                     goal_id,
+                    tool_call_id,
                 );
             }
             return SseDispatch::Handled;
@@ -405,6 +421,11 @@ pub fn try_dispatch_sse_control_payload(data: &str, cbs: &mut SseCallbacks<'_>) 
                 .to_string(),
             goal_id: tr
                 .get("goal_id")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+            tool_call_id: tr
+                .get("tool_call_id")
                 .and_then(|x| x.as_str())
                 .filter(|s| !s.is_empty())
                 .map(String::from),

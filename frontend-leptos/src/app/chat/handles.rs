@@ -48,7 +48,7 @@ pub struct ChatColumnShell {
     pub timeline_panel_expanded: RwSignal<bool>,
     pub chat: ChatSessionSignals,
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    pub expanded_tool_run_heads: RwSignal<HashSet<String>>,
+    pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
     pub chat_find_query: RwSignal<String>,
     pub chat_find_match_ids: RwSignal<Vec<String>>,
     pub chat_find_cursor: RwSignal<usize>,

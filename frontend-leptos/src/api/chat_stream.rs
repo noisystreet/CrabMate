@@ -20,8 +20,9 @@ use super::client_llm_storage::{
     executor_llm_json_for_chat_body,
 };
 
-pub type OnToolCallFn =
-    std::rc::Rc<dyn Fn(String, String, Option<String>, Option<String>, Option<String>)>;
+pub type OnToolCallFn = std::rc::Rc<
+    dyn Fn(String, String, Option<String>, Option<String>, Option<String>, Option<String>),
+>;
 
 pub struct ChatStreamCallbacks {
     pub on_delta: std::rc::Rc<dyn Fn(String)>,
@@ -368,10 +369,14 @@ fn handle_sse_block(
         (cbs.on_error)(msg);
     };
     let mut on_ws = || (cbs.on_workspace_changed)();
-    let mut on_tool_call =
-        |n: String, s: String, p: Option<String>, a: Option<String>, g: Option<String>| {
-            (cbs.on_tool_call)(n, s, p, a, g);
-        };
+    let mut on_tool_call = |n: String,
+                            s: String,
+                            p: Option<String>,
+                            a: Option<String>,
+                            g: Option<String>,
+                            tid: Option<String>| {
+        (cbs.on_tool_call)(n, s, p, a, g, tid);
+    };
     let mut on_tool_status = |b: bool| (cbs.on_tool_status)(b);
     let mut on_parse = |_b: bool| {};
     let mut on_tool_res = |info: ToolResultInfo| (cbs.on_tool_result)(info);
@@ -468,7 +473,7 @@ mod tests {
             on_clarification_questionnaire: Rc::new(|_info| {}),
             on_thinking_trace: Rc::new(|_info| {}),
             on_timeline_log: Rc::new(|_info| {}),
-            on_tool_call: Rc::new(|_n, _s, _p, _a, _g| {}),
+            on_tool_call: Rc::new(|_n, _s, _p, _a, _g, _tid| {}),
         }
     }
 

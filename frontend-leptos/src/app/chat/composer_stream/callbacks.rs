@@ -33,6 +33,11 @@ fn take_pending_tool_message_id(queue: &Rc<RefCell<VecDeque<String>>>) -> Option
     queue.borrow_mut().pop_front()
 }
 
+fn non_empty_trimmed_tool_name(s: &str) -> Option<String> {
+    let t = s.trim();
+    (!t.is_empty()).then(|| t.to_string())
+}
+
 fn build_final_response_text(title: &str, detail: Option<&str>) -> String {
     let mut final_text = title.trim().to_string();
     if let Some(detail) = detail.map(str::trim)
@@ -164,6 +169,8 @@ fn push_assistant_timeline_bubble(
                 image_urls: vec![],
                 state,
                 is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: now,
             });
         }
@@ -267,6 +274,8 @@ fn upsert_hierarchical_subgoal_bubble(
                 image_urls: vec![],
                 state: Some(marker.clone()),
                 is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
                 created_at: now,
             });
         }
@@ -547,7 +556,8 @@ pub(super) fn build_chat_stream_callbacks(
                   summary: String,
                   preview: Option<String>,
                   full: Option<String>,
-                  goal_id: Option<String>| {
+                  goal_id: Option<String>,
+                  tool_call_id: Option<String>| {
                 let _ = (preview, full);
                 let loc = stream_ctx.locale.get_untracked();
                 let core = if !summary.trim().is_empty() {
@@ -572,6 +582,11 @@ pub(super) fn build_chat_stream_callbacks(
                     .as_deref()
                     .map(|g| format!("hierarchical-subgoal:{g}"))
                     .or_else(|| current_subgoal_marker.borrow().clone());
+                let tcid = tool_call_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
                 stream_ctx.chat.sessions.update(|list| {
                     if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
                         let msg = StoredMessage {
@@ -582,6 +597,8 @@ pub(super) fn build_chat_stream_callbacks(
                             image_urls: vec![],
                             state: Some("loading".to_string()),
                             is_tool: true,
+                            tool_call_id: tcid.clone(),
+                            tool_name: non_empty_trimmed_tool_name(&name),
                             created_at: message_created_ms(),
                         };
                         if let Some(mk) = marker.as_deref()
@@ -598,7 +615,10 @@ pub(super) fn build_chat_stream_callbacks(
                 });
                 // 工具调用出现后，保持“助手正在生成”气泡在最底部，避免视觉时序倒置。
                 move_loading_assistant_to_bottom(&stream_ctx);
-                enqueue_pending_tool_message_id(&stream_ctx.pending_tool_message_ids, id);
+                // 有 `tool_call_id` 时由 `tool_result` 按 id 命中占位气泡；否则保持 FIFO。
+                if tcid.is_none() {
+                    enqueue_pending_tool_message_id(&stream_ctx.pending_tool_message_ids, id);
+                }
             },
         )
     };
@@ -623,17 +643,40 @@ pub(super) fn build_chat_stream_callbacks(
             let aid = stream_ctx.active_session_id.as_str();
             let tl_ok = info.ok.unwrap_or(true);
             let state = timeline_state_tool(&id, tl_ok);
-            let pending_id = take_pending_tool_message_id(&stream_ctx.pending_tool_message_ids);
+            let pending_queue = Rc::clone(&stream_ctx.pending_tool_message_ids);
             let mut updated_existing = false;
             stream_ctx.chat.sessions.update(|list| {
                 if let Some(s) = list.iter_mut().find(|s| s.id == aid) {
-                    if let Some(pid) = pending_id.as_deref()
-                        && let Some(m) = s.messages.iter_mut().find(|m| m.id == pid)
-                    {
+                    let tid = info
+                        .tool_call_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty());
+                    let idx_by_tid = tid.and_then(|tid| {
+                        s.messages.iter().position(|m| {
+                            m.is_tool
+                                && m.tool_call_id.as_deref() == Some(tid)
+                                && m.state.as_deref() == Some("loading")
+                        })
+                    });
+                    let idx_by_fifo = idx_by_tid.is_none().then(|| {
+                        take_pending_tool_message_id(&pending_queue)
+                            .and_then(|pid| s.messages.iter().position(|m| m.id == pid))
+                    });
+                    let idx_opt = idx_by_tid.or(idx_by_fifo.flatten());
+                    if let Some(idx) = idx_opt {
+                        let m = &mut s.messages[idx];
                         m.text = t.clone();
                         m.reasoning_text = detail.clone();
                         m.state = Some(state.clone());
                         m.is_tool = true;
+                        if m.tool_call_id.is_none() {
+                            m.tool_call_id =
+                                info.tool_call_id.clone().filter(|x| !x.trim().is_empty());
+                        }
+                        if let Some(tn) = non_empty_trimmed_tool_name(&info.name) {
+                            m.tool_name = Some(tn);
+                        }
                         updated_existing = true;
                     }
                     if !updated_existing {
@@ -645,6 +688,11 @@ pub(super) fn build_chat_stream_callbacks(
                             image_urls: vec![],
                             state: Some(state.clone()),
                             is_tool: true,
+                            tool_call_id: info
+                                .tool_call_id
+                                .clone()
+                                .filter(|x| !x.trim().is_empty()),
+                            tool_name: non_empty_trimmed_tool_name(&info.name),
                             created_at: message_created_ms(),
                         };
                         if let Some(goal_id) = info.goal_id.as_deref() {
@@ -769,6 +817,8 @@ pub(super) fn build_chat_stream_callbacks(
                         image_urls: vec![],
                         state: Some(state),
                         is_tool: false,
+                        tool_call_id: None,
+                        tool_name: None,
                         created_at: now,
                     });
                 }
@@ -933,6 +983,8 @@ pub(super) fn build_chat_stream_callbacks(
                         image_urls: vec![],
                         state: Some(state),
                         is_tool: false,
+                        tool_call_id: None,
+                        tool_name: None,
                         created_at: now,
                     });
                 }

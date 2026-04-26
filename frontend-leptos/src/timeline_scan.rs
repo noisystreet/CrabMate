@@ -201,6 +201,8 @@ mod tests {
                 r#"{"k":"cm_tl","t":"staged_end","msg":"m1","i":2,"n":5,"st":"failed"}"#.into(),
             ),
             is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let e = timeline_entry_for_message(&m).expect("entry");
@@ -217,6 +219,8 @@ mod tests {
             image_urls: vec![],
             state: Some(r#"{"k":"cm_tl","t":"tool","msg":"t1","ok":false}"#.into()),
             is_tool: true,
+            tool_call_id: None,
+            tool_name: None,
             created_at: 0,
         };
         let e = timeline_entry_for_message(&m).expect("entry");
