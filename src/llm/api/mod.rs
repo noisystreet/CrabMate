@@ -258,6 +258,7 @@ pub async fn stream_chat(
         plain_terminal_stream,
         fold_system_into_user,
         preserve_reasoning_on_assistant_tool_calls,
+        preserve_deepseek_thinking_reasoning_roundtrip,
         thinking_trace_enabled,
     } = *params;
 
@@ -279,6 +280,7 @@ pub async fn stream_chat(
         &taken,
         fold_system_into_user,
         preserve_reasoning_on_assistant_tool_calls,
+        preserve_deepseek_thinking_reasoning_roundtrip,
     );
     log_chat_request_json_preview_if_enabled(req);
     req.stream = Some(!no_stream);

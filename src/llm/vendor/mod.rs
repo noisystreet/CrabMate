@@ -114,6 +114,14 @@ pub fn fold_system_into_user_for_config(cfg: &AgentConfig) -> bool {
     is_minimax_family_model_id(&cfg.model) || api_base_looks_minimax(&cfg.api_base)
 }
 
+/// 当前 **`api_base`** 是否视为 DeepSeek 官方 OpenAI 兼容端点（用于启用 [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）。
+///
+/// 仅用 URL 判断、**不**用 `model` ID：避免在 MiniMax 等网关误配 `deepseek-chat` 时下发 `response_format`。
+#[inline]
+pub fn deepseek_json_output_eligible(cfg: &AgentConfig) -> bool {
+    cfg.api_base.to_ascii_lowercase().contains("deepseek")
+}
+
 fn kimi_coerce_temperature(model: &str, temperature: f32) -> f32 {
     if is_kimi_k2_thinking_model(model) {
         return 1.0;
@@ -394,5 +402,21 @@ mod tests {
         let mut cfg = cfg_neutral_deepseek_base();
         cfg.model = "deepseek-chat".to_string();
         assert!(!super::fold_system_into_user_for_config(&cfg));
+    }
+
+    #[test]
+    fn deepseek_json_output_eligible_by_api_base() {
+        let mut cfg = cfg_neutral_deepseek_base();
+        assert!(super::deepseek_json_output_eligible(&cfg));
+        cfg.api_base = "https://example.com/v1".to_string();
+        assert!(!super::deepseek_json_output_eligible(&cfg));
+    }
+
+    #[test]
+    fn deepseek_json_output_not_eligible_on_minimax_base_even_if_model_id_deepseek() {
+        let mut cfg = cfg_neutral_deepseek_base();
+        cfg.api_base = "https://api.minimaxi.com/v1".to_string();
+        cfg.model = "deepseek-chat".to_string();
+        assert!(!super::deepseek_json_output_eligible(&cfg));
     }
 }

@@ -82,6 +82,7 @@ pub fn tool_chat_request(
             messages,
             fold_system_into_user_for_config(cfg),
             v.preserve_assistant_tool_call_reasoning(cfg),
+            vendor::deepseek_json_output_eligible(cfg),
         ),
         tools: Some(tools.to_vec()),
         tool_choice: Some("auto".to_string()),
@@ -94,6 +95,7 @@ pub fn tool_chat_request(
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
         thinking: v.thinking_field(cfg),
+        response_format: None,
     }
 }
 
@@ -113,6 +115,7 @@ pub fn no_tools_chat_request(
         crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(
             messages,
             kimi_k2_5_vendor_requires_tool_call_reasoning(cfg),
+            vendor::deepseek_json_output_eligible(cfg),
         ),
         temperature_override,
         model_override,
@@ -151,7 +154,36 @@ pub fn no_tools_chat_request_from_messages(
         stream: None,
         reasoning_split: cfg.llm_reasoning_split.then_some(true),
         thinking: v.thinking_field(cfg),
+        response_format: None,
     }
+}
+
+/// 分层 **Manager** / 动态分解器等需解析 **结构化 JSON** 的无工具请求。
+///
+/// 当 **`api_base`** 指向 DeepSeek 官方兼容端点时，自动设置 **`response_format: {"type":"json_object"}`**（见 [DeepSeek JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）；其它网关行为不变。
+/// 仅以 hostname 判定，避免在 MiniMax 等使用 `deepseek-chat` 模型 ID 时误发不兼容字段。
+pub fn no_tools_chat_request_for_hierarchical_manager(
+    cfg: &AgentConfig,
+    messages: &[Message],
+    temperature_override: Option<f32>,
+    model_override: Option<&str>,
+    seed_override: LlmSeedOverride,
+) -> ChatRequest {
+    let mut req = no_tools_chat_request(
+        cfg,
+        messages,
+        temperature_override,
+        model_override,
+        seed_override,
+    );
+    if vendor::deepseek_json_output_eligible(cfg) {
+        req.response_format = Some(serde_json::json!({ "type": "json_object" }));
+        debug!(
+            target: "crabmate",
+            "no_tools_chat_request_for_hierarchical_manager: response_format=json_object (DeepSeek JSON Output)"
+        );
+    }
+    req
 }
 
 /// 调用 `chat/completions`：失败时若错误为 **可重试**（见 [`call_error::LlmCallError`]），按 `AgentConfig::api_retry_delay_secs` 做指数退避，最多 `api_max_retries + 1` 次；**401/400** 等不可重试错误立即返回。
@@ -272,7 +304,8 @@ mod tests {
         let messages = vec![Message::user_only("u"), sep, assistant];
         let a =
             super::no_tools_chat_request(&cfg, &messages, None, None, LlmSeedOverride::FromConfig);
-        let stripped = messages_for_api_stripping_reasoning_skip_ui_separators(&messages, false);
+        let stripped =
+            messages_for_api_stripping_reasoning_skip_ui_separators(&messages, false, false);
         let b = super::no_tools_chat_request_from_messages(
             &cfg,
             stripped,
@@ -308,5 +341,35 @@ mod tests {
             LlmSeedOverride::FromConfig,
         );
         assert_eq!(req.temperature, 1.0);
+    }
+
+    #[test]
+    fn hierarchical_manager_json_mode_only_on_deepseek_api_base() {
+        let mut cfg = load_config(None).expect("default embedded config");
+        cfg.api_base = "https://api.deepseek.com/v1".to_string();
+        let req = super::no_tools_chat_request_for_hierarchical_manager(
+            &cfg,
+            &[Message::user_only("x")],
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        assert_eq!(
+            req.response_format
+                .as_ref()
+                .and_then(|v| v.get("type"))
+                .and_then(|t| t.as_str()),
+            Some("json_object")
+        );
+
+        cfg.api_base = "http://127.0.0.1:11434/v1".to_string();
+        let req_local = super::no_tools_chat_request_for_hierarchical_manager(
+            &cfg,
+            &[Message::user_only("x")],
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        assert!(req_local.response_format.is_none());
     }
 }

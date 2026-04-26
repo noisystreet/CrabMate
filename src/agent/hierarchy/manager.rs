@@ -11,7 +11,7 @@ use crate::config::AgentConfig;
 use crate::llm::backend::ChatCompletionsBackend;
 use crate::llm::{
     CompleteChatRetryingParams, LlmRetryingTransportOpts, complete_chat_retrying,
-    no_tools_chat_request,
+    no_tools_chat_request_for_hierarchical_manager,
 };
 use crate::types::{LlmSeedOverride, Message, message_content_as_str};
 
@@ -161,8 +161,13 @@ impl ManagerAgent {
         let prompt = self.build_decomposition_prompt(task, working_dir, tools_defs);
 
         let messages = vec![Message::user_only(&prompt)];
-        let request =
-            no_tools_chat_request(cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+        let request = no_tools_chat_request_for_hierarchical_manager(
+            cfg,
+            &messages,
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
 
         let params = CompleteChatRetryingParams::new(
             llm_backend,
@@ -241,8 +246,13 @@ impl ManagerAgent {
         );
 
         let messages = vec![Message::user_only(&prompt)];
-        let request =
-            no_tools_chat_request(cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+        let request = no_tools_chat_request_for_hierarchical_manager(
+            cfg,
+            &messages,
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
 
         let params = CompleteChatRetryingParams::new(
             llm_backend,
@@ -307,8 +317,13 @@ impl ManagerAgent {
         );
 
         let messages = vec![Message::user_only(&prompt)];
-        let request =
-            no_tools_chat_request(cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+        let request = no_tools_chat_request_for_hierarchical_manager(
+            cfg,
+            &messages,
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
 
         let params = CompleteChatRetryingParams::new(
             llm_backend,
@@ -1161,8 +1176,13 @@ impl ManagerAgent {
         );
 
         let messages = vec![Message::user_only(&prompt)];
-        let request =
-            no_tools_chat_request(cfg, &messages, None, None, LlmSeedOverride::FromConfig);
+        let request = no_tools_chat_request_for_hierarchical_manager(
+            cfg,
+            &messages,
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
 
         let transport_opts = LlmRetryingTransportOpts::headless_no_stream();
         let params = CompleteChatRetryingParams::new(
@@ -1455,18 +1475,36 @@ pub fn handle_failure(
     (completed, failed, decision)
 }
 
-/// 从响应中提取 JSON（处理 LLM 输出中可能存在的多余字符）
+/// 从响应中提取最外层 JSON 对象切片（跳过前文噪音）。
+///
+/// 须在 **双引号字符串外**统计 `{}`，否则子目标 `description` 等字段中的 `{` / `}` 会破坏朴素括号计数，
+/// 导致永远找不到匹配的闭合括号（表现为 `Failed to extract JSON`）。
 fn extract_json(content: &str) -> Option<&str> {
     let start = content.find('{')?;
-    // 使用括号计数找到匹配的闭括号，处理嵌套 JSON
-    let mut depth = 0;
-    for (i, c) in content[start..].char_indices() {
+    let mut depth = 0u32;
+    let mut in_string = false;
+    let mut escape = false;
+    for (rel_byte, c) in content[start..].char_indices() {
+        if in_string {
+            if escape {
+                escape = false;
+                continue;
+            }
+            match c {
+                '\\' => escape = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
         match c {
-            '{' => depth += 1,
+            '"' => in_string = true,
+            '{' => depth = depth.saturating_add(1),
             '}' => {
-                depth -= 1;
+                depth = depth.saturating_sub(1);
                 if depth == 0 {
-                    return Some(&content[start..start + i + 1]);
+                    let end = start + rel_byte + c.len_utf8();
+                    return Some(&content[start..end]);
                 }
             }
             _ => {}
@@ -1525,5 +1563,15 @@ mod tests {
         let content = "好的，我来分解。\n{\n  \"sub_goals\": []\n}\n完成";
         let json = extract_json(content).unwrap();
         assert!(json.contains("sub_goals"));
+    }
+
+    #[test]
+    fn test_extract_json_braces_inside_string_values() {
+        let content = r#"{"sub_goals":[{"goal_id":"g1","description":"查看 {src} 与 } 符号","priority":1,"depends_on":[],"required_tools":[]}],"execution_strategy":"sequential"}"#;
+        let json = extract_json(content).unwrap();
+        assert!(json.contains("sub_goals"));
+        assert!(json.contains("{src}"));
+        let v: serde_json::Value = serde_json::from_str(json).expect("valid JSON");
+        assert!(v.get("sub_goals").is_some());
     }
 }

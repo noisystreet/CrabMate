@@ -496,11 +496,13 @@ pub fn conversation_messages_to_vendor_body(
     messages: &[Message],
     fold_system_into_user: bool,
     preserve_reasoning_on_assistant_tool_calls: bool,
+    preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Vec<Message> {
     let mut v = crate::types::normalize_messages_for_openai_compatible_request(
         crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(
             messages,
             preserve_reasoning_on_assistant_tool_calls,
+            preserve_deepseek_thinking_reasoning_roundtrip,
         ),
     );
     if fold_system_into_user {
@@ -799,9 +801,11 @@ mod tests {
             tool_call_id: None,
         };
         let slice = [Message::user_only("u"), sep, a.clone()];
-        let via = conversation_messages_to_vendor_body(&slice, false, false);
+        let via = conversation_messages_to_vendor_body(&slice, false, false, false);
         let manual = crate::types::normalize_messages_for_openai_compatible_request(
-            crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(&slice, false),
+            crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(
+                &slice, false, false,
+            ),
         );
         assert_eq!(via, manual);
     }
