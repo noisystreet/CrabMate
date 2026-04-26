@@ -575,6 +575,11 @@ mod sse_control_order_tests {
 
     use super::{SseCallbacks, SseDispatch, try_dispatch_sse_control_payload};
 
+    #[test]
+    fn single_space_sse_payload_is_plain_not_handled() {
+        assert_eq!(dispatch_triage_string(" "), "plain");
+    }
+
     fn dispatch_triage_string(data: &str) -> &'static str {
         let mut on_err = |_msg: String| {};
         let mut cbs = SseCallbacks {
