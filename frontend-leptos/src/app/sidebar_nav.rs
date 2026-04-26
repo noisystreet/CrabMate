@@ -143,16 +143,6 @@ pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
             >
                 {move || i18n::nav_new_chat(locale.get())}
             </button>
-            <button
-                type="button"
-                class="btn btn-nav-ghost-ds"
-                on:click=move |_| {
-                    session_modal.set(true);
-                    mobile_nav_open.set(false);
-                }
-            >
-                {move || i18n::nav_manage_sessions(locale.get())}
-            </button>
             <Show when=move || sidebar_search_panel_open.get()>
                 <div class="nav-rail-search">
                     <div class="nav-rail-search-header">
@@ -428,6 +418,18 @@ pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
                     class="session-ctx-item"
                     role="menuitem"
                     on:click=move |_| {
+                        session_context_menu.set(None);
+                        session_modal.set(true);
+                        mobile_nav_open.set(false);
+                    }
+                >
+                    {move || i18n::nav_manage_sessions(locale.get())}
+                </button>
+                <button
+                    type="button"
+                    class="session-ctx-item"
+                    role="menuitem"
+                    on:click=move |_| {
                         let anchor = session_context_menu.get();
                         let Some(a) = anchor else {
                             return;
@@ -590,6 +592,18 @@ pub fn sidebar_nav_view(ctx: AppShellCtx) -> impl IntoView {
                         .unwrap_or_default()
                 }
             >
+                <button
+                    type="button"
+                    class="session-ctx-item"
+                    role="menuitem"
+                    on:click=move |_| {
+                        sidebar_rail_ctx_menu.set(None);
+                        session_modal.set(true);
+                        mobile_nav_open.set(false);
+                    }
+                >
+                    {move || i18n::nav_manage_sessions(locale.get())}
+                </button>
                 <button
                     type="button"
                     class="session-ctx-item"

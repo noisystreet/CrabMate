@@ -11,9 +11,11 @@ pub fn chat_empty_lead(l: Locale) -> &'static str {
 
 pub fn chat_empty_tip1(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "左侧可新建对话、切换最近会话，或「管理会话」导出与重命名。",
+        Locale::ZhHans => {
+            "左侧可新建对话、切换最近会话；会话项右键或列表空白处右键可「管理会话」、导出与重命名。"
+        }
         Locale::En => {
-            "Use the left rail for new chat, recent sessions, or Manage sessions to export/rename."
+            "Use the left rail for new chat and recent sessions; right-click a session or empty list space for Manage sessions, export, and rename."
         }
     }
 }
