@@ -169,7 +169,7 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
 - 桌面启动失败的可视化提示
 - 日志目录与诊断页
 - 单实例保护
-- sidecar 正式打包与自动更新
+- sidecar 自动更新
 
 ## 5. 发布检查清单（sidecar 路径一致性）
 
@@ -188,3 +188,26 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
   - 在“未设置 env、PATH 不含 crabmate”的干净机器上，仍能从 sidecar 启动成功
 - **错误提示验证**
   - 故意移除 sidecar 后，能看到明确的启动失败弹窗与路径排查信息
+
+## 6. 打包 sidecar（deb）
+
+`tauri.conf.json` 已配置：
+
+- `beforeBuildCommand` / `beforeDevCommand` 调用 `desktop-tauri/scripts/prepare-sidecar.sh`
+- `bundle.externalBin` 为 `../binaries/crabmate`
+- `bundle.targets` 仅 `deb`
+
+脚本行为：
+
+1. 优先读取 `CRABMATE_DESKTOP_BACKEND_BIN`
+2. 未设置时回退到 `<repo>/target/release/crabmate`
+3. 复制为 `desktop-tauri/binaries/crabmate-<host-target-triple>`
+
+建议打包命令：
+
+```bash
+cd /home/gzz/code/crabmate_agent
+cargo build --release
+cd desktop-tauri/src-tauri
+cargo tauri build
+```
