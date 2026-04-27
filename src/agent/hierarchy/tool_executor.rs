@@ -24,6 +24,8 @@ pub struct ToolExecutorContext {
     pub web_tool_runtime: Option<crate::tool_registry::WebToolRuntime>,
     /// 分层回合内无副作用探测命令缓存（例如 `which` / `--version`）。
     pub probe_cache: Option<Arc<TokioMutex<ProbeCache>>>,
+    /// 分层回合内重复命令抑制缓存（仅用于少量可安全去重的命令模板）。
+    pub dedupe_cache: Arc<TokioMutex<HashSet<String>>>,
 }
 
 impl ToolExecutorContext {
@@ -33,6 +35,7 @@ impl ToolExecutorContext {
             working_dir,
             web_tool_runtime: None,
             probe_cache: None,
+            dedupe_cache: Arc::new(TokioMutex::new(HashSet::new())),
         }
     }
 
@@ -182,6 +185,28 @@ impl ToolExecutor {
     }
 
     async fn dispatch_tool_internal(&self, name: &str, args: &str) -> String {
+        if let Some(suppress_key) = duplicate_suppress_key(name, args)
+            && self.ctx.dedupe_cache.lock().await.contains(&suppress_key)
+        {
+            log::info!(
+                target: "crabmate",
+                "[HIERARCHICAL] Duplicate command suppressed: {}",
+                suppress_key
+            );
+            crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+                "tool_call_suppressed",
+                name,
+                Some(&serde_json::json!({
+                    "phase": "tool_execution",
+                    "source": "hierarchical_tool_executor",
+                    "tool_name": name,
+                    "args_preview": crate::redact::tool_arguments_preview_for_sse(args),
+                    "reason": "duplicate_command_suppressed",
+                    "suppress_key": suppress_key,
+                })),
+            );
+            return "命令重复执行已抑制：命中本轮去重缓存".to_string();
+        }
         if let Some(cache_key) = probe_cache_key(name, args)
             && let Some(cache) = self.ctx.probe_cache.as_ref()
         {
@@ -244,6 +269,13 @@ impl ToolExecutor {
             long_term_memory_scope_id: None,
         })
         .await;
+
+        if let Some(suppress_key) = duplicate_suppress_key(name, args) {
+            let parsed = crate::tool_result::parse_legacy_output(name, &output);
+            if parsed.ok {
+                self.ctx.dedupe_cache.lock().await.insert(suppress_key);
+            }
+        }
 
         if let Some(cache_key) = probe_cache_key(name, args)
             && let Some(cache) = self.ctx.probe_cache.as_ref()
@@ -318,6 +350,27 @@ impl ToolExecutor {
         // 非编译命令：使用严格的错误检查
         !has_explicit_error
     }
+}
+
+fn duplicate_suppress_key(tool_name: &str, args: &str) -> Option<String> {
+    if tool_name != "run_command" {
+        return None;
+    }
+    let Ok(v) = serde_json::from_str::<Value>(args) else {
+        return None;
+    };
+    let obj = v.as_object()?;
+    let command = obj.get("command")?.as_str()?.trim();
+    let argv = obj.get("args")?.as_array()?;
+    let args_vec: Vec<String> = argv
+        .iter()
+        .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
+        .collect();
+    let suppressible = ((args_vec == ["-S", ".", "-B", "build"])
+        || (args_vec == ["--build", "build"]))
+        && command == "cmake"
+        || (command == "./build/myapp" && args_vec.is_empty());
+    suppressible.then(|| format!("run_command|{command}|{}", args_vec.join("\u{1f}")))
 }
 
 fn probe_cache_key(tool_name: &str, args: &str) -> Option<String> {
