@@ -570,6 +570,7 @@ pub(super) fn build_chat_stream_callbacks(
     in_answer_phase: Rc<Cell<bool>>,
 ) -> ChatStreamCallbacks {
     let answer_delta_chars: Rc<Cell<usize>> = Rc::new(Cell::new(0));
+    let pending_followup_answer_round: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     let stream_end_reason: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let current_subgoal_marker: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let saw_final_response_timeline: Rc<Cell<bool>> = Rc::new(Cell::new(false));
@@ -577,7 +578,13 @@ pub(super) fn build_chat_stream_callbacks(
         let stream_ctx = Rc::clone(&stream_ctx);
         let in_answer_phase = Rc::clone(&in_answer_phase);
         let answer_delta_chars = Rc::clone(&answer_delta_chars);
+        let pending_followup_answer_round = Rc::clone(&pending_followup_answer_round);
         Rc::new(move |chunk: String| {
+            if pending_followup_answer_round.get() {
+                rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
+                pending_followup_answer_round.set(false);
+                answer_delta_chars.set(0);
+            }
             let aid = stream_ctx.active_session_id.as_str();
             let mid = stream_ctx.assistant_message_id.borrow();
             if in_answer_phase.get() {
@@ -597,9 +604,11 @@ pub(super) fn build_chat_stream_callbacks(
         let stream_ctx = Rc::clone(&stream_ctx);
         let in_answer_phase = Rc::clone(&in_answer_phase);
         let answer_delta_chars = Rc::clone(&answer_delta_chars);
+        let pending_followup_answer_round = Rc::clone(&pending_followup_answer_round);
         let stream_end_reason = Rc::clone(&stream_end_reason);
         let saw_final_response_timeline = Rc::clone(&saw_final_response_timeline);
         Rc::new(move || {
+            pending_followup_answer_round.set(false);
             if *stream_ctx.shell.user_cancelled_stream.lock().unwrap() {
                 *stream_ctx.shell.abort_cell.lock().unwrap() = None;
                 return;
@@ -615,14 +624,27 @@ pub(super) fn build_chat_stream_callbacks(
                                 .as_deref()
                                 .is_some_and(|st| st.starts_with("hierarchical-subgoal:"))
                     });
-                    if let Some(m) = s.messages.iter_mut().find(|m| m.id == mid)
-                        && m.state.as_deref() == Some("loading")
+                    if let Some(idx) = s.messages.iter().position(|m| m.id == mid)
+                        && s.messages[idx].state.as_deref() == Some("loading")
                     {
-                        m.state = None;
-                        let body_chars = m.text.chars().count() + m.reasoning_text.chars().count();
+                        s.messages[idx].state = None;
+                        let body_chars = s.messages[idx].text.chars().count()
+                            + s.messages[idx].reasoning_text.chars().count();
                         let diag_chars = body_chars.max(answer_delta_chars.get());
-                        if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
+                        if s.messages[idx].text.trim().is_empty()
+                            && s.messages[idx].reasoning_text.trim().is_empty()
+                        {
                             let end_reason = stream_end_reason.borrow();
+                            let completed_with_visible_delta = end_reason
+                                .as_deref()
+                                .is_some_and(|r| r.eq_ignore_ascii_case("completed"))
+                                && in_answer_phase.get()
+                                && diag_chars > 0;
+                            if completed_with_visible_delta {
+                                // 流程已完成且本轮存在可见输出时，空 loading 气泡多为尾部占位残留，直接删除避免误报“无回复”。
+                                s.messages.remove(idx);
+                                return;
+                            }
                             let completed_no_final = should_show_missing_final_summary_hint(
                                 end_reason.as_deref(),
                                 in_answer_phase.get(),
@@ -631,7 +653,7 @@ pub(super) fn build_chat_stream_callbacks(
                                 saw_final_response_timeline.get(),
                             );
                             if completed_no_final {
-                                m.text = format!(
+                                s.messages[idx].text = format!(
                                     "{}\n\n{}",
                                     i18n::stream_completed_missing_final_summary_hint(loc),
                                     i18n::stream_empty_reply_diag_line(
@@ -642,7 +664,7 @@ pub(super) fn build_chat_stream_callbacks(
                                     )
                                 );
                             } else {
-                                m.text = build_empty_reply_with_diagnostic(
+                                s.messages[idx].text = build_empty_reply_with_diagnostic(
                                     loc,
                                     in_answer_phase.get(),
                                     diag_chars,
@@ -941,10 +963,11 @@ pub(super) fn build_chat_stream_callbacks(
 
     let on_assistant_answer_phase: Rc<dyn Fn()> = {
         let in_answer_phase = Rc::clone(&in_answer_phase);
-        let stream_ctx = Rc::clone(&stream_ctx);
+        let pending_followup_answer_round = Rc::clone(&pending_followup_answer_round);
         Rc::new(move || {
             if in_answer_phase.get() {
-                rotate_streaming_assistant_for_followup_model_round(stream_ctx.as_ref());
+                // 重复 answer_phase 仅标记“下一段正文需轮换气泡”，避免无后续 delta 时产生空 "(无回复)" 气泡。
+                pending_followup_answer_round.set(true);
             }
             in_answer_phase.set(true);
         })
