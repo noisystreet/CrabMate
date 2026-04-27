@@ -44,15 +44,18 @@ impl ArtifactStore {
             .unwrap_or_default()
     }
 
-    /// 获取某个 goal 的依赖 artifacts
+    /// 获取 `depends_on` 中**每个**前置子目标在 store 中登记的**全部**产物（按依赖顺序、同 goal 内与登记顺序一致）。
+    ///
+    /// 旧实现只取每 goal 的**第一个** artifact，编译/运行多产物场景下后续子目标会看不到可执行体、头文件等。
     pub fn get_dependencies(&self, depends_on: &[String]) -> Vec<&Artifact> {
         let mut deps = Vec::new();
         for dep_goal_id in depends_on {
-            if let Some(ids) = self.produced_by.get(dep_goal_id)
-                && let Some(first_id) = ids.first()
-                && let Some(artifact) = self.artifacts.get(first_id)
-            {
-                deps.push(artifact);
+            if let Some(ids) = self.produced_by.get(dep_goal_id) {
+                for id in ids {
+                    if let Some(artifact) = self.artifacts.get(id.as_str()) {
+                        deps.push(artifact);
+                    }
+                }
             }
         }
         deps
@@ -68,5 +71,42 @@ impl ArtifactStore {
     /// 获取所有 artifacts
     pub fn all(&self) -> Vec<&Artifact> {
         self.artifacts.values().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::hierarchy::task::ArtifactKind;
+
+    fn sample_artifact(id: &str, name: &str, produced_by: &str) -> Artifact {
+        Artifact {
+            id: id.to_string(),
+            name: name.to_string(),
+            kind: ArtifactKind::File,
+            path: Some(format!("out/{id}")),
+            content: None,
+            metadata: serde_json::Value::Null,
+            produced_by: produced_by.to_string(),
+            consumed_by: vec![],
+        }
+    }
+
+    #[test]
+    fn get_dependencies_returns_all_artifacts_per_prerequisite_goal() {
+        let mut store = ArtifactStore::new();
+        let g1a = sample_artifact("a1", "file-a", "goal_1");
+        let g1b = sample_artifact("a2", "file-b", "goal_1");
+        let g2a = sample_artifact("b1", "out-c", "goal_2");
+        store.put(g1a);
+        store.put(g1b);
+        store.put(g2a);
+
+        let deps: Vec<String> = vec!["goal_1".to_string(), "goal_2".to_string()];
+        let got = store.get_dependencies(&deps);
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0].id, "a1");
+        assert_eq!(got[1].id, "a2");
+        assert_eq!(got[2].id, "b1");
     }
 }
