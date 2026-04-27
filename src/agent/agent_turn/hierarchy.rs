@@ -9,6 +9,7 @@ use crate::agent::intent_router::{
 };
 use crate::agent::per_coord::PerCoordinator;
 use crate::sse;
+use std::collections::HashMap;
 
 use super::errors::RunAgentTurnError;
 use super::intent_at_turn_start;
@@ -247,16 +248,22 @@ async fn handle_execution_result(
         plan_done
     );
     let with_core = format!("{intro}{body}");
-    let evidence_md = render_task_level_evidence(original_task, &execution_result.results);
+    let evidence_md = render_task_level_evidence(
+        original_task,
+        &execution_result.results,
+        &execution_result.goal_expected_outputs,
+    );
     let with_evidence = if evidence_md.is_empty() {
         with_core
     } else {
         format!("{with_core}\n\n{evidence_md}")
     };
 
-    let final_response: String = if let Some(reason) =
-        verify_task_level_execution_evidence(original_task, &execution_result.results)
-    {
+    let final_response: String = if let Some(reason) = verify_task_level_execution_evidence(
+        original_task,
+        &execution_result.results,
+        &execution_result.goal_expected_outputs,
+    ) {
         format!("{with_evidence}\n\n---\n**任务级验收（未通过）**：{reason}\n")
     } else if is_program_build_run_request(original_task) {
         if execution_result.total_failed == 0 {
@@ -296,13 +303,18 @@ fn is_program_build_run_request(task: &str) -> bool {
     asks_write && asks_program && asks_run
 }
 
-fn verify_task_level_execution_evidence(task: &str, results: &[TaskResult]) -> Option<String> {
+fn verify_task_level_execution_evidence(
+    task: &str,
+    results: &[TaskResult],
+    goal_expected_outputs: &HashMap<String, Vec<String>>,
+) -> Option<String> {
     if !is_program_build_run_request(task) {
         return None;
     }
     let mut wrote_source = false;
     let mut compiled = false;
     let mut ran_program = false;
+    let expected_outputs = expected_output_hints_for_results(task, results, goal_expected_outputs);
 
     for r in results {
         let combined = format!(
@@ -336,8 +348,9 @@ fn verify_task_level_execution_evidence(task: &str, results: &[TaskResult]) -> O
         );
         if r.tools_invoked.iter().any(|n| n == "run_executable")
             || (r.tools_invoked.iter().any(|n| n == "run_command")
-                && crate::agent::hierarchy::goal_verifier::run_command_invocation_mentions_hello(
+                && crate::agent::hierarchy::goal_verifier::run_command_invocation_matches_expected_output(
                     &combined_full,
+                    &expected_outputs,
                 ))
         {
             ran_program = true;
@@ -472,6 +485,7 @@ fn render_plan_completion(results: &[crate::agent::hierarchy::TaskResult]) -> St
 fn render_task_level_evidence(
     task: &str,
     results: &[crate::agent::hierarchy::TaskResult],
+    goal_expected_outputs: &HashMap<String, Vec<String>>,
 ) -> String {
     if !is_program_build_run_request(task) {
         return String::new();
@@ -480,7 +494,9 @@ fn render_task_level_evidence(
     let mut wrote_source = false;
     let mut built_binary = false;
     let mut ran_binary = false;
-    let mut seen_hello_world = false;
+    let mut seen_expected_output = false;
+    let expected_outputs = expected_output_hints_for_results(task, results, goal_expected_outputs);
+    let mut matched_expected_outputs: Vec<String> = Vec::new();
 
     for r in results {
         let combined = format!(
@@ -511,14 +527,26 @@ fn render_task_level_evidence(
         }
         if r.tools_invoked.iter().any(|n| n == "run_executable")
             || r.tools_invoked.iter().any(|n| n == "run_command")
-                && crate::agent::hierarchy::goal_verifier::run_command_invocation_mentions_hello(
+                && crate::agent::hierarchy::goal_verifier::run_command_invocation_matches_expected_output(
                     &combined,
+                    &expected_outputs,
                 )
         {
             ran_binary = true;
         }
-        if lower.contains("hello, world!") {
-            seen_hello_world = true;
+        for hint in &expected_outputs {
+            if hint.is_empty() {
+                continue;
+            }
+            if lower.contains(&hint.to_lowercase()) {
+                seen_expected_output = true;
+                if !matched_expected_outputs
+                    .iter()
+                    .any(|x| x.eq_ignore_ascii_case(hint))
+                {
+                    matched_expected_outputs.push(hint.clone());
+                }
+            }
         }
     }
 
@@ -541,13 +569,78 @@ fn render_task_level_evidence(
     ));
     lines.push(format!(
         "- 运行验证：{}",
-        if ran_binary || seen_hello_world {
-            "已检测到程序执行（含 `Hello, World!` 输出）"
+        if ran_binary || seen_expected_output {
+            if expected_outputs.is_empty() {
+                "已检测到程序执行（含可核对输出）"
+            } else {
+                "已检测到程序执行（含期望输出）"
+            }
         } else {
             "未检测到明确证据"
         }
     ));
+    if !expected_outputs.is_empty() {
+        let expected_joined = expected_outputs
+            .iter()
+            .map(|s| format!("`{}`", s))
+            .collect::<Vec<_>>()
+            .join("、");
+        lines.push(format!("- acceptance 期望输出：{}", expected_joined));
+        if matched_expected_outputs.is_empty() {
+            lines.push("- acceptance 核对结果：未在工具输出中检测到期望片段".to_string());
+        } else {
+            let matched_joined = matched_expected_outputs
+                .iter()
+                .map(|s| format!("`{}`", s))
+                .collect::<Vec<_>>()
+                .join("、");
+            lines.push(format!(
+                "- acceptance 核对结果：已检测到 {}",
+                matched_joined
+            ));
+        }
+    }
     lines.join("\n")
+}
+
+fn expected_output_hints_from_task(task: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(re) = regex::Regex::new(r#""([^"\n]{1,120})""#) {
+        for cap in re.captures_iter(task) {
+            if let Some(m) = cap.get(1) {
+                let t = m.as_str().trim();
+                if !t.is_empty() {
+                    out.push(t.to_string());
+                }
+            }
+        }
+    }
+    if out.is_empty() && task.to_lowercase().contains("hello") {
+        out.push("hello".to_string());
+    }
+    out
+}
+
+fn expected_output_hints_for_results(
+    task: &str,
+    results: &[TaskResult],
+    goal_expected_outputs: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for r in results {
+        if let Some(v) = goal_expected_outputs.get(&r.task_id) {
+            for s in v {
+                let t = s.trim();
+                if !t.is_empty() && !out.iter().any(|x| x.eq_ignore_ascii_case(t)) {
+                    out.push(t.to_string());
+                }
+            }
+        }
+    }
+    if out.is_empty() {
+        return expected_output_hints_from_task(task);
+    }
+    out
 }
 
 /// 截断字符串（按字符边界截断，支持中文）

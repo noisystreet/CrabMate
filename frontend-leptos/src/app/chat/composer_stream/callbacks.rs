@@ -551,6 +551,19 @@ fn build_stream_error_with_suggestion(raw: &str, loc: Locale) -> String {
     i18n::format_error_three_part(loc, msg, impact, hint)
 }
 
+fn should_show_missing_final_summary_hint(
+    end_reason: Option<&str>,
+    in_answer_phase: bool,
+    diag_chars: usize,
+    has_hierarchical_or_tool: bool,
+    saw_final_response_timeline: bool,
+) -> bool {
+    end_reason.is_some_and(|r| r.eq_ignore_ascii_case("completed"))
+        && (in_answer_phase || diag_chars > 0)
+        && has_hierarchical_or_tool
+        && !saw_final_response_timeline
+}
+
 /// 由 [`super::make_attach_chat_stream`](super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低 `mod.rs` 维护面。
 pub(super) fn build_chat_stream_callbacks(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -559,6 +572,7 @@ pub(super) fn build_chat_stream_callbacks(
     let answer_delta_chars: Rc<Cell<usize>> = Rc::new(Cell::new(0));
     let stream_end_reason: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let current_subgoal_marker: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let saw_final_response_timeline: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     let on_delta: Rc<dyn Fn(String)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         let in_answer_phase = Rc::clone(&in_answer_phase);
@@ -584,6 +598,7 @@ pub(super) fn build_chat_stream_callbacks(
         let in_answer_phase = Rc::clone(&in_answer_phase);
         let answer_delta_chars = Rc::clone(&answer_delta_chars);
         let stream_end_reason = Rc::clone(&stream_end_reason);
+        let saw_final_response_timeline = Rc::clone(&saw_final_response_timeline);
         Rc::new(move || {
             if *stream_ctx.shell.user_cancelled_stream.lock().unwrap() {
                 *stream_ctx.shell.abort_cell.lock().unwrap() = None;
@@ -608,11 +623,13 @@ pub(super) fn build_chat_stream_callbacks(
                         let diag_chars = body_chars.max(answer_delta_chars.get());
                         if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
                             let end_reason = stream_end_reason.borrow();
-                            let completed_no_final = end_reason
-                                .as_deref()
-                                .is_some_and(|r| r.eq_ignore_ascii_case("completed"))
-                                && (in_answer_phase.get() || diag_chars > 0)
-                                && has_hierarchical_or_tool;
+                            let completed_no_final = should_show_missing_final_summary_hint(
+                                end_reason.as_deref(),
+                                in_answer_phase.get(),
+                                diag_chars,
+                                has_hierarchical_or_tool,
+                                saw_final_response_timeline.get(),
+                            );
                             if completed_no_final {
                                 m.text = format!(
                                     "{}\n\n{}",
@@ -983,11 +1000,13 @@ pub(super) fn build_chat_stream_callbacks(
         let stream_ctx = Rc::clone(&stream_ctx);
         let answer_delta_chars = Rc::clone(&answer_delta_chars);
         let current_subgoal_marker = Rc::clone(&current_subgoal_marker);
+        let saw_final_response_timeline = Rc::clone(&saw_final_response_timeline);
         Rc::new(move |info: TimelineLogInfo| {
             web_sys::console::log_1(
                 &format!("[TL] kind={} title={}", info.kind, info.title).into(),
             );
             if info.kind == "final_response" {
+                saw_final_response_timeline.set(true);
                 let final_text = build_final_response_text(&info.title, info.detail.as_deref());
                 if !final_text.is_empty() {
                     remove_loading_assistant_placeholder(&stream_ctx);
@@ -1271,5 +1290,23 @@ mod tests {
         // 间接保障：去重比较使用 trim，不会因尾部换行误判不同。
         // 该逻辑在 `has_same_assistant_timeline_bubble` 中实现。
         let _ = has_same_assistant_timeline_bubble;
+    }
+
+    #[test]
+    fn missing_final_summary_hint_disabled_after_final_response_timeline() {
+        assert!(!super::should_show_missing_final_summary_hint(
+            Some("completed"),
+            true,
+            128,
+            true,
+            true,
+        ));
+        assert!(super::should_show_missing_final_summary_hint(
+            Some("completed"),
+            true,
+            128,
+            true,
+            false,
+        ));
     }
 }

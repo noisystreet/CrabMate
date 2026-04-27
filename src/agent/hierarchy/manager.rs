@@ -79,6 +79,48 @@ pub struct ManagerAgent {
 }
 
 impl ManagerAgent {
+    /// Manager 分解/重规划输出的强约束 schema（提示词用）。
+    fn manager_output_schema_contract() -> &'static str {
+        r#"{
+  "type": "object",
+  "required": ["sub_goals", "execution_strategy"],
+  "additionalProperties": false,
+  "properties": {
+    "sub_goals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["goal_id", "description", "priority", "depends_on", "required_tools", "goal_type"],
+        "additionalProperties": false,
+        "properties": {
+          "goal_id": {"type": "string"},
+          "description": {"type": "string"},
+          "priority": {"type": "integer", "minimum": 0},
+          "depends_on": {"type": "array", "items": {"type": "string"}},
+          "required_tools": {"type": "array", "items": {"type": "string"}},
+          "goal_type": {"type": "string", "enum": ["fix", "analyze"]},
+          "build_requirements": {
+            "type": "object",
+            "properties": {
+              "needs_artifacts": {"type": "array", "items": {"type": "string", "enum": ["SourceFile", "ObjectFile", "Executable", "StaticLibrary", "DynamicLibrary", "BuildLog"]}},
+              "produces_artifacts": {"type": "array", "items": {"type": "string", "enum": ["SourceFile", "ObjectFile", "Executable", "StaticLibrary", "DynamicLibrary", "BuildLog"]}}
+            }
+          }
+        }
+      }
+    },
+    "execution_strategy": {"type": "string", "enum": ["sequential", "parallel", "hybrid"]}
+  }
+}"#
+    }
+
+    /// Manager 的结构化 JSON 调用：禁用 thinking/reasoning_split，避免 DeepSeek thinking 模式
+    /// 对历史 `reasoning_content` 回传的额外约束干扰纯 JSON 分解/修复流程。
+    fn force_manager_structured_json_mode(req: &mut crate::types::ChatRequest) {
+        req.thinking = None;
+        req.reasoning_split = None;
+    }
+
     pub fn new(config: ManagerConfig) -> Self {
         Self {
             config,
@@ -161,31 +203,44 @@ impl ManagerAgent {
         let prompt = self.build_decomposition_prompt(task, working_dir, tools_defs);
 
         let messages = vec![Message::user_only(&prompt)];
-        let request = no_tools_chat_request_for_hierarchical_manager(
+        let mut request = no_tools_chat_request_for_hierarchical_manager(
             cfg,
             &messages,
             None,
             None,
             LlmSeedOverride::FromConfig,
         );
+        Self::force_manager_structured_json_mode(&mut request);
 
-        let params = CompleteChatRetryingParams::new(
-            llm_backend,
-            client,
-            api_key,
-            cfg,
-            LlmRetryingTransportOpts::headless_no_stream(),
-            None,
-            None,
-        );
-
-        match complete_chat_retrying(&params, &request).await {
-            Ok((response, _)) => {
+        match complete_chat_retrying(
+            &CompleteChatRetryingParams::new(
+                llm_backend,
+                client,
+                api_key,
+                cfg,
+                LlmRetryingTransportOpts::headless_no_stream(),
+                None,
+                None,
+            ),
+            &request,
+        )
+        .await
+        {
+            Ok((response, finish_reason)) => {
                 let content = message_content_as_str(&response.content)
                     .unwrap_or("")
                     .trim()
                     .to_string();
-                let output = self.parse_output(&content)?;
+                let output = self
+                    .parse_output_with_one_json_repair(
+                        &content,
+                        Some(finish_reason.as_str()),
+                        cfg,
+                        llm_backend,
+                        client,
+                        api_key,
+                    )
+                    .await?;
 
                 // 如果 LLM 返回空子目标列表，使用 fallback 确保至少有一个任务执行
                 if output.sub_goals.is_empty() {
@@ -246,31 +301,43 @@ impl ManagerAgent {
         );
 
         let messages = vec![Message::user_only(&prompt)];
-        let request = no_tools_chat_request_for_hierarchical_manager(
+        let mut request = no_tools_chat_request_for_hierarchical_manager(
             cfg,
             &messages,
             None,
             None,
             LlmSeedOverride::FromConfig,
         );
+        Self::force_manager_structured_json_mode(&mut request);
 
-        let params = CompleteChatRetryingParams::new(
-            llm_backend,
-            client,
-            api_key,
-            cfg,
-            LlmRetryingTransportOpts::headless_no_stream(),
-            None,
-            None,
-        );
-
-        match complete_chat_retrying(&params, &request).await {
-            Ok((response, _)) => {
+        match complete_chat_retrying(
+            &CompleteChatRetryingParams::new(
+                llm_backend,
+                client,
+                api_key,
+                cfg,
+                LlmRetryingTransportOpts::headless_no_stream(),
+                None,
+                None,
+            ),
+            &request,
+        )
+        .await
+        {
+            Ok((response, finish_reason)) => {
                 let content = message_content_as_str(&response.content)
                     .unwrap_or("")
                     .trim()
                     .to_string();
-                self.parse_output(&content)
+                self.parse_output_with_one_json_repair(
+                    &content,
+                    Some(finish_reason.as_str()),
+                    cfg,
+                    llm_backend,
+                    client,
+                    api_key,
+                )
+                .await
             }
             Err(e) => {
                 log::warn!(target: "crabmate", "Manager replan LLM call failed: {}, falling back to original plan", e);
@@ -317,13 +384,14 @@ impl ManagerAgent {
         );
 
         let messages = vec![Message::user_only(&prompt)];
-        let request = no_tools_chat_request_for_hierarchical_manager(
+        let mut request = no_tools_chat_request_for_hierarchical_manager(
             cfg,
             &messages,
             None,
             None,
             LlmSeedOverride::FromConfig,
         );
+        Self::force_manager_structured_json_mode(&mut request);
 
         let params = CompleteChatRetryingParams::new(
             llm_backend,
@@ -336,7 +404,7 @@ impl ManagerAgent {
         );
 
         match complete_chat_retrying(&params, &request).await {
-            Ok((response, _)) => {
+            Ok((response, _finish_reason)) => {
                 let content = message_content_as_str(&response.content)
                     .unwrap_or("")
                     .trim()
@@ -513,6 +581,18 @@ impl ManagerAgent {
 
 原始任务：{}
 
+## 分解硬性规则（必须遵守）
+1. 子目标必须**单一职责**，禁止跨步执行。
+2. 每个子目标只允许执行其描述中的动作，禁止提前执行后续步骤。
+3. 产物命名必须全程一致；一旦确定名称（如可执行文件名），后续不得改名或混用。
+4. `depends_on` 必须准确，后续步骤不得绕过依赖。
+5. 每个子目标必须给出可验证的 I/O 与验收目标，且与本步职责严格匹配。
+6. 若某步是“创建文件”，描述中只允许文件创建/内容核验，不得包含配置、编译或运行动作。
+7. 若某步是“配置构建”，描述中只允许配置动作，不得包含编译或运行动作。
+8. 若某步是“编译”，描述中只允许编译与产物核验，不得运行程序。
+9. 若某步是“运行验证”，描述中只允许运行与输出核验。
+10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（例如 `myapp`）。
+
 ## 工作目录上下文
 {}
 重要：
@@ -581,6 +661,11 @@ impl ManagerAgent {
 - `required_tools` 必须是字符串数组
 - `goal_type` 必须是 `"fix"`（修复/执行）或 `"analyze"`（分析/收集）。如果只需要收集信息（如编译错误），用 `"analyze"`，失败后直接跳过。
 
+## 强约束 Schema（必须满足）
+```json
+{}
+```
+
 ## 约束
 - 子目标数量不超过 {}
 - **只输出 JSON，不要有markdown代码块标记、不要有任何解释文字**
@@ -592,6 +677,7 @@ impl ManagerAgent {
             failures_summary,
             tools_description,
             Self::manager_tool_invariants(),
+            Self::manager_output_schema_contract(),
             self.config.max_sub_goals
         )
     }
@@ -666,6 +752,18 @@ impl ManagerAgent {
 ## 任务类型识别与指导
 {}
 
+## 分解硬性规则（必须遵守）
+1. 子目标必须**单一职责**，禁止跨步执行。
+2. 每个子目标只允许执行其描述中的动作，禁止提前执行后续步骤。
+3. 产物命名必须全程一致；一旦确定名称（如可执行文件名），后续不得改名或混用。
+4. `depends_on` 必须准确，后续步骤不得绕过依赖。
+5. 每个子目标必须给出可验证的 I/O 与验收目标，且与本步职责严格匹配。
+6. 若某步是“创建文件”，描述中只允许文件创建/内容核验，不得包含配置、编译或运行动作。
+7. 若某步是“配置构建”，描述中只允许配置动作，不得包含编译或运行动作。
+8. 若某步是“编译”，描述中只允许编译与产物核验，不得运行程序。
+9. 若某步是“运行验证”，描述中只允许运行与输出核验。
+10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（例如 `myapp`）。
+
 ## 子目标 I/O 契约（必须显式写清，便于层间传产物与注入裁剪）
 - 对**每个**子目标在 `description` 开头用 2～4 行写清：本步**输入/依赖**、本步**预期输出**（路径或行为）；若依赖前序子目标，须写进 `depends_on`。
 - `consumes_from_dependencies`：列出本步**实际消费**的前序 `goal_id`；`only_kinds` 可选，用于**注入到 Operator 的依赖上下文**的裁剪：省略或 `[]` 表示**默认**（不注入冗长 `buildlog` 与纯长文本 `commandoutput`）；填 `["all"]` 或 `["any"]` 表示不筛类型；否则为子串匹配，与产物类型字符串（如 `buildartifact(executable)`、`file`）不区分大小写子串匹配，例如 `["source"]`、`["executable"]`。
@@ -715,6 +813,11 @@ impl ManagerAgent {
 - `required_tools` 必须是字符串数组
 - `goal_type` 必须是 `"fix"`（修复/执行）或 `"analyze"`（分析/收集）。如果只需要收集信息（如编译错误），用 `"analyze"`，失败后直接跳过。
 
+## 强约束 Schema（必须满足）
+```json
+{}
+```
+
 ## 约束
 - 子目标数量不超过 {}
 - **只输出 JSON，不要有markdown代码块标记、不要有任何解释文字**
@@ -724,6 +827,7 @@ impl ManagerAgent {
             workspace_context,
             tools_description,
             Self::manager_tool_invariants(),
+            Self::manager_output_schema_contract(),
             self.config.max_sub_goals
         )
     }
@@ -818,6 +922,8 @@ impl ManagerAgent {
 - 查可执行/依赖是否在 PATH 时用 **`"command": "which"` + `"args": ["cmake"]`** 等；**禁止**写成 `\"command\": \"which cmake\"` 单字段（会把整串当程序名而失败）
 - 简单 CMake 项目用 **`add_executable(… main.cpp)`** 等**显式列出源文件**；勿对**空** `file(GLOB …)` 结果生成目标（会无源可链）；**勿**用未排除 `build/` 的 **`GLOB_RECURSE`** 收集 `*.cpp`（会把 `CMakeFiles/` 下探测源链进来导致重复 `main`）
 - 工作区内的**可执行/构建产物**的「运行（执行）」优先用 **`run_executable` + 相对工作区根路径**；白名单**系统**命令用 `run_command`；以工具说明与 `config` 中分工为准
+- 子目标若属于「运行可执行体 / 验证程序输出」：`required_tools` **必须包含** `run_executable`，并以 `run_executable` 为主执行；`run_command` 仅作补充诊断，不得替代主验证
+- 子目标若属于「编译构建」：描述与步骤中**禁止**包含运行可执行体动作；运行与输出核对应拆到独立后续子目标
 - 须**从源码到可跑通、输出可核对**的完整类任务，子目标**必须**含**运行产物并验证**的一步；**不得**在「只编译/只生成文件」时视为整任务完成
 - `read_dir` 路径为不含 `..` 的相对路径
 - `create_file` 的 `content` 为 JSON 字符串，须按规范对换行、引号等转义"#
@@ -997,9 +1103,22 @@ impl ManagerAgent {
     }
 
     /// 解析 LLM 输出
-    fn parse_output(&self, content: &str) -> Result<ManagerOutput, ManagerError> {
+    fn parse_output(
+        &self,
+        content: &str,
+        finish_reason: Option<&str>,
+    ) -> Result<ManagerOutput, ManagerError> {
         let json_str = extract_json(content).ok_or_else(|| {
-            log::warn!(target: "crabmate", "[HIERARCHICAL] Manager: failed to extract JSON from response: {:?}", truncate_for_log(content, 200));
+            let diag = extract_json_diagnostic(content);
+            log::warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] Manager: failed to extract JSON from response: finish_reason={:?} head={:?} tail={:?} depth={} in_string={}",
+                finish_reason,
+                truncate_for_log(content, 200),
+                truncate_for_log(diag.tail.as_str(), 200),
+                diag.depth,
+                diag.in_string,
+            );
             ManagerError::ParseError("Failed to extract JSON from response".to_string())
         })?;
 
@@ -1084,6 +1203,66 @@ impl ManagerAgent {
             execution_strategy,
             summary,
         })
+    }
+
+    /// 分解/重规划输出：首次解析失败时，最多一次「仅修 JSON」补调用（不改语义）。
+    async fn parse_output_with_one_json_repair(
+        &self,
+        content: &str,
+        finish_reason: Option<&str>,
+        cfg: &AgentConfig,
+        llm_backend: &dyn ChatCompletionsBackend,
+        client: &reqwest::Client,
+        api_key: &str,
+    ) -> Result<ManagerOutput, ManagerError> {
+        const MANAGER_JSON_REPAIR_LLM: bool = true;
+        match self.parse_output(content, finish_reason) {
+            Ok(out) => Ok(out),
+            Err(parse_err) if MANAGER_JSON_REPAIR_LLM => {
+                log::warn!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] Manager: plan parse failed, attempting one-shot JSON repair LLM: {}",
+                    parse_err
+                );
+                let json_fragment = extract_json_candidate_for_repair(content);
+                let repair_user = Self::build_manager_json_repair_user_prompt(
+                    json_fragment.as_str(),
+                    &parse_err.to_string(),
+                );
+                let mut messages = vec![Message::user_only(json_fragment)];
+                messages.push(Message::user_only(repair_user));
+                let mut request = no_tools_chat_request_for_hierarchical_manager(
+                    cfg,
+                    &messages,
+                    Some(Self::MANAGER_JSON_REPAIR_TEMPERATURE),
+                    None,
+                    LlmSeedOverride::FromConfig,
+                );
+                Self::force_manager_structured_json_mode(&mut request);
+                let response = complete_chat_retrying(
+                    &CompleteChatRetryingParams::new(
+                        llm_backend,
+                        client,
+                        api_key,
+                        cfg,
+                        LlmRetryingTransportOpts::headless_no_stream(),
+                        None,
+                        None,
+                    ),
+                    &request,
+                )
+                .await
+                .map_err(|e| ManagerError::LlmError(e.to_string()))?;
+                let fixed = message_content_as_str(&response.0.content).unwrap_or_default();
+                log::debug!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] Manager: plan JSON repair response preview: {}",
+                    truncate_for_log(fixed, 500)
+                );
+                self.parse_output(fixed, None)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// 获取执行策略
@@ -1209,13 +1388,14 @@ impl ManagerAgent {
         );
 
         let messages = vec![Message::user_only(&prompt)];
-        let request = no_tools_chat_request_for_hierarchical_manager(
+        let mut request = no_tools_chat_request_for_hierarchical_manager(
             cfg,
             &messages,
             Some(Self::REFLECTION_PRIMARY_TEMPERATURE),
             None,
             LlmSeedOverride::FromConfig,
         );
+        Self::force_manager_structured_json_mode(&mut request);
 
         let transport_opts = LlmRetryingTransportOpts::headless_no_stream();
         let params = CompleteChatRetryingParams::new(
@@ -1248,17 +1428,21 @@ impl ManagerAgent {
                     "[HIERARCHICAL] Manager: reflection parse failed, attempting JSON repair LLM: {}",
                     parse_err
                 );
-                let repair_user =
-                    Self::build_reflection_json_repair_user_prompt(content, &parse_err.to_string());
-                let mut messages = vec![Message::user_only(content.to_string())];
+                let json_fragment = extract_json_candidate_for_repair(content);
+                let repair_user = Self::build_reflection_json_repair_user_prompt(
+                    json_fragment.as_str(),
+                    &parse_err.to_string(),
+                );
+                let mut messages = vec![Message::user_only(json_fragment)];
                 messages.push(Message::user_only(repair_user));
-                let request = no_tools_chat_request_for_hierarchical_manager(
+                let mut request = no_tools_chat_request_for_hierarchical_manager(
                     cfg,
                     &messages,
                     Some(Self::REFLECTION_JSON_REPAIR_TEMPERATURE),
                     None,
                     LlmSeedOverride::FromConfig,
                 );
+                Self::force_manager_structured_json_mode(&mut request);
                 let response = complete_chat_retrying(&params, &request)
                     .await
                     .map_err(|e| ManagerError::LlmError(e.to_string()))?;
@@ -1278,6 +1462,8 @@ impl ManagerAgent {
     const REFLECTION_PRIMARY_TEMPERATURE: f32 = 0.25;
     /// 仅修 JSON 的补调用：更低温以约束格式
     const REFLECTION_JSON_REPAIR_TEMPERATURE: f32 = 0.0;
+    /// 分解/重规划 JSON 修复补调用温度（仅修格式/枚举，不改计划语义）。
+    const MANAGER_JSON_REPAIR_TEMPERATURE: f32 = 0.0;
 
     /// 构建反思「结构化执行摘要」供模型与日志共用
     fn build_reflection_structured_block(
@@ -1460,23 +1646,49 @@ impl ManagerAgent {
     }
 
     /// 第二次调用：在首轮模型输出上仅提取/修复符合模式的 JSON
-    fn build_reflection_json_repair_user_prompt(
-        assistant_broken: &str,
-        parse_error: &str,
-    ) -> String {
+    fn build_reflection_json_repair_user_prompt(json_fragment: &str, parse_error: &str) -> String {
         let err_preview = truncate_for_log(parse_error, 500);
-        let a = truncate_to_char_boundary(assistant_broken, 12_000);
+        let a = truncate_to_char_boundary(json_fragment, 12_000);
         format!(
             r#"上一次你在尝试输出反思 JSON 时，解析器报错如下（**不要**在输出中照抄本说明文字）:
 {err_preview}
 
-下面是你**上一次**的完整回答。请**只**输出**一个**合法 JSON 对象，**顶层键**必须包含:
+下面是你上一次回答中的 JSON 片段。请**只**输出**一个**合法 JSON 对象，**顶层键**必须包含:
 `analysis`（string）、`fix_strategy`（string）、`updated_goal`（object，与首轮 schema 相同）。
 不要 markdown 代码围栏以外的文字。若上一条在代码块中已有 JSON，请**修正**其中的引号/逗号/花括号 使其可被标准 JSON 解析。
 
 ---BEGIN_ASSISTANT---
 {a}
 ---END---"#
+        )
+    }
+
+    /// 分解/重规划第二次调用：仅提取/修复 `sub_goals + execution_strategy` JSON。
+    fn build_manager_json_repair_user_prompt(json_fragment: &str, parse_error: &str) -> String {
+        let err_preview = truncate_for_log(parse_error, 500);
+        let a = truncate_to_char_boundary(json_fragment, 12_000);
+        format!(
+            r#"上一次你在输出任务分解 JSON 时，解析器报错如下（**不要**在输出中照抄本说明文字）:
+{err_preview}
+
+下面是你上一次回答中的 JSON 片段。请**只**输出**一个**合法 JSON 对象，顶层键必须是：
+`sub_goals`（array）与 `execution_strategy`（string）。
+不要输出 markdown 代码围栏，不要输出任何解释。
+
+要求：
+1. 只修 JSON 结构与字段值合法性（引号、逗号、括号、枚举值），不改变原计划语义；
+2. `build_requirements.needs_artifacts / produces_artifacts` 仅允许：
+`SourceFile` / `ObjectFile` / `Executable` / `StaticLibrary` / `DynamicLibrary` / `BuildLog`；
+   若出现 `File`、`BuildFile` 等别名，请改为 `SourceFile`。
+3. 严格满足下方 Schema（required / enum / additionalProperties）：
+```json
+{}
+```
+
+---BEGIN_ASSISTANT---
+{a}
+---END---"#,
+            Self::manager_output_schema_contract()
         )
     }
 
@@ -1847,6 +2059,68 @@ fn extract_json(content: &str) -> Option<&str> {
     None
 }
 
+/// 为 JSON 修复补调用提取“最像 JSON”的候选片段，尽量降低噪声。
+fn extract_json_candidate_for_repair(content: &str) -> String {
+    if let Some(s) = extract_json(content) {
+        return s.to_string();
+    }
+    if let Some(start) = content.find('{') {
+        return truncate_to_char_boundary(&content[start..], 12_000).to_string();
+    }
+    truncate_to_char_boundary(content, 12_000).to_string()
+}
+
+#[derive(Debug)]
+struct ExtractJsonDiagnostic {
+    depth: u32,
+    in_string: bool,
+    tail: String,
+}
+
+/// JSON 提取失败时的快速诊断：
+/// - `depth > 0`：大概率为输出被截断（缺失闭合 `}`）；
+/// - `in_string = true`：字符串可能未闭合；
+/// - `tail`：末尾片段，便于定位中断点。
+fn extract_json_diagnostic(content: &str) -> ExtractJsonDiagnostic {
+    let start = content.find('{').unwrap_or(0);
+    let mut depth = 0u32;
+    let mut in_string = false;
+    let mut escape = false;
+    for c in content[start..].chars() {
+        if in_string {
+            if escape {
+                escape = false;
+                continue;
+            }
+            match c {
+                '\\' => escape = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '{' => depth = depth.saturating_add(1),
+            '}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    let tail: String = content
+        .chars()
+        .rev()
+        .take(200)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    ExtractJsonDiagnostic {
+        depth,
+        in_string,
+        tail,
+    }
+}
+
 /// 尝试修复常见的 LLM JSON 格式错误
 fn fix_common_json_errors(content: &str) -> String {
     let mut fixed = content.to_string();
@@ -1897,6 +2171,20 @@ mod tests {
         let content = "好的，我来分解。\n{\n  \"sub_goals\": []\n}\n完成";
         let json = extract_json(content).unwrap();
         assert!(json.contains("sub_goals"));
+    }
+
+    #[test]
+    fn test_extract_json_diagnostic_reports_unclosed_object() {
+        let d = extract_json_diagnostic(r#"{"sub_goals":[{"goal_id":"g1""#);
+        assert!(d.depth > 0);
+        assert!(!d.tail.is_empty());
+    }
+
+    #[test]
+    fn extract_json_candidate_prefers_json_slice() {
+        let raw = "前文噪音\n{\"sub_goals\":[]}\n后文";
+        let out = extract_json_candidate_for_repair(raw);
+        assert_eq!(out, "{\"sub_goals\":[]}");
     }
 
     #[test]
