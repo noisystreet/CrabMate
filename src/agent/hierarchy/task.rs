@@ -197,6 +197,16 @@ impl GoalAcceptance {
     }
 }
 
+/// 分层 I/O 契约：本步「消费」自哪些前序子目标的产物、可选仅含部分类型（与 `depends_on` 中 id 须一致，供注入裁剪）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DependencyContractEntry {
+    /// 前序子目标 `goal_id`（须出现於 `SubGoal.depends_on`）
+    pub from_goal_id: String,
+    /// 为 `None` 或空时，注入时**排除**冗长类（`buildlog`, `commandoutput`）；或填 `all` 表示不筛类型
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub only_kinds: Option<Vec<String>>,
+}
+
 /// 子目标
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubGoal {
@@ -207,6 +217,9 @@ pub struct SubGoal {
     /// 依赖的 goal_ids（这些必须先完成）
     #[serde(default)]
     pub depends_on: Vec<String>,
+    /// 对前序产物的**显式消费**说明；为空时由执行器在「可串行前序步」上自动补全，或在注入时按默认可读规则筛选
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumes_from_dependencies: Vec<DependencyContractEntry>,
     /// 该子目标需要的工具名称列表
     #[serde(default)]
     pub required_tools: Vec<String>,
@@ -231,6 +244,7 @@ impl SubGoal {
             description: description.to_string(),
             priority: 0,
             depends_on: Vec::new(),
+            consumes_from_dependencies: Vec::new(),
             required_tools: Vec::new(),
             goal_type: GoalType::default(),
             build_requirements: BuildRequirements::default(),

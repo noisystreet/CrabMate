@@ -144,6 +144,18 @@ impl<'a> ArtifactResolver<'a> {
         self.find_by_build_kind(BuildArtifactKind::Executable)
     }
 
+    /// 将 `{ref:<produced_by_goal_id>:<artifact_id>}` 展开为**工作区相对**路径（若已登记 `path`）。
+    pub fn resolve_ref(
+        &self,
+        produced_by_goal: &str,
+        artifact_id: &str,
+    ) -> Option<std::path::PathBuf> {
+        self.artifact_store
+            .get(artifact_id)
+            .filter(|a| a.produced_by == produced_by_goal)
+            .and_then(|a| a.path.as_ref().map(std::path::PathBuf::from))
+    }
+
     /// 为工具调用参数注入产物路径
     ///
     /// 将参数中的占位符（如 `{artifact:main.cpp}`）替换为实际路径

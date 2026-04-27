@@ -187,9 +187,9 @@ flowchart TB
 #### 现有功能概述
 模块实现了 Manager + Operator 分层架构：
 - **Router**: 根据任务复杂度选择执行模式
-- **Manager**: 任务分解与协调（SubGoal 生成、执行策略）
+- **Manager**: 任务分解与协调；LLM 输出的子目标可含 **`consumes_from_dependencies`（+ 可选 `only_kinds`）** 与 **`build_requirements`**，用于声明从哪些前序子目标**消费**何种产物。分解/重规划 prompt 要求**显式 I/O 契约**（`description` 中写清输入/输出、占位符约定）。
 - **Operator**: 子目标执行（ReAct 循环：思考→行动→观察）
-- **ArtifactStore**: 全局产物存储（文件、命令输出等）；`get_dependencies(depends_on)` 对**每个** `depends_on` 中的子目标 `goal_id` 取该目标在 store 中登记的**全部**产物（**不再**只取每 goal 的第一个 `artifact_id`）。`HierarchicalExecutor` 将依赖产物以按 `produced_by` 分节的 Markdown 注入到下一步 Operator 的 **user** 附加上下文中，便于子目标**显式**使用上一步的相对路径与多产物（可执行、对象文件等）。
+- **ArtifactStore** / **`subgoal_context`**: 全局产物存储；`get_dependencies(depends_on)` 仍返回每个前置子目标的**全部**登记产物；注入到 Operator 前经 **`filter_dependencies_for_injection`**（`only_kinds` 白名单或**默认**排除 `BuildLog` 与无 path 的 `CommandOutput` 等）。注入文本含 **`{ref:<produced_by>:<artifact_id>}`** 与 **`{artifact:...}`** 说明；`Operator` 在工具参数 JSON 字符串中展开 **`{ref:...}`** 为**工作区相对**路径（`ArtifactResolver::resolve_ref`）。`HierarchicalExecutor` 在 **user** 附加上下文中还拼接**最近若干步**的结构化步摘要（`build_prior_subgoals_summary_block`）。并行同层执行前将**当时**的共享 `ArtifactStore` **快照**合并进子任务子 store，使**跨层/跨级**前序产物可见，同层并行**彼此**仍不可见。
 
 #### 主要改进点
 

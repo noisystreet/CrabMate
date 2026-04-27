@@ -72,6 +72,13 @@ impl ArtifactStore {
     pub fn all(&self) -> Vec<&Artifact> {
         self.artifacts.values().collect()
     }
+
+    /// 合并另 store 的条目到 `self`（`put` 语义，重复 `id` 时后者覆盖，与 `HashMap::insert` 一致）。
+    pub fn merge_from(&mut self, other: &Self) {
+        for a in other.artifacts.values() {
+            self.put(a.clone());
+        }
+    }
 }
 
 #[cfg(test)]
