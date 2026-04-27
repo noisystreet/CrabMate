@@ -1179,7 +1179,7 @@ impl ManagerAgent {
         let request = no_tools_chat_request_for_hierarchical_manager(
             cfg,
             &messages,
-            None,
+            Some(Self::REFLECTION_PRIMARY_TEMPERATURE),
             None,
             LlmSeedOverride::FromConfig,
         );
@@ -1205,8 +1205,102 @@ impl ManagerAgent {
             truncate_for_log(content, 500)
         );
 
-        // 解析更新的子目标
-        self.parse_reflection_output(failed_goal, content)
+        // 解析更新的子目标；失败时最多一次「仅修 JSON」的补调用，提高鲁棒性
+        const REFLECT_JSON_REPAIR_LLM: bool = true;
+        match self.parse_reflection_output(failed_goal, content, working_dir, false) {
+            Ok(goal) => Ok(goal),
+            Err(parse_err) if REFLECT_JSON_REPAIR_LLM => {
+                log::warn!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] Manager: reflection parse failed, attempting JSON repair LLM: {}",
+                    parse_err
+                );
+                let repair_user =
+                    Self::build_reflection_json_repair_user_prompt(content, &parse_err.to_string());
+                let mut messages = vec![Message::user_only(content.to_string())];
+                messages.push(Message::user_only(repair_user));
+                let request = no_tools_chat_request_for_hierarchical_manager(
+                    cfg,
+                    &messages,
+                    Some(Self::REFLECTION_JSON_REPAIR_TEMPERATURE),
+                    None,
+                    LlmSeedOverride::FromConfig,
+                );
+                let response = complete_chat_retrying(&params, &request)
+                    .await
+                    .map_err(|e| ManagerError::LlmError(e.to_string()))?;
+                let fixed = message_content_as_str(&response.0.content).unwrap_or_default();
+                log::debug!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] Manager: JSON repair response preview: {}",
+                    truncate_for_log(fixed, 500)
+                );
+                self.parse_reflection_output(failed_goal, fixed, working_dir, true)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// 分层反思：为降低发散，使用略低于主配置的温度
+    const REFLECTION_PRIMARY_TEMPERATURE: f32 = 0.25;
+    /// 仅修 JSON 的补调用：更低温以约束格式
+    const REFLECTION_JSON_REPAIR_TEMPERATURE: f32 = 0.0;
+
+    /// 构建反思「结构化执行摘要」供模型与日志共用
+    fn build_reflection_structured_block(
+        failed_goal: &SubGoal,
+        verification_failure: &str,
+        execution_result: &TaskResult,
+    ) -> String {
+        let (task_status, fail_reason) = match &execution_result.status {
+            TaskStatus::Failed { reason } => ("Failed", reason.as_str()),
+            TaskStatus::Completed => ("Completed", ""),
+            TaskStatus::Skipped { reason } => ("Skipped", reason.as_str()),
+            TaskStatus::NeedsDecomposition { reason, .. } => {
+                ("NeedsDecomposition", reason.as_str())
+            }
+            TaskStatus::Pending | TaskStatus::InProgress => {
+                ("Other", "goal not in terminal state in reflection context")
+            }
+        };
+        let out_preview = truncate_for_log(execution_result.output.as_deref().unwrap_or(""), 500);
+        let err_preview = truncate_for_log(execution_result.error.as_deref().unwrap_or(""), 500);
+        let inv = execution_result.tools_invoked.to_vec().join(", ");
+        let inv_display = if inv.is_empty() {
+            "(无)".to_string()
+        } else {
+            inv
+        };
+        format!(
+            r#"## 结构化执行摘要（机器可读）
+- **execution.task_status**（子目标内执行状态，非最终验收）: `{}`
+- **execution.task_id**: `{}`
+- **execution.status_detail**: `{}`
+- **execution.verification_failure**（与 GoalVerifier 的判定一致）: `{}`
+- **execution.tools_invoked**（时间顺序，工具名）: {}
+- **execution.output_preview**:
+```
+{}
+```
+- **execution.error_preview**:
+```
+{}
+```
+
+## 原失败的子目标（同上文 goal_id 一致）当前字段速览
+- `goal_id`: `{}`
+- `current_acceptance`: {:?}
+"#,
+            task_status,
+            execution_result.task_id,
+            fail_reason,
+            verification_failure,
+            inv_display,
+            out_preview,
+            err_preview,
+            failed_goal.goal_id,
+            failed_goal.acceptance,
+        )
     }
 
     /// 构建反思 prompt
@@ -1225,10 +1319,17 @@ impl ManagerAgent {
 
         let execution_output = execution_result.output.as_deref().unwrap_or("(无输出)");
         let execution_error = execution_result.error.as_deref().unwrap_or("(无错误)");
+        let structured = Self::build_reflection_structured_block(
+            failed_goal,
+            verification_failure,
+            execution_result,
+        );
 
         format!(
             r#"## 任务
 你是一个任务修复专家。子目标执行后验证失败，需要分析原因并生成修复策略。
+
+{structured}
 
 ## 失败的子目标
 - goal_id: {}
@@ -1236,7 +1337,7 @@ impl ManagerAgent {
 - goal_type: {:?}
 - required_tools: {:?}
 
-## 验证失败原因
+## 验证失败原因（与结构化摘要中 verification_failure 相同）
 {}
 
 ## 执行输出
@@ -1261,8 +1362,13 @@ impl ManagerAgent {
 ## 子目标/工具调用的固定规范
 {}
 
+## 验收与验证命令的约束
+- `acceptance.expect_file_exists` 须为**工作区根目录下的相对路径**（可含 `/`，**禁止**以 `/` 开头、**禁止** `..` 段）。
+- `acceptance.expect_command_success`（若填写）为**无 shell 拼接**的单一验证命令，仅允许**直接执行**的 argv（见下）；**不要**用 `;`、`|`、`&`、`$()`、反引号 或**重定向**；**禁止** `..` 与**绝对路径**实参。推荐示例：`test -f path/to/file`、`./build/foo --help`（在仓库根为 cwd 下可解析）、`cargo test -q --`。
+- 仅需要文件或输出片段验证时，可**省略** `expect_command_success`（用 `expect_file_exists` 与/或 `expect_output_contains`）。
+
 ## 输出格式
-**必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
+**必须输出一个 JSON 对象**（可放在 markdown 代码块中），**顶层键**须包含 `analysis`、`fix_strategy`、`updated_goal`。**除 JSON 外不要**输出其他解释文字。JSON 须符合结构：
 ```json
 {{
   "analysis": "失败原因分析（简要说明为什么验证失败）",
@@ -1275,8 +1381,8 @@ impl ManagerAgent {
         "required_tools": {:?},
         "goal_type": "{:?}",
         "acceptance": {{
-            "expect_file_exists": ["文件路径1", "文件路径2"],
-            "expect_command_success": "可选的验证命令",
+            "expect_file_exists": ["相对路径1", "相对路径2"],
+            "expect_command_success": "仅在有把握时使用；否则省略为 null 或空字符串并省略此键",
             "expect_output_contains": ["期望的输出片段"],
             "expect_exit_code": 0
         }},
@@ -1307,6 +1413,28 @@ impl ManagerAgent {
             failed_goal.depends_on,
             failed_goal.required_tools,
             failed_goal.goal_type,
+            structured = structured,
+        )
+    }
+
+    /// 第二次调用：在首轮模型输出上仅提取/修复符合模式的 JSON
+    fn build_reflection_json_repair_user_prompt(
+        assistant_broken: &str,
+        parse_error: &str,
+    ) -> String {
+        let err_preview = truncate_for_log(parse_error, 500);
+        let a = truncate_to_char_boundary(assistant_broken, 12_000);
+        format!(
+            r#"上一次你在尝试输出反思 JSON 时，解析器报错如下（**不要**在输出中照抄本说明文字）:
+{err_preview}
+
+下面是你**上一次**的完整回答。请**只**输出**一个**合法 JSON 对象，**顶层键**必须包含:
+`analysis`（string）、`fix_strategy`（string）、`updated_goal`（object，与首轮 schema 相同）。
+不要 markdown 代码围栏以外的文字。若上一条在代码块中已有 JSON，请**修正**其中的引号/逗号/花括号 使其可被标准 JSON 解析。
+
+---BEGIN_ASSISTANT---
+{a}
+---END---"#
         )
     }
 
@@ -1315,13 +1443,20 @@ impl ManagerAgent {
         &self,
         original_goal: &SubGoal,
         content: &str,
+        workspace_root: &std::path::Path,
+        is_repair_pass: bool,
     ) -> Result<SubGoal, ManagerError> {
+        let label = if is_repair_pass {
+            "JSON repair"
+        } else {
+            "reflection"
+        };
         let json_str = extract_json(content).ok_or_else(|| {
             log::warn!(
                 target: "crabmate",
-                "[HIERARCHICAL] Manager: failed to extract JSON from reflection response"
+                "[HIERARCHICAL] Manager: failed to extract JSON from {label} response"
             );
-            ManagerError::ParseError("Failed to extract JSON from reflection response".to_string())
+            ManagerError::ParseError(format!("Failed to extract JSON from {label} response"))
         })?;
 
         // 尝试修复常见的 JSON 格式错误
@@ -1358,28 +1493,16 @@ impl ManagerAgent {
             max_retries: Option<usize>,
         }
 
-        let parsed: ReflectionOutput = serde_json::from_str(json_to_parse).map_err(|e| {
+        let mut parsed: ReflectionOutput = serde_json::from_str(json_to_parse).map_err(|e| {
             log::warn!(
                 target: "crabmate",
-                "[HIERARCHICAL] Manager: JSON parse error in reflection: {}. Content preview: {}",
+                "[HIERARCHICAL] Manager: JSON parse error in {label}: {}. Content preview: {}",
                 e,
                 truncate_for_log(json_to_parse, 200)
             );
             ManagerError::ParseError(e.to_string())
         })?;
 
-        log::info!(
-            target: "crabmate",
-            "[HIERARCHICAL] Manager: reflection analysis: {}",
-            parsed.analysis
-        );
-        log::info!(
-            target: "crabmate",
-            "[HIERARCHICAL] Manager: fix strategy: {}",
-            parsed.fix_strategy
-        );
-
-        // 确保 goal_id 一致
         if parsed.updated_goal.goal_id != original_goal.goal_id {
             log::warn!(
                 target: "crabmate",
@@ -1389,6 +1512,14 @@ impl ManagerAgent {
             );
         }
 
+        let (acceptance, dropped_cmd) =
+            sanitize_reflection_acceptance(parsed.updated_goal.acceptance.take(), workspace_root);
+        if dropped_cmd {
+            log::warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] Manager: dropped unsafe expect_command_success from reflection JSON"
+            );
+        }
         let updated_goal = SubGoal {
             goal_id: original_goal.goal_id.clone(),
             description: parsed.updated_goal.description,
@@ -1409,7 +1540,7 @@ impl ManagerAgent {
                 .goal_type
                 .unwrap_or(original_goal.goal_type.clone()),
             build_requirements: original_goal.build_requirements.clone(),
-            acceptance: parsed.updated_goal.acceptance,
+            acceptance,
             max_retries: parsed
                 .updated_goal
                 .max_retries
@@ -1418,12 +1549,161 @@ impl ManagerAgent {
 
         log::info!(
             target: "crabmate",
+            "[HIERARCHICAL] Manager: reflection analysis: {}",
+            parsed.analysis
+        );
+        log::info!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: fix strategy: {}",
+            parsed.fix_strategy
+        );
+        log::info!(
+            target: "crabmate",
             "[HIERARCHICAL] Manager: reflection produced updated goal with acceptance={}",
             updated_goal.acceptance.is_some()
         );
 
         Ok(updated_goal)
     }
+}
+
+/// 在 utf-8 下按**字符**数截断到上限（用于打包进二轮 JSON 修复的 user 消息，避免超上下文）。
+fn truncate_to_char_boundary(s: &str, max_chars: usize) -> &str {
+    if s.chars().count() <= max_chars {
+        return s;
+    }
+    let mut n = 0;
+    for (i, c) in s.char_indices() {
+        n += 1;
+        if n == max_chars {
+            let end = i + c.len_utf8();
+            return &s[..end];
+        }
+    }
+    s
+}
+
+/// 反思产出的 `acceptance` 与 `GoalVerifier::run_verify_command`（无 shell 的 argv）对齐：去路径穿越、
+/// 去 shell 元字符；`expect_file_exists` 规范为可拼进工作区根的相对路径。
+fn sanitize_reflection_acceptance(
+    acc: Option<super::task::GoalAcceptance>,
+    _workspace_root: &std::path::Path,
+) -> (Option<super::task::GoalAcceptance>, bool) {
+    let mut dropped_cmd = false;
+    let Some(mut a) = acc else {
+        return (None, false);
+    };
+
+    let mut paths = Vec::new();
+    for p in std::mem::take(&mut a.expect_file_exists) {
+        if p.trim().is_empty() {
+            continue;
+        }
+        if is_unsafe_path_segment(&p) {
+            log::debug!(
+                target: "crabmate",
+                "[HIERARCHICAL] Manager: skipping unsafe expect_file_exists: {}",
+                truncate_for_log(&p, 80)
+            );
+            continue;
+        }
+        // 规范化为相对、POSIX 式斜杠，便于与 GoalVerifier 拼接
+        let cleaned = p.trim().trim_start_matches('/').to_string();
+        if !cleaned.is_empty() {
+            paths.push(cleaned);
+        }
+    }
+    a.expect_file_exists = paths;
+
+    if let Some(ref cmd) = a.expect_command_success
+        && is_unsafe_verify_command(cmd)
+    {
+        log::warn!(
+            target: "crabmate",
+            "[HIERARCHICAL] Manager: expect_command_success rejected, clearing: {}",
+            truncate_for_log(cmd, 200)
+        );
+        a.expect_command_success = None;
+        dropped_cmd = true;
+    }
+
+    if a.expect_file_exists.is_empty()
+        && a.expect_output_contains.is_empty()
+        && a.expect_command_success.is_none()
+        && a.expect_exit_code.is_none()
+    {
+        (None, dropped_cmd)
+    } else {
+        (Some(a), dropped_cmd)
+    }
+}
+
+fn is_unsafe_path_segment(s: &str) -> bool {
+    use std::path::{Component, Path};
+
+    if s.starts_with('/') {
+        return true;
+    }
+    if s.contains("..") {
+        return true;
+    }
+    let p = Path::new(s);
+    for c in p.components() {
+        if c == Component::ParentDir {
+            return true;
+        }
+        if let Component::RootDir = c {
+            return true;
+        }
+    }
+    // 疑似 `C:...` / `C:\` 等 Windows 前缀（本验收为工作区相对路径）
+    s.len() >= 2 && s.as_bytes()[0].is_ascii_alphabetic() && s.as_bytes()[1] == b':'
+}
+
+/// 与 `run_verify_command`（`split_whitespace` + 无 shell）一致；禁止 shell 注入与 `..` 实参
+fn is_unsafe_verify_command(cmd: &str) -> bool {
+    if cmd.is_empty() {
+        return true;
+    }
+    let t = cmd.trim();
+    for ch in [
+        ';', '&', '|', '>', '<', '\n', '\r', '\t', '`', '$', '(', ')', '*', '?', '[', ']',
+    ] {
+        if t.contains(ch) {
+            return true;
+        }
+    }
+    let parts: Vec<&str> = t.split_whitespace().collect();
+    if parts.len() >= 2
+        && parts[1] == "-c"
+        && matches!(
+            parts[0].to_lowercase().as_str(),
+            "sh" | "bash" | "dash" | "zsh" | "cmd" | "ksh" | "fish" | "pwsh"
+        )
+    {
+        return true;
+    }
+    for w in t.split_whitespace() {
+        if w.contains("..") {
+            return true;
+        }
+        if w == "/" || w.starts_with('/') {
+            return true;
+        }
+        if w == "\\" {
+            return true;
+        }
+        if w.contains(':')
+            && w.len() == 2
+            && let Some(first) = w.chars().next()
+            && w.ends_with(':')
+            && first.is_ascii_alphabetic()
+        {
+            return true;
+        }
+    }
+    // 过长的单条可能是不慎粘贴的 shell 串
+    t.chars().count() > 512
 }
 
 /// Manager 输出
@@ -1573,5 +1853,29 @@ mod tests {
         assert!(json.contains("{src}"));
         let v: serde_json::Value = serde_json::from_str(json).expect("valid JSON");
         assert!(v.get("sub_goals").is_some());
+    }
+
+    #[test]
+    fn test_sanitize_reflection_acceptance_paths_and_cmd() {
+        use super::super::task::GoalAcceptance;
+
+        let acc = Some(GoalAcceptance {
+            expect_file_exists: vec!["/etc/passwd".to_string(), "ok/rel".to_string()],
+            expect_command_success: Some("rm -rf /".to_string()),
+            expect_output_contains: vec![],
+            expect_exit_code: None,
+        });
+        let (out, dropped) =
+            super::sanitize_reflection_acceptance(acc, std::path::Path::new("/tmp/ws"));
+        assert!(dropped);
+        let g = out.expect("some");
+        assert_eq!(g.expect_file_exists, vec!["ok/rel".to_string()]);
+        assert!(g.expect_command_success.is_none());
+    }
+
+    #[test]
+    fn test_is_unsafe_verify_command_allows_simple_argv() {
+        assert!(!super::is_unsafe_verify_command("test -f build/foo"));
+        assert!(super::is_unsafe_verify_command("sh -c echo"));
     }
 }
