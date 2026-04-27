@@ -252,6 +252,7 @@ flowchart TB
 | `test_result_cache.rs` | 进程内 LRU：**`cargo_test` / `rust_test_one`**、**`npm_run` `script=test`**、**`run_command` `cargo`+`test`**（无 `--nocapture`/`--test-threads`）；指纹为工作区内 `.rs`/`.toml`/`Cargo.lock`（Rust）或 `package.json`/lock（npm）的 mtime+size |
 | `package_query.rs` | `package_query`：apt/rpm 只读包查询（安装状态/版本/来源统一抽象） |
 | `parse_args.rs` | **`parse_args_json`**：各 runner 的 `args_json` → [`serde_json::Value`]，统一「参数 JSON 无效」文案（`mod.rs` 再导出） |
+| `tool_args_validate.rs` | 首次访问时把各内置工具的 `FunctionDef::parameters` 预编译为 [`jsonschema::Validator`]；`run_tool` / `run_tool_dispatch` 在解析 JSON 后、执行 runner 前做**全量** Schema 校验，错误正文含 `JSON Schema` 与路径提示 |
 | `debug_tools.rs` | 调试辅助类工具 |
 | `diagnostics.rs` | `diagnostic_summary`：脱敏环境/工具链/工作区路径摘要 |
 | `error_playbook.rs` | `error_output_playbook`：对已脱敏错误输出做启发式归类，并给出经 `allowed_commands` 过滤的 `run_command` 建议字符串（不执行）；`playbook_run_commands`：同上启发式后依次执行建议命令（内部 `command::run`） |
@@ -273,7 +274,7 @@ flowchart TB
 | `tool_summary.rs` | `summarize_tool_call`：薄封装，委托 `tool_summary_args` 中各 `summary_*` |
 | `tool_summary_args.rs` | **Dynamic** 摘要入参的 `serde` 结构体 + `ToolSummaryLine`；`summarize_from_value` 用 `serde_json::from_value`（失败则无摘要，与缺必填键行为一致） |
 | `tool_params/` | 各工具 JSON Schema（`params_*`）按领域拆分子文件，`mod.rs` 再导出；`pub(in crate::tools)` 以便与 `tool_specs_registry` 同层引用 |
-| `schema_check.rs` | **`workflow_tool_args_satisfy_required`**：对照内置工具 parameters schema 检查 `tool_args` 是否含 **required** 键（工作流解析阶段粗校验） |
+| `schema_check.rs` | **`workflow_tool_args_satisfy_required`**：与 `run_tool` 相同，对照内置 `parameters` 的 **JSON Schema 全量**校验 `tool_args`（工作流解析阶段；历史名保留） |
 | `tool_specs_registry/` | `tool_specs()`：`specs/*.inc.rs` 为数组字面量，`include!` 载入后在 `OnceLock` 中拼接为 `&'static [ToolSpec]`（name/description/category/parameters/runner） |
 | `text_transform.rs` | `text_transform`：纯内存 Base64/URL 编解码、短哈希、按行合并与按分隔符切分（不落盘，有长度上限） |
 | `text_diff.rs` | `text_diff`：两段 UTF-8 文本或工作区内两文件的行级 unified diff（与 Git 无关，输出可截断） |
@@ -475,7 +476,7 @@ flowchart LR
   5. **`tools/mod.rs`**：若有新源文件则 **`mod xxx;`**，并保留 **`runner_*`** 薄封装供 **`ToolSpec`** 引用（与当前表驱动风格一致）。
   6. **工具调用摘要**（Web/SSE/TUI 卡片）：若 `summary` 为 **`Dynamic`**，在 **`tool_summary_args.rs`** + **`tool_summary.rs`** 中补 **`Deserialize` 参数形状**与 **`summary_xxx`**。
   7. **`tool_registry`（仅当需要「非默认」执行策略时）**：默认未在 **`src/tool_registry/meta.rs`** 的 **`tool_dispatch_registry!`** 中出现的工具名走 **`HandlerId::SyncDefault`**（同步 **`tools::run_tool`**）。若需与 **`run_command`** / **`web_search`** 等相同的 **`spawn_blocking` + 墙上时钟**、或其它专用分支，则在 **`tool_dispatch_registry!`** 中增一行，并在 **`src/tool_registry/execute.rs`** 的 **`match hid`** 中补 **`HandlerId::…`** 分支（与 **`tool_registry/mod.rs`** 模块注释一致）。
-  8. **`workflow_execute` 节点**：若要在 DAG 内调用且依赖 **`schema_check`** 的必填键粗校验，在 **`src/tools/schema_check.rs`** 中按工具名补规则。
+  8. **`workflow_execute` 节点**：`schema_check::workflow_tool_args_satisfy_required` 与 **`run_tool`** 共用 **JSON Schema** 校验；新增工具时只需保证 **`tool_params`** 与 `runner` 行为一致，无需在 `schema_check` 中单独补「required 键」规则。
   9. **`Development` 分类**：在 **`src/tools/dev_tag.rs`** 的 **`tags_for_tool_name`** 中为该工具名增加标签映射（供 **`build_tools_with_options`** 裁剪）；**`Basic`** 可跳过。
   10. **配置 / 环境变量**（若有新键）：**`config/`** 分片、**`config.toml.example`**、**`docs/CONFIGURATION.md`**，以及规则要求的 **README / DEVELOPMENT** 摘要。
   11. **用户可见文档与索引**：**`docs/TOOLS.md`**（能力说明与 JSON 示例）；若增删 **`tools/mod.rs` 的 `mod`**，更新本节 **「`src/tools/` 子文件」**表（**`.cursor/rules/architecture-docs-sync.mdc`**）；**`README.md`** 仅在行为或能力对用户可见时同步。
