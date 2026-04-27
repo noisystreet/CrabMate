@@ -7,6 +7,54 @@ use super::task::{
     TaskStatus,
 };
 
+/// 注入到 Operator 的「步摘要」：最近**几条**子目标、整块**最大字符**（防抢上下文）
+pub struct PriorSummaryLimits {
+    pub max_steps: usize,
+    pub max_block_chars: usize,
+}
+
+impl Default for PriorSummaryLimits {
+    fn default() -> Self {
+        Self {
+            max_steps: 8,
+            max_block_chars: 2_000,
+        }
+    }
+}
+
+/// 在解析 Manager JSON 后调用：去重 `consumes`、剔除非 `depends_on` 项、整理 `only_kinds` 空串。
+pub fn normalize_subgoal_io_contracts(goal: &mut SubGoal) {
+    let dep: HashSet<&str> = goal.depends_on.iter().map(String::as_str).collect();
+    let mut out: Vec<DependencyContractEntry> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for mut e in std::mem::take(&mut goal.consumes_from_dependencies) {
+        if let Some(ref mut only) = e.only_kinds {
+            only.retain(|s| !s.trim().is_empty());
+            if only.is_empty() {
+                e.only_kinds = None;
+            }
+        }
+        if !dep.contains(e.from_goal_id.as_str()) {
+            log::warn!(
+                target: "crabmate",
+                "[HIERARCHICAL] dropped consumes_from_dependencies entry: from_goal_id={} not in depends_on for goal_id={}",
+                e.from_goal_id, goal.goal_id
+            );
+            continue;
+        }
+        if !seen.insert(e.from_goal_id.clone()) {
+            log::debug!(
+                target: "crabmate",
+                "[HIERARCHICAL] duplicate consumes for from_goal_id={} on goal_id={}, keeping first",
+                e.from_goal_id, goal.goal_id
+            );
+            continue;
+        }
+        out.push(e);
+    }
+    goal.consumes_from_dependencies = out;
+}
+
 /// 返回 `None` 表示可接受；`Some` 为**非致命**警告
 pub(crate) fn validate_depends_consumes_consistency(goal: &SubGoal) -> Option<String> {
     let in_dep: HashSet<&str> = goal.depends_on.iter().map(String::as_str).collect();
@@ -167,23 +215,68 @@ pub(crate) fn build_step_result_summary(r: &TaskResult) -> String {
     )
 }
 
-pub(crate) fn build_prior_subgoals_summary_block(results: &[TaskResult], limit: usize) -> String {
+fn truncate_to_char_count(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let mut n = 0;
+    for (i, c) in s.char_indices() {
+        n += 1;
+        if n >= max_chars.saturating_sub(1) {
+            return format!("{}…", &s[..i + c.len_utf8()]);
+        }
+    }
+    s.to_string()
+}
+
+fn prior_lines_from_results(results: &[TaskResult], max_steps: usize) -> Vec<String> {
+    if results.is_empty() {
+        return Vec::new();
+    }
+    let take = results.len().min(max_steps);
+    let start = results.len() - take;
+    results[start..]
+        .iter()
+        .map(|r| {
+            let mut s = build_step_result_summary(r);
+            if s.chars().count() > 500 {
+                s = truncate_to_char_count(&s, 500);
+            }
+            s
+        })
+        .collect()
+}
+
+pub fn build_prior_subgoals_summary_block_with_limits(
+    results: &[TaskResult],
+    limits: &PriorSummaryLimits,
+) -> String {
     if results.is_empty() {
         return String::new();
     }
-    let take = results.len().min(limit);
-    let start = results.len() - take;
-    let body: String = results[start..]
-        .iter()
-        .map(build_step_result_summary)
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!(
-        "## 最近已完成子目标步摘要\n\
-         供当前步衔接；**以「来自前置子目标的已登记产物」中路径为准**。\n\
-         \n\
-         {body}\n"
-    )
+    const HEADER: &str = "## 最近已完成子目标步摘要\n供当前步衔接；**以「来自前置子目标的已登记产物」中路径为准**。\n\n";
+    const OMIT: &str = "（已省略较早步，优先保留最近完成步）\n\n";
+    let all_lines = prior_lines_from_results(results, limits.max_steps);
+    if all_lines.is_empty() {
+        return String::new();
+    }
+    // 自旧向新**丢行**，使摘要块不抢占依赖节 token
+    for drop_from_start in 0..all_lines.len() {
+        let keep = &all_lines[drop_from_start..];
+        let body = keep.join("\n");
+        let prefix = if drop_from_start > 0 { OMIT } else { "" };
+        let candidate = format!("{HEADER}{prefix}{body}\n");
+        if candidate.chars().count() <= limits.max_block_chars {
+            return candidate;
+        }
+    }
+    let t = truncate_to_char_count(
+        all_lines.last().map(String::as_str).unwrap_or(""),
+        limits
+            .max_block_chars
+            .saturating_sub(HEADER.chars().count() + 8),
+    );
+    format!("{HEADER}{t}\n（步摘要已硬截断）\n")
 }
 
 /// 按 `consumes_from_dependencies` 与 `depends_on` 从 `get_dependencies` 的扁平列表中筛选
@@ -217,7 +310,10 @@ pub fn build_injected_subgoal_user_extra(
     dep_artifacts: &[&Artifact],
     prior_subgoals: &[TaskResult],
 ) -> Option<String> {
-    let sum_block = build_prior_subgoals_summary_block(prior_subgoals, 8);
+    let sum_block = build_prior_subgoals_summary_block_with_limits(
+        prior_subgoals,
+        &PriorSummaryLimits::default(),
+    );
     if dep_artifacts.is_empty() {
         return if sum_block.is_empty() {
             None
@@ -326,7 +422,7 @@ fn format_filtered_dependency_sections(depends_on: &[String], deps: &[&Artifact]
 
 #[cfg(test)]
 mod tests {
-    use super::super::task::Artifact;
+    use super::super::task::{Artifact, BuildArtifactKind, SubGoal, TaskResult, TaskStatus};
     use super::*;
 
     fn art(id: &str, goal: &str, kind: ArtifactKind) -> Artifact {
@@ -361,5 +457,58 @@ mod tests {
             only_kinds: Some(vec!["all".into()]),
         };
         assert!(should_include_artifact_for_injection(&a, &c));
+    }
+
+    #[test]
+    fn normalize_drops_consumes_not_in_depends_on() {
+        let mut g = SubGoal::new("g2", "d").with_depends_on(vec!["g1".into()]);
+        g.consumes_from_dependencies = vec![DependencyContractEntry {
+            from_goal_id: "g99".into(),
+            only_kinds: None,
+        }];
+        super::normalize_subgoal_io_contracts(&mut g);
+        assert!(g.consumes_from_dependencies.is_empty());
+    }
+
+    #[test]
+    fn build_injected_resolves_ref_path_in_extra() {
+        use super::super::artifact_store::ArtifactStore;
+        let mut store = ArtifactStore::new();
+        let a1 = Artifact::new(
+            "a1",
+            "out.bin",
+            ArtifactKind::BuildArtifact(BuildArtifactKind::Executable),
+            "g1",
+        )
+        .with_path("build/out.bin");
+        store.put(a1);
+        let raw = super::collect_artifacts_for_goals(&store, &[String::from("g1")]);
+        let g = SubGoal::new("g2", "run").with_depends_on(vec!["g1".into()]);
+        let extra = super::build_injected_subgoal_user_extra(&g, &raw, &[]).expect("extra");
+        assert!(extra.contains("{ref:g1:a1}"));
+    }
+
+    #[test]
+    fn prior_summary_drops_older_lines_when_too_long() {
+        let mut v = Vec::new();
+        for i in 0..20 {
+            v.push(TaskResult {
+                task_id: format!("g{i}"),
+                status: TaskStatus::Completed,
+                output: None,
+                error: None,
+                artifacts: vec![],
+                duration_ms: 1,
+                tools_invoked: vec!["read_file".into()],
+            });
+        }
+        let s = super::build_prior_subgoals_summary_block_with_limits(
+            &v,
+            &PriorSummaryLimits {
+                max_steps: 20,
+                max_block_chars: 300,
+            },
+        );
+        assert!(s.contains("已省略较早步") || s.chars().count() <= 400);
     }
 }
