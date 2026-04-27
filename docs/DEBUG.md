@@ -95,7 +95,18 @@ REPL 内等价：**`/doctor`**、**`/probe`**、**`/models`** 等，见 [docs/CL
 
 ---
 
-## 9. 前端（Leptos / WASM）本地构建
+## 9. Replay Dump（可选）
+
+用于定位回合级执行细节（LLM 请求/响应、工具调用、验收与决策点）：
+
+| 变量 | 说明 |
+| --- | --- |
+| **`CM_REPLAY_DUMP_DIR`** | 设置且非空时启用 replay，按动作即时追加 `turn-replay-events.jsonl` 到该目录；未设置或为空时不写 replay 文件 |
+| **`CM_REPLAY_FORCE_SERIAL=1`** | 强制工具执行阶段串行（关闭只读并行批），便于复现与排障时获得更稳定的动作顺序 |
+
+---
+
+## 10. 前端（Leptos / WASM）本地构建
 
 - 静态资源：**`cd frontend-leptos && trunk build`**（发布用 **`trunk build --release`**），再由 **`crabmate serve`** 从 **`frontend-leptos/dist`** 提供。
 - 维护者快速类型检查：**`cd frontend-leptos && cargo check --target wasm32-unknown-unknown`**。
@@ -103,7 +114,7 @@ REPL 内等价：**`/doctor`**、**`/probe`**、**`/models`** 等，见 [docs/CL
 
 ---
 
-## 10. 相关文档索引
+## 11. 相关文档索引
 
 | 文档 | 内容 |
 | --- | --- |

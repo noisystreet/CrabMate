@@ -109,8 +109,8 @@
 | 环境变量 | 说明 |
 | --- | --- |
 | `CRABMATE_REQUEST_CHROME_TRACE_DIR` | 非空目录时，每轮 **`run_agent_turn`**（Web `/chat*`、CLI `chat`/`repl` 等）结束写入 **`turn-{unix_ms}.json`**（Chrome Trace Event Format，`displayTimeUnit: us`）。在 **async 主路径**记录 **`llm.chat_completions`**（每次 `complete_chat_retrying`）与 **`agent.tools_batch`**（每批工具调度）的 **B/E** 区间；**`spawn_blocking` 内耗时**不在此文件内展开。 |
-| `CRABMATE_TURN_REPLAY_DUMP_DIR` | 非空目录时，每轮 **`run_agent_turn`** 结束（成功或失败）**后台**追加写入 **`turn-replay-{unix_ms}.json`**：本回合**结束**时的 **`messages[]`** 快照（OpenAI 形，脱敏后）、`tool` 名列表、少量编排相关配置子集与**可选**的 Web **`job_id`** 等。用于离线对照与 `tool-replay` 等辅助，**不**含发往供应商的完整 `chat/completions` 请求体；文件可能含长段对话正文，勿提交到版本库。 |
-| `AGENT_TURN_REPLAY_DUMP_DIR` | 与上一项同义。 |
+| `CM_REPLAY_DUMP_DIR` | **仅当设置且非空**时启用 turn replay：每轮 **`run_agent_turn`** 执行期间在该目录**即时追加** `turn-replay-events.jsonl`（按动作一行一条，如 `turn_started`、`llm_*`、`tool_call_*`、`acceptance_check`、`turn_finished`）。未设置（或为空）时不写任何 replay 文件。**不**含发往供应商的完整 `chat/completions` 请求体。 |
+| `CM_REPLAY_FORCE_SERIAL` | 设为真值（`1`/`true`/`yes`/`on`）时，工具执行阶段强制串行（关闭只读并行批），便于 dump/replay 排障时获得更稳定的动作顺序。 |
 
 ### 工作流（Chrome Trace 导出）
 

@@ -39,6 +39,8 @@ pub use vendor::{
     llm_vendor_adapter_for_model,
 };
 
+static LLM_CALL_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 /// **kimi-k2.5** 在**未**显式关闭思考时，服务端 **`thinking` 默认启用**；此时含 **`tool_calls`** 的 assistant 历史消息必须带 **`reasoning_content`**，否则返回 `invalid_request_error`（见 Moonshot [Chat API](https://platform.moonshot.cn/docs/api/chat) 与实测报错）。
 #[inline]
 pub(crate) fn kimi_k2_5_vendor_requires_tool_call_reasoning(cfg: &AgentConfig) -> bool {
@@ -193,6 +195,18 @@ pub async fn complete_chat_retrying(
     p: &CompleteChatRetryingParams<'_>,
     request: &ChatRequest,
 ) -> Result<(Message, String), LlmCompleteError> {
+    let llm_call_id = format!("llm-{}", LLM_CALL_SEQ.fetch_add(1, Ordering::Relaxed));
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "llm_request_started",
+        request.model.as_str(),
+        Some(&serde_json::json!({
+            "llm_call_id": llm_call_id,
+            "model": request.model,
+            "message_count": request.messages.len(),
+            "max_attempts": p.cfg.api_max_retries + 1,
+            "phase": "llm",
+        })),
+    );
     let _llm_trace = p
         .request_chrome_trace
         .as_ref()
@@ -203,6 +217,7 @@ pub async fn complete_chat_retrying(
     let mut req = request.clone();
     let stream = p.stream_params();
     for attempt in 0..max_attempts {
+        let attempt_t0 = Instant::now();
         if p.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             return Err(LlmCompleteError::Cancelled);
         }
@@ -227,12 +242,47 @@ pub async fn complete_chat_retrying(
                     request.messages.len(),
                     crate::redact::assistant_message_preview_for_log(&msg)
                 );
+                crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+                    "llm_response_done",
+                    request.model.as_str(),
+                    Some(&serde_json::json!({
+                        "llm_call_id": llm_call_id,
+                        "model": request.model,
+                        "finish_reason": finish_reason,
+                        "attempt": attempt + 1,
+                        "max_attempts": max_attempts,
+                        "attempt_elapsed_ms": attempt_t0.elapsed().as_millis(),
+                        "total_elapsed_ms": t0.elapsed().as_millis(),
+                        "assistant_preview": crate::redact::assistant_message_preview_for_log(&msg),
+                        "assistant_preview_truncated": crate::redact::assistant_message_preview_for_log(&msg).contains("…(truncated)"),
+                        "assistant_content": crate::types::message_content_as_str(&msg.content).unwrap_or(""),
+                        "reasoning_content": msg.reasoning_content.as_deref().unwrap_or(""),
+                        "phase": "llm",
+                        "tool_calls": msg.tool_calls.as_ref().map(|calls| {
+                            calls.iter().map(|tc| serde_json::json!({
+                                "id": tc.id,
+                                "name": tc.function.name,
+                                "arguments_preview": crate::redact::tool_arguments_preview_for_sse(&tc.function.arguments),
+                                "arguments_preview_truncated": crate::redact::tool_arguments_preview_for_sse(&tc.function.arguments).contains("…(truncated)"),
+                            })).collect::<Vec<_>>()
+                        }).unwrap_or_default(),
+                    })),
+                );
                 last_ok = Some((msg, finish_reason));
                 break;
             }
             Err(e) => {
                 let http_status = call_error::llm_call_error_http_status(e.as_ref());
                 let retryable = call_error::llm_call_error_retryable(e.as_ref());
+                let can_backoff = attempt < max_attempts - 1 && retryable;
+                let backoff_ms = if can_backoff {
+                    p.cfg
+                        .api_retry_delay_secs
+                        .saturating_mul(2_u64.saturating_pow(attempt))
+                        .saturating_mul(1000)
+                } else {
+                    0
+                };
                 error!(
                     target: "crabmate",
                     "llm chat 请求失败 http_status={:?} retryable={} error={} attempt={} max_attempts={}",
@@ -242,7 +292,49 @@ pub async fn complete_chat_retrying(
                     attempt + 1,
                     max_attempts
                 );
-                let can_backoff = attempt < max_attempts - 1 && retryable;
+                crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+                    "llm_request_failed",
+                    request.model.as_str(),
+                    Some(&serde_json::json!({
+                        "llm_call_id": llm_call_id,
+                        "model": request.model,
+                        "attempt": attempt + 1,
+                        "max_attempts": max_attempts,
+                        "attempt_elapsed_ms": attempt_t0.elapsed().as_millis(),
+                        "total_elapsed_ms": t0.elapsed().as_millis(),
+                        "retryable": retryable,
+                        "http_status": http_status,
+                        "error": format!("{e}"),
+                        "will_retry": can_backoff,
+                        "retry_reason": if retryable { "retryable_error" } else { "non_retryable_error" },
+                        "backoff_ms": backoff_ms,
+                        "phase": "llm",
+                    })),
+                );
+                crate::turn_replay_dump::append_decision_point_event_if_configured(
+                    "llm",
+                    "llm_retry_policy",
+                    if can_backoff { "retry" } else { "stop" },
+                    if can_backoff {
+                        "请求失败且可重试，按指数退避继续重试"
+                    } else if retryable {
+                        "达到最大重试次数，停止重试"
+                    } else {
+                        "错误不可重试，立即停止"
+                    },
+                    serde_json::json!({
+                        "llm_call_id": llm_call_id,
+                        "attempt": attempt + 1,
+                        "max_attempts": max_attempts,
+                        "retryable": retryable,
+                        "http_status": http_status,
+                        "backoff_ms": backoff_ms,
+                    }),
+                    "current_llm_call",
+                    Some(serde_json::json!({
+                        "llm_call_id": llm_call_id,
+                    })),
+                );
                 if can_backoff {
                     let delay_secs = p
                         .cfg
