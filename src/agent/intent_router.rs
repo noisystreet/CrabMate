@@ -570,8 +570,8 @@ mod tests {
     }
 
     #[test]
-    fn has_hpcg_source_code_routes_to_execute() {
-        let r = route_user_task("有hpcg的源码吗？");
+    fn third_party_source_tree_question_routes_to_execute() {
+        let r = route_user_task("仓库里有 vendor-lib 的源码吗？");
         assert_eq!(r.kind, IntentKind::Execute);
         assert!(matches!(r.route, IntentRoute::Execute));
     }
