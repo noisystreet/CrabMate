@@ -628,11 +628,18 @@ impl<'a> HierarchicalExecutor<'a> {
                 let goal_description = goal.description.clone();
                 let goal_required_tools = goal.required_tools.clone();
 
-                // 独立子 store，先合并**执行本层前**的共享产物，再运行（并行同层时彼此产物不可见）
+                // 独立子 store，先合并**执行本层前**的共享产物，再运行。
+                // 同层并行时：各子目标**彼此**的当轮产物**不可见**（DAG 同层应无互依；若需先后请用边或改顺序策略）。
                 let mut store = ArtifactStore::new();
                 store.merge_from(&pre_snapshot);
+                log::debug!(
+                    target: "crabmate",
+                    "[HIERARCHICAL] parallel subgoal {}: merged pre-level artifact snapshot ({} entries; peer goals in this level are not visible to each other)",
+                    goal_id,
+                    pre_snapshot.all().len(),
+                );
 
-                let goal = super::subgoal_context::ensure_consumes_from_dependencies(
+                let mut goal = super::subgoal_context::ensure_consumes_from_dependencies(
                     &goal,
                     prior.as_slice(),
                     current_ids.as_ref(),
@@ -643,6 +650,7 @@ impl<'a> HierarchicalExecutor<'a> {
                 {
                     log::warn!(target: "crabmate", "[HIERARCHICAL] I/O: {}", msg);
                 }
+                super::subgoal_context::normalize_subgoal_io_contracts(&mut goal);
 
                 let mut allowed_tools = goal.required_tools.clone();
                 supplement_subgoal_required_tools(&goal.description, &mut allowed_tools);
@@ -876,6 +884,7 @@ impl<'a> HierarchicalExecutor<'a> {
             current_level_goal_ids,
             true,
         );
+        super::subgoal_context::normalize_subgoal_io_contracts(&mut current_goal);
         let max_retries = current_goal.max_retries.unwrap_or(3);
 
         // 创建验证器

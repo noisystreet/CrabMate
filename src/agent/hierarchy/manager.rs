@@ -1045,7 +1045,7 @@ impl ManagerAgent {
 
         let mut sub_goals = Vec::new();
         for sg in parsed.sub_goals {
-            sub_goals.push(SubGoal {
+            let mut g = SubGoal {
                 goal_id: sg.goal_id,
                 description: sg.description,
                 priority: sg.priority.unwrap_or(0),
@@ -1056,7 +1056,9 @@ impl ManagerAgent {
                 build_requirements: sg.build_requirements.unwrap_or_default(),
                 acceptance: None,
                 max_retries: None,
-            });
+            };
+            super::subgoal_context::normalize_subgoal_io_contracts(&mut g);
+            sub_goals.push(g);
         }
 
         let summary = format!("Decomposed into {} sub-goals", sub_goals.len());
@@ -1366,6 +1368,9 @@ impl ManagerAgent {
 - goal_id: {}
 - description: {}
 - goal_type: {:?}
+- depends_on: {:?}
+- consumes_from_dependencies（当前）: {:?}
+- build_requirements（当前）: {:?}
 - required_tools: {:?}
 
 ## 验证失败原因（与结构化摘要中 verification_failure 相同）
@@ -1406,9 +1411,11 @@ impl ManagerAgent {
     "fix_strategy": "修复策略（简要说明如何修复）",
     "updated_goal": {{
         "goal_id": "{}",
-        "description": "更新后的子目标描述（更具体、包含修复步骤）",
+        "description": "更新后的子目标描述（更具体、包含修复步骤；I/O 与 `{{ref:...}}` 引用）",
         "priority": {},
         "depends_on": {:?},
+        "consumes_from_dependencies": [{{"from_goal_id": "须出现在 depends_on 中", "only_kinds": null}} 或 {{"from_goal_id": "g1", "only_kinds": ["all"]}} 或 {{"from_goal_id": "g1", "only_kinds": ["executable"]}}],
+        "build_requirements": {{"needs_artifacts": [], "produces_artifacts": []}} 可省略,
         "required_tools": {:?},
         "goal_type": "{:?}",
         "acceptance": {{
@@ -1425,12 +1432,16 @@ impl ManagerAgent {
 重要：
 1. `updated_goal.goal_id` 必须与原子目标相同
 2. `updated_goal.description` 应该更具体，明确包含修复步骤
-3. 添加或完善 `acceptance` 条件，确保下次能正确验证
-4. `max_retries` 控制验证失败后的重试次数
+3. 若失败与**未消费对的前序路径**、**`{{ref:...}}` 未填**、或 **only_kinds 过严** 有关，必须在 `updated_goal` 中**显式**给出 `consumes_from_dependencies` 与/或 调整 `depends_on`；`from_goal_id` 必须出现在 `depends_on` 中
+4. 添加或完善 `acceptance` 条件，确保下次能正确验证
+5. `max_retries` 控制验证失败后的重试次数
 "#,
             failed_goal.goal_id,
             failed_goal.description,
             failed_goal.goal_type,
+            failed_goal.depends_on,
+            failed_goal.consumes_from_dependencies,
+            failed_goal.build_requirements,
             failed_goal.required_tools,
             verification_failure,
             execution_output,
@@ -1521,6 +1532,8 @@ impl ManagerAgent {
             #[serde(default)]
             goal_type: Option<super::task::GoalType>,
             #[serde(default)]
+            build_requirements: Option<super::task::BuildRequirements>,
+            #[serde(default)]
             acceptance: Option<super::task::GoalAcceptance>,
             #[serde(default)]
             max_retries: Option<usize>,
@@ -1553,7 +1566,7 @@ impl ManagerAgent {
                 "[HIERARCHICAL] Manager: dropped unsafe expect_command_success from reflection JSON"
             );
         }
-        let updated_goal = SubGoal {
+        let mut updated_goal = SubGoal {
             goal_id: original_goal.goal_id.clone(),
             description: parsed.updated_goal.description,
             priority: parsed
@@ -1576,13 +1589,17 @@ impl ManagerAgent {
                 .updated_goal
                 .goal_type
                 .unwrap_or(original_goal.goal_type.clone()),
-            build_requirements: original_goal.build_requirements.clone(),
+            build_requirements: parsed
+                .updated_goal
+                .build_requirements
+                .unwrap_or_else(|| original_goal.build_requirements.clone()),
             acceptance,
             max_retries: parsed
                 .updated_goal
                 .max_retries
                 .or(original_goal.max_retries),
         };
+        super::subgoal_context::normalize_subgoal_io_contracts(&mut updated_goal);
 
         log::info!(
             target: "crabmate",

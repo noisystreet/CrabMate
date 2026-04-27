@@ -24,6 +24,12 @@ pub mod subgoal_context;
 pub mod task;
 pub mod tool_executor;
 
+pub use subgoal_context::{
+    PriorSummaryLimits, build_injected_subgoal_user_extra,
+    build_prior_subgoals_summary_block_with_limits, collect_artifacts_for_goals,
+    normalize_subgoal_io_contracts,
+};
+
 pub use artifact_resolver::{ArtifactResolver, prepare_build_env};
 pub use artifact_store::ArtifactStore;
 pub use build_state::{BuildState, CompileCommand, Diagnostic, DiagnosticSeverity};

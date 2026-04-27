@@ -2171,6 +2171,35 @@ mod tests {
     }
 
     #[test]
+    fn test_inject_ref_placeholder_into_tool_call() {
+        let mut store = ArtifactStore::new();
+        store.put(
+            Artifact::new(
+                "a1",
+                "out",
+                ArtifactKind::BuildArtifact(
+                    crate::agent::hierarchy::task::BuildArtifactKind::Executable,
+                ),
+                "goal_1",
+            )
+            .with_path("build/prog"),
+        );
+        let resolver = ArtifactResolver::new(&store, None);
+        let operator = OperatorAgent::new(OperatorConfig::default());
+        let tool_call = crate::types::ToolCall {
+            id: "r1".to_string(),
+            typ: "function".to_string(),
+            function: crate::types::FunctionCall {
+                name: "read_file".to_string(),
+                arguments: r#"{"path": "{ref:goal_1:a1}"}"#.to_string(),
+            },
+        };
+        let injected = operator.inject_artifact_paths_into_tool_call(&tool_call, &resolver);
+        assert!(injected.function.arguments.contains("build/prog"));
+        assert!(!injected.function.arguments.contains("{ref:goal_1:a1}"));
+    }
+
+    #[test]
     fn test_inject_paths_into_value_nested() {
         let mut store = ArtifactStore::new();
         // 使用 BuildArtifactKind::SourceFile 以便 resolve_source_file 能找到
