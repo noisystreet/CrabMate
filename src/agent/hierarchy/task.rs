@@ -53,6 +53,9 @@ pub enum ArtifactKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BuildArtifactKind {
     /// 源码文件
+    #[serde(alias = "File")]
+    #[serde(alias = "BuildFile")]
+    #[serde(alias = "BuildConfig")]
     SourceFile,
     /// 目标文件（.o/.obj）
     ObjectFile,
@@ -299,5 +302,31 @@ impl ExecutionStrategy {
             Self::Parallel => "parallel",
             Self::Hybrid => "hybrid",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BuildArtifactKind;
+
+    #[test]
+    fn build_artifact_kind_accepts_legacy_file_alias() {
+        let parsed: BuildArtifactKind =
+            serde_json::from_str("\"File\"").expect("legacy File alias should parse");
+        assert_eq!(parsed, BuildArtifactKind::SourceFile);
+    }
+
+    #[test]
+    fn build_artifact_kind_accepts_build_file_alias() {
+        let parsed: BuildArtifactKind =
+            serde_json::from_str("\"BuildFile\"").expect("legacy BuildFile alias should parse");
+        assert_eq!(parsed, BuildArtifactKind::SourceFile);
+    }
+
+    #[test]
+    fn build_artifact_kind_accepts_build_config_alias() {
+        let parsed: BuildArtifactKind =
+            serde_json::from_str("\"BuildConfig\"").expect("legacy BuildConfig alias should parse");
+        assert_eq!(parsed, BuildArtifactKind::SourceFile);
     }
 }

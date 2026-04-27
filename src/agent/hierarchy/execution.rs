@@ -33,6 +33,8 @@ pub struct HierarchicalExecutionResult {
     pub total_duration_ms: u64,
     pub total_completed: usize,
     pub total_failed: usize,
+    /// 子目标级 `acceptance.expect_output_contains` 快照（按 goal_id）。
+    pub goal_expected_outputs: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// 分层执行器错误
@@ -290,6 +292,24 @@ impl<'a> HierarchicalExecutor<'a> {
         let start_time = Instant::now();
         let sub_goals = manager_output.sub_goals;
         let strategy = manager_output.execution_strategy;
+        let goal_expected_outputs: HashMap<String, Vec<String>> = sub_goals
+            .iter()
+            .map(|g| {
+                let hints = g
+                    .acceptance
+                    .as_ref()
+                    .map(|a| {
+                        a.expect_output_contains
+                            .iter()
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty())
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                (g.goal_id.clone(), hints)
+            })
+            .collect();
 
         info!(
             target: "crabmate",
@@ -318,6 +338,7 @@ impl<'a> HierarchicalExecutor<'a> {
                 total_duration_ms: start_time.elapsed().as_millis() as u64,
                 total_completed: 0,
                 total_failed: 0,
+                goal_expected_outputs: HashMap::new(),
             });
         }
 
@@ -512,6 +533,7 @@ impl<'a> HierarchicalExecutor<'a> {
             total_duration_ms,
             total_completed,
             total_failed,
+            goal_expected_outputs,
         })
     }
 

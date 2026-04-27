@@ -73,9 +73,23 @@ impl GoalVerifier {
             return VerificationResult::Fail { reason };
         }
 
+        let expected_output_hints: Vec<String> = goal
+            .acceptance
+            .as_ref()
+            .map(|a| {
+                a.expect_output_contains
+                    .iter()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         // 「运行可执行体」子目标：须出现 run_executable，或 run_command 且可核对到进程级输出
         if is_run_executable_subgoal(goal)
-            && let Err(reason) = verify_run_executable_subgoal_tool_evidence(result)
+            && let Err(reason) =
+                verify_run_executable_subgoal_tool_evidence(result, &expected_output_hints)
         {
             return VerificationResult::Fail { reason };
         }
@@ -291,6 +305,29 @@ impl GoalVerifier {
 /// 子目标是否要求「真正运行已构建的可执行体」（与仅「检查产物是否生成」区分，仅用于分层模式验收）。
 pub(crate) fn is_run_executable_subgoal(goal: &SubGoal) -> bool {
     let d = goal.description.to_lowercase();
+    // 纯编译/构建步骤（即使提到“生成可执行文件”）不应被当作“运行可执行体”验收
+    let build_only = (d.contains("编译")
+        || d.contains("构建")
+        || d.contains("cmake --build")
+        || d.contains("linking")
+        || d.contains("built target"))
+        && !d.contains("运行")
+        && !d.contains("执行")
+        && !d.contains("run ")
+        && !d.contains("run_executable")
+        && !d.contains("./");
+    if build_only {
+        return false;
+    }
+    // “运行 cmake --build ... 编译生成可执行文件”这类表述本质仍是编译步骤，不是运行产物。
+    if d.contains("cmake --build")
+        && d.contains("编译")
+        && d.contains("生成可执行")
+        && !d.contains("./")
+        && !d.contains("run_executable")
+    {
+        return false;
+    }
     // 仅检查目录/是否生成/是否存在 → 不强制 run_executable
     if d.contains("检查")
         && (d.contains("是否生成")
@@ -318,7 +355,10 @@ pub(crate) fn is_run_executable_subgoal(goal: &SubGoal) -> bool {
 }
 
 /// 对「运行可执行体」子目标，必须有 `run_executable` 或充分的 `run_command` 执行产物证据
-fn verify_run_executable_subgoal_tool_evidence(result: &TaskResult) -> Result<(), String> {
+fn verify_run_executable_subgoal_tool_evidence(
+    result: &TaskResult,
+    expected_output_hints: &[String],
+) -> Result<(), String> {
     if result.tools_invoked.iter().any(|n| n == "run_executable") {
         return Ok(());
     }
@@ -334,40 +374,80 @@ fn verify_run_executable_subgoal_tool_evidence(result: &TaskResult) -> Result<()
         result.error.as_deref().unwrap_or("")
     );
     // 在「同一次 run_command 工具行」的片段内出现 Hello，避免与 read_file 里读到的源码混淆
-    if run_command_invocation_mentions_hello(&c) {
+    if run_command_invocation_matches_expected_output(&c, expected_output_hints) {
         return Ok(());
     }
-    Err(
-        "子目标为「运行可执行体」：已调用 `run_command` 但未能核对到可执行体进程级输出；请用 `run_executable` 或 `run_command` 直接执行构建产物，并产生可核对输出（如 Hello, World!）。"
-            .to_string(),
+    Err(format!(
+        "子目标为「运行可执行体」：已调用 `run_command` 但未能核对到可执行体进程级输出；请用 `run_executable` 或 `run_command` 直接执行构建产物，并产生可核对输出（如 Hello, World!）。{}",
+        run_exec_verification_diag(result)
+    ))
+}
+
+fn run_exec_verification_diag(result: &TaskResult) -> String {
+    let tools = if result.tools_invoked.is_empty() {
+        "(none)".to_string()
+    } else {
+        result.tools_invoked.join(",")
+    };
+    let out = truncate_verify_preview(result.output.as_deref().unwrap_or(""), 200);
+    let err = truncate_verify_preview(result.error.as_deref().unwrap_or(""), 200);
+    let exit = GoalVerifier::extract_exit_code(&format!("{}\n{}", out, err))
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    format!(
+        " [diag tools_invoked={tools} exit_code={exit} output_preview={out:?} error_preview={err:?}]"
     )
 }
 
-pub(crate) fn run_command_invocation_mentions_hello(c: &str) -> bool {
-    fn has_hello(t: &str) -> bool {
+fn truncate_verify_preview(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max_chars.saturating_sub(3)).collect();
+    out.push_str("...");
+    out
+}
+
+pub(crate) fn run_command_invocation_matches_expected_output(
+    c: &str,
+    expected_output_hints: &[String],
+) -> bool {
+    fn matches_expected(t: &str, expected_output_hints: &[String]) -> bool {
         let l = t.to_lowercase();
-        l.contains("hello, world!") || l.contains("hello, world")
+        let hints: Vec<String> = if expected_output_hints.is_empty() {
+            vec!["hello, world!".to_string(), "hello, world".to_string()]
+        } else {
+            expected_output_hints
+                .iter()
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
+        hints.into_iter().any(|h| l.contains(&h))
     }
     /// 单次 `Tool run_command …` 片段内是否像「成功执行且 stdout 含 Hello」
-    fn run_command_section_indicates_hello_run(seg: &str) -> bool {
+    fn run_command_section_indicates_hello_run(
+        seg: &str,
+        expected_output_hints: &[String],
+    ) -> bool {
         let t = format!("Tool run_command{seg}");
         let l = t.to_lowercase();
         let looks_ok = l.contains("executed successfully")
             || l.contains("退出码：0")
             || l.contains("退出码:0")
             || l.contains("(exit=0)");
-        if !looks_ok || !has_hello(&t) {
+        if !looks_ok || !matches_expected(&t, expected_output_hints) {
             return false;
         }
         // 有「标准输出：」+ Hello 时，避免误把 read_file/cat 里的源码行计为运行结果
         if t.contains("标准输出") {
             return !l.contains("#include <iostream>");
         }
-        has_hello(&t) && !l.contains("#include <iostream>")
+        matches_expected(&t, expected_output_hints) && !l.contains("#include <iostream>")
     }
     if c.split("Tool run_command")
         .skip(1)
-        .any(run_command_section_indicates_hello_run)
+        .any(|seg| run_command_section_indicates_hello_run(seg, expected_output_hints))
     {
         return true;
     }
@@ -375,7 +455,7 @@ pub(crate) fn run_command_invocation_mentions_hello(c: &str) -> bool {
     let low = c.to_lowercase();
     if low.contains("标准输出")
         && (low.contains("退出码：0") || low.contains("退出码:0") || low.contains("(exit=0)"))
-        && (low.contains("hello, world!") || low.contains("hello, world"))
+        && matches_expected(c, expected_output_hints)
         && low.contains("run_command")
         && (low.contains("subgoal_tool_trace")
             || low.contains("executed successfully")
@@ -386,8 +466,12 @@ pub(crate) fn run_command_invocation_mentions_hello(c: &str) -> bool {
     }
     low.contains("subgoal_tool_trace")
         && low.contains("run_command")
-        && (low.contains("hello, world!") || low.contains("hello, world"))
+        && matches_expected(c, expected_output_hints)
         && !low.contains("#include <iostream>")
+}
+
+pub(crate) fn run_command_invocation_mentions_hello(c: &str) -> bool {
+    run_command_invocation_matches_expected_output(c, &[])
 }
 
 fn is_program_build_and_run_goal(goal: &SubGoal) -> bool {
@@ -539,6 +623,24 @@ mod tests {
     }
 
     #[test]
+    fn run_executable_verification_failure_contains_diag_fields() {
+        let result = TaskResult {
+            task_id: "goal_run".to_string(),
+            status: TaskStatus::Completed,
+            output: Some("Tool run_command\n标准输出：\n(no hello)\n退出码：0".to_string()),
+            error: None,
+            artifacts: vec![],
+            duration_ms: 0,
+            tools_invoked: vec!["run_command".to_string()],
+        };
+        let err =
+            verify_run_executable_subgoal_tool_evidence(&result, &[]).expect_err("should fail");
+        assert!(err.contains("[diag tools_invoked="));
+        assert!(err.contains("exit_code="));
+        assert!(err.contains("output_preview="));
+    }
+
+    #[test]
     fn program_build_run_goal_fails_when_only_read_dir() {
         let verifier = GoalVerifier::new(std::env::temp_dir());
         let goal = SubGoal::new("goal_1", "编写一个简单c++程序并执行");
@@ -561,5 +663,23 @@ mod tests {
             }
             _ => panic!("expected fail with missing evidence"),
         }
+    }
+
+    #[test]
+    fn build_only_subgoal_is_not_run_executable_subgoal() {
+        let goal = SubGoal::new(
+            "goal_build",
+            "运行 cmake --build build 编译生成可执行文件，不执行程序",
+        );
+        assert!(!is_run_executable_subgoal(&goal));
+    }
+
+    #[test]
+    fn run_subgoal_is_run_executable_subgoal() {
+        let goal = SubGoal::new(
+            "goal_run",
+            "运行 ./build/myapp 并验证输出包含 Hello from CMake!",
+        );
+        assert!(is_run_executable_subgoal(&goal));
     }
 }
