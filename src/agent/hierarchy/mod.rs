@@ -20,6 +20,7 @@ pub mod operator;
 pub mod router;
 pub mod runner;
 pub mod session_state;
+pub mod subgoal_context;
 pub mod task;
 pub mod tool_executor;
 
@@ -40,6 +41,6 @@ pub use session_state::{
 };
 pub use task::{
     Artifact, ArtifactKind as TaskArtifactKind, BuildArtifactKind, BuildRequirements, Capability,
-    ExecutionStrategy, GoalAcceptance, SubGoal, TaskResult, TaskStatus,
+    DependencyContractEntry, ExecutionStrategy, GoalAcceptance, SubGoal, TaskResult, TaskStatus,
 };
 pub use tool_executor::{ExtractedArtifact, ExtractedArtifactKind, ToolExecutionResult};

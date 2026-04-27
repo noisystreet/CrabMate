@@ -18,7 +18,7 @@ use super::goal_verifier::{GoalVerifier, VerificationResult};
 use super::manager::{ManagerOutput, handle_failure};
 use super::operator::{OperatorAgent, OperatorConfig};
 use super::task::{
-    Artifact, ArtifactKind, BuildArtifactKind, ExecutionStrategy, SubGoal, TaskResult, TaskStatus,
+    ArtifactKind, BuildArtifactKind, ExecutionStrategy, SubGoal, TaskResult, TaskStatus,
 };
 use super::tool_executor::{ToolExecutor, ToolExecutorContext};
 use crate::types::{CommandApprovalDecision, Tool};
@@ -347,7 +347,7 @@ impl<'a> HierarchicalExecutor<'a> {
             build_state.source_files.len(),
             build_state.artifact_cache.len()
         );
-        let mut all_results = Vec::new();
+        let mut all_results: Vec<TaskResult> = Vec::new();
         let mut answer_phase_emitted = false;
 
         // 按层级执行
@@ -371,15 +371,25 @@ impl<'a> HierarchicalExecutor<'a> {
                 .filter_map(|id| sub_goals.iter().find(|g| &g.goal_id == id))
                 .collect();
 
-            // 按策略执行（传递 artifact_store 和 build_state）
+            // 按策略执行（传递 artifact_store 和 build_state；`all_results` 供同层/后续层补全 I/O 契约与步摘要）
             let level_results = match strategy {
                 ExecutionStrategy::Sequential => {
-                    self.execute_sequential(&level_goals, &mut artifact_store, &mut build_state)
-                        .await
+                    self.execute_sequential(
+                        &level_goals,
+                        &all_results,
+                        &mut artifact_store,
+                        &mut build_state,
+                    )
+                    .await
                 }
                 ExecutionStrategy::Parallel | ExecutionStrategy::Hybrid => {
-                    self.execute_parallel(&level_goals, &mut artifact_store, &mut build_state)
-                        .await
+                    self.execute_parallel(
+                        &level_goals,
+                        &all_results,
+                        &mut artifact_store,
+                        &mut build_state,
+                    )
+                    .await
                 }
             }?;
 
@@ -518,15 +528,20 @@ impl<'a> HierarchicalExecutor<'a> {
     async fn execute_sequential(
         &self,
         goals: &[&SubGoal],
+        prior_subgoal_results: &[TaskResult],
         artifact_store: &mut ArtifactStore,
         build_state: &mut BuildState,
     ) -> Result<Vec<TaskResult>, ExecutionError> {
+        let current_level_ids: std::collections::HashSet<String> =
+            goals.iter().map(|g| g.goal_id.to_string()).collect();
+        let mut acc: Vec<TaskResult> = prior_subgoal_results.to_vec();
         let mut results = Vec::new();
 
         for goal in goals {
             let result = self
-                .execute_single(goal, artifact_store, build_state)
+                .execute_single(goal, &acc, &current_level_ids, artifact_store, build_state)
                 .await?;
+            acc.push(result.clone());
             results.push(result);
         }
 
@@ -544,6 +559,7 @@ impl<'a> HierarchicalExecutor<'a> {
     async fn execute_parallel(
         &self,
         goals: &[&SubGoal],
+        prior_subgoal_results: &[TaskResult],
         artifact_store: &mut ArtifactStore,
         build_state: &mut BuildState,
     ) -> Result<Vec<TaskResult>, ExecutionError> {
@@ -562,7 +578,7 @@ impl<'a> HierarchicalExecutor<'a> {
                 "[HIERARCHICAL] Parallel execution requires full context, falling back to sequential"
             );
             return self
-                .execute_sequential(goals, artifact_store, build_state)
+                .execute_sequential(goals, prior_subgoal_results, artifact_store, build_state)
                 .await;
         };
 
@@ -579,6 +595,10 @@ impl<'a> HierarchicalExecutor<'a> {
         let tool_approval_out = self.tool_approval_out.clone(); // 克隆审批发送器
         let tool_approval_rx = self.tool_approval_rx.clone(); // 克隆审批接收器
         let probe_cache = self.probe_cache.clone();
+        let prior = Arc::new(prior_subgoal_results.to_vec());
+        let pre_snapshot: Arc<ArtifactStore> = Arc::new(artifact_store.clone());
+        let current_ids: std::sync::Arc<HashSet<String>> =
+            Arc::new(goals.iter().map(|g| g.goal_id.to_string()).collect());
 
         // 为每个子目标创建并发任务
         for goal in goals {
@@ -598,6 +618,9 @@ impl<'a> HierarchicalExecutor<'a> {
             let tool_approval_out = tool_approval_out.clone(); // 每个任务克隆审批发送器
             let tool_approval_rx = tool_approval_rx.clone(); // 每个任务克隆审批接收器
             let probe_cache = probe_cache.clone();
+            let prior = prior.clone();
+            let pre_snapshot = pre_snapshot.clone();
+            let current_ids = current_ids.clone();
 
             join_set.spawn(async move {
                 let _permit = permit; // 持有 permit 直到任务完成
@@ -605,14 +628,39 @@ impl<'a> HierarchicalExecutor<'a> {
                 let goal_description = goal.description.clone();
                 let goal_required_tools = goal.required_tools.clone();
 
-                // 创建独立的 artifact store
-                let store = ArtifactStore::new();
+                // 独立子 store，先合并**执行本层前**的共享产物，再运行（并行同层时彼此产物不可见）
+                let mut store = ArtifactStore::new();
+                store.merge_from(&pre_snapshot);
+
+                let goal = super::subgoal_context::ensure_consumes_from_dependencies(
+                    &goal,
+                    prior.as_slice(),
+                    current_ids.as_ref(),
+                    true,
+                );
+                if let Some(msg) =
+                    super::subgoal_context::validate_depends_consumes_consistency(&goal)
+                {
+                    log::warn!(target: "crabmate", "[HIERARCHICAL] I/O: {}", msg);
+                }
+
+                let mut allowed_tools = goal.required_tools.clone();
+                supplement_subgoal_required_tools(&goal.description, &mut allowed_tools);
+                let tools_defs_for_llm = if allowed_tools.is_empty() {
+                    tools_defs.clone()
+                } else {
+                    tools_defs
+                        .iter()
+                        .filter(|t| allowed_tools.contains(&t.function.name))
+                        .cloned()
+                        .collect()
+                };
 
                 // 创建 Operator 配置（现在支持 SSE 和动态分解）
                 let operator_config = OperatorConfig {
                     max_iterations: 15,
-                    allowed_tools: Vec::new(),
-                    tools_defs,
+                    allowed_tools: allowed_tools.clone(),
+                    tools_defs: tools_defs_for_llm,
                     sse_out, // 传递 SSE 发送器以支持工具调用事件
                     artifact_store: Some(store.clone()),
                     build_state: Some(Arc::new(StdMutex::new(build_state.clone()))),
@@ -662,8 +710,25 @@ impl<'a> HierarchicalExecutor<'a> {
 
                 let tool_executor = ToolExecutor::new(tool_executor_ctx);
 
-                // 执行子目标
-                // 使用全局静态的 OPENAI_COMPAT_BACKEND，避免生命周期问题
+                let raw_arts =
+                    super::subgoal_context::collect_artifacts_for_goals(&store, &goal.depends_on);
+                let fdeps: Vec<_> =
+                    super::subgoal_context::filter_dependencies_for_injection(&goal, &raw_arts);
+                if fdeps.len() < raw_arts.len() {
+                    log::info!(
+                        target: "crabmate",
+                        "[HIERARCHICAL] Parallel: dependency filtered {} -> {} for goal_id={}",
+                        raw_arts.len(),
+                        fdeps.len(),
+                        goal.goal_id
+                    );
+                }
+                let extra = super::subgoal_context::build_injected_subgoal_user_extra(
+                    &goal,
+                    &fdeps,
+                    prior.as_slice(),
+                );
+                // 使用全局静态的 OPENAI_COMPAT_BACKEND
                 let result = operator
                     .execute_with_tools(
                         &goal,
@@ -672,7 +737,7 @@ impl<'a> HierarchicalExecutor<'a> {
                         &client,
                         &api_key,
                         &tool_executor,
-                        None,
+                        extra.as_deref(),
                     )
                     .await;
 
@@ -796,11 +861,22 @@ impl<'a> HierarchicalExecutor<'a> {
     async fn execute_single(
         &self,
         goal: &SubGoal,
+        prior_subgoals_for_context: &[TaskResult],
+        current_level_goal_ids: &HashSet<String>,
         artifact_store: &mut ArtifactStore,
         build_state: &BuildState,
     ) -> Result<TaskResult, ExecutionError> {
-        let mut current_goal = goal.clone();
-        let max_retries = goal.max_retries.unwrap_or(3);
+        if let Some(msg) = super::subgoal_context::validate_depends_consumes_consistency(goal) {
+            warn!(target: "crabmate", "[HIERARCHICAL] I/O 契约: {}", msg);
+        }
+
+        let mut current_goal = super::subgoal_context::ensure_consumes_from_dependencies(
+            goal,
+            prior_subgoals_for_context,
+            current_level_goal_ids,
+            true,
+        );
+        let max_retries = current_goal.max_retries.unwrap_or(3);
 
         // 创建验证器
         let verifier = self
@@ -811,7 +887,12 @@ impl<'a> HierarchicalExecutor<'a> {
         for attempt in 0..max_retries {
             // 阶段 1: 执行
             let result = self
-                .execute_single_impl(&current_goal, artifact_store, build_state)
+                .execute_single_impl(
+                    &current_goal,
+                    prior_subgoals_for_context,
+                    artifact_store,
+                    build_state,
+                )
                 .await?;
 
             // 检查是否需要动态分解
@@ -1075,15 +1156,26 @@ impl<'a> HierarchicalExecutor<'a> {
     async fn execute_single_impl(
         &self,
         goal: &SubGoal,
+        prior_subgoals: &[TaskResult],
         artifact_store: &mut ArtifactStore,
         build_state: &BuildState,
     ) -> Result<TaskResult, ExecutionError> {
-        // 获取依赖的 artifacts
-        let deps = artifact_store.get_dependencies(&goal.depends_on);
+        // 获取依赖的 artifacts 并按 I/O 契约与类型**裁剪**（默认排除 buildlog/纯 CommandOutput 等）
+        let raw = artifact_store.get_dependencies(&goal.depends_on);
+        let deps: Vec<_> = super::subgoal_context::filter_dependencies_for_injection(goal, &raw);
+        if deps.len() < raw.len() {
+            log::info!(
+                target: "crabmate",
+                "[HIERARCHICAL] Executor: dependency injection filtered {} -> {} artifacts for goal_id={}",
+                raw.len(),
+                deps.len(),
+                goal.goal_id
+            );
+        }
 
         info!(
             target: "crabmate",
-            "[HIERARCHICAL] Executor: executing goal_id={} desc={} deps={} tools={:?}",
+            "[HIERARCHICAL] Executor: executing goal_id={} desc={} deps_injected={} tools={:?}",
             goal.goal_id,
             truncate_goal_desc(&goal.description),
             deps.len(),
@@ -1166,12 +1258,11 @@ impl<'a> HierarchicalExecutor<'a> {
                         tool_executor_ctx.with_web_approval_arc(out_tx, approval_rx);
                 }
                 let tool_executor = ToolExecutor::new(tool_executor_ctx);
-                // 构建额外上下文（依赖 artifacts：每前置 goal 的**全部**已登记产物）
-                let extra_context = if deps.is_empty() {
-                    None
-                } else {
-                    Some(self.format_dependencies_context(&goal.depends_on, &deps))
-                };
+                let extra = super::subgoal_context::build_injected_subgoal_user_extra(
+                    goal,
+                    &deps,
+                    prior_subgoals,
+                );
                 operator
                     .execute_with_tools(
                         goal,
@@ -1180,7 +1271,7 @@ impl<'a> HierarchicalExecutor<'a> {
                         client,
                         api_key,
                         &tool_executor,
-                        extra_context.as_deref(),
+                        extra.as_deref(),
                     )
                     .await
             } else {
@@ -1419,65 +1510,6 @@ impl<'a> HierarchicalExecutor<'a> {
                 None
             }
         }
-    }
-
-    /// 按 `depends_on` 分组格式化前置子目标产物，便于本步**直接引用**路径（相对工作区根）。
-    fn format_dependencies_context(&self, depends_on: &[String], deps: &[&Artifact]) -> String {
-        if deps.is_empty() {
-            return String::new();
-        }
-
-        let mut sections: Vec<String> = vec![concat!(
-            "## 来自前置子目标的已登记产物\n",
-            "执行当前子目标时**请优先使用**下列路径/内容，避免与已完成步骤矛盾或重复创建同一产物。\n",
-        )
-        .to_string()];
-
-        for dep_goal_id in depends_on {
-            let group: Vec<&Artifact> = deps
-                .iter()
-                .copied()
-                .filter(|a| a.produced_by == *dep_goal_id)
-                .collect();
-            if group.is_empty() {
-                sections.push(format!(
-                    "### 子目标 `{dep_goal_id}`\n- （尚无登记产物，若本步需要其输出，请用工具在工作区中确认路径。）"
-                ));
-                continue;
-            }
-
-            let mut lines = vec![format!("### 子目标 `{dep_goal_id}`")];
-            for dep in &group {
-                let kind_str = format!("{:?}", dep.kind).to_lowercase();
-                let line = if let Some(ref path) = dep.path {
-                    format!(
-                        "- `artifact_id={}` · [{}] **{}** — 工作区相对路径: `{}`",
-                        dep.id, kind_str, dep.name, path
-                    )
-                } else if let Some(ref content) = dep.content {
-                    let total = content.chars().count();
-                    let preview: String = content.chars().take(200).collect();
-                    let body = if total > 200 {
-                        format!("{preview}... (共 {total} 字符)")
-                    } else {
-                        preview
-                    };
-                    format!(
-                        "- `artifact_id={}` · [{}] **{}**（无 path，有内容摘要）\n  ```\n  {}\n  ```",
-                        dep.id, kind_str, dep.name, body
-                    )
-                } else {
-                    format!(
-                        "- `artifact_id={}` · [{}] **{}**（无 path/内容，仅元数据名）",
-                        dep.id, kind_str, dep.name
-                    )
-                };
-                lines.push(line);
-            }
-            sections.push(lines.join("\n"));
-        }
-
-        sections.join("\n\n")
     }
 
     /// 从执行结果中更新构建状态

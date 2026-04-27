@@ -1799,6 +1799,32 @@ impl OperatorAgent {
                 // 检查字符串是否包含占位符
                 let mut result = s.clone();
 
+                // 分层 I/O：{ref:goal_id:artifact_id} → 工作区相对 path
+                {
+                    const REF: &str = "{ref:";
+                    let mut s = 0;
+                    while let Some(i) = result[s..].find(REF) {
+                        let abs = s + i;
+                        if let Some(e) = result[abs..].find('}') {
+                            let end = abs + e;
+                            let inner = &result[abs + REF.len()..=end - 1];
+                            if let Some((from_goal, art_id)) = inner.split_once(':')
+                                && let Some(p) =
+                                    resolver.resolve_ref(from_goal.trim(), art_id.trim())
+                            {
+                                let path_str = p.to_string_lossy();
+                                result.replace_range(abs..=end, &path_str);
+                                modified = true;
+                                s = abs + path_str.len();
+                                continue;
+                            }
+                        }
+                        s = abs + 1;
+                        if s >= result.len() {
+                            break;
+                        }
+                    }
+                }
                 // 查找所有 {artifact:name} 模式
                 let pattern = "{artifact:";
                 let mut start = 0;
