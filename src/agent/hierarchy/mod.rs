@@ -16,6 +16,7 @@ pub mod events;
 pub mod execution;
 pub mod goal_verifier;
 pub mod manager;
+pub mod manager_json_repair;
 pub mod operator;
 pub mod router;
 pub mod runner;

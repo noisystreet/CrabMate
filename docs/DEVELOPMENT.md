@@ -187,14 +187,14 @@ flowchart TB
 #### 现有功能概述
 模块实现了 Manager + Operator 分层架构：
 - **Router**: 根据任务复杂度选择执行模式
-- **Manager**: 任务分解与协调；LLM 输出的子目标可含 **`consumes_from_dependencies`（+ 可选 `only_kinds`）** 与 **`build_requirements`**，用于声明从哪些前序子目标**消费**何种产物。分解/重规划 prompt 要求**显式 I/O 契约**（`description` 中写清输入/输出、占位符约定）。
+- **Manager**: 任务分解与协调；LLM 输出的子目标可含 **`consumes_from_dependencies`（+ 可选 `only_kinds`）** 与 **`build_requirements`**，用于声明从哪些前序子目标**消费**何种产物。分解/重规划 prompt 要求**显式 I/O 契约**（`description` 中写清输入/输出、占位符约定）。**`manager_json_repair`**：分解输出与验证失败反思共用的 JSON 提取/诊断与「最多一次」无工具低温 JSON 修复补调用（**`one_shot_json_repair_llm_response`**）。
 - **Operator**: 子目标执行（ReAct 循环：思考→行动→观察）
 - **ArtifactStore** / **`subgoal_context`**: 全局产物存储；`get_dependencies(depends_on)` 仍返回每个前置子目标的**全部**登记产物；注入到 Operator 前经 **`filter_dependencies_for_injection`**（`only_kinds` 白名单或**默认**排除 `BuildLog` 与无 path 的 `CommandOutput` 等）。**`normalize_subgoal_io_contracts`** 在 Manager 解析与执行前**去重/过滤** `consumes_from_dependencies`（`from_goal_id` 须 ∈ `depends_on`）。注入文本含 **`{ref:<produced_by>:<artifact_id>}`** 与 **`{artifact:...}`** 说明；`Operator` 在工具参数 JSON 字符串中展开 **`{ref:...}`** 为**工作区相对**路径（`ArtifactResolver::resolve_ref`）。`HierarchicalExecutor` 在 **user** 附加上下文中还拼接**最近若干步**的结构化步摘要（**`build_prior_subgoals_summary_block_with_limits`**，默认步数与整块字符上限见 **`PriorSummaryLimits`**，从尾部保留较新步、避免与依赖节抢上下文）。并行同层执行前将**当时**的共享 `ArtifactStore` **快照**合并进子任务子 store，使**跨层/跨级**前序产物可见；**同层并行**子目标**彼此**当轮产物**互不可见**（见 `execute_parallel` 日志与注释）。Manager **反思** JSON 的 `updated_goal` 可带 **`consumes_from_dependencies` / `build_requirements`**，与分解 schema 对齐。
 
 #### 主要改进点
 
 **A. Manager 代码质量**
-- **文件**: `src/agent/hierarchy/manager.rs` (约895行)
+- **文件**: `src/agent/hierarchy/manager.rs`（JSON 提取与一次修复补调用已部分迁至 **`manager_json_repair.rs`**）
 - **问题**: 函数过长且复杂（如 `decompose_with_llm` ~200行，`execute_subgoal` ~300行）
 - **建议**: 提取提示词构建至独立函数，将执行循环拆分为更小的状态处理函数
 

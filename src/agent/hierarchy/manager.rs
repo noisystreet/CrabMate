@@ -488,7 +488,7 @@ impl ManagerAgent {
         content: &str,
         original_goal: &SubGoal,
     ) -> Result<ManagerDecision, ManagerError> {
-        let json_str = extract_json(content).ok_or_else(|| {
+        let json_str = super::manager_json_repair::extract_json(content).ok_or_else(|| {
             ManagerError::ParseError("Failed to extract JSON from response".to_string())
         })?;
 
@@ -1108,8 +1108,8 @@ impl ManagerAgent {
         content: &str,
         finish_reason: Option<&str>,
     ) -> Result<ManagerOutput, ManagerError> {
-        let json_str = extract_json(content).ok_or_else(|| {
-            let diag = extract_json_diagnostic(content);
+        let json_str = super::manager_json_repair::extract_json(content).ok_or_else(|| {
+            let diag = super::manager_json_repair::extract_json_diagnostic(content);
             log::warn!(
                 target: "crabmate",
                 "[HIERARCHICAL] Manager: failed to extract JSON from response: finish_reason={:?} head={:?} tail={:?} depth={} in_string={}",
@@ -1224,42 +1224,38 @@ impl ManagerAgent {
                     "[HIERARCHICAL] Manager: plan parse failed, attempting one-shot JSON repair LLM: {}",
                     parse_err
                 );
-                let json_fragment = extract_json_candidate_for_repair(content);
+                let json_fragment =
+                    super::manager_json_repair::extract_json_candidate_for_repair(content);
                 let repair_user = Self::build_manager_json_repair_user_prompt(
                     json_fragment.as_str(),
                     &parse_err.to_string(),
                 );
-                let mut messages = vec![Message::user_only(json_fragment)];
-                messages.push(Message::user_only(repair_user));
-                let mut request = no_tools_chat_request_for_hierarchical_manager(
+                let params = CompleteChatRetryingParams::new(
+                    llm_backend,
+                    client,
+                    api_key,
                     cfg,
-                    &messages,
-                    Some(Self::MANAGER_JSON_REPAIR_TEMPERATURE),
+                    LlmRetryingTransportOpts::headless_no_stream(),
                     None,
-                    LlmSeedOverride::FromConfig,
+                    None,
                 );
-                Self::force_manager_structured_json_mode(&mut request);
-                let response = complete_chat_retrying(
-                    &CompleteChatRetryingParams::new(
-                        llm_backend,
-                        client,
-                        api_key,
-                        cfg,
-                        LlmRetryingTransportOpts::headless_no_stream(),
-                        None,
-                        None,
-                    ),
-                    &request,
+                let fixed = super::manager_json_repair::one_shot_json_repair_llm_response(
+                    &params,
+                    cfg,
+                    Some(Self::MANAGER_JSON_REPAIR_TEMPERATURE),
+                    LlmSeedOverride::FromConfig,
+                    Self::force_manager_structured_json_mode,
+                    json_fragment,
+                    repair_user,
                 )
                 .await
-                .map_err(|e| ManagerError::LlmError(e.to_string()))?;
-                let fixed = message_content_as_str(&response.0.content).unwrap_or_default();
+                .map_err(ManagerError::LlmError)?;
                 log::debug!(
                     target: "crabmate",
                     "[HIERARCHICAL] Manager: plan JSON repair response preview: {}",
-                    truncate_for_log(fixed, 500)
+                    truncate_for_log(fixed.as_str(), 500)
                 );
-                self.parse_output(fixed, None)
+                self.parse_output(fixed.as_str(), None)
             }
             Err(e) => Err(e),
         }
@@ -1428,31 +1424,29 @@ impl ManagerAgent {
                     "[HIERARCHICAL] Manager: reflection parse failed, attempting JSON repair LLM: {}",
                     parse_err
                 );
-                let json_fragment = extract_json_candidate_for_repair(content);
+                let json_fragment =
+                    super::manager_json_repair::extract_json_candidate_for_repair(content);
                 let repair_user = Self::build_reflection_json_repair_user_prompt(
                     json_fragment.as_str(),
                     &parse_err.to_string(),
                 );
-                let mut messages = vec![Message::user_only(json_fragment)];
-                messages.push(Message::user_only(repair_user));
-                let mut request = no_tools_chat_request_for_hierarchical_manager(
+                let fixed = super::manager_json_repair::one_shot_json_repair_llm_response(
+                    &params,
                     cfg,
-                    &messages,
                     Some(Self::REFLECTION_JSON_REPAIR_TEMPERATURE),
-                    None,
                     LlmSeedOverride::FromConfig,
-                );
-                Self::force_manager_structured_json_mode(&mut request);
-                let response = complete_chat_retrying(&params, &request)
-                    .await
-                    .map_err(|e| ManagerError::LlmError(e.to_string()))?;
-                let fixed = message_content_as_str(&response.0.content).unwrap_or_default();
+                    Self::force_manager_structured_json_mode,
+                    json_fragment,
+                    repair_user,
+                )
+                .await
+                .map_err(ManagerError::LlmError)?;
                 log::debug!(
                     target: "crabmate",
                     "[HIERARCHICAL] Manager: JSON repair response preview: {}",
-                    truncate_for_log(fixed, 500)
+                    truncate_for_log(fixed.as_str(), 500)
                 );
-                self.parse_reflection_output(failed_goal, fixed, working_dir, true)
+                self.parse_reflection_output(failed_goal, fixed.as_str(), working_dir, true)
             }
             Err(e) => Err(e),
         }
@@ -1648,7 +1642,7 @@ impl ManagerAgent {
     /// 第二次调用：在首轮模型输出上仅提取/修复符合模式的 JSON
     fn build_reflection_json_repair_user_prompt(json_fragment: &str, parse_error: &str) -> String {
         let err_preview = truncate_for_log(parse_error, 500);
-        let a = truncate_to_char_boundary(json_fragment, 12_000);
+        let a = super::manager_json_repair::truncate_to_char_boundary(json_fragment, 12_000);
         format!(
             r#"上一次你在尝试输出反思 JSON 时，解析器报错如下（**不要**在输出中照抄本说明文字）:
 {err_preview}
@@ -1666,7 +1660,7 @@ impl ManagerAgent {
     /// 分解/重规划第二次调用：仅提取/修复 `sub_goals + execution_strategy` JSON。
     fn build_manager_json_repair_user_prompt(json_fragment: &str, parse_error: &str) -> String {
         let err_preview = truncate_for_log(parse_error, 500);
-        let a = truncate_to_char_boundary(json_fragment, 12_000);
+        let a = super::manager_json_repair::truncate_to_char_boundary(json_fragment, 12_000);
         format!(
             r#"上一次你在输出任务分解 JSON 时，解析器报错如下（**不要**在输出中照抄本说明文字）:
 {err_preview}
@@ -1705,7 +1699,7 @@ impl ManagerAgent {
         } else {
             "reflection"
         };
-        let json_str = extract_json(content).ok_or_else(|| {
+        let json_str = super::manager_json_repair::extract_json(content).ok_or_else(|| {
             log::warn!(
                 target: "crabmate",
                 "[HIERARCHICAL] Manager: failed to extract JSON from {label} response"
@@ -1831,22 +1825,6 @@ impl ManagerAgent {
 
         Ok(updated_goal)
     }
-}
-
-/// 在 utf-8 下按**字符**数截断到上限（用于打包进二轮 JSON 修复的 user 消息，避免超上下文）。
-fn truncate_to_char_boundary(s: &str, max_chars: usize) -> &str {
-    if s.chars().count() <= max_chars {
-        return s;
-    }
-    let mut n = 0;
-    for (i, c) in s.char_indices() {
-        n += 1;
-        if n == max_chars {
-            let end = i + c.len_utf8();
-            return &s[..end];
-        }
-    }
-    s
 }
 
 /// 反思产出的 `acceptance` 与 `GoalVerifier::run_verify_command`（无 shell 的 argv）对齐：去路径穿越、
@@ -2021,106 +1999,6 @@ pub fn handle_failure(
     (completed, failed, decision)
 }
 
-/// 从响应中提取最外层 JSON 对象切片（跳过前文噪音）。
-///
-/// 须在 **双引号字符串外**统计 `{}`，否则子目标 `description` 等字段中的 `{` / `}` 会破坏朴素括号计数，
-/// 导致永远找不到匹配的闭合括号（表现为 `Failed to extract JSON`）。
-fn extract_json(content: &str) -> Option<&str> {
-    let start = content.find('{')?;
-    let mut depth = 0u32;
-    let mut in_string = false;
-    let mut escape = false;
-    for (rel_byte, c) in content[start..].char_indices() {
-        if in_string {
-            if escape {
-                escape = false;
-                continue;
-            }
-            match c {
-                '\\' => escape = true,
-                '"' => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match c {
-            '"' => in_string = true,
-            '{' => depth = depth.saturating_add(1),
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    let end = start + rel_byte + c.len_utf8();
-                    return Some(&content[start..end]);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-/// 为 JSON 修复补调用提取“最像 JSON”的候选片段，尽量降低噪声。
-fn extract_json_candidate_for_repair(content: &str) -> String {
-    if let Some(s) = extract_json(content) {
-        return s.to_string();
-    }
-    if let Some(start) = content.find('{') {
-        return truncate_to_char_boundary(&content[start..], 12_000).to_string();
-    }
-    truncate_to_char_boundary(content, 12_000).to_string()
-}
-
-#[derive(Debug)]
-struct ExtractJsonDiagnostic {
-    depth: u32,
-    in_string: bool,
-    tail: String,
-}
-
-/// JSON 提取失败时的快速诊断：
-/// - `depth > 0`：大概率为输出被截断（缺失闭合 `}`）；
-/// - `in_string = true`：字符串可能未闭合；
-/// - `tail`：末尾片段，便于定位中断点。
-fn extract_json_diagnostic(content: &str) -> ExtractJsonDiagnostic {
-    let start = content.find('{').unwrap_or(0);
-    let mut depth = 0u32;
-    let mut in_string = false;
-    let mut escape = false;
-    for c in content[start..].chars() {
-        if in_string {
-            if escape {
-                escape = false;
-                continue;
-            }
-            match c {
-                '\\' => escape = true,
-                '"' => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match c {
-            '"' => in_string = true,
-            '{' => depth = depth.saturating_add(1),
-            '}' => depth = depth.saturating_sub(1),
-            _ => {}
-        }
-    }
-    let tail: String = content
-        .chars()
-        .rev()
-        .take(200)
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect();
-    ExtractJsonDiagnostic {
-        depth,
-        in_string,
-        tail,
-    }
-}
-
 /// 尝试修复常见的 LLM JSON 格式错误
 fn fix_common_json_errors(content: &str) -> String {
     let mut fixed = content.to_string();
@@ -2164,37 +2042,6 @@ mod tests {
         let manager = ManagerAgent::new(ManagerConfig::default());
         let output = manager.decompose_fallback("测试任务");
         assert_eq!(output.sub_goals.len(), 1);
-    }
-
-    #[test]
-    fn test_extract_json() {
-        let content = "好的，我来分解。\n{\n  \"sub_goals\": []\n}\n完成";
-        let json = extract_json(content).unwrap();
-        assert!(json.contains("sub_goals"));
-    }
-
-    #[test]
-    fn test_extract_json_diagnostic_reports_unclosed_object() {
-        let d = extract_json_diagnostic(r#"{"sub_goals":[{"goal_id":"g1""#);
-        assert!(d.depth > 0);
-        assert!(!d.tail.is_empty());
-    }
-
-    #[test]
-    fn extract_json_candidate_prefers_json_slice() {
-        let raw = "前文噪音\n{\"sub_goals\":[]}\n后文";
-        let out = extract_json_candidate_for_repair(raw);
-        assert_eq!(out, "{\"sub_goals\":[]}");
-    }
-
-    #[test]
-    fn test_extract_json_braces_inside_string_values() {
-        let content = r#"{"sub_goals":[{"goal_id":"g1","description":"查看 {src} 与 } 符号","priority":1,"depends_on":[],"required_tools":[]}],"execution_strategy":"sequential"}"#;
-        let json = extract_json(content).unwrap();
-        assert!(json.contains("sub_goals"));
-        assert!(json.contains("{src}"));
-        let v: serde_json::Value = serde_json::from_str(json).expect("valid JSON");
-        assert!(v.get("sub_goals").is_some());
     }
 
     #[test]
