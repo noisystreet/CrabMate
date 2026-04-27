@@ -157,6 +157,27 @@ pub fn tool_arguments_redacted_for_sse(args: &str) -> String {
     single_line_preview(&s, TOOL_CALL_ARGUMENTS_SSE_REDACTED_MAX_CHARS)
 }
 
+/// 对**整段 JSON 文本**做与 [`tool_arguments_redacted_for_sse`] 同源的启发式脱敏，供**落盘**回合重放/调试（非密码学级保证，仅降低误写入明显密钥形态）。
+pub fn redact_secrets_in_json_str(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+    let mut t = s.to_string();
+    t = RE_SK_API_LIKE.replace_all(&t, "sk-<redacted>").to_string();
+    t = RE_BEARER.replace_all(&t, "Bearer <redacted>").to_string();
+    t = RE_JSON_SECRET_STRING
+        .replace_all(&t, |caps: &regex::Captures<'_>| {
+            format!("{}<redacted>{}", &caps[1], &caps[4])
+        })
+        .to_string();
+    t = RE_URL_QUERY_SECRET
+        .replace_all(&t, |caps: &regex::Captures<'_>| {
+            format!("{}{}=<redacted>", &caps[1], &caps[2])
+        })
+        .to_string();
+    t
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +230,13 @@ mod tests {
         let sk = r#"{"k":"sk-1234567890abcdef"}"#;
         let r2 = tool_arguments_redacted_for_sse(sk);
         assert!(r2.contains("sk-<redacted>"));
+    }
+
+    #[test]
+    fn redact_secrets_in_json_str_preserve_structure() {
+        let raw = r#"{"api_key":"x","bearer":"y","u":"https://a.com?token=sec"}"#;
+        let r = redact_secrets_in_json_str(raw);
+        assert!(!r.contains("sec"), "{r}");
+        assert!(r.contains("api_key") && r.contains("u"));
     }
 }
