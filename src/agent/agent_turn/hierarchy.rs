@@ -84,6 +84,18 @@ pub(crate) async fn run_hierarchical_agent(
                 && qa_readonly_style_primary(&assessment.primary_intent)
                 && matches!(&assessment.action, IntentAction::DirectReply(_)));
     if skip_manager_for_discourse {
+        crate::turn_replay_dump::append_decision_point_event_if_configured(
+            "intent",
+            "agent_execution_mode",
+            "single_agent_outer_loop",
+            "意图判定为话语型/澄清确认流，跳过分层 Manager，转主模型单 Agent 外循环",
+            serde_json::json!({
+                "intent_kind": format!("{:?}", assessment.kind),
+                "primary_intent": assessment.primary_intent,
+            }),
+            "current_turn",
+            None,
+        );
         let action_tag = match &assessment.action {
             IntentAction::Execute => "Execute",
             IntentAction::DirectReply(_) => "DirectReply",
@@ -259,11 +271,48 @@ async fn handle_execution_result(
         format!("{with_core}\n\n{evidence_md}")
     };
 
-    let final_response: String = if let Some(reason) = verify_task_level_execution_evidence(
+    let task_acceptance_reason = verify_task_level_execution_evidence(
         original_task,
         &execution_result.results,
         &execution_result.goal_expected_outputs,
-    ) {
+    );
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "acceptance_check",
+        "task_level",
+        Some(&serde_json::json!({
+            "passed": task_acceptance_reason.is_none(),
+            "reason": task_acceptance_reason.clone(),
+            "total_goals": execution_result.results.len(),
+            "total_completed": execution_result.total_completed,
+            "total_failed": execution_result.total_failed,
+            "duration_ms": execution_result.total_duration_ms,
+            "phase": "acceptance",
+        })),
+    );
+    crate::turn_replay_dump::append_decision_point_event_if_configured(
+        "acceptance",
+        "task_acceptance",
+        if task_acceptance_reason.is_none() {
+            "pass"
+        } else {
+            "fail"
+        },
+        if task_acceptance_reason.is_none() {
+            "任务级验收通过"
+        } else {
+            "任务级验收未通过"
+        },
+        serde_json::json!({
+            "reason": task_acceptance_reason.clone(),
+            "total_goals": execution_result.results.len(),
+            "total_completed": execution_result.total_completed,
+            "total_failed": execution_result.total_failed,
+            "duration_ms": execution_result.total_duration_ms,
+        }),
+        "current_turn",
+        None,
+    );
+    let final_response: String = if let Some(reason) = task_acceptance_reason {
         format!("{with_evidence}\n\n---\n**任务级验收（未通过）**：{reason}\n")
     } else if is_program_build_run_request(original_task) {
         if execution_result.total_failed == 0 {

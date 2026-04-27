@@ -132,6 +132,18 @@ pub(crate) async fn send_staged_plan_step_started(
     description: &str,
     executor_kind: Option<&str>,
 ) {
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "staged_plan_step_started",
+        description,
+        Some(&serde_json::json!({
+            "plan_id": plan_id,
+            "step_id": step_id,
+            "step_index": step_index,
+            "total_steps": total_steps,
+            "description": description,
+            "executor_kind": executor_kind,
+        })),
+    );
     let Some(tx) = out else {
         return;
     };
@@ -163,6 +175,19 @@ pub(crate) async fn send_staged_plan_step_finished(
     executor_kind: Option<&str>,
     verify_fail_reason: Option<&str>,
 ) {
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "staged_plan_step_finished",
+        step_id,
+        Some(&serde_json::json!({
+            "plan_id": plan_id,
+            "step_id": step_id,
+            "step_index": step_index,
+            "total_steps": total_steps,
+            "status": status,
+            "executor_kind": executor_kind,
+            "verify_fail_reason": verify_fail_reason,
+        })),
+    );
     let Some(tx) = out else {
         return;
     };

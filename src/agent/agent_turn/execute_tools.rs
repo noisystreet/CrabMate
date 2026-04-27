@@ -239,6 +239,11 @@ async fn emit_timeline_log_sse(
     detail: Option<String>,
     log_label: &'static str,
 ) {
+    crate::turn_replay_dump::append_turn_replay_event_if_configured(
+        kind,
+        title.as_str(),
+        detail.as_deref(),
+    );
     let Some(tx) = out else {
         return;
     };
@@ -261,6 +266,7 @@ async fn emit_tool_result_sse_and_append(
     per_coord: &mut PerCoordinator,
     p: EmitToolResultParams<'_>,
 ) {
+    let tool_t0 = std::time::Instant::now();
     let EmitToolResultParams {
         cfg,
         out,
@@ -326,6 +332,35 @@ async fn emit_tool_result_sse_and_append(
         "execute_tools::timeline tool_step_finished",
     )
     .await;
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "tool_call_finished",
+        name,
+        Some(&serde_json::json!({
+            "tool_call_id": id,
+            "tool_name": name,
+            "execution_mode": envelope_ctx.map(|e| e.execution_mode),
+            "parallel_batch_id": envelope_ctx.and_then(|e| e.parallel_batch_id),
+            "ok": parsed_for_timeline.ok,
+            "exit_code": parsed_for_timeline.exit_code,
+            "error_code": parsed_for_timeline.error_code,
+            "failure_category": parsed_for_timeline
+                .error_code
+                .as_deref()
+                .map(|c| crate::tool_result::failure_category_for_error_code(c).as_str().to_string()),
+            "retryable": crate::tool_result::tool_error_retryable_heuristic(
+                parsed_for_timeline.error_code.as_deref()
+            ),
+            "summary": tool_summary,
+            "stdout_preview": crate::redact::preview_chars(&parsed_for_timeline.stdout, 1200),
+            "stdout_preview_truncated": parsed_for_timeline.stdout.chars().count() > 1200,
+            "stderr_preview": crate::redact::preview_chars(&parsed_for_timeline.stderr, 1200),
+            "stderr_preview_truncated": parsed_for_timeline.stderr.chars().count() > 1200,
+            "result_preview": crate::redact::single_line_preview(result.as_str(), 1200),
+            "result_preview_truncated": result.chars().count() > 1200,
+            "tool_elapsed_ms": tool_t0.elapsed().as_millis(),
+            "phase": "tool_execution",
+        })),
+    );
 
     crate::tool_stats::record_tool_outcome(
         cfg.as_ref(),
@@ -387,7 +422,18 @@ async fn emit_tool_call_summary_sse(
     args: &str,
     messages: &[Message],
 ) {
+    let args_preview = crate::redact::tool_arguments_preview_for_sse(args);
     let Some(tx) = out else {
+        crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+            "tool_call_started",
+            name,
+            Some(&serde_json::json!({
+                "tool_call_id": tool_call_id,
+                "tool_name": name,
+                "args_preview": args_preview,
+                "phase": "tool_execution",
+            })),
+        );
         return;
     };
     let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
@@ -397,7 +443,7 @@ async fn emit_tool_call_summary_sse(
         tools::summarize_tool_call(name, args)
     }
     .unwrap_or_else(|| format!("tool: {name}"));
-    let arguments_preview = Some(crate::redact::tool_arguments_preview_for_sse(args));
+    let arguments_preview = Some(args_preview.clone());
     let arguments = cfg
         .sse_tool_call_include_arguments
         .then(|| crate::redact::tool_arguments_redacted_for_sse(args));
@@ -409,6 +455,18 @@ async fn emit_tool_call_summary_sse(
         "[tool_call] name={} args={}",
         name,
         args_for_log
+    );
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "tool_call_started",
+        name,
+        Some(&serde_json::json!({
+            "tool_call_id": tool_call_id,
+            "tool_name": name,
+            "summary": summary,
+            "args_preview": args_preview,
+            "args_preview_truncated": args.chars().count() > 1200,
+            "phase": "tool_execution",
+        })),
     );
 
     let _ = crate::sse::send_string_logged(
@@ -539,6 +597,18 @@ async fn execute_tools_parallel(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsB
     let parallel_batch_id = format!(
         "prb-{}",
         PARALLEL_READONLY_TOOL_BATCH_SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "tool_batch_started",
+        "parallel_readonly_batch",
+        Some(&serde_json::json!({
+            "phase": "tool_execution",
+            "execution_mode": "parallel_readonly_batch",
+            "parallel_batch_id": parallel_batch_id,
+            "tool_call_count": tool_calls.len(),
+            "dedup_count": dedup_count,
+            "parallel_max": parallel_max,
+        })),
     );
     let parallel_batch_id_ref = parallel_batch_id.as_str();
 
@@ -1082,21 +1152,70 @@ async fn execute_tools_serial(
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
     let out = ctx.out;
+    let force_serial = std::env::var("CM_REPLAY_FORCE_SERIAL")
+        .ok()
+        .map(|v| v.trim().to_ascii_lowercase())
+        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"));
 
     emit_sse_tool_running(out, true, "execute_tools::batch tool_running true").await;
 
-    let workspace_changed = if ctx.workspace_is_set
+    let workspace_changed = if !force_serial
+        && ctx.workspace_is_set
         && crate::agent_role_turn::tool_calls_allow_parallel_for_role(
             ctx.cfg.as_ref(),
             ctx.tool_calls,
             ctx.turn_allow,
         ) {
+        crate::turn_replay_dump::append_decision_point_event_if_configured(
+            "tool_execution",
+            "tool_batch_execution_mode",
+            "parallel_readonly_batch",
+            "当前批次满足只读并行条件，采用并行只读批执行以提升吞吐",
+            serde_json::json!({
+                "force_serial": force_serial,
+                "workspace_is_set": ctx.workspace_is_set,
+                "tool_call_count": ctx.tool_calls.len(),
+            }),
+            "current_tool_batch",
+            None,
+        );
         let outcome = execute_tools_parallel(ctx).await;
         if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {
             return outcome;
         }
         false
     } else {
+        crate::turn_replay_dump::append_decision_point_event_if_configured(
+            "tool_execution",
+            "tool_batch_execution_mode",
+            "serial",
+            if force_serial {
+                "环境变量强制串行执行，关闭并行只读批"
+            } else {
+                "当前批次不满足并行条件，回退串行执行"
+            },
+            serde_json::json!({
+                "force_serial": force_serial,
+                "workspace_is_set": ctx.workspace_is_set,
+                "tool_call_count": ctx.tool_calls.len(),
+            }),
+            "current_tool_batch",
+            None,
+        );
+        if force_serial {
+            log::info!(
+                target: LOG_TARGET,
+                "CM_REPLAY_FORCE_SERIAL enabled: force serial tool execution"
+            );
+            crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+                "tool_batch_mode",
+                "force_serial",
+                Some(&serde_json::json!({
+                    "source": "CM_REPLAY_FORCE_SERIAL",
+                    "parallel_disabled": true
+                })),
+            );
+        }
         let mut workspace_changed = false;
         let outcome = execute_tools_serial(ctx, &mut workspace_changed).await;
         if matches!(outcome, ExecuteToolsBatchOutcome::AbortedSse) {

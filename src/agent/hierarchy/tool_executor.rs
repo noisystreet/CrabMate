@@ -92,6 +92,19 @@ impl ToolExecutor {
     pub async fn execute_tool_call(&self, tool_call: &ToolCall) -> ToolExecutionResult {
         let name = &tool_call.function.name;
         let args = &tool_call.function.arguments;
+        let tool_t0 = std::time::Instant::now();
+        crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+            "tool_call_started",
+            name,
+            Some(&serde_json::json!({
+                "tool_call_id": tool_call.id,
+                "tool_name": name,
+                "args_preview": crate::redact::tool_arguments_preview_for_sse(args),
+                "args_preview_truncated": args.chars().count() > 1200,
+                "phase": "tool_execution",
+                "source": "hierarchical_tool_executor",
+            })),
+        );
 
         log::info!(target: "crabmate", "[HIERARCHICAL] Executing tool: {} with args={}", name, truncate_args(args));
 
@@ -100,6 +113,21 @@ impl ToolExecutor {
 
         // 判断工具执行是否成功
         let success = Self::check_execution_success(name, &output);
+        let parsed = crate::tool_result::parse_legacy_output(name, &output);
+        let error_code = if success {
+            parsed.error_code.clone()
+        } else {
+            parsed
+                .error_code
+                .clone()
+                .or_else(|| Some("tool_failed".to_string()))
+        };
+        let failure_category = error_code.as_deref().map(|c| {
+            crate::tool_result::failure_category_for_error_code(c)
+                .as_str()
+                .to_string()
+        });
+        let retryable = crate::tool_result::tool_error_retryable_heuristic(error_code.as_deref());
 
         log::info!(target: "crabmate", "[HIERARCHICAL] Tool {} completed, success={}, output_len={}", name, success, output.len());
 
@@ -113,6 +141,36 @@ impl ToolExecutor {
                 extracted_artifacts.len()
             );
         }
+
+        let stdout_preview = crate::redact::preview_chars(&output, 1200);
+        let stderr_preview = if success {
+            String::new()
+        } else {
+            crate::redact::preview_chars(&output, 1200)
+        };
+        crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+            "tool_call_finished",
+            name,
+            Some(&serde_json::json!({
+                "tool_call_id": tool_call.id,
+                "tool_name": name,
+                "ok": success,
+                "exit_code": parsed.exit_code,
+                "error_code": error_code,
+                "failure_category": failure_category,
+                "retryable": retryable,
+                "stdout_preview": stdout_preview,
+                "stdout_preview_truncated": output.chars().count() > 1200,
+                "stderr_preview": stderr_preview,
+                "stderr_preview_truncated": !success && output.chars().count() > 1200,
+                "result_preview": crate::redact::single_line_preview(&output, 1200),
+                "result_preview_truncated": output.chars().count() > 1200,
+                "artifacts_count": extracted_artifacts.len(),
+                "tool_elapsed_ms": tool_t0.elapsed().as_millis(),
+                "phase": "tool_execution",
+                "source": "hierarchical_tool_executor",
+            })),
+        );
 
         ToolExecutionResult {
             tool_name: name.clone(),

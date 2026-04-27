@@ -459,6 +459,20 @@ pub async fn run_agent_turn<'a>(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
+    crate::turn_replay_dump::set_turn_replay_event_context(
+        wall_ms,
+        turn_dump_scope_id.as_deref(),
+        tracing_chat_turn.as_ref().map(|t| t.job_id),
+    );
+    crate::turn_replay_dump::append_latest_user_input_event_if_configured(messages);
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "turn_started",
+        "run_agent_turn",
+        Some(&serde_json::json!({
+            "text": format!("wall_start_ms={wall_ms}"),
+            "phase": "turn"
+        })),
+    );
 
     let mut loop_params = agent::agent_turn::RunLoopParams {
         llm_backend,
@@ -537,6 +551,15 @@ pub async fn run_agent_turn<'a>(
         turn_dump_executor_model_override,
         seed_override,
     );
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "turn_finished",
+        "run_agent_turn",
+        Some(&serde_json::json!({
+            "text": format!("wall_start_ms={wall_ms}, ok={}", res.is_ok()),
+            "phase": "turn"
+        })),
+    );
+    crate::turn_replay_dump::clear_turn_replay_event_context();
     res
 }
 

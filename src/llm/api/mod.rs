@@ -78,6 +78,20 @@ fn message_from_sse_accum(acc: SseStreamAccum) -> Message {
     }
 }
 
+fn append_stream_diagnostic_event(stream_ended: &str, msg: &Message) {
+    let answer_text = crate::types::message_content_as_str(&msg.content).unwrap_or("");
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "stream_diagnostic",
+        "final_stream_status",
+        Some(&serde_json::json!({
+            "phase": "stream_diagnostic",
+            "stream_ended": stream_ended,
+            "answer_phase": !answer_text.is_empty(),
+            "delta_chars": answer_text.chars().count(),
+        })),
+    );
+}
+
 async fn non_stream_chat_response(
     res: reqwest::Response,
     out: Option<&tokio::sync::mpsc::Sender<String>>,
@@ -175,6 +189,7 @@ async fn non_stream_chat_response(
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
         redact::assistant_message_preview_for_log(&msg)
     );
+    append_stream_diagnostic_event("completed", &msg);
     Ok((msg, finish_reason))
 }
 
@@ -230,6 +245,14 @@ async fn streaming_chat_response(
         message_content_byte_len_for_estimate(&msg.content),
         msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0),
         redact::assistant_message_preview_for_log(&msg)
+    );
+    append_stream_diagnostic_event(
+        if finish == USER_CANCELLED_FINISH_REASON {
+            "cancelled"
+        } else {
+            "completed"
+        },
+        &msg,
     );
     Ok((msg, finish))
 }
