@@ -82,7 +82,17 @@ pub(crate) fn validate_parsed_str_for_builtin(
     }
     let args = match super::parse_args::parse_args_json(args_json) {
         Ok(a) => a,
-        Err(e) => return Some(Err(e)),
+        Err(e) => {
+            if name == "run_command"
+                && let Some(repaired) =
+                    super::parse_args::try_repair_run_command_args_json(args_json)
+                && let Ok(v) = serde_json::from_str::<serde_json::Value>(&repaired)
+            {
+                v
+            } else {
+                return Some(Err(e));
+            }
+        }
     };
     validate_parsed_value_if_known(name, &args)
 }

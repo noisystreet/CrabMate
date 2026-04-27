@@ -206,6 +206,21 @@ fn is_arg_safe(cmd_name: &str, arg: &str) -> bool {
     !a.contains("..") && !a.starts_with('/')
 }
 
+fn normalize_workspace_absolute_arg(arg: &str, working_dir: &Path) -> String {
+    let a = arg.trim();
+    if !a.starts_with('/') {
+        return arg.to_string();
+    }
+    let Ok(rel) = Path::new(a).strip_prefix(working_dir) else {
+        return arg.to_string();
+    };
+    if rel.as_os_str().is_empty() {
+        ".".to_string()
+    } else {
+        rel.to_string_lossy().to_string()
+    }
+}
+
 /// 可选：`cargo test …` 的进程内结果缓存（与内置 `cargo_test` 工具共用指纹逻辑）。
 pub(crate) struct RunCommandTestCacheOpts<'a> {
     pub enabled: bool,
@@ -287,7 +302,7 @@ fn run_impl(
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
 ) -> Result<String, RunCommandError> {
-    let args: serde_json::Value = serde_json::from_str(args_json)?;
+    let args: serde_json::Value = parse_run_command_args_with_repair(args_json)?;
     let cmd_raw = match args.get("command").and_then(|c| c.as_str()) {
         Some(s) => s.trim(),
         None => return Err(RunCommandError::MissingCommand),
@@ -314,7 +329,7 @@ fn run_impl(
         });
     }
 
-    let cmd_args: Vec<String> = match args.get("args") {
+    let mut cmd_args: Vec<String> = match args.get("args") {
         Some(serde_json::Value::Array(arr)) => arr
             .iter()
             .filter_map(|v| v.as_str().map(String::from))
@@ -322,6 +337,10 @@ fn run_impl(
         Some(_) => return Err(RunCommandError::ArgsNotArray),
         None => vec![],
     };
+    cmd_args = cmd_args
+        .into_iter()
+        .map(|a| normalize_workspace_absolute_arg(&a, working_dir))
+        .collect();
 
     // 对于 ./xxx 形式，检查参数安全性
     if exec_path.is_some() {
@@ -383,6 +402,22 @@ fn run_impl(
         .output()
         .map_err(|e| map_spawn_error(&cmd_name, working_dir, e))?;
     Ok(format_command_output(&invocation, output, max_output_len))
+}
+
+fn parse_run_command_args_with_repair(
+    args_json: &str,
+) -> Result<serde_json::Value, RunCommandError> {
+    match serde_json::from_str::<serde_json::Value>(args_json) {
+        Ok(v) => Ok(v),
+        Err(primary_err) => {
+            if let Some(repaired) = super::parse_args::try_repair_run_command_args_json(args_json)
+                && let Ok(v) = serde_json::from_str::<serde_json::Value>(&repaired)
+            {
+                return Ok(v);
+            }
+            Err(RunCommandError::JsonParse(primary_err))
+        }
+    }
 }
 
 fn format_invocation_for_display(cmd_raw: &str, args: &[String]) -> String {
@@ -589,6 +624,20 @@ mod tests {
             None,
         );
         assert!(out.contains("参数不允许"));
+    }
+
+    #[test]
+    fn test_run_workspace_absolute_arg_auto_normalized() {
+        let wd = std::env::current_dir().expect("cwd");
+        let wd_abs = wd.to_string_lossy().to_string();
+        let out = run(
+            &format!(r#"{{"command":"ls","args":["{wd_abs}"]}}"#),
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            &wd,
+            None,
+        );
+        assert!(out.contains("退出码：0"), "{out}");
     }
 
     #[test]
