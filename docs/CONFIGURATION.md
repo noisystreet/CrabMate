@@ -109,6 +109,8 @@
 | 环境变量 | 说明 |
 | --- | --- |
 | `CRABMATE_REQUEST_CHROME_TRACE_DIR` | 非空目录时，每轮 **`run_agent_turn`**（Web `/chat*`、CLI `chat`/`repl` 等）结束写入 **`turn-{unix_ms}.json`**（Chrome Trace Event Format，`displayTimeUnit: us`）。在 **async 主路径**记录 **`llm.chat_completions`**（每次 `complete_chat_retrying`）与 **`agent.tools_batch`**（每批工具调度）的 **B/E** 区间；**`spawn_blocking` 内耗时**不在此文件内展开。 |
+| `CRABMATE_TURN_REPLAY_DUMP_DIR` | 非空目录时，每轮 **`run_agent_turn`** 结束（成功或失败）**后台**追加写入 **`turn-replay-{unix_ms}.json`**：本回合**结束**时的 **`messages[]`** 快照（OpenAI 形，脱敏后）、`tool` 名列表、少量编排相关配置子集与**可选**的 Web **`job_id`** 等。用于离线对照与 `tool-replay` 等辅助，**不**含发往供应商的完整 `chat/completions` 请求体；文件可能含长段对话正文，勿提交到版本库。 |
+| `AGENT_TURN_REPLAY_DUMP_DIR` | 与上一项同义。 |
 
 ### 工作流（Chrome Trace 导出）
 
