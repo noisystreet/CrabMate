@@ -452,7 +452,7 @@ mod tests {
 
         state.completed_tasks.push(CompletedTask {
             task_id: "task1".to_string(),
-            task_description: "编译 hpcg 源码".to_string(),
+            task_description: "编译 vendor-lib 源码".to_string(),
             status: TaskStatus::Completed,
             completed_at: Utc::now(),
             artifacts: vec![],
@@ -460,7 +460,7 @@ mod tests {
         });
 
         // 应该能找到相似任务（关键词匹配）
-        let found = state.find_completed_task("编译 hpcg 程序");
+        let found = state.find_completed_task("编译 vendor-lib 程序");
         assert!(found.is_some());
 
         // 不相关的任务不应该匹配

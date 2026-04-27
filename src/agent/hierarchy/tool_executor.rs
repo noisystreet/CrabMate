@@ -368,8 +368,7 @@ fn duplicate_suppress_key(tool_name: &str, args: &str) -> Option<String> {
         .collect();
     let suppressible = ((args_vec == ["-S", ".", "-B", "build"])
         || (args_vec == ["--build", "build"]))
-        && command == "cmake"
-        || (command == "./build/myapp" && args_vec.is_empty());
+        && command == "cmake";
     suppressible.then(|| format!("run_command|{command}|{}", args_vec.join("\u{1f}")))
 }
 

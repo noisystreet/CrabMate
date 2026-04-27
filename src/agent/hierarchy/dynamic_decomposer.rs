@@ -365,7 +365,7 @@ mod tests {
         assert!(assessment.score < 30);
 
         // 编译类任务：7 轮迭代 + 2 次失败不应触发分解
-        let compile_goal = SubGoal::new("test_compile", "编译 hpcg 代码");
+        let compile_goal = SubGoal::new("test_compile", "编译第三方 C 库源码");
         let assessment = decomposer.assess_complexity(&compile_goal, 7, 2, 4);
         assert!(!assessment.needs_decomposition);
 

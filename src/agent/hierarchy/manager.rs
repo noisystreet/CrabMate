@@ -591,7 +591,7 @@ impl ManagerAgent {
 7. 若某步是“配置构建”，描述中只允许配置动作，不得包含编译或运行动作。
 8. 若某步是“编译”，描述中只允许编译与产物核验，不得运行程序。
 9. 若某步是“运行验证”，描述中只允许运行与输出核验。
-10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（例如 `myapp`）。
+10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（与 `add_executable` 目标名一致，勿随意改名）。
 
 ## 工作目录上下文
 {}
@@ -762,7 +762,7 @@ impl ManagerAgent {
 7. 若某步是“配置构建”，描述中只允许配置动作，不得包含编译或运行动作。
 8. 若某步是“编译”，描述中只允许编译与产物核验，不得运行程序。
 9. 若某步是“运行验证”，描述中只允许运行与输出核验。
-10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（例如 `myapp`）。
+10. 若任务涉及 C++ + CMake，默认采用稳定链路：检查目录 → 写 `main.cpp` → 写 `CMakeLists.txt` → `cmake -S . -B build` → `cmake --build build` → 运行产物；且可执行文件名需在 `CMakeLists.txt` 与后续子目标中保持一致（与 `add_executable` 目标名一致，勿随意改名）。
 
 ## 子目标 I/O 契约（必须显式写清，便于层间传产物与注入裁剪）
 - 对**每个**子目标在 `description` 开头用 2～4 行写清：本步**输入/依赖**、本步**预期输出**（路径或行为）；若依赖前序子目标，须写进 `depends_on`。
@@ -853,7 +853,7 @@ impl ManagerAgent {
 5. **检查编译工具** - 确认 gcc/g++/make/cmake 等存在
 6. **执行编译** - 运行 make/cmake 等构建命令
 7. **验证产物** - 用 `read_dir` 等检查构建输出目录中是否出现可执行文件/预期目标
-8. **运行并核对** - 用 **`run_executable`** 等工作区内运行能力执行产物、核对退出码与（如有）标准输出；用户若要求「能跑起来」或 Hello World/演示，**本步与前面步骤同等重要**，子目标**不得**停在仅编译通过
+8. **运行并核对** - 用 **`run_executable`** 等工作区内运行能力执行产物、核对退出码与（如有）标准输出；用户若要求可运行验收、演示或「能跑起来」，**本步与前面步骤同等重要**，子目标**不得**停在仅编译通过
 
 **CMake 编写要点**（模型生成 `CMakeLists.txt` 时）：
 - 单文件示例程序用 **`add_executable(目标 main.cpp)`**，避免根目录 **`file(GLOB_RECURSE "*.cpp")`** 把 `build/CMakeFiles/**/CMake*CompilerId.*` 编进目标引发链接错误
@@ -1297,7 +1297,7 @@ impl ManagerAgent {
             }
         }
 
-        // 尝试从源码包名称提取（如 hpcg-HPCG-release-3-1-0.tar.gz -> hpcg）
+        // 尝试从源码包名称提取目录前缀（如 `foo-1.2.3.tar.gz` -> `foo`）
         if let Ok(re) = regex::Regex::new(r"(\w+)[-_].*\.(tar\.gz|tgz|zip)")
             && let Some(cap) = re.captures(&task_lower)
             && let Some(name) = cap.get(1)

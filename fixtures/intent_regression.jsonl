@@ -9,7 +9,7 @@
 {"id":"mixed_test_fix_then_git","task":"先跑 cargo test 修复失败，再把改动提交并开 PR","expect":{"kind":"Execute","primary_intent":"execute.git_ops","action":"Execute","secondary_intents_contains":["execute.run_test_build","execute.debug_diagnose"],"secondary_intents_excludes":["execute.git_ops"]}}
 {"id":"list_sources_in_dir","task":"当前目录下有哪些源文件","expect":{"kind":"Execute","primary_intent":"execute.read_inspect","action":"Execute"}}
 {"id":"current_dir_what","task":"当前目录下有什么","expect":{"kind":"Execute","primary_intent":"execute.read_inspect","action":"Execute"}}
-{"id":"has_hpcg_source","task":"有hpcg的源码吗？","expect":{"kind":"Execute","primary_intent":"execute.read_inspect","action":"Execute"}}
+{"id":"third_party_source_in_repo","task":"仓库里有 vendor-lib 的源码吗？","expect":{"kind":"Execute","primary_intent":"execute.read_inspect","action":"Execute"}}
 {"id":"run_pytest","task":"帮我跑一下 pytest","expect":{"kind":"Execute","primary_intent":"execute.run_test_build","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
 {"id":"analyze_exception_first","task":"这个异常请先分析定位","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
 {"id":"docs_install_guides","task":"请完善 docs 里的安装说明","expect":{"kind":"Execute","primary_intent":"execute.docs_ops","action":"ConfirmThenExecute","need_clarification":true,"abstain":false}}
