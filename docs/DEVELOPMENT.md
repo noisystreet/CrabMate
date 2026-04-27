@@ -189,7 +189,7 @@ flowchart TB
 - **Router**: 根据任务复杂度选择执行模式
 - **Manager**: 任务分解与协调（SubGoal 生成、执行策略）
 - **Operator**: 子目标执行（ReAct 循环：思考→行动→观察）
-- **ArtifactStore**: 全局产物存储（文件、命令输出等）
+- **ArtifactStore**: 全局产物存储（文件、命令输出等）；`get_dependencies(depends_on)` 对**每个** `depends_on` 中的子目标 `goal_id` 取该目标在 store 中登记的**全部**产物（**不再**只取每 goal 的第一个 `artifact_id`）。`HierarchicalExecutor` 将依赖产物以按 `produced_by` 分节的 Markdown 注入到下一步 Operator 的 **user** 附加上下文中，便于子目标**显式**使用上一步的相对路径与多产物（可执行、对象文件等）。
 
 #### 主要改进点
 

@@ -1166,11 +1166,11 @@ impl<'a> HierarchicalExecutor<'a> {
                         tool_executor_ctx.with_web_approval_arc(out_tx, approval_rx);
                 }
                 let tool_executor = ToolExecutor::new(tool_executor_ctx);
-                // 构建额外上下文（依赖 artifacts）
+                // 构建额外上下文（依赖 artifacts：每前置 goal 的**全部**已登记产物）
                 let extra_context = if deps.is_empty() {
                     None
                 } else {
-                    Some(self.format_dependencies_context(&deps))
+                    Some(self.format_dependencies_context(&goal.depends_on, &deps))
                 };
                 operator
                     .execute_with_tools(
@@ -1421,30 +1421,63 @@ impl<'a> HierarchicalExecutor<'a> {
         }
     }
 
-    /// 格式化依赖产物上下文
-    fn format_dependencies_context(&self, deps: &[&Artifact]) -> String {
+    /// 按 `depends_on` 分组格式化前置子目标产物，便于本步**直接引用**路径（相对工作区根）。
+    fn format_dependencies_context(&self, depends_on: &[String], deps: &[&Artifact]) -> String {
         if deps.is_empty() {
             return String::new();
         }
 
-        let mut lines = Vec::new();
-        for dep in deps {
-            let kind_str = format!("{:?}", dep.kind).to_lowercase();
-            if let Some(ref path) = dep.path {
-                lines.push(format!("- [{}] {}: 路径={}", kind_str, dep.name, path));
-            } else if let Some(ref content) = dep.content {
-                // 如果是文件内容，只显示前 200 字符
-                let preview = if content.len() > 200 {
-                    format!("{}... ({} chars)", &content[..200], content.len())
-                } else {
-                    content.clone()
-                };
-                lines.push(format!("- [{}] {}:\n{}", kind_str, dep.name, preview));
-            } else {
-                lines.push(format!("- [{}] {}", kind_str, dep.name));
+        let mut sections: Vec<String> = vec![concat!(
+            "## 来自前置子目标的已登记产物\n",
+            "执行当前子目标时**请优先使用**下列路径/内容，避免与已完成步骤矛盾或重复创建同一产物。\n",
+        )
+        .to_string()];
+
+        for dep_goal_id in depends_on {
+            let group: Vec<&Artifact> = deps
+                .iter()
+                .copied()
+                .filter(|a| a.produced_by == *dep_goal_id)
+                .collect();
+            if group.is_empty() {
+                sections.push(format!(
+                    "### 子目标 `{dep_goal_id}`\n- （尚无登记产物，若本步需要其输出，请用工具在工作区中确认路径。）"
+                ));
+                continue;
             }
+
+            let mut lines = vec![format!("### 子目标 `{dep_goal_id}`")];
+            for dep in &group {
+                let kind_str = format!("{:?}", dep.kind).to_lowercase();
+                let line = if let Some(ref path) = dep.path {
+                    format!(
+                        "- `artifact_id={}` · [{}] **{}** — 工作区相对路径: `{}`",
+                        dep.id, kind_str, dep.name, path
+                    )
+                } else if let Some(ref content) = dep.content {
+                    let total = content.chars().count();
+                    let preview: String = content.chars().take(200).collect();
+                    let body = if total > 200 {
+                        format!("{preview}... (共 {total} 字符)")
+                    } else {
+                        preview
+                    };
+                    format!(
+                        "- `artifact_id={}` · [{}] **{}**（无 path，有内容摘要）\n  ```\n  {}\n  ```",
+                        dep.id, kind_str, dep.name, body
+                    )
+                } else {
+                    format!(
+                        "- `artifact_id={}` · [{}] **{}**（无 path/内容，仅元数据名）",
+                        dep.id, kind_str, dep.name
+                    )
+                };
+                lines.push(line);
+            }
+            sections.push(lines.join("\n"));
         }
-        lines.join("\n")
+
+        sections.join("\n\n")
     }
 
     /// 从执行结果中更新构建状态
