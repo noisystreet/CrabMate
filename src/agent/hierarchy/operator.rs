@@ -1118,17 +1118,17 @@ impl OperatorAgent {
             return r#"这是一个编译/构建任务，请按以下步骤执行：
 
 **步骤 0: 确定工作目录（关键！）**
-- 如果源码在子目录中（如 `hpcg-HPCG-release-3-1-0/`），**所有后续命令必须在正确的目录中执行**
+- 若源码在子目录中（记为 `SRC/`，名称以 `read_dir` 为准），**所有后续命令必须针对该目录**
 - **当前工作目录**是固定的，不会因为你执行了 `cd` 而改变
 - **执行命令的三种方式**（按推荐顺序）：
-  1. **使用 `-C` 选项**（最推荐）：`make -C hpcg-HPCG-release-3-1-0`
-  2. **完整路径作为 command**：`command: "hpcg-HPCG-release-3-1-0/configure"`, `args: []`
-  3. **完整路径在 args 中**：`command: "cp"`, `args: ["hpcg-HPCG-release-3-1-0/setup/file", "hpcg-HPCG-release-3-1-0/dest"]`
+  1. **使用 `-C` 选项**（最推荐）：`make -C SRC`
+  2. **完整路径作为 command**：`command: "SRC/configure"`, `args: []`
+  3. **完整路径在 args 中**：`command: "cp"`, `args: ["SRC/setup/file", "SRC/dest"]`
 - **常见错误**：
-  - ❌ `command: "./configure"`, `args: ["hpcg-HPCG-release-3-1-0/configure"]` —— 路径重复
-  - ❌ `command: "cp"`, `args: ["setup/Make.Linux_Serial", "Make.custom"]` —— 当前目录下没有 setup/
-  - ✅ `command: "cp"`, `args: ["hpcg-HPCG-release-3-1-0/setup/Make.Linux_Serial", "hpcg-HPCG-release-3-1-0/Make.custom"]`
-- **重要**：复制配置文件、执行 make 等操作都要使用完整路径或在正确的目录中使用 `-C` 选项
+  - ❌ `command: "./configure"`, `args: ["SRC/configure"]` —— command 与 args 重复了路径
+  - ❌ `command: "cp"`, `args: ["setup/file", "dest"]` —— 当前目录下没有 `setup/` 或未在 `SRC/` 下
+  - ✅ `command: "cp"`, `args: ["SRC/setup/模板文件", "SRC/Make.custom"]` —— 使用经 `read_dir` 确认存在的相对路径
+- **重要**：复制配置、执行 `make` 等操作都要使用完整工作区相对路径，或配合 `make -C SRC`
 
 **步骤 1: 检测构建系统**
 - 使用 `read_dir` 查看源码目录结构（注意使用正确的路径）
@@ -1149,23 +1149,20 @@ impl OperatorAgent {
   1. `mkdir -p build && cd build`
   2. `cmake ..` 或 `cmake -S .. -B .`
   3. `cmake --build .` 或 `make`
-- Configure 项目（如 HPCG）：
-  1. 先尝试 `./configure`（在源码目录）
-  2. 如果 `./configure` 不在白名单，按以下顺序尝试：
-     a. 检查是否有 `setup/` 目录（在源码目录中）
-     b. 使用 `read_file` 查看 `setup/` 中的配置模板（如 `Make.GCC_OMP`、`Make.Linux_Serial`）
-     c. **在源码目录中**执行 `cp setup/Make.Linux_Serial Make.custom`（选择适合当前系统的模板）
-     d. **在源码目录中**执行 `make` 或 `make arch=Linux_Serial` 进行编译
-  3. 如果上述都失败，报告错误
-- Make 项目：
-  1. **在源码目录中**执行 `make`
+- 带 `configure` / `Makefile` + `setup/` 模板目录的项目（常见于某些科学计算或传统 Makefile 工程）：
+  1. 先阅读 `README` / `INSTALL` / 上游文档，确认推荐的 `arch` 或配置模板名
+  2. 若 `./configure` 不在白名单：用 `read_dir` 列出 `setup/`（或文档指明的模板目录），用 `read_file` 查看候选模板，再 `cp setup/<所选模板> Make.custom`（路径以实际目录为准）
+  3. 在源码目录中执行 `make`，若 Makefile 要求 `arch=…`，按文档传入（例如 `make arch=<模板名>`）
+  4. 若上述都失败，报告错误并说明已尝试的配置依据
+- 普通 Make 项目：
+  1. **在源码目录中**执行 `make`（必要时 `make -C SRC`）
 
 **步骤 4: 处理编译错误（如果步骤 3 失败）**
 如果编译失败，请分析错误类型并采取相应措施：
 
 - **OpenMP 错误**（如 "'n' not specified in enclosing 'parallel'"）：
   * 原因：当前编译器版本与 OpenMP 配置不兼容
-  * 解决：切换到非 OpenMP 配置，如 `cp setup/Make.Linux_Serial Make.custom && make`
+  * 解决：在 `setup/`（或文档说明的目录）中选更保守的模板复制为 `Make.custom` 后再 `make`
 
 - **缺少依赖库**（如 "cannot find -lxxx"）：
   * 原因：系统缺少必要的开发库
@@ -1173,15 +1170,15 @@ impl OperatorAgent {
 
 - **编译器版本不兼容**（如 "unrecognized command line option"）：
   * 原因：配置模板使用了当前编译器不支持的选项
-  * 解决：切换到更基础的配置模板
+  * 解决：切换到更基础的配置模板（以 `read_dir` + 文档为准）
 
 - **配置错误**（如 "Please specify 'arch' variable"）：
   * 原因：Makefile 需要指定 arch 参数
-  * 解决：使用 `make arch=Linux_Serial` 或复制配置到 Make.custom
+  * 解决：按项目文档使用 `make arch=<模板名>` 或复制正确模板到 `Make.custom`
 
 - **工作目录错误**（如 "没有指明目标并且找不到 makefile"）：
   * 原因：当前目录不是源码目录
-  * 解决：使用 `-C` 选项指定正确的源码目录，如 `make -C hpcg-HPCG-release-3-1-0`
+  * 解决：使用 `-C` 指向经 `read_dir` 确认的源码目录，例如 `make -C SRC`
 
 **步骤 5: 验证构建结果**
 - 使用 `read_dir` 或 `run_command ls` 检查是否生成了可执行文件
@@ -1528,9 +1525,10 @@ impl OperatorAgent {
             return Some(CompileErrorInfo {
                 error_type: CompileErrorType::OpenMPError,
                 description: "OpenMP 并行区域变量声明错误".to_string(),
-                suggested_fix: "切换到非 OpenMP 配置模板，如 Make.Linux_Serial".to_string(),
+                suggested_fix: "在 setup/（或项目文档指明的模板目录）中选择不含 OpenMP 或更保守的 Makefile 模板，复制为 Make.custom 后重试"
+                    .to_string(),
                 retryable: true,
-                alternative_config: Some("Make.Linux_Serial".to_string()),
+                alternative_config: None,
             });
         }
 
@@ -1556,9 +1554,10 @@ impl OperatorAgent {
             return Some(CompileErrorInfo {
                 error_type: CompileErrorType::CompilerVersionError,
                 description: "编译器版本不兼容，配置使用了不支持的选项".to_string(),
-                suggested_fix: "切换到更基础的配置模板（如 Make.Linux_Serial）".to_string(),
+                suggested_fix: "切换到更基础的 Makefile 模板（以 read_dir + 项目文档为准）"
+                    .to_string(),
                 retryable: true,
-                alternative_config: Some("Make.Linux_Serial".to_string()),
+                alternative_config: None,
             });
         }
 
@@ -1569,9 +1568,10 @@ impl OperatorAgent {
             return Some(CompileErrorInfo {
                 error_type: CompileErrorType::ConfigError,
                 description: "Makefile 需要指定 arch 参数".to_string(),
-                suggested_fix: "使用 make arch=Linux_Serial 或复制配置到 Make.custom".to_string(),
+                suggested_fix: "按 README/INSTALL 使用 `make arch=<模板名>`，或将所选模板复制为 Make.custom 后再 make"
+                    .to_string(),
                 retryable: true,
-                alternative_config: Some("Make.Linux_Serial".to_string()),
+                alternative_config: None,
             });
         }
 
@@ -1586,7 +1586,7 @@ impl OperatorAgent {
             return Some(CompileErrorInfo {
                 error_type: CompileErrorType::WorkingDirectoryError,
                 description: "工作目录错误或找不到构建文件".to_string(),
-                suggested_fix: "使用 -C 选项指定正确的源码目录，如 make -C hpcg-HPCG-release-3-1-0"
+                suggested_fix: "使用 `make -C <源码子目录>`（目录名以 read_dir 确认为准），或把 command 改为该目录下的可执行路径"
                     .to_string(),
                 retryable: true,
                 alternative_config: None,
@@ -1913,8 +1913,7 @@ impl OperatorAgent {
                 }
             }
 
-            // 从输出中检测 make 的工作目录
-            // 例如："make: 进入目录"/home/gzz/test/hpcg-HPCG-release-3-1-0""
+            // 从输出中检测 make 的工作目录（GNU make 会打印 entering directory）
             if (result.output.contains("make: 进入目录")
                 || result.output.contains("make: Entering directory"))
                 && let Some(start) = result

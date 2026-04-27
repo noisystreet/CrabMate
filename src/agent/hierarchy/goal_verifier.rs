@@ -678,7 +678,7 @@ mod tests {
     fn run_subgoal_is_run_executable_subgoal() {
         let goal = SubGoal::new(
             "goal_run",
-            "运行 ./build/myapp 并验证输出包含 Hello from CMake!",
+            "运行 ./build/demo_app 并验证输出包含 EXPECTED_MARKER",
         );
         assert!(is_run_executable_subgoal(&goal));
     }
