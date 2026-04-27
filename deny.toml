@@ -13,6 +13,8 @@ confidence-threshold = 0.8
 # 与常见 Rust 生态及 pre-commit/clippy 的 `--all-features` 对齐；强 copyleft（GPL/AGPL）不在此列，若引入将报错。
 allow = [
     "MIT",
+    # borrow-or-share（jsonschema → referencing → fluent-uri）：OSI 批准的 MIT 无署名变体
+    "MIT-0",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
