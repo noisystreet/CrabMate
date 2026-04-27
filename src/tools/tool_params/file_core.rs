@@ -13,7 +13,8 @@ pub(in crate::tools) fn params_file_write() -> serde_json::Value {
                 "description": "要写入的文件内容。**JSON 中字符串须正确转义**：换行用 `\\n`，制表用 `\\t`，双引号用 `\\\"`，反斜杠用 `\\\\`。大文件可分多次写入。"
             }
         },
-        "required": ["path"]
+        "required": ["path"],
+        "additionalProperties": false
     })
 }
 
@@ -45,7 +46,8 @@ pub(in crate::tools) fn params_modify_file() -> serde_json::Value {
                 "minimum": 1
             }
         },
-        "required": ["path"]
+        "required": ["path"],
+        "additionalProperties": false
     })
 }
 
@@ -104,7 +106,8 @@ pub(in crate::tools) fn params_read_file() -> serde_json::Value {
                 "description": "可选：文本编码。默认 utf-8（严格，非法 UTF-8 会报错）；另有 utf-8-sig（去 BOM）、gb18030、gbk、gb2312、big5、utf-16le、utf-16be、auto（BOM 优先，否则嗅探）。非法序列不静默替换。"
             }
         },
-        "required": ["path"]
+        "required": ["path"],
+        "additionalProperties": false
     })
 }
 

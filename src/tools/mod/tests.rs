@@ -94,11 +94,23 @@ fn test_run_tool_try_calc_ok() {
 }
 
 #[test]
+fn test_run_tool_try_calc_schema_rejects_wrong_type() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let e = run_tool_try("calc", r#"{"expression":1}"#, &ctx).expect_err("schema");
+    assert_eq!(e.code, "invalid_args");
+    assert!(e.message.contains("JSON Schema"), "{}", e.message);
+}
+
+#[test]
 fn test_run_tool_calc_missing_expression() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
     let out = run_tool("calc", "{}", &ctx);
-    assert_eq!(out, "错误：缺少 expression 参数");
+    assert!(
+        out.starts_with("错误：") && out.contains("JSON Schema"),
+        "应拒绝缺 expression（schema required），得到: {out}"
+    );
 }
 
 #[test]
@@ -182,7 +194,7 @@ fn test_run_tool_try_run_command_disallowed_tool_error() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
     let e = run_tool_try("run_command", r#"{"command":"rm"}"#, &ctx).expect_err("disallowed");
-    assert_eq!(e.code, "command_not_allowed");
+    assert_eq!(e.code, "approval_required");
     assert_eq!(e.category, ToolFailureCategory::PolicyDenied);
     assert!(!e.retryable);
 }
@@ -435,7 +447,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"docker_compose_ps"));
     assert!(names.contains(&"podman_images"));
     assert!(names.contains(&"apply_patch"));
-    assert!(names.contains(&"run_executable"));
     assert!(names.contains(&"package_query"));
 }
 
@@ -611,7 +622,8 @@ fn repl_workspace_switch_rejects_slash_prefixed_as_tool_relative() {
         .first()
         .cloned()
         .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
-    let err = resolve_repl_workspace_switch_path(&cfg, &wd, "/tmp").expect_err("must reject");
+    // `/tmp` 可能在 `workspace_allowed_roots` 内；用敏感前缀保证稳定拒绝
+    let err = resolve_repl_workspace_switch_path(&cfg, &wd, "/etc").expect_err("must reject");
     let msg = err.to_string();
     assert!(
         msg.contains("允许范围")

@@ -20,7 +20,8 @@ pub(in crate::tools) fn params_get_current_time() -> serde_json::Value {
                 "maximum": 12
             }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
     })
 }
 
@@ -33,7 +34,8 @@ pub(in crate::tools) fn params_calc() -> serde_json::Value {
                 "description": "数学表达式，如 1+2*3、2^10、sqrt(2)、s(pi/2)、math::log10(100)"
             }
         },
-        "required": ["expression"]
+        "required": ["expression"],
+        "additionalProperties": false
     })
 }
 
@@ -80,7 +82,8 @@ pub(in crate::tools) fn params_weather() -> serde_json::Value {
                 "description": "与 city 同义，城市或地区名"
             }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
     })
 }
 
@@ -99,7 +102,8 @@ pub(in crate::tools) fn params_web_search() -> serde_json::Value {
                 "maximum": 20
             }
         },
-        "required": ["query"]
+        "required": ["query"],
+        "additionalProperties": false
     })
 }
 
@@ -194,7 +198,8 @@ pub(in crate::tools) fn params_text_transform() -> serde_json::Value {
                 "enum": ["sha256", "blake3"]
             }
         },
-        "required": ["op", "text"]
+        "required": ["op", "text"],
+        "additionalProperties": false
     })
 }
 
@@ -205,7 +210,8 @@ pub(in crate::tools) fn params_regex_test() -> serde_json::Value {
             "pattern": {"type": "string", "description": "正则表达式"},
             "test_strings": {"type": "array", "items": {"type": "string"}, "description": "待测试字符串数组（上限100条）"}
         },
-        "required": ["pattern", "test_strings"]
+        "required": ["pattern", "test_strings"],
+        "additionalProperties": false
     })
 }
 
@@ -219,7 +225,8 @@ pub(in crate::tools) fn params_date_calc() -> serde_json::Value {
             "base": {"type": "string", "description": "offset模式：基准日期 YYYY-MM-DD（默认今天）"},
             "offset": {"type": "string", "description": "offset模式：偏移量（如 +30d, -2w, +1m）"}
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
     })
 }
 
@@ -230,7 +237,8 @@ pub(in crate::tools) fn params_json_format() -> serde_json::Value {
             "text": {"type": "string", "description": "JSON 或 YAML 文本（上限512KiB）"},
             "mode": {"type": "string", "enum": ["pretty", "compact", "yaml_to_json", "json_to_yaml"], "description": "模式（默认 pretty）"}
         },
-        "required": ["text"]
+        "required": ["text"],
+        "additionalProperties": false
     })
 }
 
@@ -242,6 +250,7 @@ pub(in crate::tools) fn params_env_var_check() -> serde_json::Value {
             "show_length": {"type": "boolean", "description": "是否显示值长度（默认false）"},
             "show_prefix_chars": {"type": "integer", "description": "显示值的前N个字符（0=不显示，上限8）"}
         },
-        "required": ["names"]
+        "required": ["names"],
+        "additionalProperties": false
     })
 }

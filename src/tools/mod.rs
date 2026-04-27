@@ -64,6 +64,7 @@ mod text_diff;
 mod text_transform;
 mod time;
 mod todo_scan;
+mod tool_args_validate;
 mod tool_params;
 mod tool_specs_registry;
 mod tool_summary;
@@ -1137,7 +1138,14 @@ pub(crate) use schema_check::workflow_tool_args_satisfy_required;
 /// `ToolContext` 聚合 `run_command`、`get_weather`、`web_search` 等工具所需的配置项。
 pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     match find_spec(name) {
-        Some(spec) => (spec.runner)(args_json, ctx),
+        Some(spec) => {
+            if let Some(Err(e)) =
+                tool_args_validate::validate_parsed_str_for_builtin(name, args_json)
+            {
+                return format!("错误：{e}");
+            }
+            (spec.runner)(args_json, ctx)
+        }
         None => format!("未知工具：{}", name),
     }
 }
@@ -1151,6 +1159,9 @@ fn run_tool_dispatch(
 ) -> Result<(String, crate::tool_result::ParsedLegacyOutput), ToolError> {
     if find_spec(name).is_none() {
         return Err(ToolError::unknown_tool(name));
+    }
+    if let Some(Err(e)) = tool_args_validate::validate_parsed_str_for_builtin(name, args_json) {
+        return Err(ToolError::invalid_args(e));
     }
     match name {
         "run_command" => {
