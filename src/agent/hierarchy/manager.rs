@@ -438,6 +438,8 @@ impl ManagerAgent {
             description: String,
             priority: Option<u32>,
             depends_on: Option<Vec<String>>,
+            #[serde(default)]
+            consumes_from_dependencies: Option<Vec<super::task::DependencyContractEntry>>,
             required_tools: Option<Vec<String>>,
             #[serde(default)]
             goal_type: Option<super::task::GoalType>,
@@ -455,6 +457,9 @@ impl ManagerAgent {
                             description: ug.description,
                             priority: ug.priority.unwrap_or(original_goal.priority),
                             depends_on: ug.depends_on.unwrap_or_default(),
+                            consumes_from_dependencies: ug
+                                .consumes_from_dependencies
+                                .unwrap_or_default(),
                             required_tools: ug.required_tools.unwrap_or_default(),
                             goal_type: original_goal.goal_type.clone(),
                             build_requirements: original_goal.build_requirements.clone(),
@@ -543,19 +548,26 @@ impl ManagerAgent {
 - **禁止假设**可执行文件名称，必须使用 `Cargo.toml` 中 `[[bin]]` 或默认的 `src/main.rs` 对应的名称
 - 运行 Rust 可执行文件时，路径必须是 `./target/debug/<名称>`（在子目录内）或 `./tmp/target/debug/<名称>`（从根目录）
 
+## 子目标 I/O 契约
+- 同「初次分解」：每个子目标 `description` 写清 I/O；`depends_on` + `consumes_from_dependencies` + 可选 `build_requirements`；在描述与工具里用 `{{ref:<前序id>:<artifact_id>}}` 或 `{{artifact:...}}`，**不要**写绝对路径。
+
 ## 输出格式
 **必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
 ```
 {{{{
     "sub_goals": [
-        {{
+        {{{{
             "goal_id": "goal_1",
-            "description": "子目标描述（基于实际文件结构和已有产物）",
+            "description": "（I/O 契约）子目标描述（基于实际文件结构和已有产物）",
             "priority": 1,
             "depends_on": ["goal_id_of_dependency"],
+            "consumes_from_dependencies": [
+                {{"from_goal_id": "goal_id_of_dependency", "only_kinds": null}}
+            ],
+            "build_requirements": {{"needs_artifacts": [], "produces_artifacts": []}},
             "required_tools": ["tool_name1", "tool_name2"],
             "goal_type": "fix"  // 或 "analyze"
-        }}
+        }}}}
     ],
     "execution_strategy": "hybrid"
 }}}}
@@ -564,6 +576,8 @@ impl ManagerAgent {
 - `description` 必须是字符串
 - `priority` 必须是数字
 - `depends_on` 必须是字符串数组
+- `consumes_from_dependencies` 可选，规则同初次分解
+- `build_requirements` 可选
 - `required_tools` 必须是字符串数组
 - `goal_type` 必须是 `"fix"`（修复/执行）或 `"analyze"`（分析/收集）。如果只需要收集信息（如编译错误），用 `"analyze"`，失败后直接跳过。
 
@@ -652,6 +666,12 @@ impl ManagerAgent {
 ## 任务类型识别与指导
 {}
 
+## 子目标 I/O 契约（必须显式写清，便于层间传产物与注入裁剪）
+- 对**每个**子目标在 `description` 开头用 2～4 行写清：本步**输入/依赖**、本步**预期输出**（路径或行为）；若依赖前序子目标，须写进 `depends_on`。
+- `consumes_from_dependencies`：列出本步**实际消费**的前序 `goal_id`；`only_kinds` 可选，用于**注入到 Operator 的依赖上下文**的裁剪：省略或 `[]` 表示**默认**（不注入冗长 `buildlog` 与纯长文本 `commandoutput`）；填 `["all"]` 或 `["any"]` 表示不筛类型；否则为子串匹配，与产物类型字符串（如 `buildartifact(executable)`、`file`）不区分大小写子串匹配，例如 `["source"]`、`["executable"]`。
+- `build_requirements` 可选；编译类任务可填 `needs_artifacts` / `produces_artifacts`（`SourceFile` / `ObjectFile` / `Executable` 等）。
+- 在 `description` 与工具设计里，引用前序**具体文件/构建物**时优先写 **`{{ref:<前序子目标id>:<artifact_id>}}`** 或 `{{artifact:文件名.stem}}`；**不要**在 JSON 中写本机**绝对**路径。执行时 `{{ref:...}}` 会展开为工作区相对 path。
+
 ## 工作目录上下文
 {}
 重要：
@@ -670,14 +690,18 @@ impl ManagerAgent {
 **必须输出标准 JSON 格式**，不要输出任何其他内容。JSON 必须符合以下结构：
 ```{{{{
     "sub_goals": [
-        {{
+        {{{{
             "goal_id": "goal_1",
-            "description": "子目标描述（基于实际文件结构）",
+            "description": "（I/O: 输入/输出/产物）子目标描述（基于实际文件结构）",
             "priority": 1,
-            "depends_on": [],
+            "depends_on": ["goal_0"],
+            "consumes_from_dependencies": [
+                {{"from_goal_id": "goal_0", "only_kinds": null}}
+            ],
+            "build_requirements": {{"needs_artifacts": ["SourceFile"], "produces_artifacts": ["Executable"]}},
             "required_tools": ["tool_name1", "tool_name2"],
             "goal_type": "fix"  // 或 "analyze"
-        }}
+        }}}}
     ],
     "execution_strategy": "hybrid"
 }}}}
@@ -686,6 +710,8 @@ impl ManagerAgent {
 - `description` 必须是字符串
 - `priority` 必须是数字
 - `depends_on` 必须是字符串数组
+- `consumes_from_dependencies` 是可选数组，每项为 `from_goal_id` 字符串 + 可选 `only_kinds: string[] | null`（`from_goal_id` 必须出现在 `depends_on` 中；空数组可省略本字段，由执行器在可行时**自动补全**并默认裁剪类型）
+- `build_requirements` 可选
 - `required_tools` 必须是字符串数组
 - `goal_type` 必须是 `"fix"`（修复/执行）或 `"analyze"`（分析/收集）。如果只需要收集信息（如编译错误），用 `"analyze"`，失败后直接跳过。
 
@@ -992,9 +1018,13 @@ impl ManagerAgent {
             description: String,
             priority: Option<u32>,
             depends_on: Option<Vec<String>>,
+            #[serde(default)]
+            consumes_from_dependencies: Option<Vec<super::task::DependencyContractEntry>>,
             required_tools: Option<Vec<String>>,
             #[serde(default)]
             goal_type: Option<super::task::GoalType>,
+            #[serde(default)]
+            build_requirements: Option<super::task::BuildRequirements>,
         }
 
         let parsed: OutputJson =
@@ -1020,9 +1050,10 @@ impl ManagerAgent {
                 description: sg.description,
                 priority: sg.priority.unwrap_or(0),
                 depends_on: sg.depends_on.unwrap_or_default(),
+                consumes_from_dependencies: sg.consumes_from_dependencies.unwrap_or_default(),
                 required_tools: sg.required_tools.unwrap_or_default(),
                 goal_type: sg.goal_type.unwrap_or_default(),
-                build_requirements: super::task::BuildRequirements::default(),
+                build_requirements: sg.build_requirements.unwrap_or_default(),
                 acceptance: None,
                 max_retries: None,
             });
@@ -1484,6 +1515,8 @@ impl ManagerAgent {
             description: String,
             priority: Option<u32>,
             depends_on: Option<Vec<String>>,
+            #[serde(default)]
+            consumes_from_dependencies: Option<Vec<super::task::DependencyContractEntry>>,
             required_tools: Option<Vec<String>>,
             #[serde(default)]
             goal_type: Option<super::task::GoalType>,
@@ -1531,6 +1564,10 @@ impl ManagerAgent {
                 .updated_goal
                 .depends_on
                 .unwrap_or_else(|| original_goal.depends_on.clone()),
+            consumes_from_dependencies: parsed
+                .updated_goal
+                .consumes_from_dependencies
+                .unwrap_or_else(|| original_goal.consumes_from_dependencies.clone()),
             required_tools: parsed
                 .updated_goal
                 .required_tools
