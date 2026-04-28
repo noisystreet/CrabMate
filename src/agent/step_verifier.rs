@@ -1,5 +1,8 @@
 //! 确定性验证闸门（StepVerifier）：根据 `PlanStepV1` 中的 `acceptance` 对执行结果进行硬断言。
 //!
+//! **分阶段**路径下，验收只针对**当前步**：自该步分步 `user` 消息下标之后、**下一条** `user` 或会话末尾之前，取**最后一条** `role: tool` 消息（与
+//! 分阶段对「步内工具是否成功」的扫描范围一致）。若一步内调用了多种工具，通常应将验收条件对准**本步最后一条**工具输出，或拆成多步、每步一次工具加验收。
+//!
 //! 支持的验证规则：
 //! - `expect_exit_code`：退出码验证（如 `cargo test` → 0）
 //! - `expect_stdout_contains`：stdout 是否包含指定字符串
@@ -150,21 +153,44 @@ fn get_json_path_value(json_str: &str, path: &str) -> Option<serde_json::Value> 
     Some(current.clone())
 }
 
-/// 对步骤内的工具执行历史进行验证
+/// 自 `step_user_index` 指向的分步 `user` 起，到下一 `user` 或 `messages` 末尾为止，取其中**最后**一条 `role: tool`（分阶段步界内的「验收用」工具条）。
+fn last_tool_message_in_staged_step<'a>(
+    messages: &'a [Message],
+    step_user_index: usize,
+) -> Option<&'a Message> {
+    if step_user_index >= messages.len() {
+        return None;
+    }
+    let mut i = step_user_index.saturating_add(1);
+    let mut last_tool: Option<&'a Message> = None;
+    while i < messages.len() {
+        let m = &messages[i];
+        if m.role == "user" {
+            break;
+        }
+        if m.role == "tool" {
+            last_tool = Some(m);
+        }
+        i += 1;
+    }
+    last_tool
+}
+
+/// 对**分阶段单步**内的工具结果进行验证（`step_user_index` 为本步分步 `user` 在 `messages` 中的下标）。
 pub fn verify_step_execution(
     acceptance: &PlanStepAcceptance,
     messages: &[Message],
+    step_user_index: usize,
     workspace_root: &std::path::Path,
 ) -> VerifyResult {
-    // 找到本步注入的最后一个工具执行结果
-    let last_tool_msg = messages.iter().rev().find(|m| m.role == "tool");
+    let last_tool_msg = last_tool_message_in_staged_step(messages, step_user_index);
     let (tool_name, tool_output) = if let Some(tool_msg) = last_tool_msg {
         let name = tool_msg.name.as_deref().unwrap_or("");
         let output = crate::types::message_content_as_str(&tool_msg.content).unwrap_or("");
         (name, output)
     } else {
         return VerifyResult::Fail {
-            reason: "Step verification failed: no tool execution result found in messages"
+            reason: "Step verification failed: no tool result in this staged step (after step user, before next user message)"
                 .to_string(),
         };
     };
@@ -633,6 +659,48 @@ mod tests {
         );
 
         assert!(result.is_pass());
+    }
+
+    /// 分阶段：验收只读「本步 / 自 step_user 至下一 user 之间」最后一条 `tool`；若误用**全局**最后一条，会在后续 `user` 之后仍错判为最后 tool。
+    #[test]
+    fn verify_step_uses_last_tool_in_step_window_not_last_tool_globally() {
+        use crate::types::Message;
+        use crate::types::MessageContent;
+
+        let t_step = |exit: i32, stdout: &str| {
+            let body = if stdout.is_empty() {
+                format!("退出码：{exit}\n")
+            } else {
+                format!("退出码：{exit}\n标准输出：\n{stdout}\n")
+            };
+            Message {
+                role: "tool".to_string(),
+                content: Some(MessageContent::Text(body)),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: Some("run_command".to_string()),
+                tool_call_id: None,
+            }
+        };
+        // step_user @0：步内 t1(0) + t2(1)；下一 user 之后 t3(0)（模拟后续步）
+        let messages = vec![
+            Message::user_only("### 分步 1/1"),
+            t_step(0, "alpha"),
+            t_step(1, "beta-expected"), // 本步最后 tool
+            Message::user_only("next block"),
+            t_step(0, "gamma-wrong"), // 全局 last tool；不得用于本步
+        ];
+        let acceptance = PlanStepAcceptance {
+            expect_exit_code: Some(1),
+            expect_stdout_contains: Some("beta-expected".to_string()),
+            expect_stderr_contains: None,
+            expect_file_exists: None,
+            expect_json_path_equals: None,
+            expect_http_status: None,
+        };
+        let r = verify_step_execution(&acceptance, &messages, 0, std::path::Path::new("/tmp"));
+        assert!(r.is_pass());
     }
 
     #[test]

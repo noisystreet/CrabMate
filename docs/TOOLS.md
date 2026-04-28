@@ -14,7 +14,7 @@
 
 **终答 `agent_reply_plan` v1**（在工作流反思等路径下由服务端校验）：`steps[].id` 须唯一且符合稳定字符规则（见 **`docs/DEVELOPMENT.md`**）；可选 **`workflow_node_id`** 用于与最近一次 **`workflow_execute`** 工具结果里的 **`nodes[].id`** 对齐（子集校验），便于规划与 DAG 节点一一对应。分阶段规划下还可选 **`steps[].executor_kind`**（`review_readonly` / `patch_write` / `test_runner`）以步级收窄可见工具并拒绝越权调用（越权时工具结果含本步允许名摘要）；**`[tool_registry]`** 可用 **`sub_agent_*`** 键扩展默认补丁/测试名单或只读步拒绝表，详见 **`docs/CONFIGURATION.md`**（分阶段规划与 `tool_registry`）。**架构扩展**：显式「规划—执行—验证」闭环、与 **`plan_rewrite` / 工作流反思** 的边界及演进阶段见 **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**（设计稿，**不**改变本节字段约定）。
 
-**步级验收 `acceptance`**（分阶段规划路径下由 **`step_verifier.rs`** 强制校验）：可选 **`steps[].acceptance`** 对象支持以下确定性规则：
+**步级验收 `acceptance`**（分阶段规划路径下由 **`step_verifier.rs`** 强制校验）：对**本分步**内、自该步分步 `user` 起至下一条 `user` 前**最后一条** `role: tool` 做断言（多工具时通常对**本步最后一条**工具输出验收，或拆步）。可选 **`steps[].acceptance`** 对象支持以下确定性规则：
 - **`expect_exit_code`**：期望的退出码（如 `cargo test` → 0）
 - **`expect_stdout_contains`**：stdout 期望包含的字符串
 - **`expect_stderr_contains`**：stderr 期望包含的字符串

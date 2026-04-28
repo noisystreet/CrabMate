@@ -1289,6 +1289,7 @@ where
                 let verify_result = crate::agent::step_verifier::verify_step_execution(
                     acceptance,
                     patch_ctx.p.messages,
+                    step_user_idx,
                     patch_ctx.p.effective_working_dir,
                 );
 

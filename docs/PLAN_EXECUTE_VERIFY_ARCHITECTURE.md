@@ -35,7 +35,7 @@
 
 ### 2.3 验证（Verify）— **已实现**
 
-- **确定性验证闸门**（**`step_verifier.rs`**）：支持以下验收规则：
+- **确定性验证闸门**（**`step_verifier.rs`**）：在分阶段路径下，对「**当前分步**」内最后一条 `role: tool` 与 **`steps[].acceptance`** 比对（**步界**为：本分步 `user` 注入之后、**下一条**普通 `user` 或片段结束之前，与分阶段扫描「本步工具是否均成功」的范围一致；**不**再使用会话全局最后一条 `tool`，避免一步多工具或后续步已追加消息时验错对象）。支持以下验收规则：
   - **`expect_exit_code`**：退出码验证（如 `cargo test` → 0）
   - **`expect_stdout_contains`**：stdout 是否包含指定字符串
   - **`expect_stderr_contains`**：stderr 是否包含指定字符串
