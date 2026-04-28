@@ -8,6 +8,7 @@ mod final_plan_gate;
 
 use crate::config::AgentConfig;
 use crate::types::Message;
+use std::collections::HashMap;
 
 use super::plan_artifact;
 use super::reflection::plan_rewrite;
@@ -112,6 +113,12 @@ pub struct PerCoordinator {
     /// [`Self::append_tool_result_and_reflection`] 在追加后按新历史重算；[`Self::invalidate_workflow_validate_layer_cache_after_context_mutation`] 在上下文裁剪/摘要后清空，避免误用旧值。
     cached_workflow_validate_layer_count: Option<usize>,
     layer_count_cache_at_message_len: usize,
+    /// 同一回合内已发生失败的工具签名：`(tool_name, tool_args_json) -> error_marker`。
+    /// 用于“同命令同错误短路”，避免模型原样重试。
+    repeated_failed_tool_signatures: HashMap<(String, String), String>,
+    /// 同一回合内已发生失败的工具“错误族”：`(tool_name, failure_family) -> sample_error_marker`。
+    /// 用于“同类失败短路”，避免仅改写命令形态却继续踩同一类约束。
+    repeated_failed_tool_families: HashMap<(String, String), String>,
 }
 
 impl PerCoordinator {
@@ -175,7 +182,63 @@ impl PerCoordinator {
             plan_rewrite_attempts: 0,
             cached_workflow_validate_layer_count: None,
             layer_count_cache_at_message_len: 0,
+            repeated_failed_tool_signatures: HashMap::new(),
+            repeated_failed_tool_families: HashMap::new(),
         }
+    }
+
+    pub(crate) fn repeated_tool_failure_error_marker(
+        &self,
+        tool_name: &str,
+        tool_args_json: &str,
+    ) -> Option<&str> {
+        self.repeated_failed_tool_signatures
+            .get(&(tool_name.to_string(), tool_args_json.to_string()))
+            .map(|s| s.as_str())
+    }
+
+    pub(crate) fn mark_tool_failure_signature(
+        &mut self,
+        tool_name: &str,
+        tool_args_json: &str,
+        error_marker: String,
+    ) {
+        self.repeated_failed_tool_signatures.insert(
+            (tool_name.to_string(), tool_args_json.to_string()),
+            error_marker,
+        );
+    }
+
+    pub(crate) fn repeated_tool_failure_family_marker(
+        &self,
+        tool_name: &str,
+        failure_family: &str,
+    ) -> Option<&str> {
+        self.repeated_failed_tool_families
+            .get(&(tool_name.to_string(), failure_family.to_string()))
+            .map(|s| s.as_str())
+    }
+
+    pub(crate) fn mark_tool_failure_family(
+        &mut self,
+        tool_name: &str,
+        failure_family: &str,
+        error_marker: String,
+    ) {
+        self.repeated_failed_tool_families.insert(
+            (tool_name.to_string(), failure_family.to_string()),
+            error_marker,
+        );
+    }
+
+    pub(crate) fn clear_tool_failure_signature(&mut self, tool_name: &str, tool_args_json: &str) {
+        self.repeated_failed_tool_signatures
+            .remove(&(tool_name.to_string(), tool_args_json.to_string()));
+    }
+
+    pub(crate) fn clear_tool_failure_families_for_tool(&mut self, tool_name: &str) {
+        self.repeated_failed_tool_families
+            .retain(|(name, _), _| name != tool_name);
     }
 
     /// `context_window` 在裁剪/摘要等**就地**改写 `messages` 后调用，避免 `layer_count` 缓存指向已删除的 `workflow_validate` 工具结果。

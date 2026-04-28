@@ -423,13 +423,16 @@
 
 .msg-with-select:has(.msg-assistant) .msg-meta,
 .msg-with-select:has(.msg-staged-timeline) .msg-meta,
-.msg-with-select:has(.msg-system) .msg-meta,
-.msg-with-select:has(.msg-tool) .msg-meta {
+.msg-with-select:has(.msg-system) .msg-meta {
   justify-content: flex-start;
 }
 
+.msg-with-select:has(.msg-tool) .msg-meta {
+  justify-content: space-between;
+}
+
 .msg {
-  border-radius: var(--radius-md);
+  border-radius: calc(var(--radius-md) / 2);
   padding: var(--space-2) var(--space-inset-msg);
   min-width: 0;
   flex-shrink: 0;
@@ -845,6 +848,9 @@
   box-shadow:
     0 1px 0 color-mix(in srgb, #fff 6%, transparent) inset,
     0 2px 10px color-mix(in srgb, var(--bg) 38%, transparent);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .msg-system {
@@ -879,7 +885,7 @@
   font-size: 13px;
   line-height: 1.45;
   color: var(--text);
-  border-radius: var(--radius-md);
+  border-radius: calc(var(--radius-md) / 2);
 }
 
 /* 规划 / 工具：聊天列顶部可折叠索引 */
@@ -1193,12 +1199,12 @@
   display: none;
 }
 
-/* 工具结果：扁平行（无卡片底/边框；与助手气泡区分主要靠等宽字与字色） */
+/* 工具结果：扁平文本样式（无背景/边框/阴影）。 */
 .msg-tool {
   align-self: stretch;
   width: auto;
   max-width: none;
-  border-radius: 0;
+  border-radius: calc(var(--radius-md) / 2);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.45;
@@ -1214,6 +1220,19 @@
   border: none;
   box-shadow: none;
   color: var(--error);
+}
+
+.msg-with-select:has(.msg-assistant) > .msg-stack > .msg-assistant:hover,
+.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool:hover {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset,
+    0 6px 18px color-mix(in srgb, var(--bg) 42%, transparent);
+}
+
+.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool:hover {
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .msg-tool .msg-find-inline {
@@ -1238,7 +1257,10 @@
 }
 
 .msg-tool-compact {
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   flex: 1 1 100%;
@@ -1255,28 +1277,7 @@
 
 .msg-tool-summary {
   flex: 1 1 auto;
-}
-
-/* 与工具摘要同一行、靠右（flex 剩余空间由 margin-left: auto 吃掉） */
-.msg-tool-line-time {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.45;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-  text-transform: none;
-  font-weight: 500;
-  color: var(--muted);
-  opacity: 0.88;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.msg-tool-line-time:empty {
-  display: none;
-  margin-left: 0;
+  min-width: 0;
 }
 
 .msg-tool-drawer-btn {
@@ -1339,6 +1340,17 @@
   background: color-mix(in srgb, var(--bg) 86%, var(--surface));
   max-height: 10rem;
   overflow: auto;
+}
+
+.msg-tool-drawer-below-card {
+  margin-top: 6px;
+}
+
+.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool-drawer-below-card {
+  margin-left: var(--space-inset-msg);
+  margin-right: var(--space-inset-msg);
+  width: calc(100% - (var(--space-inset-msg) * 2));
+  box-sizing: border-box;
 }
 
 .msg-tool-drawer-pre {
@@ -1729,6 +1741,12 @@
 
 /* stretch：纵轴 flex 下让 .msg 在横向上拉满栈宽；flex-start 会使子项宽度=内容宽（流式初期塌条） */
 .msg-with-select:has(.msg-assistant) > .msg-stack {
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+}
+
+.msg-with-select:has(.msg-tool) > .msg-stack {
   align-items: stretch;
   flex: 1;
   min-width: 0;

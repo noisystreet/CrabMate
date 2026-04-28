@@ -227,6 +227,16 @@ fn strip_staged_planner_message_tool_calls(
     }
 }
 
+/// 分步执行后会在消息尾部插入 `chat_ui_separator`。
+/// 若下一轮重规划未产出结构化计划（`NotFound`），通常表示模型在做收尾自然语言，
+/// 此时直接收敛可避免“总结后再总结”的重复输出。
+#[inline]
+fn staged_planner_entered_from_step_execution(messages: &[Message]) -> bool {
+    messages
+        .last()
+        .is_some_and(crate::types::is_chat_ui_separator)
+}
+
 /// 逻辑多规划员（串行）+ 合并：首轮规划已在历史中；辅助规划员轮**不**写入 assistant，以免上下文膨胀。
 async fn maybe_run_staged_plan_ensemble_then_merge<F>(
     p: &mut RunLoopParams<'_>,
@@ -879,6 +889,7 @@ pub(crate) async fn run_staged_plan_with_prepared_request<F>(
 where
     F: Fn(String) -> Message,
 {
+    let entered_from_step_execution = staged_planner_entered_from_step_execution(p.messages);
     let planner_render_to_terminal =
         render_to_terminal && (p.out.is_some() || p.cfg.staged_plan_cli_show_planner_stream);
     let (mut msg, finish_reason) =
@@ -1012,6 +1023,13 @@ where
                 parse_err,
                 crate::agent::plan_artifact::PlanArtifactError::NotFound
             ) {
+                if entered_from_step_execution {
+                    debug!(
+                        target: "crabmate",
+                        "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
+                    );
+                    return Ok(StagedPlanRunOutcome::Finished);
+                }
                 debug!(
                     target: "crabmate",
                     "分阶段规划未产出结构化任务 (可能是通识问答或直接回复) merged_len={} merged_preview={}；降级为常规循环",
@@ -1696,5 +1714,19 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
             }
             Err(other) => return Err(other),
         }
+    }
+}
+
+#[cfg(test)]
+mod staged_convergence_tests {
+    use super::staged_planner_entered_from_step_execution;
+    use crate::types::Message;
+
+    #[test]
+    fn detects_recent_step_execution_separator_at_tail() {
+        let mut messages = vec![Message::user_only("u"), Message::assistant_only("a")];
+        assert!(!staged_planner_entered_from_step_execution(&messages));
+        messages.push(Message::chat_ui_separator(true));
+        assert!(staged_planner_entered_from_step_execution(&messages));
     }
 }

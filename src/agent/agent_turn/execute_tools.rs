@@ -1,6 +1,6 @@
 //! E 步：执行 tool_calls（SSE/终端、并行只读批、串行带缓存）。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::agent_role_turn::{tool_allowed_for_turn, turn_tool_denied_message};
 use std::path::Path;
@@ -58,6 +58,128 @@ fn context_snapshot_for_trace(messages: &[Message]) -> String {
         s.push('…');
     }
     s
+}
+
+fn parse_run_command_payload(args_json: &str) -> Option<(String, Vec<String>)> {
+    let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
+    let command = v.get("command")?.as_str()?.trim().to_string();
+    let args = v
+        .get("args")
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str())
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Some((command, args))
+}
+
+fn classify_run_command_failure_family_from_invocation(
+    command: &str,
+    args: &[String],
+) -> Option<&'static str> {
+    if command == "cd" {
+        return Some("shell_builtin_cd_unavailable");
+    }
+    if args.iter().any(|a| a.contains("..") || a.starts_with('/')) {
+        return Some("path_parent_or_absolute_forbidden");
+    }
+    None
+}
+
+fn classify_run_command_failure_family_from_result(result: &str) -> Option<&'static str> {
+    if result.contains("参数不允许包含 \"..\" 或绝对路径（以 / 开头）") {
+        return Some("path_parent_or_absolute_forbidden");
+    }
+    if result.contains("命令 \"cd\" 不存在或在当前环境中不可用") {
+        return Some("shell_builtin_cd_unavailable");
+    }
+    if result.contains("当前目录缺少 Cargo.toml") {
+        return Some("cargo_manifest_missing");
+    }
+    None
+}
+
+fn cargo_subcommand_needs_manifest(args: &[String]) -> bool {
+    let Some(sub) = args.iter().find(|s| !s.starts_with('-')) else {
+        return false;
+    };
+    matches!(
+        sub.as_str(),
+        "build" | "run" | "test" | "check" | "clippy" | "fmt"
+    )
+}
+
+fn find_cargo_toml_candidates(base: &Path, max_depth: usize, max_hits: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut q: VecDeque<(std::path::PathBuf, usize)> = VecDeque::new();
+    q.push_back((base.to_path_buf(), 0));
+    while let Some((dir, depth)) = q.pop_front() {
+        if out.len() >= max_hits {
+            break;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let path = ent.path();
+            if path.is_file() && path.file_name().is_some_and(|n| n == "Cargo.toml") {
+                if let Ok(rel) = path.strip_prefix(base) {
+                    out.push(rel.to_string_lossy().replace('\\', "/"));
+                }
+                if out.len() >= max_hits {
+                    break;
+                }
+            } else if path.is_dir() && depth < max_depth {
+                q.push_back((path, depth + 1));
+            }
+        }
+    }
+    out
+}
+
+fn run_command_cargo_workdir_preflight_error(
+    tool_name: &str,
+    tool_args_json: &str,
+    effective_working_dir: &Path,
+) -> Option<String> {
+    if tool_name != "run_command" {
+        return None;
+    }
+    let (command, args) = parse_run_command_payload(tool_args_json)?;
+    if command != "cargo" {
+        return None;
+    }
+    if args.iter().any(|a| a == "--manifest-path") {
+        return None;
+    }
+    if !cargo_subcommand_needs_manifest(&args) {
+        return None;
+    }
+    if effective_working_dir.join("Cargo.toml").is_file() {
+        return None;
+    }
+
+    let candidates = find_cargo_toml_candidates(effective_working_dir, 3, 3);
+    let command_preview = format!("cargo {}", args.join(" "));
+    if candidates.len() == 1 {
+        return Some(format!(
+            "错误：当前目录缺少 Cargo.toml，已阻止重复无效执行。请改为：`{command_preview} --manifest-path {}`",
+            candidates[0]
+        ));
+    }
+    if candidates.len() > 1 {
+        return Some(format!(
+            "错误：当前目录缺少 Cargo.toml，且发现多个候选（{}）。请显式使用 `--manifest-path <path>` 后重试。",
+            candidates.join(", ")
+        ));
+    }
+    Some(
+        "错误：当前目录缺少 Cargo.toml，已阻止重复无效执行。请先定位项目根目录，或改用 `--manifest-path <path>`。"
+            .to_string(),
+    )
 }
 
 async fn emit_thinking_trace_sse(
@@ -926,6 +1048,42 @@ async fn execute_tools_serial(
             crate::redact::tool_arguments_preview_for_log(&args)
         );
 
+        if let Some(preflight_error) = run_command_cargo_workdir_preflight_error(
+            name.as_str(),
+            args.as_str(),
+            effective_working_dir,
+        ) {
+            per_coord.mark_tool_failure_signature(
+                name.as_str(),
+                args.as_str(),
+                "cargo_manifest_missing".to_string(),
+            );
+            let env = ToolEnvelopeContext {
+                tool_call_id: id.as_str(),
+                execution_mode: "serial",
+                parallel_batch_id: None,
+            };
+            emit_tool_result_sse_and_append(
+                messages,
+                per_coord,
+                EmitToolResultParams {
+                    cfg,
+                    out,
+                    echo_terminal_transcript,
+                    terminal_tool_display_max_chars,
+                    tool_result_envelope_v1,
+                    name: name.as_str(),
+                    args: args.as_str(),
+                    id: id.as_str(),
+                    result: preflight_error,
+                    reflection_inject: None,
+                    envelope_ctx: Some(env),
+                },
+            )
+            .await;
+            continue;
+        }
+
         if let Some(k) = step_executor_constraint
             && !tool_allowed_for_step_executor_kind(cfg.as_ref(), name.as_str(), k)
         {
@@ -989,6 +1147,90 @@ async fn execute_tools_serial(
 
         let is_readonly = tool_registry::is_readonly_tool(cfg.as_ref(), name.as_str());
         let cache_key = (name.clone(), args.clone());
+
+        // 同回合短路：同一 run_command（同 args）曾失败过，则不再原样重试，强制模型切策略。
+        if name == "run_command"
+            && let Some(prev_error) =
+                per_coord.repeated_tool_failure_error_marker(name.as_str(), args.as_str())
+        {
+            let short_circuit = format!(
+                "错误：检测到同命令重复失败，已短路本次调用（error={prev_error}）。请切换策略（例如调整工作目录、改用 --manifest-path、或先做目录/文件探测）。"
+            );
+            warn!(
+                target: LOG_TARGET,
+                "run_command 重复失败短路 args_preview={} prev_error={}",
+                crate::redact::tool_arguments_preview_for_log(&args),
+                prev_error
+            );
+            let env = ToolEnvelopeContext {
+                tool_call_id: id.as_str(),
+                execution_mode: "serial",
+                parallel_batch_id: None,
+            };
+            emit_tool_result_sse_and_append(
+                messages,
+                per_coord,
+                EmitToolResultParams {
+                    cfg,
+                    out,
+                    echo_terminal_transcript,
+                    terminal_tool_display_max_chars,
+                    tool_result_envelope_v1,
+                    name: name.as_str(),
+                    args: args.as_str(),
+                    id: id.as_str(),
+                    result: short_circuit,
+                    reflection_inject: None,
+                    envelope_ctx: Some(env),
+                },
+            )
+            .await;
+            continue;
+        }
+        if name == "run_command"
+            && let Some((command, command_args)) = parse_run_command_payload(args.as_str())
+            && let Some(family) = classify_run_command_failure_family_from_invocation(
+                command.as_str(),
+                command_args.as_slice(),
+            )
+            && let Some(prev_error) =
+                per_coord.repeated_tool_failure_family_marker(name.as_str(), family)
+        {
+            let short_circuit = format!(
+                "错误：检测到同类失败已发生（family={family}, prev_error={prev_error}），已短路本次调用。请直接切换策略，避免继续同类试探。"
+            );
+            warn!(
+                target: LOG_TARGET,
+                "run_command 同类失败短路 family={} args_preview={} prev_error={}",
+                family,
+                crate::redact::tool_arguments_preview_for_log(&args),
+                prev_error
+            );
+            let env = ToolEnvelopeContext {
+                tool_call_id: id.as_str(),
+                execution_mode: "serial",
+                parallel_batch_id: None,
+            };
+            emit_tool_result_sse_and_append(
+                messages,
+                per_coord,
+                EmitToolResultParams {
+                    cfg,
+                    out,
+                    echo_terminal_transcript,
+                    terminal_tool_display_max_chars,
+                    tool_result_envelope_v1,
+                    name: name.as_str(),
+                    args: args.as_str(),
+                    id: id.as_str(),
+                    result: short_circuit,
+                    reflection_inject: None,
+                    envelope_ctx: Some(env),
+                },
+            )
+            .await;
+            continue;
+        }
 
         if is_readonly && let Some(cached) = readonly_cache.get(&cache_key) {
             info!(
@@ -1072,6 +1314,27 @@ async fn execute_tools_serial(
             crate::redact::tool_arguments_preview_for_log(&args),
             t_tool.elapsed().as_millis()
         );
+
+        if name == "run_command" {
+            let parsed = parse_legacy_output(name.as_str(), result.as_str());
+            if parsed.ok {
+                per_coord.clear_tool_failure_signature(name.as_str(), args.as_str());
+                per_coord.clear_tool_failure_families_for_tool(name.as_str());
+            } else {
+                let marker = parsed.error_code.unwrap_or_else(|| {
+                    parsed
+                        .exit_code
+                        .map(|c| format!("exit_code:{c}"))
+                        .unwrap_or_else(|| "unknown".to_string())
+                });
+                per_coord.mark_tool_failure_signature(name.as_str(), args.as_str(), marker.clone());
+                if let Some(family) =
+                    classify_run_command_failure_family_from_result(result.as_str())
+                {
+                    per_coord.mark_tool_failure_family(name.as_str(), family, marker);
+                }
+            }
+        }
 
         if cfg.codebase_semantic_search_enabled
             && cfg.codebase_semantic_invalidate_on_workspace_change
@@ -1297,4 +1560,52 @@ pub(crate) async fn per_execute_tools_web(
         tracing_chat_turn,
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        classify_run_command_failure_family_from_invocation,
+        classify_run_command_failure_family_from_result,
+    };
+
+    #[test]
+    fn classify_family_from_invocation_forbidden_path_and_cd() {
+        let cd_args = vec!["tmp".to_string()];
+        assert_eq!(
+            classify_run_command_failure_family_from_invocation("cd", cd_args.as_slice()),
+            Some("shell_builtin_cd_unavailable")
+        );
+
+        let bad_args = vec![
+            "-c".to_string(),
+            "cd build && ../configure Linux_Serial".to_string(),
+        ];
+        assert_eq!(
+            classify_run_command_failure_family_from_invocation("sh", bad_args.as_slice()),
+            Some("path_parent_or_absolute_forbidden")
+        );
+    }
+
+    #[test]
+    fn classify_family_from_result_known_failures() {
+        assert_eq!(
+            classify_run_command_failure_family_from_result(
+                "错误：参数不允许包含 \"..\" 或绝对路径（以 / 开头）"
+            ),
+            Some("path_parent_or_absolute_forbidden")
+        );
+        assert_eq!(
+            classify_run_command_failure_family_from_result(
+                "错误：命令 \"cd\" 不存在或在当前环境中不可用（工作目录：/tmp）"
+            ),
+            Some("shell_builtin_cd_unavailable")
+        );
+        assert_eq!(
+            classify_run_command_failure_family_from_result(
+                "错误：当前目录缺少 Cargo.toml，已阻止重复无效执行。"
+            ),
+            Some("cargo_manifest_missing")
+        );
+    }
 }

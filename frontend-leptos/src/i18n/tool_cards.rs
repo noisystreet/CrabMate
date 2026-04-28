@@ -155,12 +155,14 @@ pub fn tool_human_name(l: Locale, name: &str) -> String {
         (Locale::ZhHans, "read_dir") => "读取目录".to_string(),
         (Locale::ZhHans, "search_in_files") => "全文检索".to_string(),
         (Locale::ZhHans, "list_files") => "列出文件".to_string(),
+        (Locale::ZhHans, "archive_unpack") => "解压缩".to_string(),
         (Locale::En, "run_command") => "Command run".to_string(),
         (Locale::En, "read_file") => "Read file".to_string(),
         (Locale::En, "create_file") => "Create file".to_string(),
         (Locale::En, "read_dir") => "Read directory".to_string(),
         (Locale::En, "search_in_files") => "Search files".to_string(),
         (Locale::En, "list_files") => "List files".to_string(),
+        (Locale::En, "archive_unpack") => "Unpack archive".to_string(),
         _ => name.to_string(),
     }
 }

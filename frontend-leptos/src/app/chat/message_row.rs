@@ -240,6 +240,11 @@ pub(crate) fn chat_message_row(
     let is_user_plain = m.role == "user" && !m.is_tool;
     let is_tool_bubble = m.is_tool;
     let tool_detail_open = RwSignal::new(false);
+    let tool_detail_text = if is_tool_bubble {
+        Some(m.reasoning_text.clone())
+    } else {
+        None
+    };
     let jump_uid = if is_tool_bubble {
         sessions.with(|list| {
             let aid = active_id.get();
@@ -301,38 +306,11 @@ pub(crate) fn chat_message_row(
         let asc = auto_scroll_chat;
         // 工具气泡不需要跳转到用户消息的功能，只显示纯文本
         let body_inner = if is_tool_bubble {
-            let detail_text = m_for_body.reasoning_text.clone();
-            let detail_for_btn = detail_text.clone();
-            let detail_for_show = detail_text.clone();
+            let detail_for_btn = tool_detail_text.clone();
             let tool_emoji = tool_bubble_emoji(&m_for_body);
-            let tool_line_time = time_str.clone();
             view! {
                 <div class="msg-tool-compact">
-                    <span class="msg-tool-emoji" aria-hidden="true">{tool_emoji}</span>
-                    <span class="msg-body msg-tool-summary">
-                        {move || {
-                            let apply = apply_assistant_display_filters.get();
-                            let loc = locale.get();
-                            let q = normalize_search_query(&chat_find_query.get());
-                            let disp =
-                                message_text_for_display_ex(&m_for_body, loc, apply);
-                            let segs = split_for_find_highlight(&disp, &q);
-                            segs
-                                .into_iter()
-                                .map(|(s, hl)| {
-                                    if hl {
-                                        view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
-                                    } else {
-                                        view! { {s} }.into_any()
-                                    }
-                                })
-                                .collect_view()
-                        }}
-                    </span>
-                    <span class="msg-tool-line-time" aria-hidden="true">
-                        {tool_line_time}
-                    </span>
-                    <Show when=move || !detail_for_btn.trim().is_empty()>
+                    <Show when=move || detail_for_btn.as_deref().is_some_and(|s| !s.trim().is_empty())>
                         <button
                             type="button"
                             class="msg-tool-drawer-btn msg-tool-drawer-icon-btn"
@@ -374,12 +352,28 @@ pub(crate) fn chat_message_row(
                             </svg>
                         </button>
                     </Show>
+                    <span class="msg-tool-emoji" aria-hidden="true">{tool_emoji}</span>
+                    <span class="msg-body msg-tool-summary">
+                        {move || {
+                            let apply = apply_assistant_display_filters.get();
+                            let loc = locale.get();
+                            let q = normalize_search_query(&chat_find_query.get());
+                            let disp =
+                                message_text_for_display_ex(&m_for_body, loc, apply);
+                            let segs = split_for_find_highlight(&disp, &q);
+                            segs
+                                .into_iter()
+                                .map(|(s, hl)| {
+                                    if hl {
+                                        view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
+                                    } else {
+                                        view! { {s} }.into_any()
+                                    }
+                                })
+                                .collect_view()
+                        }}
+                    </span>
                 </div>
-                <Show when=move || tool_detail_open.get() && !detail_for_show.trim().is_empty()>
-                    <div class="msg-tool-drawer">
-                        <pre class="msg-tool-drawer-pre">{detail_text.clone()}</pre>
-                    </div>
-                </Show>
             }
             .into_any()
         } else if let Some(uid) = jump_uid {
@@ -470,10 +464,12 @@ pub(crate) fn chat_message_row(
         }
     };
     let mid_dom = m.id.clone();
+    let detail_for_drawer_when = tool_detail_text.clone();
+    let detail_for_drawer_text = tool_detail_text.clone();
     view! {
         <div class="msg-with-select">
             <div class="msg-stack">
-                {(!is_tool_bubble).then(|| {
+                {true.then(|| {
                     view! {
                         <div class="msg-meta" aria-hidden="true">
                             <span class="msg-meta-primary">
@@ -669,6 +665,21 @@ pub(crate) fn chat_message_row(
                         }
                     })}
                 </div>
+                <Show
+                    when=move || {
+                        is_tool_bubble
+                            && tool_detail_open.get()
+                            && detail_for_drawer_when
+                                .as_deref()
+                                .is_some_and(|s| !s.trim().is_empty())
+                    }
+                >
+                    <div class="msg-tool-drawer msg-tool-drawer-below-card">
+                        <pre class="msg-tool-drawer-pre">
+                            {detail_for_drawer_text.clone().unwrap_or_default()}
+                        </pre>
+                    </div>
+                </Show>
                 {show_msg_action_bar.then(|| {
                     view! {
                         <div class="msg-actions msg-actions-below" role="group" prop:aria-label=move || i18n::msg_actions_group_aria(locale.get())>
