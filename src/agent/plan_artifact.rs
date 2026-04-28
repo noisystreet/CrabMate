@@ -274,12 +274,38 @@ fn backfill_executor_kinds_after_staged_patch(
     }
 }
 
+/// 解析 `agent_reply_plan` v1（**无 validate-only 绑定上下文**）。
+///
+/// 注意：在需要执行 `workflow_validate_only` 绑定语义的路径中，应优先使用
+/// [`parse_agent_reply_plan_v1_with_validate_only_binding_ids`]，避免误放行多步绑定例外。
 pub fn parse_agent_reply_plan_v1(content: &str) -> Result<AgentReplyPlanV1, PlanArtifactError> {
     for slice in collect_json_candidates(content) {
         let Ok(plan) = serde_json::from_str::<AgentReplyPlanV1>(&slice) else {
             continue;
         };
         if validate_agent_reply_plan_v1(&plan).is_ok() {
+            return Ok(plan);
+        }
+    }
+    Err(PlanArtifactError::NotFound)
+}
+
+/// 与 [`parse_agent_reply_plan_v1`] 类似，但在「多步 + 每步 `workflow_node_id`」例外上
+/// 要求显式存在 validate-only 绑定上下文（`validate_only_binding_ids` 非空）。
+pub(crate) fn parse_agent_reply_plan_v1_with_validate_only_binding_ids(
+    content: &str,
+    validate_only_binding_ids: Option<&[String]>,
+) -> Result<AgentReplyPlanV1, PlanArtifactError> {
+    for slice in collect_json_candidates(content) {
+        let Ok(plan) = serde_json::from_str::<AgentReplyPlanV1>(&slice) else {
+            continue;
+        };
+        if validate_agent_reply_plan_v1_with_validate_only_binding_ids(
+            &plan,
+            validate_only_binding_ids,
+        )
+        .is_ok()
+        {
             return Ok(plan);
         }
     }
@@ -308,6 +334,15 @@ pub fn parse_agent_reply_plan_v1_from_assistant_message(
 ) -> Result<AgentReplyPlanV1, PlanArtifactError> {
     let merged = assistant_merged_text_for_plan_artifact_parse(msg);
     parse_agent_reply_plan_v1(&merged)
+}
+
+/// 从助手消息（正文 + 思维链）解析 `agent_reply_plan` v1（带 validate-only 绑定上下文）。
+pub(crate) fn parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
+    msg: &crate::types::Message,
+    validate_only_binding_ids: Option<&[String]>,
+) -> Result<AgentReplyPlanV1, PlanArtifactError> {
+    let merged = assistant_merged_text_for_plan_artifact_parse(msg);
+    parse_agent_reply_plan_v1_with_validate_only_binding_ids(&merged, validate_only_binding_ids)
 }
 
 #[allow(dead_code)] // `per_coord::content_has_plan` 等封装使用
@@ -412,6 +447,13 @@ pub(crate) fn validate_plan_binds_workflow_validate_nodes(
 }
 
 fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifactError> {
+    validate_agent_reply_plan_v1_with_validate_only_binding_ids(p, None)
+}
+
+fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
+    p: &AgentReplyPlanV1,
+    validate_only_binding_ids: Option<&[String]>,
+) -> Result<(), PlanArtifactError> {
     const STAGED_PLAN_FIXED_MAX_STEPS: usize = 1;
     if p.plan_type != "agent_reply_plan" {
         return Err(PlanArtifactError::WrongType(p.plan_type.clone()));
@@ -429,8 +471,8 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
         return Err(PlanArtifactError::EmptySteps);
     }
     // 固定单步：默认只允许 1 步。
-    // 绑定优先例外：若每步都显式绑定 `workflow_node_id`，允许多步交由
-    // `validate_plan_binds_workflow_validate_nodes` 做严格的一一对应校验。
+    // 绑定优先例外：若每步都显式绑定 `workflow_node_id`，且存在 validate-only 绑定上下文，
+    // 允许多步交由 `validate_plan_binds_workflow_validate_nodes` 做严格的一一对应校验。
     let workflow_bound_multi_step = p.steps.len() > STAGED_PLAN_FIXED_MAX_STEPS
         && p.steps.iter().all(|s| {
             s.workflow_node_id
@@ -438,7 +480,11 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
                 .map(|w| !w.trim().is_empty())
                 .unwrap_or(false)
         });
-    if p.steps.len() > STAGED_PLAN_FIXED_MAX_STEPS && !workflow_bound_multi_step {
+    let has_validate_only_binding_context =
+        validate_only_binding_ids.is_some_and(|ids| !ids.is_empty());
+    let allow_workflow_bound_multi_step =
+        workflow_bound_multi_step && has_validate_only_binding_context;
+    if p.steps.len() > STAGED_PLAN_FIXED_MAX_STEPS && !allow_workflow_bound_multi_step {
         return Err(PlanArtifactError::TooManySteps {
             max: STAGED_PLAN_FIXED_MAX_STEPS,
             got: p.steps.len(),
@@ -1199,19 +1245,11 @@ mod tests {
 
     #[test]
     fn parses_executor_kind_on_step() {
-        let j = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"r","description":"审","executor_kind":"review_readonly"},{"id":"p","description":"改","executor_kind":"patch_write"},{"id":"t","description":"测","executor_kind":"test_runner"}]}"#;
+        let j = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"r","description":"审","executor_kind":"review_readonly"}]}"#;
         let p = parse_agent_reply_plan_v1(j).unwrap();
         assert_eq!(
             p.steps[0].executor_kind,
             Some(PlanStepExecutorKind::ReviewReadonly)
-        );
-        assert_eq!(
-            p.steps[1].executor_kind,
-            Some(PlanStepExecutorKind::PatchWrite)
-        );
-        assert_eq!(
-            p.steps[2].executor_kind,
-            Some(PlanStepExecutorKind::TestRunner)
         );
     }
 
@@ -1242,7 +1280,17 @@ mod tests {
     #[test]
     fn allows_multi_steps_when_each_step_has_workflow_node_id() {
         let s = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x","workflow_node_id":"n1"},{"id":"b","description":"y","workflow_node_id":"n2"}]}"#;
-        assert!(parse_agent_reply_plan_v1(s).is_ok());
+        assert!(parse_agent_reply_plan_v1(s).is_err());
+    }
+
+    #[test]
+    fn allows_multi_steps_when_each_step_has_workflow_node_id_and_binding_context_present() {
+        let s = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x","workflow_node_id":"n1"},{"id":"b","description":"y","workflow_node_id":"n2"}]}"#;
+        let ids = vec!["n1".to_string(), "n2".to_string()];
+        assert!(
+            parse_agent_reply_plan_v1_with_validate_only_binding_ids(s, Some(ids.as_slice()))
+                .is_ok()
+        );
     }
 
     #[test]

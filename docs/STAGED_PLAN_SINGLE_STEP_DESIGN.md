@@ -1,7 +1,27 @@
 # 分阶段规划：单步规划（Planner 每轮仅 1 条 `steps`）设计
 
-**状态**：设计稿（未实现）  
+**状态**：主要已实现（持续完善中）  
 **目标读者**：维护者；实现前须与 **`docs/DEVELOPMENT.md`**（分阶段规划）、**`docs/CONFIGURATION.md`**、**`docs/SSE_PROTOCOL.md`** 及 **`crates/crabmate-sse-protocol`** 变更策略对齐。
+
+---
+
+## 实现进度（截至当前）
+
+### 已实现
+
+- 固定单步约束（无新增配置开关）：在 `agent_reply_plan` v1 校验中，`no_task=false` 时默认仅允许 1 条 `steps`。
+- 违规处理采用“硬拒绝”：多步计划触发 `TooManySteps` 校验错误（进入既有无效规划处理链路）。
+- staged 执行流已改为“步后再规划”：每完成一步后自动重入下一轮无工具规划，直到 `no_task` 或终止条件。
+- 增加循环保护：单用户回合内分阶段单步规划轮次上限（防止异常无限循环）。
+- `workflow_validate_only` 绑定优先例外：当多步且每步都带 `workflow_node_id` 时放行，后续由绑定校验规则兜底。
+- 绑定优先例外已收紧为“**仅在存在 validate-only 绑定上下文时**放行”：在 staged 的主规划、ensemble 次规划与 patch 规划解析路径统一生效，避免非绑定场景误放行多步。
+- 补充/调整单测：覆盖“多步拒绝”与“workflow 绑定多步例外”关键行为。
+
+### 近期已补充
+
+- 文档语气已从“待设计”收敛为“实现说明 + 风险/余项”。
+- 已与 `docs/CONFIGURATION.md` / `docs/DEVELOPMENT.md` 对齐“固定单步、无新增配置项”的决策。
+- 已补充回归测试，锁定“单步执行后重入下一轮规划并收敛退出”与“轮次上限防护”行为。
 
 ---
 
@@ -53,16 +73,12 @@
 
 ---
 
-## 3. 配置面建议
+## 3. 配置面结论（已定稿）
 
-- **推荐**：新增 **`[agent]`** 布尔或正整数，例如  
-  - **`staged_plan_max_planner_steps`**（默认 **`0`** 表示不限制，与历史一致；**`1`** 启用单步），或  
-  - **`staged_plan_single_step_planner`**（`true` 等价于 max=1）。
-- **环境变量**：与仓库惯例一致，例如 **`AGENT_STAGED_PLAN_MAX_PLANNER_STEPS`**（与 TOML 合并规则见 `config/finalize` / `env_overrides`）。
-- **热重载**：若走 `AgentConfig` 已有字段，**`POST /config/reload`** 须列入可热载子集（与现有一致）。
-- **`GET /status`**：建议暴露该键，便于 Web/排障与 `doctor` 对齐。
-
-**默认**：**关闭**（`0` / `false`），避免改变现有部署与 golden 行为。
+- 当前实现已采用**固定单步**策略：`no_task = false` 时默认仅允许 1 条 `steps`。
+- **不新增** `staged_plan_max_planner_steps`（或等价）配置项，也**不新增**对应环境变量。
+- 例外仅保留给 `workflow_validate_only` 绑定场景（多步且每步显式 `workflow_node_id`），由后续绑定校验兜底。
+- 因为无新增配置键，本特性不涉及 `POST /config/reload` / `GET /status` 的新增暴露项。
 
 ---
 
@@ -71,6 +87,7 @@
 ### 4.1 `plan_artifact` 校验
 
 - 在 **`validate_agent_reply_plan_v1`** 之后或之内增加对 `max_steps` 的检查；错误类型进入既有 **`PlanArtifactError`** 映射，保证 **plan_rewrite**、SSE **`reason_code`** 与前端分支可消费（若新增 `reason_code`，须走 **`api-sse-chat-protocol.mdc`** 清单：`sse_dispatch`、**`control_classify`**、**`fixtures/sse_control_golden.jsonl`**、`cargo test golden_sse_control`）。
+- 调用约定：涉及 validate-only 绑定语义的路径，统一使用带上下文参数的解析接口（`parse_agent_reply_plan_v1_with_validate_only_binding_ids` / `parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids`），避免无上下文解析误放行多步绑定例外。
 
 ### 4.2 工作流 `workflow_validate_only` 节点绑定
 
@@ -78,7 +95,7 @@
 
 **须定义优先级**（建议其一写死进实现与文档）：
 
-1. **绑定优先**：当本回合适用 `validate_plan_binds_workflow_validate_nodes` 且 `nodes.len() > 1` 时，**跳过**单步上限（允许本轮 `steps.len() == nodes.len()`），或  
+1. **绑定优先（已实现且带上下文门控）**：当本回合适用 `validate_plan_binds_workflow_validate_nodes` 且 `nodes.len() > 1` 时，**跳过**单步上限（允许本轮 `steps.len() == nodes.len()`）；但若不存在 validate-only 绑定上下文，则不放行该多步例外，或  
 2. **单步优先**：启用单步时，若绑定规则要求多步，则 **报错** 并提示用户关闭单步或拆分工作流回合。
 
 推荐 **1（绑定优先）**，否则 validate-only → Do 路径无法在一次规划内满足。

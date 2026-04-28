@@ -42,7 +42,10 @@ pub(crate) fn step_after_require_plan(
     let validate_only_binding_ids = &args.validate_only_binding_ids;
 
     let content = crate::types::message_content_as_str(&args.msg.content).unwrap_or("");
-    if let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1(content) {
+    if let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1_with_validate_only_binding_ids(
+        content,
+        validate_only_binding_ids.as_deref(),
+    ) {
         let layers_ok = match layer_need {
             Some(n) if n > 0 && apply_layer_semantics => plan.steps.len() >= n,
             _ => true,

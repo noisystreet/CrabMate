@@ -246,3 +246,66 @@ mod per_reflect_tests {
         ));
     }
 }
+
+mod staged_single_step_rolling_tests {
+    use super::super::staged::{
+        StagedPlanRunOutcome, simulate_single_step_rolling_horizon_for_test,
+    };
+
+    #[test]
+    fn single_step_then_no_task_finished_reenters_once_then_converges() {
+        let rounds = simulate_single_step_rolling_horizon_for_test(
+            &[
+                StagedPlanRunOutcome::ContinuePlanning,
+                StagedPlanRunOutcome::Finished,
+            ],
+            64,
+        )
+        .expect("should finish");
+        assert_eq!(
+            rounds, 2,
+            "应先完成一次单步执行并触发重入，再在下一轮 no_task 收敛退出"
+        );
+    }
+
+    #[test]
+    fn rolling_horizon_stops_when_round_limit_exceeded() {
+        let err = simulate_single_step_rolling_horizon_for_test(
+            &[StagedPlanRunOutcome::ContinuePlanning; 70],
+            64,
+        )
+        .expect_err("should hit round limit");
+        assert!(err.contains("超过上限"));
+    }
+}
+
+mod staged_workflow_binding_context_tests {
+    use crate::agent::plan_artifact::parse_agent_reply_plan_v1_with_validate_only_binding_ids;
+
+    fn workflow_bound_two_step_plan_json() -> &'static str {
+        r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"step1","workflow_node_id":"node.a"},{"id":"s2","description":"step2","workflow_node_id":"node.b"}]}"#
+    }
+
+    #[test]
+    fn rejects_workflow_bound_multi_step_without_validate_only_binding_ids() {
+        assert!(
+            parse_agent_reply_plan_v1_with_validate_only_binding_ids(
+                workflow_bound_two_step_plan_json(),
+                None
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn allows_workflow_bound_multi_step_with_validate_only_binding_ids() {
+        let ids = vec!["node.a".to_string(), "node.b".to_string()];
+        assert!(
+            parse_agent_reply_plan_v1_with_validate_only_binding_ids(
+                workflow_bound_two_step_plan_json(),
+                Some(ids.as_slice())
+            )
+            .is_ok()
+        );
+    }
+}

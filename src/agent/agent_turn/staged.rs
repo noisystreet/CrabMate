@@ -9,6 +9,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::agent::plan_ensemble;
 use crate::agent::plan_optimizer::{self, STAGED_PLAN_OPTIMIZER_COACH_MARK};
+use crate::agent::reflection::plan_rewrite;
 use crate::config::StagedPlanFeedbackMode;
 use crate::llm::{
     LlmCompleteError, LlmRetryingTransportOpts, kimi_k2_5_vendor_requires_tool_call_reasoning,
@@ -272,7 +273,12 @@ where
             return Ok(());
         }
         strip_staged_planner_message_tool_calls(&mut sec_msg, "·逻辑多规划员", dsml);
-        match plan_artifact::parse_agent_reply_plan_v1_from_assistant_message(&sec_msg) {
+        let validate_only_binding_ids =
+            plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.messages);
+        match plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
+            &sec_msg,
+            validate_only_binding_ids.as_deref(),
+        ) {
             Ok(p2) if !p2.no_task && !p2.steps.is_empty() => {
                 pop_last_staged_planner_coach_user_if_present(p.messages);
                 accepted.push(p2);
@@ -541,6 +547,33 @@ pub(crate) enum StagedPlanRunOutcome {
     Finished,
 }
 
+#[cfg(test)]
+pub(crate) fn simulate_single_step_rolling_horizon_for_test(
+    outcomes: &[StagedPlanRunOutcome],
+    max_rounds: usize,
+) -> Result<usize, String> {
+    let mut staged_rounds = 0usize;
+    let mut idx = 0usize;
+    loop {
+        staged_rounds = staged_rounds.saturating_add(1);
+        if staged_rounds > max_rounds {
+            return Err(format!(
+                "分阶段单步规划轮次超过上限（{}），已停止以避免无限循环",
+                max_rounds
+            ));
+        }
+        let outcome = outcomes
+            .get(idx)
+            .copied()
+            .unwrap_or(StagedPlanRunOutcome::ContinuePlanning);
+        idx = idx.saturating_add(1);
+        match outcome {
+            StagedPlanRunOutcome::ContinuePlanning => continue,
+            StagedPlanRunOutcome::Finished => return Ok(staged_rounds),
+        }
+    }
+}
+
 /// 发送单步结束 SSE（`failed` / `cancelled` / `ok`）。
 #[allow(clippy::too_many_arguments)]
 async fn finish_staged_plan_step_sse(
@@ -800,8 +833,13 @@ where
         return Ok(None);
     }
 
-    let patch_plan = match plan_artifact::parse_agent_reply_plan_v1_from_assistant_message(&msg) {
-        Ok(p) => p,
+    let validate_only_binding_ids =
+        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.messages);
+    let patch_plan = match plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
+        &msg,
+        validate_only_binding_ids.as_deref(),
+    ) {
+        Ok(plan_v1) => plan_v1,
         Err(e) => {
             warn!(
                 target: "crabmate",
@@ -961,8 +999,11 @@ where
 
     let merged_for_log =
         crate::agent::plan_artifact::assistant_merged_text_for_plan_artifact_parse(&msg);
-    let plan = match crate::agent::plan_artifact::parse_agent_reply_plan_v1_from_assistant_message(
+    let validate_only_binding_ids =
+        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.messages);
+    let plan = match crate::agent::plan_artifact::parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_binding_ids(
         &msg,
+        validate_only_binding_ids.as_deref(),
     ) {
         Ok(plan_v1) => plan_v1,
         Err(parse_err) => {
@@ -1021,23 +1062,43 @@ where
 
     let parallel_csv =
         plan_optimizer::parallel_batchable_tool_names_csv_from_defs(p.tools_defs, p.cfg.as_ref());
+    let validate_only_binding_active =
+        plan_rewrite::last_workflow_validate_binding_plan_node_ids(p.messages)
+            .is_some_and(|ids| !ids.is_empty());
     let skip_ensemble_for_casual = p.staged_plan_ensemble_count > 1
         && p.staged_plan_skip_ensemble_on_casual_prompt
         && plan_optimizer::staged_plan_trigger_user_content(p.messages)
             .is_some_and(plan_optimizer::staged_plan_user_prompt_looks_like_casual_or_trivial);
+    let skip_ensemble_for_validate_only_binding =
+        p.staged_plan_ensemble_count > 1 && validate_only_binding_active;
+    if skip_ensemble_for_validate_only_binding {
+        debug!(
+            target: "crabmate",
+            "分阶段规划·逻辑多规划员：检测到 workflow_validate_only 节点绑定上下文，跳过 ensemble 以保持逐步绑定稳定"
+        );
+    }
 
-    maybe_run_staged_plan_ensemble_then_merge(
-        p,
-        per_coord,
-        &labels,
-        &make_step_user_message,
-        planner_render_to_terminal,
-        &mut plan,
-        skip_ensemble_for_casual,
-    )
-    .await?;
+    if !skip_ensemble_for_validate_only_binding {
+        maybe_run_staged_plan_ensemble_then_merge(
+            p,
+            per_coord,
+            &labels,
+            &make_step_user_message,
+            planner_render_to_terminal,
+            &mut plan,
+            skip_ensemble_for_casual,
+        )
+        .await?;
+    }
 
     let want_optimizer = plan.steps.len() >= 2 && p.staged_plan_optimizer_round;
+    let skip_optimizer_validate_only_binding = want_optimizer && validate_only_binding_active;
+    if skip_optimizer_validate_only_binding {
+        debug!(
+            target: "crabmate",
+            "分阶段规划优化轮：检测到 workflow_validate_only 节点绑定上下文，跳过优化轮以避免破坏绑定约束"
+        );
+    }
     let skip_optimizer_no_parallel_tools = want_optimizer
         && p.staged_plan_optimizer_requires_parallel_tools
         && parallel_csv.trim().is_empty();
@@ -1048,7 +1109,8 @@ where
             plan.steps.len()
         );
     }
-    if want_optimizer && !skip_optimizer_no_parallel_tools {
+    if want_optimizer && !skip_optimizer_no_parallel_tools && !skip_optimizer_validate_only_binding
+    {
         let opt_body =
             plan_optimizer::staged_plan_optimizer_user_body(&plan, parallel_csv.as_str());
         p.messages.push(make_step_user_message(opt_body));

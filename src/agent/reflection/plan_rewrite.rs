@@ -87,7 +87,15 @@ pub(crate) fn classify_exhausted_reason(
     strict_workflow_node_coverage: bool,
 ) -> PlanRewriteExhaustedReason {
     let content = crate::types::message_content_as_str(&msg.content).unwrap_or("");
-    let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1(content) else {
+    let validate_only_binding_ids = if apply_layer_semantics {
+        last_workflow_validate_binding_plan_node_ids(messages)
+    } else {
+        None
+    };
+    let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1_with_validate_only_binding_ids(
+        content,
+        validate_only_binding_ids.as_deref(),
+    ) else {
         return PlanRewriteExhaustedReason::PlanMissing;
     };
     let layers_ok = match layer_need {
