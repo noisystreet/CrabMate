@@ -194,14 +194,14 @@ flowchart TB
 
 #### Manager 分解硬性规则（单源维护）
 
-- **位置**：`src/agent/hierarchy/manager.rs` 内 `impl ManagerAgent` 的关联常量 **`DECOMPOSITION_RULES_1_TO_10`**。
+- **位置**：`src/agent/hierarchy/manager/agent_core.rs` 内 `impl ManagerAgent` 的关联常量 **`DECOMPOSITION_RULES_1_TO_10`**（`manager/` 目录为拆分后的实现）。
 - **用途**：`build_decomposition_prompt`（首轮分解）与 `build_replan_prompt`（失败/反思后重规划）在「## 分解硬性规则（必须遵守）」下**注入同一段**第 1～10 条（含 C++ + CMake 默认链路与 **`add_executable` 目标名**须与后续子目标一致等约束）。
 - **维护约定**：调整上述通用分解约束时**只改该常量**；其余段落（任务类型指导、CMake/Cargo 附加小节、JSON schema 示例等）仍各自在对应 `build_*_prompt` 中维护。
 
 #### 主要改进点
 
 **A. Manager 代码质量**
-- **文件**: `src/agent/hierarchy/manager.rs`（JSON 提取与一次修复补调用已部分迁至 **`manager_json_repair.rs`**；分解/重规划共用的「硬性规则」第 1～10 条见 **`DECOMPOSITION_RULES_1_TO_10`**）
+- **目录**: `src/agent/hierarchy/manager/`（`types` / `agent_core` / `manager_prompts` / `output_parse` / `session_compile` / `reflect` / `manager_tail` 等；JSON 提取与一次修复补调用仍在 **`manager_json_repair.rs`**；分解/重规划共用的「硬性规则」第 1～10 条见 **`DECOMPOSITION_RULES_1_TO_10`**）
 - **问题**: 函数过长且复杂（如 `decompose_with_llm` ~200行，`execute_subgoal` ~300行）
 - **建议**: 继续提取其余提示词片段至独立常量/函数，将执行循环拆分为更小的状态处理函数
 
