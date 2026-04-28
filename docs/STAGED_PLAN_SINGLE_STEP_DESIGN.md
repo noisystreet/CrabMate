@@ -1,0 +1,137 @@
+# 分阶段规划：单步规划（Planner 每轮仅 1 条 `steps`）设计
+
+**状态**：设计稿（未实现）  
+**目标读者**：维护者；实现前须与 **`docs/DEVELOPMENT.md`**（分阶段规划）、**`docs/CONFIGURATION.md`**、**`docs/SSE_PROTOCOL.md`** 及 **`crates/crabmate-sse-protocol`** 变更策略对齐。
+
+---
+
+## 1. 背景与动机
+
+- **现状**：`staged_plan_execution = true` 时，无工具规划轮可产出 **`agent_reply_plan` v1**，`steps` 常为**多条**；执行器按 `steps` 顺序逐次进入外层循环（每步仍含 P/R/E 与工具调用）。
+- **目标**：在**保留**「规划轮 JSON + 分步执行 + SSE 时间线」的前提下，约束 **Planner 每轮输出的 `steps` 长度上限为 1**（`no_task` 时仍为空），使整体更接近 **滚动视界（rolling horizon）**：每完成一步（或等价语义），下一轮用户任务推进时再走规划轮，产出**下一步**。
+- **非目标**：不替代 **`planner_executor_mode = hierarchical`**；不替代 **`staged_plan_execution = false`** 下的纯 **`run_agent_outer_loop`**（已是单智能体循环）。
+
+---
+
+## 2. 行为定义
+
+### 2.1 解析后不变量
+
+在**启用本特性**且本轮规划**非** `no_task` 时，对解析得到的 **`AgentReplyPlanV1`** 须满足：
+
+- **`steps.len() == 1`**。
+
+当 **`no_task == true`** 时，保持现有契约：**`steps` 必须为空**（见 `plan_artifact::validate_agent_reply_plan_v1`）。
+
+### 2.2 违反时的策略（须二选一并在实现中统一）
+
+| 策略 | 行为 | 优点 | 缺点 |
+|------|------|------|------|
+| **A. 硬拒绝** | 与 `EmptySteps` / 非法 `id` 类似，返回明确 **`PlanArtifactError` 变体**（如 `TooManySteps { max: 1, got: n }`），触发既有 **plan 重写 / 用户可见错误** 路径 | 语义清晰、易测 | 模型常输出多步时重写次数与费用上升 |
+| **B. 静默截断** | 只取 `steps[0]`，丢弃后续（可打 `warn` 日志） | 鲁棒 | 与「Planner 意图」不一致，审计困难；**默认不推荐** |
+
+**建议**：默认 **A**；若日后需要 B，须单独配置键并文档标明风险。
+
+### 2.3 与「多轮规划」的关系
+
+- **单步约束只作用于「每一轮无工具规划轮」产出的 JSON**，不自动增加「每用户回合必须规划几次」；**下一轮规划**仍由现有外环（执行完当前 `steps` 后是否再进入规划轮）决定。
+- 若当前实现是「一次规划、队列执行完所有 `steps` 再结束用户回合」，则启用单步后变为：**每段执行只消费 1 步 → 需在同一用户任务下再次触发规划轮**才能继续。此处**必须与 `agent_turn::staged` 实际控制流逐字核对**（实现阶段任务）：若今日代码仅在首轮 P 一次，则须扩展为 **步后 replan** 或 **将「用户回合」拆成多段 planner 调用**；本设计稿假定产品接受 **「步后再次无工具 P」** 的 API/会话成本。
+
+---
+
+## 3. 配置面建议
+
+- **推荐**：新增 **`[agent]`** 布尔或正整数，例如  
+  - **`staged_plan_max_planner_steps`**（默认 **`0`** 表示不限制，与历史一致；**`1`** 启用单步），或  
+  - **`staged_plan_single_step_planner`**（`true` 等价于 max=1）。
+- **环境变量**：与仓库惯例一致，例如 **`AGENT_STAGED_PLAN_MAX_PLANNER_STEPS`**（与 TOML 合并规则见 `config/finalize` / `env_overrides`）。
+- **热重载**：若走 `AgentConfig` 已有字段，**`POST /config/reload`** 须列入可热载子集（与现有一致）。
+- **`GET /status`**：建议暴露该键，便于 Web/排障与 `doctor` 对齐。
+
+**默认**：**关闭**（`0` / `false`），避免改变现有部署与 golden 行为。
+
+---
+
+## 4. 与现有子系统的交互（实现前核对清单）
+
+### 4.1 `plan_artifact` 校验
+
+- 在 **`validate_agent_reply_plan_v1`** 之后或之内增加对 `max_steps` 的检查；错误类型进入既有 **`PlanArtifactError`** 映射，保证 **plan_rewrite**、SSE **`reason_code`** 与前端分支可消费（若新增 `reason_code`，须走 **`api-sse-chat-protocol.mdc`** 清单：`sse_dispatch`、**`control_classify`**、**`fixtures/sse_control_golden.jsonl`**、`cargo test golden_sse_control`）。
+
+### 4.2 工作流 `workflow_validate_only` 节点绑定
+
+现有 **`validate_plan_binds_workflow_validate_nodes`** 要求 **`steps.len() == nodes.len()`** 且每步带 `workflow_node_id`。当 **`nodes.len() > 1`** 时，与 **`steps.len() == 1`** **互斥**。
+
+**须定义优先级**（建议其一写死进实现与文档）：
+
+1. **绑定优先**：当本回合适用 `validate_plan_binds_workflow_validate_nodes` 且 `nodes.len() > 1` 时，**跳过**单步上限（允许本轮 `steps.len() == nodes.len()`），或  
+2. **单步优先**：启用单步时，若绑定规则要求多步，则 **报错** 并提示用户关闭单步或拆分工作流回合。
+
+推荐 **1（绑定优先）**，否则 validate-only → Do 路径无法在一次规划内满足。
+
+### 4.3 `final_plan_require_strict_workflow_node_coverage` 等
+
+- **`validate_plan_covers_all_workflow_node_ids`** 等与 `steps` 数量相关的规则：在「绑定豁免」或「多步例外」分支中写清，避免组合爆炸无文档。
+
+### 4.4 规划优化轮（optimizer / ensemble）
+
+- 现有逻辑在 **`steps.len() >= 2`** 时才进入部分优化路径（见 `DEVELOPMENT.md` 描述）。**`steps.len() == 1`** 时自然跳过；**无行为变更需求**，但须在 UI/日志中避免「误报优化未运行」为故障。
+
+### 4.5 规划提示词（`PLAN_V1_SCHEMA_RULES` / `staged_plan_phase_instruction`）
+
+- Schema 规则文本须明确：**在单步模式下**「除 `no_task` 外 **`steps` 仅含一项**」。
+- 若用户自定义 **`staged_plan_phase_instruction`**，文档说明 **不得与单步约束矛盾**（或实现侧在加载时给出 `config` 自检警告）。
+
+### 4.6 前端与 CLI
+
+- **`staged_plan_todo`**、**`agentPlanDisplay`**：长期仅 1 步时，待办 UI 可能退化为「当前一步」；需产品接受或增加「已执行步数 / 未知总数」的展示策略（不要求在本设计稿定稿视觉稿，实现 PR 中处理）。
+- **CLI** `format_plan_steps_markdown_for_staged_queue`：单步时队列摘要仍合法。
+
+### 4.7 `logical_dual_agent`
+
+- 若与 **`single_agent` + staged** 共用同一套 `agent_reply_plan` 解析与校验，**单步约束应对两者同时生效**（除非另有产品决策）。本设计稿默认 **一致生效**。
+
+### 4.8 三端（CLI / TUI / Web）
+
+- 遵守 **`.cursor/rules/cli-tui-web-shared-logic.mdc`**：配置键与行为在 **Web + CLI + TUI** 一致；仅 Web 专用 UI 除外。
+
+---
+
+## 5. 测试与回归
+
+- **`plan_artifact` 单元测试**：`steps` 为 0/1/2 在开关 on/off 下的通过/失败矩阵；`no_task` 边界。
+- **与工作流绑定组合**：`nodes.len()==1` 且单步；`nodes.len()>1` 与豁免策略。
+- **SSE / golden**：若新增控制面或 `reason_code`，按仓库规则更新 **`fixtures/sse_control_golden.jsonl`** 等。
+- **前端**：`cargo check --target wasm32-unknown-unknown`；大改时 `trunk build`。
+
+---
+
+## 6. 文档与发布
+
+- **`docs/CONFIGURATION.md`**：新键、默认值、环境变量、与 `workflow_validate_only` 的优先级。
+- **`docs/DEVELOPMENT.md`**：在「分阶段规划」小节增加指向本文的链接及一句行为摘要（实现合并时做）。
+- **`README.md`**：若对用户可见「推荐配置场景」，可加一句（可选）。
+- **`docs/BENCHMARK_PLANNING.md`**：无需引用；本特性与 benchmark 无强耦合。
+
+---
+
+## 7. 风险与开放问题
+
+- **API 成本**：步后 replan 若增加无工具轮次数，须可观测（日志 / trace），并考虑与 **`plan_rewrite_max_attempts`** 的叠加心理预期。
+- **模型遵从度**：仅靠 schema 文字可能仍产出多步；**A 策略 + 重写** 为默认缓解；可考虑在重写 user 中附带「上轮多步已拒」的短因。
+- **会话持久化**：多段 planner assistant 消息增长与 **`max_message_history`** 截断策略是否削弱「前文对下一步的规划」；若有问题，后续独立议题（本设计不展开）。
+
+---
+
+## 8. 参考代码锚点（实现阶段使用）
+
+| 区域 | 路径 |
+|------|------|
+| 分阶段入口 | `src/agent/agent_turn/staged.rs`（`run_staged_plan_then_execute_steps` 等） |
+| 规划 JSON 类型与校验 | `src/agent/plan_artifact.rs`（`AgentReplyPlanV1`、`validate_agent_reply_plan_v1`、workflow 绑定） |
+| 顶层分支 | `src/agent/agent_turn/mod.rs`（`run_agent_turn_common`） |
+| 配置类型 | `src/config/types.rs`、`finalize.rs`、`env_overrides.rs`、`hot_reload.rs` |
+
+---
+
+**文档维护**：本页随实现 PR 更新「状态」与「开放问题」闭合情况；与 `agent_reply_plan` v1 契约变更同步修订。
