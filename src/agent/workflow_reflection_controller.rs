@@ -57,7 +57,7 @@ impl WorkflowReflectionController {
     pub fn set_require_strict_workflow_node_coverage(&mut self, required: bool) {
         // 目前 `WorkflowReflectionController` 不直接持有此标志，
         // 这里预留 setter 接口供 `PerCoordinator` 初始化后注入配置。
-        // 实际校验逻辑在 `per_coord.rs` 的 `after_final_assistant` 中；
+        // 实际校验逻辑在 `per_coord/final_plan_gate.rs`（经 `after_final_assistant`）中；
         // 若后续需要在此处内联，可改为 `self.require_strict_workflow_node_coverage = required`。
         let _ = required;
     }

@@ -8,7 +8,7 @@
 - **`docs/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
 - **`docs/HIERARCHICAL_MULTI_AGENT_ARCHITECTURE.md`**（分层模式与 Manager 反思）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
-- 源码：`src/agent/agent_turn/mod.rs`（P/E/R 定义）、`src/agent/per_coord.rs`、`src/agent/agent_turn/staged.rs`、`src/agent/workflow_reflection_controller.rs`
+- 源码：`src/agent/agent_turn/mod.rs`（P/E/R 定义）、`src/agent/per_coord/`（`mod.rs`、`final_plan_gate.rs`）、`src/agent/agent_turn/staged.rs`、`src/agent/agent_turn/staged_orchestrator.rs`、`src/agent/workflow_reflection_controller.rs`
 
 ---
 
@@ -28,7 +28,7 @@
 
 | 表现 | 位置 / 说明 |
 |------|-------------|
-| 终答是否必须含规划 | `FinalPlanRequirementMode` + `PlanRequirementSource` + `require_plan` 多段推导（`per_coord.rs`） |
+| 终答是否必须含规划 | `FinalPlanRequirementMode` + `PlanRequirementSource` + `require_plan` 多段推导（`per_coord/final_plan_gate.rs`） |
 | 规划静态校验与重写 | `after_final_assistant` 内长链：解析、层数、workflow 节点子集/全覆盖、validate-only 绑定、重写次数、语义检查挂起等 |
 | 分阶段主循环 | `staged.rs`：`for` 步、patch 重入、优化/集成/两阶段 NL 等交叉 `if` |
 | 可观测子阶段 | 已有 **`AgentTurnSubPhase`**（`planner` / `executor` / `reflect`）与 SSE **`sub_phase`**，与**内部决策状态**未一一对应 |
@@ -142,3 +142,4 @@
 | 日期 | 说明 |
 |------|------|
 | 2026-04-28 | 初稿：问题陈述、双 FSM 建议、与现有类型对照、分阶段实现顺序 |
+| 2026-04-28 | 实现增量：`per_coord/final_plan_gate.rs`、`agent_turn/staged_orchestrator.rs` |

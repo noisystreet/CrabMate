@@ -9,7 +9,7 @@
 use crate::agent::reflection::plan_rewrite;
 use crate::types::Message;
 
-/// 常量前缀（已在 `per_coord.rs` 中定义，保持引用路径一致）。
+/// 常量前缀（已在 `per_coord/mod.rs` 中定义，保持引用路径一致）。
 const PLAN_REWRITE_EXHAUSTED_SSE: &str = super::per_coord::PLAN_REWRITE_EXHAUSTED_SSE;
 
 /// 终答后规划重写策略。
