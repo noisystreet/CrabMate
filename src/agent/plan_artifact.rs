@@ -125,6 +125,10 @@ pub enum PlanArtifactError {
     WrongType(String),
     WrongVersion(u32),
     EmptySteps,
+    TooManySteps {
+        max: usize,
+        got: usize,
+    },
     /// `no_task` 为 true 时 `steps` 必须为空。
     NoTaskWithNonEmptySteps,
     InvalidStep {
@@ -155,6 +159,9 @@ pub(crate) fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
         }
         PlanArtifactError::WrongVersion(v) => format!("wrong_version version={v}"),
         PlanArtifactError::EmptySteps => "empty_steps".to_string(),
+        PlanArtifactError::TooManySteps { max, got } => {
+            format!("too_many_steps max={max} got={got}")
+        }
         PlanArtifactError::NoTaskWithNonEmptySteps => "no_task_with_steps".to_string(),
         PlanArtifactError::InvalidStep { index, reason } => {
             format!("invalid_step index={index} reason={reason}")
@@ -194,7 +201,7 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 顶层 \"type\" 为字符串 \"agent_reply_plan\"
 - \"version\" 为数字 1
 - 可选布尔 \"no_task\"：为 true 时表示用户未提出需分步执行的具体任务，此时 \"steps\" 必须为 []（空数组）
-- 当 \"no_task\" 省略或为 false 时，\"steps\" 为非空数组；每项含非空字符串 \"id\" 与 \"description\"
+- 当 \"no_task\" 省略或为 false 时，\"steps\" 必须为**仅一项**的非空数组（单步规划）；每项含非空字符串 \"id\" 与 \"description\"
 - 每项 \"id\" 须唯一；**首尾不得含空白**；语法为 ASCII 字母或数字开头，仅含 - _ . /，总长不超过 128（与 workflow 节点 id 常见字符集一致）
 - 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法；**允许在不同步骤中重复同一值**（当 `workflow_validate_only` 的 `nodes` 含重复 `id` 时，逐步绑定需要多重集一致）。值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）
 - **工作流反思 validate_only → Do**：当最近一次工具结果为 `workflow_validate_result` 且含非空 `nodes` 时，**每一步**均须设置 `workflow_node_id`，且 `steps.len()` 须**等于** `nodes` 个数；全部 `workflow_node_id` 构成的**多重集合**须与 `nodes[].id`（含重复）**完全一致**（顺序可与 DAG 不同）
@@ -206,7 +213,7 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - **推荐**：有「先读后写再测」类任务时，为相应步显式设置 `executor_kind`（审阅步 `review_readonly` → 改代码步 `patch_write` → 跑测步 `test_runner`），以便每步仅暴露必要工具；合并/优化规划时**须保留**各步的 `executor_kind` 意图（可改写 `description`/`id`，勿无故清空该字段）";
 
 /// Plan v1 的 JSON 示例。
-pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"read-ctx","description":"只读浏览相关文件与依赖","executor_kind":"review_readonly"},{"id":"apply-fix","description":"按结论修改源码","executor_kind":"patch_write"},{"id":"verify","description":"运行项目测试验证","executor_kind":"test_runner","step_kind":"verify","acceptance":{"expect_exit_code":0},"max_step_retries":3,"transitions":[{"condition":"on_verify_fail","target_step_id":"apply-fix","max_loops":3}]}]}"#;
+pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"next-step","description":"完成下一步最关键动作","executor_kind":"patch_write","step_kind":"implement","acceptance":{"expect_exit_code":0}}]}"#;
 
 /// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json / \`\`\`markdown / \`\`\`md 等带语言行的围栏，或整段即为单个 JSON 对象）。
 /// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
@@ -405,6 +412,7 @@ pub(crate) fn validate_plan_binds_workflow_validate_nodes(
 }
 
 fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifactError> {
+    const STAGED_PLAN_FIXED_MAX_STEPS: usize = 1;
     if p.plan_type != "agent_reply_plan" {
         return Err(PlanArtifactError::WrongType(p.plan_type.clone()));
     }
@@ -419,6 +427,12 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
     }
     if p.steps.is_empty() {
         return Err(PlanArtifactError::EmptySteps);
+    }
+    if p.steps.len() > STAGED_PLAN_FIXED_MAX_STEPS {
+        return Err(PlanArtifactError::TooManySteps {
+            max: STAGED_PLAN_FIXED_MAX_STEPS,
+            got: p.steps.len(),
+        });
     }
     let mut seen_step_ids = HashSet::<String>::new();
     for (i, s) in p.steps.iter().enumerate() {
@@ -1210,6 +1224,12 @@ mod tests {
     }
 
     #[test]
+    fn rejects_more_than_one_step() {
+        let s = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x"},{"id":"b","description":"y"}]}"#;
+        assert!(parse_agent_reply_plan_v1(s).is_err());
+    }
+
+    #[test]
     fn parses_no_task_empty_steps() {
         let s = r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#;
         let p = parse_agent_reply_plan_v1(s).unwrap();
@@ -1256,8 +1276,7 @@ not json
     fn staged_queue_marks_done_steps() {
         let plan = parse_agent_reply_plan_v1(
             r#"{"type":"agent_reply_plan","version":1,"steps":[
-                {"id":"a","description":"one"},
-                {"id":"b","description":"two"}
+                {"id":"a","description":"one"}
             ]}"#,
         )
         .unwrap();
@@ -1266,18 +1285,15 @@ not json
         assert!(!s0.contains("[✓]"));
         let s1 = format_plan_steps_markdown_for_staged_queue(&plan, 1);
         assert!(s1.lines().next().unwrap_or("").contains("[✓]"));
-        assert!(s1.lines().nth(1).unwrap_or("").contains("[ ]"));
-        let s2 = format_plan_steps_markdown_for_staged_queue(&plan, 2);
-        assert_eq!(s2.matches("[✓]").count(), 2);
+        assert_eq!(s1.matches("[✓]").count(), 1);
     }
 
     #[test]
     fn format_display_includes_goal_and_steps() {
-        let content = "先调研再改代码。\n```json\n{\"type\":\"agent_reply_plan\",\"version\":1,\"steps\":[{\"id\":\"s1\",\"description\":\"读 README\"},{\"id\":\"s2\",\"description\":\"改 main\"}]}\n```\n";
+        let content = "先调研再改代码。\n```json\n{\"type\":\"agent_reply_plan\",\"version\":1,\"steps\":[{\"id\":\"s1\",\"description\":\"读 README\"}]}\n```\n";
         let s = format_agent_reply_plan_for_display(content).expect("formatted");
         assert!(s.contains("调研"));
         assert!(s.contains("1. `s1`: 读 README"));
-        assert!(s.contains("2. `s2`: 改 main"));
         assert!(!s.contains("agent_reply_plan"));
     }
 

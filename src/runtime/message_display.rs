@@ -811,7 +811,7 @@ mod tests {
     fn assistant_valid_plan_keeps_preamble_when_present() {
         let raw = format!(
             "我将帮您编写一个简单的C++ Hello World程序，并完成编译执行。以下是任务拆解：\n```json\n{}\n```\n",
-            r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x"},{"id":"b","description":"y"}]}"#
+            r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x"}]}"#
         );
         let out = assistant_markdown_source_for_display(&raw);
         assert!(
