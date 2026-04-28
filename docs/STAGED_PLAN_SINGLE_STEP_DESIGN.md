@@ -22,6 +22,7 @@
 - 文档语气已从“待设计”收敛为“实现说明 + 风险/余项”。
 - 已与 `docs/CONFIGURATION.md` / `docs/DEVELOPMENT.md` 对齐“固定单步、无新增配置项”的决策。
 - 已补充回归测试，锁定“单步执行后重入下一轮规划并收敛退出”与“轮次上限防护”行为。
+- 已增加“意图门控后再入 staged”策略：仅识别为执行类（`IntentAction::Execute`）的回合进入分阶段规划；普通问答默认走常规外环，避免一问多答与无效规划轮。
 
 ---
 
@@ -70,6 +71,13 @@
 
 - **单步约束只作用于「每一轮无工具规划轮」产出的 JSON**，不自动增加「每用户回合必须规划几次」；**下一轮规划**仍由现有外环（执行完当前 `steps` 后是否再进入规划轮）决定。
 - 若当前实现是「一次规划、队列执行完所有 `steps` 再结束用户回合」，则启用单步后变为：**每段执行只消费 1 步 → 需在同一用户任务下再次触发规划轮**才能继续。此处**必须与 `agent_turn::staged` 实际控制流逐字核对**（实现阶段任务）：若今日代码仅在首轮 P 一次，则须扩展为 **步后 replan** 或 **将「用户回合」拆成多段 planner 调用**；本设计稿假定产品接受 **「步后再次无工具 P」** 的 API/会话成本。
+
+### 2.4 进入门控（意图识别）
+
+- 分阶段规划不再对所有回合无条件生效；在 `run_agent_turn_common` 处增加回合级门控。
+- 门控复用现有 `intent_pipeline`（L0/L1；与阈值配置一致），仅当决策动作为 **`IntentAction::Execute`** 时，允许进入 `staged` / `logical_dual_agent` 路径。
+- 对于 `qa.meta`、`qa.explain`、寒暄、澄清未确认等非执行意图，直接走 `run_agent_outer_loop`，避免“先规划后降级”导致的双回答。
+- 该门控是执行路径选择，不改变 `agent_reply_plan` v1 的单步校验契约。
 
 ---
 
@@ -132,6 +140,7 @@
 
 - **`plan_artifact` 单元测试**：`steps` 为 0/1/2 在开关 on/off 下的通过/失败矩阵；`no_task` 边界。
 - **与工作流绑定组合**：`nodes.len()==1` 且单步；`nodes.len()>1` 与豁免策略。
+- **意图门控回归**：覆盖“普通问答（如 `你有哪些技能`）不进入 staged”与“执行请求进入 staged”（`agent_turn::tests::staged_intent_gate_tests`）。
 - **SSE / golden**：若新增控制面或 `reason_code`，按仓库规则更新 **`fixtures/sse_control_golden.jsonl`** 等。
 - **前端**：`cargo check --target wasm32-unknown-unknown`；大改时 `trunk build`。
 

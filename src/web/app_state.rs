@@ -141,10 +141,11 @@ impl AppState {
         }
     }
 
-    /// 前端是否已经“设置过工作区”（包含：显式选择默认目录）
+    /// 前端是否已经“设置过明确工作区路径”（`Some(non-empty)`）。
+    /// `Some("")` 仅表示回退默认目录，不视为“已设置工作区”。
     pub(crate) async fn workspace_is_set(&self) -> bool {
         let guard = self.workspace_override.read().await;
-        guard.is_some()
+        guard.as_deref().is_some_and(|s| !s.trim().is_empty())
     }
 
     pub(crate) fn next_conversation_id(&self) -> String {

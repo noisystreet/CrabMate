@@ -49,6 +49,19 @@ pub(crate) async fn first_turn_project_context_user_message(
     }
 }
 
+/// Web 首轮专用门控：仅在用户已显式设置工作区后才注入项目上下文。
+pub(crate) async fn first_turn_project_context_user_message_for_web(
+    workspace_is_set: bool,
+    workspace_root: &Path,
+    cfg: &AgentConfig,
+    memory_snippet: Option<String>,
+) -> Option<String> {
+    if !workspace_is_set {
+        return None;
+    }
+    first_turn_project_context_user_message(workspace_root, cfg, memory_snippet).await
+}
+
 /// 同步构建首轮项目上下文（供 `workspace_session` 等非 async 路径；重扫描仍在当前线程执行，与历史行为一致）。
 pub(crate) fn first_turn_project_context_user_message_sync(
     workspace_root: &Path,
@@ -108,5 +121,23 @@ pub(crate) async fn prepend_first_turn_project_context_between_system_and_user(
     let cfg = cfg_holder.read().await.clone();
     if let Some(body) = first_turn_project_context_user_message(work_dir, &cfg, None).await {
         messages.insert(1, Message::user_first_turn_workspace_context(body));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::first_turn_project_context_user_message_for_web;
+
+    #[tokio::test]
+    async fn web_first_turn_skips_context_when_workspace_unset() {
+        let cfg = crate::config::load_config(None).expect("embed default");
+        let out = first_turn_project_context_user_message_for_web(
+            false,
+            std::path::Path::new("."),
+            &cfg,
+            Some("should_not_be_used".to_string()),
+        )
+        .await;
+        assert!(out.is_none());
     }
 }

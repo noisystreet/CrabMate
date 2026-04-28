@@ -30,7 +30,7 @@ use crate::clarification_questionnaire::{
 };
 use crate::conversation_store::SaveConversationOutcome;
 use crate::conversation_turn_bootstrap::{
-    compose_new_conversation_messages, first_turn_project_context_user_message,
+    compose_new_conversation_messages, first_turn_project_context_user_message_for_web,
 };
 use crate::redact;
 use crate::types::{
@@ -348,6 +348,7 @@ async fn build_messages_for_turn(
     agent_role: Option<&str>,
 ) -> Result<ConversationTurnSeed, String> {
     let root_str = state.effective_workspace_path().await;
+    let workspace_is_set = state.workspace_is_set().await;
     let root = std::path::PathBuf::from(root_str);
     let last_user = if image_urls.is_empty() {
         Message::user_only(user_msg.to_string())
@@ -379,15 +380,19 @@ async fn build_messages_for_turn(
                 .map_err(|e| e.to_string())?
                 .to_string();
             let system_for_turn = crate::tool_stats::augment_system_prompt(&system_for_turn, &cfg);
-            let system_for_turn = merge_system_prompt_with_workspace_skills_for_web(
-                system_for_turn,
-                cfg.skills_enabled,
-                cfg.skills_dir.as_str(),
-                cfg.skills_max_chars,
-                cfg.skills_top_k,
-                root.as_path(),
-                user_msg,
-            );
+            let system_for_turn = if workspace_is_set {
+                merge_system_prompt_with_workspace_skills_for_web(
+                    system_for_turn,
+                    cfg.skills_enabled,
+                    cfg.skills_dir.as_str(),
+                    cfg.skills_max_chars,
+                    cfg.skills_top_k,
+                    root.as_path(),
+                    user_msg,
+                )
+            } else {
+                system_for_turn
+            };
             if let Some(first) = seed.messages.first_mut()
                 && first.role == "system"
             {
@@ -403,16 +408,20 @@ async fn build_messages_for_turn(
         .map_err(|e| e.to_string())?
         .to_string();
     let system_for_turn = crate::tool_stats::augment_system_prompt(&system_for_turn, &cfg);
-    let system_for_turn = merge_system_prompt_with_workspace_skills_for_web(
-        system_for_turn,
-        cfg.skills_enabled,
-        cfg.skills_dir.as_str(),
-        cfg.skills_max_chars,
-        cfg.skills_top_k,
-        root.as_path(),
-        user_msg,
-    );
-    let memory_snippet = if cfg.agent_memory_file_enabled {
+    let system_for_turn = if workspace_is_set {
+        merge_system_prompt_with_workspace_skills_for_web(
+            system_for_turn,
+            cfg.skills_enabled,
+            cfg.skills_dir.as_str(),
+            cfg.skills_max_chars,
+            cfg.skills_top_k,
+            root.as_path(),
+            user_msg,
+        )
+    } else {
+        system_for_turn
+    };
+    let memory_snippet = if workspace_is_set && cfg.agent_memory_file_enabled {
         load_memory_snippet(
             &root,
             cfg.agent_memory_file.as_str(),
@@ -422,8 +431,13 @@ async fn build_messages_for_turn(
         None
     };
 
-    let combined =
-        first_turn_project_context_user_message(root.as_path(), &cfg, memory_snippet).await;
+    let combined = first_turn_project_context_user_message_for_web(
+        workspace_is_set,
+        root.as_path(),
+        &cfg,
+        memory_snippet,
+    )
+    .await;
     let messages = compose_new_conversation_messages(&system_for_turn, combined, Some(last_user));
     Ok(ConversationTurnSeed {
         messages,

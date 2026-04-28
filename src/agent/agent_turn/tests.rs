@@ -279,6 +279,37 @@ mod staged_single_step_rolling_tests {
     }
 }
 
+mod staged_intent_gate_tests {
+    use super::super::should_enter_staged_planning;
+    use crate::types::Message;
+
+    fn test_cfg() -> crate::config::AgentConfig {
+        crate::config::load_config(None).expect("embed default")
+    }
+
+    #[test]
+    fn plain_qa_should_not_enter_staged_planning() {
+        let cfg = test_cfg();
+        let messages = vec![Message::user_only("你有哪些技能")];
+        assert!(
+            !should_enter_staged_planning(&messages, &cfg),
+            "普通问答不应进入分阶段规划"
+        );
+    }
+
+    #[test]
+    fn execute_task_should_enter_staged_planning() {
+        let cfg = test_cfg();
+        let messages = vec![Message::user_only(
+            "请修复 src/lib.rs 的编译错误并运行 cargo test",
+        )];
+        assert!(
+            should_enter_staged_planning(&messages, &cfg),
+            "任务执行类请求应进入分阶段规划"
+        );
+    }
+}
+
 mod staged_workflow_binding_context_tests {
     use crate::agent::plan_artifact::parse_agent_reply_plan_v1_with_validate_only_binding_ids;
 

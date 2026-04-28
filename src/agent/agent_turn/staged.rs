@@ -227,16 +227,6 @@ fn strip_staged_planner_message_tool_calls(
     }
 }
 
-/// 分步执行后会在消息尾部插入 `chat_ui_separator`。
-/// 若下一轮重规划未产出结构化计划（`NotFound`），通常表示模型在做收尾自然语言，
-/// 此时直接收敛可避免“总结后再总结”的重复输出。
-#[inline]
-fn staged_planner_entered_from_step_execution(messages: &[Message]) -> bool {
-    messages
-        .last()
-        .is_some_and(crate::types::is_chat_ui_separator)
-}
-
 /// 逻辑多规划员（串行）+ 合并：首轮规划已在历史中；辅助规划员轮**不**写入 assistant，以免上下文膨胀。
 async fn maybe_run_staged_plan_ensemble_then_merge<F>(
     p: &mut RunLoopParams<'_>,
@@ -416,6 +406,7 @@ pub(super) async fn run_staged_plan_then_execute_steps(
     let mut rewrite_attempts = 0;
     let max_rewrites = p.cfg.full_plan_rewrite_max_attempts;
     let mut staged_rounds = 0usize;
+    let mut entered_from_step_execution_round = false;
     const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
     let snapshot =
         crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.effective_working_dir);
@@ -440,6 +431,7 @@ pub(super) async fn run_staged_plan_then_execute_steps(
             req,
             render_to_terminal,
             echo_terminal_staged,
+            entered_from_step_execution_round,
             labels,
             |body| Message {
                 role: "user".to_string(),
@@ -455,6 +447,7 @@ pub(super) async fn run_staged_plan_then_execute_steps(
 
         match res {
             Ok(StagedPlanRunOutcome::ContinuePlanning) => {
+                entered_from_step_execution_round = true;
                 debug!(
                     target: "crabmate",
                     "分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
@@ -482,6 +475,7 @@ pub(super) async fn run_staged_plan_then_execute_steps(
                     });
                 }
                 rewrite_attempts += 1;
+                entered_from_step_execution_round = false;
                 let fb = format!(
                     "### 全局重规划要求\n\
                      由于前面的步骤执行多次修复后仍然彻底失败，失败原因摘要如下：\n\
@@ -555,6 +549,11 @@ pub(crate) fn build_logical_dual_planner_messages(
 pub(crate) enum StagedPlanRunOutcome {
     ContinuePlanning,
     Finished,
+}
+
+#[inline]
+fn should_finish_when_plan_not_found(entered_from_step_execution_round: bool) -> bool {
+    entered_from_step_execution_round
 }
 
 #[cfg(test)]
@@ -877,19 +876,20 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_staged_plan_with_prepared_request<F>(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
     req: crate::types::ChatRequest,
     render_to_terminal: bool,
     echo_terminal_staged: bool,
+    entered_from_step_execution_round: bool,
     labels: StagedPlanRunLabels,
     make_step_user_message: F,
 ) -> Result<StagedPlanRunOutcome, RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
-    let entered_from_step_execution = staged_planner_entered_from_step_execution(p.messages);
     let planner_render_to_terminal =
         render_to_terminal && (p.out.is_some() || p.cfg.staged_plan_cli_show_planner_stream);
     let (mut msg, finish_reason) =
@@ -1023,7 +1023,7 @@ where
                 parse_err,
                 crate::agent::plan_artifact::PlanArtifactError::NotFound
             ) {
-                if entered_from_step_execution {
+                if should_finish_when_plan_not_found(entered_from_step_execution_round) {
                     debug!(
                         target: "crabmate",
                         "分阶段重规划：检测到分步执行后重入且本轮未产出结构化计划，视为收敛完成，直接结束（避免重复总结）"
@@ -1643,6 +1643,7 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
     let mut rewrite_attempts = 0;
     let max_rewrites = p.cfg.full_plan_rewrite_max_attempts;
     let mut staged_rounds = 0usize;
+    let mut entered_from_step_execution_round = false;
     const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
     let snapshot =
         crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.effective_working_dir);
@@ -1667,6 +1668,7 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
             req,
             render_to_terminal,
             echo_terminal_staged,
+            entered_from_step_execution_round,
             labels,
             Message::user_only,
         )
@@ -1674,6 +1676,7 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
 
         match res {
             Ok(StagedPlanRunOutcome::ContinuePlanning) => {
+                entered_from_step_execution_round = true;
                 debug!(
                     target: "crabmate",
                     "逻辑双Agent分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
@@ -1701,6 +1704,7 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
                     });
                 }
                 rewrite_attempts += 1;
+                entered_from_step_execution_round = false;
                 let fb = format!(
                     "### 全局重规划要求\n\
                      由于前面的步骤执行多次修复后仍然彻底失败，失败原因摘要如下：\n\
@@ -1718,15 +1722,22 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
 }
 
 #[cfg(test)]
-mod staged_convergence_tests {
-    use super::staged_planner_entered_from_step_execution;
-    use crate::types::Message;
+mod staged_not_found_convergence_tests {
+    use super::should_finish_when_plan_not_found;
 
     #[test]
-    fn detects_recent_step_execution_separator_at_tail() {
-        let mut messages = vec![Message::user_only("u"), Message::assistant_only("a")];
-        assert!(!staged_planner_entered_from_step_execution(&messages));
-        messages.push(Message::chat_ui_separator(true));
-        assert!(staged_planner_entered_from_step_execution(&messages));
+    fn not_found_does_not_finish_for_plain_qa_round() {
+        assert!(
+            !should_finish_when_plan_not_found(false),
+            "普通问答轮（未进入步后重规划）遇到 NotFound 不应直接收敛结束"
+        );
+    }
+
+    #[test]
+    fn not_found_finishes_only_after_step_execution_reentry() {
+        assert!(
+            should_finish_when_plan_not_found(true),
+            "仅在同 turn 的步后重规划轮，NotFound 才应触发收敛结束"
+        );
     }
 }
