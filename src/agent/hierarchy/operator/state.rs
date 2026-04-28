@@ -29,6 +29,9 @@ pub(crate) struct ReactState {
     pub recent_commands: Vec<String>,
     /// 重复命令计数
     pub duplicate_command_count: usize,
+    /// 轻量命令去重缓存（同一子目标内复用 `run_command cat/ls` 结果，避免重复执行）
+    pub lightweight_command_cache:
+        std::collections::HashMap<String, super::super::tool_executor::ToolExecutionResult>,
     /// 已使用的工具集合（用于复杂度评估）
     pub tools_used: std::collections::HashSet<String>,
     /// 按时间顺序的每次成功/失败工具调用名（与 tools_used 不同：含重复、用于验收）

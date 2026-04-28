@@ -14,6 +14,65 @@ use super::types::{CompileErrorType, OperatorError};
 
 #[allow(dead_code, clippy::too_many_arguments)]
 impl super::types::OperatorAgent {
+    pub(super) fn get_lightweight_cached_run_command_result(
+        cache: &std::collections::HashMap<String, super::super::tool_executor::ToolExecutionResult>,
+        tool_name: &str,
+        tool_args_json: &str,
+    ) -> Option<super::super::tool_executor::ToolExecutionResult> {
+        let key = Self::lightweight_dedupe_signature_for_run_command(tool_name, tool_args_json)?;
+        cache.get(&key).cloned()
+    }
+
+    pub(super) fn lightweight_dedupe_signature_for_run_command(
+        tool_name: &str,
+        tool_args_json: &str,
+    ) -> Option<String> {
+        if tool_name != "run_command" {
+            return None;
+        }
+        let Ok(args) = serde_json::from_str::<serde_json::Value>(tool_args_json) else {
+            return None;
+        };
+        let command = args.get("command").and_then(|v| v.as_str())?;
+        let raw_args = args.get("args").and_then(|v| v.as_array())?;
+        let argv: Vec<&str> = raw_args.iter().filter_map(|v| v.as_str()).collect();
+        match command.trim() {
+            "cat" if argv.len() == 1 => Some(format!("run_command:cat:{}", argv[0].trim())),
+            "ls" => {
+                let target = argv
+                    .iter()
+                    .rev()
+                    .find(|a| !a.trim().starts_with('-'))
+                    .map(|s| s.trim())
+                    .unwrap_or(".");
+                Some(format!("run_command:ls:{target}"))
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn is_successful_build_executable_run_command(
+        goal: &SubGoal,
+        tool_name: &str,
+        tool_args_json: &str,
+        tool_success: bool,
+    ) -> bool {
+        if !tool_success || tool_name != "run_command" {
+            return false;
+        }
+        if !super::super::goal_verifier::is_run_executable_subgoal(goal) {
+            return false;
+        }
+        let Ok(args) = serde_json::from_str::<serde_json::Value>(tool_args_json) else {
+            return false;
+        };
+        let Some(command) = args.get("command").and_then(|v| v.as_str()) else {
+            return false;
+        };
+        let cmd = command.trim();
+        cmd.starts_with("./build/") || cmd.starts_with("build/")
+    }
+
     #[allow(dead_code, clippy::too_many_arguments)]
     pub async fn execute_with_tools(
         &self,
@@ -56,6 +115,7 @@ impl super::types::OperatorAgent {
             last_error_type: None,
             recent_commands: Vec::new(),
             duplicate_command_count: 0,
+            lightweight_command_cache: std::collections::HashMap::new(),
             tools_used: std::collections::HashSet::new(),
             tool_names_chron: Vec::new(),
             dynamic_decomposition_count: 0,
@@ -215,8 +275,31 @@ impl super::types::OperatorAgent {
                         tool_call.clone()
                     };
 
-                    // 执行真实工具（使用注入后的参数）
-                    let result = tool_executor.execute_tool_call(&injected_tool_call).await;
+                    let dedupe_key = Self::lightweight_dedupe_signature_for_run_command(
+                        &injected_tool_call.function.name,
+                        &injected_tool_call.function.arguments,
+                    );
+                    let mut reused_lightweight_result = false;
+                    // 执行真实工具（使用注入后的参数）；对同一子目标内重复 cat/ls 复用上次结果，避免无效重复执行
+                    let result = if let Some(key) = dedupe_key.as_ref() {
+                        if let Some(cached) = Self::get_lightweight_cached_run_command_result(
+                            &state.lightweight_command_cache,
+                            &injected_tool_call.function.name,
+                            &injected_tool_call.function.arguments,
+                        ) {
+                            reused_lightweight_result = true;
+                            log::info!(
+                                target: "crabmate",
+                                "[HIERARCHICAL] Operator: lightweight dedupe hit for {}",
+                                key
+                            );
+                            cached
+                        } else {
+                            tool_executor.execute_tool_call(&injected_tool_call).await
+                        }
+                    } else {
+                        tool_executor.execute_tool_call(&injected_tool_call).await
+                    };
 
                     log::info!(
                         target: "crabmate",
@@ -227,6 +310,14 @@ impl super::types::OperatorAgent {
                     );
                     state.tool_names_chron.push(result.tool_name.clone());
                     state.tools_used.insert(result.tool_name.clone());
+                    if !reused_lightweight_result
+                        && result.success
+                        && let Some(key) = dedupe_key.as_ref()
+                    {
+                        state
+                            .lightweight_command_cache
+                            .insert(key.clone(), result.clone());
+                    }
 
                     // 检测工作目录变化（从工具参数或输出中提取）
                     if let Some(new_dir) =
@@ -284,7 +375,9 @@ impl super::types::OperatorAgent {
                     // 检测重复命令
                     let command_signature =
                         format!("{}:{}", result.tool_name, tool_call.function.arguments);
-                    if state.recent_commands.contains(&command_signature) {
+                    if !reused_lightweight_result
+                        && state.recent_commands.contains(&command_signature)
+                    {
                         state.duplicate_command_count += 1;
                         log::warn!(
                             target: "crabmate",
@@ -319,15 +412,17 @@ impl super::types::OperatorAgent {
                                 tools_invoked: state.tool_names_chron.clone(),
                             });
                         }
-                    } else {
+                    } else if !reused_lightweight_result {
                         // 新命令，重置重复计数
                         state.duplicate_command_count = 0;
                     }
 
                     // 保持最近 5 条命令历史
-                    state.recent_commands.push(command_signature);
-                    if state.recent_commands.len() > 5 {
-                        state.recent_commands.remove(0);
+                    if !reused_lightweight_result {
+                        state.recent_commands.push(command_signature);
+                        if state.recent_commands.len() > 5 {
+                            state.recent_commands.remove(0);
+                        }
                     }
 
                     // 分析工具执行结果，检查是否表示任务已完成
@@ -510,6 +605,25 @@ impl super::types::OperatorAgent {
                             "[HIERARCHICAL] Operator: task completion detected after tool={}: {}",
                             result.tool_name,
                             reason
+                        );
+                        state.task_completed = true;
+                        state.completion_reason = Some(reason);
+                    }
+                    // 收敛策略：若已成功执行 build 目录下可执行文件，立即结束本子目标，
+                    // 防止继续进入“确认回合”重复执行 ls/cat/cmake --build 等。
+                    if !state.task_completed
+                        && Self::is_successful_build_executable_run_command(
+                            goal,
+                            &result.tool_name,
+                            &tool_call.function.arguments,
+                            result.success,
+                        )
+                    {
+                        let reason = "Built executable run_command succeeded".to_string();
+                        log::info!(
+                            target: "crabmate",
+                            "[HIERARCHICAL] Operator: early convergence after successful executable run: tool={}",
+                            result.tool_name
                         );
                         state.task_completed = true;
                         state.completion_reason = Some(reason);

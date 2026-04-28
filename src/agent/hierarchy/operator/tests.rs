@@ -157,3 +157,84 @@ fn test_parse_compile_error_metrics() {
     assert_eq!(m.error_count, 2);
     assert!(m.first_error_signature.contains("error"));
 }
+
+#[test]
+fn test_early_convergence_when_run_build_executable_succeeds() {
+    let goal = SubGoal::new("goal_run", "运行 ./build/hello 并验证输出");
+    let ok = OperatorAgent::is_successful_build_executable_run_command(
+        &goal,
+        "run_command",
+        r#"{"command":"./build/hello","args":[]}"#,
+        true,
+    );
+    assert!(ok);
+}
+
+#[test]
+fn test_no_early_convergence_when_only_build_command_succeeds() {
+    let goal = SubGoal::new(
+        "goal_build",
+        "运行 cmake --build build 编译生成可执行文件，不执行程序",
+    );
+    let ok = OperatorAgent::is_successful_build_executable_run_command(
+        &goal,
+        "run_command",
+        r#"{"command":"cmake","args":["--build","build"]}"#,
+        true,
+    );
+    assert!(!ok);
+}
+
+#[test]
+fn test_lightweight_dedupe_signature_for_cat_same_file() {
+    let sig = OperatorAgent::lightweight_dedupe_signature_for_run_command(
+        "run_command",
+        r#"{"command":"cat","args":["main.cpp"]}"#,
+    );
+    assert_eq!(sig.as_deref(), Some("run_command:cat:main.cpp"));
+}
+
+#[test]
+fn test_lightweight_dedupe_signature_for_ls_same_directory() {
+    let sig = OperatorAgent::lightweight_dedupe_signature_for_run_command(
+        "run_command",
+        r#"{"command":"ls","args":["-la","build"]}"#,
+    );
+    assert_eq!(sig.as_deref(), Some("run_command:ls:build"));
+}
+
+#[test]
+fn test_lightweight_cache_hit_for_repeated_cat_in_same_subgoal() {
+    use crate::agent::hierarchy::tool_executor::ToolExecutionResult;
+    use std::collections::HashMap;
+
+    let mut cache: HashMap<String, ToolExecutionResult> = HashMap::new();
+    let key = OperatorAgent::lightweight_dedupe_signature_for_run_command(
+        "run_command",
+        r#"{"command":"cat","args":["main.cpp"]}"#,
+    )
+    .expect("dedupe key");
+    cache.insert(
+        key,
+        ToolExecutionResult {
+            tool_name: "run_command".to_string(),
+            output: "命令：cat main.cpp\n退出码：0\n标准输出：\nHello".to_string(),
+            error: None,
+            success: true,
+            extracted_artifacts: Vec::new(),
+        },
+    );
+
+    let hit = OperatorAgent::get_lightweight_cached_run_command_result(
+        &cache,
+        "run_command",
+        r#"{"command":"cat","args":["main.cpp"]}"#,
+    );
+    assert!(hit.is_some());
+    let missed = OperatorAgent::get_lightweight_cached_run_command_result(
+        &cache,
+        "run_command",
+        r#"{"command":"cat","args":["other.cpp"]}"#,
+    );
+    assert!(missed.is_none());
+}

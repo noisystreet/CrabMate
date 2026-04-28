@@ -486,7 +486,15 @@ impl ManagerAgent {
 - `path` 优先**相对工作区根**（如 `main.cpp`）；**勿**在子目标或工具参数里造深层误路径（如无关子目录下的 `main.cpp`）
 - `create_file` 仅当目标路径**尚不存在**时成功；已存在时须用 `modify_file`、`search_replace`、`append_file` 等，**禁止**对同一路径重复 `create_file`
 - `run_command` 须分别传 `command` 与 `args`；`args` 在 JSON 中必须是**字符串**数组。每一项**必须**用双引号包起来（如列表标志为 `\"-la\"` 的数组元素，不得写成无引号 token），否则易触发「参数解析错误」或 `invalid number`
-- 查可执行/依赖是否在 PATH 时用 **`"command": "which"` + `"args": ["cmake"]`** 等；**禁止**写成 `\"command\": \"which cmake\"` 单字段（会把整串当程序名而失败）
+- 命令健康检查模板化：对编译工具可用性按“定位 + 版本”两步分别执行，避免混写假失败：
+  - `which cmake` 后再 `cmake --version`
+  - `which g++` 后再 `g++ --version`
+  - 对应 `run_command` JSON 形态分别为：
+    - `{ \"command\": \"which\", \"args\": [\"cmake\"] }`
+    - `{ \"command\": \"cmake\", \"args\": [\"--version\"] }`
+    - `{ \"command\": \"which\", \"args\": [\"g++\"] }`
+    - `{ \"command\": \"g++\", \"args\": [\"--version\"] }`
+  - **禁止**写成 `\"command\": \"which cmake\"` 或把 `which` 与 `--version` 混在一次调用里（例如 `which cmake --version`）
 - 简单 CMake 项目用 **`add_executable(… main.cpp)`** 等**显式列出源文件**；勿对**空** `file(GLOB …)` 结果生成目标（会无源可链）；**勿**用未排除 `build/` 的 **`GLOB_RECURSE`** 收集 `*.cpp`（会把 `CMakeFiles/` 下探测源链进来导致重复 `main`）
 - 工作区内的**可执行/构建产物**的「运行（执行）」优先用 **`run_executable` + 相对工作区根路径**；白名单**系统**命令用 `run_command`；以工具说明与 `config` 中分工为准
 - 子目标若属于「运行可执行体 / 验证程序输出」：`required_tools` **必须包含** `run_executable`，并以 `run_executable` 为主执行；`run_command` 仅作补充诊断，不得替代主验证
