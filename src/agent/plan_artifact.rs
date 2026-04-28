@@ -201,7 +201,7 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 顶层 \"type\" 为字符串 \"agent_reply_plan\"
 - \"version\" 为数字 1
 - 可选布尔 \"no_task\"：为 true 时表示用户未提出需分步执行的具体任务，此时 \"steps\" 必须为 []（空数组）
-- 当 \"no_task\" 省略或为 false 时，\"steps\" 必须为**仅一项**的非空数组（单步规划）；每项含非空字符串 \"id\" 与 \"description\"
+- 当 \"no_task\" 省略或为 false 时，\"steps\" 必须为**仅一项**的非空数组（单步规划）；但在 `workflow_validate_only` 绑定场景（每步都带 `workflow_node_id`）可出现多步；每项含非空字符串 \"id\" 与 \"description\"
 - 每项 \"id\" 须唯一；**首尾不得含空白**；语法为 ASCII 字母或数字开头，仅含 - _ . /，总长不超过 128（与 workflow 节点 id 常见字符集一致）
 - 可选 \"workflow_node_id\"：若填写，须**首尾无空白**且满足与 \"id\" 相同的语法；**允许在不同步骤中重复同一值**（当 `workflow_validate_only` 的 `nodes` 含重复 `id` 时，逐步绑定需要多重集一致）。值应对应最近一次 `workflow_validate_only` 工具结果里 `nodes[].id` 之一（运行时会校验子集）。在严格模式下，若**任一步**填写了 `workflow_node_id`，则**每一个**上述节点 id 都须在步骤中至少出现一次（可合并多 id 到一步时仍须逐 id 引用）
 - **工作流反思 validate_only → Do**：当最近一次工具结果为 `workflow_validate_result` 且含非空 `nodes` 时，**每一步**均须设置 `workflow_node_id`，且 `steps.len()` 须**等于** `nodes` 个数；全部 `workflow_node_id` 构成的**多重集合**须与 `nodes[].id`（含重复）**完全一致**（顺序可与 DAG 不同）
@@ -428,7 +428,17 @@ fn validate_agent_reply_plan_v1(p: &AgentReplyPlanV1) -> Result<(), PlanArtifact
     if p.steps.is_empty() {
         return Err(PlanArtifactError::EmptySteps);
     }
-    if p.steps.len() > STAGED_PLAN_FIXED_MAX_STEPS {
+    // 固定单步：默认只允许 1 步。
+    // 绑定优先例外：若每步都显式绑定 `workflow_node_id`，允许多步交由
+    // `validate_plan_binds_workflow_validate_nodes` 做严格的一一对应校验。
+    let workflow_bound_multi_step = p.steps.len() > STAGED_PLAN_FIXED_MAX_STEPS
+        && p.steps.iter().all(|s| {
+            s.workflow_node_id
+                .as_deref()
+                .map(|w| !w.trim().is_empty())
+                .unwrap_or(false)
+        });
+    if p.steps.len() > STAGED_PLAN_FIXED_MAX_STEPS && !workflow_bound_multi_step {
         return Err(PlanArtifactError::TooManySteps {
             max: STAGED_PLAN_FIXED_MAX_STEPS,
             got: p.steps.len(),
@@ -1227,6 +1237,12 @@ mod tests {
     fn rejects_more_than_one_step() {
         let s = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x"},{"id":"b","description":"y"}]}"#;
         assert!(parse_agent_reply_plan_v1(s).is_err());
+    }
+
+    #[test]
+    fn allows_multi_steps_when_each_step_has_workflow_node_id() {
+        let s = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"x","workflow_node_id":"n1"},{"id":"b","description":"y","workflow_node_id":"n2"}]}"#;
+        assert!(parse_agent_reply_plan_v1(s).is_ok());
     }
 
     #[test]

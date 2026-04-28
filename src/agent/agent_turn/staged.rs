@@ -399,10 +399,22 @@ pub(super) async fn run_staged_plan_then_execute_steps(
 
     let mut rewrite_attempts = 0;
     let max_rewrites = p.cfg.full_plan_rewrite_max_attempts;
+    let mut staged_rounds = 0usize;
+    const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
     let snapshot =
         crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.effective_working_dir);
 
     loop {
+        staged_rounds = staged_rounds.saturating_add(1);
+        if staged_rounds > STAGED_SINGLE_STEP_MAX_ROUNDS {
+            return Err(RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: format!(
+                    "分阶段单步规划轮次超过上限（{}），已停止以避免无限循环",
+                    STAGED_SINGLE_STEP_MAX_ROUNDS
+                ),
+            });
+        }
         let req =
             prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
                 .await?;
@@ -426,6 +438,15 @@ pub(super) async fn run_staged_plan_then_execute_steps(
         .await;
 
         match res {
+            Ok(StagedPlanRunOutcome::ContinuePlanning) => {
+                debug!(
+                    target: "crabmate",
+                    "分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
+                    staged_rounds
+                );
+                continue;
+            }
+            Ok(StagedPlanRunOutcome::Finished) => return Ok(()),
             Err(RunAgentTurnError::StepRetryExhausted { phase, message }) => {
                 if let Some(ref snap) = snapshot {
                     if let Err(e) = snap.restore() {
@@ -456,7 +477,7 @@ pub(super) async fn run_staged_plan_then_execute_steps(
                 p.messages.push(Message::user_only(fb));
                 continue;
             }
-            other => return other,
+            Err(other) => return Err(other),
         }
     }
 }
@@ -512,6 +533,12 @@ pub(crate) fn build_logical_dual_planner_messages(
         .collect();
     out.push(Message::system_only(plan_system));
     out
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StagedPlanRunOutcome {
+    ContinuePlanning,
+    Finished,
 }
 
 /// 发送单步结束 SSE（`failed` / `cancelled` / `ok`）。
@@ -810,7 +837,7 @@ pub(crate) async fn run_staged_plan_with_prepared_request<F>(
     echo_terminal_staged: bool,
     labels: StagedPlanRunLabels,
     make_step_user_message: F,
-) -> Result<(), RunAgentTurnError>
+) -> Result<StagedPlanRunOutcome, RunAgentTurnError>
 where
     F: Fn(String) -> Message,
 {
@@ -828,7 +855,7 @@ where
     );
 
     if finish_reason == USER_CANCELLED_FINISH_REASON {
-        return Ok(());
+        return Ok(StagedPlanRunOutcome::Finished);
     }
 
     // 规划轮请求为 `tools: []` + `tool_choice: none`，但部分网关仍返回**原生** `tool_calls`（含函数名）。
@@ -900,14 +927,15 @@ where
                 if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);
                 }
-                return Ok(());
+                return Ok(StagedPlanRunOutcome::Finished);
             }
             ReflectOnAssistantOutcome::ContinueOuterForPlanRewrite => {
                 if let Some(f) = p.per_flight.as_ref() {
                     f.sync_from_per_coord(per_coord);
                     f.awaiting_plan_rewrite_model.store(true, Ordering::Relaxed);
                 }
-                return run_agent_outer_loop(p, per_coord).await;
+                run_agent_outer_loop(p, per_coord).await?;
+                return Ok(StagedPlanRunOutcome::Finished);
             }
             ReflectOnAssistantOutcome::PlanRewriteExhausted { reason } => {
                 if let Some(f) = p.per_flight.as_ref() {
@@ -924,10 +952,11 @@ where
                     )
                     .await;
                 }
-                return Ok(());
+                return Ok(StagedPlanRunOutcome::Finished);
             }
         }
-        return run_agent_outer_loop(p, per_coord).await;
+        run_agent_outer_loop(p, per_coord).await?;
+        return Ok(StagedPlanRunOutcome::Finished);
     }
 
     let merged_for_log =
@@ -965,7 +994,8 @@ where
             }
             // 保留规划轮正文，避免整轮失败退出（REPL/脚本/Web 均与关闭分阶段规划时的行为对齐）。
             push_assistant_merging_trailing_empty_placeholder(p.messages, msg.clone());
-            return run_agent_outer_loop(p, per_coord).await;
+            run_agent_outer_loop(p, per_coord).await?;
+            return Ok(StagedPlanRunOutcome::Finished);
         }
     };
 
@@ -983,7 +1013,8 @@ where
             target: "crabmate",
             "分阶段规划：no_task=true，跳过分步注入，转入常规对话循环"
         );
-        return run_agent_outer_loop(p, per_coord).await;
+        run_agent_outer_loop(p, per_coord).await?;
+        return Ok(StagedPlanRunOutcome::Finished);
     }
 
     let mut plan = plan;
@@ -1031,7 +1062,7 @@ where
         .await?;
         if opt_finish == USER_CANCELLED_FINISH_REASON {
             pop_last_staged_planner_coach_user_if_present(p.messages);
-            return Ok(());
+            return Ok(StagedPlanRunOutcome::Finished);
         }
         strip_staged_planner_message_tool_calls(
             &mut opt_msg,
@@ -1513,7 +1544,7 @@ where
         patch_ctx.p.messages.push(Message::chat_ui_separator(true));
         emit_chat_ui_separator_sse(patch_ctx.p.out, true).await;
     }
-    Ok(())
+    Ok(StagedPlanRunOutcome::ContinuePlanning)
 }
 
 pub(super) async fn run_logical_dual_agent_then_execute_steps(
@@ -1531,10 +1562,22 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
 
     let mut rewrite_attempts = 0;
     let max_rewrites = p.cfg.full_plan_rewrite_max_attempts;
+    let mut staged_rounds = 0usize;
+    const STAGED_SINGLE_STEP_MAX_ROUNDS: usize = 64;
     let snapshot =
         crate::agent::workspace_snapshot::WorkspaceSnapshot::take(p.effective_working_dir);
 
     loop {
+        staged_rounds = staged_rounds.saturating_add(1);
+        if staged_rounds > STAGED_SINGLE_STEP_MAX_ROUNDS {
+            return Err(RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: format!(
+                    "逻辑双Agent分阶段单步规划轮次超过上限（{}），已停止以避免无限循环",
+                    STAGED_SINGLE_STEP_MAX_ROUNDS
+                ),
+            });
+        }
         let req =
             prepare_staged_planner_no_tools_request(p, per_coord, labels.build_planner_messages)
                 .await?;
@@ -1550,6 +1593,15 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
         .await;
 
         match res {
+            Ok(StagedPlanRunOutcome::ContinuePlanning) => {
+                debug!(
+                    target: "crabmate",
+                    "逻辑双Agent分阶段单步：本轮执行完成，进入下一轮无工具规划（round={}）",
+                    staged_rounds
+                );
+                continue;
+            }
+            Ok(StagedPlanRunOutcome::Finished) => return Ok(()),
             Err(RunAgentTurnError::StepRetryExhausted { phase, message }) => {
                 if let Some(ref snap) = snapshot {
                     if let Err(e) = snap.restore() {
@@ -1580,7 +1632,7 @@ pub(super) async fn run_logical_dual_agent_then_execute_steps(
                 p.messages.push(Message::user_only(fb));
                 continue;
             }
-            other => return other,
+            Err(other) => return Err(other),
         }
     }
 }
